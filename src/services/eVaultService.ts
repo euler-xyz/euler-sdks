@@ -6,7 +6,7 @@ import { DeploymentService } from "./deploymentService.js";
 
 export interface IEVaultDataSource {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEVault[]>;
-  fetchVerifiedVaults(chainId: number, perspectives: Address[]): Promise<IEVault[]>;
+  fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]>;
 }
 
 export enum StandardPerspectives {
@@ -31,7 +31,7 @@ export class EVaultService {
     return (await this.dataSource.fetchVaults(chainId, vaults)).map(vault => new EVault(vault));
   }
 
-  async fetchVerifiedEVaults(chainId: number, perspectives: (StandardPerspectives | Address)[]): Promise<EVault[]> {
+  async fetchVerifiedEVaultsAddresses(chainId: number, perspectives: (StandardPerspectives | Address)[]): Promise<Address[]> {
     if (perspectives.length === 0) {
       return [];
     }
@@ -46,12 +46,15 @@ export class EVaultService {
         throw new Error(`Perspective address not found for ${perspective}`);
       }
 
-      return deployment.addresses.peripheryAddrs[perspective as StandardPerspectives];
+      return deployment.addresses.peripheryAddrs[perspective as StandardPerspectives] as Address;
     });
-    const vaults = await this.dataSource.fetchVerifiedVaults(chainId, perspectiveAddresses as Address[]);
-    return vaults.map(vault => new EVault(vault));
+    return this.dataSource.fetchVerifiedVaultsAddresses(chainId, perspectiveAddresses);
   }
 
+  async fetchVerifiedEVaults(chainId: number, perspectives: (StandardPerspectives | Address)[]): Promise<EVault[]> {
+    const addresses = await this.fetchVerifiedEVaultsAddresses(chainId, perspectives);
+    return this.fetchEVaults(chainId, addresses);
+  }
 }
 
 export class EVaultOnchainDataSource implements IEVaultDataSource {
@@ -83,7 +86,7 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
     return parsedVaults;
   }
 
-  async fetchVerifiedVaults(chainId: number, perspectives: Address[]): Promise<IEVault[]> {
+  async fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]> {
     const provider = this.providerService.getProvider(chainId);
     const abi = await this.abiService.getABI(chainId, "BasePerspective");
 
@@ -95,7 +98,7 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
       })),
     });
 
-    let verifiedVaults: Address[] = results.flatMap((callResult, idx) => {
+    const addresses: Address[] = results.flatMap((callResult, idx) => {
       if (callResult.status === "success" && callResult.result) {
         return callResult.result as Address[];
       }
@@ -106,6 +109,6 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
       );
     });
 
-    return this.fetchVaults(chainId, verifiedVaults);
+    return addresses;
   }
 }
