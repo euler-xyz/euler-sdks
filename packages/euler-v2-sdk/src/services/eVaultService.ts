@@ -1,8 +1,9 @@
-import { EVault, IEVault } from "../entities/eVault.js";
+import { EVault, IEVault } from "../entities/EVault.js";
 import { Address } from "viem";
 import { ProviderService } from "./providerService.js";
 import { IABIService } from "./abiService.js";
 import { DeploymentService } from "./deploymentService.js";
+import { decodeOracleInfo, OracleDetailedInfo } from "src/utils/oracle.js";
 
 export interface IEVaultDataSource {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEVault[]>;
@@ -74,7 +75,14 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
 
     const parsedVaults: IEVault[] = results.map((callResult, idx) => {
       if (callResult.status === "success" && callResult.result) {
-        return callResult.result as IEVault;
+        const result = callResult.result as any;
+        const decodedOracleInfo = decodeOracleInfo(result.oracleInfo);
+        const decodedBackupAssetOracleInfo = decodeOracleInfo(result.backupAssetOracleInfo);
+        return new EVault({
+          ...result,
+          oracleInfo: decodedOracleInfo,
+          backupAssetOracleInfo: decodedBackupAssetOracleInfo,
+        });
       }
 
       throw new Error(

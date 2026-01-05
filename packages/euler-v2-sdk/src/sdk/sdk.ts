@@ -1,0 +1,17 @@
+import { AccountService } from "../services/accountService.js";
+import { DeploymentService } from "../services/deploymentService.js";
+import { EVaultService } from "../services/eVaultService.js";
+import { EulerEarnService } from "../services/eulerEarnService.js";
+import { ProviderService } from "../services/providerService.js";
+import { IABIService } from "../services/abiService.js";
+
+export class EulerSDK {
+  constructor(
+    public readonly accountService: AccountService,
+    public readonly eVaultService: EVaultService,
+    public readonly eulerEarnService: EulerEarnService,
+    public readonly deploymentService: DeploymentService,
+    public readonly providerService: ProviderService,
+    public readonly abiService: IABIService,
+  ) {}
+}

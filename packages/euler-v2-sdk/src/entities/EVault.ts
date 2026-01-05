@@ -1,6 +1,8 @@
 // TypeScript equivalents for VaultLens structs (from evk-periphery/src/Lens/LensTypes.sol).
 // Numeric on-chain values use bigint to avoid precision loss.
 
+import { OracleDecodedInfo, OracleDetailedInfo } from "src/utils/oracle.js";
+
 export type Address = `0x${string}`;
 export type BytesLike = `0x${string}` | string;
 
@@ -57,12 +59,6 @@ export interface VaultInterestRateModelInfo {
   interestRateModelInfo: InterestRateModelDetailedInfo;
 }
 
-export interface OracleDetailedInfo {
-  oracle: Address;
-  name: string;
-  oracleInfo: BytesLike;
-}
-
 export interface TokenMeta {
   name: string
   symbol: string
@@ -71,6 +67,7 @@ export interface TokenMeta {
 }
 
 export interface IEVault {
+  timestamp: bigint;
   address: Address;
   vault: TokenMeta;
   asset: TokenMeta;
@@ -91,8 +88,8 @@ export interface IEVault {
   borrowCap: bigint;
   maxLiquidationDiscount: bigint;
   liquidationCoolOffTime: bigint;
+  oracleInfo: OracleDecodedInfo;
   dTokenAddress: Address;
-  oracle: Address;
   interestRateModel: Address;
   hookTarget: Address;
   balanceTracker: Address;
@@ -100,15 +97,15 @@ export interface IEVault {
   creator: Address;
   governorAdmin: Address;
   collateralLTVInfo?: LTVInfo[];
-  oracleInfo: OracleDetailedInfo;
   irmInfo?: VaultInterestRateModelInfo;
   liabilityPriceInfo?: AssetPriceInfo;
   collateralPriceInfo?: AssetPriceInfo[];
   backupAssetPriceInfo?: AssetPriceInfo;
-  backupAssetOracleInfo?: OracleDetailedInfo;
+  backupAssetOracleInfo?: OracleDecodedInfo;
 }
 
 export class EVault implements IEVault {
+  timestamp: bigint;
   address: Address;
   vault: TokenMeta;
   asset: TokenMeta;
@@ -130,22 +127,23 @@ export class EVault implements IEVault {
   maxLiquidationDiscount: bigint;
   liquidationCoolOffTime: bigint;
   dTokenAddress: Address;
-  oracle: Address;
   interestRateModel: Address;
   hookTarget: Address;
   balanceTracker: Address;
   permit2: Address;
   creator: Address;
   governorAdmin: Address;
+  oracleInfo: OracleDecodedInfo;
+
   collateralLTVInfo?: LTVInfo[];
-  oracleInfo: OracleDetailedInfo;
   irmInfo?: VaultInterestRateModelInfo;
   liabilityPriceInfo?: AssetPriceInfo;
   collateralPriceInfo?: AssetPriceInfo[];
   backupAssetPriceInfo?: AssetPriceInfo;
-  backupAssetOracleInfo?: OracleDetailedInfo;
+  backupAssetOracleInfo?: OracleDecodedInfo;
 
   constructor(params: IEVault) {
+    this.timestamp = params.timestamp;
     this.address = params.address;
     this.vault = params.vault;
     this.asset = params.asset;
@@ -167,7 +165,6 @@ export class EVault implements IEVault {
     this.maxLiquidationDiscount = params.maxLiquidationDiscount;
     this.liquidationCoolOffTime = params.liquidationCoolOffTime;
     this.dTokenAddress = params.dTokenAddress;
-    this.oracle = params.oracle;
     this.interestRateModel = params.interestRateModel;
     this.hookTarget = params.hookTarget;
     this.balanceTracker = params.balanceTracker;

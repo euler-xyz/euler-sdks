@@ -3,7 +3,7 @@ import { createPublicClient, http, PublicClient } from "viem";
 export class ProviderService {
   private readonly providers: Record<number, PublicClient> = {};
 
-  constructor(private readonly rpcUrls: Record<number, string>) {
+  constructor(rpcUrls: Record<number, string>) {
     this.providers = Object.fromEntries(
       Object.entries(rpcUrls).map(([chainId, rpcUrl]) => [
         Number(chainId),

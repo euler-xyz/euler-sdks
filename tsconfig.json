@@ -6,7 +6,7 @@
     "moduleResolution": "NodeNext",
     "moduleDetection": "force",
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": "packages/euler-v2-sdk/src",
     "declaration": true,
     "sourceMap": true,
     "allowSyntheticDefaultImports": true,
@@ -16,8 +16,6 @@
     "strict": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true
-  },
-  "include": ["src/**/*.ts"],
-  "exclude": ["dist", "node_modules"]
+  }
 }
 
