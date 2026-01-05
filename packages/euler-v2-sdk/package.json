@@ -1,14 +1,14 @@
 {
-  "name": "node-typescript-boilerplate",
+  "name": "euler-v2-sdk",
   "version": "1.0.0",
   "description": "Minimal TypeScript npm package template (ESM, NodeNext)",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
     }
   },
   "files": [

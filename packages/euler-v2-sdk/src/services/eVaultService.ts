@@ -3,7 +3,7 @@ import { Address } from "viem";
 import { ProviderService } from "./providerService.js";
 import { IABIService } from "./abiService.js";
 import { DeploymentService } from "./deploymentService.js";
-import { decodeOracleInfo, OracleDetailedInfo } from "src/utils/oracle.js";
+import { decodeOracleInfo, OracleDetailedInfo } from "../utils/oracle.js";
 
 export interface IEVaultDataSource {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEVault[]>;

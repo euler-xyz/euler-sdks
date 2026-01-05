@@ -8,13 +8,13 @@ import { EulerEarnOnchainDataSource, EulerEarnService } from "../services/eulerE
 import { defaultAccountVaultsDataSourceConfig } from "./defaultConfig.js";
 
 export interface BuildSDKOptions {
-  rpcURLs: Record<number, string>;
+  rpcUrls: Record<number, string>;
   accountVaultsDataSourceConfig?: AccountVaultsSubgraphDataSourceConfig;
 }
 export const buildSDK = async (options: BuildSDKOptions) => {
   const abiService = new ABIService();
   const deploymentService = await DeploymentService.build();
-  const providerService = new ProviderService(options.rpcURLs);
+  const providerService = new ProviderService(options.rpcUrls);
 
   const accountVaultsDataSource = new AccountVaultsSubgraphDataSource(options.accountVaultsDataSourceConfig || defaultAccountVaultsDataSourceConfig);
   const accountDataSource = new AccountOnchainDataSource(providerService, abiService, deploymentService, accountVaultsDataSource);

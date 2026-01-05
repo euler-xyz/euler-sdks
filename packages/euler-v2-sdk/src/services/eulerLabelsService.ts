@@ -1,5 +1,5 @@
-import { EulerLabelEntity, EulerLabelVault, EulerLabelProduct } from "src/entities/EulerLabels.js";
-import { Address } from "src/entities/EVault.js";
+import { EulerLabelEntity, EulerLabelVault, EulerLabelProduct } from "../entities/EulerLabels.js";
+import { Address } from "../entities/EVault.js";
 
 export interface IEulerLabelsDataSource {
   getEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>>;

@@ -1,7 +1,7 @@
 // TypeScript equivalents for VaultLens structs (from evk-periphery/src/Lens/LensTypes.sol).
 // Numeric on-chain values use bigint to avoid precision loss.
 
-import { OracleDecodedInfo, OracleDetailedInfo } from "src/utils/oracle.js";
+import { OracleDecodedInfo, OracleDetailedInfo } from "../utils/oracle.js";
 
 export type Address = `0x${string}`;
 export type BytesLike = `0x${string}` | string;

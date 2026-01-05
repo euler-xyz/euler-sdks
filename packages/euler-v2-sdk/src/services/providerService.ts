@@ -1,14 +1,23 @@
-import { createPublicClient, http, PublicClient } from "viem";
+import { createPublicClient, extractChain, http, PublicClient, Chain } from "viem";
+import { mainnet, base, arbitrum, bsc, linea, sonic, unichain, berachain, bob, tac, plasma, monad, swellchain, avalanche } from "viem/chains";
+
+const defaultChains = [mainnet, base, arbitrum, bsc, linea, sonic, unichain, berachain, bob, tac, plasma, monad, swellchain, avalanche];
 
 export class ProviderService {
   private readonly providers: Record<number, PublicClient> = {};
 
   constructor(rpcUrls: Record<number, string>) {
+
     this.providers = Object.fromEntries(
-      Object.entries(rpcUrls).map(([chainId, rpcUrl]) => [
-        Number(chainId),
-        createPublicClient({ transport: http(rpcUrl) }),
-      ])
+      Object.entries(rpcUrls).map(([chainId, rpcUrl]) => {
+        const chain = extractChain({chains: defaultChains, id: Number(chainId) as any}) as Chain;
+        if (!chain) {
+          throw new Error(`Chain ${chainId} not supported`);
+        }
+        return [
+          Number(chainId),
+          createPublicClient({ chain, transport: http(rpcUrl) }),
+        ]})
     );
   }
 
