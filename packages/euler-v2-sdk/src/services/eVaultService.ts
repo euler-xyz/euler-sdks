@@ -10,7 +10,7 @@ export interface IEVaultDataSource {
   fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]>;
 }
 
-export enum StandardPerspectives {
+export enum StandardEVaultPerspectives {
   GOVERNED = "governedPerspective",
   FACTORY = "evkFactoryPerspective",
   EDGE = "edgeFactoryPerspective",
@@ -32,7 +32,7 @@ export class EVaultService {
     return (await this.dataSource.fetchVaults(chainId, vaults)).map(vault => new EVault(vault));
   }
 
-  async fetchVerifiedEVaultsAddresses(chainId: number, perspectives: (StandardPerspectives | Address)[]): Promise<Address[]> {
+  async fetchVerifiedEVaultsAddresses(chainId: number, perspectives: (StandardEVaultPerspectives | Address)[]): Promise<Address[]> {
     if (perspectives.length === 0) {
       return [];
     }
@@ -43,30 +43,31 @@ export class EVaultService {
       }
 
       const deployment = this.deploymentService.getDeployment(chainId);
-      if(!deployment.addresses.peripheryAddrs?.[perspective as StandardPerspectives]) {
+      if(!deployment.addresses.peripheryAddrs?.[perspective as StandardEVaultPerspectives]) {
         throw new Error(`Perspective address not found for ${perspective}`);
       }
 
-      return deployment.addresses.peripheryAddrs[perspective as StandardPerspectives] as Address;
+      return deployment.addresses.peripheryAddrs[perspective as StandardEVaultPerspectives] as Address;
     });
     return this.dataSource.fetchVerifiedVaultsAddresses(chainId, perspectiveAddresses);
   }
 
-  async fetchVerifiedEVaults(chainId: number, perspectives: (StandardPerspectives | Address)[]): Promise<EVault[]> {
+  async fetchVerifiedEVaults(chainId: number, perspectives: (StandardEVaultPerspectives | Address)[]): Promise<EVault[]> {
     const addresses = await this.fetchVerifiedEVaultsAddresses(chainId, perspectives);
     return this.fetchEVaults(chainId, addresses);
   }
 }
 
 export class EVaultOnchainDataSource implements IEVaultDataSource {
-  constructor(private readonly providerService: ProviderService, private readonly abiService: IABIService) {}
+  constructor(private readonly providerService: ProviderService, private readonly abiService: IABIService, private readonly deploymentService: DeploymentService) {}
 
   async fetchVaults(chainId: number, vaults: Address[]): Promise<IEVault[]> {
     const provider = this.providerService.getProvider(chainId);
     const abi = await this.abiService.getABI(chainId, "VaultLens");
+    const vaultLensAddress = this.deploymentService.getDeployment(chainId).addresses.lensAddrs.vaultLens;
     const results = await provider.multicall({
       contracts: vaults.map(vault => ({
-        address: vault,
+        address: vaultLensAddress,
         abi,
         functionName: "getVaultInfoFull",
         args: [vault],
@@ -117,6 +118,6 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
       );
     });
 
-    return addresses;
+    return [...new Set(addresses)];
   }
 }

@@ -9,7 +9,7 @@ export interface IEulerEarnDataSource {
   fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]>;
 }
 
-export enum StandardPerspectives {
+export enum StandardEulerEarnPerspectives {
   GOVERNED = "eulerEarnGovernedPerspective",
   FACTORY = "eulerEarnFactoryPerspective",
 }
@@ -29,7 +29,7 @@ export class EulerEarnService {
     return (await this.dataSource.fetchVaults(chainId, vaults)).map(vault => new EulerEarn(vault));
   }
 
-  async fetchVerifiedEulerEarnAddresses(chainId: number, perspectives: (StandardPerspectives | Address)[]): Promise<Address[]> {
+  async fetchVerifiedEulerEarnAddresses(chainId: number, perspectives: (StandardEulerEarnPerspectives | Address)[]): Promise<Address[]> {
     if (perspectives.length === 0) {
       return [];
     }
@@ -40,16 +40,16 @@ export class EulerEarnService {
       }
 
       const deployment = this.deploymentService.getDeployment(chainId);
-      if(!deployment.addresses.peripheryAddrs?.[perspective as StandardPerspectives]) {
+      if(!deployment.addresses.peripheryAddrs?.[perspective as StandardEulerEarnPerspectives]) {
         throw new Error(`Perspective address not found for ${perspective}`);
       }
 
-      return deployment.addresses.peripheryAddrs[perspective as StandardPerspectives] as Address;
+      return deployment.addresses.peripheryAddrs[perspective as StandardEulerEarnPerspectives] as Address;
     });
     return this.dataSource.fetchVerifiedVaultsAddresses(chainId, perspectiveAddresses);
   }
 
-  async fetchVerifiedEulerEarns(chainId: number, perspectives: (StandardPerspectives | Address)[]): Promise<EulerEarn[]> {
+  async fetchVerifiedEulerEarns(chainId: number, perspectives: (StandardEulerEarnPerspectives | Address)[]): Promise<EulerEarn[]> {
     const addresses = await this.fetchVerifiedEulerEarnAddresses(chainId, perspectives);
     return this.fetchEulerEarns(chainId, addresses);
   }

@@ -4,6 +4,7 @@ import { EVaultService } from "../services/eVaultService.js";
 import { EulerEarnService } from "../services/eulerEarnService.js";
 import { ProviderService } from "../services/providerService.js";
 import { IABIService } from "../services/abiService.js";
+import { EulerLabelsService } from "../services/eulerLabelsService.js";
 
 export class EulerSDK {
   constructor(
@@ -13,5 +14,6 @@ export class EulerSDK {
     public readonly deploymentService: DeploymentService,
     public readonly providerService: ProviderService,
     public readonly abiService: IABIService,
+    public readonly eulerLabelsService: EulerLabelsService,
   ) {}
 }

@@ -229,7 +229,7 @@ export class AccountVaultsSubgraphDataSource implements IAccountVaultsDataSource
     const parseResult = (type: "deposits" | "borrows", results: AccountVaults, data: any) => {
       data.forEach((entry: any) => {
         const subAccount = getAddress(entry.substring(0, 42));
-        const vault = getAddress(entry.substring(42));
+        const vault = getAddress(`0x${entry.substring(42)}`);
         if (!results[subAccount]) {
           results[subAccount] = {
           deposits: [],
