@@ -1,6 +1,7 @@
 import { decodeAbiParameters, type Address, type Hex, isHex, toHex } from 'viem'
+import { BigFraction } from './types.js'
 
-export type OracleDecodedInfo = {
+export type OracleInfo = {
   oracle: Address
   name: string
   adapters: OracleAdapterEntry[]
@@ -10,6 +11,18 @@ export type OracleDetailedInfo = {
   oracle: Address
   name: string
   oracleInfo: Hex
+}
+
+
+export interface OraclePrice {
+  priceMid: BigFraction;
+  priceBid: BigFraction;
+  priceAsk: BigFraction;
+  amountIn: bigint;
+  amountOutMid: bigint;
+  amountOutBid: bigint;
+  amountOutAsk: bigint;
+  timestamp: number;
 }
 
 export type EulerRouterInfo = {

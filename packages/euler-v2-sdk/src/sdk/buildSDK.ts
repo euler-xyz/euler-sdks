@@ -3,7 +3,7 @@ import { ABIService } from "../services/abiService.js";
 import { DeploymentService } from "../services/deploymentService.js";
 import { ProviderService } from "../services/providerService.js";
 import { AccountOnchainDataSource, AccountService, AccountVaultsSubgraphDataSource, AccountVaultsSubgraphDataSourceConfig } from "../services/accountService.js";
-import { EVaultOnchainDataSource, EVaultService } from "../services/eVaultService.js";
+import { EVaultOnchainDataSource, EVaultService } from "../services/eVaultService/eVaultService.js";
 import { EulerEarnOnchainDataSource, EulerEarnService } from "../services/eulerEarnService.js";
 import { EulerLabelsService, EulerLabelsURLDataSource, EulerLabelsURLDataSourceConfig } from "../services/eulerLabelsService.js";
 import { defaultAccountVaultsDataSourceConfig, defaultEulerLabelsURLDataSourceConfig } from "./defaultConfig.js";

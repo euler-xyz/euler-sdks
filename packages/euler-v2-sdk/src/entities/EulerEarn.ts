@@ -1,4 +1,4 @@
-import { Address, TokenMeta } from "./EVault.js";
+import { Address, Token } from "./EVault.js";
 
 export interface VaultInfoERC4626 {
   timestamp: bigint;
@@ -29,8 +29,8 @@ export interface EulerEarnVaultStrategyInfo {
 export interface IEulerEarn {
   timestamp: bigint;
   address: Address;
-  vault: TokenMeta;
-  asset: TokenMeta;
+  vault: Token;
+  asset: Token;
   totalShares: bigint;
   totalAssets: bigint;
   lostAssets: bigint;
@@ -55,8 +55,8 @@ export interface IEulerEarn {
 export class EulerEarn implements IEulerEarn {
   timestamp: bigint;
   address: Address;
-  vault: TokenMeta;
-  asset: TokenMeta;
+  vault: Token;
+  asset: Token;
   totalShares: bigint;
   totalAssets: bigint;
   lostAssets: bigint;

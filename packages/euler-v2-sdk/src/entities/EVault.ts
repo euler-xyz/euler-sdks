@@ -1,183 +1,148 @@
 // TypeScript equivalents for VaultLens structs (from evk-periphery/src/Lens/LensTypes.sol).
 // Numeric on-chain values use bigint to avoid precision loss.
 
-import { OracleDecodedInfo, OracleDetailedInfo } from "../utils/oracle.js";
+import { Address, Hex } from "viem";
+import { OracleInfo, OraclePrice } from "../utils/oracle.js";
+import { InterestRateModelType } from "src/services/eVaultService/dataSources/eVaultLensTypes.js";
+import { Token } from "../utils/types.js";
 
-export type Address = `0x${string}`;
-export type BytesLike = `0x${string}` | string;
-
-export interface LTVInfo {
-  collateral: Address;
-  borrowLTV: bigint;
-  liquidationLTV: bigint;
-  initialLiquidationLTV: bigint;
-  targetTimestamp: bigint;
-  rampDuration: bigint;
+export interface EVaultFees {
+  interestFee: bigint;
+  accumulatedFeesShares: bigint;
+  accumulatedFeesAssets: bigint;
+  governorFeeReceiver: Address;
+  protocolFeeReceiver: Address;
+  protocolFeeShare: bigint;
 }
 
-export interface AssetPriceInfo {
-  queryFailure: boolean;
-  queryFailureReason: BytesLike;
-  timestamp: bigint;
-  oracle: Address;
-  asset: Address;
-  unitOfAccount: Address;
-  amountIn: bigint;
-  amountOutMid: bigint;
-  amountOutBid: bigint;
-  amountOutAsk: bigint;
+export interface EVaultHooks {
+  hookedOperations: bigint;
+  hookTarget: Address;
 }
 
-export interface InterestRateInfo {
-  cash: bigint;
-  borrows: bigint;
+export interface EVaultCaps {
+  supplyCap: bigint;
+  borrowCap: bigint;
+}
+
+export interface EVaultLiquidation {
+  maxLiquidationDiscount: bigint;
+  liquidationCoolOffTime: bigint;
+}
+
+// TODO make consumable
+export interface InterestRates {
   borrowSPY: bigint;
   borrowAPY: bigint;
   supplyAPY: bigint;
 }
 
-export enum InterestRateModelType {
-  UNKNOWN = 0,
-  KINK = 1,
-  ADAPTIVE_CURVE = 2,
-  KINKY = 3,
-  FIXED_CYCLICAL_BINARY = 4,
+// TODO make an entity for this
+export interface InterestRateModel {
+  address: Address;
+  type: InterestRateModelType;
+  data: Hex; // TODO
 }
 
-export interface InterestRateModelDetailedInfo {
-  interestRateModel: Address;
-  interestRateModelType: InterestRateModelType;
-  interestRateModelParams: BytesLike;
+export interface EVaultCollateral {
+  address: Address;
+  borrowLTV: bigint;
+  liquidationLTV: bigint;
+  isRamping: boolean;
+  ramping: EVaultCollateralRamping;
+  price: OraclePrice;
 }
 
-export interface VaultInterestRateModelInfo {
-  queryFailure: boolean;
-  queryFailureReason: BytesLike;
-  vault: Address;
-  interestRateModel: Address;
-  interestRateInfo: InterestRateInfo[];
-  interestRateModelInfo: InterestRateModelDetailedInfo;
-}
-
-export interface TokenMeta {
-  name: string
-  symbol: string
-  address: string
-  decimals: bigint
+export interface EVaultCollateralRamping {
+  initialLiquidationLTV: bigint;
+  targetTimestamp: bigint;
+  rampDuration: bigint;
 }
 
 export interface IEVault {
-  timestamp: bigint;
-  address: Address;
-  vault: TokenMeta;
-  asset: TokenMeta;
-  unitOfAccount: TokenMeta;
+  vault: Token;
+  asset: Token;
+  unitOfAccount: Token;
+
   totalShares: bigint;
   totalCash: bigint;
   totalBorrowed: bigint;
   totalAssets: bigint;
-  accumulatedFeesShares: bigint;
-  accumulatedFeesAssets: bigint;
-  governorFeeReceiver: Address;
-  protocolFeeReceiver: Address;
-  protocolFeeShare: bigint;
-  interestFee: bigint;
-  hookedOperations: bigint;
-  configFlags: bigint;
-  supplyCap: bigint;
-  borrowCap: bigint;
-  maxLiquidationDiscount: bigint;
-  liquidationCoolOffTime: bigint;
-  oracleInfo: OracleDecodedInfo;
-  dTokenAddress: Address;
-  interestRateModel: Address;
-  hookTarget: Address;
-  balanceTracker: Address;
-  permit2: Address;
+
   creator: Address;
   governorAdmin: Address;
-  collateralLTVInfo?: LTVInfo[];
-  irmInfo?: VaultInterestRateModelInfo;
-  liabilityPriceInfo?: AssetPriceInfo;
-  collateralPriceInfo?: AssetPriceInfo[];
-  backupAssetPriceInfo?: AssetPriceInfo;
-  backupAssetOracleInfo?: OracleDecodedInfo;
+  dToken: Address;
+  balanceTracker: Address;
+
+  fees: EVaultFees;
+  hooks: EVaultHooks; 
+  caps: EVaultCaps;
+  liquidation: EVaultLiquidation;
+  configFlags: bigint; // TODO decode
+  oracle: OracleInfo;
+  interestRates: InterestRates;
+  interestRateModel: InterestRateModel;
+  collaterals: EVaultCollateral[];
+
+  liabilityPrice: OraclePrice;
+  timestamp: number;
 }
 
 export class EVault implements IEVault {
-  timestamp: bigint;
-  address: Address;
-  vault: TokenMeta;
-  asset: TokenMeta;
-  unitOfAccount: TokenMeta;
+  vault: Token;
+  asset: Token;
+  unitOfAccount: Token;
+
   totalShares: bigint;
   totalCash: bigint;
   totalBorrowed: bigint;
   totalAssets: bigint;
-  accumulatedFeesShares: bigint;
-  accumulatedFeesAssets: bigint;
-  governorFeeReceiver: Address;
-  protocolFeeReceiver: Address;
-  protocolFeeShare: bigint;
-  interestFee: bigint;
-  hookedOperations: bigint;
-  configFlags: bigint;
-  supplyCap: bigint;
-  borrowCap: bigint;
-  maxLiquidationDiscount: bigint;
-  liquidationCoolOffTime: bigint;
-  dTokenAddress: Address;
-  interestRateModel: Address;
-  hookTarget: Address;
-  balanceTracker: Address;
-  permit2: Address;
+
   creator: Address;
   governorAdmin: Address;
-  oracleInfo: OracleDecodedInfo;
+  dToken: Address;
+  balanceTracker: Address;
 
-  collateralLTVInfo?: LTVInfo[];
-  irmInfo?: VaultInterestRateModelInfo;
-  liabilityPriceInfo?: AssetPriceInfo;
-  collateralPriceInfo?: AssetPriceInfo[];
-  backupAssetPriceInfo?: AssetPriceInfo;
-  backupAssetOracleInfo?: OracleDecodedInfo;
+  fees: EVaultFees;
+  hooks: EVaultHooks;
+  caps: EVaultCaps;
+  liquidation: EVaultLiquidation;
+  configFlags: bigint;
+  oracle: OracleInfo;
+  interestRates: InterestRates;
+  interestRateModel: InterestRateModel;
+  collaterals: EVaultCollateral[];
 
-  constructor(params: IEVault) {
-    this.timestamp = params.timestamp;
-    this.address = params.address;
-    this.vault = params.vault;
-    this.asset = params.asset;
-    this.unitOfAccount = params.unitOfAccount;
-    this.totalShares = params.totalShares;
-    this.totalCash = params.totalCash;
-    this.totalBorrowed = params.totalBorrowed;
-    this.totalAssets = params.totalAssets;
-    this.accumulatedFeesShares = params.accumulatedFeesShares;
-    this.accumulatedFeesAssets = params.accumulatedFeesAssets;
-    this.governorFeeReceiver = params.governorFeeReceiver;
-    this.protocolFeeReceiver = params.protocolFeeReceiver;
-    this.protocolFeeShare = params.protocolFeeShare;
-    this.interestFee = params.interestFee;
-    this.hookedOperations = params.hookedOperations;
-    this.configFlags = params.configFlags;
-    this.supplyCap = params.supplyCap;
-    this.borrowCap = params.borrowCap;
-    this.maxLiquidationDiscount = params.maxLiquidationDiscount;
-    this.liquidationCoolOffTime = params.liquidationCoolOffTime;
-    this.dTokenAddress = params.dTokenAddress;
-    this.interestRateModel = params.interestRateModel;
-    this.hookTarget = params.hookTarget;
-    this.balanceTracker = params.balanceTracker;
-    this.permit2 = params.permit2;
-    this.creator = params.creator;
-    this.governorAdmin = params.governorAdmin;
-    this.collateralLTVInfo = params.collateralLTVInfo;
-    this.oracleInfo = params.oracleInfo;
-    this.irmInfo = params.irmInfo;
-    this.liabilityPriceInfo = params.liabilityPriceInfo;
-    this.collateralPriceInfo = params.collateralPriceInfo;
-    this.backupAssetPriceInfo = params.backupAssetPriceInfo;
-    this.backupAssetOracleInfo = params.backupAssetOracleInfo;
+  liabilityPrice: OraclePrice;
+  timestamp: number;
+
+  constructor(args: IEVault) {
+    this.vault = args.vault;
+    this.asset = args.asset;
+    this.unitOfAccount = args.unitOfAccount;
+
+    this.totalShares = args.totalShares;
+    this.totalCash = args.totalCash;
+    this.totalBorrowed = args.totalBorrowed;
+    this.totalAssets = args.totalAssets;
+
+    this.creator = args.creator;
+    this.governorAdmin = args.governorAdmin;
+    this.dToken = args.dToken;
+    this.balanceTracker = args.balanceTracker;
+
+    this.fees = args.fees;
+    this.hooks = args.hooks;
+    this.caps = args.caps;
+    this.liquidation = args.liquidation;
+    this.configFlags = args.configFlags;
+    this.oracle = args.oracle;
+    this.interestRates = args.interestRates;
+    this.interestRateModel = args.interestRateModel;
+    this.collaterals = args.collaterals;
+
+    this.liabilityPrice = args.liabilityPrice;
+    this.timestamp = args.timestamp;
   }
 }
 

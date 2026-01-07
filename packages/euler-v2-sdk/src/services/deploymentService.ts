@@ -111,6 +111,10 @@ export class DeploymentService {
     this.deployments = deployments;
   }
 
+  getDeploymentChainIds(): number[] {
+    return Object.keys(this.deployments).map(Number);
+  }
+
   getDeployment(chainId: number): Deployment {
     if (!this.deployments[chainId]) {
       throw new Error(`Deployment not found for chainId: ${chainId}`);

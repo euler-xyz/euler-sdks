@@ -1,7 +1,7 @@
 {
   "name": "euler-v2-sdk",
   "version": "1.0.0",
-  "description": "Minimal TypeScript npm package template (ESM, NodeNext)",
+  "description": "SDK for interacting with Euler V2 Lending Platform",
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
