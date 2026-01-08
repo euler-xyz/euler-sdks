@@ -3,9 +3,9 @@ import { ProviderService } from "../../providerService.js";
 import { IABIService } from "../../abiService.js";
 import { DeploymentService } from "../../deploymentService.js";
 import { Address } from "viem";
-import { decodeOracleInfo } from "../../../utils/oracle.js";
-import { EVault } from "../../../entities/EVault.js";
+import { EVault, IEVault } from "../../../entities/EVault.js";
 import { VaultInfoFull } from "./eVaultLensTypes.js";
+import { convertVaultInfoFullToIEVault } from "./vaultInfoConverter.js";
 
 export class EVaultOnchainDataSource implements IEVaultDataSource {
   constructor(private readonly providerService: ProviderService, private readonly abiService: IABIService, private readonly deploymentService: DeploymentService) {}
@@ -25,14 +25,8 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
 
     const parsedVaults: IEVault[] = results.map((callResult, idx) => {
       if (callResult.status === "success" && callResult.result) {
-        const result = callResult.result as VaultInfoFull;
-        const decodedOracleInfo = decodeOracleInfo(result.oracleInfo);
-        const decodedBackupAssetOracleInfo = decodeOracleInfo(result.backupAssetOracleInfo);
-        return new EVault({
-          ...result,
-          oracleInfo: decodedOracleInfo,
-          backupAssetOracleInfo: decodedBackupAssetOracleInfo,
-        });
+        const vaultInfo = callResult.result as VaultInfoFull;
+        return convertVaultInfoFullToIEVault(vaultInfo);
       }
 
       throw new Error(
@@ -41,7 +35,7 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
       );
     });
 
-    return parsedVaults;
+    return parsedVaults.map(vault => new EVault(vault));
   }
 
   async fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]> {

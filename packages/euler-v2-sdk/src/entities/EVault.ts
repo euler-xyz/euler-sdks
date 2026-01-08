@@ -6,17 +6,35 @@ import { OracleInfo, OraclePrice } from "../utils/oracle.js";
 import { InterestRateModelType } from "src/services/eVaultService/dataSources/eVaultLensTypes.js";
 import { Token } from "../utils/types.js";
 
+export type EVaultHookedOperations = {
+  deposit: boolean;
+  mint: boolean;
+  withdraw: boolean;
+  redeem: boolean;
+  transfer: boolean;
+  skim: boolean;
+  borrow: boolean;
+  repay: boolean;
+  repayWithShares: boolean;
+  pullDebt: boolean;
+  convertFees: boolean;
+  liquidate: boolean;
+  flashloan: boolean;
+  touch: boolean;
+  vaultStatusCheck: boolean;
+};
+
 export interface EVaultFees {
-  interestFee: bigint;
+  interestFee: number;
   accumulatedFeesShares: bigint;
   accumulatedFeesAssets: bigint;
   governorFeeReceiver: Address;
   protocolFeeReceiver: Address;
-  protocolFeeShare: bigint;
+  protocolFeeShare: number;
 }
 
 export interface EVaultHooks {
-  hookedOperations: bigint;
+  hookedOperations: EVaultHookedOperations;
   hookTarget: Address;
 }
 
@@ -26,8 +44,9 @@ export interface EVaultCaps {
 }
 
 export interface EVaultLiquidation {
-  maxLiquidationDiscount: bigint;
-  liquidationCoolOffTime: bigint;
+  maxLiquidationDiscount: number;
+  liquidationCoolOffTime: number;
+  socializeDebt: boolean;
 }
 
 // TODO make consumable
@@ -78,11 +97,12 @@ export interface IEVault {
   hooks: EVaultHooks; 
   caps: EVaultCaps;
   liquidation: EVaultLiquidation;
-  configFlags: bigint; // TODO decode
   oracle: OracleInfo;
   interestRates: InterestRates;
   interestRateModel: InterestRateModel;
   collaterals: EVaultCollateral[];
+
+  evcCompatibleAsset: boolean;
 
   liabilityPrice: OraclePrice;
   timestamp: number;
@@ -103,11 +123,12 @@ export class EVault implements IEVault {
   dToken: Address;
   balanceTracker: Address;
 
+  evcCompatibleAsset: boolean;
+
   fees: EVaultFees;
   hooks: EVaultHooks;
   caps: EVaultCaps;
   liquidation: EVaultLiquidation;
-  configFlags: bigint;
   oracle: OracleInfo;
   interestRates: InterestRates;
   interestRateModel: InterestRateModel;
@@ -131,11 +152,13 @@ export class EVault implements IEVault {
     this.dToken = args.dToken;
     this.balanceTracker = args.balanceTracker;
 
+    this.evcCompatibleAsset = args.evcCompatibleAsset;
+
     this.fees = args.fees;
     this.hooks = args.hooks;
     this.caps = args.caps;
     this.liquidation = args.liquidation;
-    this.configFlags = args.configFlags;
+
     this.oracle = args.oracle;
     this.interestRates = args.interestRates;
     this.interestRateModel = args.interestRateModel;

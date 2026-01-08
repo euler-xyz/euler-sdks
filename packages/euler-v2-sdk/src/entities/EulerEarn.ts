@@ -1,4 +1,5 @@
-import { Address, Token } from "./EVault.js";
+import { Address } from "viem";
+import { Token } from "../utils/types.js";
 
 export interface VaultInfoERC4626 {
   timestamp: bigint;

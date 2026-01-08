@@ -1,0 +1,271 @@
+import { decodeOracleInfo, OracleInfo, OraclePrice } from "../../../utils/oracle.js";
+import { IEVault, EVaultFees, EVaultHooks, EVaultCaps, EVaultLiquidation, InterestRates, InterestRateModel, EVaultCollateral, EVaultCollateralRamping, EVaultHookedOperations } from "../../../entities/EVault.js";
+import { Token, BigFraction } from "../../../utils/types.js";
+import { VaultInfoFull, AssetPriceInfo } from "./eVaultLensTypes.js";
+
+/**
+ * Converts VaultLens's VaultInfoFull object to an IEVault object
+ * @param vaultInfo - The VaultInfoFull object to convert
+ * @returns The IEVault object
+ */
+export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull): IEVault {
+  const oracle: OracleInfo = {
+    oracle: vaultInfo.oracleInfo.oracle,
+    name: vaultInfo.oracleInfo.name,
+    adapters: decodeOracleInfo(vaultInfo.oracleInfo),
+  };
+
+  const vault: Token = {
+    address: vaultInfo.vault,
+    name: vaultInfo.vaultName,
+    symbol: vaultInfo.vaultSymbol,
+    decimals: vaultInfo.vaultDecimals,
+  };
+
+  const asset: Token = {
+    address: vaultInfo.asset,
+    name: vaultInfo.assetName,
+    symbol: vaultInfo.assetSymbol,
+    decimals: vaultInfo.assetDecimals,
+  };
+
+  const unitOfAccount: Token = {
+    address: vaultInfo.unitOfAccount,
+    name: vaultInfo.unitOfAccountName,
+    symbol: vaultInfo.unitOfAccountSymbol,
+    decimals: vaultInfo.unitOfAccountDecimals,
+  };
+
+  const fees: EVaultFees = {
+    interestFee: convertFrom1e4(vaultInfo.interestFee),
+    accumulatedFeesShares: vaultInfo.accumulatedFeesShares,
+    accumulatedFeesAssets: vaultInfo.accumulatedFeesAssets,
+    governorFeeReceiver: vaultInfo.governorFeeReceiver,
+    protocolFeeReceiver: vaultInfo.protocolFeeReceiver,
+    protocolFeeShare: convertFrom1e4(vaultInfo.protocolFeeShare),
+  };
+
+  const hooks: EVaultHooks = {
+    hookedOperations: convertHooks(vaultInfo.hookedOperations),
+    hookTarget: vaultInfo.hookTarget,
+  };
+
+  const caps: EVaultCaps = {
+    supplyCap: vaultInfo.supplyCap,
+    borrowCap: vaultInfo.borrowCap,
+  };
+
+  const configFlags = convertConfigFlags(vaultInfo.configFlags);
+  const liquidation: EVaultLiquidation = {
+    maxLiquidationDiscount: convertFrom1e4(vaultInfo.maxLiquidationDiscount),
+    liquidationCoolOffTime: Number(vaultInfo.liquidationCoolOffTime),
+    socializeDebt: configFlags.socializeDebt,
+  };
+
+  // Extract interest rates from irmInfo
+  // Use the first interest rate info if available, or default values
+  const interestRateInfo = vaultInfo.irmInfo.interestRateInfo[0];
+  const interestRates: InterestRates = interestRateInfo
+    ? {
+        borrowSPY: interestRateInfo.borrowSPY,
+        borrowAPY: interestRateInfo.borrowAPY,
+        supplyAPY: interestRateInfo.supplyAPY,
+      }
+    : {
+        borrowSPY: 0n,
+        borrowAPY: 0n,
+        supplyAPY: 0n,
+      };
+
+  const interestRateModel: InterestRateModel = {
+    address: vaultInfo.irmInfo.interestRateModel,
+    type: vaultInfo.irmInfo.interestRateModelInfo.interestRateModelType,
+    data: vaultInfo.irmInfo.interestRateModelInfo.interestRateModelParams,
+  };
+
+  // Convert collaterals
+  const collaterals: EVaultCollateral[] = vaultInfo.collateralLTVInfo.map((ltvInfo, idx) => {
+    const priceInfo = vaultInfo.collateralPriceInfo[idx];
+    const price = priceInfo ? convertAssetPriceInfoToOraclePrice(priceInfo) : {
+      priceMid: { numerator: 0n, denominator: 1n },
+      priceBid: { numerator: 0n, denominator: 1n },
+      priceAsk: { numerator: 0n, denominator: 1n },
+      amountIn: 0n,
+      amountOutMid: 0n,
+      amountOutBid: 0n,
+      amountOutAsk: 0n,
+      timestamp: 0,
+    };
+
+    const isRamping = ltvInfo.targetTimestamp > 0n && ltvInfo.rampDuration > 0n;
+    const ramping: EVaultCollateralRamping = {
+      initialLiquidationLTV: ltvInfo.initialLiquidationLTV,
+      targetTimestamp: ltvInfo.targetTimestamp,
+      rampDuration: ltvInfo.rampDuration,
+    };
+
+    return {
+      address: ltvInfo.collateral,
+      borrowLTV: ltvInfo.borrowLTV,
+      liquidationLTV: ltvInfo.liquidationLTV,
+      isRamping,
+      ramping,
+      price,
+    };
+  });
+
+  // Convert liability price
+  const liabilityPrice = convertAssetPriceInfoToOraclePrice(vaultInfo.liabilityPriceInfo);
+
+  return {
+    vault,
+    asset,
+    unitOfAccount,
+    totalShares: vaultInfo.totalShares,
+    totalCash: vaultInfo.totalCash,
+    totalBorrowed: vaultInfo.totalBorrowed,
+    totalAssets: vaultInfo.totalAssets,
+    creator: vaultInfo.creator,
+    governorAdmin: vaultInfo.governorAdmin,
+    dToken: vaultInfo.dToken,
+    balanceTracker: vaultInfo.balanceTracker,
+    fees,
+    hooks,
+    caps,
+    liquidation,
+    evcCompatibleAsset: configFlags.evcCompatibleAsset,
+    oracle,
+    interestRates,
+    interestRateModel,
+    collaterals,
+    liabilityPrice,
+    timestamp: Number(vaultInfo.timestamp),
+  };
+}
+
+
+function convertAssetPriceInfoToOraclePrice(priceInfo: AssetPriceInfo): OraclePrice {
+  const priceMid: BigFraction = {
+    numerator: priceInfo.amountOutMid,
+    denominator: priceInfo.amountIn,
+  };
+  const priceBid: BigFraction = {
+    numerator: priceInfo.amountOutBid,
+    denominator: priceInfo.amountIn,
+  };
+  const priceAsk: BigFraction = {
+    numerator: priceInfo.amountOutAsk,
+    denominator: priceInfo.amountIn,
+  };
+
+  return {
+    priceMid,
+    priceBid,
+    priceAsk,
+    amountIn: priceInfo.amountIn,
+    amountOutMid: priceInfo.amountOutMid,
+    amountOutBid: priceInfo.amountOutBid,
+    amountOutAsk: priceInfo.amountOutAsk,
+    timestamp: Number(priceInfo.timestamp),
+  };
+}
+
+const MAX_1E4 = 10n**4n;
+/**
+ * Converts a value from 1e4 scale (where 1e4 = 100%) to a number
+ * @param value - The bigint value in 1e4 scale
+ * @returns The number value (value / 1e4)
+ */
+function convertFrom1e4(value: bigint): number {
+  if (value > MAX_1E4) {
+    throw new Error('Value exceeds maximum 1e4 scale');
+  }
+  return Number(value) / 1e4;
+}
+
+/**
+ * EVault operations enum matching Constants.sol
+ * Each operation is represented as a bit flag (1 << bit_position)
+ */
+enum EVaultOperationBitFlags {
+  deposit = 1 << 0,
+  mint = 1 << 1,
+  withdraw = 1 << 2,
+  redeem = 1 << 3,
+  transfer = 1 << 4,
+  skim = 1 << 5,
+  borrow = 1 << 6,
+  repay = 1 << 7,
+  repayWithShares = 1 << 8,
+  pullDebt = 1 << 9,
+  convertFees = 1 << 10,
+  liquidate = 1 << 11,
+  flashloan = 1 << 12,
+  touch = 1 << 13,
+  vaultStatusCheck = 1 << 14,
+}
+
+/**
+ * EVault config flags enum matching Constants.sol
+ * Each flag is represented as a bit flag (1 << bit_position)
+ */
+enum EVaultConfigFlagBitFlags {
+  dontSocializeDebt = 1 << 0, //
+  evcCompatibleAsset = 1 << 1,
+}
+
+/**
+ * Converts a hookedOperations bigint to an object with boolean members for each operation
+ * @param hookedOperations - The bigint value representing hooked operations (bit flags)
+ * @returns An object with boolean flags indicating which operations are hooked
+ */
+function convertHooks(hookedOperations: bigint): EVaultHookedOperations {
+  const operations: EVaultHookedOperations = {
+    deposit: false,
+    mint: false,
+    withdraw: false,
+    redeem: false,
+    transfer: false,
+    skim: false,
+    borrow: false,
+    repay: false,
+    repayWithShares: false,
+    pullDebt: false,
+    convertFees: false,
+    liquidate: false,
+    flashloan: false,
+    touch: false,
+    vaultStatusCheck: false,
+  };
+  
+  // Check each operation bit and set the corresponding boolean
+  for (const key in EVaultOperationBitFlags) {
+    const value = EVaultOperationBitFlags[key as keyof typeof EVaultOperationBitFlags];
+    // Only process numeric values (skip string keys)
+    if (typeof value === 'number') {
+      const opValue = BigInt(value);
+      if ((hookedOperations & opValue) !== 0n) {
+        operations[key as keyof EVaultHookedOperations] = true;
+      }
+    }
+  }
+
+  return operations;
+}
+
+
+/**
+ * Converts a configFlags bigint to an object with boolean members for each config flag
+ * @param configFlags - The bigint value representing config flags (bit flags)
+ * @returns An object with boolean flags indicating which config flags are set
+ */
+function convertConfigFlags(configFlags: bigint) {
+  const DONT_SOCIALIZE_DEBT = BigInt(EVaultConfigFlagBitFlags.dontSocializeDebt);
+  const EVC_COMPATIBLE_ASSET = BigInt(EVaultConfigFlagBitFlags.evcCompatibleAsset);
+
+  return {
+    // Invert logic: CFG_DONT_SOCIALIZE_DEBT means don't socialize, so we flip it
+    socializeDebt: (configFlags & DONT_SOCIALIZE_DEBT) === 0n,
+    evcCompatibleAsset: (configFlags & EVC_COMPATIBLE_ASSET) !== 0n,
+  };
+}
