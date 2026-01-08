@@ -1,7 +1,7 @@
 import { AccountService } from "../services/accountService.js";
 import { DeploymentService } from "../services/deploymentService.js";
 import { EVaultService } from "../services/eVaultService/eVaultService.js";
-import { EulerEarnService } from "../services/eulerEarnService.js";
+import { EulerEarnService } from "../services/eulerEarnService/eulerEarnService.js";
 import { ProviderService } from "../services/providerService.js";
 import { IABIService } from "../services/abiService.js";
 import { EulerLabelsService } from "../services/eulerLabelsService.js";

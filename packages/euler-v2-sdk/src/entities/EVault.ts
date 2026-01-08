@@ -5,6 +5,7 @@ import { Address, Hex } from "viem";
 import { OracleInfo, OraclePrice } from "../utils/oracle.js";
 import { InterestRateModelType } from "src/services/eVaultService/dataSources/eVaultLensTypes.js";
 import { Token } from "../utils/types.js";
+import { IRMParams } from "../utils/irm.js";
 
 export type EVaultHookedOperations = {
   deposit: boolean;
@@ -49,32 +50,29 @@ export interface EVaultLiquidation {
   socializeDebt: boolean;
 }
 
-// TODO make consumable
 export interface InterestRates {
-  borrowSPY: bigint;
-  borrowAPY: bigint;
-  supplyAPY: bigint;
+  borrowSPY: string;
+  borrowAPY: string;
+  supplyAPY: string;
 }
 
-// TODO make an entity for this
 export interface InterestRateModel {
   address: Address;
   type: InterestRateModelType;
-  data: Hex; // TODO
+  data: IRMParams | null; // Decoded IRM parameters, null for UNKNOWN type
 }
 
 export interface EVaultCollateral {
   address: Address;
-  borrowLTV: bigint;
-  liquidationLTV: bigint;
-  isRamping: boolean;
-  ramping: EVaultCollateralRamping;
+  borrowLTV: number;
+  liquidationLTV: number;
+  ramping?: EVaultCollateralRamping;
   price: OraclePrice;
 }
 
 export interface EVaultCollateralRamping {
-  initialLiquidationLTV: bigint;
-  targetTimestamp: bigint;
+  initialLiquidationLTV: number;
+  targetTimestamp: number;
   rampDuration: bigint;
 }
 

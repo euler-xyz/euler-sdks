@@ -1,7 +1,9 @@
 import { decodeOracleInfo, OracleInfo, OraclePrice } from "../../../utils/oracle.js";
 import { IEVault, EVaultFees, EVaultHooks, EVaultCaps, EVaultLiquidation, InterestRates, InterestRateModel, EVaultCollateral, EVaultCollateralRamping, EVaultHookedOperations } from "../../../entities/EVault.js";
 import { Token, BigFraction } from "../../../utils/types.js";
-import { VaultInfoFull, AssetPriceInfo } from "./eVaultLensTypes.js";
+import { VaultInfoFull, AssetPriceInfo, InterestRateModelType, InterestRateModelDetailedInfo } from "./eVaultLensTypes.js";
+import { formatUnits } from "viem";
+import { decodeIRMParams } from "../../../utils/irm.js";
 
 /**
  * Converts VaultLens's VaultInfoFull object to an IEVault object
@@ -67,21 +69,17 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull): IEVault
   const interestRateInfo = vaultInfo.irmInfo.interestRateInfo[0];
   const interestRates: InterestRates = interestRateInfo
     ? {
-        borrowSPY: interestRateInfo.borrowSPY,
-        borrowAPY: interestRateInfo.borrowAPY,
-        supplyAPY: interestRateInfo.supplyAPY,
+        borrowSPY: formatUnits(interestRateInfo.borrowSPY, 27),
+        borrowAPY: formatUnits(interestRateInfo.borrowAPY, 27),
+        supplyAPY: formatUnits(interestRateInfo.supplyAPY, 27),
       }
     : {
-        borrowSPY: 0n,
-        borrowAPY: 0n,
-        supplyAPY: 0n,
+        borrowSPY: "0",
+        borrowAPY: "0",
+        supplyAPY: "0",
       };
 
-  const interestRateModel: InterestRateModel = {
-    address: vaultInfo.irmInfo.interestRateModel,
-    type: vaultInfo.irmInfo.interestRateModelInfo.interestRateModelType,
-    data: vaultInfo.irmInfo.interestRateModelInfo.interestRateModelParams,
-  };
+  const interestRateModel = convertInterestRateModel(vaultInfo.irmInfo.interestRateModelInfo);
 
   // Convert collaterals
   const collaterals: EVaultCollateral[] = vaultInfo.collateralLTVInfo.map((ltvInfo, idx) => {
@@ -97,21 +95,26 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull): IEVault
       timestamp: 0,
     };
 
-    const isRamping = ltvInfo.targetTimestamp > 0n && ltvInfo.rampDuration > 0n;
-    const ramping: EVaultCollateralRamping = {
-      initialLiquidationLTV: ltvInfo.initialLiquidationLTV,
-      targetTimestamp: ltvInfo.targetTimestamp,
-      rampDuration: ltvInfo.rampDuration,
-    };
+    const targetTimestamp = Number(ltvInfo.targetTimestamp);
+    const vaultTimestamp = Number(vaultInfo.timestamp);
+    const isRamping = targetTimestamp > vaultTimestamp;
 
-    return {
+    const collateral: EVaultCollateral = {
       address: ltvInfo.collateral,
-      borrowLTV: ltvInfo.borrowLTV,
-      liquidationLTV: ltvInfo.liquidationLTV,
-      isRamping,
-      ramping,
+      borrowLTV: convertFrom1e4(ltvInfo.borrowLTV),
+      liquidationLTV: convertFrom1e4(ltvInfo.liquidationLTV),
       price,
     };
+
+    if (isRamping) {
+      collateral.ramping = {
+        initialLiquidationLTV: convertFrom1e4(ltvInfo.initialLiquidationLTV),
+        targetTimestamp,
+        rampDuration: ltvInfo.rampDuration,
+      };
+    }
+
+    return collateral;
   });
 
   // Convert liability price
@@ -143,6 +146,31 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull): IEVault
   };
 }
 
+
+/**
+ * Converts InterestRateModelDetailedInfo to InterestRateModel
+ * @param irmInfo - The InterestRateModelDetailedInfo from the lens
+ * @returns The decoded InterestRateModel
+ */
+function convertInterestRateModel(irmInfo: InterestRateModelDetailedInfo): InterestRateModel {
+  const { interestRateModel: address, interestRateModelType: type, interestRateModelParams: params } = irmInfo;
+  let decodedParams: InterestRateModel["data"] = null;
+
+  if (type !== InterestRateModelType.UNKNOWN && params) {
+    try {
+      decodedParams = decodeIRMParams(type, params);
+    } catch (error) {
+      // If decoding fails, keep params as null
+      console.warn(`Failed to decode IRM params for type ${type}:`, error);
+    }
+  }
+
+  return {
+    address,
+    type,
+    data: decodedParams,
+  };
+}
 
 function convertAssetPriceInfoToOraclePrice(priceInfo: AssetPriceInfo): OraclePrice {
   const priceMid: BigFraction = {
