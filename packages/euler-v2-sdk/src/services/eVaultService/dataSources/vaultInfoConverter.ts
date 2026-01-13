@@ -17,25 +17,25 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull): IEVault
     adapters: decodeOracleInfo(vaultInfo.oracleInfo),
   };
 
-  const vault: Token = {
+  const shares: Token = {
     address: vaultInfo.vault,
     name: vaultInfo.vaultName,
     symbol: vaultInfo.vaultSymbol,
-    decimals: vaultInfo.vaultDecimals,
+    decimals: Number(vaultInfo.vaultDecimals),
   };
 
   const asset: Token = {
     address: vaultInfo.asset,
     name: vaultInfo.assetName,
     symbol: vaultInfo.assetSymbol,
-    decimals: vaultInfo.assetDecimals,
+    decimals: Number(vaultInfo.assetDecimals),
   };
 
   const unitOfAccount: Token = {
     address: vaultInfo.unitOfAccount,
     name: vaultInfo.unitOfAccountName,
     symbol: vaultInfo.unitOfAccountSymbol,
-    decimals: vaultInfo.unitOfAccountDecimals,
+    decimals: Number(vaultInfo.unitOfAccountDecimals),
   };
 
   const fees: EVaultFees = {
@@ -121,7 +121,8 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull): IEVault
   const liabilityPrice = convertAssetPriceInfoToOraclePrice(vaultInfo.liabilityPriceInfo);
 
   return {
-    vault,
+    address: vaultInfo.vault,
+    shares,
     asset,
     unitOfAccount,
     totalShares: vaultInfo.totalShares,

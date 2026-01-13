@@ -1,107 +1,93 @@
 import { Address } from "viem";
-import { Token } from "../utils/types.js";
+import { ERC4626Data, Token, VaultType } from "../utils/types.js";
 
-export interface VaultInfoERC4626 {
-  timestamp: bigint;
-  vault: Address;
-  vaultName: string;
-  vaultSymbol: string;
-  vaultDecimals: bigint;
-  asset: Address;
-  assetName: string;
-  assetSymbol: string;
-  assetDecimals: bigint;
-  totalShares: bigint;
-  totalAssets: bigint;
-  isEVault: boolean;
+
+export interface EulerEarnAllocationCap {
+  current: bigint;
+  pending: bigint;
+  pendingValidAt: number;
 }
 
-export interface EulerEarnVaultStrategyInfo {
-  strategy: Address;
+export interface EulerEarnStrategyInfo extends ERC4626Data {
+  address: Address;
+  vaultType: VaultType;
   allocatedAssets: bigint;
   availableAssets: bigint;
-  currentAllocationCap: bigint;
-  pendingAllocationCap: bigint;
-  pendingAllocationCapValidAt: bigint;
-  removableAt: bigint;
-  info: VaultInfoERC4626;
+  allocationCap: EulerEarnAllocationCap;
+  removableAt: number;
 }
 
-export interface IEulerEarn {
-  timestamp: bigint;
-  address: Address;
-  vault: Token;
-  asset: Token;
-  totalShares: bigint;
-  totalAssets: bigint;
-  lostAssets: bigint;
-  availableAssets: bigint;
-  timelock: bigint;
-  performanceFee: bigint;
-  feeReceiver: Address;
+export interface EulerEarnGovernance {
   owner: Address;
   creator: Address;
   curator: Address;
   guardian: Address;
-  evc: Address;
-  permit2: Address;
-  pendingTimelock: bigint;
-  pendingTimelockValidAt: bigint;
+  feeReceiver: Address;
+
+  timelock: number;
+
+  pendingTimelock: number;
+  pendingTimelockValidAt: number;
   pendingGuardian: Address;
-  pendingGuardianValidAt: bigint;
+  pendingGuardianValidAt: number;
+}
+
+export interface IEulerEarn extends ERC4626Data {
+  address: Address;
+
+  lostAssets: bigint;
+  availableAssets: bigint;
+  performanceFee: number;
+
+  governance: EulerEarnGovernance;
+
   supplyQueue: Address[];
-  strategies: EulerEarnVaultStrategyInfo[];
+  strategies: EulerEarnStrategyInfo[];
+
+  timestamp: number;
 }
 
 export class EulerEarn implements IEulerEarn {
-  timestamp: bigint;
   address: Address;
-  vault: Token;
+
+  shares: Token;
   asset: Token;
   totalShares: bigint;
   totalAssets: bigint;
+
   lostAssets: bigint;
   availableAssets: bigint;
-  timelock: bigint;
-  performanceFee: bigint;
-  feeReceiver: Address;
-  owner: Address;
-  creator: Address;
-  curator: Address;
-  guardian: Address;
-  evc: Address;
-  permit2: Address;
-  pendingTimelock: bigint;
-  pendingTimelockValidAt: bigint;
-  pendingGuardian: Address;
-  pendingGuardianValidAt: bigint;
-  supplyQueue: Address[];
-  strategies: EulerEarnVaultStrategyInfo[];
+  performanceFee: number;
 
-  constructor(params: IEulerEarn) {
-    this.timestamp = params.timestamp;
-    this.address = params.address;
-    this.vault = params.vault;
-    this.asset = params.asset;
-    this.totalShares = params.totalShares;
-    this.totalAssets = params.totalAssets;
-    this.lostAssets = params.lostAssets;
-    this.availableAssets = params.availableAssets;
-    this.timelock = params.timelock;
-    this.performanceFee = params.performanceFee;
-    this.feeReceiver = params.feeReceiver;
-    this.owner = params.owner;
-    this.creator = params.creator;
-    this.curator = params.curator;
-    this.guardian = params.guardian;
-    this.evc = params.evc;
-    this.permit2 = params.permit2;
-    this.pendingTimelock = params.pendingTimelock;
-    this.pendingTimelockValidAt = params.pendingTimelockValidAt;
-    this.pendingGuardian = params.pendingGuardian;
-    this.pendingGuardianValidAt = params.pendingGuardianValidAt;
-    this.supplyQueue = params.supplyQueue;
-    this.strategies = params.strategies;
+  governance: EulerEarnGovernance;
+
+  supplyQueue: Address[];
+  strategies: EulerEarnStrategyInfo[];
+
+  timestamp: number;
+
+  constructor(args: IEulerEarn) {
+    this.address = args.address;
+
+    this.shares = args.shares;
+    this.asset = args.asset;
+    this.totalShares = args.totalShares;
+    this.totalAssets = args.totalAssets;
+
+    this.lostAssets = args.lostAssets;
+    this.availableAssets = args.availableAssets;
+    this.performanceFee = args.performanceFee;
+
+    this.governance = args.governance;
+
+    this.supplyQueue = args.supplyQueue;
+    this.strategies = args.strategies;
+
+    this.timestamp = args.timestamp;
+  }
+
+  isPendingRemoval(strategy: EulerEarnStrategyInfo): boolean {
+    return this.strategies.some((s) => s.address === strategy.address && s.removableAt > this.timestamp);
   }
 }
 

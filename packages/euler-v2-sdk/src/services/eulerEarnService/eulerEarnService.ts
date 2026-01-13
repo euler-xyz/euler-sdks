@@ -20,11 +20,11 @@ export class EulerEarnService {
     if (vaults.length === 0) {
       throw new Error(`Vault not found for ${vault}`);
     }
-    return vaults[0]!;
+    return new EulerEarn(vaults[0]!);
   }
 
   async fetchEulerEarns(chainId: number, vaults: Address[]): Promise<EulerEarn[]> {
-    return this.dataSource.fetchVaults(chainId, vaults);
+    return (await this.dataSource.fetchVaults(chainId, vaults)).map(vault => new EulerEarn(vault));
   }
 
   async fetchVerifiedEulerEarnAddresses(chainId: number, perspectives: (StandardEulerEarnPerspectives | Address)[]): Promise<Address[]> {
