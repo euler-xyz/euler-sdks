@@ -1,4 +1,4 @@
-import { AccountService } from "../services/accountService.js";
+import { AccountService } from "../services/accountService/accountService.js";
 import { DeploymentService } from "../services/deploymentService.js";
 import { EVaultService } from "../services/eVaultService/eVaultService.js";
 import { EulerEarnService } from "../services/eulerEarnService/eulerEarnService.js";

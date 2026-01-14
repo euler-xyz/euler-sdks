@@ -2,78 +2,77 @@ import { Address } from "viem";
 export type AddressPrefix = `0x${string}`; // expects a hex string representation of 19 bytes
 
 export interface SubAccount {
-  timestamp: bigint;
-  addressPrefix: AddressPrefix;
+  timestamp: number;
   account: Address;
   owner: Address;
   isLockdownMode: boolean;
   isPermitDisabledMode: boolean;
-  lastAccountStatusCheckTimestamp: bigint;
+  lastAccountStatusCheckTimestamp: number;
   enabledControllers: Address[];
   enabledCollaterals: Address[];
-  positions: Position[];
+  positions: AccountPosition[];
 }
 
-export interface AccountLiquidityInfo {
-  queryFailure: boolean;
-  queryFailureReason: string;
-  account: Address;
+export interface AssetValue {
+  liquidation: bigint;
+  borrowing: bigint;
+  oracleMid: bigint;
+}
+
+export type DaysToLiquidation = "Infinity" | "MoreThanAYear" | number;
+
+export interface AccountLiquidity {
   vault: Address;
   unitOfAccount: Address;
-  timeToLiquidation: bigint;
-  liabilityValueBorrowing: bigint;
-  liabilityValueLiquidation: bigint;
-  collateralValueBorrowing: bigint;
-  collateralValueLiquidation: bigint;
-  collateralValueRaw: bigint;
-  collaterals: Address[];
-  collateralValuesBorrowing: bigint[];
-  collateralValuesLiquidation: bigint[];
-  collateralValuesRaw: bigint[];
+  daysToLiquidation: DaysToLiquidation;
+  liabilityValue: AssetValue; 
+  totalCollateralValue: AssetValue;
+  collaterals: {
+    address: Address;
+    value: AssetValue;
+  }[];
 };
 
-export type Position = {
-  timestamp: bigint;
+export interface AccountAllowances {
+  assetForVault: bigint;
+  assetForPermit2: bigint;
+  assetForVaultInPermit2: bigint;
+  permit2ExpirationTime: number;
+}
+
+export type AccountPosition = {
   account: Address;
   vault: Address;
   asset: Address;
-  assetsAccount: bigint;
+
+  walletBalance: bigint;
   shares: bigint;
   assets: bigint;
   borrowed: bigint;
-  assetAllowanceVault: bigint;
-  assetAllowanceVaultPermit2: bigint;
-  assetAllowanceExpirationVaultPermit2: bigint;
-  assetAllowancePermit2: bigint;
-  balanceForwarderEnabled: boolean;
+
+  allowances: AccountAllowances;
+
   isController: boolean;
   isCollateral: boolean;
-  liquidityInfo: AccountLiquidityInfo;
+  
+  balanceForwarderEnabled: boolean;
+  liquidity?: AccountLiquidity;
 };
 
 export interface IAccount {
-  timestamp: bigint;
   owner: Address;
-  addressPrefix: AddressPrefix;
   subAccounts: SubAccount[];
 }
 
 export class Account implements IAccount {
-  timestamp: bigint;
   owner: Address;
-  addressPrefix: AddressPrefix;
   subAccounts: SubAccount[];
 
   constructor(
-    timestamp: bigint,
-    owner: Address,
-    addressPrefix: AddressPrefix,
-    subAccounts: SubAccount[]
+    account: IAccount
   ) {
-    this.timestamp = timestamp;
-    this.owner = owner;
-    this.addressPrefix = addressPrefix;
-    this.subAccounts = subAccounts;
+    this.owner = account.owner;
+    this.subAccounts = account.subAccounts;
   }
 }
 

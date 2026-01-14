@@ -1,4 +1,4 @@
-import { AccountVaultsSubgraphDataSourceConfig } from "../services/accountService.js"
+import { AccountVaultsSubgraphDataSourceConfig } from "../services/accountService/dataSources/accountVaultsSubgraphDataSource.js"
 import { EulerLabelsURLDataSourceConfig } from "../services/eulerLabelsService.js"
 
 export const defaultAccountVaultsDataSourceConfig: AccountVaultsSubgraphDataSourceConfig = {

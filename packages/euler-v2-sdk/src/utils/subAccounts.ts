@@ -1,3 +1,4 @@
+import { AddressPrefix } from "../entities/Account.js";
 import { Address, pad, toHex } from "viem";
 
 const SUB_ACCOUNT_MAX_ID = 255;
@@ -21,4 +22,8 @@ export function getSubAccount(primary: Address, subAccountId: number) {
 
 export function isSubAccount(primary: Address, subAccount: Address) {
   return Number(BigInt(primary) ^ BigInt(subAccount)) < SUB_ACCOUNT_MAX_ID
+}
+
+export function getAddressPrefix(address: Address) {
+  return address.substring(0, 40) as AddressPrefix;
 }
