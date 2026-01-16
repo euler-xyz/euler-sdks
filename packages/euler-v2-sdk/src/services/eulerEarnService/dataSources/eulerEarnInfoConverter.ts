@@ -6,9 +6,10 @@ import { EulerEarnVaultInfoFull, VaultInfoERC4626 as LensVaultInfoERC4626 } from
 /**
  * Converts EulerEarnVaultLens's EulerEarnVaultInfoFull object to an IEulerEarn object
  * @param vaultInfo - The EulerEarnVaultInfoFull object to convert
+ * @param chainId - The chain ID
  * @returns The IEulerEarn object
  */
-export function convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo: EulerEarnVaultInfoFull): IEulerEarn {
+export function convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo: EulerEarnVaultInfoFull, chainId: number): IEulerEarn {
   const shares: Token = {
     address: vaultInfo.vault,
     name: vaultInfo.vaultName,
@@ -72,6 +73,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo: EulerEarnVa
   });
 
   return {
+    chainId,
     address: vaultInfo.vault,
     shares,
     asset,

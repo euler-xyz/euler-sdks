@@ -31,7 +31,7 @@ export class EulerEarnOnchainDataSource implements IEulerEarnDataSource {
     const parsedVaults: IEulerEarn[] = results.map((callResult, idx) => {
       if (callResult.status === "success" && callResult.result) {
         const vaultInfo = callResult.result as EulerEarnVaultInfoFull;
-        return convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo);
+        return convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo, chainId);
       }
 
       throw new Error(

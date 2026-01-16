@@ -39,6 +39,7 @@ export class AccountOnchainDataSource implements IAccountDataSource {
     })).then((subAccounts) => subAccounts.filter((subAccount) => subAccount !== undefined) as SubAccount[]);
 
     return {
+      chainId,
       timestamp: subAccounts[0]?.timestamp ?? 0,
       owner: address,
       subAccounts: subAccounts,

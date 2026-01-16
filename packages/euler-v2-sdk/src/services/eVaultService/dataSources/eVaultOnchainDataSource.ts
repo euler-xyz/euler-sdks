@@ -26,7 +26,7 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
     const parsedVaults: IEVault[] = results.map((callResult, idx) => {
       if (callResult.status === "success" && callResult.result) {
         const vaultInfo = callResult.result as VaultInfoFull;
-        return convertVaultInfoFullToIEVault(vaultInfo);
+        return convertVaultInfoFullToIEVault(vaultInfo, chainId);
       }
 
       throw new Error(

@@ -60,17 +60,20 @@ export type AccountPosition = {
 };
 
 export interface IAccount {
+  chainId: number;
   owner: Address;
   subAccounts: SubAccount[];
 }
 
 export class Account implements IAccount {
+  chainId: number;
   owner: Address;
   subAccounts: SubAccount[];
 
   constructor(
     account: IAccount
   ) {
+    this.chainId = account.chainId;
     this.owner = account.owner;
     this.subAccounts = account.subAccounts;
   }

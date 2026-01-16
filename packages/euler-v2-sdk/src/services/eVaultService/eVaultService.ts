@@ -26,7 +26,7 @@ export class EVaultService {
   }
 
   async fetchEVaults(chainId: number, vaults: Address[]): Promise<EVault[]> {
-    return this.dataSource.fetchVaults(chainId, vaults);
+    return (await this.dataSource.fetchVaults(chainId, vaults)).map(vault => new EVault(vault));
   }
 
   async fetchVerifiedEVaultsAddresses(chainId: number, perspectives: (StandardEVaultPerspectives | Address)[]): Promise<Address[]> {

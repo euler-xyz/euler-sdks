@@ -33,6 +33,7 @@ export interface EulerEarnGovernance {
 }
 
 export interface IEulerEarn extends ERC4626Data {
+  chainId: number;
   address: Address;
 
   lostAssets: bigint;
@@ -48,6 +49,7 @@ export interface IEulerEarn extends ERC4626Data {
 }
 
 export class EulerEarn implements IEulerEarn {
+  chainId: number;
   address: Address;
 
   shares: Token;
@@ -67,6 +69,7 @@ export class EulerEarn implements IEulerEarn {
   timestamp: number;
 
   constructor(args: IEulerEarn) {
+    this.chainId = args.chainId;
     this.address = args.address;
 
     this.shares = args.shares;

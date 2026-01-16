@@ -8,9 +8,10 @@ import { decodeIRMParams } from "../../../utils/irm.js";
 /**
  * Converts VaultLens's VaultInfoFull object to an IEVault object
  * @param vaultInfo - The VaultInfoFull object to convert
+ * @param chainId - The chain ID
  * @returns The IEVault object
  */
-export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull): IEVault {
+export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId: number): IEVault {
   const oracle: OracleInfo = {
     oracle: vaultInfo.oracleInfo.oracle,
     name: vaultInfo.oracleInfo.name,
@@ -121,6 +122,7 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull): IEVault
   const liabilityPrice = convertAssetPriceInfoToOraclePrice(vaultInfo.liabilityPriceInfo);
 
   return {
+    chainId,
     address: vaultInfo.vault,
     shares,
     asset,

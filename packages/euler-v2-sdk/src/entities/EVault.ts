@@ -77,6 +77,7 @@ export interface EVaultCollateralRamping {
 }
 
 export interface IEVault extends ERC4626Data {
+  chainId: number;
   address: Address;
   
   unitOfAccount: Token;
@@ -105,6 +106,7 @@ export interface IEVault extends ERC4626Data {
 }
 
 export class EVault implements IEVault {
+  chainId: number;
   address: Address;
 
   shares: Token;
@@ -132,6 +134,7 @@ export class EVault implements IEVault {
   timestamp: number;
 
   constructor(args: IEVault) {
+    this.chainId = args.chainId;
     this.address = args.address;
 
     this.shares = args.shares;
