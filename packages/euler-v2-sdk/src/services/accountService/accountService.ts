@@ -7,7 +7,12 @@ export interface IAccountDataSource {
   fetchSubAccount(chainId: number, subAccount: Address, vaults?: Address[]): Promise<SubAccount | undefined>;
 }
 
-export class AccountService {
+export interface IAccountService {
+  fetchFullAccount(chainId: number, address: Address): Promise<Account | undefined>;
+  fetchSubAccount(chainId: number, subAccount: Address): Promise<SubAccount | undefined>;
+}
+
+export class AccountService implements IAccountService {
   constructor(
     private readonly dataSource: IAccountDataSource
   ) {}

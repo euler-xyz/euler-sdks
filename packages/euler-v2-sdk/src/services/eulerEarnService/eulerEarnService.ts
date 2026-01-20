@@ -1,6 +1,6 @@
 import { EulerEarn, IEulerEarn } from "../../entities/EulerEarn.js";
 import { Address } from "viem";
-import { DeploymentService } from "../deploymentService.js";
+import { DeploymentService } from "../deploymentService/index.js";
 
 export interface IEulerEarnDataSource {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEulerEarn[]>;
@@ -12,7 +12,14 @@ export enum StandardEulerEarnPerspectives {
   FACTORY = "eulerEarnFactoryPerspective",
 }
 
-export class EulerEarnService {
+export interface IEulerEarnService {
+  fetchEulerEarn(chainId: number, vault: Address): Promise<EulerEarn>;
+  fetchEulerEarns(chainId: number, vaults: Address[]): Promise<EulerEarn[]>;
+  fetchVerifiedEulerEarnAddresses(chainId: number, perspectives: (StandardEulerEarnPerspectives | Address)[]): Promise<Address[]>;
+  fetchVerifiedEulerEarns(chainId: number, perspectives: (StandardEulerEarnPerspectives | Address)[]): Promise<EulerEarn[]>;
+}
+
+export class EulerEarnService implements IEulerEarnService {
   constructor(private readonly dataSource: IEulerEarnDataSource, private readonly deploymentService: DeploymentService) { }
 
   async fetchEulerEarn(chainId: number, vault: Address): Promise<EulerEarn> {

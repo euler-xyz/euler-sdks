@@ -1,4 +1,4 @@
-import { EulerLabelEntity, EulerLabelVault, EulerLabelProduct } from "../entities/EulerLabels.js";
+import { EulerLabelEntity, EulerLabelVault, EulerLabelProduct } from "../../entities/EulerLabels.js";
 import { Address } from "viem";
 
 export interface IEulerLabelsDataSource {
@@ -7,7 +7,13 @@ export interface IEulerLabelsDataSource {
   getEulerLabelsProducts(chainId: number): Promise<Record<Address, EulerLabelProduct>>;
 }
 
-export class EulerLabelsService {
+export interface IEulerLabelsService {
+  getEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>>;
+  getEulerLabelsEntities(chainId: number): Promise<Record<Address, EulerLabelEntity>>;
+  getEulerLabelsProducts(chainId: number): Promise<Record<Address, EulerLabelProduct>>;
+}
+
+export class EulerLabelsService implements IEulerLabelsService {
     constructor(
       private readonly dataSource: IEulerLabelsDataSource
     ) {}

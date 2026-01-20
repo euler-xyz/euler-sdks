@@ -3,7 +3,12 @@ import { mainnet, base, arbitrum, bsc, linea, sonic, unichain, berachain, bob, t
 
 const defaultChains = [mainnet, base, arbitrum, bsc, linea, sonic, unichain, berachain, bob, tac, plasma, monad, swellchain, avalanche];
 
-export class ProviderService {
+export interface IProviderService {
+  getProvider(chainId: number): PublicClient;
+  getSupportedChainIds(): number[];
+}
+
+export class ProviderService implements IProviderService {
   private readonly providers: Record<number, PublicClient> = {};
 
   constructor(rpcUrls: Record<number, string>) {

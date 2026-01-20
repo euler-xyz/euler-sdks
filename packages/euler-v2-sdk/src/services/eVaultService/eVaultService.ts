@@ -1,6 +1,6 @@
 import { Address } from "viem";
 import { EVault, IEVault } from "../../entities/EVault.js";
-import { DeploymentService } from "../deploymentService.js";
+import { DeploymentService } from "../deploymentService/index.js";
 
 export interface IEVaultDataSource {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEVault[]>;
@@ -14,7 +14,14 @@ export enum StandardEVaultPerspectives {
   ESCROW = "escrowedCollateralPerspective",
 }
 
-export class EVaultService {
+export interface IEVaultService {
+  fetchEVault(chainId: number, vault: Address): Promise<EVault>;
+  fetchEVaults(chainId: number, vaults: Address[]): Promise<EVault[]>;
+  fetchVerifiedEVaultsAddresses(chainId: number, perspectives: (StandardEVaultPerspectives | Address)[]): Promise<Address[]>;
+  fetchVerifiedEVaults(chainId: number, perspectives: (StandardEVaultPerspectives | Address)[]): Promise<EVault[]>;
+}
+
+export class EVaultService implements IEVaultService {
   constructor(private readonly dataSource: IEVaultDataSource, private readonly deploymentService: DeploymentService) { }
 
   async fetchEVault(chainId: number, vault: Address): Promise<EVault> {

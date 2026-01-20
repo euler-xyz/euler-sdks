@@ -1,7 +1,7 @@
 import { IEVaultDataSource } from "../eVaultService.js";
-import { ProviderService } from "../../providerService.js";
-import { IABIService } from "../../abiService.js";
-import { DeploymentService } from "../../deploymentService.js";
+import { ProviderService } from "../../providerService/index.js";
+import { IABIService } from "../../abiService/index.js";
+import { DeploymentService } from "../../deploymentService/index.js";
 import { Address } from "viem";
 import { EVault, IEVault } from "../../../entities/EVault.js";
 import { VaultInfoFull } from "./eVaultLensTypes.js";

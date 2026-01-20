@@ -1,5 +1,6 @@
 import { AccountVaultsSubgraphDataSourceConfig } from "../services/accountService/dataSources/accountVaultsSubgraphDataSource.js"
-import { EulerLabelsURLDataSourceConfig } from "../services/eulerLabelsService.js"
+import { EulerLabelsURLDataSourceConfig } from "../services/eulerLabelsService/index.js"
+import type { SwapServiceConfig } from "../services/swapService/index.js"
 
 export const defaultAccountVaultsDataSourceConfig: AccountVaultsSubgraphDataSourceConfig = {
   subgraphURLs: {
@@ -29,4 +30,9 @@ export const defaultEulerLabelsURLDataSourceConfig: EulerLabelsURLDataSourceConf
   getEulerLabelsEntitiesUrl: (chainId: number) => `https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master/${chainId}/entities.json`,
   getEulerLabelsProductsUrl: (chainId: number) => `https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master/${chainId}/products.json`,
   getEulerLabelsEarnVaultsUrl: (chainId: number) => `https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master/${chainId}/eulerEarnVaults.json`,
+}
+
+export const defaultSwapServiceConfig: SwapServiceConfig = {
+  swapApiUrl: process.env.SWAP_API_URL || "https://swap.euler.finance",
+  defaultDeadline: 1800, // 30 minutes
 }

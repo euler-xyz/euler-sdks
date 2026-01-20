@@ -1,7 +1,7 @@
 import { IEulerEarnDataSource } from "../eulerEarnService.js";
-import { ProviderService } from "../../providerService.js";
-import { IABIService } from "../../abiService.js";
-import { DeploymentService } from "../../deploymentService.js";
+import { ProviderService } from "../../providerService/index.js";
+import { IABIService } from "../../abiService/index.js";
+import { DeploymentService } from "../../deploymentService/index.js";
 import { Address } from "viem";
 import { EulerEarn, IEulerEarn } from "../../../entities/EulerEarn.js";
 import { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";

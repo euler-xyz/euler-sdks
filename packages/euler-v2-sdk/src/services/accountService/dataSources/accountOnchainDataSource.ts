@@ -1,7 +1,7 @@
 import { IAccountDataSource } from "../accountService.js";
-import { ProviderService } from "../../providerService.js";
-import { IABIService } from "../../abiService.js";
-import { DeploymentService } from "../../deploymentService.js";
+import { ProviderService } from "../../providerService/index.js";
+import { IABIService } from "../../abiService/index.js";
+import { DeploymentService } from "../../deploymentService/index.js";
 import { Address, getAddress } from "viem";
 import { IAccount, SubAccount } from "../../../entities/Account.js";
 import { VaultAccountInfo, EVCAccountInfo } from "./accountLensTypes.js";

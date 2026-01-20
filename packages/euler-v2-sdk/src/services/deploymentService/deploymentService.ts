@@ -1,5 +1,5 @@
 import { Address } from "viem";
-import { config } from "../config.js";
+import { config } from "../../config.js";
 
 export interface Deployment {
   chainId: number;
@@ -99,7 +99,13 @@ export interface Deployment {
 
 export type Deployments = Record<number, Deployment>;
 
-export class DeploymentService {
+export interface IDeploymentService {
+  getDeploymentChainIds(): number[];
+  getDeployment(chainId: number): Deployment;
+  addDeployment(deployment: Deployment): void;
+}
+
+export class DeploymentService implements IDeploymentService {
   private deployments: Deployments;
 
   static async build(): Promise<DeploymentService> {

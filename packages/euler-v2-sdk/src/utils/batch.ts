@@ -1,11 +1,6 @@
+import { EVCBatchItem } from "src/services/executionService/executionServiceTypes.js"
 import { Address, encodeFunctionData, Hex } from "viem"
 
-export type EVCBatchItem = {
-  targetContract: Address
-  onBehalfOfAccount: Address
-  value?: bigint
-  data: Hex
-}
 
 export const encodeEVCBatch = (items: EVCBatchItem[]) => {
   return encodeFunctionData({
