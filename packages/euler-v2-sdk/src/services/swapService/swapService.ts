@@ -3,7 +3,8 @@ import type {
   SwapQuote,
   SwapQuoteRequest,
   SwapsApiResponse,
-  SwapVerificationType,
+  GetRepayQuoteArgs,
+  GetSwapCollateralQuoteArgs,
 } from "./swapServiceTypes.js";
 import { SwapperMode } from "./swapServiceTypes.js";
 import { swapVerifierAbi } from "./swapVerifierAbi.js";
@@ -14,10 +15,13 @@ export interface SwapServiceConfig {
 }
 
 export interface ISwapService {
-  getSwapQuotes(request: SwapQuoteRequest): Promise<SwapQuote[]>;
+  getSwapQuotes(args: SwapQuoteRequest): Promise<SwapQuote[]>;
+  getRepayQuotes(args: GetRepayQuoteArgs): Promise<SwapQuote[]>;
+  getSwapCollateralQuotes(args: GetSwapCollateralQuoteArgs): Promise<SwapQuote[]>;
 }
 
 const DEFAULT_DEADLINE = 1800; // 30 minutes
+const MAX_SLIPPAGE = 50;
 
 export class SwapService implements ISwapService {
   constructor(private readonly config: SwapServiceConfig) {
@@ -30,6 +34,10 @@ export class SwapService implements ISwapService {
    * Fetches swap quotes from the swap API
    */
   async getSwapQuotes(request: SwapQuoteRequest): Promise<SwapQuote[]> {
+    if (request.tokenIn === request.tokenOut) {
+      throw new Error("Token in and token out cannot be the same");
+    }
+
     const params = this.buildRequestParams(request);
     const searchParams = new URLSearchParams(params);
 
@@ -143,6 +151,143 @@ export class SwapService implements ISwapService {
         received: quote.verify.verifierData,
       });
       throw new Error("SwapVerifier data mismatch");
+    }
+  }
+
+  /**
+   * Fetches a swap quote for repaying debt with a swap.
+   */
+  async getRepayQuotes(
+    args: GetRepayQuoteArgs,
+  ): Promise<SwapQuote[]> {
+    const {
+      chainId,
+      fromVault,
+      fromAsset,
+      fromAccount,
+      liabilityVault,
+      liabilityAsset,
+      liabilityAmount,
+      currentDebt,
+      toAccount,
+      origin,
+      swapperMode,
+      slippage,
+      collateralAmount,
+      isMax = false,
+      deadline,
+    } = args;
+
+    if (!origin || origin === "0x0000000000000000000000000000000000000000") {
+      throw new Error("origin must be provided for swap repay");
+    }
+    if (currentDebt <= 0n) {
+      throw new Error("currentDebt must be provided for swap repay");
+    }
+    if (fromAsset === liabilityAsset) {
+      throw new Error(
+        "Swap repay requires different from and liability assets",
+      );
+    }
+    this.validateSlippage(slippage);
+
+    let amount: bigint;
+    let targetDebt = 0n;
+
+    if (swapperMode === SwapperMode.EXACT_IN) {
+      if (collateralAmount === undefined) {
+        throw new Error(
+          "collateralAmount must be provided for exact-in swap repay",
+        );
+      }
+      amount = collateralAmount;
+    } else {
+      if (liabilityAmount === undefined) {
+        throw new Error(
+          "liabilityAmount must be provided for target-debt swap repay",
+        );
+      }
+      amount = liabilityAmount;
+      targetDebt = isMax || amount >= currentDebt ? 0n : currentDebt - amount;
+    }
+
+    const quotes = await this.getSwapQuotes({
+      chainId,
+      tokenIn: fromAsset,
+      tokenOut: liabilityAsset,
+      accountIn: fromAccount,
+      accountOut: toAccount,
+      amount,
+      vaultIn: fromVault,
+      receiver: liabilityVault,
+      origin,
+      slippage,
+      swapperMode,
+      isRepay: true,
+      targetDebt,
+      currentDebt,
+      deadline: deadline ?? 0,
+    });
+
+    if (quotes.length === 0) {
+      throw new Error("No swap quotes available");
+    }
+
+    return quotes;
+  }
+
+  /**
+   * Fetches a swap quote for swapping collateral from one vault to another.
+   */
+  async getSwapCollateralQuotes(
+    args: GetSwapCollateralQuoteArgs,
+  ): Promise<SwapQuote[]> {
+    const {
+      chainId,
+      fromVault,
+      toVault,
+      fromAccount,
+      toAccount,
+      fromAsset,
+      toAsset,
+      amount,
+      origin,
+      slippage,
+      deadline,
+    } = args;
+
+    this.validateSlippage(slippage);
+
+    const quotes = await this.getSwapQuotes({
+      chainId,
+      tokenIn: fromAsset,
+      tokenOut: toAsset,
+      accountIn: fromAccount,
+      accountOut: toAccount,
+      amount,
+      vaultIn: fromVault,
+      receiver: toVault,
+      origin,
+      slippage,
+      swapperMode: SwapperMode.EXACT_IN,
+      isRepay: false,
+      targetDebt: 0n,
+      currentDebt: 0n,
+      deadline: deadline ?? 0,
+    });
+
+    if (quotes.length === 0) {
+      throw new Error("No swap quotes available");
+    }
+
+    return quotes;
+  }
+
+  private validateSlippage(slippage: number): void {
+    if (slippage === undefined || slippage > MAX_SLIPPAGE || slippage < 0) {
+      throw new Error(
+        "Valid slippage between 0 and 50% must be provided for swap",
+      );
     }
   }
 }

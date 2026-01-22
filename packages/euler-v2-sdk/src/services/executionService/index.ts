@@ -1,7 +1,6 @@
-export { ExecutionService } from "./executionService.js";
+export { ExecutionService, type IExecutionService } from "./executionService.js";
 export { executionAbis } from "./executionAbis.js";
 export type {
-  IExecutionService,
   EVCBatchItem,
   EncodeDepositBatchItemsArgs,
   EncodeMintBatchItemsArgs,
@@ -10,8 +9,7 @@ export type {
   EncodeBorrowBatchItemsArgs,
   EncodeRepayBatchItemsArgs,
   EncodePullDebtBatchItemsArgs,
-  EncodeRepayBatchItemsWithSwapArgs,
+  EncodeRepayWithSwapBatchItemsArgs,
   EncodeSwapCollateralBatchItemsArgs,
   EncodeSwapDebtBatchItemsArgs,
-  SwapQuoteForBatch,
 } from "./executionServiceTypes.js";

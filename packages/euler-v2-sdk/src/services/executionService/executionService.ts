@@ -1,7 +1,6 @@
-import { encodeFunctionData, getAddress, Hex, type Address } from "viem";
+import { encodeFunctionData, getAddress, Hex, maxUint256, type Address, zeroAddress } from "viem";
 import { DeploymentService } from "../deploymentService/index.js";
 import { executionAbis } from "./executionAbis.js";
-import type { SubAccount } from "../../entities/Account.js";
 import type {
   EVCBatchItem,
   EncodeDepositBatchItemsArgs,
@@ -9,29 +8,13 @@ import type {
   EncodeWithdrawBatchItemsArgs,
   EncodeRedeemBatchItemsArgs,
   EncodeBorrowBatchItemsArgs,
-  EncodeRepayBatchItemsArgs,
   EncodePullDebtBatchItemsArgs,
-  EncodeRepayBatchItemsWithSwapArgs,
-  EncodeSwapCollateralBatchItemsArgs,
+  EncodeRepayWithSwapBatchItemsArgs,
+  EncodeRepayFromWalletBatchItemsArgs,
+  EncodeRepayFromDepositBatchItemsArgs,
   EncodeSwapDebtBatchItemsArgs,
   EncodeTransferBatchItemsArgs,
-} from "./executionServiceTypes.js";
-
-// Re-export all types
-export type {
-  EVCBatchItem,
-  EncodeDepositBatchItemsArgs,
-  EncodeMintBatchItemsArgs,
-  EncodeWithdrawBatchItemsArgs,
-  EncodeRedeemBatchItemsArgs,
-  EncodeBorrowBatchItemsArgs,
-  EncodeRepayBatchItemsArgs,
-  EncodePullDebtBatchItemsArgs,
-  EncodeRepayBatchItemsWithSwapArgs,
   EncodeSwapCollateralBatchItemsArgs,
-  EncodeSwapDebtBatchItemsArgs,
-  EncodeTransferBatchItemsArgs,
-  SwapQuoteForBatch,
 } from "./executionServiceTypes.js";
 
 export interface IExecutionService {
@@ -40,9 +23,10 @@ export interface IExecutionService {
   encodeWithdrawBatchItems(args: EncodeWithdrawBatchItemsArgs): EVCBatchItem[];
   encodeRedeemBatchItems(args: EncodeRedeemBatchItemsArgs): EVCBatchItem[];
   encodeBorrowBatchItems(args: EncodeBorrowBatchItemsArgs): EVCBatchItem[];
-  encodeRepayBatchItems(args: EncodeRepayBatchItemsArgs): EVCBatchItem[];
   encodePullDebtBatchItems(args: EncodePullDebtBatchItemsArgs): EVCBatchItem[];
-  encodeRepayBatchItemsWithSwap(args: EncodeRepayBatchItemsWithSwapArgs): EVCBatchItem[];
+  encodeRepayFromWalletBatchItems(args: EncodeRepayFromWalletBatchItemsArgs): EVCBatchItem[];
+  encodeRepayFromDepositBatchItems(args: EncodeRepayFromDepositBatchItemsArgs): Promise<EVCBatchItem[]>;
+  encodeRepayWithSwapBatchItems(args: EncodeRepayWithSwapBatchItemsArgs): EVCBatchItem[];
   encodeSwapCollateralBatchItems(args: EncodeSwapCollateralBatchItemsArgs): EVCBatchItem[];
   encodeSwapDebtBatchItems(args: EncodeSwapDebtBatchItemsArgs): EVCBatchItem[];
   encodeTransferBatchItems(args: EncodeTransferBatchItemsArgs): EVCBatchItem[];
@@ -51,7 +35,9 @@ export interface IExecutionService {
 // TODO explain how this service is coupled to the concrete abis of ERC4626, permit2 and EVK. 
 // this is a helper service, not a generic one.
 export class ExecutionService implements IExecutionService {
-  constructor(private readonly deploymentService: DeploymentService) {}
+  constructor(
+    private readonly deploymentService: DeploymentService,
+  ) {}
 
   encodeBatch(items: EVCBatchItem[]): Hex {
     return encodeFunctionData({
@@ -71,7 +57,7 @@ export class ExecutionService implements IExecutionService {
       const evc = deployment.addresses.coreAddrs.evc
       items.push({
         targetContract: evc,
-        onBehalfOfAccount: receiver,
+        onBehalfOfAccount: zeroAddress,
         data: encodeFunctionData({
           abi: executionAbis.enableCollateralAbi,
           functionName: "enableCollateral",
@@ -104,7 +90,7 @@ export class ExecutionService implements IExecutionService {
       const evc = deployment.addresses.coreAddrs.evc
       items.push({
         targetContract: evc,
-        onBehalfOfAccount: receiver,
+        onBehalfOfAccount: zeroAddress,
         data: encodeFunctionData({
           abi: executionAbis.enableCollateralAbi,
           functionName: "enableCollateral",
@@ -202,16 +188,13 @@ export class ExecutionService implements IExecutionService {
   }: EncodeBorrowBatchItemsArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
     const account = subAccount?.account ?? receiver
-    const borrowVaultAddress = getAddress(vault)
-
     // Add collateral deposit if provided
     if (collateralVault && collateralAmount !== undefined && collateralAmount > 0n) {
       // Determine if we need to enable collateral based on subAccount state
       let needsEnableCollateral = true
       if (subAccount) {
-        const collateralVaultAddress = getAddress(collateralVault)
         const isCollateralEnabled = subAccount.enabledCollaterals.some(
-          (collateral: Address) => getAddress(collateral) === collateralVaultAddress
+          (collateral: Address) => collateral === collateralVault
         )
         needsEnableCollateral = !isCollateralEnabled
       }
@@ -233,10 +216,10 @@ export class ExecutionService implements IExecutionService {
 
     if (subAccount) {
       // There can be only one controller enabled per account
-      const enabledControllers = subAccount.enabledControllers.map(getAddress)
+      const enabledControllers = subAccount.enabledControllers
       currentController = enabledControllers.length > 0 ? (enabledControllers[0] ?? null) : null
-      needsDisableController = currentController !== null && getAddress(currentController) !== borrowVaultAddress
-      needsEnableController = !enabledControllers.some((controller: Address) => getAddress(controller) === borrowVaultAddress)
+      needsDisableController = currentController !== null && currentController !== vault
+      needsEnableController = !enabledControllers.some((controller: Address) => controller === vault)
     }
 
     // Add disable controller if there's a different controller enabled
@@ -258,7 +241,7 @@ export class ExecutionService implements IExecutionService {
       const evc = deployment.addresses.coreAddrs.evc
       items.push({
         targetContract: evc,
-        onBehalfOfAccount: account,
+        onBehalfOfAccount: zeroAddress,
         data: encodeFunctionData({
           abi: executionAbis.enableControllerAbi,
           functionName: "enableController",
@@ -281,45 +264,6 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
-  encodeRepayBatchItems({ chainId, vault, amount, receiver, subAccount, disableController }: EncodeRepayBatchItemsArgs): EVCBatchItem[] {
-    const items: EVCBatchItem[] = []
-    const account = subAccount?.account ?? receiver
-
-    // Add disable controller if flag is set
-    if (disableController && subAccount) {
-      const enabledControllers = subAccount.enabledControllers.map(getAddress)
-      const vaultAddress = getAddress(vault)
-      const currentController = enabledControllers.find(
-        (controller: Address) => getAddress(controller) === vaultAddress
-      )
-      
-      if (currentController) {
-        items.push({
-          targetContract: currentController,
-          onBehalfOfAccount: account,
-          data: encodeFunctionData({
-            abi: executionAbis.disableControllerAbi,
-            functionName: "disableController",
-            args: [account]
-          })
-        })
-      }
-    }
-
-    // Add repay operation
-    items.push({
-      targetContract: vault,
-      onBehalfOfAccount: receiver,
-      data: encodeFunctionData({
-        abi: executionAbis.repayAbi,
-        functionName: "repay",
-        args: [amount, receiver]
-      })
-    })
-
-    return items
-  }
-
   encodePullDebtBatchItems({ chainId, vault, amount, from, enableController }: EncodePullDebtBatchItemsArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
@@ -329,7 +273,7 @@ export class ExecutionService implements IExecutionService {
       const evc = deployment.addresses.coreAddrs.evc
       items.push({
         targetContract: evc,
-        onBehalfOfAccount: from,
+        onBehalfOfAccount: zeroAddress,
         data: encodeFunctionData({
           abi: executionAbis.enableControllerAbi,
           functionName: "enableController",
@@ -353,118 +297,182 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Encodes batch items for repaying debt, optionally with a swap if repaying from collateral.
-   * Supports repaying from wallet or from collateral via swap.
+   * Encodes batch items for repaying debt from wallet.
    */
-  encodeRepayBatchItemsWithSwap({
-    chainId,
-    liabilityVault,
-    liabilityAmount,
-    receiver,
-    collateralVault,
-    swapQuote,
-    subAccount,
-    disableControllerOnMax = false,
-  }: EncodeRepayBatchItemsWithSwapArgs): EVCBatchItem[] {
+  encodeRepayFromWalletBatchItems(args: EncodeRepayFromWalletBatchItemsArgs): EVCBatchItem[] {
+    const {
+      sender,
+      liabilityVault,
+      liabilityAmount,
+      receiver,
+      disableControllerOnMax = true,
+      isMax = false,
+    } = args
+
     const items: EVCBatchItem[] = []
-    const account = subAccount?.account ?? receiver
+
+    // Repay operation
+    items.push({
+      targetContract: liabilityVault,
+      onBehalfOfAccount: sender,
+      data: encodeFunctionData({
+        abi: executionAbis.repayAbi,
+        functionName: "repay",
+        args: [liabilityAmount, receiver],
+      }),
+    })
+
+    // Disable controller if needed (for max repay)
+    // Sender must be allowed to act on behalf of receiver (sender is subaccount of receiver or is an operator)
+    if (disableControllerOnMax && isMax) {
+      items.push({
+        targetContract: liabilityVault,
+        onBehalfOfAccount: receiver,
+        data: encodeFunctionData({
+          abi: executionAbis.disableControllerAbi,
+          functionName: "disableController",
+          args: [receiver],
+        }),
+      })
+    }
+
+    return items
+  }
+
+  /**
+   * Encodes batch items for repaying debt from a deposit.
+   * Supports multiple scenarios:
+   * 1. Same asset, same vault - use repayWithShares
+   * 2. Same asset, different vault - withdraw and repay
+   */
+  async encodeRepayFromDepositBatchItems(args: EncodeRepayFromDepositBatchItemsArgs): Promise<EVCBatchItem[]> {
+    const {
+      liabilityVault,
+      liabilityAsset,
+      liabilityAmount,
+      from,
+      receiver,
+      fromVault,
+      fromAsset,
+      disableControllerOnMax = false,
+      isMax = false,
+    } = args
+
+    // PATH 1: Same asset, same vault - use repayWithShares
+    if (fromAsset === liabilityAsset && fromVault === liabilityVault) {
+      return this.encodeRepayWithSharesSameAssetAndVault({
+        vault: liabilityVault,
+        amount: liabilityAmount,
+        receiver,
+        from,
+        disableController: isMax && disableControllerOnMax,
+      })
+    }
+
+    // PATH 2: Same asset, different vault
+    if (fromAsset === liabilityAsset) {
+      return this.encodeRepayWithSharesSameAssetDifferentVault({
+        fromVault,
+        toVault: liabilityVault,
+        amount: liabilityAmount,
+        receiver,
+        from,
+        isMax,
+        disableControllerOnMax,
+      })
+    }
+
+    throw new Error("encodeRepayFromDepositBatchItems only supports same-asset paths")
+  }
+
+  /**
+   * Builds repay batch items by mirroring the repay form flow.
+   * Requires a swap quote to be provided.
+   * Make sure the swap quote comes from swapService.getRepayQuotes() or follows the same structure.
+   */
+  encodeRepayWithSwapBatchItems(
+    args: EncodeRepayWithSwapBatchItemsArgs,
+  ): EVCBatchItem[] {
+    const {
+      swapQuote,
+      maxWithdraw,
+      isMax = false,
+      disableControllerOnMax = true,
+    } = args
+    const items: EVCBatchItem[] = []
+
+    // Determine withdraw amount (cap to available amount if provided)
+    const withdrawAmount =
+      maxWithdraw && maxWithdraw < BigInt(swapQuote.amountInMax || swapQuote.amountIn)
+        ? maxWithdraw
+        : BigInt(swapQuote.amountInMax || swapQuote.amountIn)
 
     // 1. Withdraw collateral from vault to swapper
-    const withdrawAmount = BigInt(swapQuote.amountInMax || swapQuote.amountIn)
     items.push({
-      targetContract: collateralVault,
+      targetContract: swapQuote.vaultIn,
       onBehalfOfAccount: swapQuote.accountIn,
       data: encodeFunctionData({
         abi: executionAbis.withdrawAbi,
         functionName: "withdraw",
-        args: [withdrawAmount, swapQuote.swap.swapperAddress, swapQuote.accountIn]
-      })
+        args: [withdrawAmount, swapQuote.swap.swapperAddress, swapQuote.accountIn],
+      }),
     })
 
     // 2. Execute swap multicall
     items.push({
       targetContract: swapQuote.swap.swapperAddress,
       onBehalfOfAccount: swapQuote.accountIn,
-      data: swapQuote.swap.swapperData
+      data: swapQuote.swap.swapperData,
     })
 
-    // 3. Verify swap and skim/repay
-    // Note: verifyDebtMax already handles the repay, so we don't need a separate repay call
+    // 3. Verify swap and repay (verifyDebtMax handles the repay)
+    if (swapQuote.verify.type !== "debtMax") {
+      throw new Error("Invalid swap quote type for repay - must be debtMax")
+    }
+
     items.push({
       targetContract: swapQuote.verify.verifierAddress,
       onBehalfOfAccount: swapQuote.accountOut,
-      data: swapQuote.verify.verifierData
+      data: swapQuote.verify.verifierData,
     })
 
-    if (swapQuote.verify.type === "skimMin") {
-      throw new Error("Invalid swap quote type")
-    }
-
-    // 5. Disable controller if needed (for max repay)
-    if (disableControllerOnMax && subAccount) {
-      const enabledControllers = subAccount.enabledControllers.map(getAddress)
-      const liabilityVaultAddress = getAddress(liabilityVault)
-      const currentController = enabledControllers.find(
-        (controller: Address) => getAddress(controller) === liabilityVaultAddress
-      )
-      
-      if (currentController) {
+    // 4. Disable controller if needed (for max repay)
+    if (isMax && disableControllerOnMax) {
         items.push({
-          targetContract: currentController,
-          onBehalfOfAccount: account,
+          targetContract: swapQuote.receiver,
+          onBehalfOfAccount: swapQuote.accountOut,
           data: encodeFunctionData({
             abi: executionAbis.disableControllerAbi,
             functionName: "disableController",
-            args: [account]
-          })
+            args: [swapQuote.accountOut],
+          }),
         })
-      }
     }
-  
-
-    // Disable controller if needed (for max repay)
-    if (disableControllerOnMax && subAccount) {
-      const enabledControllers = subAccount.enabledControllers.map(getAddress)
-      const liabilityVaultAddress = getAddress(liabilityVault)
-      const currentController = enabledControllers.find(
-        (controller: Address) => getAddress(controller) === liabilityVaultAddress
-      )
-      
-      if (currentController) {
-        items.push({
-          targetContract: currentController,
-          onBehalfOfAccount: account,
-          data: encodeFunctionData({
-            abi: executionAbis.disableControllerAbi,
-            functionName: "disableController",
-            args: [account]
-          })
-        })
-      }
-    }
-    
 
     return items
   }
 
   /**
    * Encodes batch items for swapping collateral from one vault to another.
+   * Make sure the swap quote comes from swapService.getSwapCollateralQuotes() or follows the same structure.
    */
-  encodeSwapCollateralBatchItems({
-    chainId,
-    fromVault,
-    toVault,
-    fromAccount,
-    toAccount,
-    swapQuote,
-    subAccount,
-  }: EncodeSwapCollateralBatchItemsArgs): EVCBatchItem[] {
+  encodeSwapCollateralBatchItems(args: EncodeSwapCollateralBatchItemsArgs): EVCBatchItem[] {
+    const {
+      chainId,
+      swapQuote,
+      enableCollateral = true,
+      disableCollateralOnMax = true,
+      isMax = false,
+    } = args
+
     const items: EVCBatchItem[] = []
+    const deployment = this.deploymentService.getDeployment(chainId)
+    const evc = deployment.addresses.coreAddrs.evc
 
     // 1. Withdraw from source vault to swapper
     const withdrawAmount = BigInt(swapQuote.amountInMax || swapQuote.amountIn)
     items.push({
-      targetContract: fromVault,
+      targetContract: swapQuote.vaultIn,
       onBehalfOfAccount: swapQuote.accountIn,
       data: encodeFunctionData({
         abi: executionAbis.withdrawAbi,
@@ -481,72 +489,63 @@ export class ExecutionService implements IExecutionService {
     })
 
     // 3. Verify swap and skim
+    if (swapQuote.verify.type !== "skimMin") {
+      throw new Error("Invalid swap quote type for swap collateral - must be skimMin")
+    }
     items.push({
       targetContract: swapQuote.verify.verifierAddress,
       onBehalfOfAccount: swapQuote.accountOut,
       data: swapQuote.verify.verifierData
     })
 
-    // 4. Deposit swapped tokens to destination vault
-    const depositAmount = BigInt(swapQuote.amountOut)
-    
-    // Check if we need to enable collateral
-    let needsEnableCollateral = true
-    if (subAccount) {
-      const toVaultAddress = getAddress(toVault)
-      const isCollateralEnabled = subAccount.enabledCollaterals.some(
-        (collateral: Address) => getAddress(collateral) === toVaultAddress
-      )
-      needsEnableCollateral = !isCollateralEnabled
-    }
-
-    if (needsEnableCollateral) {
-      const deployment = this.deploymentService.getDeployment(chainId)
-      const evc = deployment.addresses.coreAddrs.evc
+    // 4. Disable collateral if needed (for max swap)
+    if(isMax && disableCollateralOnMax) {
       items.push({
         targetContract: evc,
-        onBehalfOfAccount: toAccount,
+        onBehalfOfAccount: zeroAddress,
+        data: encodeFunctionData({
+          abi: executionAbis.disableCollateralAbi,
+          functionName: "disableCollateral",
+          args: [swapQuote.accountIn, swapQuote.vaultIn],
+        }),
+      })
+    }
+
+    // 5. Enable collateral if needed
+    if (enableCollateral) {
+      items.push({
+        targetContract: evc,
+        onBehalfOfAccount: zeroAddress,
         data: encodeFunctionData({
           abi: executionAbis.enableCollateralAbi,
           functionName: "enableCollateral",
-          args: [toAccount, toVault]
+          args: [swapQuote.accountOut, swapQuote.receiver]
         })
       })
     }
-
-    items.push({
-      targetContract: toVault,
-      onBehalfOfAccount: toAccount,
-      data: encodeFunctionData({
-        abi: executionAbis.depositAbi,
-        functionName: "deposit",
-        args: [depositAmount, toAccount]
-      })
-    })
 
     return items
   }
 
   /**
    * Encodes batch items for swapping debt from one vault to another.
+   * Make sure the swap quote comes from swapService.getRepayQuotes() or follows the same structure.
    */
   encodeSwapDebtBatchItems({
     chainId,
-    fromVault,
-    toVault,
-    fromAccount,
-    toAccount,
     swapQuote,
-    subAccount,
+    enableController = true,
+    disableControllerOnMax = true,
+    isMax = false,
   }: EncodeSwapDebtBatchItemsArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
-    const account = subAccount?.account ?? toAccount
-
+    const deployment = this.deploymentService.getDeployment(chainId)
+    const evc = deployment.addresses.coreAddrs.evc
     // 1. Borrow from source vault
     const borrowAmount = BigInt(swapQuote.amountIn)
     items.push({
-      targetContract: fromVault,
-      onBehalfOfAccount: account,
+      targetContract: swapQuote.vaultIn,
+      onBehalfOfAccount: swapQuote.accountIn,
       data: encodeFunctionData({
         abi: executionAbis.borrowAbi,
         functionName: "borrow",
@@ -562,65 +561,39 @@ export class ExecutionService implements IExecutionService {
     })
 
     // 3. Verify swap and skim
+    if (swapQuote.verify.type !== "debtMax") {
+      throw new Error("Invalid swap quote type for repay - must be debtMax")
+    }
     items.push({
       targetContract: swapQuote.verify.verifierAddress,
       onBehalfOfAccount: swapQuote.accountOut,
       data: swapQuote.verify.verifierData
     })
 
-    // 4. Repay to destination vault (if verifyDebtMax wasn't used)
-    if (swapQuote.verify.type !== "debtMax") {
-      const repayAmount = BigInt(swapQuote.amountOut)
-      items.push({
-        targetContract: toVault,
-        onBehalfOfAccount: toAccount,
-        data: encodeFunctionData({
-          abi: executionAbis.repayAbi,
-          functionName: "repay",
-          args: [repayAmount, toAccount]
-        })
-      })
-    }
-
-    // 5. Handle controller management
-    if (subAccount) {
-      const fromVaultAddress = getAddress(fromVault)
-      const toVaultAddress = getAddress(toVault)
-      
-      // Disable controller for fromVault if it's enabled
-      const enabledControllers = subAccount.enabledControllers.map(getAddress)
-      const fromController = enabledControllers.find(
-        (controller: Address) => getAddress(controller) === fromVaultAddress
-      )
-      
-      if (fromController) {
+    if (swapQuote.accountOut !== swapQuote.accountIn) {
+      // 4. Disable controller if needed (for max swap)
+      if (isMax && disableControllerOnMax) {
         items.push({
-          targetContract: fromController,
-          onBehalfOfAccount: account,
+          targetContract: swapQuote.vaultIn,
+          onBehalfOfAccount: swapQuote.accountIn,
           data: encodeFunctionData({
             abi: executionAbis.disableControllerAbi,
             functionName: "disableController",
-            args: [account]
-          })
+            args: [swapQuote.accountIn],
+          }),
         })
       }
 
-      // Enable controller for toVault if not already enabled
-      const needsEnableController = !enabledControllers.some(
-        (controller: Address) => getAddress(controller) === toVaultAddress
-      )
-      
-      if (needsEnableController) {
-        const deployment = this.deploymentService.getDeployment(chainId)
-        const evc = deployment.addresses.coreAddrs.evc
+      // 5. Enable controller if needed
+      if (enableController) {
         items.push({
           targetContract: evc,
-          onBehalfOfAccount: account,
+          onBehalfOfAccount: zeroAddress,
           data: encodeFunctionData({
             abi: executionAbis.enableControllerAbi,
             functionName: "enableController",
-            args: [account, toVault]
-          })
+            args: [swapQuote.accountOut],
+          }),
         })
       }
     }
@@ -663,12 +636,171 @@ export class ExecutionService implements IExecutionService {
       const evc = deployment.addresses.coreAddrs.evc
       items.push({
         targetContract: evc,
-        onBehalfOfAccount: to,
+        onBehalfOfAccount: zeroAddress,
         data: encodeFunctionData({
           abi: executionAbis.enableCollateralAbi,
           functionName: "enableCollateral",
           args: [to, vault]
         })
+      })
+    }
+
+    return items
+  }
+
+
+
+  /**
+   * Encodes batch items for repaying with shares from the same asset and vault
+   */
+  private encodeRepayWithSharesSameAssetAndVault({
+    vault,
+    amount,
+    from,
+    receiver,
+    disableController,
+  }: {
+    vault: Address
+    amount: bigint
+    from: Address
+    receiver: Address
+    disableController: boolean
+  }): EVCBatchItem[] {
+    const items: EVCBatchItem[] = []
+
+    // Repay with shares
+    items.push({
+      targetContract: vault,
+      onBehalfOfAccount: from,
+      data: encodeFunctionData({
+        abi: executionAbis.repayWithSharesAbi,
+        functionName: "repayWithShares",
+        args: [amount, receiver],
+      }),
+    })
+
+    // Disable controller if needed (for max repay)
+    if (disableController) {
+      items.push({
+        targetContract: vault,
+        onBehalfOfAccount: receiver,
+        data: encodeFunctionData({
+          abi: executionAbis.disableControllerAbi,
+          functionName: "disableController",
+          args: [receiver],
+        }),
+      })
+
+    }
+
+    return items
+  }
+
+  /**
+   * Encodes batch items for repaying with shares from same asset but different vault
+   */
+  private encodeRepayWithSharesSameAssetDifferentVault({
+    fromVault,
+    toVault,
+    amount, // if isMax, this should be the total current debt
+    receiver,
+    from,
+    isMax,
+    disableControllerOnMax,
+  }: {
+    fromVault: Address
+    toVault: Address
+    amount: bigint
+    receiver: Address
+    from: Address
+    isMax: boolean
+    disableControllerOnMax: boolean
+  }): EVCBatchItem[] {
+    const items: EVCBatchItem[] = []
+
+    if (isMax) {
+      // if amount was max uint, skim and repay with shares would not revert if after withdraw funds were skimmed
+      // by other party
+      if (amount == maxUint256) {
+        throw new Error("Amount is maxUint256, cannot be used for max repay")
+      }
+      // For max repay: withdraw full debt amount +1 BPS to cover interest, then skim, then repayWithShares max
+      const amountWithExtra = (amount * 10_001n) / 10_000n
+
+      if (amountWithExtra >= maxUint256) {
+        throw new Error("Amount with extra exceeds maxUint256")
+      }
+
+      // 1. Withdraw from collateral vault
+      items.push({
+        targetContract: fromVault,
+        onBehalfOfAccount: from,
+        data: encodeFunctionData({
+          abi: executionAbis.withdrawAbi,
+          functionName: "withdraw",
+          args: [amountWithExtra, toVault, from],
+        }),
+      })
+
+      // 2. Skim exact withdrawal amount to liability vault
+      items.push({
+        targetContract: toVault,
+        onBehalfOfAccount: from,
+        data: encodeFunctionData({
+          abi: executionAbis.skimAbi,
+          functionName: "skim",
+          args: [amountWithExtra, receiver],
+        }),
+      })
+
+      // 3. Repay with shares (max)
+      items.push({
+        targetContract: toVault,
+        onBehalfOfAccount: receiver,
+        data: encodeFunctionData({
+          abi: executionAbis.repayWithSharesAbi,
+          functionName: "repayWithShares",
+          // max is ok now, because skim deposited exact amount and it is the full debt,
+          // so pre-existing balance will not be consumed
+          args: [maxUint256, receiver],
+        }),
+      })
+
+      // 4. Disable controller if needed
+      if (disableControllerOnMax) {
+        items.push({
+          targetContract: toVault,
+          onBehalfOfAccount: receiver,
+          data: encodeFunctionData({
+            abi: executionAbis.disableControllerAbi,
+            functionName: "disableController",
+            args: [receiver],
+          }),
+        })
+      }
+    } else {
+      // TODO this needs approval
+      // For partial repay: withdraw, then repay exact amount
+      // 1. Withdraw from collateral vault
+      items.push({
+        targetContract: fromVault,
+        onBehalfOfAccount: from,
+        data: encodeFunctionData({
+          abi: executionAbis.withdrawAbi,
+          functionName: "withdraw",
+          args: [amount, from, from],
+        }),
+      })
+
+      // 2. Repay exact amount
+      items.push({
+        targetContract: toVault,
+        onBehalfOfAccount: from,
+        data: encodeFunctionData({
+          abi: executionAbis.repayAbi,
+          functionName: "repay",
+          args: [amount, receiver],
+        }),
       })
     }
 

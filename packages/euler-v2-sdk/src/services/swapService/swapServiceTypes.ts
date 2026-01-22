@@ -61,12 +61,46 @@ export interface SwapQuote {
     meta?: unknown;
   };
   slippage: number; // actual slippage
-  swap: SwapBundle;
-  verify: VerifyBlock;
-  route: RouteHop[];
+  swap: SwapperData;
+  verify: SwapVerifierData;
+  route: SwapRouteHop[];
 }
 
-export interface SwapBundle {
+
+export interface GetRepayQuoteArgs {
+  chainId: number;
+  fromVault: Address;
+  fromAsset: Address;
+  fromAccount: Address;
+  liabilityVault: Address;
+  liabilityAsset: Address;
+  liabilityAmount: bigint;
+  currentDebt: bigint;
+  toAccount: Address;
+  origin: Address;
+  swapperMode: SwapperMode;
+  slippage: number;
+  collateralAmount?: bigint;
+  isMax?: boolean;
+  deadline?: number;
+}
+
+export interface GetSwapCollateralQuoteArgs {
+  chainId: number;
+  fromVault: Address;
+  toVault: Address;
+  fromAccount: Address;
+  toAccount: Address;
+  fromAsset: Address;
+  toAsset: Address;
+  amount: bigint;
+  origin: Address;
+  slippage: number;
+  deadline?: number;
+}
+
+
+export interface SwapperData {
   swapperAddress: Address;
   swapperData: Hex; // multicall calldata
   multicallItems: MulticallItem[];
@@ -78,11 +112,11 @@ export interface MulticallItem {
   data: Hex; // encoded call data for this step
 }
 
-export interface RouteHop {
+export interface SwapRouteHop {
   providerName: string;
 }
 
-export interface VerifyBlock {
+export interface SwapVerifierData {
   verifierAddress: Address;
   verifierData: Hex;
   type: SwapVerificationType;
@@ -96,3 +130,4 @@ export interface SwapsApiResponse {
   success: boolean;
   data: SwapQuote[];
 }
+

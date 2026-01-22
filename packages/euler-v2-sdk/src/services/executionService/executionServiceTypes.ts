@@ -1,5 +1,9 @@
 import { Address, Hex } from "viem";
 import type { SubAccount } from "../../entities/Account.js";
+import type {
+  SwapQuote,
+  SwapQuoteRequest,
+} from "../swapService/swapServiceTypes.js";
 
 export type EVCBatchItem = {
   targetContract: Address
@@ -69,37 +73,58 @@ export type EncodePullDebtBatchItemsArgs = {
   enableController?: boolean
 }
 
-export type EncodeRepayBatchItemsWithSwapArgs = {
+export type RepaySourceType = "wallet" | "collateral" | "savings"
+
+export type EncodeRepayWithSwapBatchItemsArgs = {
+  swapQuote: SwapQuote
+  maxWithdraw?: bigint // max assets available to withdraw. For buy orders, amountInMax may exceed the available assets and withdraw must be capped
+  isMax?: boolean
+  disableControllerOnMax?: boolean
+}
+
+export type EncodeRepayFromWalletBatchItemsArgs = {
   chainId: number
   liabilityVault: Address
   liabilityAmount: bigint
+  sender: Address
   receiver: Address
-  // Swap-related fields (when repaying from collateral)
-  collateralVault: Address
-  swapQuote: SwapQuoteForBatch
-  // Account management
-  subAccount?: SubAccount
   disableControllerOnMax?: boolean
+  isMax?: boolean
+}
+
+export type EncodeRepayFromDepositBatchItemsArgs = {
+  chainId: number
+  liabilityVault: Address
+  liabilityAmount: bigint
+  from: Address
+  receiver: Address
+  fromVault: Address
+  fromAsset: Address
+  liabilityAsset: Address
+  swapQuote?: SwapQuote
+  swapParams?: Omit<SwapQuoteRequest, "targetDebt" | "deadline"> & {
+    targetDebt?: bigint
+    deadline?: number
+  }
+  disableControllerOnMax?: boolean
+  isMax?: boolean
+  withdrawMax?: bigint
 }
 
 export type EncodeSwapCollateralBatchItemsArgs = {
   chainId: number
-  fromVault: Address
-  toVault: Address
-  fromAccount: Address
-  toAccount: Address
-  swapQuote: SwapQuoteForBatch
-  subAccount?: SubAccount
+  swapQuote: SwapQuote
+  enableCollateral?: boolean
+  disableCollateralOnMax?: boolean
+  isMax?: boolean
 }
 
 export type EncodeSwapDebtBatchItemsArgs = {
   chainId: number
-  fromVault: Address
-  toVault: Address
-  fromAccount: Address
-  toAccount: Address
-  swapQuote: SwapQuoteForBatch
-  subAccount?: SubAccount
+  swapQuote: SwapQuote
+  enableController?: boolean
+  disableControllerOnMax?: boolean
+  isMax?: boolean
 }
 
 export type EncodeTransferBatchItemsArgs = {
@@ -110,29 +135,4 @@ export type EncodeTransferBatchItemsArgs = {
   from: Address
   enableCollateralTo?: boolean
   disableCollateralFrom?: boolean
-}
-
-export type SwapQuoteForBatch = {
-  amountIn: string
-  amountInMax: string
-  amountOut: string
-  amountOutMin: string
-  accountIn: Address
-  accountOut: Address
-  vaultIn: Address
-  receiver: Address
-  swap: {
-    swapperAddress: Address
-    swapperData: Hex
-    multicallItems: Array<{ data: Hex }>
-  }
-  verify: {
-    verifierAddress: Address
-    verifierData: Hex
-    type: "skimMin" | "debtMax"
-    vault: Address
-    account: Address
-    amount: string
-    deadline: number
-  }
 }

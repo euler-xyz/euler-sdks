@@ -266,4 +266,32 @@ export const executionAbis = {
       stateMutability: "nonpayable",
     },
   ],
+  repayWithSharesAbi: [
+    {
+      type: "function",
+      name: "repayWithShares",
+      inputs: [
+        { name: "amount", type: "uint256" },
+        { name: "receiver", type: "address" },
+      ],
+      outputs: [
+        { name: "shares", type: "uint256" },
+        { name: "debt", type: "uint256" },
+      ],
+      stateMutability: "nonpayable",
+    },
+  ],
+  skimAbi: [
+    {
+      inputs: [
+        { name: "amount", type: "uint256" },
+        { name: "receiver", type: "address" },
+      ],
+      name: "skim",
+      outputs: [ 
+        { name: "", type: "uint256" },
+      ],
+      stateMutability: "nonpayable",
+    },
+  ]
 }

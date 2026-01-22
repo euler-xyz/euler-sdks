@@ -48,7 +48,7 @@ export class AccountVaultsSubgraphDataSource implements IAccountVaultsDataSource
       }),
     });
     const data = await response.json() as any;
- 
+
     const accountVaults: AccountVaults = {};
     parseResult("deposits", accountVaults, data.data?.trackingActiveAccount?.deposits || []);
     parseResult("borrows", accountVaults, data.data?.trackingActiveAccount?.borrows || []);
