@@ -237,7 +237,8 @@ export class ExecutionService implements IExecutionService {
       chainId,
       vault,
       amount,
-      account,
+      owner,
+      borrowAccount,
       receiver,
       enableController,
       currentController,
@@ -250,15 +251,14 @@ export class ExecutionService implements IExecutionService {
 
     // Add collateral if provided
     if (collateralVault && collateralAmount !== undefined && collateralAmount > 0n) {
-
       const depositItems = this.encodeDeposit({
         chainId,
         vault: collateralVault,
         amount: collateralAmount,
-        receiver: account,
+        receiver: borrowAccount,
         enableCollateral,
         permit2: collateralPermit2,
-        owner: account,
+        owner: owner,
       })
       items.push(...depositItems)
     }
@@ -267,11 +267,11 @@ export class ExecutionService implements IExecutionService {
     if (currentController && currentController !== vault) {
       items.push({
         targetContract: currentController,
-        onBehalfOfAccount: account,
+        onBehalfOfAccount: borrowAccount,
         data: encodeFunctionData({
           abi: executionAbis.disableControllerAbi,
           functionName: "disableController",
-          args: [account]
+          args: [borrowAccount]
         })
       })
     }
@@ -285,7 +285,7 @@ export class ExecutionService implements IExecutionService {
         data: encodeFunctionData({
           abi: executionAbis.enableControllerAbi,
           functionName: "enableController",
-          args: [account, vault]
+          args: [borrowAccount, vault]
         })
       })
     }
@@ -293,7 +293,7 @@ export class ExecutionService implements IExecutionService {
     // Add borrow operation
     items.push({
       targetContract: vault,
-      onBehalfOfAccount: account,
+      onBehalfOfAccount: borrowAccount,
       data: encodeFunctionData({
         abi: executionAbis.borrowAbi,
         functionName: "borrow",
@@ -304,7 +304,7 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
-  encodePullDebt({ chainId, vault, amount, from, enableController }: EncodePullDebtArgs): EVCBatchItem[] {
+  encodePullDebt({ chainId, vault, amount, from, to, enableController }: EncodePullDebtArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
     // Add enable controller if flag is set
@@ -317,7 +317,7 @@ export class ExecutionService implements IExecutionService {
         data: encodeFunctionData({
           abi: executionAbis.enableControllerAbi,
           functionName: "enableController",
-          args: [from, vault]
+          args: [to, vault]
         })
       })
     }
@@ -928,15 +928,19 @@ export class ExecutionService implements IExecutionService {
 
   /**
    * Gets the sub-account for a given account address from the Account entity
+   * Returns undefined when account is not available
    */
-  private getSubAccount(account: Account, accountAddress: Address): SubAccount | undefined {
+  private getSubAccount(account: Account | undefined, accountAddress: Address): SubAccount | undefined {
+    if (!account) return undefined
     return account.subAccounts.find(sub => getAddress(sub.account) === getAddress(accountAddress))
   }
 
   /**
    * Gets the position for a given vault and account address
+   * Returns undefined when account/sub-account/position is not available
    */
-  private getPosition(account: Account, accountAddress: Address, vault: Address): AccountPosition | undefined {
+  private getPosition(account: Account | undefined, accountAddress: Address, vault: Address): AccountPosition | undefined {
+    if (!account) return undefined
     const subAccount = this.getSubAccount(account, accountAddress)
     if (!subAccount) return undefined
     return subAccount.positions.find(pos => getAddress(pos.vault) === getAddress(vault))
@@ -944,8 +948,10 @@ export class ExecutionService implements IExecutionService {
 
   /**
    * Checks if a vault is enabled as collateral for an account
+   * Defaults to false (not enabled) when account/sub-account is not available
    */
-  private isCollateralEnabled(account: Account, accountAddress: Address, vault: Address): boolean {
+  private isCollateralEnabled(account: Account | undefined, accountAddress: Address, vault: Address): boolean {
+    if (!account) return false
     const subAccount = this.getSubAccount(account, accountAddress)
     if (!subAccount) return false
     return subAccount.enabledCollaterals.some(coll => getAddress(coll) === getAddress(vault))
@@ -953,8 +959,10 @@ export class ExecutionService implements IExecutionService {
 
   /**
    * Checks if a vault is enabled as controller for an account
+   * Defaults to false (not enabled) when account/sub-account is not available
    */
-  private isControllerEnabled(account: Account, accountAddress: Address, vault: Address): boolean {
+  private isControllerEnabled(account: Account | undefined, accountAddress: Address, vault: Address): boolean {
+    if (!account) return false
     const subAccount = this.getSubAccount(account, accountAddress)
     if (!subAccount) return false
     return subAccount.enabledControllers.some(ctrl => getAddress(ctrl) === getAddress(vault))
@@ -962,8 +970,10 @@ export class ExecutionService implements IExecutionService {
 
   /**
    * Gets the current controller for an account (there can only be one)
+   * Returns undefined when account/sub-account is not available
    */
-  private getCurrentController(account: Account, accountAddress: Address): Address | undefined {
+  private getCurrentController(account: Account | undefined, accountAddress: Address): Address | undefined {
+    if (!account) return undefined
     const subAccount = this.getSubAccount(account, accountAddress)
     if (!subAccount || subAccount.enabledControllers.length === 0) return undefined
     return subAccount.enabledControllers[0]
@@ -972,17 +982,18 @@ export class ExecutionService implements IExecutionService {
   /**
    * Determines if an approval is needed and whether to use permit2 or regular approval
    * Returns an empty array if no approval is needed, or an array of items (approval + permit2 if both needed)
+   * When account/position is not available, assumes no approvals exist and returns approval items
    */
   private determineApproval(
     account: Account,
-    accountAddress: Address,
     token: Address,
     vault: Address,
     amount: bigint,
     usePermit2: boolean = true,
     unlimitedApproval: boolean = true
   ): (ApproveCall | Permit2DataToSign)[] {
-    const position = this.getPosition(account, accountAddress, vault)
+
+    const position = this.getPosition(account, account.owner, vault)
     const deployment = this.deploymentService.getDeployment(account.chainId)
     const permit2 = deployment.addresses.coreAddrs.permit2
 
@@ -992,7 +1003,7 @@ export class ExecutionService implements IExecutionService {
     if (!position) {
       if (usePermit2) {
         // Check if permit2 is disabled for this account
-        const subAccount = this.getSubAccount(account, accountAddress)
+        const subAccount = this.getSubAccount(account, account.owner)
         if (subAccount?.isPermitDisabledMode) {
           // Fall back to regular approval
           return [{
@@ -1031,7 +1042,7 @@ export class ExecutionService implements IExecutionService {
 
     if (usePermit2) {
       // Check if permit2 is disabled for this account
-      const subAccount = this.getSubAccount(account, accountAddress)
+      const subAccount = this.getSubAccount(account, account.owner)
       // If sub-account is not found, assume permit2 is allowed (default behavior)
       if (subAccount?.isPermitDisabledMode) {
         // Fall back to regular approval
@@ -1108,31 +1119,24 @@ export class ExecutionService implements IExecutionService {
   // ========== Transaction plan functions ==========
 
   planDeposit(args: PlanDepositArgs): TransactionPlanItem[] {
-    const { chainId, vault, amount, receiver, account, usePermit2, unlimitedApproval = true } = args
+    const { vault, amount, receiver, account, asset, usePermit2, unlimitedApproval = true } = args
     const plan: TransactionPlanItem[] = []
 
-    // Get position to determine asset and check if collateral is enabled
-    const position = this.getPosition(account, receiver, vault)
-    if (!position) {
-      throw new Error(`Position not found for vault ${vault} and account ${receiver}`)
-    }
-
-    const asset = position.asset
+    // Default: collateral is not enabled when account/position is not available
     const isCollateralEnabled = this.isCollateralEnabled(account, receiver, vault)
 
-    // Check if approval is needed (deposit from wallet needs token approval)
-    const approval = this.determineApproval(account, receiver, asset, vault, amount, usePermit2, unlimitedApproval)
+    const approval = this.determineApproval(account, asset, vault, amount, usePermit2, unlimitedApproval)
     if (approval.length > 0) {
       plan.push(...approval)
     }
 
     // Build EVC batch items
     const batchItems = this.encodeDeposit({
-      chainId,
+      chainId: account.chainId,
       vault,
       amount,
       receiver,
-      owner: receiver,
+      owner: account.owner,
       enableCollateral: !isCollateralEnabled,
       // Permit2 is handled separately in the plan
     })
@@ -1146,35 +1150,28 @@ export class ExecutionService implements IExecutionService {
   }
 
   planMint(args: PlanMintArgs): TransactionPlanItem[] {
-    const { chainId, vault, shares, receiver, account, usePermit2, unlimitedApproval = true } = args
+    const { vault, shares, receiver, account, asset, usePermit2, unlimitedApproval = true } = args
     const plan: TransactionPlanItem[] = []
 
-    // Get position to determine asset and check if collateral is enabled
-    const position = this.getPosition(account, receiver, vault)
-    if (!position) {
-      throw new Error(`Position not found for vault ${vault} and account ${receiver}`)
-    }
-
-    const asset = position.asset
+    // Default: collateral is not enabled when account/position is not available
     const isCollateralEnabled = this.isCollateralEnabled(account, receiver, vault)
 
-    // Check if approval is needed (mint from wallet needs token approval)
     // For mint, we need the asset amount. We'll use a conservative estimate based on shares
     // In practice, you'd query the vault's convertToAssets(shares) to get the exact amount
     // For now, we'll use shares as a proxy (this may overestimate, but that's safer)
     const estimatedAssetAmount = shares // This should be convertToAssets(shares) in practice
-    const approval = this.determineApproval(account, receiver, asset, vault, estimatedAssetAmount, usePermit2, unlimitedApproval)
+    const approval = this.determineApproval(account, asset, vault, estimatedAssetAmount, usePermit2, unlimitedApproval)
     if (approval.length > 0) {
       plan.push(...approval)
     }
 
     // Build EVC batch items
     const batchItems = this.encodeMint({
-      chainId,
+      chainId: account.chainId,
       vault,
       shares,
       receiver,
-      owner: receiver,
+      owner: account.owner,
       enableCollateral: !isCollateralEnabled,
       // Permit2 is handled separately in the plan
     })
@@ -1188,27 +1185,27 @@ export class ExecutionService implements IExecutionService {
   }
 
   planWithdraw(args: PlanWithdrawArgs): TransactionPlanItem[] {
-    const { chainId, vault, assets, receiver, account } = args
+    const { vault, assets, receiver, account } = args
     const plan: TransactionPlanItem[] = []
 
     // Get position to check collateral state
     const position = this.getPosition(account, receiver, vault)
-    if (!position) {
-      throw new Error(`Position not found for vault ${vault} and account ${receiver}`)
+
+    if (!position || position.assets <= assets) {
+      throw new Error(`Position not found or assets are not sufficient for withdrawal`)
     }
 
     // Check if we're withdrawing all collateral (disable if so)
     // We disable collateral when all assets are withdrawn
-    const willHaveNoCollateral = position.assets <= assets
-    const disableCollateral = willHaveNoCollateral && position.isCollateral
+    const disableCollateral = position.assets <= assets && position.isCollateral
 
     // Build EVC batch items
     const batchItems = this.encodeWithdraw({
-      chainId,
+      chainId: account.chainId,
       vault,
       assets,
       receiver,
-      owner: receiver,
+      owner: account.owner,
       disableCollateral,
     })
 
@@ -1221,23 +1218,23 @@ export class ExecutionService implements IExecutionService {
   }
 
   planRedeem(args: PlanRedeemArgs): TransactionPlanItem[] {
-    const { chainId, vault, shares, receiver, account } = args
+    const { vault, shares, receiver, account } = args
     const plan: TransactionPlanItem[] = []
 
     // Get position to check collateral state
     const position = this.getPosition(account, receiver, vault)
-    if (!position) {
-      throw new Error(`Position not found for vault ${vault} and account ${receiver}`)
+
+    if (!position || position.shares <= shares) {
+      throw new Error(`Position not found or shares are not sufficient for redemption`)
     }
 
     // Check if we're redeeming all collateral (disable if so)
     // We disable collateral when all shares are redeemed
-    const willHaveNoCollateral = position.shares <= shares
-    const disableCollateral = willHaveNoCollateral && position.isCollateral
+    const disableCollateral = position.shares <= shares && position.isCollateral
 
     // Build EVC batch items
     const batchItems = this.encodeRedeem({
-      chainId,
+      chainId: account.chainId,
       vault,
       shares,
       receiver,
@@ -1254,81 +1251,47 @@ export class ExecutionService implements IExecutionService {
   }
 
   planBorrow(args: PlanBorrowArgs): TransactionPlanItem[] {
-    const { chainId, vault, amount, receiver, account, collateralVault, collateralAmount, usePermit2, unlimitedApproval = true } = args
+    const { vault, amount, receiver, borrowAccount, account, collateral, usePermit2, unlimitedApproval = true } = args
     const plan: TransactionPlanItem[] = []
 
-    // Get receiver sub-account
-    const receiverSubAccount = this.getSubAccount(account, receiver)
-    if (!receiverSubAccount) {
-      throw new Error(`Sub-account not found for ${receiver}`)
-    }
-
-    // Check if collateral needs to be enabled
-    let enableCollateral = false
-    if (collateralVault && collateralAmount !== undefined && collateralAmount > 0n) {
-      enableCollateral = !this.isCollateralEnabled(account, receiver, collateralVault)
-    }
+    const enableCollateral = collateral && collateral.amount > 0n
+      ? !this.isCollateralEnabled(account, borrowAccount, collateral.vault)
+      : false
 
     // Check if controller needs to be enabled
-    const currentController = this.getCurrentController(account, receiver)
-    const enableController = !this.isControllerEnabled(account, receiver, vault)
+    // Default: controller is not enabled when account/sub-account is not available
+    const currentController = this.getCurrentController(account, borrowAccount)
+    const enableController = !this.isControllerEnabled(account, borrowAccount, vault)
 
-    // If there's a different controller, it will be disabled in encodeBorrow
-    // Only one controller can be enabled at a time
+    if (collateral && collateral.amount > 0n) {
 
-    // Check if approval is needed for collateral deposit
-    // Collateral is deposited from wallet, so we need approval from the account owner
-    // Note: encodeBorrow's encodeDeposit uses account (receiver) as owner, which works
-    // because EVC allows accounts to act on behalf of themselves. The actual tokens
-    // come from the wallet via permit2 or existing allowance from account.owner.
-    let collateralApproval: (ApproveCall | Permit2DataToSign)[]
-    if (collateralVault && collateralAmount !== undefined && collateralAmount > 0n) {
-      // Get the asset address from the collateral vault position
-      // If position doesn't exist yet, we'd need to fetch it from the vault service
-      // For now, we'll try to get it from a position if it exists
-      const collateralPosition = this.getPosition(account, receiver, collateralVault)
-      const asset = collateralPosition?.asset
-      
-      if (asset) {
-        // Approval is needed from the account owner (who owns the wallet tokens)
-        // We check approval for the account owner -> vault
-        collateralApproval = this.determineApproval(
-          account,
-          account.owner, // Tokens come from owner's wallet
-          asset,
-          collateralVault,
-          collateralAmount,
-          usePermit2,
-          unlimitedApproval
-        )
-        if (collateralApproval.length > 0) {
-          plan.push(...collateralApproval)
-        }
-      } else {
-        // If position doesn't exist, we can't determine the asset address
-        // In practice, you'd need to fetch it from the vault service
-        // For now, we'll skip the approval check (user will need to handle this manually)
+      // Approval is needed from the account owner (who owns the wallet tokens)
+      // We check approval for the account owner -> vault
+      const collateralApproval = this.determineApproval(
+        account,
+        collateral.asset,
+        collateral.vault,
+        collateral.amount,
+        usePermit2,
+        unlimitedApproval
+      )
+      if (collateralApproval.length > 0) {
+        plan.push(...collateralApproval)
       }
     }
 
-    // Build EVC batch items
-    // encodeBorrow uses account as both owner and receiver for the deposit
-    // This works because EVC allows the account to act on behalf of itself
-    // The actual tokens come from the wallet via permit2 or existing allowance
     const batchItems = this.encodeBorrow({
-      chainId,
+      chainId: account.chainId,
       vault,
       amount,
-      account: receiver,
+      owner: account.owner,
+      borrowAccount: receiver,
       receiver,
       enableController,
       currentController: currentController || undefined,
       enableCollateral,
-      collateralVault,
-      collateralAmount,
-      // Permit2 is handled separately in the plan - we don't pass it here
-      // Note: encodeBorrow would need to be updated to support owner parameter
-      // for wallet deposits, or we handle permit2 separately
+      collateralVault: collateral?.vault,
+      collateralAmount: collateral?.amount,
     })
 
     plan.push({
@@ -1340,34 +1303,31 @@ export class ExecutionService implements IExecutionService {
   }
 
   planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlanItem[] {
-    const { chainId, liabilityVault, liabilityAmount, receiver, account, isMax = false, usePermit2, unlimitedApproval = true } = args
+    const { liabilityVault, liabilityAmount, receiver, account, usePermit2, unlimitedApproval = true } = args
     const plan: TransactionPlanItem[] = []
 
     // Get position to determine asset
     const position = this.getPosition(account, receiver, liabilityVault)
     if (!position) {
-      throw new Error(`Position not found for vault ${liabilityVault} and account ${receiver}`)
+      throw new Error(`Position not found. Liability vault: ${liabilityVault}, Account: ${receiver}`)
     }
 
-    const asset = position.asset
-
-    // Check if approval is needed (repay from wallet needs token approval)
-    const approval = this.determineApproval(account, receiver, asset, liabilityVault, liabilityAmount, usePermit2, unlimitedApproval)
+    const approval = this.determineApproval(account, position.asset, liabilityVault, liabilityAmount, usePermit2, unlimitedApproval)
     if (approval.length > 0) {
       plan.push(...approval)
     }
 
+    const isMax = position.borrowed <= liabilityAmount
     // Determine if controller should be disabled (only when full debt is repaid)
-    const disableControllerOnMax = isMax
 
     // Build EVC batch items
     const batchItems = this.encodeRepayFromWallet({
-      chainId,
-      sender: receiver,
+      chainId: account.chainId,
+      sender: account.owner,
       liabilityVault,
       liabilityAmount,
       receiver,
-      disableControllerOnMax,
+      disableControllerOnMax: true,
       isMax,
       // Permit2 is handled separately in the plan
     })
@@ -1381,18 +1341,17 @@ export class ExecutionService implements IExecutionService {
   }
 
   async planRepayFromDeposit(args: PlanRepayFromDepositArgs): Promise<TransactionPlanItem[]> {
-    const { chainId, liabilityVault, liabilityAmount, receiver, fromVault, account, isMax = false, usePermit2, unlimitedApproval = true } = args
+    const { liabilityVault, liabilityAmount, receiver, fromVault, fromAccount, account, usePermit2, unlimitedApproval = true } = args
     const plan: TransactionPlanItem[] = []
 
     // Get positions
     const liabilityPosition = this.getPosition(account, receiver, liabilityVault)
-    const fromPosition = this.getPosition(account, receiver, fromVault)
+    const fromPosition = this.getPosition(account, fromAccount, fromVault)
 
-    if (!liabilityPosition) {
-      throw new Error(`Position not found for vault ${liabilityVault} and account ${receiver}`)
-    }
-    if (!fromPosition) {
-      throw new Error(`Position not found for vault ${fromVault} and account ${receiver}`)
+    // If positions are not available, we can't determine asset addresses
+    // We'll need to throw an error or require asset addresses to be provided
+    if (!liabilityPosition || !fromPosition) {
+      throw new Error(`Positions not found. Liability vault: ${liabilityVault}, From vault: ${fromVault}, Account: ${receiver}. Asset addresses are required when positions are not available.`)
     }
 
     const liabilityAsset = liabilityPosition.asset
@@ -1407,18 +1366,18 @@ export class ExecutionService implements IExecutionService {
     // If same asset, different vault, we might need approval for the withdraw/repay path
     if (fromVault !== liabilityVault) {
       // Check if approval is needed for repay
-      const approval = this.determineApproval(account, receiver, liabilityAsset, liabilityVault, liabilityAmount, usePermit2, unlimitedApproval)
+      const approval = this.determineApproval(account, liabilityAsset, liabilityVault, liabilityAmount, usePermit2, unlimitedApproval)
       if (approval.length > 0) {
         plan.push(...approval)
       }
     }
 
     // Determine if controller should be disabled (only when full debt is repaid)
-    const disableControllerOnMax = isMax
+    const isMax = liabilityPosition.borrowed <= liabilityAmount
 
     // Build EVC batch items
     const batchItems = await this.encodeRepayFromDeposit({
-      chainId,
+      chainId: account.chainId,
       liabilityVault,
       liabilityAsset,
       liabilityAmount,
@@ -1426,7 +1385,7 @@ export class ExecutionService implements IExecutionService {
       receiver,
       fromVault,
       fromAsset,
-      disableControllerOnMax,
+      disableControllerOnMax: true,
       isMax,
       // Permit2 is handled separately in the plan
     })
@@ -1440,18 +1399,23 @@ export class ExecutionService implements IExecutionService {
   }
 
   planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlanItem[] {
-    const { swapQuote, maxWithdraw, isMax = false, account } = args
+    const { swapQuote, account } = args
     const plan: TransactionPlanItem[] = []
 
-    // Determine if controller should be disabled (only when full debt is repaid)
-    const disableControllerOnMax = isMax
+    const liabilityPosition = this.getPosition(account, swapQuote.accountOut, swapQuote.vaultIn)
+    const fromPosition = this.getPosition(account, swapQuote.accountIn, swapQuote.vaultIn)
+    if (!liabilityPosition || !fromPosition) {
+      throw new Error(`Positions not found. Liability vault: ${swapQuote.vaultIn}, From vault: ${swapQuote.vaultIn}, Account: ${swapQuote.accountOut}`)
+    }
 
+    const isMax = liabilityPosition.borrowed <= BigInt(swapQuote.amountOutMin)
+    const maxWithdraw = fromPosition.assets
     // Build EVC batch items
     const batchItems = this.encodeRepayWithSwap({
       swapQuote,
       maxWithdraw,
       isMax,
-      disableControllerOnMax,
+      disableControllerOnMax: true,
     })
 
     plan.push({
@@ -1463,22 +1427,29 @@ export class ExecutionService implements IExecutionService {
   }
 
   planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlanItem[] {
-    const { chainId, swapQuote, account, isMax = false } = args
+    const { swapQuote, account } = args
     const plan: TransactionPlanItem[] = []
 
     // Check if source collateral needs to be disabled (when all is swapped)
+    // Default: when position is not available, assume amounts are zero, so we don't disable collateral
     const sourcePosition = this.getPosition(account, swapQuote.accountIn, swapQuote.vaultIn)
-    const disableCollateralOnMax = isMax && sourcePosition?.isCollateral === true
+
+    if (!sourcePosition) {
+      throw new Error(`Position not found. Vault: ${swapQuote.vaultIn}, Account: ${swapQuote.accountIn}`)
+    }
+
+    const isMax = sourcePosition.assets <= BigInt(swapQuote.amountInMax)
 
     // Check if destination collateral needs to be enabled
+    // Default: collateral is not enabled when account/sub-account is not available
     const enableCollateral = !this.isCollateralEnabled(account, swapQuote.accountOut, swapQuote.receiver)
 
     // Build EVC batch items
     const batchItems = this.encodeSwapCollateral({
-      chainId,
+      chainId: account.chainId,
       swapQuote,
       enableCollateral,
-      disableCollateralOnMax,
+      disableCollateralOnMax: true,
       isMax,
     })
 
@@ -1491,25 +1462,26 @@ export class ExecutionService implements IExecutionService {
   }
 
   planSwapDebt(args: PlanSwapDebtArgs): TransactionPlanItem[] {
-    const { chainId, swapQuote, account, isMax = false } = args
+    const { swapQuote, account } = args
     const plan: TransactionPlanItem[] = []
 
-    // Check if source controller needs to be disabled (when all debt is swapped)
-    const sourcePosition = this.getPosition(account, swapQuote.accountIn, swapQuote.vaultIn)
-    const disableControllerOnMax = isMax && sourcePosition?.isController === true
 
-    // Check if destination controller needs to be enabled
-    // Note: swapDebt borrows from vaultIn and repays to vaultOut (which is the receiver)
-    // The controller should be enabled on the account that will have the debt
+    const sourcePosition = this.getPosition(account, swapQuote.accountIn, swapQuote.vaultIn)
+    if (!sourcePosition) {
+      throw new Error(`Position not found. Vault: ${swapQuote.vaultIn}, Account: ${swapQuote.accountIn}`)
+    }
+
+    const isMax = sourcePosition.borrowed <= BigInt(swapQuote.amountOutMin)
+
     const enableController = swapQuote.accountOut !== swapQuote.accountIn && 
       !this.isControllerEnabled(account, swapQuote.accountOut, swapQuote.vaultIn)
 
     // Build EVC batch items
     const batchItems = this.encodeSwapDebt({
-      chainId,
+      chainId: account.chainId,
       swapQuote,
       enableController,
-      disableControllerOnMax,
+      disableControllerOnMax: true,
       isMax,
     })
 
@@ -1522,26 +1494,22 @@ export class ExecutionService implements IExecutionService {
   }
 
   planTransfer(args: PlanTransferArgs): TransactionPlanItem[] {
-    const { chainId, vault, to, amount, account } = args
+    const { vault, to, amount, from, account } = args
     const plan: TransactionPlanItem[] = []
 
-    // Get sender position
-    const fromPosition = this.getPosition(account, account.owner, vault)
+    const fromPosition = this.getPosition(account, from, vault)
     if (!fromPosition) {
-      throw new Error(`Position not found for vault ${vault} and account ${account.owner}`)
+      throw new Error(`Position not found. Vault: ${vault}, Account: ${from}`)
     }
 
-    // Check if source collateral needs to be disabled (when all is transferred)
-    // We disable collateral when all shares are transferred
-    const willHaveNoCollateral = fromPosition.shares <= amount
-    const disableCollateralFrom = willHaveNoCollateral && fromPosition.isCollateral
+    const isMax = fromPosition.shares <= amount
+    const disableCollateralFrom = isMax && fromPosition.isCollateral
 
-    // Check if destination collateral needs to be enabled
     const enableCollateralTo = !this.isCollateralEnabled(account, to, vault)
 
     // Build EVC batch items
     const batchItems = this.encodeTransfer({
-      chainId,
+      chainId: account.chainId,
       vault,
       to,
       amount,
@@ -1559,18 +1527,18 @@ export class ExecutionService implements IExecutionService {
   }
 
   planPullDebt(args: PlanPullDebtArgs): TransactionPlanItem[] {
-    const { chainId, vault, amount, account } = args
+    const { vault, amount, from, to, account } = args
     const plan: TransactionPlanItem[] = []
 
-    // Check if controller needs to be enabled
-    const enableController = !this.isControllerEnabled(account, account.owner, vault)
+    const enableController = !this.isControllerEnabled(account, to, vault)
 
     // Build EVC batch items
     const batchItems = this.encodePullDebt({
-      chainId,
+      chainId: account.chainId,
       vault,
       amount,
-      from: account.owner,
+      from,
+      to,
       enableController,
     })
 

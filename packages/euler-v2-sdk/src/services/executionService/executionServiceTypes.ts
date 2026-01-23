@@ -1,5 +1,5 @@
 import { Address, Hex } from "viem";
-import type { SubAccount } from "../../entities/Account.js";
+import type { Account, SubAccount } from "../../entities/Account.js";
 import type {
   SwapQuote,
   SwapQuoteRequest,
@@ -54,7 +54,8 @@ export type EncodeBorrowArgs = {
   chainId: number
   vault: Address
   amount: bigint
-  account: Address
+  owner: Address
+  borrowAccount: Address
   receiver: Address
   currentController?: Address
   enableController?: boolean
@@ -78,6 +79,7 @@ export type EncodePullDebtArgs = {
   vault: Address
   amount: bigint
   from: Address
+  to: Address
   enableController?: boolean
 }
 
@@ -220,108 +222,102 @@ export type TransactionPlanItem = ApproveCall | Permit2DataToSign | EVCBatchItem
 
 // Plan function argument types
 export type PlanDepositArgs = {
-  chainId: number
   vault: Address
   amount: bigint
   receiver: Address
-  account: import("../../entities/Account.js").Account
+  account: Account
+  asset: Address // Asset address - required when account/position is not available
   usePermit2?: boolean
   unlimitedApproval?: boolean
 }
 
 export type PlanMintArgs = {
-  chainId: number
   vault: Address
   shares: bigint
   receiver: Address
-  account: import("../../entities/Account.js").Account
+  account: Account
+  asset: Address // Asset address - required when account/position is not available
   usePermit2?: boolean
   unlimitedApproval?: boolean
 }
 
 export type PlanWithdrawArgs = {
-  chainId: number
   vault: Address
   assets: bigint
   receiver: Address
-  account: import("../../entities/Account.js").Account
+  account: Account
 }
 
 export type PlanRedeemArgs = {
-  chainId: number
   vault: Address
   shares: bigint
   receiver: Address
-  account: import("../../entities/Account.js").Account
+  account: Account
 }
 
 export type PlanBorrowArgs = {
-  chainId: number
   vault: Address
   amount: bigint
+  borrowAccount: Address
   receiver: Address
-  account: import("../../entities/Account.js").Account
-  collateralVault?: Address
-  collateralAmount?: bigint
+  account: Account
+  collateral?: {
+    vault: Address
+    amount: bigint
+    asset: Address
+  }
   usePermit2?: boolean
   unlimitedApproval?: boolean
 }
 
 export type PlanRepayFromWalletArgs = {
-  chainId: number
   liabilityVault: Address
   liabilityAmount: bigint
   receiver: Address
-  account: import("../../entities/Account.js").Account
-  isMax?: boolean
+  account: Account
   usePermit2?: boolean
   unlimitedApproval?: boolean
 }
 
 export type PlanRepayFromDepositArgs = {
-  chainId: number
   liabilityVault: Address
   liabilityAmount: bigint
   receiver: Address
   fromVault: Address
-  account: import("../../entities/Account.js").Account
-  isMax?: boolean
+  fromAccount: Address
+  account: Account
   usePermit2?: boolean
   unlimitedApproval?: boolean
 }
 
 export type PlanRepayWithSwapArgs = {
   swapQuote: SwapQuote
-  maxWithdraw?: bigint
-  isMax?: boolean
-  account: import("../../entities/Account.js").Account
+  account: Account
 }
 
 export type PlanSwapCollateralArgs = {
-  chainId: number
   swapQuote: SwapQuote
-  account: import("../../entities/Account.js").Account
-  isMax?: boolean
+  account: Account
 }
 
 export type PlanSwapDebtArgs = {
-  chainId: number
   swapQuote: SwapQuote
-  account: import("../../entities/Account.js").Account
-  isMax?: boolean
+  account: Account
 }
 
 export type PlanTransferArgs = {
-  chainId: number
   vault: Address
+  from: Address
   to: Address
   amount: bigint
-  account: import("../../entities/Account.js").Account
+  account: Account
 }
 
 export type PlanPullDebtArgs = {
   chainId: number
   vault: Address
+  from: Address
+  to: Address
   amount: bigint
-  account: import("../../entities/Account.js").Account
+  account: Account
 }

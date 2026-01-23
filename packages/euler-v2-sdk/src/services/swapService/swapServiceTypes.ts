@@ -32,7 +32,7 @@ export interface SwapQuoteRequest {
   deadline: number; // timestamp in seconds
   dustAccount?: Address; // account receiving dust deposits from e.g. over-swap repays
 }
-
+// TODO parse this to bigint
 export interface SwapQuote {
   amountIn: string;
   amountInMax: string;
