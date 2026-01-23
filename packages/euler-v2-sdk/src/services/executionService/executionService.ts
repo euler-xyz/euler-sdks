@@ -3,33 +3,33 @@ import { DeploymentService } from "../deploymentService/index.js";
 import { executionAbis } from "./executionAbis.js";
 import type {
   EVCBatchItem,
-  EncodeDepositBatchItemsArgs,
-  EncodeMintBatchItemsArgs,
-  EncodeWithdrawBatchItemsArgs,
-  EncodeRedeemBatchItemsArgs,
-  EncodeBorrowBatchItemsArgs,
-  EncodePullDebtBatchItemsArgs,
-  EncodeRepayWithSwapBatchItemsArgs,
-  EncodeRepayFromWalletBatchItemsArgs,
-  EncodeRepayFromDepositBatchItemsArgs,
-  EncodeSwapDebtBatchItemsArgs,
-  EncodeTransferBatchItemsArgs,
-  EncodeSwapCollateralBatchItemsArgs,
+  EncodeDepositArgs,
+  EncodeMintArgs,
+  EncodeWithdrawArgs,
+  EncodeRedeemArgs,
+  EncodeBorrowArgs,
+  EncodePullDebtArgs,
+  EncodeRepayWithSwapArgs,
+  EncodeRepayFromWalletArgs,
+  EncodeRepayFromDepositArgs,
+  EncodeSwapDebtArgs,
+  EncodeTransferArgs,
+  EncodeSwapCollateralArgs,
 } from "./executionServiceTypes.js";
 
 export interface IExecutionService {
-  encodeDepositBatchItems(args: EncodeDepositBatchItemsArgs): EVCBatchItem[];
-  encodeMintBatchItems(args: EncodeMintBatchItemsArgs): EVCBatchItem[];
-  encodeWithdrawBatchItems(args: EncodeWithdrawBatchItemsArgs): EVCBatchItem[];
-  encodeRedeemBatchItems(args: EncodeRedeemBatchItemsArgs): EVCBatchItem[];
-  encodeBorrowBatchItems(args: EncodeBorrowBatchItemsArgs): EVCBatchItem[];
-  encodePullDebtBatchItems(args: EncodePullDebtBatchItemsArgs): EVCBatchItem[];
-  encodeRepayFromWalletBatchItems(args: EncodeRepayFromWalletBatchItemsArgs): EVCBatchItem[];
-  encodeRepayFromDepositBatchItems(args: EncodeRepayFromDepositBatchItemsArgs): Promise<EVCBatchItem[]>;
-  encodeRepayWithSwapBatchItems(args: EncodeRepayWithSwapBatchItemsArgs): EVCBatchItem[];
-  encodeSwapCollateralBatchItems(args: EncodeSwapCollateralBatchItemsArgs): EVCBatchItem[];
-  encodeSwapDebtBatchItems(args: EncodeSwapDebtBatchItemsArgs): EVCBatchItem[];
-  encodeTransferBatchItems(args: EncodeTransferBatchItemsArgs): EVCBatchItem[];
+  encodeDeposit(args: EncodeDepositArgs): EVCBatchItem[];
+  encodeMint(args: EncodeMintArgs): EVCBatchItem[];
+  encodeWithdraw(args: EncodeWithdrawArgs): EVCBatchItem[];
+  encodeRedeem(args: EncodeRedeemArgs): EVCBatchItem[];
+  encodeBorrow(args: EncodeBorrowArgs): EVCBatchItem[];
+  encodePullDebt(args: EncodePullDebtArgs): EVCBatchItem[];
+  encodeRepayFromWallet(args: EncodeRepayFromWalletArgs): EVCBatchItem[];
+  encodeRepayFromDeposit(args: EncodeRepayFromDepositArgs): Promise<EVCBatchItem[]>;
+  encodeRepayWithSwap(args: EncodeRepayWithSwapArgs): EVCBatchItem[];
+  encodeSwapCollateral(args: EncodeSwapCollateralArgs): EVCBatchItem[];
+  encodeSwapDebt(args: EncodeSwapDebtArgs): EVCBatchItem[];
+  encodeTransfer(args: EncodeTransferArgs): EVCBatchItem[];
 }
 
 // TODO explain how this service is coupled to the concrete abis of ERC4626, permit2 and EVK. 
@@ -48,7 +48,7 @@ export class ExecutionService implements IExecutionService {
   }
   
 
-  encodeDepositBatchItems({ chainId, vault, amount, receiver, enableCollateral }: EncodeDepositBatchItemsArgs): EVCBatchItem[] {
+  encodeDeposit({ chainId, vault, amount, receiver, enableCollateral }: EncodeDepositArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
     // Add enable collateral if flag is set
@@ -81,7 +81,7 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
-  encodeMintBatchItems({ chainId, vault, shares, receiver, enableCollateral }: EncodeMintBatchItemsArgs): EVCBatchItem[] {
+  encodeMint({ chainId, vault, shares, receiver, enableCollateral }: EncodeMintArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
     // Add enable collateral if flag is set
@@ -113,7 +113,7 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
-  encodeWithdrawBatchItems({ chainId, vault, assets, receiver, owner, disableCollateral }: EncodeWithdrawBatchItemsArgs): EVCBatchItem[] {
+  encodeWithdraw({ chainId, vault, assets, receiver, owner, disableCollateral }: EncodeWithdrawArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
     // Add disable collateral if flag is set
@@ -145,7 +145,7 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
-  encodeRedeemBatchItems({ chainId, vault, shares, receiver, owner, disableCollateral }: EncodeRedeemBatchItemsArgs): EVCBatchItem[] {
+  encodeRedeem({ chainId, vault, shares, receiver, owner, disableCollateral }: EncodeRedeemArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
     // Add disable collateral if flag is set
@@ -177,7 +177,7 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
-  encodeBorrowBatchItems({
+  encodeBorrow({
     chainId,
     vault,
     amount,
@@ -185,7 +185,7 @@ export class ExecutionService implements IExecutionService {
     subAccount,
     collateralVault,
     collateralAmount,
-  }: EncodeBorrowBatchItemsArgs): EVCBatchItem[] {
+  }: EncodeBorrowArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
     const account = subAccount?.account ?? receiver
     // Add collateral deposit if provided
@@ -199,7 +199,7 @@ export class ExecutionService implements IExecutionService {
         needsEnableCollateral = !isCollateralEnabled
       }
 
-      const depositItems = this.encodeDepositBatchItems({
+      const depositItems = this.encodeDeposit({
         chainId,
         vault: collateralVault,
         amount: collateralAmount,
@@ -264,7 +264,7 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
-  encodePullDebtBatchItems({ chainId, vault, amount, from, enableController }: EncodePullDebtBatchItemsArgs): EVCBatchItem[] {
+  encodePullDebt({ chainId, vault, amount, from, enableController }: EncodePullDebtArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
     // Add enable controller if flag is set
@@ -299,7 +299,7 @@ export class ExecutionService implements IExecutionService {
   /**
    * Encodes batch items for repaying debt from wallet.
    */
-  encodeRepayFromWalletBatchItems(args: EncodeRepayFromWalletBatchItemsArgs): EVCBatchItem[] {
+  encodeRepayFromWallet(args: EncodeRepayFromWalletArgs): EVCBatchItem[] {
     const {
       sender,
       liabilityVault,
@@ -345,7 +345,7 @@ export class ExecutionService implements IExecutionService {
    * 1. Same asset, same vault - use repayWithShares
    * 2. Same asset, different vault - withdraw and repay
    */
-  async encodeRepayFromDepositBatchItems(args: EncodeRepayFromDepositBatchItemsArgs): Promise<EVCBatchItem[]> {
+  async encodeRepayFromDeposit(args: EncodeRepayFromDepositArgs): Promise<EVCBatchItem[]> {
     const {
       liabilityVault,
       liabilityAsset,
@@ -382,7 +382,7 @@ export class ExecutionService implements IExecutionService {
       })
     }
 
-    throw new Error("encodeRepayFromDepositBatchItems only supports same-asset paths")
+    throw new Error("encodeRepayFromDeposit only supports same-asset paths")
   }
 
   /**
@@ -390,8 +390,8 @@ export class ExecutionService implements IExecutionService {
    * Requires a swap quote to be provided.
    * Make sure the swap quote comes from swapService.getRepayQuotes() or follows the same structure.
    */
-  encodeRepayWithSwapBatchItems(
-    args: EncodeRepayWithSwapBatchItemsArgs,
+  encodeRepayWithSwap(
+    args: EncodeRepayWithSwapArgs,
   ): EVCBatchItem[] {
     const {
       swapQuote,
@@ -456,7 +456,7 @@ export class ExecutionService implements IExecutionService {
    * Encodes batch items for swapping collateral from one vault to another.
    * Make sure the swap quote comes from swapService.getSwapCollateralQuotes() or follows the same structure.
    */
-  encodeSwapCollateralBatchItems(args: EncodeSwapCollateralBatchItemsArgs): EVCBatchItem[] {
+  encodeSwapCollateral(args: EncodeSwapCollateralArgs): EVCBatchItem[] {
     const {
       chainId,
       swapQuote,
@@ -531,13 +531,13 @@ export class ExecutionService implements IExecutionService {
    * Encodes batch items for swapping debt from one vault to another.
    * Make sure the swap quote comes from swapService.getRepayQuotes() or follows the same structure.
    */
-  encodeSwapDebtBatchItems({
+  encodeSwapDebt({
     chainId,
     swapQuote,
     enableController = true,
     disableControllerOnMax = true,
     isMax = false,
-  }: EncodeSwapDebtBatchItemsArgs): EVCBatchItem[] {
+  }: EncodeSwapDebtArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
     const deployment = this.deploymentService.getDeployment(chainId)
     const evc = deployment.addresses.coreAddrs.evc
@@ -601,7 +601,7 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
-  encodeTransferBatchItems({ chainId, vault, to, amount, from, enableCollateralTo, disableCollateralFrom }: EncodeTransferBatchItemsArgs): EVCBatchItem[] {
+  encodeTransfer({ chainId, vault, to, amount, from, enableCollateralTo, disableCollateralFrom }: EncodeTransferArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
     // Add disable collateral from sender if flag is set

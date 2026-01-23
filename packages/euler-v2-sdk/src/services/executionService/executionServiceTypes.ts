@@ -12,7 +12,7 @@ export type EVCBatchItem = {
   data: Hex
 }
 
-export type EncodeDepositBatchItemsArgs = {
+export type EncodeDepositArgs = {
   chainId: number
   vault: Address
   amount: bigint
@@ -20,7 +20,7 @@ export type EncodeDepositBatchItemsArgs = {
   enableCollateral?: boolean
 }
 
-export type EncodeMintBatchItemsArgs = {
+export type EncodeMintArgs = {
   chainId: number
   vault: Address
   shares: bigint
@@ -28,7 +28,7 @@ export type EncodeMintBatchItemsArgs = {
   enableCollateral?: boolean
 }
 
-export type EncodeWithdrawBatchItemsArgs = {
+export type EncodeWithdrawArgs = {
   chainId: number
   vault: Address
   assets: bigint
@@ -37,7 +37,7 @@ export type EncodeWithdrawBatchItemsArgs = {
   disableCollateral?: boolean
 }
 
-export type EncodeRedeemBatchItemsArgs = {
+export type EncodeRedeemArgs = {
   chainId: number
   vault: Address
   shares: bigint
@@ -46,7 +46,7 @@ export type EncodeRedeemBatchItemsArgs = {
   disableCollateral?: boolean
 }
 
-export type EncodeBorrowBatchItemsArgs = {
+export type EncodeBorrowArgs = {
   chainId: number
   vault: Address
   amount: bigint
@@ -56,7 +56,7 @@ export type EncodeBorrowBatchItemsArgs = {
   collateralAmount?: bigint
 }
 
-export type EncodeRepayBatchItemsArgs = {
+export type EncodeRepayArgs = {
   chainId: number
   vault: Address
   amount: bigint
@@ -65,7 +65,7 @@ export type EncodeRepayBatchItemsArgs = {
   disableController?: boolean
 }
 
-export type EncodePullDebtBatchItemsArgs = {
+export type EncodePullDebtArgs = {
   chainId: number
   vault: Address
   amount: bigint
@@ -75,14 +75,14 @@ export type EncodePullDebtBatchItemsArgs = {
 
 export type RepaySourceType = "wallet" | "collateral" | "savings"
 
-export type EncodeRepayWithSwapBatchItemsArgs = {
+export type EncodeRepayWithSwapArgs = {
   swapQuote: SwapQuote
   maxWithdraw?: bigint // max assets available to withdraw. For buy orders, amountInMax may exceed the available assets and withdraw must be capped
   isMax?: boolean
   disableControllerOnMax?: boolean
 }
 
-export type EncodeRepayFromWalletBatchItemsArgs = {
+export type EncodeRepayFromWalletArgs = {
   chainId: number
   liabilityVault: Address
   liabilityAmount: bigint
@@ -92,7 +92,7 @@ export type EncodeRepayFromWalletBatchItemsArgs = {
   isMax?: boolean
 }
 
-export type EncodeRepayFromDepositBatchItemsArgs = {
+export type EncodeRepayFromDepositArgs = {
   chainId: number
   liabilityVault: Address
   liabilityAmount: bigint
@@ -111,7 +111,7 @@ export type EncodeRepayFromDepositBatchItemsArgs = {
   withdrawMax?: bigint
 }
 
-export type EncodeSwapCollateralBatchItemsArgs = {
+export type EncodeSwapCollateralArgs = {
   chainId: number
   swapQuote: SwapQuote
   enableCollateral?: boolean
@@ -119,7 +119,7 @@ export type EncodeSwapCollateralBatchItemsArgs = {
   isMax?: boolean
 }
 
-export type EncodeSwapDebtBatchItemsArgs = {
+export type EncodeSwapDebtArgs = {
   chainId: number
   swapQuote: SwapQuote
   enableController?: boolean
@@ -127,7 +127,7 @@ export type EncodeSwapDebtBatchItemsArgs = {
   isMax?: boolean
 }
 
-export type EncodeTransferBatchItemsArgs = {
+export type EncodeTransferArgs = {
   chainId: number
   vault: Address
   to: Address
