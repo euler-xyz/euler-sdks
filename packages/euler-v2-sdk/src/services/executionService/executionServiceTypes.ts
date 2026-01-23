@@ -17,7 +17,9 @@ export type EncodeDepositArgs = {
   vault: Address
   amount: bigint
   receiver: Address
+  owner: Address
   enableCollateral?: boolean
+  permit2?: Permit2Data
 }
 
 export type EncodeMintArgs = {
@@ -25,7 +27,9 @@ export type EncodeMintArgs = {
   vault: Address
   shares: bigint
   receiver: Address
+  owner: Address
   enableCollateral?: boolean
+  permit2?: Permit2Data
 }
 
 export type EncodeWithdrawArgs = {
@@ -50,10 +54,14 @@ export type EncodeBorrowArgs = {
   chainId: number
   vault: Address
   amount: bigint
+  account: Address
   receiver: Address
-  subAccount?: SubAccount
+  currentController?: Address
+  enableController?: boolean
+  enableCollateral?: boolean
   collateralVault?: Address
   collateralAmount?: bigint
+  collateralPermit2?: Permit2Data
 }
 
 export type EncodeRepayArgs = {
@@ -90,6 +98,7 @@ export type EncodeRepayFromWalletArgs = {
   receiver: Address
   disableControllerOnMax?: boolean
   isMax?: boolean
+  permit2?: Permit2Data
 }
 
 export type EncodeRepayFromDepositArgs = {
@@ -109,6 +118,7 @@ export type EncodeRepayFromDepositArgs = {
   disableControllerOnMax?: boolean
   isMax?: boolean
   withdrawMax?: bigint
+  liabilityPermit2?: Permit2Data
 }
 
 export type EncodeSwapCollateralArgs = {
@@ -136,3 +146,52 @@ export type EncodeTransferArgs = {
   enableCollateralTo?: boolean
   disableCollateralFrom?: boolean
 }
+
+export type EncodePermit2CallArgs = {
+  chainId: number
+  message: PermitSingleMessage
+  signature: Hex
+  owner: Address
+}
+
+export type GetPermit2TypedDataArgs = {
+  chainId: number
+  token: Address
+  amount: bigint
+  spender: Address
+  nonce: number
+  sigDeadline: bigint
+}
+
+export type PermitSingleMessage = {
+  details: PermitDetails
+  spender: Address
+  sigDeadline: bigint
+}
+
+export type PermitDetails = {
+  token: Address
+  amount: bigint
+  expiration: bigint
+  nonce: bigint
+}
+
+
+export type Permit2Data = {
+  message: PermitSingleMessage
+  signature: Hex
+}
+
+export const PERMIT2_TYPES = {
+  PermitDetails: [
+    { name: 'token', type: 'address' },
+    { name: 'amount', type: 'uint160' },
+    { name: 'expiration', type: 'uint48' },
+    { name: 'nonce', type: 'uint48' },
+  ],
+  PermitSingle: [
+    { name: 'details', type: 'PermitDetails' },
+    { name: 'spender', type: 'address' },
+    { name: 'sigDeadline', type: 'uint256' },
+  ],
+} as const

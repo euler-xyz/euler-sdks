@@ -1,20 +1,24 @@
-import { encodeFunctionData, getAddress, Hex, maxUint256, type Address, zeroAddress } from "viem";
+import { encodeFunctionData, getAddress, Hex, maxUint256, type Address, zeroAddress, maxUint160, maxUint48, TypedDataDefinition } from "viem";
 import { DeploymentService } from "../deploymentService/index.js";
 import { executionAbis } from "./executionAbis.js";
-import type {
-  EVCBatchItem,
-  EncodeDepositArgs,
-  EncodeMintArgs,
-  EncodeWithdrawArgs,
-  EncodeRedeemArgs,
-  EncodeBorrowArgs,
-  EncodePullDebtArgs,
-  EncodeRepayWithSwapArgs,
-  EncodeRepayFromWalletArgs,
-  EncodeRepayFromDepositArgs,
-  EncodeSwapDebtArgs,
-  EncodeTransferArgs,
-  EncodeSwapCollateralArgs,
+import {
+  type EVCBatchItem,
+  type EncodeDepositArgs,
+  type EncodeMintArgs,
+  type EncodeWithdrawArgs,
+  type EncodeRedeemArgs,
+  type EncodeBorrowArgs,
+  type EncodePullDebtArgs,
+  type EncodeRepayWithSwapArgs,
+  type EncodeRepayFromWalletArgs,
+  type EncodeRepayFromDepositArgs,
+  type EncodeSwapDebtArgs,
+  type EncodeTransferArgs,
+  type EncodeSwapCollateralArgs,
+  type EncodePermit2CallArgs,
+  PERMIT2_TYPES,
+  GetPermit2TypedDataArgs,
+  Permit2Data,
 } from "./executionServiceTypes.js";
 
 export interface IExecutionService {
@@ -32,6 +36,8 @@ export interface IExecutionService {
   encodeTransfer(args: EncodeTransferArgs): EVCBatchItem[];
 }
 
+const PERMIT2_SIG_WINDOW = 60n * 60n
+
 // TODO explain how this service is coupled to the concrete abis of ERC4626, permit2 and EVK. 
 // this is a helper service, not a generic one.
 export class ExecutionService implements IExecutionService {
@@ -46,10 +52,19 @@ export class ExecutionService implements IExecutionService {
       args: [items]
     })
   }
-  
 
-  encodeDeposit({ chainId, vault, amount, receiver, enableCollateral }: EncodeDepositArgs): EVCBatchItem[] {
+  encodeDeposit({ chainId, vault, amount, receiver, owner, enableCollateral, permit2 }: EncodeDepositArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
+
+    if (permit2) {
+      const permit2Call = this.encodePermit2Call({
+        chainId,
+        owner,
+        message: permit2.message,
+        signature: permit2.signature,
+      })
+      items.push(permit2Call)
+    }
 
     // Add enable collateral if flag is set
     if (enableCollateral) {
@@ -69,7 +84,7 @@ export class ExecutionService implements IExecutionService {
     // Add deposit operation
     items.push({
       targetContract: vault,
-      onBehalfOfAccount: receiver,
+      onBehalfOfAccount: owner,
       value: amount,
       data: encodeFunctionData({
         abi: executionAbis.depositAbi,
@@ -81,8 +96,18 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
-  encodeMint({ chainId, vault, shares, receiver, enableCollateral }: EncodeMintArgs): EVCBatchItem[] {
+  encodeMint({ chainId, vault, shares, receiver, owner, enableCollateral, permit2 }: EncodeMintArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
+
+    if (permit2) {
+      const permit2Call = this.encodePermit2Call({
+        chainId,
+        owner,
+        message: permit2.message,
+        signature: permit2.signature,
+      })
+      items.push(permit2Call)
+    }
 
     // Add enable collateral if flag is set
     if (enableCollateral) {
@@ -177,53 +202,39 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
-  encodeBorrow({
-    chainId,
-    vault,
-    amount,
-    receiver,
-    subAccount,
-    collateralVault,
-    collateralAmount,
-  }: EncodeBorrowArgs): EVCBatchItem[] {
+  encodeBorrow(args: EncodeBorrowArgs): EVCBatchItem[] {
+    const {
+      chainId,
+      vault,
+      amount,
+      account,
+      receiver,
+      enableController,
+      currentController,
+      collateralVault,
+      collateralAmount,
+      enableCollateral,
+      collateralPermit2,
+    } = args
     const items: EVCBatchItem[] = []
-    const account = subAccount?.account ?? receiver
-    // Add collateral deposit if provided
+
+    // Add collateral if provided
     if (collateralVault && collateralAmount !== undefined && collateralAmount > 0n) {
-      // Determine if we need to enable collateral based on subAccount state
-      let needsEnableCollateral = true
-      if (subAccount) {
-        const isCollateralEnabled = subAccount.enabledCollaterals.some(
-          (collateral: Address) => collateral === collateralVault
-        )
-        needsEnableCollateral = !isCollateralEnabled
-      }
 
       const depositItems = this.encodeDeposit({
         chainId,
         vault: collateralVault,
         amount: collateralAmount,
-        receiver,
-        enableCollateral: needsEnableCollateral,
+        receiver: account,
+        enableCollateral,
+        permit2: collateralPermit2,
+        owner: account,
       })
       items.push(...depositItems)
     }
 
-    // Determine if we need to disable/enable controller
-    let needsDisableController = false
-    let currentController: Address | null = null
-    let needsEnableController = true
-
-    if (subAccount) {
-      // There can be only one controller enabled per account
-      const enabledControllers = subAccount.enabledControllers
-      currentController = enabledControllers.length > 0 ? (enabledControllers[0] ?? null) : null
-      needsDisableController = currentController !== null && currentController !== vault
-      needsEnableController = !enabledControllers.some((controller: Address) => controller === vault)
-    }
-
     // Add disable controller if there's a different controller enabled
-    if (needsDisableController && currentController) {
+    if (currentController && currentController !== vault) {
       items.push({
         targetContract: currentController,
         onBehalfOfAccount: account,
@@ -235,8 +246,7 @@ export class ExecutionService implements IExecutionService {
       })
     }
 
-    // Add enable controller if needed (default to true when subAccount is not provided)
-    if (needsEnableController) {
+    if (enableController) {
       const deployment = this.deploymentService.getDeployment(chainId)
       const evc = deployment.addresses.coreAddrs.evc
       items.push({
@@ -301,15 +311,27 @@ export class ExecutionService implements IExecutionService {
    */
   encodeRepayFromWallet(args: EncodeRepayFromWalletArgs): EVCBatchItem[] {
     const {
+      chainId,
       sender,
       liabilityVault,
       liabilityAmount,
       receiver,
       disableControllerOnMax = true,
       isMax = false,
+      permit2,
     } = args
 
     const items: EVCBatchItem[] = []
+
+    if (permit2) {
+      const permit2Call = this.encodePermit2Call({
+        chainId,
+        owner: sender,
+        message: permit2.message,
+        signature: permit2.signature,
+      })
+      items.push(permit2Call)
+    }
 
     // Repay operation
     items.push({
@@ -347,6 +369,7 @@ export class ExecutionService implements IExecutionService {
    */
   async encodeRepayFromDeposit(args: EncodeRepayFromDepositArgs): Promise<EVCBatchItem[]> {
     const {
+      chainId,
       liabilityVault,
       liabilityAsset,
       liabilityAmount,
@@ -356,6 +379,7 @@ export class ExecutionService implements IExecutionService {
       fromAsset,
       disableControllerOnMax = false,
       isMax = false,
+      liabilityPermit2,
     } = args
 
     // PATH 1: Same asset, same vault - use repayWithShares
@@ -372,13 +396,15 @@ export class ExecutionService implements IExecutionService {
     // PATH 2: Same asset, different vault
     if (fromAsset === liabilityAsset) {
       return this.encodeRepayWithSharesSameAssetDifferentVault({
+        chainId,
         fromVault,
         toVault: liabilityVault,
         amount: liabilityAmount,
-        receiver,
+        receiver, 
         from,
         isMax,
         disableControllerOnMax,
+        permit2: liabilityPermit2,
       })
     }
 
@@ -386,7 +412,6 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Builds repay batch items by mirroring the repay form flow.
    * Requires a swap quote to be provided.
    * Make sure the swap quote comes from swapService.getRepayQuotes() or follows the same structure.
    */
@@ -648,7 +673,63 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
+  encodePermit2Call(args: EncodePermit2CallArgs): EVCBatchItem {
+    const {
+      chainId,
+      owner,
+      message,
+      signature
+    } = args
+    const deployment = this.deploymentService.getDeployment(chainId)
+    const permit2 = deployment.addresses.coreAddrs.permit2
 
+    return {
+      targetContract: permit2,
+      onBehalfOfAccount: owner,
+      data: encodeFunctionData({
+        abi: executionAbis.permit2Abi,
+        functionName: "permit",
+        args: [owner, message, signature],
+      }),
+    }
+  }
+ // TODO add example usage with wagmi
+  getPermit2TypedData(args: GetPermit2TypedDataArgs): TypedDataDefinition<typeof PERMIT2_TYPES, "PermitSingle"> {
+    const nowInSeconds = () => BigInt(Math.floor(Date.now() / 1000))
+
+    const {
+      chainId,
+      token,
+      amount,
+      spender,
+      nonce,
+      sigDeadline,
+    } = args
+    const deployment = this.deploymentService.getDeployment(chainId)
+    const permit2 = deployment.addresses.coreAddrs.permit2
+
+    const permitSingle = {
+      details: {
+        token,
+        amount: amount > maxUint160 ? maxUint160 : amount,
+        expiration: Number(maxUint48),
+        nonce,
+      },
+      spender,
+      sigDeadline: sigDeadline ?? nowInSeconds() + PERMIT2_SIG_WINDOW,
+    }
+
+    return {
+      domain: {
+        name: 'Permit2',
+        chainId,
+        verifyingContract: permit2,
+      },
+      types: PERMIT2_TYPES,
+      primaryType: 'PermitSingle',
+      message: permitSingle,
+    }
+  }
 
   /**
    * Encodes batch items for repaying with shares from the same asset and vault
@@ -700,6 +781,7 @@ export class ExecutionService implements IExecutionService {
    * Encodes batch items for repaying with shares from same asset but different vault
    */
   private encodeRepayWithSharesSameAssetDifferentVault({
+    chainId,
     fromVault,
     toVault,
     amount, // if isMax, this should be the total current debt
@@ -707,7 +789,9 @@ export class ExecutionService implements IExecutionService {
     from,
     isMax,
     disableControllerOnMax,
+    permit2,
   }: {
+    chainId: number
     fromVault: Address
     toVault: Address
     amount: bigint
@@ -715,6 +799,7 @@ export class ExecutionService implements IExecutionService {
     from: Address
     isMax: boolean
     disableControllerOnMax: boolean
+    permit2?: Permit2Data
   }): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
@@ -779,7 +864,6 @@ export class ExecutionService implements IExecutionService {
         })
       }
     } else {
-      // TODO this needs approval
       // For partial repay: withdraw, then repay exact amount
       // 1. Withdraw from collateral vault
       items.push({
@@ -793,15 +877,18 @@ export class ExecutionService implements IExecutionService {
       })
 
       // 2. Repay exact amount
-      items.push({
-        targetContract: toVault,
-        onBehalfOfAccount: from,
-        data: encodeFunctionData({
-          abi: executionAbis.repayAbi,
-          functionName: "repay",
-          args: [amount, receiver],
-        }),
+      const repayItems = this.encodeRepayFromWallet({
+        chainId,
+        sender: from,
+        liabilityVault: toVault,
+        liabilityAmount: amount,
+        receiver,
+        disableControllerOnMax,
+        isMax,
+        permit2,
       })
+
+      items.push(...repayItems)
     }
 
     return items
