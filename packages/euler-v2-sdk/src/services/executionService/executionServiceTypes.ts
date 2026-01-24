@@ -1,4 +1,4 @@
-import { Address, Hex } from "viem";
+import { Address, Hex, TypedDataDomain } from "viem";
 import type { Account, SubAccount } from "../../entities/Account.js";
 import type {
   SwapQuote,
@@ -161,14 +161,22 @@ export type GetPermit2TypedDataArgs = {
   token: Address
   amount: bigint
   spender: Address
-  nonce: number
+  nonce: bigint
   sigDeadline: bigint
+  expiration?: bigint
 }
 
 export type PermitSingleMessage = {
   details: PermitDetails
   spender: Address
   sigDeadline: bigint
+}
+
+export type PermitSingleTypedData = {
+  domain: TypedDataDomain
+  types: typeof PERMIT2_TYPES
+  primaryType: "PermitSingle"
+  message: PermitSingleMessage
 }
 
 export type PermitDetails = {

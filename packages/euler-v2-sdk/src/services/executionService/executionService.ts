@@ -41,6 +41,7 @@ import {
   type EncodeMultiplySameAssetArgs,
   type PlanMultiplyWithSwapArgs,
   type PlanMultiplySameAssetArgs,
+  type PermitSingleTypedData,
 } from "./executionServiceTypes.js";
 
 export interface IExecutionService {
@@ -76,7 +77,7 @@ export interface IExecutionService {
   planMultiplyWithSwap(args: PlanMultiplyWithSwapArgs): TransactionPlanItem[];
   planMultiplySameAsset(args: PlanMultiplySameAssetArgs): TransactionPlanItem[];
 
-  getPermit2TypedData(args: GetPermit2TypedDataArgs): TypedDataDefinition<typeof PERMIT2_TYPES, "PermitSingle">;
+  getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData;
   describeBatch(batch: EVCBatchItem[]): BatchItemDescription[];
 }
 
@@ -1000,8 +1001,9 @@ export class ExecutionService implements IExecutionService {
       }),
     }
   }
+
  // TODO add example usage with wagmi
-  getPermit2TypedData(args: GetPermit2TypedDataArgs): TypedDataDefinition<typeof PERMIT2_TYPES, "PermitSingle"> {
+  getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData {
     const nowInSeconds = () => BigInt(Math.floor(Date.now() / 1000))
 
     const {
@@ -1011,6 +1013,7 @@ export class ExecutionService implements IExecutionService {
       spender,
       nonce,
       sigDeadline,
+      expiration,
     } = args
     const deployment = this.deploymentService.getDeployment(chainId)
     const permit2 = deployment.addresses.coreAddrs.permit2
@@ -1019,7 +1022,7 @@ export class ExecutionService implements IExecutionService {
       details: {
         token,
         amount: amount > maxUint160 ? maxUint160 : amount,
-        expiration: Number(maxUint48),
+        expiration: expiration ?? maxUint48,
         nonce,
       },
       spender,
