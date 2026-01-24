@@ -819,7 +819,7 @@ export class ExecutionService implements IExecutionService {
 
   /**
    * Encodes batch items for swapping collateral from one vault to another.
-   * Make sure the swap quote comes from swapService.getSwapCollateralQuotes() or follows the same structure.
+   * Make sure the swap quote comes from swapService.getDepositQuote() or follows the same structure.
    */
   encodeSwapCollateral(args: EncodeSwapCollateralArgs): EVCBatchItem[] {
     const {

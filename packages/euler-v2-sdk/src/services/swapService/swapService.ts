@@ -4,7 +4,7 @@ import type {
   SwapQuoteRequest,
   SwapsApiResponse,
   GetRepayQuoteArgs,
-  GetSwapCollateralQuoteArgs,
+  GetDepositQuoteArgs,
 } from "./swapServiceTypes.js";
 import { SwapperMode } from "./swapServiceTypes.js";
 import { swapVerifierAbi } from "./swapVerifierAbi.js";
@@ -17,7 +17,7 @@ export interface SwapServiceConfig {
 export interface ISwapService {
   getSwapQuotes(args: SwapQuoteRequest): Promise<SwapQuote[]>;
   getRepayQuotes(args: GetRepayQuoteArgs): Promise<SwapQuote[]>;
-  getSwapCollateralQuotes(args: GetSwapCollateralQuoteArgs): Promise<SwapQuote[]>;
+  getDepositQuote(args: GetDepositQuoteArgs): Promise<SwapQuote[]>;
 }
 
 const DEFAULT_DEADLINE = 1800; // 30 minutes
@@ -37,7 +37,9 @@ export class SwapService implements ISwapService {
     if (request.tokenIn === request.tokenOut) {
       throw new Error("Token in and token out cannot be the same");
     }
-
+    if (!request.origin || request.origin === "0x0000000000000000000000000000000000000000") {
+      throw new Error("origin must be provided for swap repay");
+    }
     const params = this.buildRequestParams(request);
     const searchParams = new URLSearchParams(params);
 
@@ -178,9 +180,6 @@ export class SwapService implements ISwapService {
       deadline,
     } = args;
 
-    if (!origin || origin === "0x0000000000000000000000000000000000000000") {
-      throw new Error("origin must be provided for swap repay");
-    }
     if (currentDebt <= 0n) {
       throw new Error("currentDebt must be provided for swap repay");
     }
@@ -239,8 +238,8 @@ export class SwapService implements ISwapService {
   /**
    * Fetches a swap quote for swapping collateral from one vault to another.
    */
-  async getSwapCollateralQuotes(
-    args: GetSwapCollateralQuoteArgs,
+  async getDepositQuote(
+    args: GetDepositQuoteArgs,
   ): Promise<SwapQuote[]> {
     const {
       chainId,

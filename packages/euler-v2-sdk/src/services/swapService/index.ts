@@ -1,7 +1,7 @@
 export { SwapService, type ISwapService, type SwapServiceConfig } from "./swapService.js";
 export type {
   GetRepayQuoteArgs,
-  GetSwapCollateralQuoteArgs,
+  GetDepositQuoteArgs,
   SwapQuote,
   SwapQuoteRequest,
   SwapperMode,

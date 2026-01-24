@@ -85,7 +85,7 @@ export interface GetRepayQuoteArgs {
   deadline?: number;
 }
 
-export interface GetSwapCollateralQuoteArgs {
+export interface GetDepositQuoteArgs {
   chainId: number;
   fromVault: Address;
   toVault: Address;
