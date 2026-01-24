@@ -1,4 +1,4 @@
-import { encodeFunctionData, getAddress, Hex, maxUint256, type Address, zeroAddress, maxUint160, maxUint48, TypedDataDefinition } from "viem";
+import { encodeFunctionData, getAddress, Hex, maxUint256, type Address, zeroAddress, maxUint160, maxUint48, TypedDataDefinition, erc20Abi } from "viem";
 import { DeploymentService } from "../deploymentService/index.js";
 import { executionAbis } from "./executionAbis.js";
 import type { Account, AccountPosition, SubAccount } from "../../entities/Account.js";
@@ -992,12 +992,30 @@ export class ExecutionService implements IExecutionService {
     usePermit2: boolean = true,
     unlimitedApproval: boolean = true
   ): (ApproveCall | Permit2DataToSign)[] {
+    const makeApprove = (spender: Address): ApproveCall => ({
+      type: "approve",
+      token,
+      owner: account.owner,
+      spender,
+      amount: unlimitedApproval ? maxUint256 : amount,
+      data: encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [spender, amount],
+      }),
+    })
+    const makePermit2 = (spender: Address): Permit2DataToSign => ({
+      type: "permit2",
+      token,
+      owner: account.owner,
+      spender,
+      amount: unlimitedApproval ? maxUint160 : amount,
+    })
+
 
     const position = this.getPosition(account, account.owner, vault)
     const deployment = this.deploymentService.getDeployment(account.chainId)
     const permit2 = deployment.addresses.coreAddrs.permit2
-
-    const allowanceToSet = unlimitedApproval ? maxUint160 : amount
 
     // If position is not found, assume approval is needed
     if (!position) {
@@ -1006,37 +1024,17 @@ export class ExecutionService implements IExecutionService {
         const subAccount = this.getSubAccount(account, account.owner)
         if (subAccount?.isPermitDisabledMode) {
           // Fall back to regular approval
-          return [{
-            type: "approve",
-            token,
-            spender: vault,
-            amount: allowanceToSet,
-          }]
+          return [ makeApprove(vault) ]
         }
         // Without position data, we can't know if assetForPermit2 is sufficient
         // Assume both approval and permit2 signature are needed
         return [
-          {
-            type: "approve",
-            token,
-            spender: permit2,
-            amount: allowanceToSet,
-          },
-          {
-            type: "permit2",
-            token,
-            amount: allowanceToSet,
-            spender: vault, // Spender is the vault that receives the allowance
-          },
+          makeApprove(permit2),
+          makePermit2(vault),
         ]
       } else {
         // Regular approval
-        return [{
-          type: "approve",
-          token,
-          spender: vault,
-          amount: allowanceToSet,
-        }]
+        return [ makeApprove(vault) ]
       }
     }
 
@@ -1046,12 +1044,7 @@ export class ExecutionService implements IExecutionService {
       // If sub-account is not found, assume permit2 is allowed (default behavior)
       if (subAccount?.isPermitDisabledMode) {
         // Fall back to regular approval
-        return [{
-          type: "approve",
-          token,
-          spender: vault,
-          amount: allowanceToSet,
-        }]
+        return [ makeApprove(vault) ]
       }
 
       // Check permit2 allowances
@@ -1077,29 +1070,14 @@ export class ExecutionService implements IExecutionService {
       // If assetForPermit2 is insufficient, we need both approval and permit2 signature
       if (!hasSufficientPermit2Allowance) {
         return [
-          {
-            type: "approve",
-            token,
-            spender: permit2,
-            amount: unlimitedApproval ? maxUint256 : amount,
-          },
-          {
-            type: "permit2",
-            token,
-            amount: allowanceToSet,
-            spender: vault, // Spender is the vault that receives the allowance
-          },
+          makeApprove(permit2),
+          makePermit2(vault),
         ]
       }
 
       // assetForPermit2 is sufficient, but vault allowance is insufficient or expired
       // Only need permit2 signature (approval already exists)
-      return [{
-        type: "permit2",
-        token,
-        amount: allowanceToSet,
-        spender: vault, // Spender is the vault that receives the allowance
-      }]
+      return [ makePermit2(vault) ]
     } else {
       // Regular approval (non-permit2 path)
       // Check if we have sufficient direct vault allowance
@@ -1107,12 +1085,7 @@ export class ExecutionService implements IExecutionService {
       if (!needsDirectApproval) return []
 
       // Regular approval needed
-      return [{
-        type: "approve",
-        token,
-        spender: vault,
-        amount: unlimitedApproval ? maxUint256 : amount,
-      }]
+      return [ makeApprove(vault) ]
     }
   }
 
@@ -1126,9 +1099,8 @@ export class ExecutionService implements IExecutionService {
     const isCollateralEnabled = this.isCollateralEnabled(account, receiver, vault)
 
     const approval = this.determineApproval(account, asset, vault, amount, usePermit2, unlimitedApproval)
-    if (approval.length > 0) {
-      plan.push(...approval)
-    }
+    plan.push(...approval)
+
 
     // Build EVC batch items
     const batchItems = this.encodeDeposit({
@@ -1161,9 +1133,7 @@ export class ExecutionService implements IExecutionService {
     // For now, we'll use shares as a proxy (this may overestimate, but that's safer)
     const estimatedAssetAmount = shares // This should be convertToAssets(shares) in practice
     const approval = this.determineApproval(account, asset, vault, estimatedAssetAmount, usePermit2, unlimitedApproval)
-    if (approval.length > 0) {
-      plan.push(...approval)
-    }
+    plan.push(...approval)
 
     // Build EVC batch items
     const batchItems = this.encodeMint({

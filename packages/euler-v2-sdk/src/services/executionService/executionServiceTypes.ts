@@ -202,14 +202,17 @@ export const PERMIT2_TYPES = {
 export type ApproveCall = {
   type: "approve"
   token: Address
+  owner: Address
   spender: Address
   amount: bigint
+  data: Hex
 }
 
 export type Permit2DataToSign = {
   type: "permit2"
   token: Address
   amount: bigint
+  owner: Address
   spender: Address
 }
 
