@@ -14,12 +14,6 @@ import { ExecutionService, IExecutionService } from "../services/executionServic
 import { defaultAccountVaultsDataSourceConfig, defaultEulerLabelsURLDataSourceConfig, defaultSwapServiceConfig } from "./defaultConfig.js";
 import { EVaultOnchainDataSource } from "../services/eVaultService/dataSources/eVaultOnchainDataSource.js";
 
-export interface BuildSDKConfig {
-  rpcUrls: Record<number, string>;
-  accountVaultsDataSourceConfig?: AccountVaultsSubgraphDataSourceConfig;
-  eulerLabelsDataSourceConfig?: EulerLabelsURLDataSourceConfig;
-  swapServiceConfig?: SwapServiceConfig;
-}
 
 export interface BuildSDKOverrides {
   abiService?: IABIService;
@@ -34,24 +28,27 @@ export interface BuildSDKOverrides {
 }
 
 export interface BuildSDKOptions {
-  config: BuildSDKConfig;
-  overrides?: BuildSDKOverrides;
+  rpcUrls: Record<number, string>;
+  accountVaultsDataSourceConfig?: AccountVaultsSubgraphDataSourceConfig;
+  eulerLabelsDataSourceConfig?: EulerLabelsURLDataSourceConfig;
+  swapServiceConfig?: SwapServiceConfig;
+  servicesOverrides?: BuildSDKOverrides;
 }
 
 export const buildSDK = async (options: BuildSDKOptions) => {
-  const { config, overrides } = options;
+  const { rpcUrls, accountVaultsDataSourceConfig, eulerLabelsDataSourceConfig, swapServiceConfig, servicesOverrides } = options;
 
   // Build core services (these may be needed for data sources even if overridden)
-  const abiService = overrides?.abiService ?? new ABIService();
-  const deploymentService = overrides?.deploymentService ?? await DeploymentService.build();
-  const providerService = overrides?.providerService ?? new ProviderService(config.rpcUrls);
+  const abiService = servicesOverrides?.abiService ?? new ABIService();
+  const deploymentService = servicesOverrides?.deploymentService ?? await DeploymentService.build();
+  const providerService = servicesOverrides?.providerService ?? new ProviderService(rpcUrls);
 
   // Build account service if not overridden
   let accountService: IAccountService;
-  if (overrides?.accountService) {
-    accountService = overrides.accountService;
+  if (servicesOverrides?.accountService) {
+    accountService = servicesOverrides.accountService;
   } else {
-    const accountVaultsDataSource = new AccountVaultsSubgraphDataSource(config.accountVaultsDataSourceConfig || defaultAccountVaultsDataSourceConfig);
+    const accountVaultsDataSource = new AccountVaultsSubgraphDataSource(accountVaultsDataSourceConfig || defaultAccountVaultsDataSourceConfig);
     const accountDataSource = new AccountOnchainDataSource(
       providerService as ProviderService,
       abiService as ABIService,
@@ -63,8 +60,8 @@ export const buildSDK = async (options: BuildSDKOptions) => {
 
   // Build eVault service if not overridden
   let eVaultService: IEVaultService;
-  if (overrides?.eVaultService) {
-    eVaultService = overrides.eVaultService;
+  if (servicesOverrides?.eVaultService) {
+    eVaultService = servicesOverrides.eVaultService;
   } else {
     const eVaultDataSource = new EVaultOnchainDataSource(
       providerService as ProviderService,
@@ -76,8 +73,8 @@ export const buildSDK = async (options: BuildSDKOptions) => {
 
   // Build eulerEarn service if not overridden
   let eulerEarnService: IEulerEarnService;
-  if (overrides?.eulerEarnService) {
-    eulerEarnService = overrides.eulerEarnService;
+  if (servicesOverrides?.eulerEarnService) {
+    eulerEarnService = servicesOverrides.eulerEarnService;
   } else {
     const eulerEarnDataSource = new EulerEarnOnchainDataSource(
       providerService as ProviderService,
@@ -88,17 +85,16 @@ export const buildSDK = async (options: BuildSDKOptions) => {
   }
 
   // Build eulerLabels service if not overridden
-  const eulerLabelsService = overrides?.eulerLabelsService ?? (() => {
-    const eulerLabelsDataSource = new EulerLabelsURLDataSource(config.eulerLabelsDataSourceConfig || defaultEulerLabelsURLDataSourceConfig);
+  const eulerLabelsService = servicesOverrides?.eulerLabelsService ?? (() => {
+    const eulerLabelsDataSource = new EulerLabelsURLDataSource(eulerLabelsDataSourceConfig || defaultEulerLabelsURLDataSourceConfig);
     return new EulerLabelsService(eulerLabelsDataSource);
   })();
 
   // Build swap service if not overridden
-  const swapServiceConfig = config.swapServiceConfig || defaultSwapServiceConfig;
-  const swapService = overrides?.swapService ?? new SwapService(swapServiceConfig);
+  const swapService = servicesOverrides?.swapService ?? new SwapService(swapServiceConfig || defaultSwapServiceConfig);
 
   // Build execution service if not overridden
-  const executionService = overrides?.executionService ?? new ExecutionService(deploymentService as DeploymentService);
+  const executionService = servicesOverrides?.executionService ?? new ExecutionService(deploymentService as DeploymentService);
 
   return new EulerSDK({
     accountService,

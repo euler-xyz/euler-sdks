@@ -18,7 +18,10 @@
     "build": "tsc --project tsconfig.json",
     "build:watch": "tsc --project tsconfig.json --watch",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "deposit-example": "tsx examples/deposit-example",
+    "multiply-example": "tsx examples/multiply-example",
+    "anvil": "source examples/.env && anvil --fork-url $FORK_RPC_URL --auto-impersonate"
   },
   "keywords": [
     "typescript",
@@ -32,8 +35,10 @@
     "viem": "^2.43.3"
   },
   "devDependencies": {
+    "dotenv": "^16.4.7",
     "@types/node": "^22.7.8",
     "ts-node-dev": "^2.0.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }
 }
