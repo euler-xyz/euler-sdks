@@ -1,4 +1,4 @@
-import { encodeFunctionData, getAddress, Hex, maxUint256, type Address, zeroAddress, maxUint160, maxUint48, TypedDataDefinition, erc20Abi } from "viem";
+import { encodeFunctionData, getAddress, Hex, maxUint256, type Address, zeroAddress, maxUint160, maxUint48, TypedDataDefinition, erc20Abi, decodeFunctionData, type Abi } from "viem";
 import { DeploymentService } from "../deploymentService/index.js";
 import { executionAbis } from "./executionAbis.js";
 import type { Account, AccountPosition, SubAccount } from "../../entities/Account.js";
@@ -35,10 +35,16 @@ import {
   type PlanSwapCollateralArgs,
   type PlanSwapDebtArgs,
   type PlanTransferArgs,
-  type PlanPullDebtArgs,
+  type PlanPullDebtArgs,  
+  type BatchItemDescription,
+  type EncodeMultiplyWithSwapArgs,
+  type EncodeMultiplySameAssetArgs,
+  type PlanMultiplyWithSwapArgs,
+  type PlanMultiplySameAssetArgs,
 } from "./executionServiceTypes.js";
 
 export interface IExecutionService {
+  encodeBatch(items: EVCBatchItem[]): Hex;
   encodeDeposit(args: EncodeDepositArgs): EVCBatchItem[];
   encodeMint(args: EncodeMintArgs): EVCBatchItem[];
   encodeWithdraw(args: EncodeWithdrawArgs): EVCBatchItem[];
@@ -46,11 +52,14 @@ export interface IExecutionService {
   encodeBorrow(args: EncodeBorrowArgs): EVCBatchItem[];
   encodePullDebt(args: EncodePullDebtArgs): EVCBatchItem[];
   encodeRepayFromWallet(args: EncodeRepayFromWalletArgs): EVCBatchItem[];
-  encodeRepayFromDeposit(args: EncodeRepayFromDepositArgs): Promise<EVCBatchItem[]>;
+  encodeRepayFromDeposit(args: EncodeRepayFromDepositArgs): EVCBatchItem[];
   encodeRepayWithSwap(args: EncodeRepayWithSwapArgs): EVCBatchItem[];
   encodeSwapCollateral(args: EncodeSwapCollateralArgs): EVCBatchItem[];
   encodeSwapDebt(args: EncodeSwapDebtArgs): EVCBatchItem[];
   encodeTransfer(args: EncodeTransferArgs): EVCBatchItem[];
+  encodeMultiplyWithSwap(args: EncodeMultiplyWithSwapArgs): EVCBatchItem[];
+  encodeMultiplySameAsset(args: EncodeMultiplySameAssetArgs): EVCBatchItem[];
+  encodePermit2Call(args: EncodePermit2CallArgs): EVCBatchItem;
   // Transaction plan functions
   planDeposit(args: PlanDepositArgs): TransactionPlanItem[];
   planMint(args: PlanMintArgs): TransactionPlanItem[];
@@ -58,12 +67,17 @@ export interface IExecutionService {
   planRedeem(args: PlanRedeemArgs): TransactionPlanItem[];
   planBorrow(args: PlanBorrowArgs): TransactionPlanItem[];
   planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlanItem[];
-  planRepayFromDeposit(args: PlanRepayFromDepositArgs): Promise<TransactionPlanItem[]>;
+  planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlanItem[];
   planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlanItem[];
   planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlanItem[];
   planSwapDebt(args: PlanSwapDebtArgs): TransactionPlanItem[];
   planTransfer(args: PlanTransferArgs): TransactionPlanItem[];
   planPullDebt(args: PlanPullDebtArgs): TransactionPlanItem[];
+  planMultiplyWithSwap(args: PlanMultiplyWithSwapArgs): TransactionPlanItem[];
+  planMultiplySameAsset(args: PlanMultiplySameAssetArgs): TransactionPlanItem[];
+
+  getPermit2TypedData(args: GetPermit2TypedDataArgs): TypedDataDefinition<typeof PERMIT2_TYPES, "PermitSingle">;
+  describeBatch(batch: EVCBatchItem[]): BatchItemDescription[];
 }
 
 const PERMIT2_SIG_WINDOW = 60n * 60n
@@ -337,6 +351,269 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
+   * Encodes batch items for multiply/leverage operation with swap.
+   * Used when liability asset and long asset are different and require a swap.
+   * This combines: deposit collateral, enable controller, borrow, swap, and enable collateral.
+   */
+  encodeMultiplyWithSwap(args: EncodeMultiplyWithSwapArgs): EVCBatchItem[] {
+    const {
+      chainId,
+      collateralVault,
+      collateralAmount,
+      liabilityVault,
+      liabilityAmount,
+      longVault,
+      owner,
+      receiver,
+      enableCollateral = true,
+      enableCollateralLong = true,
+      currentController,
+      enableController = true,
+      collateralPermit2,
+      swapQuote,
+    } = args
+    const items: EVCBatchItem[] = []
+    const deployment = this.deploymentService.getDeployment(chainId)
+    const evc = deployment.addresses.coreAddrs.evc
+
+    // 1. Add permit2 for collateral if provided
+    if (collateralPermit2) {
+      const permit2Call = this.encodePermit2Call({
+        chainId,
+        owner,
+        message: collateralPermit2.message,
+        signature: collateralPermit2.signature,
+      })
+      items.push(permit2Call)
+    }
+
+    // 2. Deposit initial collateral if amount > 0
+    if (collateralAmount > 0n) {
+      // Enable collateral for collateral vault
+      if (enableCollateral) {
+        items.push({
+          targetContract: evc,
+          onBehalfOfAccount: zeroAddress,
+          data: encodeFunctionData({
+            abi: executionAbis.enableCollateralAbi,
+            functionName: "enableCollateral",
+            args: [receiver, collateralVault]
+          })
+        })
+      }
+
+      // Deposit collateral
+      items.push({
+        targetContract: collateralVault,
+        onBehalfOfAccount: owner,
+        value: collateralAmount,
+        data: encodeFunctionData({
+          abi: executionAbis.depositAbi,
+          functionName: "deposit",
+          args: [collateralAmount, receiver]
+        })
+      })
+    }
+
+    // 3. Disable current controller if there's a different one enabled
+    if (currentController && currentController !== liabilityVault) {
+      items.push({
+        targetContract: currentController,
+        onBehalfOfAccount: receiver,
+        data: encodeFunctionData({
+          abi: executionAbis.disableControllerAbi,
+          functionName: "disableController",
+          args: [receiver]
+        })
+      })
+    }
+
+    // 4. Enable controller for liability vault
+    if (enableController) {
+      items.push({
+        targetContract: evc,
+        onBehalfOfAccount: zeroAddress,
+        data: encodeFunctionData({
+          abi: executionAbis.enableControllerAbi,
+          functionName: "enableController",
+          args: [receiver, liabilityVault]
+        })
+      })
+    }
+
+    // 5. Borrow from liability vault to swapper
+    items.push({
+      targetContract: liabilityVault,
+      onBehalfOfAccount: receiver,
+      data: encodeFunctionData({
+        abi: executionAbis.borrowAbi,
+        functionName: "borrow",
+        args: [liabilityAmount, swapQuote.swap.swapperAddress]
+      })
+    })
+
+    // 6. Execute swap multicall
+    items.push({
+      targetContract: swapQuote.swap.swapperAddress,
+      onBehalfOfAccount: receiver,
+      data: swapQuote.swap.swapperData,
+    })
+
+    // 7. Verify swap and skim to long vault
+    if (swapQuote.verify.type !== "skimMin") {
+      throw new Error("Invalid swap quote type for multiply - must be skimMin")
+    }
+    items.push({
+      targetContract: swapQuote.verify.verifierAddress,
+      onBehalfOfAccount: receiver,
+      data: swapQuote.verify.verifierData,
+    })
+
+    // 8. Enable collateral on long vault
+    if (enableCollateralLong) {
+      items.push({
+        targetContract: evc,
+        onBehalfOfAccount: zeroAddress,
+        data: encodeFunctionData({
+          abi: executionAbis.enableCollateralAbi,
+          functionName: "enableCollateral",
+          args: [receiver, longVault]
+        })
+      })
+    }
+
+    return items
+  }
+
+  /**
+   * Encodes batch items for multiply/leverage operation with same asset.
+   * Used when liability asset and long asset are the same (no swap needed).
+   * This combines: deposit collateral, enable controller, borrow, skim, and enable collateral.
+   */
+  encodeMultiplySameAsset(args: EncodeMultiplySameAssetArgs): EVCBatchItem[] {
+    const {
+      chainId,
+      collateralVault,
+      collateralAmount,
+      liabilityVault,
+      liabilityAmount,
+      longVault,
+      owner,
+      receiver,
+      enableCollateral = true,
+      enableCollateralLong = true,
+      enableController = true,
+      currentController,
+      collateralPermit2,
+    } = args
+    const items: EVCBatchItem[] = []
+    const deployment = this.deploymentService.getDeployment(chainId)
+    const evc = deployment.addresses.coreAddrs.evc
+
+    // 1. Add permit2 for collateral if provided
+    if (collateralPermit2) {
+      const permit2Call = this.encodePermit2Call({
+        chainId,
+        owner,
+        message: collateralPermit2.message,
+        signature: collateralPermit2.signature,
+      })
+      items.push(permit2Call)
+    }
+
+    // 2. Deposit initial collateral if amount > 0
+    if (collateralAmount > 0n) {
+      // Enable collateral for collateral vault
+      if (enableCollateral) {
+        items.push({
+          targetContract: evc,
+          onBehalfOfAccount: zeroAddress,
+          data: encodeFunctionData({
+            abi: executionAbis.enableCollateralAbi,
+            functionName: "enableCollateral",
+            args: [receiver, collateralVault]
+          })
+        })
+      }
+
+      // Deposit collateral
+      items.push({
+        targetContract: collateralVault,
+        onBehalfOfAccount: owner,
+        value: collateralAmount,
+        data: encodeFunctionData({
+          abi: executionAbis.depositAbi,
+          functionName: "deposit",
+          args: [collateralAmount, receiver]
+        })
+      })
+    }
+
+    // 3. Disable current controller if there's a different one enabled
+    if (currentController && currentController !== liabilityVault) {
+      items.push({
+        targetContract: currentController,
+        onBehalfOfAccount: receiver,
+        data: encodeFunctionData({
+          abi: executionAbis.disableControllerAbi,
+          functionName: "disableController",
+          args: [receiver]
+        })
+      })
+    }
+
+    // 4. Enable controller for liability vault
+    if (enableController) {
+      items.push({
+        targetContract: evc,
+        onBehalfOfAccount: zeroAddress,
+        data: encodeFunctionData({
+          abi: executionAbis.enableControllerAbi,
+          functionName: "enableController",
+          args: [receiver, liabilityVault]
+        })
+      })
+    }
+
+    // 5. Borrow from liability vault directly to long vault
+    items.push({
+      targetContract: liabilityVault,
+      onBehalfOfAccount: receiver,
+      data: encodeFunctionData({
+        abi: executionAbis.borrowAbi,
+        functionName: "borrow",
+        args: [liabilityAmount, longVault]
+      })
+    })
+
+    // 6. Skim borrowed assets to position
+    items.push({
+      targetContract: longVault,
+      onBehalfOfAccount: receiver,
+      data: encodeFunctionData({
+        abi: executionAbis.skimAbi,
+        functionName: "skim",
+        args: [liabilityAmount, receiver]
+      })
+    })
+
+    // 7. Enable collateral on long vault
+    if (enableCollateralLong) {
+    items.push({
+      targetContract: evc,
+      onBehalfOfAccount: zeroAddress,
+        data: encodeFunctionData({
+          abi: executionAbis.enableCollateralAbi,
+          functionName: "enableCollateral",
+          args: [receiver, longVault]
+        })
+      })
+    }
+
+    return items
+  }
+
+  /**
    * Encodes batch items for repaying debt from wallet.
    */
   encodeRepayFromWallet(args: EncodeRepayFromWalletArgs): EVCBatchItem[] {
@@ -397,7 +674,7 @@ export class ExecutionService implements IExecutionService {
    * 1. Same asset, same vault - use repayWithShares
    * 2. Same asset, different vault - withdraw and repay
    */
-  async encodeRepayFromDeposit(args: EncodeRepayFromDepositArgs): Promise<EVCBatchItem[]> {
+  encodeRepayFromDeposit(args: EncodeRepayFromDepositArgs): EVCBatchItem[] {
     const {
       chainId,
       liabilityVault,
@@ -759,6 +1036,66 @@ export class ExecutionService implements IExecutionService {
       primaryType: 'PermitSingle',
       message: permitSingle,
     }
+  }
+
+  /**
+   * Decodes EVCBatchItem[] back to function name and named arguments.
+   * 
+   * @example
+   * const batchItems = executionService.encodeDeposit({ ... });
+   * const described = executionService.describeBatch(batchItems);
+   * console.log(described[0].functionName); // "deposit"
+   * console.log(described[0].args); // { amount: 1000n, receiver: "0x..." }
+   */
+  describeBatch(batch: EVCBatchItem[]): BatchItemDescription[] {
+    const decodedBatchItems: BatchItemDescription[] = []
+    for (const item of batch) {
+      let decoded = false
+      for (const abi of Object.values(executionAbis) as unknown as Abi[]) {
+        try {
+          const decodedData = decodeFunctionData({
+            abi: abi as unknown as Abi,
+            data: item.data,
+          })
+
+          // Convert args array to named object
+          const functionAbi = abi.find(
+            (abiItem) => abiItem.type === "function" && abiItem.name === decodedData.functionName
+          )
+
+          if (!functionAbi || functionAbi.type !== "function") {
+            continue
+          }
+
+          // Create named arguments object
+          const namedArgs: Record<string, unknown> = {}
+          if (functionAbi.inputs && Array.isArray(decodedData.args) && decodedData.args.length > 0) {
+            functionAbi.inputs.forEach((input, index) => {
+              if (input.name) {
+                namedArgs[input.name] = decodedData.args?.[index]
+              }
+            })
+          }
+
+          decodedBatchItems.push({
+            targetContract: item.targetContract,
+            onBehalfOfAccount: item.onBehalfOfAccount,
+            functionName: decodedData.functionName,
+            args: namedArgs,
+          })
+          decoded = true
+          break
+        } catch {
+          // Try next ABI
+          continue
+        }
+      }
+      if (!decoded) {
+        throw new Error(`Could not decode batch item data: ${item.data}`)
+      }
+    }
+
+    return decodedBatchItems
   }
 
   /**
@@ -1310,7 +1647,7 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
-  async planRepayFromDeposit(args: PlanRepayFromDepositArgs): Promise<TransactionPlanItem[]> {
+  planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlanItem[] {
     const { liabilityVault, liabilityAmount, receiver, fromVault, fromAccount, account, usePermit2, unlimitedApproval = true } = args
     const plan: TransactionPlanItem[] = []
 
@@ -1346,7 +1683,7 @@ export class ExecutionService implements IExecutionService {
     const isMax = liabilityPosition.borrowed <= liabilityAmount
 
     // Build EVC batch items
-    const batchItems = await this.encodeRepayFromDeposit({
+    const batchItems = this.encodeRepayFromDeposit({
       chainId: account.chainId,
       liabilityVault,
       liabilityAsset,
@@ -1510,6 +1847,145 @@ export class ExecutionService implements IExecutionService {
       from,
       to,
       enableController,
+    })
+
+    plan.push({
+      type: "evcBatch",
+      items: batchItems,
+    })
+
+    return plan
+  }
+
+  /**
+   * Plans a multiply/leverage operation with swap.
+   * Used when liability asset and long asset are different and require a swap.
+   */
+  planMultiplyWithSwap(args: PlanMultiplyWithSwapArgs): TransactionPlanItem[] {
+    const {
+      collateralVault,
+      collateralAmount,
+      collateralAsset,
+      account,
+      swapQuote,
+      usePermit2,
+      unlimitedApproval = true,
+    } = args
+    const plan: TransactionPlanItem[] = []
+
+    // 1. Check if collateral approval is needed (only if depositing collateral)
+    if (collateralAmount > 0n) {
+      const collateralApproval = this.determineApproval(
+        account,
+        collateralAsset,
+        collateralVault,
+        collateralAmount,
+        usePermit2,
+        unlimitedApproval
+      )
+      if (collateralApproval.length > 0) {
+        plan.push(...collateralApproval)
+      }
+    }
+    if (swapQuote.accountIn !== swapQuote.accountOut) {
+      throw new Error("Account in and account out must be the same")
+    }
+    const receiver = swapQuote.accountIn
+    const liabilityVault = swapQuote.vaultIn
+    const longVault = swapQuote.receiver
+    const liabilityAmount = BigInt(swapQuote.amountIn)
+
+    // 2. Determine if collateral needs to be enabled
+    const enableCollateral = collateralAmount > 0n && !this.isCollateralEnabled(account, receiver, collateralVault)
+
+    // 3. Determine if controller needs to be enabled
+    const enableController = !this.isControllerEnabled(account, receiver, liabilityVault)
+
+    // 4. Get current controller (may need to disable if different)
+    const currentController = this.getCurrentController(account, receiver)
+
+    // 5. Build EVC batch items
+    const batchItems = this.encodeMultiplyWithSwap({
+      chainId: account.chainId,
+      collateralVault,
+      collateralAmount,
+      liabilityVault,
+      liabilityAmount,
+      longVault,
+      owner: account.owner,
+      receiver,
+      enableCollateral,
+      currentController: currentController || undefined,
+      enableController,
+      swapQuote,
+      // Permit2 is handled separately in the plan
+    })
+
+    plan.push({
+      type: "evcBatch",
+      items: batchItems,
+    })
+
+    return plan
+  }
+
+  /**
+   * Plans a multiply/leverage operation with same asset.
+   * Used when liability asset and long asset are the same (no swap needed).
+   */
+  planMultiplySameAsset(args: PlanMultiplySameAssetArgs): TransactionPlanItem[] {
+    const {
+      collateralVault,
+      collateralAmount,
+      collateralAsset,
+      liabilityVault,
+      liabilityAmount,
+      longVault,
+      receiver,
+      account,
+      usePermit2,
+      unlimitedApproval = true,
+    } = args
+    const plan: TransactionPlanItem[] = []
+
+    // 1. Check if collateral approval is needed (only if depositing collateral)
+    if (collateralAmount > 0n) {
+      const collateralApproval = this.determineApproval(
+        account,
+        collateralAsset,
+        collateralVault,
+        collateralAmount,
+        usePermit2,
+        unlimitedApproval
+      )
+      if (collateralApproval.length > 0) {
+        plan.push(...collateralApproval)
+      }
+    }
+
+    // 2. Determine if collateral needs to be enabled
+    const enableCollateral = collateralAmount > 0n && !this.isCollateralEnabled(account, receiver, collateralVault)
+
+    // 3. Determine if controller needs to be enabled
+    const enableController = !this.isControllerEnabled(account, receiver, liabilityVault)
+
+    // 4. Get current controller (may need to disable if different)
+    const currentController = this.getCurrentController(account, receiver)
+
+    // 5. Build EVC batch items
+    const batchItems = this.encodeMultiplySameAsset({
+      chainId: account.chainId,
+      collateralVault,
+      collateralAmount,
+      liabilityVault,
+      liabilityAmount,
+      longVault,
+      owner: account.owner,
+      receiver,
+      enableCollateral,
+      currentController: currentController || undefined,
+      enableController,
+      // Permit2 is handled separately in the plan
     })
 
     plan.push({

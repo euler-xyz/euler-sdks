@@ -15,6 +15,8 @@ export type {
   EncodeSwapCollateralArgs,
   EncodeSwapDebtArgs,
   EncodeTransferArgs,
+  EncodeMultiplyWithSwapArgs,
+  EncodeMultiplySameAssetArgs,
   // Transaction plan types
   TransactionPlanItem,
   ApproveCall,
@@ -32,4 +34,7 @@ export type {
   PlanSwapDebtArgs,
   PlanTransferArgs,
   PlanPullDebtArgs,
+  PlanMultiplyWithSwapArgs,
+  PlanMultiplySameAssetArgs,
+  BatchItemDescription,
 } from "./executionServiceTypes.js";

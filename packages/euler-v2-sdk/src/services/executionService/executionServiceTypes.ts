@@ -324,3 +324,67 @@ export type PlanPullDebtArgs = {
   amount: bigint
   account: Account
 }
+
+export type EncodeMultiplyWithSwapArgs = {
+  chainId: number
+  collateralVault: Address
+  collateralAmount: bigint
+  liabilityVault: Address
+  liabilityAmount: bigint
+  longVault: Address
+  owner: Address
+  receiver: Address
+  enableCollateral?: boolean
+  enableCollateralLong?: boolean
+  currentController?: Address
+  enableController?: boolean
+  collateralPermit2?: Permit2Data
+  swapQuote: SwapQuote
+}
+
+export type EncodeMultiplySameAssetArgs = {
+  chainId: number
+  collateralVault: Address
+  collateralAmount: bigint
+  liabilityVault: Address
+  liabilityAmount: bigint
+  longVault: Address
+  owner: Address
+  receiver: Address
+  enableCollateral?: boolean
+  enableCollateralLong?: boolean
+  currentController?: Address
+  enableController?: boolean
+  collateralPermit2?: Permit2Data
+}
+
+export type PlanMultiplyWithSwapArgs = {
+  collateralVault: Address
+  collateralAmount: bigint
+  collateralAsset: Address
+  account: Account
+  swapQuote: SwapQuote
+  usePermit2?: boolean
+  unlimitedApproval?: boolean
+}
+
+export type PlanMultiplySameAssetArgs = {
+  collateralVault: Address
+  collateralAmount: bigint
+  collateralAsset: Address
+  liabilityVault: Address
+  liabilityAmount: bigint
+  longVault: Address
+  receiver: Address
+  account: Account
+  usePermit2?: boolean
+  unlimitedApproval?: boolean
+}
+
+// Decoded batch item data
+export type BatchItemDescription = {
+  targetContract: Address
+  onBehalfOfAccount: Address
+  functionName: string
+  args: Record<string, unknown>
+}
