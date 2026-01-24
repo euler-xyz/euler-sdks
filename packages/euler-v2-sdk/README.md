@@ -77,6 +77,7 @@ pnpm run deposit-example
 
 - **`deposit-example`**: Demonstrates depositing assets into a vault
 - **`multiply-example`**: Shows how to create leveraged positions
+- **`repay-with-swap-example`**: Shows how to borrow and repay debt by swapping collateral
 
 ## Architecture
 

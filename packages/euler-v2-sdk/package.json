@@ -21,6 +21,7 @@
     "clean": "rm -rf dist",
     "deposit-example": "tsx examples/deposit-example",
     "multiply-example": "tsx examples/multiply-example",
+    "repay-with-swap-example": "tsx examples/repay-with-swap-example",
     "anvil": "source examples/.env && anvil --fork-url $FORK_RPC_URL --auto-impersonate"
   },
   "keywords": [

@@ -1648,7 +1648,7 @@ export class ExecutionService implements IExecutionService {
       vault,
       amount,
       owner: account.owner,
-      borrowAccount: receiver,
+      borrowAccount,
       receiver,
       enableController,
       currentController: currentController || undefined,
