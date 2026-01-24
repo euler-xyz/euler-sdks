@@ -20,7 +20,7 @@ export class AccountOnchainDataSource implements IAccountDataSource {
     private readonly positionsDataSource: IAccountVaultsDataSource
   ) {}
 
-  async fetchFullAccount(
+  async fetchAccount(
     chainId: number,
     address: Address
   ): Promise<IAccount | undefined> {

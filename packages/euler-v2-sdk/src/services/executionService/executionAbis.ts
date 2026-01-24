@@ -135,6 +135,7 @@ export const executionAbis = {
   ],
   depositAbi: [
     {
+      type: "function",
       inputs: [
         { name: "amount", type: "uint256" },
         { name: "receiver", type: "address" },
@@ -146,6 +147,7 @@ export const executionAbis = {
   ],
   mintAbi: [
     {
+      type: "function",
       inputs: [
         { name: "shares", type: "uint256" },
         { name: "receiver", type: "address" },
@@ -157,6 +159,7 @@ export const executionAbis = {
   ],
   withdrawAbi: [
     {
+      type: "function",
       inputs: [
         { name: "assets", type: "uint256" },
         { name: "receiver", type: "address" },
@@ -169,6 +172,7 @@ export const executionAbis = {
   ],
   redeemAbi: [
     {
+      type: "function",
       inputs: [
         { name: "shares", type: "uint256" },
         { name: "receiver", type: "address" },
@@ -181,6 +185,7 @@ export const executionAbis = {
   ],
   borrowAbi: [
     {
+      type: "function",
       inputs: [
         { name: "amount", type: "uint256" },
         { name: "receiver", type: "address" },
@@ -192,6 +197,7 @@ export const executionAbis = {
   ],
   repayAbi: [
     {
+      type: "function",
       inputs: [
         { name: "amount", type: "uint256" },
         { name: "receiver", type: "address" },
@@ -203,6 +209,7 @@ export const executionAbis = {
   ],
   pullDebtAbi: [
     {
+      type: "function",
       inputs: [
         { name: "amount", type: "uint256" },
         { name: "from", type: "address" },
@@ -214,6 +221,7 @@ export const executionAbis = {
   ],
   enableControllerAbi: [
     {
+      type: "function",
       inputs: [
         { name: "account", type: "address" },
         { name: "vault", type: "address" },
@@ -225,6 +233,7 @@ export const executionAbis = {
   ],
   disableControllerAbi: [
     {
+      type: "function",
       inputs: [
         { name: "account", type: "address" },
       ],
@@ -235,6 +244,7 @@ export const executionAbis = {
   ],
   enableCollateralAbi: [
     {
+      type: "function",
       inputs: [
         { name: "account", type: "address" },
         { name: "vault", type: "address" },
@@ -246,6 +256,7 @@ export const executionAbis = {
   ],
   disableCollateralAbi: [
     {
+      type: "function",
       inputs: [
         { name: "account", type: "address" },
         { name: "vault", type: "address" },
@@ -257,6 +268,7 @@ export const executionAbis = {
   ],
   transferAbi: [
     {
+      type: "function",
       inputs: [
         { name: "to", type: "address" },
         { name: "amount", type: "uint256" },
@@ -283,6 +295,7 @@ export const executionAbis = {
   ],
   skimAbi: [
     {
+      type: "function",
       inputs: [
         { name: "amount", type: "uint256" },
         { name: "receiver", type: "address" },

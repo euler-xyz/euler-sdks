@@ -8,7 +8,7 @@ import type {
 export type EVCBatchItem = {
   targetContract: Address
   onBehalfOfAccount: Address
-  value?: bigint
+  value: bigint
   data: Hex
 }
 
@@ -161,9 +161,9 @@ export type GetPermit2TypedDataArgs = {
   token: Address
   amount: bigint
   spender: Address
-  nonce: bigint
-  sigDeadline: bigint
-  expiration?: bigint
+  nonce: number
+  sigDeadline?: bigint
+  expiration?: number
 }
 
 export type PermitSingleMessage = {
@@ -182,8 +182,8 @@ export type PermitSingleTypedData = {
 export type PermitDetails = {
   token: Address
   amount: bigint
-  expiration: bigint
-  nonce: bigint
+  expiration: number
+  nonce: number
 }
 
 
@@ -238,6 +238,7 @@ export type PlanDepositArgs = {
   receiver: Address
   account: Account
   asset: Address // Asset address - required when account/position is not available
+  enableCollateral?: boolean
   usePermit2?: boolean
   unlimitedApproval?: boolean
 }

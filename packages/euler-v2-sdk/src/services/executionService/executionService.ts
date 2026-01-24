@@ -42,6 +42,7 @@ import {
   type PlanMultiplyWithSwapArgs,
   type PlanMultiplySameAssetArgs,
   type PermitSingleTypedData,
+  PermitSingleMessage,
 } from "./executionServiceTypes.js";
 
 export interface IExecutionService {
@@ -118,6 +119,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: evc,
         onBehalfOfAccount: zeroAddress,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.enableCollateralAbi,
           functionName: "enableCollateral",
@@ -130,7 +132,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: vault,
       onBehalfOfAccount: owner,
-      value: amount,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.depositAbi,
         functionName: "deposit",
@@ -161,6 +163,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: evc,
         onBehalfOfAccount: zeroAddress,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.enableCollateralAbi,
           functionName: "enableCollateral",
@@ -173,6 +176,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: vault,
       onBehalfOfAccount: receiver,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.mintAbi,
         functionName: "mint",
@@ -193,6 +197,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: evc,
         onBehalfOfAccount: owner,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.disableCollateralAbi,
           functionName: "disableCollateral",
@@ -205,6 +210,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: vault,
       onBehalfOfAccount: owner,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.withdrawAbi,
         functionName: "withdraw",
@@ -225,6 +231,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: evc,
         onBehalfOfAccount: owner,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.disableCollateralAbi,
           functionName: "disableCollateral",
@@ -237,6 +244,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: vault,
       onBehalfOfAccount: owner,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.redeemAbi,
         functionName: "redeem",
@@ -283,6 +291,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: currentController,
         onBehalfOfAccount: borrowAccount,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.disableControllerAbi,
           functionName: "disableController",
@@ -297,6 +306,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: evc,
         onBehalfOfAccount: zeroAddress,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.enableControllerAbi,
           functionName: "enableController",
@@ -309,6 +319,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: vault,
       onBehalfOfAccount: borrowAccount,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.borrowAbi,
         functionName: "borrow",
@@ -329,6 +340,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: evc,
         onBehalfOfAccount: zeroAddress,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.enableControllerAbi,
           functionName: "enableController",
@@ -341,6 +353,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: vault,
       onBehalfOfAccount: from,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.pullDebtAbi,
         functionName: "pullDebt",
@@ -395,6 +408,7 @@ export class ExecutionService implements IExecutionService {
         items.push({
           targetContract: evc,
           onBehalfOfAccount: zeroAddress,
+          value: 0n,
           data: encodeFunctionData({
             abi: executionAbis.enableCollateralAbi,
             functionName: "enableCollateral",
@@ -407,7 +421,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: collateralVault,
         onBehalfOfAccount: owner,
-        value: collateralAmount,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.depositAbi,
           functionName: "deposit",
@@ -421,6 +435,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: currentController,
         onBehalfOfAccount: receiver,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.disableControllerAbi,
           functionName: "disableController",
@@ -434,6 +449,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: evc,
         onBehalfOfAccount: zeroAddress,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.enableControllerAbi,
           functionName: "enableController",
@@ -446,6 +462,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: liabilityVault,
       onBehalfOfAccount: receiver,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.borrowAbi,
         functionName: "borrow",
@@ -457,6 +474,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: swapQuote.swap.swapperAddress,
       onBehalfOfAccount: receiver,
+      value: 0n,
       data: swapQuote.swap.swapperData,
     })
 
@@ -467,6 +485,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: swapQuote.verify.verifierAddress,
       onBehalfOfAccount: receiver,
+      value: 0n,
       data: swapQuote.verify.verifierData,
     })
 
@@ -475,6 +494,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: evc,
         onBehalfOfAccount: zeroAddress,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.enableCollateralAbi,
           functionName: "enableCollateral",
@@ -529,6 +549,7 @@ export class ExecutionService implements IExecutionService {
         items.push({
           targetContract: evc,
           onBehalfOfAccount: zeroAddress,
+          value: 0n,
           data: encodeFunctionData({
             abi: executionAbis.enableCollateralAbi,
             functionName: "enableCollateral",
@@ -541,7 +562,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: collateralVault,
         onBehalfOfAccount: owner,
-        value: collateralAmount,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.depositAbi,
           functionName: "deposit",
@@ -555,6 +576,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: currentController,
         onBehalfOfAccount: receiver,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.disableControllerAbi,
           functionName: "disableController",
@@ -568,6 +590,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: evc,
         onBehalfOfAccount: zeroAddress,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.enableControllerAbi,
           functionName: "enableController",
@@ -580,6 +603,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: liabilityVault,
       onBehalfOfAccount: receiver,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.borrowAbi,
         functionName: "borrow",
@@ -591,6 +615,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: longVault,
       onBehalfOfAccount: receiver,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.skimAbi,
         functionName: "skim",
@@ -603,7 +628,8 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: evc,
       onBehalfOfAccount: zeroAddress,
-        data: encodeFunctionData({
+      value: 0n,
+      data: encodeFunctionData({
           abi: executionAbis.enableCollateralAbi,
           functionName: "enableCollateral",
           args: [receiver, longVault]
@@ -645,6 +671,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: liabilityVault,
       onBehalfOfAccount: sender,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.repayAbi,
         functionName: "repay",
@@ -658,6 +685,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: liabilityVault,
         onBehalfOfAccount: receiver,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.disableControllerAbi,
           functionName: "disableController",
@@ -744,6 +772,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: swapQuote.vaultIn,
       onBehalfOfAccount: swapQuote.accountIn,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.withdrawAbi,
         functionName: "withdraw",
@@ -755,6 +784,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: swapQuote.swap.swapperAddress,
       onBehalfOfAccount: swapQuote.accountIn,
+      value: 0n,
       data: swapQuote.swap.swapperData,
     })
 
@@ -766,6 +796,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: swapQuote.verify.verifierAddress,
       onBehalfOfAccount: swapQuote.accountOut,
+      value: 0n,
       data: swapQuote.verify.verifierData,
     })
 
@@ -774,6 +805,7 @@ export class ExecutionService implements IExecutionService {
         items.push({
           targetContract: swapQuote.receiver,
           onBehalfOfAccount: swapQuote.accountOut,
+          value: 0n,
           data: encodeFunctionData({
             abi: executionAbis.disableControllerAbi,
             functionName: "disableController",
@@ -807,6 +839,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: swapQuote.vaultIn,
       onBehalfOfAccount: swapQuote.accountIn,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.withdrawAbi,
         functionName: "withdraw",
@@ -818,6 +851,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: swapQuote.swap.swapperAddress,
       onBehalfOfAccount: swapQuote.accountIn,
+      value: 0n,
       data: swapQuote.swap.swapperData
     })
 
@@ -828,6 +862,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: swapQuote.verify.verifierAddress,
       onBehalfOfAccount: swapQuote.accountOut,
+      value: 0n,
       data: swapQuote.verify.verifierData
     })
 
@@ -836,6 +871,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: evc,
         onBehalfOfAccount: zeroAddress,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.disableCollateralAbi,
           functionName: "disableCollateral",
@@ -849,6 +885,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: evc,
         onBehalfOfAccount: zeroAddress,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.enableCollateralAbi,
           functionName: "enableCollateral",
@@ -879,6 +916,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: swapQuote.vaultIn,
       onBehalfOfAccount: swapQuote.accountIn,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.borrowAbi,
         functionName: "borrow",
@@ -890,6 +928,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: swapQuote.swap.swapperAddress,
       onBehalfOfAccount: swapQuote.accountIn,
+      value: 0n,
       data: swapQuote.swap.swapperData
     })
 
@@ -900,6 +939,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: swapQuote.verify.verifierAddress,
       onBehalfOfAccount: swapQuote.accountOut,
+      value: 0n,
       data: swapQuote.verify.verifierData
     })
 
@@ -909,6 +949,7 @@ export class ExecutionService implements IExecutionService {
         items.push({
           targetContract: swapQuote.vaultIn,
           onBehalfOfAccount: swapQuote.accountIn,
+          value: 0n,
           data: encodeFunctionData({
             abi: executionAbis.disableControllerAbi,
             functionName: "disableController",
@@ -922,6 +963,7 @@ export class ExecutionService implements IExecutionService {
         items.push({
           targetContract: evc,
           onBehalfOfAccount: zeroAddress,
+          value: 0n,
           data: encodeFunctionData({
             abi: executionAbis.enableControllerAbi,
             functionName: "enableController",
@@ -944,6 +986,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: evc,
         onBehalfOfAccount: from,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.disableCollateralAbi,
           functionName: "disableCollateral",
@@ -956,6 +999,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: vault,
       onBehalfOfAccount: from,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.transferAbi,
         functionName: "transfer",
@@ -970,6 +1014,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: evc,
         onBehalfOfAccount: zeroAddress,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.enableCollateralAbi,
           functionName: "enableCollateral",
@@ -994,6 +1039,7 @@ export class ExecutionService implements IExecutionService {
     return {
       targetContract: permit2,
       onBehalfOfAccount: owner,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.permit2Abi,
         functionName: "permit",
@@ -1022,7 +1068,7 @@ export class ExecutionService implements IExecutionService {
       details: {
         token,
         amount: amount > maxUint160 ? maxUint160 : amount,
-        expiration: expiration ?? maxUint48,
+        expiration: expiration ?? Number(maxUint48),
         nonce,
       },
       spender,
@@ -1037,7 +1083,7 @@ export class ExecutionService implements IExecutionService {
       },
       types: PERMIT2_TYPES,
       primaryType: 'PermitSingle',
-      message: permitSingle,
+      message: permitSingle as PermitSingleMessage,
     }
   }
 
@@ -1123,6 +1169,7 @@ export class ExecutionService implements IExecutionService {
     items.push({
       targetContract: vault,
       onBehalfOfAccount: from,
+      value: 0n,
       data: encodeFunctionData({
         abi: executionAbis.repayWithSharesAbi,
         functionName: "repayWithShares",
@@ -1135,6 +1182,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: vault,
         onBehalfOfAccount: receiver,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.disableControllerAbi,
           functionName: "disableController",
@@ -1190,6 +1238,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: fromVault,
         onBehalfOfAccount: from,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.withdrawAbi,
           functionName: "withdraw",
@@ -1201,6 +1250,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: toVault,
         onBehalfOfAccount: from,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.skimAbi,
           functionName: "skim",
@@ -1212,6 +1262,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: toVault,
         onBehalfOfAccount: receiver,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.repayWithSharesAbi,
           functionName: "repayWithShares",
@@ -1226,6 +1277,7 @@ export class ExecutionService implements IExecutionService {
         items.push({
           targetContract: toVault,
           onBehalfOfAccount: receiver,
+          value: 0n,
           data: encodeFunctionData({
             abi: executionAbis.disableControllerAbi,
             functionName: "disableController",
@@ -1239,6 +1291,7 @@ export class ExecutionService implements IExecutionService {
       items.push({
         targetContract: fromVault,
         onBehalfOfAccount: from,
+        value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.withdrawAbi,
           functionName: "withdraw",
@@ -1432,7 +1485,7 @@ export class ExecutionService implements IExecutionService {
   // ========== Transaction plan functions ==========
 
   planDeposit(args: PlanDepositArgs): TransactionPlanItem[] {
-    const { vault, amount, receiver, account, asset, usePermit2, unlimitedApproval = true } = args
+    const { vault, amount, receiver, account, asset, enableCollateral, usePermit2, unlimitedApproval = true } = args
     const plan: TransactionPlanItem[] = []
 
     // Default: collateral is not enabled when account/position is not available
@@ -1449,7 +1502,7 @@ export class ExecutionService implements IExecutionService {
       amount,
       receiver,
       owner: account.owner,
-      enableCollateral: !isCollateralEnabled,
+      enableCollateral: !isCollateralEnabled && enableCollateral,
       // Permit2 is handled separately in the plan
     })
 

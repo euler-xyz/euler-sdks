@@ -14,3 +14,6 @@ export * from "./services/eVaultService/index.js";
 export * from "./services/executionService/index.js";
 export * from "./services/providerService/index.js";
 export * from "./services/swapService/index.js"; 
+
+// Utils
+export * from "./utils/subAccounts.js";

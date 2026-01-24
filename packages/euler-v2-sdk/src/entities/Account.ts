@@ -1,4 +1,5 @@
-import { Address } from "viem";
+import { Address, getAddress, isAddressEqual } from "viem";
+import { getSubAccountAddress } from "../utils/subAccounts.js";
 export type AddressPrefix = `0x${string}`; // expects a hex string representation of 19 bytes
 
 export interface SubAccount {
@@ -76,6 +77,19 @@ export class Account implements IAccount {
     this.chainId = account.chainId;
     this.owner = account.owner;
     this.subAccounts = account.subAccounts;
+  }
+
+  getSubAccount(account: Address): SubAccount | undefined {
+    return this.subAccounts.find(sa => isAddressEqual(sa.account, account));
+  }
+
+  getSubAccountById(id: number): SubAccount | undefined {
+    return this.subAccounts.find(sa => isAddressEqual(sa.account, getSubAccountAddress(this.owner, id)));
+  }
+
+  getPosition(account: Address, vault: Address): AccountPosition | undefined {
+    const subAccount = this.getSubAccount(getAddress(account));
+    return subAccount?.positions.find(p => isAddressEqual(p.vault, vault));
   }
 }
 

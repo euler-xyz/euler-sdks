@@ -3,13 +3,13 @@ import { getSubAccountId } from "../../utils/subAccounts.js";
 import { Address } from "viem";
 
 export interface IAccountDataSource {
-  fetchFullAccount(chainId: number, address: Address): Promise<IAccount | undefined>;
+  fetchAccount(chainId: number, address: Address): Promise<IAccount | undefined>;
   fetchSubAccount(chainId: number, subAccount: Address, vaults?: Address[]): Promise<SubAccount | undefined>;
 }
 
 export interface IAccountService {
-  fetchFullAccount(chainId: number, address: Address): Promise<Account | undefined>;
-  fetchSubAccount(chainId: number, subAccount: Address): Promise<SubAccount | undefined>;
+  fetchAccount(chainId: number, address: Address): Promise<Account>;
+  fetchSubAccount(chainId: number, subAccount: Address, vaults?: Address[]): Promise<SubAccount | undefined>;
 }
 
 export class AccountService implements IAccountService {
@@ -18,9 +18,9 @@ export class AccountService implements IAccountService {
   ) {}
 
   // `address` in this context can be any sub-account, not just the main account.
-  async fetchFullAccount(chainId: number, address: Address): Promise<Account | undefined> {
-    const accountData = await this.dataSource.fetchFullAccount(chainId, address);
-    if (!accountData) return undefined;
+  async fetchAccount(chainId: number, address: Address): Promise<Account> {
+    const accountData = await this.dataSource.fetchAccount(chainId, address);
+    if (!accountData) return new Account({ chainId, owner: address, subAccounts: [] });
 
     if (accountData.subAccounts && Array.isArray(accountData.subAccounts)) {
       accountData.subAccounts.sort((a, b) => {
@@ -34,7 +34,7 @@ export class AccountService implements IAccountService {
     return new Account(accountData);
   }
 
-  async fetchSubAccount(chainId: number, subAccount: Address): Promise<SubAccount | undefined> {
-    return this.dataSource.fetchSubAccount(chainId, subAccount);
+  async fetchSubAccount(chainId: number, subAccount: Address, vaults?: Address[]): Promise<SubAccount | undefined> {
+    return this.dataSource.fetchSubAccount(chainId, subAccount, vaults);
   }
 }

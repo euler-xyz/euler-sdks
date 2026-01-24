@@ -11,7 +11,7 @@ export function getSubAccountId(primary: Address, subAccount: Address) {
   return xor
 }
 
-export function getSubAccount(primary: Address, subAccountId: number) {
+export function getSubAccountAddress(primary: Address, subAccountId: number) {
   if (subAccountId > SUB_ACCOUNT_MAX_ID) {
     throw new Error("Sub account ID too large");
   }
