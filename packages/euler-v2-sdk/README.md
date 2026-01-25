@@ -38,7 +38,7 @@ const depositPlan = sdk.executionService.planDeposit({
   usePermit2: true
 });
 
-//..execute plan, examples/executor.ts
+//..execute plan, see examples/executor.ts
 ```
 
 ## Running Examples
