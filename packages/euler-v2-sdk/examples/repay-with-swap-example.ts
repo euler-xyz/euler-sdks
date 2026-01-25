@@ -27,7 +27,7 @@ const BORROW_AMOUNT = parseUnits("500", 6);      // 500 USDT
 const REPAY_AMOUNT = parseUnits("250", 6);       // set to -1n to repay all debt
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
-const REPAY_QUOTE_INDEX = 2; // change provider if swap quote is bad
+const REPAY_QUOTE_INDEX = 0; // change provider if swap quote is bad
 
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
 
