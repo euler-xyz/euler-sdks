@@ -256,6 +256,7 @@ export type PlanMintArgs = {
 export type PlanWithdrawArgs = {
   vault: Address
   assets: bigint
+  owner: Address
   receiver: Address
   account: Account
 }
@@ -263,6 +264,7 @@ export type PlanWithdrawArgs = {
 export type PlanRedeemArgs = {
   vault: Address
   shares: bigint
+  owner: Address
   receiver: Address
   account: Account
 }

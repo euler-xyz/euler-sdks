@@ -234,9 +234,7 @@ export const executionAbis = {
   disableControllerAbi: [
     {
       type: "function",
-      inputs: [
-        { name: "account", type: "address" },
-      ],
+      inputs: [],
       name: "disableController",
       outputs: [],
       stateMutability: "payable",
@@ -337,6 +335,79 @@ export const executionAbis = {
       ],
       outputs: [],
       stateMutability: 'nonpayable',
+    },
+  ],
+  swapperAbi: [
+    {
+      type: "function",
+      name: "multicall",
+      inputs: [
+        {
+          name: "calls",
+          type: "bytes[]",
+          internalType: "bytes[]"
+        }
+      ],
+      outputs: [],
+      stateMutability: "nonpayable"
+    },
+  ],
+  swapVerifierAbi: [
+    {
+      type: "function",
+      name: "verifyAmountMinAndSkim",
+      inputs: [
+        {
+          name: "vault",
+          type: "address",
+          internalType: "address"
+        },
+        {
+          name: "receiver",
+          type: "address",
+          internalType: "address"
+        },
+        {
+          name: "amountMin",
+          type: "uint256",
+          internalType: "uint256"
+        },
+        {
+          name: "deadline",
+          type: "uint256",
+          internalType: "uint256"
+        }
+      ],
+      outputs: [],
+      stateMutability: "nonpayable"
+    },
+    {
+      type: "function",
+      name: "verifyDebtMax",
+      inputs: [
+        {
+          name: "vault",
+          type: "address",
+          internalType: "address"
+        },
+        {
+          name: "account",
+          type: "address",
+          internalType: "address"
+        },
+        {
+          name: "amountMax",
+          type: "uint256",
+          internalType: "uint256"
+        },
+        {
+          name: "deadline",
+          type: "uint256",
+          internalType: "uint256"
+        }
+      ],
+      outputs: [],
+      stateMutability: "view"
     },
   ]
 }

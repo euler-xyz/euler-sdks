@@ -1,4 +1,4 @@
-import { encodeFunctionData, getAddress, Hex, maxUint256, type Address, zeroAddress, maxUint160, maxUint48, TypedDataDefinition, erc20Abi, decodeFunctionData, type Abi } from "viem";
+import { encodeFunctionData, getAddress, Hex, maxUint256, type Address, zeroAddress, maxUint160, maxUint48, TypedDataDefinition, erc20Abi, decodeFunctionData, type Abi, isAddressEqual } from "viem";
 import { DeploymentService } from "../deploymentService/index.js";
 import { executionAbis } from "./executionAbis.js";
 import type { Account, AccountPosition, SubAccount } from "../../entities/Account.js";
@@ -295,7 +295,7 @@ export class ExecutionService implements IExecutionService {
         data: encodeFunctionData({
           abi: executionAbis.disableControllerAbi,
           functionName: "disableController",
-          args: [borrowAccount]
+          args: []
         })
       })
     }
@@ -439,7 +439,7 @@ export class ExecutionService implements IExecutionService {
         data: encodeFunctionData({
           abi: executionAbis.disableControllerAbi,
           functionName: "disableController",
-          args: [receiver]
+          args: []
         })
       })
     }
@@ -580,7 +580,7 @@ export class ExecutionService implements IExecutionService {
         data: encodeFunctionData({
           abi: executionAbis.disableControllerAbi,
           functionName: "disableController",
-          args: [receiver]
+          args: []
         })
       })
     }
@@ -689,7 +689,7 @@ export class ExecutionService implements IExecutionService {
         data: encodeFunctionData({
           abi: executionAbis.disableControllerAbi,
           functionName: "disableController",
-          args: [receiver],
+          args: [],
         }),
       })
     }
@@ -795,7 +795,7 @@ export class ExecutionService implements IExecutionService {
 
     items.push({
       targetContract: swapQuote.verify.verifierAddress,
-      onBehalfOfAccount: swapQuote.accountOut,
+      onBehalfOfAccount: swapQuote.verify.account,
       value: 0n,
       data: swapQuote.verify.verifierData,
     })
@@ -809,7 +809,7 @@ export class ExecutionService implements IExecutionService {
           data: encodeFunctionData({
             abi: executionAbis.disableControllerAbi,
             functionName: "disableController",
-            args: [swapQuote.accountOut],
+            args: [],
           }),
         })
     }
@@ -953,7 +953,7 @@ export class ExecutionService implements IExecutionService {
           data: encodeFunctionData({
             abi: executionAbis.disableControllerAbi,
             functionName: "disableController",
-            args: [swapQuote.accountIn],
+            args: [],
           }),
         })
       }
@@ -1186,7 +1186,7 @@ export class ExecutionService implements IExecutionService {
         data: encodeFunctionData({
           abi: executionAbis.disableControllerAbi,
           functionName: "disableController",
-          args: [receiver],
+          args: [],
         }),
       })
 
@@ -1281,7 +1281,7 @@ export class ExecutionService implements IExecutionService {
           data: encodeFunctionData({
             abi: executionAbis.disableControllerAbi,
             functionName: "disableController",
-            args: [receiver],
+            args: [],
           }),
         })
       }
@@ -1318,14 +1318,14 @@ export class ExecutionService implements IExecutionService {
   }
 
   // ========== Helper functions for transaction plans ==========
-
+  // TODO use functions on Account itself for getSubAccount and getPosition
   /**
    * Gets the sub-account for a given account address from the Account entity
    * Returns undefined when account is not available
    */
   private getSubAccount(account: Account | undefined, accountAddress: Address): SubAccount | undefined {
     if (!account) return undefined
-    return account.subAccounts.find(sub => getAddress(sub.account) === getAddress(accountAddress))
+    return account.subAccounts.find(sub => isAddressEqual(sub.account, accountAddress))
   }
 
   /**
@@ -1336,7 +1336,7 @@ export class ExecutionService implements IExecutionService {
     if (!account) return undefined
     const subAccount = this.getSubAccount(account, accountAddress)
     if (!subAccount) return undefined
-    return subAccount.positions.find(pos => getAddress(pos.vault) === getAddress(vault))
+    return subAccount.positions.find(pos => isAddressEqual(pos.vault, vault))
   }
 
   /**
@@ -1347,7 +1347,7 @@ export class ExecutionService implements IExecutionService {
     if (!account) return false
     const subAccount = this.getSubAccount(account, accountAddress)
     if (!subAccount) return false
-    return subAccount.enabledCollaterals.some(coll => getAddress(coll) === getAddress(vault))
+    return subAccount.enabledCollaterals.some(coll => isAddressEqual(coll, vault))
   }
 
   /**
@@ -1358,7 +1358,7 @@ export class ExecutionService implements IExecutionService {
     if (!account) return false
     const subAccount = this.getSubAccount(account, accountAddress)
     if (!subAccount) return false
-    return subAccount.enabledControllers.some(ctrl => getAddress(ctrl) === getAddress(vault))
+    return subAccount.enabledControllers.some(ctrl => isAddressEqual(ctrl, vault))
   }
 
   /**
@@ -1548,11 +1548,11 @@ export class ExecutionService implements IExecutionService {
   }
 
   planWithdraw(args: PlanWithdrawArgs): TransactionPlanItem[] {
-    const { vault, assets, receiver, account } = args
+    const { vault, assets, receiver, owner, account } = args
     const plan: TransactionPlanItem[] = []
 
     // Get position to check collateral state
-    const position = this.getPosition(account, receiver, vault)
+    const position = this.getPosition(account, owner, vault)
 
     if (!position || position.assets <= assets) {
       throw new Error(`Position not found or assets are not sufficient for withdrawal`)
@@ -1568,7 +1568,7 @@ export class ExecutionService implements IExecutionService {
       vault,
       assets,
       receiver,
-      owner: account.owner,
+      owner,
       disableCollateral,
     })
 
@@ -1581,11 +1581,11 @@ export class ExecutionService implements IExecutionService {
   }
 
   planRedeem(args: PlanRedeemArgs): TransactionPlanItem[] {
-    const { vault, shares, receiver, account } = args
+    const { vault, shares, receiver, owner, account } = args
     const plan: TransactionPlanItem[] = []
 
     // Get position to check collateral state
-    const position = this.getPosition(account, receiver, vault)
+    const position = this.getPosition(account, owner, vault)
 
     if (!position || position.shares <= shares) {
       throw new Error(`Position not found or shares are not sufficient for redemption`)
@@ -1601,7 +1601,7 @@ export class ExecutionService implements IExecutionService {
       vault,
       shares,
       receiver,
-      owner: receiver,
+      owner,
       disableCollateral,
     })
 
@@ -1765,10 +1765,10 @@ export class ExecutionService implements IExecutionService {
     const { swapQuote, account } = args
     const plan: TransactionPlanItem[] = []
 
-    const liabilityPosition = this.getPosition(account, swapQuote.accountOut, swapQuote.vaultIn)
+    const liabilityPosition = this.getPosition(account, swapQuote.accountOut, swapQuote.receiver)
     const fromPosition = this.getPosition(account, swapQuote.accountIn, swapQuote.vaultIn)
-    if (!liabilityPosition || !fromPosition) {
-      throw new Error(`Positions not found. Liability vault: ${swapQuote.vaultIn}, From vault: ${swapQuote.vaultIn}, Account: ${swapQuote.accountOut}`)
+    if (!liabilityPosition || !fromPosition || liabilityPosition.borrowed <= 0n) {
+      throw new Error(`Positions not found or liability is 0. Liability vault: ${swapQuote.receiver}, From vault: ${swapQuote.vaultIn}, Account: ${swapQuote.accountOut}`)
     }
 
     const isMax = liabilityPosition.borrowed <= BigInt(swapQuote.amountOutMin)

@@ -4,7 +4,7 @@ import {
   isAddressEqual,
 } from "viem";
 import { mainnet } from "viem/chains";
-import { buildSDK, getSubAccountAddress, SwapperMode } from "euler-v2-sdk";
+import { buildSDK, executionAbis, getSubAccountAddress, SwapperMode } from "euler-v2-sdk";
 
 import { executePlan } from "./utils/executor.js";
 import { printHeader } from "./utils/helpers.js";
@@ -19,13 +19,15 @@ import {
 } from "./utils/config.js";
 
 // Example of repaying debt with swap. Deposit 1000 USDC, borrow 500 USDT, then repay by swapping USDC to USDT.
+// NOTE: This example fetches live quotes from the swap API. If the swap quote is bad, try setting REPAY_QUOTE_INDEX to a different value.
 
 // Inputs
 const COLLATERAL_AMOUNT = parseUnits("1000", 6); // 1000 USDC
 const BORROW_AMOUNT = parseUnits("500", 6);      // 500 USDT
-const REPAY_AMOUNT = parseUnits("250", 6);       // 250 USDT (partial repayment)
+const REPAY_AMOUNT = parseUnits("250", 6);       // set to -1n to repay all debt
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
+const REPAY_QUOTE_INDEX = 2; // change provider if swap quote is bad
 
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
 
@@ -71,17 +73,14 @@ async function repayWithSwapExample() {
   console.log('✓ Fetching swap quote from USDC to USDT for repayment...');
   
   // Get current debt from position
-  if (!subAccountAfterBorrow) {
-    throw new Error("No sub-account found after borrow");
-  }
-  const usdtPosition = subAccountAfterBorrow.positions.find(p => isAddressEqual(p.vault, EULER_PRIME_USDT_VAULT));
+  const usdtPosition = subAccountAfterBorrow!.positions.find(p => isAddressEqual(p.vault, EULER_PRIME_USDT_VAULT));
   const currentDebt = usdtPosition?.borrowed ?? 0n;
   if (currentDebt === 0n) {
     throw new Error("No debt found to repay");
   }
 
   // Update account data with the fetched sub-account
-  accountData.subAccounts = [subAccountAfterBorrow];
+  accountData.subAccounts = [subAccountAfterBorrow!];
 
   const repayQuotes = await sdk.swapService.getRepayQuotes({
     chainId: mainnet.id,
@@ -90,7 +89,7 @@ async function repayWithSwapExample() {
     fromAccount: SUB_ACCOUNT_ADDRESS,
     liabilityVault: EULER_PRIME_USDT_VAULT,
     liabilityAsset: USDT_ADDRESS,
-    liabilityAmount: REPAY_AMOUNT,
+    liabilityAmount: REPAY_AMOUNT === -1n ? currentDebt : REPAY_AMOUNT,
     currentDebt,
     toAccount: SUB_ACCOUNT_ADDRESS,
     origin: account.address,
@@ -103,8 +102,12 @@ async function repayWithSwapExample() {
     throw new Error("No swap quotes available");
   }
 
-  const repayQuote = repayQuotes[0]!;
-  console.log(`✓ Repay quote received: ${repayQuote.amountIn} USDC → ${REPAY_AMOUNT} USDT ${repayQuote.route.map(r => r.providerName).join(' → ')}`);
+  if (REPAY_QUOTE_INDEX >= repayQuotes.length) {
+    throw new Error("No quote found at index: " + REPAY_QUOTE_INDEX);
+  }
+
+  const repayQuote = repayQuotes[REPAY_QUOTE_INDEX]!;
+  console.log(`✓ Trying repay quote received: ${repayQuote.amountIn} USDC → ${repayQuote.amountOut} USDT ${repayQuote.route.map(r => r.providerName).join(' → ')}`);
 
   // Step 3: Plan and execute repay with swap
   console.log('\n=== Step 3: Execute Repay with Swap ===');
@@ -114,7 +117,13 @@ async function repayWithSwapExample() {
   });
 
   console.log(`✓ Repay with swap plan created with ${repaySwapPlan.length} step(s), executing...`);
-  await executePlan(repaySwapPlan, sdk);
+  try {
+    await executePlan(repaySwapPlan, sdk);
+  } catch (error) {
+    console.error("Error executing repay with swap:", error);
+    console.log("\n\nThe swap quote might be bad. Try setting REPAY_QUOTE_INDEX to a different value.");
+    process.exit(1);
+  }
 
   // Fetch the updated account
   const subAccount = await sdk.accountService.fetchSubAccount(

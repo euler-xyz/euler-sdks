@@ -66,12 +66,11 @@ export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK): P
       const deployment = sdk.deploymentService.getDeployment(mainnet.id);
       const evcAddress = deployment.addresses.coreAddrs.evc;
 
-      // const decoded = sdk.executionService.describeBatch(allBatchItems);
-      // console.log('decoded: ', decoded);
-
       // Encode batch call
       const batchData = sdk.executionService.encodeBatch(allBatchItems);
-      
+
+      const description = sdk.executionService.describeBatch(allBatchItems);
+      // console.log('description: ', description);
 
       const estimatedGas = await publicClient.estimateGas({
         to: evcAddress,
@@ -94,6 +93,9 @@ export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK): P
 
       permit2BatchItems.length = 0;
       console.log("  ✓ EVC batch");
+      description.forEach(desc => {
+        console.log(`    - ${desc.functionName}`); 
+      });
     }
   }
 }
