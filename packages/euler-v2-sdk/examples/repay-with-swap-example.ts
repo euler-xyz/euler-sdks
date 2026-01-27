@@ -1,3 +1,31 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REPAY WITH SWAP EXAMPLE
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 
+ * This example demonstrates how to repay debt by swapping collateral assets.
+ * It first sets up a leveraged position, then repays the debt by withdrawing
+ * collateral and swapping it to the liability asset.
+ * 
+ * OPERATION:
+ *   1. Deposit USDC as collateral and borrow USDT
+ *   2. Withdraw USDC from collateral
+ *   3. Swap USDC → USDT (using live DEX aggregator quotes)
+ *   4. Repay USDT debt
+ *   5. Disable controller if debt is fully repaid
+ * 
+ * ASSETS & VAULTS:
+ *   • USDC → Euler Prime USDC Vault (collateral)
+ *   • USDT → Euler Prime USDT Vault (liability being repaid)
+ * 
+ * ⚠️  IMPORTANT - LIVE SWAP QUOTES:
+ *   • This example fetches real-time swap quotes from DEX aggregators
+ *   • Restart Anvil immediately before running to avoid stale blockchain state
+ *   • If the swap fails, try changing REPAY_QUOTE_INDEX to use a different provider
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import "dotenv/config";
 import {
   parseUnits,
@@ -7,7 +35,7 @@ import { mainnet } from "viem/chains";
 import { buildSDK, executionAbis, getSubAccountAddress, SwapperMode } from "euler-v2-sdk";
 
 import { executePlan } from "./utils/executor.js";
-import { printHeader } from "./utils/helpers.js";
+import { printHeader, logOperationResult } from "./utils/helpers.js";
 import { 
   rpcUrls,
   account,
@@ -18,16 +46,13 @@ import {
   USDT_ADDRESS,
 } from "./utils/config.js";
 
-// Example of repaying debt with swap. Deposit 1000 USDC, borrow 500 USDT, then repay by swapping USDC to USDT.
-// NOTE: This example fetches live quotes from the swap API. If the swap quote is bad, try setting REPAY_QUOTE_INDEX to a different value.
-
 // Inputs
 const COLLATERAL_AMOUNT = parseUnits("1000", 6); // 1000 USDC
 const BORROW_AMOUNT = parseUnits("500", 6);      // 500 USDT
-const REPAY_AMOUNT = parseUnits("250", 6);       // set to -1n to repay all debt
+const REPAY_AMOUNT = parseUnits("250", 6);       // Set to -1n to repay all debt
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
-const REPAY_QUOTE_INDEX = 1; // change provider if swap quote is bad
+const REPAY_QUOTE_INDEX = 1; // Change this if swap quote is bad
 
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
 
@@ -75,7 +100,8 @@ async function repayWithSwapExample() {
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
   );
   
-  console.log('\n✓ Sub-account after borrow:', subAccountAfterBorrow);
+  // Log the diff between before and after borrow
+  await logOperationResult(mainnet.id, accountData, [subAccountAfterBorrow], sdk);
 
   // Step 2: Get repay quote - swap USDC collateral to USDT to repay debt
   console.log('\n=== Step 2: Get Repay Quote ===');
@@ -127,18 +153,7 @@ async function repayWithSwapExample() {
 
   console.log(`✓ Repay with swap plan created with ${repaySwapPlan.length} step(s)`);
 
-  // // Fetch wallet data and resolve approvals
-  // // Note: No approvals typically needed for repay with swap since we're using deposited collateral
-  // const walletForRepay = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, repaySwapPlan);
-  // repaySwapPlan = sdk.executionService.resolveRequiredApprovals({
-  //   plan: repaySwapPlan,
-  //   wallet: walletForRepay,
-  //   chainId: mainnet.id,
-  //   usePermit2: true,
-  //   unlimitedApproval: false,
-  // });
-
-  // console.log(`✓ Approvals resolved, executing...`);
+  // no approvals are needed for repay with swap
   try {
     await executePlan(repaySwapPlan, sdk);
   } catch (error) {
@@ -147,15 +162,16 @@ async function repayWithSwapExample() {
     process.exit(1);
   }
 
-  // Fetch the updated account
-  const subAccount = await sdk.accountService.fetchSubAccount(
+  // Fetch the updated sub-account and log the result
+  const subAccountAfterRepay = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
   );
 
-  console.log('\n=== Final Positions ===');
-  console.log('Sub account:', subAccount);
+  // Log the diff between before and after repay
+  // Note: accountData already has subAccountAfterBorrow in its subAccounts array
+  await logOperationResult(mainnet.id, accountData, [subAccountAfterRepay], sdk);
 }
 
 // ============================================================================

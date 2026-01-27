@@ -1,3 +1,21 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * DEPOSIT EXAMPLE
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 
+ * This example demonstrates how to deposit assets into an Euler vault and
+ * enable them as collateral in a single transaction.
+ * 
+ * OPERATION:
+ *   • Deposit USDC into Euler Prime USDC Vault
+ *   • Enable USDC as collateral for the sub-account
+ * 
+ * ASSETS & VAULTS:
+ *   • USDC → Euler Prime USDC Vault (collateral enabled)
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import "dotenv/config";
 import {
   parseUnits,
@@ -5,7 +23,7 @@ import {
 import { mainnet } from "viem/chains";
 
 import { executePlan } from "./utils/executor.js";
-import { printHeader } from "./utils/helpers.js";
+import { printHeader, logOperationResult } from "./utils/helpers.js";
 import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "./utils/config.js";
 import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
 
@@ -49,16 +67,12 @@ async function depositExample() {
   // Execute the plan
   await executePlan(depositPlan, sdk);
 
-
-  // LOG
-
-  // Print the position before the deposit
-  const positionBefore = accountData.getPosition(SUB_ACCOUNT_ADDRESS, EULER_PRIME_USDC_VAULT);
-  if (positionBefore) console.log('Position before: ', positionBefore);
-
-  // in tests the new sub-account will not be indexed by subgraph, so we need to fetch it manually
+  // Fetch the updated sub-account and log the result
+  // In tests the new sub-account will not be indexed by subgraph, so we need to fetch it manually
   const subAccount = await sdk.accountService.fetchSubAccount(mainnet.id, SUB_ACCOUNT_ADDRESS, [EULER_PRIME_USDC_VAULT]);
-  console.log('\nSub account after: ', subAccount);
+  
+  // Log the diff between before and after
+  await logOperationResult(mainnet.id, accountData, [subAccount], sdk);
 }
 
 // ============================================================================
