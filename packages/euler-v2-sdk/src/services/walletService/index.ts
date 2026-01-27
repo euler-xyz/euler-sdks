@@ -4,3 +4,4 @@ export type {
   IWalletDataSource,
   AssetWithSpenders,
 } from "./walletService.js";
+export type { TransactionPlanItem } from "../executionService/executionServiceTypes.js";

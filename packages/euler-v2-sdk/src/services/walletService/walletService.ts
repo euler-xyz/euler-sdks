@@ -1,5 +1,6 @@
 import { Wallet, IWallet } from "../../entities/Wallet.js";
-import { Address } from "viem";
+import { Address, getAddress } from "viem";
+import { RequiredApproval, TransactionPlanItem } from "../executionService/executionServiceTypes.js";
 
 export interface AssetWithSpenders {
   asset: Address;
@@ -12,6 +13,7 @@ export interface IWalletDataSource {
 
 export interface IWalletService {
   fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<Wallet>;
+  fetchWalletForPlan(chainId: number, account: Address, transactionPlan: TransactionPlanItem[]): Promise<Wallet>;
 }
 
 export class WalletService implements IWalletService {
@@ -24,5 +26,35 @@ export class WalletService implements IWalletService {
     if (!walletData) return new Wallet({ account, assets: [] });
 
     return new Wallet(walletData);
+  }
+
+  async fetchWalletForPlan(chainId: number, account: Address, transactionPlan: TransactionPlanItem[]): Promise<Wallet> {
+    // Filter transaction plan for only RequiredApproval items
+    const requiredApprovals = transactionPlan.filter(
+      (item): item is RequiredApproval => item.type === "requiredApproval"
+    );
+
+    // Transform RequiredApprovals into AssetWithSpenders
+    const assetSpendersMap = new Map<Address, Set<Address>>();
+
+    for (const approval of requiredApprovals) {
+      const asset = getAddress(approval.token);
+      const spender = getAddress(approval.spender);
+
+      if (!assetSpendersMap.has(asset)) {
+        assetSpendersMap.set(asset, new Set());
+      }
+      assetSpendersMap.get(asset)!.add(spender);
+    }
+
+    // Convert map to AssetWithSpenders array
+    const assetsWithSpenders: AssetWithSpenders[] = Array.from(assetSpendersMap.entries()).map(
+      ([asset, spenders]) => ({
+        asset,
+        spenders: Array.from(spenders),
+      })
+    );
+
+    return this.fetchWallet(chainId, account, assetsWithSpenders);
   }
 }

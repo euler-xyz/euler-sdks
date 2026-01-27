@@ -18,30 +18,43 @@ async function depositExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account
-  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);  
-
-  // Print the position before the deposit
-  const positionBefore = accountData.getPosition(SUB_ACCOUNT_ADDRESS, EULER_PRIME_USDC_VAULT);
-  if (positionBefore) console.log('Position before: ', positionBefore);
+  // Fetch the account (or create a new empty one)
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
 
   // Plan the deposit
-  const depositPlan = sdk.executionService.planDeposit({
+  let depositPlan = sdk.executionService.planDeposit({
     vault: EULER_PRIME_USDC_VAULT,
     amount: DEPOSIT_AMOUNT,
     receiver: SUB_ACCOUNT_ADDRESS,
     account: accountData,
     asset: USDC_ADDRESS,
     enableCollateral: true,
-    usePermit2: true, // Set to false to use standard approval
-    unlimitedApproval: false, // Set to false to approve only the exact amount
+  });
+
+  console.log(`\n✓ Deposit plan created with ${depositPlan.length} step(s)`);
+
+  // Fetch wallet data and resolve approvals
+  // This would normally be done in the executor logic, e.g. in executePlan, but for illustration we'll do it here.
+  const wallet = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, depositPlan);
+  depositPlan = sdk.executionService.resolveRequiredApprovals({
+    plan: depositPlan,
+    wallet,
+    chainId: mainnet.id,
+    usePermit2: true,
+    unlimitedApproval: false,
   });
   
-  console.log(`\n✓ Deposit plan created with ${depositPlan.length} step(s), executing...`);
+  console.log(`✓ Approvals resolved, executing...`);
 
   // Execute the plan
   await executePlan(depositPlan, sdk);
 
+
+  // LOG
+
+  // Print the position before the deposit
+  const positionBefore = accountData.getPosition(SUB_ACCOUNT_ADDRESS, EULER_PRIME_USDC_VAULT);
+  if (positionBefore) console.log('Position before: ', positionBefore);
 
   // in tests the new sub-account will not be indexed by subgraph, so we need to fetch it manually
   const subAccount = await sdk.accountService.fetchSubAccount(mainnet.id, SUB_ACCOUNT_ADDRESS, [EULER_PRIME_USDC_VAULT]);

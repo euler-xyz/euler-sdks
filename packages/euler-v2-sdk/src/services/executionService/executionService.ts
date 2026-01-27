@@ -2,6 +2,7 @@ import { encodeFunctionData, getAddress, Hex, maxUint256, type Address, zeroAddr
 import { DeploymentService } from "../deploymentService/index.js";
 import { executionAbis } from "./executionAbis.js";
 import type { Account, AccountPosition, SubAccount } from "../../entities/Account.js";
+import type { Wallet } from "../../entities/Wallet.js";
 import {
   type EVCBatchItem,
   type EncodeDepositArgs,
@@ -43,6 +44,8 @@ import {
   type PlanMultiplySameAssetArgs,
   type PermitSingleTypedData,
   PermitSingleMessage,
+  type RequiredApproval,
+  type ResolveRequiredApprovalsArgs,
 } from "./executionServiceTypes.js";
 
 export interface IExecutionService {
@@ -78,6 +81,7 @@ export interface IExecutionService {
   planMultiplyWithSwap(args: PlanMultiplyWithSwapArgs): TransactionPlanItem[];
   planMultiplySameAsset(args: PlanMultiplySameAssetArgs): TransactionPlanItem[];
 
+  resolveRequiredApprovals(args: ResolveRequiredApprovalsArgs): TransactionPlanItem[];
   getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData;
   describeBatch(batch: EVCBatchItem[]): BatchItemDescription[];
 }
@@ -1373,126 +1377,128 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Determines if an approval is needed and whether to use permit2 or regular approval
-   * Returns an empty array if no approval is needed, or an array of items (approval + permit2 if both needed)
-   * When account/position is not available, assumes no approvals exist and returns approval items
+   * Resolves RequiredApproval items in a transaction plan by filling in the resolved field.
+   * Uses Wallet data to determine what approvals are needed and whether to use permit2.
+   * Returns the modified plan.
    */
-  private determineApproval(
-    account: Account,
-    token: Address,
-    vault: Address,
-    amount: bigint,
-    usePermit2: boolean = true,
-    unlimitedApproval: boolean = true
-  ): (ApproveCall | Permit2DataToSign)[] {
-    const makeApprove = (spender: Address): ApproveCall => ({
-      type: "approve",
-      token,
-      owner: account.owner,
-      spender,
-      amount: unlimitedApproval ? maxUint256 : amount,
-      data: encodeFunctionData({
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [spender, amount],
-      }),
-    })
-    const makePermit2 = (spender: Address): Permit2DataToSign => ({
-      type: "permit2",
-      token,
-      owner: account.owner,
-      spender,
-      amount: unlimitedApproval ? maxUint160 : amount,
-    })
+  resolveRequiredApprovals(args: ResolveRequiredApprovalsArgs): TransactionPlanItem[] {
+    const { plan, wallet, chainId, usePermit2 = true, unlimitedApproval = true } = args
 
-
-    const position = this.getPosition(account, account.owner, vault)
-    const deployment = this.deploymentService.getDeployment(account.chainId)
+    const deployment = this.deploymentService.getDeployment(chainId)
     const permit2 = deployment.addresses.coreAddrs.permit2
 
-    // If position is not found, assume approval is needed
-    if (!position) {
-      if (usePermit2) {
-        // Check if permit2 is disabled for this account
-        const subAccount = this.getSubAccount(account, account.owner)
-        if (subAccount?.isPermitDisabledMode) {
-          // Fall back to regular approval
-          return [ makeApprove(vault) ]
+    for (const item of plan) {
+      if (item.type === "requiredApproval") {
+        const approval = item as RequiredApproval
+        const { token, owner, spender, amount } = approval
+
+        // Get wallet asset and allowances for the specific spender
+        const walletAsset = wallet.getAsset(token)
+        const allowances = walletAsset?.allowances[spender]
+
+        const resolvedItems: (ApproveCall | Permit2DataToSign)[] = []
+
+        const makeApprove = (approvalSpender: Address, approvalAmount: bigint): ApproveCall => ({
+          type: "approve",
+          token,
+          owner,
+          spender: approvalSpender,
+          amount: approvalAmount,
+          data: encodeFunctionData({
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [approvalSpender, approvalAmount],
+          }),
+        })
+
+        const makePermit2 = (permit2Spender: Address, permit2Amount: bigint): Permit2DataToSign => ({
+          type: "permit2",
+          token,
+          owner,
+          spender: permit2Spender,
+          amount: permit2Amount,
+        })
+
+        // If no wallet asset data, assume approval is needed
+        if (!walletAsset || !allowances) {
+          if (usePermit2) {
+            // Need approval to permit2 and permit2 signature
+            resolvedItems.push(makeApprove(permit2, unlimitedApproval ? maxUint256 : amount))
+            resolvedItems.push(makePermit2(spender, unlimitedApproval ? maxUint160 : amount))
+          } else {
+            // Regular approval
+            resolvedItems.push(makeApprove(spender, unlimitedApproval ? maxUint256 : amount))
+          }
+          approval.resolved = resolvedItems
+          continue
         }
-        // Without position data, we can't know if assetForPermit2 is sufficient
-        // Assume both approval and permit2 signature are needed
-        return [
-          makeApprove(permit2),
-          makePermit2(vault),
-        ]
-      } else {
-        // Regular approval
-        return [ makeApprove(vault) ]
+
+        if (usePermit2) {
+          // Check permit2 allowances
+          const assetForPermit2 = allowances.assetForPermit2
+          const assetForVaultInPermit2 = allowances.assetForVaultInPermit2
+          const permit2ExpirationTime = allowances.permit2ExpirationTime
+
+          // Check if permit2 signature has expired
+          const currentTime = Math.floor(Date.now() / 1000)
+          const isPermit2Expired = permit2ExpirationTime > 0 && currentTime >= permit2ExpirationTime
+
+          const hasSufficientPermit2Allowance = assetForPermit2 >= amount
+          const hasSufficientVaultAllowance = assetForVaultInPermit2 >= amount && !isPermit2Expired
+
+          // If both are sufficient, no approval needed
+          if (hasSufficientPermit2Allowance && hasSufficientVaultAllowance) {
+            approval.resolved = []
+            continue
+          }
+
+          // If assetForPermit2 is insufficient, we need both approval and permit2 signature
+          if (!hasSufficientPermit2Allowance) {
+            resolvedItems.push(makeApprove(permit2, unlimitedApproval ? maxUint256 : amount))
+            resolvedItems.push(makePermit2(spender, unlimitedApproval ? maxUint160 : amount))
+          } else {
+            // assetForPermit2 is sufficient, but vault allowance is insufficient or expired
+            // Only need permit2 signature
+            resolvedItems.push(makePermit2(spender, unlimitedApproval ? maxUint160 : amount))
+          }
+
+          approval.resolved = resolvedItems
+        } else {
+          // Regular approval (non-permit2 path)
+          const assetForVault = allowances.assetForVault
+          const needsDirectApproval = assetForVault < amount
+
+          if (!needsDirectApproval) {
+            approval.resolved = []
+            continue
+          }
+
+          resolvedItems.push(makeApprove(spender, unlimitedApproval ? maxUint256 : amount))
+          approval.resolved = resolvedItems
+        }
       }
     }
 
-    if (usePermit2) {
-      // Check if permit2 is disabled for this account
-      const subAccount = this.getSubAccount(account, account.owner)
-      // If sub-account is not found, assume permit2 is allowed (default behavior)
-      if (subAccount?.isPermitDisabledMode) {
-        // Fall back to regular approval
-        return [ makeApprove(vault) ]
-      }
-
-      // Check permit2 allowances
-      // assetForPermit2: allowance from user wallet to permit2 contract (doesn't expire)
-      // assetForVaultInPermit2: allowance from permit2 to vault (set by signature, can expire)
-      const assetForPermit2 = position.allowances.assetForPermit2
-      const assetForVaultInPermit2 = position.allowances.assetForVaultInPermit2
-      const permit2ExpirationTime = position.allowances.permit2ExpirationTime
-
-      // Check if permit2 signature has expired
-      const currentTime = Math.floor(Date.now() / 1000) // Current time in seconds
-      const isPermit2Expired = permit2ExpirationTime > 0 && currentTime >= permit2ExpirationTime
-
-      // Check if both allowances are sufficient and signature is not expired
-      const hasSufficientPermit2Allowance = assetForPermit2 >= amount
-      const hasSufficientVaultAllowance = assetForVaultInPermit2 >= amount && !isPermit2Expired
-
-      // If both are sufficient, no approval needed
-      if (hasSufficientPermit2Allowance && hasSufficientVaultAllowance) {
-        return []
-      }
-
-      // If assetForPermit2 is insufficient, we need both approval and permit2 signature
-      if (!hasSufficientPermit2Allowance) {
-        return [
-          makeApprove(permit2),
-          makePermit2(vault),
-        ]
-      }
-
-      // assetForPermit2 is sufficient, but vault allowance is insufficient or expired
-      // Only need permit2 signature (approval already exists)
-      return [ makePermit2(vault) ]
-    } else {
-      // Regular approval (non-permit2 path)
-      // Check if we have sufficient direct vault allowance
-      const needsDirectApproval = position.allowances.assetForVault < amount
-      if (!needsDirectApproval) return []
-
-      // Regular approval needed
-      return [ makeApprove(vault) ]
-    }
+    return plan
   }
 
   // ========== Transaction plan functions ==========
 
   planDeposit(args: PlanDepositArgs): TransactionPlanItem[] {
-    const { vault, amount, receiver, account, asset, enableCollateral, usePermit2, unlimitedApproval = true } = args
+    const { vault, amount, receiver, account, asset, enableCollateral } = args
     const plan: TransactionPlanItem[] = []
 
     // Default: collateral is not enabled when account/position is not available
     const isCollateralEnabled = this.isCollateralEnabled(account, receiver, vault)
 
-    const approval = this.determineApproval(account, asset, vault, amount, usePermit2, unlimitedApproval)
-    plan.push(...approval)
+    // Add approval requirement (will be resolved later with Wallet data)
+    plan.push({
+      type: "requiredApproval",
+      token: asset,
+      owner: account.owner,
+      spender: vault,
+      amount,
+    })
 
 
     // Build EVC batch items
@@ -1515,7 +1521,7 @@ export class ExecutionService implements IExecutionService {
   }
 
   planMint(args: PlanMintArgs): TransactionPlanItem[] {
-    const { vault, shares, receiver, account, asset, usePermit2, unlimitedApproval = true } = args
+    const { vault, shares, receiver, account, asset } = args
     const plan: TransactionPlanItem[] = []
 
     // Default: collateral is not enabled when account/position is not available
@@ -1525,8 +1531,15 @@ export class ExecutionService implements IExecutionService {
     // In practice, you'd query the vault's convertToAssets(shares) to get the exact amount
     // For now, we'll use shares as a proxy (this may overestimate, but that's safer)
     const estimatedAssetAmount = shares // This should be convertToAssets(shares) in practice
-    const approval = this.determineApproval(account, asset, vault, estimatedAssetAmount, usePermit2, unlimitedApproval)
-    plan.push(...approval)
+    
+    // Add approval requirement (will be resolved later with Wallet data)
+    plan.push({
+      type: "requiredApproval",
+      token: asset,
+      owner: account.owner,
+      spender: vault,
+      amount: estimatedAssetAmount,
+    })
 
     // Build EVC batch items
     const batchItems = this.encodeMint({
@@ -1614,7 +1627,7 @@ export class ExecutionService implements IExecutionService {
   }
 
   planBorrow(args: PlanBorrowArgs): TransactionPlanItem[] {
-    const { vault, amount, receiver, borrowAccount, account, collateral, usePermit2, unlimitedApproval = true } = args
+    const { vault, amount, receiver, borrowAccount, account, collateral } = args
     const plan: TransactionPlanItem[] = []
 
     const enableCollateral = collateral && collateral.amount > 0n
@@ -1627,20 +1640,15 @@ export class ExecutionService implements IExecutionService {
     const enableController = !this.isControllerEnabled(account, borrowAccount, vault)
 
     if (collateral && collateral.amount > 0n) {
-
       // Approval is needed from the account owner (who owns the wallet tokens)
-      // We check approval for the account owner -> vault
-      const collateralApproval = this.determineApproval(
-        account,
-        collateral.asset,
-        collateral.vault,
-        collateral.amount,
-        usePermit2,
-        unlimitedApproval
-      )
-      if (collateralApproval.length > 0) {
-        plan.push(...collateralApproval)
-      }
+      // Add approval requirement (will be resolved later with Wallet data)
+      plan.push({
+        type: "requiredApproval",
+        token: collateral.asset,
+        owner: account.owner,
+        spender: collateral.vault,
+        amount: collateral.amount,
+      })
     }
 
     const batchItems = this.encodeBorrow({
@@ -1666,7 +1674,7 @@ export class ExecutionService implements IExecutionService {
   }
 
   planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlanItem[] {
-    const { liabilityVault, liabilityAmount, receiver, account, usePermit2, unlimitedApproval = true } = args
+    const { liabilityVault, liabilityAmount, receiver, account } = args
     const plan: TransactionPlanItem[] = []
 
     // Get position to determine asset
@@ -1675,10 +1683,14 @@ export class ExecutionService implements IExecutionService {
       throw new Error(`Position not found. Liability vault: ${liabilityVault}, Account: ${receiver}`)
     }
 
-    const approval = this.determineApproval(account, position.asset, liabilityVault, liabilityAmount, usePermit2, unlimitedApproval)
-    if (approval.length > 0) {
-      plan.push(...approval)
-    }
+    // Add approval requirement (will be resolved later with Wallet data)
+    plan.push({
+      type: "requiredApproval",
+      token: position.asset,
+      owner: account.owner,
+      spender: liabilityVault,
+      amount: liabilityAmount,
+    })
 
     const isMax = position.borrowed <= liabilityAmount
     // Determine if controller should be disabled (only when full debt is repaid)
@@ -1704,7 +1716,7 @@ export class ExecutionService implements IExecutionService {
   }
 
   planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlanItem[] {
-    const { liabilityVault, liabilityAmount, receiver, fromVault, fromAccount, account, usePermit2, unlimitedApproval = true } = args
+    const { liabilityVault, liabilityAmount, receiver, fromVault, fromAccount, account } = args
     const plan: TransactionPlanItem[] = []
 
     // Get positions
@@ -1728,11 +1740,14 @@ export class ExecutionService implements IExecutionService {
 
     // If same asset, different vault, we might need approval for the withdraw/repay path
     if (fromVault !== liabilityVault) {
-      // Check if approval is needed for repay
-      const approval = this.determineApproval(account, liabilityAsset, liabilityVault, liabilityAmount, usePermit2, unlimitedApproval)
-      if (approval.length > 0) {
-        plan.push(...approval)
-      }
+      // Add approval requirement (will be resolved later with Wallet data)
+      plan.push({
+        type: "requiredApproval",
+        token: liabilityAsset,
+        owner: account.owner,
+        spender: liabilityVault,
+        amount: liabilityAmount,
+      })
     }
 
     // Determine if controller should be disabled (only when full debt is repaid)
@@ -1924,24 +1939,19 @@ export class ExecutionService implements IExecutionService {
       collateralAsset,
       account,
       swapQuote,
-      usePermit2,
-      unlimitedApproval = true,
     } = args
     const plan: TransactionPlanItem[] = []
 
     // 1. Check if collateral approval is needed (only if depositing collateral)
     if (collateralAmount > 0n) {
-      const collateralApproval = this.determineApproval(
-        account,
-        collateralAsset,
-        collateralVault,
-        collateralAmount,
-        usePermit2,
-        unlimitedApproval
-      )
-      if (collateralApproval.length > 0) {
-        plan.push(...collateralApproval)
-      }
+      // Add approval requirement (will be resolved later with Wallet data)
+      plan.push({
+        type: "requiredApproval",
+        token: collateralAsset,
+        owner: account.owner,
+        spender: collateralVault,
+        amount: collateralAmount,
+      })
     }
     if (swapQuote.accountIn !== swapQuote.accountOut) {
       throw new Error("Account in and account out must be the same")
@@ -1999,24 +2009,19 @@ export class ExecutionService implements IExecutionService {
       longVault,
       receiver,
       account,
-      usePermit2,
-      unlimitedApproval = true,
     } = args
     const plan: TransactionPlanItem[] = []
 
     // 1. Check if collateral approval is needed (only if depositing collateral)
     if (collateralAmount > 0n) {
-      const collateralApproval = this.determineApproval(
-        account,
-        collateralAsset,
-        collateralVault,
-        collateralAmount,
-        usePermit2,
-        unlimitedApproval
-      )
-      if (collateralApproval.length > 0) {
-        plan.push(...collateralApproval)
-      }
+      // Add approval requirement (will be resolved later with Wallet data)
+      plan.push({
+        type: "requiredApproval",
+        token: collateralAsset,
+        owner: account.owner,
+        spender: collateralVault,
+        amount: collateralAmount,
+      })
     }
 
     // 2. Determine if collateral needs to be enabled

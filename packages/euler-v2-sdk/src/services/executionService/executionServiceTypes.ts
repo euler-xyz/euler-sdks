@@ -1,5 +1,6 @@
 import { Address, Hex, TypedDataDomain } from "viem";
 import type { Account, SubAccount } from "../../entities/Account.js";
+import type { Wallet } from "../../entities/Wallet.js";
 import type {
   SwapQuote,
   SwapQuoteRequest,
@@ -72,6 +73,14 @@ export type EncodeRepayArgs = {
   receiver: Address
   subAccount?: SubAccount
   disableController?: boolean
+}
+
+export type ResolveRequiredApprovalsArgs = {
+  plan: TransactionPlanItem[]
+  wallet: Wallet
+  chainId: number
+  usePermit2?: boolean
+  unlimitedApproval?: boolean
 }
 
 export type EncodePullDebtArgs = {
@@ -149,6 +158,39 @@ export type EncodeTransferArgs = {
   disableCollateralFrom?: boolean
 }
 
+export type EncodeMultiplyWithSwapArgs = {
+  chainId: number
+  collateralVault: Address
+  collateralAmount: bigint
+  liabilityVault: Address
+  liabilityAmount: bigint
+  longVault: Address
+  owner: Address
+  receiver: Address
+  enableCollateral?: boolean
+  enableCollateralLong?: boolean
+  currentController?: Address
+  enableController?: boolean
+  collateralPermit2?: Permit2Data
+  swapQuote: SwapQuote
+}
+
+export type EncodeMultiplySameAssetArgs = {
+  chainId: number
+  collateralVault: Address
+  collateralAmount: bigint
+  liabilityVault: Address
+  liabilityAmount: bigint
+  longVault: Address
+  owner: Address
+  receiver: Address
+  enableCollateral?: boolean
+  enableCollateralLong?: boolean
+  currentController?: Address
+  enableController?: boolean
+  collateralPermit2?: Permit2Data
+}
+
 export type EncodePermit2CallArgs = {
   chainId: number
   message: PermitSingleMessage
@@ -206,7 +248,15 @@ export const PERMIT2_TYPES = {
   ],
 } as const
 
-// Transaction plan types
+export type RequiredApproval = {
+  type: "requiredApproval"
+  token: Address
+  owner: Address
+  spender: Address
+  amount: bigint
+  resolved?: (ApproveCall | Permit2DataToSign)[]
+}
+
 export type ApproveCall = {
   type: "approve"
   token: Address
@@ -229,7 +279,7 @@ export type EVCBatchItems = {
   items: EVCBatchItem[]
 }
 
-export type TransactionPlanItem = ApproveCall | Permit2DataToSign | EVCBatchItems
+export type TransactionPlanItem = RequiredApproval | EVCBatchItems
 
 // Plan function argument types
 export type PlanDepositArgs = {
@@ -239,147 +289,102 @@ export type PlanDepositArgs = {
   account: Account
   asset: Address // Asset address - required when account/position is not available
   enableCollateral?: boolean
-  usePermit2?: boolean
-  unlimitedApproval?: boolean
 }
 
 export type PlanMintArgs = {
+  account: Account
   vault: Address
   shares: bigint
   receiver: Address
-  account: Account
   asset: Address // Asset address - required when account/position is not available
-  usePermit2?: boolean
-  unlimitedApproval?: boolean
 }
 
 export type PlanWithdrawArgs = {
+  account: Account
   vault: Address
   assets: bigint
   owner: Address
   receiver: Address
-  account: Account
 }
 
 export type PlanRedeemArgs = {
+  account: Account
   vault: Address
   shares: bigint
   owner: Address
   receiver: Address
-  account: Account
 }
 
 export type PlanBorrowArgs = {
+  account: Account
   vault: Address
   amount: bigint
   borrowAccount: Address
   receiver: Address
-  account: Account
   collateral?: {
     vault: Address
     amount: bigint
     asset: Address
   }
-  usePermit2?: boolean
-  unlimitedApproval?: boolean
 }
 
 export type PlanRepayFromWalletArgs = {
+  account: Account
   liabilityVault: Address
   liabilityAmount: bigint
   receiver: Address
-  account: Account
-  usePermit2?: boolean
-  unlimitedApproval?: boolean
 }
 
 export type PlanRepayFromDepositArgs = {
+  account: Account
   liabilityVault: Address
   liabilityAmount: bigint
   receiver: Address
   fromVault: Address
   fromAccount: Address
-  account: Account
-  usePermit2?: boolean
-  unlimitedApproval?: boolean
 }
 
 export type PlanRepayWithSwapArgs = {
-  swapQuote: SwapQuote
   account: Account
+  swapQuote: SwapQuote
 }
 
 export type PlanSwapCollateralArgs = {
-  swapQuote: SwapQuote
   account: Account
+  swapQuote: SwapQuote
 }
 
 export type PlanSwapDebtArgs = {
-  swapQuote: SwapQuote
   account: Account
+  swapQuote: SwapQuote
 }
 
 export type PlanTransferArgs = {
+  account: Account
   vault: Address
   from: Address
   to: Address
   amount: bigint
-  account: Account
 }
 
 export type PlanPullDebtArgs = {
-  chainId: number
+  account: Account
   vault: Address
   from: Address
   to: Address
   amount: bigint
-  account: Account
-}
-
-export type EncodeMultiplyWithSwapArgs = {
-  chainId: number
-  collateralVault: Address
-  collateralAmount: bigint
-  liabilityVault: Address
-  liabilityAmount: bigint
-  longVault: Address
-  owner: Address
-  receiver: Address
-  enableCollateral?: boolean
-  enableCollateralLong?: boolean
-  currentController?: Address
-  enableController?: boolean
-  collateralPermit2?: Permit2Data
-  swapQuote: SwapQuote
-}
-
-export type EncodeMultiplySameAssetArgs = {
-  chainId: number
-  collateralVault: Address
-  collateralAmount: bigint
-  liabilityVault: Address
-  liabilityAmount: bigint
-  longVault: Address
-  owner: Address
-  receiver: Address
-  enableCollateral?: boolean
-  enableCollateralLong?: boolean
-  currentController?: Address
-  enableController?: boolean
-  collateralPermit2?: Permit2Data
 }
 
 export type PlanMultiplyWithSwapArgs = {
+  account: Account
   collateralVault: Address
   collateralAmount: bigint
   collateralAsset: Address
-  account: Account
   swapQuote: SwapQuote
-  usePermit2?: boolean
-  unlimitedApproval?: boolean
 }
 
 export type PlanMultiplySameAssetArgs = {
+  account: Account
   collateralVault: Address
   collateralAmount: bigint
   collateralAsset: Address
@@ -387,9 +392,6 @@ export type PlanMultiplySameAssetArgs = {
   liabilityAmount: bigint
   longVault: Address
   receiver: Address
-  account: Account
-  usePermit2?: boolean
-  unlimitedApproval?: boolean
 }
 
 // Decoded batch item data

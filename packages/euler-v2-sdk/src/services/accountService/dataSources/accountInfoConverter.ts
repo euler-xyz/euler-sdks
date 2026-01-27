@@ -1,5 +1,5 @@
 import { maxInt256 } from "viem";
-import { SubAccount, AccountPosition, AccountLiquidity, AccountAllowances, AddressPrefix, DaysToLiquidation } from "../../../entities/Account.js";
+import { SubAccount, AccountPosition, AccountLiquidity, DaysToLiquidation } from "../../../entities/Account.js";
 import { EVCAccountInfo, VaultAccountInfo, AccountLiquidityInfo } from "./accountLensTypes.js";
 
 /**
@@ -54,13 +54,6 @@ import { EVCAccountInfo, VaultAccountInfo, AccountLiquidityInfo } from "./accoun
  * @returns The AccountPosition object
  */
 export function convertVaultAccountInfoToAccountPosition(vaultAccountInfo: VaultAccountInfo): AccountPosition {
-  const allowances: AccountAllowances = {
-    assetForVault: vaultAccountInfo.assetAllowanceVault,
-    assetForPermit2: vaultAccountInfo.assetAllowancePermit2,
-    assetForVaultInPermit2: vaultAccountInfo.assetAllowanceVaultPermit2,
-    permit2ExpirationTime: Number(vaultAccountInfo.assetAllowanceExpirationVaultPermit2),
-  };
-
   let liquidity: AccountLiquidity | undefined = undefined;
   if (vaultAccountInfo.borrowed !== 0n) {
     if (vaultAccountInfo.liquidityInfo.queryFailure) {
@@ -74,11 +67,9 @@ export function convertVaultAccountInfoToAccountPosition(vaultAccountInfo: Vault
     account: vaultAccountInfo.account,
     vault: vaultAccountInfo.vault,
     asset: vaultAccountInfo.asset,
-    walletBalance: vaultAccountInfo.assetsAccount,
     shares: vaultAccountInfo.shares,
     assets: vaultAccountInfo.assets,
     borrowed: vaultAccountInfo.borrowed,
-    allowances,
     isController: vaultAccountInfo.isController,
     isCollateral: vaultAccountInfo.isCollateral,
     liquidity,
