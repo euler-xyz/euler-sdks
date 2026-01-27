@@ -1,4 +1,4 @@
-import { IWalletDataSource } from "../walletService.js";
+import { IWalletDataSource, AssetWithSpenders } from "../walletService.js";
 import { ProviderService } from "../../providerService/index.js";
 import { IABIService } from "../../abiService/index.js";
 import { DeploymentService } from "../../deploymentService/index.js";
@@ -34,118 +34,133 @@ export class WalletOnchainDataSource implements IWalletDataSource {
   async fetchWallet(
     chainId: number,
     account: Address,
-    asset: Address,
-    spenders: Address[]
+    assetsWithSpenders: AssetWithSpenders[]
   ): Promise<IWallet | undefined> {
     const provider = this.providerService.getProvider(chainId);
     const deployment = this.deploymentService.getDeployment(chainId);
     const permit2Address = deployment.addresses.coreAddrs.permit2;
-    const assetAddress = getAddress(asset);
 
     try {
-      // Build multicall contracts array
-      const contracts = [
-        // Balance call
-        {
-          address: assetAddress,
-          abi: erc20Abi,
-          functionName: "balanceOf" as const,
-          args: [account],
-        },
-        // For each spender, fetch:
-        // 1. ERC20 allowance from asset to spender (vault)
-        // 2. ERC20 allowance from asset to permit2
-        // 3. Permit2 allowance from user to spender through permit2
-        ...spenders.flatMap((spender) => [
-          // assetForVault
+      // Build multicall contracts array for all assets
+      const contracts = assetsWithSpenders.flatMap(({ asset, spenders }) => {
+        const assetAddress = getAddress(asset);
+        
+        return [
+          // Balance call for this asset
           {
             address: assetAddress,
             abi: erc20Abi,
-            functionName: "allowance" as const,
-            args: [account, spender],
+            functionName: "balanceOf" as const,
+            args: [account],
           },
-          // assetForPermit2
-          {
-            address: assetAddress,
-            abi: erc20Abi,
-            functionName: "allowance" as const,
-            args: [account, permit2Address],
-          },
-          // assetForVaultInPermit2 and expiration
-          {
-            address: permit2Address,
-            abi: permit2AllowanceAbi,
-            functionName: "allowance" as const,
-            args: [account, assetAddress, spender],
-          },
-        ]),
-      ];
+          // For each spender, fetch:
+          // 1. ERC20 allowance from asset to spender (vault)
+          // 2. ERC20 allowance from asset to permit2
+          // 3. Permit2 allowance from user to spender through permit2
+          ...spenders.flatMap((spender) => [
+            // assetForVault
+            {
+              address: assetAddress,
+              abi: erc20Abi,
+              functionName: "allowance" as const,
+              args: [account, spender],
+            },
+            // assetForPermit2
+            {
+              address: assetAddress,
+              abi: erc20Abi,
+              functionName: "allowance" as const,
+              args: [account, permit2Address],
+            },
+            // assetForVaultInPermit2 and expiration
+            {
+              address: permit2Address,
+              abi: permit2AllowanceAbi,
+              functionName: "allowance" as const,
+              args: [account, assetAddress, spender],
+            },
+          ]),
+        ];
+      });
 
       // Execute multicall
       const results = await provider.multicall({ contracts });
 
-      // Parse balance result
-      const balanceResult = results[0];
-      if (!balanceResult || balanceResult.status !== "success" || !balanceResult.result) {
-        throw new Error(`Failed to fetch balance for ${account} and asset ${asset}`);
-      }
-      const balance = balanceResult.result as bigint;
+      // Parse results for each asset
+      const walletAssets: WalletAsset[] = [];
+      let resultIndex = 0;
 
-      // Parse allowance results for each spender
-      const allowances: Record<Address, AssetAllowances> = {};
-      for (let i = 0; i < spenders.length; i++) {
-        const spender = spenders[i];
-        if (!spender) continue;
+      for (const { asset, spenders } of assetsWithSpenders) {
+        const assetAddress = getAddress(asset);
 
-        // Each spender has 3 calls: assetForVault, assetForPermit2, permit2Allowance
-        const baseIndex = 1 + i * 3;
-        
-        const assetForVaultResult = results[baseIndex];
-        const assetForPermit2Result = results[baseIndex + 1];
-        const permit2AllowanceResult = results[baseIndex + 2];
+        // Parse balance result
+        const balanceResult = results[resultIndex];
+        if (!balanceResult || balanceResult.status !== "success" || !balanceResult.result) {
+          console.error(`Failed to fetch balance for ${account} and asset ${asset}`);
+          resultIndex += 1 + spenders.length * 3;
+          continue;
+        }
+        const balance = balanceResult.result as bigint;
+        resultIndex++;
 
-        const assetForVault = 
-          assetForVaultResult && assetForVaultResult.status === "success" && assetForVaultResult.result !== undefined
-            ? (assetForVaultResult.result as bigint)
-            : 0n;
-
-        const assetForPermit2 = 
-          assetForPermit2Result && assetForPermit2Result.status === "success" && assetForPermit2Result.result !== undefined
-            ? (assetForPermit2Result.result as bigint)
-            : 0n;
-
-        let assetForVaultInPermit2 = 0n;
-        let permit2ExpirationTime = 0;
-
-        if (permit2AllowanceResult && permit2AllowanceResult.status === "success" && permit2AllowanceResult.result) {
-          const result = permit2AllowanceResult.result;
-          if (Array.isArray(result) && result.length >= 2) {
-            assetForVaultInPermit2 = result[0] as bigint;
-            permit2ExpirationTime = Number(result[1]);
+        // Parse allowance results for each spender
+        const allowances: Record<Address, AssetAllowances> = {};
+        for (let i = 0; i < spenders.length; i++) {
+          const spender = spenders[i];
+          if (!spender) {
+            resultIndex += 3;
+            continue;
           }
+
+          // Each spender has 3 calls: assetForVault, assetForPermit2, permit2Allowance
+          const assetForVaultResult = results[resultIndex];
+          const assetForPermit2Result = results[resultIndex + 1];
+          const permit2AllowanceResult = results[resultIndex + 2];
+          resultIndex += 3;
+
+          const assetForVault = 
+            assetForVaultResult && assetForVaultResult.status === "success" && assetForVaultResult.result !== undefined
+              ? (assetForVaultResult.result as bigint)
+              : 0n;
+
+          const assetForPermit2 = 
+            assetForPermit2Result && assetForPermit2Result.status === "success" && assetForPermit2Result.result !== undefined
+              ? (assetForPermit2Result.result as bigint)
+              : 0n;
+
+          let assetForVaultInPermit2 = 0n;
+          let permit2ExpirationTime = 0;
+
+          if (permit2AllowanceResult && permit2AllowanceResult.status === "success" && permit2AllowanceResult.result) {
+            const result = permit2AllowanceResult.result;
+            if (Array.isArray(result) && result.length >= 2) {
+              assetForVaultInPermit2 = result[0] as bigint;
+              permit2ExpirationTime = Number(result[1]);
+            }
+          }
+
+          allowances[getAddress(spender)] = {
+            assetForVault,
+            assetForPermit2,
+            assetForVaultInPermit2,
+            permit2ExpirationTime,
+          };
         }
 
-        allowances[getAddress(spender)] = {
-          assetForVault,
-          assetForPermit2,
-          assetForVaultInPermit2,
-          permit2ExpirationTime,
-        };
+        walletAssets.push({
+          account,
+          asset: assetAddress,
+          balance,
+          allowances,
+        });
       }
-
-      const walletAsset: WalletAsset = {
-        account,
-        asset: assetAddress,
-        balance,
-        allowances,
-      };
 
       return {
         account,
-        assets: [walletAsset],
+        assets: walletAssets,
       };
     } catch (error) {
-      console.error(`Failed to fetch wallet info for ${account} and asset ${asset}:`, error);
+      console.error(`Failed to fetch wallet info for ${account}:`, error);
       return undefined;
     }
   }

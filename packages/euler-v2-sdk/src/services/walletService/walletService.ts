@@ -1,12 +1,17 @@
 import { Wallet, IWallet } from "../../entities/Wallet.js";
 import { Address } from "viem";
 
+export interface AssetWithSpenders {
+  asset: Address;
+  spenders: Address[];
+}
+
 export interface IWalletDataSource {
-  fetchWallet(chainId: number, account: Address, asset: Address, spenders: Address[]): Promise<IWallet | undefined>;
+  fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<IWallet | undefined>;
 }
 
 export interface IWalletService {
-  fetchWallet(chainId: number, account: Address, asset: Address, spenders: Address[]): Promise<Wallet>;
+  fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<Wallet>;
 }
 
 export class WalletService implements IWalletService {
@@ -14,8 +19,8 @@ export class WalletService implements IWalletService {
     private readonly dataSource: IWalletDataSource
   ) {}
 
-  async fetchWallet(chainId: number, account: Address, asset: Address, spenders: Address[]): Promise<Wallet> {
-    const walletData = await this.dataSource.fetchWallet(chainId, account, asset, spenders);
+  async fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<Wallet> {
+    const walletData = await this.dataSource.fetchWallet(chainId, account, assetsWithSpenders);
     if (!walletData) return new Wallet({ account, assets: [] });
 
     return new Wallet(walletData);
