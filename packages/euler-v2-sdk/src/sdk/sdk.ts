@@ -7,9 +7,11 @@ import { IABIService } from "../services/abiService/index.js";
 import { IEulerLabelsService } from "../services/eulerLabelsService/index.js";
 import { ISwapService } from "../services/swapService/index.js";
 import { IExecutionService } from "../services/executionService/index.js";
+import { IWalletService } from "../services/walletService/index.js";
 
 export interface EulerSDKOptions {
   accountService: IAccountService;
+  walletService: IWalletService;
   eVaultService: IEVaultService;
   eulerEarnService: IEulerEarnService;
   deploymentService: IDeploymentService;
@@ -22,6 +24,7 @@ export interface EulerSDKOptions {
 
 export class EulerSDK {
   public readonly accountService: IAccountService;
+  public readonly walletService: IWalletService;
   public readonly eVaultService: IEVaultService;
   public readonly eulerEarnService: IEulerEarnService;
   public readonly deploymentService: IDeploymentService;
@@ -33,6 +36,7 @@ export class EulerSDK {
 
   constructor(options: EulerSDKOptions) {
     this.accountService = options.accountService;
+    this.walletService = options.walletService;
     this.eVaultService = options.eVaultService;
     this.eulerEarnService = options.eulerEarnService;
     this.deploymentService = options.deploymentService;

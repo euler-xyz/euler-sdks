@@ -34,28 +34,18 @@ export interface AccountLiquidity {
   }[];
 };
 
-export interface AccountAllowances {
-  assetForVault: bigint;
-  assetForPermit2: bigint;
-  assetForVaultInPermit2: bigint;
-  permit2ExpirationTime: number;
-}
-
 export type AccountPosition = {
   account: Address;
   vault: Address;
   asset: Address;
 
-  walletBalance: bigint;
   shares: bigint;
   assets: bigint;
   borrowed: bigint;
 
-  allowances: AccountAllowances;
-
   isController: boolean;
   isCollateral: boolean;
-  
+
   balanceForwarderEnabled: boolean;
   liquidity?: AccountLiquidity;
 };
@@ -92,6 +82,4 @@ export class Account implements IAccount {
     return subAccount?.positions.find(p => isAddressEqual(p.vault, vault));
   }
 }
-
-
 

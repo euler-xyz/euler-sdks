@@ -5,6 +5,8 @@ import { ProviderService, IProviderService } from "../services/providerService/i
 import { AccountService, IAccountService } from "../services/accountService/index.js";
 import { AccountOnchainDataSource } from "../services/accountService/dataSources/accountOnchainDataSource.js";
 import { AccountVaultsSubgraphDataSource, AccountVaultsSubgraphDataSourceConfig } from "../services/accountService/dataSources/accountVaultsSubgraphDataSource.js";
+import { WalletService, IWalletService } from "../services/walletService/index.js";
+import { WalletOnchainDataSource } from "../services/walletService/dataSources/walletOnchainDataSource.js";
 import { EVaultService, IEVaultService } from "../services/eVaultService/index.js";
 import { EulerEarnService, IEulerEarnService } from "../services/eulerEarnService/index.js";
 import { EulerEarnOnchainDataSource } from "../services/eulerEarnService/dataSources/eulerEarnOnchainDataSource.js";
@@ -20,6 +22,7 @@ export interface BuildSDKOverrides {
   deploymentService?: IDeploymentService;
   providerService?: IProviderService;
   accountService?: IAccountService;
+  walletService?: IWalletService;
   eVaultService?: IEVaultService;
   eulerEarnService?: IEulerEarnService;
   eulerLabelsService?: IEulerLabelsService;
@@ -56,6 +59,19 @@ export const buildSDK = async (options: BuildSDKOptions) => {
       accountVaultsDataSource
     );
     accountService = new AccountService(accountDataSource);
+  }
+
+  // Build wallet service if not overridden
+  let walletService: IWalletService;
+  if (servicesOverrides?.walletService) {
+    walletService = servicesOverrides.walletService;
+  } else {
+    const walletDataSource = new WalletOnchainDataSource(
+      providerService as ProviderService,
+      abiService as ABIService,
+      deploymentService as DeploymentService
+    );
+    walletService = new WalletService(walletDataSource);
   }
 
   // Build eVault service if not overridden
@@ -98,6 +114,7 @@ export const buildSDK = async (options: BuildSDKOptions) => {
 
   return new EulerSDK({
     accountService,
+    walletService,
     eVaultService,
     eulerEarnService,
     deploymentService,
