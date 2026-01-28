@@ -57,6 +57,10 @@ Create a `.env` file in the `packages/euler-v2-sdk/examples` directory:
 
 ```bash
 FORK_RPC_URL="https://your-mainnet-rpc-url"
+
+# Optional: Set PRIVATE_KEY to use an existing account on the fork
+# If not set, a test account will be created and funded automatically
+# PRIVATE_KEY="0x..."
 ```
 
 2. **Start a local fork (in one terminal):**

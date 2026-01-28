@@ -23,7 +23,7 @@ export class WalletService implements IWalletService {
 
   async fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<Wallet> {
     const walletData = await this.dataSource.fetchWallet(chainId, account, assetsWithSpenders);
-    if (!walletData) return new Wallet({ account, assets: [] });
+    if (!walletData) return new Wallet({ chainId, account, assets: [] });
 
     return new Wallet(walletData);
   }

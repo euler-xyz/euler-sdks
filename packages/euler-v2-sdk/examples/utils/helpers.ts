@@ -484,3 +484,7 @@ import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK } 
 
     console.log("\n" + "═".repeat(80) + "\n");
   }
+
+  export function stringify(obj: any) {
+    return JSON.stringify(obj, (_, v) => typeof v === 'bigint' ? v.toString() : v, 2);
+  }

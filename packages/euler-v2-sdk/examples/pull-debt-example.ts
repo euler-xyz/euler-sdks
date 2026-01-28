@@ -1,0 +1,204 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * PULL DEBT EXAMPLE
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 
+ * This example demonstrates how to transfer debt from one sub-account to another.
+ * This is useful for consolidating debt positions or moving debt to a sub-account
+ * with more collateral.
+ * 
+ * OPERATION:
+ *   1. Create debt position in sub-account 1 (deposit USDC, borrow USDT)
+ *   2. Deposit additional USDC collateral into sub-account 2
+ *   3. Pull (transfer) debt from sub-account 1 to sub-account 2
+ * 
+ * ASSETS & VAULTS:
+ *   • USDC → Euler Prime USDC Vault (collateral in both sub-accounts)
+ *   • USDT → Euler Prime USDT Vault (debt transferred between sub-accounts)
+ * 
+ * 💡 TIP - USE CASES:
+ *   • Consolidate debt from multiple sub-accounts
+ *   • Move debt to a sub-account with better collateral
+ *   • Rebalance debt across sub-accounts for better risk management
+ * 
+ * 💡 TIP - REQUIREMENTS:
+ *   • The receiving sub-account must have sufficient collateral
+ *   • The debt vault must be enabled as a controller on the receiving account
+ *   • Both accounts must remain healthy after the transfer
+ * 
+ * 💡 TIP - USING EXISTING ACCOUNTS:
+ *   • Set PRIVATE_KEY in .env to use an existing account on the fork
+ *   • Without PRIVATE_KEY, a test account will be created and funded automatically
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import "dotenv/config";
+import {
+  parseUnits,
+} from "viem";
+import { mainnet } from "viem/chains";
+
+import { executePlan } from "./utils/executor.js";
+import { printHeader, logOperationResult } from "./utils/helpers.js";
+import { 
+  rpcUrls,
+  account,
+  initBalances,
+  USDC_ADDRESS,
+  EULER_PRIME_USDC_VAULT,
+  EULER_PRIME_USDT_VAULT,
+} from "./utils/config.js";
+import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
+
+// Inputs
+const COLLATERAL_AMOUNT_1 = parseUnits("1000", 6); // 1000 USDC for sub-account 1
+const COLLATERAL_AMOUNT_2 = parseUnits("2000", 6); // 2000 USDC for sub-account 2
+const BORROW_AMOUNT = parseUnits("500", 6);        // 500 USDT debt
+const PULL_DEBT_AMOUNT = parseUnits("250", 6);     // Pull 250 USDT debt
+const SUB_ACCOUNT_1_ID = 1;
+const SUB_ACCOUNT_2_ID = 2;
+const SUB_ACCOUNT_1_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_1_ID);
+const SUB_ACCOUNT_2_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_2_ID);
+
+async function pullDebtExample() {
+  // Build the SDK
+  const sdk = await buildSDK({ rpcUrls });
+
+  // Fetch the account
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
+
+  // Step 1: Create debt position in sub-account 1
+  console.log('\n=== Step 1: Create Debt Position in Sub-Account 1 ===');
+  let borrowPlan = sdk.executionService.planBorrow({
+    account: accountData,
+    vault: EULER_PRIME_USDT_VAULT,
+    amount: BORROW_AMOUNT,
+    receiver: account.address,
+    borrowAccount: SUB_ACCOUNT_1_ADDRESS,
+    collateral: {
+      vault: EULER_PRIME_USDC_VAULT,
+      amount: COLLATERAL_AMOUNT_1,
+      asset: USDC_ADDRESS,
+    },
+  });
+
+  console.log(`✓ Borrow plan created with ${borrowPlan.length} step(s)`);
+
+  // Fetch wallet data and resolve approvals
+  const walletForBorrow = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, borrowPlan);
+  borrowPlan = sdk.executionService.resolveRequiredApprovals({
+    plan: borrowPlan,
+    wallet: walletForBorrow,
+    chainId: mainnet.id,
+    usePermit2: true,
+    unlimitedApproval: false,
+  });
+
+  console.log(`✓ Approvals resolved, executing...`);
+  await executePlan(borrowPlan, sdk);
+
+  // Fetch updated sub-accounts after borrow
+  let subAccount1 = await sdk.accountService.fetchSubAccount(
+    mainnet.id,
+    SUB_ACCOUNT_1_ADDRESS,
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+  );
+  let subAccount2 = await sdk.accountService.fetchSubAccount(
+    mainnet.id,
+    SUB_ACCOUNT_2_ADDRESS,
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+  );
+  
+  // Log the diff between before and after borrow
+  await logOperationResult(mainnet.id, accountData, [subAccount1, subAccount2], sdk);
+
+  // Step 2: Deposit collateral into sub-account 2
+  console.log('\n=== Step 2: Deposit Collateral into Sub-Account 2 ===');
+  
+  // Update account data with the fetched sub-accounts
+  accountData.subAccounts = [subAccount1!, subAccount2!];
+
+  let depositPlan = sdk.executionService.planDeposit({
+    vault: EULER_PRIME_USDC_VAULT,
+    amount: COLLATERAL_AMOUNT_2,
+    receiver: SUB_ACCOUNT_2_ADDRESS,
+    account: accountData,
+    asset: USDC_ADDRESS,
+    enableCollateral: true,
+  });
+
+  console.log(`✓ Deposit plan created with ${depositPlan.length} step(s)`);
+
+  // Fetch wallet data and resolve approvals
+  const walletForDeposit = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, depositPlan);
+  depositPlan = sdk.executionService.resolveRequiredApprovals({
+    plan: depositPlan,
+    wallet: walletForDeposit,
+    chainId: mainnet.id,
+    usePermit2: true,
+    unlimitedApproval: false,
+  });
+
+  console.log(`✓ Approvals resolved, executing...`);
+  await executePlan(depositPlan, sdk);
+
+  // Fetch updated sub-accounts after deposit
+  subAccount1 = await sdk.accountService.fetchSubAccount(
+    mainnet.id,
+    SUB_ACCOUNT_1_ADDRESS,
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+  );
+  subAccount2 = await sdk.accountService.fetchSubAccount(
+    mainnet.id,
+    SUB_ACCOUNT_2_ADDRESS,
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+  );
+  
+  // Log the diff
+  await logOperationResult(mainnet.id, accountData, [subAccount1, subAccount2], sdk);
+
+  // Step 3: Pull debt from sub-account 1 to sub-account 2
+  console.log('\n=== Step 3: Pull Debt from Sub-Account 1 to Sub-Account 2 ===');
+  
+  // Update account data
+  accountData.subAccounts = [subAccount1!, subAccount2!];
+
+  let pullDebtPlan = sdk.executionService.planPullDebt({
+    account: accountData,
+    vault: EULER_PRIME_USDT_VAULT,
+    from: SUB_ACCOUNT_1_ADDRESS,
+    to: SUB_ACCOUNT_2_ADDRESS,
+    amount: PULL_DEBT_AMOUNT,
+  });
+
+  console.log(`✓ Pull debt plan created with ${pullDebtPlan.length} step(s)`);
+  console.log(`✓ Executing...`);
+
+  // No approvals needed for pull debt
+  await executePlan(pullDebtPlan, sdk);
+
+  // Fetch the updated sub-accounts and log the result
+  subAccount1 = await sdk.accountService.fetchSubAccount(
+    mainnet.id,
+    SUB_ACCOUNT_1_ADDRESS,
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+  );
+  subAccount2 = await sdk.accountService.fetchSubAccount(
+    mainnet.id,
+    SUB_ACCOUNT_2_ADDRESS,
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+  );
+
+  // Log the diff between before and after pull debt
+  await logOperationResult(mainnet.id, accountData, [subAccount1, subAccount2], sdk);
+}
+
+// ============================================================================
+// Run the example
+// ============================================================================
+printHeader("PULL DEBT EXAMPLE");
+initBalances().then(() => pullDebtExample()).catch((error) => {
+  console.error("Error:", error);
+  process.exit(1);
+});

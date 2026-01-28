@@ -207,6 +207,20 @@ export const executionAbis = {
       stateMutability: "nonpayable",
     },
   ],
+  liquidateAbi: [
+    {
+      type: "function",
+      inputs: [
+        { name: "violator", type: "address" },
+        { name: "collateral", type: "address" },
+        { name: "repayAssets", type: "uint256" },
+        { name: "minYieldBalance", type: "uint256" },
+      ],
+      name: "liquidate",
+      outputs: [],
+      stateMutability: "nonpayable",
+    },
+  ],
   pullDebtAbi: [
     {
       type: "function",

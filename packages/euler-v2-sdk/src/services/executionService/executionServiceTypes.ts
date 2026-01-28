@@ -75,6 +75,18 @@ export type EncodeRepayArgs = {
   disableController?: boolean
 }
 
+export type EncodeLiquidationArgs = {
+  chainId: number
+  vault: Address
+  violator: Address
+  collateral: Address
+  repayAssets: bigint
+  minYieldBalance: bigint
+  liquidatorAccount: Address
+  enableCollateral?: boolean
+  enableController?: boolean
+}
+
 export type ResolveRequiredApprovalsArgs = {
   plan: TransactionPlanItem[]
   wallet: Wallet
@@ -326,6 +338,38 @@ export type PlanBorrowArgs = {
     amount: bigint
     asset: Address
   }
+}
+
+export type PlanLiquidationArgs = {
+  account: Account
+  /**
+   * Account data for the violator being liquidated.
+   * This can be used by callers to derive liquidation parameters from the violator's positions.
+   */
+  violatorAccount: Account
+  vault: Address
+  asset: Address
+  violator: Address
+  collateral: Address
+  repayAssets: bigint
+  minYieldBalance: bigint
+  liquidatorAccount: Address
+}
+
+export type PlanLiquidationAndRepayWithSwapArgs = {
+  account: Account
+  /**
+   * Account data for the violator being liquidated.
+   */
+  violatorAccount: Account
+  vault: Address
+  asset: Address
+  violator: Address
+  collateral: Address
+  repayAssets: bigint
+  minYieldBalance: bigint
+  liquidatorAccount: Address
+  swapQuote: SwapQuote
 }
 
 export type PlanRepayFromWalletArgs = {

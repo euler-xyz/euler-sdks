@@ -1,0 +1,127 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WITHDRAW EXAMPLE
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 
+ * This example demonstrates how to withdraw assets from an Euler vault. It first
+ * deposits assets, then withdraws a specific amount of the underlying asset.
+ * 
+ * OPERATION:
+ *   1. Deposit USDC into Euler Prime USDC Vault
+ *   2. Withdraw specific amount of USDC back to wallet
+ *   3. Optionally disable collateral if withdrawing all
+ * 
+ * ASSETS & VAULTS:
+ *   • USDC → Euler Prime USDC Vault (collateral)
+ * 
+ * 💡 TIP - WITHDRAW vs REDEEM:
+ *   • Withdraw: You specify the exact amount of assets you want to receive
+ *   • Redeem: You specify the exact number of shares you want to burn
+ * 
+ * 💡 TIP - USING EXISTING ACCOUNTS:
+ *   • Set PRIVATE_KEY in .env to use an existing account on the fork
+ *   • Without PRIVATE_KEY, a test account will be created and funded automatically
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import "dotenv/config";
+import {
+  parseUnits,
+} from "viem";
+import { mainnet } from "viem/chains";
+
+import { executePlan } from "./utils/executor.js";
+import { printHeader, logOperationResult } from "./utils/helpers.js";
+import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "./utils/config.js";
+import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
+
+// Inputs
+const DEPOSIT_AMOUNT = parseUnits("100", 6);  // 100 USDC
+const WITHDRAW_AMOUNT = parseUnits("50", 6);  // 50 USDC
+const SUB_ACCOUNT_ID = 1;
+const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
+
+async function withdrawExample() {
+  // Build the SDK
+  const sdk = await buildSDK({ rpcUrls });
+
+  // Fetch the account (or create a new empty one)
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
+  accountData.subAccounts = [await sdk.accountService.fetchSubAccount(mainnet.id, SUB_ACCOUNT_ADDRESS, [EULER_PRIME_USDC_VAULT])]
+
+  // Step 1: Deposit USDC first
+  console.log('\n=== Step 1: Deposit USDC ===');
+  let depositPlan = sdk.executionService.planDeposit({
+    vault: EULER_PRIME_USDC_VAULT,
+    amount: DEPOSIT_AMOUNT,
+    receiver: SUB_ACCOUNT_ADDRESS,
+    account: accountData,
+    asset: USDC_ADDRESS,
+    enableCollateral: true,
+  });
+
+  console.log(`✓ Deposit plan created with ${depositPlan.length} step(s)`);
+
+  // Fetch wallet data and resolve approvals
+  const walletForDeposit = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, depositPlan);
+  depositPlan = sdk.executionService.resolveRequiredApprovals({
+    plan: depositPlan,
+    wallet: walletForDeposit,
+    chainId: mainnet.id,
+    usePermit2: true,
+    unlimitedApproval: false,
+  });
+  
+  console.log(`✓ Approvals resolved, executing...`);
+  await executePlan(depositPlan, sdk);
+
+  // Fetch updated sub-account after deposit
+  const subAccountAfterDeposit = await sdk.accountService.fetchSubAccount(
+    mainnet.id,
+    SUB_ACCOUNT_ADDRESS,
+    [EULER_PRIME_USDC_VAULT]
+  );
+  
+  // Log the diff between before and after deposit
+  await logOperationResult(mainnet.id, accountData, [subAccountAfterDeposit], sdk);
+
+  // Step 2: Withdraw USDC
+  console.log('\n=== Step 2: Withdraw USDC ===');
+  
+  // Update account data with the fetched sub-account
+  accountData.subAccounts = [subAccountAfterDeposit!];
+
+  let withdrawPlan = sdk.executionService.planWithdraw({
+    account: accountData,
+    vault: EULER_PRIME_USDC_VAULT,
+    assets: WITHDRAW_AMOUNT,
+    owner: SUB_ACCOUNT_ADDRESS,
+    receiver: account.address,
+  });
+
+  console.log(`✓ Withdraw plan created with ${withdrawPlan.length} step(s)`);
+  console.log(`✓ Executing...`);
+
+  // No approvals needed for withdraw
+  await executePlan(withdrawPlan, sdk);
+
+  // Fetch the updated sub-account and log the result
+  const subAccountAfterWithdraw = await sdk.accountService.fetchSubAccount(
+    mainnet.id,
+    SUB_ACCOUNT_ADDRESS,
+    [EULER_PRIME_USDC_VAULT]
+  );
+
+  // Log the diff between before and after withdraw
+  await logOperationResult(mainnet.id, accountData, [subAccountAfterWithdraw], sdk);
+}
+
+// ============================================================================
+// Run the example
+// ============================================================================
+printHeader("WITHDRAW EXAMPLE");
+initBalances().then(() => withdrawExample()).catch((error) => {
+  console.error("Error:", error);
+  process.exit(1);
+});

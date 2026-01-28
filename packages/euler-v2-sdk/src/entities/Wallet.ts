@@ -1,6 +1,7 @@
 import { Address, isAddressEqual } from "viem";
 
 export interface IWallet {
+  chainId: number;
   account: Address;
   assets: WalletAsset[];
 }
@@ -20,10 +21,12 @@ export interface WalletAsset {
 }
 
 export class Wallet implements IWallet {
+  chainId: number;
   account: Address;
   assets: WalletAsset[];
 
   constructor(wallet: IWallet) {
+    this.chainId = wallet.chainId;
     this.account = wallet.account;
     this.assets = wallet.assets;
   }

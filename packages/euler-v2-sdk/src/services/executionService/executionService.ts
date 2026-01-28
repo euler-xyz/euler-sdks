@@ -10,6 +10,7 @@ import {
   type EncodeWithdrawArgs,
   type EncodeRedeemArgs,
   type EncodeBorrowArgs,
+  type EncodeLiquidationArgs,
   type EncodePullDebtArgs,
   type EncodeRepayWithSwapArgs,
   type EncodeRepayFromWalletArgs,
@@ -30,9 +31,11 @@ import {
   type PlanWithdrawArgs,
   type PlanRedeemArgs,
   type PlanBorrowArgs,
+  type PlanLiquidationArgs,
   type PlanRepayFromWalletArgs,
   type PlanRepayFromDepositArgs,
   type PlanRepayWithSwapArgs,
+  type PlanLiquidationAndRepayWithSwapArgs,
   type PlanSwapCollateralArgs,
   type PlanSwapDebtArgs,
   type PlanTransferArgs,
@@ -55,6 +58,7 @@ export interface IExecutionService {
   encodeWithdraw(args: EncodeWithdrawArgs): EVCBatchItem[];
   encodeRedeem(args: EncodeRedeemArgs): EVCBatchItem[];
   encodeBorrow(args: EncodeBorrowArgs): EVCBatchItem[];
+  encodeLiquidation(args: EncodeLiquidationArgs): EVCBatchItem[];
   encodePullDebt(args: EncodePullDebtArgs): EVCBatchItem[];
   encodeRepayFromWallet(args: EncodeRepayFromWalletArgs): EVCBatchItem[];
   encodeRepayFromDeposit(args: EncodeRepayFromDepositArgs): EVCBatchItem[];
@@ -71,6 +75,8 @@ export interface IExecutionService {
   planWithdraw(args: PlanWithdrawArgs): TransactionPlanItem[];
   planRedeem(args: PlanRedeemArgs): TransactionPlanItem[];
   planBorrow(args: PlanBorrowArgs): TransactionPlanItem[];
+  planLiquidation(args: PlanLiquidationArgs): TransactionPlanItem[];
+  planLiquidationAndRepayWithSwap(args: PlanLiquidationAndRepayWithSwapArgs): TransactionPlanItem[];
   planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlanItem[];
   planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlanItem[];
   planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlanItem[];
@@ -330,6 +336,64 @@ export class ExecutionService implements IExecutionService {
         args: [amount, receiver]
       })
     })
+
+    return items
+  }
+
+  encodeLiquidation({
+    chainId,
+    vault,
+    violator,
+    collateral,
+    repayAssets,
+    minYieldBalance,
+    liquidatorAccount,
+    enableCollateral,
+    enableController,
+  }: EncodeLiquidationArgs): EVCBatchItem[] {
+    const items: EVCBatchItem[] = []
+    const deployment = this.deploymentService.getDeployment(chainId)
+    const evc = deployment.addresses.coreAddrs.evc
+
+    // Optionally enable controller for the liquidator account on the liability vault
+    if (enableController) {
+      items.push({
+        targetContract: evc,
+        onBehalfOfAccount: zeroAddress,
+        value: 0n,
+        data: encodeFunctionData({
+          abi: executionAbis.enableControllerAbi,
+          functionName: "enableController",
+          args: [liquidatorAccount, vault],
+        }),
+      })
+    }
+
+    // Perform the liquidation
+    items.push({
+      targetContract: vault,
+      onBehalfOfAccount: liquidatorAccount,
+      value: 0n,
+      data: encodeFunctionData({
+        abi: executionAbis.liquidateAbi,
+        functionName: "liquidate",
+        args: [violator, collateral, repayAssets, minYieldBalance],
+      }),
+    })
+
+    // Optionally enable collateral for the seized collateral vault on the liquidator account
+    if (enableCollateral) {
+      items.push({
+        targetContract: evc,
+        onBehalfOfAccount: zeroAddress,
+        value: 0n,
+        data: encodeFunctionData({
+          abi: executionAbis.enableCollateralAbi,
+          functionName: "enableCollateral",
+          args: [liquidatorAccount, collateral],
+        }),
+      })
+    }
 
     return items
   }
@@ -1669,6 +1733,98 @@ export class ExecutionService implements IExecutionService {
       type: "evcBatch",
       items: batchItems,
     })
+
+    return plan
+  }
+
+  planLiquidation(args: PlanLiquidationArgs): TransactionPlanItem[] {
+    const {
+      account,
+      violatorAccount,
+      vault,
+      asset,
+      violator,
+      collateral,
+      repayAssets,
+      minYieldBalance,
+      liquidatorAccount,
+    } = args
+
+    const plan: TransactionPlanItem[] = []
+
+    // Add approval requirement for the liability asset the liquidator will repay
+    plan.push({
+      type: "requiredApproval",
+      token: asset,
+      owner: account.owner,
+      spender: vault,
+      amount: repayAssets,
+    })
+
+    // Check if controller needs to be enabled for the liquidator account on the liability vault
+    const enableController = !this.isControllerEnabled(account, liquidatorAccount, vault)
+
+    // Check if collateral needs to be enabled for the seized collateral vault on the liquidator account
+    const enableCollateral = !this.isCollateralEnabled(account, liquidatorAccount, collateral)
+
+    const batchItems = this.encodeLiquidation({
+      chainId: account.chainId,
+      vault,
+      violator,
+      collateral,
+      repayAssets,
+      minYieldBalance,
+      liquidatorAccount,
+      enableController,
+      enableCollateral,
+    })
+
+    plan.push({
+      type: "evcBatch",
+      items: batchItems,
+    })
+
+    return plan
+  }
+
+  planLiquidationAndRepayWithSwap(args: PlanLiquidationAndRepayWithSwapArgs): TransactionPlanItem[] {
+    const {
+      account,
+      violatorAccount,
+      vault,
+      asset,
+      violator,
+      collateral,
+      repayAssets,
+      minYieldBalance,
+      liquidatorAccount,
+      swapQuote,
+    } = args
+
+    const plan: TransactionPlanItem[] = []
+
+    // First, plan the liquidation itself
+    const liquidationPlan = this.planLiquidation({
+      account,
+      violatorAccount,
+      vault,
+      asset,
+      violator,
+      collateral,
+      repayAssets,
+      minYieldBalance,
+      liquidatorAccount,
+    })
+
+    plan.push(...liquidationPlan)
+
+    // Then, plan the repay-with-swap leg using the resulting position changes
+    const repayPlan = this.planRepayWithSwap({
+      account,
+      swapQuote,
+    })
+
+    plan.push(...repayPlan)
 
     return plan
   }

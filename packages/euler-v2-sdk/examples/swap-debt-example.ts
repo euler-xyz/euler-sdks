@@ -1,27 +1,33 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * REPAY WITH SWAP EXAMPLE
+ * SWAP DEBT EXAMPLE
  * ═══════════════════════════════════════════════════════════════════════════
  * 
- * This example demonstrates how to repay debt by swapping collateral assets.
- * It first sets up a leveraged position, then repays the debt by withdrawing
- * collateral and swapping it to the liability asset.
+ * This example demonstrates how to swap one debt asset for another while
+ * maintaining your collateral positions. This is useful for refinancing to
+ * a lower rate, switching to a more stable debt asset, or rebalancing exposure.
  * 
  * OPERATION:
- *   1. Deposit USDC as collateral and borrow USDT
- *   2. Withdraw USDC from collateral
- *   3. Swap USDC → USDT (using live DEX aggregator quotes)
- *   4. Repay USDT debt
- *   5. Disable controller if debt is fully repaid
+ *   1. Deposit WETH as collateral
+ *   2. Borrow USDT (initial debt)
+ *   3. Borrow USDC (new debt)
+ *   4. Swap USDC → USDT (using live DEX aggregator quotes)
+ *   5. Repay USDT debt with swapped assets
  * 
  * ASSETS & VAULTS:
- *   • USDC → Euler Prime USDC Vault (collateral)
- *   • USDT → Euler Prime USDT Vault (liability being repaid)
+ *   • WETH → Euler Prime WETH Vault (collateral)
+ *   • USDT → Euler Prime USDT Vault (initial liability to be replaced)
+ *   • USDC → Euler Prime USDC Vault (new liability)
  * 
  * ⚠️  IMPORTANT - LIVE SWAP QUOTES:
  *   • This example fetches real-time swap quotes from DEX aggregators
  *   • Restart Anvil immediately before running to avoid stale blockchain state
- *   • If the swap fails, try changing REPAY_QUOTE_INDEX to use a different provider
+ *   • If the swap fails, try changing SWAP_QUOTE_INDEX to use a different provider
+ * 
+ * 💡 TIP - USE CASE:
+ *   • Refinance to a vault with lower borrow rates
+ *   • Switch to more liquid or stable debt asset
+ *   • Rebalance debt exposure across different assets
  * 
  * 💡 TIP - USING EXISTING ACCOUNTS:
  *   • Set PRIVATE_KEY in .env to use an existing account on the fork
@@ -36,7 +42,7 @@ import {
   isAddressEqual,
 } from "viem";
 import { mainnet } from "viem/chains";
-import { buildSDK, executionAbis, getSubAccountAddress, SwapperMode } from "euler-v2-sdk";
+import { buildSDK, getSubAccountAddress, SwapperMode } from "euler-v2-sdk";
 
 import { executePlan } from "./utils/executor.js";
 import { printHeader, logOperationResult } from "./utils/helpers.js";
@@ -46,39 +52,40 @@ import {
   initBalances,
   USDC_ADDRESS,
   EULER_PRIME_USDC_VAULT,
+  EULER_PRIME_WETH_VAULT,
   EULER_PRIME_USDT_VAULT,
   USDT_ADDRESS,
+  WETH_ADDRESS,
 } from "./utils/config.js";
 
 // Inputs
-const COLLATERAL_AMOUNT = parseUnits("1000", 6); // 1000 USDC
-const BORROW_AMOUNT = parseUnits("500", 6);      // 500 USDT
-const REPAY_AMOUNT = parseUnits("250", 6);       // Set to -1n to repay all debt
+const COLLATERAL_AMOUNT = parseUnits("2", 18);   // 2 WETH
+const BORROW_USDT_AMOUNT = parseUnits("1000", 6); // 1000 USDT (initial debt)
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
-const REPAY_QUOTE_INDEX = 1; // Change this if swap quote is bad
+const SWAP_QUOTE_INDEX = 0; // Change this if swap quote is bad
 
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
 
-async function repayWithSwapExample() {
+async function swapDebtExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
   // Fetch the account
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
 
-  // Step 1: Plan and execute borrow operation (deposit USDC collateral and borrow USDT)
-  console.log('\n=== Step 1: Deposit USDC and Borrow USDT ===');
+  // Step 1: Deposit WETH collateral and borrow USDT
+  console.log('\n=== Step 1: Deposit WETH and Borrow USDT ===');
   let borrowPlan = sdk.executionService.planBorrow({
     account: accountData,
     vault: EULER_PRIME_USDT_VAULT,
-    amount: BORROW_AMOUNT,
+    amount: BORROW_USDT_AMOUNT,
     receiver: account.address,
     borrowAccount: SUB_ACCOUNT_ADDRESS,
     collateral: {
-      vault: EULER_PRIME_USDC_VAULT,
+      vault: EULER_PRIME_WETH_VAULT,
       amount: COLLATERAL_AMOUNT,
-      asset: USDC_ADDRESS,
+      asset: WETH_ADDRESS,
     },
   });
 
@@ -97,39 +104,40 @@ async function repayWithSwapExample() {
   console.log(`✓ Approvals resolved, executing...`);
   await executePlan(borrowPlan, sdk);
 
-  // Fetch updated sub-account after borrow (subgraph not available on local fork)
-  const subAccountAfterBorrow = await sdk.accountService.fetchSubAccount(
+  // Fetch updated sub-account after borrow
+  let subAccount = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+    [EULER_PRIME_WETH_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_USDC_VAULT]
   );
   
   // Log the diff between before and after borrow
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterBorrow], sdk);
+  await logOperationResult(mainnet.id, accountData, [subAccount], sdk);
 
-  // Step 2: Get repay quote - swap USDC collateral to USDT to repay debt
-  console.log('\n=== Step 2: Get Repay Quote ===');
-  console.log('✓ Fetching swap quote from USDC to USDT for repayment...');
+  // Step 2: Get swap quote for debt swap
+  console.log('\n=== Step 2: Get Swap Quote ===');
+  console.log('✓ Fetching swap quote from USDC to USDT for debt swap...');
   
-  // Get current debt from position
-  const usdtPosition = subAccountAfterBorrow!.positions.find(p => isAddressEqual(p.vault, EULER_PRIME_USDT_VAULT));
-  const currentDebt = usdtPosition?.borrowed ?? 0n;
-  if (currentDebt === 0n) {
-    throw new Error("No debt found to repay");
+  // Update account data with the fetched sub-account
+  accountData.subAccounts = [subAccount!];
+
+  // Get current USDT debt
+  const usdtPosition = subAccount!.positions.find(p => isAddressEqual(p.vault, EULER_PRIME_USDT_VAULT));
+  const currentUsdtDebt = usdtPosition?.borrowed ?? 0n;
+  
+  if (currentUsdtDebt === 0n) {
+    throw new Error("No USDT debt found");
   }
 
-  // Update account data with the fetched sub-account
-  accountData.subAccounts = [subAccountAfterBorrow!];
-
-  const repayQuotes = await sdk.swapService.getRepayQuotes({
+  const swapQuotes = await sdk.swapService.getRepayQuotes({
     chainId: mainnet.id,
     fromVault: EULER_PRIME_USDC_VAULT,
     fromAsset: USDC_ADDRESS,
     fromAccount: SUB_ACCOUNT_ADDRESS,
     liabilityVault: EULER_PRIME_USDT_VAULT,
     liabilityAsset: USDT_ADDRESS,
-    liabilityAmount: REPAY_AMOUNT === -1n ? currentDebt : REPAY_AMOUNT,
-    currentDebt,
+    liabilityAmount: currentUsdtDebt,
+    currentDebt: currentUsdtDebt,
     toAccount: SUB_ACCOUNT_ADDRESS,
     origin: account.address,
     swapperMode: SwapperMode.TARGET_DEBT,
@@ -137,52 +145,52 @@ async function repayWithSwapExample() {
     deadline: THIRTY_MINUTES_FROM_NOW,
   });
 
-  if (repayQuotes.length === 0) {
+  if (swapQuotes.length === 0) {
     throw new Error("No swap quotes available");
   }
 
-  if (REPAY_QUOTE_INDEX >= repayQuotes.length) {
-    throw new Error("No quote found at index: " + REPAY_QUOTE_INDEX);
+  if (SWAP_QUOTE_INDEX >= swapQuotes.length) {
+    throw new Error(`No quote found at index: ${SWAP_QUOTE_INDEX}`);
   }
 
-  const repayQuote = repayQuotes[REPAY_QUOTE_INDEX]!;
-  console.log(`✓ Trying repay quote received: ${repayQuote.amountIn} USDC → ${repayQuote.amountOut} USDT ${repayQuote.route.map(r => r.providerName).join(' → ')}`);
+  const swapQuote = swapQuotes[SWAP_QUOTE_INDEX]!;
+  console.log(`✓ Swap quote received: ${swapQuote.amountIn} USDC → ${swapQuote.amountOut} USDT ${swapQuote.route.map(r => r.providerName).join(' → ')}`);
 
-  // Step 3: Plan and execute repay with swap
-  console.log('\n=== Step 3: Execute Repay with Swap ===');
-  let repaySwapPlan = sdk.executionService.planRepayWithSwap({
+  // Step 3: Plan and execute swap debt
+  console.log('\n=== Step 3: Execute Swap Debt ===');
+  let swapDebtPlan = sdk.executionService.planSwapDebt({
     account: accountData,
-    swapQuote: repayQuote,
+    swapQuote,
   });
 
-  console.log(`✓ Repay with swap plan created with ${repaySwapPlan.length} step(s)`);
+  console.log(`✓ Swap debt plan created with ${swapDebtPlan.length} step(s)`);
+  console.log(`✓ Executing...`);
 
-  // no approvals are needed for repay with swap
+  // No approvals needed for swap debt
   try {
-    await executePlan(repaySwapPlan, sdk);
+    await executePlan(swapDebtPlan, sdk);
   } catch (error) {
-    console.error("Error executing repay with swap:", error);
-    console.log("\n\nThe swap quote might be bad. Try setting REPAY_QUOTE_INDEX to a different value.");
+    console.error("Error executing swap debt:", error);
+    console.log("\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.");
     process.exit(1);
   }
 
   // Fetch the updated sub-account and log the result
-  const subAccountAfterRepay = await sdk.accountService.fetchSubAccount(
+  subAccount = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+    [EULER_PRIME_WETH_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_USDC_VAULT]
   );
 
-  // Log the diff between before and after repay
-  // Note: accountData already has subAccountAfterBorrow in its subAccounts array
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterRepay], sdk);
+  // Log the diff between before and after swap
+  await logOperationResult(mainnet.id, accountData, [subAccount], sdk);
 }
 
 // ============================================================================
 // Run the example
 // ============================================================================
-printHeader("REPAY WITH SWAP EXAMPLE");
-initBalances().then(() => repayWithSwapExample()).catch((error) => {
+printHeader("SWAP DEBT EXAMPLE");
+initBalances().then(() => swapDebtExample()).catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });

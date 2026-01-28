@@ -1,17 +1,24 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * DEPOSIT EXAMPLE
+ * BORROW EXAMPLE
  * ═══════════════════════════════════════════════════════════════════════════
  * 
- * This example demonstrates how to deposit assets into an Euler vault and
- * enable them as collateral in a single transaction.
+ * This example demonstrates how to borrow assets from an Euler vault by first
+ * depositing collateral, then borrowing against it.
  * 
  * OPERATION:
- *   • Deposit USDC into Euler Prime USDC Vault
- *   • Enable USDC as collateral for the sub-account
+ *   1. Deposit USDC as collateral
+ *   2. Enable USDT vault as controller
+ *   3. Borrow USDT against USDC collateral
  * 
  * ASSETS & VAULTS:
- *   • USDC → Euler Prime USDC Vault (collateral enabled)
+ *   • USDC → Euler Prime USDC Vault (collateral)
+ *   • USDT → Euler Prime USDT Vault (liability)
+ * 
+ * 💡 TIP - COLLATERAL FACTOR:
+ *   • You can borrow up to a certain percentage of your collateral value
+ *   • The exact percentage depends on the vault's collateral factor
+ *   • Always keep some buffer to avoid liquidation
  * 
  * 💡 TIP - USING EXISTING ACCOUNTS:
  *   • Set PRIVATE_KEY in .env to use an existing account on the fork
@@ -27,55 +34,68 @@ import {
 import { mainnet } from "viem/chains";
 
 import { executePlan } from "./utils/executor.js";
-import { printHeader, logOperationResult, stringify } from "./utils/helpers.js";
-import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "./utils/config.js";
+import { printHeader, logOperationResult } from "./utils/helpers.js";
+import { 
+  rpcUrls,
+  account,
+  initBalances,
+  USDC_ADDRESS,
+  EULER_PRIME_USDC_VAULT,
+  EULER_PRIME_USDT_VAULT,
+} from "./utils/config.js";
 import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
 
 // Inputs
-const DEPOSIT_AMOUNT = parseUnits("10", 6);
+const COLLATERAL_AMOUNT = parseUnits("1000", 6); // 1000 USDC
+const BORROW_AMOUNT = parseUnits("500", 6);      // 500 USDT (50% LTV)
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
 
-async function depositExample() {
+async function borrowExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
   // Fetch the account (or create a new empty one)
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
-  accountData.subAccounts = [await sdk.accountService.fetchSubAccount(mainnet.id, SUB_ACCOUNT_ADDRESS, [EULER_PRIME_USDC_VAULT])]
 
-  // Plan the deposit
-  let depositPlan = sdk.executionService.planDeposit({
-    vault: EULER_PRIME_USDC_VAULT,
-    amount: DEPOSIT_AMOUNT,
-    receiver: SUB_ACCOUNT_ADDRESS,
+  // Plan the borrow operation (will deposit collateral and borrow in one transaction)
+  let borrowPlan = sdk.executionService.planBorrow({
     account: accountData,
-    asset: USDC_ADDRESS,
-    enableCollateral: true,
+    vault: EULER_PRIME_USDT_VAULT,
+    amount: BORROW_AMOUNT,
+    receiver: account.address,
+    borrowAccount: SUB_ACCOUNT_ADDRESS,
+    collateral: {
+      vault: EULER_PRIME_USDC_VAULT,
+      amount: COLLATERAL_AMOUNT,
+      asset: USDC_ADDRESS,
+    },
   });
 
-  console.log(`\n✓ Deposit plan created with ${depositPlan.length} step(s)`);
+  console.log(`\n✓ Borrow plan created with ${borrowPlan.length} step(s)`);
 
   // Fetch wallet data and resolve approvals
-  // This would normally be done in the executor logic, e.g. in executePlan, but for illustration we'll do it here.
-  const wallet = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, depositPlan);
-  depositPlan = sdk.executionService.resolveRequiredApprovals({
-    plan: depositPlan,
+  const wallet = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, borrowPlan);
+  borrowPlan = sdk.executionService.resolveRequiredApprovals({
+    plan: borrowPlan,
     wallet,
     chainId: mainnet.id,
     usePermit2: true,
-    unlimitedApproval: true,
+    unlimitedApproval: false,
   });
-  
+
   console.log(`✓ Approvals resolved, executing...`);
 
   // Execute the plan
-  await executePlan(depositPlan, sdk);
+  await executePlan(borrowPlan, sdk);
 
   // Fetch the updated sub-account and log the result
-  // In tests the new sub-account will not be indexed by subgraph, so we need to fetch it manually
-  const subAccount = await sdk.accountService.fetchSubAccount(mainnet.id, SUB_ACCOUNT_ADDRESS, [EULER_PRIME_USDC_VAULT]);
-  
+  const subAccount = await sdk.accountService.fetchSubAccount(
+    mainnet.id,
+    SUB_ACCOUNT_ADDRESS,
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+  );
+
   // Log the diff between before and after
   await logOperationResult(mainnet.id, accountData, [subAccount], sdk);
 }
@@ -83,9 +103,8 @@ async function depositExample() {
 // ============================================================================
 // Run the example
 // ============================================================================
-printHeader("DEPOSIT EXAMPLE");
-initBalances().then(() => depositExample()).catch((error) => {
+printHeader("BORROW EXAMPLE");
+initBalances().then(() => borrowExample()).catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });
-

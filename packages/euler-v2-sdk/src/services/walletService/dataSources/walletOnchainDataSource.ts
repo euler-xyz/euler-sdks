@@ -156,6 +156,7 @@ export class WalletOnchainDataSource implements IWalletDataSource {
       }
 
       return {
+        chainId,
         account,
         assets: walletAssets,
       };
