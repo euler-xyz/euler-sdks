@@ -65,7 +65,7 @@ async function multiplyExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account (or create a new empty one)
+  // Fetch the account
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
 
   // Step 1: Get swap quote from USDT (liability asset) to WETH (long asset)

@@ -2,6 +2,8 @@ import { Address, erc20Abi, formatUnits, isAddressEqual } from "viem";
 import { publicClient } from "./config.js";
 import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK } from "euler-v2-sdk";
 
+  // AI Slop...
+
   // Helper function for header
   export function printHeader(msg: string) {
     console.log("=".repeat(80));
@@ -68,6 +70,8 @@ import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK } 
     name: string;
     assetSymbol: string;
     assetDecimals: number;
+    vaultSymbol: string;
+    vaultDecimals: number;
   }
 
   const metadataCache: {
@@ -106,15 +110,16 @@ import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK } 
   }
 
   /**
-   * Fetch vault metadata (name, asset symbol, asset decimals)
+   * Fetch vault metadata (name, asset symbol, asset decimals, vault decimals)
    */
   async function fetchVaultMetadata(chainId: number, vaultAddress: Address, assetAddress: Address, sdk: EulerSDK): Promise<VaultMetadata> {
     const cacheKey = `${chainId}:${vaultAddress.toLowerCase()}`;
     const cached = metadataCache.vaults.get(cacheKey);
     if (cached) return cached;
 
-    const [assetMetadata, labels] = await Promise.all([
+    const [assetMetadata, vaultMetadata, labels] = await Promise.all([
       fetchTokenMetadata(chainId, assetAddress, sdk),
+      fetchTokenMetadata(chainId, vaultAddress, sdk), // Vault token decimals (for shares)
       sdk.eulerLabelsService.getEulerLabelsVaults(chainId).catch(() => ({} as Record<Address, any>)),
     ]);
 
@@ -125,6 +130,8 @@ import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK } 
       name: vaultName,
       assetSymbol: assetMetadata.symbol,
       assetDecimals: assetMetadata.decimals,
+      vaultSymbol: vaultMetadata.symbol,
+      vaultDecimals: vaultMetadata.decimals,
     };
 
     metadataCache.vaults.set(cacheKey, metadata);
@@ -137,8 +144,10 @@ import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK } 
   function formatAmount(value: bigint, decimals: number, symbol: string): string {
     if (value === 0n) return `0 ${symbol}`;
     const formatted = formatUnits(value, decimals);
-    // Remove trailing zeros after decimal point
-    const cleaned = formatted.replace(/\.?0+$/, '');
+    // Remove trailing zeros only from the fractional part, do not strip integer zeros
+    const cleaned = formatted.includes('.')
+      ? formatted.replace(/\.?0+$/, '')
+      : formatted;
     return `${cleaned} ${symbol}`;
   }
 
@@ -169,7 +178,7 @@ import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK } 
     console.log(`${indent}Asset:       ${vaultMeta.assetSymbol}`);
     
     if (position.shares !== 0n) {
-      console.log(`${indent}Shares:      ${formatAmount(position.shares, vaultMeta.assetDecimals, vaultMeta.assetSymbol)}`);
+      console.log(`${indent}Shares:      ${formatAmount(position.shares, vaultMeta.vaultDecimals, vaultMeta.vaultSymbol)}`);
     }
     if (position.assets !== 0n) {
       console.log(`${indent}Assets:      ${formatAmount(position.assets, vaultMeta.assetDecimals, vaultMeta.assetSymbol)}`);
@@ -197,13 +206,13 @@ import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK } 
     // Shares diff - show if changed OR if after value is not 0n
     if (before.shares !== after.shares) {
       const diff = after.shares - before.shares;
-      const sign = diff > 0n ? "+" : "";
-      const beforeFormatted = formatAmount(before.shares, vaultMeta.assetDecimals, vaultMeta.assetSymbol);
-      const afterFormatted = formatAmount(after.shares, vaultMeta.assetDecimals, vaultMeta.assetSymbol);
-      const diffFormatted = formatAmount(diff > 0n ? diff : -diff, vaultMeta.assetDecimals, vaultMeta.assetSymbol);
+      const sign = diff > 0n ? "+" : diff < 0n ? "-" : "";
+      const beforeFormatted = formatAmount(before.shares, vaultMeta.vaultDecimals, vaultMeta.vaultSymbol);
+      const afterFormatted = formatAmount(after.shares, vaultMeta.vaultDecimals, vaultMeta.vaultSymbol);
+      const diffFormatted = formatAmount(diff > 0n ? diff : -diff, vaultMeta.vaultDecimals, vaultMeta.vaultSymbol);
       console.log(`${indent}Shares:      ${beforeFormatted} → ${afterFormatted} (${sign}${diffFormatted})`);
     } else if (after.shares !== 0n) {
-      console.log(`${indent}Shares:      ${formatAmount(after.shares, vaultMeta.assetDecimals, vaultMeta.assetSymbol)}`);
+      console.log(`${indent}Shares:      ${formatAmount(after.shares, vaultMeta.vaultDecimals, vaultMeta.vaultSymbol)}`);
     }
 
     // Assets diff - show if changed OR if after value is not 0n

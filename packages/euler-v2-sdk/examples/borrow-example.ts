@@ -55,7 +55,7 @@ async function borrowExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account (or create a new empty one)
+  // Fetch the account
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
 
   // Plan the borrow operation (will deposit collateral and borrow in one transaction)

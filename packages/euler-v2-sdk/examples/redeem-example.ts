@@ -47,9 +47,8 @@ async function redeemExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account (or create a new empty one)
+  // Fetch the account
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
-  accountData.subAccounts = [await sdk.accountService.fetchSubAccount(mainnet.id, SUB_ACCOUNT_ADDRESS, [EULER_PRIME_USDC_VAULT])]
 
   // Step 1: Deposit USDC first to get shares
   console.log('\n=== Step 1: Deposit USDC ===');

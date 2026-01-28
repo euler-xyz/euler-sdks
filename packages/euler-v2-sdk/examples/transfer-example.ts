@@ -40,28 +40,24 @@ import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
 // Inputs
 const DEPOSIT_AMOUNT = parseUnits("100", 6);    // 100 USDC
 const TRANSFER_AMOUNT = parseUnits("50", 6);    // Transfer 50 shares
-const SUB_ACCOUNT_1_ID = 1;
-const SUB_ACCOUNT_2_ID = 2;
-const SUB_ACCOUNT_1_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_1_ID);
-const SUB_ACCOUNT_2_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_2_ID);
+const SUB_ACCOUNT_FROM_ID = 1;
+const SUB_ACCOUNT_TO_ID = 2;
+const SUB_ACCOUNT_FROM_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_FROM_ID);
+const SUB_ACCOUNT_TO_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_TO_ID);
 
 async function transferExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account (or create a new empty one)
+  // Fetch the account
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
-  accountData.subAccounts = [
-    await sdk.accountService.fetchSubAccount(mainnet.id, SUB_ACCOUNT_1_ADDRESS, [EULER_PRIME_USDC_VAULT]),
-    await sdk.accountService.fetchSubAccount(mainnet.id, SUB_ACCOUNT_2_ADDRESS, [EULER_PRIME_USDC_VAULT])
-  ];
 
   // Step 1: Deposit USDC into sub-account 1
   console.log('\n=== Step 1: Deposit USDC into Sub-Account 1 ===');
   let depositPlan = sdk.executionService.planDeposit({
     vault: EULER_PRIME_USDC_VAULT,
     amount: DEPOSIT_AMOUNT,
-    receiver: SUB_ACCOUNT_1_ADDRESS,
+    receiver: SUB_ACCOUNT_FROM_ADDRESS,
     account: accountData,
     asset: USDC_ADDRESS,
     enableCollateral: true,
@@ -83,34 +79,40 @@ async function transferExample() {
   await executePlan(depositPlan, sdk);
 
   // Fetch updated sub-accounts after deposit
-  const subAccount1AfterDeposit = await sdk.accountService.fetchSubAccount(
+  const subAccountFromAfterDeposit = await sdk.accountService.fetchSubAccount(
     mainnet.id,
-    SUB_ACCOUNT_1_ADDRESS,
+    SUB_ACCOUNT_FROM_ADDRESS,
     [EULER_PRIME_USDC_VAULT]
   );
-  const subAccount2AfterDeposit = await sdk.accountService.fetchSubAccount(
+  const subAccountToAfterDeposit = await sdk.accountService.fetchSubAccount(
     mainnet.id,
-    SUB_ACCOUNT_2_ADDRESS,
+    SUB_ACCOUNT_TO_ADDRESS,
     [EULER_PRIME_USDC_VAULT]
   );
   
   // Log the diff between before and after deposit
-  await logOperationResult(mainnet.id, accountData, [subAccount1AfterDeposit, subAccount2AfterDeposit], sdk);
+  await logOperationResult(mainnet.id, accountData, [subAccountFromAfterDeposit, subAccountToAfterDeposit], sdk);
 
   // Step 2: Transfer shares from sub-account 1 to sub-account 2
   console.log('\n=== Step 2: Transfer Shares from Sub-Account 1 to Sub-Account 2 ===');
   
   // Update account data with the fetched sub-accounts
-  accountData.subAccounts = [subAccount1AfterDeposit!, subAccount2AfterDeposit!];
+  accountData.subAccounts = [subAccountFromAfterDeposit!, subAccountToAfterDeposit!];
+
+
 
   let transferPlan = sdk.executionService.planTransfer({
     account: accountData,
     vault: EULER_PRIME_USDC_VAULT,
-    from: SUB_ACCOUNT_1_ADDRESS,
-    to: SUB_ACCOUNT_2_ADDRESS,
+    from: SUB_ACCOUNT_FROM_ADDRESS,
+    to: SUB_ACCOUNT_TO_ADDRESS,
     amount: TRANSFER_AMOUNT,
+    enableCollateralTo: true,
+    disableCollateralFrom: true,
   });
 
+  // console.log(sdk.executionService.describeBatch(transferPlan.find((item) => item.type === 'evcBatch')?.items));
+// process.exit(0);
   console.log(`✓ Transfer plan created with ${transferPlan.length} step(s)`);
   console.log(`✓ Executing...`);
 
@@ -120,12 +122,12 @@ async function transferExample() {
   // Fetch the updated sub-accounts and log the result
   const subAccount1AfterTransfer = await sdk.accountService.fetchSubAccount(
     mainnet.id,
-    SUB_ACCOUNT_1_ADDRESS,
+    SUB_ACCOUNT_FROM_ADDRESS,
     [EULER_PRIME_USDC_VAULT]
   );
   const subAccount2AfterTransfer = await sdk.accountService.fetchSubAccount(
     mainnet.id,
-    SUB_ACCOUNT_2_ADDRESS,
+    SUB_ACCOUNT_TO_ADDRESS,
     [EULER_PRIME_USDC_VAULT]
   );
 

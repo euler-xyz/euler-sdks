@@ -409,6 +409,8 @@ export type PlanTransferArgs = {
   from: Address
   to: Address
   amount: bigint
+  enableCollateralTo?: boolean
+  disableCollateralFrom?: boolean
 }
 
 export type PlanPullDebtArgs = {

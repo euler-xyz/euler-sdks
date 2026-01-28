@@ -1053,7 +1053,7 @@ export class ExecutionService implements IExecutionService {
       const evc = deployment.addresses.coreAddrs.evc
       items.push({
         targetContract: evc,
-        onBehalfOfAccount: from,
+        onBehalfOfAccount: zeroAddress,
         value: 0n,
         data: encodeFunctionData({
           abi: executionAbis.disableCollateralAbi,
@@ -2028,7 +2028,7 @@ export class ExecutionService implements IExecutionService {
   }
 
   planTransfer(args: PlanTransferArgs): TransactionPlanItem[] {
-    const { vault, to, amount, from, account } = args
+    const { vault, to, amount, from, account, enableCollateralTo, disableCollateralFrom } = args
     const plan: TransactionPlanItem[] = []
 
     const fromPosition = this.getPosition(account, from, vault)
@@ -2036,20 +2036,15 @@ export class ExecutionService implements IExecutionService {
       throw new Error(`Position not found. Vault: ${vault}, Account: ${from}`)
     }
 
-    const isMax = fromPosition.shares <= amount
-    const disableCollateralFrom = isMax && fromPosition.isCollateral
-
-    const enableCollateralTo = !this.isCollateralEnabled(account, to, vault)
-
     // Build EVC batch items
     const batchItems = this.encodeTransfer({
       chainId: account.chainId,
       vault,
       to,
       amount,
-      from: account.owner,
-      enableCollateralTo,
-      disableCollateralFrom,
+      from,
+      enableCollateralTo: enableCollateralTo && !this.isCollateralEnabled(account, to, vault),
+      disableCollateralFrom: disableCollateralFrom && this.isCollateralEnabled(account, from, vault),
     })
 
     plan.push({
