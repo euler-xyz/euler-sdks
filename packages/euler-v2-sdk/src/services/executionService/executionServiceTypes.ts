@@ -115,6 +115,7 @@ export type EncodePullDebtArgs = {
 export type RepaySourceType = "wallet" | "collateral" | "savings"
 
 export type EncodeRepayWithSwapArgs = {
+  chainId: number
   swapQuote: SwapQuote
   maxWithdraw?: bigint // max assets available to withdraw. For buy orders, amountInMax may exceed the available assets and withdraw must be capped
   isMax?: boolean

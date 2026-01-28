@@ -128,18 +128,7 @@ export class ExecutionService implements IExecutionService {
 
     // Add enable collateral if flag is set
     if (enableCollateral) {
-      const deployment = this.deploymentService.getDeployment(chainId)
-      const evc = deployment.addresses.coreAddrs.evc
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: zeroAddress,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.enableCollateralAbi,
-          functionName: "enableCollateral",
-          args: [receiver, vault]
-        })
-      })
+      items.push(this.encodeEnableCollateral(chainId, receiver, vault))
     }
 
     // Add deposit operation
@@ -172,18 +161,7 @@ export class ExecutionService implements IExecutionService {
 
     // Add enable collateral if flag is set
     if (enableCollateral) {
-      const deployment = this.deploymentService.getDeployment(chainId)
-      const evc = deployment.addresses.coreAddrs.evc
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: zeroAddress,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.enableCollateralAbi,
-          functionName: "enableCollateral",
-          args: [receiver, vault]
-        })
-      })
+      items.push(this.encodeEnableCollateral(chainId, receiver, vault))
     }
 
     // Add mint operation
@@ -206,18 +184,7 @@ export class ExecutionService implements IExecutionService {
 
     // Add disable collateral if flag is set
     if (disableCollateral) {
-      const deployment = this.deploymentService.getDeployment(chainId)
-      const evc = deployment.addresses.coreAddrs.evc
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: owner,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.disableCollateralAbi,
-          functionName: "disableCollateral",
-          args: [owner, vault]
-        })
-      })
+      items.push(this.encodeDisableCollateral(chainId, owner, vault))
     }
 
     // Add withdraw operation
@@ -240,18 +207,7 @@ export class ExecutionService implements IExecutionService {
 
     // Add disable collateral if flag is set
     if (disableCollateral) {
-      const deployment = this.deploymentService.getDeployment(chainId)
-      const evc = deployment.addresses.coreAddrs.evc
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: owner,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.disableCollateralAbi,
-          functionName: "disableCollateral",
-          args: [owner, vault]
-        })
-      })
+      items.push(this.encodeDisableCollateral(chainId, owner, vault))
     }
 
     // Add redeem operation
@@ -302,31 +258,11 @@ export class ExecutionService implements IExecutionService {
 
     // Add disable controller if there's a different controller enabled
     if (currentController && currentController !== vault) {
-      items.push({
-        targetContract: currentController,
-        onBehalfOfAccount: borrowAccount,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.disableControllerAbi,
-          functionName: "disableController",
-          args: []
-        })
-      })
+      items.push(this.encodeDisableController(currentController, borrowAccount))
     }
 
     if (enableController) {
-      const deployment = this.deploymentService.getDeployment(chainId)
-      const evc = deployment.addresses.coreAddrs.evc
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: zeroAddress,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.enableControllerAbi,
-          functionName: "enableController",
-          args: [borrowAccount, vault]
-        })
-      })
+      items.push(this.encodeEnableController(chainId, borrowAccount, vault))
     }
 
     // Add borrow operation
@@ -361,16 +297,7 @@ export class ExecutionService implements IExecutionService {
 
     // Optionally enable controller for the liquidator account on the liability vault
     if (enableController) {
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: zeroAddress,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.enableControllerAbi,
-          functionName: "enableController",
-          args: [liquidatorAccount, vault],
-        }),
-      })
+      items.push(this.encodeEnableController(chainId, liquidatorAccount, vault))
     }
 
     // Perform the liquidation
@@ -387,16 +314,7 @@ export class ExecutionService implements IExecutionService {
 
     // Optionally enable collateral for the seized collateral vault on the liquidator account
     if (enableCollateral) {
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: zeroAddress,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.enableCollateralAbi,
-          functionName: "enableCollateral",
-          args: [liquidatorAccount, collateral],
-        }),
-      })
+      items.push(this.encodeEnableCollateral(chainId, liquidatorAccount, collateral))
     }
 
     return items
@@ -407,18 +325,7 @@ export class ExecutionService implements IExecutionService {
 
     // Add enable controller if flag is set
     if (enableController) {
-      const deployment = this.deploymentService.getDeployment(chainId)
-      const evc = deployment.addresses.coreAddrs.evc
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: zeroAddress,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.enableControllerAbi,
-          functionName: "enableController",
-          args: [to, vault]
-        })
-      })
+      items.push(this.encodeEnableController(chainId, to, vault))
     }
 
     // Add pullDebt operation
@@ -459,8 +366,6 @@ export class ExecutionService implements IExecutionService {
       swapQuote,
     } = args
     const items: EVCBatchItem[] = []
-    const deployment = this.deploymentService.getDeployment(chainId)
-    const evc = deployment.addresses.coreAddrs.evc
 
     // 1. Add permit2 for collateral if provided
     if (collateralPermit2) {
@@ -477,16 +382,7 @@ export class ExecutionService implements IExecutionService {
     if (collateralAmount > 0n) {
       // Enable collateral for collateral vault
       if (enableCollateral) {
-        items.push({
-          targetContract: evc,
-          onBehalfOfAccount: zeroAddress,
-          value: 0n,
-          data: encodeFunctionData({
-            abi: executionAbis.enableCollateralAbi,
-            functionName: "enableCollateral",
-            args: [receiver, collateralVault]
-          })
-        })
+        items.push(this.encodeEnableCollateral(chainId, receiver, collateralVault))
       }
 
       // Deposit collateral
@@ -504,30 +400,12 @@ export class ExecutionService implements IExecutionService {
 
     // 3. Disable current controller if there's a different one enabled
     if (currentController && currentController !== liabilityVault) {
-      items.push({
-        targetContract: currentController,
-        onBehalfOfAccount: receiver,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.disableControllerAbi,
-          functionName: "disableController",
-          args: []
-        })
-      })
+      items.push(this.encodeDisableController(currentController, receiver))
     }
 
     // 4. Enable controller for liability vault
     if (enableController) {
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: zeroAddress,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.enableControllerAbi,
-          functionName: "enableController",
-          args: [receiver, liabilityVault]
-        })
-      })
+      items.push(this.encodeEnableController(chainId, receiver, liabilityVault))
     }
 
     // 5. Borrow from liability vault to swapper
@@ -563,16 +441,7 @@ export class ExecutionService implements IExecutionService {
 
     // 8. Enable collateral on long vault
     if (enableCollateralLong) {
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: zeroAddress,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.enableCollateralAbi,
-          functionName: "enableCollateral",
-          args: [receiver, longVault]
-        })
-      })
+      items.push(this.encodeEnableCollateral(chainId, receiver, longVault))
     }
 
     return items
@@ -600,8 +469,6 @@ export class ExecutionService implements IExecutionService {
       collateralPermit2,
     } = args
     const items: EVCBatchItem[] = []
-    const deployment = this.deploymentService.getDeployment(chainId)
-    const evc = deployment.addresses.coreAddrs.evc
 
     // 1. Add permit2 for collateral if provided
     if (collateralPermit2) {
@@ -618,16 +485,7 @@ export class ExecutionService implements IExecutionService {
     if (collateralAmount > 0n) {
       // Enable collateral for collateral vault
       if (enableCollateral) {
-        items.push({
-          targetContract: evc,
-          onBehalfOfAccount: zeroAddress,
-          value: 0n,
-          data: encodeFunctionData({
-            abi: executionAbis.enableCollateralAbi,
-            functionName: "enableCollateral",
-            args: [receiver, collateralVault]
-          })
-        })
+        items.push(this.encodeEnableCollateral(chainId, receiver, collateralVault))
       }
 
       // Deposit collateral
@@ -645,30 +503,12 @@ export class ExecutionService implements IExecutionService {
 
     // 3. Disable current controller if there's a different one enabled
     if (currentController && currentController !== liabilityVault) {
-      items.push({
-        targetContract: currentController,
-        onBehalfOfAccount: receiver,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.disableControllerAbi,
-          functionName: "disableController",
-          args: []
-        })
-      })
+      items.push(this.encodeDisableController(currentController, receiver))
     }
 
     // 4. Enable controller for liability vault
     if (enableController) {
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: zeroAddress,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.enableControllerAbi,
-          functionName: "enableController",
-          args: [receiver, liabilityVault]
-        })
-      })
+      items.push(this.encodeEnableController(chainId, receiver, liabilityVault))
     }
 
     // 5. Borrow from liability vault directly to long vault
@@ -697,16 +537,7 @@ export class ExecutionService implements IExecutionService {
 
     // 7. Enable collateral on long vault
     if (enableCollateralLong) {
-    items.push({
-      targetContract: evc,
-      onBehalfOfAccount: zeroAddress,
-      value: 0n,
-      data: encodeFunctionData({
-          abi: executionAbis.enableCollateralAbi,
-          functionName: "enableCollateral",
-          args: [receiver, longVault]
-        })
-      })
+      items.push(this.encodeEnableCollateral(chainId, receiver, longVault))
     }
 
     return items
@@ -754,16 +585,7 @@ export class ExecutionService implements IExecutionService {
     // Disable controller if needed (for max repay)
     // Sender must be allowed to act on behalf of receiver (sender is subaccount of receiver or is an operator)
     if (disableControllerOnMax && isMax) {
-      items.push({
-        targetContract: liabilityVault,
-        onBehalfOfAccount: receiver,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.disableControllerAbi,
-          functionName: "disableController",
-          args: [],
-        }),
-      })
+      items.push(this.encodeDisableController(liabilityVault, receiver))
     }
 
     return items
@@ -793,6 +615,7 @@ export class ExecutionService implements IExecutionService {
     // PATH 1: Same asset, same vault - use repayWithShares
     if (fromAsset === liabilityAsset && fromVault === liabilityVault) {
       return this.encodeRepayWithSharesSameAssetAndVault({
+        chainId,
         vault: liabilityVault,
         amount: liabilityAmount,
         receiver,
@@ -827,6 +650,7 @@ export class ExecutionService implements IExecutionService {
     args: EncodeRepayWithSwapArgs,
   ): EVCBatchItem[] {
     const {
+      chainId,
       swapQuote,
       maxWithdraw,
       isMax = false,
@@ -874,16 +698,7 @@ export class ExecutionService implements IExecutionService {
 
     // 4. Disable controller if needed (for max repay)
     if (isMax && disableControllerOnMax) {
-        items.push({
-          targetContract: swapQuote.receiver,
-          onBehalfOfAccount: swapQuote.accountOut,
-          value: 0n,
-          data: encodeFunctionData({
-            abi: executionAbis.disableControllerAbi,
-            functionName: "disableController",
-            args: [],
-          }),
-        })
+      items.push(this.encodeDisableController(swapQuote.receiver, swapQuote.accountOut))
     }
 
     return items
@@ -903,8 +718,6 @@ export class ExecutionService implements IExecutionService {
     } = args
 
     const items: EVCBatchItem[] = []
-    const deployment = this.deploymentService.getDeployment(chainId)
-    const evc = deployment.addresses.coreAddrs.evc
 
     // 1. Withdraw from source vault to swapper
     const withdrawAmount = BigInt(swapQuote.amountInMax || swapQuote.amountIn)
@@ -940,30 +753,12 @@ export class ExecutionService implements IExecutionService {
 
     // 4. Disable collateral if needed (for max swap)
     if(isMax && disableCollateralOnMax) {
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: zeroAddress,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.disableCollateralAbi,
-          functionName: "disableCollateral",
-          args: [swapQuote.accountIn, swapQuote.vaultIn],
-        }),
-      })
+      items.push(this.encodeDisableCollateral(chainId, swapQuote.accountIn, swapQuote.vaultIn))
     }
 
     // 5. Enable collateral if needed
     if (enableCollateral) {
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: zeroAddress,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.enableCollateralAbi,
-          functionName: "enableCollateral",
-          args: [swapQuote.accountOut, swapQuote.receiver]
-        })
-      })
+      items.push(this.encodeEnableCollateral(chainId, swapQuote.accountOut, swapQuote.receiver))
     }
 
     return items
@@ -981,8 +776,6 @@ export class ExecutionService implements IExecutionService {
     isMax = false,
   }: EncodeSwapDebtArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
-    const deployment = this.deploymentService.getDeployment(chainId)
-    const evc = deployment.addresses.coreAddrs.evc
     // 1. Borrow from source vault
     const borrowAmount = BigInt(swapQuote.amountIn)
     items.push({
@@ -1018,30 +811,12 @@ export class ExecutionService implements IExecutionService {
     if (swapQuote.accountOut !== swapQuote.accountIn) {
       // 4. Disable controller if needed (for max swap)
       if (isMax && disableControllerOnMax) {
-        items.push({
-          targetContract: swapQuote.vaultIn,
-          onBehalfOfAccount: swapQuote.accountIn,
-          value: 0n,
-          data: encodeFunctionData({
-            abi: executionAbis.disableControllerAbi,
-            functionName: "disableController",
-            args: [],
-          }),
-        })
+        items.push(this.encodeDisableController(swapQuote.vaultIn, swapQuote.accountIn))
       }
 
       // 5. Enable controller if needed
       if (enableController) {
-        items.push({
-          targetContract: evc,
-          onBehalfOfAccount: zeroAddress,
-          value: 0n,
-          data: encodeFunctionData({
-            abi: executionAbis.enableControllerAbi,
-            functionName: "enableController",
-            args: [swapQuote.accountOut],
-          }),
-        })
+        items.push(this.encodeEnableController(chainId, swapQuote.accountOut, swapQuote.vaultIn))
       }
     }
 
@@ -1053,18 +828,7 @@ export class ExecutionService implements IExecutionService {
 
     // Add disable collateral from sender if flag is set
     if (disableCollateralFrom) {
-      const deployment = this.deploymentService.getDeployment(chainId)
-      const evc = deployment.addresses.coreAddrs.evc
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: zeroAddress,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.disableCollateralAbi,
-          functionName: "disableCollateral",
-          args: [from, vault]
-        })
-      })
+      items.push(this.encodeDisableCollateral(chainId, from, vault))
     }
 
     // Add transfer operation
@@ -1081,18 +845,7 @@ export class ExecutionService implements IExecutionService {
 
     // Add enable collateral to receiver if flag is set
     if (enableCollateralTo) {
-      const deployment = this.deploymentService.getDeployment(chainId)
-      const evc = deployment.addresses.coreAddrs.evc
-      items.push({
-        targetContract: evc,
-        onBehalfOfAccount: zeroAddress,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.enableCollateralAbi,
-          functionName: "enableCollateral",
-          args: [to, vault]
-        })
-      })
+      items.push(this.encodeEnableCollateral(chainId, to, vault))
     }
 
     return items
@@ -1117,6 +870,64 @@ export class ExecutionService implements IExecutionService {
         functionName: "permit",
         args: [owner, message, signature],
       }),
+    }
+  }
+
+  encodeEnableCollateral(chainId: number, account: Address, vault: Address): EVCBatchItem {
+    const deployment = this.deploymentService.getDeployment(chainId)
+    const evc = deployment.addresses.coreAddrs.evc
+    return {
+      targetContract: evc,
+      onBehalfOfAccount: zeroAddress,
+      value: 0n,
+      data: encodeFunctionData({
+        abi: executionAbis.enableCollateralAbi,
+        functionName: "enableCollateral",
+        args: [account, vault]
+      })
+    }
+  }
+
+  encodeDisableCollateral(chainId: number, account: Address, vault: Address): EVCBatchItem {
+    const deployment = this.deploymentService.getDeployment(chainId)
+    const evc = deployment.addresses.coreAddrs.evc
+    return {
+      targetContract: evc,
+      onBehalfOfAccount: zeroAddress,
+      value: 0n,
+      data: encodeFunctionData({
+        abi: executionAbis.disableCollateralAbi,
+        functionName: "disableCollateral",
+        args: [account, vault]
+      })
+    }
+  }
+
+  encodeEnableController(chainId: number, account: Address, vault: Address): EVCBatchItem {
+    const deployment = this.deploymentService.getDeployment(chainId)
+    const evc = deployment.addresses.coreAddrs.evc
+    return {
+      targetContract: evc,
+      onBehalfOfAccount: zeroAddress,
+      value: 0n,
+      data: encodeFunctionData({
+        abi: executionAbis.enableControllerAbi,
+        functionName: "enableController",
+        args: [account, vault]
+      })
+    }
+  }
+
+  encodeDisableController(vault: Address, account: Address): EVCBatchItem {
+    return {
+      targetContract: vault,
+      onBehalfOfAccount: account,
+      value: 0n,
+      data: encodeFunctionData({
+        abi: executionAbis.disableControllerAbi,
+        functionName: "disableController",
+        args: []
+      })
     }
   }
 
@@ -1223,12 +1034,14 @@ export class ExecutionService implements IExecutionService {
    * Encodes batch items for repaying with shares from the same asset and vault
    */
   private encodeRepayWithSharesSameAssetAndVault({
+    chainId,
     vault,
     amount,
     from,
     receiver,
     disableController,
   }: {
+    chainId: number
     vault: Address
     amount: bigint
     from: Address
@@ -1251,17 +1064,7 @@ export class ExecutionService implements IExecutionService {
 
     // Disable controller if needed (for max repay)
     if (disableController) {
-      items.push({
-        targetContract: vault,
-        onBehalfOfAccount: receiver,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: executionAbis.disableControllerAbi,
-          functionName: "disableController",
-          args: [],
-        }),
-      })
-
+      items.push(this.encodeDisableController(vault, receiver))
     }
 
     return items
@@ -1346,16 +1149,7 @@ export class ExecutionService implements IExecutionService {
 
       // 4. Disable controller if needed
       if (disableControllerOnMax) {
-        items.push({
-          targetContract: toVault,
-          onBehalfOfAccount: receiver,
-          value: 0n,
-          data: encodeFunctionData({
-            abi: executionAbis.disableControllerAbi,
-            functionName: "disableController",
-            args: [],
-          }),
-        })
+        items.push(this.encodeDisableController(toVault, receiver))
       }
     } else {
       // For partial repay: withdraw, then repay exact amount
@@ -1996,6 +1790,7 @@ export class ExecutionService implements IExecutionService {
     const maxWithdraw = fromPosition.assets
     // Build EVC batch items
     const batchItems = this.encodeRepayWithSwap({
+      chainId: account.chainId,
       swapQuote,
       maxWithdraw,
       isMax,
