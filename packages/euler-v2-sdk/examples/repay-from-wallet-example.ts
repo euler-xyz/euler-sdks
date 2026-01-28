@@ -77,12 +77,11 @@ async function repayFromWalletExample() {
 
   console.log(`✓ Borrow plan created with ${borrowPlan.length} step(s)`);
 
-  // Fetch wallet data and resolve approvals
-  const walletForBorrow = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, borrowPlan);
-  borrowPlan = sdk.executionService.resolveRequiredApprovals({
+  // Resolve approvals (fetches wallet data internally)
+  borrowPlan = await sdk.executionService.resolveRequiredApprovals({
     plan: borrowPlan,
-    wallet: walletForBorrow,
     chainId: mainnet.id,
+    account: account.address,
     usePermit2: true,
     unlimitedApproval: false,
   });
@@ -115,12 +114,11 @@ async function repayFromWalletExample() {
 
   console.log(`✓ Repay plan created with ${repayPlan.length} step(s)`);
 
-  // Fetch wallet data and resolve approvals
-  const walletForRepay = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, repayPlan);
-  repayPlan = sdk.executionService.resolveRequiredApprovals({
+  // Resolve approvals (fetches wallet data internally)
+  repayPlan = await sdk.executionService.resolveRequiredApprovals({
     plan: repayPlan,
-    wallet: walletForRepay,
     chainId: mainnet.id,
+    account: account.address,
     usePermit2: true,
     unlimitedApproval: false,
   });

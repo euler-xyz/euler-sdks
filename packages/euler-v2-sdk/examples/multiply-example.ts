@@ -106,13 +106,12 @@ async function multiplyExample() {
 
   console.log(`\n✓ Multiply plan created with ${multiplyPlan.length} step(s)`);
 
-  // Fetch wallet data and resolve approvals
+  // Resolve approvals (fetches wallet data internally).
   // This would normally be done in the executor logic, e.g. in executePlan, but for illustration we'll do it here.
-  const wallet = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, multiplyPlan);
-  multiplyPlan = sdk.executionService.resolveRequiredApprovals({
+  multiplyPlan = await sdk.executionService.resolveRequiredApprovals({
     plan: multiplyPlan,
-    wallet,
     chainId: mainnet.id,
+    account: account.address,
     usePermit2: true,
     unlimitedApproval: false,
   });

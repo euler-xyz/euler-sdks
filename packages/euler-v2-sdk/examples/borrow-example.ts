@@ -74,12 +74,11 @@ async function borrowExample() {
 
   console.log(`\n✓ Borrow plan created with ${borrowPlan.length} step(s)`);
 
-  // Fetch wallet data and resolve approvals
-  const wallet = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, borrowPlan);
-  borrowPlan = sdk.executionService.resolveRequiredApprovals({
+  // Resolve approvals (fetches wallet data internally)
+  borrowPlan = await sdk.executionService.resolveRequiredApprovals({
     plan: borrowPlan,
-    wallet,
     chainId: mainnet.id,
+    account: account.address,
     usePermit2: true,
     unlimitedApproval: false,
   });

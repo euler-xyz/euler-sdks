@@ -55,13 +55,12 @@ async function depositExample() {
 
   console.log(`\n✓ Deposit plan created with ${depositPlan.length} step(s)`);
 
-  // Fetch wallet data and resolve approvals
+  // Resolve approvals (fetches wallet data internally).
   // This would normally be done in the executor logic, e.g. in executePlan, but for illustration we'll do it here.
-  const wallet = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, depositPlan);
-  depositPlan = sdk.executionService.resolveRequiredApprovals({
+  depositPlan = await sdk.executionService.resolveRequiredApprovals({
     plan: depositPlan,
-    wallet,
     chainId: mainnet.id,
+    account: account.address,
     usePermit2: true,
     unlimitedApproval: true,
   });

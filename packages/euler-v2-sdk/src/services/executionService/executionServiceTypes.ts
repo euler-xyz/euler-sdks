@@ -86,11 +86,19 @@ export type EncodeLiquidationArgs = {
   enableCollateral?: boolean
   enableController?: boolean
 }
+ 
+export type ResolveRequiredApprovalsWithWalletArgs = {
+  plan: TransactionPlanItem[]
+  chainId: number
+  wallet: Wallet
+  usePermit2?: boolean
+  unlimitedApproval?: boolean
+}
 
 export type ResolveRequiredApprovalsArgs = {
   plan: TransactionPlanItem[]
-  wallet: Wallet
   chainId: number
+  account: Address
   usePermit2?: boolean
   unlimitedApproval?: boolean
 }

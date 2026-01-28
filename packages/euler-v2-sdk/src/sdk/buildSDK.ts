@@ -110,7 +110,10 @@ export const buildSDK = async (options: BuildSDKOptions) => {
   const swapService = servicesOverrides?.swapService ?? new SwapService(swapServiceConfig || defaultSwapServiceConfig);
 
   // Build execution service if not overridden
-  const executionService = servicesOverrides?.executionService ?? new ExecutionService(deploymentService as DeploymentService);
+  const executionService = servicesOverrides?.executionService ?? new ExecutionService(
+    deploymentService as DeploymentService,
+    walletService as WalletService,
+  );
 
   return new EulerSDK({
     accountService,

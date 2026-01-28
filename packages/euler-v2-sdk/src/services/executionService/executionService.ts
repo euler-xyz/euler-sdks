@@ -3,6 +3,7 @@ import { DeploymentService } from "../deploymentService/index.js";
 import { executionAbis } from "./executionAbis.js";
 import type { Account, AccountPosition, SubAccount } from "../../entities/Account.js";
 import type { Wallet } from "../../entities/Wallet.js";
+import type { AssetWithSpenders, IWalletService } from "../walletService/index.js";
 import {
   type EVCBatchItem,
   type EncodeDepositArgs,
@@ -49,6 +50,7 @@ import {
   PermitSingleMessage,
   type RequiredApproval,
   type ResolveRequiredApprovalsArgs,
+  type ResolveRequiredApprovalsWithWalletArgs,
 } from "./executionServiceTypes.js";
 
 export interface IExecutionService {
@@ -87,7 +89,8 @@ export interface IExecutionService {
   planMultiplyWithSwap(args: PlanMultiplyWithSwapArgs): TransactionPlanItem[];
   planMultiplySameAsset(args: PlanMultiplySameAssetArgs): TransactionPlanItem[];
 
-  resolveRequiredApprovals(args: ResolveRequiredApprovalsArgs): TransactionPlanItem[];
+  resolveRequiredApprovalsWithWallet(args: ResolveRequiredApprovalsWithWalletArgs): TransactionPlanItem[];
+  resolveRequiredApprovals(args: ResolveRequiredApprovalsArgs): Promise<TransactionPlanItem[]>;
   getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData;
   describeBatch(batch: EVCBatchItem[]): BatchItemDescription[];
 }
@@ -99,6 +102,7 @@ const PERMIT2_SIG_WINDOW = 60n * 60n
 export class ExecutionService implements IExecutionService {
   constructor(
     private readonly deploymentService: DeploymentService,
+    private readonly walletService: IWalletService,
   ) {}
 
   encodeBatch(items: EVCBatchItem[]): Hex {
@@ -1445,7 +1449,7 @@ export class ExecutionService implements IExecutionService {
    * Uses Wallet data to determine what approvals are needed and whether to use permit2.
    * Returns the modified plan.
    */
-  resolveRequiredApprovals(args: ResolveRequiredApprovalsArgs): TransactionPlanItem[] {
+  resolveRequiredApprovalsWithWallet(args: ResolveRequiredApprovalsWithWalletArgs): TransactionPlanItem[] {
     const { plan, wallet, chainId, usePermit2 = true, unlimitedApproval = true } = args
 
     const deployment = this.deploymentService.getDeployment(chainId)
@@ -1544,6 +1548,52 @@ export class ExecutionService implements IExecutionService {
     }
 
     return plan
+  }
+
+  /**
+   * Resolves RequiredApproval items in a transaction plan by:
+   * 1. Deriving wallet assets/spenders from the plan
+   * 2. Fetching wallet data via WalletService
+   * 3. Delegating to resolveRequiredApprovalsWithWallet to fill in approvals
+   */
+  async resolveRequiredApprovals(args: ResolveRequiredApprovalsArgs): Promise<TransactionPlanItem[]> {
+    const { plan, chainId, account, usePermit2 = true, unlimitedApproval = true } = args
+
+    // Filter transaction plan for only RequiredApproval items
+    const requiredApprovals = plan.filter(
+      (item): item is RequiredApproval => item.type === "requiredApproval"
+    )
+
+    // Transform RequiredApprovals into AssetWithSpenders
+    const assetSpendersMap = new Map<Address, Set<Address>>()
+
+    for (const approval of requiredApprovals) {
+      const asset = getAddress(approval.token)
+      const spender = getAddress(approval.spender)
+
+      if (!assetSpendersMap.has(asset)) {
+        assetSpendersMap.set(asset, new Set())
+      }
+      assetSpendersMap.get(asset)!.add(spender)
+    }
+
+    // Convert map to AssetWithSpenders array
+    const assetsWithSpenders: AssetWithSpenders[] = Array.from(assetSpendersMap.entries()).map(
+      ([asset, spenders]) => ({
+        asset,
+        spenders: Array.from(spenders),
+      })
+    )
+
+    const wallet = await this.walletService.fetchWallet(chainId, account, assetsWithSpenders)
+
+    return this.resolveRequiredApprovalsWithWallet({
+      plan,
+      wallet,
+      chainId,
+      usePermit2,
+      unlimitedApproval,
+    })
   }
 
   // ========== Transaction plan functions ==========

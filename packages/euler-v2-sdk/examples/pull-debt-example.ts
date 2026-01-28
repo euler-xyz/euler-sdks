@@ -85,12 +85,11 @@ async function pullDebtExample() {
 
   console.log(`✓ Borrow plan created with ${borrowPlan.length} step(s)`);
 
-  // Fetch wallet data and resolve approvals
-  const walletForBorrow = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, borrowPlan);
-  borrowPlan = sdk.executionService.resolveRequiredApprovals({
+  // Resolve approvals (fetches wallet data internally)
+  borrowPlan = await sdk.executionService.resolveRequiredApprovals({
     plan: borrowPlan,
-    wallet: walletForBorrow,
     chainId: mainnet.id,
+    account: account.address,
     usePermit2: true,
     unlimitedApproval: false,
   });
@@ -130,12 +129,11 @@ async function pullDebtExample() {
 
   console.log(`✓ Deposit plan created with ${depositPlan.length} step(s)`);
 
-  // Fetch wallet data and resolve approvals
-  const walletForDeposit = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, depositPlan);
-  depositPlan = sdk.executionService.resolveRequiredApprovals({
+  // Resolve approvals (fetches wallet data internally)
+  depositPlan = await sdk.executionService.resolveRequiredApprovals({
     plan: depositPlan,
-    wallet: walletForDeposit,
     chainId: mainnet.id,
+    account: account.address,
     usePermit2: true,
     unlimitedApproval: false,
   });

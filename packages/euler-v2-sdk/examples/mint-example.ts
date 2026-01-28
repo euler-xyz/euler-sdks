@@ -59,12 +59,11 @@ async function mintExample() {
 
   console.log(`\n✓ Mint plan created with ${mintPlan.length} step(s)`);
 
-  // Fetch wallet data and resolve approvals
-  const wallet = await sdk.walletService.fetchWalletForPlan(mainnet.id, account.address, mintPlan);
-  mintPlan = sdk.executionService.resolveRequiredApprovals({
+  // Resolve approvals (fetches wallet data internally)
+  mintPlan = await sdk.executionService.resolveRequiredApprovals({
     plan: mintPlan,
-    wallet,
     chainId: mainnet.id,
+    account: account.address,
     usePermit2: true,
     unlimitedApproval: true,
   });
