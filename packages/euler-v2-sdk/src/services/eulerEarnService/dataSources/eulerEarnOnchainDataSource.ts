@@ -1,16 +1,25 @@
 import { IEulerEarnDataSource } from "../eulerEarnService.js";
 import { ProviderService } from "../../providerService/index.js";
-import { IABIService } from "../../abiService/index.js";
 import { DeploymentService } from "../../deploymentService/index.js";
 import { Address } from "viem";
 import { EulerEarn, IEulerEarn } from "../../../entities/EulerEarn.js";
 import { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
 import { convertEulerEarnVaultInfoFullToIEulerEarn } from "./eulerEarnInfoConverter.js";
+import { eulerEarnVaultLensAbi } from "./abis/eulerEarnVaultLensAbi.js";
+
+const verifiedArrayAbi = [
+  {
+    type: "function",
+    name: "verifiedArray",
+    inputs: [],
+    outputs: [{ name: "", type: "address[]", internalType: "address[]" }],
+    stateMutability: "view",
+  },
+] as const;
 
 export class EulerEarnOnchainDataSource implements IEulerEarnDataSource {
   constructor(
     private readonly providerService: ProviderService,
-    private readonly abiService: IABIService,
     private readonly deploymentService: DeploymentService
   ) {}
 
@@ -18,11 +27,10 @@ export class EulerEarnOnchainDataSource implements IEulerEarnDataSource {
     const provider = this.providerService.getProvider(chainId);
     const deployment = this.deploymentService.getDeployment(chainId);
     const lensAddress = deployment.addresses.lensAddrs.eulerEarnVaultLens;
-    const abi = await this.abiService.getABI(chainId, "EulerEarnVaultLens");
     const results = await provider.multicall({
       contracts: vaults.map(vault => ({
         address: lensAddress,
-        abi,
+        abi: eulerEarnVaultLensAbi,
         functionName: "getVaultInfoFull",
         args: [vault],
       })),
@@ -30,7 +38,7 @@ export class EulerEarnOnchainDataSource implements IEulerEarnDataSource {
 
     const parsedVaults: IEulerEarn[] = results.map((callResult, idx) => {
       if (callResult.status === "success" && callResult.result) {
-        const vaultInfo = callResult.result as EulerEarnVaultInfoFull;
+        const vaultInfo = callResult.result as unknown as EulerEarnVaultInfoFull;
         return convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo, chainId);
       }
 
@@ -45,12 +53,11 @@ export class EulerEarnOnchainDataSource implements IEulerEarnDataSource {
 
   async fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]> {
     const provider = this.providerService.getProvider(chainId);
-    const abi = await this.abiService.getABI(chainId, "BasePerspective");
 
     const results = await provider.multicall({
       contracts: perspectives.map(perspective => ({
         address: perspective,
-        abi,
+        abi: verifiedArrayAbi,
         functionName: "verifiedArray",
       })),
     });

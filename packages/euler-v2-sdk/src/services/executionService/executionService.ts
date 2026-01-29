@@ -1,6 +1,10 @@
 import { encodeFunctionData, getAddress, Hex, maxUint256, type Address, zeroAddress, maxUint160, maxUint48, TypedDataDefinition, erc20Abi, decodeFunctionData, type Abi, isAddressEqual } from "viem";
 import { DeploymentService } from "../deploymentService/index.js";
-import { executionAbis } from "./executionAbis.js";
+import { ethereumVaultConnectorAbi } from "./abis/ethereumVaultConnectorAbi.js";
+import { eVaultAbi } from "./abis/eVaultAbi.js";
+import { permit2PermitAbi } from "./abis/permit2PermitAbi.js";
+import { swapperAbi } from "./abis/swapperAbi.js";
+import { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
 import type { Account, AccountPosition, SubAccount } from "../../entities/Account.js";
 import type { Wallet } from "../../entities/Wallet.js";
 import type { AssetWithSpenders, IWalletService } from "../walletService/index.js";
@@ -107,7 +111,7 @@ export class ExecutionService implements IExecutionService {
 
   encodeBatch(items: EVCBatchItem[]): Hex {
     return encodeFunctionData({
-      abi: executionAbis.batchAbi,
+      abi: ethereumVaultConnectorAbi,
       functionName: "batch",
       args: [items]
     })
@@ -137,7 +141,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: owner,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.depositAbi,
+        abi: eVaultAbi,
         functionName: "deposit",
         args: [amount, receiver]
       })
@@ -170,7 +174,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: receiver,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.mintAbi,
+        abi: eVaultAbi,
         functionName: "mint",
         args: [shares, receiver]
       })
@@ -193,7 +197,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: owner,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.withdrawAbi,
+        abi: eVaultAbi,
         functionName: "withdraw",
         args: [assets, receiver, owner]
       })
@@ -216,7 +220,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: owner,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.redeemAbi,
+        abi: eVaultAbi,
         functionName: "redeem",
         args: [shares, receiver, owner]
       })
@@ -271,7 +275,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: borrowAccount,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.borrowAbi,
+        abi: eVaultAbi,
         functionName: "borrow",
         args: [amount, receiver]
       })
@@ -306,7 +310,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: liquidatorAccount,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.liquidateAbi,
+        abi: eVaultAbi,
         functionName: "liquidate",
         args: [violator, collateral, repayAssets, minYieldBalance],
       }),
@@ -334,7 +338,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: from,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.pullDebtAbi,
+        abi: eVaultAbi,
         functionName: "pullDebt",
         args: [amount, from]
       })
@@ -391,7 +395,7 @@ export class ExecutionService implements IExecutionService {
         onBehalfOfAccount: owner,
         value: 0n,
         data: encodeFunctionData({
-          abi: executionAbis.depositAbi,
+          abi: eVaultAbi,
           functionName: "deposit",
           args: [collateralAmount, receiver]
         })
@@ -414,7 +418,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: receiver,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.borrowAbi,
+        abi: eVaultAbi,
         functionName: "borrow",
         args: [liabilityAmount, swapQuote.swap.swapperAddress]
       })
@@ -494,7 +498,7 @@ export class ExecutionService implements IExecutionService {
         onBehalfOfAccount: owner,
         value: 0n,
         data: encodeFunctionData({
-          abi: executionAbis.depositAbi,
+          abi: eVaultAbi,
           functionName: "deposit",
           args: [collateralAmount, receiver]
         })
@@ -517,7 +521,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: receiver,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.borrowAbi,
+        abi: eVaultAbi,
         functionName: "borrow",
         args: [liabilityAmount, longVault]
       })
@@ -529,7 +533,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: receiver,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.skimAbi,
+        abi: eVaultAbi,
         functionName: "skim",
         args: [liabilityAmount, receiver]
       })
@@ -576,7 +580,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: sender,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.repayAbi,
+        abi: eVaultAbi,
         functionName: "repay",
         args: [liabilityAmount, receiver],
       }),
@@ -670,7 +674,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: swapQuote.accountIn,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.withdrawAbi,
+        abi: eVaultAbi,
         functionName: "withdraw",
         args: [withdrawAmount, swapQuote.swap.swapperAddress, swapQuote.accountIn],
       }),
@@ -726,7 +730,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: swapQuote.accountIn,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.withdrawAbi,
+        abi: eVaultAbi,
         functionName: "withdraw",
         args: [withdrawAmount, swapQuote.swap.swapperAddress, swapQuote.accountIn]
       })
@@ -783,7 +787,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: swapQuote.accountIn,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.borrowAbi,
+        abi: eVaultAbi,
         functionName: "borrow",
         args: [borrowAmount, swapQuote.swap.swapperAddress]
       })
@@ -837,7 +841,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: from,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.transferAbi,
+        abi: eVaultAbi,
         functionName: "transfer",
         args: [to, amount]
       })
@@ -866,7 +870,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: owner,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.permit2Abi,
+        abi: permit2PermitAbi,
         functionName: "permit",
         args: [owner, message, signature],
       }),
@@ -881,7 +885,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: zeroAddress,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.enableCollateralAbi,
+        abi: ethereumVaultConnectorAbi,
         functionName: "enableCollateral",
         args: [account, vault]
       })
@@ -896,7 +900,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: zeroAddress,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.disableCollateralAbi,
+        abi: ethereumVaultConnectorAbi,
         functionName: "disableCollateral",
         args: [account, vault]
       })
@@ -911,7 +915,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: zeroAddress,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.enableControllerAbi,
+        abi: ethereumVaultConnectorAbi,
         functionName: "enableController",
         args: [account, vault]
       })
@@ -924,7 +928,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: account,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.disableControllerAbi,
+        abi: eVaultAbi,
         functionName: "disableController",
         args: []
       })
@@ -983,7 +987,8 @@ export class ExecutionService implements IExecutionService {
     const decodedBatchItems: BatchItemDescription[] = []
     for (const item of batch) {
       let decoded = false
-      for (const abi of Object.values(executionAbis) as unknown as Abi[]) {
+      const executionDecodeAbis: Abi[] = [ethereumVaultConnectorAbi, eVaultAbi, permit2PermitAbi, swapperAbi, swapVerifierAbi];
+      for (const abi of executionDecodeAbis) {
         try {
           const decodedData = decodeFunctionData({
             abi: abi as unknown as Abi,
@@ -1056,7 +1061,7 @@ export class ExecutionService implements IExecutionService {
       onBehalfOfAccount: from,
       value: 0n,
       data: encodeFunctionData({
-        abi: executionAbis.repayWithSharesAbi,
+        abi: eVaultAbi,
         functionName: "repayWithShares",
         args: [amount, receiver],
       }),
@@ -1115,7 +1120,7 @@ export class ExecutionService implements IExecutionService {
         onBehalfOfAccount: from,
         value: 0n,
         data: encodeFunctionData({
-          abi: executionAbis.withdrawAbi,
+          abi: eVaultAbi,
           functionName: "withdraw",
           args: [amountWithExtra, toVault, from],
         }),
@@ -1127,7 +1132,7 @@ export class ExecutionService implements IExecutionService {
         onBehalfOfAccount: from,
         value: 0n,
         data: encodeFunctionData({
-          abi: executionAbis.skimAbi,
+          abi: eVaultAbi,
           functionName: "skim",
           args: [amountWithExtra, receiver],
         }),
@@ -1139,7 +1144,7 @@ export class ExecutionService implements IExecutionService {
         onBehalfOfAccount: receiver,
         value: 0n,
         data: encodeFunctionData({
-          abi: executionAbis.repayWithSharesAbi,
+          abi: eVaultAbi,
           functionName: "repayWithShares",
           // max is ok now, because skim deposited exact amount and it is the full debt,
           // so pre-existing balance will not be consumed
@@ -1159,7 +1164,7 @@ export class ExecutionService implements IExecutionService {
         onBehalfOfAccount: from,
         value: 0n,
         data: encodeFunctionData({
-          abi: executionAbis.withdrawAbi,
+          abi: eVaultAbi,
           functionName: "withdraw",
           args: [amount, from, from],
         }),

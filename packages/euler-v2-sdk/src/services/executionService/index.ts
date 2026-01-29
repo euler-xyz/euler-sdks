@@ -1,5 +1,9 @@
 export { ExecutionService, type IExecutionService } from "./executionService.js";
-export { executionAbis } from "./executionAbis.js";
+export { ethereumVaultConnectorAbi } from "./abis/ethereumVaultConnectorAbi.js";
+export { eVaultAbi } from "./abis/eVaultAbi.js";
+export { permit2PermitAbi } from "./abis/permit2PermitAbi.js";
+export { swapperAbi } from "./abis/swapperAbi.js";
+export { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
 export type {
   EVCBatchItem,
   EncodeDepositArgs,

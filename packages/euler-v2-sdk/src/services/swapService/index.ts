@@ -7,4 +7,3 @@ export type {
   SwapQuoteRequest,
   SwapsApiResponse,
 } from "./swapServiceTypes.js";
-export { swapVerifierAbi } from "./swapVerifierAbi.js"; // TODO: remove this

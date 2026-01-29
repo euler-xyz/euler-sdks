@@ -1,12 +1,12 @@
 import { IAccountDataSource } from "../accountService.js";
 import { ProviderService } from "../../providerService/index.js";
-import { IABIService } from "../../abiService/index.js";
 import { DeploymentService } from "../../deploymentService/index.js";
 import { Address, getAddress } from "viem";
 import { IAccount, SubAccount } from "../../../entities/Account.js";
 import { VaultAccountInfo, EVCAccountInfo } from "./accountLensTypes.js";
 import { convertToSubAccount } from "./accountInfoConverter.js";
 import { AccountVaults } from "./accountVaultsSubgraphDataSource.js";
+import { accountLensAbi } from "./abis/accountLensAbi.js";
 
 export interface IAccountVaultsDataSource {
   getAccountVaults(chainId: number, account: Address): Promise<AccountVaults>;
@@ -15,7 +15,6 @@ export interface IAccountVaultsDataSource {
 export class AccountOnchainDataSource implements IAccountDataSource {
   constructor(
     private readonly providerService: ProviderService,
-    private readonly abiService: IABIService,
     private readonly deploymentService: DeploymentService,
     private readonly positionsDataSource: IAccountVaultsDataSource
   ) {}
@@ -51,13 +50,12 @@ export class AccountOnchainDataSource implements IAccountDataSource {
     const provider = this.providerService.getProvider(chainId);
     const deployment = this.deploymentService.getDeployment(chainId);
     const accountLensAddress = deployment.addresses.lensAddrs.accountLens;
-    const abi = await this.abiService.getABI(chainId, "AccountLens");
     const evc = deployment.addresses.coreAddrs.evc;
 
     // Get EVC account info
     const evcAccountInfoResult = await provider.readContract({
       address: accountLensAddress,
-      abi,
+      abi: accountLensAbi,
       functionName: "getEVCAccountInfo",
       args: [evc, subAccount],
     });
@@ -73,7 +71,7 @@ export class AccountOnchainDataSource implements IAccountDataSource {
     // Fetch vault account info for all vaults
     const vaultAccountInfoCalls = vaults.map((vault) => ({
       address: accountLensAddress,
-      abi,
+      abi: accountLensAbi,
       functionName: "getVaultAccountInfo" as const,
       args: [subAccount, vault],
     }));

@@ -54,7 +54,6 @@ export const buildSDK = async (options: BuildSDKOptions) => {
     const accountVaultsDataSource = new AccountVaultsSubgraphDataSource(accountVaultsDataSourceConfig || defaultAccountVaultsDataSourceConfig);
     const accountDataSource = new AccountOnchainDataSource(
       providerService as ProviderService,
-      abiService as ABIService,
       deploymentService as DeploymentService,
       accountVaultsDataSource
     );
@@ -68,7 +67,6 @@ export const buildSDK = async (options: BuildSDKOptions) => {
   } else {
     const walletDataSource = new WalletOnchainDataSource(
       providerService as ProviderService,
-      abiService as ABIService,
       deploymentService as DeploymentService
     );
     walletService = new WalletService(walletDataSource);
@@ -81,7 +79,6 @@ export const buildSDK = async (options: BuildSDKOptions) => {
   } else {
     const eVaultDataSource = new EVaultOnchainDataSource(
       providerService as ProviderService,
-      abiService as ABIService,
       deploymentService as DeploymentService
     );
     eVaultService = new EVaultService(eVaultDataSource, deploymentService as DeploymentService);
@@ -94,7 +91,6 @@ export const buildSDK = async (options: BuildSDKOptions) => {
   } else {
     const eulerEarnDataSource = new EulerEarnOnchainDataSource(
       providerService as ProviderService,
-      abiService as ABIService,
       deploymentService as DeploymentService
     );
     eulerEarnService = new EulerEarnService(eulerEarnDataSource, deploymentService as DeploymentService);

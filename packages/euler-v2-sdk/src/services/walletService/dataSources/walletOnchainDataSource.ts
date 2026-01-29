@@ -1,6 +1,5 @@
 import { IWalletDataSource, AssetWithSpenders } from "../walletService.js";
 import { ProviderService } from "../../providerService/index.js";
-import { IABIService } from "../../abiService/index.js";
 import { DeploymentService } from "../../deploymentService/index.js";
 import { Address, getAddress, erc20Abi } from "viem";
 import { IWallet, WalletAsset, AssetAllowances } from "../../../entities/Wallet.js";
@@ -27,7 +26,6 @@ const permit2AllowanceAbi = [
 export class WalletOnchainDataSource implements IWalletDataSource {
   constructor(
     private readonly providerService: ProviderService,
-    private readonly abiService: IABIService,
     private readonly deploymentService: DeploymentService
   ) {}
 

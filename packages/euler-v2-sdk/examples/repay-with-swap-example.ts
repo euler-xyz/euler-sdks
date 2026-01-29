@@ -36,7 +36,7 @@ import {
   isAddressEqual,
 } from "viem";
 import { mainnet } from "viem/chains";
-import { buildSDK, executionAbis, getSubAccountAddress, SwapperMode } from "euler-v2-sdk";
+import { buildSDK, getSubAccountAddress, SwapperMode } from "euler-v2-sdk";
 
 import { executePlan } from "./utils/executor.js";
 import { printHeader, logOperationResult } from "./utils/helpers.js";

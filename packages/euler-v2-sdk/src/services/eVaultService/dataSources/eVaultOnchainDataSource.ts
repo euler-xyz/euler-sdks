@@ -1,23 +1,32 @@
 import { IEVaultDataSource } from "../eVaultService.js";
 import { ProviderService } from "../../providerService/index.js";
-import { IABIService } from "../../abiService/index.js";
 import { DeploymentService } from "../../deploymentService/index.js";
 import { Address } from "viem";
 import { EVault, IEVault } from "../../../entities/EVault.js";
 import { VaultInfoFull } from "./eVaultLensTypes.js";
 import { convertVaultInfoFullToIEVault } from "./vaultInfoConverter.js";
+import { vaultLensAbi } from "./abis/vaultLensAbi.js";
+
+const verifiedArrayAbi = [
+  {
+    type: "function",
+    name: "verifiedArray",
+    inputs: [],
+    outputs: [{ name: "", type: "address[]", internalType: "address[]" }],
+    stateMutability: "view",
+  },
+] as const;
 
 export class EVaultOnchainDataSource implements IEVaultDataSource {
-  constructor(private readonly providerService: ProviderService, private readonly abiService: IABIService, private readonly deploymentService: DeploymentService) {}
+  constructor(private readonly providerService: ProviderService, private readonly deploymentService: DeploymentService) {}
 
   async fetchVaults(chainId: number, vaults: Address[]): Promise<IEVault[]> {
     const provider = this.providerService.getProvider(chainId);
-    const abi = await this.abiService.getABI(chainId, "VaultLens");
     const vaultLensAddress = this.deploymentService.getDeployment(chainId).addresses.lensAddrs.vaultLens;
     const results = await provider.multicall({
       contracts: vaults.map(vault => ({
         address: vaultLensAddress,
-        abi,
+        abi: vaultLensAbi,
         functionName: "getVaultInfoFull",
         args: [vault],
       })),
@@ -25,7 +34,7 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
 
     const parsedVaults: IEVault[] = results.map((callResult, idx) => {
       if (callResult.status === "success" && callResult.result) {
-        const vaultInfo = callResult.result as VaultInfoFull;
+        const vaultInfo = callResult.result as unknown as VaultInfoFull;
         return convertVaultInfoFullToIEVault(vaultInfo, chainId);
       }
 
@@ -40,12 +49,11 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
 
   async fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]> {
     const provider = this.providerService.getProvider(chainId);
-    const abi = await this.abiService.getABI(chainId, "BasePerspective");
 
     const results = await provider.multicall({
       contracts: perspectives.map(perspective => ({
         address: perspective,
-        abi,
+        abi: verifiedArrayAbi,
         functionName: "verifiedArray",
       })),
     });
