@@ -34,18 +34,23 @@ import { mainnet } from "viem/chains";
 import { executePlan } from "./utils/executor.js";
 import { printHeader, logOperationResult } from "./utils/helpers.js";
 import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "./utils/config.js";
-import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
+import { Account, buildSDK, getSubAccountAddress } from "euler-v2-sdk";
 
 // Inputs
-const SHARES_TO_MINT = parseUnits("10", 6); // Mint 10 shares (shares typically have same decimals as underlying)
+const SHARES_TO_MINT = parseUnits("10", 6); // Mint 10 shares
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
+
+const ENABLE_COLLATERAL = true;
+const USE_PERMIT2 = true;
+const UNLIMITED_APPROVAL = true;
 
 async function mintExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
 
   // Plan the mint
@@ -55,6 +60,8 @@ async function mintExample() {
     receiver: SUB_ACCOUNT_ADDRESS,
     account: accountData,
     asset: USDC_ADDRESS,
+    enableCollateral: ENABLE_COLLATERAL,
+    // sharesToAssetsExchangeRateWad: parseUnits("1.2", 18), // use if unlimitedApproval = false
   });
 
   console.log(`\n✓ Mint plan created with ${mintPlan.length} step(s)`);
@@ -64,8 +71,8 @@ async function mintExample() {
     plan: mintPlan,
     chainId: mainnet.id,
     account: account.address,
-    usePermit2: true,
-    unlimitedApproval: true,
+    usePermit2: USE_PERMIT2,
+    unlimitedApproval: UNLIMITED_APPROVAL,
   });
   
   console.log(`✓ Approvals resolved, executing...`);

@@ -100,6 +100,7 @@ export interface IExecutionService {
 }
 
 const PERMIT2_SIG_WINDOW = 60n * 60n
+const WAD = 10n ** 18n
 
 // TODO explain how this service is coupled to the concrete abis of ERC4626, permit2 and EVK. 
 // this is a helper service, not a generic one.
@@ -171,7 +172,7 @@ export class ExecutionService implements IExecutionService {
     // Add mint operation
     items.push({
       targetContract: vault,
-      onBehalfOfAccount: receiver,
+      onBehalfOfAccount: owner,
       value: 0n,
       data: encodeFunctionData({
         abi: eVaultAbi,
@@ -1434,16 +1435,14 @@ export class ExecutionService implements IExecutionService {
   }
 
   planMint(args: PlanMintArgs): TransactionPlanItem[] {
-    const { vault, shares, receiver, account, asset } = args
+    const { vault, shares, receiver, account, asset, enableCollateral, sharesToAssetsExchangeRateWad } = args
     const plan: TransactionPlanItem[] = []
 
     // Default: collateral is not enabled when account/position is not available
     const isCollateralEnabled = this.isCollateralEnabled(account, receiver, vault)
 
-    // For mint, we need the asset amount. We'll use a conservative estimate based on shares
-    // In practice, you'd query the vault's convertToAssets(shares) to get the exact amount
-    // For now, we'll use shares as a proxy (this may overestimate, but that's safer)
-    const estimatedAssetAmount = shares // This should be convertToAssets(shares) in practice
+    const estimatedAssetAmount = sharesToAssetsExchangeRateWad ? shares * sharesToAssetsExchangeRateWad / WAD : shares
+
     
     // Add approval requirement (will be resolved later with Wallet data)
     plan.push({
@@ -1461,7 +1460,7 @@ export class ExecutionService implements IExecutionService {
       shares,
       receiver,
       owner: account.owner,
-      enableCollateral: !isCollateralEnabled,
+      enableCollateral: !isCollateralEnabled && enableCollateral,
       // Permit2 is handled separately in the plan
     })
 

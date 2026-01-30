@@ -57,6 +57,8 @@ const REPAY_AMOUNT = parseUnits("250", 6);       // Set to -1n to repay all debt
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
 const REPAY_QUOTE_INDEX = 1; // Change this if swap quote is bad
+const USE_PERMIT2 = true;
+const UNLIMITED_APPROVAL = false;
 
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
 
@@ -64,7 +66,8 @@ async function repayWithSwapExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
 
   // Step 1: Plan and execute borrow operation (deposit USDC collateral and borrow USDT)
@@ -89,8 +92,8 @@ async function repayWithSwapExample() {
     plan: borrowPlan,
     chainId: mainnet.id,
     account: account.address,
-    usePermit2: true,
-    unlimitedApproval: false,
+    usePermit2: USE_PERMIT2,
+    unlimitedApproval: UNLIMITED_APPROVAL,
   });
 
   console.log(`✓ Approvals resolved, executing...`);

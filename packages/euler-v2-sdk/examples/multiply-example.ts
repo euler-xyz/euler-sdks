@@ -58,6 +58,8 @@ const LIABILITY_AMOUNT = parseUnits("50", 6);   // 50 USDT
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
 const SWAP_QUOTE_INDEX = 0; // Change this if swap quote is bad
+const USE_PERMIT2 = true;
+const UNLIMITED_APPROVAL = false;
 
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
 
@@ -65,7 +67,8 @@ async function multiplyExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
 
   // Step 1: Get swap quote from USDT (liability asset) to WETH (long asset)
@@ -112,8 +115,8 @@ async function multiplyExample() {
     plan: multiplyPlan,
     chainId: mainnet.id,
     account: account.address,
-    usePermit2: true,
-    unlimitedApproval: false,
+    usePermit2: USE_PERMIT2,
+    unlimitedApproval: UNLIMITED_APPROVAL,
   });
 
   console.log(`✓ Approvals resolved, executing...`);

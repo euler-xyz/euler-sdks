@@ -308,7 +308,7 @@ export type PlanDepositArgs = {
   amount: bigint
   receiver: Address
   account: Account
-  asset: Address // Asset address - required when account/position is not available
+  asset: Address
   enableCollateral?: boolean
 }
 
@@ -317,7 +317,9 @@ export type PlanMintArgs = {
   vault: Address
   shares: bigint
   receiver: Address
-  asset: Address // Asset address - required when account/position is not available
+  asset: Address
+  enableCollateral?: boolean
+  sharesToAssetsExchangeRateWad?: bigint
 }
 
 export type PlanWithdrawArgs = {

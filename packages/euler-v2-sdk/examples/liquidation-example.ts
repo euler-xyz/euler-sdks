@@ -72,6 +72,8 @@
 // // Amounts
 // const COLLATERAL_AMOUNT = parseUnits("10000", 6); // 10,000 USDC
 // const YEARS_TO_ADVANCE = 3; // Advance 3 years to accrue significant interest
+// const USE_PERMIT2 = true;
+// const UNLIMITED_APPROVAL = true;
 
 // async function liquidationExample() {
 //   // Build the SDK
@@ -163,8 +165,8 @@
 //     plan: violatorBorrowPlan,
 //     wallet: violatorWallet,
 //     chainId: mainnet.id,
-//     usePermit2: true,
-//     unlimitedApproval: true,
+//     usePermit2: USE_PERMIT2,
+//     unlimitedApproval: UNLIMITED_APPROVAL,
 //   });
 
 //   // Execute using violator's wallet client
@@ -361,8 +363,8 @@
 //     plan: liquidationPlan,
 //     wallet: liquidatorWallet,
 //     chainId: mainnet.id,
-//     usePermit2: true,
-//     unlimitedApproval: true,
+//     usePermit2: USE_PERMIT2,
+//     unlimitedApproval: UNLIMITED_APPROVAL,
 //   });
 
 //   console.log(`✓ Approvals resolved, executing...`);

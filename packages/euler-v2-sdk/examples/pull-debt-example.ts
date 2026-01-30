@@ -60,12 +60,15 @@ const SUB_ACCOUNT_1_ID = 1;
 const SUB_ACCOUNT_2_ID = 2;
 const SUB_ACCOUNT_1_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_1_ID);
 const SUB_ACCOUNT_2_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_2_ID);
+const USE_PERMIT2 = true;
+const UNLIMITED_APPROVAL = false;
 
 async function pullDebtExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
 
   // Step 1: Create debt position in sub-account 1
@@ -90,8 +93,8 @@ async function pullDebtExample() {
     plan: borrowPlan,
     chainId: mainnet.id,
     account: account.address,
-    usePermit2: true,
-    unlimitedApproval: false,
+    usePermit2: USE_PERMIT2,
+    unlimitedApproval: UNLIMITED_APPROVAL,
   });
 
   console.log(`✓ Approvals resolved, executing...`);
@@ -134,8 +137,8 @@ async function pullDebtExample() {
     plan: depositPlan,
     chainId: mainnet.id,
     account: account.address,
-    usePermit2: true,
-    unlimitedApproval: false,
+    usePermit2: USE_PERMIT2,
+    unlimitedApproval: UNLIMITED_APPROVAL,
   });
 
   console.log(`✓ Approvals resolved, executing...`);

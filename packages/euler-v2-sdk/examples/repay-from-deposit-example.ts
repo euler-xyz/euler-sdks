@@ -54,12 +54,15 @@ const DEPOSIT_USDT_AMOUNT = parseUnits("300", 6); // 300 USDT deposit
 const REPAY_AMOUNT = parseUnits("250", 6);       // 250 USDT (partial repayment)
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
+const USE_PERMIT2 = true;
+const UNLIMITED_APPROVAL = false;
 
 async function repayFromDepositExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
 
   // Step 1: Plan and execute borrow operation (deposit USDC collateral and borrow USDT)
@@ -84,8 +87,8 @@ async function repayFromDepositExample() {
     plan: borrowPlan,
     chainId: mainnet.id,
     account: account.address,
-    usePermit2: true,
-    unlimitedApproval: false,
+    usePermit2: USE_PERMIT2,
+    unlimitedApproval: UNLIMITED_APPROVAL,
   });
 
   console.log(`✓ Approvals resolved, executing...`);
@@ -123,8 +126,8 @@ async function repayFromDepositExample() {
     plan: depositPlan,
     chainId: mainnet.id,
     account: account.address,
-    usePermit2: true,
-    unlimitedApproval: false,
+    usePermit2: USE_PERMIT2,
+    unlimitedApproval: UNLIMITED_APPROVAL,
   });
 
   console.log(`✓ Approvals resolved, executing...`);

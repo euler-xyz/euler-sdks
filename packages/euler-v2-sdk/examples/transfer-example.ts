@@ -44,12 +44,15 @@ const SUB_ACCOUNT_FROM_ID = 1;
 const SUB_ACCOUNT_TO_ID = 2;
 const SUB_ACCOUNT_FROM_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_FROM_ID);
 const SUB_ACCOUNT_TO_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_TO_ID);
+const USE_PERMIT2 = true;
+const UNLIMITED_APPROVAL = false;
 
 async function transferExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
 
   // Step 1: Deposit USDC into sub-account 1
@@ -70,8 +73,8 @@ async function transferExample() {
     plan: depositPlan,
     chainId: mainnet.id,
     account: account.address,
-    usePermit2: true,
-    unlimitedApproval: false,
+    usePermit2: USE_PERMIT2,
+    unlimitedApproval: UNLIMITED_APPROVAL,
   });
   
   console.log(`✓ Approvals resolved, executing...`);

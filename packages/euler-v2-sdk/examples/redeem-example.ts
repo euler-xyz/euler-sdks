@@ -42,12 +42,15 @@ const DEPOSIT_AMOUNT = parseUnits("100", 6);  // 100 USDC
 const SHARES_TO_REDEEM = parseUnits("50", 6); // Redeem 50 shares (shares typically have same decimals as underlying)
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
+const USE_PERMIT2 = true;
+const UNLIMITED_APPROVAL = false;
 
 async function redeemExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
 
   // Step 1: Deposit USDC first to get shares
@@ -68,8 +71,8 @@ async function redeemExample() {
     plan: depositPlan,
     chainId: mainnet.id,
     account: account.address,
-    usePermit2: true,
-    unlimitedApproval: false,
+    usePermit2: USE_PERMIT2,
+    unlimitedApproval: UNLIMITED_APPROVAL,
   });
   
   console.log(`✓ Approvals resolved, executing...`);

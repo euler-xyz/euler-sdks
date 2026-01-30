@@ -27,20 +27,24 @@ import {
 import { mainnet } from "viem/chains";
 
 import { executePlan } from "./utils/executor.js";
-import { printHeader, logOperationResult, stringify } from "./utils/helpers.js";
+import { printHeader, logOperationResult } from "./utils/helpers.js";
 import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "./utils/config.js";
-import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
+import { Account, buildSDK, getSubAccountAddress } from "euler-v2-sdk";
 
 // Inputs
 const DEPOSIT_AMOUNT = parseUnits("10", 6);
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
+const ENABLE_COLLATERAL = true;
+const USE_PERMIT2 = true;
+const UNLIMITED_APPROVAL = true;
 
 async function depositExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
 
   // Plan the deposit
@@ -50,7 +54,7 @@ async function depositExample() {
     receiver: SUB_ACCOUNT_ADDRESS,
     account: accountData,
     asset: USDC_ADDRESS,
-    enableCollateral: true,
+    enableCollateral: ENABLE_COLLATERAL,
   });
 
   console.log(`\n✓ Deposit plan created with ${depositPlan.length} step(s)`);
@@ -61,8 +65,8 @@ async function depositExample() {
     plan: depositPlan,
     chainId: mainnet.id,
     account: account.address,
-    usePermit2: true,
-    unlimitedApproval: true,
+    usePermit2: USE_PERMIT2,
+    unlimitedApproval: UNLIMITED_APPROVAL,
   });
   
   console.log(`✓ Approvals resolved, executing...`);

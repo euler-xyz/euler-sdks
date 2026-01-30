@@ -34,7 +34,7 @@ import {
 import { mainnet } from "viem/chains";
 
 import { executePlan } from "./utils/executor.js";
-import { printHeader, logOperationResult } from "./utils/helpers.js";
+import { printHeader, logOperationResult, stringify } from "./utils/helpers.js";
 import { 
   rpcUrls,
   account,
@@ -43,20 +43,24 @@ import {
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
 } from "./utils/config.js";
-import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
+import { Account, buildSDK, getSubAccountAddress } from "euler-v2-sdk";
 
 // Inputs
 const COLLATERAL_AMOUNT = parseUnits("1000", 6); // 1000 USDC
 const BORROW_AMOUNT = parseUnits("500", 6);      // 500 USDT (50% LTV)
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
+const USE_PERMIT2 = true;
+const UNLIMITED_APPROVAL = false;
 
 async function borrowExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
+
 
   // Plan the borrow operation (will deposit collateral and borrow in one transaction)
   let borrowPlan = sdk.executionService.planBorrow({
@@ -79,8 +83,8 @@ async function borrowExample() {
     plan: borrowPlan,
     chainId: mainnet.id,
     account: account.address,
-    usePermit2: true,
-    unlimitedApproval: false,
+    usePermit2: USE_PERMIT2,
+    unlimitedApproval: UNLIMITED_APPROVAL,
   });
 
   console.log(`✓ Approvals resolved, executing...`);
