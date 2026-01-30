@@ -62,6 +62,8 @@ const UNLIMITED_APPROVAL = false;
 
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
 
+// TODO add exact input repay example
+
 async function repayWithSwapExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });

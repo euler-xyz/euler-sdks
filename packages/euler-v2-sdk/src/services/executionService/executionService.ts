@@ -336,7 +336,7 @@ export class ExecutionService implements IExecutionService {
     // Add pullDebt operation
     items.push({
       targetContract: vault,
-      onBehalfOfAccount: from,
+      onBehalfOfAccount: to,
       value: 0n,
       data: encodeFunctionData({
         abi: eVaultAbi,
@@ -781,8 +781,14 @@ export class ExecutionService implements IExecutionService {
     isMax = false,
   }: EncodeSwapDebtArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
-    // 1. Borrow from source vault
-    const borrowAmount = BigInt(swapQuote.amountIn)
+
+    // Enable controller if needed
+    if (enableController) {
+      items.push(this.encodeEnableController(chainId, swapQuote.accountOut, swapQuote.vaultIn))
+    }
+
+    // Borrow from source vault
+    const borrowAmount = BigInt(swapQuote.amountInMax)
     items.push({
       targetContract: swapQuote.vaultIn,
       onBehalfOfAccount: swapQuote.accountIn,
@@ -794,7 +800,7 @@ export class ExecutionService implements IExecutionService {
       })
     })
 
-    // 2. Execute swap multicall
+    // Execute swap multicall
     items.push({
       targetContract: swapQuote.swap.swapperAddress,
       onBehalfOfAccount: swapQuote.accountIn,
@@ -802,7 +808,7 @@ export class ExecutionService implements IExecutionService {
       data: swapQuote.swap.swapperData
     })
 
-    // 3. Verify swap and skim
+    // Verify swap and skim
     if (swapQuote.verify.type !== "debtMax") {
       throw new Error("Invalid swap quote type for repay - must be debtMax")
     }
@@ -813,16 +819,9 @@ export class ExecutionService implements IExecutionService {
       data: swapQuote.verify.verifierData
     })
 
-    if (swapQuote.accountOut !== swapQuote.accountIn) {
-      // 4. Disable controller if needed (for max swap)
-      if (isMax && disableControllerOnMax) {
-        items.push(this.encodeDisableController(swapQuote.vaultIn, swapQuote.accountIn))
-      }
-
-      // 5. Enable controller if needed
-      if (enableController) {
-        items.push(this.encodeEnableController(chainId, swapQuote.accountOut, swapQuote.vaultIn))
-      }
+    // Disable controller if needed (for max swap)
+    if (isMax && disableControllerOnMax) {
+      items.push(this.encodeDisableController(swapQuote.receiver, swapQuote.accountIn))
     }
 
     return items
@@ -1848,7 +1847,6 @@ export class ExecutionService implements IExecutionService {
     const { swapQuote, account } = args
     const plan: TransactionPlanItem[] = []
 
-
     const sourcePosition = this.getPosition(account, swapQuote.accountIn, swapQuote.vaultIn)
     if (!sourcePosition) {
       throw new Error(`Position not found. Vault: ${swapQuote.vaultIn}, Account: ${swapQuote.accountIn}`)
@@ -1856,8 +1854,11 @@ export class ExecutionService implements IExecutionService {
 
     const isMax = sourcePosition.borrowed <= BigInt(swapQuote.amountOutMin)
 
-    const enableController = swapQuote.accountOut !== swapQuote.accountIn && 
-      !this.isControllerEnabled(account, swapQuote.accountOut, swapQuote.vaultIn)
+    if (!isMax && swapQuote.accountOut !== swapQuote.accountIn) {
+      throw new Error("Swapping debt on the same account must be for max amount")
+    }
+
+    const enableController = !this.isControllerEnabled(account, swapQuote.accountOut, swapQuote.vaultIn)
 
     // Build EVC batch items
     const batchItems = this.encodeSwapDebt({

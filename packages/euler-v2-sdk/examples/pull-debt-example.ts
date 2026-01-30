@@ -16,11 +16,6 @@
  *   • USDC → Euler Prime USDC Vault (collateral in both sub-accounts)
  *   • USDT → Euler Prime USDT Vault (debt transferred between sub-accounts)
  * 
- * 💡 TIP - USE CASES:
- *   • Consolidate debt from multiple sub-accounts
- *   • Move debt to a sub-account with better collateral
- *   • Rebalance debt across sub-accounts for better risk management
- * 
  * 💡 TIP - REQUIREMENTS:
  *   • The receiving sub-account must have sufficient collateral
  *   • The debt vault must be enabled as a controller on the receiving account

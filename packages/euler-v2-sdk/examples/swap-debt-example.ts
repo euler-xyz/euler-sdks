@@ -67,6 +67,8 @@ const SWAP_QUOTE_INDEX = 0; // Change this if swap quote is bad
 const USE_PERMIT2 = true;
 const UNLIMITED_APPROVAL = false;
 
+// TODO add example of cross-account swap, including partial swap OR disallow cross-account swap
+
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
 
 async function swapDebtExample() {

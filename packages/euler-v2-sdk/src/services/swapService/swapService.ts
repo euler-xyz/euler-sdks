@@ -1,4 +1,4 @@
-import { Address, Hex, encodeFunctionData, getAddress } from "viem";
+import { Address, Hex, encodeFunctionData, getAddress, maxUint256 } from "viem";
 import type {
   SwapQuote,
   SwapQuoteRequest,
@@ -206,8 +206,9 @@ export class SwapService implements ISwapService {
           "liabilityAmount must be provided for target-debt swap repay",
         );
       }
-      amount = liabilityAmount;
-      targetDebt = isMax || amount >= currentDebt ? 0n : currentDebt - amount;
+      // TODO add to docs or change api, liabilityAmount is ignored if isMax is true
+      targetDebt = isMax || currentDebt === liabilityAmount ? 0n : currentDebt - liabilityAmount;
+      amount = isMax || currentDebt === liabilityAmount ? currentDebt - targetDebt : liabilityAmount;
     }
 
     const quotes = await this.getSwapQuotes({

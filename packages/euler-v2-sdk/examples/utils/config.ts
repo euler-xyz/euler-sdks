@@ -41,6 +41,7 @@ export const testClient: TestClient = createTestClient({
 
 export async function initBalances() {
   const USDC_WHALE = "0xb7cD010b53D23a794d754886C3b928BE6a3315dC"
+  const WETH_WHALE = "0x4a18a50a8328b42773268B4b436254056b7d70CE"
 
   if (!process.env.PRIVATE_KEY) {
     await testClient.setBalance({
@@ -56,7 +57,18 @@ export async function initBalances() {
       address: USDC_ADDRESS,
       abi: erc20Abi,
       functionName: 'transfer',
-      args: [account.address, parseUnits('100000', 6)], // Increased to 100k USDC for testing
+      args: [account.address, parseUnits('100000', 6)],
+    })
+
+    await createWalletClient({
+      account: WETH_WHALE,
+      chain: mainnet,
+      transport: http(ANVIL_RPC_URL),
+    }).writeContract({
+      address: WETH_ADDRESS,
+      abi: erc20Abi,
+      functionName: 'transfer',
+      args: [account.address, parseUnits('1000', 18)],
     })
   }
 
