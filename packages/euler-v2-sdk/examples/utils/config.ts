@@ -4,6 +4,7 @@ import { mainnet } from "viem/chains";
 
 
 const PRIVATE_KEY = (process.env.PRIVATE_KEY ?? "0x1234567890123456789012345678901234567890123456789012345678901235") as Hex;
+const PRIVATE_KEY2 = (process.env.PRIVATE_KEY2 ?? "0x1234567890123456789012345678901234567890123456789012345678901246") as Hex;
 
 // Local Anvil RPC URL
 const ANVIL_RPC_URL = "http://127.0.0.1:8545";
@@ -21,9 +22,16 @@ export const rpcUrls = {
 };
 
 export const account = privateKeyToAccount(PRIVATE_KEY);
+export const account2 = privateKeyToAccount(PRIVATE_KEY2);
 
 export const walletClient: WalletClient = createWalletClient({
   account,
+  chain: mainnet,
+  transport: http(ANVIL_RPC_URL),
+});
+
+export const walletClient2: WalletClient = createWalletClient({
+  account: account2,
   chain: mainnet,
   transport: http(ANVIL_RPC_URL),
 });
@@ -49,15 +57,24 @@ export async function initBalances() {
       value: parseEther('10'),
     });
 
-    await createWalletClient({
+    const wc = createWalletClient({
       account: USDC_WHALE,
       chain: mainnet,
       transport: http(ANVIL_RPC_URL),
-    }).writeContract({
+    })
+
+    await wc.writeContract({
       address: USDC_ADDRESS,
       abi: erc20Abi,
       functionName: 'transfer',
       args: [account.address, parseUnits('100000', 6)],
+    })
+
+    await wc.writeContract({
+      address: USDC_ADDRESS,
+      abi: erc20Abi,
+      functionName: 'transfer',
+      args: [account2.address, parseUnits('100000', 6)],
     })
 
     await createWalletClient({
@@ -77,6 +94,10 @@ export async function initBalances() {
     value: parseEther('1000'),
   });
 
+  await testClient.setBalance({
+    address: account2.address,
+    value: parseEther('1000'),
+  });
 }
 
 /**

@@ -1,6 +1,6 @@
-import { Address, erc20Abi, formatUnits, isAddressEqual } from "viem";
+import { Address, erc20Abi, formatUnits, isAddressEqual, parseAbi, PublicClient, TestClient, WalletClient } from "viem";
 import { publicClient } from "./config.js";
-import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK } from "euler-v2-sdk";
+import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK, eVaultAbi } from "euler-v2-sdk";
 
 
 // Helper function for header

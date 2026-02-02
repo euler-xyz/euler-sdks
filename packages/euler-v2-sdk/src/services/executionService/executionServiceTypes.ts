@@ -82,7 +82,7 @@ export type EncodeLiquidationArgs = {
   collateral: Address
   repayAssets: bigint
   minYieldBalance: bigint
-  liquidatorAccount: Address
+  liquidatorSubAccountAddress: Address
   enableCollateral?: boolean
   enableController?: boolean
 }
@@ -353,33 +353,24 @@ export type PlanBorrowArgs = {
 
 export type PlanLiquidationArgs = {
   account: Account
-  /**
-   * Account data for the violator being liquidated.
-   * This can be used by callers to derive liquidation parameters from the violator's positions.
-   */
-  violatorAccount: Account
+  liquidatorSubAccountAddress: Address
   vault: Address
   asset: Address
   violator: Address
   collateral: Address
   repayAssets: bigint
   minYieldBalance: bigint
-  liquidatorAccount: Address
 }
 
 export type PlanLiquidationAndRepayWithSwapArgs = {
   account: Account
-  /**
-   * Account data for the violator being liquidated.
-   */
-  violatorAccount: Account
+  liquidatorSubAccountAddress: Address
   vault: Address
   asset: Address
   violator: Address
   collateral: Address
   repayAssets: bigint
   minYieldBalance: bigint
-  liquidatorAccount: Address
   swapQuote: SwapQuote
 }
 

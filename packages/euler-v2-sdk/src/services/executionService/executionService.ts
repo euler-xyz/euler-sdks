@@ -292,23 +292,21 @@ export class ExecutionService implements IExecutionService {
     collateral,
     repayAssets,
     minYieldBalance,
-    liquidatorAccount,
+    liquidatorSubAccountAddress,
     enableCollateral,
     enableController,
   }: EncodeLiquidationArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
-    const deployment = this.deploymentService.getDeployment(chainId)
-    const evc = deployment.addresses.coreAddrs.evc
 
     // Optionally enable controller for the liquidator account on the liability vault
     if (enableController) {
-      items.push(this.encodeEnableController(chainId, liquidatorAccount, vault))
+      items.push(this.encodeEnableController(chainId, liquidatorSubAccountAddress, vault))
     }
 
     // Perform the liquidation
     items.push({
       targetContract: vault,
-      onBehalfOfAccount: liquidatorAccount,
+      onBehalfOfAccount: liquidatorSubAccountAddress,
       value: 0n,
       data: encodeFunctionData({
         abi: eVaultAbi,
@@ -319,7 +317,7 @@ export class ExecutionService implements IExecutionService {
 
     // Optionally enable collateral for the seized collateral vault on the liquidator account
     if (enableCollateral) {
-      items.push(this.encodeEnableCollateral(chainId, liquidatorAccount, collateral))
+      items.push(this.encodeEnableCollateral(chainId, liquidatorSubAccountAddress, collateral))
     }
 
     return items
@@ -1587,14 +1585,13 @@ export class ExecutionService implements IExecutionService {
   planLiquidation(args: PlanLiquidationArgs): TransactionPlanItem[] {
     const {
       account,
-      violatorAccount,
+      liquidatorSubAccountAddress,
       vault,
       asset,
       violator,
       collateral,
       repayAssets,
       minYieldBalance,
-      liquidatorAccount,
     } = args
 
     const plan: TransactionPlanItem[] = []
@@ -1609,10 +1606,10 @@ export class ExecutionService implements IExecutionService {
     })
 
     // Check if controller needs to be enabled for the liquidator account on the liability vault
-    const enableController = !this.isControllerEnabled(account, liquidatorAccount, vault)
+    const enableController = !this.isControllerEnabled(account, liquidatorSubAccountAddress, vault)
 
     // Check if collateral needs to be enabled for the seized collateral vault on the liquidator account
-    const enableCollateral = !this.isCollateralEnabled(account, liquidatorAccount, collateral)
+    const enableCollateral = !this.isCollateralEnabled(account, liquidatorSubAccountAddress, collateral)
 
     const batchItems = this.encodeLiquidation({
       chainId: account.chainId,
@@ -1621,7 +1618,7 @@ export class ExecutionService implements IExecutionService {
       collateral,
       repayAssets,
       minYieldBalance,
-      liquidatorAccount,
+      liquidatorSubAccountAddress,
       enableController,
       enableCollateral,
     })
@@ -1637,14 +1634,13 @@ export class ExecutionService implements IExecutionService {
   planLiquidationAndRepayWithSwap(args: PlanLiquidationAndRepayWithSwapArgs): TransactionPlanItem[] {
     const {
       account,
-      violatorAccount,
       vault,
       asset,
       violator,
       collateral,
       repayAssets,
       minYieldBalance,
-      liquidatorAccount,
+      liquidatorSubAccountAddress,
       swapQuote,
     } = args
 
@@ -1653,14 +1649,13 @@ export class ExecutionService implements IExecutionService {
     // First, plan the liquidation itself
     const liquidationPlan = this.planLiquidation({
       account,
-      violatorAccount,
       vault,
       asset,
       violator,
       collateral,
       repayAssets,
       minYieldBalance,
-      liquidatorAccount,
+      liquidatorSubAccountAddress,
     })
 
     plan.push(...liquidationPlan)

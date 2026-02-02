@@ -1,5 +1,5 @@
 import { EVCBatchItem, TransactionPlanItem, EulerSDK, } from "euler-v2-sdk";
-import { maxUint256 } from "viem";
+import { maxUint256, WalletClient } from "viem";
 import { mainnet } from "viem/chains";
 import { publicClient, walletClient } from "./config.js";
 
@@ -8,7 +8,7 @@ import { publicClient, walletClient } from "./config.js";
  * - requiredApproval: Processes resolved approvals (approve calls or permit2 signatures)
  * - evcBatch: Prepends any permit2 batch items and sends to EVC.batch
  */
-export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK): Promise<void> {
+export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK, wc: WalletClient = walletClient): Promise<void> {
   const permit2BatchItems: EVCBatchItem[] = [];
 
   for (const item of plan) {
@@ -21,10 +21,10 @@ export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK): P
 
       for (const resolvedItem of item.resolved) {
         if (resolvedItem.type === "approve") {
-          const hash = await walletClient.sendTransaction({
+          const hash = await wc.sendTransaction({
             to: resolvedItem.token,
             data: resolvedItem.data,
-            account: walletClient.account!,
+            account: wc.account!,
             chain: mainnet,
           });
 
@@ -54,7 +54,7 @@ export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK): P
           });
      
           // Sign the typed data
-          const signature = await walletClient.signTypedData({...typedData, account: walletClient.account!});
+          const signature = await wc.signTypedData({...typedData, account: wc.account!});
 
           // Encode permit2 call as batch item
           const permit2BatchItem = sdk.executionService.encodePermit2Call({
@@ -83,16 +83,16 @@ export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK): P
       const estimatedGas = await publicClient.estimateGas({
         to: evcAddress,
         data: batchData,
-        account: walletClient.account!.address,
+        account: wc.account!.address,
       });
 
       const gasWithBuffer = (estimatedGas * 120n) / 100n;
 
       // Send transaction to EVC.batch
-      const hash = await walletClient.sendTransaction({
+      const hash = await wc.sendTransaction({
         to: evcAddress,
         data: batchData,
-        account: walletClient.account!,
+        account: wc.account!,
         chain: mainnet,
         gas: gasWithBuffer,
       });
