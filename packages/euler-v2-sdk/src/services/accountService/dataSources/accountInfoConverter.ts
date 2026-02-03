@@ -93,8 +93,6 @@ export function convertToSubAccount(
     timestamp: Number(evcAccountInfo.timestamp),
     account: evcAccountInfo.account,
     owner: evcAccountInfo.owner,
-    isLockdownMode: evcAccountInfo.isLockdownMode,
-    isPermitDisabledMode: evcAccountInfo.isPermitDisabledMode,
     lastAccountStatusCheckTimestamp: Number(evcAccountInfo.lastAccountStatusCheckTimestamp),
     enabledControllers: evcAccountInfo.enabledControllers,
     enabledCollaterals: evcAccountInfo.enabledCollaterals,

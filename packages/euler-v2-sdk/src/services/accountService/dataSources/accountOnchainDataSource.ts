@@ -35,23 +35,26 @@ export class AccountOnchainDataSource implements IAccountDataSource {
       ])].map((vault) => getAddress(vault));
 
       return this.fetchSubAccount(chainId, subAccountAddress, vaults);
-    })).then((subAccounts) => subAccounts.filter((subAccount) => subAccount !== undefined) as SubAccount[]);
+    })).then((subAccounts) => subAccounts.filter((subAccount): subAccount is SubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean } => subAccount !== undefined));
 
     const subAccounts = subAccountsArray.reduce<Record<Address, SubAccount>>((acc, sa) => {
-      acc[getAddress(sa.account)] = sa;
+      const { isLockdownMode: _lm, isPermitDisabledMode: _pm, ...subAccount } = sa;
+      acc[getAddress(sa.account)] = subAccount;
       return acc;
     }, {});
 
+    const mainSubAccount = subAccountsArray.find((sa) => sa.account === sa.owner);
     return {
       chainId,
-      timestamp: subAccountsArray[0]?.timestamp ?? 0,
       owner: address,
+      isLockdownMode: mainSubAccount?.isLockdownMode ?? false,
+      isPermitDisabledMode: mainSubAccount?.isPermitDisabledMode ?? false,
       subAccounts,
-    } as IAccount;
+    };
 
   }
 
-  async fetchSubAccount(chainId: number, subAccount: Address, vaults: Address[] = []): Promise<SubAccount | undefined> {
+  async fetchSubAccount(chainId: number, subAccount: Address, vaults: Address[] = []): Promise<(SubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean }) | undefined> {
     const provider = this.providerService.getProvider(chainId);
     const deployment = this.deploymentService.getDeployment(chainId);
     const accountLensAddress = deployment.addresses.lensAddrs.accountLens;
@@ -70,7 +73,12 @@ export class AccountOnchainDataSource implements IAccountDataSource {
     const evcAccountInfo = evcAccountInfoResult as EVCAccountInfo;
 
     if (vaults.length === 0) {
-      return convertToSubAccount(evcAccountInfo, []);
+      const subAccountData = convertToSubAccount(evcAccountInfo, []);
+      return {
+        ...subAccountData,
+        isLockdownMode: evcAccountInfo.isLockdownMode,
+        isPermitDisabledMode: evcAccountInfo.isPermitDisabledMode,
+      };
     }
 
     // Fetch vault account info for all vaults
@@ -95,6 +103,11 @@ export class AccountOnchainDataSource implements IAccountDataSource {
       return result.result as VaultAccountInfo;
     });
 
-    return convertToSubAccount(evcAccountInfo, vaultAccountInfos);
+    const fullSubAccount = convertToSubAccount(evcAccountInfo, vaultAccountInfos);
+    return {
+      ...fullSubAccount,
+      isLockdownMode: evcAccountInfo.isLockdownMode,
+      isPermitDisabledMode: evcAccountInfo.isPermitDisabledMode,
+    };
   }
 }

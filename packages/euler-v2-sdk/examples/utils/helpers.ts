@@ -324,6 +324,15 @@ export async function logOperationResult(chainId: number, before: Account, after
   console.log("OPERATION RESULT");
   console.log("═".repeat(80));
 
+  // Log account-level settings when after is a full Account
+  if (!Array.isArray(after)) {
+    if (after.isLockdownMode || after.isPermitDisabledMode) {
+      console.log("\nAccount settings (global):");
+      if (after.isLockdownMode) console.log("  Lockdown Mode:    true");
+      if (after.isPermitDisabledMode) console.log("  Permit Disabled:  true");
+    }
+  }
+
   // Normalize after to array of sub-accounts, filtering out undefined values
   const afterSubAccounts: SubAccount[] = Array.isArray(after)
     ? after.filter((sa): sa is SubAccount => sa !== undefined)
@@ -354,9 +363,6 @@ export async function logOperationResult(chainId: number, before: Account, after
       console.log(`\n🆕 NEW SUB-ACCOUNT: ${truncateAddress(afterSub.account)}`);
       console.log(`  Owner:            ${truncateAddress(afterSub.owner)}`);
       
-      if (afterSub.isLockdownMode) {
-        console.log(`  Lockdown Mode:    ${afterSub.isLockdownMode}`);
-      }
       if (afterSub.enabledControllers.length > 0) {
         const controllers = await formatVaultList(chainId, afterSub.enabledControllers, sdk);
         console.log(`  Controllers:      ${controllers}`);

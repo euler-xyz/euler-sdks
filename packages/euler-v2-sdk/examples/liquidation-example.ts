@@ -194,7 +194,7 @@ async function liquidationExample() {
   console.log("═".repeat(80));
   await logOperationResult(
     mainnet.id,
-    Account.fromSubAccounts(mainnet.id, violatorAccount.address, updatedViolatorSubAccount!),
+    new Account({ chainId: mainnet.id, owner: violatorAccount.address, subAccounts: { [getAddress(updatedViolatorSubAccount!.account)]: updatedViolatorSubAccount! } }),
     [finalViolatorSubAccount],
     sdk
   );

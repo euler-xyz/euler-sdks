@@ -19,7 +19,7 @@ export class AccountService implements IAccountService {
   // `address` in this context can be any sub-account, not just the main account.
   async fetchAccount(chainId: number, address: Address): Promise<Account> {
     const accountData = await this.dataSource.fetchAccount(chainId, address);
-    if (!accountData) return new Account({ chainId, owner: address, subAccounts: {} });
+    if (!accountData) return new Account({ chainId, owner: address, isLockdownMode: false, isPermitDisabledMode: false, subAccounts: {} });
 
     return new Account(accountData);
   }

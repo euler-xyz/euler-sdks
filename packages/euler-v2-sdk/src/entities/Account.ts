@@ -6,8 +6,6 @@ export interface SubAccount {
   timestamp: number;
   account: Address;
   owner: Address;
-  isLockdownMode: boolean;
-  isPermitDisabledMode: boolean;
   lastAccountStatusCheckTimestamp: number;
   enabledControllers: Address[];
   enabledCollaterals: Address[];
@@ -56,11 +54,15 @@ export interface IAccount {
   chainId: number;
   owner: Address;
   subAccounts: SubAccountsMap;
+  isLockdownMode?: boolean;
+  isPermitDisabledMode?: boolean;
 }
 
 export class Account implements IAccount {
   chainId: number;
   owner: Address;
+  isLockdownMode: boolean;
+  isPermitDisabledMode: boolean;
   subAccounts: SubAccountsMap;
 
   constructor(
@@ -69,6 +71,8 @@ export class Account implements IAccount {
     this.chainId = account.chainId;
     this.owner = account.owner;
     this.subAccounts = account.subAccounts;
+    this.isLockdownMode = account.isLockdownMode ?? false;
+    this.isPermitDisabledMode = account.isPermitDisabledMode ?? false;
   }
 
   getSubAccount(account: Address): SubAccount | undefined {
@@ -124,16 +128,6 @@ export class Account implements IAccount {
       next[getAddress(sa.account)] = sa;
     }
     this.subAccounts = next;
-  }
-
-  /**
-   * Creates an Account with the given sub-accounts (keyed by account address).
-   * Use when building a one-off account for logging or passing to APIs.
-   */
-  static fromSubAccounts(chainId: number, owner: Address, ...subAccounts: SubAccount[]): Account {
-    const account = new Account({ chainId, owner, subAccounts: {} });
-    account.updateSubAccounts(...subAccounts);
-    return account;
   }
 }
 
