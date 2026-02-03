@@ -41,6 +41,7 @@ const DEPOSIT_AMOUNT = parseUnits("100", 6);  // 100 USDC
 const WITHDRAW_AMOUNT = parseUnits("50", 6);  // 50 USDC
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
+const DISABLE_COLLATERAL = true;
 const USE_PERMIT2 = true;
 const UNLIMITED_APPROVAL = false;
 
@@ -99,6 +100,7 @@ async function withdrawExample() {
     assets: WITHDRAW_AMOUNT,
     owner: SUB_ACCOUNT_ADDRESS,
     receiver: account.address,
+    disableCollateral: DISABLE_COLLATERAL,
   });
 
   console.log(`✓ Withdraw plan created with ${withdrawPlan.length} step(s)`);

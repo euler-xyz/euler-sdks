@@ -581,7 +581,7 @@ export class ExecutionService implements IExecutionService {
       data: encodeFunctionData({
         abi: eVaultAbi,
         functionName: "repay",
-        args: [liabilityAmount, receiver],
+        args: [isMax ? maxUint256 : liabilityAmount, receiver],
       }),
     })
 
@@ -1470,19 +1470,11 @@ export class ExecutionService implements IExecutionService {
   }
 
   planWithdraw(args: PlanWithdrawArgs): TransactionPlanItem[] {
-    const { vault, assets, receiver, owner, account } = args
+    const { vault, assets, receiver, owner, account, disableCollateral = false } = args
     const plan: TransactionPlanItem[] = []
 
     // Get position to check collateral state
     const position = this.getPosition(account, owner, vault)
-
-    if (!position || position.assets <= assets) {
-      throw new Error(`Position not found or assets are not sufficient for withdrawal`)
-    }
-
-    // Check if we're withdrawing all collateral (disable if so)
-    // We disable collateral when all assets are withdrawn
-    const disableCollateral = position.assets <= assets && position.isCollateral
 
     // Build EVC batch items
     const batchItems = this.encodeWithdraw({
@@ -1491,7 +1483,7 @@ export class ExecutionService implements IExecutionService {
       assets,
       receiver,
       owner,
-      disableCollateral,
+      disableCollateral: disableCollateral && position && position.isCollateral
     })
 
     plan.push({
@@ -1503,19 +1495,11 @@ export class ExecutionService implements IExecutionService {
   }
 
   planRedeem(args: PlanRedeemArgs): TransactionPlanItem[] {
-    const { vault, shares, receiver, owner, account } = args
+    const { vault, shares, receiver, owner, account, disableCollateral = false } = args
     const plan: TransactionPlanItem[] = []
 
     // Get position to check collateral state
     const position = this.getPosition(account, owner, vault)
-
-    if (!position || position.shares <= shares) {
-      throw new Error(`Position not found or shares are not sufficient for redemption`)
-    }
-
-    // Check if we're redeeming all collateral (disable if so)
-    // We disable collateral when all shares are redeemed
-    const disableCollateral = position.shares <= shares && position.isCollateral
 
     // Build EVC batch items
     const batchItems = this.encodeRedeem({
@@ -1524,7 +1508,7 @@ export class ExecutionService implements IExecutionService {
       shares,
       receiver,
       owner,
-      disableCollateral,
+      disableCollateral: disableCollateral && position && position.isCollateral
     })
 
     plan.push({
@@ -1811,11 +1795,7 @@ export class ExecutionService implements IExecutionService {
     // Default: when position is not available, assume amounts are zero, so we don't disable collateral
     const sourcePosition = this.getPosition(account, swapQuote.accountIn, swapQuote.vaultIn)
 
-    if (!sourcePosition) {
-      throw new Error(`Position not found. Vault: ${swapQuote.vaultIn}, Account: ${swapQuote.accountIn}`)
-    }
-
-    const isMax = sourcePosition.assets <= BigInt(swapQuote.amountInMax)
+    const isMax = sourcePosition ? sourcePosition.assets <= BigInt(swapQuote.amountIn) : false
 
     // Check if destination collateral needs to be enabled
     // Default: collateral is not enabled when account/sub-account is not available
@@ -1843,15 +1823,8 @@ export class ExecutionService implements IExecutionService {
     const plan: TransactionPlanItem[] = []
 
     const sourcePosition = this.getPosition(account, swapQuote.accountIn, swapQuote.vaultIn)
-    if (!sourcePosition) {
-      throw new Error(`Position not found. Vault: ${swapQuote.vaultIn}, Account: ${swapQuote.accountIn}`)
-    }
 
-    const isMax = sourcePosition.borrowed <= BigInt(swapQuote.amountOutMin)
-
-    if (!isMax && swapQuote.accountOut !== swapQuote.accountIn) {
-      throw new Error("Swapping debt on the same account must be for max amount")
-    }
+    const isMax = sourcePosition ? sourcePosition.borrowed <= BigInt(swapQuote.amountOutMin) : false
 
     const enableController = !this.isControllerEnabled(account, swapQuote.accountOut, swapQuote.vaultIn)
 
@@ -1875,11 +1848,6 @@ export class ExecutionService implements IExecutionService {
   planTransfer(args: PlanTransferArgs): TransactionPlanItem[] {
     const { vault, to, amount, from, account, enableCollateralTo, disableCollateralFrom } = args
     const plan: TransactionPlanItem[] = []
-
-    const fromPosition = this.getPosition(account, from, vault)
-    if (!fromPosition) {
-      throw new Error(`Position not found. Vault: ${vault}, Account: ${from}`)
-    }
 
     // Build EVC batch items
     const batchItems = this.encodeTransfer({

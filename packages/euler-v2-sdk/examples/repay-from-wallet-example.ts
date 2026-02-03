@@ -50,7 +50,7 @@ import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
 const COLLATERAL_AMOUNT = parseUnits("1000", 6); // 1000 USDC
 const BORROW_AMOUNT = parseUnits("500", 6);      // 500 USDT
 const REPAY_AMOUNT = parseUnits("250", 6);       // 250 USDT (partial repayment)
-const SUB_ACCOUNT_ID = 1;
+const SUB_ACCOUNT_ID = 10;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
 const USE_PERMIT2 = true;
 const UNLIMITED_APPROVAL = false;

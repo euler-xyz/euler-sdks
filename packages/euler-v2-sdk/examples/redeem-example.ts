@@ -7,18 +7,6 @@
  * assets. It first deposits assets to receive shares, then redeems a specific
  * number of shares.
  * 
- * OPERATION:
- *   1. Deposit USDC into Euler Prime USDC Vault to receive shares
- *   2. Redeem specific amount of shares to receive USDC back
- *   3. Optionally disable collateral if redeeming all shares
- * 
- * ASSETS & VAULTS:
- *   • USDC → Euler Prime USDC Vault (collateral)
- * 
- * 💡 TIP - REDEEM vs WITHDRAW:
- *   • Redeem: You specify the exact number of shares you want to burn
- *   • Withdraw: You specify the exact amount of assets you want to receive
- * 
  * 💡 TIP - USING EXISTING ACCOUNTS:
  *   • Set PRIVATE_KEY in .env to use an existing account on the fork
  *   • Without PRIVATE_KEY, a test account will be created and funded automatically
@@ -40,10 +28,11 @@ import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
 // Inputs
 const DEPOSIT_AMOUNT = parseUnits("100", 6);  // 100 USDC
 const SHARES_TO_REDEEM = parseUnits("50", 6); // Redeem 50 shares (shares typically have same decimals as underlying)
-const SUB_ACCOUNT_ID = 1;
+const SUB_ACCOUNT_ID = 2;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
 const USE_PERMIT2 = true;
 const UNLIMITED_APPROVAL = false;
+const DISABLE_COLLATERAL = true;
 
 async function redeemExample() {
   // Build the SDK
@@ -100,6 +89,7 @@ async function redeemExample() {
     shares: SHARES_TO_REDEEM,
     owner: SUB_ACCOUNT_ADDRESS,
     receiver: account.address,
+    disableCollateral: DISABLE_COLLATERAL,
   });
 
   console.log(`✓ Redeem plan created with ${redeemPlan.length} step(s)`);

@@ -14,20 +14,10 @@
  *   4. Swap USDC → USDT (using live DEX aggregator quotes)
  *   5. Repay USDT debt with swapped assets
  * 
- * ASSETS & VAULTS:
- *   • WETH → Euler Prime WETH Vault (collateral)
- *   • USDT → Euler Prime USDT Vault (initial liability to be replaced)
- *   • USDC → Euler Prime USDC Vault (new liability)
- * 
  * ⚠️  IMPORTANT - LIVE SWAP QUOTES:
  *   • This example fetches real-time swap quotes from DEX aggregators
  *   • Restart Anvil immediately before running to avoid stale blockchain state
  *   • If the swap fails, try changing SWAP_QUOTE_INDEX to use a different provider
- * 
- * 💡 TIP - USE CASE:
- *   • Refinance to a vault with lower borrow rates
- *   • Switch to more liquid or stable debt asset
- *   • Rebalance debt exposure across different assets
  * 
  * 💡 TIP - USING EXISTING ACCOUNTS:
  *   • Set PRIVATE_KEY in .env to use an existing account on the fork
@@ -56,6 +46,7 @@ import {
   EULER_PRIME_USDT_VAULT,
   USDT_ADDRESS,
   WETH_ADDRESS,
+  testClient,
 } from "./utils/config.js";
 
 // Inputs
@@ -63,7 +54,7 @@ const COLLATERAL_AMOUNT = parseUnits("2", 18);   // 2 WETH
 const BORROW_USDT_AMOUNT = parseUnits("1000", 6); // 1000 USDT (initial debt)
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
-const SWAP_QUOTE_INDEX = 0; // Change this if swap quote is bad
+const SWAP_QUOTE_INDEX = 1; // Change this if swap quote is bad
 const USE_PERMIT2 = true;
 const UNLIMITED_APPROVAL = false;
 
@@ -125,13 +116,6 @@ async function swapDebtExample() {
   // Update account data with the fetched sub-account
   accountData.subAccounts = [subAccount!];
 
-  // Get current USDT debt
-  const usdtPosition = subAccount!.positions.find(p => isAddressEqual(p.vault, EULER_PRIME_USDT_VAULT));
-  const currentUsdtDebt = usdtPosition?.borrowed ?? 0n;
-  
-  if (currentUsdtDebt === 0n) {
-    throw new Error("No USDT debt found");
-  }
 
   const swapQuotes = await sdk.swapService.getRepayQuotes({
     chainId: mainnet.id,
@@ -140,8 +124,8 @@ async function swapDebtExample() {
     fromAccount: SUB_ACCOUNT_ADDRESS,
     liabilityVault: EULER_PRIME_USDT_VAULT,
     liabilityAsset: USDT_ADDRESS,
-    liabilityAmount: currentUsdtDebt,
-    currentDebt: currentUsdtDebt,
+    liabilityAmount: BORROW_USDT_AMOUNT,
+    currentDebt: BORROW_USDT_AMOUNT,
     toAccount: SUB_ACCOUNT_ADDRESS,
     origin: account.address,
     swapperMode: SwapperMode.TARGET_DEBT,

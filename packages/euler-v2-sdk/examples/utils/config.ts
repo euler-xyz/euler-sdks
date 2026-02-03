@@ -1,7 +1,8 @@
 import { createPublicClient, createTestClient, createWalletClient, erc20Abi, getAddress, Hex, http, parseEther, parseUnits, PublicClient, TestClient, WalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { mainnet } from "viem/chains";
-
+import dotenv from 'dotenv'
+dotenv.config({ path: './examples/.env' })
 
 const PRIVATE_KEY = (process.env.PRIVATE_KEY ?? "0x1234567890123456789012345678901234567890123456789012345678901235") as Hex;
 const PRIVATE_KEY2 = (process.env.PRIVATE_KEY2 ?? "0x1234567890123456789012345678901234567890123456789012345678901246") as Hex;
@@ -49,6 +50,7 @@ export const testClient: TestClient = createTestClient({
 
 export async function initBalances() {
   const USDC_WHALE = "0xb7cD010b53D23a794d754886C3b928BE6a3315dC"
+  const USDT_WHALE = "0x83A32a54D31Ee4f1f9dFFAd2A63A6d214e469eC3"
   const WETH_WHALE = "0x4a18a50a8328b42773268B4b436254056b7d70CE"
 
   if (!process.env.PRIVATE_KEY) {
@@ -86,6 +88,17 @@ export async function initBalances() {
       abi: erc20Abi,
       functionName: 'transfer',
       args: [account.address, parseUnits('1000', 18)],
+    })
+
+    await createWalletClient({
+      account: USDT_WHALE,
+      chain: mainnet,
+      transport: http(ANVIL_RPC_URL),
+    }).writeContract({
+      address: USDT_ADDRESS,
+      abi: erc20Abi,
+      functionName: 'transfer',
+      args: [account.address, parseUnits('10000', 6)],
     })
   }
 

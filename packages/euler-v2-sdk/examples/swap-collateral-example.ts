@@ -13,20 +13,10 @@
  *   3. Swap USDC → WETH (using live DEX aggregator quotes)
  *   4. Deposit WETH as new collateral
  * 
- * ASSETS & VAULTS:
- *   • USDC → Euler Prime USDC Vault (initial collateral)
- *   • USDT → Euler Prime USDT Vault (liability)
- *   • WETH → Euler Prime WETH Vault (new collateral)
- * 
  * ⚠️  IMPORTANT - LIVE SWAP QUOTES:
  *   • This example fetches real-time swap quotes from DEX aggregators
  *   • Restart Anvil immediately before running to avoid stale blockchain state
  *   • If the swap fails, try changing SWAP_QUOTE_INDEX to use a different provider
- * 
- * 💡 TIP - USE CASE:
- *   • Rebalance collateral mix without closing debt position
- *   • Switch to more stable collateral if market volatility increases
- *   • Move to higher-yield collateral when opportunities arise
  * 
  * 💡 TIP - USING EXISTING ACCOUNTS:
  *   • Set PRIVATE_KEY in .env to use an existing account on the fork

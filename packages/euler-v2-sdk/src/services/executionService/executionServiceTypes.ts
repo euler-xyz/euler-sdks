@@ -328,6 +328,7 @@ export type PlanWithdrawArgs = {
   assets: bigint
   owner: Address
   receiver: Address
+  disableCollateral?: boolean
 }
 
 export type PlanRedeemArgs = {
@@ -336,6 +337,7 @@ export type PlanRedeemArgs = {
   shares: bigint
   owner: Address
   receiver: Address
+  disableCollateral?: boolean
 }
 
 export type PlanBorrowArgs = {

@@ -17,10 +17,6 @@
  *   • USDC → Euler Prime USDC Vault (collateral)
  *   • USDT → Euler Prime USDT Vault (both deposit and liability)
  * 
- * 💡 TIP - USE CASE:
- *   • This is useful when you have deposits earning yield in the same asset as your debt
- *   • Withdraws from deposit position to repay debt in one transaction
- * 
  * 💡 TIP - USING EXISTING ACCOUNTS:
  *   • Set PRIVATE_KEY in .env to use an existing account on the fork
  *   • Without PRIVATE_KEY, a test account will be created and funded automatically
@@ -50,7 +46,7 @@ import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
 // Inputs
 const COLLATERAL_AMOUNT = parseUnits("1000", 6); // 1000 USDC
 const BORROW_AMOUNT = parseUnits("500", 6);      // 500 USDT
-const DEPOSIT_USDT_AMOUNT = parseUnits("300", 6); // 300 USDT deposit
+const DEPOSIT_USDT_AMOUNT = parseUnits("3000", 6); // 300 USDT deposit
 const REPAY_AMOUNT = parseUnits("250", 6);       // 250 USDT (partial repayment)
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
