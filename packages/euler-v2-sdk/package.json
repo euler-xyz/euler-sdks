@@ -33,7 +33,8 @@
     "transfer-example": "tsx examples/transfer-example",
     "pull-debt-example": "tsx examples/pull-debt-example",
     "liquidation-example": "tsx examples/liquidation-example",
-    "anvil": "source examples/.env && anvil --fork-url $FORK_RPC_URL --auto-impersonate"
+    "anvil": "source examples/.env && anvil --fork-url $FORK_RPC_URL --auto-impersonate",
+    "examples": "./run-examples.sh"
   },
   "keywords": [
     "typescript",

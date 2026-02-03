@@ -50,16 +50,18 @@ export type AccountPosition = {
   liquidity?: AccountLiquidity;
 };
 
+export type SubAccountsMap = Partial<Record<Address, SubAccount>>;
+
 export interface IAccount {
   chainId: number;
   owner: Address;
-  subAccounts: SubAccount[];
+  subAccounts: SubAccountsMap;
 }
 
 export class Account implements IAccount {
   chainId: number;
   owner: Address;
-  subAccounts: SubAccount[];
+  subAccounts: SubAccountsMap;
 
   constructor(
     account: IAccount
@@ -70,16 +72,68 @@ export class Account implements IAccount {
   }
 
   getSubAccount(account: Address): SubAccount | undefined {
-    return this.subAccounts.find(sa => isAddressEqual(sa.account, account));
+    return this.subAccounts[getAddress(account)];
   }
 
   getSubAccountById(id: number): SubAccount | undefined {
-    return this.subAccounts.find(sa => isAddressEqual(sa.account, getSubAccountAddress(this.owner, id)));
+    return this.subAccounts[getSubAccountAddress(this.owner, id)];
   }
 
   getPosition(account: Address, vault: Address): AccountPosition | undefined {
     const subAccount = this.getSubAccount(getAddress(account));
     return subAccount?.positions.find(p => isAddressEqual(p.vault, vault));
+  }
+
+  /**
+   * Returns true if the given vault is enabled as collateral for the sub-account.
+   * Returns false when sub-account is not available.
+   */
+  isCollateralEnabled(subAccountAddress: Address, vault: Address): boolean {
+    const subAccount = this.getSubAccount(getAddress(subAccountAddress));
+    if (!subAccount) return false;
+    return subAccount.enabledCollaterals.some(coll => isAddressEqual(coll, vault));
+  }
+
+  /**
+   * Returns true if the given vault is enabled as controller for the sub-account.
+   * Returns false when sub-account is not available.
+   */
+  isControllerEnabled(subAccountAddress: Address, vault: Address): boolean {
+    const subAccount = this.getSubAccount(getAddress(subAccountAddress));
+    if (!subAccount) return false;
+    return subAccount.enabledControllers.some(ctrl => isAddressEqual(ctrl, vault));
+  }
+
+  /**
+   * Returns the current controller vault for the sub-account (there can only be one).
+   * Returns undefined when sub-account is not available or has no controller enabled.
+   */
+  getCurrentController(subAccountAddress: Address): Address | undefined {
+    const subAccount = this.getSubAccount(getAddress(subAccountAddress));
+    if (!subAccount || subAccount.enabledControllers.length === 0) return undefined;
+    return subAccount.enabledControllers[0];
+  }
+
+  /**
+   * Replaces subAccounts with a map built from the given sub-accounts (keyed by account address).
+   * Use in examples or when building account state from fetched sub-accounts.
+   */
+  updateSubAccounts(...subAccounts: SubAccount[]): void {
+    const next: SubAccountsMap = {};
+    for (const sa of subAccounts) {
+      next[getAddress(sa.account)] = sa;
+    }
+    this.subAccounts = next;
+  }
+
+  /**
+   * Creates an Account with the given sub-accounts (keyed by account address).
+   * Use when building a one-off account for logging or passing to APIs.
+   */
+  static fromSubAccounts(chainId: number, owner: Address, ...subAccounts: SubAccount[]): Account {
+    const account = new Account({ chainId, owner, subAccounts: {} });
+    account.updateSubAccounts(...subAccounts);
+    return account;
   }
 }
 

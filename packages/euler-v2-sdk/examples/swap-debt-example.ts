@@ -30,6 +30,7 @@ import "dotenv/config";
 import {
   parseUnits,
   isAddressEqual,
+  getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
 import { buildSDK, getSubAccountAddress, SwapperMode } from "euler-v2-sdk";
@@ -114,7 +115,7 @@ async function swapDebtExample() {
   console.log('✓ Fetching swap quote from USDC to USDT for debt swap...');
   
   // Update account data with the fetched sub-account
-  accountData.subAccounts = [subAccount!];
+  accountData.subAccounts = { [getAddress(subAccount!.account)]: subAccount! };
 
 
   const swapQuotes = await sdk.swapService.getRepayQuotes({

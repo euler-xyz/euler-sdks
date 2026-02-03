@@ -34,6 +34,7 @@ import "dotenv/config";
 import {
   parseUnits,
   isAddressEqual,
+  getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
 import { buildSDK, getSubAccountAddress, SwapperMode } from "euler-v2-sdk";
@@ -123,7 +124,7 @@ async function repayWithSwapExample() {
   }
 
   // Update account data with the fetched sub-account
-  accountData.subAccounts = [subAccountAfterBorrow!];
+  accountData.subAccounts = { [getAddress(subAccountAfterBorrow!.account)]: subAccountAfterBorrow! };
 
   const repayQuotes = await sdk.swapService.getRepayQuotes({
     chainId: mainnet.id,
@@ -178,7 +179,7 @@ async function repayWithSwapExample() {
   );
 
   // Log the diff between before and after repay
-  // Note: accountData already has subAccountAfterBorrow in its subAccounts array
+  // Note: accountData already has subAccountAfterBorrow in its subAccounts object
   await logOperationResult(mainnet.id, accountData, [subAccountAfterRepay], sdk);
 }
 

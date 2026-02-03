@@ -50,10 +50,11 @@ export async function logVaultBalance(vaultAddress: Address, account: Account, s
 }
 
 export function logAccount(account: Account) {
-  if (account.subAccounts.length === 0) {
+  const subAccountCount = Object.keys(account.subAccounts).length;
+  if (subAccountCount === 0) {
     console.log("Note: Account has no existing positions. Creating new account...");
   } else {
-    console.log(`✓ Account found with ${account.subAccounts.length} sub-account(s)`);
+    console.log(`✓ Account found with ${subAccountCount} sub-account(s)`);
   }
 }
 
@@ -324,15 +325,19 @@ export async function logOperationResult(chainId: number, before: Account, after
   console.log("═".repeat(80));
 
   // Normalize after to array of sub-accounts, filtering out undefined values
-  const afterSubAccounts = Array.isArray(after) ? after.filter((sa): sa is SubAccount => sa !== undefined) : after.subAccounts;
-  
+  const afterSubAccounts: SubAccount[] = Array.isArray(after)
+    ? after.filter((sa): sa is SubAccount => sa !== undefined)
+    : Object.values(after.subAccounts).filter((sa): sa is SubAccount => sa != null);
+
+  const beforeSubAccountsList = Object.values(before.subAccounts).filter((sa): sa is SubAccount => sa != null);
+
   // Create maps for easy lookup
-  const beforeMap = new Map(before.subAccounts.map(sa => [sa.account, sa]));
+  const beforeMap = new Map(beforeSubAccountsList.map(sa => [sa.account, sa]));
   const afterMap = new Map(afterSubAccounts.map(sa => [sa.account, sa]));
 
   // Track all sub-account addresses
   const allSubAccountAddresses = new Set([
-    ...before.subAccounts.map(sa => sa.account),
+    ...beforeSubAccountsList.map(sa => sa.account),
     ...afterSubAccounts.map(sa => sa.account)
   ]);
 

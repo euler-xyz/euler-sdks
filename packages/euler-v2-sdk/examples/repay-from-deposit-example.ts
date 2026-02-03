@@ -27,6 +27,7 @@
 import "dotenv/config";
 import {
   parseUnits,
+  getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
 
@@ -104,7 +105,7 @@ async function repayFromDepositExample() {
   console.log('\n=== Step 2: Deposit USDT ===');
   
   // Update account data with the fetched sub-account
-  accountData.subAccounts = [subAccount!];
+  accountData.updateSubAccounts(subAccount!);
 
   let depositPlan = sdk.executionService.planDeposit({
     vault: EULER_PRIME_USDT_VAULT,
@@ -143,7 +144,7 @@ async function repayFromDepositExample() {
   console.log('\n=== Step 3: Repay USDT Debt from USDT Deposit ===');
   
   // Update account data
-  accountData.subAccounts = [subAccount!];
+  accountData.updateSubAccounts(subAccount!);
 
   let repayPlan = sdk.executionService.planRepayFromDeposit({
     account: accountData,

@@ -1184,61 +1184,6 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
-  // ========== Helper functions for transaction plans ==========
-  // TODO use functions on Account itself for getSubAccount and getPosition
-  /**
-   * Gets the sub-account for a given account address from the Account entity
-   * Returns undefined when account is not available
-   */
-  private getSubAccount(account: Account | undefined, accountAddress: Address): SubAccount | undefined {
-    if (!account) return undefined
-    return account.subAccounts.find(sub => isAddressEqual(sub.account, accountAddress))
-  }
-
-  /**
-   * Gets the position for a given vault and account address
-   * Returns undefined when account/sub-account/position is not available
-   */
-  private getPosition(account: Account | undefined, accountAddress: Address, vault: Address): AccountPosition | undefined {
-    if (!account) return undefined
-    const subAccount = this.getSubAccount(account, accountAddress)
-    if (!subAccount) return undefined
-    return subAccount.positions.find(pos => isAddressEqual(pos.vault, vault))
-  }
-
-  /**
-   * Checks if a vault is enabled as collateral for an account
-   * Defaults to false (not enabled) when account/sub-account is not available
-   */
-  private isCollateralEnabled(account: Account | undefined, accountAddress: Address, vault: Address): boolean {
-    if (!account) return false
-    const subAccount = this.getSubAccount(account, accountAddress)
-    if (!subAccount) return false
-    return subAccount.enabledCollaterals.some(coll => isAddressEqual(coll, vault))
-  }
-
-  /**
-   * Checks if a vault is enabled as controller for an account
-   * Defaults to false (not enabled) when account/sub-account is not available
-   */
-  private isControllerEnabled(account: Account | undefined, accountAddress: Address, vault: Address): boolean {
-    if (!account) return false
-    const subAccount = this.getSubAccount(account, accountAddress)
-    if (!subAccount) return false
-    return subAccount.enabledControllers.some(ctrl => isAddressEqual(ctrl, vault))
-  }
-
-  /**
-   * Gets the current controller for an account (there can only be one)
-   * Returns undefined when account/sub-account is not available
-   */
-  private getCurrentController(account: Account | undefined, accountAddress: Address): Address | undefined {
-    if (!account) return undefined
-    const subAccount = this.getSubAccount(account, accountAddress)
-    if (!subAccount || subAccount.enabledControllers.length === 0) return undefined
-    return subAccount.enabledControllers[0]
-  }
-
   /**
    * Resolves RequiredApproval items in a transaction plan by filling in the resolved field.
    * Uses Wallet data to determine what approvals are needed and whether to use permit2.
@@ -1399,7 +1344,7 @@ export class ExecutionService implements IExecutionService {
     const plan: TransactionPlanItem[] = []
 
     // Default: collateral is not enabled when account/position is not available
-    const isCollateralEnabled = this.isCollateralEnabled(account, receiver, vault)
+    const isCollateralEnabled = (account?.isCollateralEnabled(receiver, vault) ?? false)
 
     // Add approval requirement (will be resolved later with Wallet data)
     plan.push({
@@ -1435,7 +1380,7 @@ export class ExecutionService implements IExecutionService {
     const plan: TransactionPlanItem[] = []
 
     // Default: collateral is not enabled when account/position is not available
-    const isCollateralEnabled = this.isCollateralEnabled(account, receiver, vault)
+    const isCollateralEnabled = (account?.isCollateralEnabled(receiver, vault) ?? false)
 
     const estimatedAssetAmount = sharesToAssetsExchangeRateWad ? shares * sharesToAssetsExchangeRateWad / WAD : shares
 
@@ -1473,7 +1418,7 @@ export class ExecutionService implements IExecutionService {
     const plan: TransactionPlanItem[] = []
 
     // Get position to check collateral state
-    const position = this.getPosition(account, owner, vault)
+    const position = account?.getPosition(owner, vault)
 
     // Build EVC batch items
     const batchItems = this.encodeWithdraw({
@@ -1499,7 +1444,7 @@ export class ExecutionService implements IExecutionService {
     const plan: TransactionPlanItem[] = []
 
     // Get position to check collateral state
-    const position = this.getPosition(account, owner, vault)
+    const position = account?.getPosition(owner, vault)
 
     // Build EVC batch items
     const batchItems = this.encodeRedeem({
@@ -1524,13 +1469,13 @@ export class ExecutionService implements IExecutionService {
     const plan: TransactionPlanItem[] = []
 
     const enableCollateral = collateral && collateral.amount > 0n
-      ? !this.isCollateralEnabled(account, borrowAccount, collateral.vault)
+      ? !(account?.isCollateralEnabled(borrowAccount, collateral.vault) ?? false)
       : false
 
     // Check if controller needs to be enabled
     // Default: controller is not enabled when account/sub-account is not available
-    const currentController = this.getCurrentController(account, borrowAccount)
-    const enableController = !this.isControllerEnabled(account, borrowAccount, vault)
+    const currentController = account?.getCurrentController(borrowAccount)
+    const enableController = !(account?.isControllerEnabled(borrowAccount, vault) ?? false)
 
     if (collateral && collateral.amount > 0n) {
       // Approval is needed from the account owner (who owns the wallet tokens)
@@ -1590,10 +1535,10 @@ export class ExecutionService implements IExecutionService {
     })
 
     // Check if controller needs to be enabled for the liquidator account on the liability vault
-    const enableController = !this.isControllerEnabled(account, liquidatorSubAccountAddress, vault)
+    const enableController = !(account?.isControllerEnabled(liquidatorSubAccountAddress, vault) ?? false)
 
     // Check if collateral needs to be enabled for the seized collateral vault on the liquidator account
-    const enableCollateral = !this.isCollateralEnabled(account, liquidatorSubAccountAddress, collateral)
+    const enableCollateral = !(account?.isCollateralEnabled(liquidatorSubAccountAddress, collateral) ?? false)
 
     const batchItems = this.encodeLiquidation({
       chainId: account.chainId,
@@ -1621,7 +1566,7 @@ export class ExecutionService implements IExecutionService {
     const plan: TransactionPlanItem[] = []
 
     // Get position to determine asset
-    const position = this.getPosition(account, receiver, liabilityVault)
+    const position = account?.getPosition(receiver, liabilityVault)
     if (!position) {
       throw new Error(`Position not found. Liability vault: ${liabilityVault}, Account: ${receiver}`)
     }
@@ -1661,8 +1606,8 @@ export class ExecutionService implements IExecutionService {
     const plan: TransactionPlanItem[] = []
 
     // Get positions
-    const liabilityPosition = this.getPosition(account, receiver, liabilityVault)
-    const fromPosition = this.getPosition(account, fromAccount, fromVault)
+    const liabilityPosition = account?.getPosition(receiver, liabilityVault)
+    const fromPosition = account?.getPosition(fromAccount, fromVault)
 
     // If positions are not available, we can't determine asset addresses
     // We'll need to throw an error or require asset addresses to be provided
@@ -1718,8 +1663,8 @@ export class ExecutionService implements IExecutionService {
     const { swapQuote, account } = args
     const plan: TransactionPlanItem[] = []
 
-    const liabilityPosition = this.getPosition(account, swapQuote.accountOut, swapQuote.receiver)
-    const fromPosition = this.getPosition(account, swapQuote.accountIn, swapQuote.vaultIn)
+    const liabilityPosition = account?.getPosition(swapQuote.accountOut, swapQuote.receiver)
+    const fromPosition = account?.getPosition(swapQuote.accountIn, swapQuote.vaultIn)
     if (!liabilityPosition || !fromPosition || liabilityPosition.borrowed <= 0n) {
       throw new Error(`Positions not found or liability is 0. Liability vault: ${swapQuote.receiver}, From vault: ${swapQuote.vaultIn}, Account: ${swapQuote.accountOut}`)
     }
@@ -1749,13 +1694,13 @@ export class ExecutionService implements IExecutionService {
 
     // Check if source collateral needs to be disabled (when all is swapped)
     // Default: when position is not available, assume amounts are zero, so we don't disable collateral
-    const sourcePosition = this.getPosition(account, swapQuote.accountIn, swapQuote.vaultIn)
+    const sourcePosition = account?.getPosition(swapQuote.accountIn, swapQuote.vaultIn)
 
     const isMax = sourcePosition ? sourcePosition.assets <= BigInt(swapQuote.amountIn) : false
 
     // Check if destination collateral needs to be enabled
     // Default: collateral is not enabled when account/sub-account is not available
-    const enableCollateral = !this.isCollateralEnabled(account, swapQuote.accountOut, swapQuote.receiver)
+    const enableCollateral = !(account?.isCollateralEnabled(swapQuote.accountOut, swapQuote.receiver) ?? false)
 
     // Build EVC batch items
     const batchItems = this.encodeSwapCollateral({
@@ -1778,11 +1723,11 @@ export class ExecutionService implements IExecutionService {
     const { swapQuote, account } = args
     const plan: TransactionPlanItem[] = []
 
-    const sourcePosition = this.getPosition(account, swapQuote.accountIn, swapQuote.vaultIn)
+    const sourcePosition = account?.getPosition(swapQuote.accountIn, swapQuote.vaultIn)
 
     const isMax = sourcePosition ? sourcePosition.borrowed <= BigInt(swapQuote.amountOutMin) : false
 
-    const enableController = !this.isControllerEnabled(account, swapQuote.accountOut, swapQuote.vaultIn)
+    const enableController = !(account?.isControllerEnabled(swapQuote.accountOut, swapQuote.vaultIn) ?? false)
 
     // Build EVC batch items
     const batchItems = this.encodeSwapDebt({
@@ -1812,8 +1757,8 @@ export class ExecutionService implements IExecutionService {
       to,
       amount,
       from,
-      enableCollateralTo: enableCollateralTo && !this.isCollateralEnabled(account, to, vault),
-      disableCollateralFrom: disableCollateralFrom && this.isCollateralEnabled(account, from, vault),
+      enableCollateralTo: enableCollateralTo && !(account?.isCollateralEnabled(to, vault) ?? false),
+      disableCollateralFrom: disableCollateralFrom && (account?.isCollateralEnabled(from, vault) ?? false),
     })
 
     plan.push({
@@ -1828,7 +1773,7 @@ export class ExecutionService implements IExecutionService {
     const { vault, amount, from, to, account } = args
     const plan: TransactionPlanItem[] = []
 
-    const enableController = !this.isControllerEnabled(account, to, vault)
+    const enableController = !(account?.isControllerEnabled(to, vault) ?? false)
 
     // Build EVC batch items
     const batchItems = this.encodePullDebt({
@@ -1882,13 +1827,13 @@ export class ExecutionService implements IExecutionService {
     const liabilityAmount = BigInt(swapQuote.amountIn)
 
     // 2. Determine if collateral needs to be enabled
-    const enableCollateral = collateralAmount > 0n && !this.isCollateralEnabled(account, receiver, collateralVault)
+    const enableCollateral = collateralAmount > 0n && !(account?.isCollateralEnabled(receiver, collateralVault) ?? false)
 
     // 3. Determine if controller needs to be enabled
-    const enableController = !this.isControllerEnabled(account, receiver, liabilityVault)
+    const enableController = !(account?.isControllerEnabled(receiver, liabilityVault) ?? false)
 
     // 4. Get current controller (may need to disable if different)
-    const currentController = this.getCurrentController(account, receiver)
+    const currentController = account?.getCurrentController(receiver)
 
     // 5. Build EVC batch items
     const batchItems = this.encodeMultiplyWithSwap({
@@ -1945,13 +1890,13 @@ export class ExecutionService implements IExecutionService {
     }
 
     // 2. Determine if collateral needs to be enabled
-    const enableCollateral = collateralAmount > 0n && !this.isCollateralEnabled(account, receiver, collateralVault)
+    const enableCollateral = collateralAmount > 0n && !(account?.isCollateralEnabled(receiver, collateralVault) ?? false)
 
     // 3. Determine if controller needs to be enabled
-    const enableController = !this.isControllerEnabled(account, receiver, liabilityVault)
+    const enableController = !(account?.isControllerEnabled(receiver, liabilityVault) ?? false)
 
     // 4. Get current controller (may need to disable if different)
-    const currentController = this.getCurrentController(account, receiver)
+    const currentController = account?.getCurrentController(receiver)
 
     // 5. Build EVC batch items
     const batchItems = this.encodeMultiplySameAsset({

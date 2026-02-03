@@ -1,5 +1,5 @@
 import { AddressPrefix } from "../entities/Account.js";
-import { Address, pad, toHex } from "viem";
+import { Address, getAddress, pad, toHex } from "viem";
 
 const SUB_ACCOUNT_MAX_ID = 255;
 
@@ -15,9 +15,9 @@ export function getSubAccountAddress(primary: Address, subAccountId: number) {
   if (subAccountId > SUB_ACCOUNT_MAX_ID) {
     throw new Error("Sub account ID too large");
   }
-  return pad(toHex(BigInt(primary) ^ BigInt(subAccountId)), {
+  return getAddress(pad(toHex(BigInt(primary) ^ BigInt(subAccountId)), {
     size: 20,
-  });
+  }));
 }
 
 export function isSubAccount(primary: Address, subAccount: Address) {

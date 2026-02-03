@@ -28,6 +28,7 @@
 import "dotenv/config";
 import {
   parseUnits,
+  getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
 
@@ -92,7 +93,7 @@ async function withdrawExample() {
   console.log('\n=== Step 2: Withdraw USDC ===');
   
   // Update account data with the fetched sub-account
-  accountData.subAccounts = [subAccountAfterDeposit!];
+  accountData.updateSubAccounts(subAccountAfterDeposit!);
 
   let withdrawPlan = sdk.executionService.planWithdraw({
     account: accountData,

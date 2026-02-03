@@ -17,6 +17,7 @@
 import "dotenv/config";
 import {
   parseUnits,
+  getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
 
@@ -81,7 +82,7 @@ async function redeemExample() {
   console.log('\n=== Step 2: Redeem Shares ===');
   
   // Update account data with the fetched sub-account
-  accountData.subAccounts = [subAccountAfterDeposit!];
+  accountData.updateSubAccounts(subAccountAfterDeposit!);
 
   let redeemPlan = sdk.executionService.planRedeem({
     account: accountData,

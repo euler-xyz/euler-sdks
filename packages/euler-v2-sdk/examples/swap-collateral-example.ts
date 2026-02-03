@@ -28,6 +28,7 @@
 import "dotenv/config";
 import {
   parseUnits,
+  getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
 import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
@@ -109,7 +110,7 @@ async function swapCollateralExample() {
   console.log('✓ Fetching swap quote from USDC to WETH...');
   
   // Update account data with the fetched sub-account
-  accountData.subAccounts = [subAccountAfterBorrow!];
+  accountData.subAccounts = { [getAddress(subAccountAfterBorrow!.account)]: subAccountAfterBorrow! };
 
   const swapQuotes = await sdk.swapService.getDepositQuote({
     chainId: mainnet.id,

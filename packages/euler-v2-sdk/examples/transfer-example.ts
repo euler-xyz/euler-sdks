@@ -29,6 +29,7 @@
 import "dotenv/config";
 import {
   parseUnits,
+  getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
 
@@ -99,9 +100,7 @@ async function transferExample() {
   console.log('\n=== Step 2: Transfer Shares from Sub-Account 1 to Sub-Account 2 ===');
   
   // Update account data with the fetched sub-accounts
-  accountData.subAccounts = [subAccountFromAfterDeposit!, subAccountToAfterDeposit!];
-
-
+  accountData.updateSubAccounts(subAccountFromAfterDeposit!, subAccountToAfterDeposit!);
 
   let transferPlan = sdk.executionService.planTransfer({
     account: accountData,

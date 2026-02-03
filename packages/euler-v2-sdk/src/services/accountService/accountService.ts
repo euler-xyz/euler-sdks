@@ -1,5 +1,4 @@
 import { Account, IAccount, SubAccount } from "../../entities/Account.js";
-import { getSubAccountId } from "../../utils/subAccounts.js";
 import { Address } from "viem";
 
 export interface IAccountDataSource {
@@ -20,16 +19,7 @@ export class AccountService implements IAccountService {
   // `address` in this context can be any sub-account, not just the main account.
   async fetchAccount(chainId: number, address: Address): Promise<Account> {
     const accountData = await this.dataSource.fetchAccount(chainId, address);
-    if (!accountData) return new Account({ chainId, owner: address, subAccounts: [] });
-
-    if (accountData.subAccounts && Array.isArray(accountData.subAccounts)) {
-      accountData.subAccounts.sort((a, b) => {
-        const primary = accountData.owner;
-        const aId = getSubAccountId(primary, a.account);
-        const bId = getSubAccountId(primary, b.account);
-        return aId - bId;
-      });
-    }
+    if (!accountData) return new Account({ chainId, owner: address, subAccounts: {} });
 
     return new Account(accountData);
   }

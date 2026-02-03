@@ -28,7 +28,7 @@ export class AccountOnchainDataSource implements IAccountDataSource {
 
     if (subAccountAddresses.length === 0) return undefined;
 
-    const subAccounts = await Promise.all(subAccountAddresses.map(async (subAccountAddress) => {
+    const subAccountsArray = await Promise.all(subAccountAddresses.map(async (subAccountAddress) => {
       const vaults = [...new Set([
         ...(accountVaults?.[subAccountAddress]?.deposits ?? []),
         ...(accountVaults?.[subAccountAddress]?.borrows ?? [])
@@ -37,11 +37,16 @@ export class AccountOnchainDataSource implements IAccountDataSource {
       return this.fetchSubAccount(chainId, subAccountAddress, vaults);
     })).then((subAccounts) => subAccounts.filter((subAccount) => subAccount !== undefined) as SubAccount[]);
 
+    const subAccounts = subAccountsArray.reduce<Record<Address, SubAccount>>((acc, sa) => {
+      acc[getAddress(sa.account)] = sa;
+      return acc;
+    }, {});
+
     return {
       chainId,
-      timestamp: subAccounts[0]?.timestamp ?? 0,
+      timestamp: subAccountsArray[0]?.timestamp ?? 0,
       owner: address,
-      subAccounts: subAccounts,
+      subAccounts,
     } as IAccount;
 
   }

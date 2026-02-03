@@ -31,6 +31,7 @@ import "dotenv/config";
 import {
   parseUnits,
   isAddressEqual,
+  getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
 
@@ -106,7 +107,7 @@ async function repayFromWalletExample() {
   console.log('\n=== Step 2: Repay USDT Debt from Wallet ===');
   
   // Update account data with the fetched sub-account
-  accountData.subAccounts = [subAccountAfterBorrow!];
+  accountData.updateSubAccounts(subAccountAfterBorrow!);
 
   let repayPlan = sdk.executionService.planRepayFromWallet({
     account: accountData,

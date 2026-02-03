@@ -31,6 +31,7 @@
 import "dotenv/config";
 import {
   parseUnits,
+  getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
 
@@ -114,7 +115,7 @@ async function pullDebtExample() {
   console.log('\n=== Step 2: Deposit Collateral into Sub-Account 2 ===');
   
   // Update account data with the fetched sub-accounts
-  accountData.subAccounts = [subAccount1!, subAccount2!];
+  accountData.updateSubAccounts(subAccount1!, subAccount2!);
 
   let depositPlan = sdk.executionService.planDeposit({
     vault: EULER_PRIME_USDC_VAULT,
@@ -158,7 +159,7 @@ async function pullDebtExample() {
   console.log('\n=== Step 3: Pull Debt from Sub-Account 1 to Sub-Account 2 ===');
   
   // Update account data
-  accountData.subAccounts = [subAccount1!, subAccount2!];
+  accountData.updateSubAccounts(subAccount1!, subAccount2!);
 
   let pullDebtPlan = sdk.executionService.planPullDebt({
     account: accountData,
