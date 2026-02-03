@@ -40,7 +40,6 @@ import {
   type PlanRepayFromWalletArgs,
   type PlanRepayFromDepositArgs,
   type PlanRepayWithSwapArgs,
-  type PlanLiquidationAndRepayWithSwapArgs,
   type PlanSwapCollateralArgs,
   type PlanSwapDebtArgs,
   type PlanTransferArgs,
@@ -82,7 +81,6 @@ export interface IExecutionService {
   planRedeem(args: PlanRedeemArgs): TransactionPlanItem[];
   planBorrow(args: PlanBorrowArgs): TransactionPlanItem[];
   planLiquidation(args: PlanLiquidationArgs): TransactionPlanItem[];
-  planLiquidationAndRepayWithSwap(args: PlanLiquidationAndRepayWithSwapArgs): TransactionPlanItem[];
   planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlanItem[];
   planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlanItem[];
   planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlanItem[];
@@ -1395,6 +1393,7 @@ export class ExecutionService implements IExecutionService {
 
   // ========== Transaction plan functions ==========
 
+  // TODO document - set maxUint256 for amount to deposit all available assets
   planDeposit(args: PlanDepositArgs): TransactionPlanItem[] {
     const { vault, amount, receiver, account, asset, enableCollateral } = args
     const plan: TransactionPlanItem[] = []
@@ -1483,7 +1482,7 @@ export class ExecutionService implements IExecutionService {
       assets,
       receiver,
       owner,
-      disableCollateral: disableCollateral && position && position.isCollateral
+      disableCollateral: disableCollateral && (!position || position.isCollateral)
     })
 
     plan.push({
@@ -1494,6 +1493,7 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
+  // TODO document - set maxUint256 for shares to redeem all available shares
   planRedeem(args: PlanRedeemArgs): TransactionPlanItem[] {
     const { vault, shares, receiver, owner, account, disableCollateral = false } = args
     const plan: TransactionPlanItem[] = []
@@ -1508,7 +1508,7 @@ export class ExecutionService implements IExecutionService {
       shares,
       receiver,
       owner,
-      disableCollateral: disableCollateral && position && position.isCollateral
+      disableCollateral: disableCollateral && (!position || position.isCollateral)
     })
 
     plan.push({
@@ -1518,7 +1518,7 @@ export class ExecutionService implements IExecutionService {
 
     return plan
   }
-
+  // TODO document - set maxUint256 for collateral amount to deposit all available assets
   planBorrow(args: PlanBorrowArgs): TransactionPlanItem[] {
     const { vault, amount, receiver, borrowAccount, account, collateral } = args
     const plan: TransactionPlanItem[] = []
@@ -1615,46 +1615,7 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
-  planLiquidationAndRepayWithSwap(args: PlanLiquidationAndRepayWithSwapArgs): TransactionPlanItem[] {
-    const {
-      account,
-      vault,
-      asset,
-      violator,
-      collateral,
-      repayAssets,
-      minYieldBalance,
-      liquidatorSubAccountAddress,
-      swapQuote,
-    } = args
-
-    const plan: TransactionPlanItem[] = []
-
-    // First, plan the liquidation itself
-    const liquidationPlan = this.planLiquidation({
-      account,
-      vault,
-      asset,
-      violator,
-      collateral,
-      repayAssets,
-      minYieldBalance,
-      liquidatorSubAccountAddress,
-    })
-
-    plan.push(...liquidationPlan)
-
-    // Then, plan the repay-with-swap leg using the resulting position changes
-    const repayPlan = this.planRepayWithSwap({
-      account,
-      swapQuote,
-    })
-
-    plan.push(...repayPlan)
-
-    return plan
-  }
-
+  // TODO document - set maxUint256 for liabilityAmount to repay all available debt
   planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlanItem[] {
     const { liabilityVault, liabilityAmount, receiver, account } = args
     const plan: TransactionPlanItem[] = []
@@ -1674,9 +1635,6 @@ export class ExecutionService implements IExecutionService {
       amount: liabilityAmount,
     })
 
-    const isMax = position.borrowed <= liabilityAmount
-    // Determine if controller should be disabled (only when full debt is repaid)
-
     // Build EVC batch items
     const batchItems = this.encodeRepayFromWallet({
       chainId: account.chainId,
@@ -1685,7 +1643,7 @@ export class ExecutionService implements IExecutionService {
       liabilityAmount,
       receiver,
       disableControllerOnMax: true,
-      isMax,
+      isMax: liabilityAmount === maxUint256,
       // Permit2 is handled separately in the plan
     })
 
@@ -1697,6 +1655,7 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
+  // TODO document - set maxUint256 for liabilityAmount to repay all available debt or up to available deposit
   planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlanItem[] {
     const { liabilityVault, liabilityAmount, receiver, fromVault, fromAccount, account } = args
     const plan: TransactionPlanItem[] = []
@@ -1732,9 +1691,6 @@ export class ExecutionService implements IExecutionService {
       })
     }
 
-    // Determine if controller should be disabled (only when full debt is repaid)
-    const isMax = liabilityPosition.borrowed <= liabilityAmount
-
     // Build EVC batch items
     const batchItems = this.encodeRepayFromDeposit({
       chainId: account.chainId,
@@ -1746,7 +1702,7 @@ export class ExecutionService implements IExecutionService {
       fromVault,
       fromAsset,
       disableControllerOnMax: true,
-      isMax,
+      isMax: liabilityAmount === maxUint256,
       // Permit2 is handled separately in the plan
     })
 

@@ -364,18 +364,6 @@ export type PlanLiquidationArgs = {
   minYieldBalance: bigint
 }
 
-export type PlanLiquidationAndRepayWithSwapArgs = {
-  account: Account
-  liquidatorSubAccountAddress: Address
-  vault: Address
-  asset: Address
-  violator: Address
-  collateral: Address
-  repayAssets: bigint
-  minYieldBalance: bigint
-  swapQuote: SwapQuote
-}
-
 export type PlanRepayFromWalletArgs = {
   account: Account
   liabilityVault: Address
