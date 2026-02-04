@@ -7,17 +7,25 @@ import { AccountOnchainDataSource } from "../services/accountService/dataSources
 import { AccountVaultsSubgraphDataSource, AccountVaultsSubgraphDataSourceConfig } from "../services/accountService/dataSources/accountVaultsSubgraphDataSource.js";
 import { WalletService, IWalletService } from "../services/walletService/index.js";
 import { WalletOnchainDataSource } from "../services/walletService/dataSources/walletOnchainDataSource.js";
-import { EVaultService, IEVaultService } from "../services/eVaultService/index.js";
-import { EulerEarnService, IEulerEarnService } from "../services/eulerEarnService/index.js";
-import { EulerEarnOnchainDataSource } from "../services/eulerEarnService/dataSources/eulerEarnOnchainDataSource.js";
+import { EVaultService, IEVaultService } from "../services/vaults/eVaultService/index.js";
+import { EulerEarnService, IEulerEarnService } from "../services/vaults/eulerEarnService/index.js";
+import { EulerEarnOnchainDataSource } from "../services/vaults/eulerEarnService/dataSources/eulerEarnOnchainDataSource.js";
 import { EulerLabelsService, EulerLabelsURLDataSource, EulerLabelsURLDataSourceConfig, IEulerLabelsService } from "../services/eulerLabelsService/index.js";
 import { SwapService, ISwapService, SwapServiceConfig } from "../services/swapService/index.js";
 import { ExecutionService, IExecutionService } from "../services/executionService/index.js";
-import { defaultAccountVaultsDataSourceConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLDataSourceConfig, defaultSwapServiceConfig } from "./defaultConfig.js";
-import { EVaultOnchainDataSource } from "../services/eVaultService/dataSources/eVaultOnchainDataSource.js";
+import { defaultAccountVaultsDataSourceConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLDataSourceConfig, defaultSwapServiceConfig, defaultVaultTypeDataSourceConfig } from "./defaultConfig.js";
+import { EVaultOnchainDataSource } from "../services/vaults/eVaultService/dataSources/eVaultOnchainDataSource.js";
+import {
+  VaultMetaService,
+  IVaultMetaService,
+  VaultTypeSubgraphDataSource,
+  type RegisteredVaultService,
+  type VaultMetaEntity,
+} from "../services/vaults/vaultMetaService/index.js";
+import type { VaultTypeSubgraphDataSourceConfig } from "../services/vaults/vaultMetaService/index.js";
 
 
-export interface BuildSDKOverrides {
+export interface BuildSDKOverrides<TVaultEntity = VaultMetaEntity> {
   abiService?: IABIService;
   deploymentService?: IDeploymentService;
   providerService?: IProviderService;
@@ -25,21 +33,27 @@ export interface BuildSDKOverrides {
   walletService?: IWalletService;
   eVaultService?: IEVaultService;
   eulerEarnService?: IEulerEarnService;
+  vaultMetaService?: IVaultMetaService<TVaultEntity>;
   eulerLabelsService?: IEulerLabelsService;
   swapService?: ISwapService;
   executionService?: IExecutionService;
 }
 
-export interface BuildSDKOptions {
+export interface BuildSDKOptions<TVaultEntity = VaultMetaEntity> {
   rpcUrls: Record<number, string>;
   accountVaultsDataSourceConfig?: AccountVaultsSubgraphDataSourceConfig;
+  vaultTypeDataSourceConfig?: VaultTypeSubgraphDataSourceConfig;
+  /** Additional vault services to register on vaultMetaService. When provided, pass the extended entity type as the generic so fetchVault/fetchVaults return the full union (e.g. buildSDK<VaultMetaEntity | CustomVault>({ ..., additionalVaultServices: [customService] })). */
+  additionalVaultServices?: RegisteredVaultService<TVaultEntity>[];
   eulerLabelsDataSourceConfig?: EulerLabelsURLDataSourceConfig;
   swapServiceConfig?: SwapServiceConfig;
-  servicesOverrides?: BuildSDKOverrides;
+  servicesOverrides?: BuildSDKOverrides<TVaultEntity>;
 }
 
-export const buildSDK = async (options: BuildSDKOptions) => {
-  const { rpcUrls, accountVaultsDataSourceConfig, eulerLabelsDataSourceConfig, swapServiceConfig, servicesOverrides } = options;
+export async function buildSDK<TVaultEntity = VaultMetaEntity>(
+  options: BuildSDKOptions<TVaultEntity>
+): Promise<EulerSDK<TVaultEntity>> {
+  const { rpcUrls, accountVaultsDataSourceConfig, vaultTypeDataSourceConfig, additionalVaultServices, eulerLabelsDataSourceConfig, swapServiceConfig, servicesOverrides } = options;
 
   // Build core services (these may be needed for data sources even if overridden)
   const abiService = servicesOverrides?.abiService ?? new ABIService();
@@ -102,6 +116,25 @@ export const buildSDK = async (options: BuildSDKOptions) => {
     );
   }
 
+  // Build vault meta service (vault type subgraph + eVault + eulerEarn + additionalVaultServices); type reflects extended entity when additionalVaultServices is used with buildSDK<TExtendedEntity>
+  let vaultMetaService: IVaultMetaService<TVaultEntity>;
+  if (servicesOverrides?.vaultMetaService) {
+    vaultMetaService = servicesOverrides.vaultMetaService;
+  } else {
+    const vaultTypeDataSource = new VaultTypeSubgraphDataSource(
+      vaultTypeDataSourceConfig ?? defaultVaultTypeDataSourceConfig
+    );
+    const allVaultServices = [
+      eVaultService,
+      eulerEarnService,
+      ...(additionalVaultServices ?? []),
+    ];
+    vaultMetaService = new VaultMetaService<TVaultEntity>({
+      vaultTypeDataSource,
+      vaultServices: allVaultServices as RegisteredVaultService<TVaultEntity>[],
+    });
+  }
+
   // Build eulerLabels service if not overridden
   const eulerLabelsService = servicesOverrides?.eulerLabelsService ?? (() => {
     const eulerLabelsDataSource = new EulerLabelsURLDataSource(eulerLabelsDataSourceConfig || defaultEulerLabelsURLDataSourceConfig);
@@ -117,11 +150,12 @@ export const buildSDK = async (options: BuildSDKOptions) => {
     walletService as WalletService,
   );
 
-  return new EulerSDK({
+  return new EulerSDK<TVaultEntity>({
     accountService,
     walletService,
     eVaultService,
     eulerEarnService,
+    vaultMetaService,
     deploymentService,
     providerService,
     abiService,

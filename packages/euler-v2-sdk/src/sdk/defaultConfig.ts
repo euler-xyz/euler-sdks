@@ -1,5 +1,6 @@
 import { DeploymentServiceConfig } from "src/services/deploymentService/deploymentService.js"
 import { AccountVaultsSubgraphDataSourceConfig } from "../services/accountService/dataSources/accountVaultsSubgraphDataSource.js"
+import type { VaultTypeSubgraphDataSourceConfig } from "../services/vaults/vaultMetaService/index.js"
 import { EulerLabelsURLDataSourceConfig } from "../services/eulerLabelsService/index.js"
 import type { SwapServiceConfig } from "../services/swapService/index.js"
 
@@ -25,6 +26,10 @@ export const defaultAccountVaultsDataSourceConfig: AccountVaultsSubgraphDataSour
     80094: 'https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-berachain/latest/gn',
   }
 }
+
+/** Same subgraph endpoints as account vaults; used by VaultMetaService to resolve vault type from factory. */
+export const defaultVaultTypeDataSourceConfig: VaultTypeSubgraphDataSourceConfig =
+  defaultAccountVaultsDataSourceConfig;
 
 export const defaultEulerLabelsURLDataSourceConfig: EulerLabelsURLDataSourceConfig = {
   getEulerLabelsVaultsUrl: (chainId: number) => `https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master/${chainId}/vaults.json`,

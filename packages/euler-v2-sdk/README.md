@@ -92,6 +92,7 @@ The SDK is organized into modular services that handle different aspects of the 
 - **Account Service**: Fetch and manage user accounts, sub-accounts, and positions
 - **EVault Service**: Query vault information, assets, and metadata
 - **Euler Earn Service**: Interact with Euler Earn aggregated vaults
+- **Vault Meta Service**: Unified vault fetching (EVault + Euler Earn) with extensible registration for custom vault types
 - **Swap Service**: Generate swap quotes for asset exchanges
 - **Execution Service**: Build and plan transactions with proper EVC batch encoding
 
@@ -230,6 +231,87 @@ const earnVaults = await sdk.eulerEarnService.fetchVerifiedVaults(
   [StandardEulerEarnPerspectives.FACTORY]
 );
 ```
+
+### Vault Meta Service
+
+Unified interface for fetching vaults without knowing their type in advance. Uses a vault-type subgraph to resolve each address to EVault or Euler Earn (or other registered types) and delegates to the appropriate underlying service. Return type is `EVault | EulerEarn` by default and is extensible when you register additional vault services.
+
+#### Key Methods
+
+Same as other vault services: `fetchVault`, `fetchVaults`, `fetchVerifiedVaultAddresses`, `fetchVerifiedVaults`, `factory`. All return the appropriate entity type (`EVault`, `EulerEarn`, or your custom type) per vault.
+
+```typescript
+// Fetch any vault by address; type is resolved automatically
+const vault = await sdk.vaultMetaService.fetchVault(mainnet.id, vaultAddress);
+// vault: EVault | EulerEarn
+
+const vaults = await sdk.vaultMetaService.fetchVaults(mainnet.id, [addr1, addr2]);
+```
+
+#### Extending Vault Meta Service
+
+You can add more vault types so the meta service returns a wider union (e.g. `EVault | EulerEarn | CustomVault`).
+
+**1. At build time via `additionalVaultServices`**
+
+Pass extra services when building the SDK; they are registered on the meta service together with EVault and Euler Earn. Use the generic `buildSDK<TVaultEntity>` so that `vaultMetaService.fetchVault` / `fetchVaults` return the extended union type.
+
+```typescript
+import { buildSDK, type VaultMetaEntity } from 'euler-v2-sdk';
+
+type ExtendedVaultEntity = VaultMetaEntity | CustomVault;
+
+const sdk = await buildSDK<ExtendedVaultEntity>({
+  rpcUrls: { [mainnet.id]: 'https://...' },
+  additionalVaultServices: [myCustomVaultService],
+});
+// sdk.vaultMetaService.fetchVault() returns Promise<ExtendedVaultEntity>
+const vault = await sdk.vaultMetaService.fetchVault(mainnet.id, addr); // Type: ExtendedVaultEntity
+```
+
+**2. At runtime via `registerVaultService`**
+
+Register a service after the SDK is built. Useful when the custom service is created later or when composing the SDK.
+
+```typescript
+const sdk = await buildSDK({ rpcUrls: { ... } });
+sdk.vaultMetaService.registerVaultService(myCustomVaultService);
+```
+
+**3. Typing an extended entity union**
+
+When you add a third (or more) vault type, extend the generic type parameter so `fetchVault` / `fetchVaults` are correctly typed as returning your full union.
+
+- Your custom service must implement `IVaultService<CustomVault, string>` (same shape as EVault/EulerEarn services: `fetchVault`, `fetchVaults`, `fetchVerifiedVaultAddresses`, `fetchVerifiedVaults`, `factory(chainId)`).
+- The subgraph must return a `factory` for each vault; the meta service matches that factory to `service.factory(chainId)` to choose the delegate.
+
+```typescript
+import {
+  VaultMetaService,
+  type VaultMetaEntity,
+  type RegisteredVaultService,
+} from 'euler-v2-sdk';
+
+// Your custom vault entity (must have .address at minimum for internal mapping)
+interface CustomVault {
+  address: Address;
+  // ... your fields
+}
+
+// Extended union: default types + your type
+type ExtendedVaultEntity = VaultMetaEntity | CustomVault;
+
+const meta = new VaultMetaService<ExtendedVaultEntity>({
+  vaultTypeDataSource: myVaultTypeDataSource,
+  vaultServices: [eVaultService, eulerEarnService, customVaultService],
+});
+
+// Return type is now EVault | EulerEarn | CustomVault
+const vault = await meta.fetchVault(chainId, addr); // Type: ExtendedVaultEntity
+const list = await meta.fetchVaults(chainId, addrs); // Type: ExtendedVaultEntity[]
+```
+
+If you only use `registerVaultService` at runtime and don’t construct `VaultMetaService<ExtendedVaultEntity>` yourself, TypeScript will still infer the default `VaultMetaEntity`; the runtime behavior includes all registered services.
 
 ### Swap Service
 

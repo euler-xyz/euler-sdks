@@ -1,7 +1,11 @@
 import { IAccountService } from "../services/accountService/index.js";
 import { IDeploymentService } from "../services/deploymentService/index.js";
-import { IEVaultService } from "../services/eVaultService/index.js";
-import { IEulerEarnService } from "../services/eulerEarnService/index.js";
+import { IEVaultService } from "../services/vaults/eVaultService/index.js";
+import { IEulerEarnService } from "../services/vaults/eulerEarnService/index.js";
+import {
+  IVaultMetaService,
+  type VaultMetaEntity,
+} from "../services/vaults/vaultMetaService/index.js";
 import { IProviderService } from "../services/providerService/index.js";
 import { IABIService } from "../services/abiService/index.js";
 import { IEulerLabelsService } from "../services/eulerLabelsService/index.js";
@@ -9,11 +13,14 @@ import { ISwapService } from "../services/swapService/index.js";
 import { IExecutionService } from "../services/executionService/index.js";
 import { IWalletService } from "../services/walletService/index.js";
 
-export interface EulerSDKOptions {
+export interface EulerSDKOptions<
+  TVaultEntity = VaultMetaEntity
+> {
   accountService: IAccountService;
   walletService: IWalletService;
   eVaultService: IEVaultService;
   eulerEarnService: IEulerEarnService;
+  vaultMetaService: IVaultMetaService<TVaultEntity>;
   deploymentService: IDeploymentService;
   providerService: IProviderService;
   abiService: IABIService;
@@ -22,11 +29,12 @@ export interface EulerSDKOptions {
   executionService: IExecutionService;
 }
 
-export class EulerSDK {
+export class EulerSDK<TVaultEntity = VaultMetaEntity> {
   public readonly accountService: IAccountService;
   public readonly walletService: IWalletService;
   public readonly eVaultService: IEVaultService;
   public readonly eulerEarnService: IEulerEarnService;
+  public readonly vaultMetaService: IVaultMetaService<TVaultEntity>;
   public readonly deploymentService: IDeploymentService;
   public readonly providerService: IProviderService;
   public readonly abiService: IABIService;
@@ -34,11 +42,12 @@ export class EulerSDK {
   public readonly swapService: ISwapService;
   public readonly executionService: IExecutionService;
 
-  constructor(options: EulerSDKOptions) {
+  constructor(options: EulerSDKOptions<TVaultEntity>) {
     this.accountService = options.accountService;
     this.walletService = options.walletService;
     this.eVaultService = options.eVaultService;
     this.eulerEarnService = options.eulerEarnService;
+    this.vaultMetaService = options.vaultMetaService;
     this.deploymentService = options.deploymentService;
     this.providerService = options.providerService;
     this.abiService = options.abiService;

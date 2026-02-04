@@ -1,6 +1,6 @@
 import { formatUnits } from "viem";
-import { IEulerEarn, EulerEarnStrategyInfo, EulerEarnGovernance, EulerEarnAllocationCap } from "../../../entities/EulerEarn.js";
-import { Token, VaultType } from "../../../utils/types.js";
+import { IEulerEarn, EulerEarnStrategyInfo, EulerEarnGovernance, EulerEarnAllocationCap } from "../../../../entities/EulerEarn.js";
+import { Token, VaultType } from "../../../../utils/types.js";
 import { EulerEarnVaultInfoFull, VaultInfoERC4626 as LensVaultInfoERC4626 } from "./eulerEarnLensTypes.js";
 
 /**

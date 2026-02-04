@@ -1,7 +1,7 @@
-import { EulerEarn, IEulerEarn } from "../../entities/EulerEarn.js";
+import { EulerEarn, IEulerEarn } from "../../../entities/EulerEarn.js";
 import { Address } from "viem";
-import { DeploymentService } from "../deploymentService/index.js";
-import type { IVaultService } from "../vaultService/index.js";
+import { DeploymentService } from "../../deploymentService/index.js";
+import type { IVaultService } from "../index.js";
 
 export interface IEulerEarnDataSource {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEulerEarn[]>;

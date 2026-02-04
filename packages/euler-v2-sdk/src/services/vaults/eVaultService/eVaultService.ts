@@ -1,7 +1,7 @@
 import { Address } from "viem";
-import { EVault, IEVault } from "../../entities/EVault.js";
-import { DeploymentService } from "../deploymentService/index.js";
-import type { IVaultService } from "../vaultService/index.js";
+import { EVault, IEVault } from "../../../entities/EVault.js";
+import { DeploymentService } from "../../deploymentService/index.js";
+import type { IVaultService } from "../index.js";
 
 export interface IEVaultDataSource {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEVault[]>;

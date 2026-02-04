@@ -1,11 +1,11 @@
-import { IEVaultDataSource } from "../eVaultService.js";
-import { ProviderService } from "../../providerService/index.js";
-import { DeploymentService } from "../../deploymentService/index.js";
+import { IEulerEarnDataSource } from "../eulerEarnService.js";
+import { ProviderService } from "../../../providerService/index.js";
+import { DeploymentService } from "../../../deploymentService/index.js";
 import { Address } from "viem";
-import { EVault, IEVault } from "../../../entities/EVault.js";
-import { VaultInfoFull } from "./eVaultLensTypes.js";
-import { convertVaultInfoFullToIEVault } from "./vaultInfoConverter.js";
-import { vaultLensAbi } from "./abis/vaultLensAbi.js";
+import { EulerEarn, IEulerEarn } from "../../../../entities/EulerEarn.js";
+import { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
+import { convertEulerEarnVaultInfoFullToIEulerEarn } from "./eulerEarnInfoConverter.js";
+import { eulerEarnVaultLensAbi } from "./abis/eulerEarnVaultLensAbi.js";
 
 const verifiedArrayAbi = [
   {
@@ -17,25 +17,29 @@ const verifiedArrayAbi = [
   },
 ] as const;
 
-export class EVaultOnchainDataSource implements IEVaultDataSource {
-  constructor(private readonly providerService: ProviderService, private readonly deploymentService: DeploymentService) {}
+export class EulerEarnOnchainDataSource implements IEulerEarnDataSource {
+  constructor(
+    private readonly providerService: ProviderService,
+    private readonly deploymentService: DeploymentService
+  ) {}
 
-  async fetchVaults(chainId: number, vaults: Address[]): Promise<IEVault[]> {
+  async fetchVaults(chainId: number, vaults: Address[]): Promise<IEulerEarn[]> {
     const provider = this.providerService.getProvider(chainId);
-    const vaultLensAddress = this.deploymentService.getDeployment(chainId).addresses.lensAddrs.vaultLens;
+    const deployment = this.deploymentService.getDeployment(chainId);
+    const lensAddress = deployment.addresses.lensAddrs.eulerEarnVaultLens;
     const results = await provider.multicall({
       contracts: vaults.map(vault => ({
-        address: vaultLensAddress,
-        abi: vaultLensAbi,
+        address: lensAddress,
+        abi: eulerEarnVaultLensAbi,
         functionName: "getVaultInfoFull",
         args: [vault],
       })),
     });
 
-    const parsedVaults: IEVault[] = results.map((callResult, idx) => {
+    const parsedVaults: IEulerEarn[] = results.map((callResult, idx) => {
       if (callResult.status === "success" && callResult.result) {
-        const vaultInfo = callResult.result as unknown as VaultInfoFull;
-        return convertVaultInfoFullToIEVault(vaultInfo, chainId);
+        const vaultInfo = callResult.result as unknown as EulerEarnVaultInfoFull;
+        return convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo, chainId);
       }
 
       throw new Error(
@@ -44,7 +48,7 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
       );
     });
 
-    return parsedVaults.map(vault => new EVault(vault));
+    return parsedVaults.map(vault => new EulerEarn(vault));
   }
 
   async fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]> {
@@ -69,6 +73,7 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
       );
     });
 
-    return [...new Set(addresses)];
+    return addresses;
   }
 }
+
