@@ -13,6 +13,7 @@ export * from "./services/deploymentService/index.js";
 export * from "./services/eulerEarnService/index.js";
 export * from "./services/eulerLabelsService/index.js";
 export * from "./services/eVaultService/index.js";
+export * from "./services/vaultService/index.js";
 export * from "./services/executionService/index.js";
 export * from "./services/providerService/index.js";
 export * from "./services/swapService/index.js"; 

@@ -81,7 +81,10 @@ export const buildSDK = async (options: BuildSDKOptions) => {
       providerService as ProviderService,
       deploymentService as DeploymentService
     );
-    eVaultService = new EVaultService(eVaultDataSource, deploymentService as DeploymentService);
+    eVaultService = new EVaultService(
+      eVaultDataSource,
+      deploymentService as DeploymentService
+    );
   }
 
   // Build eulerEarn service if not overridden
@@ -93,7 +96,10 @@ export const buildSDK = async (options: BuildSDKOptions) => {
       providerService as ProviderService,
       deploymentService as DeploymentService
     );
-    eulerEarnService = new EulerEarnService(eulerEarnDataSource, deploymentService as DeploymentService);
+    eulerEarnService = new EulerEarnService(
+      eulerEarnDataSource,
+      deploymentService as DeploymentService
+    );
   }
 
   // Build eulerLabels service if not overridden

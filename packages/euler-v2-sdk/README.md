@@ -25,7 +25,7 @@ const sdk = await buildSDK({
 const account = await sdk.accountService.fetchAccount(mainnet.id, userAddress);
 
 // Fetch vault information
-const vault = await sdk.eVaultService.fetchEVault(mainnet.id, vaultAddress);
+const vault = await sdk.eVaultService.fetchVault(mainnet.id, vaultAddress);
 
 // Create a transaction plan
 const depositPlan = sdk.executionService.planDeposit({
@@ -154,12 +154,12 @@ Queries vault information including assets, interest rates, and configurations.
 
 #### Key Methods
 
-**`fetchEVault(chainId: number, vault: Address): Promise<EVault>`**
+**`fetchVault(chainId: number, vault: Address): Promise<EVault>`**
 
 Fetches detailed vault information.
 
 ```typescript
-const vault = await sdk.eVaultService.fetchEVault(mainnet.id, vaultAddress);
+const vault = await sdk.eVaultService.fetchVault(mainnet.id, vaultAddress);
 
 console.log('Vault asset:', vault.asset);
 console.log('Total supply:', vault.totalSupply);
@@ -169,15 +169,15 @@ console.log('Borrow APY:', vault.borrowAPY);
 console.log('Utilization:', vault.utilization);
 ```
 
-**`fetchEVaults(chainId: number, vaults: Address[]): Promise<EVault[]>`**
+**`fetchVaults(chainId: number, vaults: Address[]): Promise<EVault[]>`**
 
 Fetch multiple vaults in a single call.
 
 ```typescript
-const vaults = await sdk.eVaultService.fetchEVaults(mainnet.id, [vault1, vault2]);
+const vaults = await sdk.eVaultService.fetchVaults(mainnet.id, [vault1, vault2]);
 ```
 
-**`fetchVerifiedEVaults(chainId: number, perspectives: (StandardEVaultPerspectives | Address)[]): Promise<EVault[]>`**
+**`fetchVerifiedVaults(chainId: number, perspectives: (StandardEVaultPerspectives | Address)[]): Promise<EVault[]>`**
 
 Fetch all vaults verified by specific perspectives (governance, factories, etc.).
 
@@ -185,13 +185,13 @@ Fetch all vaults verified by specific perspectives (governance, factories, etc.)
 import { StandardEVaultPerspectives } from 'euler-v2-sdk';
 
 // Get all governed vaults
-const governedVaults = await sdk.eVaultService.fetchVerifiedEVaults(
+const governedVaults = await sdk.eVaultService.fetchVerifiedVaults(
   mainnet.id,
   [StandardEVaultPerspectives.GOVERNED]
 );
 
 // Get vaults from multiple perspectives
-const allVaults = await sdk.eVaultService.fetchVerifiedEVaults(
+const allVaults = await sdk.eVaultService.fetchVerifiedVaults(
   mainnet.id,
   [
     StandardEVaultPerspectives.GOVERNED,
@@ -207,25 +207,25 @@ Manages Euler Earn aggregated yield vaults.
 
 #### Key Methods
 
-**`fetchEulerEarn(chainId: number, vault: Address): Promise<EulerEarn>`**
+**`fetchVault(chainId: number, vault: Address): Promise<EulerEarn>`**
 
 Fetches Euler Earn vault information.
 
 ```typescript
-const earnVault = await sdk.eulerEarnService.fetchEulerEarn(mainnet.id, earnVaultAddress);
+const earnVault = await sdk.eulerEarnService.fetchVault(mainnet.id, earnVaultAddress);
 
 console.log('Total assets:', earnVault.totalAssetsDeposited);
 console.log('Strategy allocations:', earnVault.strategies);
 ```
 
-**`fetchVerifiedEulerEarns(chainId: number, perspectives: (StandardEulerEarnPerspectives | Address)[]): Promise<EulerEarn[]>`**
+**`fetchVerifiedVaults(chainId: number, perspectives: (StandardEulerEarnPerspectives | Address)[]): Promise<EulerEarn[]>`**
 
 Fetch all Euler Earn vaults verified by specific perspectives.
 
 ```typescript
 import { StandardEulerEarnPerspectives } from 'euler-v2-sdk';
 
-const earnVaults = await sdk.eulerEarnService.fetchVerifiedEulerEarns(
+const earnVaults = await sdk.eulerEarnService.fetchVerifiedVaults(
   mainnet.id,
   [StandardEulerEarnPerspectives.FACTORY]
 );
