@@ -66,7 +66,7 @@ async function transferExample() {
     asset: USDC_ADDRESS,
     enableCollateral: true,
   });
-
+console.log(getAddress("0x5D2528A9AE093A20e379f27927Ff421CAA47A32"));
   console.log(`✓ Deposit plan created with ${depositPlan.length} step(s)`);
 
   // Resolve approvals (fetches wallet data internally)

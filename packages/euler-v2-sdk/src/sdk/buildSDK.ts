@@ -13,7 +13,7 @@ import { EulerEarnOnchainDataSource } from "../services/eulerEarnService/dataSou
 import { EulerLabelsService, EulerLabelsURLDataSource, EulerLabelsURLDataSourceConfig, IEulerLabelsService } from "../services/eulerLabelsService/index.js";
 import { SwapService, ISwapService, SwapServiceConfig } from "../services/swapService/index.js";
 import { ExecutionService, IExecutionService } from "../services/executionService/index.js";
-import { defaultAccountVaultsDataSourceConfig, defaultEulerLabelsURLDataSourceConfig, defaultSwapServiceConfig } from "./defaultConfig.js";
+import { defaultAccountVaultsDataSourceConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLDataSourceConfig, defaultSwapServiceConfig } from "./defaultConfig.js";
 import { EVaultOnchainDataSource } from "../services/eVaultService/dataSources/eVaultOnchainDataSource.js";
 
 
@@ -43,7 +43,7 @@ export const buildSDK = async (options: BuildSDKOptions) => {
 
   // Build core services (these may be needed for data sources even if overridden)
   const abiService = servicesOverrides?.abiService ?? new ABIService();
-  const deploymentService = servicesOverrides?.deploymentService ?? await DeploymentService.build();
+  const deploymentService = servicesOverrides?.deploymentService ?? await DeploymentService.build(defaultDeploymentServiceConfig);
   const providerService = servicesOverrides?.providerService ?? new ProviderService(rpcUrls);
 
   // Build account service if not overridden

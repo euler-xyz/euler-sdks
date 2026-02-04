@@ -1,5 +1,4 @@
 import { Address } from "viem";
-import { config } from "../../config.js";
 
 export interface Deployment {
   chainId: number;
@@ -105,11 +104,15 @@ export interface IDeploymentService {
   addDeployment(deployment: Deployment): void;
 }
 
+export interface DeploymentServiceConfig {
+  deploymentsUrl: string;
+}
+
 export class DeploymentService implements IDeploymentService {
   private deployments: Deployments;
 
-  static async build(): Promise<DeploymentService> {
-    const deployments = await fetchDeployments();
+  static async build(deploymentServiceConfig: DeploymentServiceConfig): Promise<DeploymentService> {
+    const deployments = await fetchDeployments(deploymentServiceConfig.deploymentsUrl);
     return new DeploymentService(deployments);
   }
 
@@ -133,7 +136,7 @@ export class DeploymentService implements IDeploymentService {
   }
 }
 
-async function fetchDeployments(url: string = config.DEPLOYMENTS_URL): Promise<Deployments> {
+async function fetchDeployments(url: string): Promise<Deployments> {
   if (!url) {
     throw new Error('Deployments URL is required');
   }

@@ -1,5 +1,6 @@
 import { Address, getAddress } from "viem";
 import { IAccountVaultsDataSource } from "./accountOnchainDataSource.js";
+import { getAddressPrefix } from "../../../utils/subAccounts.js";
 
 export interface AccountVaults {
   [vault: Address]: {
@@ -39,7 +40,7 @@ export class AccountVaultsSubgraphDataSource implements IAccountVaultsDataSource
       method: "POST",
       body: JSON.stringify({
         query: `query AccountBorrows {
-          trackingActiveAccount(id: "${account}") {
+          trackingActiveAccount(id: "${getAddressPrefix(account)}") {
             deposits
             borrows
           }
