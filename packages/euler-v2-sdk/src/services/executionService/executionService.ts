@@ -74,7 +74,7 @@ export interface IExecutionService {
   encodeMultiplyWithSwap(args: EncodeMultiplyWithSwapArgs): EVCBatchItem[];
   encodeMultiplySameAsset(args: EncodeMultiplySameAssetArgs): EVCBatchItem[];
   encodePermit2Call(args: EncodePermit2CallArgs): EVCBatchItem;
-  // Transaction plan functions
+  /** Transaction plan functions: build plan items (approvals + EVC batch) for each operation. See implementation JSDoc for argument details. */
   planDeposit(args: PlanDepositArgs): TransactionPlanItem[];
   planMint(args: PlanMintArgs): TransactionPlanItem[];
   planWithdraw(args: PlanWithdrawArgs): TransactionPlanItem[];
@@ -108,6 +108,12 @@ export class ExecutionService implements IExecutionService {
     private readonly walletService: IWalletService,
   ) {}
 
+  /**
+   * Encodes an array of EVC batch items into a single calldata hex for `EVC.batch()`.
+   *
+   * @param items - Array of batch items (targetContract, onBehalfOfAccount, value, data) to execute atomically
+   * @returns Encoded calldata hex for the EVC batch call
+   */
   encodeBatch(items: EVCBatchItem[]): Hex {
     return encodeFunctionData({
       abi: ethereumVaultConnectorAbi,
@@ -116,6 +122,19 @@ export class ExecutionService implements IExecutionService {
     })
   }
 
+  /**
+   * Encodes EVC batch items for depositing underlying assets into a vault (mints shares to receiver).
+   *
+   * @param args - Deposit encoding arguments
+   * @param args.chainId - Chain ID (used for EVC/permit2 addresses)
+   * @param args.vault - Address of the vault to deposit into
+   * @param args.amount - Amount of underlying assets to deposit
+   * @param args.receiver - Sub-account address that receives the vault shares
+   * @param args.owner - Address that owns the assets and authorizes the deposit (onBehalfOfAccount)
+   * @param args.enableCollateral - If true, prepends enableCollateral( receiver, vault ) via EVC
+   * @param args.permit2 - Optional Permit2 message + signature; if set, prepends a permit2 permit call so transferFrom can be used
+   * @returns Array of EVC batch items (optional permit2, optional enableCollateral, deposit)
+   */
   encodeDeposit({ chainId, vault, amount, receiver, owner, enableCollateral, permit2 }: EncodeDepositArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
@@ -149,6 +168,19 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
+  /**
+   * Encodes EVC batch items for minting vault shares by depositing underlying assets.
+   *
+   * @param args - Mint encoding arguments
+   * @param args.chainId - Chain ID (used for EVC/permit2 addresses)
+   * @param args.vault - Address of the vault to mint from
+   * @param args.shares - Number of vault shares to mint
+   * @param args.receiver - Sub-account address that receives the shares
+   * @param args.owner - Address that owns the assets and authorizes the mint (onBehalfOfAccount)
+   * @param args.enableCollateral - If true, prepends enableCollateral( receiver, vault ) via EVC
+   * @param args.permit2 - Optional Permit2 message + signature for transferFrom
+   * @returns Array of EVC batch items (optional permit2, optional enableCollateral, mint)
+   */
   encodeMint({ chainId, vault, shares, receiver, owner, enableCollateral, permit2 }: EncodeMintArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
@@ -182,6 +214,18 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
+  /**
+   * Encodes EVC batch items for withdrawing underlying assets from a vault (burns shares).
+   *
+   * @param args - Withdraw encoding arguments
+   * @param args.chainId - Chain ID (used for EVC when disabling collateral)
+   * @param args.vault - Address of the vault to withdraw from
+   * @param args.assets - Amount of underlying assets to withdraw
+   * @param args.receiver - Address that receives the withdrawn underlying assets
+   * @param args.owner - Sub-account address whose vault shares are withdrawn (onBehalfOfAccount)
+   * @param args.disableCollateral - If true, appends disableCollateral( owner, vault ) via EVC before withdraw
+   * @returns Array of EVC batch items (optional disableCollateral, withdraw)
+   */
   encodeWithdraw({ chainId, vault, assets, receiver, owner, disableCollateral }: EncodeWithdrawArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
@@ -205,6 +249,18 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
+  /**
+   * Encodes EVC batch items for redeeming vault shares for underlying assets.
+   *
+   * @param args - Redeem encoding arguments
+   * @param args.chainId - Chain ID (used for EVC when disabling collateral)
+   * @param args.vault - Address of the vault to redeem from
+   * @param args.shares - Number of vault shares to redeem
+   * @param args.receiver - Address that receives the underlying assets
+   * @param args.owner - Sub-account address whose shares are redeemed (onBehalfOfAccount)
+   * @param args.disableCollateral - If true, prepends disableCollateral( owner, vault ) via EVC
+   * @returns Array of EVC batch items (optional disableCollateral, redeem)
+   */
   encodeRedeem({ chainId, vault, shares, receiver, owner, disableCollateral }: EncodeRedeemArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
@@ -228,6 +284,24 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
+  /**
+   * Encodes EVC batch items for borrowing from a liability vault, optionally depositing collateral in the same batch.
+   *
+   * @param args - Borrow encoding arguments
+   * @param args.chainId - Chain ID (used for EVC and optional deposit)
+   * @param args.vault - Address of the liability (borrow) vault to borrow from
+   * @param args.amount - Amount of underlying assets to borrow
+   * @param args.owner - Address that owns collateral assets when depositing (onBehalfOfAccount for deposit)
+   * @param args.borrowAccount - Sub-account that takes the debt and receives collateral if any
+   * @param args.receiver - Address that receives the borrowed assets
+   * @param args.enableController - If true, enables this vault as controller for borrowAccount via EVC before borrow (default true)
+   * @param args.currentController - If set and different from vault, disables it before enabling the new controller
+   * @param args.collateralVault - Optional vault to deposit collateral into (same batch)
+   * @param args.collateralAmount - Optional amount of collateral to deposit (requires collateralVault)
+   * @param args.enableCollateral - When depositing collateral, whether to enable it for borrowAccount (default true)
+   * @param args.collateralPermit2 - Optional Permit2 data for the collateral deposit
+   * @returns Array of EVC batch items (optional deposit, optional disableController, optional enableController, borrow)
+   */
   encodeBorrow(args: EncodeBorrowArgs): EVCBatchItem[] {
     const {
       chainId,
@@ -236,11 +310,11 @@ export class ExecutionService implements IExecutionService {
       owner,
       borrowAccount,
       receiver,
-      enableController,
+      enableController = true,
       currentController,
       collateralVault,
       collateralAmount,
-      enableCollateral,
+      enableCollateral = true,
       collateralPermit2,
     } = args
     const items: EVCBatchItem[] = []
@@ -283,6 +357,21 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
+  /**
+   * Encodes EVC batch items for liquidating an undercollateralized account (repay debt, seize collateral).
+   *
+   * @param args - Liquidation encoding arguments
+   * @param args.chainId - Chain ID (used for EVC enableController/enableCollateral)
+   * @param args.vault - Address of the liability vault (debt is repaid to this vault)
+   * @param args.violator - Sub-account address of the account being liquidated
+   * @param args.collateral - Address of the collateral vault from which collateral is seized
+   * @param args.repayAssets - Amount of liability asset the liquidator repays
+   * @param args.minYieldBalance - Minimum yield balance the liquidator requires; liquidation can revert if not met
+   * @param args.liquidatorSubAccountAddress - Sub-account that repays and receives seized collateral (onBehalfOfAccount)
+   * @param args.enableController - If true, enables vault as controller for liquidator sub-account before liquidate (default true)
+   * @param args.enableCollateral - If true, enables collateral vault for liquidator sub-account after liquidate (default true)
+   * @returns Array of EVC batch items (optional enableController, liquidate, optional enableCollateral)
+   */
   encodeLiquidation({
     chainId,
     vault,
@@ -291,8 +380,8 @@ export class ExecutionService implements IExecutionService {
     repayAssets,
     minYieldBalance,
     liquidatorSubAccountAddress,
-    enableCollateral,
-    enableController,
+    enableCollateral = true,
+    enableController = true,
   }: EncodeLiquidationArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
@@ -321,7 +410,19 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
-  encodePullDebt({ chainId, vault, amount, from, to, enableController }: EncodePullDebtArgs): EVCBatchItem[] {
+  /**
+   * Encodes EVC batch items for pulling debt from one sub-account to another on the same liability vault.
+   *
+   * @param args - Pull-debt encoding arguments
+   * @param args.chainId - Chain ID (used for EVC when enabling controller)
+   * @param args.vault - Address of the liability vault
+   * @param args.amount - Amount of debt to pull
+   * @param args.from - Sub-account address from which debt is pulled
+   * @param args.to - Sub-account address that receives the debt (onBehalfOfAccount)
+   * @param args.enableController - If true, enables vault as controller for `to` via EVC before pullDebt (default true)
+   * @returns Array of EVC batch items (optional enableController, pullDebt)
+   */
+  encodePullDebt({ chainId, vault, amount, from, to, enableController = true }: EncodePullDebtArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
     // Add enable controller if flag is set
@@ -345,9 +446,25 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Encodes batch items for multiply/leverage operation with swap.
-   * Used when liability asset and long asset are different and require a swap.
-   * This combines: deposit collateral, enable controller, borrow, swap, and enable collateral.
+   * Encodes EVC batch items for a multiply/leverage operation when liability and long asset differ (swap required).
+   * Order: optional permit2 → optional deposit + enable collateral → optional disableController → enableController → borrow → swap → verify/skim → optional enableCollateral on long vault.
+   *
+   * @param args - Multiply-with-swap encoding arguments
+   * @param args.chainId - Chain ID (used for EVC and permit2)
+   * @param args.collateralVault - Vault to deposit initial collateral into (can use 0n amount to skip)
+   * @param args.collateralAmount - Amount of collateral to deposit (0n to skip)
+   * @param args.liabilityVault - Vault to borrow from (liability)
+   * @param args.liabilityAmount - Amount to borrow (sent to swapper)
+   * @param args.longVault - Vault that receives the swapped assets (verify type must be skimMin)
+   * @param args.owner - Address that owns collateral (onBehalfOfAccount for deposit)
+   * @param args.receiver - Sub-account that holds the position (receives collateral, long and debt)
+   * @param args.enableCollateral - When depositing collateral, whether to enable it for receiver (default true)
+   * @param args.enableCollateralLong - Whether to enable long vault as collateral for receiver (default true)
+   * @param args.currentController - If set and different from liabilityVault, disables it first
+   * @param args.enableController - Whether to enable liability vault as controller for receiver (default true)
+   * @param args.collateralPermit2 - Optional Permit2 data for collateral deposit
+   * @param args.swapQuote - Quote with swap and verify (skimMin) steps; borrow is sent to swapQuote.swap.swapperAddress
+   * @returns Array of EVC batch items
    */
   encodeMultiplyWithSwap(args: EncodeMultiplyWithSwapArgs): EVCBatchItem[] {
     const {
@@ -449,9 +566,24 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Encodes batch items for multiply/leverage operation with same asset.
-   * Used when liability asset and long asset are the same (no swap needed).
-   * This combines: deposit collateral, enable controller, borrow, skim, and enable collateral.
+   * Encodes EVC batch items for a multiply/leverage operation when liability and long asset are the same (no swap).
+   * Order: optional permit2 → optional deposit + enable collateral → optional disableController → enableController → borrow to longVault → skim → enableCollateral on long vault.
+   *
+   * @param args - Multiply-same-asset encoding arguments
+   * @param args.chainId - Chain ID (used for EVC and permit2)
+   * @param args.collateralVault - Vault to deposit initial collateral into (can use 0n to skip)
+   * @param args.collateralAmount - Amount of collateral to deposit (0n to skip)
+   * @param args.liabilityVault - Vault to borrow from (same asset as longVault)
+   * @param args.liabilityAmount - Amount to borrow (sent to longVault)
+   * @param args.longVault - Vault that receives the borrowed assets (skim + enable collateral)
+   * @param args.owner - Address that owns collateral (onBehalfOfAccount for deposit)
+   * @param args.receiver - Sub-account that holds the position
+   * @param args.enableCollateral - When depositing collateral, whether to enable it (default true)
+   * @param args.enableCollateralLong - Whether to enable long vault as collateral (default true)
+   * @param args.currentController - If set and different from liabilityVault, disables it first
+   * @param args.enableController - Whether to enable liability vault as controller (default true)
+   * @param args.collateralPermit2 - Optional Permit2 data for collateral deposit
+   * @returns Array of EVC batch items
    */
   encodeMultiplySameAsset(args: EncodeMultiplySameAssetArgs): EVCBatchItem[] {
     const {
@@ -545,7 +677,18 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Encodes batch items for repaying debt from wallet.
+   * Encodes EVC batch items for repaying debt using assets from the sender's wallet (transferFrom to vault then repay).
+   *
+   * @param args - Repay-from-wallet encoding arguments
+   * @param args.chainId - Chain ID (used for permit2 when provided)
+   * @param args.sender - Address that sends the liability asset and authorizes the repay (onBehalfOfAccount)
+   * @param args.liabilityVault - Vault (liability) to repay debt to
+   * @param args.liabilityAmount - Amount to repay (use maxUint256 with isMax for "repay all")
+   * @param args.receiver - Sub-account whose debt is repaid
+   * @param args.disableControllerOnMax - If true and isMax, appends disableController for receiver on liabilityVault (default true)
+   * @param args.isMax - If true, repays max (amount is ignored and maxUint256 is passed to repay)
+   * @param args.permit2 - Optional Permit2 message + signature so transferFrom can be used without prior approve
+   * @returns Array of EVC batch items (optional permit2, repay, optional disableController)
    */
   encodeRepayFromWallet(args: EncodeRepayFromWalletArgs): EVCBatchItem[] {
     const {
@@ -593,10 +736,22 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Encodes batch items for repaying debt from a deposit.
-   * Supports multiple scenarios:
-   * 1. Same asset, same vault - use repayWithShares
-   * 2. Same asset, different vault - withdraw and repay
+   * Encodes EVC batch items for repaying debt from a deposit (same-asset only).
+   * Path 1: same asset and same vault → repayWithShares. Path 2: same asset, different vault → withdraw then repay/skim/repayWithShares as needed.
+   *
+   * @param args - Repay-from-deposit encoding arguments
+   * @param args.chainId - Chain ID (used for EVC and optional permit2)
+   * @param args.liabilityVault - Vault (liability) to repay debt to
+   * @param args.liabilityAsset - Underlying asset address of the liability vault
+   * @param args.liabilityAmount - Amount of liability to repay (maxUint256 with isMax for full repay)
+   * @param args.from - Sub-account address that holds the source deposit (withdraw/shares source)
+   * @param args.receiver - Sub-account whose debt is repaid
+   * @param args.fromVault - Vault to withdraw/source assets from (must be same asset as liability for this encoder)
+   * @param args.fromAsset - Underlying asset of fromVault (must equal liabilityAsset)
+   * @param args.disableControllerOnMax - When isMax, whether to disable controller for receiver (default true)
+   * @param args.isMax - If true, repays full debt (amount used for withdraw sizing where applicable)
+   * @param args.liabilityPermit2 - Optional Permit2 for liability asset when path uses transfer/repay
+   * @returns Array of EVC batch items. Throws if fromAsset !== liabilityAsset.
    */
   encodeRepayFromDeposit(args: EncodeRepayFromDepositArgs): EVCBatchItem[] {
     const {
@@ -608,7 +763,7 @@ export class ExecutionService implements IExecutionService {
       receiver,
       fromVault,
       fromAsset,
-      disableControllerOnMax = false,
+      disableControllerOnMax = true,
       isMax = false,
       liabilityPermit2,
     } = args
@@ -644,8 +799,16 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Requires a swap quote to be provided.
-   * Make sure the swap quote comes from swapService.getRepayQuotes() or follows the same structure.
+   * Encodes EVC batch items for repaying debt by swapping collateral (withdraw from vaultIn → swap → verify/repay debtMax).
+   * Swap quote must come from swapService.getRepayQuotes() or match the same structure (verify type debtMax).
+   *
+   * @param args - Repay-with-swap encoding arguments
+   * @param args.chainId - Chain ID (used for EVC disableController when applicable)
+   * @param args.swapQuote - Quote with vaultIn, accountIn, accountOut, receiver, swap and verify (debtMax) steps
+   * @param args.maxWithdraw - Optional cap on withdraw amount (e.g. available collateral); if less than quote amountInMax, that value is used
+   * @param args.isMax - If true, disables controller on max repay when disableControllerOnMax is true (default true)
+   * @param args.disableControllerOnMax - When isMax, whether to append disableController for accountOut on receiver (default true)
+   * @returns Array of EVC batch items (withdraw, swap, verify/repay, optional disableController)
    */
   encodeRepayWithSwap(
     args: EncodeRepayWithSwapArgs,
@@ -706,8 +869,16 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Encodes batch items for swapping collateral from one vault to another.
-   * Make sure the swap quote comes from swapService.getDepositQuote() or follows the same structure.
+   * Encodes EVC batch items for swapping collateral: withdraw from vaultIn → swap → verify/skim to receiver; optional enable/disable collateral.
+   * Swap quote should come from swapService.getDepositQuote() or match the same structure (verify type skimMin).
+   *
+   * @param args - Swap-collateral encoding arguments
+   * @param args.chainId - Chain ID (used for EVC enableCollateral/disableCollateral)
+   * @param args.swapQuote - Quote with vaultIn, accountIn, accountOut, receiver, swap and verify (skimMin) steps
+   * @param args.enableCollateral - If true, enables receiver vault as collateral for accountOut (default true)
+   * @param args.disableCollateralOnMax - When isMax, whether to disable collateral for accountIn on vaultIn (default true)
+   * @param args.isMax - If true, treats as full swap (can trigger disableCollateralOnMax)
+   * @returns Array of EVC batch items (withdraw, swap, verify/skim, optional disableCollateral, optional enableCollateral)
    */
   encodeSwapCollateral(args: EncodeSwapCollateralArgs): EVCBatchItem[] {
     const {
@@ -766,8 +937,16 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Encodes batch items for swapping debt from one vault to another.
-   * Make sure the swap quote comes from swapService.getRepayQuotes() or follows the same structure.
+   * Encodes EVC batch items for swapping debt: enableController → borrow from vaultIn → swap → verify/repay (debtMax).
+   * Swap quote should come from swapService.getRepayQuotes() or match the same structure (verify type debtMax).
+   *
+   * @param args - Swap-debt encoding arguments
+   * @param args.chainId - Chain ID (used for EVC enableController/disableController)
+   * @param args.swapQuote - Quote with vaultIn, accountIn, accountOut, receiver, swap and verify (debtMax) steps
+   * @param args.enableController - If true, enables vaultIn as controller for accountOut before borrow (default true)
+   * @param args.disableControllerOnMax - When isMax, whether to disable controller for accountIn on receiver (default true)
+   * @param args.isMax - If true, treats as full debt swap (can trigger disableControllerOnMax)
+   * @returns Array of EVC batch items (optional enableController, borrow, swap, verify/repay, optional disableController)
    */
   encodeSwapDebt({
     chainId,
@@ -823,6 +1002,19 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
+  /**
+   * Encodes EVC batch items for transferring vault shares between sub-accounts.
+   *
+   * @param args - Transfer encoding arguments
+   * @param args.chainId - Chain ID (used for EVC when enabling/disabling collateral)
+   * @param args.vault - Address of the vault
+   * @param args.from - Sub-account address sending the shares (onBehalfOfAccount)
+   * @param args.to - Sub-account address receiving the shares
+   * @param args.amount - Amount of vault shares to transfer
+   * @param args.enableCollateralTo - If true, appends enableCollateral( to, vault ) via EVC after transfer
+   * @param args.disableCollateralFrom - If true, prepends disableCollateral( from, vault ) via EVC before transfer
+   * @returns Array of EVC batch items (optional disableCollateralFrom, transfer, optional enableCollateralTo)
+   */
   encodeTransfer({ chainId, vault, to, amount, from, enableCollateralTo, disableCollateralFrom }: EncodeTransferArgs): EVCBatchItem[] {
     const items: EVCBatchItem[] = []
 
@@ -851,6 +1043,17 @@ export class ExecutionService implements IExecutionService {
     return items
   }
 
+  /**
+   * Encodes a single EVC batch item that calls Permit2's `permit` with the given message and signature.
+   * Used to authorize a token transfer for a subsequent contract call in the same batch.
+   *
+   * @param args - Permit2 call encoding arguments
+   * @param args.chainId - Chain ID (used to resolve Permit2 contract address)
+   * @param args.owner - Token owner that signed the permit (onBehalfOfAccount)
+   * @param args.message - Permit2 PermitSingle message (details + spender + sigDeadline)
+   * @param args.signature - Signature over the permit message
+   * @returns Single EVC batch item (targetContract = Permit2, permit call)
+   */
   encodePermit2Call(args: EncodePermit2CallArgs): EVCBatchItem {
     const {
       chainId,
@@ -931,7 +1134,20 @@ export class ExecutionService implements IExecutionService {
     }
   }
 
- // TODO add example usage with wagmi
+  /**
+   * Builds EIP-712 typed data for a Permit2 PermitSingle signature (token approval for a spender).
+   * Use with signTypedData (e.g. wagmi) then pass the signed message to encodePermit2Call or plan flows.
+   *
+   * @param args - Permit2 typed data arguments
+   * @param args.chainId - Chain ID (used to resolve Permit2 contract for domain)
+   * @param args.token - Token address to approve
+   * @param args.amount - Amount to approve (capped to maxUint160 in the message if larger)
+   * @param args.spender - Address that will be allowed to transfer the token (e.g. vault or Permit2)
+   * @param args.nonce - Unique nonce for this permit (e.g. from Permit2 nonce(owner, token, spender))
+   * @param args.sigDeadline - Signature deadline (defaults to now + 1 hour if omitted)
+   * @param args.expiration - Permit expiration (defaults to maxUint48 if omitted)
+   * @returns EIP-712 typed data (domain, types, primaryType, message) for signing
+   */
   getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData {
     const nowInSeconds = () => BigInt(Math.floor(Date.now() / 1000))
 
@@ -971,8 +1187,11 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Decodes EVCBatchItem[] back to function name and named arguments.
-   * 
+   * Decodes EVC batch items into human-readable function names and named arguments.
+   * Tries known ABIs (EVC, eVault, Permit2, swapper, swapVerifier) to decode each item's data.
+   *
+   * @param batch - Array of EVC batch items (targetContract, onBehalfOfAccount, value, data) to decode
+   * @returns Array of decoded items with targetContract, onBehalfOfAccount, functionName, and args (record of param name to value). Throws if any item cannot be decoded.
    * @example
    * const batchItems = executionService.encodeDeposit({ ... });
    * const described = executionService.describeBatch(batchItems);
@@ -1185,9 +1404,17 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Resolves RequiredApproval items in a transaction plan by filling in the resolved field.
-   * Uses Wallet data to determine what approvals are needed and whether to use permit2.
-   * Returns the modified plan.
+   * Resolves RequiredApproval items in a transaction plan by filling in each item's `resolved` field.
+   * Uses wallet allowances (and optional Permit2 state) to decide whether to add approve/permit2 steps.
+   * Mutates the plan in place and returns it.
+   *
+   * @param args - Resolve-with-wallet arguments
+   * @param args.plan - Transaction plan containing requiredApproval items (e.g. from planDeposit, planBorrow)
+   * @param args.chainId - Chain ID (used to resolve Permit2 address when usePermit2 is true)
+   * @param args.wallet - Wallet entity with token balances and allowances (assetForVault, assetForPermit2, etc.)
+   * @param args.usePermit2 - If true, prefer Permit2 path (approve Permit2 + sign PermitSingle) when allowance is insufficient (default true)
+   * @param args.unlimitedApproval - If true, approval/permit amounts use maxUint256/maxUint160 (default true)
+   * @returns The same plan array with requiredApproval[].resolved populated (approve and/or permit2 data to sign)
    */
   resolveRequiredApprovalsWithWallet(args: ResolveRequiredApprovalsWithWalletArgs): TransactionPlanItem[] {
     const { plan, wallet, chainId, usePermit2 = true, unlimitedApproval = true } = args
@@ -1291,13 +1518,19 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Resolves RequiredApproval items in a transaction plan by:
-   * 1. Deriving wallet assets/spenders from the plan
-   * 2. Fetching wallet data via WalletService
-   * 3. Delegating to resolveRequiredApprovalsWithWallet to fill in approvals
+   * Resolves RequiredApproval items in a transaction plan by fetching wallet data then filling in approvals.
+   * Collects (token, spender) from plan's requiredApproval items, fetches wallet via WalletService, then calls resolveRequiredApprovalsWithWallet.
+   *
+   * @param args - Resolve arguments
+   * @param args.plan - Transaction plan containing requiredApproval items
+   * @param args.chainId - Chain ID (used for deployment and wallet fetch)
+   * @param args.account - Account address (owner) used to fetch wallet and allowances
+   * @param args.usePermit2 - If true, use Permit2 path when needed (default true)
+   * @param args.unlimitedApproval - If true, use max amounts for approvals (default false)
+   * @returns Promise of the plan with requiredApproval[].resolved populated
    */
   async resolveRequiredApprovals(args: ResolveRequiredApprovalsArgs): Promise<TransactionPlanItem[]> {
-    const { plan, chainId, account, usePermit2 = true, unlimitedApproval = true } = args
+    const { plan, chainId, account, usePermit2 = true, unlimitedApproval = false } = args
 
     // Filter transaction plan for only RequiredApproval items
     const requiredApprovals = plan.filter(
@@ -1338,7 +1571,19 @@ export class ExecutionService implements IExecutionService {
 
   // ========== Transaction plan functions ==========
 
-  // TODO document - set maxUint256 for amount to deposit all available assets
+  /**
+   * Builds a transaction plan for depositing assets into a vault.
+   * Use `maxUint256` for `amount` to deposit all available assets from the wallet.
+   *
+   * @param args - Deposit plan arguments
+   * @param args.vault - Address of the vault to deposit into
+   * @param args.amount - Amount of underlying assets to deposit (use maxUint256 for "deposit all")
+   * @param args.receiver - Sub-account address that will receive the vault shares (and count as collateral if enabled)
+   * @param args.account - Account entity (owner + positions); used for chainId, owner, and collateral state
+   * @param args.asset - Address of the underlying ERC20 asset being deposited (used for approval requirement)
+   * @param args.enableCollateral - If true, enables this vault as collateral for `receiver` when not already enabled
+   * @returns Array of transaction plan items (required approvals + EVC batch)
+   */
   planDeposit(args: PlanDepositArgs): TransactionPlanItem[] {
     const { vault, amount, receiver, account, asset, enableCollateral } = args
     const plan: TransactionPlanItem[] = []
@@ -1375,6 +1620,19 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
+  /**
+   * Builds a transaction plan for minting vault shares by depositing assets.
+   *
+   * @param args - Mint plan arguments
+   * @param args.vault - Address of the vault to mint shares from
+   * @param args.shares - Number of vault shares to mint
+   * @param args.receiver - Sub-account address that will receive the shares (and count as collateral if enabled)
+   * @param args.account - Account entity (owner + positions); used for chainId, owner, and collateral state
+   * @param args.asset - Address of the underlying ERC20 asset (used for approval requirement)
+   * @param args.enableCollateral - If true, enables this vault as collateral for `receiver` when not already enabled
+   * @param args.sharesToAssetsExchangeRateWad - Optional exchange rate (WAD) to estimate asset amount for approval when minting by shares. Default 1.
+   * @returns Array of transaction plan items (required approvals + EVC batch)
+   */
   planMint(args: PlanMintArgs): TransactionPlanItem[] {
     const { vault, shares, receiver, account, asset, enableCollateral, sharesToAssetsExchangeRateWad } = args
     const plan: TransactionPlanItem[] = []
@@ -1413,6 +1671,18 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
+  /**
+   * Builds a transaction plan for withdrawing assets from a vault.
+   *
+   * @param args - Withdraw plan arguments
+   * @param args.vault - Address of the vault to withdraw from
+   * @param args.assets - Amount of underlying assets to withdraw
+   * @param args.owner - Sub-account address whose vault shares are being withdrawn
+   * @param args.receiver - Address that will receive the withdrawn underlying assets
+   * @param args.account - Account entity; used for chainId and position/collateral state
+   * @param args.disableCollateral - If true, disables this vault as collateral for `owner` when the position is fully withdrawn and was collateral
+   * @returns Array of transaction plan items (EVC batch; no approvals needed for withdraw)
+   */
   planWithdraw(args: PlanWithdrawArgs): TransactionPlanItem[] {
     const { vault, assets, receiver, owner, account, disableCollateral = false } = args
     const plan: TransactionPlanItem[] = []
@@ -1438,7 +1708,19 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
-  // TODO document - set maxUint256 for shares to redeem all available shares
+  /**
+   * Builds a transaction plan for redeeming vault shares for underlying assets.
+   * Use `maxUint256` for `shares` to redeem all available shares.
+   *
+   * @param args - Redeem plan arguments
+   * @param args.vault - Address of the vault to redeem shares from
+   * @param args.shares - Number of vault shares to redeem (use maxUint256 for "redeem all")
+   * @param args.owner - Sub-account address whose shares are being redeemed
+   * @param args.receiver - Address that will receive the underlying assets
+   * @param args.account - Account entity; used for chainId and position/collateral state
+   * @param args.disableCollateral - If true, disables this vault as collateral for `owner` when the position is fully redeemed and was collateral
+   * @returns Array of transaction plan items (EVC batch; no approvals needed for redeem)
+   */
   planRedeem(args: PlanRedeemArgs): TransactionPlanItem[] {
     const { vault, shares, receiver, owner, account, disableCollateral = false } = args
     const plan: TransactionPlanItem[] = []
@@ -1463,7 +1745,23 @@ export class ExecutionService implements IExecutionService {
 
     return plan
   }
-  // TODO document - set maxUint256 for collateral amount to deposit all available assets
+
+  /**
+   * Builds a transaction plan for borrowing from a liability vault.
+   * Use `maxUint256` for `collateral.amount` to deposit all available collateral asset from the wallet.
+   *
+   * @param args - Borrow plan arguments
+   * @param args.vault - Address of the liability (borrow) vault to borrow from
+   * @param args.amount - Amount of underlying assets to borrow
+   * @param args.borrowAccount - Sub-account address that will take the debt (and hold collateral if any)
+   * @param args.receiver - Address that will receive the borrowed assets
+   * @param args.account - Account entity; used for chainId, owner, controller/collateral state
+   * @param args.collateral - Optional: deposit collateral in the same batch; use maxUint256 for amount to deposit all available
+   * @param args.collateral.vault - Collateral vault to deposit into
+   * @param args.collateral.amount - Amount of collateral asset to deposit
+   * @param args.collateral.asset - Underlying asset address of the collateral (for approval)
+   * @returns Array of transaction plan items (optional approval + EVC batch)
+   */
   planBorrow(args: PlanBorrowArgs): TransactionPlanItem[] {
     const { vault, amount, receiver, borrowAccount, account, collateral } = args
     const plan: TransactionPlanItem[] = []
@@ -1511,6 +1809,20 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
+  /**
+   * Builds a transaction plan for liquidating an undercollateralized account.
+   *
+   * @param args - Liquidation plan arguments
+   * @param args.account - Liquidator's account entity; used for chainId, owner, and controller/collateral state on liquidator sub-account
+   * @param args.liquidatorSubAccountAddress - Sub-account address that will repay debt and receive seized collateral
+   * @param args.vault - Address of the liability vault (debt is repaid to this vault)
+   * @param args.asset - Address of the liability vault's underlying asset (used for approval of repay amount)
+   * @param args.violator - Sub-account address of the undercollateralized account being liquidated
+   * @param args.collateral - Address of the collateral vault from which collateral is seized
+   * @param args.repayAssets - Amount of liability asset the liquidator will repay (and receive collateral up to the liquidation incentive)
+   * @param args.minYieldBalance - Minimum yield balance the liquidator requires; liquidation may revert if not met
+   * @returns Array of transaction plan items (approval for repay asset + EVC batch)
+   */
   planLiquidation(args: PlanLiquidationArgs): TransactionPlanItem[] {
     const {
       account,
@@ -1560,7 +1872,17 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
-  // TODO document - set maxUint256 for liabilityAmount to repay all available debt
+  /**
+   * Builds a transaction plan for repaying debt using assets from the wallet.
+   * Use `maxUint256` for `liabilityAmount` to repay all available debt.
+   *
+   * @param args - Repay-from-wallet plan arguments
+   * @param args.liabilityVault - Address of the liability vault (debt is repaid to this vault)
+   * @param args.liabilityAmount - Amount of liability asset to repay (use maxUint256 for "repay all")
+   * @param args.receiver - Sub-account address whose debt is being repaid
+   * @param args.account - Account entity; used for chainId, owner, and position (to resolve liability asset)
+   * @returns Array of transaction plan items (approval + EVC batch)
+   */
   planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlanItem[] {
     const { liabilityVault, liabilityAmount, receiver, account } = args
     const plan: TransactionPlanItem[] = []
@@ -1600,7 +1922,19 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
-  // TODO document - set maxUint256 for liabilityAmount to repay all available debt or up to available deposit
+  /**
+   * Builds a transaction plan for repaying debt using assets from another vault deposit (same asset only).
+   * Use `maxUint256` for `liabilityAmount` to repay all available debt or up to the available deposit.
+   *
+   * @param args - Repay-from-deposit plan arguments
+   * @param args.liabilityVault - Address of the liability vault (debt is repaid to this vault)
+   * @param args.liabilityAmount - Amount of liability to repay (use maxUint256 for max repay)
+   * @param args.receiver - Sub-account address whose debt is being repaid (and from whose deposit we may withdraw when fromAccount === receiver)
+   * @param args.fromVault - Vault to withdraw assets from (must be same underlying asset as liability for this plan)
+   * @param args.fromAccount - Sub-account that holds the deposit in `fromVault`
+   * @param args.account - Account entity; used for chainId, owner, and positions (to resolve assets and eligibility)
+   * @returns Array of transaction plan items (optional approval + EVC batch). Throws if asset differs between fromVault and liabilityVault; use planRepayWithSwap for cross-asset.
+   */
   planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlanItem[] {
     const { liabilityVault, liabilityAmount, receiver, fromVault, fromAccount, account } = args
     const plan: TransactionPlanItem[] = []
@@ -1659,6 +1993,15 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
+  /**
+   * Builds a transaction plan for repaying debt by swapping collateral (e.g. withdraw collateral → swap → repay).
+   * Use when the repayment asset differs from the collateral asset.
+   *
+   * @param args - Repay-with-swap plan arguments
+   * @param args.swapQuote - Quote from swap service (e.g. getRepayQuotes); defines vaultIn, accountIn, accountOut, receiver, swap and verify steps
+   * @param args.account - Account entity; used for chainId and positions (to compute isMax and maxWithdraw)
+   * @returns Array of transaction plan items (EVC batch: withdraw, swap, verify/repay). Throws if positions not found or liability is zero.
+   */
   planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlanItem[] {
     const { swapQuote, account } = args
     const plan: TransactionPlanItem[] = []
@@ -1688,6 +2031,14 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
+  /**
+   * Builds a transaction plan for swapping collateral from one vault to another (withdraw → swap → deposit/skim).
+   *
+   * @param args - Swap-collateral plan arguments
+   * @param args.swapQuote - Quote from swap service (e.g. getDepositQuote); defines vaultIn, accountIn, accountOut, receiver, swap and verify (skimMin) steps
+   * @param args.account - Account entity; used for chainId and positions (to determine isMax and whether to enable collateral on destination)
+   * @returns Array of transaction plan items (EVC batch: withdraw, swap, verify/skim, optional enable/disable collateral)
+   */
   planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlanItem[] {
     const { swapQuote, account } = args
     const plan: TransactionPlanItem[] = []
@@ -1719,6 +2070,14 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
+  /**
+   * Builds a transaction plan for swapping debt from one liability vault to another (borrow from source → swap → repay to destination).
+   *
+   * @param args - Swap-debt plan arguments
+   * @param args.swapQuote - Quote from swap service (e.g. getRepayQuotes for the new debt); defines vaultIn, accountIn, accountOut, swap and verify (debtMax) steps
+   * @param args.account - Account entity; used for chainId and controller state (enableController, isMax, disableControllerOnMax)
+   * @returns Array of transaction plan items (EVC batch: enableController, borrow, swap, verify/repay, optional disableController)
+   */
   planSwapDebt(args: PlanSwapDebtArgs): TransactionPlanItem[] {
     const { swapQuote, account } = args
     const plan: TransactionPlanItem[] = []
@@ -1746,6 +2105,19 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
+  /**
+   * Builds a transaction plan for transferring vault shares between sub-accounts.
+   *
+   * @param args - Transfer plan arguments
+   * @param args.vault - Address of the vault
+   * @param args.from - Sub-account address sending the shares
+   * @param args.to - Sub-account address receiving the shares
+   * @param args.amount - Amount of vault shares to transfer
+   * @param args.account - Account entity; used for chainId and collateral state for from/to
+   * @param args.enableCollateralTo - If true, enables the vault as collateral for `to` when not already enabled
+   * @param args.disableCollateralFrom - If true, disables the vault as collateral for `from` when it was enabled
+   * @returns Array of transaction plan items (EVC batch; no approvals needed)
+   */
   planTransfer(args: PlanTransferArgs): TransactionPlanItem[] {
     const { vault, to, amount, from, account, enableCollateralTo, disableCollateralFrom } = args
     const plan: TransactionPlanItem[] = []
@@ -1769,6 +2141,17 @@ export class ExecutionService implements IExecutionService {
     return plan
   }
 
+  /**
+   * Builds a transaction plan for pulling debt from one sub-account to another (same liability vault).
+   *
+   * @param args - Pull-debt plan arguments
+   * @param args.vault - Address of the liability vault
+   * @param args.amount - Amount of debt to pull
+   * @param args.from - Sub-account address from which debt is pulled
+   * @param args.to - Sub-account address that will receive the debt (and receive the borrowed assets if any)
+   * @param args.account - Account entity; used for chainId and controller state (enableController for `to` if needed)
+   * @returns Array of transaction plan items (EVC batch: optional enableController + pullDebt)
+   */
   planPullDebt(args: PlanPullDebtArgs): TransactionPlanItem[] {
     const { vault, amount, from, to, account } = args
     const plan: TransactionPlanItem[] = []
@@ -1794,8 +2177,16 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Plans a multiply/leverage operation with swap.
-   * Used when liability asset and long asset are different and require a swap.
+   * Builds a transaction plan for a multiply/leverage position when liability and long asset differ (requires a swap).
+   * Flow: optional collateral deposit → enable controller → borrow → swap → enable collateral on long vault.
+   *
+   * @param args - Multiply-with-swap plan arguments
+   * @param args.collateralVault - Vault to deposit initial collateral into (optional; omit amount or use 0 to skip)
+   * @param args.collateralAmount - Amount of collateral asset to deposit (0n to skip deposit)
+   * @param args.collateralAsset - Underlying asset address of collateral (for approval when collateralAmount > 0)
+   * @param args.swapQuote - Quote describing borrow vault (vaultIn), long vault (receiver), amounts, swap and verify (skimMin) steps; accountIn must equal accountOut
+   * @param args.account - Account entity; used for chainId, owner, and collateral/controller state
+   * @returns Array of transaction plan items (optional approval + EVC batch). Throws if swapQuote.accountIn !== swapQuote.accountOut.
    */
   planMultiplyWithSwap(args: PlanMultiplyWithSwapArgs): TransactionPlanItem[] {
     const {
@@ -1861,8 +2252,19 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
-   * Plans a multiply/leverage operation with same asset.
-   * Used when liability asset and long asset are the same (no swap needed).
+   * Builds a transaction plan for a multiply/leverage position when liability and long asset are the same (no swap).
+   * Flow: optional collateral deposit → enable controller → borrow to long vault → skim → enable collateral on long vault.
+   *
+   * @param args - Multiply-same-asset plan arguments
+   * @param args.collateralVault - Vault to deposit initial collateral into (optional; use 0n for collateralAmount to skip)
+   * @param args.collateralAmount - Amount of collateral asset to deposit (0n to skip)
+   * @param args.collateralAsset - Underlying asset address of collateral (for approval when collateralAmount > 0)
+   * @param args.liabilityVault - Liability vault to borrow from
+   * @param args.liabilityAmount - Amount to borrow (same asset as long vault)
+   * @param args.longVault - Vault to deposit borrowed assets into (same asset as liability)
+   * @param args.receiver - Sub-account address that holds the position (collateral + debt)
+   * @param args.account - Account entity; used for chainId, owner, and collateral/controller state
+   * @returns Array of transaction plan items (optional approval + EVC batch)
    */
   planMultiplySameAsset(args: PlanMultiplySameAssetArgs): TransactionPlanItem[] {
     const {

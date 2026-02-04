@@ -81,7 +81,6 @@ export interface GetRepayQuoteArgs {
   slippage: number;
   liabilityAmount?: bigint; // amount to repay in TARGET_DEBT mode, set to current  debt to repay full
   collateralAmount?: bigint; // amount to sell for debt in EXACT_IN mode
-  isMax?: boolean;
   deadline?: number;
 }
 

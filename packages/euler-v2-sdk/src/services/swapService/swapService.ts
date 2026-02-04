@@ -15,8 +15,11 @@ export interface SwapServiceConfig {
 }
 
 export interface ISwapService {
+  /** Fetches raw swap quotes from the API. Prefer getRepayQuotes or getDepositQuote for repay/collateral-swap flows. */
   getSwapQuotes(args: SwapQuoteRequest): Promise<SwapQuote[]>;
+  /** Fetches swap quotes for repaying debt by swapping collateral (withdraw → swap → repay). */
   getRepayQuotes(args: GetRepayQuoteArgs): Promise<SwapQuote[]>;
+  /** Fetches swap quotes for swapping collateral between vaults (withdraw → swap → deposit). */
   getDepositQuote(args: GetDepositQuoteArgs): Promise<SwapQuote[]>;
 }
 
@@ -31,7 +34,27 @@ export class SwapService implements ISwapService {
   }
 
   /**
-   * Fetches swap quotes from the swap API
+   * Fetches swap quotes from the swap API for a given token pair and amount.
+   * Validates verifier data for each quote. Use getRepayQuotes or getDepositQuote for repay/collateral-swap flows.
+   *
+   * @param request - Swap quote request
+   * @param request.chainId - Chain ID
+   * @param request.tokenIn - Token to sell (input)
+   * @param request.tokenOut - Token to buy (output); must differ from tokenIn
+   * @param request.accountIn - Sub-account providing the input (e.g. withdrawing from vaultIn)
+   * @param request.accountOut - Sub-account receiving the output (e.g. repay target or collateral receiver)
+   * @param request.amount - Exact-in: amount to sell; exact-out: amount to buy; exact-out repay: estimated amount to buy
+   * @param request.vaultIn - Vault to withdraw from (for returning unused input)
+   * @param request.receiver - Vault that receives the swap output (e.g. liability vault for repay, destination vault for deposit)
+   * @param request.origin - EOA sending the transaction (required, cannot be zero address)
+   * @param request.slippage - Slippage in percent (e.g. 1 = 1%); must be between 0 and 50
+   * @param request.swapperMode - EXACT_IN (0), EXACT_OUT (1), or TARGET_DEBT (2) for repay
+   * @param request.isRepay - If true, quote is for repaying debt (verify type debtMax)
+   * @param request.targetDebt - Target debt after repay (used when swapperMode is TARGET_DEBT)
+   * @param request.currentDebt - Current debt of the account (required when isRepay is true)
+   * @param request.deadline - Quote deadline timestamp in seconds (defaults to config defaultDeadline from now)
+   * @param request.dustAccount - Account receiving dust from over-swap repays (defaults to origin)
+   * @returns Promise of array of swap quotes (amounts, swap calldata, verifier calldata). Throws if tokenIn === tokenOut, origin is zero, or API/verifier validation fails.
    */
   async getSwapQuotes(request: SwapQuoteRequest): Promise<SwapQuote[]> {
     if (request.tokenIn === request.tokenOut) {
@@ -157,7 +180,25 @@ export class SwapService implements ISwapService {
   }
 
   /**
-   * Fetches a swap quote for repaying debt with a swap.
+   * Fetches swap quotes for repaying debt by swapping collateral (e.g. withdraw collateral → swap → repay).
+   * Delegates to getSwapQuotes with isRepay true. fromAsset and liabilityAsset must differ.
+   *
+   * @param args - Repay quote arguments
+   * @param args.chainId - Chain ID
+   * @param args.fromVault - Vault to withdraw collateral from (source of swap input)
+   * @param args.fromAsset - Underlying asset of fromVault (tokenIn for the swap)
+   * @param args.fromAccount - Sub-account that holds the collateral in fromVault
+   * @param args.liabilityVault - Vault to repay debt to (receiver of swap output)
+   * @param args.liabilityAsset - Underlying asset of liabilityVault (tokenOut for the swap)
+   * @param args.currentDebt - Current debt of the account being repaid (must be > 0)
+   * @param args.toAccount - Sub-account whose debt is repaid (accountOut)
+   * @param args.origin - EOA sending the transaction
+   * @param args.swapperMode - EXACT_IN (sell fixed collateral amount) or TARGET_DEBT (repay toward target debt)
+   * @param args.slippage - Slippage in percent (0–50)
+   * @param args.collateralAmount - In EXACT_IN mode: amount of collateral to sell; required in EXACT_IN
+   * @param args.liabilityAmount - In TARGET_DEBT mode: amount of debt to repay; set to currentDebt for full repay
+   * @param args.deadline - Quote deadline timestamp in seconds (optional)
+   * @returns Promise of array of swap quotes for repay (verify type debtMax). Throws if currentDebt <= 0, fromAsset === liabilityAsset, or no quotes.
    */
   async getRepayQuotes(
     args: GetRepayQuoteArgs,
@@ -176,7 +217,6 @@ export class SwapService implements ISwapService {
       swapperMode,
       slippage,
       collateralAmount,
-      isMax = false,
       deadline,
     } = args;
 
@@ -207,8 +247,8 @@ export class SwapService implements ISwapService {
         );
       }
       // TODO add to docs or change api, liabilityAmount is ignored if isMax is true
-      targetDebt = isMax || currentDebt === liabilityAmount ? 0n : currentDebt - liabilityAmount;
-      amount = isMax || currentDebt === liabilityAmount ? currentDebt - targetDebt : liabilityAmount;
+      targetDebt = currentDebt === liabilityAmount ? 0n : currentDebt - liabilityAmount;
+      amount = currentDebt === liabilityAmount ? currentDebt - targetDebt : liabilityAmount;
     }
 
     const quotes = await this.getSwapQuotes({
@@ -237,7 +277,22 @@ export class SwapService implements ISwapService {
   }
 
   /**
-   * Fetches a swap quote for swapping collateral from one vault to another.
+   * Fetches swap quotes for swapping collateral from one vault to another (withdraw from source → swap → deposit to destination).
+   * Delegates to getSwapQuotes with isRepay false and EXACT_IN mode.
+   *
+   * @param args - Deposit/collateral-swap quote arguments
+   * @param args.chainId - Chain ID
+   * @param args.fromVault - Vault to withdraw collateral from (source)
+   * @param args.toVault - Vault to receive the swapped collateral (destination, receiver)
+   * @param args.fromAccount - Sub-account that holds the collateral in fromVault
+   * @param args.toAccount - Sub-account that will hold the new collateral in toVault
+   * @param args.fromAsset - Underlying asset of fromVault (tokenIn)
+   * @param args.toAsset - Underlying asset of toVault (tokenOut)
+   * @param args.amount - Amount of fromAsset to swap (exact-in)
+   * @param args.origin - EOA sending the transaction
+   * @param args.slippage - Slippage in percent (0–50)
+   * @param args.deadline - Quote deadline timestamp in seconds (optional)
+   * @returns Promise of array of swap quotes (verify type skimMin). Throws if slippage invalid or no quotes.
    */
   async getDepositQuote(
     args: GetDepositQuoteArgs,
