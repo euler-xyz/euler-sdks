@@ -22,6 +22,7 @@ export type {
   EncodeMultiplyWithSwapArgs,
   EncodeMultiplySameAssetArgs,
   // Transaction plan types
+  TransactionPlan,
   TransactionPlanItem,
   ApproveCall,
   Permit2DataToSign,

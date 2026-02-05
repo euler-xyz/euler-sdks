@@ -528,6 +528,24 @@ const multiplyPlan = sdk.executionService.planMultiplySameAsset({
 });
 ```
 
+**`mergePlans(plans: TransactionPlan[]): TransactionPlan`**
+
+Merges multiple transaction plans into one. Required approvals for the same (token, owner, spender) are summed; EVC batch items from all plans are concatenated in order. Use this to combine several operations (e.g. borrow + deposit + repay) into a single plan for one execution.
+
+```typescript
+const borrowPlan = sdk.executionService.planBorrow({ ... });
+const depositPlan = sdk.executionService.planDeposit({ ... });
+const repayPlan = sdk.executionService.planRepayFromWallet({ ... });
+
+const merged = sdk.executionService.mergePlans([borrowPlan, depositPlan, repayPlan]);
+const resolved = await sdk.executionService.resolveRequiredApprovals({
+  plan: merged,
+  chainId,
+  account: account.address,
+});
+// execute resolved plan once
+```
+
 #### Transaction Plan Structure
 
 A `TransactionPlanItem` can be:

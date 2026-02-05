@@ -28,6 +28,7 @@ import {
   GetPermit2TypedDataArgs,
   Permit2Data,
   type TransactionPlanItem,
+  type TransactionPlan,
   type ApproveCall,
   type Permit2DataToSign,
   type EVCBatchItems,
@@ -75,26 +76,30 @@ export interface IExecutionService {
   encodeMultiplySameAsset(args: EncodeMultiplySameAssetArgs): EVCBatchItem[];
   encodePermit2Call(args: EncodePermit2CallArgs): EVCBatchItem;
   /** Transaction plan functions: build plan items (approvals + EVC batch) for each operation. See implementation JSDoc for argument details. */
-  planDeposit(args: PlanDepositArgs): TransactionPlanItem[];
-  planMint(args: PlanMintArgs): TransactionPlanItem[];
-  planWithdraw(args: PlanWithdrawArgs): TransactionPlanItem[];
-  planRedeem(args: PlanRedeemArgs): TransactionPlanItem[];
-  planBorrow(args: PlanBorrowArgs): TransactionPlanItem[];
-  planLiquidation(args: PlanLiquidationArgs): TransactionPlanItem[];
-  planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlanItem[];
-  planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlanItem[];
-  planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlanItem[];
-  planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlanItem[];
-  planSwapDebt(args: PlanSwapDebtArgs): TransactionPlanItem[];
-  planTransfer(args: PlanTransferArgs): TransactionPlanItem[];
-  planPullDebt(args: PlanPullDebtArgs): TransactionPlanItem[];
-  planMultiplyWithSwap(args: PlanMultiplyWithSwapArgs): TransactionPlanItem[];
-  planMultiplySameAsset(args: PlanMultiplySameAssetArgs): TransactionPlanItem[];
+  planDeposit(args: PlanDepositArgs): TransactionPlan;
+  planMint(args: PlanMintArgs): TransactionPlan;
+  planWithdraw(args: PlanWithdrawArgs): TransactionPlan;
+  planRedeem(args: PlanRedeemArgs): TransactionPlan;
+  planBorrow(args: PlanBorrowArgs): TransactionPlan;
+  planLiquidation(args: PlanLiquidationArgs): TransactionPlan;
+  planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlan;
+  planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlan;
+  planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlan;
+  planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlan;
+  planSwapDebt(args: PlanSwapDebtArgs): TransactionPlan;
+  planTransfer(args: PlanTransferArgs): TransactionPlan;
+  planPullDebt(args: PlanPullDebtArgs): TransactionPlan;
+  planMultiplyWithSwap(args: PlanMultiplyWithSwapArgs): TransactionPlan;
+  planMultiplySameAsset(args: PlanMultiplySameAssetArgs): TransactionPlan;
 
-  resolveRequiredApprovalsWithWallet(args: ResolveRequiredApprovalsWithWalletArgs): TransactionPlanItem[];
-  resolveRequiredApprovals(args: ResolveRequiredApprovalsArgs): Promise<TransactionPlanItem[]>;
+  resolveRequiredApprovalsWithWallet(args: ResolveRequiredApprovalsWithWalletArgs): TransactionPlan;
+  resolveRequiredApprovals(args: ResolveRequiredApprovalsArgs): Promise<TransactionPlan>;
   getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData;
   describeBatch(batch: EVCBatchItem[]): BatchItemDescription[];
+  /** Merges multiple plans into one: required approvals for the same (token, owner, spender) are summed; EVC batch items are concatenated in order. */
+  mergePlans(plans: TransactionPlan[]): TransactionPlan;
+  /** Converts EVC batch items into a transaction plan (single evcBatch, no required approvals). */
+  convertBatchItemsToPlan(items: EVCBatchItem[]): TransactionPlan;
 }
 
 const PERMIT2_SIG_WINDOW = 60n * 60n
@@ -1251,6 +1256,57 @@ export class ExecutionService implements IExecutionService {
   }
 
   /**
+   * Merges multiple transaction plans into a single plan.
+   * Required approvals for the same (token, owner, spender) are summed.
+   * EVC batch items from all plans are concatenated in order into one evcBatch.
+   * Can be used to construct a transaction queue.
+   *
+   * @param plans - Array of transaction plans to merge
+   * @returns Single plan: summed required approvals first, then one evcBatch with concatenated items
+   */
+  mergePlans(plans: TransactionPlan[]): TransactionPlan {
+    const approvalByKey = new Map<string, RequiredApproval>()
+    const allBatchItems: EVCBatchItem[] = []
+
+    for (const plan of plans) {
+      for (const item of plan) {
+        if (item.type === "requiredApproval") {
+          const key = `${getAddress(item.token)}:${getAddress(item.owner)}:${getAddress(item.spender)}`
+          const existing = approvalByKey.get(key)
+          if (existing) {
+            existing.amount += item.amount
+            existing.resolved = undefined
+          } else {
+            const { resolved: _r, ...rest } = item
+            approvalByKey.set(key, { ...rest, resolved: undefined })
+          }
+        } else if (item.type === "evcBatch") {
+          allBatchItems.push(...item.items)
+        }
+      }
+    }
+
+    const merged: TransactionPlan = [...approvalByKey.values()]
+    if (allBatchItems.length > 0) {
+      merged.push({ type: "evcBatch", items: allBatchItems })
+    }
+    return merged
+  }
+
+  /**
+   * Converts EVC batch items into a transaction plan.
+   * Returns a plan with a single evcBatch containing the given items (no required approvals).
+   * Returns an empty plan if items is empty.
+   *
+   * @param items - EVC batch items to wrap in a plan
+   * @returns Transaction plan containing one evcBatch with the items
+   */
+  convertBatchItemsToPlan(items: EVCBatchItem[]): TransactionPlan {
+    if (items.length === 0) return []
+    return [{ type: "evcBatch", items }]
+  }
+
+  /**
    * Encodes batch items for repaying with shares from the same asset and vault
    */
   private encodeRepayWithSharesSameAssetAndVault({
@@ -1633,7 +1689,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.sharesToAssetsExchangeRateWad - Optional exchange rate (WAD) to estimate asset amount for approval when minting by shares. Default 1.
    * @returns Array of transaction plan items (required approvals + EVC batch)
    */
-  planMint(args: PlanMintArgs): TransactionPlanItem[] {
+  planMint(args: PlanMintArgs): TransactionPlan {
     const { vault, shares, receiver, account, asset, enableCollateral, sharesToAssetsExchangeRateWad } = args
     const plan: TransactionPlanItem[] = []
 
@@ -1683,7 +1739,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.disableCollateral - If true, disables this vault as collateral for `owner` when the position is fully withdrawn and was collateral
    * @returns Array of transaction plan items (EVC batch; no approvals needed for withdraw)
    */
-  planWithdraw(args: PlanWithdrawArgs): TransactionPlanItem[] {
+  planWithdraw(args: PlanWithdrawArgs): TransactionPlan {
     const { vault, assets, receiver, owner, account, disableCollateral = false } = args
     const plan: TransactionPlanItem[] = []
 
@@ -1721,7 +1777,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.disableCollateral - If true, disables this vault as collateral for `owner` when the position is fully redeemed and was collateral
    * @returns Array of transaction plan items (EVC batch; no approvals needed for redeem)
    */
-  planRedeem(args: PlanRedeemArgs): TransactionPlanItem[] {
+  planRedeem(args: PlanRedeemArgs): TransactionPlan {
     const { vault, shares, receiver, owner, account, disableCollateral = false } = args
     const plan: TransactionPlanItem[] = []
 
@@ -1762,7 +1818,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.collateral.asset - Underlying asset address of the collateral (for approval)
    * @returns Array of transaction plan items (optional approval + EVC batch)
    */
-  planBorrow(args: PlanBorrowArgs): TransactionPlanItem[] {
+  planBorrow(args: PlanBorrowArgs): TransactionPlan {
     const { vault, amount, receiver, borrowAccount, account, collateral } = args
     const plan: TransactionPlanItem[] = []
 
@@ -1823,7 +1879,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.minYieldBalance - Minimum yield balance the liquidator requires; liquidation may revert if not met
    * @returns Array of transaction plan items (approval for repay asset + EVC batch)
    */
-  planLiquidation(args: PlanLiquidationArgs): TransactionPlanItem[] {
+  planLiquidation(args: PlanLiquidationArgs): TransactionPlan {
     const {
       account,
       liquidatorSubAccountAddress,
@@ -1883,7 +1939,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.account - Account entity; used for chainId, owner, and position (to resolve liability asset)
    * @returns Array of transaction plan items (approval + EVC batch)
    */
-  planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlanItem[] {
+  planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlan {
     const { liabilityVault, liabilityAmount, receiver, account } = args
     const plan: TransactionPlanItem[] = []
 
@@ -1935,7 +1991,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.account - Account entity; used for chainId, owner, and positions (to resolve assets and eligibility)
    * @returns Array of transaction plan items (optional approval + EVC batch). Throws if asset differs between fromVault and liabilityVault; use planRepayWithSwap for cross-asset.
    */
-  planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlanItem[] {
+  planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlan {
     const { liabilityVault, liabilityAmount, receiver, fromVault, fromAccount, account } = args
     const plan: TransactionPlanItem[] = []
 
@@ -2002,7 +2058,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.account - Account entity; used for chainId and positions (to compute isMax and maxWithdraw)
    * @returns Array of transaction plan items (EVC batch: withdraw, swap, verify/repay). Throws if positions not found or liability is zero.
    */
-  planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlanItem[] {
+  planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlan {
     const { swapQuote, account } = args
     const plan: TransactionPlanItem[] = []
 
@@ -2039,7 +2095,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.account - Account entity; used for chainId and positions (to determine isMax and whether to enable collateral on destination)
    * @returns Array of transaction plan items (EVC batch: withdraw, swap, verify/skim, optional enable/disable collateral)
    */
-  planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlanItem[] {
+  planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlan {
     const { swapQuote, account } = args
     const plan: TransactionPlanItem[] = []
 
@@ -2078,7 +2134,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.account - Account entity; used for chainId and controller state (enableController, isMax, disableControllerOnMax)
    * @returns Array of transaction plan items (EVC batch: enableController, borrow, swap, verify/repay, optional disableController)
    */
-  planSwapDebt(args: PlanSwapDebtArgs): TransactionPlanItem[] {
+  planSwapDebt(args: PlanSwapDebtArgs): TransactionPlan {
     const { swapQuote, account } = args
     const plan: TransactionPlanItem[] = []
 
@@ -2118,7 +2174,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.disableCollateralFrom - If true, disables the vault as collateral for `from` when it was enabled
    * @returns Array of transaction plan items (EVC batch; no approvals needed)
    */
-  planTransfer(args: PlanTransferArgs): TransactionPlanItem[] {
+  planTransfer(args: PlanTransferArgs): TransactionPlan {
     const { vault, to, amount, from, account, enableCollateralTo, disableCollateralFrom } = args
     const plan: TransactionPlanItem[] = []
 
@@ -2152,7 +2208,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.account - Account entity; used for chainId and controller state (enableController for `to` if needed)
    * @returns Array of transaction plan items (EVC batch: optional enableController + pullDebt)
    */
-  planPullDebt(args: PlanPullDebtArgs): TransactionPlanItem[] {
+  planPullDebt(args: PlanPullDebtArgs): TransactionPlan {
     const { vault, amount, from, to, account } = args
     const plan: TransactionPlanItem[] = []
 
@@ -2188,7 +2244,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.account - Account entity; used for chainId, owner, and collateral/controller state
    * @returns Array of transaction plan items (optional approval + EVC batch). Throws if swapQuote.accountIn !== swapQuote.accountOut.
    */
-  planMultiplyWithSwap(args: PlanMultiplyWithSwapArgs): TransactionPlanItem[] {
+  planMultiplyWithSwap(args: PlanMultiplyWithSwapArgs): TransactionPlan {
     const {
       collateralVault,
       collateralAmount,
@@ -2266,7 +2322,7 @@ export class ExecutionService implements IExecutionService {
    * @param args.account - Account entity; used for chainId, owner, and collateral/controller state
    * @returns Array of transaction plan items (optional approval + EVC batch)
    */
-  planMultiplySameAsset(args: PlanMultiplySameAssetArgs): TransactionPlanItem[] {
+  planMultiplySameAsset(args: PlanMultiplySameAssetArgs): TransactionPlan {
     const {
       collateralVault,
       collateralAmount,

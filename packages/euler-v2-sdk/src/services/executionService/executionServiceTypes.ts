@@ -88,7 +88,7 @@ export type EncodeLiquidationArgs = {
 }
  
 export type ResolveRequiredApprovalsWithWalletArgs = {
-  plan: TransactionPlanItem[]
+  plan: TransactionPlan
   chainId: number
   wallet: Wallet
   usePermit2?: boolean
@@ -96,7 +96,7 @@ export type ResolveRequiredApprovalsWithWalletArgs = {
 }
 
 export type ResolveRequiredApprovalsArgs = {
-  plan: TransactionPlanItem[]
+  plan: TransactionPlan
   chainId: number
   account: Address
   usePermit2?: boolean
@@ -301,6 +301,8 @@ export type EVCBatchItems = {
 }
 
 export type TransactionPlanItem = RequiredApproval | EVCBatchItems
+
+export type TransactionPlan = TransactionPlanItem[]
 
 // Plan function argument types
 export type PlanDepositArgs = {
