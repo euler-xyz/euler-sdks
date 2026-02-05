@@ -66,7 +66,7 @@ async function liquidationExample() {
   console.log("\n📋 Step 1: Violator creating leveraged position...");
 
   // Fetch violator account
-  let violatorAccountData = await sdk.accountService.fetchAccount(mainnet.id, violatorAccount.address);
+  let violatorAccountData = await sdk.accountService.fetchAccountBasic(mainnet.id, violatorAccount.address);
 
   // Calculate max borrow amount
   // We'll borrow close to max to make it risky
@@ -99,14 +99,14 @@ async function liquidationExample() {
   await executePlan(resolvedViolatorPlan, sdk, walletClient2);
 
   // Fetch updated violator account
-  const violatorSubAccountAfterBorrow = await sdk.accountService.fetchSubAccount(
+  const violatorSubAccountAfterBorrow = await sdk.accountService.fetchSubAccountBasic(
     mainnet.id,
     VIOLATOR_SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
   );
 
   const violatorPosition = violatorSubAccountAfterBorrow?.positions.find(
-    (p) => p.vault === EULER_PRIME_USDT_VAULT
+    (p) => p.vaultAddress === EULER_PRIME_USDT_VAULT
   );
   const actualBorrowed = violatorPosition?.borrowed ?? 0n;
   console.log(`✓ Violator borrowed ${actualBorrowed / parseUnits("1", 6)} USDT`);
@@ -123,7 +123,7 @@ async function liquidationExample() {
   // ============================================================================
   console.log("\n📋 Step 3: Checking violator account health and checking if liquidatable...");
 
-  const updatedViolatorSubAccount = await sdk.accountService.fetchSubAccount(
+  const updatedViolatorSubAccount = await sdk.accountService.fetchSubAccountBasic(
     mainnet.id,
     VIOLATOR_SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
@@ -147,7 +147,7 @@ async function liquidationExample() {
   console.log("\n📋 Step 4: Liquidator performing liquidation...");
 
   // Fetch liquidator account
-  let liquidatorAccountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
+  let liquidatorAccountData = await sdk.accountService.fetchAccountBasic(mainnet.id, account.address);
 
   // Plan liquidation
   const liquidationPlan = sdk.executionService.planLiquidation({
@@ -176,13 +176,13 @@ async function liquidationExample() {
   await executePlan(resolvedLiquidationPlan, sdk);
 
 
-  const finalViolatorSubAccount = await sdk.accountService.fetchSubAccount(
+  const finalViolatorSubAccount = await sdk.accountService.fetchSubAccountBasic(
     mainnet.id,
     VIOLATOR_SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
   );
 
-  const finalLiquidatorSubAccount = await sdk.accountService.fetchSubAccount(
+  const finalLiquidatorSubAccount = await sdk.accountService.fetchSubAccountBasic(
     mainnet.id,
     LIQUIDATOR_SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]

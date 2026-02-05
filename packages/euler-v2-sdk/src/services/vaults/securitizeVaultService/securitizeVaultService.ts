@@ -61,6 +61,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     _chainId: number,
     _perspectives: (StandardSecuritizeCollateralPerspectives | Address)[]
   ): Promise<Address[]> {
+    // TODO fix this
     return [];
   }
 

@@ -39,7 +39,7 @@ import { EVCAccountInfo, VaultAccountInfo, AccountLiquidityInfo } from "./accoun
   }
 
   return {
-    vault: liquidityInfo.vault,
+    vaultAddress: liquidityInfo.vault,
     unitOfAccount: liquidityInfo.unitOfAccount,
     daysToLiquidation,
     liabilityValue,
@@ -65,7 +65,7 @@ export function convertVaultAccountInfoToAccountPosition(vaultAccountInfo: Vault
 
   return {
     account: vaultAccountInfo.account,
-    vault: vaultAccountInfo.vault,
+    vaultAddress: vaultAccountInfo.vault,
     asset: vaultAccountInfo.asset,
     shares: vaultAccountInfo.shares,
     assets: vaultAccountInfo.assets,

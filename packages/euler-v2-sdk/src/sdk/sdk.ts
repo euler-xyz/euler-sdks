@@ -1,3 +1,4 @@
+import type { IVaultEntity } from "../entities/Account.js";
 import { IAccountService } from "../services/accountService/index.js";
 import { IDeploymentService } from "../services/deploymentService/index.js";
 import { IEVaultService } from "../services/vaults/eVaultService/index.js";
@@ -14,10 +15,8 @@ import { ISwapService } from "../services/swapService/index.js";
 import { IExecutionService } from "../services/executionService/index.js";
 import { IWalletService } from "../services/walletService/index.js";
 
-export interface EulerSDKOptions<
-  TVaultEntity = VaultMetaEntity
-> {
-  accountService: IAccountService;
+export interface EulerSDKOptions<TVaultEntity extends IVaultEntity = VaultMetaEntity> {
+  accountService: IAccountService<TVaultEntity>;
   walletService: IWalletService;
   eVaultService: IEVaultService;
   eulerEarnService: IEulerEarnService;
@@ -31,8 +30,8 @@ export interface EulerSDKOptions<
   executionService: IExecutionService;
 }
 
-export class EulerSDK<TVaultEntity = VaultMetaEntity> {
-  public readonly accountService: IAccountService;
+export class EulerSDK<TVaultEntity extends IVaultEntity = VaultMetaEntity> {
+  public readonly accountService: IAccountService<TVaultEntity>;
   public readonly walletService: IWalletService;
   public readonly eVaultService: IEVaultService;
   public readonly eulerEarnService: IEulerEarnService;

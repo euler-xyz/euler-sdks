@@ -103,7 +103,6 @@ export class VaultMetaService<TEntity = VaultMetaEntity>
     );
 
     const factoryToService = this.getFactoryToServiceMap(chainId);
-    console.log('factoryToService: ', factoryToService);
     const map = new Map<Address, RegisteredVaultService<TEntity>>();
     for (const { id, factory } of results) {
       const service = factoryToService.get(getAddress(factory));

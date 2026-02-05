@@ -21,8 +21,8 @@ const sdk = await buildSDK({
   }
 });
 
-// Fetch account data
-const account = await sdk.accountService.fetchAccount(mainnet.id, userAddress);
+// Fetch account data (use fetchAccount for vault entities in positions; fetchAccountBasic for execution plans)
+const account = await sdk.accountService.fetchAccountBasic(mainnet.id, userAddress);
 
 // Fetch vault information
 const vault = await sdk.eVaultService.fetchVault(mainnet.id, vaultAddress);
@@ -111,31 +111,38 @@ Manages account data including positions, collateral, and debt across sub-accoun
 
 #### Key Methods
 
-**`fetchAccount(chainId: number, address: Address): Promise<Account>`**
+**`fetchAccount(chainId: number, address: Address): Promise<Account<Address | TVaultEntity>>`**
 
-Fetches all account data including sub-accounts and their positions.
+Fetches account data and resolves vault refs in positions and liquidity collaterals to full vault entities. Use when you need vault entities (e.g. EVault, EulerEarn) on the account.
+
+**`fetchAccountBasic(chainId: number, address: Address): Promise<Account<Address>>`**
+
+Fetches account data with vault refs as addresses only (no vault entity resolution). Use when passing the account to the execution service or when vault entities are not needed.
 
 ```typescript
 const account = await sdk.accountService.fetchAccount(mainnet.id, userAddress);
 
-// Access positions
+// Access positions (vault may be Address or vault entity in positions/liquidity)
 const position = account.getPosition(subAccountAddress, vaultAddress);
-console.log('Collateral:', position?.collateralValue);
 console.log('Debt:', position?.borrowed);
 
-// Check enabled collaterals
-const subAccount = account.subAccounts[0];
-console.log('Enabled collaterals:', subAccount.enabledCollaterals);
-console.log('Controller:', subAccount.enabledControllers[0]);
+// Check enabled collaterals (always addresses)
+const subAccount = account.getSubAccount(subAccountAddress);
+console.log('Enabled collaterals:', subAccount?.enabledCollaterals);
+console.log('Controller:', subAccount?.enabledControllers[0]);
 ```
 
-**`fetchSubAccount(chainId: number, subAccount: Address, vaults?: Address[]): Promise<SubAccount | undefined>`**
+**`fetchSubAccount(chainId: number, subAccount: Address, vaults?: Address[]): Promise<SubAccount<Address | TVaultEntity> | undefined>`**
 
-Fetches a specific sub-account's data.
+Fetches a sub-account with vault refs in positions/liquidity resolved to vault entities.
+
+**`fetchSubAccountBasic(chainId: number, subAccount: Address, vaults?: Address[]): Promise<SubAccount<Address> | undefined>`**
+
+Fetches a sub-account with vault refs as addresses only.
 
 ```typescript
-const subAccount = await sdk.accountService.fetchSubAccount(
-  mainnet.id, 
+const subAccount = await sdk.accountService.fetchSubAccountBasic(
+  mainnet.id,
   subAccountAddress,
   [vaultAddress]
 );

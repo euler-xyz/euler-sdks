@@ -65,7 +65,7 @@ async function pullDebtExample() {
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
-  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address);
+  let accountData = await sdk.accountService.fetchAccountBasic(mainnet.id, account.address);
 
   // Step 1: Create debt position in sub-account 1
   console.log('\n=== Step 1: Create Debt Position in Sub-Account 1 ===');
@@ -97,12 +97,12 @@ async function pullDebtExample() {
   await executePlan(borrowPlan, sdk);
 
   // Fetch updated sub-accounts after borrow
-  let subAccount1 = await sdk.accountService.fetchSubAccount(
+  let subAccount1 = await sdk.accountService.fetchSubAccountBasic(
     mainnet.id,
     SUB_ACCOUNT_1_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
   );
-  let subAccount2 = await sdk.accountService.fetchSubAccount(
+  let subAccount2 = await sdk.accountService.fetchSubAccountBasic(
     mainnet.id,
     SUB_ACCOUNT_2_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
@@ -141,12 +141,12 @@ async function pullDebtExample() {
   await executePlan(depositPlan, sdk);
 
   // Fetch updated sub-accounts after deposit
-  subAccount1 = await sdk.accountService.fetchSubAccount(
+  subAccount1 = await sdk.accountService.fetchSubAccountBasic(
     mainnet.id,
     SUB_ACCOUNT_1_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
   );
-  subAccount2 = await sdk.accountService.fetchSubAccount(
+  subAccount2 = await sdk.accountService.fetchSubAccountBasic(
     mainnet.id,
     SUB_ACCOUNT_2_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
@@ -176,12 +176,12 @@ async function pullDebtExample() {
   await executePlan(pullDebtPlan, sdk);
 
   // Fetch the updated sub-accounts and log the result
-  subAccount1 = await sdk.accountService.fetchSubAccount(
+  subAccount1 = await sdk.accountService.fetchSubAccountBasic(
     mainnet.id,
     SUB_ACCOUNT_1_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
   );
-  subAccount2 = await sdk.accountService.fetchSubAccount(
+  subAccount2 = await sdk.accountService.fetchSubAccountBasic(
     mainnet.id,
     SUB_ACCOUNT_2_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]

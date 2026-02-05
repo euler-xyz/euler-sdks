@@ -27,13 +27,13 @@ import {
 } from "../services/vaults/vaultMetaService/index.js";
 import { VaultType } from "../utils/types.js";
 import type { VaultTypeSubgraphDataSourceConfig } from "../services/vaults/vaultMetaService/index.js";
+import type { IVaultEntity } from "../entities/Account.js";
 
-
-export interface BuildSDKOverrides<TVaultEntity = VaultMetaEntity> {
+export interface BuildSDKOverrides<TVaultEntity extends IVaultEntity = VaultMetaEntity> {
   abiService?: IABIService;
   deploymentService?: IDeploymentService;
   providerService?: IProviderService;
-  accountService?: IAccountService;
+  accountService?: IAccountService<TVaultEntity>;
   walletService?: IWalletService;
   eVaultService?: IEVaultService;
   eulerEarnService?: IEulerEarnService;
@@ -44,7 +44,7 @@ export interface BuildSDKOverrides<TVaultEntity = VaultMetaEntity> {
   executionService?: IExecutionService;
 }
 
-export interface BuildSDKOptions<TVaultEntity = VaultMetaEntity> {
+export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultMetaEntity> {
   rpcUrls: Record<number, string>;
   accountVaultsDataSourceConfig?: AccountVaultsSubgraphDataSourceConfig;
   vaultTypeDataSourceConfig?: VaultTypeSubgraphDataSourceConfig;
@@ -55,7 +55,7 @@ export interface BuildSDKOptions<TVaultEntity = VaultMetaEntity> {
   servicesOverrides?: BuildSDKOverrides<TVaultEntity>;
 }
 
-export async function buildSDK<TVaultEntity = VaultMetaEntity>(
+export async function buildSDK<TVaultEntity extends IVaultEntity = VaultMetaEntity>(
   options: BuildSDKOptions<TVaultEntity>
 ): Promise<EulerSDK<TVaultEntity>> {
   const { rpcUrls, accountVaultsDataSourceConfig, vaultTypeDataSourceConfig, additionalVaultServices, eulerLabelsDataSourceConfig, swapServiceConfig, servicesOverrides } = options;
@@ -65,19 +65,13 @@ export async function buildSDK<TVaultEntity = VaultMetaEntity>(
   const deploymentService = servicesOverrides?.deploymentService ?? await DeploymentService.build(defaultDeploymentServiceConfig);
   const providerService = servicesOverrides?.providerService ?? new ProviderService(rpcUrls);
 
-  // Build account service if not overridden
-  let accountService: IAccountService;
-  if (servicesOverrides?.accountService) {
-    accountService = servicesOverrides.accountService;
-  } else {
-    const accountVaultsDataSource = new AccountVaultsSubgraphDataSource(accountVaultsDataSourceConfig || defaultAccountVaultsDataSourceConfig);
-    const accountDataSource = new AccountOnchainDataSource(
-      providerService as ProviderService,
-      deploymentService as DeploymentService,
-      accountVaultsDataSource
-    );
-    accountService = new AccountService(accountDataSource);
-  }
+  // Account data source is built early so it can be used when building account service (after vault meta service)
+  const accountVaultsDataSource = new AccountVaultsSubgraphDataSource(accountVaultsDataSourceConfig || defaultAccountVaultsDataSourceConfig);
+  const accountDataSource = new AccountOnchainDataSource(
+    providerService as ProviderService,
+    deploymentService as DeploymentService,
+    accountVaultsDataSource
+  );
 
   // Build wallet service if not overridden
   let walletService: IWalletService;
@@ -145,15 +139,26 @@ export async function buildSDK<TVaultEntity = VaultMetaEntity>(
       vaultTypeDataSourceConfig ?? defaultVaultTypeDataSourceConfig
     );
     const allVaultServices: VaultServiceEntry<TVaultEntity>[] = [
-      { type: VaultType.EVault, service: eVaultService as RegisteredVaultService<TVaultEntity> },
-      { type: VaultType.Earn, service: eulerEarnService as RegisteredVaultService<TVaultEntity> },
-      { type: VaultType.SecuritizeCollateral, service: securitizeVaultService as RegisteredVaultService<TVaultEntity> },
+      { type: VaultType.EVault, service: eVaultService as unknown as RegisteredVaultService<TVaultEntity> },
+      { type: VaultType.Earn, service: eulerEarnService as unknown as RegisteredVaultService<TVaultEntity> },
+      {
+        type: VaultType.SecuritizeCollateral,
+        service: securitizeVaultService as unknown as RegisteredVaultService<TVaultEntity>,
+      },
       ...(additionalVaultServices ?? []),
     ];
     vaultMetaService = new VaultMetaService<TVaultEntity>({
       vaultTypeDataSource,
       vaultServices: allVaultServices,
     });
+  }
+
+  // Build account service if not overridden (requires vaultMetaService for fetchAccountWithVaults / fetchVaults)
+  let accountService: IAccountService<TVaultEntity>;
+  if (servicesOverrides?.accountService) {
+    accountService = servicesOverrides.accountService;
+  } else {
+    accountService = new AccountService<TVaultEntity>(accountDataSource, vaultMetaService);
   }
 
   // Build eulerLabels service if not overridden

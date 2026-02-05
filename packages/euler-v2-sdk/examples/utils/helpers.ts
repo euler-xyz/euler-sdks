@@ -172,7 +172,7 @@ function truncateAddress(address: Address): string {
  * Log a position with formatting, skipping default/empty values
  */
 async function logPosition(chainId: number, position: AccountPosition, sdk: EulerSDK, indent: string = "    ") {
-  const vaultMeta = await fetchVaultMetadata(chainId, position.vault, position.asset, sdk);
+  const vaultMeta = await fetchVaultMetadata(chainId, position.vaultAddress, position.asset, sdk);
   
   console.log(`${indent}Vault:       ${vaultMeta.name}`);
   console.log(`${indent}Asset:       ${vaultMeta.assetSymbol}`);
@@ -198,7 +198,7 @@ async function logPosition(chainId: number, position: AccountPosition, sdk: Eule
  * Log the difference between two positions, skipping default/empty values unless they changed
  */
 async function logPositionDiff(chainId: number, before: AccountPosition, after: AccountPosition, sdk: EulerSDK, indent: string = "    ") {
-  const vaultMeta = await fetchVaultMetadata(chainId, after.vault, after.asset, sdk);
+  const vaultMeta = await fetchVaultMetadata(chainId, after.vaultAddress, after.asset, sdk);
   
   console.log(`${indent}Vault:       ${vaultMeta.name}`);
   console.log(`${indent}Asset:       ${vaultMeta.assetSymbol}`);
@@ -268,7 +268,7 @@ function hasPositionData(position: AccountPosition): boolean {
  * Find a position in a sub-account by vault address
  */
 function findPosition(subAccount: SubAccount, vaultAddress: Address): AccountPosition | undefined {
-  return subAccount.positions.find(p => isAddressEqual(p.vault, vaultAddress));
+  return subAccount.positions.find(p => isAddressEqual(p.vaultAddress, vaultAddress));
 }
 
 /**
@@ -304,18 +304,18 @@ async function formatVaultList(chainId: number, vaultAddresses: Address[], sdk: 
  * @param sdk - SDK instance for fetching metadata
  * 
  * @example
- * const accountBefore = await sdk.accountService.fetchAccount(chainId, address);
+ * const accountBefore = await sdk.accountService.fetchAccountBasic(chainId, address);
  * await executePlan(plan, sdk);
- * const accountAfter = await sdk.accountService.fetchAccount(chainId, address);
+ * const accountAfter = await sdk.accountService.fetchAccountBasic(chainId, address);
  * await logOperationResult(chainId, accountBefore, accountAfter, sdk);
  * 
  * @example
  * // Or with sub-accounts only
- * const accountBefore = await sdk.accountService.fetchAccount(chainId, address);
+ * const accountBefore = await sdk.accountService.fetchAccountBasic(chainId, address);
  * await executePlan(plan, sdk);
  * const subAccounts = await Promise.all([
- *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr1, vaults),
- *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr2, vaults),
+ *   sdk.accountService.fetchSubAccountBasic(chainId, subAccountAddr1, vaults),
+  *   sdk.accountService.fetchSubAccountBasic(chainId, subAccountAddr2, vaults),
  * ]);
  * await logOperationResult(chainId, accountBefore, subAccounts, sdk);
  */
@@ -431,8 +431,8 @@ export async function logOperationResult(chainId: number, before: Account, after
       }
 
       // Check for position changes
-      const beforePositions = new Map(beforeSub.positions.map(p => [p.vault, p]));
-      const afterPositions = new Map(afterSub.positions.map(p => [p.vault, p]));
+      const beforePositions = new Map(beforeSub.positions.map(p => [p.vaultAddress, p]));
+      const afterPositions = new Map(afterSub.positions.map(p => [p.vaultAddress, p]));
       const allVaults = new Set([...beforePositions.keys(), ...afterPositions.keys()]);
 
       const positionChanges: { type: 'new' | 'changed' | 'removed', vault: Address, before?: AccountPosition, after?: AccountPosition }[] = [];
