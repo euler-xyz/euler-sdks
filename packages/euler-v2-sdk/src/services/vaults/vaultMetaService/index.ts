@@ -5,6 +5,8 @@ export {
   type RegisteredVaultService,
   type VaultMetaEntity,
   type VaultMetaPerspective,
+  type VaultServiceEntry,
+  type VaultTypeString,
 } from "./vaultMetaService.js";
 export type {
   IVaultTypeDataSource,

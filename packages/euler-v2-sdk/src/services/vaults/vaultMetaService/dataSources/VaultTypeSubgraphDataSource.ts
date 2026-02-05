@@ -8,7 +8,7 @@ export interface VaultTypeSubgraphDataSourceConfig {
   subgraphURLs: Record<number, string>;
 }
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 1000;
 
 export class VaultTypeSubgraphDataSource implements IVaultTypeDataSource {
   constructor(
@@ -28,7 +28,7 @@ export class VaultTypeSubgraphDataSource implements IVaultTypeDataSource {
     }
     const ids = vaultAddresses.map((a) => a.toLowerCase());
     const query = `query VaultFactories($ids: [String!]!) {
-      vaults(where: { id_in: $ids }) {
+      vaults(first: ${PAGE_SIZE}, where: { id_in: $ids }) {
         id
         factory
       }

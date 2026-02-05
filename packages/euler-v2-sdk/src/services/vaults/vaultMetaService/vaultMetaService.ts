@@ -1,6 +1,7 @@
 import { Address, getAddress } from "viem";
 import { EVault } from "../../../entities/EVault.js";
 import { EulerEarn } from "../../../entities/EulerEarn.js";
+import { SecuritizeCollateralVault } from "../../../entities/SecuritizeCollateralVault.js";
 import type { IVaultService } from "../index.js";
 import type { IVaultTypeDataSource } from "./dataSources/IVaultTypeDataSource.js";
 import { StandardEVaultPerspectives } from "../eVaultService/index.js";
@@ -11,8 +12,8 @@ export type VaultMetaPerspective =
   | StandardEVaultPerspectives
   | Address;
 
-/** Default union of vault entity types (EVault, Euler Earn). Extend this when registering additional vault services. */
-export type VaultMetaEntity = EVault | EulerEarn;
+/** Default union of vault entity types (EVault, Euler Earn, SecuritizeCollateral). Extend this when registering additional vault services. */
+export type VaultMetaEntity = EVault | EulerEarn | SecuritizeCollateralVault;
 
 /** A vault service that can be registered with VaultMetaService. Use TEntity to extend the meta service return type (e.g. EVault | EulerEarn | CustomVault). */
 export type RegisteredVaultService<TEntity = VaultMetaEntity> = IVaultService<
@@ -20,37 +21,60 @@ export type RegisteredVaultService<TEntity = VaultMetaEntity> = IVaultService<
   string
 >;
 
+/** Extendable vault type: built-in (e.g. VaultType.EVault, VaultType.Earn) or custom string when adding vault services with a type. */
+export type VaultTypeString = string;
+
+/** A vault service optionally tagged with a type for getFactoryByType(chainId, type). Use { type, service } when adding custom vault types. */
+export type VaultServiceEntry<TEntity = VaultMetaEntity> =
+  | RegisteredVaultService<TEntity>
+  | { type: VaultTypeString; service: RegisteredVaultService<TEntity> };
+
 /** Meta vault service; TEntity is the union of all registered vault entity types (default EVault | EulerEarn). Extend with a wider union when registering more services. */
 export interface IVaultMetaService<TEntity = VaultMetaEntity>
   extends Omit<IVaultService<TEntity, VaultMetaPerspective>, "fetchVault"> {
-  /** Register an additional vault service; its return type is included in this meta service's TEntity. */
-  registerVaultService(service: RegisteredVaultService<TEntity>): void;
+  /** Register a vault service; use { type, service } to make the type available to getFactoryByType(chainId, type). */
+  registerVaultService(entry: VaultServiceEntry<TEntity>): void;
   /** Fetches a single vault; returns undefined if the vault type is unknown (no matching registered service). */
   fetchVault(
     chainId: number,
     vault: Address
   ): Promise<TEntity | undefined>;
+  /** Returns the factory address for the given chain and vault type, or undefined if the type is not registered. */
+  getFactoryByType(chainId: number, type: VaultTypeString): Address | undefined;
 }
 
 export interface VaultMetaServiceConfig<TEntity = VaultMetaEntity> {
   vaultTypeDataSource: IVaultTypeDataSource;
-  /** Initial vault services; each must implement factory(chainId). More can be added via registerVaultService. */
-  vaultServices?: RegisteredVaultService<TEntity>[];
+  /** Initial vault services; each must implement factory(chainId). Use { type, service } to register a vault type for getFactoryByType(chainId, type). */
+  vaultServices?: VaultServiceEntry<TEntity>[];
 }
 
 export class VaultMetaService<TEntity = VaultMetaEntity>
   implements IVaultMetaService<TEntity> {
   private readonly vaultServicesList: RegisteredVaultService<TEntity>[] = [];
+  private readonly typeToService = new Map<string, RegisteredVaultService<TEntity>>();
 
   constructor(private readonly config: VaultMetaServiceConfig<TEntity>) {
     if (config.vaultServices?.length) {
-      this.vaultServicesList.push(...config.vaultServices);
+      for (const entry of config.vaultServices) {
+        if ("type" in entry && "service" in entry) {
+          this.typeToService.set(entry.type, entry.service);
+          this.vaultServicesList.push(entry.service);
+        } else {
+          this.vaultServicesList.push(entry as RegisteredVaultService<TEntity>);
+        }
+      }
     }
   }
 
-  /** Register an additional vault service; its return type is included in this meta service's TEntity. */
-  registerVaultService(service: RegisteredVaultService<TEntity>): void {
-    this.vaultServicesList.push(service);
+  /** Register a vault service; use { type, service } to make the type available to getFactoryByType(chainId, type). */
+  registerVaultService(entry: VaultServiceEntry<TEntity>): void {
+    if ("type" in entry && "service" in entry) {
+      this.typeToService.set(entry.type, entry.service);
+      this.vaultServicesList.push(entry.service);
+    } else {
+      this.vaultServicesList.push(entry as RegisteredVaultService<TEntity>);
+    }
   }
 
   private get vaultServices(): readonly RegisteredVaultService<TEntity>[] {
@@ -77,7 +101,9 @@ export class VaultMetaService<TEntity = VaultMetaEntity>
       chainId,
       vaultAddresses
     );
+
     const factoryToService = this.getFactoryToServiceMap(chainId);
+    console.log('factoryToService: ', factoryToService);
     const map = new Map<Address, RegisteredVaultService<TEntity>>();
     for (const { id, factory } of results) {
       const service = factoryToService.get(getAddress(factory));
@@ -93,6 +119,11 @@ export class VaultMetaService<TEntity = VaultMetaEntity>
       throw new Error("VaultMetaService has no registered vault services");
     }
     return this.vaultServices[0]!.factory(chainId);
+  }
+
+  getFactoryByType(chainId: number, type: string): Address | undefined {
+    const service = this.typeToService.get(type);
+    return service?.factory(chainId);
   }
 
   async fetchVault(

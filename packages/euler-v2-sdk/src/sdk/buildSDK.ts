@@ -10,6 +10,8 @@ import { WalletOnchainDataSource } from "../services/walletService/dataSources/w
 import { EVaultService, IEVaultService } from "../services/vaults/eVaultService/index.js";
 import { EulerEarnService, IEulerEarnService } from "../services/vaults/eulerEarnService/index.js";
 import { EulerEarnOnchainDataSource } from "../services/vaults/eulerEarnService/dataSources/eulerEarnOnchainDataSource.js";
+import { SecuritizeVaultService, ISecuritizeVaultService } from "../services/vaults/securitizeVaultService/index.js";
+import { SecuritizeVaultOnchainDataSource } from "../services/vaults/securitizeVaultService/dataSources/securitizeVaultOnchainDataSource.js";
 import { EulerLabelsService, EulerLabelsURLDataSource, EulerLabelsURLDataSourceConfig, IEulerLabelsService } from "../services/eulerLabelsService/index.js";
 import { SwapService, ISwapService, SwapServiceConfig } from "../services/swapService/index.js";
 import { ExecutionService, IExecutionService } from "../services/executionService/index.js";
@@ -21,7 +23,9 @@ import {
   VaultTypeSubgraphDataSource,
   type RegisteredVaultService,
   type VaultMetaEntity,
+  type VaultServiceEntry,
 } from "../services/vaults/vaultMetaService/index.js";
+import { VaultType } from "../utils/types.js";
 import type { VaultTypeSubgraphDataSourceConfig } from "../services/vaults/vaultMetaService/index.js";
 
 
@@ -33,6 +37,7 @@ export interface BuildSDKOverrides<TVaultEntity = VaultMetaEntity> {
   walletService?: IWalletService;
   eVaultService?: IEVaultService;
   eulerEarnService?: IEulerEarnService;
+  securitizeVaultService?: ISecuritizeVaultService;
   vaultMetaService?: IVaultMetaService<TVaultEntity>;
   eulerLabelsService?: IEulerLabelsService;
   swapService?: ISwapService;
@@ -43,8 +48,8 @@ export interface BuildSDKOptions<TVaultEntity = VaultMetaEntity> {
   rpcUrls: Record<number, string>;
   accountVaultsDataSourceConfig?: AccountVaultsSubgraphDataSourceConfig;
   vaultTypeDataSourceConfig?: VaultTypeSubgraphDataSourceConfig;
-  /** Additional vault services to register on vaultMetaService. When provided, pass the extended entity type as the generic so fetchVault/fetchVaults return the full union (e.g. buildSDK<VaultMetaEntity | CustomVault>({ ..., additionalVaultServices: [customService] })). */
-  additionalVaultServices?: RegisteredVaultService<TVaultEntity>[];
+  /** Additional vault services to register; use { type, service } to register a custom vault type for getFactoryByType(chainId, type). Pass the extended entity type as the generic (e.g. buildSDK<VaultMetaEntity | CustomVault>({ ..., additionalVaultServices: [{ type: 'CustomVault', service: customService }] })). */
+  additionalVaultServices?: VaultServiceEntry<TVaultEntity>[];
   eulerLabelsDataSourceConfig?: EulerLabelsURLDataSourceConfig;
   swapServiceConfig?: SwapServiceConfig;
   servicesOverrides?: BuildSDKOverrides<TVaultEntity>;
@@ -116,6 +121,21 @@ export async function buildSDK<TVaultEntity = VaultMetaEntity>(
     );
   }
 
+  // Build securitizeVault service if not overridden
+  let securitizeVaultService: ISecuritizeVaultService;
+  if (servicesOverrides?.securitizeVaultService) {
+    securitizeVaultService = servicesOverrides.securitizeVaultService;
+  } else {
+    const securitizeVaultDataSource = new SecuritizeVaultOnchainDataSource(
+      providerService as ProviderService,
+      deploymentService as DeploymentService
+    );
+    securitizeVaultService = new SecuritizeVaultService(
+      securitizeVaultDataSource,
+      deploymentService as DeploymentService
+    );
+  }
+
   // Build vault meta service (vault type subgraph + eVault + eulerEarn + additionalVaultServices); type reflects extended entity when additionalVaultServices is used with buildSDK<TExtendedEntity>
   let vaultMetaService: IVaultMetaService<TVaultEntity>;
   if (servicesOverrides?.vaultMetaService) {
@@ -124,14 +144,15 @@ export async function buildSDK<TVaultEntity = VaultMetaEntity>(
     const vaultTypeDataSource = new VaultTypeSubgraphDataSource(
       vaultTypeDataSourceConfig ?? defaultVaultTypeDataSourceConfig
     );
-    const allVaultServices = [
-      eVaultService,
-      eulerEarnService,
+    const allVaultServices: VaultServiceEntry<TVaultEntity>[] = [
+      { type: VaultType.EVault, service: eVaultService as RegisteredVaultService<TVaultEntity> },
+      { type: VaultType.Earn, service: eulerEarnService as RegisteredVaultService<TVaultEntity> },
+      { type: VaultType.SecuritizeCollateral, service: securitizeVaultService as RegisteredVaultService<TVaultEntity> },
       ...(additionalVaultServices ?? []),
     ];
     vaultMetaService = new VaultMetaService<TVaultEntity>({
       vaultTypeDataSource,
-      vaultServices: allVaultServices as RegisteredVaultService<TVaultEntity>[],
+      vaultServices: allVaultServices,
     });
   }
 
@@ -155,6 +176,7 @@ export async function buildSDK<TVaultEntity = VaultMetaEntity>(
     walletService,
     eVaultService,
     eulerEarnService,
+    securitizeVaultService,
     vaultMetaService,
     deploymentService,
     providerService,
