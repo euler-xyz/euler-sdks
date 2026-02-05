@@ -1,5 +1,6 @@
 import { Address } from "viem";
 import { ERC4626Data, Token, VaultType } from "../utils/types.js";
+import { ERC4626Vault, IERC4626Vault, VIRTUAL_DEPOSIT_AMOUNT } from "./ERC4626Vault.js";
 
 
 export interface EulerEarnAllocationCap {
@@ -32,10 +33,7 @@ export interface EulerEarnGovernance {
   pendingGuardianValidAt: number;
 }
 
-export interface IEulerEarn extends ERC4626Data {
-  chainId: number;
-  address: Address;
-
+export interface IEulerEarn extends IERC4626Vault {
   lostAssets: bigint;
   availableAssets: bigint;
   performanceFee: number;
@@ -48,15 +46,7 @@ export interface IEulerEarn extends ERC4626Data {
   timestamp: number;
 }
 
-export class EulerEarn implements IEulerEarn {
-  chainId: number;
-  address: Address;
-
-  shares: Token;
-  asset: Token;
-  totalShares: bigint;
-  totalAssets: bigint;
-
+export class EulerEarn extends ERC4626Vault implements IEulerEarn {
   lostAssets: bigint;
   availableAssets: bigint;
   performanceFee: number;
@@ -69,14 +59,7 @@ export class EulerEarn implements IEulerEarn {
   timestamp: number;
 
   constructor(args: IEulerEarn) {
-    this.chainId = args.chainId;
-    this.address = args.address;
-
-    this.shares = args.shares;
-    this.asset = args.asset;
-    this.totalShares = args.totalShares;
-    this.totalAssets = args.totalAssets;
-
+    super(args);
     this.lostAssets = args.lostAssets;
     this.availableAssets = args.availableAssets;
     this.performanceFee = args.performanceFee;
@@ -91,6 +74,20 @@ export class EulerEarn implements IEulerEarn {
 
   isPendingRemoval(strategy: EulerEarnStrategyInfo): boolean {
     return this.strategies.some((s) => s.address === strategy.address && s.removableAt > this.timestamp);
+  }
+
+  /** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
+  override convertToAssets(shares: bigint): bigint {
+    const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
+    const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
+    return (shares * totalAssetsAdjusted) / totalSharesAdjusted;
+  }
+
+  /** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
+  override convertToShares(assets: bigint): bigint {
+    const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
+    const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
+    return (assets * totalSharesAdjusted) / totalAssetsAdjusted;
   }
 }
 

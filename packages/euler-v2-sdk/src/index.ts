@@ -1,3 +1,4 @@
+export * from "./entities/ERC4626Vault.js";
 export * from "./entities/EVault.js";
 export * from "./entities/Account.js";
 export * from "./entities/Wallet.js";

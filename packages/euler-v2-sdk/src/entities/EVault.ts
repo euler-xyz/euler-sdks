@@ -4,8 +4,9 @@
 import { Address, Hex } from "viem";
 import { OracleInfo, OraclePrice } from "../utils/oracle.js";
 import { InterestRateModelType } from "../services/vaults/eVaultService/dataSources/eVaultLensTypes.js";
-import { ERC4626Data, Token } from "../utils/types.js";
+import { Token } from "../utils/types.js";
 import { IRMParams } from "../utils/irm.js";
+import { ERC4626Vault, IERC4626Vault, VIRTUAL_DEPOSIT_AMOUNT } from "./ERC4626Vault.js";
 
 export type EVaultHookedOperations = {
   deposit: boolean;
@@ -76,10 +77,7 @@ export interface EVaultCollateralRamping {
   rampDuration: bigint;
 }
 
-export interface IEVault extends ERC4626Data {
-  chainId: number;
-  address: Address;
-  
+export interface IEVault extends IERC4626Vault {
   unitOfAccount: Token;
 
   totalCash: bigint;
@@ -105,15 +103,7 @@ export interface IEVault extends ERC4626Data {
   timestamp: number;
 }
 
-export class EVault implements IEVault {
-  chainId: number;
-  address: Address;
-
-  shares: Token;
-  asset: Token;
-  totalShares: bigint;
-  totalAssets: bigint;
-
+export class EVault extends ERC4626Vault implements IEVault {
   unitOfAccount: Token;
   totalCash: bigint;
   totalBorrowed: bigint;
@@ -134,14 +124,7 @@ export class EVault implements IEVault {
   timestamp: number;
 
   constructor(args: IEVault) {
-    this.chainId = args.chainId;
-    this.address = args.address;
-
-    this.shares = args.shares;
-    this.asset = args.asset;
-    this.totalShares = args.totalShares;
-    this.totalAssets = args.totalAssets;
-
+    super(args);
     this.unitOfAccount = args.unitOfAccount;
     this.totalCash = args.totalCash;
     this.totalBorrowed = args.totalBorrowed;
@@ -160,5 +143,19 @@ export class EVault implements IEVault {
     this.evcCompatibleAsset = args.evcCompatibleAsset;
     this.liabilityPrice = args.liabilityPrice;
     this.timestamp = args.timestamp;
+  }
+
+  /** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
+  override convertToAssets(shares: bigint): bigint {
+    const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
+    const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
+    return (shares * totalAssetsAdjusted) / totalSharesAdjusted;
+  }
+
+  /** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
+  override convertToShares(assets: bigint): bigint {
+    const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
+    const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
+    return (assets * totalSharesAdjusted) / totalAssetsAdjusted;
   }
 }

@@ -1,6 +1,6 @@
 import { decodeOracleInfo, OracleInfo, OraclePrice } from "../../../../utils/oracle.js";
 import { IEVault, EVaultFees, EVaultHooks, EVaultCaps, EVaultLiquidation, InterestRates, InterestRateModel, EVaultCollateral, EVaultCollateralRamping, EVaultHookedOperations } from "../../../../entities/EVault.js";
-import { Token, BigFraction } from "../../../../utils/types.js";
+import { Token, BigFraction, VaultType } from "../../../../utils/types.js";
 import { VaultInfoFull, AssetPriceInfo, InterestRateModelType, InterestRateModelDetailedInfo } from "./eVaultLensTypes.js";
 import { formatUnits } from "viem";
 import { decodeIRMParams } from "../../../../utils/irm.js";
@@ -122,6 +122,7 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId:
   const liabilityPrice = convertAssetPriceInfoToOraclePrice(vaultInfo.liabilityPriceInfo);
 
   return {
+    type: VaultType.EVault,
     chainId,
     address: vaultInfo.vault,
     shares,
