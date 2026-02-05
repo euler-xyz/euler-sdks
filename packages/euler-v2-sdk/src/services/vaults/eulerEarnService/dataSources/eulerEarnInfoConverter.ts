@@ -73,7 +73,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo: EulerEarnVa
   });
 
   return {
-    type: VaultType.Earn,
+    type: VaultType.EulerEarn,
     chainId,
     address: vaultInfo.vault,
     shares,

@@ -162,7 +162,7 @@ Vault entities share a common base and a `type` string for discrimination:
 
 - **`ERC4626Vault`** – Base entity with `type`, `chainId`, `address`, `shares`, `asset`, `totalShares`, `totalAssets`. Implements **`IERC4626VaultConversion`** with 1:1 `convertToAssets(shares)` and `convertToShares(assets)`.
 - **`EVault`** – Extends `ERC4626Vault`; `type` is `VaultType.EVault`. Overrides conversion using `VIRTUAL_DEPOSIT_AMOUNT` (matches on-chain EVault logic).
-- **`EulerEarn`** – Extends `ERC4626Vault`; `type` is `VaultType.Earn`. Same conversion as EVault (virtual deposit).
+- **`EulerEarn`** – Extends `ERC4626Vault`; `type` is `VaultType.EulerEarn`. Same conversion as EVault (virtual deposit).
 
 Use `entity.type` to branch (e.g. `vault.type === VaultType.EVault`) or pass to `vaultMetaService.getFactoryByType(chainId, vault.type)`. Custom vault types use whatever `type` string you register with the meta service.
 
@@ -234,7 +234,7 @@ Fetches Euler Earn vault information.
 ```typescript
 const earnVault = await sdk.eulerEarnService.fetchVault(mainnet.id, earnVaultAddress);
 
-console.log('Vault type:', earnVault.type); // VaultType.Earn
+console.log('Vault type:', earnVault.type); // VaultType.EulerEarn
 console.log('Total assets:', earnVault.totalAssets);
 console.log('Strategy allocations:', earnVault.strategies);
 // Share/asset conversion (uses VIRTUAL_DEPOSIT)
@@ -264,7 +264,7 @@ Same as other vault services: `fetchVault`, `fetchVaults`, `fetchVerifiedVaultAd
 
 **`getFactoryByType(chainId: number, type: VaultTypeString): Address | undefined`**
 
-Returns the factory address for the given chain and vault type (e.g. `VaultType.EVault`, `VaultType.Earn`, or a custom type you registered). Returns `undefined` if the type is not registered.
+Returns the factory address for the given chain and vault type (e.g. `VaultType.EVault`, `VaultType.EulerEarn`, or a custom type you registered). Returns `undefined` if the type is not registered.
 
 ```typescript
 import { VaultType } from 'euler-v2-sdk';
@@ -292,9 +292,9 @@ Vault types are extendable in the same way as custom services. Use **`VaultServi
 Pass extra services as `VaultServiceEntry[]`; use `{ type, service }` to register a custom vault type. Use the generic `buildSDK<TVaultEntity>` so that `vaultMetaService.fetchVault` / `fetchVaults` return the extended union type.
 
 ```typescript
-import { buildSDK, type VaultMetaEntity, type VaultServiceEntry } from 'euler-v2-sdk';
+import { buildSDK, type VaultEntity, type VaultServiceEntry } from 'euler-v2-sdk';
 
-type ExtendedVaultEntity = VaultMetaEntity | CustomVault;
+type ExtendedVaultEntity = VaultEntity | CustomVault;
 
 const sdk = await buildSDK<ExtendedVaultEntity>({
   rpcUrls: { [mainnet.id]: 'https://...' },
@@ -328,7 +328,7 @@ When you add a custom vault type:
 ```typescript
 import {
   VaultMetaService,
-  type VaultMetaEntity,
+  type VaultEntity,
   type VaultServiceEntry,
   type VaultTypeString,
 } from 'euler-v2-sdk';
@@ -339,13 +339,13 @@ interface CustomVault {
   // ... your fields
 }
 
-type ExtendedVaultEntity = VaultMetaEntity | CustomVault;
+type ExtendedVaultEntity = VaultEntity | CustomVault;
 
 const meta = new VaultMetaService<ExtendedVaultEntity>({
   vaultTypeDataSource: myVaultTypeDataSource,
   vaultServices: [
     { type: 'EVault', service: eVaultService },
-    { type: 'Earn', service: eulerEarnService },
+    { type: 'EulerEarn', service: eulerEarnService },
     { type: 'CustomVault', service: customVaultService },
   ] as VaultServiceEntry<ExtendedVaultEntity>[],
 });
@@ -354,7 +354,7 @@ const vault = await meta.fetchVault(chainId, addr); // Type: ExtendedVaultEntity
 const factory = meta.getFactoryByType(chainId, 'CustomVault'); // Address | undefined
 ```
 
-If you only use `registerVaultService` at runtime and don’t construct `VaultMetaService<ExtendedVaultEntity>` yourself, TypeScript will still infer the default `VaultMetaEntity`; the runtime behavior includes all registered services.
+If you only use `registerVaultService` at runtime and don’t construct `VaultMetaService<ExtendedVaultEntity>` yourself, TypeScript will still infer the default `VaultEntity`; the runtime behavior includes all registered services.
 
 ### Swap Service
 

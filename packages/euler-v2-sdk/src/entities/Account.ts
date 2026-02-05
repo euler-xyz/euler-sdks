@@ -1,6 +1,6 @@
 import { Address, getAddress, isAddressEqual } from "viem";
 import { getSubAccountAddress } from "../utils/subAccounts.js";
-import type { VaultMetaEntity } from "../services/vaults/vaultMetaService/index.js";
+import type { VaultEntity } from "../services/vaults/vaultMetaService/index.js";
 
 export type AddressPrefix = `0x${string}`; // expects a hex string representation of 19 bytes
 
@@ -11,7 +11,7 @@ export interface IHasVaultAddress {
 
 /** Default vault entity type (EVault | EulerEarn | SecuritizeCollateralVault). Use as IVaultEntity in the SDK. */
 
-export type IVaultEntity = VaultMetaEntity;
+export type IVaultEntity = VaultEntity;
 
 
 export interface AssetValue {

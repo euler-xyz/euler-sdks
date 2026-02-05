@@ -24,3 +24,4 @@ export * from "./services/swapService/index.js";
 
 // Utils
 export * from "./utils/subAccounts.js";
+export * from "./utils/types.js";

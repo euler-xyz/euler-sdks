@@ -22,7 +22,7 @@ export interface BigFraction {
 
 export enum VaultType {
   EVault = 'EVault',
-  Earn = 'Earn',
+  EulerEarn = 'EulerEarn',
   SecuritizeCollateral = 'SecuritizeCollateral',
   Unknown = 'Unknown',
 }

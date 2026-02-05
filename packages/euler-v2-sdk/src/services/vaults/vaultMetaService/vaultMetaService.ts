@@ -2,6 +2,7 @@ import { Address, getAddress } from "viem";
 import { EVault } from "../../../entities/EVault.js";
 import { EulerEarn } from "../../../entities/EulerEarn.js";
 import { SecuritizeCollateralVault } from "../../../entities/SecuritizeCollateralVault.js";
+import { VaultType } from "../../../utils/types.js";
 import type { IVaultService } from "../index.js";
 import type { IVaultTypeDataSource } from "./dataSources/IVaultTypeDataSource.js";
 import { StandardEVaultPerspectives } from "../eVaultService/index.js";
@@ -13,24 +14,39 @@ export type VaultMetaPerspective =
   | Address;
 
 /** Default union of vault entity types (EVault, Euler Earn, SecuritizeCollateral). Extend this when registering additional vault services. */
-export type VaultMetaEntity = EVault | EulerEarn | SecuritizeCollateralVault;
+export type VaultEntity = EVault | EulerEarn | SecuritizeCollateralVault;
+
+/** Type guard: narrows VaultEntity to EVault. */
+export function isEVault(v: VaultEntity): v is EVault {
+  return v.type === VaultType.EVault;
+}
+
+/** Type guard: narrows VaultEntity to EulerEarn. */
+export function isEulerEarn(v: VaultEntity): v is EulerEarn {
+  return v.type === VaultType.EulerEarn;
+}
+
+/** Type guard: narrows VaultEntity to SecuritizeCollateralVault. */
+export function isSecuritizeCollateralVault(v: VaultEntity): v is SecuritizeCollateralVault {
+  return v.type === VaultType.SecuritizeCollateral;
+}
 
 /** A vault service that can be registered with VaultMetaService. Use TEntity to extend the meta service return type (e.g. EVault | EulerEarn | CustomVault). */
-export type RegisteredVaultService<TEntity = VaultMetaEntity> = IVaultService<
+export type RegisteredVaultService<TEntity = VaultEntity> = IVaultService<
   TEntity,
   string
 >;
 
-/** Extendable vault type: built-in (e.g. VaultType.EVault, VaultType.Earn) or custom string when adding vault services with a type. */
+/** Extendable vault type: built-in (e.g. VaultType.EVault, VaultType.EulerEarn) or custom string when adding vault services with a type. */
 export type VaultTypeString = string;
 
 /** A vault service optionally tagged with a type for getFactoryByType(chainId, type). Use { type, service } when adding custom vault types. */
-export type VaultServiceEntry<TEntity = VaultMetaEntity> =
+export type VaultServiceEntry<TEntity = VaultEntity> =
   | RegisteredVaultService<TEntity>
   | { type: VaultTypeString; service: RegisteredVaultService<TEntity> };
 
 /** Meta vault service; TEntity is the union of all registered vault entity types (default EVault | EulerEarn). Extend with a wider union when registering more services. */
-export interface IVaultMetaService<TEntity = VaultMetaEntity>
+export interface IVaultMetaService<TEntity = VaultEntity>
   extends Omit<IVaultService<TEntity, VaultMetaPerspective>, "fetchVault"> {
   /** Register a vault service; use { type, service } to make the type available to getFactoryByType(chainId, type). */
   registerVaultService(entry: VaultServiceEntry<TEntity>): void;
@@ -43,13 +59,13 @@ export interface IVaultMetaService<TEntity = VaultMetaEntity>
   getFactoryByType(chainId: number, type: VaultTypeString): Address | undefined;
 }
 
-export interface VaultMetaServiceConfig<TEntity = VaultMetaEntity> {
+export interface VaultMetaServiceConfig<TEntity = VaultEntity> {
   vaultTypeDataSource: IVaultTypeDataSource;
   /** Initial vault services; each must implement factory(chainId). Use { type, service } to register a vault type for getFactoryByType(chainId, type). */
   vaultServices?: VaultServiceEntry<TEntity>[];
 }
 
-export class VaultMetaService<TEntity = VaultMetaEntity>
+export class VaultMetaService<TEntity = VaultEntity>
   implements IVaultMetaService<TEntity> {
   private readonly vaultServicesList: RegisteredVaultService<TEntity>[] = [];
   private readonly typeToService = new Map<string, RegisteredVaultService<TEntity>>();

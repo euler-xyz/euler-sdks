@@ -1,9 +1,12 @@
 export {
   VaultMetaService,
+  isEVault,
+  isEulerEarn,
+  isSecuritizeCollateralVault,
   type IVaultMetaService,
   type VaultMetaServiceConfig,
   type RegisteredVaultService,
-  type VaultMetaEntity,
+  type VaultEntity,
   type VaultMetaPerspective,
   type VaultServiceEntry,
   type VaultTypeString,
