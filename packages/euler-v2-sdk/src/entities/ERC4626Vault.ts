@@ -12,12 +12,15 @@ export interface IERC4626Vault extends ERC4626Data {
   asset: Token;
   totalShares: bigint;
   totalAssets: bigint;
+}
 
+/** Interface for ERC4626 share/asset conversion methods (not part of data shape). */
+export interface IERC4626VaultConversion {
   convertToAssets(shares: bigint): bigint;
   convertToShares(assets: bigint): bigint;
 }
 
-export class ERC4626Vault implements IERC4626Vault {
+export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
   type: string;
   chainId: number;
   address: Address;

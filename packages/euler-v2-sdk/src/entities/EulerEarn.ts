@@ -1,6 +1,6 @@
 import { Address } from "viem";
 import { ERC4626Data, Token, VaultType } from "../utils/types.js";
-import { ERC4626Vault, IERC4626Vault, VIRTUAL_DEPOSIT_AMOUNT } from "./ERC4626Vault.js";
+import { ERC4626Vault, IERC4626Vault, IERC4626VaultConversion, VIRTUAL_DEPOSIT_AMOUNT } from "./ERC4626Vault.js";
 
 
 export interface EulerEarnAllocationCap {
@@ -46,7 +46,7 @@ export interface IEulerEarn extends IERC4626Vault {
   timestamp: number;
 }
 
-export class EulerEarn extends ERC4626Vault implements IEulerEarn {
+export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626VaultConversion {
   lostAssets: bigint;
   availableAssets: bigint;
   performanceFee: number;

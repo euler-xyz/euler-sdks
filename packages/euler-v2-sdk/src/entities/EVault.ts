@@ -6,7 +6,7 @@ import { OracleInfo, OraclePrice } from "../utils/oracle.js";
 import { InterestRateModelType } from "../services/vaults/eVaultService/dataSources/eVaultLensTypes.js";
 import { Token } from "../utils/types.js";
 import { IRMParams } from "../utils/irm.js";
-import { ERC4626Vault, IERC4626Vault, VIRTUAL_DEPOSIT_AMOUNT } from "./ERC4626Vault.js";
+import { ERC4626Vault, IERC4626Vault, IERC4626VaultConversion, VIRTUAL_DEPOSIT_AMOUNT } from "./ERC4626Vault.js";
 
 export type EVaultHookedOperations = {
   deposit: boolean;
@@ -103,7 +103,7 @@ export interface IEVault extends IERC4626Vault {
   timestamp: number;
 }
 
-export class EVault extends ERC4626Vault implements IEVault {
+export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConversion {
   unitOfAccount: Token;
   totalCash: bigint;
   totalBorrowed: bigint;
