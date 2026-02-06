@@ -13,9 +13,11 @@ import { EulerEarnOnchainDataSource } from "../services/vaults/eulerEarnService/
 import { SecuritizeVaultService, ISecuritizeVaultService } from "../services/vaults/securitizeVaultService/index.js";
 import { SecuritizeVaultOnchainDataSource } from "../services/vaults/securitizeVaultService/dataSources/securitizeVaultOnchainDataSource.js";
 import { EulerLabelsService, EulerLabelsURLDataSource, EulerLabelsURLDataSourceConfig, IEulerLabelsService } from "../services/eulerLabelsService/index.js";
+import { TokenlistService, ITokenlistService } from "../services/tokenlistService/index.js";
 import { SwapService, ISwapService, SwapServiceConfig } from "../services/swapService/index.js";
 import { ExecutionService, IExecutionService } from "../services/executionService/index.js";
-import { defaultAccountVaultsDataSourceConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLDataSourceConfig, defaultSwapServiceConfig, defaultVaultTypeDataSourceConfig } from "./defaultConfig.js";
+import { defaultAccountVaultsDataSourceConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLDataSourceConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeDataSourceConfig } from "./defaultConfig.js";
+import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
 import { EVaultOnchainDataSource } from "../services/vaults/eVaultService/dataSources/eVaultOnchainDataSource.js";
 import {
   VaultMetaService,
@@ -40,6 +42,7 @@ export interface BuildSDKOverrides<TVaultEntity extends IVaultEntity = VaultEnti
   securitizeVaultService?: ISecuritizeVaultService;
   vaultMetaService?: IVaultMetaService<TVaultEntity>;
   eulerLabelsService?: IEulerLabelsService;
+  tokenlistService?: ITokenlistService;
   swapService?: ISwapService;
   executionService?: IExecutionService;
 }
@@ -51,6 +54,7 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   /** Additional vault services to register; use { type, service } to register a custom vault type for getFactoryByType(chainId, type). Pass the extended entity type as the generic (e.g. buildSDK<VaultEntity | CustomVault>({ ..., additionalVaultServices: [{ type: 'CustomVault', service: customService }] })). */
   additionalVaultServices?: VaultServiceEntry<TVaultEntity>[];
   eulerLabelsDataSourceConfig?: EulerLabelsURLDataSourceConfig;
+  tokenlistServiceConfig?: TokenlistServiceConfig;
   swapServiceConfig?: SwapServiceConfig;
   servicesOverrides?: BuildSDKOverrides<TVaultEntity>;
 }
@@ -58,7 +62,7 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
 export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   options: BuildSDKOptions<TVaultEntity>
 ): Promise<EulerSDK<TVaultEntity>> {
-  const { rpcUrls, accountVaultsDataSourceConfig, vaultTypeDataSourceConfig, additionalVaultServices, eulerLabelsDataSourceConfig, swapServiceConfig, servicesOverrides } = options;
+  const { rpcUrls, accountVaultsDataSourceConfig, vaultTypeDataSourceConfig, additionalVaultServices, eulerLabelsDataSourceConfig, tokenlistServiceConfig, swapServiceConfig, servicesOverrides } = options;
 
   // Build core services (these may be needed for data sources even if overridden)
   const abiService = servicesOverrides?.abiService ?? new ABIService();
@@ -167,6 +171,9 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
     return new EulerLabelsService(eulerLabelsDataSource);
   })();
 
+  // Build tokenlist service if not overridden
+  const tokenlistService = servicesOverrides?.tokenlistService ?? new TokenlistService(tokenlistServiceConfig || defaultTokenlistServiceConfig);
+
   // Build swap service if not overridden
   const swapService = servicesOverrides?.swapService ?? new SwapService(swapServiceConfig || defaultSwapServiceConfig);
 
@@ -187,6 +194,7 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
     providerService,
     abiService,
     eulerLabelsService,
+    tokenlistService,
     swapService,
     executionService,
   });

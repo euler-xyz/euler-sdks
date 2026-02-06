@@ -3,6 +3,7 @@ import { AccountVaultsSubgraphDataSourceConfig } from "../services/accountServic
 import type { VaultTypeSubgraphDataSourceConfig } from "../services/vaults/vaultMetaService/index.js"
 import { EulerLabelsURLDataSourceConfig } from "../services/eulerLabelsService/index.js"
 import type { SwapServiceConfig } from "../services/swapService/index.js"
+import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js"
 
 export const defaultAccountVaultsDataSourceConfig: AccountVaultsSubgraphDataSourceConfig = {
   subgraphURLs: {
@@ -45,4 +46,8 @@ export const defaultSwapServiceConfig: SwapServiceConfig = {
 
 export const defaultDeploymentServiceConfig: DeploymentServiceConfig = {
   deploymentsUrl: process.env.DEPLOYMENTS_URL || "https://raw.githubusercontent.com/euler-xyz/euler-interfaces/refs/heads/master/EulerChains.json"
+}
+
+export const defaultTokenlistServiceConfig: TokenlistServiceConfig = {
+  apiBaseUrl: process.env.EULER_API_URL || "https://index.euler.finance",
 } 

@@ -3,7 +3,6 @@ export * from "./entities/EVault.js";
 export * from "./entities/Account.js";
 export * from "./entities/Wallet.js";
 export * from "./entities/EulerEarn.js";
-export * from "./entities/SecuritizeCollateralVault.js";
 export * from "./sdk/sdk.js";
 export * from "./sdk/buildSDK.js";
 
@@ -14,8 +13,8 @@ export * from "./services/walletService/index.js";
 export * from "./services/deploymentService/index.js";
 export * from "./services/vaults/eulerEarnService/index.js";
 export * from "./services/eulerLabelsService/index.js";
+export * from "./services/tokenlistService/index.js";
 export * from "./services/vaults/eVaultService/index.js";
-export * from "./services/vaults/securitizeVaultService/index.js";
 export * from "./services/vaults/vaultMetaService/index.js";
 export * from "./services/vaults/index.js";
 export * from "./services/executionService/index.js";
@@ -24,4 +23,3 @@ export * from "./services/swapService/index.js";
 
 // Utils
 export * from "./utils/subAccounts.js";
-export * from "./utils/types.js";

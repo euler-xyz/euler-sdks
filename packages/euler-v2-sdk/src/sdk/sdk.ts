@@ -11,6 +11,7 @@ import {
 import { IProviderService } from "../services/providerService/index.js";
 import { IABIService } from "../services/abiService/index.js";
 import { IEulerLabelsService } from "../services/eulerLabelsService/index.js";
+import { ITokenlistService } from "../services/tokenlistService/index.js";
 import { ISwapService } from "../services/swapService/index.js";
 import { IExecutionService } from "../services/executionService/index.js";
 import { IWalletService } from "../services/walletService/index.js";
@@ -26,6 +27,7 @@ export interface EulerSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   providerService: IProviderService;
   abiService: IABIService;
   eulerLabelsService: IEulerLabelsService;
+  tokenlistService: ITokenlistService;
   swapService: ISwapService;
   executionService: IExecutionService;
 }
@@ -41,6 +43,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
   public readonly providerService: IProviderService;
   public readonly abiService: IABIService;
   public readonly eulerLabelsService: IEulerLabelsService;
+  public readonly tokenlistService: ITokenlistService;
   public readonly swapService: ISwapService;
   public readonly executionService: IExecutionService;
 
@@ -55,6 +58,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
     this.providerService = options.providerService;
     this.abiService = options.abiService;
     this.eulerLabelsService = options.eulerLabelsService;
+    this.tokenlistService = options.tokenlistService;
     this.swapService = options.swapService;
     this.executionService = options.executionService;
   }
