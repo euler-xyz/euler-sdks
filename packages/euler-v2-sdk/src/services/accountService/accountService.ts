@@ -68,29 +68,8 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     private readonly vaultMetaService: IVaultMetaService<TVaultEntity>
   ) {}
 
-  // `address` in this context can be any sub-account, not just the main account.
-  async fetchAccountBasic(chainId: number, address: Address): Promise<Account<never>> {
-    const accountData = await this.dataSource.fetchAccount(chainId, address);
-    if (!accountData)
-      return new Account({
-        chainId,
-        owner: address,
-        isLockdownMode: false,
-        isPermitDisabledMode: false,
-        subAccounts: {},
-      });
 
-    return new Account(accountData);
-  }
-
-  async fetchSubAccountBasic(
-    chainId: number,
-    subAccount: Address,
-    vaults?: Address[]
-  ): Promise<SubAccount | undefined> {
-    return this.dataSource.fetchSubAccount(chainId, subAccount, vaults);
-  }
-
+  // address should be the main account address (e.g. connected EOA)
   async fetchAccount(chainId: number, address: Address): Promise<Account<TVaultEntity>> {
     const account = await this.fetchAccountBasic(chainId, address);
     return this.fetchVaults(account);
@@ -113,6 +92,28 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     });
     tempAccount.resolveVaults(entities);
     return tempAccount.getSubAccount(getAddress(sa.account));
+  }
+
+  async fetchAccountBasic(chainId: number, address: Address): Promise<Account<never>> {
+    const accountData = await this.dataSource.fetchAccount(chainId, address);
+    if (!accountData)
+      return new Account({
+        chainId,
+        owner: address,
+        isLockdownMode: false,
+        isPermitDisabledMode: false,
+        subAccounts: {},
+      });
+
+    return new Account(accountData);
+  }
+
+  async fetchSubAccountBasic(
+    chainId: number,
+    subAccount: Address,
+    vaults?: Address[]
+  ): Promise<SubAccount | undefined> {
+    return this.dataSource.fetchSubAccount(chainId, subAccount, vaults);
   }
 
   async fetchVaults(account: Account<never>): Promise<Account<TVaultEntity>> {
