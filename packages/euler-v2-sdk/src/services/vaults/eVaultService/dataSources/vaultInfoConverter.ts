@@ -85,10 +85,7 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId:
   // Convert collaterals
   const collaterals: EVaultCollateral[] = vaultInfo.collateralLTVInfo.map((ltvInfo, idx) => {
     const priceInfo = vaultInfo.collateralPriceInfo[idx];
-    const price = priceInfo ? convertAssetPriceInfoToOraclePrice(priceInfo) : {
-      priceMid: { numerator: 0n, denominator: 1n },
-      priceBid: { numerator: 0n, denominator: 1n },
-      priceAsk: { numerator: 0n, denominator: 1n },
+    const oraclePriceRaw = priceInfo ? convertAssetPriceInfoToOraclePrice(priceInfo) : {
       amountIn: 0n,
       amountOutMid: 0n,
       amountOutBid: 0n,
@@ -104,7 +101,7 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId:
       address: ltvInfo.collateral,
       borrowLTV: convertFrom1e4(ltvInfo.borrowLTV),
       liquidationLTV: convertFrom1e4(ltvInfo.liquidationLTV),
-      price,
+      oraclePriceRaw,
     };
 
     if (isRamping) {
@@ -119,7 +116,7 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId:
   });
 
   // Convert liability price
-  const liabilityPrice = convertAssetPriceInfoToOraclePrice(vaultInfo.liabilityPriceInfo);
+  const oraclePriceRaw = convertAssetPriceInfoToOraclePrice(vaultInfo.liabilityPriceInfo);
 
   return {
     type: VaultType.EVault,
@@ -145,7 +142,7 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId:
     interestRates,
     interestRateModel,
     collaterals,
-    liabilityPrice,
+    oraclePriceRaw,
     timestamp: Number(vaultInfo.timestamp),
   };
 }

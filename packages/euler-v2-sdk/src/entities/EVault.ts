@@ -68,7 +68,7 @@ export interface EVaultCollateral {
   borrowLTV: number;
   liquidationLTV: number;
   ramping?: EVaultCollateralRamping;
-  price: OraclePrice;
+  oraclePriceRaw: OraclePrice; // shouldn't be used directly, use EVault price getters instead
 }
 
 export interface EVaultCollateralRamping {
@@ -99,7 +99,7 @@ export interface IEVault extends IERC4626Vault {
 
   evcCompatibleAsset: boolean;
 
-  liabilityPrice: OraclePrice;
+  oraclePriceRaw: OraclePrice; // shouldn't be used directly, use EVault price getters instead
   timestamp: number;
 }
 
@@ -120,7 +120,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
   interestRateModel: InterestRateModel;
   collaterals: EVaultCollateral[];
   evcCompatibleAsset: boolean;
-  liabilityPrice: OraclePrice;
+  oraclePriceRaw: OraclePrice;
   timestamp: number;
 
   constructor(args: IEVault) {
@@ -141,7 +141,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
     this.interestRateModel = args.interestRateModel;
     this.collaterals = args.collaterals;
     this.evcCompatibleAsset = args.evcCompatibleAsset;
-    this.liabilityPrice = args.liabilityPrice;
+    this.oraclePriceRaw = args.oraclePriceRaw;
     this.timestamp = args.timestamp;
   }
 
