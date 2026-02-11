@@ -15,6 +15,7 @@ import { ITokenlistService } from "../services/tokenlistService/index.js";
 import { ISwapService } from "../services/swapService/index.js";
 import { IExecutionService } from "../services/executionService/index.js";
 import { IWalletService } from "../services/walletService/index.js";
+import { IPriceService } from "../services/priceService/index.js";
 
 export interface EulerSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity> {
   accountService: IAccountService<TVaultEntity>;
@@ -30,6 +31,7 @@ export interface EulerSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   tokenlistService: ITokenlistService;
   swapService: ISwapService;
   executionService: IExecutionService;
+  priceService: IPriceService;
 }
 
 export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
@@ -46,6 +48,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
   public readonly tokenlistService: ITokenlistService;
   public readonly swapService: ISwapService;
   public readonly executionService: IExecutionService;
+  public readonly priceService: IPriceService;
 
   constructor(options: EulerSDKOptions<TVaultEntity>) {
     this.accountService = options.accountService;
@@ -61,5 +64,6 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
     this.tokenlistService = options.tokenlistService;
     this.swapService = options.swapService;
     this.executionService = options.executionService;
+    this.priceService = options.priceService;
   }
 }

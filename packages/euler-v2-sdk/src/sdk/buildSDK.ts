@@ -16,6 +16,7 @@ import { EulerLabelsService, EulerLabelsURLDataSource, EulerLabelsURLDataSourceC
 import { TokenlistService, ITokenlistService } from "../services/tokenlistService/index.js";
 import { SwapService, ISwapService, SwapServiceConfig } from "../services/swapService/index.js";
 import { ExecutionService, IExecutionService } from "../services/executionService/index.js";
+import { PriceService, IPriceService, type BackendConfig, PricingBackendClient } from "../services/priceService/index.js";
 import { defaultAccountVaultsDataSourceConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLDataSourceConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeDataSourceConfig } from "./defaultConfig.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
 import { EVaultOnchainDataSource } from "../services/vaults/eVaultService/dataSources/eVaultOnchainDataSource.js";
@@ -45,6 +46,7 @@ export interface BuildSDKOverrides<TVaultEntity extends IVaultEntity = VaultEnti
   tokenlistService?: ITokenlistService;
   swapService?: ISwapService;
   executionService?: IExecutionService;
+  priceService?: IPriceService;
 }
 
 export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity> {
@@ -56,13 +58,14 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   eulerLabelsDataSourceConfig?: EulerLabelsURLDataSourceConfig;
   tokenlistServiceConfig?: TokenlistServiceConfig;
   swapServiceConfig?: SwapServiceConfig;
+  backendConfig?: BackendConfig;
   servicesOverrides?: BuildSDKOverrides<TVaultEntity>;
 }
 
 export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   options: BuildSDKOptions<TVaultEntity>
 ): Promise<EulerSDK<TVaultEntity>> {
-  const { rpcUrls, accountVaultsDataSourceConfig, vaultTypeDataSourceConfig, additionalVaultServices, eulerLabelsDataSourceConfig, tokenlistServiceConfig, swapServiceConfig, servicesOverrides } = options;
+  const { rpcUrls, accountVaultsDataSourceConfig, vaultTypeDataSourceConfig, additionalVaultServices, eulerLabelsDataSourceConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, servicesOverrides } = options;
 
   // Build core services (these may be needed for data sources even if overridden)
   const abiService = servicesOverrides?.abiService ?? new ABIService();
@@ -183,6 +186,16 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
     walletService as WalletService,
   );
 
+  // Build price service if not overridden
+  const priceService = servicesOverrides?.priceService ?? (() => {
+    const backendClient = backendConfig ? new PricingBackendClient(backendConfig) : undefined;
+    return new PriceService(
+      providerService as ProviderService,
+      deploymentService as DeploymentService,
+      backendClient,
+    );
+  })();
+
   return new EulerSDK<TVaultEntity>({
     accountService,
     walletService,
@@ -197,5 +210,6 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
     tokenlistService,
     swapService,
     executionService,
+    priceService,
   });
 }

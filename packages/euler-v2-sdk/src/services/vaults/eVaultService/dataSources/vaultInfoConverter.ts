@@ -2,7 +2,7 @@ import { decodeOracleInfo, OracleInfo, OraclePrice } from "../../../../utils/ora
 import { IEVault, EVaultFees, EVaultHooks, EVaultCaps, EVaultLiquidation, InterestRates, InterestRateModel, EVaultCollateral, EVaultCollateralRamping, EVaultHookedOperations } from "../../../../entities/EVault.js";
 import { Token, VaultType } from "../../../../utils/types.js";
 import { VaultInfoFull, AssetPriceInfo, InterestRateModelType, InterestRateModelDetailedInfo } from "./eVaultLensTypes.js";
-import { formatUnits } from "viem";
+import { formatUnits, type Hex } from "viem";
 import { decodeIRMParams } from "../../../../utils/irm.js";
 
 /**
@@ -86,6 +86,8 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId:
   const collaterals: EVaultCollateral[] = vaultInfo.collateralLTVInfo.map((ltvInfo, idx) => {
     const priceInfo = vaultInfo.collateralPriceInfo[idx];
     const oraclePriceRaw = priceInfo ? convertAssetPriceInfoToOraclePrice(priceInfo) : {
+      queryFailure: true,
+      queryFailureReason: "0x" as Hex,
       amountIn: 0n,
       amountOutMid: 0n,
       amountOutBid: 0n,
@@ -175,6 +177,8 @@ function convertInterestRateModel(irmInfo: InterestRateModelDetailedInfo): Inter
 
 function convertAssetPriceInfoToOraclePrice(priceInfo: AssetPriceInfo): OraclePrice {
   return {
+    queryFailure: priceInfo.queryFailure,
+    queryFailureReason: priceInfo.queryFailureReason,
     amountIn: priceInfo.amountIn,
     amountOutMid: priceInfo.amountOutMid,
     amountOutBid: priceInfo.amountOutBid,

@@ -14,6 +14,8 @@ export type OracleDetailedInfo = {
 
 
 export interface OraclePrice {
+  queryFailure: boolean;
+  queryFailureReason: Hex;
   amountIn: bigint;
   amountOutMid: bigint;
   amountOutBid: bigint;
