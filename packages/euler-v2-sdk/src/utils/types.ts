@@ -15,11 +15,6 @@ export interface Token {
   logoURI?: string;
 }
 
-export interface BigFraction {
-  numerator: bigint;
-  denominator: bigint;
-}
-
 export enum VaultType {
   EVault = 'EVault',
   EulerEarn = 'EulerEarn',

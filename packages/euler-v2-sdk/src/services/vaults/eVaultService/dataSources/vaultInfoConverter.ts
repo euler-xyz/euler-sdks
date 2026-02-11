@@ -1,6 +1,6 @@
 import { decodeOracleInfo, OracleInfo, OraclePrice } from "../../../../utils/oracle.js";
 import { IEVault, EVaultFees, EVaultHooks, EVaultCaps, EVaultLiquidation, InterestRates, InterestRateModel, EVaultCollateral, EVaultCollateralRamping, EVaultHookedOperations } from "../../../../entities/EVault.js";
-import { Token, BigFraction, VaultType } from "../../../../utils/types.js";
+import { Token, VaultType } from "../../../../utils/types.js";
 import { VaultInfoFull, AssetPriceInfo, InterestRateModelType, InterestRateModelDetailedInfo } from "./eVaultLensTypes.js";
 import { formatUnits } from "viem";
 import { decodeIRMParams } from "../../../../utils/irm.js";
@@ -177,23 +177,7 @@ function convertInterestRateModel(irmInfo: InterestRateModelDetailedInfo): Inter
 }
 
 function convertAssetPriceInfoToOraclePrice(priceInfo: AssetPriceInfo): OraclePrice {
-  const priceMid: BigFraction = {
-    numerator: priceInfo.amountOutMid,
-    denominator: priceInfo.amountIn,
-  };
-  const priceBid: BigFraction = {
-    numerator: priceInfo.amountOutBid,
-    denominator: priceInfo.amountIn,
-  };
-  const priceAsk: BigFraction = {
-    numerator: priceInfo.amountOutAsk,
-    denominator: priceInfo.amountIn,
-  };
-
   return {
-    priceMid,
-    priceBid,
-    priceAsk,
     amountIn: priceInfo.amountIn,
     amountOutMid: priceInfo.amountOutMid,
     amountOutBid: priceInfo.amountOutBid,

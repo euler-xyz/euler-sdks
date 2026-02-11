@@ -1,5 +1,4 @@
 import { decodeAbiParameters, type Address, type Hex, isHex, toHex } from 'viem'
-import { BigFraction } from './types.js'
 
 export type OracleInfo = {
   oracle: Address
@@ -15,9 +14,6 @@ export type OracleDetailedInfo = {
 
 
 export interface OraclePrice {
-  priceMid: BigFraction;
-  priceBid: BigFraction;
-  priceAsk: BigFraction;
   amountIn: bigint;
   amountOutMid: bigint;
   amountOutBid: bigint;
