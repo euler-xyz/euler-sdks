@@ -33,9 +33,9 @@ import {
 } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executePlan } from "./utils/executor.js";
-import { printHeader, logOperationResult } from "./utils/helpers.js";
-import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "./utils/config.js";
+import { executePlan } from "../utils/executor.js";
+import { printHeader, logOperationResult } from "../utils/helpers.js";
+import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "../utils/config.js";
 import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
 
 // Inputs

@@ -38,8 +38,8 @@ import {
 import { mainnet } from "viem/chains";
 import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
 
-import { executePlan } from "./utils/executor.js";
-import { printHeader, logOperationResult } from "./utils/helpers.js";
+import { executePlan } from "../utils/executor.js";
+import { printHeader, logOperationResult } from "../utils/helpers.js";
 import { 
   rpcUrls,
   account,
@@ -50,7 +50,7 @@ import {
   EULER_PRIME_USDT_VAULT,
   USDT_ADDRESS,
   WETH_ADDRESS,
-} from "./utils/config.js";
+} from "../utils/config.js";
 
 // Inputs
 const COLLATERAL_AMOUNT = parseUnits("100", 6); // 100 USDC

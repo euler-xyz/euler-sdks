@@ -1,17 +1,22 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * DEPOSIT EXAMPLE
+ * MINT EXAMPLE
  * ═══════════════════════════════════════════════════════════════════════════
  * 
- * This example demonstrates how to deposit assets into an Euler vault and
- * enable them as collateral in a single transaction.
+ * This example demonstrates how to mint a specific amount of vault shares by
+ * depositing the required amount of underlying assets. The mint operation
+ * specifies the exact number of shares you want to receive.
  * 
  * OPERATION:
- *   • Deposit USDC into Euler Prime USDC Vault
+ *   • Mint exact amount of vault shares for USDC
  *   • Enable USDC as collateral for the sub-account
  * 
  * ASSETS & VAULTS:
  *   • USDC → Euler Prime USDC Vault (collateral enabled)
+ * 
+ * 💡 TIP - MINT vs DEPOSIT:
+ *   • Mint: You specify the exact number of shares you want to receive
+ *   • Deposit: You specify the exact amount of assets you want to deposit
  * 
  * 💡 TIP - USING EXISTING ACCOUNTS:
  *   • Set PRIVATE_KEY in .env to use an existing account on the fork
@@ -26,20 +31,21 @@ import {
 } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executePlan } from "./utils/executor.js";
-import { printHeader, logOperationResult } from "./utils/helpers.js";
-import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "./utils/config.js";
+import { executePlan } from "../utils/executor.js";
+import { printHeader, logOperationResult } from "../utils/helpers.js";
+import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "../utils/config.js";
 import { Account, buildSDK, getSubAccountAddress } from "euler-v2-sdk";
 
 // Inputs
-const DEPOSIT_AMOUNT = parseUnits("10", 6);
+const SHARES_TO_MINT = parseUnits("10", 6); // Mint 10 shares
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
+
 const ENABLE_COLLATERAL = true;
 const USE_PERMIT2 = true;
 const UNLIMITED_APPROVAL = true;
 
-async function depositExample() {
+async function mintExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
@@ -47,22 +53,22 @@ async function depositExample() {
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = await sdk.accountService.fetchAccountBasic(mainnet.id, account.address);
 
-  // Plan the deposit
-  let depositPlan = sdk.executionService.planDeposit({
+  // Plan the mint
+  let mintPlan = sdk.executionService.planMint({
     vault: EULER_PRIME_USDC_VAULT,
-    amount: DEPOSIT_AMOUNT,
+    shares: SHARES_TO_MINT,
     receiver: SUB_ACCOUNT_ADDRESS,
     account: accountData,
     asset: USDC_ADDRESS,
     enableCollateral: ENABLE_COLLATERAL,
+    // sharesToAssetsExchangeRateWad: parseUnits("1.2", 18), // use if unlimitedApproval = false
   });
 
-  console.log(`\n✓ Deposit plan created with ${depositPlan.length} step(s)`);
+  console.log(`\n✓ Mint plan created with ${mintPlan.length} step(s)`);
 
-  // Resolve approvals (fetches wallet data internally).
-  // This would normally be done in the executor logic, e.g. in executePlan, but for illustration we'll do it here.
-  depositPlan = await sdk.executionService.resolveRequiredApprovals({
-    plan: depositPlan,
+  // Resolve approvals (fetches wallet data internally)
+  mintPlan = await sdk.executionService.resolveRequiredApprovals({
+    plan: mintPlan,
     chainId: mainnet.id,
     account: account.address,
     usePermit2: USE_PERMIT2,
@@ -72,10 +78,9 @@ async function depositExample() {
   console.log(`✓ Approvals resolved, executing...`);
 
   // Execute the plan
-  await executePlan(depositPlan, sdk);
+  await executePlan(mintPlan, sdk);
 
   // Fetch the updated sub-account and log the result
-  // In tests the new sub-account will not be indexed by subgraph, so we need to fetch it manually
   const subAccount = await sdk.accountService.fetchSubAccountBasic(mainnet.id, SUB_ACCOUNT_ADDRESS, [EULER_PRIME_USDC_VAULT]);
   
   // Log the diff between before and after
@@ -85,9 +90,8 @@ async function depositExample() {
 // ============================================================================
 // Run the example
 // ============================================================================
-printHeader("DEPOSIT EXAMPLE");
-initBalances().then(() => depositExample()).catch((error) => {
+printHeader("MINT EXAMPLE");
+initBalances().then(() => mintExample()).catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });
-

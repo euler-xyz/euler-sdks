@@ -82,17 +82,6 @@ export interface IPriceService {
     collateralVault: ERC4626Vault
   ): Promise<PriceResult | undefined>;
 
-  // Layer 3: USD Values (async — tries backend first, falls back to on-chain)
-  getAssetUsdValue(
-    amount: bigint,
-    vault: ERC4626Vault
-  ): Promise<number | undefined>;
-  getCollateralUsdValue(
-    assetAmount: bigint,
-    liabilityVault: EVault,
-    collateralVault: ERC4626Vault
-  ): Promise<number | undefined>;
-
   // Display helpers
   formatAssetValue(
     amount: bigint,
@@ -117,99 +106,22 @@ export class PriceService implements IPriceService {
   // Layer 1: Raw Oracle Prices (Unit of Account)
   // -----------------------------------------------------------------------
 
-  /**
-   * Get raw oracle price for a vault's asset in the vault's unit of account.
-   * Uses oraclePriceRaw (liabilityPriceInfo from the vault lens).
-   */
   getAssetOraclePrice(vault: EVault): PriceResult | undefined {
-    const { oraclePriceRaw, unitOfAccount } = vault;
-    if (!oraclePriceRaw || !oraclePriceRaw.amountOutMid) return undefined;
-
-    const { amountOutMid, amountOutAsk, amountOutBid } = oraclePriceRaw;
-    const ask = amountOutAsk && amountOutAsk > 0n ? amountOutAsk : amountOutMid;
-    const bid = amountOutBid && amountOutBid > 0n ? amountOutBid : amountOutMid;
-
-    return {
-      amountOutMid,
-      amountOutAsk: ask,
-      amountOutBid: bid,
-      decimals: unitOfAccount.decimals,
-    };
+    return getAssetOraclePrice(vault);
   }
 
-  /**
-   * Get collateral share price from the liability vault's perspective.
-   * Returns the raw OraclePrice in the liability vault's unit of account.
-   */
   getCollateralShareOraclePrice(
     liabilityVault: EVault,
     collateralVault: ERC4626Vault
   ): OraclePrice | undefined {
-    const collateralAddress = getAddress(collateralVault.address);
-
-    const collateral = liabilityVault.collaterals.find(
-      (c) => getAddress(c.address) === collateralAddress
-    );
-
-    if (!collateral) return undefined;
-
-    const { oraclePriceRaw } = collateral;
-    // Treat zero amountOutMid with no meaningful bid/ask as "no price"
-    if (!oraclePriceRaw.amountOutMid && !oraclePriceRaw.amountOutAsk && !oraclePriceRaw.amountOutBid) {
-      return undefined;
-    }
-
-    return oraclePriceRaw;
+    return getCollateralShareOraclePrice(liabilityVault, collateralVault);
   }
 
-  /**
-   * Get collateral ASSET price from the liability vault's perspective.
-   * Converts share price to asset price using totalShares/totalAssets.
-   */
   getCollateralOraclePrice(
     liabilityVault: EVault,
     collateralVault: ERC4626Vault
   ): PriceResult | undefined {
-    const sharePrice = this.getCollateralShareOraclePrice(
-      liabilityVault,
-      collateralVault
-    );
-    if (!sharePrice) return undefined;
-
-    const { totalAssets, totalShares } = collateralVault;
-    const uoaDecimals = liabilityVault.unitOfAccount.decimals;
-
-    // Empty vault (both 0): ERC-4626 standard defines 1:1 ratio
-    if (totalAssets === 0n && totalShares === 0n) {
-      const mid = sharePrice.amountOutMid;
-      const ask =
-        sharePrice.amountOutAsk && sharePrice.amountOutAsk > 0n
-          ? sharePrice.amountOutAsk
-          : mid;
-      const bid =
-        sharePrice.amountOutBid && sharePrice.amountOutBid > 0n
-          ? sharePrice.amountOutBid
-          : mid;
-      return { amountOutMid: mid, amountOutAsk: ask, amountOutBid: bid, decimals: uoaDecimals };
-    }
-
-    if (totalAssets === 0n) {
-      // totalAssets 0 but totalShares > 0 — unusual state
-      return undefined;
-    }
-
-    // assetPrice = sharePrice × (totalShares / totalAssets)
-    const amountOutMid =
-      (sharePrice.amountOutMid * totalShares) / totalAssets;
-    const amountOutAsk =
-      (sharePrice.amountOutAsk * totalShares) / totalAssets;
-    const amountOutBid =
-      (sharePrice.amountOutBid * totalShares) / totalAssets;
-
-    const ask = amountOutAsk > 0n ? amountOutAsk : amountOutMid;
-    const bid = amountOutBid > 0n ? amountOutBid : amountOutMid;
-
-    return { amountOutMid, amountOutAsk: ask, amountOutBid: bid, decimals: uoaDecimals };
+    return getCollateralOraclePrice(liabilityVault, collateralVault);
   }
 
   // -----------------------------------------------------------------------
@@ -317,49 +229,6 @@ export class PriceService implements IPriceService {
     }
 
     return this.getCollateralUsdPriceFromOracle(liabilityVault, collateralVault);
-  }
-
-  // -----------------------------------------------------------------------
-  // Layer 3: USD Values
-  // -----------------------------------------------------------------------
-
-  /**
-   * Calculate USD value of an asset amount.
-   */
-  async getAssetUsdValue(
-    amount: bigint,
-    vault: ERC4626Vault
-  ): Promise<number | undefined> {
-    if (!vault) return undefined;
-
-    const price = await this.getAssetUsdPrice(vault);
-    if (!price) return undefined;
-
-    const tokenAmount = +formatUnits(amount, vault.asset.decimals);
-    const usdPrice = +formatUnits(price.amountOutMid, price.decimals);
-    return tokenAmount * usdPrice;
-  }
-
-  /**
-   * Calculate USD value of collateral amount in liability context.
-   * `assetAmount` is in native token decimals (assets, not shares).
-   */
-  async getCollateralUsdValue(
-    assetAmount: bigint,
-    liabilityVault: EVault,
-    collateralVault: ERC4626Vault
-  ): Promise<number | undefined> {
-    if (!liabilityVault || !collateralVault) return undefined;
-
-    const price = await this.getCollateralUsdPrice(
-      liabilityVault,
-      collateralVault
-    );
-    if (!price) return undefined;
-
-    const tokenAmount = +formatUnits(assetAmount, collateralVault.asset.decimals);
-    const usdPrice = +formatUnits(price.amountOutMid, price.decimals);
-    return tokenAmount * usdPrice;
   }
 
   // -----------------------------------------------------------------------
@@ -503,6 +372,105 @@ export class PriceService implements IPriceService {
       return undefined;
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Free functions — Layer 1 oracle price extraction (used by vault entities)
+// ---------------------------------------------------------------------------
+
+/**
+ * Get raw oracle price for a vault's asset in the vault's unit of account.
+ * Uses oraclePriceRaw (liabilityPriceInfo from the vault lens).
+ */
+export function getAssetOraclePrice(vault: EVault): PriceResult | undefined {
+  const { oraclePriceRaw, unitOfAccount } = vault;
+  if (!oraclePriceRaw || !oraclePriceRaw.amountOutMid) return undefined;
+
+  const { amountOutMid, amountOutAsk, amountOutBid } = oraclePriceRaw;
+  const ask = amountOutAsk && amountOutAsk > 0n ? amountOutAsk : amountOutMid;
+  const bid = amountOutBid && amountOutBid > 0n ? amountOutBid : amountOutMid;
+
+  return {
+    amountOutMid,
+    amountOutAsk: ask,
+    amountOutBid: bid,
+    decimals: unitOfAccount.decimals,
+  };
+}
+
+/**
+ * Get collateral share price from the liability vault's perspective.
+ * Returns the raw OraclePrice in the liability vault's unit of account.
+ */
+export function getCollateralShareOraclePrice(
+  liabilityVault: EVault,
+  collateralVault: ERC4626Vault
+): OraclePrice | undefined {
+  const collateralAddress = getAddress(collateralVault.address);
+
+  const collateral = liabilityVault.collaterals.find(
+    (c) => getAddress(c.address) === collateralAddress
+  );
+
+  if (!collateral) return undefined;
+
+  const { oraclePriceRaw } = collateral;
+  // Treat zero amountOutMid with no meaningful bid/ask as "no price"
+  if (!oraclePriceRaw.amountOutMid && !oraclePriceRaw.amountOutAsk && !oraclePriceRaw.amountOutBid) {
+    return undefined;
+  }
+
+  return oraclePriceRaw;
+}
+
+/**
+ * Get collateral ASSET price from the liability vault's perspective.
+ * Converts share price to asset price using totalShares/totalAssets.
+ */
+export function getCollateralOraclePrice(
+  liabilityVault: EVault,
+  collateralVault: ERC4626Vault
+): PriceResult | undefined {
+  const sharePrice = getCollateralShareOraclePrice(
+    liabilityVault,
+    collateralVault
+  );
+  if (!sharePrice) return undefined;
+
+  const { totalAssets, totalShares } = collateralVault;
+  const uoaDecimals = liabilityVault.unitOfAccount.decimals;
+
+  // Empty vault (both 0): ERC-4626 standard defines 1:1 ratio
+  if (totalAssets === 0n && totalShares === 0n) {
+    const mid = sharePrice.amountOutMid;
+    const ask =
+      sharePrice.amountOutAsk && sharePrice.amountOutAsk > 0n
+        ? sharePrice.amountOutAsk
+        : mid;
+    const bid =
+      sharePrice.amountOutBid && sharePrice.amountOutBid > 0n
+        ? sharePrice.amountOutBid
+        : mid;
+    return { amountOutMid: mid, amountOutAsk: ask, amountOutBid: bid, decimals: uoaDecimals };
+  }
+
+  if (totalAssets === 0n) {
+    // totalAssets 0 but totalShares > 0 — unusual state
+    return undefined;
+  }
+
+  // assetPrice = sharePrice × (totalShares / totalAssets)
+  const amountOutMid =
+    (sharePrice.amountOutMid * totalShares) / totalAssets;
+  const amountOutAsk =
+    (sharePrice.amountOutAsk * totalShares) / totalAssets;
+  const amountOutBid =
+    (sharePrice.amountOutBid * totalShares) / totalAssets;
+
+  const ask = amountOutAsk > 0n ? amountOutAsk : amountOutMid;
+  const bid = amountOutBid > 0n ? amountOutBid : amountOutMid;
+
+  return { amountOutMid, amountOutAsk: ask, amountOutBid: bid, decimals: uoaDecimals };
 }
 
 // ---------------------------------------------------------------------------

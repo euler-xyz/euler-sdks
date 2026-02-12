@@ -4,17 +4,53 @@ This document describes the pricing system in the Euler V2 SDK, including how pr
 
 ## Overview
 
-The pricing system is built as a 3-layer architecture that separates concerns between raw oracle data, USD conversion, and value calculation. It is exposed via `sdk.priceService` (the `PriceService` class).
+The pricing system provides two access patterns:
 
-## Price Sources: Backend + On-Chain Fallback
+1. **Vault helpers** (primary) — Methods directly on vault entities (`EVault`, `ERC4626Vault`) for getting risk prices and USD market prices.
+2. **PriceService** (advanced) — The underlying `sdk.priceService` with full access to raw oracle data, USD conversion, value calculation, and display formatting.
 
-All USD pricing functions (Layers 2 and 3) automatically try the **backend (off-chain)** first, then fall back to **on-chain** oracle data. There is no `source` parameter — the behavior is always: backend first, on-chain fallback.
+## Vault Price Helpers
 
-Layer 1 functions (oracle prices) are always **synchronous** reads from on-chain vault data.
+The vault entities provide direct access to pricing through methods and properties. These are the recommended entry point for most use cases.
 
-### Backend Configuration
+### Types
 
-Pass `backendConfig` when building the SDK to enable backend pricing:
+```typescript
+/** Price scaled to 18 decimals (WAD precision). */
+type PriceWad = bigint
+
+type RiskPrice = {
+  priceLiquidation: PriceWad  // Mid oracle price, scaled to 18 decimals
+  priceBorrowing: PriceWad    // Ask (asset) or bid (collateral) oracle price, scaled to 18 decimals
+}
+```
+
+All prices are returned as `PriceWad` — a `bigint` always scaled to 18 decimals.
+
+### EVault Helpers
+
+**Risk prices** — synchronous, read directly from vault oracle data, scaled to 18 decimals:
+
+- **`vault.assetRiskPrice`** — Asset price as `RiskPrice`. Maps oracle mid to `priceLiquidation`, oracle ask to `priceBorrowing`.
+- **`vault.getCollateralRiskPrice(collateralVault)`** — Collateral asset price as `RiskPrice`. Converts from share price using `totalShares/totalAssets`. Maps oracle mid to `priceLiquidation`, oracle bid to `priceBorrowing`.
+
+**USD market prices** — async, tries backend first, falls back to on-chain. Returns `PriceWad` (18-decimal bigint):
+
+- **`vault.fetchUnitOfAccountMarketPriceUsd(priceService)`** — UoA → USD rate.
+- **`vault.fetchAssetMarketPriceUsd(priceService)`** — Asset USD price.
+- **`vault.fetchCollateralMarketPriceUsd(collateralVault, priceService)`** — Collateral USD price.
+
+**USD market values** — async, amount × price as 18-decimal bigint:
+
+- **`vault.fetchAssetMarketValueUsd(amount, priceService)`** — USD value of an asset amount. Inherited from `ERC4626Vault`.
+- **`vault.fetchCollateralMarketValueUsd(amount, collateralVault, priceService)`** — USD value of a collateral amount in this vault's context.
+
+### ERC4626Vault Helpers
+
+- **`vault.fetchAssetMarketPriceUsd(priceService)`** — Asset USD price as `PriceWad`. Works for any vault type (EVault, EulerEarn, Securitize).
+- **`vault.fetchAssetMarketValueUsd(amount, priceService)`** — USD value of an asset amount as 18-decimal bigint.
+
+### Usage Example
 
 ```typescript
 import { buildSDK } from 'euler-v2-sdk'
@@ -27,55 +63,72 @@ const sdk = await buildSDK({
   },
 })
 
-// USD price (tries backend first, falls back to on-chain)
-const price = await sdk.priceService.getAssetUsdPrice(vault)
+const vault = await sdk.eVaultService.fetchVault(1, '0x...')
 
-// Raw oracle price (always on-chain, synchronous)
-const oraclePrice = sdk.priceService.getAssetOraclePrice(evault)
+// Risk prices (sync — from oracle data, all PriceWad = 18-decimal bigint)
+const assetRisk = vault.assetRiskPrice
+// => { priceLiquidation: 1000000000000000000n, priceBorrowing: 1000100000000000000n }
+
+const collateralVault = await sdk.eVaultService.fetchVault(1, '0x...')
+const collateralRisk = vault.getCollateralRiskPrice(collateralVault)
+
+// USD market prices (async, PriceWad)
+const assetUsd = await vault.fetchAssetMarketPriceUsd(sdk.priceService)
+// => 1000000000000000000n  (= $1.00)
+
+const uoaUsd = await vault.fetchUnitOfAccountMarketPriceUsd(sdk.priceService)
+const collateralUsd = await vault.fetchCollateralMarketPriceUsd(collateralVault, sdk.priceService)
+
+// USD market values (async, 18-decimal bigint)
+const assetValue = await vault.fetchAssetMarketValueUsd(1000000n, sdk.priceService)
+// => 1000000000000000000n  ($1.00 for 1 USDC)
+
+const collateralValue = await vault.fetchCollateralMarketValueUsd(
+  1000000000000000000n, collateralVault, sdk.priceService
+)
 ```
 
-When `backendConfig` is not provided, all pricing falls back to on-chain oracle data.
+### Display Formatting
 
-### Backend Client Implementation
+Use `formatAssetValue` on the PriceService to format asset amounts for UI display:
 
-The `PricingBackendClient` (`services/priceService/backendClient.ts`) provides price fetching with automatic optimizations:
+```typescript
+const formatted = await sdk.priceService.formatAssetValue(amount, vault)
+// => { display: "1,234.56 USDC", hasPrice: true, usdValue: 1234.56, assetAmount: 1234.56, assetSymbol: "USDC" }
+```
 
-**Types:**
-- `BackendPriceData` — Response shape: `{ address, price: number, source, symbol, timestamp }`
-- `BackendPriceResponse` — `Record<string, BackendPriceData>` keyed by lowercase address
+```typescript
+type FormatAssetValueOptions = {
+  maxDecimals?: number  // default: 2
+  minDecimals?: number  // default: 2
+}
 
-**API Endpoint:**
-- URL: `GET /v1/prices?chainId={chainId}&assets={addr1},{addr2},...`
-- Response: Flat object keyed by lowercase address
+type FormattedAssetValue = {
+  display: string       // "1,234.56 USDC" when no price, empty when price available
+  hasPrice: boolean     // Whether a USD price was found
+  usdValue: number      // USD value (0 when no price)
+  assetAmount: number   // Human-readable token amount
+  assetSymbol: string   // Token symbol
+}
+```
 
-**Caching:**
-- TTL: 60 seconds
-- Key format: `{chainId}:{address.toLowerCase()}`
-- Stale entries cleared via `clearStaleCache()`
+When `hasPrice` is `true`, `usdValue` contains the USD value and the caller formats the display. When `hasPrice` is `false`, `display` contains a fallback string like `"1,234.56 USDC"`.
 
-**Request Batching:**
-- 50ms debounce window for `fetchPrice()` calls
-- Requests grouped by chainId
-- Addresses deduplicated within batch
+## PriceService (Advanced)
 
-**Error Handling:**
-- Network errors: return cached results if available
-- Non-200 responses: fall back to cached results
-- Partial failures: return available cached data
+The `PriceService` (`sdk.priceService`) provides the full pricing API. The vault helpers above delegate to these methods internally.
 
-**Key Functions:**
-- `fetchPrice(address, chainId?)` — Single price with auto-batching
-- `fetchPrices(addresses, chainId?)` — Multiple prices in one call
-- `backendPriceToBigInt(price)` — Convert to 18-decimal bigint
+### Price Sources: Backend + On-Chain Fallback
 
-## Architecture: 3-Layer System
+All USD pricing functions automatically try the **backend (off-chain)** first, then fall back to **on-chain** oracle data. There is no `source` parameter — the behavior is always: backend first, on-chain fallback.
+
+Layer 1 functions (oracle prices) are always **synchronous** reads from on-chain vault data.
+
+Pass `backendConfig` when building the SDK to enable backend pricing. When `backendConfig` is not provided, all pricing falls back to on-chain oracle data.
+
+### Architecture: 3-Layer System
 
 ```
-+-------------------------------------------------------------+
-|                    Layer 3: USD Values                       |
-|        getAssetUsdValue(), getCollateralUsdValue()          |
-+-------------------------------------------------------------+
-                              |
 +-------------------------------------------------------------+
 |                   Layer 2: USD Prices                        |
 |        getAssetUsdPrice(), getCollateralUsdPrice()          |
@@ -100,29 +153,7 @@ The `PricingBackendClient` (`services/priceService/backendClient.ts`) provides p
 +-------------------------------------------------------------+
 ```
 
-## Type Mapping
-
-The SDK uses `ERC4626Vault` (the common base class) for vault parameters that accept any vault type, and `EVault` specifically for liability vaults:
-
-| Role | SDK Type | Notes |
-|------|----------|-------|
-| Liability vault | `EVault` | Always an EVault |
-| Collateral / any vault | `ERC4626Vault` | Base class of `EVault`, `EulerEarn`, `SecuritizeCollateralVault` |
-
-Key field mappings from on-chain data:
-
-| Data | SDK Location | Description |
-|------|-------------|-------------|
-| Liability price | `EVault.oraclePriceRaw` | Asset price in vault's unit of account (from VaultLens) |
-| Collateral prices | `EVault.collaterals[i].oraclePriceRaw` | Collateral prices from liability vault's perspective (from VaultLens) |
-| UoA -> USD rate | fetched on-demand | `utilsLens.getAssetPriceInfo(unitOfAccount, USD_ADDRESS)` |
-| Direct USD price | fetched on-demand | `utilsLens.getAssetPriceInfo(asset, USD_ADDRESS)` (for EulerEarn/Securitize) |
-
-**Note:** Unlike euler-lite which caches `assetPriceInfo` and `unitOfAccountPriceInfo` on the vault entity during loading, the SDK fetches these on-demand via the `PriceService` when needed.
-
-## PriceResult Type
-
-All price functions return `PriceResult`:
+### PriceResult Type
 
 ```typescript
 type PriceResult = {
@@ -136,8 +167,6 @@ type PriceResult = {
 The `decimals` field indicates the precision of the amounts:
 - **Layer 1** (oracle prices): UoA decimals (from `EVault.unitOfAccount.decimals`)
 - **Layer 2/3** (USD prices): 18 (USD is represented with 18 decimals)
-
-## Key Functions
 
 ### Layer 1: Raw Oracle Prices
 
@@ -165,31 +194,25 @@ These are **async** — they try backend first, then fall back to on-chain.
 - **`getCollateralUsdPrice(liabilityVault: EVault, collateralVault: ERC4626Vault)`** — Collateral price in USD using the liability vault's oracle and UoA rate
   - Tries backend with collateral asset address first
 
-### Layer 3: USD Values
+## Type Mapping
 
-- **`getAssetUsdValue(amount: bigint, vault: ERC4626Vault)`** — USD value of an asset amount. Returns `undefined` when no price is available.
-- **`getCollateralUsdValue(assetAmount: bigint, liabilityVault: EVault, collateralVault: ERC4626Vault)`** — USD value of collateral in borrow context. `assetAmount` is in native token decimals (assets, not shares).
+The SDK uses `ERC4626Vault` (the common base class) for vault parameters that accept any vault type, and `EVault` specifically for liability vaults:
 
-### Display Helpers
+| Role | SDK Type | Notes |
+|------|----------|-------|
+| Liability vault | `EVault` | Always an EVault |
+| Collateral / any vault | `ERC4626Vault` | Base class of `EVault`, `EulerEarn`, `SecuritizeCollateralVault` |
 
-- **`formatAssetValue(amount: bigint, vault: ERC4626Vault, options?)`** — Formats an asset amount for UI display. Returns a `FormattedAssetValue`:
+Key field mappings from on-chain data:
 
-```typescript
-type FormatAssetValueOptions = {
-  maxDecimals?: number  // default: 2
-  minDecimals?: number  // default: 2
-}
+| Data | SDK Location | Description |
+|------|-------------|-------------|
+| Liability price | `EVault.oraclePriceRaw` | Asset price in vault's unit of account (from VaultLens) |
+| Collateral prices | `EVault.collaterals[i].oraclePriceRaw` | Collateral prices from liability vault's perspective (from VaultLens) |
+| UoA -> USD rate | fetched on-demand | `utilsLens.getAssetPriceInfo(unitOfAccount, USD_ADDRESS)` |
+| Direct USD price | fetched on-demand | `utilsLens.getAssetPriceInfo(asset, USD_ADDRESS)` (for EulerEarn/Securitize) |
 
-type FormattedAssetValue = {
-  display: string       // "1,234.56 USDC" when no price, empty when price available
-  hasPrice: boolean     // Whether a USD price was found
-  usdValue: number      // USD value (0 when no price)
-  assetAmount: number   // Human-readable token amount
-  assetSymbol: string   // Token symbol
-}
-```
-
-When `hasPrice` is `true`, `usdValue` contains the USD value and the caller formats the display. When `hasPrice` is `false`, `display` contains a fallback string like `"1,234.56 USDC"`.
+**Note:** Unlike euler-lite which caches `assetPriceInfo` and `unitOfAccountPriceInfo` on the vault entity during loading, the SDK fetches these on-demand via the `PriceService` when needed.
 
 ## USD Price Calculation for EVault
 
@@ -253,6 +276,38 @@ The SDK provides utilities for working with Pyth oracles in `utils/oracle.ts`:
 
 Pyth price update simulation (via EVC `batchSimulation`) is not built into the SDK's PriceService — it is the caller's responsibility to ensure Pyth prices are fresh before reading vault data. The oracle info on `EVault.oracle` contains the full configuration tree needed to identify and update Pyth feeds.
 
+## Backend Client Implementation
+
+The `PricingBackendClient` (`services/priceService/backendClient.ts`) provides price fetching with automatic optimizations:
+
+**Types:**
+- `BackendPriceData` — Response shape: `{ address, price: number, source, symbol, timestamp }`
+- `BackendPriceResponse` — `Record<string, BackendPriceData>` keyed by lowercase address
+
+**API Endpoint:**
+- URL: `GET /v1/prices?chainId={chainId}&assets={addr1},{addr2},...`
+- Response: Flat object keyed by lowercase address
+
+**Caching:**
+- TTL: 60 seconds
+- Key format: `{chainId}:{address.toLowerCase()}`
+- Stale entries cleared via `clearStaleCache()`
+
+**Request Batching:**
+- 50ms debounce window for `fetchPrice()` calls
+- Requests grouped by chainId
+- Addresses deduplicated within batch
+
+**Error Handling:**
+- Network errors: return cached results if available
+- Non-200 responses: fall back to cached results
+- Partial failures: return available cached data
+
+**Key Functions:**
+- `fetchPrice(address, chainId?)` — Single price with auto-batching
+- `fetchPrices(addresses, chainId?)` — Multiple prices in one call
+- `backendPriceToBigInt(price)` — Convert to 18-decimal bigint
+
 ## Design Principles
 
 1. **Backend first, on-chain fallback** — All USD pricing tries the backend automatically, with on-chain as fallback. No source parameter needed.
@@ -266,7 +321,9 @@ Pyth price update simulation (via EVC `batchSimulation`) is not built into the S
 
 ## Files
 
-- `services/priceService/priceService.ts` — Core pricing functions (Layers 1-3), `IPriceService` interface
+- `entities/ERC4626Vault.ts` — `PriceWad` type, `fetchAssetMarketPriceUsd()`, `fetchAssetMarketValueUsd()` base methods
+- `entities/EVault.ts` — `RiskPrice` type, `assetRiskPrice`, `getCollateralRiskPrice()`, `fetchUnitOfAccountMarketPriceUsd()`, `fetchCollateralMarketPriceUsd()`, `fetchCollateralMarketValueUsd()`
+- `services/priceService/priceService.ts` — Core pricing functions, `IPriceService` interface, `formatAssetValue()`, free functions (`getAssetOraclePrice`, `getCollateralOraclePrice`, `getCollateralShareOraclePrice`)
 - `services/priceService/backendClient.ts` — Backend API client with batching and caching
 - `services/priceService/utilsLensPriceAbi.ts` — ABI for `utilsLens.getAssetPriceInfo`
 - `services/priceService/index.ts` — Public exports

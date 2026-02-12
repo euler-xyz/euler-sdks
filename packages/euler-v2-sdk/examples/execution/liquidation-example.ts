@@ -25,8 +25,8 @@ import {
 } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executePlan } from "./utils/executor.js";
-import { printHeader, logOperationResult, stringify } from "./utils/helpers.js";
+import { executePlan } from "../utils/executor.js";
+import { printHeader, logOperationResult, stringify } from "../utils/helpers.js";
 import { 
   rpcUrls,
   account,
@@ -40,7 +40,7 @@ import {
   walletClient2,
   publicClient,
   walletClient,
-} from "./utils/config.js";
+} from "../utils/config.js";
 import { Account, buildSDK, eVaultAbi, getSubAccountAddress } from "euler-v2-sdk";
 
 

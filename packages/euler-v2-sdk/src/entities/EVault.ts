@@ -1,12 +1,14 @@
 // TypeScript equivalents for VaultLens structs (from evk-periphery/src/Lens/LensTypes.sol).
 // Numeric on-chain values use bigint to avoid precision loss.
 
-import { Address, Hex } from "viem";
+import { Address } from "viem";
 import { OracleInfo, OraclePrice } from "../utils/oracle.js";
 import { InterestRateModelType } from "../services/vaults/eVaultService/dataSources/eVaultLensTypes.js";
 import { Token } from "../utils/types.js";
 import { IRMParams } from "../utils/irm.js";
-import { ERC4626Vault, IERC4626Vault, IERC4626VaultConversion, VIRTUAL_DEPOSIT_AMOUNT } from "./ERC4626Vault.js";
+import { ERC4626Vault, IERC4626Vault, IERC4626VaultConversion, VIRTUAL_DEPOSIT_AMOUNT, type PriceWad } from "./ERC4626Vault.js";
+import type { IPriceService } from "../services/priceService/index.js";
+import { getAssetOraclePrice, getCollateralOraclePrice } from "../services/priceService/index.js";
 
 export type EVaultHookedOperations = {
   deposit: boolean;
@@ -76,6 +78,11 @@ export interface EVaultCollateralRamping {
   targetTimestamp: number;
   rampDuration: bigint;
 }
+
+export type RiskPrice = {
+  priceLiquidation: PriceWad;
+  priceBorrowing: PriceWad;
+};
 
 export interface IEVault extends IERC4626Vault {
   unitOfAccount: Token;
@@ -157,5 +164,50 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
     const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
     const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
     return (assets * totalSharesAdjusted) / totalAssetsAdjusted;
+  }
+
+  get assetRiskPrice(): RiskPrice | undefined {
+    const price = getAssetOraclePrice(this);
+    if (!price) return undefined;
+
+    const scale = 10n ** BigInt(18 - price.decimals);
+    return {
+      priceLiquidation: price.amountOutMid * scale,
+      priceBorrowing: price.amountOutAsk * scale,
+    };
+  }
+
+  getCollateralRiskPrice(collateralVault: ERC4626Vault): RiskPrice | undefined {
+    const price = getCollateralOraclePrice(this, collateralVault);
+    if (!price) return undefined;
+
+    const scale = 10n ** BigInt(18 - price.decimals);
+    return {
+      priceLiquidation: price.amountOutMid * scale,
+      priceBorrowing: price.amountOutBid * scale,
+    };
+  }
+
+  async fetchUnitOfAccountMarketPriceUsd(priceService: IPriceService): Promise<PriceWad | undefined> {
+    return priceService.getUnitOfAccountUsdRate(this);
+  }
+
+  async fetchCollateralMarketPriceUsd(
+    collateralVault: ERC4626Vault,
+    priceService: IPriceService
+  ): Promise<PriceWad | undefined> {
+    const price = await priceService.getCollateralUsdPrice(this, collateralVault);
+    if (!price) return undefined;
+    return price.amountOutMid;
+  }
+
+  async fetchCollateralMarketValueUsd(
+    amount: bigint,
+    collateralVault: ERC4626Vault,
+    priceService: IPriceService
+  ): Promise<bigint | undefined> {
+    const price = await priceService.getCollateralUsdPrice(this, collateralVault);
+    if (!price) return undefined;
+    return (amount * price.amountOutMid) / 10n ** BigInt(collateralVault.asset.decimals);
   }
 }

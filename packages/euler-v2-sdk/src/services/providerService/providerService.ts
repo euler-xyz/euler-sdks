@@ -12,7 +12,6 @@ export class ProviderService implements IProviderService {
   private readonly providers: Record<number, PublicClient> = {};
 
   constructor(rpcUrls: Record<number, string>) {
-
     this.providers = Object.fromEntries(
       Object.entries(rpcUrls).map(([chainId, rpcUrl]) => {
         const chain = extractChain({chains: defaultChains, id: Number(chainId) as any}) as Chain;

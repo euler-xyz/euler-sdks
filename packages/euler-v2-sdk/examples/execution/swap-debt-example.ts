@@ -1,17 +1,18 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * SWAP COLLATERAL EXAMPLE
+ * SWAP DEBT EXAMPLE
  * ═══════════════════════════════════════════════════════════════════════════
  * 
- * This example demonstrates how to swap one collateral asset for another while
- * maintaining an open debt position. This is useful for rebalancing collateral
- * or switching to a more stable or higher-yield collateral.
+ * This example demonstrates how to swap one debt asset for another while
+ * maintaining your collateral positions. This is useful for refinancing to
+ * a lower rate, switching to a more stable debt asset, or rebalancing exposure.
  * 
  * OPERATION:
- *   1. Deposit USDC as collateral and borrow USDT
- *   2. Withdraw some USDC collateral
- *   3. Swap USDC → WETH (using live DEX aggregator quotes)
- *   4. Deposit WETH as new collateral
+ *   1. Deposit WETH as collateral
+ *   2. Borrow USDT (initial debt)
+ *   3. Borrow USDC (new debt)
+ *   4. Swap USDC → USDT (using live DEX aggregator quotes)
+ *   5. Repay USDT debt with swapped assets
  * 
  * ⚠️  IMPORTANT - LIVE SWAP QUOTES:
  *   • This example fetches real-time swap quotes from DEX aggregators
@@ -28,13 +29,14 @@
 import "dotenv/config";
 import {
   parseUnits,
+  isAddressEqual,
   getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
-import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
+import { buildSDK, getSubAccountAddress, SwapperMode } from "euler-v2-sdk";
 
-import { executePlan } from "./utils/executor.js";
-import { printHeader, logOperationResult } from "./utils/helpers.js";
+import { executePlan } from "../utils/executor.js";
+import { printHeader, logOperationResult } from "../utils/helpers.js";
 import { 
   rpcUrls,
   account,
@@ -43,22 +45,25 @@ import {
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_WETH_VAULT,
   EULER_PRIME_USDT_VAULT,
+  USDT_ADDRESS,
   WETH_ADDRESS,
-} from "./utils/config.js";
+  testClient,
+} from "../utils/config.js";
 
 // Inputs
-const COLLATERAL_AMOUNT = parseUnits("2000", 6); // 2000 USDC
-const BORROW_AMOUNT = parseUnits("500", 6);      // 500 USDT
-const SWAP_AMOUNT = parseUnits("500", 6);        // Swap 500 USDC to WETH
+const COLLATERAL_AMOUNT = parseUnits("2", 18);   // 2 WETH
+const BORROW_USDT_AMOUNT = parseUnits("1000", 6); // 1000 USDT (initial debt)
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
-const SWAP_QUOTE_INDEX = 0; // Change this if swap quote is bad
+const SWAP_QUOTE_INDEX = 1; // Change this if swap quote is bad
 const USE_PERMIT2 = true;
 const UNLIMITED_APPROVAL = false;
 
+// TODO add example of cross-account swap, including partial swap OR disallow cross-account swap
+
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
 
-async function swapCollateralExample() {
+async function swapDebtExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
@@ -66,18 +71,18 @@ async function swapCollateralExample() {
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = await sdk.accountService.fetchAccountBasic(mainnet.id, account.address);
 
-  // Step 1: Plan and execute borrow operation (deposit USDC collateral and borrow USDT)
-  console.log('\n=== Step 1: Deposit USDC and Borrow USDT ===');
+  // Step 1: Deposit WETH collateral and borrow USDT
+  console.log('\n=== Step 1: Deposit WETH and Borrow USDT ===');
   let borrowPlan = sdk.executionService.planBorrow({
     account: accountData,
     vault: EULER_PRIME_USDT_VAULT,
-    amount: BORROW_AMOUNT,
+    amount: BORROW_USDT_AMOUNT,
     receiver: account.address,
     borrowAccount: SUB_ACCOUNT_ADDRESS,
     collateral: {
-      vault: EULER_PRIME_USDC_VAULT,
+      vault: EULER_PRIME_WETH_VAULT,
       amount: COLLATERAL_AMOUNT,
-      asset: USDC_ADDRESS,
+      asset: WETH_ADDRESS,
     },
   });
 
@@ -96,32 +101,35 @@ async function swapCollateralExample() {
   await executePlan(borrowPlan, sdk);
 
   // Fetch updated sub-account after borrow
-  const subAccountAfterBorrow = await sdk.accountService.fetchSubAccountBasic(
+  let subAccount = await sdk.accountService.fetchSubAccountBasic(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_WETH_VAULT]
+    [EULER_PRIME_WETH_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_USDC_VAULT]
   );
   
   // Log the diff between before and after borrow
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterBorrow], sdk);
+  await logOperationResult(mainnet.id, accountData, [subAccount], sdk);
 
-  // Step 2: Get swap quote from USDC to WETH
+  // Step 2: Get swap quote for debt swap
   console.log('\n=== Step 2: Get Swap Quote ===');
-  console.log('✓ Fetching swap quote from USDC to WETH...');
+  console.log('✓ Fetching swap quote from USDC to USDT for debt swap...');
   
   // Update account data with the fetched sub-account
-  accountData.subAccounts = { [getAddress(subAccountAfterBorrow!.account)]: subAccountAfterBorrow! };
+  accountData.subAccounts = { [getAddress(subAccount!.account)]: subAccount! };
 
-  const swapQuotes = await sdk.swapService.getDepositQuote({
+
+  const swapQuotes = await sdk.swapService.getRepayQuotes({
     chainId: mainnet.id,
     fromVault: EULER_PRIME_USDC_VAULT,
-    toVault: EULER_PRIME_WETH_VAULT,
-    fromAccount: SUB_ACCOUNT_ADDRESS,
-    toAccount: SUB_ACCOUNT_ADDRESS,
     fromAsset: USDC_ADDRESS,
-    toAsset: WETH_ADDRESS,
-    amount: SWAP_AMOUNT,
+    fromAccount: SUB_ACCOUNT_ADDRESS,
+    liabilityVault: EULER_PRIME_USDT_VAULT,
+    liabilityAsset: USDT_ADDRESS,
+    liabilityAmount: BORROW_USDT_AMOUNT,
+    currentDebt: BORROW_USDT_AMOUNT,
+    toAccount: SUB_ACCOUNT_ADDRESS,
     origin: account.address,
+    swapperMode: SwapperMode.TARGET_DEBT,
     slippage: 0.5, // 0.5% slippage
     deadline: THIRTY_MINUTES_FROM_NOW,
   });
@@ -135,43 +143,43 @@ async function swapCollateralExample() {
   }
 
   const swapQuote = swapQuotes[SWAP_QUOTE_INDEX]!;
-  console.log(`✓ Swap quote received: ${SWAP_AMOUNT} USDC → ${swapQuote.amountOut} WETH ${swapQuote.route.map(r => r.providerName).join(' → ')}`);
+  console.log(`✓ Swap quote received: ${swapQuote.amountIn} USDC → ${swapQuote.amountOut} USDT ${swapQuote.route.map(r => r.providerName).join(' → ')}`);
 
-  // Step 3: Plan and execute swap collateral
-  console.log('\n=== Step 3: Execute Swap Collateral ===');
-  let swapCollateralPlan = sdk.executionService.planSwapCollateral({
+  // Step 3: Plan and execute swap debt
+  console.log('\n=== Step 3: Execute Swap Debt ===');
+  let swapDebtPlan = sdk.executionService.planSwapDebt({
     account: accountData,
     swapQuote,
   });
 
-  console.log(`✓ Swap collateral plan created with ${swapCollateralPlan.length} step(s)`);
+  console.log(`✓ Swap debt plan created with ${swapDebtPlan.length} step(s)`);
   console.log(`✓ Executing...`);
 
-  // No approvals needed for swap collateral
+  // No approvals needed for swap debt
   try {
-    await executePlan(swapCollateralPlan, sdk);
+    await executePlan(swapDebtPlan, sdk);
   } catch (error) {
-    console.error("Error executing swap collateral:", error);
+    console.error("Error executing swap debt:", error);
     console.log("\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.");
     process.exit(1);
   }
 
   // Fetch the updated sub-account and log the result
-  const subAccountAfterSwap = await sdk.accountService.fetchSubAccountBasic(
+  subAccount = await sdk.accountService.fetchSubAccountBasic(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_WETH_VAULT]
+    [EULER_PRIME_WETH_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_USDC_VAULT]
   );
 
   // Log the diff between before and after swap
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterSwap], sdk);
+  await logOperationResult(mainnet.id, accountData, [subAccount], sdk);
 }
 
 // ============================================================================
 // Run the example
 // ============================================================================
-printHeader("SWAP COLLATERAL EXAMPLE");
-initBalances().then(() => swapCollateralExample()).catch((error) => {
+printHeader("SWAP DEBT EXAMPLE");
+initBalances().then(() => swapDebtExample()).catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });

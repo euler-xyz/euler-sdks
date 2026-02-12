@@ -6,6 +6,9 @@ export {
   type FormatAssetValueOptions,
   ONE_18,
   USD_ADDRESS,
+  getAssetOraclePrice,
+  getCollateralShareOraclePrice,
+  getCollateralOraclePrice,
 } from "./priceService.js";
 
 export {
