@@ -57,18 +57,25 @@ async function fetchApysExample() {
       StandardEulerEarnPerspectives.GOVERNED,
     ]);
 
+  eulerEarnVaults.sort((a, b) => (b.supplyApy ?? 0) - (a.supplyApy ?? 0));
+
   console.log(`\nFound ${eulerEarnVaults.length} governed EulerEarn vaults:\n`);
   console.log(
     "Vault".padEnd(50),
     "Address".padEnd(44),
+    "Supply APY".padEnd(14),
     "Strategies",
   );
-  console.log("-".repeat(120));
+  console.log("-".repeat(130));
 
   for (const vault of eulerEarnVaults) {
+    const supplyApy = vault.supplyApy !== undefined
+      ? `${(vault.supplyApy * 100).toFixed(2)}%`
+      : "N/A";
     console.log(
       vault.shares.name.padEnd(50),
       vault.address.padEnd(44),
+      supplyApy.padEnd(14),
       `${vault.strategies.length} strategies`,
     );
   }

@@ -118,7 +118,8 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
     );
     eulerEarnService = new EulerEarnService(
       eulerEarnDataSource,
-      deploymentService as DeploymentService
+      deploymentService as DeploymentService,
+      eVaultService
     );
   }
 

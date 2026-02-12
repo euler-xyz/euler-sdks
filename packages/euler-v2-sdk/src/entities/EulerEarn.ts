@@ -1,6 +1,7 @@
 import { Address } from "viem";
 import { ERC4626Data, Token, VaultType } from "../utils/types.js";
 import { ERC4626Vault, IERC4626Vault, IERC4626VaultConversion, VIRTUAL_DEPOSIT_AMOUNT } from "./ERC4626Vault.js";
+import type { EVault } from "./EVault.js";
 
 
 export interface EulerEarnAllocationCap {
@@ -16,6 +17,7 @@ export interface EulerEarnStrategyInfo extends ERC4626Data {
   availableAssets: bigint;
   allocationCap: EulerEarnAllocationCap;
   removableAt: number;
+  vault?: EVault;
 }
 
 export interface EulerEarnGovernance {
@@ -88,6 +90,28 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
     const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
     const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
     return (assets * totalSharesAdjusted) / totalAssetsAdjusted;
+  }
+
+  /** Weighted supply APY derived from underlying strategy EVault APYs, net of performance fee. */
+  get supplyApy(): number | undefined {
+    if (this.totalAssets === 0n) return undefined;
+
+    const strategiesWithVault = this.strategies.filter((s) => s.vault);
+    if (strategiesWithVault.length === 0) return undefined;
+
+    let weightedSum = 0;
+    let totalAllocated = 0;
+    for (const strategy of strategiesWithVault) {
+      const apy = parseFloat(strategy.vault!.interestRates.supplyAPY);
+      const allocated = Number(strategy.allocatedAssets);
+      weightedSum += allocated * apy;
+      totalAllocated += allocated;
+    }
+
+    if (totalAllocated === 0) return undefined;
+
+    const grossApy = weightedSum / totalAllocated;
+    return grossApy * (1 - this.performanceFee);
   }
 }
 

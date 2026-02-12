@@ -2,6 +2,7 @@ import { EulerEarn, IEulerEarn } from "../../../entities/EulerEarn.js";
 import { Address } from "viem";
 import { DeploymentService } from "../../deploymentService/index.js";
 import type { IVaultService } from "../index.js";
+import type { IEVaultService } from "../eVaultService/index.js";
 
 export interface IEulerEarnDataSource {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEulerEarn[]>;
@@ -19,7 +20,8 @@ export interface IEulerEarnService
 export class EulerEarnService implements IEulerEarnService {
   constructor(
     private readonly dataSource: IEulerEarnDataSource,
-    private readonly deploymentService: DeploymentService
+    private readonly deploymentService: DeploymentService,
+    private readonly eVaultService?: IEVaultService
   ) {}
 
   factory(chainId: number): Address {
@@ -32,13 +34,50 @@ export class EulerEarnService implements IEulerEarnService {
     if (vaults.length === 0) {
       throw new Error(`Vault not found for ${vault}`);
     }
-    return new EulerEarn(vaults[0]!);
+    const eulerEarn = new EulerEarn(vaults[0]!);
+    await this.populateStrategyVaults(chainId, [eulerEarn]);
+    return eulerEarn;
   }
 
   async fetchVaults(chainId: number, vaults: Address[]): Promise<EulerEarn[]> {
-    return (await this.dataSource.fetchVaults(chainId, vaults)).map(
+    const eulerEarns = (await this.dataSource.fetchVaults(chainId, vaults)).map(
       (vault) => new EulerEarn(vault)
     );
+    await this.populateStrategyVaults(chainId, eulerEarns);
+    return eulerEarns;
+  }
+
+  private async populateStrategyVaults(
+    chainId: number,
+    eulerEarns: EulerEarn[]
+  ): Promise<void> {
+    if (!this.eVaultService) return;
+
+    const allStrategyAddresses = [
+      ...new Set(
+        eulerEarns.flatMap((ee) => ee.strategies.map((s) => s.address))
+      ),
+    ];
+
+    if (allStrategyAddresses.length === 0) return;
+
+    const eVaults = await Promise.all(
+      allStrategyAddresses.map((addr) =>
+        this.eVaultService!.fetchVault(chainId, addr).catch(() => undefined)
+      )
+    );
+
+    const eVaultByAddress = new Map(
+      eVaults
+        .filter((v) => v !== undefined)
+        .map((v) => [v.address.toLowerCase(), v])
+    );
+
+    for (const ee of eulerEarns) {
+      for (const strategy of ee.strategies) {
+        strategy.vault = eVaultByAddress.get(strategy.address.toLowerCase());
+      }
+    }
   }
 
   async fetchVerifiedVaultAddresses(
