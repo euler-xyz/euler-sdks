@@ -41,7 +41,7 @@ async function redeemExample() {
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
-  let accountData = await sdk.accountService.fetchAccountBasic(mainnet.id, account.address);
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { resolveVaults: false });
 
   // Step 1: Deposit USDC first to get shares
   console.log('\n=== Step 1: Deposit USDC ===');
@@ -69,10 +69,11 @@ async function redeemExample() {
   await executePlan(depositPlan, sdk);
 
   // Fetch updated sub-account after deposit
-  const subAccountAfterDeposit = await sdk.accountService.fetchSubAccountBasic(
+  const subAccountAfterDeposit = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT]
+    [EULER_PRIME_USDC_VAULT],
+    { resolveVaults: false }
   );
   
   // Log the diff between before and after deposit
@@ -100,10 +101,11 @@ async function redeemExample() {
   await executePlan(redeemPlan, sdk);
 
   // Fetch the updated sub-account and log the result
-  const subAccountAfterRedeem = await sdk.accountService.fetchSubAccountBasic(
+  const subAccountAfterRedeem = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT]
+    [EULER_PRIME_USDC_VAULT],
+    { resolveVaults: false }
   );
 
   // Log the diff between before and after redeem

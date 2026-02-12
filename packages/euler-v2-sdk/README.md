@@ -21,8 +21,8 @@ const sdk = await buildSDK({
   }
 });
 
-// Fetch account data (use fetchAccount for vault entities in positions; fetchAccountBasic for execution plans)
-const account = await sdk.accountService.fetchAccountBasic(mainnet.id, userAddress);
+// Fetch account data (use fetchAccount for vault entities in positions; pass { resolveVaults: false } for execution plans)
+const account = await sdk.accountService.fetchAccount(mainnet.id, userAddress, { resolveVaults: false });
 
 // Fetch vault information
 const vault = await sdk.eVaultService.fetchVault(mainnet.id, vaultAddress);
@@ -115,9 +115,9 @@ Manages account data including positions, collateral, and debt across sub-accoun
 
 Fetches account data and resolves vault refs in positions and liquidity collaterals to full vault entities. Use when you need vault entities (e.g. EVault, EulerEarn) on the account.
 
-**`fetchAccountBasic(chainId: number, address: Address): Promise<Account<Address>>`**
+**`fetchAccount(chainId: number, address: Address, options?: { resolveVaults?: boolean }): Promise<Account<Address>>`**
 
-Fetches account data with vault refs as addresses only (no vault entity resolution). Use when passing the account to the execution service or when vault entities are not needed.
+When called with `{ resolveVaults: false }`, fetches account data with vault refs as addresses only (no vault entity resolution). Use when passing the account to the execution service or when vault entities are not needed. When `resolveVaults` is omitted or `true`, vault refs in positions and liquidity collaterals are resolved to full vault entities.
 
 ```typescript
 const account = await sdk.accountService.fetchAccount(mainnet.id, userAddress);
@@ -136,15 +136,16 @@ console.log('Controller:', subAccount?.enabledControllers[0]);
 
 Fetches a sub-account with vault refs in positions/liquidity resolved to vault entities.
 
-**`fetchSubAccountBasic(chainId: number, subAccount: Address, vaults?: Address[]): Promise<SubAccount<Address> | undefined>`**
+**`fetchSubAccount(chainId: number, subAccount: Address, vaults?: Address[], options?: { resolveVaults?: boolean }): Promise<SubAccount<Address> | undefined>`**
 
-Fetches a sub-account with vault refs as addresses only.
+When called with `{ resolveVaults: false }`, fetches a sub-account with vault refs as addresses only.
 
 ```typescript
-const subAccount = await sdk.accountService.fetchSubAccountBasic(
+const subAccount = await sdk.accountService.fetchSubAccount(
   mainnet.id,
   subAccountAddress,
-  [vaultAddress]
+  [vaultAddress],
+  { resolveVaults: false }
 );
 ```
 

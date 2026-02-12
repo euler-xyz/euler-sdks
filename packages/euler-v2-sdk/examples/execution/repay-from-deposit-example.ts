@@ -60,7 +60,7 @@ async function repayFromDepositExample() {
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
-  let accountData = await sdk.accountService.fetchAccountBasic(mainnet.id, account.address);
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { resolveVaults: false });
 
   // Step 1: Plan and execute borrow operation (deposit USDC collateral and borrow USDT)
   console.log('\n=== Step 1: Deposit USDC and Borrow USDT ===');
@@ -92,18 +92,19 @@ async function repayFromDepositExample() {
   await executePlan(borrowPlan, sdk);
 
   // Fetch updated sub-account after borrow
-  let subAccount = await sdk.accountService.fetchSubAccountBasic(
+  let subAccount = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    { resolveVaults: false }
   );
-  
+
   // Log the diff between before and after borrow
   await logOperationResult(mainnet.id, accountData, [subAccount], sdk);
 
   // Step 2: Deposit USDT to create a deposit position
   console.log('\n=== Step 2: Deposit USDT ===');
-  
+
   // Update account data with the fetched sub-account
   accountData.updateSubAccounts(subAccount!);
 
@@ -131,10 +132,11 @@ async function repayFromDepositExample() {
   await executePlan(depositPlan, sdk);
 
   // Fetch updated sub-account after deposit
-  subAccount = await sdk.accountService.fetchSubAccountBasic(
+  subAccount = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    { resolveVaults: false }
   );
   
   // Log the diff
@@ -162,10 +164,11 @@ async function repayFromDepositExample() {
   await executePlan(repayPlan, sdk);
 
   // Fetch the updated sub-account and log the result
-  subAccount = await sdk.accountService.fetchSubAccountBasic(
+  subAccount = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    { resolveVaults: false }
   );
 
   // Log the diff between before and after repay

@@ -4,7 +4,8 @@ import {
   ISecuritizeCollateralVault,
 } from "../../../entities/SecuritizeCollateralVault.js";
 import { DeploymentService } from "../../deploymentService/index.js";
-import type { IVaultService } from "../index.js";
+import type { IVaultService, VaultFetchOptions } from "../index.js";
+import type { IPriceService } from "../../priceService/index.js";
 
 export interface ISecuritizeCollateralDataSource {
   fetchVaults(
@@ -27,10 +28,16 @@ export interface ISecuritizeVaultService
   > {}
 
 export class SecuritizeVaultService implements ISecuritizeVaultService {
+  private priceService?: IPriceService;
+
   constructor(
     private readonly dataSource: ISecuritizeCollateralDataSource,
     private readonly deploymentService: DeploymentService
   ) {}
+
+  setPriceService(service: IPriceService): void {
+    this.priceService = service;
+  }
 
   factory(chainId: number): Address {
     // TODO fix this
@@ -39,21 +46,45 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 
   async fetchVault(
     chainId: number,
-    vault: Address
+    vault: Address,
+    options?: VaultFetchOptions
   ): Promise<SecuritizeCollateralVault> {
     const vaults = await this.dataSource.fetchVaults(chainId, [vault]);
     if (vaults.length === 0) {
       throw new Error(`Securitize vault not found for ${vault}`);
     }
-    return new SecuritizeCollateralVault(vaults[0]!);
+    const entity = new SecuritizeCollateralVault(vaults[0]!);
+    if (options?.fetchMarketPrices) {
+      await this.populateMarketPrices([entity]);
+    }
+    return entity;
   }
 
   async fetchVaults(
     chainId: number,
-    vaults: Address[]
+    vaults: Address[],
+    options?: VaultFetchOptions
   ): Promise<SecuritizeCollateralVault[]> {
-    return (await this.dataSource.fetchVaults(chainId, vaults)).map(
+    const entities = (await this.dataSource.fetchVaults(chainId, vaults)).map(
       (v) => new SecuritizeCollateralVault(v)
+    );
+    if (options?.fetchMarketPrices) {
+      await this.populateMarketPrices(entities);
+    }
+    return entities;
+  }
+
+  private async populateMarketPrices(
+    vaults: SecuritizeCollateralVault[]
+  ): Promise<void> {
+    if (!this.priceService) return;
+
+    await Promise.all(
+      vaults.map(async (v) => {
+        v.marketPriceUsd = await v
+          .fetchAssetMarketPriceUsd(this.priceService!)
+          .catch(() => undefined);
+      })
     );
   }
 

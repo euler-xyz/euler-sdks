@@ -69,7 +69,7 @@ async function swapDebtExample() {
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
-  let accountData = await sdk.accountService.fetchAccountBasic(mainnet.id, account.address);
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { resolveVaults: false });
 
   // Step 1: Deposit WETH collateral and borrow USDT
   console.log('\n=== Step 1: Deposit WETH and Borrow USDT ===');
@@ -101,10 +101,11 @@ async function swapDebtExample() {
   await executePlan(borrowPlan, sdk);
 
   // Fetch updated sub-account after borrow
-  let subAccount = await sdk.accountService.fetchSubAccountBasic(
+  let subAccount = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_WETH_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_USDC_VAULT]
+    [EULER_PRIME_WETH_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_USDC_VAULT],
+    { resolveVaults: false }
   );
   
   // Log the diff between before and after borrow
@@ -165,10 +166,11 @@ async function swapDebtExample() {
   }
 
   // Fetch the updated sub-account and log the result
-  subAccount = await sdk.accountService.fetchSubAccountBasic(
+  subAccount = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_WETH_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_USDC_VAULT]
+    [EULER_PRIME_WETH_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_USDC_VAULT],
+    { resolveVaults: false }
   );
 
   // Log the diff between before and after swap

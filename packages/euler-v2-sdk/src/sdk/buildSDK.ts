@@ -161,6 +161,11 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
     });
   }
 
+  // Wire vaultMetaService into eVaultService for collateral resolution
+  if (eVaultService instanceof EVaultService) {
+    eVaultService.setVaultMetaService(vaultMetaService as IVaultMetaService);
+  }
+
   // Build account service if not overridden (requires vaultMetaService for fetchAccountWithVaults / fetchVaults)
   let accountService: IAccountService<TVaultEntity>;
   if (servicesOverrides?.accountService) {
@@ -196,6 +201,17 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
       backendClient,
     );
   })();
+
+  // Wire priceService into vault services for market price resolution
+  if (eVaultService instanceof EVaultService) {
+    eVaultService.setPriceService(priceService);
+  }
+  if (eulerEarnService instanceof EulerEarnService) {
+    eulerEarnService.setPriceService(priceService);
+  }
+  if (securitizeVaultService instanceof SecuritizeVaultService) {
+    securitizeVaultService.setPriceService(priceService);
+  }
 
   return new EulerSDK<TVaultEntity>({
     accountService,

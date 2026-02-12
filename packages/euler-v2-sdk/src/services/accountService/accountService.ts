@@ -2,6 +2,12 @@ import { Account, IAccount, SubAccount } from "../../entities/Account.js";
 import { Address, getAddress } from "viem";
 import type { IVaultMetaService } from "../vaults/vaultMetaService/index.js";
 import type { IHasVaultAddress, IVaultEntity } from "../../entities/Account.js";
+import type { VaultFetchOptions } from "../vaults/index.js";
+
+export interface AccountFetchOptions {
+  resolveVaults?: boolean;
+  vaultOptions?: VaultFetchOptions;
+}
 
 /** Collects unique vault addresses from positions and liquidity collaterals only (not enabledControllers/enabledCollaterals). */
 function collectVaultAddressesFromPositionsAndLiquidity(account: IAccount): Address[] {
@@ -44,19 +50,14 @@ export interface IAccountDataSource {
 }
 
 export interface IAccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity> {
-  fetchAccountBasic(chainId: number, address: Address): Promise<Account<never>>;
-  fetchSubAccountBasic(
-    chainId: number,
-    subAccount: Address,
-    vaults?: Address[]
-  ): Promise<SubAccount | undefined>;
-  fetchAccount(chainId: number, address: Address): Promise<Account<TVaultEntity>>;
+  fetchAccount(chainId: number, address: Address, options?: AccountFetchOptions): Promise<Account<TVaultEntity>>;
   fetchSubAccount(
     chainId: number,
     subAccount: Address,
-    vaults?: Address[]
+    vaults?: Address[],
+    options?: AccountFetchOptions
   ): Promise<SubAccount<TVaultEntity> | undefined>;
-  fetchVaults(account: Account<never>): Promise<Account<TVaultEntity>>;
+  fetchVaults(account: Account<never>, vaultOptions?: VaultFetchOptions): Promise<Account<TVaultEntity>>;
   resolveVaults<T extends IHasVaultAddress>(account: Account<never>, vaults: T[]): Account<T>;
 }
 
@@ -68,23 +69,41 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     private readonly vaultMetaService: IVaultMetaService<TVaultEntity>
   ) {}
 
+  async fetchAccount(chainId: number, address: Address, options?: AccountFetchOptions): Promise<Account<TVaultEntity>> {
+    const accountData = await this.dataSource.fetchAccount(chainId, address);
+    const account: Account<never> = accountData
+      ? new Account(accountData)
+      : new Account({
+          chainId,
+          owner: address,
+          isLockdownMode: false,
+          isPermitDisabledMode: false,
+          subAccounts: {},
+        });
 
-  // address should be the main account address (e.g. connected EOA)
-  async fetchAccount(chainId: number, address: Address): Promise<Account<TVaultEntity>> {
-    const account = await this.fetchAccountBasic(chainId, address);
-    return this.fetchVaults(account);
+    if (options?.resolveVaults === false) {
+      return account as Account<TVaultEntity>;
+    }
+
+    return this.fetchVaults(account, options?.vaultOptions);
   }
 
   async fetchSubAccount(
     chainId: number,
     subAccount: Address,
-    vaults?: Address[]
+    vaults?: Address[],
+    options?: AccountFetchOptions
   ): Promise<SubAccount<TVaultEntity> | undefined> {
     const sa = await this.dataSource.fetchSubAccount(chainId, subAccount, vaults);
     if (!sa) return undefined;
+
+    if (options?.resolveVaults === false) {
+      return sa as SubAccount<TVaultEntity>;
+    }
+
     const addresses = vaults?.length ? vaults : collectVaultAddressesFromSubAccountPositionsAndLiquidity(sa);
     if (addresses.length === 0) return sa as SubAccount<TVaultEntity>;
-    const entities = await this.vaultMetaService.fetchVaults(chainId, addresses);
+    const entities = await this.vaultMetaService.fetchVaults(chainId, addresses, options?.vaultOptions);
     const tempAccount = new Account({
       chainId,
       owner: sa.owner,
@@ -94,32 +113,10 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     return tempAccount.getSubAccount(getAddress(sa.account));
   }
 
-  async fetchAccountBasic(chainId: number, address: Address): Promise<Account<never>> {
-    const accountData = await this.dataSource.fetchAccount(chainId, address);
-    if (!accountData)
-      return new Account({
-        chainId,
-        owner: address,
-        isLockdownMode: false,
-        isPermitDisabledMode: false,
-        subAccounts: {},
-      });
-
-    return new Account(accountData);
-  }
-
-  async fetchSubAccountBasic(
-    chainId: number,
-    subAccount: Address,
-    vaults?: Address[]
-  ): Promise<SubAccount | undefined> {
-    return this.dataSource.fetchSubAccount(chainId, subAccount, vaults);
-  }
-
-  async fetchVaults(account: Account<never>): Promise<Account<TVaultEntity>> {
+  async fetchVaults(account: Account<never>, vaultOptions?: VaultFetchOptions): Promise<Account<TVaultEntity>> {
     const addresses = collectVaultAddressesFromPositionsAndLiquidity(account);
     if (addresses.length === 0) return account as Account<TVaultEntity>;
-    const vaults = await this.vaultMetaService.fetchVaults(account.chainId, addresses);
+    const vaults = await this.vaultMetaService.fetchVaults(account.chainId, addresses, vaultOptions);
     return account.resolveVaults(vaults);
   }
 

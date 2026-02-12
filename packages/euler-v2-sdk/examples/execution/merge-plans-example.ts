@@ -65,7 +65,7 @@ async function mergePlansExample() {
   const sdk = await buildSDK({ rpcUrls });
 
   // Fetch account (may have no positions yet)
-  let accountData = await sdk.accountService.fetchAccountBasic(mainnet.id, account.address);
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { resolveVaults: false });
 
   // ─── Setup: initial borrow so we have a position for repay/withdraw plans ───
   console.log("\n=== Setup: Initial borrow (deposit USDC + borrow USDT) ===");
@@ -92,10 +92,11 @@ async function mergePlansExample() {
   console.log("✓ Setup complete: position created\n");
 
   // Fetch sub-account and update account data so we have positions for repay/withdraw plans
-  const subAccount = await sdk.accountService.fetchSubAccountBasic(
+  const subAccount = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    { resolveVaults: false },
   );
   if (!subAccount) throw new Error("Sub-account not found after setup");
   accountData.updateSubAccounts(subAccount);
@@ -161,10 +162,11 @@ async function mergePlansExample() {
   console.log("✓ Executing merged plan...\n");
   await executePlan(resolvedPlan, sdk);
 
-  const subAccountAfter = await sdk.accountService.fetchSubAccountBasic(
+  const subAccountAfter = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    { resolveVaults: false },
   );
   await logOperationResult(mainnet.id, accountData, [subAccountAfter], sdk);
 }

@@ -69,7 +69,7 @@ async function multiplyExample() {
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
-  let accountData = await sdk.accountService.fetchAccountBasic(mainnet.id, account.address);
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { resolveVaults: false });
 
   // Step 1: Get swap quote from USDT (liability asset) to WETH (long asset)
   console.log('\n✓ Fetching swap quote from USDT to WETH...');
@@ -131,10 +131,11 @@ async function multiplyExample() {
   }
 
   // Fetch the updated sub-account and log the result
-  const subAccount = await sdk.accountService.fetchSubAccountBasic(
+  const subAccount = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_WETH_VAULT]
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_WETH_VAULT],
+    { resolveVaults: false }
   );
 
   // Log the diff between before and after

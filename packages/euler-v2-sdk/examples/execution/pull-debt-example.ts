@@ -65,7 +65,7 @@ async function pullDebtExample() {
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
-  let accountData = await sdk.accountService.fetchAccountBasic(mainnet.id, account.address);
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { resolveVaults: false });
 
   // Step 1: Create debt position in sub-account 1
   console.log('\n=== Step 1: Create Debt Position in Sub-Account 1 ===');
@@ -97,23 +97,25 @@ async function pullDebtExample() {
   await executePlan(borrowPlan, sdk);
 
   // Fetch updated sub-accounts after borrow
-  let subAccount1 = await sdk.accountService.fetchSubAccountBasic(
+  let subAccount1 = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_1_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    { resolveVaults: false }
   );
-  let subAccount2 = await sdk.accountService.fetchSubAccountBasic(
+  let subAccount2 = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_2_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    { resolveVaults: false }
   );
-  
+
   // Log the diff between before and after borrow
   await logOperationResult(mainnet.id, accountData, [subAccount1, subAccount2], sdk);
 
   // Step 2: Deposit collateral into sub-account 2
   console.log('\n=== Step 2: Deposit Collateral into Sub-Account 2 ===');
-  
+
   // Update account data with the fetched sub-accounts
   accountData.updateSubAccounts(subAccount1!, subAccount2!);
 
@@ -141,15 +143,17 @@ async function pullDebtExample() {
   await executePlan(depositPlan, sdk);
 
   // Fetch updated sub-accounts after deposit
-  subAccount1 = await sdk.accountService.fetchSubAccountBasic(
+  subAccount1 = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_1_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    { resolveVaults: false }
   );
-  subAccount2 = await sdk.accountService.fetchSubAccountBasic(
+  subAccount2 = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_2_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    { resolveVaults: false }
   );
   
   // Log the diff
@@ -176,15 +180,17 @@ async function pullDebtExample() {
   await executePlan(pullDebtPlan, sdk);
 
   // Fetch the updated sub-accounts and log the result
-  subAccount1 = await sdk.accountService.fetchSubAccountBasic(
+  subAccount1 = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_1_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    { resolveVaults: false }
   );
-  subAccount2 = await sdk.accountService.fetchSubAccountBasic(
+  subAccount2 = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_2_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    { resolveVaults: false }
   );
 
   // Log the diff between before and after pull debt

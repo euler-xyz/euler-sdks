@@ -51,7 +51,7 @@ async function mintExample() {
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
-  let accountData = await sdk.accountService.fetchAccountBasic(mainnet.id, account.address);
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { resolveVaults: false });
 
   // Plan the mint
   let mintPlan = sdk.executionService.planMint({
@@ -81,7 +81,7 @@ async function mintExample() {
   await executePlan(mintPlan, sdk);
 
   // Fetch the updated sub-account and log the result
-  const subAccount = await sdk.accountService.fetchSubAccountBasic(mainnet.id, SUB_ACCOUNT_ADDRESS, [EULER_PRIME_USDC_VAULT]);
+  const subAccount = await sdk.accountService.fetchSubAccount(mainnet.id, SUB_ACCOUNT_ADDRESS, [EULER_PRIME_USDC_VAULT], { resolveVaults: false });
   
   // Log the diff between before and after
   await logOperationResult(mainnet.id, accountData, [subAccount], sdk);

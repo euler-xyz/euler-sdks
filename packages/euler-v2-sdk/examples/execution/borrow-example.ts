@@ -57,9 +57,9 @@ async function borrowExample() {
   // Build the SDK
   const sdk = await buildSDK({ rpcUrls });
 
-  // Fetch the account. NOTE: fetchAccountBasic depends on indexing for sub-account discovery,
-  // it will not detect data created on local chain, like previous example runs. Use fetchSubAccountBasic for that.
-  let accountData = await sdk.accountService.fetchAccountBasic(mainnet.id, account.address);
+  // Fetch the account. NOTE: fetchAccount depends on indexing for sub-account discovery,
+  // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { resolveVaults: false });
 
 
   // Plan the borrow operation (will deposit collateral and borrow in one transaction)
@@ -93,10 +93,11 @@ async function borrowExample() {
   await executePlan(borrowPlan, sdk);
 
   // Fetch the updated sub-account and log the result
-  const subAccount = await sdk.accountService.fetchSubAccountBasic(
+  const subAccount = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT]
+    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    { resolveVaults: false }
   );
 
   // Log the diff between before and after

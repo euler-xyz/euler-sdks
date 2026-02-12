@@ -32,6 +32,7 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
   asset: Token;
   totalShares: bigint;
   totalAssets: bigint;
+  marketPriceUsd?: PriceWad;
 
   constructor(args: IERC4626Vault) {
     this.type = args.type;

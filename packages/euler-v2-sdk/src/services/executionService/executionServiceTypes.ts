@@ -1,5 +1,5 @@
 import { Address, Hex, TypedDataDomain } from "viem";
-import type { Account, SubAccount } from "../../entities/Account.js";
+import type { Account, SubAccount, IHasVaultAddress } from "../../entities/Account.js";
 import type { Wallet } from "../../entities/Wallet.js";
 import type {
   SwapQuote,
@@ -309,13 +309,13 @@ export type PlanDepositArgs = {
   vault: Address
   amount: bigint
   receiver: Address
-  account: Account
+  account: Account<IHasVaultAddress>
   asset: Address
   enableCollateral?: boolean
 }
 
 export type PlanMintArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   vault: Address
   shares: bigint
   receiver: Address
@@ -325,7 +325,7 @@ export type PlanMintArgs = {
 }
 
 export type PlanWithdrawArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   vault: Address
   assets: bigint
   owner: Address
@@ -334,7 +334,7 @@ export type PlanWithdrawArgs = {
 }
 
 export type PlanRedeemArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   vault: Address
   shares: bigint
   owner: Address
@@ -343,7 +343,7 @@ export type PlanRedeemArgs = {
 }
 
 export type PlanBorrowArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   vault: Address
   amount: bigint
   borrowAccount: Address
@@ -356,7 +356,7 @@ export type PlanBorrowArgs = {
 }
 
 export type PlanLiquidationArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   liquidatorSubAccountAddress: Address
   vault: Address
   asset: Address
@@ -367,14 +367,14 @@ export type PlanLiquidationArgs = {
 }
 
 export type PlanRepayFromWalletArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   liabilityVault: Address
   liabilityAmount: bigint
   receiver: Address
 }
 
 export type PlanRepayFromDepositArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   liabilityVault: Address
   liabilityAmount: bigint
   receiver: Address
@@ -383,22 +383,22 @@ export type PlanRepayFromDepositArgs = {
 }
 
 export type PlanRepayWithSwapArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   swapQuote: SwapQuote
 }
 
 export type PlanSwapCollateralArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   swapQuote: SwapQuote
 }
 
 export type PlanSwapDebtArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   swapQuote: SwapQuote
 }
 
 export type PlanTransferArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   vault: Address
   from: Address
   to: Address
@@ -408,7 +408,7 @@ export type PlanTransferArgs = {
 }
 
 export type PlanPullDebtArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   vault: Address
   from: Address
   to: Address
@@ -416,7 +416,7 @@ export type PlanPullDebtArgs = {
 }
 
 export type PlanMultiplyWithSwapArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   collateralVault: Address
   collateralAmount: bigint
   collateralAsset: Address
@@ -424,7 +424,7 @@ export type PlanMultiplyWithSwapArgs = {
 }
 
 export type PlanMultiplySameAssetArgs = {
-  account: Account
+  account: Account<IHasVaultAddress>
   collateralVault: Address
   collateralAmount: bigint
   collateralAsset: Address

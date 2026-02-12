@@ -3,7 +3,7 @@ import { EVault } from "../../../entities/EVault.js";
 import { EulerEarn } from "../../../entities/EulerEarn.js";
 import { SecuritizeCollateralVault } from "../../../entities/SecuritizeCollateralVault.js";
 import { VaultType } from "../../../utils/types.js";
-import type { IVaultService } from "../index.js";
+import type { IVaultService, VaultFetchOptions } from "../index.js";
 import type { IVaultTypeDataSource } from "./dataSources/IVaultTypeDataSource.js";
 import { StandardEVaultPerspectives } from "../eVaultService/index.js";
 import { StandardEulerEarnPerspectives } from "../eulerEarnService/index.js";
@@ -153,7 +153,8 @@ export class VaultMetaService<TEntity = VaultEntity>
 
   async fetchVaults(
     chainId: number,
-    vaults: Address[]
+    vaults: Address[],
+    options?: VaultFetchOptions
   ): Promise<TEntity[]> {
     if (vaults.length === 0) return [];
     const vaultToService = await this.getVaultToService(chainId, vaults);
@@ -173,7 +174,7 @@ export class VaultMetaService<TEntity = VaultEntity>
     await Promise.all(
       Array.from(serviceToAddresses.entries()).map(
         async ([service, addrs]) => {
-          const entities = await service.fetchVaults(chainId, addrs);
+          const entities = await service.fetchVaults(chainId, addrs, options);
           for (const e of entities) {
             resultsByAddress.set(
               getAddress((e as { address: Address }).address),

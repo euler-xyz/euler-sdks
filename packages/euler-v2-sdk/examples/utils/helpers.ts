@@ -1,6 +1,6 @@
 import { Address, erc20Abi, formatUnits, isAddressEqual, parseAbi, PublicClient, TestClient, WalletClient } from "viem";
 import { publicClient } from "./config.js";
-import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK, eVaultAbi } from "euler-v2-sdk";
+import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK, eVaultAbi, type IHasVaultAddress } from "euler-v2-sdk";
 
 
 // Helper function for header
@@ -42,14 +42,14 @@ export async function logWalletBalance(tokenAddress: Address, accountAddress: Ad
   console.log(`  Wallet ${symbol} balance: ${formatUnits(balance, await getDecimals(tokenAddress))} ${symbol}`);
 }
 
-export async function logVaultBalance(vaultAddress: Address, account: Account, subAccountId: number) {
+export async function logVaultBalance(vaultAddress: Address, account: Account<IHasVaultAddress>, subAccountId: number) {
   const position = account.getPosition(getSubAccountAddress(account.owner, subAccountId), vaultAddress);
   const vaultBalance = position?.assets ?? 0n;
   const symbol = await getSymbol(vaultAddress);
   console.log(`  Vault ${symbol} balance: ${formatUnits(vaultBalance, await getDecimals(vaultAddress))} ${symbol}`);
 }
 
-export function logAccount(account: Account) {
+export function logAccount(account: Account<IHasVaultAddress>) {
   const subAccountCount = Object.keys(account.subAccounts).length;
   if (subAccountCount === 0) {
     console.log("Note: Account has no existing positions. Creating new account...");
@@ -171,7 +171,7 @@ function truncateAddress(address: Address): string {
 /**
  * Log a position with formatting, skipping default/empty values
  */
-async function logPosition(chainId: number, position: AccountPosition, sdk: EulerSDK, indent: string = "    ") {
+async function logPosition(chainId: number, position: AccountPosition<IHasVaultAddress>, sdk: EulerSDK, indent: string = "    ") {
   const vaultMeta = await fetchVaultMetadata(chainId, position.vaultAddress, position.asset, sdk);
   
   console.log(`${indent}Vault:       ${vaultMeta.name}`);
@@ -197,7 +197,7 @@ async function logPosition(chainId: number, position: AccountPosition, sdk: Eule
 /**
  * Log the difference between two positions, skipping default/empty values unless they changed
  */
-async function logPositionDiff(chainId: number, before: AccountPosition, after: AccountPosition, sdk: EulerSDK, indent: string = "    ") {
+async function logPositionDiff(chainId: number, before: AccountPosition<IHasVaultAddress>, after: AccountPosition<IHasVaultAddress>, sdk: EulerSDK, indent: string = "    ") {
   const vaultMeta = await fetchVaultMetadata(chainId, after.vaultAddress, after.asset, sdk);
   
   console.log(`${indent}Vault:       ${vaultMeta.name}`);
@@ -256,7 +256,7 @@ async function logPositionDiff(chainId: number, before: AccountPosition, after: 
 /**
  * Check if a position has any meaningful data (non-default values)
  */
-function hasPositionData(position: AccountPosition): boolean {
+function hasPositionData(position: AccountPosition<IHasVaultAddress>): boolean {
   return position.shares !== 0n || 
           position.assets !== 0n || 
           position.borrowed !== 0n || 
@@ -267,7 +267,7 @@ function hasPositionData(position: AccountPosition): boolean {
 /**
  * Find a position in a sub-account by vault address
  */
-function findPosition(subAccount: SubAccount, vaultAddress: Address): AccountPosition | undefined {
+function findPosition(subAccount: SubAccount<IHasVaultAddress>, vaultAddress: Address): AccountPosition<IHasVaultAddress> | undefined {
   return subAccount.positions.find(p => isAddressEqual(p.vaultAddress, vaultAddress));
 }
 
@@ -304,22 +304,22 @@ async function formatVaultList(chainId: number, vaultAddresses: Address[], sdk: 
  * @param sdk - SDK instance for fetching metadata
  * 
  * @example
- * const accountBefore = await sdk.accountService.fetchAccountBasic(chainId, address);
+ * const accountBefore = await sdk.accountService.fetchAccount(chainId, address, { resolveVaults: false });
  * await executePlan(plan, sdk);
- * const accountAfter = await sdk.accountService.fetchAccountBasic(chainId, address);
+ * const accountAfter = await sdk.accountService.fetchAccount(chainId, address, { resolveVaults: false });
  * await logOperationResult(chainId, accountBefore, accountAfter, sdk);
- * 
+ *
  * @example
  * // Or with sub-accounts only
- * const accountBefore = await sdk.accountService.fetchAccountBasic(chainId, address);
+ * const accountBefore = await sdk.accountService.fetchAccount(chainId, address, { resolveVaults: false });
  * await executePlan(plan, sdk);
  * const subAccounts = await Promise.all([
- *   sdk.accountService.fetchSubAccountBasic(chainId, subAccountAddr1, vaults),
-  *   sdk.accountService.fetchSubAccountBasic(chainId, subAccountAddr2, vaults),
+ *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr1, vaults, { resolveVaults: false }),
+  *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr2, vaults, { resolveVaults: false }),
  * ]);
  * await logOperationResult(chainId, accountBefore, subAccounts, sdk);
  */
-export async function logOperationResult(chainId: number, before: Account, after: Account | (SubAccount | undefined)[], sdk: EulerSDK) {
+export async function logOperationResult(chainId: number, before: Account<IHasVaultAddress>, after: Account<IHasVaultAddress> | (SubAccount<IHasVaultAddress> | undefined)[], sdk: EulerSDK) {
   console.log("\n" + "═".repeat(80));
   console.log("OPERATION RESULT");
   console.log("═".repeat(80));
@@ -334,11 +334,11 @@ export async function logOperationResult(chainId: number, before: Account, after
   }
 
   // Normalize after to array of sub-accounts, filtering out undefined values
-  const afterSubAccounts: SubAccount[] = Array.isArray(after)
-    ? after.filter((sa): sa is SubAccount => sa !== undefined)
-    : Object.values(after.subAccounts).filter((sa): sa is SubAccount => sa != null);
+  const afterSubAccounts: SubAccount<IHasVaultAddress>[] = Array.isArray(after)
+    ? after.filter((sa): sa is SubAccount<IHasVaultAddress> => sa !== undefined)
+    : Object.values(after.subAccounts).filter((sa): sa is SubAccount<IHasVaultAddress> => sa != null);
 
-  const beforeSubAccountsList = Object.values(before.subAccounts).filter((sa): sa is SubAccount => sa != null);
+  const beforeSubAccountsList = Object.values(before.subAccounts).filter((sa): sa is SubAccount<IHasVaultAddress> => sa != null);
 
   // Create maps for easy lookup
   const beforeMap = new Map(beforeSubAccountsList.map(sa => [sa.account, sa]));
@@ -435,7 +435,7 @@ export async function logOperationResult(chainId: number, before: Account, after
       const afterPositions = new Map(afterSub.positions.map(p => [p.vaultAddress, p]));
       const allVaults = new Set([...beforePositions.keys(), ...afterPositions.keys()]);
 
-      const positionChanges: { type: 'new' | 'changed' | 'removed', vault: Address, before?: AccountPosition, after?: AccountPosition }[] = [];
+      const positionChanges: { type: 'new' | 'changed' | 'removed', vault: Address, before?: AccountPosition<IHasVaultAddress>, after?: AccountPosition<IHasVaultAddress> }[] = [];
 
       for (const vault of allVaults) {
         const beforePos = beforePositions.get(vault);

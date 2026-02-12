@@ -9,6 +9,7 @@ import { IRMParams } from "../utils/irm.js";
 import { ERC4626Vault, IERC4626Vault, IERC4626VaultConversion, VIRTUAL_DEPOSIT_AMOUNT, type PriceWad } from "./ERC4626Vault.js";
 import type { IPriceService } from "../services/priceService/index.js";
 import { getAssetOraclePrice, getCollateralOraclePrice } from "../services/priceService/index.js";
+import type { VaultEntity } from "../services/vaults/vaultMetaService/index.js";
 
 export type EVaultHookedOperations = {
   deposit: boolean;
@@ -71,6 +72,8 @@ export interface EVaultCollateral {
   liquidationLTV: number;
   ramping?: EVaultCollateralRamping;
   oraclePriceRaw: OraclePrice; // shouldn't be used directly, use EVault price getters instead
+  vault?: VaultEntity;
+  marketPriceUsd?: PriceWad;
 }
 
 export interface EVaultCollateralRamping {
