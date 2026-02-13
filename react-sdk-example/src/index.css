@@ -145,6 +145,15 @@ th {
   white-space: nowrap;
 }
 
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+th.sortable:hover {
+  background: #f0f0f0;
+}
+
 tr:hover {
   background: #f5f5f5;
 }
@@ -299,4 +308,71 @@ tr.clickable {
 
 .copy-btn:hover {
   opacity: 1;
+}
+
+/* APY with rewards tooltip */
+.apy-with-rewards {
+  position: relative;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.apy-tooltip {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #000;
+  color: #fff;
+  font-size: 11px;
+  padding: 8px 10px;
+  white-space: nowrap;
+  z-index: 100;
+  margin-bottom: 6px;
+  min-width: 180px;
+}
+
+.apy-with-rewards:hover .apy-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.apy-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.apy-tooltip-divider {
+  border-top: 1px solid #555;
+  margin: 2px 0;
+}
+
+.apy-tooltip-total {
+  font-weight: 700;
+}
+
+.apy-tooltip-campaign {
+  color: #aaa;
+  font-size: 10px;
+}
+
+/* Rewards page */
+.rewards-vault-details {
+  margin-bottom: 16px;
+  border: 1px solid #ccc;
+  padding: 8px 12px;
+}
+
+.rewards-vault-details summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.rewards-vault-details[open] summary {
+  margin-bottom: 8px;
 }

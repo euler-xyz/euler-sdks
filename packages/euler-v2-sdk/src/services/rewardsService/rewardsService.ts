@@ -164,7 +164,8 @@ export class RewardsService implements IRewardsService {
           campaignId: c.campaignId,
           source: "merkl",
           action: opp.action,
-          apr: c.apr,
+          // Merkl API returns APR as a percentage (5.5 = 5.5%); normalise to decimal fraction
+          apr: c.apr / 100,
           rewardTokenAddress: getAddress(c.rewardToken.address) as Address,
           rewardTokenSymbol: c.rewardToken.symbol,
           dailyRewards: c.dailyRewards,
@@ -227,7 +228,7 @@ export class RewardsService implements IRewardsService {
 
     for (const campaign of all) {
       const key = campaign._vaultAddress; // already lowercased
-      if (!key) continue;
+      if (!key || !campaign.apr) continue;
 
       let info = map.get(key);
       if (!info) {

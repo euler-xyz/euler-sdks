@@ -8,6 +8,7 @@ import { VaultListPage } from "./pages/VaultListPage.tsx";
 import { VaultDetailPage } from "./pages/VaultDetailPage.tsx";
 import { EulerEarnDetailPage } from "./pages/EulerEarnDetailPage.tsx";
 import { PortfolioPage } from "./pages/PortfolioPage.tsx";
+import { RewardsPage } from "./pages/RewardsPage.tsx";
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
                   element={<EulerEarnDetailPage />}
                 />
                 <Route path="/portfolio" element={<PortfolioPage />} />
+                <Route path="/rewards" element={<RewardsPage />} />
               </Routes>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
 import { useVerifiedVaults } from "../queries/sdkQueries.ts";
@@ -7,9 +7,12 @@ import {
   StandardEulerEarnPerspectives,
   isEVault,
   isEulerEarn,
+  type EVault,
+  type EulerEarn,
 } from "euler-v2-sdk";
-import { formatBigInt, formatAPY, formatPercent, formatPriceUsd } from "../utils/format.ts";
+import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
+import { ApyCell } from "../components/ApyCell.tsx";
 
 const ALL_PERSPECTIVES = [
   StandardEVaultPerspectives.GOVERNED,
@@ -18,6 +21,130 @@ const ALL_PERSPECTIVES = [
 ];
 
 type Tab = "evaults" | "eulerEarn" | "securitize";
+type SortDir = "asc" | "desc";
+
+// ---------------------------------------------------------------------------
+// EVault sorting
+// ---------------------------------------------------------------------------
+
+type EVaultSortKey =
+  | "name"
+  | "asset"
+  | "totalSupply"
+  | "totalBorrows"
+  | "supplyAPY"
+  | "borrowAPY"
+  | "usdPrice"
+  | "collaterals";
+
+function getEVaultSortValue(vault: EVault, key: EVaultSortKey): number | string {
+  switch (key) {
+    case "name":
+      return (vault.shares.name || "").toLowerCase();
+    case "asset":
+      return vault.asset.symbol.toLowerCase();
+    case "totalSupply": {
+      const amt = Number(vault.totalAssets) / 10 ** vault.asset.decimals;
+      const price = Number(vault.marketPriceUsd ?? 0n) / 1e18;
+      return amt * price;
+    }
+    case "totalBorrows": {
+      const amt = Number(vault.totalBorrowed) / 10 ** vault.asset.decimals;
+      const price = Number(vault.marketPriceUsd ?? 0n) / 1e18;
+      return amt * price;
+    }
+    case "supplyAPY":
+      return Number(vault.interestRates.supplyAPY) + (vault.rewards?.totalRewardsApr ?? 0);
+    case "borrowAPY":
+      return Number(vault.interestRates.borrowAPY);
+    case "usdPrice":
+      return vault.marketPriceUsd !== undefined ? Number(vault.marketPriceUsd) : -1;
+    case "collaterals":
+      return vault.collaterals.length;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// EulerEarn sorting
+// ---------------------------------------------------------------------------
+
+type EarnSortKey =
+  | "name"
+  | "asset"
+  | "totalAssets"
+  | "supplyAPY"
+  | "usdPrice"
+  | "strategies"
+  | "perfFee";
+
+function getEarnSortValue(vault: EulerEarn, key: EarnSortKey): number | string {
+  switch (key) {
+    case "name":
+      return (vault.shares.name || "").toLowerCase();
+    case "asset":
+      return vault.asset.symbol.toLowerCase();
+    case "totalAssets": {
+      const amt = Number(vault.totalAssets) / 10 ** vault.asset.decimals;
+      const price = Number(vault.marketPriceUsd ?? 0n) / 1e18;
+      return amt * price;
+    }
+    case "supplyAPY":
+      return (vault.supplyApy ?? 0) + (vault.rewards?.totalRewardsApr ?? 0);
+    case "usdPrice":
+      return vault.marketPriceUsd !== undefined ? Number(vault.marketPriceUsd) : -1;
+    case "strategies":
+      return vault.strategies.length;
+    case "perfFee":
+      return vault.performanceFee;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Generic sort helper
+// ---------------------------------------------------------------------------
+
+function useSorted<T, K extends string>(
+  items: T[],
+  defaultKey: K,
+  getValue: (item: T, key: K) => number | string
+) {
+  const [sortKey, setSortKey] = useState<K>(defaultKey);
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const sorted = useMemo(() => {
+    const copy = [...items];
+    copy.sort((a, b) => {
+      const va = getValue(a, sortKey);
+      const vb = getValue(b, sortKey);
+      let cmp: number;
+      if (typeof va === "string" && typeof vb === "string") {
+        cmp = va.localeCompare(vb);
+      } else {
+        cmp = (va as number) - (vb as number);
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return copy;
+  }, [items, sortKey, sortDir, getValue]);
+
+  const toggleSort = (key: K) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  const indicator = (key: K) =>
+    key === sortKey ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : "";
+
+  return { sorted, toggleSort, indicator, sortKey };
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export function VaultListPage() {
   const { chainId, loading: sdkLoading, error: sdkError } = useSDK();
@@ -28,6 +155,9 @@ export function VaultListPage() {
 
   const eVaults = allVaults?.filter(isEVault) ?? [];
   const earnVaults = allVaults?.filter(isEulerEarn) ?? [];
+
+  const eVaultSort = useSorted(eVaults, "totalSupply" as EVaultSortKey, getEVaultSortValue);
+  const earnSort = useSorted(earnVaults, "totalAssets" as EarnSortKey, getEarnSortValue);
 
   if (sdkLoading)
     return <div className="status-message">Initializing SDK...</div>;
@@ -69,19 +199,35 @@ export function VaultListPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Asset</th>
+                  <th className="sortable" onClick={() => eVaultSort.toggleSort("name")}>
+                    Name{eVaultSort.indicator("name")}
+                  </th>
+                  <th className="sortable" onClick={() => eVaultSort.toggleSort("asset")}>
+                    Asset{eVaultSort.indicator("asset")}
+                  </th>
                   <th>Address</th>
-                  <th>Total Supply</th>
-                  <th>Total Borrows</th>
-                  <th>Supply APY</th>
-                  <th>Borrow APY</th>
-                  <th>USD Price</th>
-                  <th>Collaterals</th>
+                  <th className="sortable" onClick={() => eVaultSort.toggleSort("totalSupply")}>
+                    Total Supply{eVaultSort.indicator("totalSupply")}
+                  </th>
+                  <th className="sortable" onClick={() => eVaultSort.toggleSort("totalBorrows")}>
+                    Total Borrows{eVaultSort.indicator("totalBorrows")}
+                  </th>
+                  <th className="sortable" onClick={() => eVaultSort.toggleSort("supplyAPY")}>
+                    Supply APY{eVaultSort.indicator("supplyAPY")}
+                  </th>
+                  <th className="sortable" onClick={() => eVaultSort.toggleSort("borrowAPY")}>
+                    Borrow APY{eVaultSort.indicator("borrowAPY")}
+                  </th>
+                  <th className="sortable" onClick={() => eVaultSort.toggleSort("usdPrice")}>
+                    USD Price{eVaultSort.indicator("usdPrice")}
+                  </th>
+                  <th className="sortable" onClick={() => eVaultSort.toggleSort("collaterals")}>
+                    Collaterals{eVaultSort.indicator("collaterals")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {eVaults.map((vault) => (
+                {eVaultSort.sorted.map((vault) => (
                   <tr
                     key={vault.address}
                     className="clickable"
@@ -98,8 +244,17 @@ export function VaultListPage() {
                     <td>
                       {formatBigInt(vault.totalBorrowed, vault.asset.decimals)}
                     </td>
-                    <td>{formatAPY(vault.interestRates.supplyAPY)}</td>
-                    <td>{formatAPY(vault.interestRates.borrowAPY)}</td>
+                    <td>
+                      <ApyCell
+                        baseApy={Number(vault.interestRates.supplyAPY)}
+                        rewards={vault.rewards}
+                      />
+                    </td>
+                    <td>
+                      <ApyCell
+                        baseApy={Number(vault.interestRates.borrowAPY)}
+                      />
+                    </td>
                     <td>{formatPriceUsd(vault.marketPriceUsd)}</td>
                     <td>{vault.collaterals.length}</td>
                   </tr>
@@ -122,18 +277,32 @@ export function VaultListPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Asset</th>
+                  <th className="sortable" onClick={() => earnSort.toggleSort("name")}>
+                    Name{earnSort.indicator("name")}
+                  </th>
+                  <th className="sortable" onClick={() => earnSort.toggleSort("asset")}>
+                    Asset{earnSort.indicator("asset")}
+                  </th>
                   <th>Address</th>
-                  <th>Total Assets</th>
-                  <th>Supply APY</th>
-                  <th>USD Price</th>
-                  <th>Strategies</th>
-                  <th>Perf. Fee</th>
+                  <th className="sortable" onClick={() => earnSort.toggleSort("totalAssets")}>
+                    Total Assets{earnSort.indicator("totalAssets")}
+                  </th>
+                  <th className="sortable" onClick={() => earnSort.toggleSort("supplyAPY")}>
+                    Supply APY{earnSort.indicator("supplyAPY")}
+                  </th>
+                  <th className="sortable" onClick={() => earnSort.toggleSort("usdPrice")}>
+                    USD Price{earnSort.indicator("usdPrice")}
+                  </th>
+                  <th className="sortable" onClick={() => earnSort.toggleSort("strategies")}>
+                    Strategies{earnSort.indicator("strategies")}
+                  </th>
+                  <th className="sortable" onClick={() => earnSort.toggleSort("perfFee")}>
+                    Perf. Fee{earnSort.indicator("perfFee")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {earnVaults.map((vault) => (
+                {earnSort.sorted.map((vault) => (
                   <tr
                     key={vault.address}
                     className="clickable"
@@ -149,7 +318,7 @@ export function VaultListPage() {
                     </td>
                     <td>
                       {vault.supplyApy !== undefined
-                        ? formatPercent(vault.supplyApy)
+                        ? <ApyCell baseApy={vault.supplyApy} rewards={vault.rewards} />
                         : "-"}
                     </td>
                     <td>{formatPriceUsd(vault.marketPriceUsd)}</td>

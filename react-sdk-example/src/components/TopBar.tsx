@@ -11,6 +11,7 @@ export function TopBar() {
     location.pathname.startsWith("/vaults") ||
     location.pathname.startsWith("/vault/");
   const isPortfolio = location.pathname.startsWith("/portfolio");
+  const isRewards = location.pathname.startsWith("/rewards");
 
   return (
     <div className="topbar">
@@ -33,6 +34,12 @@ export function TopBar() {
             onClick={() => navigate("/portfolio")}
           >
             Portfolio
+          </button>
+          <button
+            className={`nav-link ${isRewards ? "active" : ""}`}
+            onClick={() => navigate("/rewards")}
+          >
+            Rewards
           </button>
         </nav>
       </div>

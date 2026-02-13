@@ -9,6 +9,7 @@ import {
   formatPriceUsd,
 } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
+import { ApyCell } from "../components/ApyCell.tsx";
 
 export function VaultDetailPage() {
   const { chainId: chainIdParam, address } = useParams<{
@@ -96,7 +97,10 @@ export function VaultDetailPage() {
         <div className="detail-item">
           <div className="label">Supply APY</div>
           <div className="value">
-            {formatAPY(vault.interestRates.supplyAPY)}
+            <ApyCell
+              baseApy={Number(vault.interestRates.supplyAPY)}
+              rewards={vault.rewards}
+            />
           </div>
         </div>
         <div className="detail-item">

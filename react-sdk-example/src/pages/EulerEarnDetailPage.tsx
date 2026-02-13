@@ -9,6 +9,7 @@ import {
   formatPriceUsd,
 } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
+import { ApyCell } from "../components/ApyCell.tsx";
 
 export function EulerEarnDetailPage() {
   const { chainId: chainIdParam, address } = useParams<{
@@ -80,7 +81,7 @@ export function EulerEarnDetailPage() {
           <div className="label">Supply APY (weighted)</div>
           <div className="value">
             {supplyApy !== undefined
-              ? formatPercent(supplyApy)
+              ? <ApyCell baseApy={supplyApy} rewards={vault.rewards} />
               : "-"}
           </div>
         </div>

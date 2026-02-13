@@ -1,5 +1,5 @@
 import { QueryClient, useQuery } from "@tanstack/react-query";
-import type { BuildQueryFn, VaultMetaPerspective } from "euler-v2-sdk";
+import type { BuildQueryFn, VaultMetaPerspective, VaultRewardInfo } from "euler-v2-sdk";
 import type { Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import { recordExecution } from "./queryProfileStore.ts";
@@ -124,6 +124,7 @@ export function useVerifiedVaults(perspectives: VaultMetaPerspective[]) {
       sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
         populateMarketPrices: true,
         populateStrategyVaults: true,
+        populateRewards: true,
       }),
     enabled,
     staleTime: 1_000,
@@ -138,6 +139,7 @@ export function useVaultDetail(chainId: number, address: string | undefined) {
       sdk!.eVaultService.fetchVault(chainId, address as Address, {
         populateCollaterals: true,
         populateMarketPrices: true,
+        populateRewards: true,
       }),
     enabled: enabled && !!address,
     staleTime: 1_000,
@@ -152,6 +154,7 @@ export function useEulerEarnDetail(chainId: number, address: string | undefined)
       sdk!.eulerEarnService.fetchVault(chainId, address as Address, {
         populateStrategyVaults: true,
         populateMarketPrices: true,
+        populateRewards: true,
       }),
     enabled: enabled && !!address,
     staleTime: 1_000,
@@ -168,9 +171,29 @@ export function useAccount(chainId: number, address: string | undefined) {
         vaultFetchOptions: {
           populateMarketPrices: true,
           populateCollaterals: true,
+          populateRewards: true,
         },
       }),
     enabled: enabled && !!address && address.length === 42,
     staleTime: 1_000,
+  });
+}
+
+export function useChainRewards() {
+  const { sdk, chainId, enabled } = useSdkReady();
+  return useQuery({
+    queryKey: ["chainRewards", chainId],
+    queryFn: async () => {
+      const map = await sdk!.rewardsService.getChainRewards(chainId);
+      // Convert Map to a serialisable array for display
+      const entries: { vaultAddress: string; info: VaultRewardInfo }[] = [];
+      for (const [vaultAddress, info] of map) {
+        entries.push({ vaultAddress, info });
+      }
+      entries.sort((a, b) => b.info.totalRewardsApr - a.info.totalRewardsApr);
+      return entries;
+    },
+    enabled,
+    staleTime: 60_000,
   });
 }
