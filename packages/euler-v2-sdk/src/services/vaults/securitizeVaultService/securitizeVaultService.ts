@@ -6,6 +6,7 @@ import {
 import { DeploymentService } from "../../deploymentService/index.js";
 import type { IVaultService, VaultFetchOptions } from "../index.js";
 import type { IPriceService } from "../../priceService/index.js";
+import type { IRewardsService } from "../../rewardsService/index.js";
 
 export interface ISecuritizeCollateralDataSource {
   fetchVaults(
@@ -27,10 +28,12 @@ export interface ISecuritizeVaultService
     StandardSecuritizeCollateralPerspectives | Address
   > {
   populateMarketPrices(vaults: SecuritizeCollateralVault[]): Promise<void>;
+  populateRewards(vaults: SecuritizeCollateralVault[]): Promise<void>;
 }
 
 export class SecuritizeVaultService implements ISecuritizeVaultService {
   private priceService?: IPriceService;
+  private rewardsService?: IRewardsService;
 
   constructor(
     private dataSource: ISecuritizeCollateralDataSource,
@@ -47,6 +50,10 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 
   setPriceService(service: IPriceService): void {
     this.priceService = service;
+  }
+
+  setRewardsService(service: IRewardsService): void {
+    this.rewardsService = service;
   }
 
   factory(chainId: number): Address {
@@ -67,6 +74,9 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     if (options?.populateMarketPrices) {
       await this.populateMarketPrices([entity]);
     }
+    if (options?.populateRewards) {
+      await this.populateRewards([entity]);
+    }
     return entity;
   }
 
@@ -80,6 +90,9 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     );
     if (options?.populateMarketPrices) {
       await this.populateMarketPrices(entities);
+    }
+    if (options?.populateRewards) {
+      await this.populateRewards(entities);
     }
     return entities;
   }
@@ -96,6 +109,11 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
           .catch(() => undefined);
       })
     );
+  }
+
+  async populateRewards(vaults: SecuritizeCollateralVault[]): Promise<void> {
+    if (!this.rewardsService || vaults.length === 0) return;
+    await this.rewardsService.populateRewards(vaults);
   }
 
   async fetchVerifiedVaultAddresses(

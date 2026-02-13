@@ -22,6 +22,9 @@ Services in the SDK follow a standardized **populate** pattern for cross-service
 | `EulerEarn` | Strategy vault entities | `eulerEarnService.populateStrategyVaults(earns[])` | `eulerEarn.populateStrategyVaults(eVaultService)` | `populateStrategyVaults` | EVaultService |
 | `EulerEarn` | USD market prices | `eulerEarnService.populateMarketPrices(earns[])` | `eulerEarn.populateMarketPrices(priceService)` | `populateMarketPrices` | PriceService |
 | `SecuritizeCollateralVault` | USD market prices | `securitizeVaultService.populateMarketPrices(vaults[])` | `vault.populateMarketPrices(priceService)` | `populateMarketPrices` | PriceService |
+| `EVault` | Reward campaigns | `eVaultService.populateRewards(vaults[])` | `eVault.populateRewards(rewardsService)` | `populateRewards` | RewardsService |
+| `EulerEarn` | Reward campaigns | `eulerEarnService.populateRewards(earns[])` | `eulerEarn.populateRewards(rewardsService)` | `populateRewards` | RewardsService |
+| `SecuritizeCollateralVault` | Reward campaigns | `securitizeVaultService.populateRewards(vaults[])` | `vault.populateRewards(rewardsService)` | `populateRewards` | RewardsService |
 
 ## FetchOptions Per Service
 
@@ -32,6 +35,7 @@ interface VaultFetchOptions {
   populateMarketPrices?: boolean;
   populateCollaterals?: boolean;     // EVault-specific, ignored by other vault services
   populateStrategyVaults?: boolean;  // EulerEarn-specific, ignored by other vault services
+  populateRewards?: boolean;         // Resolve reward campaigns from Merkl/Brevis
 }
 ```
 
@@ -41,6 +45,7 @@ interface VaultFetchOptions {
 interface EVaultFetchOptions {
   populateCollaterals?: boolean;   // Resolve collateral vault entities
   populateMarketPrices?: boolean;  // Resolve USD prices for vault asset and collaterals
+  populateRewards?: boolean;       // Resolve reward campaigns
 }
 ```
 
@@ -51,6 +56,7 @@ interface EulerEarnFetchOptions {
   populateStrategyVaults?: boolean;  // Resolve strategy EVault entities
   populateMarketPrices?: boolean;    // Resolve USD price for the vault asset
   populateCollaterals?: boolean;     // Level 2: resolve collaterals on strategy EVaults
+  populateRewards?: boolean;         // Resolve reward campaigns
 }
 ```
 
@@ -62,6 +68,7 @@ interface AccountFetchOptions {
   populateCollaterals?: boolean;      // Level 2: resolve collaterals on EVaults
   populateMarketPrices?: boolean;     // Level 2: resolve USD prices on vaults
   populateStrategyVaults?: boolean;   // Level 2: resolve strategy vaults on EulerEarn
+  populateRewards?: boolean;          // Level 2: resolve reward campaigns on vaults
 }
 ```
 
@@ -126,7 +133,8 @@ AccountFetchOptions
   ├─ populateVaults          → triggers VaultMetaService.fetchVaults()
   ├─ populateCollaterals     → forwarded as VaultFetchOptions.populateCollaterals  → EVaultService
   ├─ populateMarketPrices    → forwarded as VaultFetchOptions.populateMarketPrices → all vault services
-  └─ populateStrategyVaults  → forwarded as VaultFetchOptions.populateStrategyVaults → EulerEarnService
+  ├─ populateStrategyVaults  → forwarded as VaultFetchOptions.populateStrategyVaults → EulerEarnService
+  └─ populateRewards         → forwarded as VaultFetchOptions.populateRewards → all vault services
 ```
 
 Similarly, `EulerEarnFetchOptions.populateCollaterals` is forwarded to EVaultService when fetching strategy vaults.
@@ -134,8 +142,8 @@ Similarly, `EulerEarnFetchOptions.populateCollaterals` is forwarded to EVaultSer
 ## Dependency Graph
 
 ```
-PriceService
-  ↓ (populateMarketPrices)
+PriceService          RewardsService
+  ↓ (populateMarketPrices)  ↓ (populateRewards)
 EVaultService ←→ VaultMetaService ← AccountService
   ↑ (populateCollaterals)         (populateVaults)
   │

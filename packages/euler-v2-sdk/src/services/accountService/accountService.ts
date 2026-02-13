@@ -12,6 +12,8 @@ export interface AccountFetchOptions {
   populateMarketPrices?: boolean;
   /** Level 2: when populating EulerEarn vaults, also resolve their strategy vault entities. */
   populateStrategyVaults?: boolean;
+  /** Level 2: when populating vaults, also resolve reward campaigns. */
+  populateRewards?: boolean;
 }
 
 /** Collects unique vault addresses from a sub-account's positions and liquidity collaterals only. */
@@ -119,13 +121,14 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
 
   /** Converts AccountFetchOptions level-2 flags into VaultFetchOptions. */
   private buildVaultFetchOptions(options?: AccountFetchOptions): VaultFetchOptions | undefined {
-    if (!options?.populateCollaterals && !options?.populateMarketPrices && !options?.populateStrategyVaults) {
+    if (!options?.populateCollaterals && !options?.populateMarketPrices && !options?.populateStrategyVaults && !options?.populateRewards) {
       return undefined;
     }
     return {
       populateCollaterals: options.populateCollaterals,
       populateMarketPrices: options.populateMarketPrices,
       populateStrategyVaults: options.populateStrategyVaults,
+      populateRewards: options.populateRewards,
     };
   }
 }

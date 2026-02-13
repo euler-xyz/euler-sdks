@@ -4,6 +4,7 @@ import { DeploymentService } from "../../deploymentService/index.js";
 import type { IVaultService } from "../index.js";
 import type { IEVaultService } from "../eVaultService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
+import type { IRewardsService } from "../../rewardsService/index.js";
 
 export interface IEulerEarnDataSource {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEulerEarn[]>;
@@ -20,6 +21,7 @@ export interface EulerEarnFetchOptions {
   populateMarketPrices?: boolean;
   /** Level 2: when populating strategy vaults, also resolve their collaterals. */
   populateCollaterals?: boolean;
+  populateRewards?: boolean;
 }
 
 export interface IEulerEarnService
@@ -28,10 +30,12 @@ export interface IEulerEarnService
   fetchVaults(chainId: number, vaults: Address[], options?: EulerEarnFetchOptions): Promise<EulerEarn[]>;
   populateStrategyVaults(eulerEarns: EulerEarn[], options?: { populateCollaterals?: boolean }): Promise<void>;
   populateMarketPrices(eulerEarns: EulerEarn[]): Promise<void>;
+  populateRewards(eulerEarns: EulerEarn[]): Promise<void>;
 }
 
 export class EulerEarnService implements IEulerEarnService {
   private priceService?: IPriceService;
+  private rewardsService?: IRewardsService;
 
   constructor(
     private dataSource: IEulerEarnDataSource,
@@ -55,6 +59,10 @@ export class EulerEarnService implements IEulerEarnService {
     this.priceService = service;
   }
 
+  setRewardsService(service: IRewardsService): void {
+    this.rewardsService = service;
+  }
+
   factory(chainId: number): Address {
     return this.deploymentService.getDeployment(chainId).addresses.coreAddrs
       .eulerEarnFactory;
@@ -72,6 +80,9 @@ export class EulerEarnService implements IEulerEarnService {
     if (options?.populateMarketPrices) {
       await this.populateMarketPrices([eulerEarn]);
     }
+    if (options?.populateRewards) {
+      await this.populateRewards([eulerEarn]);
+    }
     return eulerEarn;
   }
 
@@ -84,6 +95,9 @@ export class EulerEarnService implements IEulerEarnService {
     }
     if (options?.populateMarketPrices) {
       await this.populateMarketPrices(eulerEarns);
+    }
+    if (options?.populateRewards) {
+      await this.populateRewards(eulerEarns);
     }
     return eulerEarns;
   }
@@ -136,6 +150,11 @@ export class EulerEarnService implements IEulerEarnService {
           .catch(() => undefined);
       })
     );
+  }
+
+  async populateRewards(eulerEarns: EulerEarn[]): Promise<void> {
+    if (!this.rewardsService || eulerEarns.length === 0) return;
+    await this.rewardsService.populateRewards(eulerEarns);
   }
 
   async fetchVerifiedVaultAddresses(

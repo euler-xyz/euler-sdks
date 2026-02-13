@@ -17,6 +17,7 @@ import { TokenlistService, ITokenlistService } from "../services/tokenlistServic
 import { SwapService, ISwapService, SwapServiceConfig } from "../services/swapService/index.js";
 import { ExecutionService, IExecutionService } from "../services/executionService/index.js";
 import { PriceService, IPriceService, type BackendConfig, PricingBackendClient } from "../services/priceService/index.js";
+import { RewardsService, IRewardsService, type RewardsServiceConfig } from "../services/rewardsService/index.js";
 import { defaultAccountVaultsDataSourceConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLDataSourceConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeDataSourceConfig } from "./defaultConfig.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
 import { EVaultOnchainDataSource } from "../services/vaults/eVaultService/dataSources/eVaultOnchainDataSource.js";
@@ -48,6 +49,7 @@ export interface BuildSDKOverrides<TVaultEntity extends IVaultEntity = VaultEnti
   swapService?: ISwapService;
   executionService?: IExecutionService;
   priceService?: IPriceService;
+  rewardsService?: IRewardsService;
 }
 
 export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity> {
@@ -60,6 +62,7 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   tokenlistServiceConfig?: TokenlistServiceConfig;
   swapServiceConfig?: SwapServiceConfig;
   backendConfig?: BackendConfig;
+  rewardsServiceConfig?: RewardsServiceConfig;
   /** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
   buildQuery?: BuildQueryFn;
   servicesOverrides?: BuildSDKOverrides<TVaultEntity>;
@@ -68,7 +71,7 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
 export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   options: BuildSDKOptions<TVaultEntity>
 ): Promise<EulerSDK<TVaultEntity>> {
-  const { rpcUrls, accountVaultsDataSourceConfig, vaultTypeDataSourceConfig, additionalVaultServices, eulerLabelsDataSourceConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, buildQuery, servicesOverrides } = options;
+  const { rpcUrls, accountVaultsDataSourceConfig, vaultTypeDataSourceConfig, additionalVaultServices, eulerLabelsDataSourceConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, buildQuery, servicesOverrides } = options;
 
   // Build core services (these may be needed for data sources even if overridden)
   const abiService = servicesOverrides?.abiService ?? new ABIService(buildQuery);
@@ -212,6 +215,9 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
     );
   })();
 
+  // Build rewards service if not overridden
+  const rewardsService = servicesOverrides?.rewardsService ?? new RewardsService(rewardsServiceConfig, buildQuery);
+
   // Wire priceService into vault services for market price resolution
   if (eVaultService instanceof EVaultService) {
     eVaultService.setPriceService(priceService);
@@ -221,6 +227,17 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   }
   if (securitizeVaultService instanceof SecuritizeVaultService) {
     securitizeVaultService.setPriceService(priceService);
+  }
+
+  // Wire rewardsService into vault services for reward population
+  if (eVaultService instanceof EVaultService) {
+    eVaultService.setRewardsService(rewardsService);
+  }
+  if (eulerEarnService instanceof EulerEarnService) {
+    eulerEarnService.setRewardsService(rewardsService);
+  }
+  if (securitizeVaultService instanceof SecuritizeVaultService) {
+    securitizeVaultService.setRewardsService(rewardsService);
   }
 
   return new EulerSDK<TVaultEntity>({
@@ -238,5 +255,6 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
     swapService,
     executionService,
     priceService,
+    rewardsService,
   });
 }

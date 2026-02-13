@@ -4,6 +4,7 @@ export interface VaultFetchOptions {
   populateMarketPrices?: boolean;
   populateCollaterals?: boolean;
   populateStrategyVaults?: boolean;
+  populateRewards?: boolean;
 }
 
 /**
