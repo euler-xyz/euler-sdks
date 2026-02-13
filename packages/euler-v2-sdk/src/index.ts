@@ -26,3 +26,4 @@ export * from "./services/rewardsService/index.js";
 // Utils
 export * from "./utils/subAccounts.js";
 export { type BuildQueryFn, applyBuildQuery } from "./utils/buildQuery.js";
+export * from "./utils/stateOverrides/index.js";
