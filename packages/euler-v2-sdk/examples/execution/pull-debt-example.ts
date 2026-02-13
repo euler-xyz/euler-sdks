@@ -65,7 +65,7 @@ async function pullDebtExample() {
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
-  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { resolveVaults: false });
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false });
 
   // Step 1: Create debt position in sub-account 1
   console.log('\n=== Step 1: Create Debt Position in Sub-Account 1 ===');
@@ -101,13 +101,13 @@ async function pullDebtExample() {
     mainnet.id,
     SUB_ACCOUNT_1_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
   let subAccount2 = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_2_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
 
   // Log the diff between before and after borrow
@@ -147,13 +147,13 @@ async function pullDebtExample() {
     mainnet.id,
     SUB_ACCOUNT_1_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
   subAccount2 = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_2_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
   
   // Log the diff
@@ -184,13 +184,13 @@ async function pullDebtExample() {
     mainnet.id,
     SUB_ACCOUNT_1_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
   subAccount2 = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_2_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
 
   // Log the diff between before and after pull debt

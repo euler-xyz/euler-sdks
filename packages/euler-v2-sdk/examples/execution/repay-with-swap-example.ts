@@ -71,7 +71,7 @@ async function repayWithSwapExample() {
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
-  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { resolveVaults: false });
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false });
 
   // Step 1: Plan and execute borrow operation (deposit USDC collateral and borrow USDT)
   console.log('\n=== Step 1: Deposit USDC and Borrow USDT ===');
@@ -107,7 +107,7 @@ async function repayWithSwapExample() {
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
   
   // Log the diff between before and after borrow
@@ -177,7 +177,7 @@ async function repayWithSwapExample() {
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
 
   // Log the diff between before and after repay

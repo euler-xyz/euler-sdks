@@ -25,7 +25,9 @@ export interface ISecuritizeVaultService
   extends IVaultService<
     SecuritizeCollateralVault,
     StandardSecuritizeCollateralPerspectives | Address
-  > {}
+  > {
+  populateMarketPrices(vaults: SecuritizeCollateralVault[]): Promise<void>;
+}
 
 export class SecuritizeVaultService implements ISecuritizeVaultService {
   private priceService?: IPriceService;
@@ -54,7 +56,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
       throw new Error(`Securitize vault not found for ${vault}`);
     }
     const entity = new SecuritizeCollateralVault(vaults[0]!);
-    if (options?.fetchMarketPrices) {
+    if (options?.populateMarketPrices) {
       await this.populateMarketPrices([entity]);
     }
     return entity;
@@ -68,16 +70,16 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     const entities = (await this.dataSource.fetchVaults(chainId, vaults)).map(
       (v) => new SecuritizeCollateralVault(v)
     );
-    if (options?.fetchMarketPrices) {
+    if (options?.populateMarketPrices) {
       await this.populateMarketPrices(entities);
     }
     return entities;
   }
 
-  private async populateMarketPrices(
+  async populateMarketPrices(
     vaults: SecuritizeCollateralVault[]
   ): Promise<void> {
-    if (!this.priceService) return;
+    if (!this.priceService || vaults.length === 0) return;
 
     await Promise.all(
       vaults.map(async (v) => {

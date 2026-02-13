@@ -10,6 +10,7 @@ import { ERC4626Vault, IERC4626Vault, IERC4626VaultConversion, VIRTUAL_DEPOSIT_A
 import type { IPriceService } from "../services/priceService/index.js";
 import { getAssetOraclePrice, getCollateralOraclePrice } from "../services/priceService/index.js";
 import type { VaultEntity } from "../services/vaults/vaultMetaService/index.js";
+import type { IVaultMetaService } from "../services/vaults/vaultMetaService/index.js";
 
 export type EVaultHookedOperations = {
   deposit: boolean;
@@ -212,5 +213,40 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
     const price = await priceService.getCollateralUsdPrice(this, collateralVault);
     if (!price) return undefined;
     return (amount * price.amountOutMid) / 10n ** BigInt(collateralVault.asset.decimals);
+  }
+
+  async populateCollaterals(vaultMetaService: IVaultMetaService): Promise<void> {
+    const addresses = this.collaterals.map((c) => c.address);
+    if (addresses.length === 0) return;
+
+    const collateralVaults = await Promise.all(
+      addresses.map((addr) =>
+        vaultMetaService.fetchVault(this.chainId, addr).catch(() => undefined)
+      )
+    );
+
+    const vaultByAddress = new Map(
+      collateralVaults
+        .filter((v) => v !== undefined)
+        .map((v) => [(v as { address: Address }).address.toLowerCase(), v])
+    );
+
+    for (const collateral of this.collaterals) {
+      collateral.vault = vaultByAddress.get(collateral.address.toLowerCase());
+    }
+  }
+
+  override async populateMarketPrices(priceService: IPriceService): Promise<void> {
+    this.marketPriceUsd = await this.fetchAssetMarketPriceUsd(priceService).catch(() => undefined);
+
+    await Promise.all(
+      this.collaterals.map(async (collateral) => {
+        if (!collateral.vault) return;
+        const price = await priceService
+          .getCollateralUsdPrice(this, collateral.vault as ERC4626Vault)
+          .catch(() => undefined);
+        collateral.marketPriceUsd = price?.amountOutMid;
+      })
+    );
   }
 }

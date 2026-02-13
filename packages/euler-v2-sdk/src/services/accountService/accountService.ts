@@ -5,25 +5,13 @@ import type { IHasVaultAddress, IVaultEntity } from "../../entities/Account.js";
 import type { VaultFetchOptions } from "../vaults/index.js";
 
 export interface AccountFetchOptions {
-  resolveVaults?: boolean;
-  vaultOptions?: VaultFetchOptions;
-}
-
-/** Collects unique vault addresses from positions and liquidity collaterals only (not enabledControllers/enabledCollaterals). */
-function collectVaultAddressesFromPositionsAndLiquidity(account: IAccount): Address[] {
-  const set = new Set<string>();
-  const push = (a: Address) => set.add(getAddress(a));
-  for (const sa of Object.values(account.subAccounts ?? {})) {
-    if (!sa) continue;
-    for (const p of sa.positions) {
-      push(p.vaultAddress);
-      if (p.liquidity) {
-        push(p.liquidity.vaultAddress);
-        p.liquidity.collaterals.forEach((c) => push(c.address));
-      }
-    }
-  }
-  return Array.from(set, (s) => s as Address);
+  populateVaults?: boolean;
+  /** Level 2: when populating EVaults, also resolve their collateral vault entities. */
+  populateCollaterals?: boolean;
+  /** Level 2: when populating vaults, also resolve USD market prices. */
+  populateMarketPrices?: boolean;
+  /** Level 2: when populating EulerEarn vaults, also resolve their strategy vault entities. */
+  populateStrategyVaults?: boolean;
 }
 
 /** Collects unique vault addresses from a sub-account's positions and liquidity collaterals only. */
@@ -57,8 +45,7 @@ export interface IAccountService<TVaultEntity extends IHasVaultAddress = IVaultE
     vaults?: Address[],
     options?: AccountFetchOptions
   ): Promise<SubAccount<TVaultEntity> | undefined>;
-  fetchVaults(account: Account<never>, vaultOptions?: VaultFetchOptions): Promise<Account<TVaultEntity>>;
-  resolveVaults<T extends IHasVaultAddress>(account: Account<never>, vaults: T[]): Account<T>;
+  populateVaults(accounts: Account<never>[], options?: AccountFetchOptions): Promise<Account<TVaultEntity>[]>;
 }
 
 export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity>
@@ -81,11 +68,12 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
           subAccounts: {},
         });
 
-    if (options?.resolveVaults === false) {
+    if (options?.populateVaults === false) {
       return account as Account<TVaultEntity>;
     }
 
-    return this.fetchVaults(account, options?.vaultOptions);
+    const populated = await this.populateVaults([account], options);
+    return populated[0]!;
   }
 
   async fetchSubAccount(
@@ -97,30 +85,39 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     const sa = await this.dataSource.fetchSubAccount(chainId, subAccount, vaults);
     if (!sa) return undefined;
 
-    if (options?.resolveVaults === false) {
+    if (options?.populateVaults === false) {
       return sa as SubAccount<TVaultEntity>;
     }
 
     const addresses = vaults?.length ? vaults : collectVaultAddressesFromSubAccountPositionsAndLiquidity(sa);
     if (addresses.length === 0) return sa as SubAccount<TVaultEntity>;
-    const entities = await this.vaultMetaService.fetchVaults(chainId, addresses, options?.vaultOptions);
-    const tempAccount = new Account({
+
+    const tempAccount = new Account<never>({
       chainId,
       owner: sa.owner,
       subAccounts: { [getAddress(sa.account)]: sa },
     });
-    tempAccount.resolveVaults(entities);
-    return tempAccount.getSubAccount(getAddress(sa.account));
+    const populated = await tempAccount.populateVaults(this.vaultMetaService, this.buildVaultFetchOptions(options));
+    return populated.getSubAccount(getAddress(sa.account));
   }
 
-  async fetchVaults(account: Account<never>, vaultOptions?: VaultFetchOptions): Promise<Account<TVaultEntity>> {
-    const addresses = collectVaultAddressesFromPositionsAndLiquidity(account);
-    if (addresses.length === 0) return account as Account<TVaultEntity>;
-    const vaults = await this.vaultMetaService.fetchVaults(account.chainId, addresses, vaultOptions);
-    return account.resolveVaults(vaults);
+  async populateVaults(accounts: Account<never>[], options?: AccountFetchOptions): Promise<Account<TVaultEntity>[]> {
+    const vaultFetchOptions = this.buildVaultFetchOptions(options);
+
+    return Promise.all(
+      accounts.map((account) => account.populateVaults(this.vaultMetaService, vaultFetchOptions))
+    );
   }
 
-  resolveVaults<T extends IHasVaultAddress>(account: Account<never>, vaults: T[]): Account<T> {
-    return account.resolveVaults(vaults);
+  /** Converts AccountFetchOptions level-2 flags into VaultFetchOptions. */
+  private buildVaultFetchOptions(options?: AccountFetchOptions): VaultFetchOptions | undefined {
+    if (!options?.populateCollaterals && !options?.populateMarketPrices && !options?.populateStrategyVaults) {
+      return undefined;
+    }
+    return {
+      populateCollaterals: options.populateCollaterals,
+      populateMarketPrices: options.populateMarketPrices,
+      populateStrategyVaults: options.populateStrategyVaults,
+    };
   }
 }

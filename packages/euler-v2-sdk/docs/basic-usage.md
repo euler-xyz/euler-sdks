@@ -39,18 +39,21 @@ When you only need raw position data (addresses, balances), skip vault resolutio
 
 ```typescript
 const account = await sdk.accountService.fetchAccount(1, '0xOwner...', {
-  resolveVaults: false,
+  populateVaults: false,
 })
 // position.vault is undefined, but position.vaultAddress, assets, borrowed are available
 ```
 
 ### With vault augmentations
 
-Pass `vaultOptions` to control how resolved vaults are fetched (options are forwarded to the underlying vault services):
+Pass level-2 flags to control how resolved vaults are fetched (options are forwarded to the underlying vault services):
 
 ```typescript
 const account = await sdk.accountService.fetchAccount(1, '0xOwner...', {
-  vaultOptions: { fetchMarketPrices: true },
+  populateVaults: true,
+  populateMarketPrices: true,
+  populateCollaterals: true,
+  populateStrategyVaults: true,
 })
 // position.vault.marketPriceUsd is populated on each resolved vault
 ```
@@ -67,17 +70,17 @@ const subAccount = await sdk.accountService.fetchSubAccount(
 
 Pass vault addresses when the subgraph may not have indexed recent changes (e.g. local forks). When omitted, vaults are auto-collected from position data.
 
-### Resolving vaults later
+### Populating vaults later
 
-You can fetch without resolution first, then resolve later:
+You can fetch without population first, then populate later:
 
 ```typescript
 const account = await sdk.accountService.fetchAccount(1, '0xOwner...', {
-  resolveVaults: false,
+  populateVaults: false,
 })
 
 // ... later, when vault details are needed:
-const resolved = await sdk.accountService.fetchVaults(account)
+await account.populateVaults(sdk.vaultMetaService)
 ```
 
 ## Fetching Vaults
@@ -93,8 +96,8 @@ With augmentations:
 
 ```typescript
 const vault = await sdk.eVaultService.fetchVault(1, '0xVault...', {
-  resolveCollaterals: true,   // Populate collateral.vault entities
-  fetchMarketPrices: true,    // Populate marketPriceUsd on vault and collaterals
+  populateCollaterals: true,   // Populate collateral.vault entities
+  populateMarketPrices: true,  // Populate marketPriceUsd on vault and collaterals
 })
 ```
 
@@ -174,7 +177,7 @@ import { StandardEulerEarnPerspectives } from 'euler-v2-sdk'
 
 const governed = await sdk.eulerEarnService.fetchVerifiedVaults(1, [
   StandardEulerEarnPerspectives.GOVERNED,
-])
+], { populateStrategyVaults: true })
 ```
 
 Available EulerEarn perspectives:
@@ -247,7 +250,7 @@ Common properties (from `ERC4626Vault`):
 - `address`, `chainId`, `type`
 - `shares` (name, symbol, decimals), `asset` (name, symbol, decimals)
 - `totalShares`, `totalAssets`
-- `marketPriceUsd` (when fetched with `{ fetchMarketPrices: true }`)
+- `marketPriceUsd` (when fetched with `{ populateMarketPrices: true }`)
 
 ### Type-specific services
 

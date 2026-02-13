@@ -4,7 +4,7 @@ import { useSDK } from "../context/SdkContext.tsx";
 import { useAccount } from "../queries/sdkQueries.ts";
 import { getSubAccountId } from "euler-v2-sdk";
 import type { Address } from "viem";
-import { formatBigInt } from "../utils/format.ts";
+import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import type { VaultEntity, AccountPosition } from "euler-v2-sdk";
 
@@ -146,6 +146,7 @@ export function PortfolioPage() {
                         <th>Asset</th>
                         <th>Deposited</th>
                         <th>Borrowed</th>
+                        <th>USD Price</th>
                         <th>Collateral</th>
                         <th>Controller</th>
                       </tr>
@@ -183,6 +184,7 @@ export function PortfolioPage() {
                                   )
                                 : "-"}
                             </td>
+                            <td>{formatPriceUsd(pos.vault?.marketPriceUsd)}</td>
                             <td>{pos.isCollateral ? "Yes" : "No"}</td>
                             <td>{pos.isController ? "Yes" : "No"}</td>
                           </tr>
@@ -213,6 +215,7 @@ export function PortfolioPage() {
                           <th>Borrow Vault</th>
                           <th>Days to Liquidation</th>
                           <th>Collaterals</th>
+                          <th>Collateral USD Prices</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -240,6 +243,15 @@ export function PortfolioPage() {
                                         ? c.vault.shares.name ||
                                           c.vault.asset.symbol
                                         : <CopyAddress address={c.address} />}
+                                    </span>
+                                  ))}
+                              </td>
+                              <td>
+                                {p.liquidity!.collaterals
+                                  .map((c, i) => (
+                                    <span key={c.address}>
+                                      {i > 0 && ", "}
+                                      {formatPriceUsd(c.vault?.marketPriceUsd)}
                                     </span>
                                   ))}
                               </td>

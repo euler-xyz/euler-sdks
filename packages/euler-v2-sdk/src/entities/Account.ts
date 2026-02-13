@@ -1,6 +1,8 @@
 import { Address, getAddress, isAddressEqual } from "viem";
 import { getSubAccountAddress } from "../utils/subAccounts.js";
 import type { VaultEntity } from "../services/vaults/vaultMetaService/index.js";
+import type { IVaultMetaService } from "../services/vaults/vaultMetaService/index.js";
+import type { VaultFetchOptions } from "../services/vaults/index.js";
 
 export type AddressPrefix = `0x${string}`; // expects a hex string representation of 19 bytes
 
@@ -140,17 +142,42 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
   }
 
   /**
-   * Resolves vaults only in positions and in liquidity collaterals (not in enabledControllers/enabledCollaterals).
-   * Mutates the account in place. Sets vault (entity only, never Address) when a matching entity is found.
-   * Returns this typed as Account<TResolved>.
+   * Fetches vault entities from the service and maps them onto positions and liquidity collaterals.
+   * Mutates in place. Returns this account re-typed as Account<TResolved>.
    */
-  resolveVaults<TResolved extends IHasVaultAddress>(vaults: TResolved[]): Account<TResolved> {
+  async populateVaults<TResolved extends IHasVaultAddress>(
+    vaultMetaService: IVaultMetaService<TResolved>,
+    options?: VaultFetchOptions
+  ): Promise<Account<TResolved>> {
+    const set = new Set<string>();
+    const push = (a: Address) => set.add(getAddress(a));
+    for (const sa of Object.values(this.subAccounts ?? {})) {
+      if (!sa) continue;
+      for (const p of sa.positions) {
+        push(p.vaultAddress);
+        if (p.liquidity) {
+          push(p.liquidity.vaultAddress);
+          p.liquidity.collaterals.forEach((c) => push(c.address));
+        }
+      }
+    }
+    const addresses = Array.from(set, (s) => s as Address);
+    if (addresses.length === 0) return this as unknown as Account<TResolved>;
+    const vaults = await vaultMetaService.fetchVaults(this.chainId, addresses, options);
+    return Account.mapVaultsToPositions(this, vaults);
+  }
+
+  /** Maps fetched vault entities onto positions and liquidity collaterals. Mutates in place. */
+  private static mapVaultsToPositions<TResolved extends IHasVaultAddress>(
+    account: Account<any>,
+    vaults: TResolved[]
+  ): Account<TResolved> {
     const byAddress = new Map<string, TResolved>();
     for (const v of vaults) {
       byAddress.set(getAddress(v.address), v);
     }
     const resolve = (addr: Address): TResolved | undefined => byAddress.get(getAddress(addr));
-    for (const sa of Object.values(this.subAccounts ?? {})) {
+    for (const sa of Object.values(account.subAccounts ?? {})) {
       if (!sa) continue;
       for (const p of sa.positions) {
         const entity = resolve(p.vaultAddress);
@@ -166,7 +193,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
         }
       }
     }
-    return this as unknown as Account<TResolved>;
+    return account as unknown as Account<TResolved>;
   }
 
   /**

@@ -8,7 +8,7 @@ This document describes the pricing system in the Euler V2 SDK, including how pr
 
 The pricing system provides three access patterns:
 
-1. **Fetch options** (recommended) — Pass `{ fetchMarketPrices: true }` when fetching vaults to auto-populate `marketPriceUsd` on entities and collaterals.
+1. **Fetch options** (recommended) — Pass `{ populateMarketPrices: true }` when fetching vaults to auto-populate `marketPriceUsd` on entities and collaterals.
 2. **Vault helpers** — Methods directly on vault entities (`EVault`, `ERC4626Vault`) for getting risk prices and USD market prices on-demand.
 3. **PriceService** (advanced) — The underlying `sdk.priceService` with full access to raw oracle data, USD conversion, value calculation, and display formatting.
 
@@ -20,7 +20,7 @@ All vault services (`eVaultService`, `eulerEarnService`, `securitizeVaultService
 
 ```typescript
 interface VaultFetchOptions {
-  fetchMarketPrices?: boolean  // Populate marketPriceUsd on vault entities
+  populateMarketPrices?: boolean  // Populate marketPriceUsd on vault entities
 }
 ```
 
@@ -28,26 +28,26 @@ interface VaultFetchOptions {
 
 ```typescript
 interface EVaultFetchOptions {
-  resolveCollaterals?: boolean  // Resolve collateral vault entities
-  fetchMarketPrices?: boolean   // Populate marketPriceUsd on vault AND collaterals
+  populateCollaterals?: boolean   // Resolve collateral vault entities
+  populateMarketPrices?: boolean  // Populate marketPriceUsd on vault AND collaterals
 }
 ```
 
-When `fetchMarketPrices` is set, the service populates:
+When `populateMarketPrices` is set, the service populates:
 - `vault.marketPriceUsd` — Asset USD price (on `ERC4626Vault`, inherited by all vault types)
-- `collateral.marketPriceUsd` — Collateral USD price (on `EVaultCollateral`, requires `resolveCollaterals`)
+- `collateral.marketPriceUsd` — Collateral USD price (on `EVaultCollateral`, requires `populateCollaterals`)
 
 ```typescript
 // EVault with prices and collateral prices
 const vault = await sdk.eVaultService.fetchVault(1, '0x...', {
-  resolveCollaterals: true,
-  fetchMarketPrices: true,
+  populateCollaterals: true,
+  populateMarketPrices: true,
 })
 vault.marketPriceUsd               // => 1000000000000000000n ($1.00)
 vault.collaterals[0].marketPriceUsd // => 2500000000000000000000n ($2500.00)
 
 // EulerEarn / Securitize with prices
-const ee = await sdk.eulerEarnService.fetchVault(1, '0x...', { fetchMarketPrices: true })
+const ee = await sdk.eulerEarnService.fetchVault(1, '0x...', { populateMarketPrices: true })
 ee.marketPriceUsd  // => PriceWad
 ```
 
@@ -107,8 +107,8 @@ const sdk = await buildSDK({
 
 // Option 1: Auto-populated prices via fetch options (recommended)
 const vault = await sdk.eVaultService.fetchVault(1, '0x...', {
-  resolveCollaterals: true,
-  fetchMarketPrices: true,
+  populateCollaterals: true,
+  populateMarketPrices: true,
 })
 vault.marketPriceUsd                 // already populated
 vault.collaterals[0].marketPriceUsd  // already populated
@@ -318,8 +318,8 @@ Key field mappings:
 |------|-------------|-------------|
 | Liability price | `EVault.oraclePriceRaw` | Asset price in vault's unit of account (from VaultLens) |
 | Collateral prices | `EVault.collaterals[i].oraclePriceRaw` | Collateral prices from liability vault's perspective |
-| Vault USD price | `vault.marketPriceUsd` | Set by `fetchMarketPrices` option or via `fetchAssetMarketPriceUsd()` |
-| Collateral USD price | `collateral.marketPriceUsd` | Set by `fetchMarketPrices` option (requires `resolveCollaterals`) |
+| Vault USD price | `vault.marketPriceUsd` | Set by `populateMarketPrices` option or via `fetchAssetMarketPriceUsd()` |
+| Collateral USD price | `collateral.marketPriceUsd` | Set by `populateMarketPrices` option (requires `populateCollaterals`) |
 
 ## Pyth Oracle Handling
 
@@ -353,7 +353,7 @@ The `PricingBackendClient` (`services/priceService/backendClient.ts`) provides p
 
 ## Design Principles
 
-1. **Fetch options for convenience** — Pass `{ fetchMarketPrices: true }` to auto-populate `marketPriceUsd` on entities during fetch
+1. **Fetch options for convenience** — Pass `{ populateMarketPrices: true }` to auto-populate `marketPriceUsd` on entities during fetch
 2. **Backend first, on-chain fallback** — All USD pricing tries the backend automatically, with on-chain as fallback
 3. **Collateral prices from liability vault's perspective** — Collateral is always priced using the liability vault's oracle router
 4. **No hardcoded fallbacks** — If a price cannot be determined, return `undefined` rather than assuming values
@@ -365,7 +365,7 @@ The `PricingBackendClient` (`services/priceService/backendClient.ts`) provides p
 
 - `entities/ERC4626Vault.ts` — `PriceWad` type, `marketPriceUsd` property, `fetchAssetMarketPriceUsd()`, `fetchAssetMarketValueUsd()`
 - `entities/EVault.ts` — `RiskPrice` type, `EVaultCollateral.marketPriceUsd`, `assetRiskPrice`, `getCollateralRiskPrice()`, `fetchCollateralMarketPriceUsd()`, `fetchCollateralMarketValueUsd()`
-- `services/vaults/IVaultService.ts` — `VaultFetchOptions { fetchMarketPrices }` base interface
+- `services/vaults/IVaultService.ts` — `VaultFetchOptions { populateMarketPrices }` base interface
 - `services/vaults/eVaultService/eVaultService.ts` — `EVaultFetchOptions`, price population
 - `services/vaults/eulerEarnService/eulerEarnService.ts` — Market price population
 - `services/vaults/securitizeVaultService/securitizeVaultService.ts` — Market price population

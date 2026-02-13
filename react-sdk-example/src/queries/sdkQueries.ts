@@ -122,7 +122,8 @@ export function useVerifiedVaults(perspectives: VaultMetaPerspective[]) {
     queryKey: ["vaults", chainId, perspectives],
     queryFn: () =>
       sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
-        fetchMarketPrices: true,
+        populateMarketPrices: true,
+        populateStrategyVaults: true,
       }),
     enabled,
     staleTime: 1_000,
@@ -135,8 +136,8 @@ export function useVaultDetail(chainId: number, address: string | undefined) {
     queryKey: ["vault", chainId, address],
     queryFn: () =>
       sdk!.eVaultService.fetchVault(chainId, address as Address, {
-        resolveCollaterals: true,
-        fetchMarketPrices: true,
+        populateCollaterals: true,
+        populateMarketPrices: true,
       }),
     enabled: enabled && !!address,
     staleTime: 1_000,
@@ -149,7 +150,8 @@ export function useEulerEarnDetail(chainId: number, address: string | undefined)
     queryKey: ["eulerEarn", chainId, address],
     queryFn: () =>
       sdk!.eulerEarnService.fetchVault(chainId, address as Address, {
-        fetchMarketPrices: true,
+        populateStrategyVaults: true,
+        populateMarketPrices: true,
       }),
     enabled: enabled && !!address,
     staleTime: 1_000,
@@ -162,7 +164,9 @@ export function useAccount(chainId: number, address: string | undefined) {
     queryKey: ["account", chainId, address],
     queryFn: () =>
       sdk!.accountService.fetchAccount(chainId, address as Address, {
-        resolveVaults: true,
+        populateVaults: true,
+        populateMarketPrices: true,
+        populateCollaterals: true,
       }),
     enabled: enabled && !!address && address.length === 42,
     staleTime: 1_000,

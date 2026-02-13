@@ -21,8 +21,8 @@ const sdk = await buildSDK({
   }
 });
 
-// Fetch account data (use fetchAccount for vault entities in positions; pass { resolveVaults: false } for execution plans)
-const account = await sdk.accountService.fetchAccount(mainnet.id, userAddress, { resolveVaults: false });
+// Fetch account data (use fetchAccount for vault entities in positions; pass { populateVaults: false } for execution plans)
+const account = await sdk.accountService.fetchAccount(mainnet.id, userAddress, { populateVaults: false });
 
 // Fetch vault information
 const vault = await sdk.eVaultService.fetchVault(mainnet.id, vaultAddress);
@@ -111,43 +111,49 @@ Manages account data including positions, collateral, and debt across sub-accoun
 
 #### Key Methods
 
-**`fetchAccount(chainId: number, address: Address): Promise<Account<Address | TVaultEntity>>`**
+**`fetchAccount(chainId: number, address: Address, options?: AccountFetchOptions): Promise<Account<TVaultEntity>>`**
 
-Fetches account data and resolves vault refs in positions and liquidity collaterals to full vault entities. Use when you need vault entities (e.g. EVault, EulerEarn) on the account.
-
-**`fetchAccount(chainId: number, address: Address, options?: { resolveVaults?: boolean }): Promise<Account<Address>>`**
-
-When called with `{ resolveVaults: false }`, fetches account data with vault refs as addresses only (no vault entity resolution). Use when passing the account to the execution service or when vault entities are not needed. When `resolveVaults` is omitted or `true`, vault refs in positions and liquidity collaterals are resolved to full vault entities.
+Fetches account data. By default, vault entities in positions and liquidity collaterals are populated. Pass `{ populateVaults: false }` to skip vault resolution.
 
 ```typescript
+// With vault population (default)
 const account = await sdk.accountService.fetchAccount(mainnet.id, userAddress);
 
-// Access positions (vault may be Address or vault entity in positions/liquidity)
+// Access positions (vault entities are populated on positions/liquidity)
 const position = account.getPosition(subAccountAddress, vaultAddress);
 console.log('Debt:', position?.borrowed);
+console.log('Vault name:', position?.vault?.shares.name);
 
-// Check enabled collaterals (always addresses)
-const subAccount = account.getSubAccount(subAccountAddress);
-console.log('Enabled collaterals:', subAccount?.enabledCollaterals);
-console.log('Controller:', subAccount?.enabledControllers[0]);
+// Without vault population
+const account = await sdk.accountService.fetchAccount(mainnet.id, userAddress, {
+  populateVaults: false,
+});
+
+// With level-2 augmentations
+const account = await sdk.accountService.fetchAccount(mainnet.id, userAddress, {
+  populateVaults: true,
+  populateMarketPrices: true,
+  populateCollaterals: true,
+  populateStrategyVaults: true,
+});
 ```
 
-**`fetchSubAccount(chainId: number, subAccount: Address, vaults?: Address[]): Promise<SubAccount<Address | TVaultEntity> | undefined>`**
+**`fetchSubAccount(chainId: number, subAccount: Address, vaults?: Address[], options?: AccountFetchOptions): Promise<SubAccount<TVaultEntity> | undefined>`**
 
-Fetches a sub-account with vault refs in positions/liquidity resolved to vault entities.
-
-**`fetchSubAccount(chainId: number, subAccount: Address, vaults?: Address[], options?: { resolveVaults?: boolean }): Promise<SubAccount<Address> | undefined>`**
-
-When called with `{ resolveVaults: false }`, fetches a sub-account with vault refs as addresses only.
+Fetches a sub-account. Pass vault addresses when the subgraph may not have indexed recent changes.
 
 ```typescript
 const subAccount = await sdk.accountService.fetchSubAccount(
   mainnet.id,
   subAccountAddress,
   [vaultAddress],
-  { resolveVaults: false }
+  { populateVaults: false }
 );
 ```
+
+**`populateVaults(accounts: Account<never>[], options?: AccountFetchOptions): Promise<Account<TVaultEntity>[]>`**
+
+Populates vault entities on an array of accounts. Use when you fetched accounts without population and want to resolve vaults later in bulk.
 
 #### Account Entity
 

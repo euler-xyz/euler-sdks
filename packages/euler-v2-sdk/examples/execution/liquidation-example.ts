@@ -66,7 +66,7 @@ async function liquidationExample() {
   console.log("\n📋 Step 1: Violator creating leveraged position...");
 
   // Fetch violator account
-  let violatorAccountData = await sdk.accountService.fetchAccount(mainnet.id, violatorAccount.address, { resolveVaults: false });
+  let violatorAccountData = await sdk.accountService.fetchAccount(mainnet.id, violatorAccount.address, { populateVaults: false });
 
   // Calculate max borrow amount
   // We'll borrow close to max to make it risky
@@ -103,7 +103,7 @@ async function liquidationExample() {
     mainnet.id,
     VIOLATOR_SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
 
   const violatorPosition = violatorSubAccountAfterBorrow?.positions.find(
@@ -128,7 +128,7 @@ async function liquidationExample() {
     mainnet.id,
     VIOLATOR_SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
 
   const [maxRepayAmount] = await publicClient.readContract({
@@ -149,7 +149,7 @@ async function liquidationExample() {
   console.log("\n📋 Step 4: Liquidator performing liquidation...");
 
   // Fetch liquidator account
-  let liquidatorAccountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { resolveVaults: false });
+  let liquidatorAccountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false });
 
   // Plan liquidation
   const liquidationPlan = sdk.executionService.planLiquidation({
@@ -182,14 +182,14 @@ async function liquidationExample() {
     mainnet.id,
     VIOLATOR_SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
 
   const finalLiquidatorSubAccount = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     LIQUIDATOR_SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
 
   // Log violator account changes

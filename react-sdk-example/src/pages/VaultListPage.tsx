@@ -8,7 +8,7 @@ import {
   isEVault,
   isEulerEarn,
 } from "euler-v2-sdk";
-import { formatBigInt, formatAPY, formatPriceUsd } from "../utils/format.ts";
+import { formatBigInt, formatAPY, formatPercent, formatPriceUsd } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 
 const ALL_PERSPECTIVES = [
@@ -126,6 +126,7 @@ export function VaultListPage() {
                   <th>Asset</th>
                   <th>Address</th>
                   <th>Total Assets</th>
+                  <th>Supply APY</th>
                   <th>USD Price</th>
                   <th>Strategies</th>
                   <th>Perf. Fee</th>
@@ -145,6 +146,11 @@ export function VaultListPage() {
                     <td><CopyAddress address={vault.address} /></td>
                     <td>
                       {formatBigInt(vault.totalAssets, vault.asset.decimals)}
+                    </td>
+                    <td>
+                      {vault.supplyApy !== undefined
+                        ? formatPercent(vault.supplyApy)
+                        : "-"}
                     </td>
                     <td>{formatPriceUsd(vault.marketPriceUsd)}</td>
                     <td>{vault.strategies.length}</td>

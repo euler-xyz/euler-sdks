@@ -1,7 +1,9 @@
 import { Address } from "viem";
 
 export interface VaultFetchOptions {
-  fetchMarketPrices?: boolean;
+  populateMarketPrices?: boolean;
+  populateCollaterals?: boolean;
+  populateStrategyVaults?: boolean;
 }
 
 /**

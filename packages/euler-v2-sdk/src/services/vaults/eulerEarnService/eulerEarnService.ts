@@ -1,7 +1,7 @@
 import { EulerEarn, IEulerEarn } from "../../../entities/EulerEarn.js";
 import { Address } from "viem";
 import { DeploymentService } from "../../deploymentService/index.js";
-import type { IVaultService, VaultFetchOptions } from "../index.js";
+import type { IVaultService } from "../index.js";
 import type { IEVaultService } from "../eVaultService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
 
@@ -15,8 +15,20 @@ export enum StandardEulerEarnPerspectives {
   FACTORY = "eulerEarnFactoryPerspective",
 }
 
+export interface EulerEarnFetchOptions {
+  populateStrategyVaults?: boolean;
+  populateMarketPrices?: boolean;
+  /** Level 2: when populating strategy vaults, also resolve their collaterals. */
+  populateCollaterals?: boolean;
+}
+
 export interface IEulerEarnService
-  extends IVaultService<EulerEarn, StandardEulerEarnPerspectives> {}
+  extends IVaultService<EulerEarn, StandardEulerEarnPerspectives> {
+  fetchVault(chainId: number, vault: Address, options?: EulerEarnFetchOptions): Promise<EulerEarn>;
+  fetchVaults(chainId: number, vaults: Address[], options?: EulerEarnFetchOptions): Promise<EulerEarn[]>;
+  populateStrategyVaults(eulerEarns: EulerEarn[], options?: { populateCollaterals?: boolean }): Promise<void>;
+  populateMarketPrices(eulerEarns: EulerEarn[]): Promise<void>;
+}
 
 export class EulerEarnService implements IEulerEarnService {
   private priceService?: IPriceService;
@@ -36,35 +48,39 @@ export class EulerEarnService implements IEulerEarnService {
       .eulerEarnFactory;
   }
 
-  async fetchVault(chainId: number, vault: Address, options?: VaultFetchOptions): Promise<EulerEarn> {
+  async fetchVault(chainId: number, vault: Address, options?: EulerEarnFetchOptions): Promise<EulerEarn> {
     const vaults = await this.dataSource.fetchVaults(chainId, [vault]);
     if (vaults.length === 0) {
       throw new Error(`Vault not found for ${vault}`);
     }
     const eulerEarn = new EulerEarn(vaults[0]!);
-    await this.populateStrategyVaults(chainId, [eulerEarn]);
-    if (options?.fetchMarketPrices) {
+    if (options?.populateStrategyVaults) {
+      await this.populateStrategyVaults([eulerEarn], { populateCollaterals: options?.populateCollaterals });
+    }
+    if (options?.populateMarketPrices) {
       await this.populateMarketPrices([eulerEarn]);
     }
     return eulerEarn;
   }
 
-  async fetchVaults(chainId: number, vaults: Address[], options?: VaultFetchOptions): Promise<EulerEarn[]> {
+  async fetchVaults(chainId: number, vaults: Address[], options?: EulerEarnFetchOptions): Promise<EulerEarn[]> {
     const eulerEarns = (await this.dataSource.fetchVaults(chainId, vaults)).map(
       (vault) => new EulerEarn(vault)
     );
-    await this.populateStrategyVaults(chainId, eulerEarns);
-    if (options?.fetchMarketPrices) {
+    if (options?.populateStrategyVaults) {
+      await this.populateStrategyVaults(eulerEarns, { populateCollaterals: options?.populateCollaterals });
+    }
+    if (options?.populateMarketPrices) {
       await this.populateMarketPrices(eulerEarns);
     }
     return eulerEarns;
   }
 
-  private async populateStrategyVaults(
-    chainId: number,
-    eulerEarns: EulerEarn[]
+  async populateStrategyVaults(
+    eulerEarns: EulerEarn[],
+    options?: { populateCollaterals?: boolean }
   ): Promise<void> {
-    if (!this.eVaultService) return;
+    if (!this.eVaultService || eulerEarns.length === 0) return;
 
     const allStrategyAddresses = [
       ...new Set(
@@ -74,9 +90,12 @@ export class EulerEarnService implements IEulerEarnService {
 
     if (allStrategyAddresses.length === 0) return;
 
+    const chainId = eulerEarns[0]!.chainId;
     const eVaults = await Promise.all(
       allStrategyAddresses.map((addr) =>
-        this.eVaultService!.fetchVault(chainId, addr).catch(() => undefined)
+        this.eVaultService!.fetchVault(chainId, addr, {
+          populateCollaterals: options?.populateCollaterals,
+        }).catch(() => undefined)
       )
     );
 
@@ -93,10 +112,10 @@ export class EulerEarnService implements IEulerEarnService {
     }
   }
 
-  private async populateMarketPrices(
+  async populateMarketPrices(
     eulerEarns: EulerEarn[]
   ): Promise<void> {
-    if (!this.priceService) return;
+    if (!this.priceService || eulerEarns.length === 0) return;
 
     await Promise.all(
       eulerEarns.map(async (ee) => {
@@ -142,7 +161,7 @@ export class EulerEarnService implements IEulerEarnService {
   async fetchVerifiedVaults(
     chainId: number,
     perspectives: (StandardEulerEarnPerspectives | Address)[],
-    options?: VaultFetchOptions
+    options?: EulerEarnFetchOptions
   ): Promise<EulerEarn[]> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
@@ -151,4 +170,3 @@ export class EulerEarnService implements IEulerEarnService {
     return this.fetchVaults(chainId, addresses, options);
   }
 }
-

@@ -55,7 +55,7 @@ async function fetchApysExample() {
   const eulerEarnVaults =
     await sdk.eulerEarnService.fetchVerifiedVaults(mainnet.id, [
       StandardEulerEarnPerspectives.GOVERNED,
-    ]);
+    ], { populateStrategyVaults: true });
 
   eulerEarnVaults.sort((a, b) => (b.supplyApy ?? 0) - (a.supplyApy ?? 0));
 

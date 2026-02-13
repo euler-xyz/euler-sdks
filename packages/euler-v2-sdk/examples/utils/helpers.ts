@@ -304,18 +304,18 @@ async function formatVaultList(chainId: number, vaultAddresses: Address[], sdk: 
  * @param sdk - SDK instance for fetching metadata
  * 
  * @example
- * const accountBefore = await sdk.accountService.fetchAccount(chainId, address, { resolveVaults: false });
+ * const accountBefore = await sdk.accountService.fetchAccount(chainId, address, { populateVaults: false });
  * await executePlan(plan, sdk);
- * const accountAfter = await sdk.accountService.fetchAccount(chainId, address, { resolveVaults: false });
+ * const accountAfter = await sdk.accountService.fetchAccount(chainId, address, { populateVaults: false });
  * await logOperationResult(chainId, accountBefore, accountAfter, sdk);
  *
  * @example
  * // Or with sub-accounts only
- * const accountBefore = await sdk.accountService.fetchAccount(chainId, address, { resolveVaults: false });
+ * const accountBefore = await sdk.accountService.fetchAccount(chainId, address, { populateVaults: false });
  * await executePlan(plan, sdk);
  * const subAccounts = await Promise.all([
- *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr1, vaults, { resolveVaults: false }),
-  *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr2, vaults, { resolveVaults: false }),
+ *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr1, vaults, { populateVaults: false }),
+  *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr2, vaults, { populateVaults: false }),
  * ]);
  * await logOperationResult(chainId, accountBefore, subAccounts, sdk);
  */

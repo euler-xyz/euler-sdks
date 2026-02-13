@@ -1,7 +1,7 @@
 import { Address } from "viem";
 import { EVault, IEVault } from "../../../entities/EVault.js";
 import { DeploymentService } from "../../deploymentService/index.js";
-import type { IVaultService } from "../index.js";
+import type { IVaultService, VaultFetchOptions } from "../index.js";
 import type { IVaultMetaService } from "../vaultMetaService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
 
@@ -18,14 +18,16 @@ export enum StandardEVaultPerspectives {
 }
 
 export interface EVaultFetchOptions {
-  resolveCollaterals?: boolean;
-  fetchMarketPrices?: boolean;
+  populateCollaterals?: boolean;
+  populateMarketPrices?: boolean;
 }
 
 export interface IEVaultService
   extends IVaultService<EVault, StandardEVaultPerspectives> {
   fetchVault(chainId: number, vault: Address, options?: EVaultFetchOptions): Promise<EVault>;
   fetchVaults(chainId: number, vaults: Address[], options?: EVaultFetchOptions): Promise<EVault[]>;
+  populateCollaterals(eVaults: EVault[]): Promise<void>;
+  populateMarketPrices(eVaults: EVault[]): Promise<void>;
 }
 
 export class EVaultService implements IEVaultService {
@@ -56,10 +58,10 @@ export class EVaultService implements IEVaultService {
       throw new Error(`Vault not found for ${vault}`);
     }
     const eVault = new EVault(vaults[0]!);
-    if (options?.resolveCollaterals) {
-      await this.populateCollateralVaults(chainId, [eVault]);
+    if (options?.populateCollaterals) {
+      await this.populateCollaterals([eVault]);
     }
-    if (options?.fetchMarketPrices) {
+    if (options?.populateMarketPrices) {
       await this.populateMarketPrices([eVault]);
     }
     return eVault;
@@ -69,20 +71,17 @@ export class EVaultService implements IEVaultService {
     const eVaults = (await this.dataSource.fetchVaults(chainId, vaults)).map(
       (vault) => new EVault(vault)
     );
-    if (options?.resolveCollaterals) {
-      await this.populateCollateralVaults(chainId, eVaults);
+    if (options?.populateCollaterals) {
+      await this.populateCollaterals(eVaults);
     }
-    if (options?.fetchMarketPrices) {
+    if (options?.populateMarketPrices) {
       await this.populateMarketPrices(eVaults);
     }
     return eVaults;
   }
 
-  private async populateCollateralVaults(
-    chainId: number,
-    eVaults: EVault[]
-  ): Promise<void> {
-    if (!this.vaultMetaService) return;
+  async populateCollaterals(eVaults: EVault[]): Promise<void> {
+    if (!this.vaultMetaService || eVaults.length === 0) return;
 
     const allCollateralAddresses = [
       ...new Set(
@@ -92,6 +91,7 @@ export class EVaultService implements IEVaultService {
 
     if (allCollateralAddresses.length === 0) return;
 
+    const chainId = eVaults[0]!.chainId;
     const collateralVaults = await Promise.all(
       allCollateralAddresses.map((addr) =>
         this.vaultMetaService!.fetchVault(chainId, addr).catch(() => undefined)
@@ -111,8 +111,8 @@ export class EVaultService implements IEVaultService {
     }
   }
 
-  private async populateMarketPrices(eVaults: EVault[]): Promise<void> {
-    if (!this.priceService) return;
+  async populateMarketPrices(eVaults: EVault[]): Promise<void> {
+    if (!this.priceService || eVaults.length === 0) return;
 
     await Promise.all(
       eVaults.map(async (eVault) => {

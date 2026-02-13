@@ -65,4 +65,8 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
     if (!price) return undefined;
     return (amount * price.amountOutMid) / 10n ** BigInt(this.asset.decimals);
   }
+
+  async populateMarketPrices(priceService: IPriceService): Promise<void> {
+    this.marketPriceUsd = await this.fetchAssetMarketPriceUsd(priceService).catch(() => undefined);
+  }
 }
