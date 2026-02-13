@@ -8,7 +8,7 @@ Services in the SDK follow a standardized **populate** pattern for cross-service
 
 2. **FetchOptions flag** — For every population there is a `populateX?: boolean` flag in the service's fetch options. Default is `false`.
 
-3. **Two-level propagation** — If the augmenting service has its own populate flags, they are surfaced as flags on the parent service's fetch options. Maximum depth is 2 levels (parent → child augmentations, no deeper).
+3. **Nested options for forwarding** — When a service forwards options to another service, level-2 flags are grouped in a nested object named after the target service's fetch options type (e.g. `eVaultFetchOptions`).
 
 4. **Entity-level populate method** — Every entity that can be populated exposes a `populateX(requiredService)` async method that fetches data from the given service and mutates itself.
 
@@ -35,7 +35,8 @@ interface VaultFetchOptions {
   populateMarketPrices?: boolean;
   populateCollaterals?: boolean;     // EVault-specific, ignored by other vault services
   populateStrategyVaults?: boolean;  // EulerEarn-specific, ignored by other vault services
-  populateRewards?: boolean;         // Resolve reward campaigns from Merkl/Brevis
+  populateRewards?: boolean;
+  eVaultFetchOptions?: EVaultFetchOptions;  // Forwarded to EVaultService by EulerEarnService
 }
 ```
 
@@ -43,9 +44,9 @@ interface VaultFetchOptions {
 
 ```typescript
 interface EVaultFetchOptions {
-  populateCollaterals?: boolean;   // Resolve collateral vault entities
-  populateMarketPrices?: boolean;  // Resolve USD prices for vault asset and collaterals
-  populateRewards?: boolean;       // Resolve reward campaigns
+  populateCollaterals?: boolean;
+  populateMarketPrices?: boolean;
+  populateRewards?: boolean;
 }
 ```
 
@@ -53,10 +54,10 @@ interface EVaultFetchOptions {
 
 ```typescript
 interface EulerEarnFetchOptions {
-  populateStrategyVaults?: boolean;  // Resolve strategy EVault entities
-  populateMarketPrices?: boolean;    // Resolve USD price for the vault asset
-  populateCollaterals?: boolean;     // Level 2: resolve collaterals on strategy EVaults
-  populateRewards?: boolean;         // Resolve reward campaigns
+  populateStrategyVaults?: boolean;
+  populateMarketPrices?: boolean;
+  populateRewards?: boolean;
+  eVaultFetchOptions?: EVaultFetchOptions;  // Forwarded to EVaultService when populating strategies
 }
 ```
 
@@ -64,11 +65,8 @@ interface EulerEarnFetchOptions {
 
 ```typescript
 interface AccountFetchOptions {
-  populateVaults?: boolean;           // Resolve vault entities in positions and liquidity
-  populateCollaterals?: boolean;      // Level 2: resolve collaterals on EVaults
-  populateMarketPrices?: boolean;     // Level 2: resolve USD prices on vaults
-  populateStrategyVaults?: boolean;   // Level 2: resolve strategy vaults on EulerEarn
-  populateRewards?: boolean;          // Level 2: resolve reward campaigns on vaults
+  populateVaults?: boolean;
+  vaultFetchOptions?: VaultFetchOptions;  // Forwarded to vault services
 }
 ```
 
@@ -77,11 +75,15 @@ interface AccountFetchOptions {
 ### Via fetch options (declarative)
 
 ```typescript
-// Account with fully resolved vaults and prices
+// Account with fully resolved vaults, prices, and strategy collaterals
 const account = await accountService.fetchAccount(chainId, address, {
-  populateVaults: true,
-  populateMarketPrices: true,
-  populateCollaterals: true,
+  vaultFetchOptions: {
+    populateMarketPrices: true,
+    populateCollaterals: true,
+    populateStrategyVaults: true,
+    populateRewards: true,
+    eVaultFetchOptions: { populateCollaterals: true },
+  },
 });
 
 // EVault with collaterals and prices
@@ -90,10 +92,11 @@ const vault = await eVaultService.fetchVault(chainId, address, {
   populateMarketPrices: true,
 });
 
-// EulerEarn with strategy vaults (needed for supplyApy)
+// EulerEarn with strategy vaults and collaterals on strategies
 const earn = await eulerEarnService.fetchVault(chainId, address, {
   populateStrategyVaults: true,
   populateMarketPrices: true,
+  eVaultFetchOptions: { populateCollaterals: true },
 });
 ```
 
@@ -124,20 +127,22 @@ const account = await accountService.fetchAccount(chainId, address, { populateVa
 await account.populateVaults(vaultMetaService);
 ```
 
-## Two-Level Propagation
+## Options Forwarding
 
-When `AccountFetchOptions.populateVaults` is true, level-2 flags are forwarded as `VaultFetchOptions` to the vault services through VaultMetaService. Each service picks up the flags it cares about:
+When `AccountFetchOptions.populateVaults` is true (default), `vaultFetchOptions` is forwarded as `VaultFetchOptions` to vault services through VaultMetaService:
 
 ```
 AccountFetchOptions
-  ├─ populateVaults          → triggers VaultMetaService.fetchVaults()
-  ├─ populateCollaterals     → forwarded as VaultFetchOptions.populateCollaterals  → EVaultService
-  ├─ populateMarketPrices    → forwarded as VaultFetchOptions.populateMarketPrices → all vault services
-  ├─ populateStrategyVaults  → forwarded as VaultFetchOptions.populateStrategyVaults → EulerEarnService
-  └─ populateRewards         → forwarded as VaultFetchOptions.populateRewards → all vault services
+  ├─ populateVaults              → triggers VaultMetaService.fetchVaults()
+  └─ vaultFetchOptions           → forwarded as VaultFetchOptions
+       ├─ populateCollaterals    → EVaultService
+       ├─ populateMarketPrices   → all vault services
+       ├─ populateStrategyVaults → EulerEarnService
+       ├─ populateRewards        → all vault services
+       └─ eVaultFetchOptions     → EulerEarnService → EVaultService (for strategy vaults)
 ```
 
-Similarly, `EulerEarnFetchOptions.populateCollaterals` is forwarded to EVaultService when fetching strategy vaults.
+Similarly, `EulerEarnFetchOptions.eVaultFetchOptions` is forwarded to EVaultService when fetching strategy vaults.
 
 ## Dependency Graph
 

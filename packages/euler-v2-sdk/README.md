@@ -132,9 +132,11 @@ const account = await sdk.accountService.fetchAccount(mainnet.id, userAddress, {
 // With level-2 augmentations
 const account = await sdk.accountService.fetchAccount(mainnet.id, userAddress, {
   populateVaults: true,
-  populateMarketPrices: true,
-  populateCollaterals: true,
-  populateStrategyVaults: true,
+  vaultFetchOptions: {
+    populateMarketPrices: true,
+    populateCollaterals: true,
+    populateStrategyVaults: true,
+  },
 });
 ```
 

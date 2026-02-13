@@ -6,14 +6,8 @@ import type { VaultFetchOptions } from "../vaults/index.js";
 
 export interface AccountFetchOptions {
   populateVaults?: boolean;
-  /** Level 2: when populating EVaults, also resolve their collateral vault entities. */
-  populateCollaterals?: boolean;
-  /** Level 2: when populating vaults, also resolve USD market prices. */
-  populateMarketPrices?: boolean;
-  /** Level 2: when populating EulerEarn vaults, also resolve their strategy vault entities. */
-  populateStrategyVaults?: boolean;
-  /** Level 2: when populating vaults, also resolve reward campaigns. */
-  populateRewards?: boolean;
+  /** Options forwarded to vault services when populating vaults. */
+  vaultFetchOptions?: VaultFetchOptions;
 }
 
 /** Collects unique vault addresses from a sub-account's positions and liquidity collaterals only. */
@@ -119,16 +113,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     );
   }
 
-  /** Converts AccountFetchOptions level-2 flags into VaultFetchOptions. */
   private buildVaultFetchOptions(options?: AccountFetchOptions): VaultFetchOptions | undefined {
-    if (!options?.populateCollaterals && !options?.populateMarketPrices && !options?.populateStrategyVaults && !options?.populateRewards) {
-      return undefined;
-    }
-    return {
-      populateCollaterals: options.populateCollaterals,
-      populateMarketPrices: options.populateMarketPrices,
-      populateStrategyVaults: options.populateStrategyVaults,
-      populateRewards: options.populateRewards,
-    };
+    return options?.vaultFetchOptions;
   }
 }
