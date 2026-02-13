@@ -33,9 +33,17 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
   private priceService?: IPriceService;
 
   constructor(
-    private readonly dataSource: ISecuritizeCollateralDataSource,
-    private readonly deploymentService: DeploymentService
+    private dataSource: ISecuritizeCollateralDataSource,
+    private deploymentService: DeploymentService
   ) {}
+
+  setDataSource(dataSource: ISecuritizeCollateralDataSource): void {
+    this.dataSource = dataSource;
+  }
+
+  setDeploymentService(deploymentService: DeploymentService): void {
+    this.deploymentService = deploymentService;
+  }
 
   setPriceService(service: IPriceService): void {
     this.priceService = service;

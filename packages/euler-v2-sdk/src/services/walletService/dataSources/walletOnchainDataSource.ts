@@ -26,11 +26,19 @@ const permit2AllowanceAbi = [
 
 export class WalletOnchainDataSource implements IWalletDataSource {
   constructor(
-    private readonly providerService: ProviderService,
-    private readonly deploymentService: DeploymentService,
+    private providerService: ProviderService,
+    private deploymentService: DeploymentService,
     buildQuery?: BuildQueryFn,
   ) {
     if (buildQuery) applyBuildQuery(this, buildQuery);
+  }
+
+  setProviderService(providerService: ProviderService): void {
+    this.providerService = providerService;
+  }
+
+  setDeploymentService(deploymentService: DeploymentService): void {
+    this.deploymentService = deploymentService;
   }
 
   queryBalanceOf = async (

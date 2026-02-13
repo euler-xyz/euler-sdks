@@ -16,8 +16,12 @@ export interface IEulerLabelsService {
 
 export class EulerLabelsService implements IEulerLabelsService {
     constructor(
-      private readonly dataSource: IEulerLabelsDataSource
+      private dataSource: IEulerLabelsDataSource
     ) {}
+
+    setDataSource(dataSource: IEulerLabelsDataSource): void {
+      this.dataSource = dataSource;
+    }
 
     async getEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>> {
         return this.dataSource.getEulerLabelsVaults(chainId);

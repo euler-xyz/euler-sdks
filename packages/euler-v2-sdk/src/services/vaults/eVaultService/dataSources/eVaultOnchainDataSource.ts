@@ -19,8 +19,16 @@ const verifiedArrayAbi = [
 ] as const;
 
 export class EVaultOnchainDataSource implements IEVaultDataSource {
-  constructor(private readonly providerService: ProviderService, private readonly deploymentService: DeploymentService, buildQuery?: BuildQueryFn) {
+  constructor(private providerService: ProviderService, private deploymentService: DeploymentService, buildQuery?: BuildQueryFn) {
     if (buildQuery) applyBuildQuery(this, buildQuery);
+  }
+
+  setProviderService(providerService: ProviderService): void {
+    this.providerService = providerService;
+  }
+
+  setDeploymentService(deploymentService: DeploymentService): void {
+    this.deploymentService = deploymentService;
   }
 
   queryVaultInfoFull = async (

@@ -16,8 +16,12 @@ export interface IWalletService {
 
 export class WalletService implements IWalletService {
   constructor(
-    private readonly dataSource: IWalletDataSource
+    private dataSource: IWalletDataSource
   ) {}
+
+  setDataSource(dataSource: IWalletDataSource): void {
+    this.dataSource = dataSource;
+  }
 
   async fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<Wallet> {
     const walletData = await this.dataSource.fetchWallet(chainId, account, assetsWithSpenders);

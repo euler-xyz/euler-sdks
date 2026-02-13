@@ -34,10 +34,22 @@ export class EulerEarnService implements IEulerEarnService {
   private priceService?: IPriceService;
 
   constructor(
-    private readonly dataSource: IEulerEarnDataSource,
-    private readonly deploymentService: DeploymentService,
-    private readonly eVaultService?: IEVaultService
+    private dataSource: IEulerEarnDataSource,
+    private deploymentService: DeploymentService,
+    private eVaultService?: IEVaultService
   ) {}
+
+  setDataSource(dataSource: IEulerEarnDataSource): void {
+    this.dataSource = dataSource;
+  }
+
+  setDeploymentService(deploymentService: DeploymentService): void {
+    this.deploymentService = deploymentService;
+  }
+
+  setEVaultService(eVaultService: IEVaultService): void {
+    this.eVaultService = eVaultService;
+  }
 
   setPriceService(service: IPriceService): void {
     this.priceService = service;

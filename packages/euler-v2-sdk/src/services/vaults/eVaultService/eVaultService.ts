@@ -35,9 +35,17 @@ export class EVaultService implements IEVaultService {
   private priceService?: IPriceService;
 
   constructor(
-    private readonly dataSource: IEVaultDataSource,
-    private readonly deploymentService: DeploymentService
+    private dataSource: IEVaultDataSource,
+    private deploymentService: DeploymentService
   ) {}
+
+  setDataSource(dataSource: IEVaultDataSource): void {
+    this.dataSource = dataSource;
+  }
+
+  setDeploymentService(deploymentService: DeploymentService): void {
+    this.deploymentService = deploymentService;
+  }
 
   setVaultMetaService(service: IVaultMetaService): void {
     this.vaultMetaService = service;

@@ -109,9 +109,17 @@ const WAD = 10n ** 18n
 // this is a helper service, not a generic one.
 export class ExecutionService implements IExecutionService {
   constructor(
-    private readonly deploymentService: DeploymentService,
-    private readonly walletService: IWalletService,
+    private deploymentService: DeploymentService,
+    private walletService: IWalletService,
   ) {}
+
+  setDeploymentService(deploymentService: DeploymentService): void {
+    this.deploymentService = deploymentService;
+  }
+
+  setWalletService(walletService: IWalletService): void {
+    this.walletService = walletService;
+  }
 
   /**
    * Encodes an array of EVC batch items into a single calldata hex for `EVC.batch()`.

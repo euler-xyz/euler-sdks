@@ -15,12 +15,24 @@ export interface IAccountVaultsDataSource {
 
 export class AccountOnchainDataSource implements IAccountDataSource {
   constructor(
-    private readonly providerService: ProviderService,
-    private readonly deploymentService: DeploymentService,
-    private readonly positionsDataSource: IAccountVaultsDataSource,
+    private providerService: ProviderService,
+    private deploymentService: DeploymentService,
+    private positionsDataSource: IAccountVaultsDataSource,
     buildQuery?: BuildQueryFn,
   ) {
     if (buildQuery) applyBuildQuery(this, buildQuery);
+  }
+
+  setProviderService(providerService: ProviderService): void {
+    this.providerService = providerService;
+  }
+
+  setDeploymentService(deploymentService: DeploymentService): void {
+    this.deploymentService = deploymentService;
+  }
+
+  setPositionsDataSource(positionsDataSource: IAccountVaultsDataSource): void {
+    this.positionsDataSource = positionsDataSource;
   }
 
   queryEVCAccountInfo = async (

@@ -98,12 +98,24 @@ export interface IPriceService {
 
 export class PriceService implements IPriceService {
   constructor(
-    private readonly providerService: ProviderService,
-    private readonly deploymentService: DeploymentService,
-    private readonly backendClient?: PricingBackendClient,
+    private providerService: ProviderService,
+    private deploymentService: DeploymentService,
+    private backendClient?: PricingBackendClient,
     buildQuery?: BuildQueryFn,
   ) {
     if (buildQuery) applyBuildQuery(this, buildQuery);
+  }
+
+  setProviderService(providerService: ProviderService): void {
+    this.providerService = providerService;
+  }
+
+  setDeploymentService(deploymentService: DeploymentService): void {
+    this.deploymentService = deploymentService;
+  }
+
+  setBackendClient(backendClient: PricingBackendClient | undefined): void {
+    this.backendClient = backendClient;
   }
 
   queryAssetPriceInfo = async (

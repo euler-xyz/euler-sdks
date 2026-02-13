@@ -52,9 +52,17 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
   implements IAccountService<TVaultEntity>
 {
   constructor(
-    private readonly dataSource: IAccountDataSource,
-    private readonly vaultMetaService: IVaultMetaService<TVaultEntity>
+    private dataSource: IAccountDataSource,
+    private vaultMetaService: IVaultMetaService<TVaultEntity>
   ) {}
+
+  setDataSource(dataSource: IAccountDataSource): void {
+    this.dataSource = dataSource;
+  }
+
+  setVaultMetaService(vaultMetaService: IVaultMetaService<TVaultEntity>): void {
+    this.vaultMetaService = vaultMetaService;
+  }
 
   async fetchAccount(chainId: number, address: Address, options?: AccountFetchOptions): Promise<Account<TVaultEntity>> {
     const accountData = await this.dataSource.fetchAccount(chainId, address);
