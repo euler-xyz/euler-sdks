@@ -217,12 +217,13 @@ export class VaultMetaService<TEntity = VaultEntity>
 
   async fetchVerifiedVaults(
     chainId: number,
-    perspectives: VaultMetaPerspective[]
+    perspectives: VaultMetaPerspective[],
+    options?: VaultFetchOptions
   ): Promise<TEntity[]> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives
     );
-    return this.fetchVaults(chainId, addresses);
+    return this.fetchVaults(chainId, addresses, options);
   }
 }

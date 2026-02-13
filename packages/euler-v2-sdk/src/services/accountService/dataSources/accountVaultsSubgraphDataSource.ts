@@ -1,6 +1,7 @@
 import { Address, getAddress } from "viem";
 import { IAccountVaultsDataSource } from "./accountOnchainDataSource.js";
 import { getAddressPrefix } from "../../../utils/subAccounts.js";
+import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js";
 
 export interface AccountVaults {
   [vault: Address]: {
@@ -15,8 +16,34 @@ export interface AccountVaultsSubgraphDataSourceConfig {
 
 export class AccountVaultsSubgraphDataSource implements IAccountVaultsDataSource {
   constructor(
-    private readonly config: AccountVaultsSubgraphDataSourceConfig
-  ) {}
+    private readonly config: AccountVaultsSubgraphDataSourceConfig,
+    buildQuery?: BuildQueryFn,
+  ) {
+    if (buildQuery) applyBuildQuery(this, buildQuery);
+  }
+
+  queryAccountVaults = async (
+    subgraphUrl: string,
+    account: Address
+  ): Promise<any> => {
+    const response = await fetch(subgraphUrl, {
+      method: "POST",
+      body: JSON.stringify({
+        query: `query AccountBorrows {
+          trackingActiveAccount(id: "${getAddressPrefix(account)}") {
+            deposits
+            borrows
+          }
+        }`,
+        operationName: 'AccountVaults',
+      }),
+    });
+    return response.json();
+  };
+
+  setQueryAccountVaults(fn: typeof this.queryAccountVaults): void {
+    this.queryAccountVaults = fn;
+  }
 
   async getAccountVaults(chainId: number, account: Address): Promise<AccountVaults> {
     const parseResult = (type: "deposits" | "borrows", results: AccountVaults, data: any) => {
@@ -36,19 +63,7 @@ export class AccountVaultsSubgraphDataSource implements IAccountVaultsDataSource
     if (!subgraphUrl) {
       throw new Error(`Subgraph URL not found for chain ${chainId}`);
     }
-    const response = await fetch(subgraphUrl, {
-      method: "POST",
-      body: JSON.stringify({
-        query: `query AccountBorrows {
-          trackingActiveAccount(id: "${getAddressPrefix(account)}") {
-            deposits
-            borrows
-          }
-        }`,
-        operationName: 'AccountVaults',
-      }),
-    });
-    const data = await response.json() as any;
+    const data = await this.queryAccountVaults(subgraphUrl, account);
 
     const accountVaults: AccountVaults = {};
     parseResult("deposits", accountVaults, data.data?.trackingActiveAccount?.deposits || []);

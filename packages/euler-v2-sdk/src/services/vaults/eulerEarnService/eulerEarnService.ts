@@ -141,13 +141,14 @@ export class EulerEarnService implements IEulerEarnService {
 
   async fetchVerifiedVaults(
     chainId: number,
-    perspectives: (StandardEulerEarnPerspectives | Address)[]
+    perspectives: (StandardEulerEarnPerspectives | Address)[],
+    options?: VaultFetchOptions
   ): Promise<EulerEarn[]> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives
     );
-    return this.fetchVaults(chainId, addresses);
+    return this.fetchVaults(chainId, addresses, options);
   }
 }
 

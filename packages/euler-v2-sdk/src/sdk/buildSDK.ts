@@ -31,6 +31,7 @@ import {
 import { VaultType } from "../utils/types.js";
 import type { VaultTypeSubgraphDataSourceConfig } from "../services/vaults/vaultMetaService/index.js";
 import type { IVaultEntity } from "../entities/Account.js";
+import type { BuildQueryFn } from "../utils/buildQuery.js";
 
 export interface BuildSDKOverrides<TVaultEntity extends IVaultEntity = VaultEntity> {
   abiService?: IABIService;
@@ -59,25 +60,28 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   tokenlistServiceConfig?: TokenlistServiceConfig;
   swapServiceConfig?: SwapServiceConfig;
   backendConfig?: BackendConfig;
+  /** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
+  buildQuery?: BuildQueryFn;
   servicesOverrides?: BuildSDKOverrides<TVaultEntity>;
 }
 
 export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   options: BuildSDKOptions<TVaultEntity>
 ): Promise<EulerSDK<TVaultEntity>> {
-  const { rpcUrls, accountVaultsDataSourceConfig, vaultTypeDataSourceConfig, additionalVaultServices, eulerLabelsDataSourceConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, servicesOverrides } = options;
+  const { rpcUrls, accountVaultsDataSourceConfig, vaultTypeDataSourceConfig, additionalVaultServices, eulerLabelsDataSourceConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, buildQuery, servicesOverrides } = options;
 
   // Build core services (these may be needed for data sources even if overridden)
-  const abiService = servicesOverrides?.abiService ?? new ABIService();
-  const deploymentService = servicesOverrides?.deploymentService ?? await DeploymentService.build(defaultDeploymentServiceConfig);
+  const abiService = servicesOverrides?.abiService ?? new ABIService(buildQuery);
+  const deploymentService = servicesOverrides?.deploymentService ?? await DeploymentService.build(defaultDeploymentServiceConfig, buildQuery);
   const providerService = servicesOverrides?.providerService ?? new ProviderService(rpcUrls);
 
   // Account data source is built early so it can be used when building account service (after vault meta service)
-  const accountVaultsDataSource = new AccountVaultsSubgraphDataSource(accountVaultsDataSourceConfig || defaultAccountVaultsDataSourceConfig);
+  const accountVaultsDataSource = new AccountVaultsSubgraphDataSource(accountVaultsDataSourceConfig || defaultAccountVaultsDataSourceConfig, buildQuery);
   const accountDataSource = new AccountOnchainDataSource(
     providerService as ProviderService,
     deploymentService as DeploymentService,
-    accountVaultsDataSource
+    accountVaultsDataSource,
+    buildQuery,
   );
 
   // Build wallet service if not overridden
@@ -87,7 +91,8 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   } else {
     const walletDataSource = new WalletOnchainDataSource(
       providerService as ProviderService,
-      deploymentService as DeploymentService
+      deploymentService as DeploymentService,
+      buildQuery,
     );
     walletService = new WalletService(walletDataSource);
   }
@@ -99,7 +104,8 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   } else {
     const eVaultDataSource = new EVaultOnchainDataSource(
       providerService as ProviderService,
-      deploymentService as DeploymentService
+      deploymentService as DeploymentService,
+      buildQuery,
     );
     eVaultService = new EVaultService(
       eVaultDataSource,
@@ -114,7 +120,8 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   } else {
     const eulerEarnDataSource = new EulerEarnOnchainDataSource(
       providerService as ProviderService,
-      deploymentService as DeploymentService
+      deploymentService as DeploymentService,
+      buildQuery,
     );
     eulerEarnService = new EulerEarnService(
       eulerEarnDataSource,
@@ -130,7 +137,8 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   } else {
     const securitizeVaultDataSource = new SecuritizeVaultOnchainDataSource(
       providerService as ProviderService,
-      deploymentService as DeploymentService
+      deploymentService as DeploymentService,
+      buildQuery,
     );
     securitizeVaultService = new SecuritizeVaultService(
       securitizeVaultDataSource,
@@ -144,7 +152,8 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
     vaultMetaService = servicesOverrides.vaultMetaService;
   } else {
     const vaultTypeDataSource = new VaultTypeSubgraphDataSource(
-      vaultTypeDataSourceConfig ?? defaultVaultTypeDataSourceConfig
+      vaultTypeDataSourceConfig ?? defaultVaultTypeDataSourceConfig,
+      buildQuery,
     );
     const allVaultServices: VaultServiceEntry<TVaultEntity>[] = [
       { type: VaultType.EVault, service: eVaultService as unknown as RegisteredVaultService<TVaultEntity> },
@@ -176,15 +185,15 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
 
   // Build eulerLabels service if not overridden
   const eulerLabelsService = servicesOverrides?.eulerLabelsService ?? (() => {
-    const eulerLabelsDataSource = new EulerLabelsURLDataSource(eulerLabelsDataSourceConfig || defaultEulerLabelsURLDataSourceConfig);
+    const eulerLabelsDataSource = new EulerLabelsURLDataSource(eulerLabelsDataSourceConfig || defaultEulerLabelsURLDataSourceConfig, buildQuery);
     return new EulerLabelsService(eulerLabelsDataSource);
   })();
 
   // Build tokenlist service if not overridden
-  const tokenlistService = servicesOverrides?.tokenlistService ?? new TokenlistService(tokenlistServiceConfig || defaultTokenlistServiceConfig);
+  const tokenlistService = servicesOverrides?.tokenlistService ?? new TokenlistService(tokenlistServiceConfig || defaultTokenlistServiceConfig, buildQuery);
 
   // Build swap service if not overridden
-  const swapService = servicesOverrides?.swapService ?? new SwapService(swapServiceConfig || defaultSwapServiceConfig);
+  const swapService = servicesOverrides?.swapService ?? new SwapService(swapServiceConfig || defaultSwapServiceConfig, buildQuery);
 
   // Build execution service if not overridden
   const executionService = servicesOverrides?.executionService ?? new ExecutionService(
@@ -194,11 +203,12 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
 
   // Build price service if not overridden
   const priceService = servicesOverrides?.priceService ?? (() => {
-    const backendClient = backendConfig ? new PricingBackendClient(backendConfig) : undefined;
+    const backendClient = backendConfig ? new PricingBackendClient(backendConfig, buildQuery) : undefined;
     return new PriceService(
       providerService as ProviderService,
       deploymentService as DeploymentService,
       backendClient,
+      buildQuery,
     );
   })();
 

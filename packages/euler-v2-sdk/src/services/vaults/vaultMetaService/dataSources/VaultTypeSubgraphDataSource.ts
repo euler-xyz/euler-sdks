@@ -3,6 +3,7 @@ import type {
   IVaultTypeDataSource,
   VaultFactoryResult,
 } from "./IVaultTypeDataSource.js";
+import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
 
 export interface VaultTypeSubgraphDataSourceConfig {
   subgraphURLs: Record<number, string>;
@@ -12,8 +13,34 @@ const PAGE_SIZE = 1000;
 
 export class VaultTypeSubgraphDataSource implements IVaultTypeDataSource {
   constructor(
-    private readonly config: VaultTypeSubgraphDataSourceConfig
-  ) {}
+    private readonly config: VaultTypeSubgraphDataSourceConfig,
+    buildQuery?: BuildQueryFn,
+  ) {
+    if (buildQuery) applyBuildQuery(this, buildQuery);
+  }
+
+  queryVaultFactories = async (
+    subgraphUrl: string,
+    query: string,
+    pageIds: string[]
+  ): Promise<Array<{ id: string; factory: string }>> => {
+    const response = await fetch(subgraphUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query,
+        variables: { ids: pageIds },
+      }),
+    });
+    const json = (await response.json()) as {
+      data?: { vaults?: Array<{ id: string; factory: string }> };
+    };
+    return json.data?.vaults ?? [];
+  };
+
+  setQueryVaultFactories(fn: typeof this.queryVaultFactories): void {
+    this.queryVaultFactories = fn;
+  }
 
   async getVaultFactories(
     chainId: number,
@@ -38,23 +65,12 @@ export class VaultTypeSubgraphDataSource implements IVaultTypeDataSource {
     for (let i = 0; i < ids.length; i += PAGE_SIZE) {
       const pageIds = ids.slice(i, i + PAGE_SIZE);
       pagePromises.push(
-        fetch(subgraphUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            query,
-            variables: { ids: pageIds },
-          }),
-        }).then(async (response) => {
-          const json = (await response.json()) as {
-            data?: { vaults?: Array<{ id: string; factory: string }> };
-          };
-          const vaults = json.data?.vaults ?? [];
-          return vaults.map((v) => ({
+        this.queryVaultFactories(subgraphUrl, query, pageIds).then((vaults) =>
+          vaults.map((v) => ({
             id: getAddress(v.id),
             factory: getAddress(v.factory),
-          }));
-        })
+          }))
+        )
       );
     }
     const pageResults = await Promise.all(pagePromises);

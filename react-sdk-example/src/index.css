@@ -1,0 +1,302 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Courier New", Courier, monospace;
+  background: #fff;
+  color: #000;
+  line-height: 1.5;
+}
+
+a {
+  color: #000;
+  text-decoration: underline;
+}
+
+a:hover {
+  text-decoration: none;
+}
+
+/* Top bar */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  border-bottom: 2px solid #000;
+}
+
+.topbar h1 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.topbar select {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 4px 8px;
+  border: 1px solid #000;
+  background: #fff;
+  cursor: pointer;
+}
+
+/* Layout */
+.app-layout {
+  display: flex;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+/* Query Profiler */
+.profiler-panel {
+  width: 280px;
+  flex-shrink: 0;
+  border-left: 2px solid #000;
+  padding: 12px;
+  font-size: 11px;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: 100vh;
+  overflow-y: auto;
+}
+
+.profiler-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #000;
+}
+
+.profiler-empty {
+  color: #999;
+  font-style: italic;
+}
+
+.profiler-row {
+  display: flex;
+  gap: 8px;
+  padding: 3px 0;
+  opacity: 1;
+  transition: none;
+}
+
+.profiler-row.fading {
+  opacity: 0;
+  transition: opacity 3s linear;
+}
+
+.profiler-count {
+  font-weight: 700;
+  min-width: 28px;
+}
+
+.profiler-name {
+  word-break: break-all;
+}
+
+/* Section */
+.section-title {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #000;
+}
+
+/* Table */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-bottom: 32px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 6px 12px;
+  border-bottom: 1px solid #ccc;
+}
+
+th {
+  font-weight: 700;
+  border-bottom: 2px solid #000;
+  white-space: nowrap;
+}
+
+tr:hover {
+  background: #f5f5f5;
+}
+
+tr.clickable {
+  cursor: pointer;
+}
+
+/* Detail page */
+.detail-header {
+  margin-bottom: 24px;
+}
+
+.detail-header h2 {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.detail-header .address {
+  font-size: 12px;
+  color: #666;
+  word-break: break-all;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.detail-item {
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+}
+
+.detail-item .label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #666;
+}
+
+.detail-item .value {
+  font-size: 14px;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+/* Back link */
+.back-link {
+  display: inline-block;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+/* Loading / Error */
+.status-message {
+  padding: 24px;
+  text-align: center;
+  font-size: 14px;
+  color: #666;
+}
+
+.error-message {
+  padding: 24px;
+  text-align: center;
+  font-size: 14px;
+  color: #c00;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 24px;
+  border-bottom: 2px solid #000;
+}
+
+.tab {
+  padding: 8px 20px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: none;
+  border: 2px solid #000;
+  border-bottom: none;
+  cursor: pointer;
+  margin-bottom: -2px;
+}
+
+.tab.active {
+  background: #000;
+  color: #fff;
+}
+
+.tab:not(.active):hover {
+  background: #f0f0f0;
+}
+
+/* Top bar nav */
+.topbar-nav {
+  display: flex;
+  gap: 4px;
+}
+
+.nav-link {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 12px;
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.nav-link.active {
+  border-color: #000;
+}
+
+.nav-link:not(.active):hover {
+  text-decoration: underline;
+}
+
+/* Copy address */
+.copy-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 11px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  line-height: 1;
+  opacity: 0.4;
+}
+
+.copy-btn:hover {
+  opacity: 1;
+}

@@ -18,7 +18,8 @@ export interface IVaultService<TVault, TPerspective> {
   ): Promise<Address[]>;
   fetchVerifiedVaults(
     chainId: number,
-    perspectives: (TPerspective | Address)[]
+    perspectives: (TPerspective | Address)[],
+    options?: VaultFetchOptions
   ): Promise<TVault[]>;
   factory(chainId: number): Address;
 }

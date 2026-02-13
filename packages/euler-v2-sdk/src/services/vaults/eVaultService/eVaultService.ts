@@ -169,12 +169,13 @@ export class EVaultService implements IEVaultService {
 
   async fetchVerifiedVaults(
     chainId: number,
-    perspectives: (StandardEVaultPerspectives | Address)[]
+    perspectives: (StandardEVaultPerspectives | Address)[],
+    options?: EVaultFetchOptions
   ): Promise<EVault[]> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives
     );
-    return this.fetchVaults(chainId, addresses);
+    return this.fetchVaults(chainId, addresses, options);
   }
 }

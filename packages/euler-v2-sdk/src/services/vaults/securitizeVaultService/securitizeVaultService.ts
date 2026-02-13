@@ -98,12 +98,13 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 
   async fetchVerifiedVaults(
     chainId: number,
-    perspectives: (StandardSecuritizeCollateralPerspectives | Address)[]
+    perspectives: (StandardSecuritizeCollateralPerspectives | Address)[],
+    options?: VaultFetchOptions
   ): Promise<SecuritizeCollateralVault[]> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives
     );
-    return this.fetchVaults(chainId, addresses);
+    return this.fetchVaults(chainId, addresses, options);
   }
 }

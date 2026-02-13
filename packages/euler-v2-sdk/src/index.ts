@@ -24,3 +24,4 @@ export * from "./services/priceService/index.js";
 
 // Utils
 export * from "./utils/subAccounts.js";
+export { type BuildQueryFn, applyBuildQuery } from "./utils/buildQuery.js";
