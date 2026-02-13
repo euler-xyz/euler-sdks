@@ -1,7 +1,8 @@
 import { headers } from "next/headers";
 import Link from "next/link";
+import { Suspense } from "react";
 import { CopyAddress } from "../components/CopyAddress";
-import { resolveChainId } from "../config/chains";
+import { CHAIN_NAMES, resolveChainId } from "../config/chains";
 import type { VaultTableData } from "../server/vaultsData";
 
 export const dynamic = "force-dynamic";
@@ -51,36 +52,36 @@ async function getVaultTableDataFromApi(
   return (await response.json()) as VaultTableData;
 }
 
-export default async function Page({ searchParams }: PageProps) {
-  const params = (await searchParams) ?? {};
-  const chainId = resolveChainId(params.chainId);
-  const tab = resolveTab(params.tab);
+function VaultsDataFallback({ chainId, tab }: { chainId: number; tab: Tab }) {
+  return (
+    <>
+      <div className="status-message">
+        Chain: {CHAIN_NAMES[chainId] ?? `Chain ${chainId}`} ({chainId}).
+      </div>
+      {tab === "securitize" ? (
+        <div className="status-message">
+          Securitize vaults have no predefined perspectives. They are resolved
+          per-address when used as collateral in EVaults.
+        </div>
+      ) : (
+        <div className="status-message">Loading vault table...</div>
+      )}
+    </>
+  );
+}
+
+async function VaultsDataSection({
+  chainId,
+  tab,
+}: {
+  chainId: number;
+  tab: Tab;
+}) {
   const { chainName, eVaults, earnVaults } =
     await getVaultTableDataFromApi(chainId);
 
   return (
     <>
-      <div className="tabs">
-        <Link
-          className={`tab ${tab === "evaults" ? "active" : ""}`}
-          href={tabHref(chainId, "evaults")}
-        >
-          EVaults ({eVaults.length})
-        </Link>
-        <Link
-          className={`tab ${tab === "eulerEarn" ? "active" : ""}`}
-          href={tabHref(chainId, "eulerEarn")}
-        >
-          Euler Earn ({earnVaults.length})
-        </Link>
-        <Link
-          className={`tab ${tab === "securitize" ? "active" : ""}`}
-          href={tabHref(chainId, "securitize")}
-        >
-          Securitize
-        </Link>
-      </div>
-
       <div className="status-message">
         Chain: {chainName} ({chainId}).
       </div>
@@ -171,6 +172,44 @@ export default async function Page({ searchParams }: PageProps) {
           per-address when used as collateral in EVaults.
         </div>
       )}
+    </>
+  );
+}
+
+export default async function Page({ searchParams }: PageProps) {
+  const params = (await searchParams) ?? {};
+  const chainId = resolveChainId(params.chainId);
+  const tab = resolveTab(params.tab);
+
+  return (
+    <>
+      <div className="tabs">
+        <Link
+          className={`tab ${tab === "evaults" ? "active" : ""}`}
+          href={tabHref(chainId, "evaults")}
+        >
+          EVaults
+        </Link>
+        <Link
+          className={`tab ${tab === "eulerEarn" ? "active" : ""}`}
+          href={tabHref(chainId, "eulerEarn")}
+        >
+          Euler Earn
+        </Link>
+        <Link
+          className={`tab ${tab === "securitize" ? "active" : ""}`}
+          href={tabHref(chainId, "securitize")}
+        >
+          Securitize
+        </Link>
+      </div>
+
+      <Suspense
+        key={`${chainId}:${tab}`}
+        fallback={<VaultsDataFallback chainId={chainId} tab={tab} />}
+      >
+        <VaultsDataSection chainId={chainId} tab={tab} />
+      </Suspense>
     </>
   );
 }
