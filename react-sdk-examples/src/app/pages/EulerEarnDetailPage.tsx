@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import type { Address } from "viem";
 import { CopyAddress } from "../components/CopyAddress";
+import { ServerRefreshProgress } from "../components/ServerRefreshProgress";
 import { getEulerEarnDetailData } from "../server/eulerEarnDetailData";
 import {
   formatAPY,
@@ -33,6 +34,9 @@ function EulerEarnDetailFallback({
   return (
     <>
       <BackToVaultsLink chainId={chainId} />
+      <div className="vaults-progress-slot" aria-live="polite" aria-busy="true">
+        <div className="vaults-progress-bar" />
+      </div>
       <div className="detail-header">
         <h2>Loading vault...</h2>
         <div className="address">{address}</div>
@@ -47,73 +51,123 @@ async function EulerEarnDetailSection({
   address,
 }: EulerEarnDetailPageProps) {
   try {
-    const vault = await getEulerEarnDetailData(chainId, address);
-    const supplyApy = vault.supplyApy;
+    const data = await getEulerEarnDetailData(chainId, address);
+    const vault = data.vault;
+    const snapshot = data.listSnapshot;
+    const refreshErrorLabel = data.refreshErrorAt
+      ? new Date(data.refreshErrorAt).toLocaleTimeString()
+      : "";
+    const loadingValue = "Loading...";
+    const headerName =
+      vault?.shares.name || snapshot?.name || "Loading vault details...";
+    const headerAddress = vault?.address || snapshot?.address || address;
+    const strategiesCount = vault
+      ? String(vault.strategies.length)
+      : snapshot
+        ? String(snapshot.strategyCount)
+        : loadingValue;
+    const snapshotNotice = !vault && snapshot;
+    const topStatusContent = data.refreshError ? (
+      <div className="vaults-refresh-warning">
+        Showing cached data. Background refresh failed
+        {refreshErrorLabel ? ` at ${refreshErrorLabel}` : ""}:{" "}
+        {data.refreshError}
+      </div>
+    ) : snapshotNotice ? (
+      <div className="status-message detail-inline-status">
+        Showing cached list snapshot while loading full vault details...
+      </div>
+    ) : null;
 
     return (
       <>
         <BackToVaultsLink chainId={chainId} />
+        <ServerRefreshProgress serverRefreshing={data.isRefreshing} />
+        <div className="detail-status-slot">{topStatusContent}</div>
 
         <div className="detail-header">
-          <h2>{vault.shares.name || "Unnamed Vault"}</h2>
-          <div className="address">{vault.address}</div>
+          <h2>{headerName}</h2>
+          <div className="address">{headerAddress}</div>
         </div>
 
         <div className="detail-grid">
           <div className="detail-item">
             <div className="label">Asset</div>
             <div className="value">
-              {vault.asset.symbol} ({vault.asset.name})
+              {vault
+                ? `${vault.asset.symbol} (${vault.asset.name})`
+                : snapshot?.assetSymbol || loadingValue}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Asset Address</div>
-            <div className="value">{vault.asset.address}</div>
+            <div className="value">{vault?.asset.address || loadingValue}</div>
           </div>
           <div className="detail-item">
             <div className="label">Asset USD Price</div>
-            <div className="value">{formatPriceUsd(vault.marketPriceUsd)}</div>
+            <div className="value">
+              {vault
+                ? formatPriceUsd(vault.marketPriceUsd)
+                : snapshot?.marketPriceUsd || loadingValue}
+            </div>
           </div>
           <div className="detail-item">
             <div className="label">Total Assets</div>
             <div className="value">
-              {formatBigInt(vault.totalAssets, vault.asset.decimals)}{" "}
-              {vault.asset.symbol}
+              {vault
+                ? `${formatBigInt(vault.totalAssets, vault.asset.decimals)} ${vault.asset.symbol}`
+                : snapshot
+                  ? `${snapshot.totalAssets} ${snapshot.assetSymbol}`
+                  : loadingValue}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Total Shares</div>
             <div className="value">
-              {formatBigInt(vault.totalShares, vault.shares.decimals)}
+              {vault
+                ? formatBigInt(vault.totalShares, vault.shares.decimals)
+                : loadingValue}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Supply APY (weighted)</div>
             <div className="value">
-              {supplyApy !== undefined ? formatPercent(supplyApy) : "-"}
+              {vault
+                ? vault.supplyApy !== undefined
+                  ? formatPercent(vault.supplyApy)
+                  : "-"
+                : loadingValue}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Performance Fee</div>
-            <div className="value">{formatPercent(vault.performanceFee)}</div>
+            <div className="value">
+              {vault
+                ? formatPercent(vault.performanceFee)
+                : snapshot?.performanceFee || loadingValue}
+            </div>
           </div>
           <div className="detail-item">
             <div className="label">Available Assets</div>
             <div className="value">
-              {formatBigInt(vault.availableAssets, vault.asset.decimals)}{" "}
-              {vault.asset.symbol}
+              {vault
+                ? `${formatBigInt(vault.availableAssets, vault.asset.decimals)} ${vault.asset.symbol}`
+                : loadingValue}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Lost Assets</div>
             <div className="value">
-              {formatBigInt(vault.lostAssets, vault.asset.decimals)}{" "}
-              {vault.asset.symbol}
+              {vault
+                ? `${formatBigInt(vault.lostAssets, vault.asset.decimals)} ${vault.asset.symbol}`
+                : loadingValue}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Strategies</div>
-            <div className="value">{vault.strategies.length}</div>
+            <div className="value">
+              {vault ? String(vault.strategies.length) : strategiesCount}
+            </div>
           </div>
         </div>
 
@@ -122,38 +176,119 @@ async function EulerEarnDetailSection({
           <div className="detail-item">
             <div className="label">Owner</div>
             <div className="value">
-              <CopyAddress address={vault.governance.owner} />
+              {vault ? (
+                <CopyAddress address={vault.governance.owner} />
+              ) : (
+                loadingValue
+              )}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Curator</div>
             <div className="value">
-              <CopyAddress address={vault.governance.curator} />
+              {vault ? (
+                <CopyAddress address={vault.governance.curator} />
+              ) : (
+                loadingValue
+              )}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Guardian</div>
             <div className="value">
-              <CopyAddress address={vault.governance.guardian} />
+              {vault ? (
+                <CopyAddress address={vault.governance.guardian} />
+              ) : (
+                loadingValue
+              )}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Fee Receiver</div>
             <div className="value">
-              <CopyAddress address={vault.governance.feeReceiver} />
+              {vault ? (
+                <CopyAddress address={vault.governance.feeReceiver} />
+              ) : (
+                loadingValue
+              )}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Timelock</div>
-            <div className="value">{vault.governance.timelock}s</div>
+            <div className="value">
+              {vault ? `${vault.governance.timelock}s` : loadingValue}
+            </div>
           </div>
         </div>
 
-        <h3 className="section-title">
-          Strategies ({vault.strategies.length})
-        </h3>
-        {vault.strategies.length === 0 ? (
-          <div className="status-message">No strategies configured</div>
+        <h3 className="section-title">Strategies ({strategiesCount})</h3>
+        {vault ? (
+          vault.strategies.length === 0 ? (
+            <div className="status-message">No strategies configured</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Strategy</th>
+                  <th>Address</th>
+                  <th>Type</th>
+                  <th>Allocated</th>
+                  <th>Cap</th>
+                  <th>Supply APY</th>
+                  <th>Total Assets</th>
+                  <th>USD Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vault.strategies.map((strategy) => (
+                  <tr key={strategy.address}>
+                    <td>
+                      {strategy.vault ? (
+                        <Link href={`/vault/${chainId}/${strategy.address}`}>
+                          {strategy.vault.shares.name ||
+                            strategy.vault.asset.symbol}
+                        </Link>
+                      ) : (
+                        strategy.shares.name ||
+                        strategy.asset.symbol || (
+                          <CopyAddress address={strategy.address} />
+                        )
+                      )}
+                    </td>
+                    <td>
+                      <CopyAddress address={strategy.address} />
+                    </td>
+                    <td>{strategy.vaultType}</td>
+                    <td>
+                      {formatBigInt(
+                        strategy.allocatedAssets,
+                        vault.asset.decimals,
+                      )}{" "}
+                      {vault.asset.symbol}
+                    </td>
+                    <td>
+                      {strategy.allocationCap.current === BigInt(0)
+                        ? "Unlimited"
+                        : formatBigInt(
+                            strategy.allocationCap.current,
+                            vault.asset.decimals,
+                          )}
+                    </td>
+                    <td>
+                      {strategy.vault
+                        ? formatAPY(strategy.vault.interestRates.supplyAPY)
+                        : "-"}
+                    </td>
+                    <td>
+                      {formatBigInt(strategy.totalAssets, vault.asset.decimals)}{" "}
+                      {vault.asset.symbol}
+                    </td>
+                    <td>{formatPriceUsd(strategy.vault?.marketPriceUsd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
         ) : (
           <table>
             <thead>
@@ -169,52 +304,16 @@ async function EulerEarnDetailSection({
               </tr>
             </thead>
             <tbody>
-              {vault.strategies.map((strategy) => (
-                <tr key={strategy.address}>
-                  <td>
-                    {strategy.vault ? (
-                      <Link href={`/vault/${chainId}/${strategy.address}`}>
-                        {strategy.vault.shares.name ||
-                          strategy.vault.asset.symbol}
-                      </Link>
-                    ) : (
-                      strategy.shares.name ||
-                      strategy.asset.symbol || (
-                        <CopyAddress address={strategy.address} />
-                      )
-                    )}
-                  </td>
-                  <td>
-                    <CopyAddress address={strategy.address} />
-                  </td>
-                  <td>{strategy.vaultType}</td>
-                  <td>
-                    {formatBigInt(
-                      strategy.allocatedAssets,
-                      vault.asset.decimals,
-                    )}{" "}
-                    {vault.asset.symbol}
-                  </td>
-                  <td>
-                    {strategy.allocationCap.current === 0n
-                      ? "Unlimited"
-                      : formatBigInt(
-                          strategy.allocationCap.current,
-                          vault.asset.decimals,
-                        )}
-                  </td>
-                  <td>
-                    {strategy.vault
-                      ? formatAPY(strategy.vault.interestRates.supplyAPY)
-                      : "-"}
-                  </td>
-                  <td>
-                    {formatBigInt(strategy.totalAssets, vault.asset.decimals)}{" "}
-                    {vault.asset.symbol}
-                  </td>
-                  <td>{formatPriceUsd(strategy.vault?.marketPriceUsd)}</td>
-                </tr>
-              ))}
+              <tr>
+                <td>{loadingValue}</td>
+                <td>{loadingValue}</td>
+                <td>{loadingValue}</td>
+                <td>{loadingValue}</td>
+                <td>{loadingValue}</td>
+                <td>{loadingValue}</td>
+                <td>{loadingValue}</td>
+                <td>{loadingValue}</td>
+              </tr>
             </tbody>
           </table>
         )}

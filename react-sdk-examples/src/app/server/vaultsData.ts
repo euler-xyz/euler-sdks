@@ -18,8 +18,7 @@ const ALL_PERSPECTIVES: VaultMetaPerspective[] = [
 
 const MAX_PAGE_SIZE = 50
 const DEFAULT_PAGE_SIZE = 50
-const SNAPSHOT_STALE_TIME_MS = 5 * 60_000
-// const SNAPSHOT_STALE_TIME_MS = 10_000;
+const SNAPSHOT_STALE_TIME_MS = process.env.NODE_ENV === "development" ? 5 * 60_000 : 5 * 60_000
 
 type SortDir = "asc" | "desc"
 export type { SortDir }
@@ -124,6 +123,11 @@ interface VaultsSnapshotError {
 
 export interface CachedVaultListSnapshot {
   row: EVaultRow | null
+  snapshotUpdatedAt: number | null
+}
+
+export interface CachedEulerEarnListSnapshot {
+  row: EulerEarnRow | null
   snapshotUpdatedAt: number | null
 }
 
@@ -417,6 +421,31 @@ export function getCachedVaultListSnapshot(
 
   return {
     row: rowInternal ? toPublicEVaultRow(rowInternal) : null,
+    snapshotUpdatedAt: state?.dataUpdatedAt || snapshot.updatedAt,
+  }
+}
+
+export function getCachedEulerEarnListSnapshot(
+  chainId: number,
+  address: string,
+): CachedEulerEarnListSnapshot {
+  const queryClient = getServerQueryClient()
+  const state = queryClient.getQueryState<VaultsSnapshot>(getVaultsSnapshotQueryKey(chainId))
+  const snapshot = state?.data
+  if (!snapshot) {
+    return {
+      row: null,
+      snapshotUpdatedAt: null,
+    }
+  }
+
+  const addressLower = address.toLowerCase()
+  const rowInternal = snapshot.eulerEarnRowsInternal.find(
+    (row) => row.addressLower === addressLower,
+  )
+
+  return {
+    row: rowInternal ? toPublicEulerEarnRow(rowInternal) : null,
     snapshotUpdatedAt: state?.dataUpdatedAt || snapshot.updatedAt,
   }
 }
