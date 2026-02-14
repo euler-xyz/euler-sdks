@@ -1,5 +1,26 @@
+import { getAddress, isAddress } from "viem";
+import { resolveChainId } from "../../../config/chains";
 import { VaultDetailPage } from "../../../pages/VaultDetailPage";
 
-export default function Page() {
-  return <VaultDetailPage />;
+export const dynamic = "force-dynamic";
+
+interface PageProps {
+  params: Promise<{
+    chainId: string;
+    address: string;
+  }>;
+}
+
+export default async function Page({ params }: PageProps) {
+  const { chainId: rawChainId, address: rawAddress } = await params;
+  const chainId = resolveChainId(rawChainId);
+
+  if (!isAddress(rawAddress)) {
+    return (
+      <div className="error-message">Invalid vault address: {rawAddress}</div>
+    );
+  }
+
+  const address = getAddress(rawAddress);
+  return <VaultDetailPage chainId={chainId} address={address} />;
 }

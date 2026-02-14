@@ -4,7 +4,6 @@ import { QueryClient, useQuery } from "@tanstack/react-query";
 import type { BuildQueryFn, VaultMetaPerspective } from "euler-v2-sdk";
 import type { Address } from "viem";
 import { useSDK } from "../context/SdkContext";
-import { recordExecution } from "./queryProfileStore";
 
 // ---------------------------------------------------------------------------
 // Query client
@@ -139,7 +138,6 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn) => {
         if (ENABLE_SDK_QUERY_LOGS) {
           console.log(`[rq:sdk] execute ${queryName}`, queryKey);
         }
-        recordExecution(queryName);
         return fn(...args);
       },
       staleTime,
@@ -169,7 +167,7 @@ export function useVerifiedVaults(perspectives: VaultMetaPerspective[]) {
     queryKey: ["vaults", chainId, perspectives],
     queryFn: () =>
       sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
-        fetchMarketPrices: true,
+        populateMarketPrices: true,
       }),
     enabled,
     staleTime: 1_000,
@@ -182,8 +180,8 @@ export function useVaultDetail(chainId: number, address: string | undefined) {
     queryKey: ["vault", chainId, address],
     queryFn: () =>
       sdk!.eVaultService.fetchVault(chainId, address as Address, {
-        resolveCollaterals: true,
-        fetchMarketPrices: true,
+        populateCollaterals: true,
+        populateMarketPrices: true,
       }),
     enabled: enabled && !!address,
     staleTime: 1_000,
@@ -199,7 +197,7 @@ export function useEulerEarnDetail(
     queryKey: ["eulerEarn", chainId, address],
     queryFn: () =>
       sdk!.eulerEarnService.fetchVault(chainId, address as Address, {
-        fetchMarketPrices: true,
+        populateMarketPrices: true,
       }),
     enabled: enabled && !!address,
     staleTime: 1_000,
@@ -212,7 +210,7 @@ export function useAccount(chainId: number, address: string | undefined) {
     queryKey: ["account", chainId, address],
     queryFn: () =>
       sdk!.accountService.fetchAccount(chainId, address as Address, {
-        resolveVaults: true,
+        populateVaults: true,
       }),
     enabled: enabled && !!address && address.length === 42,
     staleTime: 1_000,

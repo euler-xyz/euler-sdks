@@ -1,13 +1,21 @@
-import { headers } from "next/headers";
 import Link from "next/link";
 import { Suspense } from "react";
 import { CopyAddress } from "../components/CopyAddress";
 import { CHAIN_NAMES, resolveChainId } from "../config/chains";
-import type { VaultTableData } from "../server/vaultsData";
+import {
+  getVaultTableData,
+  parseVaultTableQuery,
+  type SortDir,
+  type VaultsTab,
+  type VaultTableData,
+  type VaultTableQuery,
+} from "../server/vaultsData";
+import {
+  VaultsDataReadySignal,
+  VaultsNavigationProgress,
+} from "./VaultsNavigationProgress";
 
 export const dynamic = "force-dynamic";
-
-type Tab = "evaults" | "eulerEarn" | "securitize";
 
 type SearchParamValue = string | string[] | undefined;
 type SearchParams = Record<string, SearchParamValue>;
@@ -16,96 +24,354 @@ interface PageProps {
   searchParams?: Promise<SearchParams>;
 }
 
-function resolveTab(value: SearchParamValue): Tab {
-  const raw = Array.isArray(value) ? value[0] : value;
-  if (raw === "eulerEarn" || raw === "securitize") return raw;
-  return "evaults";
+function defaultSortForTab(tab: VaultsTab): {
+  sortBy: string;
+  sortDir: SortDir;
+} {
+  return tab === "evaults"
+    ? { sortBy: "totalSupply", sortDir: "desc" }
+    : { sortBy: "totalAssets", sortDir: "desc" };
 }
 
-function tabHref(chainId: number, tab: Tab): string {
-  return `/vaults?chainId=${chainId}&tab=${tab}`;
+function tabLabel(tab: VaultsTab): string {
+  return tab === "evaults" ? "EVaults" : "Euler Earn";
 }
 
-async function getVaultTableDataFromApi(
+function isTextSort(sortBy: string): boolean {
+  return sortBy === "name" || sortBy === "asset" || sortBy === "address";
+}
+
+function nextSortDir(query: VaultTableQuery, sortBy: string): SortDir {
+  if (query.sortBy === sortBy) {
+    return query.sortDir === "asc" ? "desc" : "asc";
+  }
+  return isTextSort(sortBy) ? "asc" : "desc";
+}
+
+function sortIndicator(query: VaultTableQuery, sortBy: string): string {
+  if (query.sortBy !== sortBy) return "";
+  return query.sortDir === "asc" ? " ↑" : " ↓";
+}
+
+function buildVaultsHref(
   chainId: number,
-): Promise<VaultTableData> {
-  const requestHeaders = await headers();
-  const host =
-    requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? "http";
+  query: VaultTableQuery,
+  overrides: Partial<VaultTableQuery> = {},
+): string {
+  const next = {
+    ...query,
+    ...overrides,
+  };
 
-  if (!host) {
-    throw new Error("Missing host header for API request");
-  }
+  const params = new URLSearchParams();
+  params.set("chainId", String(chainId));
+  params.set("tab", next.tab);
+  params.set("page", String(next.page));
+  params.set("pageSize", String(next.pageSize));
+  params.set("sortBy", next.sortBy);
+  params.set("sortDir", next.sortDir);
+  if (next.q) params.set("q", next.q);
 
-  const response = await fetch(
-    `${protocol}://${host}/api/vaults?chainId=${chainId}`,
-    {
-      cache: "no-store",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Vault API request failed with ${response.status}`);
-  }
-
-  return (await response.json()) as VaultTableData;
+  return `/vaults?${params.toString()}`;
 }
 
-function VaultsDataFallback({ chainId, tab }: { chainId: number; tab: Tab }) {
+function VaultsDataFallback({
+  chainId,
+  query,
+}: {
+  chainId: number;
+  query: VaultTableQuery;
+}) {
   return (
     <>
       <div className="status-message">
         Chain: {CHAIN_NAMES[chainId] ?? `Chain ${chainId}`} ({chainId}).
       </div>
-      {tab === "securitize" ? (
-        <div className="status-message">
-          Securitize vaults have no predefined perspectives. They are resolved
-          per-address when used as collateral in EVaults.
-        </div>
-      ) : (
-        <div className="status-message">Loading vault table...</div>
-      )}
+      <FilterControls chainId={chainId} query={query} disabled />
+      <div className="status-message">Showing 0-0 of 0</div>
+      <PaginationControls
+        chainId={chainId}
+        query={query}
+        page={query.page}
+        totalPages={query.page}
+        disabled
+      />
+      <div className="vaults-loading-table">
+        {query.tab === "eulerEarn"
+          ? "Loading Euler Earn table..."
+          : "Loading EVault table..."}
+      </div>
+      <PaginationControls
+        chainId={chainId}
+        query={query}
+        page={query.page}
+        totalPages={query.page}
+        disabled
+      />
     </>
+  );
+}
+
+function FilterControls({
+  chainId,
+  query,
+  disabled = false,
+}: {
+  chainId: number;
+  query: VaultTableQuery;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="status-message vaults-controls-row">
+      <form method="get">
+        <input type="hidden" name="chainId" value={String(chainId)} />
+        <input type="hidden" name="tab" value={query.tab} />
+        <input type="hidden" name="page" value="1" />
+        <input type="hidden" name="pageSize" value={String(query.pageSize)} />
+        <input type="hidden" name="sortBy" value={query.sortBy} />
+        <input type="hidden" name="sortDir" value={query.sortDir} />
+        <input
+          type="text"
+          name="q"
+          placeholder="Filter name / asset / address"
+          defaultValue={query.q}
+          disabled={disabled}
+        />{" "}
+        <button type="submit" disabled={disabled}>
+          Apply
+        </button>{" "}
+        {query.q ? (
+          disabled ? (
+            <span>Clear</span>
+          ) : (
+            <Link
+              href={buildVaultsHref(chainId, query, {
+                q: "",
+                page: 1,
+              })}
+              prefetch={false}
+            >
+              Clear
+            </Link>
+          )
+        ) : (
+          <span className="vaults-inline-placeholder" aria-hidden="true">
+            Clear
+          </span>
+        )}
+      </form>
+    </div>
+  );
+}
+
+function PaginationControls({
+  chainId,
+  query,
+  page,
+  totalPages,
+  disabled = false,
+}: {
+  chainId: number;
+  query: VaultTableQuery;
+  page: number;
+  totalPages: number;
+  disabled?: boolean;
+}) {
+  const safeTotalPages = Math.max(totalPages, 1);
+  const safePage = Math.min(Math.max(page, 1), safeTotalPages);
+
+  return (
+    <div className="status-message vaults-controls-row">
+      {!disabled && safePage > 1 ? (
+        <Link
+          href={buildVaultsHref(chainId, query, { page: safePage - 1 })}
+          prefetch={false}
+        >
+          Previous
+        </Link>
+      ) : (
+        <span>Previous</span>
+      )}{" "}
+      | Page {safePage} / {safeTotalPages} |{" "}
+      {!disabled && safePage < safeTotalPages ? (
+        <Link
+          href={buildVaultsHref(chainId, query, { page: safePage + 1 })}
+          prefetch={false}
+        >
+          Next
+        </Link>
+      ) : (
+        <span>Next</span>
+      )}
+    </div>
   );
 }
 
 async function VaultsDataSection({
   chainId,
-  tab,
+  query,
 }: {
   chainId: number;
-  tab: Tab;
+  query: VaultTableQuery;
 }) {
-  const { chainName, eVaults, earnVaults } =
-    await getVaultTableDataFromApi(chainId);
+  const data: VaultTableData = await getVaultTableData(chainId, query);
+  const readyToken = `${data.tab}:${data.page}:${data.pageSize}:${data.totalRows}:${data.q}:${data.sortBy}:${data.sortDir}:${data.eVaults.length}:${data.earnVaults.length}`;
+
+  const normalizedQuery: VaultTableQuery = {
+    tab: data.tab,
+    page: data.page,
+    pageSize: data.pageSize,
+    q: data.q,
+    sortBy: data.sortBy,
+    sortDir: data.sortDir,
+  };
+
+  const showingFrom =
+    data.totalRows === 0 ? 0 : (data.page - 1) * data.pageSize + 1;
+  const showingTo = Math.min(data.page * data.pageSize, data.totalRows);
 
   return (
     <>
+      <VaultsDataReadySignal token={readyToken} />
       <div className="status-message">
-        Chain: {chainName} ({chainId}).
+        Chain: {data.chainName} ({chainId}) | {tabLabel(data.tab)}:{" "}
+        {data.eVaultsCount}
+        {" / "}Euler Earn: {data.earnVaultsCount}
       </div>
 
-      {tab === "evaults" &&
-        (eVaults.length === 0 ? (
+      <FilterControls chainId={chainId} query={normalizedQuery} />
+
+      <div className="status-message">
+        Showing {showingFrom}-{showingTo} of {data.totalRows}
+      </div>
+
+      <PaginationControls
+        chainId={chainId}
+        query={normalizedQuery}
+        page={data.page}
+        totalPages={data.totalPages}
+      />
+
+      {data.tab === "evaults" &&
+        (data.eVaults.length === 0 ? (
           <div className="status-message">No EVaults found</div>
         ) : (
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Asset</th>
-                <th>Address</th>
-                <th>Total Supply</th>
-                <th>Total Borrows</th>
-                <th>Supply APY</th>
-                <th>Borrow APY</th>
-                <th>USD Price</th>
-                <th>Collaterals</th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "name",
+                      sortDir: nextSortDir(normalizedQuery, "name"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Name{sortIndicator(normalizedQuery, "name")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "asset",
+                      sortDir: nextSortDir(normalizedQuery, "asset"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Asset{sortIndicator(normalizedQuery, "asset")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "address",
+                      sortDir: nextSortDir(normalizedQuery, "address"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Address{sortIndicator(normalizedQuery, "address")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "totalSupply",
+                      sortDir: nextSortDir(normalizedQuery, "totalSupply"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Total Supply{sortIndicator(normalizedQuery, "totalSupply")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "totalBorrows",
+                      sortDir: nextSortDir(normalizedQuery, "totalBorrows"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Total Borrows
+                    {sortIndicator(normalizedQuery, "totalBorrows")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "supplyApy",
+                      sortDir: nextSortDir(normalizedQuery, "supplyApy"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Supply APY{sortIndicator(normalizedQuery, "supplyApy")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "borrowApy",
+                      sortDir: nextSortDir(normalizedQuery, "borrowApy"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Borrow APY{sortIndicator(normalizedQuery, "borrowApy")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "price",
+                      sortDir: nextSortDir(normalizedQuery, "price"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    USD Price{sortIndicator(normalizedQuery, "price")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "collaterals",
+                      sortDir: nextSortDir(normalizedQuery, "collaterals"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Collaterals{sortIndicator(normalizedQuery, "collaterals")}
+                  </Link>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {eVaults.map((vault) => (
+              {data.eVaults.map((vault) => (
                 <tr key={vault.address}>
                   <td>
                     <Link href={`/vault/${chainId}/${vault.address}`}>
@@ -128,24 +394,101 @@ async function VaultsDataSection({
           </table>
         ))}
 
-      {tab === "eulerEarn" &&
-        (earnVaults.length === 0 ? (
+      {data.tab === "eulerEarn" &&
+        (data.earnVaults.length === 0 ? (
           <div className="status-message">No Euler Earn vaults found</div>
         ) : (
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Asset</th>
-                <th>Address</th>
-                <th>Total Assets</th>
-                <th>USD Price</th>
-                <th>Strategies</th>
-                <th>Perf. Fee</th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "name",
+                      sortDir: nextSortDir(normalizedQuery, "name"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Name{sortIndicator(normalizedQuery, "name")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "asset",
+                      sortDir: nextSortDir(normalizedQuery, "asset"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Asset{sortIndicator(normalizedQuery, "asset")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "address",
+                      sortDir: nextSortDir(normalizedQuery, "address"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Address{sortIndicator(normalizedQuery, "address")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "totalAssets",
+                      sortDir: nextSortDir(normalizedQuery, "totalAssets"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Total Assets{sortIndicator(normalizedQuery, "totalAssets")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "price",
+                      sortDir: nextSortDir(normalizedQuery, "price"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    USD Price{sortIndicator(normalizedQuery, "price")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "strategies",
+                      sortDir: nextSortDir(normalizedQuery, "strategies"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Strategies{sortIndicator(normalizedQuery, "strategies")}
+                  </Link>
+                </th>
+                <th>
+                  <Link
+                    href={buildVaultsHref(chainId, normalizedQuery, {
+                      sortBy: "performanceFee",
+                      sortDir: nextSortDir(normalizedQuery, "performanceFee"),
+                      page: 1,
+                    })}
+                    prefetch={false}
+                  >
+                    Perf. Fee{sortIndicator(normalizedQuery, "performanceFee")}
+                  </Link>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {earnVaults.map((vault) => (
+              {data.earnVaults.map((vault) => (
                 <tr key={vault.address}>
                   <td>
                     <Link href={`/earn/${chainId}/${vault.address}`}>
@@ -166,12 +509,12 @@ async function VaultsDataSection({
           </table>
         ))}
 
-      {tab === "securitize" && (
-        <div className="status-message">
-          Securitize vaults have no predefined perspectives. They are resolved
-          per-address when used as collateral in EVaults.
-        </div>
-      )}
+      <PaginationControls
+        chainId={chainId}
+        query={normalizedQuery}
+        page={data.page}
+        totalPages={data.totalPages}
+      />
     </>
   );
 }
@@ -179,37 +522,49 @@ async function VaultsDataSection({
 export default async function Page({ searchParams }: PageProps) {
   const params = (await searchParams) ?? {};
   const chainId = resolveChainId(params.chainId);
-  const tab = resolveTab(params.tab);
+  const query = parseVaultTableQuery({
+    tab: params.tab,
+    page: params.page,
+    pageSize: params.pageSize,
+    q: params.q,
+    sortBy: params.sortBy,
+    sortDir: params.sortDir,
+  });
 
   return (
-    <>
+    <div data-vaults-page>
       <div className="tabs">
         <Link
-          className={`tab ${tab === "evaults" ? "active" : ""}`}
-          href={tabHref(chainId, "evaults")}
+          className={`tab ${query.tab === "evaults" ? "active" : ""}`}
+          href={buildVaultsHref(chainId, query, {
+            tab: "evaults",
+            page: 1,
+            ...defaultSortForTab("evaults"),
+          })}
+          prefetch={false}
         >
           EVaults
         </Link>
         <Link
-          className={`tab ${tab === "eulerEarn" ? "active" : ""}`}
-          href={tabHref(chainId, "eulerEarn")}
+          className={`tab ${query.tab === "eulerEarn" ? "active" : ""}`}
+          href={buildVaultsHref(chainId, query, {
+            tab: "eulerEarn",
+            page: 1,
+            ...defaultSortForTab("eulerEarn"),
+          })}
+          prefetch={false}
         >
           Euler Earn
         </Link>
-        <Link
-          className={`tab ${tab === "securitize" ? "active" : ""}`}
-          href={tabHref(chainId, "securitize")}
-        >
-          Securitize
-        </Link>
       </div>
 
+      <VaultsNavigationProgress />
+
       <Suspense
-        key={`${chainId}:${tab}`}
-        fallback={<VaultsDataFallback chainId={chainId} tab={tab} />}
+        fallback={<VaultsDataFallback chainId={chainId} query={query} />}
       >
-        <VaultsDataSection chainId={chainId} tab={tab} />
+        <VaultsDataSection chainId={chainId} query={query} />
       </Suspense>
-    </>
+    </div>
   );
 }

@@ -4,7 +4,6 @@ export default function Loading() {
       <div className="tabs">
         <span className="tab active">EVaults</span>
         <span className="tab">Euler Earn</span>
-        <span className="tab">Securitize</span>
       </div>
       <div className="status-message">Loading vaults...</div>
     </>

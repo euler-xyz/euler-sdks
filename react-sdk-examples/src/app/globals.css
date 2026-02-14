@@ -62,57 +62,6 @@ a:hover {
   padding: 24px;
 }
 
-/* Query Profiler */
-.profiler-panel {
-  width: 280px;
-  flex-shrink: 0;
-  border-left: 2px solid #000;
-  padding: 12px;
-  font-size: 11px;
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
-  max-height: 100vh;
-  overflow-y: auto;
-}
-
-.profiler-title {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid #000;
-}
-
-.profiler-empty {
-  color: #999;
-  font-style: italic;
-}
-
-.profiler-row {
-  display: flex;
-  gap: 8px;
-  padding: 3px 0;
-  opacity: 1;
-  transition: none;
-}
-
-.profiler-row.fading {
-  opacity: 0;
-  transition: opacity 3s linear;
-}
-
-.profiler-count {
-  font-weight: 700;
-  min-width: 28px;
-}
-
-.profiler-name {
-  word-break: break-all;
-}
-
 /* Section */
 .section-title {
   font-size: 14px;
@@ -248,6 +197,55 @@ tr.clickable {
 
 .tab:not(.active):hover {
   background: #f0f0f0;
+}
+
+.vaults-controls-row {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vaults-controls-row form {
+  margin: 0;
+}
+
+.vaults-inline-placeholder {
+  visibility: hidden;
+}
+
+.vaults-loading-table {
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+}
+
+.vaults-progress-slot {
+  position: relative;
+  height: 3px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.vaults-progress-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 28%;
+  background: #000;
+  animation: vaults-progress-slide 1s linear infinite;
+}
+
+@keyframes vaults-progress-slide {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(420%);
+  }
 }
 
 /* Top bar nav */
