@@ -1,9 +1,10 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-const VAULTS_READY_EVENT = "vaults:data-ready";
-const MAX_PENDING_MS = 15_000;
+const MAX_INTERACTION_PENDING_MS = 15_000;
+const BACKGROUND_REFRESH_POLL_MS = 2_000;
 
 function clearTimer(timerRef: {
   current: ReturnType<typeof setTimeout> | null;
@@ -13,37 +14,47 @@ function clearTimer(timerRef: {
   timerRef.current = null;
 }
 
-function setPendingTimeout(
+function setInteractionTimeout(
   timerRef: { current: ReturnType<typeof setTimeout> | null },
   onTimeout: () => void,
 ) {
   clearTimer(timerRef);
-  timerRef.current = setTimeout(onTimeout, MAX_PENDING_MS);
+  timerRef.current = setTimeout(onTimeout, MAX_INTERACTION_PENDING_MS);
 }
 
 function isSameOriginVaultsUrl(url: URL): boolean {
   return url.origin === window.location.origin && url.pathname === "/vaults";
 }
 
-export function VaultsNavigationProgress() {
-  const [isPending, setIsPending] = useState(false);
-  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+interface VaultsNavigationProgressProps {
+  readyToken: string;
+  serverRefreshing: boolean;
+}
+
+export function VaultsNavigationProgress({
+  readyToken,
+  serverRefreshing,
+}: VaultsNavigationProgressProps) {
+  const router = useRouter();
+  const [interactionPending, setInteractionPending] = useState(false);
+  const interactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const readyTokenRef = useRef(readyToken);
+
+  useEffect(() => {
+    if (readyTokenRef.current === readyToken) return;
+    readyTokenRef.current = readyToken;
+    setInteractionPending(false);
+    clearTimer(interactionTimerRef);
+  }, [readyToken]);
 
   useEffect(() => {
     const beginPending = () => {
-      setIsPending(true);
-      setPendingTimeout(pendingTimerRef, () => {
-        setIsPending(false);
+      setInteractionPending(true);
+      setInteractionTimeout(interactionTimerRef, () => {
+        setInteractionPending(false);
       });
-    };
-
-    const endPending = () => {
-      setIsPending(false);
-      clearTimer(pendingTimerRef);
-    };
-
-    const handleReady = () => {
-      endPending();
     };
 
     const handleClick = (event: MouseEvent) => {
@@ -99,17 +110,27 @@ export function VaultsNavigationProgress() {
       beginPending();
     };
 
-    window.addEventListener(VAULTS_READY_EVENT, handleReady);
     document.addEventListener("click", handleClick, true);
     document.addEventListener("submit", handleSubmit, true);
 
     return () => {
-      clearTimer(pendingTimerRef);
-      window.removeEventListener(VAULTS_READY_EVENT, handleReady);
+      clearTimer(interactionTimerRef);
       document.removeEventListener("click", handleClick, true);
       document.removeEventListener("submit", handleSubmit, true);
     };
   }, []);
+
+  useEffect(() => {
+    if (!serverRefreshing) return;
+
+    const timer = setInterval(() => {
+      router.refresh();
+    }, BACKGROUND_REFRESH_POLL_MS);
+
+    return () => clearInterval(timer);
+  }, [serverRefreshing, router]);
+
+  const isPending = interactionPending || serverRefreshing;
 
   return (
     <div
@@ -120,14 +141,4 @@ export function VaultsNavigationProgress() {
       {isPending ? <div className="vaults-progress-bar" /> : null}
     </div>
   );
-}
-
-export function VaultsDataReadySignal({ token }: { token: string }) {
-  useEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent(VAULTS_READY_EVENT, { detail: token }),
-    );
-  }, [token]);
-
-  return null;
 }

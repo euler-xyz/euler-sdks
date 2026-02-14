@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { Suspense } from "react";
 import { CopyAddress } from "../components/CopyAddress";
-import { CHAIN_NAMES, resolveChainId } from "../config/chains";
+import { resolveChainId } from "../config/chains";
 import {
   getVaultTableData,
   parseVaultTableQuery,
@@ -10,10 +9,7 @@ import {
   type VaultTableData,
   type VaultTableQuery,
 } from "../server/vaultsData";
-import {
-  VaultsDataReadySignal,
-  VaultsNavigationProgress,
-} from "./VaultsNavigationProgress";
+import { VaultsNavigationProgress } from "./VaultsNavigationProgress";
 
 export const dynamic = "force-dynamic";
 
@@ -73,43 +69,6 @@ function buildVaultsHref(
   if (next.q) params.set("q", next.q);
 
   return `/vaults?${params.toString()}`;
-}
-
-function VaultsDataFallback({
-  chainId,
-  query,
-}: {
-  chainId: number;
-  query: VaultTableQuery;
-}) {
-  return (
-    <>
-      <div className="status-message">
-        Chain: {CHAIN_NAMES[chainId] ?? `Chain ${chainId}`} ({chainId}).
-      </div>
-      <FilterControls chainId={chainId} query={query} disabled />
-      <div className="status-message">Showing 0-0 of 0</div>
-      <PaginationControls
-        chainId={chainId}
-        query={query}
-        page={query.page}
-        totalPages={query.page}
-        disabled
-      />
-      <div className="vaults-loading-table">
-        {query.tab === "eulerEarn"
-          ? "Loading Euler Earn table..."
-          : "Loading EVault table..."}
-      </div>
-      <PaginationControls
-        chainId={chainId}
-        query={query}
-        page={query.page}
-        totalPages={query.page}
-        disabled
-      />
-    </>
-  );
 }
 
 function FilterControls({
@@ -215,7 +174,10 @@ async function VaultsDataSection({
   query: VaultTableQuery;
 }) {
   const data: VaultTableData = await getVaultTableData(chainId, query);
-  const readyToken = `${data.tab}:${data.page}:${data.pageSize}:${data.totalRows}:${data.q}:${data.sortBy}:${data.sortDir}:${data.eVaults.length}:${data.earnVaults.length}`;
+  const readyToken = `${data.tab}:${data.page}:${data.pageSize}:${data.totalRows}:${data.q}:${data.sortBy}:${data.sortDir}:${data.snapshotUpdatedAt}:${data.isRefreshing ? "1" : "0"}:${data.refreshErrorAt ?? 0}`;
+  const refreshErrorLabel = data.refreshErrorAt
+    ? new Date(data.refreshErrorAt).toLocaleTimeString()
+    : "";
 
   const normalizedQuery: VaultTableQuery = {
     tab: data.tab,
@@ -232,7 +194,19 @@ async function VaultsDataSection({
 
   return (
     <>
-      <VaultsDataReadySignal token={readyToken} />
+      <VaultsNavigationProgress
+        readyToken={readyToken}
+        serverRefreshing={data.isRefreshing}
+      />
+
+      {data.refreshError ? (
+        <div className="vaults-refresh-warning">
+          Showing cached data. Background refresh failed
+          {refreshErrorLabel ? ` at ${refreshErrorLabel}` : ""}:{" "}
+          {data.refreshError}
+        </div>
+      ) : null}
+
       <div className="status-message">
         Chain: {data.chainName} ({chainId}) | {tabLabel(data.tab)}:{" "}
         {data.eVaultsCount}
@@ -557,14 +531,7 @@ export default async function Page({ searchParams }: PageProps) {
           Euler Earn
         </Link>
       </div>
-
-      <VaultsNavigationProgress />
-
-      <Suspense
-        fallback={<VaultsDataFallback chainId={chainId} query={query} />}
-      >
-        <VaultsDataSection chainId={chainId} query={query} />
-      </Suspense>
+      <VaultsDataSection chainId={chainId} query={query} />
     </div>
   );
 }

@@ -248,6 +248,32 @@ tr.clickable {
   }
 }
 
+.vaults-refresh-warning {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid #c00;
+  color: #c00;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.detail-status-slot {
+  min-height: 52px;
+  margin-bottom: 12px;
+}
+
+.detail-status-slot .vaults-refresh-warning {
+  margin-bottom: 0;
+}
+
+.detail-inline-status {
+  margin: 0;
+  padding: 8px 12px;
+  text-align: left;
+  border: 1px solid #ccc;
+  font-size: 12px;
+}
+
 /* Top bar nav */
 .topbar-nav {
   display: flex;
