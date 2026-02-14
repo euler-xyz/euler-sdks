@@ -1,36 +1,25 @@
-import Link from "next/link";
-import { Suspense } from "react";
-import type { Address } from "viem";
-import { CopyAddress } from "../components/CopyAddress";
-import { ServerRefreshProgress } from "../components/ServerRefreshProgress";
-import { getEulerEarnDetailData } from "../server/eulerEarnDetailData";
-import {
-  formatAPY,
-  formatBigInt,
-  formatPercent,
-  formatPriceUsd,
-} from "../utils/format";
+import Link from "next/link"
+import { Suspense } from "react"
+import type { Address } from "viem"
+import { CopyAddress } from "../components/CopyAddress"
+import { ServerRefreshProgress } from "../components/ServerRefreshProgress"
+import { getEulerEarnDetailData } from "../server/eulerEarnDetailData"
+import { formatAPY, formatBigInt, formatPercent, formatPriceUsd } from "../utils/format"
 
 interface EulerEarnDetailPageProps {
-  chainId: number;
-  address: Address;
+  chainId: number
+  address: Address
 }
 
 function BackToVaultsLink({ chainId }: { chainId: number }) {
   return (
-    <Link
-      href={`/vaults?chainId=${chainId}&tab=eulerEarn`}
-      className="back-link"
-    >
+    <Link href={`/vaults?chainId=${chainId}&tab=eulerEarn`} className="back-link">
       &larr; Back to vaults
     </Link>
-  );
+  )
 }
 
-function EulerEarnDetailFallback({
-  chainId,
-  address,
-}: EulerEarnDetailPageProps) {
+function EulerEarnDetailFallback({ chainId, address }: EulerEarnDetailPageProps) {
   return (
     <>
       <BackToVaultsLink chainId={chainId} />
@@ -43,41 +32,38 @@ function EulerEarnDetailFallback({
       </div>
       <div className="status-message">Loading vault details...</div>
     </>
-  );
+  )
 }
 
-async function EulerEarnDetailSection({
-  chainId,
-  address,
-}: EulerEarnDetailPageProps) {
+async function EulerEarnDetailSection({ chainId, address }: EulerEarnDetailPageProps) {
   try {
-    const data = await getEulerEarnDetailData(chainId, address);
-    const vault = data.vault;
-    const snapshot = data.listSnapshot;
-    const refreshErrorLabel = data.refreshErrorAt
-      ? new Date(data.refreshErrorAt).toLocaleTimeString()
-      : "";
-    const loadingValue = "Loading...";
-    const headerName =
-      vault?.shares.name || snapshot?.name || "Loading vault details...";
-    const headerAddress = vault?.address || snapshot?.address || address;
+    const data = await getEulerEarnDetailData(chainId, address)
+    const vault = data.vault
+    const snapshot = data.listSnapshot
+    const lastSuccessAt = data.detailUpdatedAt ?? snapshot?.updatedAt ?? null
+    const lastSuccessLabel = lastSuccessAt
+      ? new Date(lastSuccessAt).toLocaleTimeString()
+      : ""
+    const loadingValue = "Loading..."
+    const headerName = vault?.shares.name || snapshot?.name || "Loading vault details..."
+    const headerAddress = vault?.address || snapshot?.address || address
     const strategiesCount = vault
       ? String(vault.strategies.length)
       : snapshot
         ? String(snapshot.strategyCount)
-        : loadingValue;
-    const snapshotNotice = !vault && snapshot;
+        : loadingValue
+    const snapshotNotice = !vault && snapshot
     const topStatusContent = data.refreshError ? (
       <div className="vaults-refresh-warning">
-        Showing cached data. Background refresh failed
-        {refreshErrorLabel ? ` at ${refreshErrorLabel}` : ""}:{" "}
-        {data.refreshError}
+        Showing cached data. Background refresh failed.
+        {lastSuccessLabel ? ` Last successful refresh at ${lastSuccessLabel}.` : ""}
+        {` Error: ${data.refreshError}`}
       </div>
     ) : snapshotNotice ? (
       <div className="status-message detail-inline-status">
         Showing cached list snapshot while loading full vault details...
       </div>
-    ) : null;
+    ) : null
 
     return (
       <>
@@ -124,9 +110,7 @@ async function EulerEarnDetailSection({
           <div className="detail-item">
             <div className="label">Total Shares</div>
             <div className="value">
-              {vault
-                ? formatBigInt(vault.totalShares, vault.shares.decimals)
-                : loadingValue}
+              {vault ? formatBigInt(vault.totalShares, vault.shares.decimals) : loadingValue}
             </div>
           </div>
           <div className="detail-item">
@@ -165,9 +149,7 @@ async function EulerEarnDetailSection({
           </div>
           <div className="detail-item">
             <div className="label">Strategies</div>
-            <div className="value">
-              {vault ? String(vault.strategies.length) : strategiesCount}
-            </div>
+            <div className="value">{vault ? String(vault.strategies.length) : strategiesCount}</div>
           </div>
         </div>
 
@@ -176,48 +158,30 @@ async function EulerEarnDetailSection({
           <div className="detail-item">
             <div className="label">Owner</div>
             <div className="value">
-              {vault ? (
-                <CopyAddress address={vault.governance.owner} />
-              ) : (
-                loadingValue
-              )}
+              {vault ? <CopyAddress address={vault.governance.owner} /> : loadingValue}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Curator</div>
             <div className="value">
-              {vault ? (
-                <CopyAddress address={vault.governance.curator} />
-              ) : (
-                loadingValue
-              )}
+              {vault ? <CopyAddress address={vault.governance.curator} /> : loadingValue}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Guardian</div>
             <div className="value">
-              {vault ? (
-                <CopyAddress address={vault.governance.guardian} />
-              ) : (
-                loadingValue
-              )}
+              {vault ? <CopyAddress address={vault.governance.guardian} /> : loadingValue}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Fee Receiver</div>
             <div className="value">
-              {vault ? (
-                <CopyAddress address={vault.governance.feeReceiver} />
-              ) : (
-                loadingValue
-              )}
+              {vault ? <CopyAddress address={vault.governance.feeReceiver} /> : loadingValue}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">Timelock</div>
-            <div className="value">
-              {vault ? `${vault.governance.timelock}s` : loadingValue}
-            </div>
+            <div className="value">{vault ? `${vault.governance.timelock}s` : loadingValue}</div>
           </div>
         </div>
 
@@ -245,14 +209,11 @@ async function EulerEarnDetailSection({
                     <td>
                       {strategy.vault ? (
                         <Link href={`/vault/${chainId}/${strategy.address}`}>
-                          {strategy.vault.shares.name ||
-                            strategy.vault.asset.symbol}
+                          {strategy.vault.shares.name || strategy.vault.asset.symbol}
                         </Link>
                       ) : (
                         strategy.shares.name ||
-                        strategy.asset.symbol || (
-                          <CopyAddress address={strategy.address} />
-                        )
+                        strategy.asset.symbol || <CopyAddress address={strategy.address} />
                       )}
                     </td>
                     <td>
@@ -260,24 +221,16 @@ async function EulerEarnDetailSection({
                     </td>
                     <td>{strategy.vaultType}</td>
                     <td>
-                      {formatBigInt(
-                        strategy.allocatedAssets,
-                        vault.asset.decimals,
-                      )}{" "}
+                      {formatBigInt(strategy.allocatedAssets, vault.asset.decimals)}{" "}
                       {vault.asset.symbol}
                     </td>
                     <td>
                       {strategy.allocationCap.current === BigInt(0)
                         ? "Unlimited"
-                        : formatBigInt(
-                            strategy.allocationCap.current,
-                            vault.asset.decimals,
-                          )}
+                        : formatBigInt(strategy.allocationCap.current, vault.asset.decimals)}
                     </td>
                     <td>
-                      {strategy.vault
-                        ? formatAPY(strategy.vault.interestRates.supplyAPY)
-                        : "-"}
+                      {strategy.vault ? formatAPY(strategy.vault.interestRates.supplyAPY) : "-"}
                     </td>
                     <td>
                       {formatBigInt(strategy.totalAssets, vault.asset.decimals)}{" "}
@@ -318,21 +271,18 @@ async function EulerEarnDetailSection({
           </table>
         )}
       </>
-    );
+    )
   } catch (error) {
     return (
       <>
         <BackToVaultsLink chainId={chainId} />
         <div className="error-message">Error: {String(error)}</div>
       </>
-    );
+    )
   }
 }
 
-export function EulerEarnDetailPage({
-  chainId,
-  address,
-}: EulerEarnDetailPageProps) {
+export function EulerEarnDetailPage({ chainId, address }: EulerEarnDetailPageProps) {
   return (
     <Suspense
       key={`${chainId}:${address}`}
@@ -340,5 +290,5 @@ export function EulerEarnDetailPage({
     >
       <EulerEarnDetailSection chainId={chainId} address={address} />
     </Suspense>
-  );
+  )
 }

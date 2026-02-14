@@ -19,6 +19,7 @@ const ALL_PERSPECTIVES: VaultMetaPerspective[] = [
 const MAX_PAGE_SIZE = 50
 const DEFAULT_PAGE_SIZE = 50
 const SNAPSHOT_STALE_TIME_MS = process.env.NODE_ENV === "development" ? 5 * 60_000 : 5 * 60_000
+const SNAPSHOT_REFRESH_ERROR_RETRY_COOLDOWN_MS = 30_000
 
 type SortDir = "asc" | "desc"
 export type { SortDir }
@@ -536,6 +537,11 @@ function getRefreshError(
   }
 }
 
+function shouldRetryBackgroundRefresh(errorUpdatedAt: number | undefined): boolean {
+  if (!errorUpdatedAt) return true
+  return Date.now() - errorUpdatedAt >= SNAPSHOT_REFRESH_ERROR_RETRY_COOLDOWN_MS
+}
+
 async function getCachedSnapshot(chainId: number): Promise<{
   snapshot: VaultsSnapshot
   snapshotUpdatedAt: number
@@ -550,17 +556,25 @@ async function getCachedSnapshot(chainId: number): Promise<{
   const previousSnapshot = previousState?.data
 
   let snapshot: VaultsSnapshot
-  try {
-    snapshot = await queryClient.ensureQueryData({
-      queryKey,
-      staleTime: SNAPSHOT_STALE_TIME_MS,
-      revalidateIfStale: true,
-      queryFn: () => fetchFreshSnapshot(chainId),
-    })
-  } catch (error) {
-    console.error({ error })
-    if (!previousSnapshot) throw error
+  const shouldAttemptRefresh =
+    previousState?.fetchStatus === "fetching" ||
+    shouldRetryBackgroundRefresh(previousState?.errorUpdatedAt)
+
+  if (previousSnapshot && !shouldAttemptRefresh) {
     snapshot = previousSnapshot
+  } else {
+    try {
+      snapshot = await queryClient.ensureQueryData({
+        queryKey,
+        staleTime: SNAPSHOT_STALE_TIME_MS,
+        revalidateIfStale: true,
+        queryFn: () => fetchFreshSnapshot(chainId),
+      })
+    } catch (error) {
+      console.error({ error })
+      if (!previousSnapshot) throw error
+      snapshot = previousSnapshot
+    }
   }
 
   const state = queryClient.getQueryState<VaultsSnapshot>(queryKey)

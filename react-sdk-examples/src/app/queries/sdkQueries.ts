@@ -4,6 +4,8 @@ import { QueryClient, useQuery } from "@tanstack/react-query";
 import type { BuildQueryFn, VaultMetaPerspective } from "euler-v2-sdk";
 import type { Address } from "viem";
 import { useSDK } from "../context/SdkContext";
+import { getClientSimulateRpcErrorsEnabled } from "../dev/simulateRpcErrors";
+import { buildSdkQueryKey } from "./sdkQueryKeys";
 
 // ---------------------------------------------------------------------------
 // Query client
@@ -33,8 +35,15 @@ if (
     const query = event?.query;
     if (!query) return;
 
-    const [scope] = query.queryKey;
-    if (scope !== "sdk") return;
+    const [scope, maybeConfig] = query.queryKey;
+    const isSdkScope =
+      scope === "sdk" ||
+      (scope === "readContract" &&
+        maybeConfig !== null &&
+        typeof maybeConfig === "object" &&
+        "scopeKey" in maybeConfig &&
+        (maybeConfig as { scopeKey?: unknown }).scopeKey === "sdk");
+    if (!isSdkScope) return;
 
     console.log("[rq:sdk]", event.type, query.queryKey, {
       status: query.state.status,
@@ -51,23 +60,6 @@ if (
 // wrapped with queryClient.fetchQuery() so each individual RPC / subgraph
 // call gets its own React-Query cache entry.
 // ---------------------------------------------------------------------------
-
-function serializeArg(arg: unknown): unknown {
-  if (typeof arg === "bigint") return `bigint:${arg.toString()}`;
-
-  // viem PublicClient – use its chain id as identity
-  if (
-    arg !== null &&
-    typeof arg === "object" &&
-    "chain" in arg &&
-    "transport" in arg
-  ) {
-    const client = arg as { chain?: { id: number } };
-    return `client:${client.chain?.id ?? "unknown"}`;
-  }
-
-  return arg;
-}
 
 const MINUTE = 60_000;
 
@@ -118,7 +110,17 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn) => {
   const staleTime = STALE_TIMES[queryName] ?? DEFAULT_STALE_TIME;
 
   const wrapped = (...args: unknown[]) => {
-    const queryKey = ["sdk", queryName, ...args.map(serializeArg)];
+    if (getClientSimulateRpcErrorsEnabled()) {
+      const simulatedError = new Error(
+        `[simulated-rpc-error:client] ${queryName}`,
+      );
+      if (ENABLE_SDK_QUERY_LOGS) {
+        console.warn("[rq:sdk] simulated error", queryName, simulatedError);
+      }
+      return Promise.reject(simulatedError);
+    }
+
+    const queryKey = buildSdkQueryKey(queryName, args);
     const stateBefore = queryClient.getQueryState(queryKey);
     const isFresh =
       !!stateBefore?.dataUpdatedAt &&

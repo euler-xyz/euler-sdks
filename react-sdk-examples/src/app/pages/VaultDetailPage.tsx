@@ -1,19 +1,14 @@
-import Link from "next/link";
-import { Suspense } from "react";
-import type { Address } from "viem";
-import { CopyAddress } from "../components/CopyAddress";
-import { ServerRefreshProgress } from "../components/ServerRefreshProgress";
-import { getVaultDetailData } from "../server/vaultDetailData";
-import {
-  formatAPY,
-  formatBigInt,
-  formatPercent,
-  formatPriceUsd,
-} from "../utils/format";
+import Link from "next/link"
+import { Suspense } from "react"
+import type { Address } from "viem"
+import { CopyAddress } from "../components/CopyAddress"
+import { ServerRefreshProgress } from "../components/ServerRefreshProgress"
+import { getVaultDetailData } from "../server/vaultDetailData"
+import { formatAPY, formatBigInt, formatPercent, formatPriceUsd } from "../utils/format"
 
 interface VaultDetailPageProps {
-  chainId: number;
-  address: Address;
+  chainId: number
+  address: Address
 }
 
 function BackToVaultsLink({ chainId }: { chainId: number }) {
@@ -21,7 +16,7 @@ function BackToVaultsLink({ chainId }: { chainId: number }) {
     <Link href={`/vaults?chainId=${chainId}`} className="back-link">
       &larr; Back to vaults
     </Link>
-  );
+  )
 }
 
 function VaultDetailFallback({ chainId, address }: VaultDetailPageProps) {
@@ -37,38 +32,38 @@ function VaultDetailFallback({ chainId, address }: VaultDetailPageProps) {
       </div>
       <div className="status-message">Loading vault details...</div>
     </>
-  );
+  )
 }
 
 async function VaultDetailSection({ chainId, address }: VaultDetailPageProps) {
   try {
-    const data = await getVaultDetailData(chainId, address);
-    const vault = data.vault;
-    const snapshot = data.listSnapshot;
-    const refreshErrorLabel = data.refreshErrorAt
-      ? new Date(data.refreshErrorAt).toLocaleTimeString()
-      : "";
-    const loadingValue = "Loading...";
-    const headerName =
-      vault?.shares.name || snapshot?.name || "Loading vault details...";
-    const headerAddress = vault?.address || snapshot?.address || address;
+    const data = await getVaultDetailData(chainId, address)
+    const vault = data.vault
+    const snapshot = data.listSnapshot
+    const lastSuccessAt = data.detailUpdatedAt ?? snapshot?.updatedAt ?? null
+    const lastSuccessLabel = lastSuccessAt
+      ? new Date(lastSuccessAt).toLocaleTimeString()
+      : ""
+    const loadingValue = "Loading..."
+    const headerName = vault?.shares.name || snapshot?.name || "Loading vault details..."
+    const headerAddress = vault?.address || snapshot?.address || address
     const collateralsCount = vault
       ? String(vault.collaterals.length)
       : snapshot
         ? String(snapshot.collateralCount)
-        : loadingValue;
-    const snapshotNotice = !vault && snapshot;
+        : loadingValue
+    const snapshotNotice = !vault && snapshot
     const topStatusContent = data.refreshError ? (
       <div className="vaults-refresh-warning">
-        Showing cached data. Background refresh failed
-        {refreshErrorLabel ? ` at ${refreshErrorLabel}` : ""}:{" "}
-        {data.refreshError}
+        Showing cached data. Background refresh failed.
+        {lastSuccessLabel ? ` Last successful refresh at ${lastSuccessLabel}.` : ""}
+        {` Error: ${data.refreshError}`}
       </div>
     ) : snapshotNotice ? (
       <div className="status-message detail-inline-status">
         Showing cached list snapshot while loading full vault details...
       </div>
-    ) : null;
+    ) : null
 
     return (
       <>
@@ -97,9 +92,7 @@ async function VaultDetailSection({ chainId, address }: VaultDetailPageProps) {
           <div className="detail-item">
             <div className="label">Unit of Account</div>
             <div className="value">
-              {vault
-                ? `${vault.unitOfAccount.symbol} (${vault.unitOfAccount.name})`
-                : loadingValue}
+              {vault ? `${vault.unitOfAccount.symbol} (${vault.unitOfAccount.name})` : loadingValue}
             </div>
           </div>
           <div className="detail-item">
@@ -141,9 +134,7 @@ async function VaultDetailSection({ chainId, address }: VaultDetailPageProps) {
           <div className="detail-item">
             <div className="label">Total Shares</div>
             <div className="value">
-              {vault
-                ? formatBigInt(vault.totalShares, vault.shares.decimals)
-                : loadingValue}
+              {vault ? formatBigInt(vault.totalShares, vault.shares.decimals) : loadingValue}
             </div>
           </div>
           <div className="detail-item">
@@ -185,11 +176,7 @@ async function VaultDetailSection({ chainId, address }: VaultDetailPageProps) {
           <div className="detail-item">
             <div className="label">Governor</div>
             <div className="value">
-              {vault ? (
-                <CopyAddress address={vault.governorAdmin} />
-              ) : (
-                loadingValue
-              )}
+              {vault ? <CopyAddress address={vault.governorAdmin} /> : loadingValue}
             </div>
           </div>
           <div className="detail-item">
@@ -202,17 +189,13 @@ async function VaultDetailSection({ chainId, address }: VaultDetailPageProps) {
             <div className="label">Oracle</div>
             <div className="value">
               {vault
-                ? vault.oracle.name || (
-                    <CopyAddress address={vault.oracle.oracle} />
-                  )
+                ? vault.oracle.name || <CopyAddress address={vault.oracle.oracle} />
                 : loadingValue}
             </div>
           </div>
           <div className="detail-item">
             <div className="label">IRM Type</div>
-            <div className="value">
-              {vault ? vault.interestRateModel.type : loadingValue}
-            </div>
+            <div className="value">{vault ? vault.interestRateModel.type : loadingValue}</div>
           </div>
         </div>
 
@@ -277,14 +260,14 @@ async function VaultDetailSection({ chainId, address }: VaultDetailPageProps) {
           </table>
         )}
       </>
-    );
+    )
   } catch (error) {
     return (
       <>
         <BackToVaultsLink chainId={chainId} />
         <div className="error-message">Error: {String(error)}</div>
       </>
-    );
+    )
   }
 }
 
@@ -296,5 +279,5 @@ export function VaultDetailPage({ chainId, address }: VaultDetailPageProps) {
     >
       <VaultDetailSection chainId={chainId} address={address} />
     </Suspense>
-  );
+  )
 }

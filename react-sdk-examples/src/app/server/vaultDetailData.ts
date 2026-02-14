@@ -103,15 +103,24 @@ export async function getVaultDetailData(
   let refreshStarted = false;
 
   if (previousDetail) {
-    try {
-      detail = await queryClient.ensureQueryData({
-        queryKey,
-        staleTime: DETAIL_STALE_TIME_MS,
-        revalidateIfStale: true,
-        queryFn: () => fetchFreshVaultDetail(chainId, address),
-      });
-    } catch {
+    const state = queryClient.getQueryState<VaultDetail>(queryKey);
+    const shouldAttemptRefresh =
+      state?.fetchStatus === "fetching" ||
+      shouldRetryBackgroundRefresh(state?.errorUpdatedAt);
+
+    if (!shouldAttemptRefresh) {
       detail = previousDetail;
+    } else {
+      try {
+        detail = await queryClient.ensureQueryData({
+          queryKey,
+          staleTime: DETAIL_STALE_TIME_MS,
+          revalidateIfStale: true,
+          queryFn: () => fetchFreshVaultDetail(chainId, address),
+        });
+      } catch {
+        detail = previousDetail;
+      }
     }
   } else if (listSnapshot) {
     const state = queryClient.getQueryState<VaultDetail>(queryKey);

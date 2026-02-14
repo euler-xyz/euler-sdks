@@ -101,15 +101,24 @@ export async function getEulerEarnDetailData(
   let refreshStarted = false;
 
   if (previousDetail) {
-    try {
-      detail = await queryClient.ensureQueryData({
-        queryKey,
-        staleTime: DETAIL_STALE_TIME_MS,
-        revalidateIfStale: true,
-        queryFn: () => fetchFreshEulerEarnDetail(chainId, address),
-      });
-    } catch {
+    const state = queryClient.getQueryState<EulerEarnDetail>(queryKey);
+    const shouldAttemptRefresh =
+      state?.fetchStatus === "fetching" ||
+      shouldRetryBackgroundRefresh(state?.errorUpdatedAt);
+
+    if (!shouldAttemptRefresh) {
       detail = previousDetail;
+    } else {
+      try {
+        detail = await queryClient.ensureQueryData({
+          queryKey,
+          staleTime: DETAIL_STALE_TIME_MS,
+          revalidateIfStale: true,
+          queryFn: () => fetchFreshEulerEarnDetail(chainId, address),
+        });
+      } catch {
+        detail = previousDetail;
+      }
     }
   } else if (listSnapshot) {
     const state = queryClient.getQueryState<EulerEarnDetail>(queryKey);

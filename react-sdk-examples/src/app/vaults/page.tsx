@@ -1,6 +1,6 @@
-import Link from "next/link";
-import { CopyAddress } from "../components/CopyAddress";
-import { resolveChainId } from "../config/chains";
+import Link from "next/link"
+import { CopyAddress } from "../components/CopyAddress"
+import { resolveChainId } from "../config/chains"
 import {
   getVaultTableData,
   parseVaultTableQuery,
@@ -8,45 +8,45 @@ import {
   type VaultsTab,
   type VaultTableData,
   type VaultTableQuery,
-} from "../server/vaultsData";
-import { VaultsNavigationProgress } from "./VaultsNavigationProgress";
+} from "../server/vaultsData"
+import { VaultsNavigationProgress } from "./VaultsNavigationProgress"
 
-export const dynamic = "force-dynamic";
+export const dynamic = "force-dynamic"
 
-type SearchParamValue = string | string[] | undefined;
-type SearchParams = Record<string, SearchParamValue>;
+type SearchParamValue = string | string[] | undefined
+type SearchParams = Record<string, SearchParamValue>
 
 interface PageProps {
-  searchParams?: Promise<SearchParams>;
+  searchParams?: Promise<SearchParams>
 }
 
 function defaultSortForTab(tab: VaultsTab): {
-  sortBy: string;
-  sortDir: SortDir;
+  sortBy: string
+  sortDir: SortDir
 } {
   return tab === "evaults"
     ? { sortBy: "totalSupply", sortDir: "desc" }
-    : { sortBy: "totalAssets", sortDir: "desc" };
+    : { sortBy: "totalAssets", sortDir: "desc" }
 }
 
 function tabLabel(tab: VaultsTab): string {
-  return tab === "evaults" ? "EVaults" : "Euler Earn";
+  return tab === "evaults" ? "EVaults" : "Euler Earn"
 }
 
 function isTextSort(sortBy: string): boolean {
-  return sortBy === "name" || sortBy === "asset" || sortBy === "address";
+  return sortBy === "name" || sortBy === "asset" || sortBy === "address"
 }
 
 function nextSortDir(query: VaultTableQuery, sortBy: string): SortDir {
   if (query.sortBy === sortBy) {
-    return query.sortDir === "asc" ? "desc" : "asc";
+    return query.sortDir === "asc" ? "desc" : "asc"
   }
-  return isTextSort(sortBy) ? "asc" : "desc";
+  return isTextSort(sortBy) ? "asc" : "desc"
 }
 
 function sortIndicator(query: VaultTableQuery, sortBy: string): string {
-  if (query.sortBy !== sortBy) return "";
-  return query.sortDir === "asc" ? " ↑" : " ↓";
+  if (query.sortBy !== sortBy) return ""
+  return query.sortDir === "asc" ? " ↑" : " ↓"
 }
 
 function buildVaultsHref(
@@ -57,18 +57,18 @@ function buildVaultsHref(
   const next = {
     ...query,
     ...overrides,
-  };
+  }
 
-  const params = new URLSearchParams();
-  params.set("chainId", String(chainId));
-  params.set("tab", next.tab);
-  params.set("page", String(next.page));
-  params.set("pageSize", String(next.pageSize));
-  params.set("sortBy", next.sortBy);
-  params.set("sortDir", next.sortDir);
-  if (next.q) params.set("q", next.q);
+  const params = new URLSearchParams()
+  params.set("chainId", String(chainId))
+  params.set("tab", next.tab)
+  params.set("page", String(next.page))
+  params.set("pageSize", String(next.pageSize))
+  params.set("sortBy", next.sortBy)
+  params.set("sortDir", next.sortDir)
+  if (next.q) params.set("q", next.q)
 
-  return `/vaults?${params.toString()}`;
+  return `/vaults?${params.toString()}`
 }
 
 function FilterControls({
@@ -76,9 +76,9 @@ function FilterControls({
   query,
   disabled = false,
 }: {
-  chainId: number;
-  query: VaultTableQuery;
-  disabled?: boolean;
+  chainId: number
+  query: VaultTableQuery
+  disabled?: boolean
 }) {
   return (
     <div className="status-message vaults-controls-row">
@@ -120,7 +120,7 @@ function FilterControls({
         )}
       </form>
     </div>
-  );
+  )
 }
 
 function PaginationControls({
@@ -130,22 +130,19 @@ function PaginationControls({
   totalPages,
   disabled = false,
 }: {
-  chainId: number;
-  query: VaultTableQuery;
-  page: number;
-  totalPages: number;
-  disabled?: boolean;
+  chainId: number
+  query: VaultTableQuery
+  page: number
+  totalPages: number
+  disabled?: boolean
 }) {
-  const safeTotalPages = Math.max(totalPages, 1);
-  const safePage = Math.min(Math.max(page, 1), safeTotalPages);
+  const safeTotalPages = Math.max(totalPages, 1)
+  const safePage = Math.min(Math.max(page, 1), safeTotalPages)
 
   return (
     <div className="status-message vaults-controls-row">
       {!disabled && safePage > 1 ? (
-        <Link
-          href={buildVaultsHref(chainId, query, { page: safePage - 1 })}
-          prefetch={false}
-        >
+        <Link href={buildVaultsHref(chainId, query, { page: safePage - 1 })} prefetch={false}>
           Previous
         </Link>
       ) : (
@@ -153,31 +150,22 @@ function PaginationControls({
       )}{" "}
       | Page {safePage} / {safeTotalPages} |{" "}
       {!disabled && safePage < safeTotalPages ? (
-        <Link
-          href={buildVaultsHref(chainId, query, { page: safePage + 1 })}
-          prefetch={false}
-        >
+        <Link href={buildVaultsHref(chainId, query, { page: safePage + 1 })} prefetch={false}>
           Next
         </Link>
       ) : (
         <span>Next</span>
       )}
     </div>
-  );
+  )
 }
 
-async function VaultsDataSection({
-  chainId,
-  query,
-}: {
-  chainId: number;
-  query: VaultTableQuery;
-}) {
-  const data: VaultTableData = await getVaultTableData(chainId, query);
-  const readyToken = `${data.tab}:${data.page}:${data.pageSize}:${data.totalRows}:${data.q}:${data.sortBy}:${data.sortDir}:${data.snapshotUpdatedAt}:${data.isRefreshing ? "1" : "0"}:${data.refreshErrorAt ?? 0}`;
-  const refreshErrorLabel = data.refreshErrorAt
-    ? new Date(data.refreshErrorAt).toLocaleTimeString()
-    : "";
+async function VaultsDataSection({ chainId, query }: { chainId: number; query: VaultTableQuery }) {
+  const data: VaultTableData = await getVaultTableData(chainId, query)
+  const readyToken = `${data.tab}:${data.page}:${data.pageSize}:${data.totalRows}:${data.q}:${data.sortBy}:${data.sortDir}:${data.snapshotUpdatedAt}:${data.isRefreshing ? "1" : "0"}:${data.refreshErrorAt ?? 0}`
+  const lastSuccessLabel = data.snapshotUpdatedAt
+    ? new Date(data.snapshotUpdatedAt).toLocaleTimeString()
+    : ""
 
   const normalizedQuery: VaultTableQuery = {
     tab: data.tab,
@@ -186,30 +174,25 @@ async function VaultsDataSection({
     q: data.q,
     sortBy: data.sortBy,
     sortDir: data.sortDir,
-  };
+  }
 
-  const showingFrom =
-    data.totalRows === 0 ? 0 : (data.page - 1) * data.pageSize + 1;
-  const showingTo = Math.min(data.page * data.pageSize, data.totalRows);
+  const showingFrom = data.totalRows === 0 ? 0 : (data.page - 1) * data.pageSize + 1
+  const showingTo = Math.min(data.page * data.pageSize, data.totalRows)
 
   return (
     <>
-      <VaultsNavigationProgress
-        readyToken={readyToken}
-        serverRefreshing={data.isRefreshing}
-      />
+      <VaultsNavigationProgress readyToken={readyToken} serverRefreshing={data.isRefreshing} />
 
       {data.refreshError ? (
         <div className="vaults-refresh-warning">
-          Showing cached data. Background refresh failed
-          {refreshErrorLabel ? ` at ${refreshErrorLabel}` : ""}:{" "}
-          {data.refreshError}
+          Showing cached data. Background refresh failed.
+          {lastSuccessLabel ? ` Last successful refresh at ${lastSuccessLabel}.` : ""}
+          {` Error: ${data.refreshError}`}
         </div>
       ) : null}
 
       <div className="status-message">
-        Chain: {data.chainName} ({chainId}) | {tabLabel(data.tab)}:{" "}
-        {data.eVaultsCount}
+        Chain: {data.chainName} ({chainId}) | {tabLabel(data.tab)}: {data.eVaultsCount}
         {" / "}Euler Earn: {data.earnVaultsCount}
       </div>
 
@@ -348,9 +331,7 @@ async function VaultsDataSection({
               {data.eVaults.map((vault) => (
                 <tr key={vault.address}>
                   <td>
-                    <Link href={`/vault/${chainId}/${vault.address}`}>
-                      {vault.name}
-                    </Link>
+                    <Link href={`/vault/${chainId}/${vault.address}`}>{vault.name}</Link>
                   </td>
                   <td>{vault.assetSymbol}</td>
                   <td>
@@ -465,9 +446,7 @@ async function VaultsDataSection({
               {data.earnVaults.map((vault) => (
                 <tr key={vault.address}>
                   <td>
-                    <Link href={`/earn/${chainId}/${vault.address}`}>
-                      {vault.name}
-                    </Link>
+                    <Link href={`/earn/${chainId}/${vault.address}`}>{vault.name}</Link>
                   </td>
                   <td>{vault.assetSymbol}</td>
                   <td>
@@ -490,12 +469,12 @@ async function VaultsDataSection({
         totalPages={data.totalPages}
       />
     </>
-  );
+  )
 }
 
 export default async function Page({ searchParams }: PageProps) {
-  const params = (await searchParams) ?? {};
-  const chainId = resolveChainId(params.chainId);
+  const params = (await searchParams) ?? {}
+  const chainId = resolveChainId(params.chainId)
   const query = parseVaultTableQuery({
     tab: params.tab,
     page: params.page,
@@ -503,7 +482,7 @@ export default async function Page({ searchParams }: PageProps) {
     q: params.q,
     sortBy: params.sortBy,
     sortDir: params.sortDir,
-  });
+  })
 
   return (
     <div data-vaults-page>
@@ -533,5 +512,5 @@ export default async function Page({ searchParams }: PageProps) {
       </div>
       <VaultsDataSection chainId={chainId} query={query} />
     </div>
-  );
+  )
 }
