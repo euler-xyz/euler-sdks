@@ -1,7 +1,16 @@
 import { Address } from "viem";
 
 export interface VaultFetchOptions {
-  fetchMarketPrices?: boolean;
+  populateMarketPrices?: boolean;
+  populateCollaterals?: boolean;
+  populateStrategyVaults?: boolean;
+  populateRewards?: boolean;
+  /** Options forwarded to EVaultService when populating strategy vaults (applies to EulerEarnService). */
+  eVaultFetchOptions?: {
+    populateCollaterals?: boolean;
+    populateMarketPrices?: boolean;
+    populateRewards?: boolean;
+  };
 }
 
 /**
@@ -18,7 +27,8 @@ export interface IVaultService<TVault, TPerspective> {
   ): Promise<Address[]>;
   fetchVerifiedVaults(
     chainId: number,
-    perspectives: (TPerspective | Address)[]
+    perspectives: (TPerspective | Address)[],
+    options?: VaultFetchOptions
   ): Promise<TVault[]>;
   factory(chainId: number): Address;
 }

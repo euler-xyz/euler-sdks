@@ -6,6 +6,7 @@ import { EulerEarn, IEulerEarn } from "../../../../entities/EulerEarn.js";
 import { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
 import { convertEulerEarnVaultInfoFullToIEulerEarn } from "./eulerEarnInfoConverter.js";
 import { eulerEarnVaultLensAbi } from "./abis/eulerEarnVaultLensAbi.js";
+import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
 
 const verifiedArrayAbi = [
   {
@@ -19,33 +20,64 @@ const verifiedArrayAbi = [
 
 export class EulerEarnOnchainDataSource implements IEulerEarnDataSource {
   constructor(
-    private readonly providerService: ProviderService,
-    private readonly deploymentService: DeploymentService
-  ) {}
+    private providerService: ProviderService,
+    private deploymentService: DeploymentService,
+    buildQuery?: BuildQueryFn,
+  ) {
+    if (buildQuery) applyBuildQuery(this, buildQuery);
+  }
+
+  setProviderService(providerService: ProviderService): void {
+    this.providerService = providerService;
+  }
+
+  setDeploymentService(deploymentService: DeploymentService): void {
+    this.deploymentService = deploymentService;
+  }
+
+  queryEulerEarnVaultInfoFull = async (
+    provider: ReturnType<ProviderService["getProvider"]>,
+    lensAddress: Address,
+    vault: Address
+  ) => {
+    return provider.readContract({
+      address: lensAddress,
+      abi: eulerEarnVaultLensAbi,
+      functionName: "getVaultInfoFull",
+      args: [vault],
+    });
+  };
+
+  setQueryEulerEarnVaultInfoFull(fn: typeof this.queryEulerEarnVaultInfoFull): void {
+    this.queryEulerEarnVaultInfoFull = fn;
+  }
+
+  queryEulerEarnVerifiedArray = async (
+    provider: ReturnType<ProviderService["getProvider"]>,
+    perspective: Address
+  ) => {
+    return provider.readContract({
+      address: perspective,
+      abi: verifiedArrayAbi,
+      functionName: "verifiedArray",
+    });
+  };
+
+  setQueryEulerEarnVerifiedArray(fn: typeof this.queryEulerEarnVerifiedArray): void {
+    this.queryEulerEarnVerifiedArray = fn;
+  }
 
   async fetchVaults(chainId: number, vaults: Address[]): Promise<IEulerEarn[]> {
     const provider = this.providerService.getProvider(chainId);
     const deployment = this.deploymentService.getDeployment(chainId);
     const lensAddress = deployment.addresses.lensAddrs.eulerEarnVaultLens;
-    const results = await provider.multicall({
-      contracts: vaults.map(vault => ({
-        address: lensAddress,
-        abi: eulerEarnVaultLensAbi,
-        functionName: "getVaultInfoFull",
-        args: [vault],
-      })),
-    });
+    const results = await Promise.all(
+      vaults.map(vault => this.queryEulerEarnVaultInfoFull(provider, lensAddress, vault))
+    );
 
-    const parsedVaults: IEulerEarn[] = results.map((callResult, idx) => {
-      if (callResult.status === "success" && callResult.result) {
-        const vaultInfo = callResult.result as unknown as EulerEarnVaultInfoFull;
-        return convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo, chainId);
-      }
-
-      throw new Error(
-        `Failed to fetch vault data for ${vaults[idx]}: ${callResult.error ? callResult.error.message : "Unknown error"
-        }`
-      );
+    const parsedVaults: IEulerEarn[] = results.map((result, idx) => {
+      const vaultInfo = result as unknown as EulerEarnVaultInfoFull;
+      return convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo, chainId);
     });
 
     return parsedVaults.map(vault => new EulerEarn(vault));
@@ -54,24 +86,11 @@ export class EulerEarnOnchainDataSource implements IEulerEarnDataSource {
   async fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]> {
     const provider = this.providerService.getProvider(chainId);
 
-    const results = await provider.multicall({
-      contracts: perspectives.map(perspective => ({
-        address: perspective,
-        abi: verifiedArrayAbi,
-        functionName: "verifiedArray",
-      })),
-    });
+    const results = await Promise.all(
+      perspectives.map(perspective => this.queryEulerEarnVerifiedArray(provider, perspective))
+    );
 
-    const addresses: Address[] = results.flatMap((callResult, idx) => {
-      if (callResult.status === "success" && callResult.result) {
-        return callResult.result as Address[];
-      }
-
-      throw new Error(
-        `Failed to fetch verified vaults for ${perspectives[idx]}: ${callResult.error ? callResult.error.message : "Unknown error"
-        }`
-      );
-    });
+    const addresses: Address[] = results.flatMap(result => result as Address[]);
 
     return addresses;
   }

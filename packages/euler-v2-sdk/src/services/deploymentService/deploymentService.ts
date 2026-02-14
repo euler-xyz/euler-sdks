@@ -1,4 +1,5 @@
 import { Address } from "viem";
+import type { BuildQueryFn } from "../../utils/buildQuery.js";
 
 export interface Deployment {
   chainId: number;
@@ -111,8 +112,31 @@ export interface DeploymentServiceConfig {
 export class DeploymentService implements IDeploymentService {
   private deployments: Deployments;
 
-  static async build(deploymentServiceConfig: DeploymentServiceConfig): Promise<DeploymentService> {
-    const deployments = await fetchDeployments(deploymentServiceConfig.deploymentsUrl);
+  static queryDeployments = async (url: string): Promise<Deployment[]> => {
+    if (!url) {
+      throw new Error('Deployments URL is required');
+    }
+    const response = await fetch(url);
+    const data = await response.json();
+    if (!Array.isArray(data)) {
+      throw new Error('Invalid deployment data format');
+    }
+    return data as Deployment[];
+  };
+
+  static setQueryDeployments(fn: typeof DeploymentService.queryDeployments): void {
+    DeploymentService.queryDeployments = fn;
+  }
+
+  static async build(deploymentServiceConfig: DeploymentServiceConfig, buildQuery?: BuildQueryFn): Promise<DeploymentService> {
+    const queryFn = buildQuery
+      ? buildQuery("queryDeployments", DeploymentService.queryDeployments)
+      : DeploymentService.queryDeployments;
+    const data = await queryFn(deploymentServiceConfig.deploymentsUrl);
+    const deployments = data.reduce((acc: Record<number, Deployment>, deployment: Deployment) => {
+      acc[deployment.chainId] = deployment;
+      return acc;
+    }, {});
     return new DeploymentService(deployments);
   }
 
@@ -134,19 +158,4 @@ export class DeploymentService implements IDeploymentService {
   addDeployment(deployment: Deployment): void {
     this.deployments[deployment.chainId] = deployment;
   }
-}
-
-async function fetchDeployments(url: string): Promise<Deployments> {
-  if (!url) {
-    throw new Error('Deployments URL is required');
-  }
-  const response = await fetch(url);
-  const data = await response.json();
-  if (!Array.isArray(data)) {
-    throw new Error('Invalid deployment data format');
-  }
-  return data.reduce((acc: Record<number, Deployment>, deployment: Deployment) => {
-    acc[deployment.chainId] = deployment;
-        return acc;
-      }, {});
 }

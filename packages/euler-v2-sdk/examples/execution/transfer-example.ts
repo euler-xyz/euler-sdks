@@ -54,7 +54,7 @@ async function transferExample() {
 
   // Fetch the account. NOTE: fetchAccount depends on indexing for sub-account discovery,
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
-  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { resolveVaults: false });
+  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false });
 
   // Step 1: Deposit USDC into sub-account 1
   console.log('\n=== Step 1: Deposit USDC into Sub-Account 1 ===');
@@ -86,13 +86,13 @@ console.log(getAddress("0x5D2528A9AE093A20e379f27927Ff421CAA47A32"));
     mainnet.id,
     SUB_ACCOUNT_FROM_ADDRESS,
     [EULER_PRIME_USDC_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
   const subAccountToAfterDeposit = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_TO_ADDRESS,
     [EULER_PRIME_USDC_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
   
   // Log the diff between before and after deposit
@@ -127,13 +127,13 @@ console.log(getAddress("0x5D2528A9AE093A20e379f27927Ff421CAA47A32"));
     mainnet.id,
     SUB_ACCOUNT_FROM_ADDRESS,
     [EULER_PRIME_USDC_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
   const subAccount2AfterTransfer = await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_TO_ADDRESS,
     [EULER_PRIME_USDC_VAULT],
-    { resolveVaults: false }
+    { populateVaults: false }
   );
 
   // Log the diff between before and after transfer

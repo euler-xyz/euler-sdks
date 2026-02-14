@@ -1,6 +1,7 @@
 import { getAddress } from "viem";
 import type { Address } from "viem";
 import type { TokenListItem, TokenlistServiceConfig } from "./tokenlistServiceTypes.js";
+import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 
 /** Raw token shape from Euler API GET /v1/tokens response. */
 interface ApiToken {
@@ -25,22 +26,34 @@ export class TokenlistService implements ITokenlistService {
   private readonly config: TokenlistServiceConfig;
   private readonly cache = new Map<number, TokenListItem[]>();
 
-  constructor(config: TokenlistServiceConfig) {
+  constructor(config: TokenlistServiceConfig, buildQuery?: BuildQueryFn) {
     this.config = config;
+    if (buildQuery) applyBuildQuery(this, buildQuery);
   }
 
-  async loadTokenlist(chainId: number): Promise<TokenListItem[]> {
-    const url = `${this.config.apiBaseUrl.replace(/\/$/, "")}/v1/tokens?chainId=${chainId}`;
+  queryTokenList = async (
+    url: string
+  ): Promise<ApiToken[]> => {
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(
-        `Failed to fetch token list for chain ${chainId}: ${response.status} ${response.statusText}`
+        `Failed to fetch token list: ${response.status} ${response.statusText}`
       );
     }
     const raw = (await response.json()) as ApiToken[];
     if (!Array.isArray(raw)) {
-      throw new Error(`Invalid token list response for chain ${chainId}: expected array`);
+      throw new Error(`Invalid token list response: expected array`);
     }
+    return raw;
+  };
+
+  setQueryTokenList(fn: typeof this.queryTokenList): void {
+    this.queryTokenList = fn;
+  }
+
+  async loadTokenlist(chainId: number): Promise<TokenListItem[]> {
+    const url = `${this.config.apiBaseUrl.replace(/\/$/, "")}/v1/tokens?chainId=${chainId}`;
+    const raw = await this.queryTokenList(url);
     const list: TokenListItem[] = raw
       .filter((t) => t?.address)
       .map((t) => ({

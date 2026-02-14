@@ -6,6 +6,7 @@ import {
 import { DeploymentService } from "../../deploymentService/index.js";
 import type { IVaultService, VaultFetchOptions } from "../index.js";
 import type { IPriceService } from "../../priceService/index.js";
+import type { IRewardsService } from "../../rewardsService/index.js";
 
 export interface ISecuritizeCollateralDataSource {
   fetchVaults(
@@ -25,18 +26,34 @@ export interface ISecuritizeVaultService
   extends IVaultService<
     SecuritizeCollateralVault,
     StandardSecuritizeCollateralPerspectives | Address
-  > {}
+  > {
+  populateMarketPrices(vaults: SecuritizeCollateralVault[]): Promise<void>;
+  populateRewards(vaults: SecuritizeCollateralVault[]): Promise<void>;
+}
 
 export class SecuritizeVaultService implements ISecuritizeVaultService {
   private priceService?: IPriceService;
+  private rewardsService?: IRewardsService;
 
   constructor(
-    private readonly dataSource: ISecuritizeCollateralDataSource,
-    private readonly deploymentService: DeploymentService
+    private dataSource: ISecuritizeCollateralDataSource,
+    private deploymentService: DeploymentService
   ) {}
+
+  setDataSource(dataSource: ISecuritizeCollateralDataSource): void {
+    this.dataSource = dataSource;
+  }
+
+  setDeploymentService(deploymentService: DeploymentService): void {
+    this.deploymentService = deploymentService;
+  }
 
   setPriceService(service: IPriceService): void {
     this.priceService = service;
+  }
+
+  setRewardsService(service: IRewardsService): void {
+    this.rewardsService = service;
   }
 
   factory(chainId: number): Address {
@@ -54,8 +71,11 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
       throw new Error(`Securitize vault not found for ${vault}`);
     }
     const entity = new SecuritizeCollateralVault(vaults[0]!);
-    if (options?.fetchMarketPrices) {
+    if (options?.populateMarketPrices) {
       await this.populateMarketPrices([entity]);
+    }
+    if (options?.populateRewards) {
+      await this.populateRewards([entity]);
     }
     return entity;
   }
@@ -68,16 +88,19 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     const entities = (await this.dataSource.fetchVaults(chainId, vaults)).map(
       (v) => new SecuritizeCollateralVault(v)
     );
-    if (options?.fetchMarketPrices) {
+    if (options?.populateMarketPrices) {
       await this.populateMarketPrices(entities);
+    }
+    if (options?.populateRewards) {
+      await this.populateRewards(entities);
     }
     return entities;
   }
 
-  private async populateMarketPrices(
+  async populateMarketPrices(
     vaults: SecuritizeCollateralVault[]
   ): Promise<void> {
-    if (!this.priceService) return;
+    if (!this.priceService || vaults.length === 0) return;
 
     await Promise.all(
       vaults.map(async (v) => {
@@ -86,6 +109,11 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
           .catch(() => undefined);
       })
     );
+  }
+
+  async populateRewards(vaults: SecuritizeCollateralVault[]): Promise<void> {
+    if (!this.rewardsService || vaults.length === 0) return;
+    await this.rewardsService.populateRewards(vaults);
   }
 
   async fetchVerifiedVaultAddresses(
@@ -98,12 +126,13 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 
   async fetchVerifiedVaults(
     chainId: number,
-    perspectives: (StandardSecuritizeCollateralPerspectives | Address)[]
+    perspectives: (StandardSecuritizeCollateralPerspectives | Address)[],
+    options?: VaultFetchOptions
   ): Promise<SecuritizeCollateralVault[]> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives
     );
-    return this.fetchVaults(chainId, addresses);
+    return this.fetchVaults(chainId, addresses, options);
   }
 }

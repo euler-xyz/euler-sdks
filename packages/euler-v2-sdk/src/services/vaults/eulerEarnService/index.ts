@@ -2,4 +2,5 @@ export { EulerEarnService, StandardEulerEarnPerspectives } from "./eulerEarnServ
 export type {
   IEulerEarnService,
   IEulerEarnDataSource,
+  EulerEarnFetchOptions,
 } from "./eulerEarnService.js";

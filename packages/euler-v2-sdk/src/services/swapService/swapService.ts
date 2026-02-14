@@ -8,6 +8,7 @@ import type {
 } from "./swapServiceTypes.js";
 import { SwapperMode } from "./swapServiceTypes.js";
 import { swapVerifierAbi } from "./swapVerifierAbi.js";
+import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 
 export interface SwapServiceConfig {
   swapApiUrl: string;
@@ -27,10 +28,30 @@ const DEFAULT_DEADLINE = 1800; // 30 minutes
 const MAX_SLIPPAGE = 50;
 
 export class SwapService implements ISwapService {
-  constructor(private readonly config: SwapServiceConfig) {
+  constructor(private readonly config: SwapServiceConfig, buildQuery?: BuildQueryFn) {
     if (!config.swapApiUrl) {
       throw new Error("Swap API URL is required");
     }
+    if (buildQuery) applyBuildQuery(this, buildQuery);
+  }
+
+  querySwapQuotes = async (
+    url: string
+  ): Promise<SwapsApiResponse> => {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Swap API request failed: ${response.status} ${errorText}`,
+      );
+    }
+
+    return response.json() as Promise<SwapsApiResponse>;
+  };
+
+  setQuerySwapQuotes(fn: typeof this.querySwapQuotes): void {
+    this.querySwapQuotes = fn;
   }
 
   /**
@@ -66,18 +87,9 @@ export class SwapService implements ISwapService {
     const params = this.buildRequestParams(request);
     const searchParams = new URLSearchParams(params);
 
-    const response = await fetch(
+    const jsonData = await this.querySwapQuotes(
       `${this.config.swapApiUrl}/swaps?${searchParams.toString()}`,
     );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Swap API request failed: ${response.status} ${errorText}`,
-      );
-    }
-
-    const jsonData = await response.json() as SwapsApiResponse;
 
     if (!jsonData.success) {
       throw new Error("Swap API returned unsuccessful response");

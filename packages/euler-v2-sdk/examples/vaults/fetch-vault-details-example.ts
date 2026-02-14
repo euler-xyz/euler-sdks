@@ -32,7 +32,7 @@ async function fetchVaultDetailsExample() {
   const vault = await sdk.eVaultService.fetchVault(
     mainnet.id,
     VAULT_ADDRESS,
-    { resolveCollaterals: true, fetchMarketPrices: true },
+    { populateCollaterals: true, populateMarketPrices: true },
   );
 
   // Vault overview

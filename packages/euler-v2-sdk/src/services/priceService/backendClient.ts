@@ -1,4 +1,5 @@
 import type { Address } from "viem";
+import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 
 /**
  * Response shape from the price backend (indexer /v1/prices endpoint).
@@ -70,9 +71,10 @@ export class PricingBackendClient {
   private pendingRequests: PendingRequest[] = [];
   private batchTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(config: BackendConfig) {
+  constructor(config: BackendConfig, buildQuery?: BuildQueryFn) {
     this.endpoint = config.endpoint;
     this.defaultChainId = config.chainId ?? 1;
+    if (buildQuery) applyBuildQuery(this, buildQuery);
   }
 
   get isConfigured(): boolean {
@@ -169,6 +171,25 @@ export class PricingBackendClient {
     }
   }
 
+  queryPricesBatch = async (
+    url: string
+  ): Promise<BackendPriceResponse | undefined> => {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+
+    if (!response.ok) {
+      return undefined;
+    }
+
+    return (await response.json()) as BackendPriceResponse;
+  };
+
+  setQueryPricesBatch(fn: typeof this.queryPricesBatch): void {
+    this.queryPricesBatch = fn;
+  }
+
   private async fetchPricesBatch(
     assetAddresses: Address[],
     chainId?: number
@@ -198,16 +219,11 @@ export class PricingBackendClient {
       url.searchParams.set("chainId", String(effectiveChainId));
       url.searchParams.set("assets", missingAddresses.join(","));
 
-      const response = await fetch(url.toString(), {
-        method: "GET",
-        headers: { Accept: "application/json" },
-      });
+      const data = await this.queryPricesBatch(url.toString());
 
-      if (!response.ok) {
+      if (!data) {
         return results.size > 0 ? results : undefined;
       }
-
-      const data = (await response.json()) as BackendPriceResponse;
 
       for (const [address, priceData] of Object.entries(data)) {
         const normalizedAddr = address.toLowerCase();

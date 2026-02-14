@@ -7,6 +7,7 @@ import { VaultAccountInfo, EVCAccountInfo } from "./accountLensTypes.js";
 import { convertToSubAccount } from "./accountInfoConverter.js";
 import { AccountVaults } from "./accountVaultsSubgraphDataSource.js";
 import { accountLensAbi } from "./abis/accountLensAbi.js";
+import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js";
 
 export interface IAccountVaultsDataSource {
   getAccountVaults(chainId: number, account: Address): Promise<AccountVaults>;
@@ -14,10 +15,61 @@ export interface IAccountVaultsDataSource {
 
 export class AccountOnchainDataSource implements IAccountDataSource {
   constructor(
-    private readonly providerService: ProviderService,
-    private readonly deploymentService: DeploymentService,
-    private readonly positionsDataSource: IAccountVaultsDataSource
-  ) {}
+    private providerService: ProviderService,
+    private deploymentService: DeploymentService,
+    private positionsDataSource: IAccountVaultsDataSource,
+    buildQuery?: BuildQueryFn,
+  ) {
+    if (buildQuery) applyBuildQuery(this, buildQuery);
+  }
+
+  setProviderService(providerService: ProviderService): void {
+    this.providerService = providerService;
+  }
+
+  setDeploymentService(deploymentService: DeploymentService): void {
+    this.deploymentService = deploymentService;
+  }
+
+  setPositionsDataSource(positionsDataSource: IAccountVaultsDataSource): void {
+    this.positionsDataSource = positionsDataSource;
+  }
+
+  queryEVCAccountInfo = async (
+    provider: ReturnType<ProviderService["getProvider"]>,
+    accountLensAddress: Address,
+    evc: Address,
+    subAccount: Address
+  ) => {
+    return provider.readContract({
+      address: accountLensAddress,
+      abi: accountLensAbi,
+      functionName: "getEVCAccountInfo",
+      args: [evc, subAccount],
+    });
+  };
+
+  setQueryEVCAccountInfo(fn: typeof this.queryEVCAccountInfo): void {
+    this.queryEVCAccountInfo = fn;
+  }
+
+  queryVaultAccountInfo = async (
+    provider: ReturnType<ProviderService["getProvider"]>,
+    accountLensAddress: Address,
+    subAccount: Address,
+    vault: Address
+  ) => {
+    return provider.readContract({
+      address: accountLensAddress,
+      abi: accountLensAbi,
+      functionName: "getVaultAccountInfo",
+      args: [subAccount, vault],
+    });
+  };
+
+  setQueryVaultAccountInfo(fn: typeof this.queryVaultAccountInfo): void {
+    this.queryVaultAccountInfo = fn;
+  }
 
   async fetchAccount(
     chainId: number,
@@ -61,12 +113,7 @@ export class AccountOnchainDataSource implements IAccountDataSource {
     const evc = deployment.addresses.coreAddrs.evc;
 
     // Get EVC account info
-    const evcAccountInfoResult = await provider.readContract({
-      address: accountLensAddress,
-      abi: accountLensAbi,
-      functionName: "getEVCAccountInfo",
-      args: [evc, subAccount],
-    });
+    const evcAccountInfoResult = await this.queryEVCAccountInfo(provider, accountLensAddress, evc, subAccount);
 
     if (!evcAccountInfoResult) return undefined;
 
@@ -82,26 +129,9 @@ export class AccountOnchainDataSource implements IAccountDataSource {
     }
 
     // Fetch vault account info for all vaults
-    const vaultAccountInfoCalls = vaults.map((vault) => ({
-      address: accountLensAddress,
-      abi: accountLensAbi,
-      functionName: "getVaultAccountInfo" as const,
-      args: [subAccount, vault],
-    }));
-
-    const vaultResults = await provider.multicall({
-      contracts: vaultAccountInfoCalls,
-    });
-
-    const vaultAccountInfos: VaultAccountInfo[] = vaultResults.map((result, idx) => {
-      if (!result || result.status !== "success" || !result.result) {
-        throw new Error(
-          `Failed to fetch vault account info for ${subAccount} in vault ${vaults[idx]}: ${result?.error?.message || "Unknown error"}`
-        );
-      }
-
-      return result.result as VaultAccountInfo;
-    });
+    const vaultAccountInfos = await Promise.all(
+      vaults.map(vault => this.queryVaultAccountInfo(provider, accountLensAddress, subAccount, vault))
+    ) as VaultAccountInfo[];
 
     const fullSubAccount = convertToSubAccount(evcAccountInfo, vaultAccountInfos);
     return {

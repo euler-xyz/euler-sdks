@@ -70,7 +70,7 @@ export class VaultMetaService<TEntity = VaultEntity>
   private readonly vaultServicesList: RegisteredVaultService<TEntity>[] = [];
   private readonly typeToService = new Map<string, RegisteredVaultService<TEntity>>();
 
-  constructor(private readonly config: VaultMetaServiceConfig<TEntity>) {
+  constructor(private config: VaultMetaServiceConfig<TEntity>) {
     if (config.vaultServices?.length) {
       for (const entry of config.vaultServices) {
         if ("type" in entry && "service" in entry) {
@@ -81,6 +81,10 @@ export class VaultMetaService<TEntity = VaultEntity>
         }
       }
     }
+  }
+
+  setVaultTypeDataSource(dataSource: IVaultTypeDataSource): void {
+    this.config = { ...this.config, vaultTypeDataSource: dataSource };
   }
 
   /** Register a vault service; use { type, service } to make the type available to getFactoryByType(chainId, type). */
@@ -217,12 +221,13 @@ export class VaultMetaService<TEntity = VaultEntity>
 
   async fetchVerifiedVaults(
     chainId: number,
-    perspectives: VaultMetaPerspective[]
+    perspectives: VaultMetaPerspective[],
+    options?: VaultFetchOptions
   ): Promise<TEntity[]> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives
     );
-    return this.fetchVaults(chainId, addresses);
+    return this.fetchVaults(chainId, addresses, options);
   }
 }

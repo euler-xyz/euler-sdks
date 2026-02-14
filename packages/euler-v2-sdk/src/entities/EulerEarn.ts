@@ -2,6 +2,8 @@ import { Address } from "viem";
 import { ERC4626Data, Token, VaultType } from "../utils/types.js";
 import { ERC4626Vault, IERC4626Vault, IERC4626VaultConversion, VIRTUAL_DEPOSIT_AMOUNT } from "./ERC4626Vault.js";
 import type { EVault } from "./EVault.js";
+import type { IEVaultService } from "../services/vaults/eVaultService/eVaultService.js";
+import type { IPriceService } from "../services/priceService/index.js";
 
 
 export interface EulerEarnAllocationCap {
@@ -112,6 +114,31 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
 
     const grossApy = weightedSum / totalAllocated;
     return grossApy * (1 - this.performanceFee);
+  }
+
+  async populateStrategyVaults(eVaultService: IEVaultService): Promise<void> {
+    const allStrategyAddresses = [...new Set(this.strategies.map((s) => s.address))];
+    if (allStrategyAddresses.length === 0) return;
+
+    const eVaults = await Promise.all(
+      allStrategyAddresses.map((addr) =>
+        eVaultService.fetchVault(this.chainId, addr).catch(() => undefined)
+      )
+    );
+
+    const eVaultByAddress = new Map(
+      eVaults
+        .filter((v) => v !== undefined)
+        .map((v) => [v.address.toLowerCase(), v])
+    );
+
+    for (const strategy of this.strategies) {
+      strategy.vault = eVaultByAddress.get(strategy.address.toLowerCase());
+    }
+  }
+
+  override async populateMarketPrices(priceService: IPriceService): Promise<void> {
+    this.marketPriceUsd = await this.fetchAssetMarketPriceUsd(priceService).catch(() => undefined);
   }
 }
 

@@ -1,6 +1,7 @@
 import { Address } from "viem";
 import { ERC4626Data, Token } from "../utils/types.js";
 import type { IPriceService } from "../services/priceService/index.js";
+import type { IRewardsService, VaultRewardInfo } from "../services/rewardsService/index.js";
 
 /** Virtual deposit amount used in share/asset conversions (matches EVault ConversionHelpers.sol). */
 export const VIRTUAL_DEPOSIT_AMOUNT = 1_000_000n;
@@ -33,6 +34,7 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
   totalShares: bigint;
   totalAssets: bigint;
   marketPriceUsd?: PriceWad;
+  rewards?: VaultRewardInfo;
 
   constructor(args: IERC4626Vault) {
     this.type = args.type;
@@ -64,5 +66,13 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
     const price = await priceService.getAssetUsdPrice(this);
     if (!price) return undefined;
     return (amount * price.amountOutMid) / 10n ** BigInt(this.asset.decimals);
+  }
+
+  async populateMarketPrices(priceService: IPriceService): Promise<void> {
+    this.marketPriceUsd = await this.fetchAssetMarketPriceUsd(priceService).catch(() => undefined);
+  }
+
+  async populateRewards(rewardsService: IRewardsService): Promise<void> {
+    this.rewards = await rewardsService.getVaultRewards(this.chainId, this.address).catch(() => undefined);
   }
 }

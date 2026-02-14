@@ -1,9 +1,10 @@
 import { Address } from "viem";
 import { EVault, IEVault } from "../../../entities/EVault.js";
 import { DeploymentService } from "../../deploymentService/index.js";
-import type { IVaultService } from "../index.js";
+import type { IVaultService, VaultFetchOptions } from "../index.js";
 import type { IVaultMetaService } from "../vaultMetaService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
+import type { IRewardsService } from "../../rewardsService/index.js";
 
 export interface IEVaultDataSource {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEVault[]>;
@@ -18,24 +19,37 @@ export enum StandardEVaultPerspectives {
 }
 
 export interface EVaultFetchOptions {
-  resolveCollaterals?: boolean;
-  fetchMarketPrices?: boolean;
+  populateCollaterals?: boolean;
+  populateMarketPrices?: boolean;
+  populateRewards?: boolean;
 }
 
 export interface IEVaultService
   extends IVaultService<EVault, StandardEVaultPerspectives> {
   fetchVault(chainId: number, vault: Address, options?: EVaultFetchOptions): Promise<EVault>;
   fetchVaults(chainId: number, vaults: Address[], options?: EVaultFetchOptions): Promise<EVault[]>;
+  populateCollaterals(eVaults: EVault[]): Promise<void>;
+  populateMarketPrices(eVaults: EVault[]): Promise<void>;
+  populateRewards(eVaults: EVault[]): Promise<void>;
 }
 
 export class EVaultService implements IEVaultService {
   private vaultMetaService?: IVaultMetaService;
   private priceService?: IPriceService;
+  private rewardsService?: IRewardsService;
 
   constructor(
-    private readonly dataSource: IEVaultDataSource,
-    private readonly deploymentService: DeploymentService
+    private dataSource: IEVaultDataSource,
+    private deploymentService: DeploymentService
   ) {}
+
+  setDataSource(dataSource: IEVaultDataSource): void {
+    this.dataSource = dataSource;
+  }
+
+  setDeploymentService(deploymentService: DeploymentService): void {
+    this.deploymentService = deploymentService;
+  }
 
   setVaultMetaService(service: IVaultMetaService): void {
     this.vaultMetaService = service;
@@ -43,6 +57,10 @@ export class EVaultService implements IEVaultService {
 
   setPriceService(service: IPriceService): void {
     this.priceService = service;
+  }
+
+  setRewardsService(service: IRewardsService): void {
+    this.rewardsService = service;
   }
 
   factory(chainId: number): Address {
@@ -56,11 +74,14 @@ export class EVaultService implements IEVaultService {
       throw new Error(`Vault not found for ${vault}`);
     }
     const eVault = new EVault(vaults[0]!);
-    if (options?.resolveCollaterals) {
-      await this.populateCollateralVaults(chainId, [eVault]);
+    if (options?.populateCollaterals) {
+      await this.populateCollaterals([eVault]);
     }
-    if (options?.fetchMarketPrices) {
+    if (options?.populateMarketPrices) {
       await this.populateMarketPrices([eVault]);
+    }
+    if (options?.populateRewards) {
+      await this.populateRewards([eVault]);
     }
     return eVault;
   }
@@ -69,20 +90,20 @@ export class EVaultService implements IEVaultService {
     const eVaults = (await this.dataSource.fetchVaults(chainId, vaults)).map(
       (vault) => new EVault(vault)
     );
-    if (options?.resolveCollaterals) {
-      await this.populateCollateralVaults(chainId, eVaults);
+    if (options?.populateCollaterals) {
+      await this.populateCollaterals(eVaults);
     }
-    if (options?.fetchMarketPrices) {
+    if (options?.populateMarketPrices) {
       await this.populateMarketPrices(eVaults);
+    }
+    if (options?.populateRewards) {
+      await this.populateRewards(eVaults);
     }
     return eVaults;
   }
 
-  private async populateCollateralVaults(
-    chainId: number,
-    eVaults: EVault[]
-  ): Promise<void> {
-    if (!this.vaultMetaService) return;
+  async populateCollaterals(eVaults: EVault[]): Promise<void> {
+    if (!this.vaultMetaService || eVaults.length === 0) return;
 
     const allCollateralAddresses = [
       ...new Set(
@@ -92,6 +113,7 @@ export class EVaultService implements IEVaultService {
 
     if (allCollateralAddresses.length === 0) return;
 
+    const chainId = eVaults[0]!.chainId;
     const collateralVaults = await Promise.all(
       allCollateralAddresses.map((addr) =>
         this.vaultMetaService!.fetchVault(chainId, addr).catch(() => undefined)
@@ -111,8 +133,8 @@ export class EVaultService implements IEVaultService {
     }
   }
 
-  private async populateMarketPrices(eVaults: EVault[]): Promise<void> {
-    if (!this.priceService) return;
+  async populateMarketPrices(eVaults: EVault[]): Promise<void> {
+    if (!this.priceService || eVaults.length === 0) return;
 
     await Promise.all(
       eVaults.map(async (eVault) => {
@@ -133,6 +155,11 @@ export class EVaultService implements IEVaultService {
         );
       })
     );
+  }
+
+  async populateRewards(eVaults: EVault[]): Promise<void> {
+    if (!this.rewardsService || eVaults.length === 0) return;
+    await this.rewardsService.populateRewards(eVaults);
   }
 
   async fetchVerifiedVaultAddresses(
@@ -169,12 +196,13 @@ export class EVaultService implements IEVaultService {
 
   async fetchVerifiedVaults(
     chainId: number,
-    perspectives: (StandardEVaultPerspectives | Address)[]
+    perspectives: (StandardEVaultPerspectives | Address)[],
+    options?: EVaultFetchOptions
   ): Promise<EVault[]> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives
     );
-    return this.fetchVaults(chainId, addresses);
+    return this.fetchVaults(chainId, addresses, options);
   }
 }

@@ -1,5 +1,6 @@
 import { EulerLabelEntity, EulerLabelVault, EulerLabelProduct } from "../../entities/EulerLabels.js";
 import { Address } from "viem";
+import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 
 export interface IEulerLabelsDataSource {
   getEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>>;
@@ -15,8 +16,12 @@ export interface IEulerLabelsService {
 
 export class EulerLabelsService implements IEulerLabelsService {
     constructor(
-      private readonly dataSource: IEulerLabelsDataSource
+      private dataSource: IEulerLabelsDataSource
     ) {}
+
+    setDataSource(dataSource: IEulerLabelsDataSource): void {
+      this.dataSource = dataSource;
+    }
 
     async getEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>> {
         return this.dataSource.getEulerLabelsVaults(chainId);
@@ -37,31 +42,55 @@ export interface EulerLabelsURLDataSourceConfig {
 }
 export class EulerLabelsURLDataSource implements IEulerLabelsDataSource {
   constructor(
-    private readonly config: EulerLabelsURLDataSourceConfig
-  ) {}
+    private readonly config: EulerLabelsURLDataSourceConfig,
+    buildQuery?: BuildQueryFn,
+  ) {
+    if (buildQuery) applyBuildQuery(this, buildQuery);
+  }
+
+  queryEulerLabelsVaults = async (url: string): Promise<Record<Address, EulerLabelVault>> => {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Euler labels vaults: ${response.statusText}`);
+    }
+    return response.json() as Promise<Record<Address, EulerLabelVault>>;
+  };
+
+  setQueryEulerLabelsVaults(fn: typeof this.queryEulerLabelsVaults): void {
+    this.queryEulerLabelsVaults = fn;
+  }
+
+  queryEulerLabelsEntities = async (url: string): Promise<Record<Address, EulerLabelEntity>> => {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Euler labels entities: ${response.statusText}`);
+    }
+    return response.json() as Promise<Record<Address, EulerLabelEntity>>;
+  };
+
+  setQueryEulerLabelsEntities(fn: typeof this.queryEulerLabelsEntities): void {
+    this.queryEulerLabelsEntities = fn;
+  }
+
+  queryEulerLabelsProducts = async (url: string): Promise<Record<Address, EulerLabelProduct>> => {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Euler labels products: ${response.statusText}`);
+    }
+    return response.json() as Promise<Record<Address, EulerLabelProduct>>;
+  };
+
+  setQueryEulerLabelsProducts(fn: typeof this.queryEulerLabelsProducts): void {
+    this.queryEulerLabelsProducts = fn;
+  }
 
   async getEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>> {
-    const response = await fetch(this.config.getEulerLabelsVaultsUrl(chainId))
-    if (!response.ok) {
-      throw new Error(`Failed to fetch Euler labels vaults for chain ${chainId}: ${response.statusText}`);
-    }
-    const data = await response.json() as Promise<Record<Address, EulerLabelVault>>;
-    return data;
+    return this.queryEulerLabelsVaults(this.config.getEulerLabelsVaultsUrl(chainId));
   }
   async getEulerLabelsEntities(chainId: number): Promise<Record<Address, EulerLabelEntity>> {
-    const response = await fetch(this.config.getEulerLabelsEntitiesUrl(chainId))
-    if (!response.ok) {
-      throw new Error(`Failed to fetch Euler labels entities for chain ${chainId}: ${response.statusText}`);
-    }
-    const data = await response.json() as Promise<Record<Address, EulerLabelEntity>>;
-    return data;
+    return this.queryEulerLabelsEntities(this.config.getEulerLabelsEntitiesUrl(chainId));
   }
   async getEulerLabelsProducts(chainId: number): Promise<Record<Address, EulerLabelProduct>> {
-    const response = await fetch(this.config.getEulerLabelsProductsUrl(chainId))
-    if (!response.ok) {
-      throw new Error(`Failed to fetch Euler labels products for chain ${chainId}: ${response.statusText}`);
-    }
-    const data = await response.json() as Promise<Record<Address, EulerLabelProduct>>;
-    return data;
+    return this.queryEulerLabelsProducts(this.config.getEulerLabelsProductsUrl(chainId));
   }
 }

@@ -7,6 +7,7 @@ import type { ProviderService } from "../providerService/providerService.js";
 import type { DeploymentService } from "../deploymentService/deploymentService.js";
 import { utilsLensPriceAbi } from "./utilsLensPriceAbi.js";
 import { PricingBackendClient, backendPriceToBigInt } from "./backendClient.js";
+import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -97,10 +98,45 @@ export interface IPriceService {
 
 export class PriceService implements IPriceService {
   constructor(
-    private readonly providerService: ProviderService,
-    private readonly deploymentService: DeploymentService,
-    private readonly backendClient?: PricingBackendClient
-  ) {}
+    private providerService: ProviderService,
+    private deploymentService: DeploymentService,
+    private backendClient?: PricingBackendClient,
+    buildQuery?: BuildQueryFn,
+  ) {
+    if (buildQuery) applyBuildQuery(this, buildQuery);
+  }
+
+  setProviderService(providerService: ProviderService): void {
+    this.providerService = providerService;
+  }
+
+  setDeploymentService(deploymentService: DeploymentService): void {
+    this.deploymentService = deploymentService;
+  }
+
+  setBackendClient(backendClient: PricingBackendClient | undefined): void {
+    this.backendClient = backendClient;
+  }
+
+  queryAssetPriceInfo = async (
+    provider: ReturnType<ProviderService["getProvider"]>,
+    utilsLensAddress: Address,
+    assetAddress: Address
+  ) => {
+    return provider.readContract({
+      address: utilsLensAddress,
+      abi: utilsLensPriceAbi,
+      functionName: "getAssetPriceInfo",
+      args: [assetAddress, USD_ADDRESS],
+    }) as Promise<{
+      queryFailure: boolean;
+      amountOutMid: bigint;
+    }>;
+  };
+
+  setQueryAssetPriceInfo(fn: typeof this.queryAssetPriceInfo): void {
+    this.queryAssetPriceInfo = fn;
+  }
 
   // -----------------------------------------------------------------------
   // Layer 1: Raw Oracle Prices (Unit of Account)
@@ -349,15 +385,7 @@ export class PriceService implements IPriceService {
         this.deploymentService.getDeployment(chainId).addresses.lensAddrs
           .utilsLens;
 
-      const priceInfo = (await provider.readContract({
-        address: utilsLensAddress,
-        abi: utilsLensPriceAbi,
-        functionName: "getAssetPriceInfo",
-        args: [assetAddress, USD_ADDRESS],
-      })) as {
-        queryFailure: boolean;
-        amountOutMid: bigint;
-      };
+      const priceInfo = await this.queryAssetPriceInfo(provider, utilsLensAddress, assetAddress);
 
       if (
         priceInfo.queryFailure ||
