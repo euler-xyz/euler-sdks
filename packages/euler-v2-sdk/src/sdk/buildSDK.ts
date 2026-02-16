@@ -216,10 +216,14 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   const swapService = servicesOverrides?.swapService ?? new SwapService(swapServiceConfig || defaultSwapServiceConfig, buildQuery);
 
   // Build execution service if not overridden
-  const executionService = servicesOverrides?.executionService ?? new ExecutionService(
-    deploymentService as DeploymentService,
-    walletService as WalletService,
-  );
+  const executionService = servicesOverrides?.executionService ?? (() => {
+    const svc = new ExecutionService(
+      deploymentService as DeploymentService,
+      walletService as WalletService,
+    );
+    if (plugins?.length) svc.setPlugins(plugins);
+    return svc;
+  })();
 
   // Build price service if not overridden
   const priceService = servicesOverrides?.priceService ?? (() => {

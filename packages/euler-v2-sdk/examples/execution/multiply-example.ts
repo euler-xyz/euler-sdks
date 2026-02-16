@@ -24,10 +24,12 @@
  *   • Restart Anvil immediately before running to avoid stale blockchain state
  *   • If the swap fails, try changing REPAY_QUOTE_INDEX to use a different provider
  * 
- * 💡 TIP - USING EXISTING ACCOUNTS:
- *   • Set PRIVATE_KEY in .env to use an existing account on the fork
- *   • Without PRIVATE_KEY, a test account will be created and funded automatically
- * 
+ * USAGE:
+ *   1. Set FORK_RPC_URL in examples/.env
+ *   2. Restart Anvil immediately before running: npm run anvil
+ *   3. Run: npx tsx examples/execution/multiply-example.ts
+ *   Optionally set PRIVATE_KEY in examples/.env to use an existing account.
+ *
  * ═══════════════════════════════════════════════════════════════════════════
  */
 

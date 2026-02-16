@@ -1,6 +1,6 @@
 import type { Address, Hex, PublicClient } from "viem";
 import type { EVault } from "../entities/EVault.js";
-import type { EVCBatchItem, TransactionPlan, TransactionPlanItem } from "../services/executionService/executionServiceTypes.js";
+import type { BatchItemDescription, EVCBatchItem, TransactionPlan, TransactionPlanItem } from "../services/executionService/executionServiceTypes.js";
 
 export interface PluginBatchItems {
   items: EVCBatchItem[];
@@ -30,6 +30,8 @@ export interface EulerPlugin {
   getReadPrepend?(ctx: ReadPluginContext): Promise<PluginBatchItems | null>;
   /** Transform a transaction plan (e.g. prepend oracle updates, resolve approvals). */
   processPlan?(plan: TransactionPlan, ctx: WritePluginContext): Promise<TransactionPlan>;
+  /** Decode a batch item that this plugin produced. Return null if the item is not from this plugin. */
+  decodeBatchItem?(item: EVCBatchItem): BatchItemDescription | null;
 }
 
 export type ProcessPluginsArgs = Omit<WritePluginContext, "provider">;

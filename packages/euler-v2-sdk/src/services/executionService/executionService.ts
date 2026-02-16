@@ -8,6 +8,7 @@ import { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
 import type { Account, AccountPosition, SubAccount } from "../../entities/Account.js";
 import type { Wallet } from "../../entities/Wallet.js";
 import type { AssetWithSpenders, IWalletService } from "../walletService/index.js";
+import type { EulerPlugin } from "../../plugins/types.js";
 import {
   type EVCBatchItem,
   type EncodeDepositArgs,
@@ -108,6 +109,8 @@ const WAD = 10n ** 18n
 // TODO explain how this service is coupled to the concrete abis of ERC4626, permit2 and EVK. 
 // this is a helper service, not a generic one.
 export class ExecutionService implements IExecutionService {
+  private plugins: EulerPlugin[] = [];
+
   constructor(
     private deploymentService: DeploymentService,
     private walletService: IWalletService,
@@ -119,6 +122,10 @@ export class ExecutionService implements IExecutionService {
 
   setWalletService(walletService: IWalletService): void {
     this.walletService = walletService;
+  }
+
+  setPlugins(plugins: EulerPlugin[]): void {
+    this.plugins = plugins;
   }
 
   /**
@@ -1253,6 +1260,22 @@ export class ExecutionService implements IExecutionService {
         } catch {
           // Try next ABI
           continue
+        }
+      }
+      // Fall back to plugins
+      if (!decoded) {
+        for (const plugin of this.plugins) {
+          if (!plugin.decodeBatchItem) continue
+          try {
+            const result = plugin.decodeBatchItem(item)
+            if (result) {
+              decodedBatchItems.push(result)
+              decoded = true
+              break
+            }
+          } catch {
+            continue
+          }
         }
       }
       if (!decoded) {

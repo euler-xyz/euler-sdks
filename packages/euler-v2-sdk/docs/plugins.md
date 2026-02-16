@@ -57,6 +57,8 @@ createPythPlugin({
 })
 ```
 
+See [`examples/execution/borrow-with-pyth-example.ts`](../examples/execution/borrow-with-pyth-example.ts) for a complete working example that borrows WBTC against LBTC collateral with Pyth price updates.
+
 ### Keyring (`createKeyringPlugin`)
 
 Handles vaults that use Keyring compliance hooks. The plugin checks if the sender already holds a valid credential for each relevant vault and, if not, prepends a `createCredential` call.

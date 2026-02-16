@@ -2,12 +2,14 @@ import {
   type Address,
   type Hex,
   type PublicClient,
+  type Abi,
   encodeFunctionData,
+  decodeFunctionData,
   zeroAddress,
 } from "viem";
 import type { EulerPlugin, PluginBatchItems, ReadPluginContext, WritePluginContext } from "./types.js";
 import { prependToBatch } from "./types.js";
-import type { EVCBatchItem, TransactionPlan } from "../services/executionService/executionServiceTypes.js";
+import type { BatchItemDescription, EVCBatchItem, TransactionPlan } from "../services/executionService/executionServiceTypes.js";
 import { collectPythFeedsFromAdapters, type PythFeed } from "../utils/oracle.js";
 import { type BuildQueryFn, applyBuildQuery } from "../utils/buildQuery.js";
 
@@ -266,6 +268,32 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
       if (!result.items.length) return plan;
 
       return prependToBatch(plan, result.items);
+    },
+
+    decodeBatchItem(item: EVCBatchItem): BatchItemDescription | null {
+      try {
+        const decoded = decodeFunctionData({
+          abi: PYTH_ABI as unknown as Abi,
+          data: item.data,
+        });
+
+        const functionAbi = PYTH_ABI.find((a) => a.type === "function" && a.name === decoded.functionName);
+        const namedArgs: Record<string, unknown> = {};
+        if (functionAbi && "inputs" in functionAbi && Array.isArray(decoded.args)) {
+          functionAbi.inputs.forEach((input, index) => {
+            namedArgs[input.name] = decoded.args?.[index];
+          });
+        }
+
+        return {
+          targetContract: item.targetContract,
+          onBehalfOfAccount: item.onBehalfOfAccount,
+          functionName: decoded.functionName,
+          args: namedArgs,
+        };
+      } catch {
+        return null;
+      }
     },
   };
 }

@@ -17,10 +17,12 @@
  *   • USDC → Euler Prime USDC Vault (collateral)
  *   • USDT → Euler Prime USDT Vault (both deposit and liability)
  * 
- * 💡 TIP - USING EXISTING ACCOUNTS:
- *   • Set PRIVATE_KEY in .env to use an existing account on the fork
- *   • Without PRIVATE_KEY, a test account will be created and funded automatically
- * 
+ * USAGE:
+ *   1. Set FORK_RPC_URL in examples/.env
+ *   2. Start Anvil: npm run anvil
+ *   3. Run: npx tsx examples/execution/repay-from-deposit-example.ts
+ *   Optionally set PRIVATE_KEY in examples/.env to use an existing account.
+ *
  * ═══════════════════════════════════════════════════════════════════════════
  */
 

@@ -24,6 +24,11 @@
  *   4. Includes the required ETH fee for the Pyth contract
  *   This ensures oracle prices are fresh when the borrow is executed.
  *
+ * USAGE:
+ *   1. Set FORK_RPC_URL in examples/.env
+ *   2. Start Anvil: npm run anvil
+ *   3. Run: npx tsx examples/execution/borrow-with-pyth-example.ts
+ *
  * ═══════════════════════════════════════════════════════════════════════════
  */
 

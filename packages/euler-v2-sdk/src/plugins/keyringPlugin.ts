@@ -2,12 +2,14 @@ import {
   type Address,
   type Hex,
   type PublicClient,
+  type Abi,
   encodeFunctionData,
+  decodeFunctionData,
   zeroAddress,
 } from "viem";
 import type { EulerPlugin, PluginBatchItems, ReadPluginContext, WritePluginContext } from "./types.js";
 import { prependToBatch } from "./types.js";
-import type { EVCBatchItem, TransactionPlan } from "../services/executionService/executionServiceTypes.js";
+import type { BatchItemDescription, EVCBatchItem, TransactionPlan } from "../services/executionService/executionServiceTypes.js";
 import type { EVault } from "../entities/EVault.js";
 import { type BuildQueryFn, applyBuildQuery } from "../utils/buildQuery.js";
 
@@ -217,6 +219,32 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 
       if (!items.length) return plan;
       return prependToBatch(plan, items);
+    },
+
+    decodeBatchItem(item: EVCBatchItem): BatchItemDescription | null {
+      try {
+        const decoded = decodeFunctionData({
+          abi: KEYRING_CONTRACT_ABI as unknown as Abi,
+          data: item.data,
+        });
+
+        const functionAbi = KEYRING_CONTRACT_ABI.find((a) => a.type === "function" && a.name === decoded.functionName);
+        const namedArgs: Record<string, unknown> = {};
+        if (functionAbi && "inputs" in functionAbi && Array.isArray(decoded.args)) {
+          functionAbi.inputs.forEach((input, index) => {
+            namedArgs[input.name] = decoded.args?.[index];
+          });
+        }
+
+        return {
+          targetContract: item.targetContract,
+          onBehalfOfAccount: item.onBehalfOfAccount,
+          functionName: decoded.functionName,
+          args: namedArgs,
+        };
+      } catch {
+        return null;
+      }
     },
   };
 }

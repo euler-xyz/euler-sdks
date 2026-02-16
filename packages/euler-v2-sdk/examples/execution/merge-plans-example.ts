@@ -24,6 +24,12 @@
  * 💡 mergePlans() sums required approvals for the same (token, owner, spender)
  *    and concatenates all EVC batch items in order.
  *
+ * USAGE:
+ *   1. Set FORK_RPC_URL in examples/.env
+ *   2. Start Anvil: npm run anvil
+ *   3. Run: npx tsx examples/execution/merge-plans-example.ts
+ *   Optionally set PRIVATE_KEY in examples/.env to use an existing account.
+ *
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
