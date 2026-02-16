@@ -235,6 +235,11 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   // Build rewards service if not overridden
   const rewardsService = servicesOverrides?.rewardsService ?? new RewardsService(rewardsServiceConfig, buildQuery);
 
+  // Wire priceService into account service for populateMarketPrices
+  if (accountService instanceof AccountService) {
+    accountService.setPriceService(priceService);
+  }
+
   // Wire priceService into vault services for market price resolution
   if (eVaultService instanceof EVaultService) {
     eVaultService.setPriceService(priceService);

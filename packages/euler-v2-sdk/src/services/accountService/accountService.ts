@@ -3,9 +3,12 @@ import { Address, getAddress } from "viem";
 import type { IVaultMetaService } from "../vaults/vaultMetaService/index.js";
 import type { IHasVaultAddress, IVaultEntity } from "../../entities/Account.js";
 import type { VaultFetchOptions } from "../vaults/index.js";
+import type { IPriceService } from "../priceService/index.js";
 
 export interface AccountFetchOptions {
   populateVaults?: boolean;
+  /** When true, populates USD market prices on positions and liquidity. Requires `populateVaults` (default). */
+  populateMarketPrices?: boolean;
   /** Options forwarded to vault services when populating vaults. */
   vaultFetchOptions?: VaultFetchOptions;
 }
@@ -49,7 +52,8 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
 {
   constructor(
     private dataSource: IAccountDataSource,
-    private vaultMetaService: IVaultMetaService<TVaultEntity>
+    private vaultMetaService: IVaultMetaService<TVaultEntity>,
+    private priceService?: IPriceService
   ) {}
 
   setDataSource(dataSource: IAccountDataSource): void {
@@ -58,6 +62,10 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
 
   setVaultMetaService(vaultMetaService: IVaultMetaService<TVaultEntity>): void {
     this.vaultMetaService = vaultMetaService;
+  }
+
+  setPriceService(priceService: IPriceService): void {
+    this.priceService = priceService;
   }
 
   async fetchAccount(chainId: number, address: Address, options?: AccountFetchOptions): Promise<Account<TVaultEntity>> {
@@ -77,7 +85,13 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     }
 
     const populated = await this.populateVaults([account], options);
-    return populated[0]!;
+    const result = populated[0]!;
+
+    if (options?.populateMarketPrices && this.priceService) {
+      await result.populateMarketPrices(this.priceService);
+    }
+
+    return result;
   }
 
   async fetchSubAccount(
