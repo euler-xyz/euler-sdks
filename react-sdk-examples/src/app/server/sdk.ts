@@ -43,6 +43,11 @@ const STALE_TIMES: Record<string, number> = {
 
 const DEFAULT_STALE_TIME = MINUTE;
 
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return String(error);
+}
+
 const serverBuildQuery: BuildQueryFn = (queryName, fn) => {
   const staleTime = STALE_TIMES[queryName] ?? DEFAULT_STALE_TIME;
 
@@ -96,7 +101,7 @@ const serverBuildQuery: BuildQueryFn = (queryName, fn) => {
           if (ENABLE_SERVER_SDK_LOGS) {
             console.error(
               `[rq:sdk:server] error ${queryName} (${Date.now() - startedAt}ms)`,
-              error,
+              toErrorMessage(error),
             );
           }
           throw error;

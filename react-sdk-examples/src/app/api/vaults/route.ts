@@ -5,9 +5,6 @@ import {
   parseVaultTableQuery,
 } from "../../server/vaultsData";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 export async function GET(request: NextRequest) {
   const chainId = resolveChainId(
     request.nextUrl.searchParams.get("chainId") ?? undefined,

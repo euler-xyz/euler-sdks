@@ -66,14 +66,57 @@ function normalizeAddressLike(value: unknown): string {
   return value.toLowerCase()
 }
 
-export function serializeSdkQueryArg(arg: unknown): unknown {
-  if (typeof arg === "bigint") return `bigint:${arg.toString()}`
-
-  if (arg !== null && typeof arg === "object" && "chain" in arg && "transport" in arg) {
-    return `client:${getChainIdFromProvider(arg)}`
+function serializeQueryKeyValue(
+  value: unknown,
+  seen: WeakSet<object> = new WeakSet(),
+): unknown {
+  if (typeof value === "bigint") return `bigint:${value.toString()}`
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value
   }
 
-  return arg
+  if (typeof value === "symbol") return String(value)
+  if (typeof value === "function") return "[function]"
+
+  if (value instanceof Date) return value.toISOString()
+
+  if (value !== null && typeof value === "object" && "chain" in value && "transport" in value) {
+    return `client:${getChainIdFromProvider(value)}`
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => serializeQueryKeyValue(item, seen))
+  }
+
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>
+    if (seen.has(obj)) return "[circular]"
+    seen.add(obj)
+
+    const out: Record<string, unknown> = {}
+    for (const [key, nested] of Object.entries(obj)) {
+      out[key] = serializeQueryKeyValue(nested, seen)
+    }
+    return out
+  }
+
+  return String(value)
+}
+
+export function serializeSdkQueryArg(arg: unknown): unknown {
+  return serializeQueryKeyValue(arg)
+}
+
+function normalizeQueryKey(key: QueryKey): QueryKey {
+  const normalized = serializeQueryKeyValue(key)
+  if (!Array.isArray(normalized)) return key
+  return normalized as QueryKey
 }
 
 function buildReadContractQueryKey(
@@ -92,7 +135,7 @@ function buildReadContractQueryKey(
     args,
   })
 
-  return queryOptions.queryKey as QueryKey
+  return normalizeQueryKey(queryOptions.queryKey as QueryKey)
 }
 
 function buildWagmiReadContractKey(queryName: string, args: unknown[]): QueryKey | null {

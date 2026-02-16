@@ -11,8 +11,6 @@ import {
 } from "../server/vaultsData"
 import { VaultsNavigationProgress } from "./VaultsNavigationProgress"
 
-export const dynamic = "force-dynamic"
-
 type SearchParamValue = string | string[] | undefined
 type SearchParams = Record<string, SearchParamValue>
 
@@ -161,7 +159,20 @@ function PaginationControls({
 }
 
 async function VaultsDataSection({ chainId, query }: { chainId: number; query: VaultTableQuery }) {
-  const data: VaultTableData = await getVaultTableData(chainId, query)
+  let data: VaultTableData
+
+  try {
+    data = await getVaultTableData(chainId, query)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return (
+      <div className="vaults-refresh-warning">
+        Failed to load vault data.
+        {message ? ` Error: ${message}` : ""}
+      </div>
+    )
+  }
+
   const readyToken = `${data.tab}:${data.page}:${data.pageSize}:${data.totalRows}:${data.q}:${data.sortBy}:${data.sortDir}:${data.snapshotUpdatedAt}:${data.isRefreshing ? "1" : "0"}:${data.refreshErrorAt ?? 0}`
   const lastSuccessLabel = data.snapshotUpdatedAt
     ? new Date(data.snapshotUpdatedAt).toLocaleTimeString()

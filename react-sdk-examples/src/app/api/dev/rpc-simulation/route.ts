@@ -4,9 +4,15 @@ import {
   setSimulateRpcErrorsEnabled,
   toggleSimulateRpcErrorsEnabled,
 } from "../../../server/simulateRpcErrorsFlag";
+import {
+  clearVaultsSnapshotSimulatedRefreshErrors,
+  startVaultsSnapshotCronJobs,
+  triggerVaultsSnapshotCronRefreshNow,
+} from "../../../server/vaultsData";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const runtime = "nodejs";
 
 function jsonWithNoStore(payload: unknown) {
   return NextResponse.json(payload, {
@@ -43,6 +49,19 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 },
     );
+  }
+
+  // Apply the new simulation mode to cron-driven vault refreshes immediately.
+  startVaultsSnapshotCronJobs();
+  if (nextEnabled) {
+    void triggerVaultsSnapshotCronRefreshNow();
+  } else {
+    clearVaultsSnapshotSimulatedRefreshErrors();
+    // When turning simulation OFF, wait for a guaranteed post-in-flight refresh
+    // so stale simulated errors are replaced by fresh data immediately.
+    await triggerVaultsSnapshotCronRefreshNow({
+      ensurePostInFlightRefresh: true,
+    });
   }
 
   return jsonWithNoStore({

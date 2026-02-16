@@ -8,6 +8,7 @@ import {
 import { CHAIN_NAMES } from "../config/chains"
 import { formatAPY, formatBigInt, formatPriceUsd } from "../utils/format"
 import { getServerQueryClient } from "./queryClient"
+import { getSimulateRpcErrorsEnabled } from "./simulateRpcErrorsFlag"
 import { getServerSdk } from "./sdk"
 
 const ALL_PERSPECTIVES: VaultMetaPerspective[] = [
@@ -18,8 +19,55 @@ const ALL_PERSPECTIVES: VaultMetaPerspective[] = [
 
 const MAX_PAGE_SIZE = 50
 const DEFAULT_PAGE_SIZE = 50
-const SNAPSHOT_STALE_TIME_MS = process.env.NODE_ENV === "development" ? 5 * 60_000 : 5 * 60_000
-const SNAPSHOT_REFRESH_ERROR_RETRY_COOLDOWN_MS = 30_000
+const SNAPSHOT_REFRESH_INTERVAL_MS = (() => {
+  const raw = Number.parseInt(process.env.VAULTS_SNAPSHOT_REFRESH_MS ?? "", 10)
+  if (Number.isFinite(raw) && raw > 0) return raw
+  return 60 * 60_000
+})()
+const ENABLE_VAULTS_CACHE_LOGS =
+  process.env.VAULTS_CACHE_DEBUG === "1" || process.env.VAULTS_CACHE_DEBUG === "true"
+
+const globalForVaultsCacheDebug = globalThis as typeof globalThis & {
+  __vaultsCacheInstanceId?: string
+}
+
+function getVaultsCacheInstanceId(): string {
+  if (!globalForVaultsCacheDebug.__vaultsCacheInstanceId) {
+    const random = Math.random().toString(36).slice(2, 8)
+    globalForVaultsCacheDebug.__vaultsCacheInstanceId = `instance-${random}`
+  }
+
+  return globalForVaultsCacheDebug.__vaultsCacheInstanceId
+}
+
+function safeJsonStringify(value: unknown): string {
+  const seen = new WeakSet<object>()
+
+  return JSON.stringify(value, (_key, nestedValue: unknown) => {
+    if (typeof nestedValue === "bigint") return `bigint:${nestedValue.toString()}`
+    if (typeof nestedValue === "symbol") return String(nestedValue)
+    if (typeof nestedValue === "function") return "[function]"
+    if (nestedValue && typeof nestedValue === "object") {
+      const obj = nestedValue as object
+      if (seen.has(obj)) return "[circular]"
+      seen.add(obj)
+    }
+    return nestedValue
+  })
+}
+
+function logVaultsCache(event: string, fields: Record<string, unknown>) {
+  if (!ENABLE_VAULTS_CACHE_LOGS) return
+
+  console.log(
+    "[vaults-cache]",
+    safeJsonStringify({
+      event,
+      instance: getVaultsCacheInstanceId(),
+      ...fields,
+    }),
+  )
+}
 
 type SortDir = "asc" | "desc"
 export type { SortDir }
@@ -122,6 +170,40 @@ interface VaultsSnapshotError {
   at: number
 }
 
+interface LiveEVaultDetailForSnapshot {
+  address: string
+  shares: {
+    name: string
+  }
+  asset: {
+    symbol: string
+    decimals: number
+  }
+  totalAssets: bigint
+  totalBorrowed: bigint
+  interestRates: {
+    supplyAPY: string
+    borrowAPY: string
+  }
+  marketPriceUsd?: bigint
+  collaterals: unknown[]
+}
+
+interface LiveEulerEarnDetailForSnapshot {
+  address: string
+  shares: {
+    name: string
+  }
+  asset: {
+    symbol: string
+    decimals: number
+  }
+  totalAssets: bigint
+  marketPriceUsd?: bigint
+  strategies: unknown[]
+  performanceFee: number
+}
+
 export interface CachedVaultListSnapshot {
   row: EVaultRow | null
   snapshotUpdatedAt: number | null
@@ -136,6 +218,62 @@ type ServerSdk = Awaited<ReturnType<typeof getServerSdk>>
 type VerifiedVault = Awaited<
   ReturnType<ServerSdk["vaultMetaService"]["fetchVerifiedVaults"]>
 >[number]
+
+interface VaultsSnapshotMeta {
+  refreshError: VaultsSnapshotError | null
+  isRefreshing: boolean
+}
+
+function isSimulatedRpcErrorMessage(message: string): boolean {
+  return message.includes("[simulated-rpc-error:server]")
+}
+
+export interface VaultsSnapshotCronChainStatus {
+  chainId: number
+  chainName: string
+  hasInterval: boolean
+  refreshInFlight: boolean
+  hasSnapshot: boolean
+  snapshotUpdatedAt: number | null
+  snapshotAgeMs: number | null
+  isRefreshing: boolean
+  refreshError: string | null
+  refreshErrorAt: number | null
+}
+
+export interface VaultsSnapshotCronStatus {
+  started: boolean
+  refreshIntervalMs: number
+  chains: VaultsSnapshotCronChainStatus[]
+}
+
+const globalForVaultsSnapshotCronRuntime = globalThis as typeof globalThis & {
+  __vaultsSnapshotCronStarted?: boolean
+  __vaultsSnapshotCronIntervals?: Map<number, ReturnType<typeof setInterval>>
+  __vaultsSnapshotRefreshPromises?: Map<number, Promise<void>>
+}
+
+function getVaultsSnapshotCronIntervals(): Map<number, ReturnType<typeof setInterval>> {
+  if (!globalForVaultsSnapshotCronRuntime.__vaultsSnapshotCronIntervals) {
+    globalForVaultsSnapshotCronRuntime.__vaultsSnapshotCronIntervals = new Map()
+  }
+
+  return globalForVaultsSnapshotCronRuntime.__vaultsSnapshotCronIntervals
+}
+
+function getVaultsSnapshotRefreshPromises(): Map<number, Promise<void>> {
+  if (!globalForVaultsSnapshotCronRuntime.__vaultsSnapshotRefreshPromises) {
+    globalForVaultsSnapshotCronRuntime.__vaultsSnapshotRefreshPromises = new Map()
+  }
+
+  return globalForVaultsSnapshotCronRuntime.__vaultsSnapshotRefreshPromises
+}
+
+function getConfiguredChainIds(): number[] {
+  return Object.keys(CHAIN_NAMES)
+    .map(Number)
+    .filter((chainId) => Number.isInteger(chainId))
+}
 
 const EVAULT_SORT_FIELDS = new Set([
   "name",
@@ -400,16 +538,237 @@ function toErrorMessage(error: unknown): string {
 }
 
 function getVaultsSnapshotQueryKey(chainId: number) {
-  return ["sdk", "vaultsTableSnapshot", chainId] as const
+  return ["sdk", "vaultsTableSnapshotCron", chainId] as const
+}
+
+function getVaultsSnapshotMetaQueryKey(chainId: number) {
+  return ["sdk", "vaultsTableSnapshotCronMeta", chainId] as const
+}
+
+function ensureVaultsSnapshotQueryDefaults(chainId: number) {
+  const queryClient = getServerQueryClient()
+  queryClient.setQueryDefaults(getVaultsSnapshotQueryKey(chainId), {
+    staleTime: Infinity,
+    gcTime: Infinity,
+  })
+  queryClient.setQueryDefaults(getVaultsSnapshotMetaQueryKey(chainId), {
+    staleTime: Infinity,
+    gcTime: Infinity,
+  })
+}
+
+function getVaultsSnapshotState(chainId: number): {
+  snapshot: VaultsSnapshot | null
+  refreshError: VaultsSnapshotError | null
+  isRefreshing: boolean
+} {
+  const queryClient = getServerQueryClient()
+  const snapshot = queryClient.getQueryData<VaultsSnapshot>(getVaultsSnapshotQueryKey(chainId)) ?? null
+  const meta = queryClient.getQueryData<VaultsSnapshotMeta>(getVaultsSnapshotMetaQueryKey(chainId))
+
+  return {
+    snapshot,
+    refreshError: meta?.refreshError ?? null,
+    isRefreshing: meta?.isRefreshing ?? false,
+  }
+}
+
+async function runVaultsSnapshotRefresh(
+  chainId: number,
+  trigger: "startup" | "cron" | "manual",
+): Promise<void> {
+  ensureVaultsSnapshotQueryDefaults(chainId)
+  const refreshPromises = getVaultsSnapshotRefreshPromises()
+  const inFlight = refreshPromises.get(chainId)
+  if (inFlight) {
+    return inFlight
+  }
+
+  const queryClient = getServerQueryClient()
+  const snapshotKey = getVaultsSnapshotQueryKey(chainId)
+  const metaKey = getVaultsSnapshotMetaQueryKey(chainId)
+  const snapshotBefore = queryClient.getQueryData<VaultsSnapshot>(snapshotKey) ?? null
+  const startedAt = Date.now()
+  queryClient.setQueryData<VaultsSnapshotMeta>(metaKey, (previous) => ({
+    refreshError: previous?.refreshError ?? null,
+    isRefreshing: true,
+  }))
+
+  logVaultsCache("cron:refresh-start", {
+    chainId,
+    trigger,
+    hasSnapshot: !!snapshotBefore,
+    snapshotAgeMs: snapshotBefore ? Date.now() - snapshotBefore.updatedAt : null,
+  })
+
+  const refreshPromise = (async () => {
+    try {
+      const snapshot = await fetchFreshSnapshot(chainId)
+      queryClient.setQueryData(snapshotKey, snapshot, {
+        updatedAt: snapshot.updatedAt,
+      })
+      queryClient.setQueryData<VaultsSnapshotMeta>(metaKey, {
+        refreshError: null,
+        isRefreshing: false,
+      })
+      logVaultsCache("cron:refresh-success", {
+        chainId,
+        trigger,
+        snapshotUpdatedAt: snapshot.updatedAt,
+        snapshotAgeMs: Date.now() - snapshot.updatedAt,
+      })
+    } catch (error) {
+      const refreshError: VaultsSnapshotError = {
+        message: toErrorMessage(error),
+        at: Date.now(),
+      }
+      queryClient.setQueryData<VaultsSnapshotMeta>(metaKey, {
+        refreshError,
+        isRefreshing: false,
+      })
+      const snapshotAfter = queryClient.getQueryData<VaultsSnapshot>(snapshotKey) ?? null
+      logVaultsCache("cron:refresh-failed", {
+        chainId,
+        trigger,
+        error: toErrorMessage(error),
+        hasSnapshot: !!snapshotAfter,
+        snapshotAgeMs: snapshotAfter ? Date.now() - snapshotAfter.updatedAt : null,
+      })
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[vaults] cron refresh failed", toErrorMessage(error))
+      }
+    } finally {
+      refreshPromises.delete(chainId)
+      const state = getVaultsSnapshotState(chainId)
+      logVaultsCache("cron:refresh-done", {
+        chainId,
+        trigger,
+        durationMs: Date.now() - startedAt,
+        hasSnapshot: !!state.snapshot,
+        hasError: !!state.refreshError,
+      })
+    }
+  })()
+
+  refreshPromises.set(chainId, refreshPromise)
+  return refreshPromise
+}
+
+function startVaultsSnapshotCronForChain(chainId: number) {
+  ensureVaultsSnapshotQueryDefaults(chainId)
+  const intervals = getVaultsSnapshotCronIntervals()
+  if (intervals.has(chainId)) return
+
+  void runVaultsSnapshotRefresh(chainId, "startup")
+
+  const intervalHandle = setInterval(() => {
+    void runVaultsSnapshotRefresh(chainId, "cron")
+  }, SNAPSHOT_REFRESH_INTERVAL_MS)
+
+  if (typeof intervalHandle === "object" && "unref" in intervalHandle) {
+    intervalHandle.unref()
+  }
+
+  intervals.set(chainId, intervalHandle)
+
+  logVaultsCache("cron:chain-started", {
+    chainId,
+    refreshIntervalMs: SNAPSHOT_REFRESH_INTERVAL_MS,
+  })
+}
+
+export function startVaultsSnapshotCronJobs() {
+  if (globalForVaultsSnapshotCronRuntime.__vaultsSnapshotCronStarted) return
+  globalForVaultsSnapshotCronRuntime.__vaultsSnapshotCronStarted = true
+
+  const chainIds = getConfiguredChainIds()
+
+  for (const chainId of chainIds) {
+    startVaultsSnapshotCronForChain(chainId)
+  }
+
+  logVaultsCache("cron:all-started", {
+    chainIds,
+    refreshIntervalMs: SNAPSHOT_REFRESH_INTERVAL_MS,
+  })
+}
+
+export async function triggerVaultsSnapshotCronRefreshNow(options?: {
+  ensurePostInFlightRefresh?: boolean
+}) {
+  startVaultsSnapshotCronJobs()
+
+  const chainIds = getConfiguredChainIds()
+  const refreshPromises = getVaultsSnapshotRefreshPromises()
+
+  const pendingRefreshes = chainIds.map((chainId) => {
+    const inFlight = refreshPromises.get(chainId)
+
+    if (options?.ensurePostInFlightRefresh && inFlight) {
+      return inFlight.finally(() => runVaultsSnapshotRefresh(chainId, "manual"))
+    }
+
+    return runVaultsSnapshotRefresh(chainId, "manual")
+  })
+
+  logVaultsCache("cron:manual-triggered", {
+    chainIds,
+    ensurePostInFlightRefresh: !!options?.ensurePostInFlightRefresh,
+  })
+
+  await Promise.allSettled(pendingRefreshes)
+}
+
+export function getVaultsSnapshotCronStatus(): VaultsSnapshotCronStatus {
+  const intervals = getVaultsSnapshotCronIntervals()
+  const refreshPromises = getVaultsSnapshotRefreshPromises()
+  const now = Date.now()
+
+  return {
+    started: !!globalForVaultsSnapshotCronRuntime.__vaultsSnapshotCronStarted,
+    refreshIntervalMs: SNAPSHOT_REFRESH_INTERVAL_MS,
+    chains: getConfiguredChainIds().map((chainId) => {
+      const state = getVaultsSnapshotState(chainId)
+      const snapshotUpdatedAt = state.snapshot?.updatedAt ?? null
+
+      return {
+        chainId,
+        chainName: CHAIN_NAMES[chainId] ?? `Chain ${chainId}`,
+        hasInterval: intervals.has(chainId),
+        refreshInFlight: refreshPromises.has(chainId),
+        hasSnapshot: !!state.snapshot,
+        snapshotUpdatedAt,
+        snapshotAgeMs: snapshotUpdatedAt ? now - snapshotUpdatedAt : null,
+        isRefreshing: state.isRefreshing,
+        refreshError: state.refreshError?.message ?? null,
+        refreshErrorAt: state.refreshError?.at ?? null,
+      }
+    }),
+  }
+}
+
+export function clearVaultsSnapshotSimulatedRefreshErrors() {
+  const queryClient = getServerQueryClient()
+
+  for (const chainId of getConfiguredChainIds()) {
+    ensureVaultsSnapshotQueryDefaults(chainId)
+    const metaKey = getVaultsSnapshotMetaQueryKey(chainId)
+    const meta = queryClient.getQueryData<VaultsSnapshotMeta>(metaKey)
+    if (!meta?.refreshError) continue
+    if (!isSimulatedRpcErrorMessage(meta.refreshError.message)) continue
+
+    queryClient.setQueryData<VaultsSnapshotMeta>(metaKey, {
+      refreshError: null,
+      isRefreshing: meta.isRefreshing,
+    })
+  }
 }
 
 export function getCachedVaultListSnapshot(
   chainId: number,
   address: string,
 ): CachedVaultListSnapshot {
-  const queryClient = getServerQueryClient()
-  const state = queryClient.getQueryState<VaultsSnapshot>(getVaultsSnapshotQueryKey(chainId))
-  const snapshot = state?.data
+  const { snapshot } = getVaultsSnapshotState(chainId)
   if (!snapshot) {
     return {
       row: null,
@@ -422,7 +781,7 @@ export function getCachedVaultListSnapshot(
 
   return {
     row: rowInternal ? toPublicEVaultRow(rowInternal) : null,
-    snapshotUpdatedAt: state?.dataUpdatedAt || snapshot.updatedAt,
+    snapshotUpdatedAt: snapshot.updatedAt,
   }
 }
 
@@ -430,9 +789,7 @@ export function getCachedEulerEarnListSnapshot(
   chainId: number,
   address: string,
 ): CachedEulerEarnListSnapshot {
-  const queryClient = getServerQueryClient()
-  const state = queryClient.getQueryState<VaultsSnapshot>(getVaultsSnapshotQueryKey(chainId))
-  const snapshot = state?.data
+  const { snapshot } = getVaultsSnapshotState(chainId)
   if (!snapshot) {
     return {
       row: null,
@@ -447,62 +804,148 @@ export function getCachedEulerEarnListSnapshot(
 
   return {
     row: rowInternal ? toPublicEulerEarnRow(rowInternal) : null,
-    snapshotUpdatedAt: state?.dataUpdatedAt || snapshot.updatedAt,
+    snapshotUpdatedAt: snapshot.updatedAt,
   }
 }
 
-function createSnapshotFromVaults(allVaults: VerifiedVault[]): VaultsSnapshot {
-  const eVaultRowsInternal: EVaultRowInternal[] = allVaults.filter(isEVault).map((vault) => {
-    const name = vault.shares.name || "-"
-    const priceRaw = vault.marketPriceUsd ?? -1n
-    const supplyApyRaw = Number(vault.interestRates.supplyAPY)
-    const borrowApyRaw = Number(vault.interestRates.borrowAPY)
+function toEVaultRowInternalFromLiveDetail(vault: LiveEVaultDetailForSnapshot): EVaultRowInternal {
+  const name = vault.shares.name || "-"
+  const priceRaw = vault.marketPriceUsd ?? -1n
+  const supplyApyRaw = Number(vault.interestRates.supplyAPY)
+  const borrowApyRaw = Number(vault.interestRates.borrowAPY)
+
+  return {
+    address: vault.address,
+    name,
+    assetSymbol: vault.asset.symbol,
+    totalSupply: formatBigInt(vault.totalAssets, vault.asset.decimals),
+    totalBorrows: formatBigInt(vault.totalBorrowed, vault.asset.decimals),
+    supplyApy: formatAPY(vault.interestRates.supplyAPY),
+    borrowApy: formatAPY(vault.interestRates.borrowAPY),
+    marketPriceUsd: formatPriceUsd(vault.marketPriceUsd),
+    collateralCount: vault.collaterals.length,
+
+    nameLower: name.toLowerCase(),
+    assetLower: vault.asset.symbol.toLowerCase(),
+    addressLower: vault.address.toLowerCase(),
+    totalSupplyRaw: vault.totalAssets,
+    totalBorrowsRaw: vault.totalBorrowed,
+    supplyApyRaw: Number.isFinite(supplyApyRaw) ? supplyApyRaw : 0,
+    borrowApyRaw: Number.isFinite(borrowApyRaw) ? borrowApyRaw : 0,
+    priceRaw,
+  }
+}
+
+function toEulerEarnRowInternalFromLiveDetail(
+  vault: LiveEulerEarnDetailForSnapshot,
+): EulerEarnRowInternal {
+  const name = vault.shares.name || "-"
+  const priceRaw = vault.marketPriceUsd ?? -1n
+
+  return {
+    address: vault.address,
+    name,
+    assetSymbol: vault.asset.symbol,
+    totalAssets: formatBigInt(vault.totalAssets, vault.asset.decimals),
+    marketPriceUsd: formatPriceUsd(vault.marketPriceUsd),
+    strategyCount: vault.strategies.length,
+    performanceFee: `${(vault.performanceFee * 100).toFixed(1)}%`,
+
+    nameLower: name.toLowerCase(),
+    assetLower: vault.asset.symbol.toLowerCase(),
+    addressLower: vault.address.toLowerCase(),
+    totalAssetsRaw: vault.totalAssets,
+    priceRaw,
+    performanceFeeRaw: vault.performanceFee,
+  }
+}
+
+export function updateCachedVaultListSnapshotFromLiveDetail(
+  chainId: number,
+  vault: LiveEVaultDetailForSnapshot,
+): boolean {
+  ensureVaultsSnapshotQueryDefaults(chainId)
+  const queryClient = getServerQueryClient()
+  const snapshotKey = getVaultsSnapshotQueryKey(chainId)
+  const nextRow = toEVaultRowInternalFromLiveDetail(vault)
+  let didUpdate = false
+
+  queryClient.setQueryData<VaultsSnapshot>(snapshotKey, (previous) => {
+    if (!previous) return previous
+
+    const index = previous.eVaultRowsInternal.findIndex(
+      (row) => row.addressLower === nextRow.addressLower,
+    )
+    if (index === -1) return previous
+
+    const nextRows = [...previous.eVaultRowsInternal]
+    nextRows[index] = nextRow
+    didUpdate = true
 
     return {
-      address: vault.address,
-      name,
-      assetSymbol: vault.asset.symbol,
-      totalSupply: formatBigInt(vault.totalAssets, vault.asset.decimals),
-      totalBorrows: formatBigInt(vault.totalBorrowed, vault.asset.decimals),
-      supplyApy: formatAPY(vault.interestRates.supplyAPY),
-      borrowApy: formatAPY(vault.interestRates.borrowAPY),
-      marketPriceUsd: formatPriceUsd(vault.marketPriceUsd),
-      collateralCount: vault.collaterals.length,
-
-      nameLower: name.toLowerCase(),
-      assetLower: vault.asset.symbol.toLowerCase(),
-      addressLower: vault.address.toLowerCase(),
-      totalSupplyRaw: vault.totalAssets,
-      totalBorrowsRaw: vault.totalBorrowed,
-      supplyApyRaw: Number.isFinite(supplyApyRaw) ? supplyApyRaw : 0,
-      borrowApyRaw: Number.isFinite(borrowApyRaw) ? borrowApyRaw : 0,
-      priceRaw,
+      ...previous,
+      eVaultRowsInternal: nextRows,
     }
   })
 
+  if (didUpdate) {
+    logVaultsCache("snapshot:row-updated", {
+      chainId,
+      tab: "evaults",
+      address: nextRow.address,
+    })
+  }
+
+  return didUpdate
+}
+
+export function updateCachedEulerEarnListSnapshotFromLiveDetail(
+  chainId: number,
+  vault: LiveEulerEarnDetailForSnapshot,
+): boolean {
+  ensureVaultsSnapshotQueryDefaults(chainId)
+  const queryClient = getServerQueryClient()
+  const snapshotKey = getVaultsSnapshotQueryKey(chainId)
+  const nextRow = toEulerEarnRowInternalFromLiveDetail(vault)
+  let didUpdate = false
+
+  queryClient.setQueryData<VaultsSnapshot>(snapshotKey, (previous) => {
+    if (!previous) return previous
+
+    const index = previous.eulerEarnRowsInternal.findIndex(
+      (row) => row.addressLower === nextRow.addressLower,
+    )
+    if (index === -1) return previous
+
+    const nextRows = [...previous.eulerEarnRowsInternal]
+    nextRows[index] = nextRow
+    didUpdate = true
+
+    return {
+      ...previous,
+      eulerEarnRowsInternal: nextRows,
+    }
+  })
+
+  if (didUpdate) {
+    logVaultsCache("snapshot:row-updated", {
+      chainId,
+      tab: "eulerEarn",
+      address: nextRow.address,
+    })
+  }
+
+  return didUpdate
+}
+
+function createSnapshotFromVaults(allVaults: VerifiedVault[]): VaultsSnapshot {
+  const eVaultRowsInternal: EVaultRowInternal[] = allVaults
+    .filter(isEVault)
+    .map((vault) => toEVaultRowInternalFromLiveDetail(vault))
+
   const eulerEarnRowsInternal: EulerEarnRowInternal[] = allVaults
     .filter(isEulerEarn)
-    .map((vault) => {
-      const name = vault.shares.name || "-"
-      const priceRaw = vault.marketPriceUsd ?? -1n
-
-      return {
-        address: vault.address,
-        name,
-        assetSymbol: vault.asset.symbol,
-        totalAssets: formatBigInt(vault.totalAssets, vault.asset.decimals),
-        marketPriceUsd: formatPriceUsd(vault.marketPriceUsd),
-        strategyCount: vault.strategies.length,
-        performanceFee: `${(vault.performanceFee * 100).toFixed(1)}%`,
-
-        nameLower: name.toLowerCase(),
-        assetLower: vault.asset.symbol.toLowerCase(),
-        addressLower: vault.address.toLowerCase(),
-        totalAssetsRaw: vault.totalAssets,
-        priceRaw,
-        performanceFeeRaw: vault.performanceFee,
-      }
-    })
+    .map((vault) => toEulerEarnRowInternalFromLiveDetail(vault))
 
   return {
     updatedAt: Date.now(),
@@ -522,26 +965,6 @@ async function fetchFreshSnapshot(chainId: number): Promise<VaultsSnapshot> {
   return createSnapshotFromVaults(allVaults)
 }
 
-function getRefreshError(
-  state:
-    | {
-        error: unknown
-        errorUpdatedAt: number
-      }
-    | undefined,
-): VaultsSnapshotError | null {
-  if (!state?.error) return null
-  return {
-    message: toErrorMessage(state.error),
-    at: state.errorUpdatedAt || Date.now(),
-  }
-}
-
-function shouldRetryBackgroundRefresh(errorUpdatedAt: number | undefined): boolean {
-  if (!errorUpdatedAt) return true
-  return Date.now() - errorUpdatedAt >= SNAPSHOT_REFRESH_ERROR_RETRY_COOLDOWN_MS
-}
-
 async function getCachedSnapshot(chainId: number): Promise<{
   snapshot: VaultsSnapshot
   snapshotUpdatedAt: number
@@ -549,43 +972,52 @@ async function getCachedSnapshot(chainId: number): Promise<{
   isRefreshing: boolean
   refreshError: VaultsSnapshotError | null
 }> {
-  const queryClient = getServerQueryClient()
-  const queryKey = getVaultsSnapshotQueryKey(chainId)
+  let state = getVaultsSnapshotState(chainId)
 
-  const previousState = queryClient.getQueryState<VaultsSnapshot>(queryKey)
-  const previousSnapshot = previousState?.data
-
-  let snapshot: VaultsSnapshot
-  const shouldAttemptRefresh =
-    previousState?.fetchStatus === "fetching" ||
-    shouldRetryBackgroundRefresh(previousState?.errorUpdatedAt)
-
-  if (previousSnapshot && !shouldAttemptRefresh) {
-    snapshot = previousSnapshot
-  } else {
-    try {
-      snapshot = await queryClient.ensureQueryData({
-        queryKey,
-        staleTime: SNAPSHOT_STALE_TIME_MS,
-        revalidateIfStale: true,
-        queryFn: () => fetchFreshSnapshot(chainId),
-      })
-    } catch (error) {
-      console.error({ error })
-      if (!previousSnapshot) throw error
-      snapshot = previousSnapshot
+  // On cold boot, wait for the startup refresh once before serving.
+  if (!state.snapshot) {
+    const inFlight = getVaultsSnapshotRefreshPromises().get(chainId)
+    if (inFlight) {
+      await inFlight
+      state = getVaultsSnapshotState(chainId)
     }
   }
 
-  const state = queryClient.getQueryState<VaultsSnapshot>(queryKey)
-  const snapshotUpdatedAt = state?.dataUpdatedAt || snapshot.updatedAt
+  const snapshot = state.snapshot
+  const refreshError = state.refreshError
+  logVaultsCache("request:start", {
+    chainId,
+    hasInMemorySnapshot: !!snapshot,
+    inMemorySnapshotAgeMs: snapshot ? Date.now() - snapshot.updatedAt : null,
+    hasError: !!refreshError,
+    errorAgeMs: refreshError?.at ? Date.now() - refreshError.at : null,
+    isRefreshing: state.isRefreshing,
+  })
+
+  if (!snapshot) {
+    const detail = refreshError ? ` Last refresh failed: ${refreshError.message}` : ""
+    throw new Error(`Vault snapshot unavailable.${detail}`)
+  }
+
+  const snapshotUpdatedAt = snapshot.updatedAt
+  const snapshotIsStale = Date.now() - snapshotUpdatedAt >= SNAPSHOT_REFRESH_INTERVAL_MS
+  const isRefreshing = state.isRefreshing
+
+  logVaultsCache("request:done", {
+    chainId,
+    snapshotUpdatedAt,
+    snapshotAgeMs: Date.now() - snapshotUpdatedAt,
+    snapshotIsStale,
+    isRefreshing,
+    hasError: !!refreshError,
+  })
 
   return {
     snapshot,
     snapshotUpdatedAt,
-    snapshotIsStale: Date.now() - snapshotUpdatedAt >= SNAPSHOT_STALE_TIME_MS,
-    isRefreshing: state?.fetchStatus === "fetching",
-    refreshError: getRefreshError(state),
+    snapshotIsStale,
+    isRefreshing,
+    refreshError,
   }
 }
 
@@ -594,8 +1026,14 @@ export async function getVaultTableData(
   queryInput?: VaultTableQueryInput,
 ): Promise<VaultTableData> {
   const query = parseVaultTableQuery(queryInput ?? {})
-  const { snapshot, snapshotUpdatedAt, snapshotIsStale, isRefreshing, refreshError } =
+  const { snapshot, snapshotUpdatedAt, snapshotIsStale, isRefreshing, refreshError: rawRefreshError } =
     await getCachedSnapshot(chainId)
+  const refreshError =
+    rawRefreshError &&
+    isSimulatedRpcErrorMessage(rawRefreshError.message) &&
+    !getSimulateRpcErrorsEnabled()
+      ? null
+      : rawRefreshError
 
   if (query.tab === "evaults") {
     const filtered = filterByQuery(snapshot.eVaultRowsInternal, query.q)
