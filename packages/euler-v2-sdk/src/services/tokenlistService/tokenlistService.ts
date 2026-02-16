@@ -52,7 +52,7 @@ export class TokenlistService implements ITokenlistService {
   }
 
   async loadTokenlist(chainId: number): Promise<TokenListItem[]> {
-    const url = `${this.config.apiBaseUrl.replace(/\/$/, "")}/v1/tokens?chainId=${chainId}`;
+    const url = this.config.getTokenListUrl(chainId);
     const raw = await this.queryTokenList(url);
     const list: TokenListItem[] = raw
       .filter((t) => t?.address)

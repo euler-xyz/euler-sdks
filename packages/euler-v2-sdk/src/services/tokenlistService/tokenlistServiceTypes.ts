@@ -30,6 +30,6 @@ export interface TokenListItem {
 }
 
 export interface TokenlistServiceConfig {
-  /** Base URL for Euler index API . */
-  apiBaseUrl: string;
+  /** Returns the full URL for fetching the token list for a given chain. */
+  getTokenListUrl: (chainId: number) => string;
 }
