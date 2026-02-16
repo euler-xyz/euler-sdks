@@ -2,6 +2,7 @@ import { Address } from "viem";
 import { ERC4626Data, Token } from "../utils/types.js";
 import type { IPriceService } from "../services/priceService/index.js";
 import type { IRewardsService, VaultRewardInfo } from "../services/rewardsService/index.js";
+import type { EulerLabel } from "./EulerLabels.js";
 
 /** Virtual deposit amount used in share/asset conversions (matches EVault ConversionHelpers.sol). */
 export const VIRTUAL_DEPOSIT_AMOUNT = 1_000_000n;
@@ -35,6 +36,7 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
   totalAssets: bigint;
   marketPriceUsd?: PriceWad;
   rewards?: VaultRewardInfo;
+  eulerLabel?: EulerLabel;
 
   constructor(args: IERC4626Vault) {
     this.type = args.type;

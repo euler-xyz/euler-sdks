@@ -5,6 +5,7 @@ import type { IVaultService, VaultFetchOptions } from "../index.js";
 import type { IVaultMetaService } from "../vaultMetaService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
+import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 
 export interface IEVaultDataSource {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEVault[]>;
@@ -22,6 +23,7 @@ export interface EVaultFetchOptions {
   populateCollaterals?: boolean;
   populateMarketPrices?: boolean;
   populateRewards?: boolean;
+  populateLabels?: boolean;
 }
 
 export interface IEVaultService
@@ -31,12 +33,14 @@ export interface IEVaultService
   populateCollaterals(eVaults: EVault[]): Promise<void>;
   populateMarketPrices(eVaults: EVault[]): Promise<void>;
   populateRewards(eVaults: EVault[]): Promise<void>;
+  populateLabels(eVaults: EVault[]): Promise<void>;
 }
 
 export class EVaultService implements IEVaultService {
   private vaultMetaService?: IVaultMetaService;
   private priceService?: IPriceService;
   private rewardsService?: IRewardsService;
+  private eulerLabelsService?: IEulerLabelsService;
 
   constructor(
     private dataSource: IEVaultDataSource,
@@ -63,6 +67,10 @@ export class EVaultService implements IEVaultService {
     this.rewardsService = service;
   }
 
+  setEulerLabelsService(service: IEulerLabelsService): void {
+    this.eulerLabelsService = service;
+  }
+
   factory(chainId: number): Address {
     return this.deploymentService.getDeployment(chainId).addresses.coreAddrs
       .eVaultFactory;
@@ -83,6 +91,9 @@ export class EVaultService implements IEVaultService {
     if (options?.populateRewards) {
       await this.populateRewards([eVault]);
     }
+    if (options?.populateLabels) {
+      await this.populateLabels([eVault]);
+    }
     return eVault;
   }
 
@@ -98,6 +109,9 @@ export class EVaultService implements IEVaultService {
     }
     if (options?.populateRewards) {
       await this.populateRewards(eVaults);
+    }
+    if (options?.populateLabels) {
+      await this.populateLabels(eVaults);
     }
     return eVaults;
   }
@@ -160,6 +174,11 @@ export class EVaultService implements IEVaultService {
   async populateRewards(eVaults: EVault[]): Promise<void> {
     if (!this.rewardsService || eVaults.length === 0) return;
     await this.rewardsService.populateRewards(eVaults);
+  }
+
+  async populateLabels(eVaults: EVault[]): Promise<void> {
+    if (!this.eulerLabelsService || eVaults.length === 0) return;
+    await this.eulerLabelsService.populateLabels(eVaults);
   }
 
   async fetchVerifiedVaultAddresses(

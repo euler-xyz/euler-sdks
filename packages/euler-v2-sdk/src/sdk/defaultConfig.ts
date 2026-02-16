@@ -32,11 +32,15 @@ export const defaultAccountVaultsDataSourceConfig: AccountVaultsSubgraphDataSour
 export const defaultVaultTypeDataSourceConfig: VaultTypeSubgraphDataSourceConfig =
   defaultAccountVaultsDataSourceConfig;
 
+const EULER_LABELS_BASE = 'https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master';
+
 export const defaultEulerLabelsURLDataSourceConfig: EulerLabelsURLDataSourceConfig = {
-  getEulerLabelsVaultsUrl: (chainId: number) => `https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master/${chainId}/vaults.json`,
-  getEulerLabelsEntitiesUrl: (chainId: number) => `https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master/${chainId}/entities.json`,
-  getEulerLabelsProductsUrl: (chainId: number) => `https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master/${chainId}/products.json`,
-  getEulerLabelsEarnVaultsUrl: (chainId: number) => `https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master/${chainId}/eulerEarnVaults.json`,
+  getEulerLabelsVaultsUrl: (chainId: number) => `${EULER_LABELS_BASE}/${chainId}/vaults.json`,
+  getEulerLabelsEntitiesUrl: (chainId: number) => `${EULER_LABELS_BASE}/${chainId}/entities.json`,
+  getEulerLabelsProductsUrl: (chainId: number) => `${EULER_LABELS_BASE}/${chainId}/products.json`,
+  getEulerLabelsPointsUrl: (chainId: number) => `${EULER_LABELS_BASE}/${chainId}/points.json`,
+  getEulerLabelsEarnVaultsUrl: (chainId: number) => `${EULER_LABELS_BASE}/${chainId}/eulerEarnVaults.json`,
+  getEulerLabelsLogoUrl: (filename: string) => `${EULER_LABELS_BASE}/logo/${filename}`,
 }
 
 export const defaultSwapServiceConfig: SwapServiceConfig = {

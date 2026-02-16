@@ -7,6 +7,7 @@ import { DeploymentService } from "../../deploymentService/index.js";
 import type { IVaultService, VaultFetchOptions } from "../index.js";
 import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
+import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 
 export interface ISecuritizeCollateralDataSource {
   fetchVaults(
@@ -29,11 +30,13 @@ export interface ISecuritizeVaultService
   > {
   populateMarketPrices(vaults: SecuritizeCollateralVault[]): Promise<void>;
   populateRewards(vaults: SecuritizeCollateralVault[]): Promise<void>;
+  populateLabels(vaults: SecuritizeCollateralVault[]): Promise<void>;
 }
 
 export class SecuritizeVaultService implements ISecuritizeVaultService {
   private priceService?: IPriceService;
   private rewardsService?: IRewardsService;
+  private eulerLabelsService?: IEulerLabelsService;
 
   constructor(
     private dataSource: ISecuritizeCollateralDataSource,
@@ -54,6 +57,10 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 
   setRewardsService(service: IRewardsService): void {
     this.rewardsService = service;
+  }
+
+  setEulerLabelsService(service: IEulerLabelsService): void {
+    this.eulerLabelsService = service;
   }
 
   factory(chainId: number): Address {
@@ -77,6 +84,9 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     if (options?.populateRewards) {
       await this.populateRewards([entity]);
     }
+    if (options?.populateLabels) {
+      await this.populateLabels([entity]);
+    }
     return entity;
   }
 
@@ -93,6 +103,9 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     }
     if (options?.populateRewards) {
       await this.populateRewards(entities);
+    }
+    if (options?.populateLabels) {
+      await this.populateLabels(entities);
     }
     return entities;
   }
@@ -114,6 +127,11 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
   async populateRewards(vaults: SecuritizeCollateralVault[]): Promise<void> {
     if (!this.rewardsService || vaults.length === 0) return;
     await this.rewardsService.populateRewards(vaults);
+  }
+
+  async populateLabels(vaults: SecuritizeCollateralVault[]): Promise<void> {
+    if (!this.eulerLabelsService || vaults.length === 0) return;
+    await this.eulerLabelsService.populateLabels(vaults);
   }
 
   async fetchVerifiedVaultAddresses(

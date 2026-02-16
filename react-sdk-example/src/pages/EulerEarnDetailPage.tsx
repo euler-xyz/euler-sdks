@@ -45,8 +45,22 @@ export function EulerEarnDetailPage() {
       </Link>
 
       <div className="detail-header">
-        <h2>{vault.shares.name || "Unnamed Vault"}</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          {vault.eulerLabel?.entities[0]?.logo && (
+            <img
+              src={vault.eulerLabel.entities[0].logo}
+              alt=""
+              style={{ width: 32, height: 32, borderRadius: 4 }}
+            />
+          )}
+          <h2>{vault.eulerLabel?.vault.name || vault.shares.name || "Unnamed Vault"}</h2>
+        </div>
         <div className="address">{vault.address}</div>
+        {vault.eulerLabel?.vault.description && (
+          <div style={{ marginTop: 8, opacity: 0.7, fontSize: "0.9em" }}>
+            {vault.eulerLabel.vault.description}
+          </div>
+        )}
       </div>
 
       <div className="detail-grid">
@@ -110,6 +124,93 @@ export function EulerEarnDetailPage() {
           <div className="value">{vault.strategies.length}</div>
         </div>
       </div>
+
+      {vault.eulerLabel && (
+        <>
+          {vault.eulerLabel.entities.length > 0 && (
+            <>
+              <h3 className="section-title">Entity</h3>
+              <div className="detail-grid">
+                {vault.eulerLabel.entities.map((entity, i) => (
+                  <div className="detail-item" key={i}>
+                    <div className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {entity.logo && (
+                        <img src={entity.logo} alt="" style={{ width: 20, height: 20, borderRadius: 3 }} />
+                      )}
+                      {entity.name}
+                    </div>
+                    <div className="value">
+                      {entity.url ? (
+                        <a href={entity.url} target="_blank" rel="noopener noreferrer">{entity.url}</a>
+                      ) : entity.description || "-"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {vault.eulerLabel.products.length > 0 && (
+            <>
+              <h3 className="section-title">Products</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Description</th>
+                    <th>Vaults</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {vault.eulerLabel.products.map((product, i) => (
+                    <tr key={i}>
+                      <td style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {product.logo && (
+                          <img src={product.logo} alt="" style={{ width: 20, height: 20, borderRadius: 3 }} />
+                        )}
+                        {product.url ? (
+                          <a href={product.url} target="_blank" rel="noopener noreferrer">{product.name}</a>
+                        ) : product.name}
+                      </td>
+                      <td>{product.description || "-"}</td>
+                      <td>{product.vaults.length}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          {vault.eulerLabel.points.length > 0 && (
+            <>
+              <h3 className="section-title">Points</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Program</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {vault.eulerLabel.points.map((point, i) => (
+                    <tr key={i}>
+                      <td style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {point.logo && (
+                          <img src={point.logo} alt="" style={{ width: 20, height: 20, borderRadius: 3 }} />
+                        )}
+                        {point.url ? (
+                          <a href={point.url} target="_blank" rel="noopener noreferrer">{point.name}</a>
+                        ) : point.name}
+                      </td>
+                      <td>{point.description || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </>
+      )}
 
       <h3 className="section-title">Governance</h3>
       <div className="detail-grid">

@@ -51,6 +51,7 @@ const STALE_TIMES: Record<string, number> = {
   queryEulerLabelsVaults: Infinity,
   queryEulerLabelsEntities: Infinity,
   queryEulerLabelsProducts: Infinity,
+  queryEulerLabelsPoints: Infinity,
 
   // Perspective / factory lists — change only when new vaults are deployed
   queryVerifiedArray: 5 * MINUTE,
@@ -140,6 +141,7 @@ export function useVaultDetail(chainId: number, address: string | undefined) {
         populateCollaterals: true,
         populateMarketPrices: true,
         populateRewards: true,
+        populateLabels: true,
       }),
     enabled: enabled && !!address,
     staleTime: 1_000,
@@ -155,6 +157,7 @@ export function useEulerEarnDetail(chainId: number, address: string | undefined)
         populateStrategyVaults: true,
         populateMarketPrices: true,
         populateRewards: true,
+        populateLabels: true,
       }),
     enabled: enabled && !!address,
     staleTime: 1_000,

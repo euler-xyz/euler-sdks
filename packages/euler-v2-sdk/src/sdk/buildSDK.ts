@@ -187,9 +187,10 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   }
 
   // Build eulerLabels service if not overridden
+  const eulerLabelsConfig = eulerLabelsDataSourceConfig || defaultEulerLabelsURLDataSourceConfig;
   const eulerLabelsService = servicesOverrides?.eulerLabelsService ?? (() => {
-    const eulerLabelsDataSource = new EulerLabelsURLDataSource(eulerLabelsDataSourceConfig || defaultEulerLabelsURLDataSourceConfig, buildQuery);
-    return new EulerLabelsService(eulerLabelsDataSource);
+    const eulerLabelsDataSource = new EulerLabelsURLDataSource(eulerLabelsConfig, buildQuery);
+    return new EulerLabelsService(eulerLabelsDataSource, eulerLabelsConfig.getEulerLabelsLogoUrl);
   })();
 
   // Build tokenlist service if not overridden
@@ -238,6 +239,17 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   }
   if (securitizeVaultService instanceof SecuritizeVaultService) {
     securitizeVaultService.setRewardsService(rewardsService);
+  }
+
+  // Wire eulerLabelsService into vault services for label population
+  if (eVaultService instanceof EVaultService) {
+    eVaultService.setEulerLabelsService(eulerLabelsService);
+  }
+  if (eulerEarnService instanceof EulerEarnService) {
+    eulerEarnService.setEulerLabelsService(eulerLabelsService);
+  }
+  if (securitizeVaultService instanceof SecuritizeVaultService) {
+    securitizeVaultService.setEulerLabelsService(eulerLabelsService);
   }
 
   return new EulerSDK<TVaultEntity>({

@@ -16,7 +16,7 @@ import { mainnet } from "viem/chains";
 import { getRpcUrls } from "../utils/config.js";
 import { buildSDK, type EVault } from "euler-v2-sdk";
 
-const VAULT_ADDRESS = "0xbC4B4AC47582c3E38Ce5940B80Da65401F4628f1";
+const VAULT_ADDRESS = "0x3C75C170671acb394804DfAf63e4F9891C121625";
 
 function formatUsd(priceWad: bigint | undefined): string {
   if (priceWad === undefined) return "N/A";
@@ -32,7 +32,7 @@ async function fetchVaultDetailsExample() {
   const vault = await sdk.eVaultService.fetchVault(
     mainnet.id,
     VAULT_ADDRESS,
-    { populateCollaterals: true, populateMarketPrices: true },
+    { populateCollaterals: true, populateMarketPrices: true, populateLabels: true, populateRewards: true },
   );
 
   // Vault overview
@@ -99,6 +99,50 @@ async function fetchVaultDetailsExample() {
     } else {
       console.log("    Vault:           (not resolved)");
     }
+  }
+
+  // Labels
+  console.log("\n" + "-".repeat(80));
+  console.log("LABELS");
+  console.log("-".repeat(80));
+
+  if (vault.eulerLabel) {
+    const label = vault.eulerLabel;
+    console.log(`  Vault label:     ${label.vault.name}`);
+    console.log(`  Description:     ${label.vault.description}`);
+
+    for (const entity of label.entities) {
+      console.log(`  Entity:          ${entity.name}`);
+      if (entity.url) console.log(`    URL:           ${entity.url}`);
+      if (entity.logo) console.log(`    Logo:          ${entity.logo}`);
+    }
+
+    for (const product of label.products) {
+      console.log(`  Product:         ${product.name} (${product.vaults.length} vaults)`);
+      if (product.description) console.log(`    Description:   ${product.description}`);
+    }
+
+    for (const point of label.points) {
+      console.log(`  Points:          ${point.name}`);
+      if (point.logo) console.log(`    Logo:          ${point.logo}`);
+    }
+  } else {
+    console.log("  No labels available");
+  }
+
+  // Rewards
+  console.log("\n" + "-".repeat(80));
+  console.log("REWARDS");
+  console.log("-".repeat(80));
+
+  if (vault.rewards && vault.rewards.campaigns.length > 0) {
+    console.log(`  Total rewards APR: ${(vault.rewards.totalRewardsApr * 100).toFixed(4)}%`);
+    for (const campaign of vault.rewards.campaigns) {
+      console.log(`  Campaign:        ${campaign.rewardTokenSymbol} (${campaign.source})`);
+      console.log(`    APR:           ${(campaign.apr * 100).toFixed(4)}%`);
+    }
+  } else {
+    console.log("  No rewards campaigns");
   }
 
   console.log("\n" + "=".repeat(80));

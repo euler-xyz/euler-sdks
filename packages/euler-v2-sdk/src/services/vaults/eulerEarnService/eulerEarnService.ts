@@ -5,6 +5,7 @@ import type { IVaultService } from "../index.js";
 import type { IEVaultService, EVaultFetchOptions } from "../eVaultService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
+import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 
 export interface IEulerEarnDataSource {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEulerEarn[]>;
@@ -20,6 +21,7 @@ export interface EulerEarnFetchOptions {
   populateStrategyVaults?: boolean;
   populateMarketPrices?: boolean;
   populateRewards?: boolean;
+  populateLabels?: boolean;
   /** Options forwarded to EVaultService when populating strategy vaults. */
   eVaultFetchOptions?: EVaultFetchOptions;
 }
@@ -31,11 +33,13 @@ export interface IEulerEarnService
   populateStrategyVaults(eulerEarns: EulerEarn[], eVaultFetchOptions?: EVaultFetchOptions): Promise<void>;
   populateMarketPrices(eulerEarns: EulerEarn[]): Promise<void>;
   populateRewards(eulerEarns: EulerEarn[]): Promise<void>;
+  populateLabels(eulerEarns: EulerEarn[]): Promise<void>;
 }
 
 export class EulerEarnService implements IEulerEarnService {
   private priceService?: IPriceService;
   private rewardsService?: IRewardsService;
+  private eulerLabelsService?: IEulerLabelsService;
 
   constructor(
     private dataSource: IEulerEarnDataSource,
@@ -63,6 +67,10 @@ export class EulerEarnService implements IEulerEarnService {
     this.rewardsService = service;
   }
 
+  setEulerLabelsService(service: IEulerLabelsService): void {
+    this.eulerLabelsService = service;
+  }
+
   factory(chainId: number): Address {
     return this.deploymentService.getDeployment(chainId).addresses.coreAddrs
       .eulerEarnFactory;
@@ -83,6 +91,9 @@ export class EulerEarnService implements IEulerEarnService {
     if (options?.populateRewards) {
       await this.populateRewards([eulerEarn]);
     }
+    if (options?.populateLabels) {
+      await this.populateLabels([eulerEarn]);
+    }
     return eulerEarn;
   }
 
@@ -98,6 +109,9 @@ export class EulerEarnService implements IEulerEarnService {
     }
     if (options?.populateRewards) {
       await this.populateRewards(eulerEarns);
+    }
+    if (options?.populateLabels) {
+      await this.populateLabels(eulerEarns);
     }
     return eulerEarns;
   }
@@ -153,6 +167,11 @@ export class EulerEarnService implements IEulerEarnService {
   async populateRewards(eulerEarns: EulerEarn[]): Promise<void> {
     if (!this.rewardsService || eulerEarns.length === 0) return;
     await this.rewardsService.populateRewards(eulerEarns);
+  }
+
+  async populateLabels(eulerEarns: EulerEarn[]): Promise<void> {
+    if (!this.eulerLabelsService || eulerEarns.length === 0) return;
+    await this.eulerLabelsService.populateLabels(eulerEarns);
   }
 
   async fetchVerifiedVaultAddresses(
