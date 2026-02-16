@@ -80,9 +80,13 @@ export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK, wc
       const description = sdk.executionService.describeBatch(allBatchItems);
       // console.log('description: ', description);
 
+      // Compute total value from batch items (needed for payable calls like Pyth price updates)
+      const totalValue = allBatchItems.reduce((sum, bi) => sum + bi.value, 0n);
+
       const estimatedGas = await publicClient.estimateGas({
         to: evcAddress,
         data: batchData,
+        value: totalValue,
         account: wc.account!.address,
       });
 
@@ -92,6 +96,7 @@ export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK, wc
       const hash = await wc.sendTransaction({
         to: evcAddress,
         data: batchData,
+        value: totalValue,
         account: wc.account!,
         chain: mainnet,
         gas: gasWithBuffer,

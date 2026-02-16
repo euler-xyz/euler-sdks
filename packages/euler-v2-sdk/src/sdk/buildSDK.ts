@@ -3,38 +3,38 @@ import { ABIService, IABIService } from "../services/abiService/index.js";
 import { DeploymentService, IDeploymentService } from "../services/deploymentService/index.js";
 import { ProviderService, IProviderService } from "../services/providerService/index.js";
 import { AccountService, IAccountService } from "../services/accountService/index.js";
-import { AccountOnchainDataSource } from "../services/accountService/dataSources/accountOnchainDataSource.js";
-import { AccountVaultsSubgraphDataSource, AccountVaultsSubgraphDataSourceConfig } from "../services/accountService/dataSources/accountVaultsSubgraphDataSource.js";
+import { AccountOnchainAdapter } from "../services/accountService/adapters/accountOnchainAdapter.js";
+import { AccountVaultsSubgraphAdapter, AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter.js";
 import { WalletService, IWalletService } from "../services/walletService/index.js";
-import { WalletOnchainDataSource } from "../services/walletService/dataSources/walletOnchainDataSource.js";
+import { WalletOnchainAdapter } from "../services/walletService/adapters/walletOnchainAdapter.js";
 import { EVaultService, IEVaultService } from "../services/vaults/eVaultService/index.js";
 import { EulerEarnService, IEulerEarnService } from "../services/vaults/eulerEarnService/index.js";
-import { EulerEarnOnchainDataSource } from "../services/vaults/eulerEarnService/dataSources/eulerEarnOnchainDataSource.js";
+import { EulerEarnOnchainAdapter } from "../services/vaults/eulerEarnService/adapters/eulerEarnOnchainAdapter.js";
 import { SecuritizeVaultService, ISecuritizeVaultService } from "../services/vaults/securitizeVaultService/index.js";
-import { SecuritizeVaultOnchainDataSource } from "../services/vaults/securitizeVaultService/dataSources/securitizeVaultOnchainDataSource.js";
-import { EulerLabelsService, EulerLabelsURLDataSource, EulerLabelsURLDataSourceConfig, IEulerLabelsService } from "../services/eulerLabelsService/index.js";
+import { SecuritizeVaultOnchainAdapter } from "../services/vaults/securitizeVaultService/adapters/securitizeVaultOnchainAdapter.js";
+import { EulerLabelsService, EulerLabelsURLAdapter, EulerLabelsURLAdapterConfig, IEulerLabelsService } from "../services/eulerLabelsService/index.js";
 import { TokenlistService, ITokenlistService } from "../services/tokenlistService/index.js";
 import { SwapService, ISwapService, SwapServiceConfig } from "../services/swapService/index.js";
 import { ExecutionService, IExecutionService } from "../services/executionService/index.js";
 import { PriceService, IPriceService, type BackendConfig, PricingBackendClient } from "../services/priceService/index.js";
 import { RewardsService, IRewardsService, type RewardsServiceConfig } from "../services/rewardsService/index.js";
-import { defaultAccountVaultsDataSourceConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLDataSourceConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeDataSourceConfig } from "./defaultConfig.js";
+import { defaultAccountVaultsAdapterConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLAdapterConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeAdapterConfig } from "./defaultConfig.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
-import { EVaultOnchainDataSource } from "../services/vaults/eVaultService/dataSources/eVaultOnchainDataSource.js";
+import { EVaultOnchainAdapter } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter.js";
 import {
   VaultMetaService,
   IVaultMetaService,
-  VaultTypeSubgraphDataSource,
+  VaultTypeSubgraphAdapter,
   type RegisteredVaultService,
   type VaultEntity,
   type VaultServiceEntry,
 } from "../services/vaults/vaultMetaService/index.js";
 import { VaultType } from "../utils/types.js";
-import type { VaultTypeSubgraphDataSourceConfig } from "../services/vaults/vaultMetaService/index.js";
+import type { VaultTypeSubgraphAdapterConfig } from "../services/vaults/vaultMetaService/index.js";
 import type { IVaultEntity } from "../entities/Account.js";
 import type { BuildQueryFn } from "../utils/buildQuery.js";
 import type { EulerPlugin } from "../plugins/types.js";
-import { BatchSimulationDataSource } from "../plugins/batchSimulation.js";
+import { BatchSimulationAdapter } from "../plugins/batchSimulation.js";
 
 export interface BuildSDKOverrides<TVaultEntity extends IVaultEntity = VaultEntity> {
   abiService?: IABIService;
@@ -56,11 +56,11 @@ export interface BuildSDKOverrides<TVaultEntity extends IVaultEntity = VaultEnti
 
 export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity> {
   rpcUrls: Record<number, string>;
-  accountVaultsDataSourceConfig?: AccountVaultsSubgraphDataSourceConfig;
-  vaultTypeDataSourceConfig?: VaultTypeSubgraphDataSourceConfig;
+  accountVaultsAdapterConfig?: AccountVaultsSubgraphAdapterConfig;
+  vaultTypeAdapterConfig?: VaultTypeSubgraphAdapterConfig;
   /** Additional vault services to register; use { type, service } to register a custom vault type for getFactoryByType(chainId, type). Pass the extended entity type as the generic (e.g. buildSDK<VaultEntity | CustomVault>({ ..., additionalVaultServices: [{ type: 'CustomVault', service: customService }] })). */
   additionalVaultServices?: VaultServiceEntry<TVaultEntity>[];
-  eulerLabelsDataSourceConfig?: EulerLabelsURLDataSourceConfig;
+  eulerLabelsAdapterConfig?: EulerLabelsURLAdapterConfig;
   tokenlistServiceConfig?: TokenlistServiceConfig;
   swapServiceConfig?: SwapServiceConfig;
   backendConfig?: BackendConfig;
@@ -75,19 +75,19 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
 export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   options: BuildSDKOptions<TVaultEntity>
 ): Promise<EulerSDK<TVaultEntity>> {
-  const { rpcUrls, accountVaultsDataSourceConfig, vaultTypeDataSourceConfig, additionalVaultServices, eulerLabelsDataSourceConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, buildQuery, plugins, servicesOverrides } = options;
+  const { rpcUrls, accountVaultsAdapterConfig, vaultTypeAdapterConfig, additionalVaultServices, eulerLabelsAdapterConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, buildQuery, plugins, servicesOverrides } = options;
 
-  // Build core services (these may be needed for data sources even if overridden)
+  // Build core services (these may be needed for adapters even if overridden)
   const abiService = servicesOverrides?.abiService ?? new ABIService(buildQuery);
   const deploymentService = servicesOverrides?.deploymentService ?? await DeploymentService.build(defaultDeploymentServiceConfig, buildQuery);
   const providerService = servicesOverrides?.providerService ?? new ProviderService(rpcUrls);
 
-  // Account data source is built early so it can be used when building account service (after vault meta service)
-  const accountVaultsDataSource = new AccountVaultsSubgraphDataSource(accountVaultsDataSourceConfig || defaultAccountVaultsDataSourceConfig, buildQuery);
-  const accountDataSource = new AccountOnchainDataSource(
+  // Account adapter is built early so it can be used when building account service (after vault meta service)
+  const accountVaultsAdapter = new AccountVaultsSubgraphAdapter(accountVaultsAdapterConfig || defaultAccountVaultsAdapterConfig, buildQuery);
+  const accountAdapter = new AccountOnchainAdapter(
     providerService as ProviderService,
     deploymentService as DeploymentService,
-    accountVaultsDataSource,
+    accountVaultsAdapter,
     buildQuery,
   );
 
@@ -96,27 +96,27 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   if (servicesOverrides?.walletService) {
     walletService = servicesOverrides.walletService;
   } else {
-    const walletDataSource = new WalletOnchainDataSource(
+    const walletAdapter = new WalletOnchainAdapter(
       providerService as ProviderService,
       deploymentService as DeploymentService,
       buildQuery,
     );
-    walletService = new WalletService(walletDataSource);
+    walletService = new WalletService(walletAdapter);
   }
 
   // Build eVault service if not overridden
   let eVaultService: IEVaultService;
-  let eVaultDataSource: EVaultOnchainDataSource | undefined;
+  let eVaultAdapter: EVaultOnchainAdapter | undefined;
   if (servicesOverrides?.eVaultService) {
     eVaultService = servicesOverrides.eVaultService;
   } else {
-    eVaultDataSource = new EVaultOnchainDataSource(
+    eVaultAdapter = new EVaultOnchainAdapter(
       providerService as ProviderService,
       deploymentService as DeploymentService,
       buildQuery,
     );
     eVaultService = new EVaultService(
-      eVaultDataSource,
+      eVaultAdapter,
       deploymentService as DeploymentService
     );
   }
@@ -126,13 +126,13 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   if (servicesOverrides?.eulerEarnService) {
     eulerEarnService = servicesOverrides.eulerEarnService;
   } else {
-    const eulerEarnDataSource = new EulerEarnOnchainDataSource(
+    const eulerEarnAdapter = new EulerEarnOnchainAdapter(
       providerService as ProviderService,
       deploymentService as DeploymentService,
       buildQuery,
     );
     eulerEarnService = new EulerEarnService(
-      eulerEarnDataSource,
+      eulerEarnAdapter,
       deploymentService as DeploymentService,
       eVaultService
     );
@@ -143,13 +143,13 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   if (servicesOverrides?.securitizeVaultService) {
     securitizeVaultService = servicesOverrides.securitizeVaultService;
   } else {
-    const securitizeVaultDataSource = new SecuritizeVaultOnchainDataSource(
+    const securitizeVaultAdapter = new SecuritizeVaultOnchainAdapter(
       providerService as ProviderService,
       deploymentService as DeploymentService,
       buildQuery,
     );
     securitizeVaultService = new SecuritizeVaultService(
-      securitizeVaultDataSource,
+      securitizeVaultAdapter,
       deploymentService as DeploymentService
     );
   }
@@ -159,8 +159,8 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   if (servicesOverrides?.vaultMetaService) {
     vaultMetaService = servicesOverrides.vaultMetaService;
   } else {
-    const vaultTypeDataSource = new VaultTypeSubgraphDataSource(
-      vaultTypeDataSourceConfig ?? defaultVaultTypeDataSourceConfig,
+    const vaultTypeAdapter = new VaultTypeSubgraphAdapter(
+      vaultTypeAdapterConfig ?? defaultVaultTypeAdapterConfig,
       buildQuery,
     );
     const allVaultServices: VaultServiceEntry<TVaultEntity>[] = [
@@ -173,7 +173,7 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
       ...(additionalVaultServices ?? []),
     ];
     vaultMetaService = new VaultMetaService<TVaultEntity>({
-      vaultTypeDataSource,
+      vaultTypeAdapter,
       vaultServices: allVaultServices,
     });
   }
@@ -183,15 +183,15 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
     eVaultService.setVaultMetaService(vaultMetaService as IVaultMetaService);
   }
 
-  // Wire plugins into onchain data sources for read-path enrichment
+  // Wire plugins into onchain adapters for read-path enrichment
   if (plugins?.length) {
-    const pluginBatchSimDs = new BatchSimulationDataSource(buildQuery);
-    if (eVaultDataSource) {
-      eVaultDataSource.setPlugins(plugins);
-      eVaultDataSource.setBatchSimulationDataSource(pluginBatchSimDs);
+    const pluginBatchSimDs = new BatchSimulationAdapter(buildQuery);
+    if (eVaultAdapter) {
+      eVaultAdapter.setPlugins(plugins);
+      eVaultAdapter.setBatchSimulationAdapter(pluginBatchSimDs);
     }
-    accountDataSource.setPlugins(plugins);
-    accountDataSource.setBatchSimulationDataSource(pluginBatchSimDs);
+    accountAdapter.setPlugins(plugins);
+    accountAdapter.setBatchSimulationAdapter(pluginBatchSimDs);
   }
 
   // Build account service if not overridden (requires vaultMetaService for fetchAccountWithVaults / fetchVaults)
@@ -199,14 +199,14 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   if (servicesOverrides?.accountService) {
     accountService = servicesOverrides.accountService;
   } else {
-    accountService = new AccountService<TVaultEntity>(accountDataSource, vaultMetaService);
+    accountService = new AccountService<TVaultEntity>(accountAdapter, vaultMetaService);
   }
 
   // Build eulerLabels service if not overridden
-  const eulerLabelsConfig = eulerLabelsDataSourceConfig || defaultEulerLabelsURLDataSourceConfig;
+  const eulerLabelsConfig = eulerLabelsAdapterConfig || defaultEulerLabelsURLAdapterConfig;
   const eulerLabelsService = servicesOverrides?.eulerLabelsService ?? (() => {
-    const eulerLabelsDataSource = new EulerLabelsURLDataSource(eulerLabelsConfig, buildQuery);
-    return new EulerLabelsService(eulerLabelsDataSource, eulerLabelsConfig.getEulerLabelsLogoUrl);
+    const eulerLabelsAdapter = new EulerLabelsURLAdapter(eulerLabelsConfig, buildQuery);
+    return new EulerLabelsService(eulerLabelsAdapter, eulerLabelsConfig.getEulerLabelsLogoUrl);
   })();
 
   // Build tokenlist service if not overridden

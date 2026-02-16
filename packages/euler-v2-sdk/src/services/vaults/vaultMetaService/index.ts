@@ -12,10 +12,10 @@ export {
   type VaultTypeString,
 } from "./vaultMetaService.js";
 export type {
-  IVaultTypeDataSource,
+  IVaultTypeAdapter,
   VaultFactoryResult,
-} from "./dataSources/IVaultTypeDataSource.js";
+} from "./adapters/IVaultTypeAdapter.js";
 export {
-  VaultTypeSubgraphDataSource,
-  type VaultTypeSubgraphDataSourceConfig,
-} from "./dataSources/VaultTypeSubgraphDataSource.js";
+  VaultTypeSubgraphAdapter,
+  type VaultTypeSubgraphAdapterConfig,
+} from "./adapters/VaultTypeSubgraphAdapter.js";

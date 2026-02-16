@@ -7,7 +7,7 @@ import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 
-export interface IEulerEarnDataSource {
+export interface IEulerEarnAdapter {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEulerEarn[]>;
   fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]>;
 }
@@ -42,13 +42,13 @@ export class EulerEarnService implements IEulerEarnService {
   private eulerLabelsService?: IEulerLabelsService;
 
   constructor(
-    private dataSource: IEulerEarnDataSource,
+    private adapter: IEulerEarnAdapter,
     private deploymentService: DeploymentService,
     private eVaultService?: IEVaultService
   ) {}
 
-  setDataSource(dataSource: IEulerEarnDataSource): void {
-    this.dataSource = dataSource;
+  setAdapter(adapter: IEulerEarnAdapter): void {
+    this.adapter = adapter;
   }
 
   setDeploymentService(deploymentService: DeploymentService): void {
@@ -77,7 +77,7 @@ export class EulerEarnService implements IEulerEarnService {
   }
 
   async fetchVault(chainId: number, vault: Address, options?: EulerEarnFetchOptions): Promise<EulerEarn> {
-    const vaults = await this.dataSource.fetchVaults(chainId, [vault]);
+    const vaults = await this.adapter.fetchVaults(chainId, [vault]);
     if (vaults.length === 0) {
       throw new Error(`Vault not found for ${vault}`);
     }
@@ -98,7 +98,7 @@ export class EulerEarnService implements IEulerEarnService {
   }
 
   async fetchVaults(chainId: number, vaults: Address[], options?: EulerEarnFetchOptions): Promise<EulerEarn[]> {
-    const eulerEarns = (await this.dataSource.fetchVaults(chainId, vaults)).map(
+    const eulerEarns = (await this.adapter.fetchVaults(chainId, vaults)).map(
       (vault) => new EulerEarn(vault)
     );
     if (options?.populateStrategyVaults) {
@@ -200,7 +200,7 @@ export class EulerEarnService implements IEulerEarnService {
         perspective as StandardEulerEarnPerspectives
       ] as Address;
     });
-    return this.dataSource.fetchVerifiedVaultsAddresses(
+    return this.adapter.fetchVerifiedVaultsAddresses(
       chainId,
       perspectiveAddresses
     );

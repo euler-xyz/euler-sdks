@@ -7,7 +7,7 @@ import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 
-export interface IEVaultDataSource {
+export interface IEVaultAdapter {
   fetchVaults(chainId: number, vault: Address[]): Promise<IEVault[]>;
   fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]>;
 }
@@ -43,12 +43,12 @@ export class EVaultService implements IEVaultService {
   private eulerLabelsService?: IEulerLabelsService;
 
   constructor(
-    private dataSource: IEVaultDataSource,
+    private adapter: IEVaultAdapter,
     private deploymentService: DeploymentService
   ) {}
 
-  setDataSource(dataSource: IEVaultDataSource): void {
-    this.dataSource = dataSource;
+  setAdapter(adapter: IEVaultAdapter): void {
+    this.adapter = adapter;
   }
 
   setDeploymentService(deploymentService: DeploymentService): void {
@@ -77,7 +77,7 @@ export class EVaultService implements IEVaultService {
   }
 
   async fetchVault(chainId: number, vault: Address, options?: EVaultFetchOptions): Promise<EVault> {
-    const vaults = await this.dataSource.fetchVaults(chainId, [vault]);
+    const vaults = await this.adapter.fetchVaults(chainId, [vault]);
     if (vaults.length === 0) {
       throw new Error(`Vault not found for ${vault}`);
     }
@@ -99,7 +99,7 @@ export class EVaultService implements IEVaultService {
   }
 
   async fetchVaults(chainId: number, vaults: Address[], options?: EVaultFetchOptions): Promise<EVault[]> {
-    const eVaults = (await this.dataSource.fetchVaults(chainId, vaults)).map(
+    const eVaults = (await this.adapter.fetchVaults(chainId, vaults)).map(
       (vault) => new EVault(vault)
     );
 
@@ -209,7 +209,7 @@ export class EVaultService implements IEVaultService {
         perspective as StandardEVaultPerspectives
       ] as Address;
     });
-    return this.dataSource.fetchVerifiedVaultsAddresses(
+    return this.adapter.fetchVerifiedVaultsAddresses(
       chainId,
       perspectiveAddresses
     );

@@ -1,6 +1,6 @@
 export { EVaultService, StandardEVaultPerspectives } from "./eVaultService.js";
 export type {
   IEVaultService,
-  IEVaultDataSource,
+  IEVaultAdapter,
   EVaultFetchOptions,
 } from "./eVaultService.js";

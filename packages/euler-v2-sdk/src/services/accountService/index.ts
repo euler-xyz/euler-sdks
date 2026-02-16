@@ -1,6 +1,6 @@
 export { AccountService } from "./accountService.js";
 export type {
   IAccountService,
-  IAccountDataSource,
+  IAccountAdapter,
   AccountFetchOptions,
 } from "./accountService.js";

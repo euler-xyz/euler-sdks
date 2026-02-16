@@ -6,7 +6,7 @@ export interface AssetWithSpenders {
   spenders: Address[];
 }
 
-export interface IWalletDataSource {
+export interface IWalletAdapter {
   fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<IWallet | undefined>;
 }
 
@@ -16,15 +16,15 @@ export interface IWalletService {
 
 export class WalletService implements IWalletService {
   constructor(
-    private dataSource: IWalletDataSource
+    private adapter: IWalletAdapter
   ) {}
 
-  setDataSource(dataSource: IWalletDataSource): void {
-    this.dataSource = dataSource;
+  setAdapter(adapter: IWalletAdapter): void {
+    this.adapter = adapter;
   }
 
   async fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<Wallet> {
-    const walletData = await this.dataSource.fetchWallet(chainId, account, assetsWithSpenders);
+    const walletData = await this.adapter.fetchWallet(chainId, account, assetsWithSpenders);
     if (!walletData) return new Wallet({ chainId, account, assets: [] });
 
     return new Wallet(walletData);

@@ -28,11 +28,11 @@ export interface ExecuteBatchSimulationParams {
 }
 
 /**
- * Data source for EVC batchSimulation calls.
+ * Adapter for EVC batchSimulation calls.
  * Follows the SDK's injectable query pattern: the raw RPC call is a `query*` arrow
  * function property, wrapped by `applyBuildQuery` for logging/caching/profiling.
  */
-export class BatchSimulationDataSource {
+export class BatchSimulationAdapter {
   constructor(buildQuery?: BuildQueryFn) {
     if (buildQuery) applyBuildQuery(this, buildQuery);
   }
@@ -65,7 +65,7 @@ export class BatchSimulationDataSource {
  */
 export async function executeBatchSimulation<T>(
   params: ExecuteBatchSimulationParams,
-  dataSource?: BatchSimulationDataSource,
+  adapter?: BatchSimulationAdapter,
 ): Promise<T | undefined> {
   const {
     provider,
@@ -100,7 +100,7 @@ export async function executeBatchSimulation<T>(
       args: [batchItems],
     });
 
-    const ds = dataSource ?? new BatchSimulationDataSource();
+    const ds = adapter ?? new BatchSimulationAdapter();
     const resultData = await ds.queryBatchSimulation(provider, evcAddress, calldata, totalValue);
 
     if (!resultData) return undefined;

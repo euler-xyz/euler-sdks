@@ -1,6 +1,6 @@
-export { EulerLabelsService, EulerLabelsURLDataSource } from "./eulerLabelsService.js";
+export { EulerLabelsService, EulerLabelsURLAdapter } from "./eulerLabelsService.js";
 export type {
   IEulerLabelsService,
-  IEulerLabelsDataSource,
-  EulerLabelsURLDataSourceConfig,
+  IEulerLabelsAdapter,
+  EulerLabelsURLAdapterConfig,
 } from "./eulerLabelsService.js";

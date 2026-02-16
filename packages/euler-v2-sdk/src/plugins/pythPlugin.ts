@@ -59,10 +59,10 @@ const getCacheKey = (feedIds: Hex[], endpoint: string): string => {
 };
 
 /**
- * Data source for the Pyth plugin. Follows the SDK's injectable query pattern:
+ * Adapter for the Pyth plugin. Follows the SDK's injectable query pattern:
  * all external calls are `query*` arrow-function properties, wrapped by `applyBuildQuery`.
  */
-export class PythPluginDataSource {
+export class PythPluginAdapter {
   private pendingRequests: PythPendingRequest[] = [];
   private batchTimeout: ReturnType<typeof setTimeout> | null = null;
   private updateCache = new Map<string, CachedPythUpdate>();
@@ -176,7 +176,7 @@ export class PythPluginDataSource {
 
 async function buildPythBatchItems(
   feeds: PythFeed[],
-  dataSource: PythPluginDataSource,
+  adapter: PythPluginAdapter,
   provider: PublicClient,
   hermesUrl: string,
   sender: Address = zeroAddress,
@@ -196,10 +196,10 @@ async function buildPythBatchItems(
 
   for (const [pythAddress, feedSet] of grouped.entries()) {
     try {
-      const updateData = await dataSource.queryPythUpdateData([...feedSet], hermesUrl);
+      const updateData = await adapter.queryPythUpdateData([...feedSet], hermesUrl);
       if (!updateData.length) continue;
 
-      const fee = await dataSource.queryPythUpdateFee(provider, pythAddress, updateData);
+      const fee = await adapter.queryPythUpdateFee(provider, pythAddress, updateData);
 
       items.push({
         targetContract: pythAddress,
@@ -241,7 +241,7 @@ export interface PythPluginConfig {
 
 export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
   const hermesUrl = config.hermesUrl || "https://hermes.pyth.network";
-  const dataSource = new PythPluginDataSource(config.buildQuery);
+  const adapter = new PythPluginAdapter(config.buildQuery);
 
   return {
     name: "pyth",
@@ -252,7 +252,7 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
       );
 
       if (!feeds.length) return null;
-      const result = await buildPythBatchItems(feeds, dataSource, ctx.provider, hermesUrl);
+      const result = await buildPythBatchItems(feeds, adapter, ctx.provider, hermesUrl);
       return result.items.length > 0 ? result : null;
     },
 
@@ -262,7 +262,7 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
       );
       if (!feeds.length) return plan;
 
-      const result = await buildPythBatchItems(feeds, dataSource, ctx.provider, hermesUrl, ctx.sender);
+      const result = await buildPythBatchItems(feeds, adapter, ctx.provider, hermesUrl, ctx.sender);
       if (!result.items.length) return plan;
 
       return prependToBatch(plan, result.items);

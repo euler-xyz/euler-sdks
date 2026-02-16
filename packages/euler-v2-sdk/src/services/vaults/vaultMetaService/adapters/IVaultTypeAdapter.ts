@@ -5,10 +5,10 @@ export interface VaultFactoryResult {
   factory: Address;
 }
 
-export interface IVaultTypeDataSource {
+export interface IVaultTypeAdapter {
   /**
    * Fetches vault id -> factory address for the given vault addresses on the chain.
-   * Vaults not found in the data source may be omitted from the result.
+   * Vaults not found in the adapter may be omitted from the result.
    */
   getVaultFactories(
     chainId: number,

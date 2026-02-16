@@ -7,7 +7,7 @@ All external data fetching in the SDK (RPC calls, subgraph queries, HTTP request
 Every class that fetches external data defines its fetchers as arrow-function properties named `query*`:
 
 ```typescript
-class EVaultOnchainDataSource {
+class EVaultOnchainAdapter {
   constructor(/* ... */, buildQuery?: BuildQueryFn) {
     if (buildQuery) applyBuildQuery(this, buildQuery);
   }
@@ -27,7 +27,7 @@ type BuildQueryFn = <T extends (...args: any[]) => Promise<any>>(
 ) => T;
 ```
 
-Pass `buildQuery` once when building the SDK — it propagates to every service and data source:
+Pass `buildQuery` once when building the SDK — it propagates to every service and adapter:
 
 ```typescript
 const sdk = await buildSDK({
@@ -149,35 +149,35 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 | `queryTokenList` | `TokenlistService` | Fetch token list from URL |
 | `querySwapQuotes` | `SwapService` | Fetch swap quotes from aggregator API |
 
-### Vault Data Sources
+### Vault Adapters
 
 | Query | Class | Description |
 |-------|-------|-------------|
-| `queryVaultInfoFull` | `EVaultOnchainDataSource` | Read full vault state via VaultLens |
-| `queryVerifiedArray` | `EVaultOnchainDataSource` | Read verified vault list from Perspective |
-| `queryEulerEarnVaultInfoFull` | `EulerEarnOnchainDataSource` | Read EulerEarn vault state via EulerEarnVaultLens |
-| `queryEulerEarnVerifiedArray` | `EulerEarnOnchainDataSource` | Read verified EulerEarn vault list |
-| `queryVaultInfoERC4626` | `SecuritizeVaultOnchainDataSource` | Read ERC4626 vault info |
-| `queryGovernorAdmin` | `SecuritizeVaultOnchainDataSource` | Read governor admin address |
-| `querySupplyCapResolved` | `SecuritizeVaultOnchainDataSource` | Read resolved supply cap |
-| `queryVaultFactories` | `VaultTypeSubgraphDataSource` | Query vault factory data from subgraph |
+| `queryVaultInfoFull` | `EVaultOnchainAdapter` | Read full vault state via VaultLens |
+| `queryVerifiedArray` | `EVaultOnchainAdapter` | Read verified vault list from Perspective |
+| `queryEulerEarnVaultInfoFull` | `EulerEarnOnchainAdapter` | Read EulerEarn vault state via EulerEarnVaultLens |
+| `queryEulerEarnVerifiedArray` | `EulerEarnOnchainAdapter` | Read verified EulerEarn vault list |
+| `queryVaultInfoERC4626` | `SecuritizeVaultOnchainAdapter` | Read ERC4626 vault info |
+| `queryGovernorAdmin` | `SecuritizeVaultOnchainAdapter` | Read governor admin address |
+| `querySupplyCapResolved` | `SecuritizeVaultOnchainAdapter` | Read resolved supply cap |
+| `queryVaultFactories` | `VaultTypeSubgraphAdapter` | Query vault factory data from subgraph |
 
-### Account Data Sources
-
-| Query | Class | Description |
-|-------|-------|-------------|
-| `queryEVCAccountInfo` | `AccountOnchainDataSource` | Read EVC account state (controllers, collaterals) |
-| `queryVaultAccountInfo` | `AccountOnchainDataSource` | Read per-vault account position |
-| `queryVaultInfoFull` | `AccountOnchainDataSource` | Read vault info for account context |
-| `queryAccountVaults` | `AccountVaultsSubgraphDataSource` | Query account vault history from subgraph |
-
-### Wallet Data Source
+### Account Adapters
 
 | Query | Class | Description |
 |-------|-------|-------------|
-| `queryBalanceOf` | `WalletOnchainDataSource` | Read ERC20 balance |
-| `queryAllowance` | `WalletOnchainDataSource` | Read ERC20 allowance |
-| `queryPermit2Allowance` | `WalletOnchainDataSource` | Read Permit2 allowance |
+| `queryEVCAccountInfo` | `AccountOnchainAdapter` | Read EVC account state (controllers, collaterals) |
+| `queryVaultAccountInfo` | `AccountOnchainAdapter` | Read per-vault account position |
+| `queryVaultInfoFull` | `AccountOnchainAdapter` | Read vault info for account context |
+| `queryAccountVaults` | `AccountVaultsSubgraphAdapter` | Query account vault history from subgraph |
+
+### Wallet Adapter
+
+| Query | Class | Description |
+|-------|-------|-------------|
+| `queryBalanceOf` | `WalletOnchainAdapter` | Read ERC20 balance |
+| `queryAllowance` | `WalletOnchainAdapter` | Read ERC20 allowance |
+| `queryPermit2Allowance` | `WalletOnchainAdapter` | Read Permit2 allowance |
 
 ### Price Service
 
@@ -190,10 +190,10 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 
 | Query | Class | Description |
 |-------|-------|-------------|
-| `queryEulerLabelsVaults` | `EulerLabelsURLDataSource` | Fetch vault labels from Euler API |
-| `queryEulerLabelsEntities` | `EulerLabelsURLDataSource` | Fetch entity labels from Euler API |
-| `queryEulerLabelsProducts` | `EulerLabelsURLDataSource` | Fetch product labels from Euler API |
-| `queryEulerLabelsPoints` | `EulerLabelsURLDataSource` | Fetch points labels from Euler API |
+| `queryEulerLabelsVaults` | `EulerLabelsURLAdapter` | Fetch vault labels from Euler API |
+| `queryEulerLabelsEntities` | `EulerLabelsURLAdapter` | Fetch entity labels from Euler API |
+| `queryEulerLabelsProducts` | `EulerLabelsURLAdapter` | Fetch product labels from Euler API |
+| `queryEulerLabelsPoints` | `EulerLabelsURLAdapter` | Fetch points labels from Euler API |
 
 ### Rewards Service
 
@@ -206,12 +206,12 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 
 | Query | Class | Description |
 |-------|-------|-------------|
-| `queryBatchSimulation` | `BatchSimulationDataSource` | Execute EVC batchSimulation via eth_call |
-| `queryPythUpdateData` | `PythPluginDataSource` | Fetch Pyth price update data from Hermes API |
-| `queryPythUpdateFee` | `PythPluginDataSource` | Read Pyth update fee from on-chain contract |
-| `queryCheckCredential` | `KeyringPluginDataSource` | Check keyring credential validity |
-| `queryPolicyId` | `KeyringPluginDataSource` | Read vault's keyring policy ID |
-| `queryKeyringAddress` | `KeyringPluginDataSource` | Read keyring contract address from vault |
+| `queryBatchSimulation` | `BatchSimulationAdapter` | Execute EVC batchSimulation via eth_call |
+| `queryPythUpdateData` | `PythPluginAdapter` | Fetch Pyth price update data from Hermes API |
+| `queryPythUpdateFee` | `PythPluginAdapter` | Read Pyth update fee from on-chain contract |
+| `queryCheckCredential` | `KeyringPluginAdapter` | Check keyring credential validity |
+| `queryPolicyId` | `KeyringPluginAdapter` | Read vault's keyring policy ID |
+| `queryKeyringAddress` | `KeyringPluginAdapter` | Read keyring contract address from vault |
 
 ### Not Wrapped (Internal Utilities)
 

@@ -1,4 +1,4 @@
-import { IAccountDataSource } from "../accountService.js";
+import { IAccountAdapter } from "../accountService.js";
 import { ProviderService } from "../../providerService/index.js";
 import { DeploymentService } from "../../deploymentService/index.js";
 import { type Address, type Abi, getAddress } from "viem";
@@ -6,27 +6,27 @@ import { IAccount, SubAccount } from "../../../entities/Account.js";
 import { EVault } from "../../../entities/EVault.js";
 import { VaultAccountInfo, EVCAccountInfo } from "./accountLensTypes.js";
 import { convertToSubAccount } from "./accountInfoConverter.js";
-import { AccountVaults } from "./accountVaultsSubgraphDataSource.js";
+import { AccountVaults } from "./accountVaultsSubgraphAdapter.js";
 import { accountLensAbi } from "./abis/accountLensAbi.js";
-import { vaultLensAbi } from "../../vaults/eVaultService/dataSources/abis/vaultLensAbi.js";
-import type { VaultInfoFull } from "../../vaults/eVaultService/dataSources/eVaultLensTypes.js";
-import { convertVaultInfoFullToIEVault } from "../../vaults/eVaultService/dataSources/vaultInfoConverter.js";
+import { vaultLensAbi } from "../../vaults/eVaultService/adapters/abis/vaultLensAbi.js";
+import type { VaultInfoFull } from "../../vaults/eVaultService/adapters/eVaultLensTypes.js";
+import { convertVaultInfoFullToIEVault } from "../../vaults/eVaultService/adapters/vaultInfoConverter.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js";
 import type { EulerPlugin, PluginBatchItems } from "../../../plugins/types.js";
-import { executeBatchSimulation, BatchSimulationDataSource } from "../../../plugins/batchSimulation.js";
+import { executeBatchSimulation, BatchSimulationAdapter } from "../../../plugins/batchSimulation.js";
 
-export interface IAccountVaultsDataSource {
+export interface IAccountVaultsAdapter {
   getAccountVaults(chainId: number, account: Address): Promise<AccountVaults>;
 }
 
-export class AccountOnchainDataSource implements IAccountDataSource {
+export class AccountOnchainAdapter implements IAccountAdapter {
   private plugins: EulerPlugin[] = [];
-  private batchSimulationDataSource?: BatchSimulationDataSource;
+  private batchSimulationAdapter?: BatchSimulationAdapter;
 
   constructor(
     private providerService: ProviderService,
     private deploymentService: DeploymentService,
-    private positionsDataSource: IAccountVaultsDataSource,
+    private positionsAdapter: IAccountVaultsAdapter,
     buildQuery?: BuildQueryFn,
   ) {
     if (buildQuery) applyBuildQuery(this, buildQuery);
@@ -40,16 +40,16 @@ export class AccountOnchainDataSource implements IAccountDataSource {
     this.deploymentService = deploymentService;
   }
 
-  setPositionsDataSource(positionsDataSource: IAccountVaultsDataSource): void {
-    this.positionsDataSource = positionsDataSource;
+  setPositionsAdapter(positionsAdapter: IAccountVaultsAdapter): void {
+    this.positionsAdapter = positionsAdapter;
   }
 
   setPlugins(plugins: EulerPlugin[]): void {
     this.plugins = plugins;
   }
 
-  setBatchSimulationDataSource(dataSource: BatchSimulationDataSource): void {
-    this.batchSimulationDataSource = dataSource;
+  setBatchSimulationAdapter(adapter: BatchSimulationAdapter): void {
+    this.batchSimulationAdapter = adapter;
   }
 
   queryEVCAccountInfo = async (
@@ -110,7 +110,7 @@ export class AccountOnchainDataSource implements IAccountDataSource {
     chainId: number,
     address: Address
   ): Promise<IAccount | undefined> {
-    const accountVaults = await this.positionsDataSource.getAccountVaults(chainId, address);
+    const accountVaults = await this.positionsAdapter.getAccountVaults(chainId, address);
     const subAccountAddresses = [...new Set(Object.keys(accountVaults).map((subAccountAddress) => getAddress(subAccountAddress)))];
 
     if (subAccountAddresses.length === 0) return undefined;
@@ -234,7 +234,7 @@ export class AccountOnchainDataSource implements IAccountDataSource {
               lensFunctionName: "getVaultAccountInfo",
               lensArgs: [subAccount, vault],
             },
-            this.batchSimulationDataSource,
+            this.batchSimulationAdapter,
           );
 
           if (result) return result;

@@ -1,4 +1,4 @@
-import { IEVaultDataSource } from "../eVaultService.js";
+import { IEVaultAdapter } from "../eVaultService.js";
 import { ProviderService } from "../../../providerService/index.js";
 import { DeploymentService } from "../../../deploymentService/index.js";
 import { type Address, type Abi } from "viem";
@@ -8,7 +8,7 @@ import { convertVaultInfoFullToIEVault } from "./vaultInfoConverter.js";
 import { vaultLensAbi } from "./abis/vaultLensAbi.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
 import type { EulerPlugin, PluginBatchItems } from "../../../../plugins/types.js";
-import { executeBatchSimulation, BatchSimulationDataSource } from "../../../../plugins/batchSimulation.js";
+import { executeBatchSimulation, BatchSimulationAdapter } from "../../../../plugins/batchSimulation.js";
 
 const verifiedArrayAbi = [
   {
@@ -20,9 +20,9 @@ const verifiedArrayAbi = [
   },
 ] as const;
 
-export class EVaultOnchainDataSource implements IEVaultDataSource {
+export class EVaultOnchainAdapter implements IEVaultAdapter {
   private plugins: EulerPlugin[] = [];
-  private batchSimulationDataSource?: BatchSimulationDataSource;
+  private batchSimulationAdapter?: BatchSimulationAdapter;
 
   constructor(private providerService: ProviderService, private deploymentService: DeploymentService, buildQuery?: BuildQueryFn) {
     if (buildQuery) applyBuildQuery(this, buildQuery);
@@ -40,8 +40,8 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
     this.plugins = plugins;
   }
 
-  setBatchSimulationDataSource(dataSource: BatchSimulationDataSource): void {
-    this.batchSimulationDataSource = dataSource;
+  setBatchSimulationAdapter(adapter: BatchSimulationAdapter): void {
+    this.batchSimulationAdapter = adapter;
   }
 
   queryVaultInfoFull = async (
@@ -114,7 +114,7 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
               lensFunctionName: "getVaultInfoFull",
               lensArgs: [eVault.address],
             },
-            this.batchSimulationDataSource,
+            this.batchSimulationAdapter,
           );
 
           if (!result) return eVault;

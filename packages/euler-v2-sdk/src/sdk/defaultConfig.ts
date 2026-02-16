@@ -1,11 +1,11 @@
 import { DeploymentServiceConfig } from "src/services/deploymentService/deploymentService.js"
-import { AccountVaultsSubgraphDataSourceConfig } from "../services/accountService/dataSources/accountVaultsSubgraphDataSource.js"
-import type { VaultTypeSubgraphDataSourceConfig } from "../services/vaults/vaultMetaService/index.js"
-import { EulerLabelsURLDataSourceConfig } from "../services/eulerLabelsService/index.js"
+import { AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter.js"
+import type { VaultTypeSubgraphAdapterConfig } from "../services/vaults/vaultMetaService/index.js"
+import { EulerLabelsURLAdapterConfig } from "../services/eulerLabelsService/index.js"
 import type { SwapServiceConfig } from "../services/swapService/index.js"
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js"
 
-export const defaultAccountVaultsDataSourceConfig: AccountVaultsSubgraphDataSourceConfig = {
+export const defaultAccountVaultsAdapterConfig: AccountVaultsSubgraphAdapterConfig = {
   subgraphURLs: {
     1: 'https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-mainnet/latest/gn',
     10: 'https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-optimism/latest/gn',
@@ -29,12 +29,12 @@ export const defaultAccountVaultsDataSourceConfig: AccountVaultsSubgraphDataSour
 }
 
 /** Same subgraph endpoints as account vaults; used by VaultMetaService to resolve vault type from factory. */
-export const defaultVaultTypeDataSourceConfig: VaultTypeSubgraphDataSourceConfig =
-  defaultAccountVaultsDataSourceConfig;
+export const defaultVaultTypeAdapterConfig: VaultTypeSubgraphAdapterConfig =
+  defaultAccountVaultsAdapterConfig;
 
 const EULER_LABELS_BASE = 'https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master';
 
-export const defaultEulerLabelsURLDataSourceConfig: EulerLabelsURLDataSourceConfig = {
+export const defaultEulerLabelsURLAdapterConfig: EulerLabelsURLAdapterConfig = {
   getEulerLabelsVaultsUrl: (chainId: number) => `${EULER_LABELS_BASE}/${chainId}/vaults.json`,
   getEulerLabelsEntitiesUrl: (chainId: number) => `${EULER_LABELS_BASE}/${chainId}/entities.json`,
   getEulerLabelsProductsUrl: (chainId: number) => `${EULER_LABELS_BASE}/${chainId}/products.json`,

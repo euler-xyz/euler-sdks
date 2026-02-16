@@ -9,7 +9,7 @@ import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 
-export interface ISecuritizeCollateralDataSource {
+export interface ISecuritizeCollateralAdapter {
   fetchVaults(
     chainId: number,
     vault: Address[]
@@ -39,12 +39,12 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
   private eulerLabelsService?: IEulerLabelsService;
 
   constructor(
-    private dataSource: ISecuritizeCollateralDataSource,
+    private adapter: ISecuritizeCollateralAdapter,
     private deploymentService: DeploymentService
   ) {}
 
-  setDataSource(dataSource: ISecuritizeCollateralDataSource): void {
-    this.dataSource = dataSource;
+  setAdapter(adapter: ISecuritizeCollateralAdapter): void {
+    this.adapter = adapter;
   }
 
   setDeploymentService(deploymentService: DeploymentService): void {
@@ -73,7 +73,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     vault: Address,
     options?: VaultFetchOptions
   ): Promise<SecuritizeCollateralVault> {
-    const vaults = await this.dataSource.fetchVaults(chainId, [vault]);
+    const vaults = await this.adapter.fetchVaults(chainId, [vault]);
     if (vaults.length === 0) {
       throw new Error(`Securitize vault not found for ${vault}`);
     }
@@ -95,7 +95,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     vaults: Address[],
     options?: VaultFetchOptions
   ): Promise<SecuritizeCollateralVault[]> {
-    const entities = (await this.dataSource.fetchVaults(chainId, vaults)).map(
+    const entities = (await this.adapter.fetchVaults(chainId, vaults)).map(
       (v) => new SecuritizeCollateralVault(v)
     );
     if (options?.populateMarketPrices) {

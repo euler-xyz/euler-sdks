@@ -69,9 +69,9 @@ export interface KeyringCredentialData {
   backdoor: Hex;
 }
 
-// ── Data source (injectable query pattern) ──
+// ── Adapter (injectable query pattern) ──
 
-export class KeyringPluginDataSource {
+export class KeyringPluginAdapter {
   constructor(buildQuery?: BuildQueryFn) {
     if (buildQuery) applyBuildQuery(this, buildQuery);
   }
@@ -146,7 +146,7 @@ function isKeyringHook(vault: EVault, hookTargets: Address[]): boolean {
 }
 
 export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
-  const dataSource = new KeyringPluginDataSource(config.buildQuery);
+  const adapter = new KeyringPluginAdapter(config.buildQuery);
 
   return {
     name: "keyring",
@@ -168,7 +168,7 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
           const hookTarget = vault.hooks.hookTarget;
 
           // Check if credential is already valid
-          const hasCredential = await dataSource.queryCheckCredential(
+          const hasCredential = await adapter.queryCheckCredential(
             ctx.provider,
             hookTarget,
             ctx.sender,
@@ -177,8 +177,8 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 
           // Read policyId and keyring address from hook target
           const [policyId, keyringAddress] = await Promise.all([
-            dataSource.queryPolicyId(ctx.provider, hookTarget),
-            dataSource.queryKeyringAddress(ctx.provider, hookTarget),
+            adapter.queryPolicyId(ctx.provider, hookTarget),
+            adapter.queryKeyringAddress(ctx.provider, hookTarget),
           ]);
 
           // Get credential data from consumer callback

@@ -2,12 +2,12 @@
 
 ## Overview
 
-The SDK follows a layered architecture where **services** create **entities** using **data sources**, which in turn make external calls via injectable [`query*` methods](./external-data-queries.md). Services compose with each other via the [population pattern](./cross-service-data-population.md) to progressively enrich entities with cross-domain data.
+The SDK follows a layered architecture where **services** create **entities** using **adapters**, which in turn make external calls via injectable [`query*` methods](./external-data-queries.md). Services compose with each other via the [population pattern](./cross-service-data-population.md) to progressively enrich entities with cross-domain data.
 
 ```
 query* methods          Lowest level — individual network calls (RPC, subgraph, HTTP)
     ↓
-Data Sources            Combine queries, convert raw responses into entity interfaces (I*)
+Adapters                Combine queries, convert raw responses into entity interfaces (I*)
     ↓
 Services                Construct entity class instances, orchestrate populations
     ↓
@@ -20,7 +20,7 @@ Every boundary is an interface, making each layer swappable and testable indepen
 
 Entities are the SDK's domain objects. Each entity has two parts:
 
-- **`I<Entity>` interface** — plain serializable data shape (e.g. `IEVault`, `IAccount`). This is what data sources return.
+- **`I<Entity>` interface** — plain serializable data shape (e.g. `IEVault`, `IAccount`). This is what adapters return.
 - **Entity class** — implements the interface and adds methods: conversions, computed properties, `populate*` methods.
 
 ### Entity hierarchy
@@ -51,35 +51,35 @@ await vault.populateMarketPrices(priceService)
 
 Some properties are derived from populated data. For example, `Account` attaches computed getters (`healthFactor`, `currentLTV`, `liquidationLTV`, `netValueUsd`) that calculate from position data and USD prices. These **depend on prior population** — e.g. `netValueUsd` requires that vaults have been populated with market prices first. If the underlying data hasn't been populated, computed values may be `undefined` or zero.
 
-## Data Sources
+## Adapters
 
-Data sources are the SDK's I/O boundary. They implement focused interfaces (e.g. `IEVaultDataSource`, `IAccountDataSource`) and handle all external communication. Services never make network calls directly.
+Adapters are the SDK's I/O boundary. They implement focused interfaces (e.g. `IEVaultAdapter`, `IAccountAdapter`) and handle all external communication. Services never make network calls directly.
 
-### Types of data sources
+### Types of adapters
 
 | Type | Examples | Reads from |
 |------|----------|------------|
-| **Onchain** | `EVaultOnchainDataSource`, `AccountOnchainDataSource`, `WalletOnchainDataSource` | Lens contracts via RPC (`VaultLens`, `AccountLens`, `UtilsLens`) |
-| **Subgraph** | `VaultTypeSubgraphDataSource`, `AccountVaultsSubgraphDataSource` | The Graph (indexed chain data — vault factories, account vault history) |
-| **Backend / API** | `PricingBackendClient`, `EulerLabelsURLDataSource` | REST APIs (pricing, labels, rewards) |
+| **Onchain** | `EVaultOnchainAdapter`, `AccountOnchainAdapter`, `WalletOnchainAdapter` | Lens contracts via RPC (`VaultLens`, `AccountLens`, `UtilsLens`) |
+| **Subgraph** | `VaultTypeSubgraphAdapter`, `AccountVaultsSubgraphAdapter` | The Graph (indexed chain data — vault factories, account vault history) |
+| **Backend / API** | `PricingBackendClient`, `EulerLabelsURLAdapter` | REST APIs (pricing, labels, rewards) |
 
-### Data source → entity interface
+### Adapter → entity interface
 
-Each onchain data source has a companion **converter function** that transforms raw Lens structs into the `I*` entity interface:
+Each onchain adapter has a companion **converter function** that transforms raw Lens structs into the `I*` entity interface:
 
 ```
 VaultLens RPC response  →  convertVaultInfoFullToIEVault()  →  IEVault
 AccountLens RPC response  →  convertToSubAccount()          →  SubAccount
 ```
 
-This keeps data sources thin and conversion logic pure and testable.
+This keeps adapters thin and conversion logic pure and testable.
 
 ### Query methods
 
-All external calls within data sources are defined as `query*` arrow-function properties. The [`BuildQueryFn`](./external-data-queries.md) decorator wraps every `query*` method at construction time, enabling global caching, logging, or profiling without modifying SDK internals.
+All external calls within adapters are defined as `query*` arrow-function properties. The [`BuildQueryFn`](./external-data-queries.md) decorator wraps every `query*` method at construction time, enabling global caching, logging, or profiling without modifying SDK internals.
 
 ```typescript
-class EVaultOnchainDataSource {
+class EVaultOnchainAdapter {
   queryVaultInfoFull = async (provider, lensAddress, vault) => {
     return provider.readContract({ ... })
   }
@@ -90,15 +90,15 @@ class EVaultOnchainDataSource {
 
 Services are the primary API surface. Each service:
 
-1. Receives a **data source** via constructor injection
-2. Calls the data source to get `I*` plain data
+1. Receives an **adapter** via constructor injection
+2. Calls the adapter to get `I*` plain data
 3. Constructs the entity class instance
 4. Optionally runs populations based on `FetchOptions` flags
 
 ```typescript
 // Inside EVaultService.fetchVault():
-const data = await this.dataSource.fetchVaults(chainId, [address])  // → IEVault[]
-const vault = new EVault(data[0])                                    // construct entity
+const data = await this.adapter.fetchVaults(chainId, [address])  // → IEVault[]
+const vault = new EVault(data[0])                                 // construct entity
 if (options?.populateCollaterals) await this.populateCollaterals([vault])
 if (options?.populateMarketPrices) await this.populateMarketPrices([vault])
 return vault
@@ -132,16 +132,16 @@ See [Cross-Service Data Population](./cross-service-data-population.md) for the 
 `buildSDK()` is the composition root that constructs the full dependency graph:
 
 1. **Core infrastructure** — `ProviderService` (RPC clients), `DeploymentService` (chain addresses), `ABIService`
-2. **Data sources** — each constructed with `ProviderService`, `DeploymentService`, and optional `buildQuery`
-3. **Typed vault services** — `EVaultService`, `EulerEarnService`, `SecuritizeVaultService`, each with their data source
-4. **VaultMetaService** — wraps all vault services + `VaultTypeSubgraphDataSource`
-5. **AccountService** — depends on `AccountOnchainDataSource` + `VaultMetaService`
+2. **Adapters** — each constructed with `ProviderService`, `DeploymentService`, and optional `buildQuery`
+3. **Typed vault services** — `EVaultService`, `EulerEarnService`, `SecuritizeVaultService`, each with their adapter
+4. **VaultMetaService** — wraps all vault services + `VaultTypeSubgraphAdapter`
+5. **AccountService** — depends on `AccountOnchainAdapter` + `VaultMetaService`
 6. **Support services** — `PriceService`, `RewardsService`, `EulerLabelsService`, `WalletService`, etc.
 7. **Post-construction wiring** — setter-based cross-service injection (`setPriceService`, `setRewardsService`, etc.)
 
 ## Flexibility and Customization
 
-The interface-based design makes the SDK highly flexible. Every service and data source can be swapped, composed, or run in parallel.
+The interface-based design makes the SDK highly flexible. Every service and adapter can be swapped, composed, or run in parallel.
 
 ### Service overrides
 
@@ -157,15 +157,15 @@ const sdk = await buildSDK({
 })
 ```
 
-### Custom data source implementations
+### Custom adapter implementations
 
-Since services depend on data source **interfaces**, you can provide alternative implementations. For example, a meta data source for accounts that tries a backend first and falls back to on-chain:
+Since services depend on adapter **interfaces**, you can provide alternative implementations. For example, a meta adapter for accounts that tries a backend first and falls back to on-chain:
 
 ```typescript
-class AccountBackendWithFallbackDataSource implements IAccountDataSource {
+class AccountBackendWithFallbackAdapter implements IAccountAdapter {
   constructor(
-    private backend: AccountBackendDataSource,
-    private onchain: AccountOnchainDataSource,
+    private backend: AccountBackendAdapter,
+    private onchain: AccountOnchainAdapter,
   ) {}
 
   async fetchAccount(chainId: number, address: Address) {
@@ -178,7 +178,7 @@ class AccountBackendWithFallbackDataSource implements IAccountDataSource {
 }
 ```
 
-This pattern works for any data source interface in the SDK.
+This pattern works for any adapter interface in the SDK.
 
 ### Multiple parallel SDK or service instances
 
@@ -187,15 +187,15 @@ Because services are plain objects with injected dependencies, you can run multi
 **Separate services for different use cases:**
 
 ```typescript
-// Vault service with backend data source + long cache for vault table / stats display
+// Vault service with backend adapter + long cache for vault table / stats display
 const tableVaultService = new EVaultService(
-  backendVaultDataSource,  // backed by cached HTTP API
+  backendVaultAdapter,  // backed by cached HTTP API
   deploymentService,
 )
 
 // Vault service with fresh on-chain data for portfolio / active position management
 const portfolioVaultService = new EVaultService(
-  new EVaultOnchainDataSource(providerService, deploymentService, shortCacheBuildQuery),
+  new EVaultOnchainAdapter(providerService, deploymentService, shortCacheBuildQuery),
   deploymentService,
 )
 ```
@@ -247,19 +247,19 @@ Putting it all together — fetching an account with full resolution:
 ```
 accountService.fetchAccount(chainId, owner, { populateVaults: true, populateMarketPrices: true })
   │
-  ├─ AccountVaultsSubgraphDataSource.queryAccountVaults()     ← subgraph
+  ├─ AccountVaultsSubgraphAdapter.queryAccountVaults()       ← subgraph
   │    → list of vault addresses per sub-account
   │
-  ├─ AccountOnchainDataSource.queryEVCAccountInfo()           ← RPC (AccountLens)
-  ├─ AccountOnchainDataSource.queryVaultAccountInfo() × N     ← RPC (AccountLens)
+  ├─ AccountOnchainAdapter.queryEVCAccountInfo()             ← RPC (AccountLens)
+  ├─ AccountOnchainAdapter.queryVaultAccountInfo() × N       ← RPC (AccountLens)
   │    → convertToSubAccount() → IAccount
   │    → new Account(data)
   │
   ├─ account.populateVaults(vaultMetaService)
-  │    ├─ VaultTypeSubgraphDataSource.queryVaultFactories()   ← subgraph
+  │    ├─ VaultTypeSubgraphAdapter.queryVaultFactories()     ← subgraph
   │    │    → route addresses to correct services
-  │    ├─ EVaultOnchainDataSource.queryVaultInfoFull()        ← RPC (VaultLens)
-  │    ├─ EulerEarnOnchainDataSource.queryEulerEarnVaultInfoFull() ← RPC
+  │    ├─ EVaultOnchainAdapter.queryVaultInfoFull()          ← RPC (VaultLens)
+  │    ├─ EulerEarnOnchainAdapter.queryEulerEarnVaultInfoFull() ← RPC
   │    │    → convert, construct typed entities
   │    └─ assign vault entities to position.vault fields
   │

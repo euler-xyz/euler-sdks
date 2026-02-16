@@ -1,19 +1,19 @@
 import { Address, getAddress } from "viem";
 import type {
-  IVaultTypeDataSource,
+  IVaultTypeAdapter,
   VaultFactoryResult,
-} from "./IVaultTypeDataSource.js";
+} from "./IVaultTypeAdapter.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
 
-export interface VaultTypeSubgraphDataSourceConfig {
+export interface VaultTypeSubgraphAdapterConfig {
   subgraphURLs: Record<number, string>;
 }
 
 const PAGE_SIZE = 1000;
 
-export class VaultTypeSubgraphDataSource implements IVaultTypeDataSource {
+export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
   constructor(
-    private readonly config: VaultTypeSubgraphDataSourceConfig,
+    private readonly config: VaultTypeSubgraphAdapterConfig,
     buildQuery?: BuildQueryFn,
   ) {
     if (buildQuery) applyBuildQuery(this, buildQuery);

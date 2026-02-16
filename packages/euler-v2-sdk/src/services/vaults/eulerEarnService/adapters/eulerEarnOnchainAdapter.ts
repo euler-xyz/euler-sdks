@@ -1,4 +1,4 @@
-import { IEulerEarnDataSource } from "../eulerEarnService.js";
+import { IEulerEarnAdapter } from "../eulerEarnService.js";
 import { ProviderService } from "../../../providerService/index.js";
 import { DeploymentService } from "../../../deploymentService/index.js";
 import { Address } from "viem";
@@ -18,7 +18,7 @@ const verifiedArrayAbi = [
   },
 ] as const;
 
-export class EulerEarnOnchainDataSource implements IEulerEarnDataSource {
+export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
   constructor(
     private providerService: ProviderService,
     private deploymentService: DeploymentService,

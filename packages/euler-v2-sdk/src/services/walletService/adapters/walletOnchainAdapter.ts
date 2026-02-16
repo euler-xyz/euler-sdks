@@ -1,4 +1,4 @@
-import { IWalletDataSource, AssetWithSpenders } from "../walletService.js";
+import { IWalletAdapter, AssetWithSpenders } from "../walletService.js";
 import { ProviderService } from "../../providerService/index.js";
 import { DeploymentService } from "../../deploymentService/index.js";
 import { Address, getAddress, erc20Abi } from "viem";
@@ -24,7 +24,7 @@ const permit2AllowanceAbi = [
   },
 ] as const;
 
-export class WalletOnchainDataSource implements IWalletDataSource {
+export class WalletOnchainAdapter implements IWalletAdapter {
   constructor(
     private providerService: ProviderService,
     private deploymentService: DeploymentService,

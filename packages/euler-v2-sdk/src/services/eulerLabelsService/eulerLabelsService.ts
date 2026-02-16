@@ -3,7 +3,7 @@ import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
 import { Address } from "viem";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 
-export interface IEulerLabelsDataSource {
+export interface IEulerLabelsAdapter {
   getEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>>;
   getEulerLabelsEntities(chainId: number): Promise<Record<string, EulerLabelEntity>>;
   getEulerLabelsProducts(chainId: number): Promise<Record<string, EulerLabelProduct>>;
@@ -21,12 +21,12 @@ export interface IEulerLabelsService {
 
 export class EulerLabelsService implements IEulerLabelsService {
     constructor(
-      private dataSource: IEulerLabelsDataSource,
+      private adapter: IEulerLabelsAdapter,
       private resolveLogoUrlFn?: (filename: string) => string,
     ) {}
 
-    setDataSource(dataSource: IEulerLabelsDataSource): void {
-      this.dataSource = dataSource;
+    setAdapter(adapter: IEulerLabelsAdapter): void {
+      this.adapter = adapter;
     }
 
     resolveLogoUrl(filename: string): string {
@@ -34,16 +34,16 @@ export class EulerLabelsService implements IEulerLabelsService {
     }
 
     async getEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>> {
-        return this.dataSource.getEulerLabelsVaults(chainId);
+        return this.adapter.getEulerLabelsVaults(chainId);
     }
     async getEulerLabelsEntities(chainId: number): Promise<Record<string, EulerLabelEntity>> {
-        return this.dataSource.getEulerLabelsEntities(chainId);
+        return this.adapter.getEulerLabelsEntities(chainId);
     }
     async getEulerLabelsProducts(chainId: number): Promise<Record<string, EulerLabelProduct>> {
-        return this.dataSource.getEulerLabelsProducts(chainId);
+        return this.adapter.getEulerLabelsProducts(chainId);
     }
     async getEulerLabelsPoints(chainId: number): Promise<EulerLabelPoint[]> {
-        return this.dataSource.getEulerLabelsPoints(chainId);
+        return this.adapter.getEulerLabelsPoints(chainId);
     }
 
     async populateLabels(vaults: ERC4626Vault[]): Promise<void> {
@@ -128,7 +128,7 @@ export class EulerLabelsService implements IEulerLabelsService {
     }
 }
 
-export interface EulerLabelsURLDataSourceConfig {
+export interface EulerLabelsURLAdapterConfig {
   getEulerLabelsVaultsUrl: (chainId: number) => string;
   getEulerLabelsEntitiesUrl: (chainId: number) => string;
   getEulerLabelsProductsUrl: (chainId: number) => string;
@@ -136,9 +136,9 @@ export interface EulerLabelsURLDataSourceConfig {
   getEulerLabelsEarnVaultsUrl: (chainId: number) => string;
   getEulerLabelsLogoUrl: (filename: string) => string;
 }
-export class EulerLabelsURLDataSource implements IEulerLabelsDataSource {
+export class EulerLabelsURLAdapter implements IEulerLabelsAdapter {
   constructor(
-    private readonly config: EulerLabelsURLDataSourceConfig,
+    private readonly config: EulerLabelsURLAdapterConfig,
     buildQuery?: BuildQueryFn,
   ) {
     if (buildQuery) applyBuildQuery(this, buildQuery);

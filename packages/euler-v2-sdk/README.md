@@ -351,7 +351,7 @@ interface CustomVault {
 type ExtendedVaultEntity = VaultEntity | CustomVault;
 
 const meta = new VaultMetaService<ExtendedVaultEntity>({
-  vaultTypeDataSource: myVaultTypeDataSource,
+  vaultTypeAdapter: myVaultTypeAdapter,
   vaultServices: [
     { type: 'EVault', service: eVaultService },
     { type: 'EulerEarn', service: eulerEarnService },
@@ -624,19 +624,19 @@ descriptions.forEach(desc => {
 
 ## Advanced Configuration
 
-### Custom Data Sources
+### Custom Adapters
 
-You can override default data sources:
+You can override default adapters:
 
 ```typescript
 const sdk = await buildSDK({
   rpcUrls,
-  accountVaultsDataSourceConfig: {
+  accountVaultsAdapterConfig: {
     subgraphURLs: {
       [mainnet.id]: 'https://your-custom-subgraph.com'
     }
   },
-  eulerLabelsDataSourceConfig: {
+  eulerLabelsAdapterConfig: {
     labelsBaseUrl: 'https://your-labels-url.com'
   },
   swapServiceConfig: {

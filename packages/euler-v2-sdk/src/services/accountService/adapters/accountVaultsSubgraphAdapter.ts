@@ -1,5 +1,5 @@
 import { Address, getAddress } from "viem";
-import { IAccountVaultsDataSource } from "./accountOnchainDataSource.js";
+import { IAccountVaultsAdapter } from "./accountOnchainAdapter.js";
 import { getAddressPrefix } from "../../../utils/subAccounts.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js";
 
@@ -10,13 +10,13 @@ export interface AccountVaults {
   };
 }
 
-export interface AccountVaultsSubgraphDataSourceConfig {
+export interface AccountVaultsSubgraphAdapterConfig {
   subgraphURLs: Record<number, string>;
 }
 
-export class AccountVaultsSubgraphDataSource implements IAccountVaultsDataSource {
+export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
   constructor(
-    private readonly config: AccountVaultsSubgraphDataSourceConfig,
+    private readonly config: AccountVaultsSubgraphAdapterConfig,
     buildQuery?: BuildQueryFn,
   ) {
     if (buildQuery) applyBuildQuery(this, buildQuery);

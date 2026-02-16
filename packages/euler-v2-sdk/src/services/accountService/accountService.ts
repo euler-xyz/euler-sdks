@@ -27,7 +27,7 @@ function collectVaultAddressesFromSubAccountPositionsAndLiquidity(sa: SubAccount
   return Array.from(set, (s) => s as Address);
 }
 
-export interface IAccountDataSource {
+export interface IAccountAdapter {
   fetchAccount(chainId: number, address: Address): Promise<IAccount | undefined>;
   fetchSubAccount(
     chainId: number,
@@ -51,13 +51,13 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
   implements IAccountService<TVaultEntity>
 {
   constructor(
-    private dataSource: IAccountDataSource,
+    private adapter: IAccountAdapter,
     private vaultMetaService: IVaultMetaService<TVaultEntity>,
     private priceService?: IPriceService
   ) {}
 
-  setDataSource(dataSource: IAccountDataSource): void {
-    this.dataSource = dataSource;
+  setAdapter(adapter: IAccountAdapter): void {
+    this.adapter = adapter;
   }
 
   setVaultMetaService(vaultMetaService: IVaultMetaService<TVaultEntity>): void {
@@ -69,7 +69,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
   }
 
   async fetchAccount(chainId: number, address: Address, options?: AccountFetchOptions): Promise<Account<TVaultEntity>> {
-    const accountData = await this.dataSource.fetchAccount(chainId, address);
+    const accountData = await this.adapter.fetchAccount(chainId, address);
     const account: Account<never> = accountData
       ? new Account(accountData)
       : new Account({
@@ -100,7 +100,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     vaults?: Address[],
     options?: AccountFetchOptions
   ): Promise<SubAccount<TVaultEntity> | undefined> {
-    const sa = await this.dataSource.fetchSubAccount(chainId, subAccount, vaults);
+    const sa = await this.adapter.fetchSubAccount(chainId, subAccount, vaults);
     if (!sa) return undefined;
 
     if (options?.populateVaults === false) {

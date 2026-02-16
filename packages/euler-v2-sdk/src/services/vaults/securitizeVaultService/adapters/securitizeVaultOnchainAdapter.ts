@@ -1,4 +1,4 @@
-import type { ISecuritizeCollateralDataSource } from "../securitizeVaultService.js";
+import type { ISecuritizeCollateralAdapter } from "../securitizeVaultService.js";
 import { ProviderService } from "../../../providerService/index.js";
 import { DeploymentService } from "../../../deploymentService/index.js";
 import { Address } from "viem";
@@ -9,8 +9,8 @@ import { utilsLensAbi } from "./abis/utilsLensAbi.js";
 import { erc4626EvcCollateralSecuritizeAbi } from "./abis/erc4626EvcCollateralSecuritizeAbi.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
 
-export class SecuritizeVaultOnchainDataSource
-  implements ISecuritizeCollateralDataSource
+export class SecuritizeVaultOnchainAdapter
+  implements ISecuritizeCollateralAdapter
 {
   constructor(
     private providerService: ProviderService,

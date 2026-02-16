@@ -3,7 +3,7 @@
 
 import { Address } from "viem";
 import { OracleInfo, OraclePrice } from "../utils/oracle.js";
-import { InterestRateModelType } from "../services/vaults/eVaultService/dataSources/eVaultLensTypes.js";
+import { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultLensTypes.js";
 import { Token } from "../utils/types.js";
 import { IRMParams } from "../utils/irm.js";
 import { ERC4626Vault, IERC4626Vault, IERC4626VaultConversion, VIRTUAL_DEPOSIT_AMOUNT, type PriceWad } from "./ERC4626Vault.js";

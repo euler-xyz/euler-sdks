@@ -1,7 +1,7 @@
 export {
   SecuritizeVaultService,
   ISecuritizeVaultService,
-  ISecuritizeCollateralDataSource,
+  ISecuritizeCollateralAdapter,
   type StandardSecuritizeCollateralPerspectives,
 } from "./securitizeVaultService.js";
-export { SecuritizeVaultOnchainDataSource } from "./dataSources/securitizeVaultOnchainDataSource.js";
+export { SecuritizeVaultOnchainAdapter } from "./adapters/securitizeVaultOnchainAdapter.js";

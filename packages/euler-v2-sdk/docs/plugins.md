@@ -27,7 +27,7 @@ const sdk = await buildSDK({
 })
 ```
 
-The SDK wires read-path plugins into the onchain data source (where the actual chain calls happen) and makes them available on the `sdk.plugins` array and through `sdk.processPlugins()`.
+The SDK wires read-path plugins into the onchain adapter (where the actual chain calls happen) and makes them available on the `sdk.plugins` array and through `sdk.processPlugins()`.
 
 ### Hooks
 

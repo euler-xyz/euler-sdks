@@ -4,7 +4,7 @@ import { EulerEarn } from "../../../entities/EulerEarn.js";
 import { SecuritizeCollateralVault } from "../../../entities/SecuritizeCollateralVault.js";
 import { VaultType } from "../../../utils/types.js";
 import type { IVaultService, VaultFetchOptions } from "../index.js";
-import type { IVaultTypeDataSource } from "./dataSources/IVaultTypeDataSource.js";
+import type { IVaultTypeAdapter } from "./adapters/IVaultTypeAdapter.js";
 import { StandardEVaultPerspectives } from "../eVaultService/index.js";
 import { StandardEulerEarnPerspectives } from "../eulerEarnService/index.js";
 
@@ -60,7 +60,7 @@ export interface IVaultMetaService<TEntity = VaultEntity>
 }
 
 export interface VaultMetaServiceConfig<TEntity = VaultEntity> {
-  vaultTypeDataSource: IVaultTypeDataSource;
+  vaultTypeAdapter: IVaultTypeAdapter;
   /** Initial vault services. Use { type, service } to register a vault type for getFactoryByType(chainId, type). */
   vaultServices?: VaultServiceEntry<TEntity>[];
 }
@@ -83,8 +83,8 @@ export class VaultMetaService<TEntity = VaultEntity>
     }
   }
 
-  setVaultTypeDataSource(dataSource: IVaultTypeDataSource): void {
-    this.config = { ...this.config, vaultTypeDataSource: dataSource };
+  setVaultTypeAdapter(adapter: IVaultTypeAdapter): void {
+    this.config = { ...this.config, vaultTypeAdapter: adapter };
   }
 
   /** Register a vault service; use { type, service } to make the type available to getFactoryByType(chainId, type). */
@@ -117,7 +117,7 @@ export class VaultMetaService<TEntity = VaultEntity>
     vaultAddresses: Address[]
   ): Promise<Map<Address, RegisteredVaultService<TEntity>>> {
     if (vaultAddresses.length === 0) return new Map();
-    const results = await this.config.vaultTypeDataSource.getVaultFactories(
+    const results = await this.config.vaultTypeAdapter.getVaultFactories(
       chainId,
       vaultAddresses
     );
