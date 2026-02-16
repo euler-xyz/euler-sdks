@@ -33,6 +33,8 @@ import { VaultType } from "../utils/types.js";
 import type { VaultTypeSubgraphDataSourceConfig } from "../services/vaults/vaultMetaService/index.js";
 import type { IVaultEntity } from "../entities/Account.js";
 import type { BuildQueryFn } from "../utils/buildQuery.js";
+import type { EulerPlugin } from "../plugins/types.js";
+import { BatchSimulationDataSource } from "../plugins/batchSimulation.js";
 
 export interface BuildSDKOverrides<TVaultEntity extends IVaultEntity = VaultEntity> {
   abiService?: IABIService;
@@ -65,13 +67,15 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   rewardsServiceConfig?: RewardsServiceConfig;
   /** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
   buildQuery?: BuildQueryFn;
+  /** Plugins that enrich on-chain reads (via batchSimulation) and transaction plans (via processPlan). */
+  plugins?: EulerPlugin[];
   servicesOverrides?: BuildSDKOverrides<TVaultEntity>;
 }
 
 export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   options: BuildSDKOptions<TVaultEntity>
 ): Promise<EulerSDK<TVaultEntity>> {
-  const { rpcUrls, accountVaultsDataSourceConfig, vaultTypeDataSourceConfig, additionalVaultServices, eulerLabelsDataSourceConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, buildQuery, servicesOverrides } = options;
+  const { rpcUrls, accountVaultsDataSourceConfig, vaultTypeDataSourceConfig, additionalVaultServices, eulerLabelsDataSourceConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, buildQuery, plugins, servicesOverrides } = options;
 
   // Build core services (these may be needed for data sources even if overridden)
   const abiService = servicesOverrides?.abiService ?? new ABIService(buildQuery);
@@ -102,10 +106,11 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
 
   // Build eVault service if not overridden
   let eVaultService: IEVaultService;
+  let eVaultDataSource: EVaultOnchainDataSource | undefined;
   if (servicesOverrides?.eVaultService) {
     eVaultService = servicesOverrides.eVaultService;
   } else {
-    const eVaultDataSource = new EVaultOnchainDataSource(
+    eVaultDataSource = new EVaultOnchainDataSource(
       providerService as ProviderService,
       deploymentService as DeploymentService,
       buildQuery,
@@ -176,6 +181,17 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   // Wire vaultMetaService into eVaultService for collateral resolution
   if (eVaultService instanceof EVaultService) {
     eVaultService.setVaultMetaService(vaultMetaService as IVaultMetaService);
+  }
+
+  // Wire plugins into onchain data sources for read-path enrichment
+  if (plugins?.length) {
+    const pluginBatchSimDs = new BatchSimulationDataSource(buildQuery);
+    if (eVaultDataSource) {
+      eVaultDataSource.setPlugins(plugins);
+      eVaultDataSource.setBatchSimulationDataSource(pluginBatchSimDs);
+    }
+    accountDataSource.setPlugins(plugins);
+    accountDataSource.setBatchSimulationDataSource(pluginBatchSimDs);
   }
 
   // Build account service if not overridden (requires vaultMetaService for fetchAccountWithVaults / fetchVaults)
@@ -268,5 +284,6 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
     executionService,
     priceService,
     rewardsService,
+    plugins,
   });
 }

@@ -1,4 +1,4 @@
-import { Address } from "viem";
+import { type Address } from "viem";
 import { EVault, IEVault } from "../../../entities/EVault.js";
 import { DeploymentService } from "../../deploymentService/index.js";
 import type { IVaultService, VaultFetchOptions } from "../index.js";
@@ -82,6 +82,7 @@ export class EVaultService implements IEVaultService {
       throw new Error(`Vault not found for ${vault}`);
     }
     const eVault = new EVault(vaults[0]!);
+
     if (options?.populateCollaterals) {
       await this.populateCollaterals([eVault]);
     }
@@ -101,6 +102,7 @@ export class EVaultService implements IEVaultService {
     const eVaults = (await this.dataSource.fetchVaults(chainId, vaults)).map(
       (vault) => new EVault(vault)
     );
+
     if (options?.populateCollaterals) {
       await this.populateCollaterals(eVaults);
     }

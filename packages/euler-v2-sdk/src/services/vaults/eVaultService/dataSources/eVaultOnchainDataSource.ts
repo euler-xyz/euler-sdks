@@ -1,12 +1,14 @@
 import { IEVaultDataSource } from "../eVaultService.js";
 import { ProviderService } from "../../../providerService/index.js";
 import { DeploymentService } from "../../../deploymentService/index.js";
-import { Address } from "viem";
+import { type Address, type Abi } from "viem";
 import { EVault, IEVault } from "../../../../entities/EVault.js";
 import { VaultInfoFull } from "./eVaultLensTypes.js";
 import { convertVaultInfoFullToIEVault } from "./vaultInfoConverter.js";
 import { vaultLensAbi } from "./abis/vaultLensAbi.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
+import type { EulerPlugin, PluginBatchItems } from "../../../../plugins/types.js";
+import { executeBatchSimulation, BatchSimulationDataSource } from "../../../../plugins/batchSimulation.js";
 
 const verifiedArrayAbi = [
   {
@@ -19,6 +21,9 @@ const verifiedArrayAbi = [
 ] as const;
 
 export class EVaultOnchainDataSource implements IEVaultDataSource {
+  private plugins: EulerPlugin[] = [];
+  private batchSimulationDataSource?: BatchSimulationDataSource;
+
   constructor(private providerService: ProviderService, private deploymentService: DeploymentService, buildQuery?: BuildQueryFn) {
     if (buildQuery) applyBuildQuery(this, buildQuery);
   }
@@ -31,10 +36,19 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
     this.deploymentService = deploymentService;
   }
 
+  setPlugins(plugins: EulerPlugin[]): void {
+    this.plugins = plugins;
+  }
+
+  setBatchSimulationDataSource(dataSource: BatchSimulationDataSource): void {
+    this.batchSimulationDataSource = dataSource;
+  }
+
   queryVaultInfoFull = async (
     provider: ReturnType<ProviderService["getProvider"]>,
     vaultLensAddress: Address,
-    vault: Address
+    vault: Address,
+    _options?: { pluginPreRead?: boolean },
   ) => {
     return provider.readContract({
       address: vaultLensAddress,
@@ -65,17 +79,73 @@ export class EVaultOnchainDataSource implements IEVaultDataSource {
 
   async fetchVaults(chainId: number, vaults: Address[]): Promise<IEVault[]> {
     const provider = this.providerService.getProvider(chainId);
-    const vaultLensAddress = this.deploymentService.getDeployment(chainId).addresses.lensAddrs.vaultLens;
+    const deployment = this.deploymentService.getDeployment(chainId);
+    const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
+
+    const pluginPreRead = this.plugins.length > 0;
     const results = await Promise.all(
-      vaults.map(vault => this.queryVaultInfoFull(provider, vaultLensAddress, vault))
+      vaults.map(vault => this.queryVaultInfoFull(provider, vaultLensAddress, vault, { pluginPreRead }))
     );
 
-    const parsedVaults: IEVault[] = results.map((result, idx) => {
+    const parsedVaults: IEVault[] = results.map((result) => {
       const vaultInfo = result as unknown as VaultInfoFull;
       return convertVaultInfoFullToIEVault(vaultInfo, chainId);
     });
 
-    return parsedVaults.map(vault => new EVault(vault));
+    const eVaults = parsedVaults.map(vault => new EVault(vault));
+
+    // Plugin enrichment: re-fetch vaults via batchSimulation when plugins provide prepend items
+    if (this.plugins.length === 0) return eVaults;
+
+    const enriched = await Promise.all(
+      eVaults.map(async (eVault) => {
+        try {
+          const prepend = await this.collectReadPrepend(chainId, [eVault]);
+          if (!prepend || prepend.items.length === 0) return eVault;
+
+          const result = await executeBatchSimulation<VaultInfoFull>(
+            {
+              provider,
+              evcAddress: deployment.addresses.coreAddrs.evc,
+              prependItems: prepend.items,
+              totalValue: prepend.totalValue,
+              lensAddress: vaultLensAddress,
+              lensAbi: vaultLensAbi as unknown as Abi,
+              lensFunctionName: "getVaultInfoFull",
+              lensArgs: [eVault.address],
+            },
+            this.batchSimulationDataSource,
+          );
+
+          if (!result) return eVault;
+          return new EVault(convertVaultInfoFullToIEVault(result, chainId));
+        } catch {
+          return eVault;
+        }
+      }),
+    );
+
+    return enriched;
+  }
+
+  private async collectReadPrepend(chainId: number, vaults: EVault[]): Promise<PluginBatchItems | null> {
+    const provider = this.providerService.getProvider(chainId);
+    const allItems: PluginBatchItems = { items: [], totalValue: 0n };
+
+    for (const plugin of this.plugins) {
+      if (!plugin.getReadPrepend) continue;
+      try {
+        const result = await plugin.getReadPrepend({ chainId, vaults, provider });
+        if (result) {
+          allItems.items.push(...result.items);
+          allItems.totalValue += result.totalValue;
+        }
+      } catch {
+        // Plugin failed — skip it gracefully
+      }
+    }
+
+    return allItems.items.length > 0 ? allItems : null;
   }
 
   async fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]> {

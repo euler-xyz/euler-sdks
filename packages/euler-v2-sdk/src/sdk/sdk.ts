@@ -17,6 +17,8 @@ import { IExecutionService } from "../services/executionService/index.js";
 import { IWalletService } from "../services/walletService/index.js";
 import { IPriceService } from "../services/priceService/index.js";
 import { IRewardsService } from "../services/rewardsService/index.js";
+import type { EulerPlugin, ProcessPluginsArgs, WritePluginContext } from "../plugins/types.js";
+import type { TransactionPlan } from "../services/executionService/executionServiceTypes.js";
 
 export interface EulerSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity> {
   accountService: IAccountService<TVaultEntity>;
@@ -34,6 +36,7 @@ export interface EulerSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   executionService: IExecutionService;
   priceService: IPriceService;
   rewardsService: IRewardsService;
+  plugins?: EulerPlugin[];
 }
 
 export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
@@ -52,6 +55,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
   public readonly executionService: IExecutionService;
   public readonly priceService: IPriceService;
   public readonly rewardsService: IRewardsService;
+  public readonly plugins: EulerPlugin[];
 
   constructor(options: EulerSDKOptions<TVaultEntity>) {
     this.accountService = options.accountService;
@@ -69,5 +73,29 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
     this.executionService = options.executionService;
     this.priceService = options.priceService;
     this.rewardsService = options.rewardsService;
+    this.plugins = options.plugins ?? [];
+  }
+
+  /**
+   * Run all plugins' processPlan methods on a transaction plan.
+   * Plugins execute in array order; each receives the plan as modified by previous plugins.
+   * Errors in individual plugins are caught gracefully — the plan continues without that plugin.
+   */
+  async processPlugins(plan: TransactionPlan, args: ProcessPluginsArgs): Promise<TransactionPlan> {
+    if (this.plugins.length === 0) return plan;
+
+    const provider = this.providerService.getProvider(args.chainId);
+    const ctx: WritePluginContext = { ...args, provider };
+
+    for (const plugin of this.plugins) {
+      if (!plugin.processPlan) continue;
+      try {
+        plan = await plugin.processPlan(plan, ctx);
+      } catch {
+        // Plugin failed — skip it gracefully, operation proceeds without this plugin's enrichment
+      }
+    }
+
+    return plan;
   }
 }

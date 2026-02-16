@@ -2,7 +2,8 @@
  * FETCH VAULT DETAILS EXAMPLE
  *
  * Fetches a single EVault with collaterals fully resolved and USD
- * market prices, displaying vault info, prices, and collateral details.
+ * market prices, displaying vault info, prices, collateral details,
+ * labels (off-chain metadata), and reward campaigns.
  *
  * USAGE:
  *   Set RPC_URL_1 in examples/.env for mainnet access, then run:
@@ -14,9 +15,9 @@ import { formatUnits } from "viem";
 import { mainnet } from "viem/chains";
 
 import { getRpcUrls } from "../utils/config.js";
-import { buildSDK, type EVault } from "euler-v2-sdk";
+import { buildSDK, createPythPlugin, type EVault } from "euler-v2-sdk";
 
-const VAULT_ADDRESS = "0x3C75C170671acb394804DfAf63e4F9891C121625";
+const VAULT_ADDRESS = "0x29A9E5A004002Ff9E960bb8BB536E076F53cbDF1";
 
 function formatUsd(priceWad: bigint | undefined): string {
   if (priceWad === undefined) return "N/A";
@@ -25,7 +26,7 @@ function formatUsd(priceWad: bigint | undefined): string {
 
 async function fetchVaultDetailsExample() {
   const rpcUrls = getRpcUrls();
-  const sdk = await buildSDK({ rpcUrls });
+  const sdk = await buildSDK({ rpcUrls, plugins: [createPythPlugin()] });
 
   console.log(`Fetching vault ${VAULT_ADDRESS} with resolved collaterals and prices...\n`);
 
@@ -101,7 +102,7 @@ async function fetchVaultDetailsExample() {
     }
   }
 
-  // Labels
+  // Labels (off-chain metadata from euler-labels)
   console.log("\n" + "-".repeat(80));
   console.log("LABELS");
   console.log("-".repeat(80));

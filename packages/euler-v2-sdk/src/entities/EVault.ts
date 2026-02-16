@@ -100,7 +100,7 @@ export interface IEVault extends IERC4626Vault {
   balanceTracker: Address;
 
   fees: EVaultFees;
-  hooks: EVaultHooks; 
+  hooks: EVaultHooks;
   caps: EVaultCaps;
   liquidation: EVaultLiquidation;
   oracle: OracleInfo;

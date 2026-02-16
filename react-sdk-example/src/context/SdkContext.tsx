@@ -6,7 +6,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import { buildSDK, type EulerSDK } from "euler-v2-sdk";
+import { buildSDK, createPythPlugin, type EulerSDK } from "euler-v2-sdk";
 import { sdkBuildQuery } from "../queries/sdkQueries.ts";
 
 // Only chains supported by the SDK's ProviderService (viem chain definitions)
@@ -65,7 +65,11 @@ export function SdkProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
 
-    buildSDK({ rpcUrls: RPC_URLS, buildQuery: sdkBuildQuery })
+    buildSDK({
+        rpcUrls: RPC_URLS,
+        buildQuery: sdkBuildQuery,
+        plugins: [createPythPlugin({ buildQuery: sdkBuildQuery })],
+      })
       .then((instance) => {
         if (!cancelled) {
           setSdk(instance);

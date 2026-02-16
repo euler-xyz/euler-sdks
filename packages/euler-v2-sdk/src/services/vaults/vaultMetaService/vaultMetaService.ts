@@ -47,7 +47,7 @@ export type VaultServiceEntry<TEntity = VaultEntity> =
 
 /** Meta vault service; TEntity is the union of all registered vault entity types (default EVault | EulerEarn). Extend with a wider union when registering more services. */
 export interface IVaultMetaService<TEntity = VaultEntity>
-  extends Omit<IVaultService<TEntity, VaultMetaPerspective>, "fetchVault"> {
+  extends Omit<IVaultService<TEntity, VaultMetaPerspective>, "fetchVault" | "factory"> {
   /** Register a vault service; use { type, service } to make the type available to getFactoryByType(chainId, type). */
   registerVaultService(entry: VaultServiceEntry<TEntity>): void;
   /** Fetches a single vault; returns undefined if the vault type is unknown (no matching registered service). */
@@ -61,7 +61,7 @@ export interface IVaultMetaService<TEntity = VaultEntity>
 
 export interface VaultMetaServiceConfig<TEntity = VaultEntity> {
   vaultTypeDataSource: IVaultTypeDataSource;
-  /** Initial vault services; each must implement factory(chainId). Use { type, service } to register a vault type for getFactoryByType(chainId, type). */
+  /** Initial vault services. Use { type, service } to register a vault type for getFactoryByType(chainId, type). */
   vaultServices?: VaultServiceEntry<TEntity>[];
 }
 
@@ -131,13 +131,6 @@ export class VaultMetaService<TEntity = VaultEntity>
       }
     }
     return map;
-  }
-
-  factory(chainId: number): Address {
-    if (this.vaultServices.length === 0) {
-      throw new Error("VaultMetaService has no registered vault services");
-    }
-    return this.vaultServices[0]!.factory(chainId);
   }
 
   getFactoryByType(chainId: number, type: string): Address | undefined {

@@ -63,7 +63,11 @@ export type OracleAdapterEntry = {
   name: string
   base: Address
   quote: Address
+  pythDetail?: PythOracleInfo
+  chainlinkDetail?: { oracle: Address }
 }
+
+const isChainlinkOracleName = (name: string) => name.toLowerCase().includes('chainlink')
 
 type OracleAdapterOptions = {
   base?: Address
@@ -227,8 +231,8 @@ export const decodeOracleInfo = (
   const visited = new Set<string>()
   const leafOnly = options.leafOnly ?? false
 
-  const addAdapter = (info: OracleDetailedInfo, base: Address, quote: Address) => {
-    adapters.push({ oracle: info.oracle, name: info.name, base, quote })
+  const addAdapter = (info: OracleDetailedInfo, base: Address, quote: Address, extra?: Pick<OracleAdapterEntry, 'pythDetail' | 'chainlinkDetail'>) => {
+    adapters.push({ oracle: info.oracle, name: info.name, base, quote, ...extra })
   }
 
   const visit = (info: OracleDetailedInfo | null | undefined, depth: number, context: OracleAdapterContext) => {
@@ -281,14 +285,15 @@ export const decodeOracleInfo = (
       const decoded = decodePythOracleInfo(info.oracleInfo)
       const pair = resolveAdapterPair(context, decoded ? { base: decoded.base, quote: decoded.quote } : undefined)
       if (pair) {
-        addAdapter(info, pair.base, pair.quote)
+        addAdapter(info, pair.base, pair.quote, decoded ? { pythDetail: decoded } : undefined)
       }
       return
     }
 
     const pair = resolveAdapterPair(context)
     if (pair) {
-      addAdapter(info, pair.base, pair.quote)
+      const extra = isChainlinkOracleName(info.name) ? { chainlinkDetail: { oracle: info.oracle } } : undefined
+      addAdapter(info, pair.base, pair.quote, extra)
     }
   }
 
@@ -304,8 +309,6 @@ export const decodeOracleInfo = (
 
   return [...deduped.values()]
 }
-
-const isChainlinkOracleName = (name: string) => name.toLowerCase().includes('chainlink')
 
 export const collectChainlinkOracles = (
   oracleInfo: OracleDetailedInfo | null | undefined,
@@ -351,5 +354,24 @@ export const collectChainlinkOracles = (
     }
   })
 
+  return [...deduped.values()]
+}
+
+/**
+ * Extract unique PythFeed entries from already-decoded oracle adapters.
+ * Use this instead of collectPythFeedIds when you have OracleAdapterEntry[] (e.g. from vault.oracle.adapters).
+ */
+export const collectPythFeedsFromAdapters = (adapters: OracleAdapterEntry[]): PythFeed[] => {
+  const deduped = new Map<string, PythFeed>()
+  for (const adapter of adapters) {
+    if (!adapter.pythDetail) continue
+    const key = `${adapter.pythDetail.pyth.toLowerCase()}:${adapter.pythDetail.feedId.toLowerCase()}`
+    if (!deduped.has(key)) {
+      deduped.set(key, {
+        pythAddress: adapter.pythDetail.pyth,
+        feedId: normalizeHex(adapter.pythDetail.feedId),
+      })
+    }
+  }
   return [...deduped.values()]
 }

@@ -24,7 +24,11 @@ export * from "./services/swapService/index.js";
 export * from "./services/priceService/index.js";
 export * from "./services/rewardsService/index.js";
 
+// Plugins
+export * from "./plugins/index.js";
+
 // Utils
 export * from "./utils/subAccounts.js";
 export { type BuildQueryFn, applyBuildQuery } from "./utils/buildQuery.js";
 export * from "./utils/stateOverrides/index.js";
+export * from "./utils/oracle.js";
