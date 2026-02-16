@@ -48,6 +48,8 @@ export const defaultDeploymentServiceConfig: DeploymentServiceConfig = {
   deploymentsUrl: process.env.DEPLOYMENTS_URL || "https://raw.githubusercontent.com/euler-xyz/euler-interfaces/refs/heads/master/EulerChains.json"
 }
 
+const DEFAULT_TOKENLIST_API_BASE = process.env.TOKENLIST_API_BASE || "https://indexer.euler.finance";
+
 export const defaultTokenlistServiceConfig: TokenlistServiceConfig = {
-  apiBaseUrl: process.env.EULER_API_URL || "https://index.euler.finance",
-} 
+  getTokenListUrl: (chainId: number) => `${DEFAULT_TOKENLIST_API_BASE}/v1/tokens?chainId=${chainId}`,
+}
