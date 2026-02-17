@@ -114,6 +114,7 @@ export function VaultDetailPage() {
             <ApyCell
               baseApy={Number(vault.interestRates.supplyAPY)}
               rewards={vault.rewards}
+              intrinsicApy={vault.intrinsicApy}
             />
           </div>
         </div>

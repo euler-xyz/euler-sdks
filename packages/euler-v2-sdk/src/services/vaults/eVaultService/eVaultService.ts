@@ -5,6 +5,7 @@ import type { IVaultService, VaultFetchOptions } from "../index.js";
 import type { IVaultMetaService } from "../vaultMetaService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
+import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 
 export interface IEVaultAdapter {
@@ -23,6 +24,7 @@ export interface EVaultFetchOptions {
   populateCollaterals?: boolean;
   populateMarketPrices?: boolean;
   populateRewards?: boolean;
+  populateIntrinsicApy?: boolean;
   populateLabels?: boolean;
 }
 
@@ -33,6 +35,7 @@ export interface IEVaultService
   populateCollaterals(eVaults: EVault[]): Promise<void>;
   populateMarketPrices(eVaults: EVault[]): Promise<void>;
   populateRewards(eVaults: EVault[]): Promise<void>;
+  populateIntrinsicApy(eVaults: EVault[]): Promise<void>;
   populateLabels(eVaults: EVault[]): Promise<void>;
 }
 
@@ -40,6 +43,7 @@ export class EVaultService implements IEVaultService {
   private vaultMetaService?: IVaultMetaService;
   private priceService?: IPriceService;
   private rewardsService?: IRewardsService;
+  private intrinsicApyService?: IIntrinsicApyService;
   private eulerLabelsService?: IEulerLabelsService;
 
   constructor(
@@ -67,6 +71,10 @@ export class EVaultService implements IEVaultService {
     this.rewardsService = service;
   }
 
+  setIntrinsicApyService(service: IIntrinsicApyService): void {
+    this.intrinsicApyService = service;
+  }
+
   setEulerLabelsService(service: IEulerLabelsService): void {
     this.eulerLabelsService = service;
   }
@@ -92,6 +100,9 @@ export class EVaultService implements IEVaultService {
     if (options?.populateRewards) {
       await this.populateRewards([eVault]);
     }
+    if (options?.populateIntrinsicApy) {
+      await this.populateIntrinsicApy([eVault]);
+    }
     if (options?.populateLabels) {
       await this.populateLabels([eVault]);
     }
@@ -111,6 +122,9 @@ export class EVaultService implements IEVaultService {
     }
     if (options?.populateRewards) {
       await this.populateRewards(eVaults);
+    }
+    if (options?.populateIntrinsicApy) {
+      await this.populateIntrinsicApy(eVaults);
     }
     if (options?.populateLabels) {
       await this.populateLabels(eVaults);
@@ -176,6 +190,11 @@ export class EVaultService implements IEVaultService {
   async populateRewards(eVaults: EVault[]): Promise<void> {
     if (!this.rewardsService || eVaults.length === 0) return;
     await this.rewardsService.populateRewards(eVaults);
+  }
+
+  async populateIntrinsicApy(eVaults: EVault[]): Promise<void> {
+    if (!this.intrinsicApyService || eVaults.length === 0) return;
+    await this.intrinsicApyService.populateIntrinsicApy(eVaults);
   }
 
   async populateLabels(eVaults: EVault[]): Promise<void> {

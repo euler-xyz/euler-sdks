@@ -5,12 +5,14 @@ export interface VaultFetchOptions {
   populateCollaterals?: boolean;
   populateStrategyVaults?: boolean;
   populateRewards?: boolean;
+  populateIntrinsicApy?: boolean;
   populateLabels?: boolean;
   /** Options forwarded to EVaultService when populating strategy vaults (applies to EulerEarnService). */
   eVaultFetchOptions?: {
     populateCollaterals?: boolean;
     populateMarketPrices?: boolean;
     populateRewards?: boolean;
+    populateIntrinsicApy?: boolean;
   };
 }
 

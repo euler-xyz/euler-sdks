@@ -9,6 +9,7 @@ export function RoeCell({ roe }: RoeCellProps) {
   if (!roe) return <>-</>;
 
   const hasRewards = roe.rewards !== 0;
+  const hasIntrinsic = roe.intrinsicApy !== 0;
 
   return (
     <span className="apy-with-rewards">
@@ -22,6 +23,12 @@ export function RoeCell({ roe }: RoeCellProps) {
           <span>Lending & borrowing APY</span>
           <span>{formatPercent(roe.lending + roe.borrowing)}</span>
         </span>
+        {hasIntrinsic && (
+          <span className="apy-tooltip-row">
+            <span>Intrinsic APY</span>
+            <span>{roe.intrinsicApy > 0 ? "+ " : "- "}{formatPercent(Math.abs(roe.intrinsicApy))}</span>
+          </span>
+        )}
         {hasRewards && (
           <span className="apy-tooltip-row">
             <span>Rewards APY</span>

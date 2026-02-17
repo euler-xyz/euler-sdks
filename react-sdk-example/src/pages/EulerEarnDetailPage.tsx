@@ -95,7 +95,7 @@ export function EulerEarnDetailPage() {
           <div className="label">Supply APY (weighted)</div>
           <div className="value">
             {supplyApy !== undefined
-              ? <ApyCell baseApy={supplyApy} rewards={vault.rewards} />
+              ? <ApyCell baseApy={supplyApy} rewards={vault.rewards} intrinsicApy={vault.intrinsicApy} />
               : "-"}
           </div>
         </div>

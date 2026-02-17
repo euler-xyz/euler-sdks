@@ -33,7 +33,7 @@ async function fetchVaultDetailsExample() {
   const vault = await sdk.eVaultService.fetchVault(
     mainnet.id,
     VAULT_ADDRESS,
-    { populateCollaterals: true, populateMarketPrices: true, populateLabels: true, populateRewards: true },
+    { populateCollaterals: true, populateMarketPrices: true, populateLabels: true, populateRewards: true, populateIntrinsicApy: true },
   );
 
   // Vault overview
@@ -144,6 +144,21 @@ async function fetchVaultDetailsExample() {
     }
   } else {
     console.log("  No rewards campaigns");
+  }
+
+  // Intrinsic APY
+  console.log("\n" + "-".repeat(80));
+  console.log("INTRINSIC APY");
+  console.log("-".repeat(80));
+
+  if (vault.intrinsicApy && vault.intrinsicApy.apy > 0) {
+    console.log(`  APY:             ${vault.intrinsicApy.apy.toFixed(4)}%`);
+    console.log(`  Provider:        ${vault.intrinsicApy.provider}`);
+    if (vault.intrinsicApy.source) {
+      console.log(`  Source:          ${vault.intrinsicApy.source}`);
+    }
+  } else {
+    console.log("  No intrinsic APY for this asset");
   }
 
   console.log("\n" + "=".repeat(80));

@@ -32,22 +32,7 @@ const PYTH_ABI = [
   },
 ] as const;
 
-// ── Hermes data fetch with batching + caching (injectable query pattern) ──
-
-const PYTH_BATCH_DELAY_MS = 50;
-const PYTH_UPDATE_CACHE_TTL_MS = 15_000;
-
-type PythPendingRequest = {
-  feedIds: Hex[];
-  endpoint: string;
-  resolve: (data: Hex[]) => void;
-  reject: (err: unknown) => void;
-};
-
-type CachedPythUpdate = {
-  data: Hex[];
-  fetchedAt: number;
-};
+// ── Hermes data fetch (injectable query pattern) ──
 
 const normalizeHex = (value: string): Hex =>
   (value.startsWith("0x") ? value : `0x${value}`) as Hex;
@@ -55,47 +40,37 @@ const normalizeHex = (value: string): Hex =>
 const normalizeFeedId = (value: string): Hex =>
   normalizeHex(value).toLowerCase() as Hex;
 
-const getCacheKey = (feedIds: Hex[], endpoint: string): string => {
-  const sorted = [...feedIds].sort().join(",");
-  return `${endpoint}:${sorted}`;
-};
-
 /**
  * Adapter for the Pyth plugin. Follows the SDK's injectable query pattern:
  * all external calls are `query*` arrow-function properties, wrapped by `applyBuildQuery`.
  */
 export class PythPluginAdapter {
-  private pendingRequests: PythPendingRequest[] = [];
-  private batchTimeout: ReturnType<typeof setTimeout> | null = null;
-  private updateCache = new Map<string, CachedPythUpdate>();
-
   constructor(buildQuery?: BuildQueryFn) {
     if (buildQuery) applyBuildQuery(this, buildQuery);
   }
 
   /**
    * Fetch latest price update data from Pyth Hermes API.
-   * Includes a 50ms batching window to coalesce concurrent calls,
-   * and a 15-second cache for identical feed sets.
    */
   queryPythUpdateData = async (feedIds: Hex[], endpoint: string): Promise<Hex[]> => {
     if (!feedIds.length || !endpoint) return [];
 
     const normalizedIds = feedIds.map(normalizeFeedId);
-    const cacheKey = getCacheKey(normalizedIds, endpoint);
-    const now = Date.now();
 
-    const cached = this.updateCache.get(cacheKey);
-    if (cached && now - cached.fetchedAt < PYTH_UPDATE_CACHE_TTL_MS) {
-      return cached.data;
+    const url = new URL("/v2/updates/price/latest", endpoint);
+    normalizedIds.forEach((id) => url.searchParams.append("ids[]", id));
+    url.searchParams.set("encoding", "hex");
+
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Pyth update data: ${response.status}`);
     }
 
-    return new Promise<Hex[]>((resolve, reject) => {
-      this.pendingRequests.push({ feedIds: normalizedIds, endpoint, resolve, reject });
-      if (!this.batchTimeout) {
-        this.batchTimeout = setTimeout(() => this.executeBatch(), PYTH_BATCH_DELAY_MS);
-      }
-    });
+    const body = (await response.json()) as { binary?: { data?: unknown[] } };
+    const binaryData = body?.binary?.data;
+    if (!Array.isArray(binaryData)) return [];
+
+    return binaryData.map((item) => normalizeHex(String(item)));
   };
 
   /**
@@ -112,65 +87,6 @@ export class PythPluginAdapter {
       functionName: "getUpdateFee",
       args: [updateData],
     });
-  };
-
-  // ── Internal batch executor ──
-
-  private executeBatch = async () => {
-    this.batchTimeout = null;
-    const requests = this.pendingRequests;
-    this.pendingRequests = [];
-    if (requests.length === 0) return;
-
-    // Group by endpoint
-    const byEndpoint = new Map<string, PythPendingRequest[]>();
-    for (const req of requests) {
-      const group = byEndpoint.get(req.endpoint) || [];
-      group.push(req);
-      byEndpoint.set(req.endpoint, group);
-    }
-
-    for (const [endpoint, endpointRequests] of byEndpoint.entries()) {
-      const allFeedIds = new Set<Hex>();
-      for (const req of endpointRequests) {
-        req.feedIds.forEach((id) => allFeedIds.add(id));
-      }
-
-      const feedIdArray = [...allFeedIds];
-      const cacheKey = getCacheKey(feedIdArray, endpoint);
-      const now = Date.now();
-
-      const cached = this.updateCache.get(cacheKey);
-      if (cached && now - cached.fetchedAt < PYTH_UPDATE_CACHE_TTL_MS) {
-        for (const req of endpointRequests) req.resolve(cached.data);
-        continue;
-      }
-
-      try {
-        const data = await this.fetchDirect(feedIdArray, endpoint);
-        this.updateCache.set(cacheKey, { data, fetchedAt: Date.now() });
-        for (const req of endpointRequests) req.resolve(data);
-      } catch (err) {
-        for (const req of endpointRequests) req.reject(err);
-      }
-    }
-  };
-
-  private fetchDirect = async (feedIds: Hex[], endpoint: string): Promise<Hex[]> => {
-    const url = new URL("/v2/updates/price/latest", endpoint);
-    feedIds.forEach((id) => url.searchParams.append("ids[]", id));
-    url.searchParams.set("encoding", "hex");
-
-    const response = await fetch(url.toString());
-    if (!response.ok) {
-      throw new Error(`Failed to fetch Pyth update data: ${response.status}`);
-    }
-
-    const body = (await response.json()) as { binary?: { data?: unknown[] } };
-    const binaryData = body?.binary?.data;
-    if (!Array.isArray(binaryData)) return [];
-
-    return binaryData.map((item) => normalizeHex(String(item)));
   };
 }
 

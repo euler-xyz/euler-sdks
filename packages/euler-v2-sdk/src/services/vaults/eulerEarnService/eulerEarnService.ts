@@ -5,6 +5,7 @@ import type { IVaultService } from "../index.js";
 import type { IEVaultService, EVaultFetchOptions } from "../eVaultService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
+import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 
 export interface IEulerEarnAdapter {
@@ -21,6 +22,7 @@ export interface EulerEarnFetchOptions {
   populateStrategyVaults?: boolean;
   populateMarketPrices?: boolean;
   populateRewards?: boolean;
+  populateIntrinsicApy?: boolean;
   populateLabels?: boolean;
   /** Options forwarded to EVaultService when populating strategy vaults. */
   eVaultFetchOptions?: EVaultFetchOptions;
@@ -33,12 +35,14 @@ export interface IEulerEarnService
   populateStrategyVaults(eulerEarns: EulerEarn[], eVaultFetchOptions?: EVaultFetchOptions): Promise<void>;
   populateMarketPrices(eulerEarns: EulerEarn[]): Promise<void>;
   populateRewards(eulerEarns: EulerEarn[]): Promise<void>;
+  populateIntrinsicApy(eulerEarns: EulerEarn[]): Promise<void>;
   populateLabels(eulerEarns: EulerEarn[]): Promise<void>;
 }
 
 export class EulerEarnService implements IEulerEarnService {
   private priceService?: IPriceService;
   private rewardsService?: IRewardsService;
+  private intrinsicApyService?: IIntrinsicApyService;
   private eulerLabelsService?: IEulerLabelsService;
 
   constructor(
@@ -67,6 +71,10 @@ export class EulerEarnService implements IEulerEarnService {
     this.rewardsService = service;
   }
 
+  setIntrinsicApyService(service: IIntrinsicApyService): void {
+    this.intrinsicApyService = service;
+  }
+
   setEulerLabelsService(service: IEulerLabelsService): void {
     this.eulerLabelsService = service;
   }
@@ -91,6 +99,9 @@ export class EulerEarnService implements IEulerEarnService {
     if (options?.populateRewards) {
       await this.populateRewards([eulerEarn]);
     }
+    if (options?.populateIntrinsicApy) {
+      await this.populateIntrinsicApy([eulerEarn]);
+    }
     if (options?.populateLabels) {
       await this.populateLabels([eulerEarn]);
     }
@@ -109,6 +120,9 @@ export class EulerEarnService implements IEulerEarnService {
     }
     if (options?.populateRewards) {
       await this.populateRewards(eulerEarns);
+    }
+    if (options?.populateIntrinsicApy) {
+      await this.populateIntrinsicApy(eulerEarns);
     }
     if (options?.populateLabels) {
       await this.populateLabels(eulerEarns);
@@ -167,6 +181,11 @@ export class EulerEarnService implements IEulerEarnService {
   async populateRewards(eulerEarns: EulerEarn[]): Promise<void> {
     if (!this.rewardsService || eulerEarns.length === 0) return;
     await this.rewardsService.populateRewards(eulerEarns);
+  }
+
+  async populateIntrinsicApy(eulerEarns: EulerEarn[]): Promise<void> {
+    if (!this.intrinsicApyService || eulerEarns.length === 0) return;
+    await this.intrinsicApyService.populateIntrinsicApy(eulerEarns);
   }
 
   async populateLabels(eulerEarns: EulerEarn[]): Promise<void> {

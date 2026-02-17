@@ -136,7 +136,9 @@ export interface SubAccountRoe {
   borrowing: number;
   /** ROE contribution from reward APRs (supply + borrow incentives). */
   rewards: number;
-  /** Total ROE: lending + borrowing + rewards. */
+  /** ROE contribution from intrinsic asset yield (e.g. staking rewards, PT implied yield). */
+  intrinsicApy: number;
+  /** Total ROE: lending + borrowing + rewards + intrinsicApy. */
   total: number;
 }
 
@@ -149,6 +151,7 @@ export function computeSubAccountRoe(subAccount: ISubAccount<IHasVaultAddress>):
   let totalLendingYield = 0;
   let totalBorrowingYield = 0;
   let totalRewardYield = 0;
+  let totalIntrinsicYield = 0;
   let totalSupplyUsd = 0;
   let totalBorrowUsd = 0;
   let hasData = false;
@@ -156,6 +159,8 @@ export function computeSubAccountRoe(subAccount: ISubAccount<IHasVaultAddress>):
   for (const p of subAccount.positions) {
     const vault = p.vault as any;
     if (!vault) continue;
+
+    const intrinsicApyDecimal = getVaultIntrinsicApy(vault);
 
     // Supply side
     if (p.suppliedValueUsd != null && p.suppliedValueUsd > 0n) {
@@ -166,6 +171,7 @@ export function computeSubAccountRoe(subAccount: ISubAccount<IHasVaultAddress>):
         totalSupplyUsd += supplyUsd;
         totalLendingYield += supplyUsd * supplyApy;
         totalRewardYield += supplyUsd * getVaultRewardApr(vault, "LEND");
+        totalIntrinsicYield += supplyUsd * intrinsicApyDecimal;
       }
     }
 
@@ -178,6 +184,7 @@ export function computeSubAccountRoe(subAccount: ISubAccount<IHasVaultAddress>):
         totalBorrowUsd += borrowUsd;
         totalBorrowingYield += borrowUsd * borrowApy;
         totalRewardYield += borrowUsd * getVaultRewardApr(vault, "BORROW");
+        totalIntrinsicYield -= borrowUsd * intrinsicApyDecimal;
       }
     }
   }
@@ -190,8 +197,9 @@ export function computeSubAccountRoe(subAccount: ISubAccount<IHasVaultAddress>):
   const lending = totalLendingYield / equity;
   const borrowing = -totalBorrowingYield / equity;
   const rewards = totalRewardYield / equity;
+  const intrinsicApy = totalIntrinsicYield / equity;
 
-  return { lending, borrowing, rewards, total: lending + borrowing + rewards };
+  return { lending, borrowing, rewards, intrinsicApy, total: lending + borrowing + rewards + intrinsicApy };
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +314,14 @@ function getVaultBorrowApy(vault: any): number | undefined {
     return Number.isFinite(val) ? val : undefined;
   }
   return undefined;
+}
+
+/** Intrinsic APY as a decimal fraction from vault's populated intrinsicApy field. */
+function getVaultIntrinsicApy(vault: any): number {
+  if (vault.intrinsicApy?.apy != null && typeof vault.intrinsicApy.apy === "number") {
+    return vault.intrinsicApy.apy / 100;
+  }
+  return 0;
 }
 
 /** Sum reward APRs for a given action (LEND or BORROW) from vault campaigns. */

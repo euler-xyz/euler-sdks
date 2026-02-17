@@ -18,6 +18,7 @@ import { SwapService, ISwapService, SwapServiceConfig } from "../services/swapSe
 import { ExecutionService, IExecutionService } from "../services/executionService/index.js";
 import { PriceService, IPriceService, type BackendConfig, PricingBackendClient } from "../services/priceService/index.js";
 import { RewardsService, IRewardsService, type RewardsServiceConfig } from "../services/rewardsService/index.js";
+import { IntrinsicApyService, IIntrinsicApyService, type IntrinsicApyServiceConfig } from "../services/intrinsicApyService/index.js";
 import { defaultAccountVaultsAdapterConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLAdapterConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeAdapterConfig } from "./defaultConfig.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
 import { EVaultOnchainAdapter } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter.js";
@@ -52,6 +53,7 @@ export interface BuildSDKOverrides<TVaultEntity extends IVaultEntity = VaultEnti
   executionService?: IExecutionService;
   priceService?: IPriceService;
   rewardsService?: IRewardsService;
+  intrinsicApyService?: IIntrinsicApyService;
 }
 
 export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity> {
@@ -65,6 +67,7 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   swapServiceConfig?: SwapServiceConfig;
   backendConfig?: BackendConfig;
   rewardsServiceConfig?: RewardsServiceConfig;
+  intrinsicApyServiceConfig?: IntrinsicApyServiceConfig;
   /** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
   buildQuery?: BuildQueryFn;
   /** Plugins that enrich on-chain reads (via batchSimulation) and transaction plans (via processPlan). */
@@ -75,7 +78,7 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
 export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   options: BuildSDKOptions<TVaultEntity>
 ): Promise<EulerSDK<TVaultEntity>> {
-  const { rpcUrls, accountVaultsAdapterConfig, vaultTypeAdapterConfig, additionalVaultServices, eulerLabelsAdapterConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, buildQuery, plugins, servicesOverrides } = options;
+  const { rpcUrls, accountVaultsAdapterConfig, vaultTypeAdapterConfig, additionalVaultServices, eulerLabelsAdapterConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, intrinsicApyServiceConfig, buildQuery, plugins, servicesOverrides } = options;
 
   // Build core services (these may be needed for adapters even if overridden)
   const abiService = servicesOverrides?.abiService ?? new ABIService(buildQuery);
@@ -239,6 +242,9 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   // Build rewards service if not overridden
   const rewardsService = servicesOverrides?.rewardsService ?? new RewardsService(rewardsServiceConfig, buildQuery);
 
+  // Build intrinsic APY service if not overridden
+  const intrinsicApyService = servicesOverrides?.intrinsicApyService ?? new IntrinsicApyService(intrinsicApyServiceConfig, buildQuery);
+
   // Wire priceService and rewardsService into account service
   if (accountService instanceof AccountService) {
     accountService.setPriceService(priceService);
@@ -265,6 +271,17 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   }
   if (securitizeVaultService instanceof SecuritizeVaultService) {
     securitizeVaultService.setRewardsService(rewardsService);
+  }
+
+  // Wire intrinsicApyService into vault services for intrinsic APY population
+  if (eVaultService instanceof EVaultService) {
+    eVaultService.setIntrinsicApyService(intrinsicApyService);
+  }
+  if (eulerEarnService instanceof EulerEarnService) {
+    eulerEarnService.setIntrinsicApyService(intrinsicApyService);
+  }
+  if (securitizeVaultService instanceof SecuritizeVaultService) {
+    securitizeVaultService.setIntrinsicApyService(intrinsicApyService);
   }
 
   // Wire eulerLabelsService into vault services for label population
@@ -294,6 +311,7 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
     executionService,
     priceService,
     rewardsService,
+    intrinsicApyService,
     plugins,
   });
 }

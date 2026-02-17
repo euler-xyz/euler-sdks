@@ -54,7 +54,7 @@ function getEVaultSortValue(vault: EVault, key: EVaultSortKey): number | string 
       return amt * price;
     }
     case "supplyAPY":
-      return Number(vault.interestRates.supplyAPY) + (vault.rewards?.totalRewardsApr ?? 0);
+      return Number(vault.interestRates.supplyAPY) + (vault.rewards?.totalRewardsApr ?? 0) + (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0);
     case "borrowAPY":
       return Number(vault.interestRates.borrowAPY);
     case "usdPrice":
@@ -89,7 +89,7 @@ function getEarnSortValue(vault: EulerEarn, key: EarnSortKey): number | string {
       return amt * price;
     }
     case "supplyAPY":
-      return (vault.supplyApy ?? 0) + (vault.rewards?.totalRewardsApr ?? 0);
+      return (vault.supplyApy ?? 0) + (vault.rewards?.totalRewardsApr ?? 0) + (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0);
     case "usdPrice":
       return vault.marketPriceUsd !== undefined ? Number(vault.marketPriceUsd) : -1;
     case "strategies":
@@ -248,6 +248,7 @@ export function VaultListPage() {
                       <ApyCell
                         baseApy={Number(vault.interestRates.supplyAPY)}
                         rewards={vault.rewards}
+                        intrinsicApy={vault.intrinsicApy}
                       />
                     </td>
                     <td>
@@ -318,7 +319,7 @@ export function VaultListPage() {
                     </td>
                     <td>
                       {vault.supplyApy !== undefined
-                        ? <ApyCell baseApy={vault.supplyApy} rewards={vault.rewards} />
+                        ? <ApyCell baseApy={vault.supplyApy} rewards={vault.rewards} intrinsicApy={vault.intrinsicApy} />
                         : "-"}
                     </td>
                     <td>{formatPriceUsd(vault.marketPriceUsd)}</td>

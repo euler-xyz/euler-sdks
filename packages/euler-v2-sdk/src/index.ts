@@ -23,6 +23,7 @@ export * from "./services/providerService/index.js";
 export * from "./services/swapService/index.js";
 export * from "./services/priceService/index.js";
 export * from "./services/rewardsService/index.js";
+export * from "./services/intrinsicApyService/index.js";
 
 // Plugins
 export * from "./plugins/index.js";

@@ -7,6 +7,7 @@ import { DeploymentService } from "../../deploymentService/index.js";
 import type { IVaultService, VaultFetchOptions } from "../index.js";
 import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
+import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 
 export interface ISecuritizeCollateralAdapter {
@@ -30,12 +31,14 @@ export interface ISecuritizeVaultService
   > {
   populateMarketPrices(vaults: SecuritizeCollateralVault[]): Promise<void>;
   populateRewards(vaults: SecuritizeCollateralVault[]): Promise<void>;
+  populateIntrinsicApy(vaults: SecuritizeCollateralVault[]): Promise<void>;
   populateLabels(vaults: SecuritizeCollateralVault[]): Promise<void>;
 }
 
 export class SecuritizeVaultService implements ISecuritizeVaultService {
   private priceService?: IPriceService;
   private rewardsService?: IRewardsService;
+  private intrinsicApyService?: IIntrinsicApyService;
   private eulerLabelsService?: IEulerLabelsService;
 
   constructor(
@@ -57,6 +60,10 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 
   setRewardsService(service: IRewardsService): void {
     this.rewardsService = service;
+  }
+
+  setIntrinsicApyService(service: IIntrinsicApyService): void {
+    this.intrinsicApyService = service;
   }
 
   setEulerLabelsService(service: IEulerLabelsService): void {
@@ -84,6 +91,9 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     if (options?.populateRewards) {
       await this.populateRewards([entity]);
     }
+    if (options?.populateIntrinsicApy) {
+      await this.populateIntrinsicApy([entity]);
+    }
     if (options?.populateLabels) {
       await this.populateLabels([entity]);
     }
@@ -103,6 +113,9 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     }
     if (options?.populateRewards) {
       await this.populateRewards(entities);
+    }
+    if (options?.populateIntrinsicApy) {
+      await this.populateIntrinsicApy(entities);
     }
     if (options?.populateLabels) {
       await this.populateLabels(entities);
@@ -127,6 +140,11 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
   async populateRewards(vaults: SecuritizeCollateralVault[]): Promise<void> {
     if (!this.rewardsService || vaults.length === 0) return;
     await this.rewardsService.populateRewards(vaults);
+  }
+
+  async populateIntrinsicApy(vaults: SecuritizeCollateralVault[]): Promise<void> {
+    if (!this.intrinsicApyService || vaults.length === 0) return;
+    await this.intrinsicApyService.populateIntrinsicApy(vaults);
   }
 
   async populateLabels(vaults: SecuritizeCollateralVault[]): Promise<void> {
