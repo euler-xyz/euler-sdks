@@ -73,6 +73,17 @@ const STALE_TIMES: Record<string, number> = {
 
   // Swap quotes — very short-lived
   querySwapQuotes: 10_000,
+  querySwapProviders: 60 * MINUTE,
+
+  // Rewards — external API data
+  queryMerklOpportunities: 5 * MINUTE,
+  queryBrevisCampaigns: 5 * MINUTE,
+  queryMerklUserRewards: MINUTE,
+  queryBrevisUserProofs: MINUTE,
+
+  // Intrinsic APY — external API data
+  queryDefiLlamaPools: 5 * MINUTE,
+  queryPendleMarketData: 5 * MINUTE,
 
   // Account / subgraph lookups — moderate
   queryAccountVaults: 30_000,

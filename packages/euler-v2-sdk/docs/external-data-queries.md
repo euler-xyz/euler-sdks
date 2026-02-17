@@ -106,6 +106,10 @@ const STALE_TIMES: Record<string, number> = {
 
 
 
+  // Intrinsic APY — external API data
+  queryDefiLlamaPools: 5 * MINUTE,
+  queryPendleMarketData: 5 * MINUTE,
+
   // Account / subgraph lookups
   queryAccountVaults: 30_000,
 
@@ -205,6 +209,15 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 |-------|-------|------|-------------|
 | `queryMerklOpportunities` | `RewardsService` | `(url)` | Fetch Merkl reward opportunities |
 | `queryBrevisCampaigns` | `RewardsService` | `(url, body)` | Fetch Brevis reward campaigns |
+| `queryMerklUserRewards` | `RewardsService` | `(url)` | Fetch Merkl user reward balances |
+| `queryBrevisUserProofs` | `RewardsService` | `(url, body)` | Fetch Brevis user reward proofs |
+
+### Intrinsic APY Service
+
+| Query | Class | Args | Description |
+|-------|-------|------|-------------|
+| `queryDefiLlamaPools` | `IntrinsicApyService` | `(url)` | Fetch yield pool data from DefiLlama |
+| `queryPendleMarketData` | `IntrinsicApyService` | `(url)` | Fetch market data from Pendle API |
 
 ### Plugins
 
