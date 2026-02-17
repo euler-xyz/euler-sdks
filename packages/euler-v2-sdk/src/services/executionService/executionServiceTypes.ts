@@ -1,5 +1,5 @@
 import { Address, Hex, TypedDataDomain } from "viem";
-import type { Account, SubAccount, IHasVaultAddress } from "../../entities/Account.js";
+import type { Account, ISubAccount, IHasVaultAddress } from "../../entities/Account.js";
 import type { Wallet } from "../../entities/Wallet.js";
 import type {
   SwapQuote,
@@ -71,7 +71,7 @@ export type EncodeRepayArgs = {
   vault: Address
   amount: bigint
   receiver: Address
-  subAccount?: SubAccount
+  subAccount?: ISubAccount
   disableController?: boolean
 }
 

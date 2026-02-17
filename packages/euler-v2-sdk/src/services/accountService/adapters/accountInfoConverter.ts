@@ -1,17 +1,17 @@
 import { maxInt256 } from "viem";
-import { SubAccount, AccountPosition, AccountLiquidity, DaysToLiquidation } from "../../../entities/Account.js";
+import type { ISubAccount, AccountPosition, IAccountLiquidity, DaysToLiquidation } from "../../../entities/Account.js";
 import { EVCAccountInfo, VaultAccountInfo, AccountLiquidityInfo } from "./accountLensTypes.js";
 
 /**
- * Converts AccountLens's AccountLiquidityInfo object to an AccountLiquidity object
+ * Converts AccountLens's AccountLiquidityInfo object to an IAccountLiquidity object
  * @param liquidityInfo - The AccountLiquidityInfo object to convert
- * @returns The AccountLiquidity object
+ * @returns The IAccountLiquidity object
  */
- function convertAccountLiquidityInfoToAccountLiquidity(liquidityInfo: AccountLiquidityInfo): AccountLiquidity {
+ function convertAccountLiquidityInfoToAccountLiquidity(liquidityInfo: AccountLiquidityInfo): IAccountLiquidity {
   const liabilityValue = {
     borrowing: liquidityInfo.liabilityValueBorrowing,
     liquidation: liquidityInfo.liabilityValueLiquidation,
-    oracleMid: liquidityInfo.liabilityValueLiquidation, // vault liquidation value is oraclemid 
+    oracleMid: liquidityInfo.liabilityValueLiquidation, // vault liquidation value is oraclemid
   };
 
   const totalCollateralValue = {
@@ -54,7 +54,7 @@ import { EVCAccountInfo, VaultAccountInfo, AccountLiquidityInfo } from "./accoun
  * @returns The AccountPosition object
  */
 export function convertVaultAccountInfoToAccountPosition(vaultAccountInfo: VaultAccountInfo): AccountPosition {
-  let liquidity: AccountLiquidity | undefined = undefined;
+  let liquidity: IAccountLiquidity | undefined = undefined;
   if (vaultAccountInfo.borrowed !== 0n) {
     if (vaultAccountInfo.liquidityInfo.queryFailure) {
       throw new Error(`Failed to fetch liquidity for position ${vaultAccountInfo.vault} for sub-account ${vaultAccountInfo.account}: ${vaultAccountInfo.liquidityInfo.queryFailureReason}`);
@@ -86,7 +86,7 @@ export function convertVaultAccountInfoToAccountPosition(vaultAccountInfo: Vault
 export function convertToSubAccount(
   evcAccountInfo: EVCAccountInfo,
   vaultAccountInfos: VaultAccountInfo[]
-): SubAccount {
+): ISubAccount {
   const positions = vaultAccountInfos.map(convertVaultAccountInfoToAccountPosition);
 
   return {

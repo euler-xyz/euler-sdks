@@ -5,7 +5,7 @@ import { eVaultAbi } from "./abis/eVaultAbi.js";
 import { permit2PermitAbi } from "./abis/permit2PermitAbi.js";
 import { swapperAbi } from "./abis/swapperAbi.js";
 import { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
-import type { Account, AccountPosition, SubAccount } from "../../entities/Account.js";
+import type { Account, AccountPosition } from "../../entities/Account.js";
 import type { Wallet } from "../../entities/Wallet.js";
 import type { AssetWithSpenders, IWalletService } from "../walletService/index.js";
 import type { EulerPlugin } from "../../plugins/types.js";

@@ -46,7 +46,12 @@ export interface AccountLiquidityCollateral<TVaultEntity extends IHasVaultAddres
   valueUsd?: bigint;
 }
 
-export interface AccountLiquidity<TVaultEntity extends IHasVaultAddress = never> {
+// ---------------------------------------------------------------------------
+// AccountLiquidity
+// ---------------------------------------------------------------------------
+
+/** Raw liquidity data shape (returned by data sources). */
+export interface IAccountLiquidity<TVaultEntity extends IHasVaultAddress = never> {
   vaultAddress: Address;
   vault?: TVaultEntity;
   unitOfAccount: Address;
@@ -58,11 +63,50 @@ export interface AccountLiquidity<TVaultEntity extends IHasVaultAddress = never>
   liabilityValueUsd?: bigint;
   /** Total collateral value in USD (18 dec). Populated by `populateMarketPrices`. */
   totalCollateralValueUsd?: bigint;
-  /** Per-collateral liquidation price multipliers (WAD). Computed getter. */
+  /** Per-collateral liquidation price multipliers (WAD). Computed getter on AccountLiquidity class. */
   readonly collateralLiquidationPrices?: Record<Address, bigint>;
-  /** Borrow liquidation price multiplier (WAD). `> 1` = safe margin. Computed getter. */
+  /** Borrow liquidation price multiplier (WAD). `> 1` = safe margin. Computed getter on AccountLiquidity class. */
   readonly borrowLiquidationPrice?: bigint;
 }
+
+/** AccountLiquidity with computed getters for liquidation prices. */
+export class AccountLiquidity<TVaultEntity extends IHasVaultAddress = never> implements IAccountLiquidity<TVaultEntity> {
+  vaultAddress: Address;
+  vault?: TVaultEntity;
+  unitOfAccount: Address;
+  daysToLiquidation: DaysToLiquidation;
+  liabilityValue: AssetValue;
+  totalCollateralValue: AssetValue;
+  collaterals: AccountLiquidityCollateral<TVaultEntity>[];
+  liabilityValueUsd?: bigint;
+  totalCollateralValueUsd?: bigint;
+
+  constructor(data: IAccountLiquidity<TVaultEntity>) {
+    this.vaultAddress = data.vaultAddress;
+    this.vault = data.vault;
+    this.unitOfAccount = data.unitOfAccount;
+    this.daysToLiquidation = data.daysToLiquidation;
+    this.liabilityValue = data.liabilityValue;
+    this.totalCollateralValue = data.totalCollateralValue;
+    this.collaterals = data.collaterals;
+    this.liabilityValueUsd = data.liabilityValueUsd;
+    this.totalCollateralValueUsd = data.totalCollateralValueUsd;
+  }
+
+  /** Per-collateral liquidation price multipliers (WAD). */
+  get collateralLiquidationPrices(): Record<Address, bigint> {
+    return computeCollateralLiquidationPrices(this as unknown as IAccountLiquidity<IHasVaultAddress>);
+  }
+
+  /** Borrow liquidation price multiplier (WAD). `> 1` = safe margin. */
+  get borrowLiquidationPrice(): bigint | undefined {
+    return computeBorrowLiquidationPrice(this as unknown as IAccountLiquidity<IHasVaultAddress>);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// AccountPosition
+// ---------------------------------------------------------------------------
 
 export type AccountPosition<TVaultEntity extends IHasVaultAddress = never> = {
   account: Address;
@@ -79,7 +123,7 @@ export type AccountPosition<TVaultEntity extends IHasVaultAddress = never> = {
   isCollateral: boolean;
 
   balanceForwarderEnabled: boolean;
-  liquidity?: AccountLiquidity<TVaultEntity>;
+  liquidity?: IAccountLiquidity<TVaultEntity>;
 
   /** USD price per underlying asset (18 dec WAD). Populated by `populateMarketPrices`. */
   marketPriceUsd?: PriceWad;
@@ -89,7 +133,12 @@ export type AccountPosition<TVaultEntity extends IHasVaultAddress = never> = {
   borrowedValueUsd?: bigint;
 };
 
-export interface SubAccount<TVaultEntity extends IHasVaultAddress = never> {
+// ---------------------------------------------------------------------------
+// SubAccount
+// ---------------------------------------------------------------------------
+
+/** Raw sub-account data shape (returned by data sources). */
+export interface ISubAccount<TVaultEntity extends IHasVaultAddress = never> {
   timestamp: number;
   account: Address;
   owner: Address;
@@ -100,65 +149,78 @@ export interface SubAccount<TVaultEntity extends IHasVaultAddress = never> {
   enabledCollaterals: Address[];
   positions: AccountPosition<TVaultEntity>[];
 
-  /** Health factor (WAD). `> 1e18` = healthy. Computed getter. */
+  /** Health factor (WAD). `> 1e18` = healthy. Computed getter on SubAccount class. */
   readonly healthFactor?: bigint;
-  /** Current LTV (WAD). `liabilityValue / totalCollateralValue`. Computed getter. */
+  /** Current LTV (WAD). `liabilityValue / totalCollateralValue`. Computed getter on SubAccount class. */
   readonly currentLTV?: bigint;
-  /** Weighted-average liquidation LTV threshold (WAD). Computed getter. */
+  /** Weighted-average liquidation LTV threshold (WAD). Computed getter on SubAccount class. */
   readonly liquidationLTV?: bigint;
-  /** Leverage multiplier (WAD, 1e18 = 1x). Requires USD data. Computed getter. */
+  /** Leverage multiplier (WAD, 1e18 = 1x). Requires USD data. Computed getter on SubAccount class. */
   readonly multiplier?: bigint;
-  /** Net value in USD (18 dec): sum(supplied) - sum(borrowed). Computed getter. */
+  /** Net value in USD (18 dec): sum(supplied) - sum(borrowed). Computed getter on SubAccount class. */
   readonly netValueUsd?: bigint;
+}
+
+/** SubAccount with computed getters for risk metrics. */
+export class SubAccount<TVaultEntity extends IHasVaultAddress = never> implements ISubAccount<TVaultEntity> {
+  timestamp: number;
+  account: Address;
+  owner: Address;
+  lastAccountStatusCheckTimestamp: number;
+  enabledControllers: Address[];
+  enabledCollaterals: Address[];
+  positions: AccountPosition<TVaultEntity>[];
+
+  constructor(data: ISubAccount<TVaultEntity>) {
+    this.timestamp = data.timestamp;
+    this.account = data.account;
+    this.owner = data.owner;
+    this.lastAccountStatusCheckTimestamp = data.lastAccountStatusCheckTimestamp;
+    this.enabledControllers = data.enabledControllers;
+    this.enabledCollaterals = data.enabledCollaterals;
+    // Wrap raw liquidity objects in AccountLiquidity class instances
+    this.positions = data.positions.map((p) => {
+      if (p.liquidity && !(p.liquidity instanceof AccountLiquidity)) {
+        return { ...p, liquidity: new AccountLiquidity(p.liquidity) };
+      }
+      return p;
+    });
+  }
+
+  /** Health factor (WAD). `> 1e18` = healthy. */
+  get healthFactor(): bigint | undefined {
+    return computeHealthFactor(this as unknown as ISubAccount<IHasVaultAddress>);
+  }
+
+  /** Current LTV (WAD). `liabilityValue / totalCollateralValue`. */
+  get currentLTV(): bigint | undefined {
+    return computeCurrentLTV(this as unknown as ISubAccount<IHasVaultAddress>);
+  }
+
+  /** Weighted-average liquidation LTV threshold (WAD). */
+  get liquidationLTV(): bigint | undefined {
+    return computeLiquidationLTV(this as unknown as ISubAccount<IHasVaultAddress>);
+  }
+
+  /** Leverage multiplier (WAD, 1e18 = 1x). Requires USD data. */
+  get multiplier(): bigint | undefined {
+    return computeMultiplier(this as unknown as ISubAccount<IHasVaultAddress>);
+  }
+
+  /** Net value in USD (18 dec): sum(supplied) - sum(borrowed). */
+  get netValueUsd(): bigint | undefined {
+    return computeSubAccountNetValueUsd(this as unknown as ISubAccount<IHasVaultAddress>);
+  }
 }
 
 export type SubAccountsMap<TVaultEntity extends IHasVaultAddress = never> = Partial<
   Record<Address, SubAccount<TVaultEntity>>
 >;
 
-// ---------------------------------------------------------------------------
-// Computed getter helpers – attach pure getters to plain data objects
-// ---------------------------------------------------------------------------
-
-function defineComputedGetter(obj: object, key: string, compute: () => unknown): void {
-  Object.defineProperty(obj, key, {
-    get: compute,
-    enumerable: true,
-    configurable: true,
-  });
-}
-
-/** Attach computed getters to a SubAccount and its nested liquidity objects. */
-function attachComputedGetters<T extends IHasVaultAddress>(sa: SubAccount<T>): void {
-  const s = sa as SubAccount<IHasVaultAddress>;
-  defineComputedGetter(sa, "healthFactor", () => computeHealthFactor(s));
-  defineComputedGetter(sa, "currentLTV", () => computeCurrentLTV(s));
-  defineComputedGetter(sa, "liquidationLTV", () => computeLiquidationLTV(s));
-  defineComputedGetter(sa, "multiplier", () => computeMultiplier(s));
-  defineComputedGetter(sa, "netValueUsd", () => computeSubAccountNetValueUsd(s));
-
-  for (const p of sa.positions) {
-    if (p.liquidity) {
-      attachLiquidityGetters(p.liquidity);
-    }
-  }
-}
-
-/** Attach computed getters to an AccountLiquidity object. */
-function attachLiquidityGetters<T extends IHasVaultAddress>(liq: AccountLiquidity<T>): void {
-  const l = liq as AccountLiquidity<IHasVaultAddress>;
-  defineComputedGetter(liq, "collateralLiquidationPrices", () =>
-    computeCollateralLiquidationPrices(l)
-  );
-  defineComputedGetter(liq, "borrowLiquidationPrice", () =>
-    computeBorrowLiquidationPrice(l)
-  );
-}
-
 export interface IAccount<TVaultEntity extends IHasVaultAddress = never> {
   chainId: number;
   owner: Address;
-  subAccounts: SubAccountsMap<TVaultEntity>;
+  subAccounts: Partial<Record<Address, ISubAccount<TVaultEntity>>>;
   isLockdownMode?: boolean;
   isPermitDisabledMode?: boolean;
 }
@@ -173,13 +235,17 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
   constructor(account: IAccount<TVaultEntity>) {
     this.chainId = account.chainId;
     this.owner = account.owner;
-    this.subAccounts = account.subAccounts;
     this.isLockdownMode = account.isLockdownMode ?? false;
     this.isPermitDisabledMode = account.isPermitDisabledMode ?? false;
 
-    for (const sa of Object.values(this.subAccounts ?? {})) {
-      if (sa) attachComputedGetters(sa);
+    // Wrap raw ISubAccount data into SubAccount class instances
+    const wrapped: SubAccountsMap<TVaultEntity> = {};
+    for (const [addr, sa] of Object.entries(account.subAccounts ?? {})) {
+      if (sa) {
+        wrapped[addr as Address] = sa instanceof SubAccount ? sa : new SubAccount(sa);
+      }
     }
+    this.subAccounts = wrapped;
   }
 
   getSubAccount(account: Address): SubAccount<TVaultEntity> | undefined {
@@ -327,7 +393,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
           }
         }
 
-        // Populate liquidity USD values and computed liquidity props
+        // Populate liquidity USD values
         if (p.liquidity?.vault) {
           const liqVault = p.liquidity.vault as any;
           const uoaRate = await priceService.getUnitOfAccountUsdRate(liqVault).catch(() => undefined);
@@ -394,11 +460,8 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
   updateSubAccounts(...subAccounts: SubAccount<TVaultEntity>[]): void {
     const next: SubAccountsMap<TVaultEntity> = {};
     for (const sa of subAccounts) {
-      attachComputedGetters(sa);
       next[getAddress(sa.account)] = sa;
     }
     this.subAccounts = next;
   }
 }
-
-

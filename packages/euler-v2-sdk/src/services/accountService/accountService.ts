@@ -1,7 +1,7 @@
 import { Account, IAccount, SubAccount } from "../../entities/Account.js";
 import { Address, getAddress } from "viem";
 import type { IVaultMetaService } from "../vaults/vaultMetaService/index.js";
-import type { IHasVaultAddress, IVaultEntity } from "../../entities/Account.js";
+import type { IHasVaultAddress, IVaultEntity, ISubAccount } from "../../entities/Account.js";
 import type { VaultFetchOptions } from "../vaults/index.js";
 import type { IPriceService } from "../priceService/index.js";
 
@@ -14,7 +14,7 @@ export interface AccountFetchOptions {
 }
 
 /** Collects unique vault addresses from a sub-account's positions and liquidity collaterals only. */
-function collectVaultAddressesFromSubAccountPositionsAndLiquidity(sa: SubAccount): Address[] {
+function collectVaultAddressesFromSubAccountPositionsAndLiquidity(sa: ISubAccount): Address[] {
   const set = new Set<string>();
   const push = (a: Address) => set.add(getAddress(a));
   for (const p of sa.positions) {
@@ -33,7 +33,7 @@ export interface IAccountAdapter {
     chainId: number,
     subAccount: Address,
     vaults?: Address[]
-  ): Promise<SubAccount | undefined>;
+  ): Promise<ISubAccount | undefined>;
 }
 
 export interface IAccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity> {
@@ -104,11 +104,11 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     if (!sa) return undefined;
 
     if (options?.populateVaults === false) {
-      return sa as SubAccount<TVaultEntity>;
+      return new SubAccount(sa) as SubAccount<TVaultEntity>;
     }
 
     const addresses = vaults?.length ? vaults : collectVaultAddressesFromSubAccountPositionsAndLiquidity(sa);
-    if (addresses.length === 0) return sa as SubAccount<TVaultEntity>;
+    if (addresses.length === 0) return new SubAccount(sa) as SubAccount<TVaultEntity>;
 
     const tempAccount = new Account<never>({
       chainId,

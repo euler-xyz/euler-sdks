@@ -2,7 +2,7 @@ import { IAccountAdapter } from "../accountService.js";
 import { ProviderService } from "../../providerService/index.js";
 import { DeploymentService } from "../../deploymentService/index.js";
 import { type Address, type Abi, getAddress } from "viem";
-import { IAccount, SubAccount } from "../../../entities/Account.js";
+import { IAccount, type ISubAccount } from "../../../entities/Account.js";
 import { EVault } from "../../../entities/EVault.js";
 import { VaultAccountInfo, EVCAccountInfo } from "./accountLensTypes.js";
 import { convertToSubAccount } from "./accountInfoConverter.js";
@@ -122,9 +122,9 @@ export class AccountOnchainAdapter implements IAccountAdapter {
       ])].map((vault) => getAddress(vault));
 
       return this.fetchSubAccount(chainId, subAccountAddress, vaults);
-    })).then((subAccounts) => subAccounts.filter((subAccount): subAccount is SubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean } => subAccount !== undefined));
+    })).then((subAccounts) => subAccounts.filter((subAccount): subAccount is ISubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean } => subAccount !== undefined));
 
-    const subAccounts = subAccountsArray.reduce<Record<Address, SubAccount>>((acc, sa) => {
+    const subAccounts = subAccountsArray.reduce<Record<Address, ISubAccount>>((acc, sa) => {
       const { isLockdownMode: _lm, isPermitDisabledMode: _pm, ...subAccount } = sa;
       acc[getAddress(sa.account)] = subAccount;
       return acc;
@@ -141,7 +141,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 
   }
 
-  async fetchSubAccount(chainId: number, subAccount: Address, vaults: Address[] = []): Promise<(SubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean }) | undefined> {
+  async fetchSubAccount(chainId: number, subAccount: Address, vaults: Address[] = []): Promise<(ISubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean }) | undefined> {
     const provider = this.providerService.getProvider(chainId);
     const deployment = this.deploymentService.getDeployment(chainId);
     const accountLensAddress = deployment.addresses.lensAddrs.accountLens;

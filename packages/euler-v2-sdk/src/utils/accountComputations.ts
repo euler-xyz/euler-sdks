@@ -4,7 +4,7 @@
  */
 
 import type { Address } from "viem";
-import type { AccountLiquidity, AccountPosition, IHasVaultAddress, SubAccount } from "../entities/Account.js";
+import type { IAccountLiquidity, AccountPosition, IHasVaultAddress, ISubAccount } from "../entities/Account.js";
 
 const WAD = 10n ** 18n;
 
@@ -17,7 +17,7 @@ const WAD = 10n ** 18n;
  * `totalCollateralValue.liquidation / liabilityValue.liquidation` (WAD, 18 dec).
  * `> 1e18` = healthy, `< 1e18` = liquidatable.
  */
-export function computeHealthFactor(subAccount: SubAccount<IHasVaultAddress>): bigint | undefined {
+export function computeHealthFactor(subAccount: ISubAccount<IHasVaultAddress>): bigint | undefined {
   const liq = findLiquidity(subAccount);
   if (!liq) return undefined;
   if (liq.liabilityValue.liquidation === 0n) return undefined;
@@ -28,7 +28,7 @@ export function computeHealthFactor(subAccount: SubAccount<IHasVaultAddress>): b
  * Current loan-to-value ratio for a sub-account.
  * `liabilityValue.oracleMid / totalCollateralValue.oracleMid` (WAD).
  */
-export function computeCurrentLTV(subAccount: SubAccount<IHasVaultAddress>): bigint | undefined {
+export function computeCurrentLTV(subAccount: ISubAccount<IHasVaultAddress>): bigint | undefined {
   const liq = findLiquidity(subAccount);
   if (!liq) return undefined;
   if (liq.totalCollateralValue.oracleMid === 0n) return undefined;
@@ -39,7 +39,7 @@ export function computeCurrentLTV(subAccount: SubAccount<IHasVaultAddress>): big
  * Weighted-average liquidation LTV threshold.
  * `totalCollateralValue.liquidation / totalCollateralValue.oracleMid` (WAD).
  */
-export function computeLiquidationLTV(subAccount: SubAccount<IHasVaultAddress>): bigint | undefined {
+export function computeLiquidationLTV(subAccount: ISubAccount<IHasVaultAddress>): bigint | undefined {
   const liq = findLiquidity(subAccount);
   if (!liq) return undefined;
   if (liq.totalCollateralValue.oracleMid === 0n) return undefined;
@@ -54,7 +54,7 @@ export function computeLiquidationLTV(subAccount: SubAccount<IHasVaultAddress>):
  * Leverage multiplier for a sub-account (WAD, 1e18 = 1x).
  * `totalCollateralValueUsd / (totalCollateralValueUsd - borrowedValueUsd)`.
  */
-export function computeMultiplier(subAccount: SubAccount<IHasVaultAddress>): bigint | undefined {
+export function computeMultiplier(subAccount: ISubAccount<IHasVaultAddress>): bigint | undefined {
   const liq = findLiquidity(subAccount);
   if (!liq?.totalCollateralValueUsd) return undefined;
 
@@ -69,7 +69,7 @@ export function computeMultiplier(subAccount: SubAccount<IHasVaultAddress>): big
 /**
  * Net value in USD for a sub-account: sum(suppliedValueUsd) - sum(borrowedValueUsd).
  */
-export function computeSubAccountNetValueUsd(subAccount: SubAccount<IHasVaultAddress>): bigint | undefined {
+export function computeSubAccountNetValueUsd(subAccount: ISubAccount<IHasVaultAddress>): bigint | undefined {
   let supplied: bigint | undefined;
   let borrowed: bigint | undefined;
 
@@ -92,7 +92,7 @@ export function computeSubAccountNetValueUsd(subAccount: SubAccount<IHasVaultAdd
  * `< 1` means the price can drop by this factor before liquidation.
  */
 export function computeCollateralLiquidationPrices(
-  liquidity: AccountLiquidity<IHasVaultAddress>
+  liquidity: IAccountLiquidity<IHasVaultAddress>
 ): Record<Address, bigint> {
   const result: Record<Address, bigint> = {};
   const totalColl = liquidity.totalCollateralValue.liquidation;
@@ -115,7 +115,7 @@ export function computeCollateralLiquidationPrices(
  * `> 1` = borrow price can increase by this factor before liquidation.
  */
 export function computeBorrowLiquidationPrice(
-  liquidity: AccountLiquidity<IHasVaultAddress>
+  liquidity: IAccountLiquidity<IHasVaultAddress>
 ): bigint | undefined {
   if (liquidity.liabilityValue.liquidation === 0n) return undefined;
   return (liquidity.totalCollateralValue.liquidation * WAD) / liquidity.liabilityValue.liquidation;
@@ -195,8 +195,8 @@ export function getMaxRoe(
 // ---------------------------------------------------------------------------
 
 function findLiquidity<T extends IHasVaultAddress>(
-  subAccount: SubAccount<T>
-): AccountLiquidity<T> | undefined {
+  subAccount: ISubAccount<T>
+): IAccountLiquidity<T> | undefined {
   for (const p of subAccount.positions) {
     if (p.liquidity) return p.liquidity;
   }
@@ -204,7 +204,7 @@ function findLiquidity<T extends IHasVaultAddress>(
 }
 
 function findBorrowedValueUsd<T extends IHasVaultAddress>(
-  subAccount: SubAccount<T>
+  subAccount: ISubAccount<T>
 ): bigint | undefined {
   for (const p of subAccount.positions) {
     if (p.borrowedValueUsd != null) return p.borrowedValueUsd;
