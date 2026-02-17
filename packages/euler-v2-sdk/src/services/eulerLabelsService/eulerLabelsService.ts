@@ -75,6 +75,15 @@ export class EulerLabelsService implements IEulerLabelsService {
         }
       }
 
+      // Pre-index deprecated vaults: address -> deprecationReason
+      const deprecatedVaultsMap = new Map<string, string>();
+      for (const product of Object.values(labelsProducts)) {
+        if (!product.deprecatedVaults) continue;
+        for (const vaultAddr of product.deprecatedVaults) {
+          deprecatedVaultsMap.set(vaultAddr.toLowerCase(), product.deprecationReason ?? "");
+        }
+      }
+
       // Pre-index points by lowercase collateral vault address
       const pointsByCollateralVault = new Map<string, EulerLabelPoint[]>();
       for (const point of labelsPoints) {
@@ -118,11 +127,17 @@ export class EulerLabelsService implements IEulerLabelsService {
             logo: p.logo ? this.resolveLogoUrl(p.logo) : p.logo,
           }));
 
+        const deprecationReason = deprecatedVaultsMap.get(addrLower);
+
         vault.eulerLabel = {
           vault: vaultLabel,
           entities,
           products,
           points,
+          ...(deprecationReason !== undefined && {
+            deprecated: true,
+            deprecationReason,
+          }),
         };
       }
     }

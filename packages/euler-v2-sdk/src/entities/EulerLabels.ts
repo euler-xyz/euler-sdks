@@ -27,6 +27,8 @@ export type EulerLabelProduct = {
   url: string
   logo?: string
   vaults: string[]
+  deprecatedVaults?: string[]
+  deprecationReason?: string
 }
 export type EulerLabelPoint = {
   name: string
@@ -47,4 +49,6 @@ export type EulerLabel = {
   entities: EulerLabelEntity[]
   products: EulerLabelProduct[]
   points: EulerLabelPoint[]
+  deprecated?: boolean
+  deprecationReason?: string
 }
