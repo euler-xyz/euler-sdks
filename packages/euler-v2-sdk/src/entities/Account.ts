@@ -5,6 +5,7 @@ import type { IVaultMetaService } from "../services/vaults/vaultMetaService/inde
 import type { VaultFetchOptions } from "../services/vaults/index.js";
 import type { PriceWad } from "./ERC4626Vault.js";
 import type { IPriceService } from "../services/priceService/index.js";
+import type { IRewardsService, UserReward } from "../services/rewardsService/index.js";
 import {
   computeHealthFactor,
   computeCurrentLTV,
@@ -231,6 +232,8 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
   isLockdownMode: boolean;
   isPermitDisabledMode: boolean;
   subAccounts: SubAccountsMap<TVaultEntity>;
+  /** Per-user unclaimed rewards from Merkl/Brevis. Populated by `populateUserRewards`. */
+  userRewards?: UserReward[];
 
   constructor(account: IAccount<TVaultEntity>) {
     this.chainId = account.chainId;
@@ -451,6 +454,32 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
     const borrowed = this.totalBorrowedValueUsd;
     if (supplied == null) return undefined;
     return supplied - (borrowed ?? 0n);
+  }
+
+  /** Total unclaimed rewards value in USD (18 dec). `undefined` if no user rewards populated. */
+  get totalRewardsValueUsd(): bigint | undefined {
+    if (!this.userRewards || this.userRewards.length === 0) return undefined;
+    const PRICE_PRECISION = 8;
+    const PRICE_SCALE = 10 ** PRICE_PRECISION;
+    const WAD_SCALER = 10n ** BigInt(18 - PRICE_PRECISION); // 10^10
+    let total = 0n;
+    for (const reward of this.userRewards) {
+      if (reward.tokenPrice <= 0 || reward.unclaimed === "0") continue;
+      const unclaimed = BigInt(reward.unclaimed);
+      const priceScaled = BigInt(Math.round(reward.tokenPrice * PRICE_SCALE));
+      const tokenDecimals = BigInt(reward.token.decimals);
+      total += (unclaimed * priceScaled * WAD_SCALER) / (10n ** tokenDecimals);
+    }
+    return total;
+  }
+
+  /**
+   * Fetches per-user unclaimed rewards from Merkl and Brevis providers.
+   * Populates `this.userRewards`. Returns `this`.
+   */
+  async populateUserRewards(rewardsService: IRewardsService): Promise<this> {
+    this.userRewards = await rewardsService.getUserRewards(this.chainId, this.owner);
+    return this;
   }
 
   /**

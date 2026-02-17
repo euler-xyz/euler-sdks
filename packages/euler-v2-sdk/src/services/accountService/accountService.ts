@@ -4,11 +4,14 @@ import type { IVaultMetaService } from "../vaults/vaultMetaService/index.js";
 import type { IHasVaultAddress, IVaultEntity, ISubAccount } from "../../entities/Account.js";
 import type { VaultFetchOptions } from "../vaults/index.js";
 import type { IPriceService } from "../priceService/index.js";
+import type { IRewardsService } from "../rewardsService/index.js";
 
 export interface AccountFetchOptions {
   populateVaults?: boolean;
   /** When true, populates USD market prices on positions and liquidity. Requires `populateVaults` (default). */
   populateMarketPrices?: boolean;
+  /** When true, populates per-user unclaimed rewards from Merkl/Brevis. */
+  populateUserRewards?: boolean;
   /** Options forwarded to vault services when populating vaults. */
   vaultFetchOptions?: VaultFetchOptions;
 }
@@ -50,6 +53,8 @@ export interface IAccountService<TVaultEntity extends IHasVaultAddress = IVaultE
 export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity>
   implements IAccountService<TVaultEntity>
 {
+  private rewardsService?: IRewardsService;
+
   constructor(
     private adapter: IAccountAdapter,
     private vaultMetaService: IVaultMetaService<TVaultEntity>,
@@ -66,6 +71,10 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
 
   setPriceService(priceService: IPriceService): void {
     this.priceService = priceService;
+  }
+
+  setRewardsService(rewardsService: IRewardsService): void {
+    this.rewardsService = rewardsService;
   }
 
   async fetchAccount(chainId: number, address: Address, options?: AccountFetchOptions): Promise<Account<TVaultEntity>> {
@@ -89,6 +98,10 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
 
     if (options?.populateMarketPrices && this.priceService) {
       await result.populateMarketPrices(this.priceService);
+    }
+
+    if (options?.populateUserRewards && this.rewardsService) {
+      await result.populateUserRewards(this.rewardsService);
     }
 
     return result;

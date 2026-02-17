@@ -171,6 +171,8 @@ export function useAccount(chainId: number, address: string | undefined) {
     queryFn: () =>
       sdk!.accountService.fetchAccount(chainId, address as Address, {
         populateVaults: true,
+        populateMarketPrices: true,
+        populateUserRewards: true,
         vaultFetchOptions: {
           populateMarketPrices: true,
           populateCollaterals: true,

@@ -28,6 +28,22 @@ export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
 }
 
+export function formatWad(value: bigint | undefined, displayDecimals = 4): string {
+  if (value === undefined) return "-";
+  const num = Number(formatUnits(value, 18));
+  if (num === 0) return "0";
+  return num.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: displayDecimals,
+  });
+}
+
+export function formatWadPercent(value: bigint | undefined): string {
+  if (value === undefined) return "-";
+  const num = Number(formatUnits(value, 18)) * 100;
+  return `${num.toFixed(2)}%`;
+}
+
 export function formatPriceUsd(priceWad: bigint | undefined): string {
   if (priceWad === undefined) return "-";
   const price = Number(formatUnits(priceWad, 18));

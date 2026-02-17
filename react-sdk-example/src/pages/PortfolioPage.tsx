@@ -4,12 +4,17 @@ import { useSDK } from "../context/SdkContext.tsx";
 import { useAccount } from "../queries/sdkQueries.ts";
 import { getSubAccountId } from "euler-v2-sdk";
 import type { Address } from "viem";
-import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
+import { formatBigInt, formatPriceUsd, formatWad, formatWadPercent } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
-import type { VaultEntity, AccountPosition } from "euler-v2-sdk";
+import type { VaultEntity, AccountPosition, UserReward } from "euler-v2-sdk";
 
 // Persist across navigations but not across full page reloads
 let lastAddress: string | undefined;
+
+function formatUsdValue(value: bigint | undefined): string {
+  if (value === undefined) return "-";
+  return formatPriceUsd(value);
+}
 
 export function PortfolioPage() {
   const { chainId, loading: sdkLoading, error: sdkError } = useSDK();
@@ -120,7 +125,77 @@ export function PortfolioPage() {
                 {account.isPermitDisabledMode ? "Yes" : "No"}
               </div>
             </div>
+            <div className="detail-item">
+              <div className="label">Total Supplied (USD)</div>
+              <div className="value">{formatUsdValue(account.totalSuppliedValueUsd)}</div>
+            </div>
+            <div className="detail-item">
+              <div className="label">Total Borrowed (USD)</div>
+              <div className="value">{formatUsdValue(account.totalBorrowedValueUsd)}</div>
+            </div>
+            <div className="detail-item">
+              <div className="label">Net Asset Value (USD)</div>
+              <div className="value">{formatUsdValue(account.netAssetValueUsd)}</div>
+            </div>
+            <div className="detail-item">
+              <div className="label">Your Rewards (USD)</div>
+              <div className="value">{formatUsdValue(account.totalRewardsValueUsd)}</div>
+            </div>
           </div>
+
+          {account.userRewards && account.userRewards.length > 0 && (
+            <div style={{ marginBottom: 24 }}>
+              <h4
+                style={{
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                  marginBottom: 8,
+                  color: "#666",
+                }}
+              >
+                Your Rewards
+              </h4>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Token</th>
+                    <th>Unclaimed</th>
+                    <th>Token Price</th>
+                    <th>Provider</th>
+                    <th>Claim Address</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {account.userRewards.map(
+                    (reward: UserReward, idx: number) => (
+                      <tr key={`${reward.token.address}-${reward.provider}-${idx}`}>
+                        <td>{reward.token.symbol}</td>
+                        <td>
+                          {formatBigInt(
+                            BigInt(reward.unclaimed),
+                            reward.token.decimals
+                          )}
+                        </td>
+                        <td>
+                          {reward.tokenPrice > 0
+                            ? `$${reward.tokenPrice.toLocaleString("en-US", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 4,
+                              })}`
+                            : "-"}
+                        </td>
+                        <td>{reward.provider}</td>
+                        <td>
+                          <CopyAddress address={reward.claimAddress} />
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {subAccountEntries.length === 0 && (
             <div className="status-message">
@@ -135,6 +210,29 @@ export function PortfolioPage() {
                 <h3 className="section-title">
                   Sub-account #{subId} &mdash; <CopyAddress address={addr} />
                 </h3>
+
+                <div className="detail-grid" style={{ marginBottom: 16 }}>
+                  <div className="detail-item">
+                    <div className="label">Health Factor</div>
+                    <div className="value">{formatWad(sub.healthFactor)}</div>
+                  </div>
+                  <div className="detail-item">
+                    <div className="label">Current LTV</div>
+                    <div className="value">{formatWadPercent(sub.currentLTV)}</div>
+                  </div>
+                  <div className="detail-item">
+                    <div className="label">Liquidation LTV</div>
+                    <div className="value">{formatWadPercent(sub.liquidationLTV)}</div>
+                  </div>
+                  <div className="detail-item">
+                    <div className="label">Multiplier</div>
+                    <div className="value">{sub.multiplier != null ? `${formatWad(sub.multiplier, 2)}x` : "-"}</div>
+                  </div>
+                  <div className="detail-item">
+                    <div className="label">Net Value (USD)</div>
+                    <div className="value">{formatUsdValue(sub.netValueUsd)}</div>
+                  </div>
+                </div>
 
                 {sub.positions.length === 0 ? (
                   <div className="status-message">No positions</div>
@@ -214,8 +312,9 @@ export function PortfolioPage() {
                         <tr>
                           <th>Borrow Vault</th>
                           <th>Days to Liquidation</th>
+                          <th>Borrow Liq. Price</th>
                           <th>Collaterals</th>
-                          <th>Collateral USD Prices</th>
+                          <th>Collateral Liq. Prices</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -223,40 +322,47 @@ export function PortfolioPage() {
                           .filter(
                             (p: AccountPosition<VaultEntity>) => p.liquidity
                           )
-                          .map((p: AccountPosition<VaultEntity>) => (
-                            <tr key={`liq-${p.vaultAddress}`}>
-                              <td>
-                                {p.vault
-                                  ? p.vault.shares.name ||
-                                    p.vault.asset.symbol
-                                  : <CopyAddress address={p.vaultAddress} />}
-                              </td>
-                              <td>
-                                {String(p.liquidity!.daysToLiquidation)}
-                              </td>
-                              <td>
-                                {p.liquidity!.collaterals
-                                  .map((c, i) => (
-                                    <span key={c.address}>
-                                      {i > 0 && ", "}
-                                      {c.vault
-                                        ? c.vault.shares.name ||
-                                          c.vault.asset.symbol
-                                        : <CopyAddress address={c.address} />}
-                                    </span>
-                                  ))}
-                              </td>
-                              <td>
-                                {p.liquidity!.collaterals
-                                  .map((c, i) => (
-                                    <span key={c.address}>
-                                      {i > 0 && ", "}
-                                      {formatPriceUsd(c.vault?.marketPriceUsd)}
-                                    </span>
-                                  ))}
-                              </td>
-                            </tr>
-                          ))}
+                          .map((p: AccountPosition<VaultEntity>) => {
+                            const liq = p.liquidity!;
+                            const collLiqPrices = liq.collateralLiquidationPrices;
+                            return (
+                              <tr key={`liq-${p.vaultAddress}`}>
+                                <td>
+                                  {p.vault
+                                    ? p.vault.shares.name ||
+                                      p.vault.asset.symbol
+                                    : <CopyAddress address={p.vaultAddress} />}
+                                </td>
+                                <td>
+                                  {String(liq.daysToLiquidation)}
+                                </td>
+                                <td>{formatWad(liq.borrowLiquidationPrice)}</td>
+                                <td>
+                                  {liq.collaterals
+                                    .map((c, i) => (
+                                      <span key={c.address}>
+                                        {i > 0 && ", "}
+                                        {c.vault
+                                          ? c.vault.shares.name ||
+                                            c.vault.asset.symbol
+                                          : <CopyAddress address={c.address} />}
+                                      </span>
+                                    ))}
+                                </td>
+                                <td>
+                                  {liq.collaterals
+                                    .map((c, i) => (
+                                      <span key={c.address}>
+                                        {i > 0 && ", "}
+                                        {collLiqPrices?.[c.address] != null
+                                          ? formatWad(collLiqPrices[c.address])
+                                          : "-"}
+                                      </span>
+                                    ))}
+                                </td>
+                              </tr>
+                            );
+                          })}
                       </tbody>
                     </table>
                   </>

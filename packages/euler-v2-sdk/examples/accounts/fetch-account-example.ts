@@ -27,7 +27,16 @@ async function fetchAccountExample() {
 
   console.log(`Fetching account for ${owner} on mainnet...\n`);
 
-  const account = await sdk.accountService.fetchAccount(mainnet.id, owner);
+  const account = await sdk.accountService.fetchAccount(mainnet.id, owner, {
+    populateVaults: true,
+    populateMarketPrices: true,
+    vaultFetchOptions: {
+      populateCollaterals: true,
+      populateRewards: true,
+      populateLabels: true,
+      populateMarketPrices: true,
+    },
+  });
 
   // Account overview
   console.log("=".repeat(80));
@@ -75,6 +84,56 @@ async function fetchAccountExample() {
 
       console.log(`    Is Controller: ${pos.isController}`);
       console.log(`    Is Collateral: ${pos.isCollateral}`);
+
+      // Market price (from populateMarketPrices)
+      if (pos.marketPriceUsd != null) {
+        console.log(`    Market Price:  $${formatUnits(pos.marketPriceUsd, 18)}`);
+      }
+      if (pos.suppliedValueUsd != null) {
+        console.log(`    Supplied USD:  $${formatUnits(pos.suppliedValueUsd, 18)}`);
+      }
+      if (pos.borrowedValueUsd != null) {
+        console.log(`    Borrowed USD:  $${formatUnits(pos.borrowedValueUsd, 18)}`);
+      }
+
+      // Labels (from populateLabels)
+      const vault = pos.vault as any;
+      if (vault?.eulerLabel) {
+        const label = vault.eulerLabel;
+        console.log(`    Label:`);
+        console.log(`      Vault:      ${label.vault.name} — ${label.vault.description}`);
+        if (label.entities?.length > 0) {
+          console.log(`      Entities:   ${label.entities.map((e: any) => e.name).join(", ")}`);
+        }
+        if (label.products?.length > 0) {
+          console.log(`      Products:   ${label.products.map((p: any) => p.name).join(", ")}`);
+        }
+        if (label.points?.length > 0) {
+          console.log(`      Points:     ${label.points.map((p: any) => p.name).join(", ")}`);
+        }
+        if (label.deprecated) {
+          console.log(`      DEPRECATED: ${label.deprecationReason}`);
+        }
+      }
+
+      // Rewards (from populateRewards)
+      if (vault?.rewards) {
+        const rewards = vault.rewards;
+        console.log(`    Rewards:`);
+        console.log(`      Total APR:  ${(rewards.totalRewardsApr * 100).toFixed(2)}%`);
+        for (const c of rewards.campaigns) {
+          console.log(`      ${c.rewardTokenSymbol} (${c.source}/${c.action}): ${(c.apr * 100).toFixed(2)}%`);
+        }
+      }
+
+      // Collaterals (from populateCollaterals)
+      if (vault?.collaterals?.length > 0) {
+        console.log(`    Collaterals:`);
+        for (const coll of vault.collaterals) {
+          const collName = coll.vault && "shares" in coll.vault ? coll.vault.shares.name : coll.address;
+          console.log(`      ${collName}: bLTV=${(coll.borrowLTV * 100).toFixed(1)}% lLTV=${(coll.liquidationLTV * 100).toFixed(1)}%`);
+        }
+      }
 
       if (pos.liquidity) {
         const liq = pos.liquidity;

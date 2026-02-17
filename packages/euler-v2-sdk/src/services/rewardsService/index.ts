@@ -6,4 +6,6 @@ export type {
   RewardSource,
   RewardAction,
   RewardsServiceConfig,
+  UserReward,
+  UserRewardToken,
 } from "./rewardsServiceTypes.js";

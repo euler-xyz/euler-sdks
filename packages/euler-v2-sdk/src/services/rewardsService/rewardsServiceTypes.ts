@@ -1,4 +1,4 @@
-import type { Address } from "viem";
+import type { Address, Hex } from "viem";
 import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
 
 // ---------------------------------------------------------------------------
@@ -27,13 +27,48 @@ export interface VaultRewardInfo {
   campaigns: RewardCampaign[];
 }
 
+export interface UserRewardToken {
+  address: Address;
+  chainId: number;
+  symbol: string;
+  name: string;
+  decimals: number;
+}
+
+export interface UserReward {
+  /** Chain the reward can be claimed on (may differ from account chain for cross-chain rewards). */
+  chainId: number;
+  /** Reward token metadata. */
+  token: UserRewardToken;
+  /** USD price per whole token (floating point). */
+  tokenPrice: number;
+  /** Reward provider. */
+  provider: RewardSource;
+  /** Total accumulated reward amount (raw, unscaled bigint as string). */
+  accumulated: string;
+  /** Unclaimed reward amount (raw, unscaled bigint as string). */
+  unclaimed: string;
+  /** Merkle proof for claiming. */
+  proof: Hex[];
+  /** Contract address to call for claiming rewards. */
+  claimAddress: Address;
+  /** Cumulative amounts for epoch-based claiming (Brevis). */
+  cumulativeAmounts?: string[];
+  /** Epoch identifier (Brevis). */
+  epoch?: string;
+}
+
 export interface RewardsServiceConfig {
   merklApiUrl?: string;
   brevisApiUrl?: string;
+  /** URL for Brevis user rewards proofs endpoint. */
+  brevisProofsApiUrl?: string;
   /** Chain IDs for which Brevis campaigns should be fetched (default: [1]). */
   brevisChainIds?: number[];
   /** Cache TTL in milliseconds (default: 300_000 = 5 min). */
   cacheTtlMs?: number;
+  /** Override the Merkl distributor contract address (default: standard Merkl Distributor). */
+  merklDistributorAddress?: Address;
 }
 
 // ---------------------------------------------------------------------------
@@ -44,6 +79,7 @@ export interface IRewardsService {
   getVaultRewards(chainId: number, vaultAddress: Address): Promise<VaultRewardInfo | undefined>;
   getChainRewards(chainId: number): Promise<Map<string, VaultRewardInfo>>;
   populateRewards(vaults: ERC4626Vault[]): Promise<void>;
+  getUserRewards(chainId: number, address: Address): Promise<UserReward[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +119,7 @@ export interface BrevisRewardInfo {
   token_address: string;
   token_symbol: string;
   apr: number;
+  rewardUsdPrice?: number;
 }
 
 export interface BrevisCampaign {
@@ -106,4 +143,48 @@ export interface BrevisCampaignsRequest {
 export interface BrevisCampaignsResponse {
   err?: { code: number; msg: string };
   campaigns: BrevisCampaign[];
+}
+
+// ---------------------------------------------------------------------------
+// Internal: Merkl user rewards API types
+// ---------------------------------------------------------------------------
+
+export interface MerklUserRewardEntry {
+  token: {
+    address: string;
+    chainId: number;
+    price: number;
+    symbol: string;
+    name: string;
+    decimals: number;
+    icon?: string;
+    isTest?: boolean;
+  };
+  amount: string;
+  claimed: string;
+  proofs: string[];
+}
+
+export interface MerklUserChainRewards {
+  chainId: number;
+  rewards: MerklUserRewardEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// Internal: Brevis user rewards proofs API types
+// ---------------------------------------------------------------------------
+
+export interface BrevisUserRewardBatchEntry {
+  campaignId: string;
+  claimChainId: number;
+  claimContractAddr: string;
+  claimableRewards: string;
+  epoch: string;
+  cumulativeRewards: string[];
+  merkleProof: string[];
+}
+
+export interface BrevisUserRewardsBatchResponse {
+  err?: { code: string; msg: string } | null;
+  rewardsBatch: BrevisUserRewardBatchEntry[] | null;
 }
