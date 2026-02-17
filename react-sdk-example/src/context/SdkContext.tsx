@@ -27,8 +27,8 @@ const CHAIN_NAMES: Record<number, string> = {
 
 const DEFAULT_CHAIN = 1;
 
-// Free public RPCs - users should replace with their own for production
-const RPC_URLS: Record<number, string> = {
+// Public RPC fallbacks — override per chain with VITE_RPC_URL_<chainId> in .env
+const PUBLIC_RPC_URLS: Record<number, string> = {
   1: "https://eth.drpc.org",
   56: "https://bsc.drpc.org",
   130: "https://unichain.drpc.org",
@@ -42,6 +42,13 @@ const RPC_URLS: Record<number, string> = {
   60808: "https://bob.drpc.org",
   80094: "https://berachain.drpc.org",
 };
+
+const RPC_URLS: Record<number, string> = Object.fromEntries(
+  Object.entries(PUBLIC_RPC_URLS).map(([chainId, fallback]) => {
+    const envUrl = import.meta.env[`VITE_RPC_URL_${chainId}`];
+    return [chainId, envUrl || fallback];
+  }),
+);
 
 interface SdkContextValue {
   sdk: EulerSDK | null;

@@ -1,4 +1,4 @@
-# External Data Queries
+# Caching External Data Queries
 
 All external data fetching in the SDK (RPC calls, subgraph queries, HTTP requests) goes through **injectable `query*` methods**. This lets consumers wrap every network call with caching, logging, profiling, or any other cross-cutting concern — without modifying SDK internals.
 
@@ -98,13 +98,15 @@ const STALE_TIMES: Record<string, number> = {
 
   // Prices
   queryAssetPriceInfo: MINUTE,
-  queryPricesBatch: MINUTE,
+  queryBackendPrice: MINUTE,
 
   // Swap quotes — very short-lived
   querySwapQuotes: 10_000,
   querySwapProviders: 60 * MINUTE, // providers rarely change
 
-
+  // Pyth plugin — price update data is short-lived
+  queryPythUpdateData: 10_000,
+  queryPythUpdateFee: 30_000,
 
   // Intrinsic APY — external API data
   queryDefiLlamaPools: 5 * MINUTE,
@@ -168,7 +170,7 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 | `queryVaultInfoERC4626` | `SecuritizeVaultOnchainAdapter` | `(provider, utilsLensAddress, vault)` | Read ERC4626 vault info |
 | `queryGovernorAdmin` | `SecuritizeVaultOnchainAdapter` | `(provider, vault)` | Read governor admin address |
 | `querySupplyCapResolved` | `SecuritizeVaultOnchainAdapter` | `(provider, vault)` | Read resolved supply cap |
-| `queryVaultFactories` | `VaultTypeSubgraphAdapter` | `(subgraphUrl, query, pageIds)` | Query vault factory data from subgraph |
+| `queryVaultFactories` | `VaultTypeSubgraphAdapter` | `({ address, chainId })` | Fetch vault factory for a single vault (auto-bundled) |
 
 ### Account Adapters
 
@@ -192,7 +194,7 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 | Query | Class | Args | Description |
 |-------|-------|------|-------------|
 | `queryAssetPriceInfo` | `PriceService` | `(provider, utilsLensAddress, assetAddress)` | Read on-chain oracle price for an asset |
-| `queryPricesBatch` | `PricingBackendClient` | `(url)` | Batch-fetch prices from pricing backend |
+| `queryBackendPrice` | `PricingBackendClient` | `({ address, chainId })` | Fetch asset price from pricing backend (auto-bundled) |
 
 ### Labels Service
 
@@ -224,7 +226,7 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 | Query | Class | Args | Description |
 |-------|-------|------|-------------|
 | `queryBatchSimulation` | `BatchSimulationAdapter` | `(provider, evcAddress, calldata, value)` | Execute EVC batchSimulation via eth_call |
-| `queryPythUpdateData` | `PythPluginAdapter` | `(feedIds, endpoint)` | Fetch Pyth price update data from Hermes API |
+| `queryPythUpdateData` | `PythPluginAdapter` | `(feedIds)` | Fetch Pyth price update data from Hermes API (auto-bundled) |
 | `queryPythUpdateFee` | `PythPluginAdapter` | `(provider, pythAddress, updateData)` | Read Pyth update fee from on-chain contract |
 | `queryCheckCredential` | `KeyringPluginAdapter` | `(provider, hookTarget, account)` | Check keyring credential validity |
 | `queryPolicyId` | `KeyringPluginAdapter` | `(provider, hookTarget)` | Read vault's keyring policy ID |

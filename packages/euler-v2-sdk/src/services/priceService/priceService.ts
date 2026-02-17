@@ -182,10 +182,10 @@ export class PriceService implements IPriceService {
     // Try backend first
     if (this.backendClient?.isConfigured) {
       try {
-        const backendPrice = await this.backendClient.fetchPrice(
-          uoaAddress,
-          vault.chainId
-        );
+        const backendPrice = await this.backendClient.queryBackendPrice({
+          address: uoaAddress,
+          chainId: vault.chainId,
+        });
         if (backendPrice) {
           const rate = backendPriceToBigInt(backendPrice.price);
           if (rate > 0n) return rate;
@@ -221,10 +221,10 @@ export class PriceService implements IPriceService {
     // Try backend first
     if (this.backendClient?.isConfigured) {
       try {
-        const backendPrice = await this.backendClient.fetchPrice(
-          vault.asset.address,
-          vault.chainId
-        );
+        const backendPrice = await this.backendClient.queryBackendPrice({
+          address: vault.asset.address,
+          chainId: vault.chainId,
+        });
         if (backendPrice) {
           const result = backendPriceToPriceResult(backendPrice.price);
           if (result) return result;
@@ -251,10 +251,10 @@ export class PriceService implements IPriceService {
     // Try backend first
     if (this.backendClient?.isConfigured) {
       try {
-        const backendPrice = await this.backendClient.fetchPrice(
-          collateralVault.asset.address,
-          collateralVault.chainId
-        );
+        const backendPrice = await this.backendClient.queryBackendPrice({
+          address: collateralVault.asset.address,
+          chainId: collateralVault.chainId,
+        });
         if (backendPrice) {
           const result = backendPriceToPriceResult(backendPrice.price);
           if (result) return result;

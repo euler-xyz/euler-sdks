@@ -36,3 +36,4 @@ export { type BuildQueryFn, applyBuildQuery } from "./utils/buildQuery.js";
 export * from "./utils/stateOverrides/index.js";
 export * from "./utils/oracle.js";
 export * from "./utils/accountComputations.js";
+export * from "./utils/callBundler.js";

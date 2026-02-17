@@ -69,11 +69,15 @@ const STALE_TIMES: Record<string, number> = {
 
   // Prices
   queryAssetPriceInfo: MINUTE,
-  queryPricesBatch: MINUTE,
+  queryBackendPrice: MINUTE,
 
   // Swap quotes — very short-lived
   querySwapQuotes: 10_000,
   querySwapProviders: 60 * MINUTE,
+
+  // Pyth plugin — price update data is short-lived
+  queryPythUpdateData: 10_000,
+  queryPythUpdateFee: 30_000,
 
   // Rewards — external API data
   queryMerklOpportunities: 5 * MINUTE,
@@ -104,9 +108,11 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn) => {
   const wrapped = (...args: unknown[]) =>
     queryClient.fetchQuery({
       queryKey: ["sdk", queryName, ...args.map(serializeArg)],
-      queryFn: () => {
+      queryFn: async () => {
         recordExecution(queryName);
-        return fn(...args);
+        const result = await fn(...args);
+        // react-query treats undefined as missing data — use null instead
+        return result === undefined ? null : result;
       },
       staleTime,
     });

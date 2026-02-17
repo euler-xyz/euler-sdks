@@ -12,6 +12,7 @@ import { prependToBatch } from "./types.js";
 import type { BatchItemDescription, EVCBatchItem, TransactionPlan } from "../services/executionService/executionServiceTypes.js";
 import { collectPythFeedsFromAdapters, type PythFeed } from "../utils/oracle.js";
 import { type BuildQueryFn, applyBuildQuery } from "../utils/buildQuery.js";
+import { createBundledCall } from "../utils/callBundler.js";
 
 // ── Pyth ABI (minimal: only the two functions we need) ──
 
@@ -45,19 +46,22 @@ const normalizeFeedId = (value: string): Hex =>
  * all external calls are `query*` arrow-function properties, wrapped by `applyBuildQuery`.
  */
 export class PythPluginAdapter {
-  constructor(buildQuery?: BuildQueryFn) {
+  private hermesUrl: string;
+
+  constructor(hermesUrl: string, buildQuery?: BuildQueryFn) {
+    this.hermesUrl = hermesUrl;
     if (buildQuery) applyBuildQuery(this, buildQuery);
   }
 
   /**
    * Fetch latest price update data from Pyth Hermes API.
+   * FeedIds are automatically bundled across concurrent calls within the same tick.
    */
-  queryPythUpdateData = async (feedIds: Hex[], endpoint: string): Promise<Hex[]> => {
-    if (!feedIds.length || !endpoint) return [];
+  queryPythUpdateData = createBundledCall(async (feedIds: Hex[]): Promise<Hex[]> => {
+    const normalizedIds = [...new Set(feedIds.map(normalizeFeedId))];
+    if (!normalizedIds.length) return [];
 
-    const normalizedIds = feedIds.map(normalizeFeedId);
-
-    const url = new URL("/v2/updates/price/latest", endpoint);
+    const url = new URL("/v2/updates/price/latest", this.hermesUrl);
     normalizedIds.forEach((id) => url.searchParams.append("ids[]", id));
     url.searchParams.set("encoding", "hex");
 
@@ -71,7 +75,7 @@ export class PythPluginAdapter {
     if (!Array.isArray(binaryData)) return [];
 
     return binaryData.map((item) => normalizeHex(String(item)));
-  };
+  });
 
   /**
    * Query the on-chain Pyth contract for the fee required to update given price data.
@@ -88,6 +92,14 @@ export class PythPluginAdapter {
       args: [updateData],
     });
   };
+
+  setQueryPythUpdateData(fn: typeof this.queryPythUpdateData): void {
+    this.queryPythUpdateData = fn;
+  }
+
+  setQueryPythUpdateFee(fn: typeof this.queryPythUpdateFee): void {
+    this.queryPythUpdateFee = fn;
+  }
 }
 
 // ── Core batch item builder ──
@@ -96,7 +108,6 @@ async function buildPythBatchItems(
   feeds: PythFeed[],
   adapter: PythPluginAdapter,
   provider: PublicClient,
-  hermesUrl: string,
   sender: Address = zeroAddress,
 ): Promise<PluginBatchItems> {
   if (!feeds.length) return { items: [], totalValue: 0n };
@@ -114,7 +125,7 @@ async function buildPythBatchItems(
 
   for (const [pythAddress, feedSet] of grouped.entries()) {
     try {
-      const updateData = await adapter.queryPythUpdateData([...feedSet], hermesUrl);
+      const updateData = await adapter.queryPythUpdateData([...feedSet]);
       if (!updateData.length) continue;
 
       const fee = await adapter.queryPythUpdateFee(provider, pythAddress, updateData);
@@ -159,7 +170,7 @@ export interface PythPluginConfig {
 
 export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
   const hermesUrl = config.hermesUrl || "https://hermes.pyth.network";
-  const adapter = new PythPluginAdapter(config.buildQuery);
+  const adapter = new PythPluginAdapter(hermesUrl, config.buildQuery);
 
   return {
     name: "pyth",
@@ -170,7 +181,7 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
       );
 
       if (!feeds.length) return null;
-      const result = await buildPythBatchItems(feeds, adapter, ctx.provider, hermesUrl);
+      const result = await buildPythBatchItems(feeds, adapter, ctx.provider);
       return result.items.length > 0 ? result : null;
     },
 
@@ -180,7 +191,7 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
       );
       if (!feeds.length) return plan;
 
-      const result = await buildPythBatchItems(feeds, adapter, ctx.provider, hermesUrl, ctx.sender);
+      const result = await buildPythBatchItems(feeds, adapter, ctx.provider, ctx.sender);
       if (!result.items.length) return plan;
 
       return prependToBatch(plan, result.items);

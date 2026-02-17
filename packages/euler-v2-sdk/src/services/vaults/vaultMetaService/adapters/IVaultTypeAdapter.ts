@@ -10,7 +10,7 @@ export interface IVaultTypeAdapter {
    * Fetches vault id -> factory address for the given vault addresses on the chain.
    * Vaults not found in the adapter may be omitted from the result.
    */
-  getVaultFactories(
+  fetchVaultFactories(
     chainId: number,
     vaultAddresses: Address[]
   ): Promise<VaultFactoryResult[]>;

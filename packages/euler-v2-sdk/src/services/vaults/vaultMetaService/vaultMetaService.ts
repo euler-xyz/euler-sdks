@@ -117,7 +117,7 @@ export class VaultMetaService<TEntity = VaultEntity>
     vaultAddresses: Address[]
   ): Promise<Map<Address, RegisteredVaultService<TEntity>>> {
     if (vaultAddresses.length === 0) return new Map();
-    const results = await this.config.vaultTypeAdapter.getVaultFactories(
+    const results = await this.config.vaultTypeAdapter.fetchVaultFactories(
       chainId,
       vaultAddresses
     );
