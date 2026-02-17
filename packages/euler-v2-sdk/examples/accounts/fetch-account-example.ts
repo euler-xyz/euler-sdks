@@ -15,7 +15,7 @@ import { formatUnits, type Address } from "viem";
 import { mainnet } from "viem/chains";
 
 import { getRpcUrls } from "../utils/config.js";
-import { buildSDK, createPythPlugin } from "euler-v2-sdk";
+import { buildEulerSDK, createPythPlugin } from "euler-v2-sdk";
 
 // Default: a known address with Euler positions on mainnet
 const DEFAULT_OWNER = "0x75cFE4ef963232ae8313aC33e21fC39241338618" as Address;
@@ -23,7 +23,7 @@ const DEFAULT_OWNER = "0x75cFE4ef963232ae8313aC33e21fC39241338618" as Address;
 async function fetchAccountExample() {
   const owner = (process.argv[2] as Address) || DEFAULT_OWNER;
   const rpcUrls = getRpcUrls();
-  const sdk = await buildSDK({ rpcUrls, plugins: [createPythPlugin()] });
+  const sdk = await buildEulerSDK({ rpcUrls, plugins: [createPythPlugin()] });
 
   console.log(`Fetching account for ${owner} on mainnet...\n`);
 

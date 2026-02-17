@@ -50,7 +50,7 @@ import {
   account,
   testClient,
 } from "../utils/config.js";
-import { buildSDK, createPythPlugin, getSubAccountAddress } from "euler-v2-sdk";
+import { buildEulerSDK, createPythPlugin, getSubAccountAddress } from "euler-v2-sdk";
 
 // ── Vault addresses ──
 const WBTC_BORROW_VAULT = getAddress("0x82D2CE1f71cbe391c05E21132811e5172d51A6EE");
@@ -101,7 +101,7 @@ async function initBalances() {
 
 async function borrowWithPythExample() {
   // Build the SDK with the Pyth plugin enabled
-  const sdk = await buildSDK({
+  const sdk = await buildEulerSDK({
     rpcUrls,
     plugins: [createPythPlugin()],
   });

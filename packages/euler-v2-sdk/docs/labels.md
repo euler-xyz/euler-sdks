@@ -12,7 +12,7 @@ Labels are purely off-chain metadata sourced from [`euler-labels`](https://githu
 ## Usage
 
 ```typescript
-const sdk = await buildSDK({ rpcUrls: { 1: 'https://...' } })
+const sdk = await buildEulerSDK({ rpcUrls: { 1: 'https://...' } })
 
 // Fetch labels for a chain
 const [vaults, entities, products] = await Promise.all([

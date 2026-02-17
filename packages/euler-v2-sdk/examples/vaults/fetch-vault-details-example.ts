@@ -15,7 +15,7 @@ import { formatUnits } from "viem";
 import { mainnet } from "viem/chains";
 
 import { getRpcUrls } from "../utils/config.js";
-import { buildSDK, createPythPlugin, type EVault } from "euler-v2-sdk";
+import { buildEulerSDK, createPythPlugin, type EVault } from "euler-v2-sdk";
 
 const VAULT_ADDRESS = "0x29A9E5A004002Ff9E960bb8BB536E076F53cbDF1";
 
@@ -26,7 +26,7 @@ function formatUsd(priceWad: bigint | undefined): string {
 
 async function fetchVaultDetailsExample() {
   const rpcUrls = getRpcUrls();
-  const sdk = await buildSDK({ rpcUrls, plugins: [createPythPlugin()] });
+  const sdk = await buildEulerSDK({ rpcUrls, plugins: [createPythPlugin()] });
 
   console.log(`Fetching vault ${VAULT_ADDRESS} with resolved collaterals and prices...\n`);
 

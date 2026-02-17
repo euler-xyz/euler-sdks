@@ -35,7 +35,7 @@ import {
   getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
-import { buildSDK, getSubAccountAddress, SwapperMode } from "euler-v2-sdk";
+import { buildEulerSDK, getSubAccountAddress, SwapperMode } from "euler-v2-sdk";
 
 import { executePlan } from "../utils/executor.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
@@ -67,7 +67,7 @@ const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minu
 
 async function swapDebtExample() {
   // Build the SDK
-  const sdk = await buildSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({ rpcUrls });
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.

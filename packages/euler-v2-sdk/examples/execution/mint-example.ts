@@ -36,7 +36,7 @@ import { mainnet } from "viem/chains";
 import { executePlan } from "../utils/executor.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
 import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "../utils/config.js";
-import { Account, buildSDK, getSubAccountAddress } from "euler-v2-sdk";
+import { Account, buildEulerSDK, getSubAccountAddress } from "euler-v2-sdk";
 
 // Inputs
 const SHARES_TO_MINT = parseUnits("10", 6); // Mint 10 shares
@@ -49,7 +49,7 @@ const UNLIMITED_APPROVAL = true;
 
 async function mintExample() {
   // Build the SDK
-  const sdk = await buildSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({ rpcUrls });
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.

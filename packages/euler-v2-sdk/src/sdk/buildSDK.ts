@@ -60,7 +60,7 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   rpcUrls: Record<number, string>;
   accountVaultsAdapterConfig?: AccountVaultsSubgraphAdapterConfig;
   vaultTypeAdapterConfig?: VaultTypeSubgraphAdapterConfig;
-  /** Additional vault services to register; use { type, service } to register a custom vault type for getFactoryByType(chainId, type). Pass the extended entity type as the generic (e.g. buildSDK<VaultEntity | CustomVault>({ ..., additionalVaultServices: [{ type: 'CustomVault', service: customService }] })). */
+  /** Additional vault services to register; use { type, service } to register a custom vault type for getFactoryByType(chainId, type). Pass the extended entity type as the generic (e.g. buildEulerSDK<VaultEntity | CustomVault>({ ..., additionalVaultServices: [{ type: 'CustomVault', service: customService }] })). */
   additionalVaultServices?: VaultServiceEntry<TVaultEntity>[];
   eulerLabelsAdapterConfig?: EulerLabelsURLAdapterConfig;
   tokenlistServiceConfig?: TokenlistServiceConfig;
@@ -75,7 +75,7 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   servicesOverrides?: BuildSDKOverrides<TVaultEntity>;
 }
 
-export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
+export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   options: BuildSDKOptions<TVaultEntity>
 ): Promise<EulerSDK<TVaultEntity>> {
   const { rpcUrls, accountVaultsAdapterConfig, vaultTypeAdapterConfig, additionalVaultServices, eulerLabelsAdapterConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, intrinsicApyServiceConfig, buildQuery, plugins, servicesOverrides } = options;
@@ -157,7 +157,7 @@ export async function buildSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
     );
   }
 
-  // Build vault meta service (vault type subgraph + eVault + eulerEarn + additionalVaultServices); type reflects extended entity when additionalVaultServices is used with buildSDK<TExtendedEntity>
+  // Build vault meta service (vault type subgraph + eVault + eulerEarn + additionalVaultServices); type reflects extended entity when additionalVaultServices is used with buildEulerSDK<TExtendedEntity>
   let vaultMetaService: IVaultMetaService<TVaultEntity>;
   if (servicesOverrides?.vaultMetaService) {
     vaultMetaService = servicesOverrides.vaultMetaService;

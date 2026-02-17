@@ -95,9 +95,9 @@ All prices are returned as `PriceWad` — a `bigint` always scaled to 18 decimal
 ### Usage Example
 
 ```typescript
-import { buildSDK } from 'euler-v2-sdk'
+import { buildEulerSDK } from 'euler-v2-sdk'
 
-const sdk = await buildSDK({
+const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },
   backendConfig: {
     endpoint: 'https://pricing.euler.finance',

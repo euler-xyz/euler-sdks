@@ -43,7 +43,7 @@ import {
   publicClient,
   walletClient,
 } from "../utils/config.js";
-import { Account, buildSDK, eVaultAbi, getSubAccountAddress } from "euler-v2-sdk";
+import { Account, buildEulerSDK, eVaultAbi, getSubAccountAddress } from "euler-v2-sdk";
 
 
 const VIOLATOR_SUB_ACCOUNT_ID = 1;
@@ -60,7 +60,7 @@ const UNLIMITED_APPROVAL = true;
 
 async function liquidationExample() {
   // Build the SDK
-  const sdk = await buildSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({ rpcUrls });
 
   // ============================================================================
   // STEP 1: Violator deposits collateral and borrows at high LTV

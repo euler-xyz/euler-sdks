@@ -8,12 +8,12 @@ Plugins let you handle these cases transparently. They hook into the SDK's read 
 
 ### Initialization
 
-Plugins are passed to `buildSDK` via the `plugins` option:
+Plugins are passed to `buildEulerSDK` via the `plugins` option:
 
 ```typescript
-import { buildSDK, createPythPlugin, createKeyringPlugin } from "@euler-xyz/euler-v2-sdk"
+import { buildEulerSDK, createPythPlugin, createKeyringPlugin } from "@euler-xyz/euler-v2-sdk"
 
-const sdk = await buildSDK({
+const sdk = await buildEulerSDK({
   rpcUrls: { 1: "https://..." },
   plugins: [
     createPythPlugin(),

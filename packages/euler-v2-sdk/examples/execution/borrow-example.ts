@@ -45,7 +45,7 @@ import {
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
 } from "../utils/config.js";
-import { Account, buildSDK, getSubAccountAddress } from "euler-v2-sdk";
+import { Account, buildEulerSDK, getSubAccountAddress } from "euler-v2-sdk";
 
 // Inputs
 const COLLATERAL_AMOUNT = parseUnits("1000", 6); // 1000 USDC
@@ -57,7 +57,7 @@ const UNLIMITED_APPROVAL = false;
 
 async function borrowExample() {
   // Build the SDK
-  const sdk = await buildSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({ rpcUrls });
 
   // Fetch the account. NOTE: fetchAccount depends on indexing for sub-account discovery,
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.

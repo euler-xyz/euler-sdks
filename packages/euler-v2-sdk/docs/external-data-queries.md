@@ -30,7 +30,7 @@ type BuildQueryFn = <T extends (...args: any[]) => Promise<any>>(
 Pass `buildQuery` once when building the SDK — it propagates to every service and adapter:
 
 ```typescript
-const sdk = await buildSDK({
+const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },
   buildQuery: myBuildQueryFn,
   plugins: [createPythPlugin({ buildQuery: myBuildQueryFn })],
@@ -127,11 +127,11 @@ const DEFAULT_STALE_TIME = MINUTE;
 ### SDK initialization
 
 ```typescript
-import { buildSDK, createPythPlugin } from "euler-v2-sdk";
+import { buildEulerSDK, createPythPlugin } from "euler-v2-sdk";
 import { sdkBuildQuery, queryClient } from "./sdkQueries";
 
 // In a React component/provider:
-const sdk = await buildSDK({
+const sdk = await buildEulerSDK({
   rpcUrls: RPC_URLS,
   buildQuery: sdkBuildQuery,
   plugins: [createPythPlugin({ buildQuery: sdkBuildQuery })],

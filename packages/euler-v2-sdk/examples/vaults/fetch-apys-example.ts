@@ -15,7 +15,7 @@ import { mainnet } from "viem/chains";
 
 import { getRpcUrls } from "../utils/config.js";
 import {
-  buildSDK,
+  buildEulerSDK,
   StandardEVaultPerspectives,
   StandardEulerEarnPerspectives,
 } from "euler-v2-sdk";
@@ -23,7 +23,7 @@ import {
 async function fetchApysExample() {
   const rpcUrls = getRpcUrls();
 
-  const sdk = await buildSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({ rpcUrls });
 
   // Fetch all governed EVaults with rewards and intrinsic APY
   console.log("Fetching governed EVaults...");

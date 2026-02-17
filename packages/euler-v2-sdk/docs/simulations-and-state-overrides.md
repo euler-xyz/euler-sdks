@@ -8,7 +8,7 @@ Euler SDK provides helpers for simulating transactions without requiring the con
 import { createPublicClient, http } from "viem"
 import { mainnet } from "viem/chains"
 import {
-  buildSDK,
+  buildEulerSDK,
   getSubAccountAddress,
   getStateOverrides,
   ethereumVaultConnectorAbi,
@@ -17,7 +17,7 @@ import {
 } from "euler-v2-sdk"
 
 const client = createPublicClient({ chain: mainnet, transport: http(RPC_URL) })
-const sdk = await buildSDK({ rpcUrls: { [mainnet.id]: RPC_URL } })
+const sdk = await buildEulerSDK({ rpcUrls: { [mainnet.id]: RPC_URL } })
 const deployment = sdk.deploymentService.getDeployment(mainnet.id)
 
 // 1. Create a plan

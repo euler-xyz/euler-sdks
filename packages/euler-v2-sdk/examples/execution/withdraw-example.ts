@@ -37,7 +37,7 @@ import { mainnet } from "viem/chains";
 import { executePlan } from "../utils/executor.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
 import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "../utils/config.js";
-import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
+import { buildEulerSDK, getSubAccountAddress } from "euler-v2-sdk";
 
 // Inputs
 const DEPOSIT_AMOUNT = parseUnits("100", 6);  // 100 USDC
@@ -50,7 +50,7 @@ const UNLIMITED_APPROVAL = false;
 
 async function withdrawExample() {
   // Build the SDK
-  const sdk = await buildSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({ rpcUrls });
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.

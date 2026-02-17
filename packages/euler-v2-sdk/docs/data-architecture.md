@@ -127,9 +127,9 @@ See [Cross-Service Data Population](./cross-service-data-population.md) for the 
 
 `VaultMetaService` is the orchestration layer that handles multiple vault types transparently. It maps vault addresses to the correct typed service by looking up each vault's factory address (via subgraph) and matching it to a registered service. This powers `accountService.fetchAccount()` (resolving mixed vault types on positions) and `vaultMetaService.fetchVault()` (type-agnostic fetch).
 
-## Wiring — `buildSDK()`
+## Wiring — `buildEulerSDK()`
 
-`buildSDK()` is the composition root that constructs the full dependency graph:
+`buildEulerSDK()` is the composition root that constructs the full dependency graph:
 
 1. **Core infrastructure** — `ProviderService` (RPC clients), `DeploymentService` (chain addresses), `ABIService`
 2. **Adapters** — each constructed with `ProviderService`, `DeploymentService`, and optional `buildQuery`
@@ -148,7 +148,7 @@ The interface-based design makes the SDK highly flexible. Every service and adap
 Any service can be replaced at build time:
 
 ```typescript
-const sdk = await buildSDK({
+const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },
   servicesOverrides: {
     priceService: myCustomPriceService,
@@ -203,21 +203,21 @@ const portfolioVaultService = new EVaultService(
 **Separate SDK instances per chain or context:**
 
 ```typescript
-const mainnetSdk = await buildSDK({ rpcUrls: { 1: mainnetRpc } })
-const baseSdk = await buildSDK({ rpcUrls: { 8453: baseRpc } })
+const mainnetSdk = await buildEulerSDK({ rpcUrls: { 1: mainnetRpc } })
+const baseSdk = await buildEulerSDK({ rpcUrls: { 8453: baseRpc } })
 ```
 
 **Different cache strategies via `buildQuery`:**
 
 ```typescript
 // Long cache for static / slow-changing data
-const longCacheSdk = await buildSDK({
+const longCacheSdk = await buildEulerSDK({
   rpcUrls,
   buildQuery: buildQueryWithLongStaleTime,
 })
 
 // Short cache for real-time data
-const realtimeSdk = await buildSDK({
+const realtimeSdk = await buildEulerSDK({
   rpcUrls,
   buildQuery: buildQueryWithShortStaleTime,
 })
@@ -230,7 +230,7 @@ Register additional vault services to extend the entity union:
 ```typescript
 type ExtendedVault = VaultEntity | MyCustomVault
 
-const sdk = await buildSDK<ExtendedVault>({
+const sdk = await buildEulerSDK<ExtendedVault>({
   rpcUrls,
   additionalVaultServices: [
     { type: 'MyCustomVault', service: myCustomVaultService },

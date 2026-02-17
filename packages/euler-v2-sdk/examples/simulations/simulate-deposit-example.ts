@@ -40,7 +40,7 @@ import {
 } from "viem"
 import { mainnet } from "viem/chains"
 import {
-  buildSDK,
+  buildEulerSDK,
   getSubAccountAddress,
   getStateOverrides,
   ethereumVaultConnectorAbi,
@@ -68,7 +68,7 @@ const DEPOSIT_AMOUNT = parseUnits("1000", 6) // 1000 USDC
 async function simulateDeposit() {
   const rpcUrls = { ...getRpcUrls(), [mainnet.id]: RPC_URL }
   const client = createPublicClient({ chain: mainnet, transport: http(RPC_URL) })
-  const sdk = await buildSDK({ rpcUrls })
+  const sdk = await buildEulerSDK({ rpcUrls })
 
   const deployment = sdk.deploymentService.getDeployment(mainnet.id)
   const evcAddress = deployment.addresses.coreAddrs.evc

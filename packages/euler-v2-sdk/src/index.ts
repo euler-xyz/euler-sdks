@@ -6,6 +6,8 @@ export * from "./entities/EulerEarn.js";
 export * from "./entities/EulerLabels.js";
 export * from "./sdk/sdk.js";
 export * from "./sdk/buildSDK.js";
+/** @deprecated Use `buildEulerSDK` instead. */
+export { buildEulerSDK as buildSDK } from "./sdk/buildSDK.js";
 
 // Services
 export * from "./services/abiService/index.js";

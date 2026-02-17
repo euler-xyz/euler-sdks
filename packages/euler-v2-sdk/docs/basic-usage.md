@@ -3,9 +3,9 @@
 ## Setup
 
 ```typescript
-import { buildSDK } from 'euler-v2-sdk'
+import { buildEulerSDK } from 'euler-v2-sdk'
 
-const sdk = await buildSDK({
+const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },           // chainId -> RPC URL
   backendConfig: {                           // Optional: enables backend pricing
     endpoint: 'https://pricing.euler.finance',

@@ -47,7 +47,7 @@ import {
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
 } from "../utils/config.js";
-import { buildSDK, getSubAccountAddress } from "euler-v2-sdk";
+import { buildEulerSDK, getSubAccountAddress } from "euler-v2-sdk";
 import type { TransactionPlan } from "euler-v2-sdk";
 
 // Inputs
@@ -68,7 +68,7 @@ const UNLIMITED_APPROVAL = false;
 // TODO use simulations to build account state
 
 async function mergePlansExample() {
-  const sdk = await buildSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({ rpcUrls });
 
   // Fetch account (may have no positions yet)
   let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false });
