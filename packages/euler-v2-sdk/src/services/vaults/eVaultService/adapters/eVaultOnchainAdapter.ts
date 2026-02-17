@@ -48,7 +48,6 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
     provider: ReturnType<ProviderService["getProvider"]>,
     vaultLensAddress: Address,
     vault: Address,
-    _options?: { pluginPreRead?: boolean },
   ) => {
     return provider.readContract({
       address: vaultLensAddress,
@@ -82,9 +81,8 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
     const deployment = this.deploymentService.getDeployment(chainId);
     const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
 
-    const pluginPreRead = this.plugins.length > 0;
     const results = await Promise.all(
-      vaults.map(vault => this.queryVaultInfoFull(provider, vaultLensAddress, vault, { pluginPreRead }))
+      vaults.map(vault => this.queryVaultInfoFull(provider, vaultLensAddress, vault))
     );
 
     const parsedVaults: IEVault[] = results.map((result) => {

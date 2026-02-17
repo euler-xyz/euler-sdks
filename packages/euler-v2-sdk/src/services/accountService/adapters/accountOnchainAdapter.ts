@@ -92,7 +92,6 @@ export class AccountOnchainAdapter implements IAccountAdapter {
     provider: ReturnType<ProviderService["getProvider"]>,
     vaultLensAddress: Address,
     vault: Address,
-    _options?: { pluginPreRead?: boolean },
   ) => {
     return provider.readContract({
       address: vaultLensAddress,
@@ -201,7 +200,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
     // Vaults that fail the lens read are filtered out — plugins won't enrich them.
     const vaultInfoResults = await Promise.all(
       vaults.map(vault =>
-        this.queryVaultInfoFull(provider, vaultLensAddress, vault, { pluginPreRead: true })
+        this.queryVaultInfoFull(provider, vaultLensAddress, vault)
           .then((result) => new EVault(convertVaultInfoFullToIEVault(result as unknown as VaultInfoFull, chainId)))
           .catch(() => null),
       ),
