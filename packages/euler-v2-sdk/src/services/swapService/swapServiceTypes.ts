@@ -31,6 +31,7 @@ export interface SwapQuoteRequest {
   currentDebt: bigint; // needed in exact input or output and with `isRepay` set
   deadline: number; // timestamp in seconds
   dustAccount?: Address; // account receiving dust deposits from e.g. over-swap repays
+  provider?: string; // preselected provider, see getProviders
 }
 // TODO parse this to bigint
 export interface SwapQuote {
@@ -82,6 +83,7 @@ export interface GetRepayQuoteArgs {
   liabilityAmount?: bigint; // amount to repay in TARGET_DEBT mode, set to current  debt to repay full
   collateralAmount?: bigint; // amount to sell for debt in EXACT_IN mode
   deadline?: number;
+  provider?: string; // preselected provider, see getProviders
 }
 
 export interface GetDepositQuoteArgs {
@@ -96,6 +98,7 @@ export interface GetDepositQuoteArgs {
   origin: Address;
   slippage: number;
   deadline?: number;
+  provider?: string; // preselected provider, see getProviders
 }
 
 
@@ -128,5 +131,10 @@ export interface SwapVerifierData {
 export interface SwapsApiResponse {
   success: boolean;
   data: SwapQuote[];
+}
+
+export interface SwapProvidersApiResponse {
+  success: boolean;
+  data: string[];
 }
 

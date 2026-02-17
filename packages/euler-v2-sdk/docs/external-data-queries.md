@@ -102,6 +102,9 @@ const STALE_TIMES: Record<string, number> = {
 
   // Swap quotes — very short-lived
   querySwapQuotes: 10_000,
+  querySwapProviders: 60 * MINUTE, // providers rarely change
+
+
 
   // Account / subgraph lookups
   queryAccountVaults: 30_000,
@@ -148,6 +151,7 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 | `queryABI` | `ABIService` | `(url)` | Fetch ABI JSON from URL |
 | `queryTokenList` | `TokenlistService` | `(url)` | Fetch token list from URL |
 | `querySwapQuotes` | `SwapService` | `(url)` | Fetch swap quotes from aggregator API |
+| `querySwapProviders` | `SwapService` | `(url)` | Fetch available swap providers for a chain |
 
 ### Vault Adapters
 

@@ -3,6 +3,7 @@ import type {
   SwapQuote,
   SwapQuoteRequest,
   SwapsApiResponse,
+  SwapProvidersApiResponse,
   GetRepayQuoteArgs,
   GetDepositQuoteArgs,
 } from "./swapServiceTypes.js";
@@ -22,6 +23,8 @@ export interface ISwapService {
   getRepayQuotes(args: GetRepayQuoteArgs): Promise<SwapQuote[]>;
   /** Fetches swap quotes for swapping collateral between vaults (withdraw → swap → deposit). */
   getDepositQuote(args: GetDepositQuoteArgs): Promise<SwapQuote[]>;
+  /** Fetches available swap providers for a given chain. */
+  getProviders(chainId: number): Promise<string[]>;
 }
 
 const DEFAULT_DEADLINE = 1800; // 30 minutes
@@ -52,6 +55,25 @@ export class SwapService implements ISwapService {
 
   setQuerySwapQuotes(fn: typeof this.querySwapQuotes): void {
     this.querySwapQuotes = fn;
+  }
+
+  querySwapProviders = async (
+    url: string
+  ): Promise<SwapProvidersApiResponse> => {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Swap API providers request failed: ${response.status} ${errorText}`,
+      );
+    }
+
+    return response.json() as Promise<SwapProvidersApiResponse>;
+  };
+
+  setQuerySwapProviders(fn: typeof this.querySwapProviders): void {
+    this.querySwapProviders = fn;
   }
 
   /**
@@ -104,6 +126,27 @@ export class SwapService implements ISwapService {
   }
 
   /**
+   * Fetches available swap providers for a given chain.
+   * The result is static per chain and can be cached for a long time.
+   *
+   * @param chainId - Chain ID
+   * @returns Promise of array of provider name strings
+   */
+  async getProviders(chainId: number): Promise<string[]> {
+    const params = new URLSearchParams({ chainId: chainId.toString() });
+
+    const jsonData = await this.querySwapProviders(
+      `${this.config.swapApiUrl}/providers?${params.toString()}`,
+    );
+
+    if (!jsonData.success) {
+      throw new Error("Swap API providers returned unsuccessful response");
+    }
+
+    return jsonData.data;
+  }
+
+  /**
    * Builds request parameters for the swap API
    */
   private buildRequestParams(request: SwapQuoteRequest): Record<string, string> {
@@ -112,7 +155,7 @@ export class SwapService implements ISwapService {
       Math.floor(Date.now() / 1000) +
         (this.config.defaultDeadline || DEFAULT_DEADLINE);
 
-    return {
+    const params: Record<string, string> = {
       chainId: request.chainId.toString(),
       tokenIn: getAddress(request.tokenIn),
       tokenOut: getAddress(request.tokenOut),
@@ -132,6 +175,12 @@ export class SwapService implements ISwapService {
         : getAddress(request.origin),
       isRepay: request.isRepay ? "true" : "false",
     };
+
+    if (request.provider) {
+      params.provider = request.provider;
+    }
+
+    return params;
   }
 
   /**
@@ -279,6 +328,7 @@ export class SwapService implements ISwapService {
       targetDebt,
       currentDebt,
       deadline: deadline ?? 0,
+      provider: args.provider,
     });
 
     if (quotes.length === 0) {
@@ -341,6 +391,7 @@ export class SwapService implements ISwapService {
       targetDebt: 0n,
       currentDebt: 0n,
       deadline: deadline ?? 0,
+      provider: args.provider,
     });
 
     if (quotes.length === 0) {

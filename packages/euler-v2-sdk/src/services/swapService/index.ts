@@ -6,4 +6,5 @@ export type {
   SwapQuote,
   SwapQuoteRequest,
   SwapsApiResponse,
+  SwapProvidersApiResponse,
 } from "./swapServiceTypes.js";
