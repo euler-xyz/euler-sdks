@@ -12,9 +12,11 @@ import {
   computeLiquidationLTV,
   computeMultiplier,
   computeSubAccountNetValueUsd,
+  computeSubAccountRoe,
   computeCollateralLiquidationPrices,
   computeBorrowLiquidationPrice,
 } from "../utils/accountComputations.js";
+import type { SubAccountRoe } from "../utils/accountComputations.js";
 
 export type AddressPrefix = `0x${string}`; // expects a hex string representation of 19 bytes
 
@@ -160,6 +162,8 @@ export interface ISubAccount<TVaultEntity extends IHasVaultAddress = never> {
   readonly multiplier?: bigint;
   /** Net value in USD (18 dec): sum(supplied) - sum(borrowed). Computed getter on SubAccount class. */
   readonly netValueUsd?: bigint;
+  /** ROE breakdown (decimal fractions). Requires populated vaults + market prices. Computed getter on SubAccount class. */
+  readonly roe?: SubAccountRoe;
 }
 
 /** SubAccount with computed getters for risk metrics. */
@@ -211,6 +215,11 @@ export class SubAccount<TVaultEntity extends IHasVaultAddress = never> implement
   /** Net value in USD (18 dec): sum(supplied) - sum(borrowed). */
   get netValueUsd(): bigint | undefined {
     return computeSubAccountNetValueUsd(this as unknown as ISubAccount<IHasVaultAddress>);
+  }
+
+  /** ROE breakdown (decimal fractions, 0.05 = 5%). Requires populated vaults + market prices. */
+  get roe(): SubAccountRoe | undefined {
+    return computeSubAccountRoe(this as unknown as ISubAccount<IHasVaultAddress>);
   }
 }
 

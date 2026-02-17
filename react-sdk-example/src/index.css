@@ -359,6 +359,11 @@ tr.clickable {
   font-size: 10px;
 }
 
+.apy-tooltip-heading {
+  font-weight: 700;
+  font-size: 11px;
+}
+
 /* Rewards page */
 .rewards-vault-details {
   margin-bottom: 16px;

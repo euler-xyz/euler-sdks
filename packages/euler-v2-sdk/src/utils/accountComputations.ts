@@ -122,6 +122,79 @@ export function computeBorrowLiquidationPrice(
 }
 
 // ---------------------------------------------------------------------------
+// Sub-account ROE (requires populated vaults + market prices)
+// ---------------------------------------------------------------------------
+
+/**
+ * ROE (Return on Equity) breakdown for a sub-account.
+ * All values are decimal fractions (0.05 = 5%).
+ */
+export interface SubAccountRoe {
+  /** ROE contribution from base supply APYs. */
+  lending: number;
+  /** ROE contribution from base borrow APYs (typically negative). */
+  borrowing: number;
+  /** ROE contribution from reward APRs (supply + borrow incentives). */
+  rewards: number;
+  /** Total ROE: lending + borrowing + rewards. */
+  total: number;
+}
+
+/**
+ * Computes the ROE breakdown for a sub-account.
+ * Requires populated vaults (for APY data) and market prices (for USD values).
+ * Returns `undefined` when prerequisites are missing or equity <= 0.
+ */
+export function computeSubAccountRoe(subAccount: ISubAccount<IHasVaultAddress>): SubAccountRoe | undefined {
+  let totalLendingYield = 0;
+  let totalBorrowingYield = 0;
+  let totalRewardYield = 0;
+  let totalSupplyUsd = 0;
+  let totalBorrowUsd = 0;
+  let hasData = false;
+
+  for (const p of subAccount.positions) {
+    const vault = p.vault as any;
+    if (!vault) continue;
+
+    // Supply side
+    if (p.suppliedValueUsd != null && p.suppliedValueUsd > 0n) {
+      const supplyUsd = Number(p.suppliedValueUsd) / 1e18;
+      const supplyApy = getVaultSupplyApy(vault);
+      if (supplyApy != null) {
+        hasData = true;
+        totalSupplyUsd += supplyUsd;
+        totalLendingYield += supplyUsd * supplyApy;
+        totalRewardYield += supplyUsd * getVaultRewardApr(vault, "LEND");
+      }
+    }
+
+    // Borrow side
+    if (p.borrowedValueUsd != null && p.borrowedValueUsd > 0n) {
+      const borrowUsd = Number(p.borrowedValueUsd) / 1e18;
+      const borrowApy = getVaultBorrowApy(vault);
+      if (borrowApy != null) {
+        hasData = true;
+        totalBorrowUsd += borrowUsd;
+        totalBorrowingYield += borrowUsd * borrowApy;
+        totalRewardYield += borrowUsd * getVaultRewardApr(vault, "BORROW");
+      }
+    }
+  }
+
+  if (!hasData) return undefined;
+
+  const equity = totalSupplyUsd - totalBorrowUsd;
+  if (equity <= 0) return undefined;
+
+  const lending = totalLendingYield / equity;
+  const borrowing = -totalBorrowingYield / equity;
+  const rewards = totalRewardYield / equity;
+
+  return { lending, borrowing, rewards, total: lending + borrowing + rewards };
+}
+
+// ---------------------------------------------------------------------------
 // Yield computations (use `number` since APYs are percentages)
 // ---------------------------------------------------------------------------
 
@@ -210,4 +283,39 @@ function findBorrowedValueUsd<T extends IHasVaultAddress>(
     if (p.borrowedValueUsd != null) return p.borrowedValueUsd;
   }
   return undefined;
+}
+
+/** Duck-type supply APY from a vault entity (EVault string or EulerEarn number getter). */
+function getVaultSupplyApy(vault: any): number | undefined {
+  // EVault: interestRates.supplyAPY (string, decimal fraction via formatUnits(_, 27))
+  if (vault.interestRates?.supplyAPY != null) {
+    const val = parseFloat(vault.interestRates.supplyAPY);
+    return Number.isFinite(val) ? val : undefined;
+  }
+  // EulerEarn: supplyApy (number getter)
+  if (typeof vault.supplyApy === "number") {
+    return vault.supplyApy;
+  }
+  return undefined;
+}
+
+/** Duck-type borrow APY from a vault entity (EVault only). */
+function getVaultBorrowApy(vault: any): number | undefined {
+  if (vault.interestRates?.borrowAPY != null) {
+    const val = parseFloat(vault.interestRates.borrowAPY);
+    return Number.isFinite(val) ? val : undefined;
+  }
+  return undefined;
+}
+
+/** Sum reward APRs for a given action (LEND or BORROW) from vault campaigns. */
+function getVaultRewardApr(vault: any, action: string): number {
+  if (!vault.rewards?.campaigns) return 0;
+  let total = 0;
+  for (const c of vault.rewards.campaigns) {
+    if (c.action === action && typeof c.apr === "number") {
+      total += c.apr;
+    }
+  }
+  return total;
 }

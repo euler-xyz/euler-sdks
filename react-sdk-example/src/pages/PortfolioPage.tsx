@@ -6,6 +6,7 @@ import { getSubAccountId } from "euler-v2-sdk";
 import type { Address } from "viem";
 import { formatBigInt, formatPriceUsd, formatWad, formatWadPercent } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
+import { RoeCell } from "../components/RoeCell.tsx";
 import type { VaultEntity, AccountPosition, UserReward } from "euler-v2-sdk";
 
 // Persist across navigations but not across full page reloads
@@ -231,6 +232,10 @@ export function PortfolioPage() {
                   <div className="detail-item">
                     <div className="label">Net Value (USD)</div>
                     <div className="value">{formatUsdValue(sub.netValueUsd)}</div>
+                  </div>
+                  <div className="detail-item">
+                    <div className="label">ROE</div>
+                    <div className="value"><RoeCell roe={sub.roe} /></div>
                   </div>
                 </div>
 
