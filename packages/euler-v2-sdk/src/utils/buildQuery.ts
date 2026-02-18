@@ -9,6 +9,7 @@
 export type BuildQueryFn = <T extends (...args: any[]) => Promise<any>>(
   queryName: string,
   fn: T,
+  target: object,
 ) => T;
 
 /**
@@ -18,7 +19,7 @@ export type BuildQueryFn = <T extends (...args: any[]) => Promise<any>>(
 export function applyBuildQuery(target: object, buildQuery: BuildQueryFn): void {
   for (const key of Object.getOwnPropertyNames(target)) {
     if (key.startsWith("query") && typeof (target as any)[key] === "function") {
-      (target as any)[key] = buildQuery(key, (target as any)[key]);
+      (target as any)[key] = buildQuery(key, (target as any)[key], target);
     }
   }
 }

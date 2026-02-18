@@ -130,7 +130,7 @@ export class DeploymentService implements IDeploymentService {
 
   static async build(deploymentServiceConfig: DeploymentServiceConfig, buildQuery?: BuildQueryFn): Promise<DeploymentService> {
     const queryFn = buildQuery
-      ? buildQuery("queryDeployments", DeploymentService.queryDeployments)
+      ? buildQuery("queryDeployments", DeploymentService.queryDeployments, {})
       : DeploymentService.queryDeployments;
     const data = await queryFn(deploymentServiceConfig.deploymentsUrl);
     const deployments = data.reduce((acc: Record<number, Deployment>, deployment: Deployment) => {

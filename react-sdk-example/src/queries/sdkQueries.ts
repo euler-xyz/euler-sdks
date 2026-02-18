@@ -102,7 +102,7 @@ const STALE_TIMES: Record<string, number> = {
 
 const DEFAULT_STALE_TIME = MINUTE;
 
-export const sdkBuildQuery: BuildQueryFn = (queryName, fn) => {
+export const sdkBuildQuery: BuildQueryFn = (queryName, fn, target) => {
   const staleTime = STALE_TIMES[queryName] ?? DEFAULT_STALE_TIME;
 
   const wrapped = (...args: unknown[]) =>
