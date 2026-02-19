@@ -12,6 +12,7 @@ export enum SwapperMode {
 export enum SwapVerificationType {
   SkimMin = "skimMin",
   DebtMax = "debtMax",
+  TransferMin = "transferMin",
 }
 
 export interface SwapQuoteRequest {
@@ -31,6 +32,9 @@ export interface SwapQuoteRequest {
   currentDebt: bigint; // needed in exact input or output and with `isRepay` set
   deadline: number; // timestamp in seconds
   dustAccount?: Address; // account receiving dust deposits from e.g. over-swap repays
+  unusedInputReceiver?: Address; // address to receive unused input instead of depositing to vaultIn/accountIn
+  transferOutputToReceiver?: boolean; // transfer output tokens to receiver instead of depositing. Not valid for repay swaps
+  skipSweepDepositOut?: boolean; // don't add a final deposit of the output token, leave assets in Swapper
   provider?: string; // preselected provider, see getProviders
 }
 // TODO parse this to bigint
@@ -44,7 +48,7 @@ export interface SwapQuote {
   vaultIn: Address;
   receiver: Address;
   tokenIn: {
-    addressInfo: Address;
+    address: Address;
     chainId: number;
     decimals: number;
     logoURI: string;
@@ -53,7 +57,7 @@ export interface SwapQuote {
     meta?: unknown;
   };
   tokenOut: {
-    addressInfo: Address;
+    address: Address;
     chainId: number;
     decimals: number;
     logoURI: string;
@@ -65,6 +69,7 @@ export interface SwapQuote {
   swap: SwapperData;
   verify: SwapVerifierData;
   route: SwapRouteHop[];
+  transferOutputToReceiver?: boolean;
 }
 
 
@@ -83,6 +88,7 @@ export interface GetRepayQuoteArgs {
   liabilityAmount?: bigint; // amount to repay in TARGET_DEBT mode, set to current  debt to repay full
   collateralAmount?: bigint; // amount to sell for debt in EXACT_IN mode
   deadline?: number;
+  unusedInputReceiver?: Address; // address to receive unused input instead of depositing to vaultIn/accountIn
   provider?: string; // preselected provider, see getProviders
 }
 
@@ -98,6 +104,8 @@ export interface GetDepositQuoteArgs {
   origin: Address;
   slippage: number;
   deadline?: number;
+  unusedInputReceiver?: Address; // address to receive unused input instead of depositing to vaultIn/accountIn
+  skipSweepDepositOut?: boolean; // don't add a final deposit of the output token, leave assets in Swapper
   provider?: string; // preselected provider, see getProviders
 }
 

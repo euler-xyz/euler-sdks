@@ -137,15 +137,17 @@ async function swapDebtExample() {
     deadline: THIRTY_MINUTES_FROM_NOW,
   });
 
-  if (swapQuotes.length === 0) {
+  const filteredSwapQuotes = swapQuotes.filter(q => !q.route.some(r => r.providerName.includes("CoW")));
+
+  if (filteredSwapQuotes.length === 0) {
     throw new Error("No swap quotes available");
   }
 
-  if (SWAP_QUOTE_INDEX >= swapQuotes.length) {
+  if (SWAP_QUOTE_INDEX >= filteredSwapQuotes.length) {
     throw new Error(`No quote found at index: ${SWAP_QUOTE_INDEX}`);
   }
 
-  const swapQuote = swapQuotes[SWAP_QUOTE_INDEX]!;
+  const swapQuote = filteredSwapQuotes[SWAP_QUOTE_INDEX]!;
   console.log(`✓ Swap quote received: ${swapQuote.amountIn} USDC → ${swapQuote.amountOut} USDT ${swapQuote.route.map(r => r.providerName).join(' → ')}`);
 
   // Step 3: Plan and execute swap debt

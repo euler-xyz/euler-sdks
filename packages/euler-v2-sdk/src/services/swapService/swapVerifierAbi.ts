@@ -1,10 +1,89 @@
 export const swapVerifierAbi = [
   {
     type: "function",
+    name: "transferFromSender",
+    inputs: [
+      {
+        name: "token",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "amount",
+        type: "uint256",
+        internalType: "uint256",
+      },
+      {
+        name: "to",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "verifyAmountMinAndDeposit",
+    inputs: [
+      {
+        name: "vault",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "receiver",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "amountMin",
+        type: "uint256",
+        internalType: "uint256",
+      },
+      {
+        name: "deadline",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "verifyAmountMinAndSkim",
     inputs: [
       {
         name: "vault",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "receiver",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "amountMin",
+        type: "uint256",
+        internalType: "uint256",
+      },
+      {
+        name: "deadline",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "verifyAmountMinAndTransfer",
+    inputs: [
+      {
+        name: "asset",
         type: "address",
         internalType: "address",
       },
@@ -57,7 +136,27 @@ export const swapVerifierAbi = [
   },
   {
     type: "error",
+    name: "ControllerDisabled",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "EVC_InvalidAddress",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "NotAuthorized",
+    inputs: [],
+  },
+  {
+    type: "error",
     name: "SwapVerifier_debtMax",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "SwapVerifier_depositMin",
     inputs: [],
   },
   {
@@ -68,6 +167,11 @@ export const swapVerifierAbi = [
   {
     type: "error",
     name: "SwapVerifier_skimMin",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "SwapVerifier_transferMin",
     inputs: [],
   },
 ] as const;

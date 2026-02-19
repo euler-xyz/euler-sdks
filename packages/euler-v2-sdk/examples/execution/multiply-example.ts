@@ -89,15 +89,17 @@ async function multiplyExample() {
     deadline: THIRTY_MINUTES_FROM_NOW, // 30 minutes
   });
 
-  if (swapQuotes.length === 0) {
+  const filteredSwapQuotes = swapQuotes.filter(q => !q.route.some(r => r.providerName.includes("CoW")));
+
+  if (filteredSwapQuotes.length === 0) {
     throw new Error("No swap quotes available");
   }
 
-  if (SWAP_QUOTE_INDEX >= swapQuotes.length) {
+  if (SWAP_QUOTE_INDEX >= filteredSwapQuotes.length) {
     throw new Error(`No quote found at index: ${SWAP_QUOTE_INDEX}`);
   }
 
-  const swapQuote = swapQuotes[SWAP_QUOTE_INDEX]!;
+  const swapQuote = filteredSwapQuotes[SWAP_QUOTE_INDEX]!;
   console.log(`✓ Swap quote received: ${LIABILITY_AMOUNT} USDT → ${swapQuote.amountOut} WETH ${swapQuote.route.map(r => r.providerName).join(' → ')}`);
 
   // Step 2: Plan the multiply operation

@@ -145,15 +145,17 @@ async function repayWithSwapExample() {
     deadline: THIRTY_MINUTES_FROM_NOW,
   });
 
-  if (repayQuotes.length === 0) {
+  const filteredRepayQuotes = repayQuotes.filter(q => !q.route.some(r => r.providerName.includes("CoW")));
+
+  if (filteredRepayQuotes.length === 0) {
     throw new Error("No swap quotes available");
   }
 
-  if (REPAY_QUOTE_INDEX >= repayQuotes.length) {
+  if (REPAY_QUOTE_INDEX >= filteredRepayQuotes.length) {
     throw new Error("No quote found at index: " + REPAY_QUOTE_INDEX);
   }
 
-  const repayQuote = repayQuotes[REPAY_QUOTE_INDEX]!;
+  const repayQuote = filteredRepayQuotes[REPAY_QUOTE_INDEX]!;
   console.log(`✓ Trying repay quote received: ${repayQuote.amountIn} USDC → ${repayQuote.amountOut} USDT ${repayQuote.route.map(r => r.providerName).join(' → ')}`);
 
   // Step 3: Plan and execute repay with swap

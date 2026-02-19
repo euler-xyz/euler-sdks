@@ -23,6 +23,7 @@ import {
   type EncodeRepayFromDepositArgs,
   type EncodeSwapDebtArgs,
   type EncodeTransferArgs,
+  type EncodeDepositWithSwapFromWalletArgs,
   type EncodeSwapCollateralArgs,
   type EncodePermit2CallArgs,
   PERMIT2_TYPES,
@@ -42,6 +43,7 @@ import {
   type PlanRepayFromWalletArgs,
   type PlanRepayFromDepositArgs,
   type PlanRepayWithSwapArgs,
+  type PlanDepositWithSwapFromWalletArgs,
   type PlanSwapCollateralArgs,
   type PlanSwapDebtArgs,
   type PlanTransferArgs,
@@ -70,6 +72,7 @@ export interface IExecutionService {
   encodeRepayFromWallet(args: EncodeRepayFromWalletArgs): EVCBatchItem[];
   encodeRepayFromDeposit(args: EncodeRepayFromDepositArgs): EVCBatchItem[];
   encodeRepayWithSwap(args: EncodeRepayWithSwapArgs): EVCBatchItem[];
+  encodeDepositWithSwapFromWallet(args: EncodeDepositWithSwapFromWalletArgs): EVCBatchItem[];
   encodeSwapCollateral(args: EncodeSwapCollateralArgs): EVCBatchItem[];
   encodeSwapDebt(args: EncodeSwapDebtArgs): EVCBatchItem[];
   encodeTransfer(args: EncodeTransferArgs): EVCBatchItem[];
@@ -86,6 +89,7 @@ export interface IExecutionService {
   planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlan;
   planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlan;
   planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlan;
+  planDepositWithSwapFromWallet(args: PlanDepositWithSwapFromWalletArgs): TransactionPlan;
   planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlan;
   planSwapDebt(args: PlanSwapDebtArgs): TransactionPlan;
   planTransfer(args: PlanTransferArgs): TransactionPlan;
@@ -883,6 +887,65 @@ export class ExecutionService implements IExecutionService {
     // 4. Disable controller if needed (for max repay)
     if (isMax && disableControllerOnMax) {
       items.push(this.encodeDisableController(swapQuote.receiver, swapQuote.accountOut))
+    }
+
+    return items
+  }
+
+  /**
+   * Encodes EVC batch items for depositing into a vault using tokens from the user's wallet, going through a swap.
+   * The approval is given to SwapVerifier, then transferFromSender pulls tokens to Swapper, swap executes, and output is deposited.
+   *
+   * @param args - Deposit-with-swap-from-wallet encoding arguments
+   * @param args.chainId - Chain ID (used for EVC and deployment addresses)
+   * @param args.swapQuote - Quote with swap and verify steps (verify type skimMin or transferMin)
+   * @param args.amount - Amount of input token to transfer from wallet to swapper
+   * @param args.sender - Wallet address providing the tokens (onBehalfOfAccount for transferFromSender)
+   * @param args.enableCollateral - If true, enables receiver vault as collateral for accountOut (default true)
+   * @returns Array of EVC batch items (transferFromSender, swap, verify, optional enableCollateral)
+   */
+  encodeDepositWithSwapFromWallet(args: EncodeDepositWithSwapFromWalletArgs): EVCBatchItem[] {
+    const {
+      chainId,
+      swapQuote,
+      amount,
+      sender,
+      enableCollateral = true,
+    } = args
+
+    const items: EVCBatchItem[] = []
+
+    // 1. Transfer tokens from sender's wallet to swapper via SwapVerifier.transferFromSender
+    items.push({
+      targetContract: swapQuote.verify.verifierAddress,
+      onBehalfOfAccount: sender,
+      value: 0n,
+      data: encodeFunctionData({
+        abi: swapVerifierAbi,
+        functionName: "transferFromSender",
+        args: [swapQuote.tokenIn.address, amount, swapQuote.swap.swapperAddress],
+      }),
+    })
+
+    // 2. Execute swap multicall
+    items.push({
+      targetContract: swapQuote.swap.swapperAddress,
+      onBehalfOfAccount: sender,
+      value: 0n,
+      data: swapQuote.swap.swapperData,
+    })
+
+    // 3. Verify swap
+    items.push({
+      targetContract: swapQuote.verify.verifierAddress,
+      onBehalfOfAccount: swapQuote.accountOut || sender,
+      value: 0n,
+      data: swapQuote.verify.verifierData,
+    })
+
+    // 4. Enable collateral if needed
+    if (enableCollateral && swapQuote.receiver) {
+      items.push(this.encodeEnableCollateral(chainId, swapQuote.accountOut || sender, swapQuote.receiver))
     }
 
     return items
@@ -2108,6 +2171,55 @@ export class ExecutionService implements IExecutionService {
       maxWithdraw,
       isMax,
       disableControllerOnMax: true,
+    })
+
+    plan.push({
+      type: "evcBatch",
+      items: batchItems,
+    })
+
+    return plan
+  }
+
+  /**
+   * Builds a transaction plan for depositing into a vault using tokens from the user's wallet, going through a swap.
+   * The approval is given to SwapVerifier (not the vault), then transferFromSender is used in the batch
+   * to provide the tokens to the Swapper from the user's wallet.
+   *
+   * @param args - Deposit-with-swap-from-wallet plan arguments
+   * @param args.swapQuote - Quote from swap service; defines swap and verify steps
+   * @param args.amount - Amount of input token to transfer from wallet
+   * @param args.tokenIn - Input token address (for approval to SwapVerifier)
+   * @param args.account - Account entity; used for chainId, owner, and collateral state
+   * @param args.enableCollateral - If true, enables receiver vault as collateral for accountOut
+   * @returns Array of transaction plan items (approval to SwapVerifier + EVC batch)
+   */
+  planDepositWithSwapFromWallet(args: PlanDepositWithSwapFromWalletArgs): TransactionPlan {
+    const { swapQuote, amount, tokenIn, account, enableCollateral } = args
+    const plan: TransactionPlanItem[] = []
+
+    // Approval goes to the transferFromSender contract (which uses permit2 transferFrom internally)
+    plan.push({
+      type: "requiredApproval",
+      token: tokenIn,
+      owner: account.owner,
+      spender: swapQuote.verify.verifierAddress,
+      amount,
+    })
+
+    // Check if collateral needs to be enabled
+    const receiverVault = swapQuote.receiver
+    const accountOut = swapQuote.accountOut || account.owner
+    const isCollateralEnabled = account?.isCollateralEnabled(accountOut, receiverVault) ?? false
+    const shouldEnableCollateral = enableCollateral !== undefined ? enableCollateral && !isCollateralEnabled : !isCollateralEnabled
+
+    // Build EVC batch items
+    const batchItems = this.encodeDepositWithSwapFromWallet({
+      chainId: account.chainId,
+      swapQuote,
+      amount,
+      sender: account.owner,
+      enableCollateral: shouldEnableCollateral,
     })
 
     plan.push({

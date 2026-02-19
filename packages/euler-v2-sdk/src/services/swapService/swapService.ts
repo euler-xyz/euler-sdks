@@ -180,6 +180,18 @@ export class SwapService implements ISwapService {
       params.provider = request.provider;
     }
 
+    if (request.unusedInputReceiver) {
+      params.unusedInputReceiver = getAddress(request.unusedInputReceiver);
+    }
+
+    if (request.transferOutputToReceiver) {
+      params.transferOutputToReceiver = "true";
+    }
+
+    if (request.skipSweepDepositOut) {
+      params.skipSweepDepositOut = "true";
+    }
+
     return params;
   }
 
@@ -195,14 +207,18 @@ export class SwapService implements ISwapService {
       throw new Error("Missing swap params for verification");
     }
 
-    let functionName: "verifyAmountMinAndSkim" | "verifyDebtMax";
+    let functionName: "verifyAmountMinAndSkim" | "verifyDebtMax" | "verifyAmountMinAndTransfer";
     let amount: bigint;
+    let firstArg: Address; // vault or asset depending on verification type
+    let secondArg: Address; // receiver or account depending on verification type
 
     const adjustForInterest = (debtAmount: bigint) =>
       (debtAmount * 10_001n) / 10_000n;
 
     if (request.isRepay) {
       functionName = "verifyDebtMax";
+      firstArg = request.receiver;
+      secondArg = request.accountOut;
       if (request.swapperMode === SwapperMode.TARGET_DEBT) {
         amount = request.targetDebt || 0n;
       } else {
@@ -210,8 +226,15 @@ export class SwapService implements ISwapService {
         if (amount < 0n) amount = 0n;
         amount = adjustForInterest(amount);
       }
+    } else if (request.transferOutputToReceiver) {
+      functionName = "verifyAmountMinAndTransfer";
+      firstArg = request.tokenOut;
+      secondArg = request.receiver;
+      amount = BigInt(quote.amountOutMin);
     } else {
       functionName = "verifyAmountMinAndSkim";
+      firstArg = request.receiver;
+      secondArg = request.accountOut;
       amount = BigInt(quote.amountOutMin);
     }
 
@@ -224,8 +247,8 @@ export class SwapService implements ISwapService {
       abi: swapVerifierAbi,
       functionName,
       args: [
-        request.receiver,
-        request.accountOut,
+        firstArg,
+        secondArg,
         amount,
         BigInt(deadline),
       ],
@@ -328,6 +351,7 @@ export class SwapService implements ISwapService {
       targetDebt,
       currentDebt,
       deadline: deadline ?? 0,
+      unusedInputReceiver: args.unusedInputReceiver,
       provider: args.provider,
     });
 
@@ -339,14 +363,25 @@ export class SwapService implements ISwapService {
   }
 
   /**
-   * Fetches swap quotes for swapping collateral from one vault to another (withdraw from source → swap → deposit to destination).
+   * Fetches swap quotes for swapping one asset to another and depositing into a destination vault.
    * Delegates to getSwapQuotes with isRepay false and EXACT_IN mode.
+   *
+   * The swapped output tokens are always deposited into `toVault` for `toAccount` (verify type skimMin).
+   * Use `getSwapQuotes` directly with `transferOutputToReceiver` if you need to transfer output
+   * tokens to an address instead of depositing into a vault.
+   *
+   * `unusedInputReceiver` can redirect leftover input tokens to a wallet address instead of
+   * depositing them back into `fromVault` for `fromAccount`. When set, `fromVault` and
+   * `fromAccount` should be zero address.
+   *
+   * `skipSweepDepositOut` leaves the output tokens in the Swapper contract instead of depositing.
+   * Useful when the Swapper is the receiver and further processing is needed.
    *
    * @param args - Deposit/collateral-swap quote arguments
    * @param args.chainId - Chain ID
-   * @param args.fromVault - Vault to withdraw collateral from (source)
-   * @param args.toVault - Vault to receive the swapped collateral (destination, receiver)
-   * @param args.fromAccount - Sub-account that holds the collateral in fromVault
+   * @param args.fromVault - Vault to withdraw collateral from (source). Use zero address when `unusedInputReceiver` is set.
+   * @param args.toVault - Vault to deposit swapped tokens into (destination, receiver)
+   * @param args.fromAccount - Sub-account that holds the collateral in fromVault. Use zero address when `unusedInputReceiver` is set.
    * @param args.toAccount - Sub-account that will hold the new collateral in toVault
    * @param args.fromAsset - Underlying asset of fromVault (tokenIn)
    * @param args.toAsset - Underlying asset of toVault (tokenOut)
@@ -354,6 +389,8 @@ export class SwapService implements ISwapService {
    * @param args.origin - EOA sending the transaction
    * @param args.slippage - Slippage in percent (0–50)
    * @param args.deadline - Quote deadline timestamp in seconds (optional)
+   * @param args.unusedInputReceiver - Address to receive unused input tokens instead of depositing back to fromVault/fromAccount (optional)
+   * @param args.skipSweepDepositOut - If true, output tokens are left in the Swapper (no deposit of output). (optional)
    * @returns Promise of array of swap quotes (verify type skimMin). Throws if slippage invalid or no quotes.
    */
   async getDepositQuote(
@@ -391,6 +428,8 @@ export class SwapService implements ISwapService {
       targetDebt: 0n,
       currentDebt: 0n,
       deadline: deadline ?? 0,
+      unusedInputReceiver: args.unusedInputReceiver,
+      skipSweepDepositOut: args.skipSweepDepositOut,
       provider: args.provider,
     });
 
