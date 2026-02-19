@@ -81,7 +81,7 @@ export class KeyringPluginAdapter {
   /**
    * Check if an account has a valid Keyring credential (or wildcard) on a hook target.
    */
-  queryCheckCredential = async (
+  queryKeyringCheckCredential = async (
     provider: PublicClient,
     hookTarget: Address,
     account: Address,
@@ -97,7 +97,7 @@ export class KeyringPluginAdapter {
   /**
    * Read the policyId from a hook target contract.
    */
-  queryPolicyId = async (
+  queryKeyringPolicyId = async (
     provider: PublicClient,
     hookTarget: Address,
   ): Promise<number> => {
@@ -170,7 +170,7 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
           const hookTarget = vault.hooks.hookTarget;
 
           // Check if credential is already valid
-          const hasCredential = await adapter.queryCheckCredential(
+          const hasCredential = await adapter.queryKeyringCheckCredential(
             ctx.provider,
             hookTarget,
             ctx.sender,
@@ -179,7 +179,7 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 
           // Read policyId and keyring address from hook target
           const [policyId, keyringAddress] = await Promise.all([
-            adapter.queryPolicyId(ctx.provider, hookTarget),
+            adapter.queryKeyringPolicyId(ctx.provider, hookTarget),
             adapter.queryKeyringAddress(ctx.provider, hookTarget),
           ]);
 

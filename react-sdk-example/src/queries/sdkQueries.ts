@@ -19,7 +19,7 @@ export const queryClient = new QueryClient({
 // ---------------------------------------------------------------------------
 // Layer 1 – Fetcher-level caching via SDK's buildQuery hook
 //
-// Every SDK `query*` method (queryVaultInfoFull, queryVerifiedArray, …) is
+// Every SDK `query*` method (queryEVaultInfoFull, queryEVaultVerifiedArray, …) is
 // wrapped with queryClient.fetchQuery() so each individual RPC / subgraph
 // call gets its own React-Query cache entry.
 // ---------------------------------------------------------------------------
@@ -54,18 +54,18 @@ const STALE_TIMES: Record<string, number> = {
   queryEulerLabelsPoints: Infinity,
 
   // Perspective / factory lists — change only when new vaults are deployed
-  queryVerifiedArray: 5 * MINUTE,
+  queryEVaultVerifiedArray: 5 * MINUTE,
   queryEulerEarnVerifiedArray: 5 * MINUTE,
   queryVaultFactories: 5 * MINUTE,
 
   // On-chain vault state — moderate refresh
-  queryVaultInfoFull: 20_000,
+  queryEVaultInfoFull: 20_000,
   queryEulerEarnVaultInfoFull: 20_000,
   queryVaultInfoERC4626: 20_000,
   
   // Vault config, probably ok to be cached for a while
-  queryGovernorAdmin: 60 * MINUTE,
-  querySupplyCapResolved: 60 * MINUTE,
+  querySecuritizeVaultGovernorAdmin: 60 * MINUTE,
+  querySecuritizeVaultSupplyCapResolved: 60 * MINUTE,
 
   // Prices
   queryAssetPriceInfo: MINUTE,

@@ -45,7 +45,7 @@ export class SecuritizeVaultOnchainAdapter
     this.queryVaultInfoERC4626 = fn;
   }
 
-  queryGovernorAdmin = async (
+  querySecuritizeVaultGovernorAdmin = async (
     provider: ReturnType<ProviderService["getProvider"]>,
     vault: Address
   ) => {
@@ -56,11 +56,11 @@ export class SecuritizeVaultOnchainAdapter
     });
   };
 
-  setQueryGovernorAdmin(fn: typeof this.queryGovernorAdmin): void {
-    this.queryGovernorAdmin = fn;
+  setQuerySecuritizeVaultGovernorAdmin(fn: typeof this.querySecuritizeVaultGovernorAdmin): void {
+    this.querySecuritizeVaultGovernorAdmin = fn;
   }
 
-  querySupplyCapResolved = async (
+  querySecuritizeVaultSupplyCapResolved = async (
     provider: ReturnType<ProviderService["getProvider"]>,
     vault: Address
   ) => {
@@ -71,8 +71,8 @@ export class SecuritizeVaultOnchainAdapter
     });
   };
 
-  setQuerySupplyCapResolved(fn: typeof this.querySupplyCapResolved): void {
-    this.querySupplyCapResolved = fn;
+  setQuerySecuritizeVaultSupplyCapResolved(fn: typeof this.querySecuritizeVaultSupplyCapResolved): void {
+    this.querySecuritizeVaultSupplyCapResolved = fn;
   }
 
   async fetchVaults(
@@ -87,8 +87,8 @@ export class SecuritizeVaultOnchainAdapter
 
     const [infoResults, governorResults, supplyCapResults] = await Promise.all([
       Promise.all(vaults.map(vault => this.queryVaultInfoERC4626(provider, utilsLensAddress, vault))),
-      Promise.all(vaults.map(vault => this.queryGovernorAdmin(provider, vault))),
-      Promise.all(vaults.map(vault => this.querySupplyCapResolved(provider, vault))),
+      Promise.all(vaults.map(vault => this.querySecuritizeVaultGovernorAdmin(provider, vault))),
+      Promise.all(vaults.map(vault => this.querySecuritizeVaultSupplyCapResolved(provider, vault))),
     ]);
 
     const parsed: ISecuritizeCollateralVault[] = [];

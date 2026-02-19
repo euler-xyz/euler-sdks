@@ -2,6 +2,7 @@ import { Address, getAddress } from "viem";
 import { IAccountVaultsAdapter } from "./accountOnchainAdapter.js";
 import { getAddressPrefix } from "../../../utils/subAccounts.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js";
+import { createCallBundler } from "../../../utils/callBundler.js";
 
 export interface AccountVaults {
   [vault: Address]: {
@@ -22,24 +23,54 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
     if (buildQuery) applyBuildQuery(this, buildQuery);
   }
 
-  queryAccountVaults = async (
-    subgraphUrl: string,
-    account: Address
-  ): Promise<any> => {
-    const response = await fetch(subgraphUrl, {
-      method: "POST",
-      body: JSON.stringify({
-        query: `query AccountBorrows {
-          trackingActiveAccount(id: "${getAddressPrefix(account)}") {
-            deposits
-            borrows
-          }
-        }`,
-        operationName: 'AccountVaults',
-      }),
-    });
-    return response.json();
-  };
+  queryAccountVaults = createCallBundler(
+    async (keys: { chainId: number; account: Address }[]): Promise<any[]> => {
+      const byChain = new Map<number, Address[]>();
+      for (const key of keys) {
+        const arr = byChain.get(key.chainId) ?? [];
+        arr.push(key.account);
+        byChain.set(key.chainId, arr);
+      }
+
+      const chainResults = new Map<number, Map<string, any>>();
+      for (const [chainId, accounts] of byChain) {
+        const subgraphUrl = this.config.subgraphURLs[chainId];
+        if (!subgraphUrl) continue;
+
+        const ids = [...new Set(accounts.map((a) => getAddressPrefix(a)))];
+        const response = await fetch(subgraphUrl, {
+          method: "POST",
+          body: JSON.stringify({
+            query: `query AccountVaults($ids: [String!]!) {
+              trackingActiveAccounts(where: { id_in: $ids }) {
+                id
+                deposits
+                borrows
+              }
+            }`,
+            variables: { ids },
+            operationName: "AccountVaults",
+          }),
+        });
+        const json = await response.json();
+        const map = new Map<string, any>();
+        for (const entry of (json as any).data?.trackingActiveAccounts ?? []) {
+          map.set(entry.id.toLowerCase(), entry);
+        }
+        chainResults.set(chainId, map);
+      }
+
+      return keys.map((key) => {
+        const prefix = getAddressPrefix(key.account);
+        const entry = chainResults.get(key.chainId)?.get(prefix.toLowerCase());
+        return {
+          data: {
+            trackingActiveAccount: entry ?? null,
+          },
+        };
+      });
+    },
+  );
 
   setQueryAccountVaults(fn: typeof this.queryAccountVaults): void {
     this.queryAccountVaults = fn;
@@ -59,11 +90,7 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
         results[subAccount][type].push(vault);
       });
     };
-    const subgraphUrl = this.config.subgraphURLs[chainId];
-    if (!subgraphUrl) {
-      throw new Error(`Subgraph URL not found for chain ${chainId}`);
-    }
-    const data = await this.queryAccountVaults(subgraphUrl, account);
+    const data = await this.queryAccountVaults({ chainId, account });
 
     const accountVaults: AccountVaults = {};
     parseResult("deposits", accountVaults, data.data?.trackingActiveAccount?.deposits || []);

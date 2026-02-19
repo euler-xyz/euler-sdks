@@ -12,7 +12,7 @@ class EVaultOnchainAdapter {
     if (buildQuery) applyBuildQuery(this, buildQuery);
   }
 
-  queryVaultInfoFull = async (provider, chainId, vault) => {
+  queryEVaultInfoFull = async (provider, lensAddress, vault) => {
     // RPC call via viem
   };
 }
@@ -24,6 +24,7 @@ At construction time, `applyBuildQuery` iterates all own properties starting wit
 type BuildQueryFn = <T extends (...args: any[]) => Promise<any>>(
   queryName: string,
   fn: T,
+  target: object,
 ) => T;
 ```
 
@@ -83,18 +84,18 @@ const STALE_TIMES: Record<string, number> = {
   queryEulerLabelsPoints: Infinity,
 
   // Perspective / factory lists — change only when new vaults are deployed
-  queryVerifiedArray: 5 * MINUTE,
+  queryEVaultVerifiedArray: 5 * MINUTE,
   queryEulerEarnVerifiedArray: 5 * MINUTE,
   queryVaultFactories: 5 * MINUTE,
 
   // On-chain vault state — moderate refresh
-  queryVaultInfoFull: 20_000,
+  queryEVaultInfoFull: 20_000,
   queryEulerEarnVaultInfoFull: 20_000,
   queryVaultInfoERC4626: 20_000,
 
   // Vault config — slow-changing
-  queryGovernorAdmin: 60 * MINUTE,
-  querySupplyCapResolved: 60 * MINUTE,
+  querySecuritizeVaultGovernorAdmin: 60 * MINUTE,
+  querySecuritizeVaultSupplyCapResolved: 60 * MINUTE,
 
   // Prices
   queryAssetPriceInfo: MINUTE,
@@ -151,86 +152,86 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 
 ### Core Services
 
-| Query | Class | Args | Description |
-|-------|-------|------|-------------|
-| `queryDeployments` | `DeploymentService` (static) | `(url)` | Fetch deployment addresses from URL |
-| `queryABI` | `ABIService` | `(url)` | Fetch ABI JSON from URL |
-| `queryTokenList` | `TokenlistService` | `(url)` | Fetch token list from URL |
-| `querySwapQuotes` | `SwapService` | `(url)` | Fetch swap quotes from aggregator API |
-| `querySwapProviders` | `SwapService` | `(url)` | Fetch available swap providers for a chain |
+| Query | Type | Class | Args | Description |
+|-------|------|-------|------|-------------|
+| `queryDeployments` | url | `DeploymentService` (static) | `(url)` | Fetch deployment addresses from URL |
+| `queryABI` | url | `ABIService` | `(url)` | Fetch ABI JSON from URL |
+| `queryTokenList` | url | `TokenlistService` | `(url)` | Fetch token list from URL |
+| `querySwapQuotes` | url | `SwapService` | `(url)` | Fetch swap quotes from aggregator API |
+| `querySwapProviders` | url | `SwapService` | `(url)` | Fetch available swap providers for a chain |
 
 ### Vault Adapters
 
-| Query | Class | Args | Description |
-|-------|-------|------|-------------|
-| `queryVaultInfoFull` | `EVaultOnchainAdapter` | `(provider, vaultLensAddress, vault, options?)` | Read full vault state via VaultLens |
-| `queryVerifiedArray` | `EVaultOnchainAdapter` | `(provider, perspective)` | Read verified vault list from Perspective |
-| `queryEulerEarnVaultInfoFull` | `EulerEarnOnchainAdapter` | `(provider, lensAddress, vault)` | Read EulerEarn vault state via EulerEarnVaultLens |
-| `queryEulerEarnVerifiedArray` | `EulerEarnOnchainAdapter` | `(provider, perspective)` | Read verified EulerEarn vault list |
-| `queryVaultInfoERC4626` | `SecuritizeVaultOnchainAdapter` | `(provider, utilsLensAddress, vault)` | Read ERC4626 vault info |
-| `queryGovernorAdmin` | `SecuritizeVaultOnchainAdapter` | `(provider, vault)` | Read governor admin address |
-| `querySupplyCapResolved` | `SecuritizeVaultOnchainAdapter` | `(provider, vault)` | Read resolved supply cap |
-| `queryVaultFactories` | `VaultTypeSubgraphAdapter` | `({ address, chainId })` | Fetch vault factory for a single vault (auto-bundled) |
+| Query | Type | Class | Args | Description |
+|-------|------|-------|------|-------------|
+| `queryEVaultInfoFull` | rpc | `EVaultOnchainAdapter` | `(provider, vaultLensAddress, vault)` | Read full vault state via VaultLens |
+| `queryEVaultVerifiedArray` | rpc | `EVaultOnchainAdapter` | `(provider, perspective)` | Read verified vault list from Perspective |
+| `queryEulerEarnVaultInfoFull` | rpc | `EulerEarnOnchainAdapter` | `(provider, lensAddress, vault)` | Read EulerEarn vault state via EulerEarnVaultLens |
+| `queryEulerEarnVerifiedArray` | rpc | `EulerEarnOnchainAdapter` | `(provider, perspective)` | Read verified EulerEarn vault list |
+| `queryVaultInfoERC4626` | rpc | `SecuritizeVaultOnchainAdapter` | `(provider, utilsLensAddress, vault)` | Read ERC4626 vault info |
+| `querySecuritizeVaultGovernorAdmin` | rpc | `SecuritizeVaultOnchainAdapter` | `(provider, vault)` | Read governor admin address |
+| `querySecuritizeVaultSupplyCapResolved` | rpc | `SecuritizeVaultOnchainAdapter` | `(provider, vault)` | Read resolved supply cap |
+| `queryVaultFactories` | gql | `VaultTypeSubgraphAdapter` | `({ address, chainId })` | Fetch vault factory for a single vault (auto-bundled) |
 
 ### Account Adapters
 
-| Query | Class | Args | Description |
-|-------|-------|------|-------------|
-| `queryEVCAccountInfo` | `AccountOnchainAdapter` | `(provider, accountLensAddress, evc, subAccount)` | Read EVC account state (controllers, collaterals) |
-| `queryVaultAccountInfo` | `AccountOnchainAdapter` | `(provider, accountLensAddress, subAccount, vault)` | Read per-vault account position |
-| `queryVaultInfoFull` | `AccountOnchainAdapter` | `(provider, vaultLensAddress, vault, options?)` | Read vault info for account context |
-| `queryAccountVaults` | `AccountVaultsSubgraphAdapter` | `(subgraphUrl, account)` | Query account vault history from subgraph |
+| Query | Type | Class | Args | Description |
+|-------|------|-------|------|-------------|
+| `queryEVCAccountInfo` | rpc | `AccountOnchainAdapter` | `(provider, accountLensAddress, evc, subAccount)` | Read EVC account state (controllers, collaterals) |
+| `queryVaultAccountInfo` | rpc | `AccountOnchainAdapter` | `(provider, accountLensAddress, subAccount, vault)` | Read per-vault account position |
+| `queryEVaultInfoFull` | rpc | `AccountOnchainAdapter` | `(provider, vaultLensAddress, vault)` | Read vault info for account context |
+| `queryAccountVaults` | gql | `AccountVaultsSubgraphAdapter` | `({ chainId, account })` | Query account vault history from subgraph (auto-bundled) |
 
 ### Wallet Adapter
 
-| Query | Class | Args | Description |
-|-------|-------|------|-------------|
-| `queryBalanceOf` | `WalletOnchainAdapter` | `(provider, asset, account)` | Read ERC20 balance |
-| `queryAllowance` | `WalletOnchainAdapter` | `(provider, asset, owner, spender)` | Read ERC20 allowance |
-| `queryPermit2Allowance` | `WalletOnchainAdapter` | `(provider, permit2Address, owner, asset, spender)` | Read Permit2 allowance |
+| Query | Type | Class | Args | Description |
+|-------|------|-------|------|-------------|
+| `queryBalanceOf` | rpc | `WalletOnchainAdapter` | `(provider, asset, account)` | Read ERC20 balance |
+| `queryAllowance` | rpc | `WalletOnchainAdapter` | `(provider, asset, owner, spender)` | Read ERC20 allowance |
+| `queryPermit2Allowance` | rpc | `WalletOnchainAdapter` | `(provider, permit2Address, owner, asset, spender)` | Read Permit2 allowance |
 
 ### Price Service
 
-| Query | Class | Args | Description |
-|-------|-------|------|-------------|
-| `queryAssetPriceInfo` | `PriceService` | `(provider, utilsLensAddress, assetAddress)` | Read on-chain oracle price for an asset |
-| `queryBackendPrice` | `PricingBackendClient` | `({ address, chainId })` | Fetch asset price from pricing backend (auto-bundled) |
+| Query | Type | Class | Args | Description |
+|-------|------|-------|------|-------------|
+| `queryAssetPriceInfo` | rpc | `PriceService` | `(provider, utilsLensAddress, assetAddress)` | Read on-chain oracle price for an asset |
+| `queryBackendPrice` | url | `PricingBackendClient` | `({ address, chainId })` | Fetch asset price from pricing backend (auto-bundled) |
 
 ### Labels Service
 
-| Query | Class | Args | Description |
-|-------|-------|------|-------------|
-| `queryEulerLabelsVaults` | `EulerLabelsURLAdapter` | `(url)` | Fetch vault labels from Euler API |
-| `queryEulerLabelsEntities` | `EulerLabelsURLAdapter` | `(url)` | Fetch entity labels from Euler API |
-| `queryEulerLabelsProducts` | `EulerLabelsURLAdapter` | `(url)` | Fetch product labels from Euler API |
-| `queryEulerLabelsPoints` | `EulerLabelsURLAdapter` | `(url)` | Fetch points labels from Euler API |
+| Query | Type | Class | Args | Description |
+|-------|------|-------|------|-------------|
+| `queryEulerLabelsVaults` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch vault labels from Euler API |
+| `queryEulerLabelsEntities` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch entity labels from Euler API |
+| `queryEulerLabelsProducts` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch product labels from Euler API |
+| `queryEulerLabelsPoints` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch points labels from Euler API |
 
 ### Rewards Service
 
-| Query | Class | Args | Description |
-|-------|-------|------|-------------|
-| `queryMerklOpportunities` | `RewardsService` | `(url)` | Fetch Merkl reward opportunities |
-| `queryBrevisCampaigns` | `RewardsService` | `(url, body)` | Fetch Brevis reward campaigns |
-| `queryMerklUserRewards` | `RewardsService` | `(url)` | Fetch Merkl user reward balances |
-| `queryBrevisUserProofs` | `RewardsService` | `(url, body)` | Fetch Brevis user reward proofs |
+| Query | Type | Class | Args | Description |
+|-------|------|-------|------|-------------|
+| `queryMerklOpportunities` | url | `RewardsService` | `(url)` | Fetch Merkl reward opportunities |
+| `queryBrevisCampaigns` | url | `RewardsService` | `(url, body)` | Fetch Brevis reward campaigns |
+| `queryMerklUserRewards` | url | `RewardsService` | `(url)` | Fetch Merkl user reward balances |
+| `queryBrevisUserProofs` | url | `RewardsService` | `(url, body)` | Fetch Brevis user reward proofs |
 
 ### Intrinsic APY Service
 
-| Query | Class | Args | Description |
-|-------|-------|------|-------------|
-| `queryDefiLlamaPools` | `IntrinsicApyService` | `(url)` | Fetch yield pool data from DefiLlama |
-| `queryPendleMarketData` | `IntrinsicApyService` | `(url)` | Fetch market data from Pendle API |
+| Query | Type | Class | Args | Description |
+|-------|------|-------|------|-------------|
+| `queryDefiLlamaPools` | url | `IntrinsicApyService` | `(url)` | Fetch yield pool data from DefiLlama |
+| `queryPendleMarketData` | url | `IntrinsicApyService` | `(url)` | Fetch market data from Pendle API |
 
 ### Plugins
 
-| Query | Class | Args | Description |
-|-------|-------|------|-------------|
-| `queryBatchSimulation` | `BatchSimulationAdapter` | `(provider, evcAddress, calldata, value)` | Execute EVC batchSimulation via eth_call |
-| `queryPythUpdateData` | `PythPluginAdapter` | `(feedIds)` | Fetch Pyth price update data from Hermes API (auto-bundled) |
-| `queryPythUpdateFee` | `PythPluginAdapter` | `(provider, pythAddress, updateData)` | Read Pyth update fee from on-chain contract |
-| `queryCheckCredential` | `KeyringPluginAdapter` | `(provider, hookTarget, account)` | Check keyring credential validity |
-| `queryPolicyId` | `KeyringPluginAdapter` | `(provider, hookTarget)` | Read vault's keyring policy ID |
-| `queryKeyringAddress` | `KeyringPluginAdapter` | `(provider, hookTarget)` | Read keyring contract address from vault |
+| Query | Type | Class | Args | Description |
+|-------|------|-------|------|-------------|
+| `queryBatchSimulation` | rpc | `BatchSimulationAdapter` | `(provider, evcAddress, calldata, value)` | Execute EVC batchSimulation via eth_call |
+| `queryPythUpdateData` | url | `PythPluginAdapter` | `(feedIds)` | Fetch Pyth price update data from Hermes API (auto-bundled) |
+| `queryPythUpdateFee` | rpc | `PythPluginAdapter` | `(provider, pythAddress, updateData)` | Read Pyth update fee from on-chain contract |
+| `queryKeyringCheckCredential` | rpc | `KeyringPluginAdapter` | `(provider, hookTarget, account)` | Check keyring credential validity |
+| `queryKeyringPolicyId` | rpc | `KeyringPluginAdapter` | `(provider, hookTarget)` | Read vault's keyring policy ID |
+| `queryKeyringAddress` | rpc | `KeyringPluginAdapter` | `(provider, hookTarget)` | Read keyring contract address from vault |
 
 ### Not Wrapped (Internal Utilities)
 

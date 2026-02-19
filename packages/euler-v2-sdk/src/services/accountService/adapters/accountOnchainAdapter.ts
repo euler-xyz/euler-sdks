@@ -88,13 +88,12 @@ export class AccountOnchainAdapter implements IAccountAdapter {
     this.queryVaultAccountInfo = fn;
   }
 
-  queryVaultInfoFull = async (
-    chainId: number,
+  queryEVaultInfoFull = async (
+    provider: ReturnType<ProviderService["getProvider"]>,
+    vaultLensAddress: Address,
     vault: Address,
   ) => {
-    const deployment = this.deploymentService.getDeployment(chainId);
-    const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
-    return this.providerService.getProvider(chainId).readContract({
+    return provider.readContract({
       address: vaultLensAddress,
       abi: vaultLensAbi,
       functionName: "getVaultInfoFull",
@@ -102,8 +101,8 @@ export class AccountOnchainAdapter implements IAccountAdapter {
     });
   };
 
-  setQueryVaultInfoFull(fn: typeof this.queryVaultInfoFull): void {
-    this.queryVaultInfoFull = fn;
+  setQueryEVaultInfoFull(fn: typeof this.queryEVaultInfoFull): void {
+    this.queryEVaultInfoFull = fn;
   }
 
   async fetchAccount(
@@ -195,12 +194,13 @@ export class AccountOnchainAdapter implements IAccountAdapter {
     vaults: Address[],
   ): Promise<VaultAccountInfo[]> {
     const deployment = this.deploymentService.getDeployment(chainId);
+    const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
 
     // Fetch vault info to construct EVault objects for plugin prepend collection.
     // Vaults that fail the lens read are filtered out — plugins won't enrich them.
     const vaultInfoResults = await Promise.all(
       vaults.map(vault =>
-        this.queryVaultInfoFull(chainId, vault)
+        this.queryEVaultInfoFull(provider, vaultLensAddress, vault)
           .then((result) => new EVault(convertVaultInfoFullToIEVault(result as unknown as VaultInfoFull, chainId)))
           .catch(() => null),
       ),

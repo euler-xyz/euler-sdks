@@ -44,7 +44,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
     this.batchSimulationAdapter = adapter;
   }
 
-  queryVaultInfoFull = async (
+  queryEVaultInfoFull = async (
     provider: ReturnType<ProviderService["getProvider"]>,
     vaultLensAddress: Address,
     vault: Address,
@@ -57,11 +57,11 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
     });
   };
 
-  setQueryVaultInfoFull(fn: typeof this.queryVaultInfoFull): void {
-    this.queryVaultInfoFull = fn;
+  setQueryEVaultInfoFull(fn: typeof this.queryEVaultInfoFull): void {
+    this.queryEVaultInfoFull = fn;
   }
 
-  queryVerifiedArray = async (
+  queryEVaultVerifiedArray = async (
     provider: ReturnType<ProviderService["getProvider"]>,
     perspective: Address
   ) => {
@@ -72,8 +72,8 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
     });
   };
 
-  setQueryVerifiedArray(fn: typeof this.queryVerifiedArray): void {
-    this.queryVerifiedArray = fn;
+  setQueryEVaultVerifiedArray(fn: typeof this.queryEVaultVerifiedArray): void {
+    this.queryEVaultVerifiedArray = fn;
   }
 
   async fetchVaults(chainId: number, vaults: Address[]): Promise<IEVault[]> {
@@ -82,7 +82,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
     const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
 
     const results = await Promise.all(
-      vaults.map(vault => this.queryVaultInfoFull(provider, vaultLensAddress, vault))
+      vaults.map(vault => this.queryEVaultInfoFull(provider, vaultLensAddress, vault))
     );
 
     const parsedVaults: IEVault[] = results.map((result) => {
@@ -150,7 +150,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
     const provider = this.providerService.getProvider(chainId);
 
     const results = await Promise.all(
-      perspectives.map(perspective => this.queryVerifiedArray(provider, perspective))
+      perspectives.map(perspective => this.queryEVaultVerifiedArray(provider, perspective))
     );
 
     const addresses: Address[] = results.flatMap(result => result as Address[]);

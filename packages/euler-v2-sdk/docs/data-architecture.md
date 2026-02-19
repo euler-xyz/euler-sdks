@@ -80,7 +80,7 @@ All external calls within adapters are defined as `query*` arrow-function proper
 
 ```typescript
 class EVaultOnchainAdapter {
-  queryVaultInfoFull = async (provider, lensAddress, vault) => {
+  queryEVaultInfoFull = async (provider, lensAddress, vault) => {
     return provider.readContract({ ... })
   }
 }
@@ -258,7 +258,7 @@ accountService.fetchAccount(chainId, owner, { populateVaults: true, populateMark
   ├─ account.populateVaults(vaultMetaService)
   │    ├─ VaultTypeSubgraphAdapter.queryVaultFactories()     ← subgraph
   │    │    → route addresses to correct services
-  │    ├─ EVaultOnchainAdapter.queryVaultInfoFull()          ← RPC (VaultLens)
+  │    ├─ EVaultOnchainAdapter.queryEVaultInfoFull()          ← RPC (VaultLens)
   │    ├─ EulerEarnOnchainAdapter.queryEulerEarnVaultInfoFull() ← RPC
   │    │    → convert, construct typed entities
   │    └─ assign vault entities to position.vault fields
