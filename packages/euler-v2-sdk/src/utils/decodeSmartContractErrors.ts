@@ -249,7 +249,7 @@ export async function decodeSmartContractErrors(
 ): Promise<DecodedSmartContractError[]> {
   const fetchTimeout = typeof options.fetchTimeout === "number" && options.fetchTimeout >= 0
     ? options.fetchTimeout
-    : 2000;
+    : 5000;
   const results: DecodedSmartContractError[] = [];
   const seenResults = new Set<string>();
   const seenStrings = new Set<string>();

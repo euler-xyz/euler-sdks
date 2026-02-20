@@ -55,7 +55,7 @@ import {
 } from "../utils/config.js";
 
 // Inputs
-const COLLATERAL_AMOUNT = parseUnits("100", 6); // 100 USDC
+const COLLATERAL_AMOUNT = parseUnits("1000000", 6); // 100 USDC
 const LIABILITY_AMOUNT = parseUnits("50", 6);   // 50 USDT
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
