@@ -7,6 +7,7 @@ import { QueryProfiler } from "./components/QueryProfiler.tsx";
 import { VaultListPage } from "./pages/VaultListPage.tsx";
 import { VaultDetailPage } from "./pages/VaultDetailPage.tsx";
 import { EulerEarnDetailPage } from "./pages/EulerEarnDetailPage.tsx";
+import { BorrowPage } from "./pages/BorrowPage.tsx";
 import { PortfolioPage } from "./pages/PortfolioPage.tsx";
 import { RewardsPage } from "./pages/RewardsPage.tsx";
 
@@ -21,6 +22,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<Navigate to="/vaults" replace />} />
                 <Route path="/vaults" element={<VaultListPage />} />
+                <Route path="/borrow" element={<BorrowPage />} />
                 <Route
                   path="/vault/:chainId/:address"
                   element={<VaultDetailPage />}

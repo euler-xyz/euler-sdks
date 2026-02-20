@@ -29,6 +29,7 @@ export type PlanProgress = {
   completed: number;
   total: number;
   current?: TransactionPlanItem;
+  status?: string;
 };
 
 export async function executePlanWithProgress(args: {
@@ -44,8 +45,8 @@ export async function executePlanWithProgress(args: {
   const permit2BatchItems: EVCBatchItem[] = [];
   let completed = 0;
 
-  const update = (current?: TransactionPlanItem) => {
-    onProgress?.({ completed, total: plan.length, current });
+  const update = (current?: TransactionPlanItem, status?: string) => {
+    onProgress?.({ completed, total: plan.length, current, status });
   };
 
   update();
@@ -61,6 +62,7 @@ export async function executePlanWithProgress(args: {
 
         for (const resolvedItem of item.resolved) {
           if (resolvedItem.type === "approve") {
+            update(item, `Approval tx (${formatApprovalAmount(resolvedItem.amount)})`);
             const hash = await walletClient.sendTransaction({
               to: resolvedItem.token,
               data: resolvedItem.data,
@@ -70,6 +72,7 @@ export async function executePlanWithProgress(args: {
 
             await publicClient.waitForTransactionReceipt({ hash });
           } else if (resolvedItem.type === "permit2") {
+            update(item, "Permit2 signature");
             const deployment = sdk.deploymentService.getDeployment(chainId);
             const permit2Address = deployment.addresses.coreAddrs.permit2;
 
@@ -105,6 +108,7 @@ export async function executePlanWithProgress(args: {
           }
         }
       } else if (item.type === "evcBatch") {
+        update(item, "EVC batch");
         const allBatchItems = [...permit2BatchItems, ...item.items];
         const deployment = sdk.deploymentService.getDeployment(chainId);
         const evcAddress = deployment.addresses.coreAddrs.evc;
@@ -133,7 +137,7 @@ export async function executePlanWithProgress(args: {
       }
 
       completed += 1;
-      update(item);
+      update(item, "Completed");
     }
   } catch (error) {
     const decoded = await decodeSmartContractErrors(error);

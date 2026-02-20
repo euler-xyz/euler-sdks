@@ -47,7 +47,8 @@ a:hover {
 
 /* Layout */
 .app-layout {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .app-main {
@@ -74,6 +75,35 @@ a:hover {
   align-self: flex-start;
   max-height: 100vh;
   overflow-y: auto;
+  background: #fff;
+  transition: width 160ms ease, padding 160ms ease;
+}
+
+.profiler-panel.collapsed {
+  width: 30px;
+  padding: 8px 4px;
+  overflow: hidden;
+}
+
+.profiler-panel.collapsed .profiler-header {
+  margin: 0;
+  padding: 0;
+  border-bottom: 0;
+  justify-content: center;
+}
+
+@media (max-width: 1200px) {
+  .app-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .profiler-panel {
+    width: auto;
+    position: static;
+    border-left: 0;
+    border-top: 2px solid #000;
+    max-height: none;
+  }
 }
 
 .profiler-title {
@@ -81,9 +111,26 @@ a:hover {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1px;
+}
+
+.profiler-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 8px;
   padding-bottom: 4px;
   border-bottom: 1px solid #000;
+}
+
+.profiler-toggle {
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid #000;
+  background: #fff;
+  padding: 2px 6px;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .profiler-empty {
@@ -160,6 +207,12 @@ tr:hover {
 
 tr.clickable {
   cursor: pointer;
+}
+
+.table-subline {
+  font-size: 11px;
+  color: #666;
+  margin-top: 2px;
 }
 
 /* Detail page */
@@ -429,4 +482,107 @@ tr.clickable {
   border: 1px solid #000;
   background: #fff5d6;
   font-size: 12px;
+}
+
+.deposit-row td {
+  background: #f8f8f8;
+}
+
+.deposit-panel {
+  padding: 12px;
+  border: 1px solid #000;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.deposit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.deposit-balance {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.deposit-form {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.deposit-label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.deposit-input {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid #000;
+  background: #fff;
+}
+
+.deposit-usd {
+  grid-column: 2 / 3;
+  font-size: 12px;
+  color: #333;
+}
+
+.deposit-actions {
+  grid-column: 2 / 3;
+}
+
+.plan-progress {
+  display: grid;
+  gap: 6px;
+}
+
+.plan-progress-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.plan-progress-status {
+  font-size: 12px;
+  color: #333;
+}
+
+.plan-progress-bar {
+  width: 100%;
+  height: 8px;
+  border: 1px solid #000;
+  background: #fff;
+}
+
+.plan-progress-fill {
+  height: 100%;
+  background: #000;
+  transition: width 200ms ease;
+}
+
+.success-message {
+  padding: 8px 10px;
+  border: 1px solid #000;
+  background: #e7ffe7;
+  font-size: 12px;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
 }

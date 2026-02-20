@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
-import { useVerifiedVaults, useWalletBalance } from "../queries/sdkQueries.ts";
+import { queryClient, useVerifiedVaults, useWalletBalance } from "../queries/sdkQueries.ts";
 import {
   StandardEVaultPerspectives,
   StandardEulerEarnPerspectives,
@@ -10,11 +10,18 @@ import {
   type EVault,
   type EulerEarn,
 } from "euler-v2-sdk";
-import { formatUnits, parseUnits } from "viem";
-import { useAccount } from "wagmi";
+import { formatUnits, parseUnits, type Address } from "viem";
+import {
+  useAccount,
+  useChainId,
+  usePublicClient,
+  useSwitchChain,
+  useWalletClient,
+} from "wagmi";
 import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
+import { executePlanWithProgress } from "../utils/txExecutor.ts";
 
 const ALL_PERSPECTIVES = [
   StandardEVaultPerspectives.GOVERNED,
@@ -163,7 +170,7 @@ function amountToUsdWad(
   if (!amount || !priceWad) return undefined;
   try {
     const amountRaw = parseUnits(amount as `${number}`, decimals);
-    return (amountRaw * priceWad) / BigInt(10 ** decimals);
+    return (amountRaw * priceWad) / (10n ** BigInt(decimals));
   } catch {
     return undefined;
   }
@@ -175,7 +182,7 @@ function balanceToUsdWad(
   priceWad: bigint | undefined
 ): bigint | undefined {
   if (balance === undefined || !priceWad) return undefined;
-  return (balance * priceWad) / BigInt(10 ** decimals);
+  return (balance * priceWad) / (10n ** BigInt(decimals));
 }
 
 function DepositFormRow({
@@ -187,8 +194,17 @@ function DepositFormRow({
   chainId: number;
   onClose: () => void;
 }) {
+  const { sdk } = useSDK();
   const { address: walletAddress, isConnected } = useAccount();
+  const walletChainId = useChainId();
+  const { data: walletClient } = useWalletClient({ chainId });
+  const publicClient = usePublicClient({ chainId });
+  const { switchChain, isPending: isSwitching } = useSwitchChain();
   const [amount, setAmount] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [progress, setProgress] = useState<{ completed: number; total: number; status?: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const debouncedAmount = useDebouncedValue(amount, 400);
 
   const { data: walletBalance } = useWalletBalance(
@@ -211,6 +227,105 @@ function DepositFormRow({
     ? formatBigInt(walletBalance, vault.asset.decimals)
     : "-";
   const balanceUsd = formatPriceUsd(balanceUsdWad);
+  const isChainMismatch = isConnected && walletChainId !== chainId;
+
+  const handleSupply = async () => {
+    if (!sdk || !walletAddress) {
+      setError("Connect wallet first.");
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+
+    if (isChainMismatch) {
+      if (!switchChain) {
+        setError(`Switch wallet to chain ${chainId} and try again.`);
+        return;
+      }
+      try {
+        await switchChain({ chainId });
+      } catch (err) {
+        setError(String(err));
+      }
+      return;
+    }
+
+    if (!walletClient || !publicClient) {
+      setError("Wallet client not ready yet. Retry in a second.");
+      return;
+    }
+
+    if (!amount.trim()) {
+      setError("Enter an amount to supply.");
+      return;
+    }
+
+    let amountRaw: bigint;
+    try {
+      amountRaw = parseUnits(amount as `${number}`, vault.asset.decimals);
+    } catch {
+      setError("Invalid amount.");
+      return;
+    }
+
+    if (amountRaw <= 0n) {
+      setError("Amount must be greater than zero.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const accountData = await sdk.accountService.fetchAccount(
+        chainId,
+        walletAddress as Address,
+        { populateVaults: false }
+      );
+
+      let plan = sdk.executionService.planDeposit({
+        vault: vault.address,
+        amount: amountRaw,
+        receiver: walletAddress as Address,
+        account: accountData,
+        asset: vault.asset.address,
+        enableCollateral: false,
+      });
+
+      plan = await sdk.executionService.resolveRequiredApprovals({
+        plan,
+        chainId,
+        account: walletAddress as Address,
+        usePermit2: true,
+        unlimitedApproval: false,
+      });
+
+      setProgress({ completed: 0, total: plan.length });
+
+      await executePlanWithProgress({
+        plan,
+        sdk,
+        chainId,
+        walletClient,
+        publicClient,
+        account: walletAddress as Address,
+        onProgress: (p) => {
+          setProgress({ completed: p.completed, total: p.total, status: p.status });
+        },
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: ["walletBalance", chainId, walletAddress, vault.asset.address],
+      });
+
+      setAmount("");
+      setSuccess("Supply completed.");
+      setProgress(null);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <tr className="deposit-row">
@@ -231,8 +346,13 @@ function DepositFormRow({
             </div>
           )}
 
-          {isConnected && (
+              {isConnected && (
             <>
+              {isChainMismatch && (
+                <div className="wallet-chain-warning">
+                  Wallet is connected to a different chain. We will prompt a switch to {chainId}.
+                </div>
+              )}
               <div className="deposit-balance">
                 <span>
                   Wallet Balance: {formattedBalance} {vault.asset.symbol}
@@ -261,11 +381,48 @@ function DepositFormRow({
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.0"
                   className="deposit-input"
+                  disabled={isSubmitting}
                 />
                 <div className="deposit-usd">
                   USD value: {formatPriceUsd(amountUsdWad)}
                 </div>
+                <div className="deposit-actions">
+                  <button
+                    type="button"
+                    className="wallet-button"
+                    onClick={handleSupply}
+                    disabled={isSubmitting || !isConnected}
+                  >
+                    {isSwitching
+                      ? "Switching..."
+                      : isSubmitting
+                      ? "Supplying..."
+                      : "Supply"}
+                  </button>
+                </div>
               </div>
+              {progress && (
+                <div className="plan-progress">
+                  <div className="plan-progress-label">
+                    Progress: {progress.completed}/{progress.total}
+                  </div>
+                  {progress.status && (
+                    <div className="plan-progress-status">{progress.status}</div>
+                  )}
+                  <div className="plan-progress-bar">
+                    <div
+                      className="plan-progress-fill"
+                      style={{
+                        width: `${Math.round(
+                          (progress.completed / Math.max(progress.total, 1)) * 100
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+              {success && <div className="success-message">{success}</div>}
+              {error && <div className="error-message">{error}</div>}
             </>
           )}
         </div>
@@ -363,9 +520,8 @@ export function VaultListPage() {
               </thead>
               <tbody>
                 {eVaultSort.sorted.map((vault) => (
-                  <>
+                  <Fragment key={vault.address}>
                     <tr
-                      key={vault.address}
                       className="clickable"
                       onClick={() =>
                         navigate(`/vault/${chainId}/${vault.address}`)
@@ -418,7 +574,7 @@ export function VaultListPage() {
                         onClose={() => setOpenDeposit(null)}
                       />
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>

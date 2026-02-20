@@ -144,6 +144,7 @@ export function useVerifiedVaults(perspectives: VaultMetaPerspective[]) {
         populateStrategyVaults: true,
         populateRewards: true,
         populateIntrinsicApy: true,
+        populateLabels: true,
       }),
     enabled,
     staleTime: 1_000,

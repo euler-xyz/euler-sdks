@@ -18,9 +18,7 @@ export function WalletConnectButton({
     error: switchError,
   } = useSwitchChain();
 
-  const injectedConnector =
-    connectors.find((connector) => connector.id === "injected") ??
-    connectors[0];
+  const connector = connectors[0];
 
   const isChainMismatch = isConnected && walletChainId !== appChainId;
 
@@ -55,8 +53,8 @@ export function WalletConnectButton({
       <button
         type="button"
         className="wallet-button"
-        onClick={() => injectedConnector && connect({ connector: injectedConnector })}
-        disabled={!injectedConnector || isPending}
+        onClick={() => connector && connect({ connector })}
+        disabled={!connector || isPending}
       >
         {isPending ? "Connecting..." : "Connect Wallet"}
       </button>
