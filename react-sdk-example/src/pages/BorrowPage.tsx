@@ -242,7 +242,9 @@ export function BorrowPage() {
               <tr
                 key={row.id}
                 className="clickable"
-                onClick={() => navigate(`/vault/${chainId}/${row.debtAddress}`)}
+                onClick={() =>
+                  navigate(`/borrow/${chainId}/${row.collateralAddress}/${row.debtAddress}`)
+                }
               >
                 <td>
                   <div>{row.collateralVault?.asset.symbol ?? "Unknown"}</div>

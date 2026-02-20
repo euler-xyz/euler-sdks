@@ -300,7 +300,10 @@ export async function decodeSmartContractErrors(
     }
 
     for (const signature of signatures) {
-      if (normalizedHex.length <= 10) continue;
+      if (normalizedHex.length <= 10) {
+        addResult(signature, selector, []);
+        continue;
+      }
 
       const decoded = tryDecodeWithSignature(normalizedHex, signature);
       if (!decoded) {
@@ -343,6 +346,26 @@ export async function decodeSmartContractErrors(
       }
     }
   };
+
+  if (typeof input === "string") {
+    const normalized = normalizeHex(input);
+    if (normalized && normalized.length <= 10) {
+      const selector = normalized.slice(0, 10) as Hex;
+      const signatures = new Set<string>();
+      const knownSignature = EULER_ERROR_SELECTOR_TO_SIGNATURE[
+        selector as keyof typeof EULER_ERROR_SELECTOR_TO_SIGNATURE
+      ];
+      if (knownSignature) signatures.add(knownSignature);
+      const builtinSignature = BUILTIN_SELECTOR_TO_SIGNATURE[selector.toLowerCase()];
+      if (builtinSignature) signatures.add(builtinSignature);
+      if (!knownSignature && !builtinSignature) {
+        const fetched = await fetchSignaturesBySelector(selector, fetchTimeout);
+        fetched.forEach((signature) => signatures.add(signature));
+      }
+      signatures.forEach((signature) => addResult(signature, selector, []));
+      return results;
+    }
+  }
 
   const initialCandidates = collectCandidateStrings(input);
   for (const candidate of initialCandidates) {

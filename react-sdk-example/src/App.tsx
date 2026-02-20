@@ -8,6 +8,7 @@ import { VaultListPage } from "./pages/VaultListPage.tsx";
 import { VaultDetailPage } from "./pages/VaultDetailPage.tsx";
 import { EulerEarnDetailPage } from "./pages/EulerEarnDetailPage.tsx";
 import { BorrowPage } from "./pages/BorrowPage.tsx";
+import { BorrowPairPage } from "./pages/BorrowPairPage.tsx";
 import { PortfolioPage } from "./pages/PortfolioPage.tsx";
 import { RewardsPage } from "./pages/RewardsPage.tsx";
 
@@ -23,6 +24,10 @@ function App() {
                 <Route path="/" element={<Navigate to="/vaults" replace />} />
                 <Route path="/vaults" element={<VaultListPage />} />
                 <Route path="/borrow" element={<BorrowPage />} />
+                <Route
+                  path="/borrow/:chainId/:collateral/:debt"
+                  element={<BorrowPairPage />}
+                />
                 <Route
                   path="/vault/:chainId/:address"
                   element={<VaultDetailPage />}

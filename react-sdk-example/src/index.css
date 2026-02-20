@@ -586,3 +586,149 @@ tr.clickable {
   cursor: pointer;
   padding: 0;
 }
+
+/* Borrow pair view */
+.pair-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.pair-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.pair-subtitle {
+  font-size: 12px;
+  color: #555;
+}
+
+.pair-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.pair-card {
+  border: 1px solid #000;
+  background: #fff;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pair-card-header {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.pair-form-grid {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.pair-form-label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pair-form-subline {
+  font-size: 12px;
+  color: #333;
+}
+
+.pair-form-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.pair-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.pair-summary-item {
+  border: 1px solid #ccc;
+  padding: 8px 10px;
+  background: #fafafa;
+}
+
+.pair-quote {
+  border: 1px solid #ccc;
+  padding: 8px 10px;
+  background: #fafafa;
+}
+
+.pair-quote-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+}
+
+.pair-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.pair-overview-item {
+  border: 1px solid #ccc;
+  padding: 8px 10px;
+  background: #fafafa;
+}
+
+.pair-vault-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.pair-vault {
+  border: 1px solid #ccc;
+  padding: 8px 10px;
+  background: #fafafa;
+}
+
+.pair-vault-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+}
+
+.pair-vault-line {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.pair-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .pair-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .pair-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pair-form-subline {
+    padding-bottom: 6px;
+  }
+}
