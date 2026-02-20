@@ -17,7 +17,7 @@ import { mainnet } from "viem/chains";
 import { getRpcUrls } from "../utils/config.js";
 import { buildEulerSDK, createPythPlugin, type EVault } from "euler-v2-sdk";
 
-const VAULT_ADDRESS = "0x29A9E5A004002Ff9E960bb8BB536E076F53cbDF1";
+const VAULT_ADDRESS = "0x777a7a579d7cCa0c909D1F55bE93dCBf872ACED6";
 
 function formatUsd(priceWad: bigint | undefined): string {
   if (priceWad === undefined) return "N/A";
@@ -47,6 +47,7 @@ async function fetchVaultDetailsExample() {
   console.log(`  Total Assets:    ${formatUnits(vault.totalAssets, vault.asset.decimals)} ${vault.asset.symbol}`);
   console.log(`  Total Borrowed:  ${formatUnits(vault.totalBorrowed, vault.asset.decimals)} ${vault.asset.symbol}`);
   console.log(`  Total Cash:      ${formatUnits(vault.totalCash, vault.asset.decimals)} ${vault.asset.symbol}`);
+  console.log(`  Available Liq.:  ${formatUnits(vault.availableToBorrow, vault.asset.decimals)} ${vault.asset.symbol}`);
 
   // Interest rates
   console.log("\n" + "-".repeat(80));

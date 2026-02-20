@@ -1,7 +1,7 @@
 // TypeScript equivalents for VaultLens structs (from evk-periphery/src/Lens/LensTypes.sol).
 // Numeric on-chain values use bigint to avoid precision loss.
 
-import { Address } from "viem";
+import { Address, maxUint256 } from "viem";
 import { OracleInfo, OraclePrice } from "../utils/oracle.js";
 import { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultLensTypes.js";
 import { Token } from "../utils/types.js";
@@ -170,6 +170,14 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
     return (assets * totalSharesAdjusted) / totalAssetsAdjusted;
   }
 
+  get availableToBorrow(): bigint {
+    const { borrowCap } = this.caps;
+    if (borrowCap === maxUint256) return this.totalCash;
+    if (this.totalBorrowed >= borrowCap) return 0n;
+    const remaining = borrowCap - this.totalBorrowed;
+    return this.totalCash < remaining ? this.totalCash : remaining;
+  }
+
   get assetRiskPrice(): RiskPrice | undefined {
     const price = getAssetOraclePrice(this);
     if (!price) return undefined;
@@ -249,4 +257,5 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
       })
     );
   }
+
 }
