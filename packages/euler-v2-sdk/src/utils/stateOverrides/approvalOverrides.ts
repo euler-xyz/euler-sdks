@@ -13,7 +13,7 @@ import {
   toHex,
 } from "viem"
 import { encodeFunctionData } from "viem/utils"
-import { getAccessedSlots } from "./debugTracers.js"
+import { getAccessedSlots } from "./accessList.js"
 
 /**
  * Compute Permit2 allowance storage slots for the given approvals.
@@ -134,7 +134,7 @@ async function discoverAllowanceSlots(
  * 1. Computes Permit2 storage slots deterministically (keccak256 mapping layout)
  * 2. Traces actual ERC20 approve() calls to discover approval storage slots
  *
- * @param client - viem PublicClient (must support debug_traceCall for approval tracing)
+ * @param client - viem PublicClient (must support eth_createAccessList and eth_call with state overrides)
  * @param account - token owner address
  * @param approvals - array of [assetAddress, spenderAddress] pairs
  * @param permit2Address - Permit2 contract address

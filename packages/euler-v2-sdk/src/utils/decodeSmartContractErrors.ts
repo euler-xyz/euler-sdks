@@ -1,0 +1,351 @@
+import { decodeErrorResult, isHex, parseAbiItem, type Hex } from "viem";
+import { EULER_ERROR_SELECTOR_TO_SIGNATURE, EULER_ERROR_SIGNATURES } from "./eulerErrorSelectors.js";
+
+const FOURBYTE_LOOKUP_URL = "https://api.4byte.sourcify.dev/signature-database/v1/lookup?function=";
+const HEX_PATTERN = /0x[0-9a-fA-F]{8,}/g;
+const SELECTOR_WITH_PAYLOAD_PATTERN = /0x([0-9a-fA-F]{8})\s*[:|-]?\s*([0-9a-fA-F]{64,})/g;
+const SIGNATURE_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*\([^()]*\)$/;
+const BUILTIN_SELECTOR_TO_SIGNATURE: Record<string, string> = {
+  "0x08c379a0": "Error(string)",
+  "0x4e487b71": "Panic(uint256)",
+};
+
+const signatureByName = new Map<string, string[]>();
+for (const signature of EULER_ERROR_SIGNATURES) {
+  const openParen = signature.indexOf("(");
+  if (openParen === -1) continue;
+  const name = signature.slice(0, openParen);
+  const list = signatureByName.get(name) ?? [];
+  list.push(signature);
+  signatureByName.set(name, list);
+}
+
+const lookupCache = new Map<string, Promise<string[]>>();
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const normalizeHex = (value: string): Hex | null => {
+  if (!value.startsWith("0x")) return null;
+  const clean = value.toLowerCase();
+  if (!isHex(clean, { strict: false })) return null;
+  return (clean.length % 2 === 0 ? clean : clean.slice(0, clean.length - 1)) as Hex;
+};
+
+const extractHexStrings = (value: string): Hex[] => {
+  const out = new Set<Hex>();
+  const directMatches = value.match(HEX_PATTERN) ?? [];
+
+  directMatches
+    .map(normalizeHex)
+    .filter((entry): entry is Hex => entry !== null)
+    .forEach((entry) => out.add(entry));
+
+  for (const match of value.matchAll(SELECTOR_WITH_PAYLOAD_PATTERN)) {
+    const selector = match[1];
+    const payload = match[2];
+    const rebuilt = normalizeHex(`0x${selector}${payload}`);
+    if (rebuilt) out.add(rebuilt);
+  }
+
+  return [...out];
+};
+
+const extractSignaturesDeep = (value: unknown, out: Set<string>) => {
+  if (typeof value === "string") {
+    if (SIGNATURE_PATTERN.test(value)) out.add(value);
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((entry) => extractSignaturesDeep(entry, out));
+    return;
+  }
+
+  if (!value || typeof value !== "object") return;
+
+  for (const entry of Object.values(value as Record<string, unknown>)) {
+    extractSignaturesDeep(entry, out);
+  }
+};
+
+const fetchSignaturesBySelector = (selector: string, fetchTimeout: number): Promise<string[]> => {
+  const normalizedSelector = selector.toLowerCase();
+  const cacheKey = `${normalizedSelector}:${fetchTimeout}`;
+  const cached = lookupCache.get(cacheKey);
+  if (cached) return cached;
+
+  const request = (async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), fetchTimeout);
+    try {
+      const response = await fetch(`${FOURBYTE_LOOKUP_URL}${normalizedSelector}`, { signal: controller.signal });
+      if (!response.ok) return [];
+
+      const payload = await response.json();
+      const signatures = new Set<string>();
+      extractSignaturesDeep(payload, signatures);
+      return [...signatures];
+    }
+    catch {
+      return [];
+    }
+    finally {
+      clearTimeout(timeoutId);
+    }
+  })();
+
+  lookupCache.set(cacheKey, request);
+  return request;
+};
+
+const collectCandidateStrings = (input: unknown): string[] => {
+  if (typeof input === "string") return [input];
+  if (!input || typeof input !== "object") return [];
+
+  const candidates = new Set<string>();
+  const visited = new Set<object>();
+
+  const collectAllStrings = (value: unknown) => {
+    if (typeof value === "string") {
+      candidates.add(value);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      value.forEach(collectAllStrings);
+      return;
+    }
+    Object.values(value as Record<string, unknown>).forEach(collectAllStrings);
+  };
+
+  const walk = (value: unknown) => {
+    if (!value) return;
+
+    if (typeof value === "string") {
+      if (value.toLowerCase().includes("error")) {
+        candidates.add(value);
+      }
+      return;
+    }
+
+    if (typeof value !== "object") return;
+    if (visited.has(value)) return;
+    visited.add(value);
+
+    if (value instanceof Error) {
+      if (typeof value.message === "string" && value.message.length > 0) {
+        candidates.add(value.message);
+      }
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach(walk);
+      return;
+    }
+
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      const keyIncludesError = key.toLowerCase().includes("error");
+
+      if (typeof child === "string") {
+        const valueIncludesError = child.toLowerCase().includes("error");
+        if (keyIncludesError || valueIncludesError) {
+          candidates.add(child);
+        }
+      }
+      else {
+        if (keyIncludesError) {
+          collectAllStrings(child);
+        }
+        walk(child);
+      }
+    }
+  };
+
+  walk(input);
+  return [...candidates];
+};
+
+const addKnownErrorsFromCandidate = (candidate: string, output: Set<string>) => {
+  const lowered = candidate.toLowerCase();
+
+  for (const signature of EULER_ERROR_SIGNATURES) {
+    if (lowered.includes(signature.toLowerCase())) {
+      output.add(signature);
+    }
+  }
+
+  for (const [name, signatures] of signatureByName.entries()) {
+    const regex = new RegExp(`(^|[^A-Za-z0-9_])${escapeRegex(name)}(\\(|[^A-Za-z0-9_]|$)`, "i");
+    if (regex.test(candidate) || lowered.includes(name.toLowerCase())) {
+      signatures.forEach((signature) => output.add(signature));
+    }
+  }
+};
+
+const collectHexFromDecoded = (value: unknown, output: Set<Hex>) => {
+  if (typeof value === "string") {
+    extractHexStrings(value).forEach((hex) => output.add(hex));
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((entry) => collectHexFromDecoded(entry, output));
+    return;
+  }
+
+  if (!value || typeof value !== "object") return;
+
+  for (const entry of Object.values(value as Record<string, unknown>)) {
+    collectHexFromDecoded(entry, output);
+  }
+};
+
+const tryDecodeWithSignature = (data: Hex, signature: string): unknown | null => {
+  try {
+    const abiError = parseAbiItem(`error ${signature}`);
+    const decoded = decodeErrorResult({ abi: [abiError], data });
+    return decoded;
+  }
+  catch {
+    return null;
+  }
+};
+
+const extractDecodedErrorString = (decoded: unknown): string | null => {
+  if (!decoded || typeof decoded !== "object") return null;
+  const args = (decoded as { args?: unknown[] }).args;
+  if (!Array.isArray(args) || args.length === 0) return null;
+  return typeof args[0] === "string" ? args[0] : null;
+};
+
+export type DecodedSmartContractError = {
+  message: string;
+  params: unknown[];
+};
+
+export type DecodeSmartContractErrorsOptions = {
+  /**
+   * Timeout in milliseconds for unknown-selector signature lookup (OpenChain/Sourcify API).
+   * Defaults to 2000ms.
+   */
+  fetchTimeout?: number;
+};
+
+const normalizeForKey = (value: unknown): unknown => {
+  if (typeof value === "bigint") return `bigint:${value.toString()}`;
+  if (Array.isArray(value)) return value.map((entry) => normalizeForKey(entry));
+  if (!value || typeof value !== "object") return value;
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, entry]) => [key, normalizeForKey(entry)]);
+  return Object.fromEntries(entries);
+};
+
+export async function decodeSmartContractErrors(
+  input: unknown,
+  options: DecodeSmartContractErrorsOptions = {},
+): Promise<DecodedSmartContractError[]> {
+  const fetchTimeout = typeof options.fetchTimeout === "number" && options.fetchTimeout >= 0
+    ? options.fetchTimeout
+    : 2000;
+  const results: DecodedSmartContractError[] = [];
+  const seenResults = new Set<string>();
+  const seenStrings = new Set<string>();
+  const seenHex = new Set<string>();
+
+  const addResult = (message: string, params: unknown[] = []) => {
+    const key = JSON.stringify([message, normalizeForKey(params)]);
+    if (seenResults.has(key)) return;
+    seenResults.add(key);
+    results.push({ message, params });
+  };
+
+  const addKnownErrorsFromCandidateToResults = (candidate: string) => {
+    const signatures = new Set<string>();
+    addKnownErrorsFromCandidate(candidate, signatures);
+    signatures.forEach((signature) => addResult(signature, []));
+  };
+
+  const processCandidateString = async (candidate: string): Promise<void> => {
+    if (seenStrings.has(candidate)) return;
+    seenStrings.add(candidate);
+
+    addKnownErrorsFromCandidateToResults(candidate);
+
+    const hexValues = extractHexStrings(candidate);
+    for (const hexValue of hexValues) {
+      await processHexValue(hexValue);
+    }
+  };
+
+  const processHexValue = async (hexValue: Hex): Promise<void> => {
+    const normalizedHex = normalizeHex(hexValue);
+    if (!normalizedHex || normalizedHex.length < 10) return;
+    if (seenHex.has(normalizedHex)) return;
+    seenHex.add(normalizedHex);
+
+    const selector = normalizedHex.slice(0, 10) as Hex;
+    const signatures = new Set<string>();
+
+    const knownSignature = EULER_ERROR_SELECTOR_TO_SIGNATURE[selector as keyof typeof EULER_ERROR_SELECTOR_TO_SIGNATURE];
+    if (knownSignature) signatures.add(knownSignature);
+    const builtinSignature = BUILTIN_SELECTOR_TO_SIGNATURE[selector.toLowerCase()];
+    if (builtinSignature) signatures.add(builtinSignature);
+
+    if (!knownSignature && !builtinSignature) {
+      const fetched = await fetchSignaturesBySelector(selector, fetchTimeout);
+      fetched.forEach((signature) => signatures.add(signature));
+    }
+
+    for (const signature of signatures) {
+      if (normalizedHex.length <= 10) continue;
+
+      const decoded = tryDecodeWithSignature(normalizedHex, signature);
+      if (!decoded) {
+        if (signature !== "Error(string)") {
+          addResult(signature, []);
+        }
+        continue;
+      }
+
+      if (signature === "Error(string)") {
+        const message = extractDecodedErrorString(decoded);
+        if (message) {
+          addResult(message, []);
+          await processCandidateString(message);
+        }
+      } else {
+        const args = (decoded as { args?: unknown[] }).args;
+        addResult(signature, Array.isArray(args) ? args : []);
+      }
+
+      const nestedHex = new Set<Hex>();
+      collectHexFromDecoded(decoded, nestedHex);
+
+      for (const nested of nestedHex) {
+        await processHexValue(nested);
+      }
+
+      for (const entry of Object.values(decoded as Record<string, unknown>)) {
+        if (typeof entry === "string") {
+          await processCandidateString(entry);
+        }
+      }
+    }
+  };
+
+  const initialCandidates = collectCandidateStrings(input);
+  for (const candidate of initialCandidates) {
+    await processCandidateString(candidate);
+  }
+
+  const messagesWithParams = new Set(
+    results.filter((entry) => entry.params.length > 0).map((entry) => entry.message),
+  );
+
+  return results.filter((entry) => {
+    if (entry.params.length > 0) return true;
+    return !messagesWithParams.has(entry.message);
+  });
+}

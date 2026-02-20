@@ -8,7 +8,7 @@ import {
   numberToHex,
 } from "viem"
 import { encodeFunctionData } from "viem/utils"
-import { getAccessedSlots } from "./debugTracers.js"
+import { getAccessedSlots } from "./accessList.js"
 import type { StorageSlot } from "./types.js"
 
 type SlotCacheKey = `${number}:${Address}:${Address}`
@@ -71,10 +71,10 @@ function findIndexOfLargest(arr: bigint[]): number {
  * Generate state overrides that give `account` sufficient ERC20 balances.
  *
  * For each token where the on-chain balance is below the requested amount,
- * uses debug_traceCall to discover the balanceOf storage slot, then builds
+ * uses eth_createAccessList to discover the balanceOf storage slot, then builds
  * a stateDiff that sets that slot to the desired value.
  *
- * @param client - viem PublicClient (must support debug_traceCall)
+ * @param client - viem PublicClient (must support eth_createAccessList and eth_call with state overrides)
  * @param account - address whose balance to override
  * @param tokens - array of [tokenAddress, requiredAmount]
  */

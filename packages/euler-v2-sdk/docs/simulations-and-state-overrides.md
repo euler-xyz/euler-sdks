@@ -68,12 +68,12 @@ const stateOverride = await getStateOverrides(client, plan, account, {
 **What it does internally:**
 
 1. **Extracts balance requirements** — walks the plan's `RequiredApproval` items to find which tokens and amounts the account needs.
-2. **Generates balance overrides** — for each token with insufficient balance, uses `debug_traceCall` to discover the `balanceOf` storage slot, then creates a `stateDiff` entry that sets that slot to the required value.
+2. **Generates balance overrides** — for each token with insufficient balance, uses `eth_createAccessList` to discover the `balanceOf` storage slot, then creates a `stateDiff` entry that sets that slot to the required value.
 3. **Generates approval overrides** — computes Permit2 allowance storage slots deterministically (keccak256 mapping layout) and traces ERC20 `approve()` calls to discover approval storage slots.
 4. **Adds native balance** — sets the account's ETH balance (for gas and any native-asset operations).
 5. **Merges** — consolidates all overrides by address, concatenating `stateDiff` arrays.
 
-**RPC requirement:** the client must support `debug_traceCall` (Alchemy, Infura archive, local node). If tracing is unavailable, balance/approval slot discovery is silently skipped.
+**RPC requirement:** the client must support `eth_createAccessList` (EIP-2930) and `eth_call` with state overrides. These are standard RPC methods supported by all major providers. If access list creation is unavailable, balance/approval slot discovery is silently skipped.
 
 ### `getBalanceOverrides(client, account, tokens)`
 
@@ -90,7 +90,7 @@ const overrides = await getBalanceOverrides(client, account, [
 
 For each token, it:
 - Reads the current balance; skips if already sufficient
-- Traces `balanceOf(account)` via `debug_traceCall` to find candidate storage slots
+- Uses `eth_createAccessList` on `balanceOf(account)` to find candidate storage slots
 - Tests each slot by overriding it and re-reading `balanceOf`
 - Picks the slot that produces the highest balance
 - Caches discovered slots in memory for subsequent calls

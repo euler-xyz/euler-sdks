@@ -78,7 +78,7 @@ function extractApprovalRequirements(
  * - ERC20 balance overrides (via storage slot discovery)
  * - ERC20 approval + Permit2 allowance overrides
  *
- * @param client - viem PublicClient (must support debug_traceCall for slot discovery)
+ * @param client - viem PublicClient (must support eth_createAccessList and eth_call with state overrides)
  * @param plan - TransactionPlan from the SDK's execution service
  * @param account - the connected wallet address
  * @param options - Permit2 address and optional native balance override

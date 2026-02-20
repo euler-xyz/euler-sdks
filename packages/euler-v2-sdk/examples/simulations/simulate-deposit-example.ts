@@ -18,7 +18,7 @@
  *   - Read vault shares balance after deposit
  *
  * REQUIREMENTS:
- *   - An RPC endpoint that supports debug_traceCall (Alchemy, Infura, local node)
+ *   - An RPC endpoint that supports eth_createAccessList (all major providers)
  *   - Set RPC_URL_1 env var, or default to local Anvil (http://127.0.0.1:8545)
  *
  * RUN:

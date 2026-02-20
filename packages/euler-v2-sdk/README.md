@@ -77,6 +77,10 @@ pnpm run deposit-example
 
 **NOTE**: The local blockchain might need to be restarted before running another example
 
+## Additional Docs
+
+- [Decoding Smart Contract Errors](./docs/decode-smart-contract-errors.md)
+
 ### Available Examples
 
 - **`deposit-example`**: Demonstrates depositing assets into a vault
