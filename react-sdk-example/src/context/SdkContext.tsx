@@ -8,47 +8,11 @@ import {
 } from "react";
 import { buildEulerSDK, createPythPlugin, type EulerSDK } from "euler-v2-sdk";
 import { sdkBuildQuery } from "../queries/sdkQueries.ts";
-
-// Only chains supported by the SDK's ProviderService (viem chain definitions)
-const CHAIN_NAMES: Record<number, string> = {
-  1: "Ethereum",
-  56: "BSC",
-  130: "Unichain",
-  146: "Sonic",
-  239: "TAC",
-  1923: "Swell",
-  8453: "Base",
-  9745: "Plasma",
-  42161: "Arbitrum",
-  43114: "Avalanche",
-  60808: "Bob",
-  80094: "Berachain",
-};
-
-const DEFAULT_CHAIN = 1;
-
-// Public RPC fallbacks — override per chain with VITE_RPC_URL_<chainId> in .env
-const PUBLIC_RPC_URLS: Record<number, string> = {
-  1: "https://eth.drpc.org",
-  56: "https://bsc.drpc.org",
-  130: "https://unichain.drpc.org",
-  146: "https://sonic.drpc.org",
-  239: "https://turin.rpc.tac.build",
-  1923: "https://swell-mainnet.g.alchemy.com/public",
-  8453: "https://base.drpc.org",
-  9745: "https://rpc.plasma.cloud",
-  42161: "https://arbitrum.drpc.org",
-  43114: "https://avalanche.drpc.org",
-  60808: "https://bob.drpc.org",
-  80094: "https://berachain.drpc.org",
-};
-
-const RPC_URLS: Record<number, string> = Object.fromEntries(
-  Object.entries(PUBLIC_RPC_URLS).map(([chainId, fallback]) => {
-    const envUrl = import.meta.env[`VITE_RPC_URL_${chainId}`];
-    return [chainId, envUrl || fallback];
-  }),
-);
+import {
+  CHAIN_NAMES,
+  DEFAULT_CHAIN,
+  RPC_URLS,
+} from "../config/chains.ts";
 
 interface SdkContextValue {
   sdk: EulerSDK | null;
@@ -73,10 +37,10 @@ export function SdkProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     buildEulerSDK({
-        rpcUrls: RPC_URLS,
-        buildQuery: sdkBuildQuery,
-        plugins: [createPythPlugin({ buildQuery: sdkBuildQuery })],
-      })
+      rpcUrls: RPC_URLS,
+      buildQuery: sdkBuildQuery,
+      plugins: [createPythPlugin({ buildQuery: sdkBuildQuery })],
+    })
       .then((instance) => {
         if (!cancelled) {
           setSdk(instance);

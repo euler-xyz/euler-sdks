@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
-import { useAccount } from "../queries/sdkQueries.ts";
+import { useAccount as useWagmiAccount, useChainId } from "wagmi";
+import { useAccount as useSdkAccount } from "../queries/sdkQueries.ts";
 import { getSubAccountId } from "euler-v2-sdk";
 import type { Address } from "viem";
 import { formatBigInt, formatPriceUsd, formatWad, formatWadPercent } from "../utils/format.ts";
@@ -19,10 +20,20 @@ function formatUsdValue(value: bigint | undefined): string {
 
 export function PortfolioPage() {
   const { chainId, loading: sdkLoading, error: sdkError } = useSDK();
+  const { address: walletAddress, isConnected } = useWagmiAccount();
+  const walletChainId = useChainId();
   const [input, setInput] = useState(lastAddress ?? "");
   const [address, setAddress] = useState<string | undefined>(lastAddress);
 
-  const { data: account, isLoading, error } = useAccount(chainId, address);
+  const { data: account, isLoading, error } = useSdkAccount(chainId, address);
+
+  useEffect(() => {
+    if (!lastAddress && isConnected && walletAddress) {
+      lastAddress = walletAddress;
+      setInput(walletAddress);
+      setAddress(walletAddress);
+    }
+  }, [isConnected, walletAddress]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,12 +97,41 @@ export function PortfolioPage() {
           >
             Load
           </button>
+          {isConnected && walletAddress && (
+            <button
+              type="button"
+              style={{
+                fontFamily: "inherit",
+                fontSize: 13,
+                fontWeight: 700,
+                padding: "6px 12px",
+                border: "2px solid #000",
+                background: "#fff",
+                color: "#000",
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                lastAddress = walletAddress;
+                setInput(walletAddress);
+                setAddress(walletAddress);
+              }}
+            >
+              Use Connected Wallet
+            </button>
+          )}
         </div>
       </form>
 
       {!address && (
         <div className="status-message">
           Enter an Ethereum address to view its Euler V2 positions.
+        </div>
+      )}
+
+      {isConnected && walletChainId !== chainId && (
+        <div className="wallet-chain-warning">
+          Wallet is connected to a different chain than the app. Switch the app chain
+          or use the wallet switch button in the header.
         </div>
       )}
 

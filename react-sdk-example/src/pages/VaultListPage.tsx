@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
-import { useVerifiedVaults } from "../queries/sdkQueries.ts";
+import { useVerifiedVaults, useWalletBalance } from "../queries/sdkQueries.ts";
 import {
   StandardEVaultPerspectives,
   StandardEulerEarnPerspectives,
@@ -10,6 +10,8 @@ import {
   type EVault,
   type EulerEarn,
 } from "euler-v2-sdk";
+import { formatUnits, parseUnits } from "viem";
+import { useAccount } from "wagmi";
 import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
@@ -142,6 +144,136 @@ function useSorted<T, K extends string>(
   return { sorted, toggleSort, indicator, sortKey };
 }
 
+function useDebouncedValue<T>(value: T, delayMs = 350) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(handle);
+  }, [value, delayMs]);
+
+  return debounced;
+}
+
+function amountToUsdWad(
+  amount: string,
+  decimals: number,
+  priceWad: bigint | undefined
+): bigint | undefined {
+  if (!amount || !priceWad) return undefined;
+  try {
+    const amountRaw = parseUnits(amount as `${number}`, decimals);
+    return (amountRaw * priceWad) / BigInt(10 ** decimals);
+  } catch {
+    return undefined;
+  }
+}
+
+function balanceToUsdWad(
+  balance: bigint | undefined,
+  decimals: number,
+  priceWad: bigint | undefined
+): bigint | undefined {
+  if (balance === undefined || !priceWad) return undefined;
+  return (balance * priceWad) / BigInt(10 ** decimals);
+}
+
+function DepositFormRow({
+  vault,
+  chainId,
+  onClose,
+}: {
+  vault: EVault;
+  chainId: number;
+  onClose: () => void;
+}) {
+  const { address: walletAddress, isConnected } = useAccount();
+  const [amount, setAmount] = useState("");
+  const debouncedAmount = useDebouncedValue(amount, 400);
+
+  const { data: walletBalance } = useWalletBalance(
+    chainId,
+    walletAddress,
+    vault.asset.address
+  );
+
+  const priceWad = vault.marketPriceUsd ?? undefined;
+  const amountUsdWad = useMemo(
+    () => amountToUsdWad(debouncedAmount, vault.asset.decimals, priceWad),
+    [debouncedAmount, vault.asset.decimals, priceWad]
+  );
+  const balanceUsdWad = useMemo(
+    () => balanceToUsdWad(walletBalance, vault.asset.decimals, priceWad),
+    [walletBalance, vault.asset.decimals, priceWad]
+  );
+
+  const formattedBalance = walletBalance !== undefined
+    ? formatBigInt(walletBalance, vault.asset.decimals)
+    : "-";
+  const balanceUsd = formatPriceUsd(balanceUsdWad);
+
+  return (
+    <tr className="deposit-row">
+      <td colSpan={10}>
+        <div className="deposit-panel">
+          <div className="deposit-header">
+            <div>
+              Deposit into <strong>{vault.shares.name || vault.asset.symbol}</strong>
+            </div>
+            <button type="button" className="link-button" onClick={onClose}>
+              Close
+            </button>
+          </div>
+
+          {!isConnected && (
+            <div className="status-message">
+              Connect a wallet to deposit.
+            </div>
+          )}
+
+          {isConnected && (
+            <>
+              <div className="deposit-balance">
+                <span>
+                  Wallet Balance: {formattedBalance} {vault.asset.symbol}
+                </span>
+                <span>({balanceUsd})</span>
+                <button
+                  type="button"
+                  className="wallet-button"
+                  onClick={() => {
+                    if (walletBalance === undefined) return;
+                    setAmount(formatUnits(walletBalance, vault.asset.decimals));
+                  }}
+                  disabled={walletBalance === undefined || walletBalance === 0n}
+                >
+                  Max
+                </button>
+              </div>
+
+              <div className="deposit-form">
+                <label className="deposit-label">
+                  Amount ({vault.asset.symbol})
+                </label>
+                <input
+                  type="text"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.0"
+                  className="deposit-input"
+                />
+                <div className="deposit-usd">
+                  USD value: {formatPriceUsd(amountUsdWad)}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -150,6 +282,8 @@ export function VaultListPage() {
   const { chainId, loading: sdkLoading, error: sdkError } = useSDK();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("evaults");
+  const { isConnected } = useAccount();
+  const [openDeposit, setOpenDeposit] = useState<string | null>(null);
 
   const { data: allVaults, isLoading, error } = useVerifiedVaults(ALL_PERSPECTIVES);
 
@@ -224,41 +358,67 @@ export function VaultListPage() {
                   <th className="sortable" onClick={() => eVaultSort.toggleSort("collaterals")}>
                     Collaterals{eVaultSort.indicator("collaterals")}
                   </th>
+                  <th>Deposit</th>
                 </tr>
               </thead>
               <tbody>
                 {eVaultSort.sorted.map((vault) => (
-                  <tr
-                    key={vault.address}
-                    className="clickable"
-                    onClick={() =>
-                      navigate(`/vault/${chainId}/${vault.address}`)
-                    }
-                  >
-                    <td>{vault.shares.name || "-"}</td>
-                    <td>{vault.asset.symbol}</td>
-                    <td><CopyAddress address={vault.address} /></td>
-                    <td>
-                      {formatBigInt(vault.totalAssets, vault.asset.decimals)}
-                    </td>
-                    <td>
-                      {formatBigInt(vault.totalBorrowed, vault.asset.decimals)}
-                    </td>
-                    <td>
-                      <ApyCell
-                        baseApy={Number(vault.interestRates.supplyAPY)}
-                        rewards={vault.rewards}
-                        intrinsicApy={vault.intrinsicApy}
+                  <>
+                    <tr
+                      key={vault.address}
+                      className="clickable"
+                      onClick={() =>
+                        navigate(`/vault/${chainId}/${vault.address}`)
+                      }
+                    >
+                      <td>{vault.shares.name || "-"}</td>
+                      <td>{vault.asset.symbol}</td>
+                      <td><CopyAddress address={vault.address} /></td>
+                      <td>
+                        {formatBigInt(vault.totalAssets, vault.asset.decimals)}
+                      </td>
+                      <td>
+                        {formatBigInt(vault.totalBorrowed, vault.asset.decimals)}
+                      </td>
+                      <td>
+                        <ApyCell
+                          baseApy={Number(vault.interestRates.supplyAPY)}
+                          rewards={vault.rewards}
+                          intrinsicApy={vault.intrinsicApy}
+                        />
+                      </td>
+                      <td>
+                        <ApyCell
+                          baseApy={Number(vault.interestRates.borrowAPY)}
+                        />
+                      </td>
+                      <td>{formatPriceUsd(vault.marketPriceUsd)}</td>
+                      <td>{vault.collaterals.length}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="wallet-button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isConnected) return;
+                            setOpenDeposit((prev) =>
+                              prev === vault.address ? null : vault.address
+                            );
+                          }}
+                          disabled={!isConnected}
+                        >
+                          Deposit
+                        </button>
+                      </td>
+                    </tr>
+                    {openDeposit === vault.address && (
+                      <DepositFormRow
+                        vault={vault}
+                        chainId={chainId}
+                        onClose={() => setOpenDeposit(null)}
                       />
-                    </td>
-                    <td>
-                      <ApyCell
-                        baseApy={Number(vault.interestRates.borrowAPY)}
-                      />
-                    </td>
-                    <td>{formatPriceUsd(vault.marketPriceUsd)}</td>
-                    <td>{vault.collaterals.length}</td>
-                  </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>

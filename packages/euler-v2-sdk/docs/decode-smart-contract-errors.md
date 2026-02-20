@@ -12,7 +12,8 @@ import { decodeSmartContractErrors } from "euler-v2-sdk";
 
 ```ts
 type DecodedSmartContractError = {
-  message: string;
+  signature: string;
+  selector: string | null;
   params: unknown[];
 };
 
@@ -26,11 +27,12 @@ function decodeSmartContractErrors(
 
 Each result has:
 
-- `message`
-  - custom error signature like `Swapper_SwapError(address,bytes)`, or
-  - decoded revert reason string for `Error(string)` (for example `"Slippage Limit Exceeded"`).
+- `signature`
+  - decoded error signature (for example `Swapper_SwapError(address,bytes)` or `Error(string)`).
+- `selector`
+  - 4-byte selector (`0x...`) when known from decoded payload or local map, otherwise `null`.
 - `params`
-  - decoded params for that error (empty for plain revert reason strings).
+  - decoded params for that error.
 
 ## Behavior
 
@@ -60,15 +62,17 @@ const decoded = await decodeSmartContractErrors(error);
 console.log(decoded);
 // [
 //   {
-//     message: 'Swapper_SwapError(address,bytes)',
+//     signature: 'Swapper_SwapError(address,bytes)',
+//     selector: '0x436fa211',
 //     params: [
 //       '0xCf5540fFFCdC3d510B18bFcA6d2b9987b0772559',
 //       '0x08c379a0...'
 //     ]
 //   },
 //   {
-//     message: 'Slippage Limit Exceeded',
-//     params: []
+//     signature: 'Error(string)',
+//     selector: '0x08c379a0',
+//     params: ['Slippage Limit Exceeded']
 //   }
 // ]
 ```
@@ -78,4 +82,4 @@ console.log(decoded);
 - The function accepts arbitrary input (`unknown`) and handles nested objects/errors.
 - Network lookup is used only for selectors not found in the built-in Euler selector map.
 - Use `fetchTimeout` (ms) to control timeout for unknown-selector OpenChain/Sourcify lookups. Default is `2000`.
-- `Error(string)` is returned as the decoded message text, not as `Error(string)`.
+- `Error(string)` is handled like any other signature and returns decoded params.

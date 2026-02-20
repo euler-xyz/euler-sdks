@@ -117,10 +117,11 @@ export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK, wc
     if (decoded.length > 0) {
       console.error("\n\nExecution failed. Decoded contract errors:");
       decoded.forEach((entry) => {
+        const selector = entry.selector ? ` | selector: ${entry.selector}` : "";
         const params = entry.params.length > 0
           ? ` | params: ${entry.params.map((param) => String(param)).join(", ")}`
           : "";
-        console.error(`  - ${entry.message}${params}`);
+        console.error(`  - ${entry.signature}${selector}${params}`);
       });
     }
     // throw error;

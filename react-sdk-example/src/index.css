@@ -381,3 +381,52 @@ tr.clickable {
 .rewards-vault-details[open] summary {
   margin-bottom: 8px;
 }
+
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wallet-connection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wallet-button {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border: 2px solid #000;
+  background: #fff;
+  cursor: pointer;
+}
+
+.wallet-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.wallet-address {
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid #000;
+  background: #fff;
+}
+
+.wallet-error {
+  font-size: 11px;
+  color: #b00020;
+}
+
+
+.wallet-chain-warning {
+  margin: 8px 0 16px;
+  padding: 8px 10px;
+  border: 1px solid #000;
+  background: #fff5d6;
+  font-size: 12px;
+}

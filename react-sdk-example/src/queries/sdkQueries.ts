@@ -205,6 +205,27 @@ export function useAccount(chainId: number, address: string | undefined) {
   });
 }
 
+export function useWalletBalance(
+  chainId: number,
+  account: string | undefined,
+  assetAddress: string | undefined
+) {
+  const { sdk, enabled } = useSdkReady();
+  return useQuery({
+    queryKey: ["walletBalance", chainId, account, assetAddress],
+    queryFn: async () => {
+      const wallet = await sdk!.walletService.fetchWallet(
+        chainId,
+        account as Address,
+        [{ asset: assetAddress as Address, spenders: [] }]
+      );
+      return wallet.getBalance(assetAddress as Address);
+    },
+    enabled: enabled && !!account && !!assetAddress,
+    staleTime: 5_000,
+  });
+}
+
 export function useChainRewards() {
   const { sdk, chainId, enabled } = useSdkReady();
   return useQuery({

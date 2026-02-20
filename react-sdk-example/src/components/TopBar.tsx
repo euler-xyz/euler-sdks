@@ -1,5 +1,6 @@
 import { useSDK } from "../context/SdkContext.tsx";
 import { useNavigate, useLocation } from "react-router-dom";
+import { WalletConnectButton } from "./WalletConnectButton.tsx";
 
 export function TopBar() {
   const { chainId, setChainId, chainNames } = useSDK();
@@ -16,10 +17,7 @@ export function TopBar() {
   return (
     <div className="topbar">
       <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-        <h1
-          style={{ cursor: "pointer" }}
-          onClick={() => navigate("/vaults")}
-        >
+        <h1 style={{ cursor: "pointer" }} onClick={() => navigate("/vaults")}>
           Euler V2 Explorer
         </h1>
         <nav className="topbar-nav">
@@ -43,7 +41,7 @@ export function TopBar() {
           </button>
         </nav>
       </div>
-      <div>
+      <div className="topbar-right">
         <label>
           Chain:{" "}
           <select
@@ -59,6 +57,10 @@ export function TopBar() {
             ))}
           </select>
         </label>
+        <WalletConnectButton
+          appChainId={chainId}
+          appChainName={chainNames[chainId] ?? String(chainId)}
+        />
       </div>
     </div>
   );

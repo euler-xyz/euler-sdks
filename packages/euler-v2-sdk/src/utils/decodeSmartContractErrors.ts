@@ -11,6 +11,7 @@ const BUILTIN_SELECTOR_TO_SIGNATURE: Record<string, string> = {
 };
 
 const signatureByName = new Map<string, string[]>();
+const selectorBySignature = new Map<string, string>();
 for (const signature of EULER_ERROR_SIGNATURES) {
   const openParen = signature.indexOf("(");
   if (openParen === -1) continue;
@@ -18,6 +19,12 @@ for (const signature of EULER_ERROR_SIGNATURES) {
   const list = signatureByName.get(name) ?? [];
   list.push(signature);
   signatureByName.set(name, list);
+}
+for (const [selector, signature] of Object.entries(EULER_ERROR_SELECTOR_TO_SIGNATURE)) {
+  selectorBySignature.set(signature, selector);
+}
+for (const [selector, signature] of Object.entries(BUILTIN_SELECTOR_TO_SIGNATURE)) {
+  selectorBySignature.set(signature, selector);
 }
 
 const lookupCache = new Map<string, Promise<string[]>>();
@@ -211,15 +218,9 @@ const tryDecodeWithSignature = (data: Hex, signature: string): unknown | null =>
   }
 };
 
-const extractDecodedErrorString = (decoded: unknown): string | null => {
-  if (!decoded || typeof decoded !== "object") return null;
-  const args = (decoded as { args?: unknown[] }).args;
-  if (!Array.isArray(args) || args.length === 0) return null;
-  return typeof args[0] === "string" ? args[0] : null;
-};
-
 export type DecodedSmartContractError = {
-  message: string;
+  signature: string;
+  selector: string | null;
   params: unknown[];
 };
 
@@ -254,17 +255,17 @@ export async function decodeSmartContractErrors(
   const seenStrings = new Set<string>();
   const seenHex = new Set<string>();
 
-  const addResult = (message: string, params: unknown[] = []) => {
-    const key = JSON.stringify([message, normalizeForKey(params)]);
+  const addResult = (signature: string, selector: string | null, params: unknown[] = []) => {
+    const key = JSON.stringify([signature, selector, normalizeForKey(params)]);
     if (seenResults.has(key)) return;
     seenResults.add(key);
-    results.push({ message, params });
+    results.push({ signature, selector, params });
   };
 
   const addKnownErrorsFromCandidateToResults = (candidate: string) => {
     const signatures = new Set<string>();
     addKnownErrorsFromCandidate(candidate, signatures);
-    signatures.forEach((signature) => addResult(signature, []));
+    signatures.forEach((signature) => addResult(signature, selectorBySignature.get(signature) ?? null, []));
   };
 
   const processCandidateString = async (candidate: string): Promise<void> => {
@@ -303,21 +304,29 @@ export async function decodeSmartContractErrors(
 
       const decoded = tryDecodeWithSignature(normalizedHex, signature);
       if (!decoded) {
-        if (signature !== "Error(string)") {
-          addResult(signature, []);
-        }
+        addResult(signature, selector, []);
         continue;
       }
 
-      if (signature === "Error(string)") {
-        const message = extractDecodedErrorString(decoded);
-        if (message) {
-          addResult(message, []);
-          await processCandidateString(message);
+      const args = (decoded as { args?: unknown[] }).args;
+      addResult(signature, selector, Array.isArray(args) ? args : []);
+
+      const nestedStrings = new Set<string>();
+      const collectStrings = (value: unknown) => {
+        if (typeof value === "string") {
+          nestedStrings.add(value);
+          return;
         }
-      } else {
-        const args = (decoded as { args?: unknown[] }).args;
-        addResult(signature, Array.isArray(args) ? args : []);
+        if (Array.isArray(value)) {
+          value.forEach(collectStrings);
+          return;
+        }
+        if (!value || typeof value !== "object") return;
+        Object.values(value as Record<string, unknown>).forEach(collectStrings);
+      };
+      collectStrings(decoded);
+      for (const nestedString of nestedStrings) {
+        await processCandidateString(nestedString);
       }
 
       const nestedHex = new Set<Hex>();
@@ -340,12 +349,14 @@ export async function decodeSmartContractErrors(
     await processCandidateString(candidate);
   }
 
-  const messagesWithParams = new Set(
-    results.filter((entry) => entry.params.length > 0).map((entry) => entry.message),
+  const entriesWithParams = new Set(
+    results
+      .filter((entry) => entry.params.length > 0)
+      .map((entry) => JSON.stringify([entry.signature, entry.selector])),
   );
 
   return results.filter((entry) => {
     if (entry.params.length > 0) return true;
-    return !messagesWithParams.has(entry.message);
+    return !entriesWithParams.has(JSON.stringify([entry.signature, entry.selector]));
   });
 }
