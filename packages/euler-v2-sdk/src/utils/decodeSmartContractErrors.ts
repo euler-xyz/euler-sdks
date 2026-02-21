@@ -112,38 +112,14 @@ const collectCandidateStrings = (input: unknown): string[] => {
   const candidates = new Set<string>();
   const visited = new Set<object>();
 
-  const collectAllStrings = (value: unknown) => {
-    if (typeof value === "string") {
-      candidates.add(value);
-      return;
-    }
-    if (!value || typeof value !== "object") return;
-    if (Array.isArray(value)) {
-      value.forEach(collectAllStrings);
-      return;
-    }
-    Object.values(value as Record<string, unknown>).forEach(collectAllStrings);
-  };
-
   const walk = (value: unknown) => {
     if (!value) return;
 
-    if (typeof value === "string") {
-      if (value.toLowerCase().includes("error")) {
-        candidates.add(value);
-      }
-      return;
-    }
+    if (typeof value === "string") return;
 
     if (typeof value !== "object") return;
     if (visited.has(value)) return;
     visited.add(value);
-
-    if (value instanceof Error) {
-      if (typeof value.message === "string" && value.message.length > 0) {
-        candidates.add(value.message);
-      }
-    }
 
     if (Array.isArray(value)) {
       value.forEach(walk);
@@ -151,18 +127,15 @@ const collectCandidateStrings = (input: unknown): string[] => {
     }
 
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      const keyIncludesError = key.toLowerCase().includes("error");
+      const lowerKey = key.toLowerCase();
+      const keyMatches = lowerKey.includes("error") || lowerKey.includes("message") || lowerKey.includes("reason");
 
       if (typeof child === "string") {
-        const valueIncludesError = child.toLowerCase().includes("error");
-        if (keyIncludesError || valueIncludesError) {
+        if (keyMatches) {
           candidates.add(child);
         }
       }
       else {
-        if (keyIncludesError) {
-          collectAllStrings(child);
-        }
         walk(child);
       }
     }
@@ -247,6 +220,7 @@ export async function decodeSmartContractErrors(
   input: unknown,
   options: DecodeSmartContractErrorsOptions = {},
 ): Promise<DecodedSmartContractError[]> {
+  console.log('input: ', input);
   const fetchTimeout = typeof options.fetchTimeout === "number" && options.fetchTimeout >= 0
     ? options.fetchTimeout
     : 5000;
@@ -368,6 +342,7 @@ export async function decodeSmartContractErrors(
   }
 
   const initialCandidates = collectCandidateStrings(input);
+  console.log('initialCandidates: ', initialCandidates);
   for (const candidate of initialCandidates) {
     await processCandidateString(candidate);
   }

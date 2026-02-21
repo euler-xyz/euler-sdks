@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   StandardEVaultPerspectives,
   StandardEulerEarnPerspectives,
+  getSubAccountAddress,
   getMaxMultiplier,
   getMaxRoe,
   isEVault,
   type EVault,
   type SwapQuote,
 } from "euler-v2-sdk";
-import { formatUnits, parseUnits, type Address } from "viem";
+import { formatUnits, getAddress, parseUnits, type Address } from "viem";
 import {
   useAccount as useWagmiAccount,
   useChainId,
@@ -30,6 +31,7 @@ import {
   formatBigInt,
   formatPercent,
   formatPriceUsd,
+  formatWad,
 } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
@@ -81,6 +83,53 @@ function formatPairPrice(
   };
 }
 
+function toComparable(value: unknown): unknown {
+  if (typeof value === "bigint") return `${value.toString()}n`;
+  if (Array.isArray(value)) return value.map(toComparable);
+  if (!value || typeof value !== "object") return value;
+
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "function") continue;
+    out[key] = toComparable(v);
+  }
+  return out;
+}
+
+function collectDiffs(a: unknown, b: unknown, path = "account", out: string[] = []): string[] {
+  if (a === b) return out;
+
+  // Ignore sub-accounts that existed in current account but are absent in simulated account.
+  if (path.startsWith("account.subAccounts.") && a !== undefined && b === undefined) {
+    return out;
+  }
+
+  const aIsObj = a && typeof a === "object";
+  const bIsObj = b && typeof b === "object";
+  if (!aIsObj || !bIsObj) {
+    out.push(`${path}: ${JSON.stringify(a)} -> ${JSON.stringify(b)}`);
+    return out;
+  }
+
+  if (Array.isArray(a) || Array.isArray(b)) {
+    const aArr = Array.isArray(a) ? a : [];
+    const bArr = Array.isArray(b) ? b : [];
+    const max = Math.max(aArr.length, bArr.length);
+    for (let i = 0; i < max; i += 1) {
+      collectDiffs(aArr[i], bArr[i], `${path}[${i}]`, out);
+    }
+    return out;
+  }
+
+  const aObj = a as Record<string, unknown>;
+  const bObj = b as Record<string, unknown>;
+  const keys = Array.from(new Set([...Object.keys(aObj), ...Object.keys(bObj)])).sort();
+  for (const key of keys) {
+    collectDiffs(aObj[key], bObj[key], `${path}.${key}`, out);
+  }
+  return out;
+}
+
 export function BorrowPairPage() {
   const { chainId: chainIdParam, collateral, debt } = useParams<{
     chainId: string;
@@ -116,6 +165,23 @@ export function BorrowPairPage() {
     walletAddress,
     collateralVault?.asset.address
   );
+  const targetSubAccount = useMemo(() => {
+    if (!walletAddress) return undefined;
+    
+    const owner = getAddress(walletAddress as Address);
+    const account = accountData;
+    if (!account) return owner;
+    
+    for (let id = 0; id <= 255; id += 1) {
+      const subAccount = getSubAccountAddress(owner, id);
+      const current = account.getSubAccount(subAccount);
+      if (!current || current.positions.length === 0) {
+        return subAccount;
+      }
+    }
+    
+    return owner;
+  }, [walletAddress, accountData]);
 
   const [tab, setTab] = useState<FormTab>("borrow");
   const [collateralAmount, setCollateralAmount] = useState("");
@@ -129,6 +195,9 @@ export function BorrowPairPage() {
   const [progress, setProgress] = useState<PlanProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [simulatedAccountPreview, setSimulatedAccountPreview] = useState<any | null>(null);
+  const [showAccountDiff, setShowAccountDiff] = useState(false);
+  const [previewSimulationError, setPreviewSimulationError] = useState<string | null>(null);
 
   const collateralConfig = useMemo(() => {
     if (!debtVault || !collateralVault) return undefined;
@@ -160,6 +229,33 @@ export function BorrowPairPage() {
     debtVault?.marketPriceUsd !== undefined
       ? Number(debtVault.marketPriceUsd) / 1e18
       : undefined;
+
+  const previewSubAccount = useMemo(() => {
+    if (!simulatedAccountPreview || !targetSubAccount) return undefined;
+    return simulatedAccountPreview.getSubAccount(targetSubAccount);
+  }, [simulatedAccountPreview, targetSubAccount]);
+
+  const currentSubAccount = useMemo(() => {
+    if (!accountData || !targetSubAccount) return undefined;
+    return accountData.getSubAccount(targetSubAccount);
+  }, [accountData, targetSubAccount]);
+
+  const projectedNetApy = previewSubAccount?.roe?.total;
+  const currentNetApy = currentSubAccount?.roe?.total;
+
+  const previewLiquidationPrice = useMemo(() => {
+    if (!previewSubAccount) return undefined;
+    const values = previewSubAccount.positions
+      .map((p: any) => p.liquidity?.borrowLiquidationPrice)
+      .filter((v: bigint | undefined): v is bigint => v !== undefined);
+    if (values.length === 0) return undefined;
+    return values.reduce((min: bigint, v: bigint) => (v < min ? v : min), values[0]!);
+  }, [previewSubAccount]);
+
+  const accountDiffLines = useMemo(() => {
+    if (!accountData || !simulatedAccountPreview) return [];
+    return collectDiffs(toComparable(accountData), toComparable(simulatedAccountPreview)).slice(0, 300);
+  }, [accountData, simulatedAccountPreview]);
 
   const applyMultiplyTarget = (value: number) => {
     if (!collateralUsdPrice || !debtUsdPrice) return;
@@ -213,8 +309,8 @@ export function BorrowPairPage() {
         chainId,
         fromVault: debtVault.address,
         toVault: collateralVault.address,
-        fromAccount: walletAddress as Address,
-        toAccount: walletAddress as Address,
+        fromAccount: (targetSubAccount ?? walletAddress) as Address,
+        toAccount: (targetSubAccount ?? walletAddress) as Address,
         fromAsset: debtVault.asset.address,
         toAsset: collateralVault.asset.address,
         amount: liabilityRaw,
@@ -256,6 +352,108 @@ export function BorrowPairPage() {
     isConnected,
     walletAddress,
     multiplyAmount,
+    targetSubAccount,
+  ]);
+
+  const getAccountData = useCallback(async () => {
+    if (accountData) return accountData;
+    if (!sdk || !walletAddress) throw new Error("Wallet not ready");
+    return sdk.accountService.fetchAccount(chainId, walletAddress as Address, {
+      populateVaults: true,
+      populateMarketPrices: true,
+      populateUserRewards: true,
+      vaultFetchOptions: {
+        populateMarketPrices: true,
+        populateCollaterals: true,
+        populateRewards: true,
+        populateIntrinsicApy: true,
+      },
+    });
+  }, [accountData, sdk, walletAddress, chainId]);
+
+  useEffect(() => {
+    if (!sdk || !collateralVault || !debtVault) return;
+    if (tab !== "multiply") return;
+    if (!selectedQuote) return;
+    if (!isConnected || !walletAddress) return;
+    if (!walletClient || !publicClient) return;
+    if (isChainMismatch) return;
+    if (isSubmitting) return;
+    if (!multiplyAmount.trim()) return;
+
+    let cancelled = false;
+    setPreviewSimulationError(null);
+
+    (async () => {
+      const account = await getAccountData();
+
+      let liabilityRaw: bigint;
+      try {
+        liabilityRaw = parseUnits(multiplyAmount as `${number}`, debtVault.asset.decimals);
+      } catch {
+        throw new Error("Invalid multiply amount.");
+      }
+      if (liabilityRaw <= 0n) throw new Error("Multiply amount must be greater than zero.");
+
+      let collateralRaw = 0n;
+      if (collateralAmount.trim()) {
+        try {
+          collateralRaw = parseUnits(
+            collateralAmount as `${number}`,
+            collateralVault.asset.decimals
+          );
+        } catch {
+          throw new Error("Invalid collateral amount.");
+        }
+      }
+
+      const plan = sdk.executionService.planMultiplyWithSwap({
+        account,
+        collateralVault: collateralVault.address,
+        collateralAmount: collateralRaw,
+        collateralAsset: collateralVault.asset.address,
+        swapQuote: selectedQuote,
+      });
+
+      await executePlanWithProgress({
+        plan,
+        sdk,
+        chainId,
+        walletClient,
+        publicClient,
+        account: walletAddress as Address,
+        dryRunOnly: true,
+        useStateOverrides: true,
+        onSimulationResolved: (simulated) => {
+          if (cancelled || !simulated) return;
+          setSimulatedAccountPreview(simulated);
+        },
+      });
+    })()
+      .catch((err) => {
+        if (cancelled) return;
+        setPreviewSimulationError(String(err));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    sdk,
+    chainId,
+    tab,
+    selectedQuote,
+    collateralVault,
+    debtVault,
+    isConnected,
+    walletAddress,
+    walletClient,
+    publicClient,
+    isChainMismatch,
+    isSubmitting,
+    multiplyAmount,
+    collateralAmount,
+    getAccountData,
   ]);
 
   const resetMessages = () => {
@@ -279,22 +477,6 @@ export function BorrowPairPage() {
       throw new Error("Wallet client not ready yet. Retry in a second.");
     }
     return true;
-  };
-
-  const getAccountData = async () => {
-    if (accountData) return accountData;
-    if (!sdk || !walletAddress) throw new Error("Wallet not ready");
-    return sdk.accountService.fetchAccount(chainId, walletAddress as Address, {
-      populateVaults: true,
-      populateMarketPrices: true,
-      populateUserRewards: true,
-      vaultFetchOptions: {
-        populateMarketPrices: true,
-        populateCollaterals: true,
-        populateRewards: true,
-        populateIntrinsicApy: true,
-      },
-    });
   };
 
   const handleBorrow = async () => {
@@ -333,7 +515,7 @@ export function BorrowPairPage() {
       let plan = sdk!.executionService.planBorrow({
         vault: debtVault.address,
         amount: borrowRaw,
-        borrowAccount: walletAddress as Address,
+        borrowAccount: (targetSubAccount ?? walletAddress) as Address,
         receiver: walletAddress as Address,
         account,
         collateral:
@@ -365,6 +547,10 @@ export function BorrowPairPage() {
         account: walletAddress as Address,
         onProgress: (p) => {
           setProgress({ completed: p.completed, total: p.total, status: p.status });
+        },
+        onSimulationResolved: (simulated) => {
+          if (!simulated) return;
+          setSimulatedAccountPreview(simulated);
         },
       });
 
@@ -429,7 +615,7 @@ export function BorrowPairPage() {
           liabilityVault: debtVault.address,
           liabilityAmount: liabilityRaw,
           longVault: collateralVault.address,
-          receiver: walletAddress as Address,
+          receiver: (targetSubAccount ?? walletAddress) as Address,
         });
       } else {
         if (!selectedQuote) {
@@ -464,6 +650,10 @@ export function BorrowPairPage() {
         account: walletAddress as Address,
         onProgress: (p) => {
           setProgress({ completed: p.completed, total: p.total, status: p.status });
+        },
+        onSimulationResolved: (simulated) => {
+          if (!simulated) return;
+          setSimulatedAccountPreview(simulated);
         },
       });
 
@@ -682,16 +872,38 @@ export function BorrowPairPage() {
                 <div className="pair-summary">
                   <div className="pair-summary-item">
                     <div className="label">Net APY</div>
-                    <div className="value">-</div>
+                    <div className="value">
+                      {projectedNetApy !== undefined
+                        ? formatPercent(projectedNetApy)
+                        : currentNetApy !== undefined
+                        ? formatPercent(currentNetApy)
+                        : "-"}
+                    </div>
+                    {projectedNetApy !== undefined && (
+                      <div className="pair-subtitle">
+                        Current:{" "}
+                        {currentNetApy !== undefined ? formatPercent(currentNetApy) : "-"}
+                      </div>
+                    )}
                   </div>
                   <div className="pair-summary-item">
                     <div className="label">Liquidation Price</div>
-                    <div className="value">-</div>
+                    <div className="value">{previewSubAccount ? formatWad(previewLiquidationPrice) : "-"}</div>
                   </div>
                   <div className="pair-summary-item">
                     <div className="label">Position Health</div>
-                    <div className="value">-</div>
+                    <div className="value">{previewSubAccount ? formatWad(previewSubAccount.healthFactor) : "-"}</div>
                   </div>
+                </div>
+                <div className="pair-form-actions">
+                  <button
+                    type="button"
+                    className="wallet-button"
+                    onClick={() => setShowAccountDiff(true)}
+                    disabled={!accountData || !simulatedAccountPreview}
+                  >
+                    Account Diff
+                  </button>
                 </div>
 
                 {progress && (
@@ -716,6 +928,7 @@ export function BorrowPairPage() {
                 )}
                 {success && <div className="success-message">{success}</div>}
                 {error && <div className="error-message">{error}</div>}
+                {previewSimulationError && <div className="error-message">{previewSimulationError}</div>}
               </>
             )}
           </div>
@@ -876,6 +1089,54 @@ export function BorrowPairPage() {
           )}
         </div>
       </div>
+      {showAccountDiff && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            zIndex: 1000,
+          }}
+          onClick={() => setShowAccountDiff(false)}
+        >
+          <div
+            style={{
+              width: "min(960px, 100%)",
+              maxHeight: "80vh",
+              background: "#fff",
+              border: "2px solid #000",
+              display: "flex",
+              flexDirection: "column",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", padding: 12 }}>
+              <div className="pair-card-header">Current vs Simulated Account Diff</div>
+              <button type="button" className="wallet-button" onClick={() => setShowAccountDiff(false)}>
+                Close
+              </button>
+            </div>
+            <pre
+              style={{
+                margin: 0,
+                padding: 12,
+                borderTop: "1px solid #ccc",
+                overflow: "auto",
+                fontSize: 12,
+                lineHeight: 1.4,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}
+            >
+              {accountDiffLines.length > 0 ? accountDiffLines.join("\n") : "No differences."}
+            </pre>
+          </div>
+        </div>
+      )}
     </>
   );
 }

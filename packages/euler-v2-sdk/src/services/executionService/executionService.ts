@@ -100,7 +100,7 @@ export interface IExecutionService {
   resolveRequiredApprovalsWithWallet(args: ResolveRequiredApprovalsWithWalletArgs): TransactionPlan;
   resolveRequiredApprovals(args: ResolveRequiredApprovalsArgs): Promise<TransactionPlan>;
   getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData;
-  describeBatch(batch: EVCBatchItem[]): BatchItemDescription[];
+  describeBatch(batch: EVCBatchItem[], extraAbis?: Abi[]): BatchItemDescription[];
   /** Merges multiple plans into one: required approvals for the same (token, owner, spender) are summed; EVC batch items are concatenated in order. */
   mergePlans(plans: TransactionPlan[]): TransactionPlan;
   /** Converts EVC batch items into a transaction plan (single evcBatch, no required approvals). */
@@ -1274,6 +1274,7 @@ export class ExecutionService implements IExecutionService {
    * Tries known ABIs (EVC, eVault, Permit2, swapper, swapVerifier) to decode each item's data.
    *
    * @param batch - Array of EVC batch items (targetContract, onBehalfOfAccount, value, data) to decode
+   * @param extraAbis - Optional extra ABIs to try first when decoding unknown batch items.
    * @returns Array of decoded items with targetContract, onBehalfOfAccount, functionName, and args (record of param name to value). Throws if any item cannot be decoded.
    * @example
    * const batchItems = executionService.encodeDeposit({ ... });
@@ -1281,11 +1282,18 @@ export class ExecutionService implements IExecutionService {
    * console.log(described[0].functionName); // "deposit"
    * console.log(described[0].args); // { amount: 1000n, receiver: "0x..." }
    */
-  describeBatch(batch: EVCBatchItem[]): BatchItemDescription[] {
+  describeBatch(batch: EVCBatchItem[], extraAbis?: Abi[]): BatchItemDescription[] {
     const decodedBatchItems: BatchItemDescription[] = []
+    const executionDecodeAbis: Abi[] = [
+      ...(extraAbis ?? []),
+      ethereumVaultConnectorAbi as unknown as Abi,
+      eVaultAbi as unknown as Abi,
+      permit2PermitAbi as unknown as Abi,
+      swapperAbi as unknown as Abi,
+      swapVerifierAbi as unknown as Abi,
+    ];
     for (const item of batch) {
       let decoded = false
-      const executionDecodeAbis: Abi[] = [ethereumVaultConnectorAbi, eVaultAbi, permit2PermitAbi, swapperAbi, swapVerifierAbi];
       for (const abi of executionDecodeAbis) {
         try {
           const decodedData = decodeFunctionData({
@@ -1342,7 +1350,12 @@ export class ExecutionService implements IExecutionService {
         }
       }
       if (!decoded) {
-        throw new Error(`Could not decode batch item data: ${item.data}`)
+        return [{
+          targetContract: item.targetContract,
+          onBehalfOfAccount: item.onBehalfOfAccount,
+          functionName: "Unknown",
+          args: {},
+        }]
       }
     }
 

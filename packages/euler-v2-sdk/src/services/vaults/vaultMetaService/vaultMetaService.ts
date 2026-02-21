@@ -55,6 +55,13 @@ export interface IVaultMetaService<TEntity = VaultEntity>
     chainId: number,
     vault: Address
   ): Promise<TEntity | undefined>;
+  /** Returns vault type for the given vault address, or undefined if unknown. */
+  fetchVaultType(chainId: number, vault: Address): Promise<VaultTypeString | undefined>;
+  /** Returns vault types for the given vault addresses (keyed by normalized vault address). */
+  fetchVaultTypes(
+    chainId: number,
+    vaults: Address[]
+  ): Promise<Partial<Record<Address, VaultTypeString>>>;
   /** Returns the factory address for the given chain and vault type, or undefined if the type is not registered. */
   getFactoryByType(chainId: number, type: VaultTypeString): Address | undefined;
 }
@@ -69,12 +76,14 @@ export class VaultMetaService<TEntity = VaultEntity>
   implements IVaultMetaService<TEntity> {
   private readonly vaultServicesList: RegisteredVaultService<TEntity>[] = [];
   private readonly typeToService = new Map<string, RegisteredVaultService<TEntity>>();
+  private readonly serviceToType = new Map<RegisteredVaultService<TEntity>, string>();
 
   constructor(private config: VaultMetaServiceConfig<TEntity>) {
     if (config.vaultServices?.length) {
       for (const entry of config.vaultServices) {
         if ("type" in entry && "service" in entry) {
           this.typeToService.set(entry.type, entry.service);
+          this.serviceToType.set(entry.service, entry.type);
           this.vaultServicesList.push(entry.service);
         } else {
           this.vaultServicesList.push(entry as RegisteredVaultService<TEntity>);
@@ -91,6 +100,7 @@ export class VaultMetaService<TEntity = VaultEntity>
   registerVaultService(entry: VaultServiceEntry<TEntity>): void {
     if ("type" in entry && "service" in entry) {
       this.typeToService.set(entry.type, entry.service);
+      this.serviceToType.set(entry.service, entry.type);
       this.vaultServicesList.push(entry.service);
     } else {
       this.vaultServicesList.push(entry as RegisteredVaultService<TEntity>);
@@ -146,6 +156,32 @@ export class VaultMetaService<TEntity = VaultEntity>
     const service = vaultToService.get(getAddress(vault));
     if (!service) return undefined;
     return service.fetchVault(chainId, vault);
+  }
+
+  async fetchVaultType(chainId: number, vault: Address): Promise<VaultTypeString | undefined> {
+    const vaultToService = await this.getVaultToService(chainId, [vault]);
+    const service = vaultToService.get(getAddress(vault));
+    if (!service) return undefined;
+    return this.serviceToType.get(service);
+  }
+
+  async fetchVaultTypes(
+    chainId: number,
+    vaults: Address[]
+  ): Promise<Partial<Record<Address, VaultTypeString>>> {
+    if (vaults.length === 0) return {};
+
+    const vaultToService = await this.getVaultToService(chainId, vaults);
+    const out: Partial<Record<Address, VaultTypeString>> = {};
+    for (const vault of vaults) {
+      const key = getAddress(vault);
+      const service = vaultToService.get(key);
+      if (!service) continue;
+      const type = this.serviceToType.get(service);
+      if (!type) continue;
+      out[key as Address] = type;
+    }
+    return out;
   }
 
   async fetchVaults(
