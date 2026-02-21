@@ -1,7 +1,7 @@
 import { IAccountAdapter } from "../accountService.js";
 import { ProviderService } from "../../providerService/index.js";
 import { DeploymentService } from "../../deploymentService/index.js";
-import { type Address, type Abi, getAddress } from "viem";
+import { type Address, type Abi, encodeFunctionData, getAddress, zeroAddress } from "viem";
 import { IAccount, type ISubAccount } from "../../../entities/Account.js";
 import { EVault } from "../../../entities/EVault.js";
 import { VaultAccountInfo, EVCAccountInfo } from "./accountLensTypes.js";
@@ -14,6 +14,37 @@ import { convertVaultInfoFullToIEVault } from "../../vaults/eVaultService/adapte
 import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js";
 import type { EulerPlugin, PluginBatchItems } from "../../../plugins/types.js";
 import { executeBatchSimulation, BatchSimulationAdapter } from "../../../plugins/batchSimulation.js";
+import type { EVCBatchItem } from "../../executionService/executionServiceTypes.js";
+
+export const getEVCAccountInfoLensBatchItem = (
+  accountLensAddress: Address,
+  evc: Address,
+  subAccount: Address,
+): EVCBatchItem => ({
+  targetContract: accountLensAddress,
+  onBehalfOfAccount: zeroAddress,
+  value: 0n,
+  data: encodeFunctionData({
+    abi: accountLensAbi,
+    functionName: "getEVCAccountInfo",
+    args: [evc, subAccount],
+  }),
+});
+
+export const getVaultAccountInfoLensBatchItem = (
+  accountLensAddress: Address,
+  subAccount: Address,
+  vault: Address,
+): EVCBatchItem => ({
+  targetContract: accountLensAddress,
+  onBehalfOfAccount: zeroAddress,
+  value: 0n,
+  data: encodeFunctionData({
+    abi: accountLensAbi,
+    functionName: "getVaultAccountInfo",
+    args: [subAccount, vault],
+  }),
+});
 
 export interface IAccountVaultsAdapter {
   getAccountVaults(chainId: number, account: Address): Promise<AccountVaults>;
@@ -154,12 +185,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
     const evcAccountInfo = evcAccountInfoResult as EVCAccountInfo;
 
     if (vaults.length === 0) {
-      const subAccountData = convertToSubAccount(evcAccountInfo, []);
-      return {
-        ...subAccountData,
-        isLockdownMode: evcAccountInfo.isLockdownMode,
-        isPermitDisabledMode: evcAccountInfo.isPermitDisabledMode,
-      };
+      return this.buildSubAccount(evcAccountInfo, []);
     }
 
     // Fetch vault account info, using batchSimulation when plugins provide prepend items
@@ -173,9 +199,16 @@ export class AccountOnchainAdapter implements IAccountAdapter {
       ) as VaultAccountInfo[];
     }
 
-    const fullSubAccount = convertToSubAccount(evcAccountInfo, vaultAccountInfos);
+    return this.buildSubAccount(evcAccountInfo, vaultAccountInfos);
+  }
+
+  buildSubAccount(
+    evcAccountInfo: EVCAccountInfo,
+    vaultAccountInfos: VaultAccountInfo[],
+  ): ISubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean } {
+    const subAccountData = convertToSubAccount(evcAccountInfo, vaultAccountInfos);
     return {
-      ...fullSubAccount,
+      ...subAccountData,
       isLockdownMode: evcAccountInfo.isLockdownMode,
       isPermitDisabledMode: evcAccountInfo.isPermitDisabledMode,
     };

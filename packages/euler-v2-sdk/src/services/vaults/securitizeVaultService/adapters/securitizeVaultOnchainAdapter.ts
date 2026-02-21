@@ -1,13 +1,28 @@
 import type { ISecuritizeCollateralAdapter } from "../securitizeVaultService.js";
 import { ProviderService } from "../../../providerService/index.js";
 import { DeploymentService } from "../../../deploymentService/index.js";
-import { Address } from "viem";
+import { Address, encodeFunctionData, zeroAddress } from "viem";
 import { ISecuritizeCollateralVault } from "../../../../entities/SecuritizeCollateralVault.js";
 import { VaultInfoERC4626 } from "./securitizeVaultLensTypes.js";
 import { convertToISecuritizeCollateralVault } from "./securitizeVaultInfoConverter.js";
 import { utilsLensAbi } from "./abis/utilsLensAbi.js";
 import { erc4626EvcCollateralSecuritizeAbi } from "./abis/erc4626EvcCollateralSecuritizeAbi.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
+import type { EVCBatchItem } from "../../../executionService/executionServiceTypes.js";
+
+export const getVaultInfoERC4626LensBatchItem = (
+  utilsLensAddress: Address,
+  vault: Address,
+): EVCBatchItem => ({
+  targetContract: utilsLensAddress,
+  onBehalfOfAccount: zeroAddress,
+  value: 0n,
+  data: encodeFunctionData({
+    abi: utilsLensAbi,
+    functionName: "getVaultInfoERC4626",
+    args: [vault],
+  }),
+});
 
 export class SecuritizeVaultOnchainAdapter
   implements ISecuritizeCollateralAdapter

@@ -1,12 +1,13 @@
 import { IEulerEarnAdapter } from "../eulerEarnService.js";
 import { ProviderService } from "../../../providerService/index.js";
 import { DeploymentService } from "../../../deploymentService/index.js";
-import { Address } from "viem";
+import { Address, encodeFunctionData, zeroAddress } from "viem";
 import { EulerEarn, IEulerEarn } from "../../../../entities/EulerEarn.js";
 import { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
 import { convertEulerEarnVaultInfoFullToIEulerEarn } from "./eulerEarnInfoConverter.js";
 import { eulerEarnVaultLensAbi } from "./abis/eulerEarnVaultLensAbi.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
+import type { EVCBatchItem } from "../../../executionService/executionServiceTypes.js";
 
 const verifiedArrayAbi = [
   {
@@ -17,6 +18,20 @@ const verifiedArrayAbi = [
     stateMutability: "view",
   },
 ] as const;
+
+export const getEulerEarnVaultInfoFullLensBatchItem = (
+  lensAddress: Address,
+  vault: Address,
+): EVCBatchItem => ({
+  targetContract: lensAddress,
+  onBehalfOfAccount: zeroAddress,
+  value: 0n,
+  data: encodeFunctionData({
+    abi: eulerEarnVaultLensAbi,
+    functionName: "getVaultInfoFull",
+    args: [vault],
+  }),
+});
 
 export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
   constructor(
@@ -95,4 +110,3 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
     return addresses;
   }
 }
-

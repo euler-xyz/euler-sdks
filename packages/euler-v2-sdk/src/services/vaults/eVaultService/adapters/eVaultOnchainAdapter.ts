@@ -1,7 +1,7 @@
 import { IEVaultAdapter } from "../eVaultService.js";
 import { ProviderService } from "../../../providerService/index.js";
 import { DeploymentService } from "../../../deploymentService/index.js";
-import { type Address, type Abi } from "viem";
+import { type Address, type Abi, encodeFunctionData, zeroAddress } from "viem";
 import { EVault, IEVault } from "../../../../entities/EVault.js";
 import { VaultInfoFull } from "./eVaultLensTypes.js";
 import { convertVaultInfoFullToIEVault } from "./vaultInfoConverter.js";
@@ -9,6 +9,7 @@ import { vaultLensAbi } from "./abis/vaultLensAbi.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
 import type { EulerPlugin, PluginBatchItems } from "../../../../plugins/types.js";
 import { executeBatchSimulation, BatchSimulationAdapter } from "../../../../plugins/batchSimulation.js";
+import type { EVCBatchItem } from "../../../executionService/executionServiceTypes.js";
 
 const verifiedArrayAbi = [
   {
@@ -19,6 +20,20 @@ const verifiedArrayAbi = [
     stateMutability: "view",
   },
 ] as const;
+
+export const getVaultInfoFullLensBatchItem = (
+  vaultLensAddress: Address,
+  vault: Address,
+): EVCBatchItem => ({
+  targetContract: vaultLensAddress,
+  onBehalfOfAccount: zeroAddress,
+  value: 0n,
+  data: encodeFunctionData({
+    abi: vaultLensAbi,
+    functionName: "getVaultInfoFull",
+    args: [vault],
+  }),
+});
 
 export class EVaultOnchainAdapter implements IEVaultAdapter {
   private plugins: EulerPlugin[] = [];
