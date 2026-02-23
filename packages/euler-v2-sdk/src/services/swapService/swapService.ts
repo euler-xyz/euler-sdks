@@ -97,6 +97,7 @@ export class SwapService implements ISwapService {
    * @param request.currentDebt - Current debt of the account (required when isRepay is true)
    * @param request.deadline - Quote deadline timestamp in seconds (defaults to config defaultDeadline from now)
    * @param request.dustAccount - Account receiving dust from over-swap repays (defaults to origin)
+   * @param request.provider - Optional preselected provider (see getProviders)
    * @returns Promise of array of swap quotes (amounts, swap calldata, verifier calldata). Throws if tokenIn === tokenOut, origin is zero, or API/verifier validation fails.
    */
   async getSwapQuotes(request: SwapQuoteRequest): Promise<SwapQuote[]> {

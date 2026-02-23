@@ -14,6 +14,7 @@ import { IEulerLabelsService } from "../services/eulerLabelsService/index.js";
 import { ITokenlistService } from "../services/tokenlistService/index.js";
 import { ISwapService } from "../services/swapService/index.js";
 import { IExecutionService } from "../services/executionService/index.js";
+import { ISimulationService } from "../services/simulationService/index.js";
 import { IWalletService } from "../services/walletService/index.js";
 import { IPriceService } from "../services/priceService/index.js";
 import { IRewardsService } from "../services/rewardsService/index.js";
@@ -35,6 +36,7 @@ export interface EulerSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   tokenlistService: ITokenlistService;
   swapService: ISwapService;
   executionService: IExecutionService;
+  simulationService: ISimulationService<TVaultEntity>;
   priceService: IPriceService;
   rewardsService: IRewardsService;
   intrinsicApyService: IIntrinsicApyService;
@@ -55,6 +57,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
   public readonly tokenlistService: ITokenlistService;
   public readonly swapService: ISwapService;
   public readonly executionService: IExecutionService;
+  public readonly simulationService: ISimulationService<TVaultEntity>;
   public readonly priceService: IPriceService;
   public readonly rewardsService: IRewardsService;
   public readonly intrinsicApyService: IIntrinsicApyService;
@@ -74,6 +77,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
     this.tokenlistService = options.tokenlistService;
     this.swapService = options.swapService;
     this.executionService = options.executionService;
+    this.simulationService = options.simulationService;
     this.priceService = options.priceService;
     this.rewardsService = options.rewardsService;
     this.intrinsicApyService = options.intrinsicApyService;

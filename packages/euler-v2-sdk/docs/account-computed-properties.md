@@ -35,6 +35,8 @@ const account = await accountService.fetchAccount(chainId, owner, {
 | `currentLTV` | `bigint \| undefined` | Liquidity data | `liabilityValue / totalCollateralValue` (WAD). Current loan-to-value ratio. |
 | `liquidationLTV` | `bigint \| undefined` | Liquidity data | `totalCollateralValue.liquidation / totalCollateralValue.oracleMid` (WAD). Weighted-average liquidation threshold. |
 | `multiplier` | `bigint \| undefined` | `populateMarketPrices` | `totalCollateralValueUsd / equity` (WAD, 1e18 = 1x). Leverage multiplier. |
+| `totalCollateralValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Total collateral value in USD from sub-account liquidity (18 dec). |
+| `liabilityValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Liability value in USD from sub-account liquidity (18 dec). |
 | `netValueUsd` | `bigint \| undefined` | `populateMarketPrices` | `sum(suppliedValueUsd) - sum(borrowedValueUsd)` (18 dec). Net asset value in USD. |
 | `roe` | `SubAccountRoe \| undefined` | `populateVaults` + `populateMarketPrices` (+ `populateRewards` for rewards breakdown) | Return on equity breakdown. See below. |
 

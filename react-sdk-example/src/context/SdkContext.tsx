@@ -39,6 +39,9 @@ export function SdkProvider({ children }: { children: ReactNode }) {
     buildEulerSDK({
       rpcUrls: RPC_URLS,
       buildQuery: sdkBuildQuery,
+      swapServiceConfig: {
+        swapApiUrl: "http://localhost:3002",
+      },
       plugins: [createPythPlugin({ buildQuery: sdkBuildQuery })],
     })
       .then((instance) => {

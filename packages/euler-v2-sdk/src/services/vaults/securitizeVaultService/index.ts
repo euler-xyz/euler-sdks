@@ -4,4 +4,7 @@ export {
   ISecuritizeCollateralAdapter,
   type StandardSecuritizeCollateralPerspectives,
 } from "./securitizeVaultService.js";
-export { SecuritizeVaultOnchainAdapter } from "./adapters/securitizeVaultOnchainAdapter.js";
+export {
+  SecuritizeVaultOnchainAdapter,
+  getVaultInfoERC4626LensBatchItem,
+} from "./adapters/securitizeVaultOnchainAdapter.js";

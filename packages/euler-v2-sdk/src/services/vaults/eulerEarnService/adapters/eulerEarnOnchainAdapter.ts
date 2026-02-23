@@ -1,7 +1,7 @@
 import { IEulerEarnAdapter } from "../eulerEarnService.js";
 import { ProviderService } from "../../../providerService/index.js";
 import { DeploymentService } from "../../../deploymentService/index.js";
-import { Address, encodeFunctionData, zeroAddress } from "viem";
+import { Address, encodeFunctionData } from "viem";
 import { EulerEarn, IEulerEarn } from "../../../../entities/EulerEarn.js";
 import { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
 import { convertEulerEarnVaultInfoFullToIEulerEarn } from "./eulerEarnInfoConverter.js";
@@ -22,9 +22,10 @@ const verifiedArrayAbi = [
 export const getEulerEarnVaultInfoFullLensBatchItem = (
   lensAddress: Address,
   vault: Address,
+  onBehalfOfAccount: Address,
 ): EVCBatchItem => ({
   targetContract: lensAddress,
-  onBehalfOfAccount: zeroAddress,
+  onBehalfOfAccount,
   value: 0n,
   data: encodeFunctionData({
     abi: eulerEarnVaultLensAbi,

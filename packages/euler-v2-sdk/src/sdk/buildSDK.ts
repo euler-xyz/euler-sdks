@@ -19,6 +19,7 @@ import { ExecutionService, IExecutionService } from "../services/executionServic
 import { PriceService, IPriceService, type BackendConfig, PricingBackendClient } from "../services/priceService/index.js";
 import { RewardsService, IRewardsService, type RewardsServiceConfig } from "../services/rewardsService/index.js";
 import { IntrinsicApyService, IIntrinsicApyService, type IntrinsicApyServiceConfig } from "../services/intrinsicApyService/index.js";
+import { SimulationService, ISimulationService } from "../services/simulationService/index.js";
 import { defaultAccountVaultsAdapterConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLAdapterConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeAdapterConfig } from "./defaultConfig.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
 import { EVaultOnchainAdapter } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter.js";
@@ -51,6 +52,7 @@ export interface BuildSDKOverrides<TVaultEntity extends IVaultEntity = VaultEnti
   tokenlistService?: ITokenlistService;
   swapService?: ISwapService;
   executionService?: IExecutionService;
+  simulationService?: ISimulationService<TVaultEntity>;
   priceService?: IPriceService;
   rewardsService?: IRewardsService;
   intrinsicApyService?: IIntrinsicApyService;
@@ -245,6 +247,18 @@ export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEnt
   // Build intrinsic APY service if not overridden
   const intrinsicApyService = servicesOverrides?.intrinsicApyService ?? new IntrinsicApyService(intrinsicApyServiceConfig, buildQuery);
 
+  // Build simulation service if not overridden
+  const simulationService = servicesOverrides?.simulationService ?? new SimulationService<TVaultEntity>(
+    providerService as ProviderService,
+    deploymentService as DeploymentService,
+    vaultMetaService as IVaultMetaService<TVaultEntity>,
+    executionService,
+    priceService,
+    rewardsService,
+    intrinsicApyService,
+    eulerLabelsService,
+  );
+
   // Wire priceService and rewardsService into account service
   if (accountService instanceof AccountService) {
     accountService.setPriceService(priceService);
@@ -309,6 +323,7 @@ export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEnt
     tokenlistService,
     swapService,
     executionService,
+    simulationService,
     priceService,
     rewardsService,
     intrinsicApyService,

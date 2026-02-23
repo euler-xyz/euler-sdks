@@ -8,7 +8,7 @@ import {
 type CallParams = {
   data: Hex
   to: Address
-  from: Address
+  from?: Address
 }
 
 /**
@@ -21,16 +21,15 @@ export async function getAccessedSlots(
   client: PublicClient,
   params: CallParams,
 ): Promise<Map<Address, Hex[]>> {
+  const tx = {
+    to: params.to,
+    data: params.data,
+    ...(params.from ? { from: params.from } : {}),
+  }
+
   const result = (await client.request({
     method: "eth_createAccessList" as any,
-    params: [
-      {
-        from: params.from,
-        to: params.to,
-        data: params.data,
-      },
-      "latest",
-    ] as any,
+    params: [tx, "latest"] as any,
   })) as any
 
   const map = new Map<Address, Hex[]>()

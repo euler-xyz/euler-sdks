@@ -130,7 +130,6 @@ export async function getBalanceOverrides(
           args: [account],
         }),
         to: token,
-        from: account,
       })
 
       const tokenSlots = accessedSlots.get(getAddress(token))

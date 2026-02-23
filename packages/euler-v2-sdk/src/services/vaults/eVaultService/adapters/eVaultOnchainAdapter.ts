@@ -1,7 +1,7 @@
 import { IEVaultAdapter } from "../eVaultService.js";
 import { ProviderService } from "../../../providerService/index.js";
 import { DeploymentService } from "../../../deploymentService/index.js";
-import { type Address, type Abi, encodeFunctionData, zeroAddress } from "viem";
+import { type Address, type Abi, encodeFunctionData } from "viem";
 import { EVault, IEVault } from "../../../../entities/EVault.js";
 import { VaultInfoFull } from "./eVaultLensTypes.js";
 import { convertVaultInfoFullToIEVault } from "./vaultInfoConverter.js";
@@ -24,9 +24,10 @@ const verifiedArrayAbi = [
 export const getVaultInfoFullLensBatchItem = (
   vaultLensAddress: Address,
   vault: Address,
+  onBehalfOfAccount: Address,
 ): EVCBatchItem => ({
   targetContract: vaultLensAddress,
-  onBehalfOfAccount: zeroAddress,
+  onBehalfOfAccount,
   value: 0n,
   data: encodeFunctionData({
     abi: vaultLensAbi,

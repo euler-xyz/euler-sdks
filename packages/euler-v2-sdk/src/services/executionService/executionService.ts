@@ -582,7 +582,7 @@ export class ExecutionService implements IExecutionService {
     })
 
     // 8. Enable collateral on long vault
-    if (enableCollateralLong) {
+    if (enableCollateralLong && collateralVault !== longVault) {
       items.push(this.encodeEnableCollateral(chainId, receiver, longVault))
     }
 

@@ -13,7 +13,7 @@ export function RoeCell({ roe }: RoeCellProps) {
 
   return (
     <span className="apy-with-rewards">
-      {formatPercent(roe.total)}
+      {formatPercent(roe.total)}{hasRewards ? " ✦" : ""}
       <span className="apy-tooltip">
         <span className="apy-tooltip-row apy-tooltip-heading">
           <span>ROE Breakdown</span>

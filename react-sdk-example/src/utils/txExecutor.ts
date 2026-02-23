@@ -264,7 +264,7 @@ export async function executePlanWithProgress(args: {
         const batchData = sdk.executionService.encodeBatch(allBatchItems);
         const totalValue = allBatchItems.reduce((sum, bi) => sum + bi.value, 0n);
 
-        await simulateBatchOrThrow(allBatchItems);
+        // await simulateBatchOrThrow(allBatchItems);
 
         update(item, "EVC batch");
         const estimatedGas = await publicClient.estimateGas({

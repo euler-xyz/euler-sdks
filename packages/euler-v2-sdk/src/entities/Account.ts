@@ -11,6 +11,8 @@ import {
   computeCurrentLTV,
   computeLiquidationLTV,
   computeMultiplier,
+  computeSubAccountTotalCollateralValueUsd,
+  computeSubAccountLiabilityValueUsd,
   computeSubAccountNetValueUsd,
   computeSubAccountRoe,
   computeCollateralLiquidationPrices,
@@ -160,6 +162,10 @@ export interface ISubAccount<TVaultEntity extends IHasVaultAddress = never> {
   readonly liquidationLTV?: bigint;
   /** Leverage multiplier (WAD, 1e18 = 1x). Requires USD data. Computed getter on SubAccount class. */
   readonly multiplier?: bigint;
+  /** Total collateral value in USD (18 dec). Requires USD data. Computed getter on SubAccount class. */
+  readonly totalCollateralValueUsd?: bigint;
+  /** Liability value in USD (18 dec). Requires USD data. Computed getter on SubAccount class. */
+  readonly liabilityValueUsd?: bigint;
   /** Net value in USD (18 dec): sum(supplied) - sum(borrowed). Computed getter on SubAccount class. */
   readonly netValueUsd?: bigint;
   /** ROE breakdown (decimal fractions). Requires populated vaults + market prices. Computed getter on SubAccount class. */
@@ -210,6 +216,16 @@ export class SubAccount<TVaultEntity extends IHasVaultAddress = never> implement
   /** Leverage multiplier (WAD, 1e18 = 1x). Requires USD data. */
   get multiplier(): bigint | undefined {
     return computeMultiplier(this as unknown as ISubAccount<IHasVaultAddress>);
+  }
+
+  /** Total collateral value in USD (18 dec). Requires USD data. */
+  get totalCollateralValueUsd(): bigint | undefined {
+    return computeSubAccountTotalCollateralValueUsd(this as unknown as ISubAccount<IHasVaultAddress>);
+  }
+
+  /** Liability value in USD (18 dec). Requires USD data. */
+  get liabilityValueUsd(): bigint | undefined {
+    return computeSubAccountLiabilityValueUsd(this as unknown as ISubAccount<IHasVaultAddress>);
   }
 
   /** Net value in USD (18 dec): sum(supplied) - sum(borrowed). */
@@ -326,12 +342,11 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
     const addresses = Array.from(set, (s) => s as Address);
     if (addresses.length === 0) return this as unknown as Account<TResolved>;
     const vaults = await vaultMetaService.fetchVaults(this.chainId, addresses, options);
-    return Account.mapVaultsToPositions(this, vaults);
+    return this.mapVaultsToPositions(vaults);
   }
 
   /** Maps fetched vault entities onto positions and liquidity collaterals. Mutates in place. */
-  private static mapVaultsToPositions<TResolved extends IHasVaultAddress>(
-    account: Account<any>,
+  mapVaultsToPositions<TResolved extends IHasVaultAddress>(
     vaults: TResolved[]
   ): Account<TResolved> {
     const byAddress = new Map<string, TResolved>();
@@ -339,7 +354,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
       byAddress.set(getAddress(v.address), v);
     }
     const resolve = (addr: Address): TResolved | undefined => byAddress.get(getAddress(addr));
-    for (const sa of Object.values(account.subAccounts ?? {})) {
+    for (const sa of Object.values(this.subAccounts ?? {})) {
       if (!sa) continue;
       for (const p of sa.positions) {
         const entity = resolve(p.vaultAddress);
@@ -355,7 +370,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
         }
       }
     }
-    return account as unknown as Account<TResolved>;
+    return this as unknown as Account<TResolved>;
   }
 
   /**

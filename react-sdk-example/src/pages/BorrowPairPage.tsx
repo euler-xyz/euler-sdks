@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   StandardEVaultPerspectives,
-  StandardEulerEarnPerspectives,
   getSubAccountAddress,
+  getStateOverrides,
   getMaxMultiplier,
   getMaxRoe,
-  isEVault,
   type EVault,
   type SwapQuote,
 } from "euler-v2-sdk";
@@ -23,7 +22,6 @@ import {
   queryClient,
   useAccount as useSdkAccount,
   useVaultDetail,
-  useVerifiedVaults,
   useWalletBalance,
 } from "../queries/sdkQueries.ts";
 import {
@@ -35,15 +33,11 @@ import {
 } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
+import { RoeCell } from "../components/RoeCell.tsx";
 import { executePlanWithProgress, type PlanProgress } from "../utils/txExecutor.ts";
 
-const ALL_PERSPECTIVES = [
-  StandardEVaultPerspectives.GOVERNED,
-  StandardEVaultPerspectives.ESCROW,
-  StandardEulerEarnPerspectives.GOVERNED,
-];
-
 type FormTab = "borrow" | "multiply";
+type QuoteCard = { provider: string; quote: SwapQuote };
 
 function pct(value: number | undefined): string {
   if (value === undefined) return "-";
@@ -54,6 +48,13 @@ function calcVaultSupplyApy(vault: EVault): number {
   return (
     Number(vault.interestRates.supplyAPY) +
     (vault.rewards?.totalRewardsApr ?? 0) +
+    (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0)
+  );
+}
+
+function calcVaultBorrowApy(vault: EVault): number {
+  return (
+    Number(vault.interestRates.borrowAPY) +
     (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0)
   );
 }
@@ -81,6 +82,27 @@ function formatPairPrice(
     primary: `1 ${collateralVault.asset.symbol} = ${ratio.toFixed(4)} ${debtVault.asset.symbol}`,
     secondary: `1 ${debtVault.asset.symbol} = ${inverse.toFixed(4)} ${collateralVault.asset.symbol}`,
   };
+}
+
+function pickBestQuote(quotes: SwapQuote[]): SwapQuote | null {
+  if (!quotes.length) return null;
+  return quotes.reduce((best, next) =>
+    BigInt(next.amountOut) > BigInt(best.amountOut) ? next : best
+  );
+}
+
+function sortQuoteCards(cards: QuoteCard[]): QuoteCard[] {
+  return [...cards].sort((a, b) => {
+    const amountA = BigInt(a.quote.amountOut);
+    const amountB = BigInt(b.quote.amountOut);
+    if (amountA === amountB) return 0;
+    return amountA > amountB ? -1 : 1;
+  });
+}
+
+function isRevertError(error: unknown): boolean {
+  const message = String(error ?? "");
+  return message.toLowerCase().includes("revert");
 }
 
 function toComparable(value: unknown): unknown {
@@ -148,9 +170,6 @@ export function BorrowPairPage() {
     collateral
   );
   const { data: debtVault, isLoading: debtLoading } = useVaultDetail(chainId, debt);
-  const { data: allVaults } = useVerifiedVaults(ALL_PERSPECTIVES);
-  const eVaults = useMemo(() => (allVaults?.filter(isEVault) ?? []), [allVaults]);
-
   const { address: walletAddress, isConnected } = useWagmiAccount();
   const walletChainId = useChainId();
   const { data: walletClient } = useWalletClient({ chainId });
@@ -188,9 +207,19 @@ export function BorrowPairPage() {
   const [borrowAmount, setBorrowAmount] = useState("");
   const [multiplyAmount, setMultiplyAmount] = useState("");
   const [multiplyTarget, setMultiplyTarget] = useState<number | null>(null);
-  const [selectedQuote, setSelectedQuote] = useState<SwapQuote | null>(null);
+  const [quoteCards, setQuoteCards] = useState<QuoteCard[]>([]);
+  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [providersCount, setProvidersCount] = useState(0);
+  const [providersFetchedCount, setProvidersFetchedCount] = useState(0);
+  const quoteCardsRef = useRef<QuoteCard[]>([]);
+  const quoteRequestId = useRef(0);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [quoteFailure, setQuoteFailure] = useState<{ provider: string; message: string } | null>(
+    null
+  );
+  const [failedProviders, setFailedProviders] = useState<string[]>([]);
+  const [quoteRefreshToken, setQuoteRefreshToken] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [progress, setProgress] = useState<PlanProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -215,9 +244,47 @@ export function BorrowPairPage() {
   const maxRoe = useMemo(() => {
     if (!collateralVault || !debtVault || maxMultiplier === undefined) return undefined;
     const supplyApy = calcVaultSupplyApy(collateralVault);
-    const borrowApy = Number(debtVault.interestRates.borrowAPY);
+    const borrowApy = calcVaultBorrowApy(debtVault);
     return getMaxRoe(maxMultiplier, supplyApy, borrowApy);
   }, [collateralVault, debtVault, maxMultiplier]);
+
+  const selectedQuote = useMemo(() => {
+    if (!selectedProvider) return null;
+    return quoteCards.find((card) => card.provider === selectedProvider)?.quote ?? null;
+  }, [quoteCards, selectedProvider]);
+
+  const quoteProgress = useMemo(() => {
+    if (!providersCount) return 0;
+    return Math.min(providersFetchedCount / providersCount, 1);
+  }, [providersCount, providersFetchedCount]);
+
+  const resetQuotes = useCallback(() => {
+    quoteCardsRef.current = [];
+    setQuoteCards([]);
+    setSelectedProvider(null);
+    setProvidersCount(0);
+    setProvidersFetchedCount(0);
+    setQuoteLoading(false);
+    setQuoteError(null);
+    setQuoteFailure(null);
+    setFailedProviders([]);
+  }, []);
+
+  const refreshQuotes = useCallback(() => {
+    setQuoteFailure(null);
+    setQuoteRefreshToken((prev) => prev + 1);
+  }, []);
+
+  const upsertQuote = useCallback((provider: string, quote: SwapQuote) => {
+    setQuoteCards((prev) => {
+      const next = sortQuoteCards([
+        ...prev.filter((card) => card.provider !== provider),
+        { provider, quote },
+      ]);
+      quoteCardsRef.current = next;
+      return next;
+    });
+  }, []);
 
   const pairPrice = formatPairPrice(collateralVault, debtVault);
 
@@ -240,17 +307,24 @@ export function BorrowPairPage() {
     return accountData.getSubAccount(targetSubAccount);
   }, [accountData, targetSubAccount]);
 
-  const projectedNetApy = previewSubAccount?.roe?.total;
-  const currentNetApy = currentSubAccount?.roe?.total;
+  const projectedRoe = previewSubAccount?.roe;
+  const currentRoe = currentSubAccount?.roe;
 
-  const previewLiquidationPrice = useMemo(() => {
+  const previewLiquidity = useMemo(() => {
     if (!previewSubAccount) return undefined;
-    const values = previewSubAccount.positions
-      .map((p: any) => p.liquidity?.borrowLiquidationPrice)
-      .filter((v: bigint | undefined): v is bigint => v !== undefined);
-    if (values.length === 0) return undefined;
-    return values.reduce((min: bigint, v: bigint) => (v < min ? v : min), values[0]!);
+    return previewSubAccount.positions.map((p: any) => p.liquidity).find(Boolean);
   }, [previewSubAccount]);
+
+  const previewCollateralLiquidationPrice = useMemo(() => {
+    if (!previewLiquidity || !collateralVault) return undefined;
+    const key = getAddress(collateralVault.address);
+    return previewLiquidity.collateralLiquidationPrices?.[key];
+  }, [previewLiquidity, collateralVault]);
+
+  const previewDebtLiquidationPrice = useMemo(
+    () => previewLiquidity?.borrowLiquidationPrice,
+    [previewLiquidity]
+  );
 
   const accountDiffLines = useMemo(() => {
     if (!accountData || !simulatedAccountPreview) return [];
@@ -280,64 +354,94 @@ export function BorrowPairPage() {
     if (tab !== "multiply") return;
     if (!isConnected || !walletAddress) return;
     if (!multiplyAmount.trim()) {
-      setSelectedQuote(null);
-      setQuoteError(null);
+      resetQuotes();
       return;
     }
     if (collateralVault.asset.address.toLowerCase() === debtVault.asset.address.toLowerCase()) {
-      setSelectedQuote(null);
-      setQuoteError(null);
+      resetQuotes();
       return;
     }
 
     let cancelled = false;
+    const requestId = (quoteRequestId.current += 1);
     setQuoteLoading(true);
     setQuoteError(null);
+    setQuoteFailure(null);
+    setProvidersCount(0);
+    setProvidersFetchedCount(0);
+    quoteCardsRef.current = [];
+    setQuoteCards([]);
+    setSelectedProvider(null);
+    setFailedProviders([]);
 
     (async () => {
       let liabilityRaw: bigint;
       try {
-        liabilityRaw = parseUnits(
-          multiplyAmount as `${number}`,
-          debtVault.asset.decimals
-        );
+        liabilityRaw = parseUnits(multiplyAmount as `${number}`, debtVault.asset.decimals);
       } catch {
         throw new Error("Invalid multiply amount.");
       }
 
-      const quotes = await sdk.swapService.getDepositQuote({
-        chainId,
-        fromVault: debtVault.address,
-        toVault: collateralVault.address,
-        fromAccount: (targetSubAccount ?? walletAddress) as Address,
-        toAccount: (targetSubAccount ?? walletAddress) as Address,
-        fromAsset: debtVault.asset.address,
-        toAsset: collateralVault.asset.address,
-        amount: liabilityRaw,
-        origin: walletAddress as Address,
-        slippage: 0.5,
-        deadline: Math.floor(Date.now() / 1000) + 60 * 30,
+      const providers = await sdk.swapService.getProviders(chainId);
+      if (cancelled || quoteRequestId.current !== requestId) return;
+      setProvidersCount(providers.length);
+
+      if (!providers.length) {
+        throw new Error("No swap providers available.");
+      }
+
+      const providersTotal = providers.length;
+      const fetchProviderQuote = async (provider: string) => {
+        try {
+          const quotes = await sdk.swapService.getDepositQuote({
+            chainId,
+            fromVault: debtVault.address,
+            toVault: collateralVault.address,
+            fromAccount: (targetSubAccount ?? walletAddress) as Address,
+            toAccount: (targetSubAccount ?? walletAddress) as Address,
+            fromAsset: debtVault.asset.address,
+            toAsset: collateralVault.asset.address,
+            amount: liabilityRaw,
+            origin: walletAddress as Address,
+            slippage: 0.5,
+            deadline: Math.floor(Date.now() / 1000) + 60 * 30,
+            provider,
+          });
+
+          if (cancelled || quoteRequestId.current !== requestId) return;
+
+          const filtered = quotes.filter(
+            (q) => !q.route.some((r) => r.providerName.includes("CoW"))
+          );
+          const best = pickBestQuote(filtered);
+          if (best) {
+            upsertQuote(provider, best);
+          }
+        } catch (err) {
+          if (cancelled || quoteRequestId.current !== requestId) return;
+        } finally {
+          if (cancelled || quoteRequestId.current !== requestId) return;
+          setProvidersFetchedCount((prev) => {
+            const next = prev + 1;
+            if (next >= providersTotal) {
+              setQuoteLoading(false);
+              if (quoteCardsRef.current.length === 0) {
+                setQuoteError("Unable to fetch swap quote.");
+              }
+            }
+            return next;
+          });
+        }
+      };
+
+      providers.forEach((provider) => {
+        void fetchProviderQuote(provider);
       });
-
-      const filtered = quotes.filter(
-        (q) => !q.route.some((r) => r.providerName.includes("CoW"))
-      );
-
-      if (filtered.length === 0) {
-        throw new Error("No swap quotes available.");
-      }
-
-      if (!cancelled) {
-        setSelectedQuote(filtered[0] ?? null);
-      }
     })()
       .catch((err) => {
         if (cancelled) return;
-        setSelectedQuote(null);
+        resetQuotes();
         setQuoteError(String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setQuoteLoading(false);
       });
 
     return () => {
@@ -353,7 +457,20 @@ export function BorrowPairPage() {
     walletAddress,
     multiplyAmount,
     targetSubAccount,
+    resetQuotes,
+    upsertQuote,
+    quoteRefreshToken,
   ]);
+
+  useEffect(() => {
+    if (!quoteCards.length) {
+      setSelectedProvider(null);
+      return;
+    }
+    if (selectedProvider && !quoteCards.some((card) => card.provider === selectedProvider)) {
+      setSelectedProvider(null);
+    }
+  }, [quoteCards, selectedProvider]);
 
   const getAccountData = useCallback(async () => {
     if (accountData) return accountData;
@@ -374,15 +491,19 @@ export function BorrowPairPage() {
   useEffect(() => {
     if (!sdk || !collateralVault || !debtVault) return;
     if (tab !== "multiply") return;
-    if (!selectedQuote) return;
     if (!isConnected || !walletAddress) return;
-    if (!walletClient || !publicClient) return;
+    if (!publicClient) return;
     if (isChainMismatch) return;
     if (isSubmitting) return;
     if (!multiplyAmount.trim()) return;
 
+    const isSameAsset =
+      collateralVault.asset.address.toLowerCase() === debtVault.asset.address.toLowerCase();
+    if (!isSameAsset && !selectedQuote) return;
+
     let cancelled = false;
     setPreviewSimulationError(null);
+    setQuoteFailure(null);
 
     (async () => {
       const account = await getAccountData();
@@ -407,32 +528,101 @@ export function BorrowPairPage() {
         }
       }
 
-      const plan = sdk.executionService.planMultiplyWithSwap({
-        account,
-        collateralVault: collateralVault.address,
-        collateralAmount: collateralRaw,
-        collateralAsset: collateralVault.asset.address,
-        swapQuote: selectedQuote,
-      });
+      const receiver = (targetSubAccount ?? walletAddress) as Address;
 
-      await executePlanWithProgress({
-        plan,
-        sdk,
-        chainId,
-        walletClient,
+      let plan;
+      if (isSameAsset) {
+        plan = sdk.executionService.planMultiplySameAsset({
+          account,
+          collateralVault: collateralVault.address,
+          collateralAmount: collateralRaw,
+          collateralAsset: collateralVault.asset.address,
+          liabilityVault: debtVault.address,
+          liabilityAmount: liabilityRaw,
+          longVault: collateralVault.address,
+          receiver,
+        });
+      } else {
+        if (!selectedQuote) {
+          throw new Error("No swap quote available.");
+        }
+        plan = sdk.executionService.planMultiplyWithSwap({
+          account,
+          collateralVault: collateralVault.address,
+          collateralAmount: collateralRaw,
+          collateralAsset: collateralVault.asset.address,
+          swapQuote: selectedQuote,
+        });
+      }
+
+      const permit2 = sdk.deploymentService.getDeployment(chainId).addresses.coreAddrs.permit2;
+      const stateOverrides = await getStateOverrides(
         publicClient,
-        account: walletAddress as Address,
-        dryRunOnly: true,
-        useStateOverrides: true,
-        onSimulationResolved: (simulated) => {
-          if (cancelled || !simulated) return;
-          setSimulatedAccountPreview(simulated);
-        },
-      });
+        plan,
+        walletAddress as Address,
+        { permit2Address: permit2 }
+      );
+      const batchItems = plan.flatMap((item) => (item.type === "evcBatch" ? item.items : []));
+      if (batchItems.length === 0) {
+        throw new Error("No batch items to simulate.");
+      }
+      const { simulatedAccounts } = await sdk.simulationService.simulateBatch(
+        chainId,
+        walletAddress as Address,
+        batchItems,
+        stateOverrides,
+        {
+          vaultFetchOptions: {
+            populateMarketPrices: true,
+            populateCollaterals: true,
+            populateStrategyVaults: true,
+            populateRewards: true,
+            populateIntrinsicApy: true,
+            populateLabels: true,
+            eVaultFetchOptions: {
+              populateCollaterals: true,
+              populateMarketPrices: true,
+              populateRewards: true,
+              populateIntrinsicApy: true,
+            },
+          },
+          accountFetchOptions: {
+            populateVaults: true,
+            populateMarketPrices: true,
+            populateUserRewards: true,
+            vaultFetchOptions: {
+              populateMarketPrices: true,
+              populateCollaterals: true,
+              populateStrategyVaults: true,
+              populateRewards: true,
+              populateIntrinsicApy: true,
+              populateLabels: true,
+              eVaultFetchOptions: {
+                populateCollaterals: true,
+                populateMarketPrices: true,
+                populateRewards: true,
+                populateIntrinsicApy: true,
+              },
+            },
+          },
+        }
+      );
+      const simulated = simulatedAccounts[0];
+      if (cancelled) return;
+      setSimulatedAccountPreview(simulated ?? null);
+      if (selectedProvider) {
+        setFailedProviders((prev) => prev.filter((provider) => provider !== selectedProvider));
+      }
     })()
       .catch((err) => {
         if (cancelled) return;
         setPreviewSimulationError(String(err));
+        if (selectedProvider && isRevertError(err)) {
+          setFailedProviders((prev) =>
+            prev.includes(selectedProvider) ? prev : [...prev, selectedProvider]
+          );
+          setQuoteFailure({ provider: selectedProvider, message: String(err) });
+        }
       });
 
     return () => {
@@ -442,18 +632,19 @@ export function BorrowPairPage() {
     sdk,
     chainId,
     tab,
-    selectedQuote,
     collateralVault,
     debtVault,
     isConnected,
     walletAddress,
-    walletClient,
     publicClient,
     isChainMismatch,
     isSubmitting,
     multiplyAmount,
     collateralAmount,
     getAccountData,
+    selectedQuote,
+    selectedProvider,
+    targetSubAccount,
   ]);
 
   const resetMessages = () => {
@@ -547,10 +738,6 @@ export function BorrowPairPage() {
         account: walletAddress as Address,
         onProgress: (p) => {
           setProgress({ completed: p.completed, total: p.total, status: p.status });
-        },
-        onSimulationResolved: (simulated) => {
-          if (!simulated) return;
-          setSimulatedAccountPreview(simulated);
         },
       });
 
@@ -650,10 +837,6 @@ export function BorrowPairPage() {
         account: walletAddress as Address,
         onProgress: (p) => {
           setProgress({ completed: p.completed, total: p.total, status: p.status });
-        },
-        onSimulationResolved: (simulated) => {
-          if (!simulated) return;
-          setSimulatedAccountPreview(simulated);
         },
       });
 
@@ -837,30 +1020,101 @@ export function BorrowPairPage() {
 
                 {tab === "multiply" && (
                   <div className="pair-quote">
-                    <div className="pair-quote-title">Best Swap Quote</div>
+                    <div className="pair-quote-title">
+                      <span>Swap Quotes</span>
+                      <button
+                        type="button"
+                        className="quote-refresh"
+                        onClick={refreshQuotes}
+                        disabled={quoteLoading || !multiplyAmount.trim()}
+                      >
+                        Refresh
+                      </button>
+                    </div>
                     {collateralVault.asset.address.toLowerCase() ===
                     debtVault.asset.address.toLowerCase() ? (
                       <div className="pair-form-subline">No swap required.</div>
-                    ) : quoteLoading ? (
-                      <div className="pair-form-subline">Fetching swap quotes...</div>
                     ) : quoteError ? (
                       <div className="error-message">{quoteError}</div>
-                    ) : selectedQuote ? (
-                      <div className="pair-form-subline">
-                        {formatUnits(
-                          BigInt(selectedQuote.amountIn),
-                          selectedQuote.tokenIn.decimals
-                        )}{" "}
-                        {selectedQuote.tokenIn.symbol} →{" "}
-                        {formatUnits(
-                          BigInt(selectedQuote.amountOut),
-                          selectedQuote.tokenOut.decimals
-                        )}{" "}
-                        {selectedQuote.tokenOut.symbol}{" "}
-                        <span>
-                          ({selectedQuote.route.map((r) => r.providerName).join(" → ")})
-                        </span>
-                      </div>
+                    ) : quoteLoading && !quoteCards.length ? (
+                      <div className="pair-form-subline">Fetching swap quotes...</div>
+                    ) : quoteCards.length ? (
+                      <>
+                        <div className="quote-progress">
+                          <div className="quote-progress-bar" style={{ width: `${quoteProgress * 100}%` }} />
+                        </div>
+                        <div className="quote-list">
+                          {quoteCards.map((card, index) => {
+                            const isSelected = card.provider === selectedProvider;
+                            const isFailed = failedProviders.includes(card.provider);
+                            const isBest = index === 0;
+                            return (
+                              <button
+                                key={card.provider}
+                                type="button"
+                                className={`quote-card${isSelected ? " selected" : ""}${
+                                  isFailed ? " failed" : ""
+                                }`}
+                                onClick={() => {
+                                  setSelectedProvider(card.provider);
+                                  setQuoteFailure(null);
+                                }}
+                              >
+                                <div className="quote-provider">
+                                  <span>{card.provider}</span>
+                                  {isBest && <span className="quote-badge">Best</span>}
+                                </div>
+                                <div className="quote-amount-row">
+                                  <div className="quote-amount">
+                                    {formatUnits(
+                                      BigInt(card.quote.amountIn),
+                                      card.quote.tokenIn.decimals
+                                    )}{" "}
+                                    {card.quote.tokenIn.symbol} →{" "}
+                                    {formatUnits(
+                                      BigInt(card.quote.amountOut),
+                                      card.quote.tokenOut.decimals
+                                    )}{" "}
+                                    {card.quote.tokenOut.symbol}
+                                  </div>
+                                  <div className="quote-impact">
+                                    Price impact: {card.quote.slippage.toFixed(2)}%
+                                  </div>
+                                </div>
+                                {isFailed && (
+                                  <div className="quote-warning">Simulation failed</div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {selectedQuote && (
+                          <div className="quote-summary">
+                            <div className="quote-summary-title">Selected Quote</div>
+                            <div className="quote-summary-line">
+                              Provider: {selectedProvider ?? "-"}
+                            </div>
+                            <div className="quote-summary-line">
+                              {formatUnits(
+                                BigInt(selectedQuote.amountIn),
+                                selectedQuote.tokenIn.decimals
+                              )}{" "}
+                              {selectedQuote.tokenIn.symbol} →{" "}
+                              {formatUnits(
+                                BigInt(selectedQuote.amountOut),
+                                selectedQuote.tokenOut.decimals
+                              )}{" "}
+                              {selectedQuote.tokenOut.symbol}
+                            </div>
+                            <div className="quote-summary-line">
+                              Price impact: {selectedQuote.slippage.toFixed(2)}%
+                            </div>
+                          </div>
+                        )}
+                        {quoteLoading && (
+                          <div className="pair-form-subline">Fetching swap quotes...</div>
+                        )}
+                      </>
                     ) : (
                       <div className="pair-form-subline">
                         Enter a multiply amount to fetch quotes.
@@ -873,26 +1127,37 @@ export function BorrowPairPage() {
                   <div className="pair-summary-item">
                     <div className="label">Net APY</div>
                     <div className="value">
-                      {projectedNetApy !== undefined
-                        ? formatPercent(projectedNetApy)
-                        : currentNetApy !== undefined
-                        ? formatPercent(currentNetApy)
-                        : "-"}
+                      {projectedRoe ? (
+                        <RoeCell roe={projectedRoe} />
+                      ) : currentRoe ? (
+                        <RoeCell roe={currentRoe} />
+                      ) : (
+                        "-"
+                      )}
                     </div>
-                    {projectedNetApy !== undefined && (
+                    {projectedRoe && (
                       <div className="pair-subtitle">
-                        Current:{" "}
-                        {currentNetApy !== undefined ? formatPercent(currentNetApy) : "-"}
+                        Current: {currentRoe ? <RoeCell roe={currentRoe} /> : "-"}
                       </div>
                     )}
                   </div>
                   <div className="pair-summary-item">
                     <div className="label">Liquidation Price</div>
-                    <div className="value">{previewSubAccount ? formatWad(previewLiquidationPrice) : "-"}</div>
+                    <div className="value">
+                      {previewSubAccount &&
+                      previewCollateralLiquidationPrice !== undefined &&
+                      previewDebtLiquidationPrice !== undefined
+                        ? `${formatWad(previewCollateralLiquidationPrice)} / ${formatWad(
+                            previewDebtLiquidationPrice
+                          )}`
+                        : "-"}
+                    </div>
                   </div>
                   <div className="pair-summary-item">
                     <div className="label">Position Health</div>
-                    <div className="value">{previewSubAccount ? formatWad(previewSubAccount.healthFactor) : "-"}</div>
+                    <div className="value">
+                      {previewSubAccount ? formatWad(previewSubAccount.healthFactor) : "-"}
+                    </div>
                   </div>
                 </div>
                 <div className="pair-form-actions">
@@ -1054,7 +1319,7 @@ export function BorrowPairPage() {
             </div>
           </div>
 
-          {eVaults.length > 0 && (
+          {debtVault.collaterals.length > 0 && (
             <div className="pair-card">
               <div className="pair-card-header">Pair Collaterals</div>
               <table>
@@ -1067,13 +1332,13 @@ export function BorrowPairPage() {
                 </thead>
                 <tbody>
                   {debtVault.collaterals.map((collateral) => {
-                    const vault = eVaults.find(
-                      (v) => v.address.toLowerCase() === collateral.address.toLowerCase()
-                    );
+                    const isCurrent =
+                      collateralVault?.address.toLowerCase() === collateral.address.toLowerCase();
+                    const symbol = isCurrent ? collateralVault.asset.symbol : "Unknown";
                     return (
                       <tr key={collateral.address}>
                         <td>
-                          <div>{vault?.asset.symbol ?? "Unknown"}</div>
+                          <div>{symbol}</div>
                           <div className="table-subline">
                             <CopyAddress address={collateral.address} />
                           </div>
@@ -1134,6 +1399,27 @@ export function BorrowPairPage() {
             >
               {accountDiffLines.length > 0 ? accountDiffLines.join("\n") : "No differences."}
             </pre>
+          </div>
+        </div>
+      )}
+      {quoteFailure && (
+        <div className="quote-popup-overlay">
+          <div className="quote-popup">
+            <div className="quote-popup-title">Quote Simulation Failed</div>
+            <div className="quote-popup-body">
+              The quote from {quoteFailure.provider} reverted during simulation. Select another
+              quote to continue.
+            </div>
+            <div className="quote-popup-error">{quoteFailure.message}</div>
+            <div className="quote-popup-actions">
+              <button
+                type="button"
+                className="wallet-button"
+                onClick={() => setQuoteFailure(null)}
+              >
+                Choose another quote
+              </button>
+            </div>
           </div>
         </div>
       )}

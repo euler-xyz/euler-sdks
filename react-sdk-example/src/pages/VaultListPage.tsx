@@ -108,6 +108,12 @@ function getEarnSortValue(vault: EulerEarn, key: EarnSortKey): number | string {
   }
 }
 
+function calcVaultSupplyUsd(vault: EVault): bigint | undefined {
+  if (vault.marketPriceUsd === undefined) return undefined;
+  const decimals = BigInt(vault.asset.decimals ?? 18);
+  return (vault.totalAssets * vault.marketPriceUsd) / (10n ** decimals);
+}
+
 // ---------------------------------------------------------------------------
 // Generic sort helper
 // ---------------------------------------------------------------------------
@@ -439,6 +445,10 @@ export function VaultListPage() {
   const { chainId, loading: sdkLoading, error: sdkError } = useSDK();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("evaults");
+  const [marketFilter, setMarketFilter] = useState<string>("all");
+  const [assetFilter, setAssetFilter] = useState<string>("all");
+  const [marketSearch, setMarketSearch] = useState<string>("");
+  const [assetSearch, setAssetSearch] = useState<string>("");
   const { isConnected } = useAccount();
   const [openDeposit, setOpenDeposit] = useState<string | null>(null);
 
@@ -447,7 +457,62 @@ export function VaultListPage() {
   const eVaults = allVaults?.filter(isEVault) ?? [];
   const earnVaults = allVaults?.filter(isEulerEarn) ?? [];
 
-  const eVaultSort = useSorted(eVaults, "totalSupply" as EVaultSortKey, getEVaultSortValue);
+  const eVaultMarkets = useMemo(() => {
+    const byName = new Map<string, bigint>();
+    for (const vault of eVaults) {
+      const market = vault.eulerLabel?.products[0]?.name ?? vault.eulerLabel?.vault.name;
+      if (!market) continue;
+      const suppliedUsd = calcVaultSupplyUsd(vault) ?? 0n;
+      byName.set(market, (byName.get(market) ?? 0n) + suppliedUsd);
+    }
+    return Array.from(byName.entries())
+      .sort((a, b) => {
+        if (a[1] === b[1]) return a[0].localeCompare(b[0]);
+        return a[1] > b[1] ? -1 : 1;
+      })
+      .map(([name]) => name);
+  }, [eVaults]);
+
+  const eVaultAssets = useMemo(() => {
+    const assets = new Map<string, string>();
+    for (const vault of eVaults) {
+      assets.set(vault.asset.address.toLowerCase(), vault.asset.symbol);
+    }
+    return Array.from(assets.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [eVaults]);
+
+  const searchedEVaultMarkets = useMemo(() => {
+    const query = marketSearch.trim().toLowerCase();
+    if (!query) return eVaultMarkets;
+    return eVaultMarkets.filter((market) =>
+      market === marketFilter || market.toLowerCase().includes(query)
+    );
+  }, [eVaultMarkets, marketSearch, marketFilter]);
+
+  const searchedEVaultAssets = useMemo(() => {
+    const query = assetSearch.trim().toLowerCase();
+    if (!query) return eVaultAssets;
+    return eVaultAssets.filter(([address, symbol]) =>
+      address === assetFilter ||
+      symbol.toLowerCase().includes(query) ||
+      address.includes(query)
+    );
+  }, [eVaultAssets, assetSearch, assetFilter]);
+
+  const filteredEVaults = useMemo(() => {
+    return eVaults.filter((vault) => {
+      if (marketFilter !== "all") {
+        const market = vault.eulerLabel?.products[0]?.name ?? vault.eulerLabel?.vault.name;
+        if (market !== marketFilter) return false;
+      }
+      if (assetFilter !== "all") {
+        if (vault.asset.address.toLowerCase() !== assetFilter) return false;
+      }
+      return true;
+    });
+  }, [eVaults, marketFilter, assetFilter]);
+
+  const eVaultSort = useSorted(filteredEVaults, "totalSupply" as EVaultSortKey, getEVaultSortValue);
   const earnSort = useSorted(earnVaults, "totalAssets" as EarnSortKey, getEarnSortValue);
 
   if (sdkLoading)
@@ -487,97 +552,156 @@ export function VaultListPage() {
           ) : eVaults.length === 0 ? (
             <div className="status-message">No EVaults found</div>
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th className="sortable" onClick={() => eVaultSort.toggleSort("name")}>
-                    Name{eVaultSort.indicator("name")}
-                  </th>
-                  <th className="sortable" onClick={() => eVaultSort.toggleSort("asset")}>
-                    Asset{eVaultSort.indicator("asset")}
-                  </th>
-                  <th>Address</th>
-                  <th className="sortable" onClick={() => eVaultSort.toggleSort("totalSupply")}>
-                    Total Supply{eVaultSort.indicator("totalSupply")}
-                  </th>
-                  <th className="sortable" onClick={() => eVaultSort.toggleSort("totalBorrows")}>
-                    Total Borrows{eVaultSort.indicator("totalBorrows")}
-                  </th>
-                  <th className="sortable" onClick={() => eVaultSort.toggleSort("supplyAPY")}>
-                    Supply APY{eVaultSort.indicator("supplyAPY")}
-                  </th>
-                  <th className="sortable" onClick={() => eVaultSort.toggleSort("borrowAPY")}>
-                    Borrow APY{eVaultSort.indicator("borrowAPY")}
-                  </th>
-                  <th className="sortable" onClick={() => eVaultSort.toggleSort("usdPrice")}>
-                    USD Price{eVaultSort.indicator("usdPrice")}
-                  </th>
-                  <th className="sortable" onClick={() => eVaultSort.toggleSort("collaterals")}>
-                    Collaterals{eVaultSort.indicator("collaterals")}
-                  </th>
-                  <th>Deposit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {eVaultSort.sorted.map((vault) => (
-                  <Fragment key={vault.address}>
-                    <tr
-                      className="clickable"
-                      onClick={() =>
-                        navigate(`/vault/${chainId}/${vault.address}`)
-                      }
-                    >
-                      <td>{vault.shares.name || "-"}</td>
-                      <td>{vault.asset.symbol}</td>
-                      <td><CopyAddress address={vault.address} /></td>
-                      <td>
-                        {formatBigInt(vault.totalAssets, vault.asset.decimals)}
-                      </td>
-                      <td>
-                        {formatBigInt(vault.totalBorrowed, vault.asset.decimals)}
-                      </td>
-                      <td>
-                        <ApyCell
-                          baseApy={Number(vault.interestRates.supplyAPY)}
-                          rewards={vault.rewards}
-                          intrinsicApy={vault.intrinsicApy}
-                        />
-                      </td>
-                      <td>
-                        <ApyCell
-                          baseApy={Number(vault.interestRates.borrowAPY)}
-                        />
-                      </td>
-                      <td>{formatPriceUsd(vault.marketPriceUsd)}</td>
-                      <td>{vault.collaterals.length}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="wallet-button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!isConnected) return;
-                            setOpenDeposit((prev) =>
-                              prev === vault.address ? null : vault.address
-                            );
-                          }}
-                          disabled={!isConnected}
-                        >
-                          Deposit
-                        </button>
-                      </td>
+            <>
+              <div className="filter-bar">
+                <div className="filter-group">
+                  <label className="filter-label" htmlFor="vault-market-filter">
+                    Market
+                  </label>
+                  <input
+                    type="text"
+                    className="filter-input"
+                    value={marketSearch}
+                    onChange={(e) => setMarketSearch(e.target.value)}
+                    placeholder="Search markets"
+                  />
+                  <select
+                    id="vault-market-filter"
+                    className="filter-select"
+                    value={marketFilter}
+                    onChange={(e) => setMarketFilter(e.target.value)}
+                  >
+                    <option value="all">All markets</option>
+                    {searchedEVaultMarkets.map((market) => (
+                      <option key={market} value={market}>
+                        {market}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="filter-group">
+                  <label className="filter-label" htmlFor="vault-asset-filter">
+                    Asset
+                  </label>
+                  <input
+                    type="text"
+                    className="filter-input"
+                    value={assetSearch}
+                    onChange={(e) => setAssetSearch(e.target.value)}
+                    placeholder="Search assets"
+                  />
+                  <select
+                    id="vault-asset-filter"
+                    className="filter-select"
+                    value={assetFilter}
+                    onChange={(e) => setAssetFilter(e.target.value)}
+                  >
+                    <option value="all">All assets</option>
+                    {searchedEVaultAssets.map(([address, symbol]) => (
+                      <option key={address} value={address}>
+                        {symbol}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {eVaultSort.sorted.length === 0 ? (
+                <div className="status-message">No EVaults match the selected filters.</div>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th className="sortable" onClick={() => eVaultSort.toggleSort("name")}>
+                        Name{eVaultSort.indicator("name")}
+                      </th>
+                      <th className="sortable" onClick={() => eVaultSort.toggleSort("asset")}>
+                        Asset{eVaultSort.indicator("asset")}
+                      </th>
+                      <th>Address</th>
+                      <th className="sortable" onClick={() => eVaultSort.toggleSort("totalSupply")}>
+                        Total Supply{eVaultSort.indicator("totalSupply")}
+                      </th>
+                      <th className="sortable" onClick={() => eVaultSort.toggleSort("totalBorrows")}>
+                        Total Borrows{eVaultSort.indicator("totalBorrows")}
+                      </th>
+                      <th className="sortable" onClick={() => eVaultSort.toggleSort("supplyAPY")}>
+                        Supply APY{eVaultSort.indicator("supplyAPY")}
+                      </th>
+                      <th className="sortable" onClick={() => eVaultSort.toggleSort("borrowAPY")}>
+                        Borrow APY{eVaultSort.indicator("borrowAPY")}
+                      </th>
+                      <th className="sortable" onClick={() => eVaultSort.toggleSort("usdPrice")}>
+                        USD Price{eVaultSort.indicator("usdPrice")}
+                      </th>
+                      <th className="sortable" onClick={() => eVaultSort.toggleSort("collaterals")}>
+                        Collaterals{eVaultSort.indicator("collaterals")}
+                      </th>
+                      <th>Deposit</th>
                     </tr>
-                    {openDeposit === vault.address && (
-                      <DepositFormRow
-                        vault={vault}
-                        chainId={chainId}
-                        onClose={() => setOpenDeposit(null)}
-                      />
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {eVaultSort.sorted.map((vault) => (
+                      <Fragment key={vault.address}>
+                        <tr
+                          className="clickable"
+                          onClick={() =>
+                            navigate(`/vault/${chainId}/${vault.address}`)
+                          }
+                        >
+                          <td>{vault.shares.name || "-"}</td>
+                          <td>{vault.asset.symbol}</td>
+                          <td><CopyAddress address={vault.address} /></td>
+                          <td>
+                            {formatBigInt(vault.totalAssets, vault.asset.decimals)}
+                          </td>
+                          <td>
+                            {formatBigInt(vault.totalBorrowed, vault.asset.decimals)}
+                          </td>
+                          <td>
+                            <ApyCell
+                              baseApy={Number(vault.interestRates.supplyAPY)}
+                              rewards={vault.rewards}
+                              intrinsicApy={vault.intrinsicApy}
+                            />
+                          </td>
+                          <td>
+                            <ApyCell
+                              baseApy={Number(vault.interestRates.borrowAPY)}
+                            />
+                          </td>
+                          <td>{formatPriceUsd(vault.marketPriceUsd)}</td>
+                          <td>{vault.collaterals.length}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="wallet-button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!isConnected) return;
+                                setOpenDeposit((prev) =>
+                                  prev === vault.address ? null : vault.address
+                                );
+                              }}
+                              disabled={!isConnected}
+                            >
+                              Deposit
+                            </button>
+                          </td>
+                        </tr>
+                        {openDeposit === vault.address && (
+                          <DepositFormRow
+                            vault={vault}
+                            chainId={chainId}
+                            onClose={() => setOpenDeposit(null)}
+                          />
+                        )}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </>
           )}
         </>
       )}

@@ -67,6 +67,26 @@ export function computeMultiplier(subAccount: ISubAccount<IHasVaultAddress>): bi
 }
 
 /**
+ * Total collateral value in USD for a sub-account (18 dec).
+ * Sourced from sub-account liquidity and populated by `populateMarketPrices`.
+ */
+export function computeSubAccountTotalCollateralValueUsd(
+  subAccount: ISubAccount<IHasVaultAddress>
+): bigint | undefined {
+  return findLiquidity(subAccount)?.totalCollateralValueUsd;
+}
+
+/**
+ * Liability value in USD for a sub-account (18 dec).
+ * Sourced from sub-account liquidity and populated by `populateMarketPrices`.
+ */
+export function computeSubAccountLiabilityValueUsd(
+  subAccount: ISubAccount<IHasVaultAddress>
+): bigint | undefined {
+  return findLiquidity(subAccount)?.liabilityValueUsd;
+}
+
+/**
  * Net value in USD for a sub-account: sum(suppliedValueUsd) - sum(borrowedValueUsd).
  */
 export function computeSubAccountNetValueUsd(subAccount: ISubAccount<IHasVaultAddress>): bigint | undefined {
@@ -155,7 +175,6 @@ export function computeSubAccountRoe(subAccount: ISubAccount<IHasVaultAddress>):
   let totalSupplyUsd = 0;
   let totalBorrowUsd = 0;
   let hasData = false;
-
   for (const p of subAccount.positions) {
     const vault = p.vault as any;
     if (!vault) continue;
@@ -165,6 +184,7 @@ export function computeSubAccountRoe(subAccount: ISubAccount<IHasVaultAddress>):
     // Supply side
     if (p.suppliedValueUsd != null && p.suppliedValueUsd > 0n) {
       const supplyUsd = Number(p.suppliedValueUsd) / 1e18;
+
       const supplyApy = getVaultSupplyApy(vault);
       if (supplyApy != null) {
         hasData = true;

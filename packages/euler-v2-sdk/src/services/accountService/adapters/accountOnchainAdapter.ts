@@ -1,7 +1,7 @@
 import { IAccountAdapter } from "../accountService.js";
 import { ProviderService } from "../../providerService/index.js";
 import { DeploymentService } from "../../deploymentService/index.js";
-import { type Address, type Abi, encodeFunctionData, getAddress, zeroAddress } from "viem";
+import { type Address, type Abi, encodeFunctionData, getAddress } from "viem";
 import { IAccount, type ISubAccount } from "../../../entities/Account.js";
 import { EVault } from "../../../entities/EVault.js";
 import { VaultAccountInfo, EVCAccountInfo } from "./accountLensTypes.js";
@@ -20,9 +20,10 @@ export const getEVCAccountInfoLensBatchItem = (
   accountLensAddress: Address,
   evc: Address,
   subAccount: Address,
+  onBehalfOfAccount: Address,
 ): EVCBatchItem => ({
   targetContract: accountLensAddress,
-  onBehalfOfAccount: zeroAddress,
+  onBehalfOfAccount,
   value: 0n,
   data: encodeFunctionData({
     abi: accountLensAbi,
@@ -35,9 +36,10 @@ export const getVaultAccountInfoLensBatchItem = (
   accountLensAddress: Address,
   subAccount: Address,
   vault: Address,
+  onBehalfOfAccount: Address,
 ): EVCBatchItem => ({
   targetContract: accountLensAddress,
-  onBehalfOfAccount: zeroAddress,
+  onBehalfOfAccount,
   value: 0n,
   data: encodeFunctionData({
     abi: accountLensAbi,
@@ -211,6 +213,35 @@ export class AccountOnchainAdapter implements IAccountAdapter {
       ...subAccountData,
       isLockdownMode: evcAccountInfo.isLockdownMode,
       isPermitDisabledMode: evcAccountInfo.isPermitDisabledMode,
+    };
+  }
+
+  buildAccount(
+    chainId: number,
+    owner: Address,
+    subAccounts: ISubAccount[],
+    enabledCollaterals: Address[],
+    enabledControllers: Address[],
+    isLockdownMode: boolean,
+    isPermitDisabledMode: boolean,
+  ): IAccount {
+    const map = subAccounts.reduce<Record<Address, ISubAccount>>((acc, sa) => {
+      acc[getAddress(sa.account)] = sa;
+      return acc;
+    }, {});
+
+    const main = map[getAddress(owner)];
+    if (main) {
+      main.enabledCollaterals = enabledCollaterals;
+      main.enabledControllers = enabledControllers;
+    }
+
+    return {
+      chainId,
+      owner: getAddress(owner),
+      isLockdownMode,
+      isPermitDisabledMode,
+      subAccounts: map,
     };
   }
 

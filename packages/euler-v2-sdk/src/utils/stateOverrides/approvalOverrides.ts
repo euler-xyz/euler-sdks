@@ -84,7 +84,6 @@ async function discoverAllowanceSlots(
           args: [account, permit2],
         }),
         to: asset,
-        from: account,
       })
 
       const tokenSlots = accessedSlots.get(getAddress(asset))
