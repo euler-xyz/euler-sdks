@@ -5,6 +5,7 @@ import {
   decodeFunctionResult,
   encodeFunctionData,
   getAddress,
+  parseEther,
   stringify,
 } from "viem";
 import { ProviderService } from "../providerService/index.js";
@@ -13,10 +14,13 @@ import type { IVaultMetaService, VaultEntity } from "../vaults/vaultMetaService/
 import type { VaultFetchOptions } from "../vaults/index.js";
 import { VaultType } from "../../utils/types.js";
 import { isSubAccount } from "../../utils/subAccounts.js";
-import { getStateOverrides } from "../../utils/stateOverrides/getStateOverrides.js";
 import { decodeSmartContractErrors, type DecodedSmartContractError } from "../../utils/decodeSmartContractErrors.js";
-import type { EVCBatchItem } from "../executionService/executionServiceTypes.js";
+import type { EVCBatchItem, RequiredApproval, TransactionPlan } from "../executionService/executionServiceTypes.js";
 import type { IExecutionService } from "../executionService/index.js";
+import type { IWalletService } from "../walletService/index.js";
+import { getApprovalOverrides } from "../../utils/stateOverrides/approvalOverrides.js";
+import { getBalanceOverrides } from "../../utils/stateOverrides/balanceOverrides.js";
+import { mergeStateOverrides } from "../../utils/stateOverrides/mergeStateOverrides.js";
 import { ethereumVaultConnectorAbi } from "../executionService/abis/ethereumVaultConnectorAbi.js";
 import { Account, type IAccount, type ISubAccount } from "../../entities/Account.js";
 import { EVault } from "../../entities/EVault.js";
@@ -50,24 +54,45 @@ type StatusCheckResult = {
   result: Hex;
 };
 
+export type SimulationInsufficientRequirement = {
+  token: Address;
+  amount: bigint;
+};
+
 export interface SimulateBatchResult<TVaultEntity extends VaultEntity = VaultEntity> {
   simulatedAccounts: Account<TVaultEntity>[];
   simulatedVaults: TVaultEntity[];
   simulationError?: { error: unknown; decoded: DecodedSmartContractError[] };
   accountStatusErrors?: Array<{ account: Address; error: Hex; decoded: DecodedSmartContractError[] }>;
   vaultStatusErrors?: Array<{ vault: Address; error: Hex; decoded: DecodedSmartContractError[] }>;
+  insufficientWalletAssets?: SimulationInsufficientRequirement[];
+  insufficientPermit2Allowances?: SimulationInsufficientRequirement[];
+  insufficientDirectAllowances?: SimulationInsufficientRequirement[];
 }
 
 export type SimulateBatchOptions = {
+  /** When true, fetches state overrides internally from the transaction plan before simulation. */
+  stateOverrides?: boolean;
   vaultFetchOptions?: VaultFetchOptions;
   accountFetchOptions?: AccountFetchOptions;
 };
 
+export type SimulationStateOverrideOptions = {
+  /** Override the native (ETH) balance. Defaults to 1000 ETH. Set to 0n to skip. */
+  nativeBalance?: bigint;
+};
+
 export interface ISimulationService<TVaultEntity extends VaultEntity = VaultEntity> {
-  simulateBatch(
+  getStateOverrides(
     chainId: number,
     account: Address,
-    batch: EVCBatchItem[],
+    transactionPlan: TransactionPlan,
+    options?: SimulationStateOverrideOptions,
+  ): Promise<StateOverride>;
+  simulateTransactionPlan(
+    chainId: number,
+    account: Address,
+    transactionPlan: TransactionPlan,
     stateOverrides?: StateOverride,
     options?: SimulateBatchOptions
   ): Promise<SimulateBatchResult<TVaultEntity>>;
@@ -82,8 +107,6 @@ type LensMeta =
 export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
   implements ISimulationService<TVaultEntity>
 {
-  static getStateOverrides = getStateOverrides;
-
   private accountAdapter: AccountOnchainAdapter;
 
   constructor(
@@ -95,6 +118,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
     private rewardsService?: IRewardsService,
     private intrinsicApyService?: IIntrinsicApyService,
     private eulerLabelsService?: IEulerLabelsService,
+    private walletService?: IWalletService,
   ) {
     const emptyPositionsAdapter = { getAccountVaults: async () => ({}) };
     this.accountAdapter = new AccountOnchainAdapter(
@@ -104,14 +128,60 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
     );
   }
 
-  async simulateBatch(
+  async getStateOverrides(
     chainId: number,
     account: Address,
-    batch: EVCBatchItem[],
+    transactionPlan: TransactionPlan,
+    options?: SimulationStateOverrideOptions,
+  ): Promise<StateOverride> {
+    const owner = getAddress(account);
+    const nativeBalance = options?.nativeBalance ?? parseEther("1000");
+    const permit2Address = this.deploymentService.getDeployment(chainId).addresses.coreAddrs.permit2;
+    const provider = this.providerService.getProvider(chainId);
+
+    const balanceRequirements = this.extractBalanceRequirements(transactionPlan, owner);
+    const approvalRequirements = this.extractApprovalRequirements(transactionPlan, owner);
+
+    const [balanceOverrides, approvalOverrides] = await Promise.all([
+      getBalanceOverrides(provider, owner, balanceRequirements),
+      getApprovalOverrides(provider, owner, approvalRequirements, permit2Address),
+    ]);
+
+    const allOverrides: StateOverride = [];
+    if (nativeBalance > 0n) {
+      allOverrides.push({ address: owner, balance: nativeBalance });
+    }
+    allOverrides.push(...balanceOverrides);
+    allOverrides.push(...approvalOverrides);
+
+    return mergeStateOverrides(allOverrides);
+  }
+
+  async simulateTransactionPlan(
+    chainId: number,
+    account: Address,
+    transactionPlan: TransactionPlan,
     stateOverrides?: StateOverride,
     options?: SimulateBatchOptions,
   ): Promise<SimulateBatchResult<TVaultEntity>> {
     const owner = getAddress(account);
+    let effectiveStateOverrides = stateOverrides;
+    if (!effectiveStateOverrides && options?.stateOverrides) {
+      effectiveStateOverrides = await this.getStateOverrides(chainId, owner, transactionPlan);
+    }
+
+    const batch = transactionPlan.flatMap((item) => (item.type === "evcBatch" ? item.items : []));
+    if (batch.length === 0) {
+      return {
+        simulatedAccounts: [],
+        simulatedVaults: [],
+      };
+    }
+    const diagnostics = await this.getSimulationDiagnostics(
+      chainId,
+      owner,
+      transactionPlan,
+    );
     const { fullBatch, lensMeta, evcAddress, totalValue, calldata } =
       await this.buildSimulationBatch(chainId, owner, batch);
 
@@ -121,10 +191,13 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
       evcAddress,
       fullBatch,
       totalValue,
-      stateOverrides,
+      effectiveStateOverrides,
     );
     if ("simulationError" in simulationResult) {
-      return simulationResult;
+      return {
+        ...simulationResult,
+        ...diagnostics,
+      };
     }
 
     const { batchResults, accountStatusErrors, vaultStatusErrors } = simulationResult;
@@ -253,12 +326,15 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
     }
     console.log('simulatedAccount: ', simulatedAccount);
 
-    return {
+    const result = {
       simulatedAccounts: [populatedAccount],
       simulatedVaults,
       accountStatusErrors: accountStatusErrors.length > 0 ? accountStatusErrors : undefined,
       vaultStatusErrors: vaultStatusErrors.length > 0 ? vaultStatusErrors : undefined,
+      ...diagnostics,
     };
+    console.log('result: ', result);
+    return result;
   }
 
   private async buildSimulationBatch(
@@ -481,5 +557,130 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
     );
 
     return { batchResults, accountStatusErrors, vaultStatusErrors };
+  }
+
+  private async getSimulationDiagnostics(
+    chainId: number,
+    account: Address,
+    transactionPlan?: TransactionPlan,
+  ): Promise<{
+    insufficientWalletAssets?: SimulationInsufficientRequirement[];
+    insufficientPermit2Allowances?: SimulationInsufficientRequirement[];
+    insufficientDirectAllowances?: SimulationInsufficientRequirement[];
+  }> {
+    if (!this.walletService || !transactionPlan) return {};
+
+    const requiredApprovals = transactionPlan.filter(
+      (item): item is RequiredApproval =>
+        item.type === "requiredApproval" && getAddress(item.owner) === getAddress(account)
+    );
+    if (requiredApprovals.length === 0) return {};
+
+    const assetSpendersMap = new Map<Address, Set<Address>>();
+    for (const approval of requiredApprovals) {
+      const token = getAddress(approval.token);
+      const spender = getAddress(approval.spender);
+      if (!assetSpendersMap.has(token)) assetSpendersMap.set(token, new Set<Address>());
+      assetSpendersMap.get(token)!.add(spender);
+    }
+
+    const assetsWithSpenders = Array.from(assetSpendersMap.entries()).map(([asset, spenders]) => ({
+      asset,
+      spenders: Array.from(spenders),
+    }));
+
+    let wallet;
+    try {
+      wallet = await this.walletService.fetchWallet(chainId, account, assetsWithSpenders);
+    } catch {
+      return {};
+    }
+
+    const walletByToken = new Map<Address, bigint>();
+    const directByToken = new Map<Address, bigint>();
+    const permit2ByToken = new Map<Address, bigint>();
+    const now = Math.floor(Date.now() / 1000);
+
+    for (const approval of requiredApprovals) {
+      const token = getAddress(approval.token);
+      const spender = getAddress(approval.spender);
+      const amount = approval.amount;
+      const walletAsset = wallet.getAsset(token);
+      const allowances = walletAsset?.allowances[spender];
+
+      const balance = walletAsset?.balance ?? 0n;
+      if (balance < amount) {
+        const deficit = amount - balance;
+        const prev = walletByToken.get(token) ?? 0n;
+        if (deficit > prev) walletByToken.set(token, deficit);
+      }
+
+      const directAllowance = allowances?.assetForPermit2 ?? 0n;
+      if (directAllowance < amount) {
+        const deficit = amount - directAllowance;
+        const prev = directByToken.get(token) ?? 0n;
+        if (deficit > prev) directByToken.set(token, deficit);
+      }
+
+      const permit2Allowance = allowances?.assetForVaultInPermit2 ?? 0n;
+      const permit2ExpirationTime = allowances?.permit2ExpirationTime ?? 0;
+      const permit2Expired = permit2ExpirationTime > 0 && now >= permit2ExpirationTime;
+      if (permit2Allowance < amount || permit2Expired) {
+        const deficit = permit2Expired ? amount : amount - permit2Allowance;
+        const prev = permit2ByToken.get(token) ?? 0n;
+        if (deficit > prev) permit2ByToken.set(token, deficit);
+      }
+    }
+
+    const mapToArray = (map: Map<Address, bigint>) =>
+      Array.from(map.entries()).map(([token, amount]) => ({ token, amount }));
+
+    return {
+      ...(walletByToken.size > 0
+        ? { insufficientWalletAssets: mapToArray(walletByToken) }
+        : {}),
+      ...(directByToken.size > 0
+        ? { insufficientDirectAllowances: mapToArray(directByToken) }
+        : {}),
+      ...(permit2ByToken.size > 0
+        ? { insufficientPermit2Allowances: mapToArray(permit2ByToken) }
+        : {}),
+    };
+  }
+
+  private extractBalanceRequirements(
+    transactionPlan: TransactionPlan,
+    account: Address,
+  ): [Address, bigint][] {
+    const maxPerToken = new Map<Address, bigint>();
+    for (const item of transactionPlan) {
+      if (item.type !== "requiredApproval") continue;
+      if (getAddress(item.owner) !== getAddress(account)) continue;
+      const token = getAddress(item.token);
+      const current = maxPerToken.get(token) ?? 0n;
+      if (item.amount > current) {
+        maxPerToken.set(token, item.amount);
+      }
+    }
+    return Array.from(maxPerToken.entries());
+  }
+
+  private extractApprovalRequirements(
+    transactionPlan: TransactionPlan,
+    account: Address,
+  ): [Address, Address][] {
+    const seen = new Set<string>();
+    const approvals: [Address, Address][] = [];
+    for (const item of transactionPlan) {
+      if (item.type !== "requiredApproval") continue;
+      if (getAddress(item.owner) !== getAddress(account)) continue;
+      const asset = getAddress(item.token);
+      const spender = getAddress(item.spender);
+      const key = `${asset}:${spender}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      approvals.push([asset, spender]);
+    }
+    return approvals;
   }
 }

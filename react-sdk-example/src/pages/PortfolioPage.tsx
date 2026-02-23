@@ -289,7 +289,7 @@ export function PortfolioPage() {
                         <th>Asset</th>
                         <th>Deposited</th>
                         <th>Borrowed</th>
-                        <th>USD Price</th>
+                        <th>Borrow Liq. Price (USD)</th>
                         <th>Collateral</th>
                         <th>Controller</th>
                       </tr>
@@ -327,7 +327,7 @@ export function PortfolioPage() {
                                   )
                                 : "-"}
                             </td>
-                            <td>{formatPriceUsd(pos.vault?.marketPriceUsd)}</td>
+                            <td>{formatPriceUsd(pos.borrowLiquidationPriceUsd)}</td>
                             <td>{pos.isCollateral ? "Yes" : "No"}</td>
                             <td>{pos.isController ? "Yes" : "No"}</td>
                           </tr>
@@ -355,56 +355,56 @@ export function PortfolioPage() {
                     <table>
                       <thead>
                         <tr>
-                          <th>Borrow Vault</th>
-                          <th>Days to Liquidation</th>
-                          <th>Borrow Liq. Price</th>
-                          <th>Collaterals</th>
-                          <th>Collateral Liq. Prices</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sub.positions
-                          .filter(
-                            (p: AccountPosition<VaultEntity>) => p.liquidity
-                          )
-                          .map((p: AccountPosition<VaultEntity>) => {
-                            const liq = p.liquidity!;
-                            const collLiqPrices = liq.collateralLiquidationPrices;
-                            return (
-                              <tr key={`liq-${p.vaultAddress}`}>
-                                <td>
-                                  {p.vault
-                                    ? p.vault.shares.name ||
+                        <th>Borrow Vault</th>
+                        <th>Days to Liquidation</th>
+                        <th>Borrow Liq. Price (USD)</th>
+                        <th>Collaterals</th>
+                        <th>Collateral Liq. Prices (USD)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sub.positions
+                        .filter(
+                          (p: AccountPosition<VaultEntity>) => p.liquidity
+                        )
+                        .map((p: AccountPosition<VaultEntity>) => {
+                          const liq = p.liquidity!;
+                          const collLiqPricesUsd = p.collateralLiqiidationPricesUsd;
+                          return (
+                            <tr key={`liq-${p.vaultAddress}`}>
+                              <td>
+                                {p.vault
+                                  ? p.vault.shares.name ||
                                       p.vault.asset.symbol
                                     : <CopyAddress address={p.vaultAddress} />}
                                 </td>
-                                <td>
-                                  {String(liq.daysToLiquidation)}
-                                </td>
-                                <td>{formatWad(liq.borrowLiquidationPrice)}</td>
-                                <td>
-                                  {liq.collaterals
-                                    .map((c, i) => (
-                                      <span key={c.address}>
-                                        {i > 0 && ", "}
+                              <td>
+                                {String(liq.daysToLiquidation)}
+                              </td>
+                              <td>{formatPriceUsd(p.borrowLiquidationPriceUsd)}</td>
+                              <td>
+                                {liq.collaterals
+                                  .map((c, i) => (
+                                    <span key={c.address}>
+                                      {i > 0 && ", "}
                                         {c.vault
                                           ? c.vault.shares.name ||
                                             c.vault.asset.symbol
                                           : <CopyAddress address={c.address} />}
                                       </span>
                                     ))}
-                                </td>
-                                <td>
-                                  {liq.collaterals
-                                    .map((c, i) => (
-                                      <span key={c.address}>
-                                        {i > 0 && ", "}
-                                        {collLiqPrices?.[c.address] != null
-                                          ? formatWad(collLiqPrices[c.address])
-                                          : "-"}
-                                      </span>
-                                    ))}
-                                </td>
+                              </td>
+                              <td>
+                                {liq.collaterals
+                                  .map((c, i) => (
+                                    <span key={c.address}>
+                                      {i > 0 && ", "}
+                                      {collLiqPricesUsd?.[c.address] != null
+                                        ? formatPriceUsd(collLiqPricesUsd[c.address])
+                                        : "-"}
+                                    </span>
+                                  ))}
+                              </td>
                               </tr>
                             );
                           })}

@@ -1,5 +1,6 @@
 import { maxInt256 } from "viem";
-import type { ISubAccount, AccountPosition, IAccountLiquidity, DaysToLiquidation } from "../../../entities/Account.js";
+import type { ISubAccount, IAccountLiquidity, DaysToLiquidation } from "../../../entities/Account.js";
+import { AccountPosition } from "../../../entities/Account.js";
 import { EVCAccountInfo, VaultAccountInfo, AccountLiquidityInfo } from "./accountLensTypes.js";
 
 /**
@@ -63,7 +64,7 @@ export function convertVaultAccountInfoToAccountPosition(vaultAccountInfo: Vault
   }
 
 
-  return {
+  return new AccountPosition({
     account: vaultAccountInfo.account,
     vaultAddress: vaultAccountInfo.vault,
     asset: vaultAccountInfo.asset,
@@ -74,7 +75,7 @@ export function convertVaultAccountInfoToAccountPosition(vaultAccountInfo: Vault
     isCollateral: vaultAccountInfo.isCollateral,
     liquidity,
     balanceForwarderEnabled: vaultAccountInfo.balanceForwarderEnabled,
-  };
+  });
 }
 
 /**

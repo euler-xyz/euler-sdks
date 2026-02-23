@@ -113,7 +113,7 @@ export class AccountLiquidity<TVaultEntity extends IHasVaultAddress = never> imp
 // AccountPosition
 // ---------------------------------------------------------------------------
 
-export type AccountPosition<TVaultEntity extends IHasVaultAddress = never> = {
+export interface IAccountPosition<TVaultEntity extends IHasVaultAddress = never> {
   account: Address;
   vaultAddress: Address;
   /** Resolved vault entity only (never Address). Omitted when unresolved. */
@@ -136,7 +136,95 @@ export type AccountPosition<TVaultEntity extends IHasVaultAddress = never> = {
   suppliedValueUsd?: bigint;
   /** Borrowed value in USD (18 dec). `borrowed * marketPriceUsd / 10^decimals`. */
   borrowedValueUsd?: bigint;
-};
+
+  /** Borrow liquidation price in USD (18 dec WAD). Computed getter on positions. */
+  readonly borrowLiquidationPriceUsd?: bigint;
+  /** Per-collateral liquidation price in USD (18 dec WAD). Computed getter on positions. */
+  readonly collateralLiquidationPricesUsd?: Record<Address, bigint>;
+  /** Per-collateral liquidation price in USD (18 dec WAD). Computed getter on positions. (Legacy typo alias) */
+  readonly collateralLiqiidationPricesUsd?: Record<Address, bigint>;
+}
+
+const WAD = 10n ** 18n;
+
+export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
+  implements IAccountPosition<TVaultEntity>
+{
+  account: Address;
+  vaultAddress: Address;
+  vault?: TVaultEntity;
+  asset: Address;
+
+  shares: bigint;
+  assets: bigint;
+  borrowed: bigint;
+
+  isController: boolean;
+  isCollateral: boolean;
+
+  balanceForwarderEnabled: boolean;
+  liquidity?: IAccountLiquidity<TVaultEntity>;
+
+  marketPriceUsd?: PriceWad;
+  suppliedValueUsd?: bigint;
+  borrowedValueUsd?: bigint;
+
+  constructor(data: IAccountPosition<TVaultEntity>) {
+    this.account = data.account;
+    this.vaultAddress = data.vaultAddress;
+    this.vault = data.vault;
+    this.asset = data.asset;
+
+    this.shares = data.shares;
+    this.assets = data.assets;
+    this.borrowed = data.borrowed;
+
+    this.isController = data.isController;
+    this.isCollateral = data.isCollateral;
+
+    this.balanceForwarderEnabled = data.balanceForwarderEnabled;
+    if (data.liquidity && !(data.liquidity instanceof AccountLiquidity)) {
+      this.liquidity = new AccountLiquidity(data.liquidity);
+    } else {
+      this.liquidity = data.liquidity;
+    }
+
+    this.marketPriceUsd = data.marketPriceUsd;
+    this.suppliedValueUsd = data.suppliedValueUsd;
+    this.borrowedValueUsd = data.borrowedValueUsd;
+  }
+
+  get borrowLiquidationPriceUsd(): bigint | undefined {
+    const priceUsd = this.marketPriceUsd ?? (this.vault as any)?.marketPriceUsd;
+    if (priceUsd == null) return undefined;
+    const multiplier = this.liquidity?.borrowLiquidationPrice;
+    if (multiplier == null) return undefined;
+    return (priceUsd * multiplier) / WAD;
+  }
+
+  get collateralLiquidationPricesUsd(): Record<Address, bigint> | undefined {
+    const liquidity = this.liquidity;
+    if (!liquidity) return undefined;
+    const multipliers = liquidity.collateralLiquidationPrices;
+    if (!multipliers) return undefined;
+
+    const result: Record<Address, bigint> = {};
+    for (const collateral of liquidity.collaterals) {
+      const multiplier = multipliers[collateral.address];
+      if (multiplier == null) continue;
+      const priceUsd = collateral.marketPriceUsd ?? (collateral.vault as any)?.marketPriceUsd;
+      if (priceUsd == null) continue;
+      result[collateral.address] = (priceUsd * multiplier) / WAD;
+    }
+
+    return Object.keys(result).length > 0 ? result : undefined;
+  }
+
+  get collateralLiqiidationPricesUsd(): Record<Address, bigint> | undefined {
+    return this.collateralLiquidationPricesUsd;
+  }
+}
+
 
 // ---------------------------------------------------------------------------
 // SubAccount
@@ -152,7 +240,7 @@ export interface ISubAccount<TVaultEntity extends IHasVaultAddress = never> {
   enabledControllers: Address[];
   /** Always addresses; only positions and liquidity collaterals get resolved vault entities. */
   enabledCollaterals: Address[];
-  positions: AccountPosition<TVaultEntity>[];
+  positions: IAccountPosition<TVaultEntity>[];
 
   /** Health factor (WAD). `> 1e18` = healthy. Computed getter on SubAccount class. */
   readonly healthFactor?: bigint;
@@ -189,13 +277,10 @@ export class SubAccount<TVaultEntity extends IHasVaultAddress = never> implement
     this.lastAccountStatusCheckTimestamp = data.lastAccountStatusCheckTimestamp;
     this.enabledControllers = data.enabledControllers;
     this.enabledCollaterals = data.enabledCollaterals;
-    // Wrap raw liquidity objects in AccountLiquidity class instances
-    this.positions = data.positions.map((p) => {
-      if (p.liquidity && !(p.liquidity instanceof AccountLiquidity)) {
-        return { ...p, liquidity: new AccountLiquidity(p.liquidity) };
-      }
-      return p;
-    });
+    // Wrap raw position objects into AccountPosition class instances
+    this.positions = data.positions.map((p) =>
+      p instanceof AccountPosition ? p : new AccountPosition(p)
+    );
   }
 
   /** Health factor (WAD). `> 1e18` = healthy. */

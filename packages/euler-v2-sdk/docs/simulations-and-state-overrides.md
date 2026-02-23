@@ -5,43 +5,39 @@ Euler SDK provides helpers for simulating transactions without requiring the con
 ## Quick start
 
 ```typescript
-import { createPublicClient, http } from "viem"
+import { createPublicClient, http, getAddress } from "viem"
 import { mainnet } from "viem/chains"
 import {
   buildEulerSDK,
   getSubAccountAddress,
-  getStateOverrides,
-  ethereumVaultConnectorAbi,
-  type EVCBatchItem,
-  type EVCBatchItems,
 } from "euler-v2-sdk"
 
 const client = createPublicClient({ chain: mainnet, transport: http(RPC_URL) })
 const sdk = await buildEulerSDK({ rpcUrls: { [mainnet.id]: RPC_URL } })
-const deployment = sdk.deploymentService.getDeployment(mainnet.id)
+const accountAddress = getAddress("0x000000000000000000000000000000000000dEaD")
+const subAccount = getSubAccountAddress(accountAddress, 0)
 
 // 1. Create a plan
+const account = await sdk.accountService.fetchAccount(mainnet.id, accountAddress, { populateVaults: false })
 const plan = sdk.executionService.planDeposit({ vault, amount, receiver, account, asset })
 
-// 2. Generate state overrides from the plan
-const stateOverride = await getStateOverrides(client, plan, account, {
-  permit2Address: deployment.addresses.coreAddrs.permit2,
-})
+// 2. Simulate the full transaction plan.
+// `stateOverrides: true` makes SimulationService generate overrides internally.
+const result = await sdk.simulationService.simulateTransactionPlan(
+  mainnet.id,
+  accountAddress,
+  plan,
+  undefined,
+  {
+    stateOverrides: true,
+  },
+)
 
-// 3. Extract batch items (skip RequiredApprovals — overrides handle them)
-const batchItems: EVCBatchItem[] = plan
-  .filter((item): item is EVCBatchItems => item.type === "evcBatch")
-  .flatMap((item) => item.items)
-
-// 4. Simulate via EVC batchSimulation
-const { result } = await client.simulateContract({
-  address: deployment.addresses.coreAddrs.evc,
-  abi: ethereumVaultConnectorAbi,
-  functionName: "batchSimulation",
-  args: [batchItems],
-  account: accountAddress,
-  stateOverride,
-})
+if (result.simulationError) {
+  console.error(result.simulationError.decoded)
+} else {
+  console.log("Simulation succeeded")
+}
 ```
 
 See `examples/simulations/simulate-deposit-example.ts` for a full runnable example:
@@ -50,13 +46,39 @@ See `examples/simulations/simulate-deposit-example.ts` for a full runnable examp
 npx tsx examples/simulations/simulate-deposit-example.ts
 ```
 
+## Simulation service API
+
+`SimulationService` is the recommended entry point for plan simulation.
+
+### `simulateTransactionPlan(chainId, account, transactionPlan, stateOverrides?, options?)`
+
+Simulates a full `TransactionPlan` and returns:
+
+- simulated account/vault entities
+- decoded simulation errors/status-check failures
+- insufficiency diagnostics (`insufficientWalletAssets`, `insufficientDirectAllowances`, `insufficientPermit2Allowances`)
+
+Use `options.stateOverrides = true` to auto-generate state overrides from the plan:
+
+```typescript
+const result = await sdk.simulationService.simulateTransactionPlan(
+  chainId,
+  accountAddress,
+  plan,
+  undefined,
+  { stateOverrides: true },
+)
+```
+
+You can still pass a manual `stateOverrides` object as the 4th argument when needed.
+
 ## State override utilities
 
 All exports are available from the top-level `euler-v2-sdk` package.
 
 ### `getStateOverrides(client, plan, account, options)`
 
-The main entry point. Takes a `TransactionPlan` and generates all the overrides needed to simulate it from `account`, even if that account has no tokens or approvals.
+Low-level utility. Takes a `TransactionPlan` and generates all overrides needed for `eth_call` simulation from `account`.
 
 ```typescript
 const stateOverride = await getStateOverrides(client, plan, account, {

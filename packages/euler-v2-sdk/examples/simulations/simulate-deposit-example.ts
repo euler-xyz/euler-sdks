@@ -6,16 +6,13 @@
  * Demonstrates simulating a vault deposit WITHOUT needing:
  *   - A private key or wallet
  *   - Token balances in the account
- *   - Whale transfers or Anvil impersonation
+ *   - Prior token approvals
  *
- * Uses state overrides to inject the required token balance and approvals,
- * then simulates via EVC's batchSimulation to verify the deposit succeeds
- * and read back the resulting vault share balance.
+ * Uses SimulationService + automatic state overrides to simulate a deposit.
  *
  * OPERATION:
  *   - Simulate depositing 1000 USDC into Euler Prime USDC Vault
  *   - Enable as collateral
- *   - Read vault shares balance after deposit
  *
  * REQUIREMENTS:
  *   - An RPC endpoint that supports eth_createAccessList (all major providers)
@@ -32,9 +29,6 @@ import {
   createPublicClient,
   http,
   parseUnits,
-  erc20Abi,
-  encodeFunctionData,
-  decodeFunctionResult,
   formatUnits,
   getAddress,
 } from "viem"
@@ -42,10 +36,6 @@ import { mainnet } from "viem/chains"
 import {
   buildEulerSDK,
   getSubAccountAddress,
-  getStateOverrides,
-  ethereumVaultConnectorAbi,
-  type EVCBatchItem,
-  type EVCBatchItems,
 } from "euler-v2-sdk"
 
 import { getRpcUrls } from "../utils/config.js"
@@ -67,11 +57,8 @@ const DEPOSIT_AMOUNT = parseUnits("1000", 6) // 1000 USDC
 
 async function simulateDeposit() {
   const rpcUrls = { ...getRpcUrls(), [mainnet.id]: RPC_URL }
-  const client = createPublicClient({ chain: mainnet, transport: http(RPC_URL) })
+  createPublicClient({ chain: mainnet, transport: http(RPC_URL) })
   const sdk = await buildEulerSDK({ rpcUrls })
-
-  const deployment = sdk.deploymentService.getDeployment(mainnet.id)
-  const evcAddress = deployment.addresses.coreAddrs.evc
 
   console.log(`Account:      ${TEST_ADDRESS}`)
   console.log(`Sub-account:  ${SUB_ACCOUNT_ADDRESS}`)
@@ -95,79 +82,47 @@ async function simulateDeposit() {
   })
   console.log(`Plan created: ${plan.length} item(s)`)
 
-  // 3. Generate state overrides — injects token balance + approvals for TEST_ADDRESS
-  const stateOverride = await getStateOverrides(client, plan, TEST_ADDRESS, {
-    permit2Address: deployment.addresses.coreAddrs.permit2,
-  })
-  console.log(`State overrides: ${stateOverride.length} contract(s) overridden`)
+  console.log(`\nSimulating transaction plan via SimulationService...\n`)
 
-  // 4. Extract EVC batch items from the plan (skip RequiredApprovals — state overrides handle them)
-  const batchItems: EVCBatchItem[] = plan
-    .filter((item): item is EVCBatchItems => item.type === "evcBatch")
-    .flatMap((item) => item.items)
+  // 3. Simulate full transaction plan.
+  // stateOverrides:true injects required balances/approvals automatically.
+  const simulation = await sdk.simulationService.simulateTransactionPlan(
+    mainnet.id,
+    TEST_ADDRESS,
+    plan,
+    undefined,
+    { stateOverrides: true },
+  )
 
-  // 5. Append a balanceOf call to read vault shares after the deposit
-  batchItems.push({
-    targetContract: EULER_PRIME_USDC_VAULT,
-    onBehalfOfAccount: SUB_ACCOUNT_ADDRESS,
-    value: 0n,
-    data: encodeFunctionData({
-      abi: erc20Abi,
-      functionName: "balanceOf",
-      args: [SUB_ACCOUNT_ADDRESS],
-    }),
-  })
-
-  console.log(`\nSimulating ${batchItems.length} batch item(s) via EVC batchSimulation...\n`)
-
-  // 6. Simulate using EVC batchSimulation with state overrides
-  const { result } = await client.simulateContract({
-    address: evcAddress,
-    abi: ethereumVaultConnectorAbi,
-    functionName: "batchSimulation",
-    args: [batchItems.map(item => ({
-      targetContract: item.targetContract,
-      onBehalfOfAccount: item.onBehalfOfAccount,
-      value: item.value,
-      data: item.data,
-    }))],
-    account: TEST_ADDRESS,
-    stateOverride,
-  })
-
-  // 7. Parse results
-  const [batchResults, accountChecks, vaultChecks] = result
-
-  // Log each batch item result
-  const descriptions = sdk.executionService.describeBatch(batchItems)
-  for (let i = 0; i < batchResults.length; i++) {
-    const r = batchResults[i]!
-    const desc = descriptions[i]
-    const label = desc ? desc.functionName : `item ${i}`
-    console.log(`  ${i + 1}. ${label}: ${r.success ? "OK" : "FAILED"}`)
+  if (simulation.simulationError) {
+    console.error("Simulation failed")
+    console.error(simulation.simulationError.decoded)
+    return
   }
 
-  // Log status checks
-  for (const check of accountChecks) {
-    console.log(`  Account check ${check.checkedAddress}: ${check.isValid ? "valid" : "INVALID"}`)
+  for (const check of simulation.accountStatusErrors ?? []) {
+    console.log(`  Account check ${check.account}: INVALID`)
   }
-  for (const check of vaultChecks) {
-    console.log(`  Vault check ${check.checkedAddress}: ${check.isValid ? "valid" : "INVALID"}`)
+  for (const check of simulation.vaultStatusErrors ?? []) {
+    console.log(`  Vault check ${check.vault}: INVALID`)
   }
 
-  // 8. Decode balanceOf result (last batch item)
-  const balanceOfResult = batchResults[batchResults.length - 1]!
-  if (balanceOfResult.success) {
-    const shares = decodeFunctionResult({
-      abi: erc20Abi,
-      functionName: "balanceOf",
-      data: balanceOfResult.result,
-    })
-    console.log(`\nVault shares after deposit: ${formatUnits(shares, 6)}`)
-    console.log("Simulation successful - deposit would work for this account")
-  } else {
-    console.error("\nbalanceOf call failed:", balanceOfResult.result)
+  if (simulation.insufficientWalletAssets?.length) {
+    console.log("\nWallet insufficiencies detected:")
+    for (const req of simulation.insufficientWalletAssets) {
+      console.log(`  - ${req.token}: ${req.amount.toString()}`)
+    }
   }
+
+  const simulatedAccount = simulation.simulatedAccounts[0]
+  const simulatedSub = simulatedAccount?.getSubAccount(SUB_ACCOUNT_ADDRESS)
+  const simulatedPosition = simulatedSub?.positions.find(
+    (p) => p.vaultAddress.toLowerCase() === EULER_PRIME_USDC_VAULT.toLowerCase(),
+  )
+  const simulatedShares = simulatedPosition?.shares ?? 0n
+
+  console.log(`\nVault shares after deposit: ${formatUnits(simulatedShares, 6)}`)
+  console.log("Simulation successful - deposit would work for this account")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

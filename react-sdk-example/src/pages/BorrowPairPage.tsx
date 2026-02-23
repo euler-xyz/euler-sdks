@@ -3,9 +3,9 @@ import { Link, useParams } from "react-router-dom";
 import {
   StandardEVaultPerspectives,
   getSubAccountAddress,
-  getStateOverrides,
   getMaxMultiplier,
   getMaxRoe,
+  type SimulationInsufficientRequirement,
   type EVault,
   type SwapQuote,
 } from "euler-v2-sdk";
@@ -38,6 +38,14 @@ import { executePlanWithProgress, type PlanProgress } from "../utils/txExecutor.
 
 type FormTab = "borrow" | "multiply";
 type QuoteCard = { provider: string; quote: SwapQuote };
+type DiffKind = "added" | "removed" | "changed";
+type AccountDiffEntry = {
+  path: string;
+  before: string;
+  after: string;
+  kind: DiffKind;
+};
+type TokenMeta = { symbol: string; decimals: number };
 
 function pct(value: number | undefined): string {
   if (value === undefined) return "-";
@@ -118,7 +126,25 @@ function toComparable(value: unknown): unknown {
   return out;
 }
 
-function collectDiffs(a: unknown, b: unknown, path = "account", out: string[] = []): string[] {
+function formatDiffValue(value: unknown): string {
+  if (value === undefined) return "undefined";
+  if (value === null) return "null";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function collectDiffs(
+  a: unknown,
+  b: unknown,
+  path = "account",
+  out: AccountDiffEntry[] = []
+): AccountDiffEntry[] {
   if (a === b) return out;
 
   // Ignore sub-accounts that existed in current account but are absent in simulated account.
@@ -129,7 +155,13 @@ function collectDiffs(a: unknown, b: unknown, path = "account", out: string[] = 
   const aIsObj = a && typeof a === "object";
   const bIsObj = b && typeof b === "object";
   if (!aIsObj || !bIsObj) {
-    out.push(`${path}: ${JSON.stringify(a)} -> ${JSON.stringify(b)}`);
+    const kind: DiffKind = a === undefined ? "added" : b === undefined ? "removed" : "changed";
+    out.push({
+      path,
+      before: formatDiffValue(a),
+      after: formatDiffValue(b),
+      kind,
+    });
     return out;
   }
 
@@ -150,6 +182,21 @@ function collectDiffs(a: unknown, b: unknown, path = "account", out: string[] = 
     collectDiffs(aObj[key], bObj[key], `${path}.${key}`, out);
   }
   return out;
+}
+
+function formatInsufficientWalletAssetsMessage(
+  requirements: SimulationInsufficientRequirement[],
+  tokenMetaByAddress: Map<Address, TokenMeta>
+): string {
+  const parts = requirements.map((req) => {
+    const token = getAddress(req.token);
+    const tokenMeta = tokenMetaByAddress.get(token);
+    if (tokenMeta) {
+      return `${formatUnits(req.amount, tokenMeta.decimals)} ${tokenMeta.symbol}`;
+    }
+    return `${req.amount.toString()} units of ${token}`;
+  });
+  return `You don't have enough tokens in your wallet for that operation.. Missing: ${parts.join(", ")}.`;
 }
 
 export function BorrowPairPage() {
@@ -227,6 +274,7 @@ export function BorrowPairPage() {
   const [simulatedAccountPreview, setSimulatedAccountPreview] = useState<any | null>(null);
   const [showAccountDiff, setShowAccountDiff] = useState(false);
   const [previewSimulationError, setPreviewSimulationError] = useState<string | null>(null);
+  const [previewInsufficientWalletAssets, setPreviewInsufficientWalletAssets] = useState<string | null>(null);
 
   const collateralConfig = useMemo(() => {
     if (!debtVault || !collateralVault) return undefined;
@@ -252,6 +300,33 @@ export function BorrowPairPage() {
     if (!selectedProvider) return null;
     return quoteCards.find((card) => card.provider === selectedProvider)?.quote ?? null;
   }, [quoteCards, selectedProvider]);
+
+  const tokenMetaByAddress = useMemo(() => {
+    const map = new Map<Address, TokenMeta>();
+    if (collateralVault) {
+      map.set(getAddress(collateralVault.asset.address), {
+        symbol: collateralVault.asset.symbol,
+        decimals: collateralVault.asset.decimals,
+      });
+    }
+    if (debtVault) {
+      map.set(getAddress(debtVault.asset.address), {
+        symbol: debtVault.asset.symbol,
+        decimals: debtVault.asset.decimals,
+      });
+    }
+    if (selectedQuote) {
+      map.set(getAddress(selectedQuote.tokenIn.address as Address), {
+        symbol: selectedQuote.tokenIn.symbol,
+        decimals: selectedQuote.tokenIn.decimals,
+      });
+      map.set(getAddress(selectedQuote.tokenOut.address as Address), {
+        symbol: selectedQuote.tokenOut.symbol,
+        decimals: selectedQuote.tokenOut.decimals,
+      });
+    }
+    return map;
+  }, [collateralVault, debtVault, selectedQuote]);
 
   const quoteProgress = useMemo(() => {
     if (!providersCount) return 0;
@@ -310,26 +385,32 @@ export function BorrowPairPage() {
   const projectedRoe = previewSubAccount?.roe;
   const currentRoe = currentSubAccount?.roe;
 
-  const previewLiquidity = useMemo(() => {
+  const previewPositionWithLiquidity = useMemo(() => {
     if (!previewSubAccount) return undefined;
-    return previewSubAccount.positions.map((p: any) => p.liquidity).find(Boolean);
+    return previewSubAccount.positions.find((p) => p.liquidity);
   }, [previewSubAccount]);
 
-  const previewCollateralLiquidationPrice = useMemo(() => {
-    if (!previewLiquidity || !collateralVault) return undefined;
+  const previewCollateralLiquidationPriceUsd = useMemo(() => {
+    if (!previewPositionWithLiquidity || !collateralVault) return undefined;
     const key = getAddress(collateralVault.address);
-    return previewLiquidity.collateralLiquidationPrices?.[key];
-  }, [previewLiquidity, collateralVault]);
+    return previewPositionWithLiquidity.collateralLiqiidationPricesUsd?.[key];
+  }, [previewPositionWithLiquidity, collateralVault]);
 
-  const previewDebtLiquidationPrice = useMemo(
-    () => previewLiquidity?.borrowLiquidationPrice,
-    [previewLiquidity]
+  const previewDebtLiquidationPriceUsd = useMemo(
+    () => previewPositionWithLiquidity?.borrowLiquidationPriceUsd,
+    [previewPositionWithLiquidity]
   );
 
   const accountDiffLines = useMemo(() => {
     if (!accountData || !simulatedAccountPreview) return [];
     return collectDiffs(toComparable(accountData), toComparable(simulatedAccountPreview)).slice(0, 300);
   }, [accountData, simulatedAccountPreview]);
+
+  const accountDiffSummary = useMemo(() => {
+    const summary = { added: 0, removed: 0, changed: 0 };
+    for (const diff of accountDiffLines) summary[diff.kind] += 1;
+    return summary;
+  }, [accountDiffLines]);
 
   const applyMultiplyTarget = (value: number) => {
     if (!collateralUsdPrice || !debtUsdPrice) return;
@@ -503,6 +584,7 @@ export function BorrowPairPage() {
 
     let cancelled = false;
     setPreviewSimulationError(null);
+    setPreviewInsufficientWalletAssets(null);
     setQuoteFailure(null);
 
     (async () => {
@@ -555,23 +637,13 @@ export function BorrowPairPage() {
         });
       }
 
-      const permit2 = sdk.deploymentService.getDeployment(chainId).addresses.coreAddrs.permit2;
-      const stateOverrides = await getStateOverrides(
-        publicClient,
-        plan,
-        walletAddress as Address,
-        { permit2Address: permit2 }
-      );
-      const batchItems = plan.flatMap((item) => (item.type === "evcBatch" ? item.items : []));
-      if (batchItems.length === 0) {
-        throw new Error("No batch items to simulate.");
-      }
-      const { simulatedAccounts } = await sdk.simulationService.simulateBatch(
+      const { simulatedAccounts, insufficientWalletAssets } = await sdk.simulationService.simulateTransactionPlan(
         chainId,
         walletAddress as Address,
-        batchItems,
-        stateOverrides,
+        plan,
+        undefined,
         {
+          stateOverrides: true,
           vaultFetchOptions: {
             populateMarketPrices: true,
             populateCollaterals: true,
@@ -607,6 +679,13 @@ export function BorrowPairPage() {
           },
         }
       );
+      if (insufficientWalletAssets?.length) {
+        const msg = formatInsufficientWalletAssetsMessage(
+          insufficientWalletAssets,
+          tokenMetaByAddress
+        );
+        if (!cancelled) setPreviewInsufficientWalletAssets(msg);
+      }
       const simulated = simulatedAccounts[0];
       if (cancelled) return;
       setSimulatedAccountPreview(simulated ?? null);
@@ -617,6 +696,7 @@ export function BorrowPairPage() {
       .catch((err) => {
         if (cancelled) return;
         setPreviewSimulationError(String(err));
+        setPreviewInsufficientWalletAssets(null);
         if (selectedProvider && isRevertError(err)) {
           setFailedProviders((prev) =>
             prev.includes(selectedProvider) ? prev : [...prev, selectedProvider]
@@ -645,6 +725,7 @@ export function BorrowPairPage() {
     selectedQuote,
     selectedProvider,
     targetSubAccount,
+    tokenMetaByAddress,
   ]);
 
   const resetMessages = () => {
@@ -1142,13 +1223,13 @@ export function BorrowPairPage() {
                     )}
                   </div>
                   <div className="pair-summary-item">
-                    <div className="label">Liquidation Price</div>
+                    <div className="label">Liquidation Price (USD)</div>
                     <div className="value">
                       {previewSubAccount &&
-                      previewCollateralLiquidationPrice !== undefined &&
-                      previewDebtLiquidationPrice !== undefined
-                        ? `${formatWad(previewCollateralLiquidationPrice)} / ${formatWad(
-                            previewDebtLiquidationPrice
+                      previewCollateralLiquidationPriceUsd !== undefined &&
+                      previewDebtLiquidationPriceUsd !== undefined
+                        ? `${formatPriceUsd(previewCollateralLiquidationPriceUsd)} / ${formatPriceUsd(
+                            previewDebtLiquidationPriceUsd
                           )}`
                         : "-"}
                     </div>
@@ -1193,6 +1274,9 @@ export function BorrowPairPage() {
                 )}
                 {success && <div className="success-message">{success}</div>}
                 {error && <div className="error-message">{error}</div>}
+                {previewInsufficientWalletAssets && (
+                  <div className="wallet-chain-warning">{previewInsufficientWalletAssets}</div>
+                )}
                 {previewSimulationError && <div className="error-message">{previewSimulationError}</div>}
               </>
             )}
@@ -1356,49 +1440,49 @@ export function BorrowPairPage() {
       </div>
       {showAccountDiff && (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-            zIndex: 1000,
-          }}
+          className="account-diff-overlay"
           onClick={() => setShowAccountDiff(false)}
         >
-          <div
-            style={{
-              width: "min(960px, 100%)",
-              maxHeight: "80vh",
-              background: "#fff",
-              border: "2px solid #000",
-              display: "flex",
-              flexDirection: "column",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", padding: 12 }}>
-              <div className="pair-card-header">Current vs Simulated Account Diff</div>
+          <div className="account-diff-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="account-diff-header">
+              <div>
+                <div className="pair-card-header">Current vs Simulated Account Diff</div>
+                <div className="account-diff-meta">
+                  {accountDiffLines.length} change{accountDiffLines.length === 1 ? "" : "s"}{" "}
+                  ({accountDiffSummary.added} added, {accountDiffSummary.removed} removed,{" "}
+                  {accountDiffSummary.changed} changed)
+                </div>
+              </div>
               <button type="button" className="wallet-button" onClick={() => setShowAccountDiff(false)}>
                 Close
               </button>
             </div>
-            <pre
-              style={{
-                margin: 0,
-                padding: 12,
-                borderTop: "1px solid #ccc",
-                overflow: "auto",
-                fontSize: 12,
-                lineHeight: 1.4,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-              }}
-            >
-              {accountDiffLines.length > 0 ? accountDiffLines.join("\n") : "No differences."}
-            </pre>
+            <div className="account-diff-list">
+              {accountDiffLines.length > 0 ? (
+                accountDiffLines.map((entry, index) => (
+                  <div className={`account-diff-item account-diff-item-${entry.kind}`} key={`${entry.path}-${index}`}>
+                    <div className="account-diff-item-top">
+                      <span className={`account-diff-badge account-diff-badge-${entry.kind}`}>
+                        {entry.kind}
+                      </span>
+                      <code className="account-diff-path">{entry.path}</code>
+                    </div>
+                    <div className="account-diff-values">
+                      <div className="account-diff-value-block">
+                        <div className="account-diff-value-label">Current</div>
+                        <pre className="account-diff-value">{entry.before}</pre>
+                      </div>
+                      <div className="account-diff-value-block">
+                        <div className="account-diff-value-label">Simulated</div>
+                        <pre className="account-diff-value">{entry.after}</pre>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="account-diff-empty">No differences.</div>
+              )}
+            </div>
           </div>
         </div>
       )}

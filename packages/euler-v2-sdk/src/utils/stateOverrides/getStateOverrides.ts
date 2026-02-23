@@ -5,7 +5,7 @@ import {
   getAddress,
   parseEther,
 } from "viem"
-import type { TransactionPlan, RequiredApproval } from "../../services/executionService/executionServiceTypes.js"
+import type { TransactionPlan } from "../../services/executionService/executionServiceTypes.js"
 import { getBalanceOverrides } from "./balanceOverrides.js"
 import { getApprovalOverrides } from "./approvalOverrides.js"
 import { mergeStateOverrides } from "./mergeStateOverrides.js"
@@ -41,6 +41,7 @@ function extractBalanceRequirements(
 
   return Array.from(maxPerToken.entries())
 }
+
 
 /**
  * Extract approval pairs from a TransactionPlan.

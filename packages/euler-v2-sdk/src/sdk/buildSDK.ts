@@ -257,6 +257,7 @@ export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEnt
     rewardsService,
     intrinsicApyService,
     eulerLabelsService,
+    walletService,
   );
 
   // Wire priceService and rewardsService into account service
