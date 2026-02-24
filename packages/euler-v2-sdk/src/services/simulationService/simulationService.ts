@@ -15,7 +15,12 @@ import type { VaultFetchOptions } from "../vaults/index.js";
 import { VaultType } from "../../utils/types.js";
 import { isSubAccount } from "../../utils/subAccounts.js";
 import { decodeSmartContractErrors, type DecodedSmartContractError } from "../../utils/decodeSmartContractErrors.js";
-import type { EVCBatchItem, RequiredApproval, TransactionPlan } from "../executionService/executionServiceTypes.js";
+import type {
+  BatchItemDescription,
+  EVCBatchItem,
+  RequiredApproval,
+  TransactionPlan,
+} from "../executionService/executionServiceTypes.js";
 import type { IExecutionService } from "../executionService/index.js";
 import type { IWalletService } from "../walletService/index.js";
 import { getApprovalOverrides } from "../../utils/stateOverrides/approvalOverrides.js";
@@ -62,6 +67,14 @@ export type SimulationInsufficientRequirement = {
 export interface SimulateBatchResult<TVaultEntity extends VaultEntity = VaultEntity> {
   simulatedAccounts: Account<TVaultEntity>[];
   simulatedVaults: TVaultEntity[];
+  canExecute: boolean;
+  rawBatchResults?: BatchItemResult[];
+  failedBatchItems?: Array<{
+    index: number;
+    item: BatchItemDescription;
+    error: Hex;
+    decodedError: DecodedSmartContractError[];
+  }>;
   simulationError?: { error: unknown; decoded: DecodedSmartContractError[] };
   accountStatusErrors?: Array<{ account: Address; error: Hex; decoded: DecodedSmartContractError[] }>;
   vaultStatusErrors?: Array<{ vault: Address; error: Hex; decoded: DecodedSmartContractError[] }>;
@@ -93,7 +106,6 @@ export interface ISimulationService<TVaultEntity extends VaultEntity = VaultEnti
     chainId: number,
     account: Address,
     transactionPlan: TransactionPlan,
-    stateOverrides?: StateOverride,
     options?: SimulateBatchOptions
   ): Promise<SimulateBatchResult<TVaultEntity>>;
 }
@@ -161,12 +173,12 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
     chainId: number,
     account: Address,
     transactionPlan: TransactionPlan,
-    stateOverrides?: StateOverride,
     options?: SimulateBatchOptions,
   ): Promise<SimulateBatchResult<TVaultEntity>> {
     const owner = getAddress(account);
-    let effectiveStateOverrides = stateOverrides;
-    if (!effectiveStateOverrides && options?.stateOverrides) {
+    const useStateOverrides = options?.stateOverrides ?? true;
+    let effectiveStateOverrides: StateOverride | undefined = undefined;
+    if (useStateOverrides) {
       effectiveStateOverrides = await this.getStateOverrides(chainId, owner, transactionPlan);
     }
 
@@ -175,6 +187,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
       return {
         simulatedAccounts: [],
         simulatedVaults: [],
+        canExecute: false,
       };
     }
     const diagnostics = await this.getSimulationDiagnostics(
@@ -196,11 +209,51 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
     if ("simulationError" in simulationResult) {
       return {
         ...simulationResult,
+        canExecute: false,
         ...diagnostics,
       };
     }
 
     const { batchResults, accountStatusErrors, vaultStatusErrors } = simulationResult;
+
+    const rawBatchResults = batchResults.slice(0, batch.length);
+    let describedBatch: BatchItemDescription[] | undefined;
+    try {
+      describedBatch = this.executionService.describeBatch(batch);
+    } catch {
+      describedBatch = undefined;
+    }
+    const fallbackDescription = (item: EVCBatchItem): BatchItemDescription => ({
+      targetContract: item.targetContract,
+      onBehalfOfAccount: item.onBehalfOfAccount,
+      functionName: "Unknown",
+      args: {},
+    });
+    const failedBatchItems = (
+      await Promise.all(
+        rawBatchResults.map(async (itemResult, index) => {
+          if (itemResult.success) return null;
+          const decodedError = await decodeSmartContractErrors(itemResult.result);
+          const decodedItem =
+            describedBatch && describedBatch.length === batch.length
+              ? describedBatch[index]!
+              : fallbackDescription(batch[index]!);
+          return {
+            index,
+            item: decodedItem,
+            error: itemResult.result,
+            decodedError,
+          };
+        })
+      )
+    ).filter(
+      (item): item is {
+        index: number;
+        item: BatchItemDescription;
+        error: Hex;
+        decodedError: DecodedSmartContractError[];
+      } => item !== null
+    );
 
     const vaultsByAddress = new Map<Address, VaultEntity>();
     const evcInfos = new Map<Address, EVCAccountInfo>();
@@ -324,16 +377,24 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
     if (accountFetchOptions?.populateUserRewards && this.rewardsService) {
       await populatedAccount.populateUserRewards(this.rewardsService);
     }
-    console.log('simulatedAccount: ', simulatedAccount);
 
     const result = {
       simulatedAccounts: [populatedAccount],
       simulatedVaults,
+      canExecute:
+        failedBatchItems.length === 0 &&
+        accountStatusErrors.length === 0 &&
+        vaultStatusErrors.length === 0 &&
+        !diagnostics.insufficientWalletAssets?.length &&
+        !diagnostics.insufficientPermit2Allowances?.length &&
+        !diagnostics.insufficientDirectAllowances?.length,
+      rawBatchResults,
+      failedBatchItems: failedBatchItems.length > 0 ? failedBatchItems : undefined,
       accountStatusErrors: accountStatusErrors.length > 0 ? accountStatusErrors : undefined,
       vaultStatusErrors: vaultStatusErrors.length > 0 ? vaultStatusErrors : undefined,
       ...diagnostics,
     };
-    console.log('result: ', result);
+
     return result;
   }
 
@@ -349,11 +410,9 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
     calldata: Hex;
   }> {
     const { candidateVaults, subAccountVaults } = this.collectCandidateVaults(owner, batch);
-    console.log('candidateVaults: ', candidateVaults);
 
     const vaultCandidatesList = Array.from(candidateVaults);
     const vaultTypes = await this.vaultMetaService.fetchVaultTypes(chainId, vaultCandidatesList);
-    console.log('vaultTypes: ', vaultTypes);
 
     const validVaults = new Set<Address>();
     const eVaults: Address[] = [];

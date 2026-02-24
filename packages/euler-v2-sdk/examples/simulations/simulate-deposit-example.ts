@@ -26,11 +26,10 @@
 
 import "dotenv/config"
 import {
-  createPublicClient,
-  http,
   parseUnits,
   formatUnits,
   getAddress,
+  stringify,
 } from "viem"
 import { mainnet } from "viem/chains"
 import {
@@ -40,12 +39,8 @@ import {
 
 import { getRpcUrls } from "../utils/config.js"
 
-// ─── Configuration ───────────────────────────────────────────────────────────
-
-const RPC_URL = process.env.RPC_URL_1 || "http://127.0.0.1:8545"
-
 // Any address — doesn't need to hold any tokens
-const TEST_ADDRESS = getAddress("0x000000000000000000000000000000000000dEaD")
+const TEST_ADDRESS = getAddress("0x0000000000000000000000000000000000001234")
 const SUB_ACCOUNT_ID = 0
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(TEST_ADDRESS, SUB_ACCOUNT_ID)
 
@@ -56,9 +51,7 @@ const DEPOSIT_AMOUNT = parseUnits("1000", 6) // 1000 USDC
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function simulateDeposit() {
-  const rpcUrls = { ...getRpcUrls(), [mainnet.id]: RPC_URL }
-  createPublicClient({ chain: mainnet, transport: http(RPC_URL) })
-  const sdk = await buildEulerSDK({ rpcUrls })
+  const sdk = await buildEulerSDK({ rpcUrls: getRpcUrls() })
 
   console.log(`Account:      ${TEST_ADDRESS}`)
   console.log(`Sub-account:  ${SUB_ACCOUNT_ADDRESS}`)
@@ -68,7 +61,6 @@ async function simulateDeposit() {
   const accountData = await sdk.accountService.fetchAccount(
     mainnet.id,
     TEST_ADDRESS,
-    { populateVaults: false },
   )
 
   // 2. Create deposit plan
@@ -90,14 +82,33 @@ async function simulateDeposit() {
     mainnet.id,
     TEST_ADDRESS,
     plan,
-    undefined,
-    { stateOverrides: true },
+    { stateOverrides: true }, // default is true
   )
 
   if (simulation.simulationError) {
     console.error("Simulation failed")
     console.error(simulation.simulationError.decoded)
     return
+  }
+
+  if (simulation.rawBatchResults?.length) {
+    console.log("\nRaw batch results (plan only):")
+    simulation.rawBatchResults.forEach((item, index) => {
+      console.log(`  #${index + 1} success=${item.success} result=${item.result}`)
+    })
+  }
+
+  if (simulation.failedBatchItems?.length) {
+    console.log("\nFailed batch items:")
+    for (const failed of simulation.failedBatchItems) {
+      console.log(`  #${failed.index + 1} ${failed.item.functionName}`)
+      console.log(`    target: ${failed.item.targetContract}`)
+      console.log(`    onBehalfOf: ${failed.item.onBehalfOfAccount}`)
+      console.log(`    error: ${failed.error}`)
+      if (failed.decodedError.length) {
+        console.log(`    decoded: ${stringify(failed.decodedError, null, 2)}`)
+      }
+    }
   }
 
   for (const check of simulation.accountStatusErrors ?? []) {
@@ -113,6 +124,18 @@ async function simulateDeposit() {
       console.log(`  - ${req.token}: ${req.amount.toString()}`)
     }
   }
+  if (simulation.insufficientPermit2Allowances?.length) {
+    console.log("\nPermit2 allowance insufficiencies detected:")
+    for (const req of simulation.insufficientPermit2Allowances) {
+      console.log(`  - ${req.token}: ${req.amount.toString()}`)
+    }
+  }
+  if (simulation.insufficientDirectAllowances?.length) {
+    console.log("\nDirect allowance insufficiencies detected:")
+    for (const req of simulation.insufficientDirectAllowances) {
+      console.log(`  - ${req.token}: ${req.amount.toString()}`)
+    }
+  }
 
   const simulatedAccount = simulation.simulatedAccounts[0]
   const simulatedSub = simulatedAccount?.getSubAccount(SUB_ACCOUNT_ADDRESS)
@@ -121,8 +144,12 @@ async function simulateDeposit() {
   )
   const simulatedShares = simulatedPosition?.shares ?? 0n
 
-  console.log(`\nVault shares after deposit: ${formatUnits(simulatedShares, 6)}`)
-  console.log("Simulation successful - deposit would work for this account")
+  console.log(`\nVault shares after deposit: ${formatUnits(simulatedShares, 6)}\n`)
+  if (simulation.canExecute) {
+    console.log("Deposit would work for this account.")
+  } else {
+    console.log("Deposit would not work for this account.")
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

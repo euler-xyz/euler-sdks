@@ -1,35 +1,21 @@
 # Simulations & State Overrides
 
-Euler SDK provides helpers for simulating transactions without requiring the connected account to hold tokens or have approvals in place. This is done via **state overrides** — temporary storage modifications passed to `eth_call` that let you inject ERC20 balances, allowances, and native ETH into any address for the duration of the call.
+Euler SDK provides helpers for simulating transaction plans end-to-end. The simulation runs the exact EVC batch your plan would submit and returns decoded results plus enriched account/vault data so you can validate safety, filter bad quotes, and preview the resulting position before you send a transaction.
 
 ## Quick start
 
 ```typescript
-import { createPublicClient, http, getAddress } from "viem"
-import { mainnet } from "viem/chains"
-import {
-  buildEulerSDK,
-  getSubAccountAddress,
-} from "euler-v2-sdk"
-
-const client = createPublicClient({ chain: mainnet, transport: http(RPC_URL) })
-const sdk = await buildEulerSDK({ rpcUrls: { [mainnet.id]: RPC_URL } })
-const accountAddress = getAddress("0x000000000000000000000000000000000000dEaD")
-const subAccount = getSubAccountAddress(accountAddress, 0)
-
 // 1. Create a plan
-const account = await sdk.accountService.fetchAccount(mainnet.id, accountAddress, { populateVaults: false })
 const plan = sdk.executionService.planDeposit({ vault, amount, receiver, account, asset })
 
 // 2. Simulate the full transaction plan.
-// `stateOverrides: true` makes SimulationService generate overrides internally.
+// `stateOverrides` defaults to true (auto-inject balances/approvals).
 const result = await sdk.simulationService.simulateTransactionPlan(
   mainnet.id,
   accountAddress,
   plan,
-  undefined,
   {
-    stateOverrides: true,
+    stateOverrides: true, // optional; default is true
   },
 )
 
@@ -40,37 +26,55 @@ if (result.simulationError) {
 }
 ```
 
-See `examples/simulations/simulate-deposit-example.ts` for a full runnable example:
-
-```
-npx tsx examples/simulations/simulate-deposit-example.ts
-```
+See [examples/simulations/simulate-deposit-example.ts](../examples/simulations/simulate-deposit-example.ts) for a full runnable example:
 
 ## Simulation service API
 
 `SimulationService` is the recommended entry point for plan simulation.
 
-### `simulateTransactionPlan(chainId, account, transactionPlan, stateOverrides?, options?)`
+### `simulateTransactionPlan(chainId, account, transactionPlan, options?)`
 
 Simulates a full `TransactionPlan` and returns:
 
-- simulated account/vault entities
-- decoded simulation errors/status-check failures
-- insufficiency diagnostics (`insufficientWalletAssets`, `insufficientDirectAllowances`, `insufficientPermit2Allowances`)
+- `simulatedAccounts`: account entities updated to reflect the plan’s execution
+- `simulatedVaults`: vault entities updated from lens data
+- `canExecute`: `true` if all batch items succeeded, all status checks passed, and no insufficiencies were detected
+- `simulationError`: decoded revert info when the simulation fails
+- `rawBatchResults`: raw `batchSimulation` results for plan items only (lens calls excluded)
+- `failedBatchItems`: decoded failed batch items with error details
+- `accountStatusErrors` / `vaultStatusErrors`: health-check failures after execution
+- requirements not met by the connected wallet (`insufficientWalletAssets`, `insufficientDirectAllowances`, `insufficientPermit2Allowances`)
 
-Use `options.stateOverrides = true` to auto-generate state overrides from the plan:
+Why use it:
+- Filter failing swap quotes or routes before submitting a transaction.
+- Ensure the resulting position is healthy (health factor, LTV) and passes vault status checks.
+- Catch vault caps or other protocol limits that would cause a revert.
+- Evaluate position profitability without holding tokens, since the simulation can inject balances/approvals.
+
+### Population of simulated accounts
+
+`simulateTransactionPlan` can populate the returned account/vault entities using the same fetch options as `accountService.fetchAccount`. This is useful when you want computed properties (e.g., ROE, APY breakdowns, USD values) on the simulated account:
 
 ```typescript
 const result = await sdk.simulationService.simulateTransactionPlan(
   chainId,
   accountAddress,
   plan,
-  undefined,
-  { stateOverrides: true },
+  {
+    accountFetchOptions: {
+      populateVaults: true,
+      populateMarketPrices: true,
+      populateUserRewards: true,
+      vaultFetchOptions: {
+        populateMarketPrices: true,
+        populateRewards: true,
+        populateIntrinsicApy: true,
+      },
+    },
+  }
 )
 ```
 
-You can still pass a manual `stateOverrides` object as the 4th argument when needed.
 
 ## State override utilities
 
@@ -78,87 +82,15 @@ All exports are available from the top-level `euler-v2-sdk` package.
 
 ### `getStateOverrides(client, plan, account, options)`
 
-Low-level utility. Takes a `TransactionPlan` and generates all overrides needed for `eth_call` simulation from `account`.
+Utility helper that generates the override set for a plan. Internally it uses `eth_createAccessList` (EIP-2930) to discover storage slots for balances and approvals.
+
+Low-level utility. Takes a `TransactionPlan` and generates all overrides needed for `eth_simulateContract` simulation from `account`.
 
 ```typescript
 const stateOverride = await getStateOverrides(client, plan, account, {
   permit2Address: deployment.addresses.coreAddrs.permit2,
   nativeBalance: parseEther("1000"), // optional, defaults to 1000 ETH
 })
-```
-
-**What it does internally:**
-
-1. **Extracts balance requirements** — walks the plan's `RequiredApproval` items to find which tokens and amounts the account needs.
-2. **Generates balance overrides** — for each token with insufficient balance, uses `eth_createAccessList` to discover the `balanceOf` storage slot, then creates a `stateDiff` entry that sets that slot to the required value.
-3. **Generates approval overrides** — computes Permit2 allowance storage slots deterministically (keccak256 mapping layout) and traces ERC20 `approve()` calls to discover approval storage slots.
-4. **Adds native balance** — sets the account's ETH balance (for gas and any native-asset operations).
-5. **Merges** — consolidates all overrides by address, concatenating `stateDiff` arrays.
-
-**RPC requirement:** the client must support `eth_createAccessList` (EIP-2930) and `eth_call` with state overrides. These are standard RPC methods supported by all major providers. If access list creation is unavailable, balance/approval slot discovery is silently skipped.
-
-### `getBalanceOverrides(client, account, tokens)`
-
-Lower-level helper. Generates `StateOverride` entries for ERC20 token balances.
-
-```typescript
-import { getBalanceOverrides } from "euler-v2-sdk"
-
-const overrides = await getBalanceOverrides(client, account, [
-  [USDC_ADDRESS, parseUnits("10000", 6)],
-  [WETH_ADDRESS, parseEther("5")],
-])
-```
-
-For each token, it:
-- Reads the current balance; skips if already sufficient
-- Uses `eth_createAccessList` on `balanceOf(account)` to find candidate storage slots
-- Tests each slot by overriding it and re-reading `balanceOf`
-- Picks the slot that produces the highest balance
-- Caches discovered slots in memory for subsequent calls
-
-### `getApprovalOverrides(client, account, approvals, permit2Address)`
-
-Lower-level helper. Generates `StateOverride` entries for ERC20 approvals and Permit2 allowances.
-
-```typescript
-import { getApprovalOverrides } from "euler-v2-sdk"
-
-const overrides = await getApprovalOverrides(client, account, [
-  [USDC_ADDRESS, VAULT_ADDRESS], // [asset, spender]
-], permit2Address)
-```
-
-This:
-- Computes Permit2 allowance slots deterministically via keccak256
-- Traces `approve()` calls to find the actual ERC20 allowance storage slots
-- Handles tokens that require approval reset before setting to max (USDT, LIDO, NMR, MNW)
-
-### `computePermit2StateDiff(account, approvals)`
-
-Pure function. Computes the Permit2 storage slots for the given `[asset, spender]` pairs without any RPC calls.
-
-```typescript
-import { computePermit2StateDiff } from "euler-v2-sdk"
-
-const stateDiff = computePermit2StateDiff(account, [
-  [USDC_ADDRESS, VAULT_ADDRESS],
-])
-// Returns StateMapping: [{ slot, value }, ...]
-```
-
-### `mergeStateOverrides(overrides)`
-
-Combines multiple `StateOverride` arrays into one, deduplicating by address and concatenating `stateDiff` entries.
-
-```typescript
-import { mergeStateOverrides } from "euler-v2-sdk"
-
-const merged = mergeStateOverrides([
-  ...balanceOverrides,
-  ...approvalOverrides,
-  { address: account, balance: parseEther("100") },
-])
 ```
 
 ## EVC `batchSimulation`
@@ -246,14 +178,8 @@ if (balanceResult.success) {
 }
 ```
 
-This pattern lets you simulate a transaction and read back any resulting state in a single `eth_call`.
+This pattern lets you simulate a transaction and read back any resulting state in a single `eth_simulateContract`.
 
 ### Skipping approvals in simulation
 
 When using state overrides, the `RequiredApproval` items in a `TransactionPlan` can be skipped — the overrides inject the necessary allowances directly into storage. Only the `evcBatch` items need to be passed to `batchSimulation`:
-
-```typescript
-const batchItems = plan
-  .filter((item): item is EVCBatchItems => item.type === "evcBatch")
-  .flatMap((item) => item.items)
-```

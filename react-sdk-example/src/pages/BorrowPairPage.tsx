@@ -46,6 +46,36 @@ type AccountDiffEntry = {
   kind: DiffKind;
 };
 type TokenMeta = { symbol: string; decimals: number };
+type FailedBatchItem = {
+  index: number;
+  item: {
+    functionName: string;
+    targetContract: Address;
+    onBehalfOfAccount: Address;
+    args: Record<string, unknown>;
+  };
+  error: `0x${string}`;
+  decodedError: Array<{ signature: string; params: unknown[] }>;
+};
+
+function formatFailedBatchItems(items: FailedBatchItem[]): string {
+  const lines = ["Simulation failed:"];
+  for (const failed of items) {
+    const decoded = failed.decodedError
+      .map((entry) => {
+        if (entry.signature === "Error(string)" && entry.params.length > 0) {
+          return String(entry.params[0]);
+        }
+        return entry.signature;
+      })
+      .join(" ; ");
+    const details = decoded || failed.error;
+    lines.push(
+      `- Batch ${failed.index + 1} (${failed.item.functionName}): ${details}`
+    );
+  }
+  return lines.join("\n");
+}
 
 function pct(value: number | undefined): string {
   if (value === undefined) return "-";
@@ -637,11 +667,15 @@ export function BorrowPairPage() {
         });
       }
 
-      const { simulatedAccounts, insufficientWalletAssets } = await sdk.simulationService.simulateTransactionPlan(
+      const {
+        simulatedAccounts,
+        insufficientWalletAssets,
+        rawBatchResults,
+        failedBatchItems,
+      } = await sdk.simulationService.simulateTransactionPlan(
         chainId,
         walletAddress as Address,
         plan,
-        undefined,
         {
           stateOverrides: true,
           vaultFetchOptions: {
@@ -679,6 +713,14 @@ export function BorrowPairPage() {
           },
         }
       );
+      if (rawBatchResults?.length) {
+        console.debug("[preview] raw batch results (plan only):", rawBatchResults);
+      }
+      if (failedBatchItems?.length) {
+        setPreviewSimulationError(formatFailedBatchItems(failedBatchItems));
+        setSimulatedAccountPreview(null);
+        return;
+      }
       if (insufficientWalletAssets?.length) {
         const msg = formatInsufficientWalletAssetsMessage(
           insufficientWalletAssets,
