@@ -81,5 +81,5 @@ console.log(decoded);
 
 - The function accepts arbitrary input (`unknown`) and handles nested objects/errors.
 - Network lookup is used only for selectors not found in the built-in Euler selector map.
-- Use `fetchTimeout` (ms) to control timeout for unknown-selector OpenChain/Sourcify lookups. Default is `2000`.
+- Use `fetchTimeout` (ms) to control timeout for unknown-selector OpenChain/Sourcify lookups. Default is `5000`.
 - `Error(string)` is handled like any other signature and returns decoded params.

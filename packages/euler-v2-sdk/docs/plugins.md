@@ -11,7 +11,7 @@ Plugins let you handle these cases transparently. They hook into the SDK's read 
 Plugins are passed to `buildEulerSDK` via the `plugins` option:
 
 ```typescript
-import { buildEulerSDK, createPythPlugin, createKeyringPlugin } from "@euler-xyz/euler-v2-sdk"
+import { buildEulerSDK, createPythPlugin, createKeyringPlugin } from "euler-v2-sdk"
 
 const sdk = await buildEulerSDK({
   rpcUrls: { 1: "https://..." },

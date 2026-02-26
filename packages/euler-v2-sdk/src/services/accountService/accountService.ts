@@ -89,7 +89,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
           subAccounts: {},
         });
 
-    if (options?.populateVaults === false) {
+    if (Boolean(options?.populateVaults) === false) {
       return account as Account<TVaultEntity>;
     }
 

@@ -25,6 +25,14 @@ Services in the SDK follow a standardized **populate** pattern for cross-service
 | `EVault` | Reward campaigns | `eVaultService.populateRewards(vaults[])` | `eVault.populateRewards(rewardsService)` | `populateRewards` | RewardsService |
 | `EulerEarn` | Reward campaigns | `eulerEarnService.populateRewards(earns[])` | `eulerEarn.populateRewards(rewardsService)` | `populateRewards` | RewardsService |
 | `SecuritizeCollateralVault` | Reward campaigns | `securitizeVaultService.populateRewards(vaults[])` | `vault.populateRewards(rewardsService)` | `populateRewards` | RewardsService |
+| `EVault` | Intrinsic APY | `eVaultService.populateIntrinsicApy(vaults[])` | `eVault.populateIntrinsicApy(intrinsicApyService)` | `populateIntrinsicApy` | IntrinsicApyService |
+| `EulerEarn` | Intrinsic APY | `eulerEarnService.populateIntrinsicApy(earns[])` | `eulerEarn.populateIntrinsicApy(intrinsicApyService)` | `populateIntrinsicApy` | IntrinsicApyService |
+| `SecuritizeCollateralVault` | Intrinsic APY | `securitizeVaultService.populateIntrinsicApy(vaults[])` | `vault.populateIntrinsicApy(intrinsicApyService)` | `populateIntrinsicApy` | IntrinsicApyService |
+| `EVault` | Labels | `eVaultService.populateLabels(vaults[])` | `eVault.populateLabels(eulerLabelsService)` | `populateLabels` | EulerLabelsService |
+| `EulerEarn` | Labels | `eulerEarnService.populateLabels(earns[])` | `eulerEarn.populateLabels(eulerLabelsService)` | `populateLabels` | EulerLabelsService |
+| `SecuritizeCollateralVault` | Labels | `securitizeVaultService.populateLabels(vaults[])` | `vault.populateLabels(eulerLabelsService)` | `populateLabels` | EulerLabelsService |
+| `Account` | USD market prices | `account.populateMarketPrices(priceService)` | `account.populateMarketPrices(priceService)` | `populateMarketPrices` | PriceService |
+| `Account` | User rewards | `account.populateUserRewards(rewardsService)` | `account.populateUserRewards(rewardsService)` | `populateUserRewards` | RewardsService |
 
 ## FetchOptions Per Service
 
@@ -36,6 +44,8 @@ interface VaultFetchOptions {
   populateCollaterals?: boolean;     // EVault-specific, ignored by other vault services
   populateStrategyVaults?: boolean;  // EulerEarn-specific, ignored by other vault services
   populateRewards?: boolean;
+  populateIntrinsicApy?: boolean;
+  populateLabels?: boolean;
   eVaultFetchOptions?: EVaultFetchOptions;  // Forwarded to EVaultService by EulerEarnService
 }
 ```
@@ -47,6 +57,8 @@ interface EVaultFetchOptions {
   populateCollaterals?: boolean;
   populateMarketPrices?: boolean;
   populateRewards?: boolean;
+  populateIntrinsicApy?: boolean;
+  populateLabels?: boolean;
 }
 ```
 
@@ -57,6 +69,8 @@ interface EulerEarnFetchOptions {
   populateStrategyVaults?: boolean;
   populateMarketPrices?: boolean;
   populateRewards?: boolean;
+  populateIntrinsicApy?: boolean;
+  populateLabels?: boolean;
   eVaultFetchOptions?: EVaultFetchOptions;  // Forwarded to EVaultService when populating strategies
 }
 ```
@@ -66,6 +80,8 @@ interface EulerEarnFetchOptions {
 ```typescript
 interface AccountFetchOptions {
   populateVaults?: boolean;
+  populateMarketPrices?: boolean;
+  populateUserRewards?: boolean;
   vaultFetchOptions?: VaultFetchOptions;  // Forwarded to vault services
 }
 ```
@@ -77,11 +93,15 @@ interface AccountFetchOptions {
 ```typescript
 // Account with fully resolved vaults, prices, and strategy collaterals
 const account = await accountService.fetchAccount(chainId, address, {
+  populateMarketPrices: true,
+  populateUserRewards: true,
   vaultFetchOptions: {
     populateMarketPrices: true,
     populateCollaterals: true,
     populateStrategyVaults: true,
     populateRewards: true,
+    populateIntrinsicApy: true,
+    populateLabels: true,
     eVaultFetchOptions: { populateCollaterals: true },
   },
 });
@@ -90,12 +110,18 @@ const account = await accountService.fetchAccount(chainId, address, {
 const vault = await eVaultService.fetchVault(chainId, address, {
   populateCollaterals: true,
   populateMarketPrices: true,
+  populateRewards: true,
+  populateIntrinsicApy: true,
+  populateLabels: true,
 });
 
 // EulerEarn with strategy vaults and collaterals on strategies
 const earn = await eulerEarnService.fetchVault(chainId, address, {
   populateStrategyVaults: true,
   populateMarketPrices: true,
+  populateRewards: true,
+  populateIntrinsicApy: true,
+  populateLabels: true,
   eVaultFetchOptions: { populateCollaterals: true },
 });
 ```
@@ -129,7 +155,7 @@ await account.populateVaults(vaultMetaService);
 
 ## Options Forwarding
 
-When `AccountFetchOptions.populateVaults` is true (default), `vaultFetchOptions` is forwarded as `VaultFetchOptions` to vault services through VaultMetaService:
+When `AccountFetchOptions.populateVaults` is true, `vaultFetchOptions` is forwarded as `VaultFetchOptions` to vault services through VaultMetaService:
 
 ```
 AccountFetchOptions
@@ -139,6 +165,8 @@ AccountFetchOptions
        ├─ populateMarketPrices   → all vault services
        ├─ populateStrategyVaults → EulerEarnService
        ├─ populateRewards        → all vault services
+       ├─ populateIntrinsicApy   → all vault services
+       ├─ populateLabels         → all vault services
        └─ eVaultFetchOptions     → EulerEarnService → EVaultService (for strategy vaults)
 ```
 

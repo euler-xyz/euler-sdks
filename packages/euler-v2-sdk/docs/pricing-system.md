@@ -340,15 +340,11 @@ The `PricingBackendClient` (`services/priceService/backendClient.ts`) provides p
 - URL: `GET /v1/prices?chainId={chainId}&assets={addr1},{addr2},...`
 - Response: `Record<string, BackendPriceData>` keyed by lowercase address
 
-**Caching:**
-- TTL: 60 seconds, keyed by `{chainId}:{address.toLowerCase()}`
-
 **Request Batching:**
-- 50ms debounce window, grouped by chainId, addresses deduplicated
+- Concurrent calls are bundled per microtask and grouped by chainId (addresses deduplicated per request)
 
 **Key Functions:**
-- `fetchPrice(address, chainId?)` — Single price with auto-batching
-- `fetchPrices(addresses, chainId?)` — Multiple prices in one call
+- `queryBackendPrice({ address, chainId })` — Single-key query API with automatic bundling
 - `backendPriceToBigInt(price)` — Convert to 18-decimal bigint
 
 ## Design Principles
@@ -370,7 +366,7 @@ The `PricingBackendClient` (`services/priceService/backendClient.ts`) provides p
 - `services/vaults/eulerEarnService/eulerEarnService.ts` — Market price population
 - `services/vaults/securitizeVaultService/securitizeVaultService.ts` — Market price population
 - `services/priceService/priceService.ts` — Core pricing functions, `IPriceService`, `formatAssetValue()`
-- `services/priceService/backendClient.ts` — Backend API client with batching and caching
+- `services/priceService/backendClient.ts` — Backend API client with bundled requests
 - `services/priceService/index.ts` — Public exports
 - `utils/oracle.ts` — Oracle decoding and Pyth/Chainlink feed collection
 - `examples/vaults/fetch-vault-details-example.ts` — Example with resolved collaterals and market prices

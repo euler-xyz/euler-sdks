@@ -38,18 +38,19 @@ const account = await accountService.fetchAccount(chainId, owner, {
 | `totalCollateralValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Total collateral value in USD from sub-account liquidity (18 dec). |
 | `liabilityValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Liability value in USD from sub-account liquidity (18 dec). |
 | `netValueUsd` | `bigint \| undefined` | `populateMarketPrices` | `sum(suppliedValueUsd) - sum(borrowedValueUsd)` (18 dec). Net asset value in USD. |
-| `roe` | `SubAccountRoe \| undefined` | `populateVaults` + `populateMarketPrices` (+ `populateRewards` for rewards breakdown) | Return on equity breakdown. See below. |
+| `roe` | `SubAccountRoe \| undefined` | `populateVaults` + `populateMarketPrices` (+ `populateRewards` and `populateIntrinsicApy` for full breakdown) | Return on equity breakdown. See below. |
 
 ### ROE (Return on Equity)
 
-The `roe` property returns a `SubAccountRoe` object that breaks down the return on equity into three components. All values are decimal fractions (0.05 = 5%).
+The `roe` property returns a `SubAccountRoe` object that breaks down the return on equity into four components. All values are decimal fractions (0.05 = 5%).
 
 ```typescript
 interface SubAccountRoe {
   lending: number;    // ROE contribution from base supply APYs
   borrowing: number;  // ROE contribution from base borrow APYs (typically negative)
   rewards: number;    // ROE contribution from reward APRs (supply + borrow incentives)
-  total: number;      // lending + borrowing + rewards
+  intrinsicApy: number; // ROE contribution from intrinsic asset yield
+  total: number;      // lending + borrowing + rewards + intrinsicApy
 }
 ```
 
@@ -59,17 +60,20 @@ The formula aggregates across all positions in the sub-account:
 For each position with supply:
   lendingYield  += supplyUsd * supplyAPY
   rewardYield   += supplyUsd * supplyRewardAPR   (LEND campaigns)
+  intrinsicYield += supplyUsd * intrinsicApy
 
 For each position with borrows:
   borrowYield   += borrowUsd * borrowAPY
   rewardYield   += borrowUsd * borrowRewardAPR   (BORROW campaigns)
+  intrinsicYield -= borrowUsd * intrinsicApy
 
 equity = totalSupplyUsd - totalBorrowUsd
 
 lending   =  lendingYield / equity
 borrowing = -borrowYield  / equity
 rewards   =  rewardYield  / equity
-total     =  lending + borrowing + rewards
+intrinsicApy = intrinsicYield / equity
+total     =  lending + borrowing + rewards + intrinsicApy
 ```
 
 This is equivalent to the standard formula: `ROE = supplyAPY * multiplier - borrowAPY * (multiplier - 1)`.

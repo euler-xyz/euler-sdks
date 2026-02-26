@@ -14,6 +14,33 @@ const sdk = await buildEulerSDK({
 })
 ```
 
+## Quick Deposit Example
+
+```typescript
+import { buildEulerSDK } from 'euler-v2-sdk'
+import { parseUnits } from 'viem'
+
+const sdk = await buildEulerSDK({ rpcUrls: { 1: 'https://...' } })
+
+const account = await sdk.accountService.fetchAccount(1, '0xYourAddress...', {
+  populateVaults: false,
+})
+
+const plan = sdk.executionService.planDeposit({
+  vault: '0xVault...',
+  amount: parseUnits('100', 6),
+  receiver: '0xYourSubAccountOrAddress...',
+  account,
+  asset: '0xAsset...',
+  enableCollateral: true,
+})
+
+// Resolve approvals/signatures for your wallet flow, then execute the plan items.
+// See examples/utils/executor.ts for a full reference executor.
+```
+
+For execution planning and transaction-plan structure, see [Execution Service](./execution-service.md).
+
 ## Fetching Accounts
 
 An account represents an Ethereum address and its Euler sub-accounts (up to 256 per owner). Each sub-account has positions, enabled controllers/collaterals, and liquidity info.
@@ -26,12 +53,12 @@ const account = await sdk.accountService.fetchAccount(1, '0xOwner...')
 for (const [address, subAccount] of Object.entries(account.subAccounts)) {
   for (const position of subAccount.positions) {
     console.log(position.vaultAddress, position.assets, position.borrowed)
-    console.log(position.vault?.shares.name)  // Resolved vault entity
+    console.log(position.vault?.shares.name)  // Undefined unless populateVaults: true
   }
 }
 ```
 
-By default, `fetchAccount` resolves vault entities for all positions — meaning each `position.vault` is populated with the full vault object (`EVault`, `EulerEarn`, or `SecuritizeCollateralVault`). This adds extra RPC calls.
+`fetchAccount` resolves vault entities only when `populateVaults: true` is set. Otherwise each `position.vault` remains `undefined` and you only get raw position data.
 
 ### Without vault resolution
 
@@ -52,8 +79,10 @@ Pass level-2 flags to control how resolved vaults are fetched (options are forwa
 const account = await sdk.accountService.fetchAccount(1, '0xOwner...', {
   populateVaults: true,
   populateMarketPrices: true,
-  populateCollaterals: true,
-  populateStrategyVaults: true,
+  vaultFetchOptions: {
+    populateCollaterals: true,
+    populateStrategyVaults: true,
+  },
 })
 // position.vault.marketPriceUsd is populated on each resolved vault
 ```

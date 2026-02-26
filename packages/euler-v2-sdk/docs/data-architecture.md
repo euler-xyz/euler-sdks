@@ -2,7 +2,7 @@
 
 ## Overview
 
-The SDK follows a layered architecture where **services** create **entities** using **adapters**, which in turn make external calls via injectable [`query*` methods](./external-data-queries.md). Services compose with each other via the [population pattern](./cross-service-data-population.md) to progressively enrich entities with cross-domain data.
+The SDK follows a layered architecture where **services** create **entities** using **adapters**, which in turn make external calls via injectable [`query*` methods](./caching-external-data-queries.md). Services compose with each other via the [population pattern](./cross-service-data-population.md) to progressively enrich entities with cross-domain data.
 
 ```
 query* methods          Lowest level — individual network calls (RPC, subgraph, HTTP)
@@ -76,7 +76,7 @@ This keeps adapters thin and conversion logic pure and testable.
 
 ### Query methods
 
-All external calls within adapters are defined as `query*` arrow-function properties. The [`BuildQueryFn`](./external-data-queries.md) decorator wraps every `query*` method at construction time, enabling global caching, logging, or profiling without modifying SDK internals.
+All external calls within adapters are defined as `query*` arrow-function properties. The [`BuildQueryFn`](./caching-external-data-queries.md) decorator wraps every `query*` method at construction time, enabling global caching, logging, or profiling without modifying SDK internals.
 
 ```typescript
 class EVaultOnchainAdapter {
@@ -85,6 +85,18 @@ class EVaultOnchainAdapter {
   }
 }
 ```
+
+### Call bundling for some queries
+
+Some `query*` methods are implemented with call bundling (`createCallBundler`) to reduce request fanout.
+
+How it works (briefly):
+
+1. The adapter exposes a single-item query API (for example, "fetch one vault factory" or "fetch one asset price").
+2. Concurrent calls made in the same event-loop tick are grouped into one batched request.
+3. The batch response is split back into per-item results and each original caller receives only its own value.
+
+This keeps the service API simple while reducing RPC/HTTP round trips and improving throughput for high-concurrency fetch paths.
 
 ## Services
 
@@ -264,7 +276,7 @@ accountService.fetchAccount(chainId, owner, { populateVaults: true, populateMark
   │    └─ assign vault entities to position.vault fields
   │
   └─ account.populateMarketPrices(priceService)
-       ├─ PricingBackendClient.queryPricesBatch()             ← HTTP (backend)
+       ├─ PricingBackendClient.queryBackendPrice()            ← HTTP (backend, bundled)
        │   or PriceService.queryAssetPriceInfo()              ← RPC (fallback)
        └─ set marketPriceUsd on each vault
             → computed getters (healthFactor, netValueUsd, ...) now resolve
