@@ -14,21 +14,6 @@ Diagnostics are stored in a sidecar `WeakMap<object, DataIssue[]>`, keyed by ent
 
 ## API
 
-Import from SDK root:
-
-```ts
-import {
-  addEntityDataIssue,
-  getEntityDataIssues,
-  getEntityDataIssuesAtPath,
-  hasEntityDataIssues,
-  transferEntityDataIssues,
-  type DataIssue,
-  type DataIssueCode,
-  type DataIssueSeverity,
-} from "euler-v2-sdk";
-```
-
 Main functions:
 
 - `addEntityDataIssue(entity, issue)` adds an issue to an entity sidecar.
@@ -36,6 +21,7 @@ Main functions:
 - `getEntityDataIssuesAtPath(entity, path)` filters by field path.
 - `hasEntityDataIssues(entity)` quick boolean check.
 - `transferEntityDataIssues(source, target)` moves/merges diagnostics across wrappers.
+- `bigintToSafeNumber(...)`, `bigintToScaledNumber(...)`, `numberLikeToSafeFiniteNumber(...)` normalize values and automatically add diagnostics via `addEntityDataIssue`.
 
 ## Path Convention
 
@@ -45,7 +31,6 @@ Use JSONPath-like strings relative to the entity root:
 - `$.liquidity.daysToLiquidation`
 - `$.collaterals[2].liquidationLTV`
 
-Stable, consistent path naming is important for UI consumers.
 
 ## Reading Diagnostics in App/UI
 
@@ -77,26 +62,16 @@ Decision to throw on conversion issues is up to the consumer:
 
 ```ts
 import {
-  addEntityDataIssue,
+  bigintToSafeNumber,
   transferEntityDataIssues,
 } from "euler-v2-sdk";
 
 export function convertCustomVault(raw: RawVault): CustomVaultData {
-  let decimals: number;
-  if (raw.decimals > BigInt(Number.MAX_SAFE_INTEGER)) {
-    decimals = Number.MAX_SAFE_INTEGER;
-    addEntityDataIssue(raw as object, {
-      code: "OUT_OF_RANGE_CLAMPED",
-      severity: "warning",
-      message: "Decimals out of safe range and clamped.",
-      path: "$.asset.decimals",
-      source: "customSource",
-      originalValue: raw.decimals.toString(),
-      normalizedValue: decimals,
-    });
-  } else {
-    decimals = Number(raw.decimals);
-  }
+  const decimals = bigintToSafeNumber(raw.decimals, {
+    path: "$.asset.decimals",
+    target: raw as object,
+    source: "customSource",
+  });
 
   const result: CustomVaultData = {
     address: raw.vault,
