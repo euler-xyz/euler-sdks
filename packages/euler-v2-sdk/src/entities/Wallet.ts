@@ -1,4 +1,5 @@
 import { Address, isAddressEqual } from "viem";
+import { transferEntityDataIssues } from "../utils/entityDiagnostics.js";
 
 export interface IWallet {
   chainId: number;
@@ -26,6 +27,7 @@ export class Wallet implements IWallet {
   assets: WalletAsset[];
 
   constructor(wallet: IWallet) {
+    transferEntityDataIssues(wallet as object, this);
     this.chainId = wallet.chainId;
     this.account = wallet.account;
     this.assets = wallet.assets;

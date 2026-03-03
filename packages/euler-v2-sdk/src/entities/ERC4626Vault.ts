@@ -4,6 +4,7 @@ import type { IPriceService } from "../services/priceService/index.js";
 import type { IRewardsService, VaultRewardInfo } from "../services/rewardsService/index.js";
 import type { IntrinsicApyInfo } from "../services/intrinsicApyService/index.js";
 import type { EulerLabel } from "./EulerLabels.js";
+import { addEntityDataIssue, transferEntityDataIssues } from "../utils/entityDiagnostics.js";
 
 /** Virtual deposit amount used in share/asset conversions (matches EVault ConversionHelpers.sol). */
 export const VIRTUAL_DEPOSIT_AMOUNT = 1_000_000n;
@@ -41,6 +42,7 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
   eulerLabel?: EulerLabel;
 
   constructor(args: IERC4626Vault) {
+    transferEntityDataIssues(args as object, this);
     this.type = args.type;
     this.chainId = args.chainId;
     this.address = args.address;
@@ -73,10 +75,30 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
   }
 
   async populateMarketPrices(priceService: IPriceService): Promise<void> {
-    this.marketPriceUsd = await this.fetchAssetMarketPriceUsd(priceService).catch(() => undefined);
+    this.marketPriceUsd = await this.fetchAssetMarketPriceUsd(priceService).catch((error) => {
+      addEntityDataIssue(this, {
+        code: "SOURCE_UNAVAILABLE",
+        severity: "warning",
+        message: "Failed to populate asset USD market price.",
+        path: "$.marketPriceUsd",
+        source: "priceService",
+        originalValue: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    });
   }
 
   async populateRewards(rewardsService: IRewardsService): Promise<void> {
-    this.rewards = await rewardsService.getVaultRewards(this.chainId, this.address).catch(() => undefined);
+    this.rewards = await rewardsService.getVaultRewards(this.chainId, this.address).catch((error) => {
+      addEntityDataIssue(this, {
+        code: "SOURCE_UNAVAILABLE",
+        severity: "warning",
+        message: "Failed to populate vault rewards.",
+        path: "$.rewards",
+        source: "rewardsService",
+        originalValue: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    });
   }
 }

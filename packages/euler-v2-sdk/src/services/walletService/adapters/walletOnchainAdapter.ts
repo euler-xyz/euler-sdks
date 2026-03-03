@@ -4,6 +4,12 @@ import { DeploymentService } from "../../deploymentService/index.js";
 import { Address, getAddress, erc20Abi } from "viem";
 import { IWallet, WalletAsset, AssetAllowances } from "../../../entities/Wallet.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js";
+import {
+  addEntityDataIssue,
+  transferEntityDataIssues,
+  type DataIssueInput,
+} from "../../../utils/entityDiagnostics.js";
+import { numberLikeToSafeFiniteNumber } from "../../../utils/normalization.js";
 
 // Permit2 IAllowanceTransfer.allowance function ABI
 const permit2AllowanceAbi = [
@@ -106,27 +112,95 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 
     try {
       const walletAssets: WalletAsset[] = [];
+      const pendingIssues: DataIssueInput[] = [];
+      const normalizationTarget: object = {};
 
       // Fetch all data in parallel
       const assetResults = await Promise.all(
-        assetsWithSpenders.map(async ({ asset, spenders }) => {
+        assetsWithSpenders.map(async ({ asset, spenders }, assetIdx) => {
           const assetAddress = getAddress(asset);
 
-          const [balance, ...spenderResults] = await Promise.all([
-            this.queryBalanceOf(provider, assetAddress, account).catch(() => undefined),
-            ...spenders.flatMap((spender) => [
-              this.queryAllowance(provider, assetAddress, account, spender).catch(() => 0n),
-              this.queryAllowance(provider, assetAddress, account, permit2Address).catch(() => 0n),
-              this.queryPermit2Allowance(provider, permit2Address, account, assetAddress, spender).catch(() => [0n, 0, 0] as unknown as readonly [bigint, number, number]),
-            ]),
-          ]);
+          const balanceResult = await this.queryBalanceOf(provider, assetAddress, account)
+            .then((value) => ({ value, failed: false as const }))
+            .catch(() => ({ value: undefined, failed: true as const }));
 
-          return { assetAddress, balance, spenders, spenderResults };
+          const spenderResults = await Promise.all(
+            spenders.map(async (spender, spenderIdx) => {
+              const assetForVault = await this.queryAllowance(provider, assetAddress, account, spender)
+                .then((value) => ({ value, failed: false as const }))
+                .catch(() => ({ value: 0n, failed: true as const }));
+
+              const assetForPermit2 = await this.queryAllowance(provider, assetAddress, account, permit2Address)
+                .then((value) => ({ value, failed: false as const }))
+                .catch(() => ({ value: 0n, failed: true as const }));
+
+              const permit2Allowance = await this.queryPermit2Allowance(
+                provider,
+                permit2Address,
+                account,
+                assetAddress,
+                spender
+              )
+                .then((value) => ({ value, failed: false as const }))
+                .catch(
+                  () =>
+                    ({
+                      value: [0n, 0, 0] as unknown as readonly [bigint, number, number],
+                      failed: true as const,
+                    })
+                );
+
+              if (assetForVault.failed) {
+                pendingIssues.push({
+                  code: "SOURCE_UNAVAILABLE",
+                  severity: "warning",
+                  message: "Failed to fetch asset allowance for spender; defaulted to 0.",
+                  path: `$.assets[${assetIdx}].allowances[${spenderIdx}].assetForVault`,
+                  source: "erc20.allowance",
+                  normalizedValue: "0",
+                });
+              }
+              if (assetForPermit2.failed) {
+                pendingIssues.push({
+                  code: "SOURCE_UNAVAILABLE",
+                  severity: "warning",
+                  message: "Failed to fetch Permit2 allowance approval; defaulted to 0.",
+                  path: `$.assets[${assetIdx}].allowances[${spenderIdx}].assetForPermit2`,
+                  source: "erc20.allowance",
+                  normalizedValue: "0",
+                });
+              }
+              if (permit2Allowance.failed) {
+                pendingIssues.push({
+                  code: "SOURCE_UNAVAILABLE",
+                  severity: "warning",
+                  message: "Failed to fetch Permit2 spender allowance; defaulted to 0.",
+                  path: `$.assets[${assetIdx}].allowances[${spenderIdx}].assetForVaultInPermit2`,
+                  source: "permit2.allowance",
+                  normalizedValue: "0",
+                });
+              }
+
+              return { spender, assetForVault, assetForPermit2, permit2Allowance };
+            })
+          );
+
+          return { assetAddress, balanceResult, spenders, spenderResults };
         })
       );
 
-      for (const { assetAddress, balance, spenders, spenderResults } of assetResults) {
+      for (const { assetAddress, balanceResult, spenders, spenderResults } of assetResults) {
+        const balance = balanceResult.value;
         if (balance === undefined) {
+          pendingIssues.push({
+            code: "SOURCE_UNAVAILABLE",
+            severity: "warning",
+            message: "Failed to fetch asset balance; asset entry omitted from wallet result.",
+            path: "$.assets",
+            source: "erc20.balanceOf",
+            originalValue: assetAddress,
+            normalizedValue: "asset-omitted",
+          });
           console.error(`Failed to fetch balance for ${account} and asset ${assetAddress}`);
           continue;
         }
@@ -136,12 +210,22 @@ export class WalletOnchainAdapter implements IWalletAdapter {
           const spender = spenders[i];
           if (!spender) continue;
 
-          const assetForVault = (spenderResults[i * 3] ?? 0n) as bigint;
-          const assetForPermit2 = (spenderResults[i * 3 + 1] ?? 0n) as bigint;
-          const permit2Result = spenderResults[i * 3 + 2] as readonly [bigint, number, number];
+          const result = spenderResults[i];
+          if (!result) continue;
+          const assetForVault = result.assetForVault.value;
+          const assetForPermit2 = result.assetForPermit2.value;
+          const permit2Result = result.permit2Allowance.value;
 
           const assetForVaultInPermit2 = permit2Result?.[0] ?? 0n;
-          const permit2ExpirationTime = Number(permit2Result?.[1] ?? 0);
+          const permit2ExpirationTime = numberLikeToSafeFiniteNumber(
+            (permit2Result?.[1] ?? 0) as bigint | number,
+            {
+              path: `$.assets.allowances[${i}].permit2ExpirationTime`,
+              target: normalizationTarget,
+              source: "permit2.allowance",
+              fallback: 0,
+            }
+          );
 
           allowances[getAddress(spender)] = {
             assetForVault,
@@ -159,11 +243,16 @@ export class WalletOnchainAdapter implements IWalletAdapter {
         });
       }
 
-      return {
+      const walletData: IWallet = {
         chainId,
         account,
         assets: walletAssets,
       };
+      for (const issue of pendingIssues) {
+        addEntityDataIssue(walletData as object, issue);
+      }
+      transferEntityDataIssues(normalizationTarget, walletData as object);
+      return walletData;
     } catch (error) {
       console.error(`Failed to fetch wallet info for ${account}:`, error);
       return undefined;

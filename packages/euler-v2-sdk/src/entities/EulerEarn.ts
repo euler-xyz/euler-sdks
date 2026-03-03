@@ -4,6 +4,7 @@ import { ERC4626Vault, IERC4626Vault, IERC4626VaultConversion, VIRTUAL_DEPOSIT_A
 import type { EVault } from "./EVault.js";
 import type { IEVaultService } from "../services/vaults/eVaultService/eVaultService.js";
 import type { IPriceService } from "../services/priceService/index.js";
+import { addEntityDataIssue, transferEntityDataIssues } from "../utils/entityDiagnostics.js";
 
 
 export interface EulerEarnAllocationCap {
@@ -64,6 +65,7 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
 
   constructor(args: IEulerEarn) {
     super(args);
+    transferEntityDataIssues(args as object, this);
     this.lostAssets = args.lostAssets;
     this.availableAssets = args.availableAssets;
     this.performanceFee = args.performanceFee;
@@ -105,7 +107,21 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
     let totalAllocated = 0;
     for (const strategy of strategiesWithVault) {
       const apy = parseFloat(strategy.vault!.interestRates.supplyAPY);
-      const allocated = Number(strategy.allocatedAssets);
+      let allocated: number;
+      if (strategy.allocatedAssets <= BigInt(Number.MAX_SAFE_INTEGER)) {
+        allocated = Number(strategy.allocatedAssets);
+      } else {
+        allocated = Number.MAX_SAFE_INTEGER;
+        addEntityDataIssue(this, {
+          code: "OUT_OF_RANGE_CLAMPED",
+          severity: "warning",
+          message: "Strategy allocatedAssets exceeded safe number range in supply APY computation and was clamped.",
+          path: "$.supplyApy",
+          source: "eulerEarnEntity",
+          originalValue: strategy.allocatedAssets.toString(),
+          normalizedValue: allocated,
+        });
+      }
       weightedSum += allocated * apy;
       totalAllocated += allocated;
     }
@@ -122,7 +138,18 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
 
     const eVaults = await Promise.all(
       allStrategyAddresses.map((addr) =>
-        eVaultService.fetchVault(this.chainId, addr).catch(() => undefined)
+        eVaultService.fetchVault(this.chainId, addr).catch((error) => {
+          addEntityDataIssue(this, {
+            code: "SOURCE_UNAVAILABLE",
+            severity: "warning",
+            message: "Failed to populate strategy vault metadata for EulerEarn strategy.",
+            path: "$.strategies",
+            source: "eVaultService",
+            originalValue: error instanceof Error ? error.message : String(error),
+            normalizedValue: "strategy-vault-missing",
+          });
+          return undefined;
+        })
       )
     );
 
@@ -138,7 +165,16 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
   }
 
   override async populateMarketPrices(priceService: IPriceService): Promise<void> {
-    this.marketPriceUsd = await this.fetchAssetMarketPriceUsd(priceService).catch(() => undefined);
+    this.marketPriceUsd = await this.fetchAssetMarketPriceUsd(priceService).catch((error) => {
+      addEntityDataIssue(this, {
+        code: "SOURCE_UNAVAILABLE",
+        severity: "warning",
+        message: "Failed to populate EulerEarn market price.",
+        path: "$.marketPriceUsd",
+        source: "priceService",
+        originalValue: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    });
   }
 }
-

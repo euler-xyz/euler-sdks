@@ -6,6 +6,7 @@ import type { VaultFetchOptions } from "../services/vaults/index.js";
 import type { PriceWad } from "./ERC4626Vault.js";
 import type { IPriceService } from "../services/priceService/index.js";
 import type { IRewardsService, UserReward } from "../services/rewardsService/index.js";
+import { addEntityDataIssue, transferEntityDataIssues } from "../utils/entityDiagnostics.js";
 import {
   computeHealthFactor,
   computeCurrentLTV,
@@ -87,6 +88,7 @@ export class AccountLiquidity<TVaultEntity extends IHasVaultAddress = never> imp
   totalCollateralValueUsd?: bigint;
 
   constructor(data: IAccountLiquidity<TVaultEntity>) {
+    transferEntityDataIssues(data as object, this);
     this.vaultAddress = data.vaultAddress;
     this.vault = data.vault;
     this.unitOfAccount = data.unitOfAccount;
@@ -170,6 +172,7 @@ export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
   borrowedValueUsd?: bigint;
 
   constructor(data: IAccountPosition<TVaultEntity>) {
+    transferEntityDataIssues(data as object, this);
     this.account = data.account;
     this.vaultAddress = data.vaultAddress;
     this.vault = data.vault;
@@ -271,6 +274,7 @@ export class SubAccount<TVaultEntity extends IHasVaultAddress = never> implement
   positions: AccountPosition<TVaultEntity>[];
 
   constructor(data: ISubAccount<TVaultEntity>) {
+    transferEntityDataIssues(data as object, this);
     this.timestamp = data.timestamp;
     this.account = data.account;
     this.owner = data.owner;
@@ -346,6 +350,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
   userRewards?: UserReward[];
 
   constructor(account: IAccount<TVaultEntity>) {
+    transferEntityDataIssues(account as object, this);
     this.chainId = account.chainId;
     this.owner = account.owner;
     this.isLockdownMode = account.isLockdownMode ?? false;
@@ -508,7 +513,18 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
         // Populate liquidity USD values
         if (p.liquidity?.vault) {
           const liqVault = p.liquidity.vault as any;
-          const uoaRate = await priceService.getUnitOfAccountUsdRate(liqVault).catch(() => undefined);
+          const uoaRate = await priceService.getUnitOfAccountUsdRate(liqVault).catch((error) => {
+            addEntityDataIssue(p, {
+              code: "SOURCE_UNAVAILABLE",
+              severity: "warning",
+              message: "Failed to fetch unit-of-account USD rate for liquidity valuation.",
+              path: "$.liquidity",
+              source: "priceService",
+              originalValue: error instanceof Error ? error.message : String(error),
+              normalizedValue: "usd-liquidity-values-missing",
+            });
+            return undefined;
+          });
           if (uoaRate != null) {
             p.liquidity.liabilityValueUsd = (p.liquidity.liabilityValue.oracleMid * uoaRate) / ONE_18;
             p.liquidity.totalCollateralValueUsd =

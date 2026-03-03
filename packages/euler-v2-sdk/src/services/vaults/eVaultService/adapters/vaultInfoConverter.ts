@@ -4,6 +4,14 @@ import { Token, VaultType } from "../../../../utils/types.js";
 import { VaultInfoFull, AssetPriceInfo, InterestRateModelType, InterestRateModelDetailedInfo } from "./eVaultLensTypes.js";
 import { formatUnits, type Hex } from "viem";
 import { decodeIRMParams } from "../../../../utils/irm.js";
+import {
+  transferEntityDataIssues,
+} from "../../../../utils/entityDiagnostics.js";
+import {
+  bigintToSafeNumber,
+  bigintToScaledNumber,
+  emitNormalizationIssue,
+} from "../../../../utils/normalization.js";
 
 /**
  * Converts VaultLens's VaultInfoFull object to an IEVault object
@@ -11,7 +19,10 @@ import { decodeIRMParams } from "../../../../utils/irm.js";
  * @param chainId - The chain ID
  * @returns The IEVault object
  */
-export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId: number): IEVault {
+export function convertVaultInfoFullToIEVault(
+  vaultInfo: VaultInfoFull,
+  chainId: number
+): IEVault {
   const oracle: OracleInfo = {
     oracle: vaultInfo.oracleInfo.oracle,
     name: vaultInfo.oracleInfo.name,
@@ -22,30 +33,42 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId:
     address: vaultInfo.vault,
     name: vaultInfo.vaultName,
     symbol: vaultInfo.vaultSymbol,
-    decimals: Number(vaultInfo.vaultDecimals),
+    decimals: bigintToSafeNumber(vaultInfo.vaultDecimals, {
+      path: "$.shares.decimals",
+      target: vaultInfo as object,
+      source: "vaultLens",
+    }),
   };
 
   const asset: Token = {
     address: vaultInfo.asset,
     name: vaultInfo.assetName,
     symbol: vaultInfo.assetSymbol,
-    decimals: Number(vaultInfo.assetDecimals),
+    decimals: bigintToSafeNumber(vaultInfo.assetDecimals, {
+      path: "$.asset.decimals",
+      target: vaultInfo as object,
+      source: "vaultLens",
+    }),
   };
 
   const unitOfAccount: Token = {
     address: vaultInfo.unitOfAccount,
     name: vaultInfo.unitOfAccountName,
     symbol: vaultInfo.unitOfAccountSymbol,
-    decimals: Number(vaultInfo.unitOfAccountDecimals),
+    decimals: bigintToSafeNumber(vaultInfo.unitOfAccountDecimals, {
+      path: "$.unitOfAccount.decimals",
+      target: vaultInfo as object,
+      source: "vaultLens",
+    }),
   };
 
   const fees: EVaultFees = {
-    interestFee: convertFrom1e4(vaultInfo.interestFee),
+    interestFee: convertFrom1e4(vaultInfo.interestFee, "$.fees.interestFee", vaultInfo as object),
     accumulatedFeesShares: vaultInfo.accumulatedFeesShares,
     accumulatedFeesAssets: vaultInfo.accumulatedFeesAssets,
     governorFeeReceiver: vaultInfo.governorFeeReceiver,
     protocolFeeReceiver: vaultInfo.protocolFeeReceiver,
-    protocolFeeShare: convertFrom1e4(vaultInfo.protocolFeeShare),
+    protocolFeeShare: convertFrom1e4(vaultInfo.protocolFeeShare, "$.fees.protocolFeeShare", vaultInfo as object),
   };
 
   const hooks: EVaultHooks = {
@@ -60,8 +83,16 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId:
 
   const configFlags = convertConfigFlags(vaultInfo.configFlags);
   const liquidation: EVaultLiquidation = {
-    maxLiquidationDiscount: convertFrom1e4(vaultInfo.maxLiquidationDiscount),
-    liquidationCoolOffTime: Number(vaultInfo.liquidationCoolOffTime),
+    maxLiquidationDiscount: convertFrom1e4(
+      vaultInfo.maxLiquidationDiscount,
+      "$.liquidation.maxLiquidationDiscount",
+      vaultInfo as object
+    ),
+    liquidationCoolOffTime: bigintToSafeNumber(vaultInfo.liquidationCoolOffTime, {
+      path: "$.liquidation.liquidationCoolOffTime",
+      target: vaultInfo as object,
+      source: "vaultLens",
+    }),
     socializeDebt: configFlags.socializeDebt,
   };
 
@@ -80,35 +111,70 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId:
         supplyAPY: "0",
       };
 
-  const interestRateModel = convertInterestRateModel(vaultInfo.irmInfo.interestRateModelInfo);
+  const interestRateModel = convertInterestRateModel(
+    vaultInfo.irmInfo.interestRateModelInfo,
+    vaultInfo as object
+  );
 
   // Convert collaterals
   const collaterals: EVaultCollateral[] = vaultInfo.collateralLTVInfo.map((ltvInfo, idx) => {
     const priceInfo = vaultInfo.collateralPriceInfo[idx];
-    const oraclePriceRaw = priceInfo ? convertAssetPriceInfoToOraclePrice(priceInfo) : {
-      queryFailure: true,
-      queryFailureReason: "0x" as Hex,
-      amountIn: 0n,
-      amountOutMid: 0n,
-      amountOutBid: 0n,
-      amountOutAsk: 0n,
-      timestamp: 0,
-    };
+    const oraclePriceRaw = priceInfo
+      ? convertAssetPriceInfoToOraclePrice(
+          priceInfo,
+          `$.collaterals[${idx}].oraclePriceRaw`,
+          vaultInfo as object
+        )
+      : {
+          queryFailure: true,
+          queryFailureReason: "0x" as Hex,
+          amountIn: 0n,
+          amountOutMid: 0n,
+          amountOutBid: 0n,
+          amountOutAsk: 0n,
+          timestamp: 0,
+        };
+    if (!priceInfo) {
+      emitNormalizationIssue(vaultInfo as object, {
+        code: "DEFAULT_APPLIED",
+        severity: "warning",
+        message: "Missing collateral price info; default zero-price placeholder applied.",
+        path: `$.collaterals[${idx}].oraclePriceRaw`,
+        source: "vaultLens",
+        normalizedValue: "queryFailure:true",
+      });
+    }
 
-    const targetTimestamp = Number(ltvInfo.targetTimestamp);
-    const vaultTimestamp = Number(vaultInfo.timestamp);
+    const targetTimestamp = bigintToSafeNumber(ltvInfo.targetTimestamp, {
+      path: `$.collaterals[${idx}].ramping.targetTimestamp`,
+      target: vaultInfo as object,
+      source: "vaultLens",
+    });
+    const vaultTimestamp = bigintToSafeNumber(vaultInfo.timestamp, {
+      path: "$.timestamp",
+      target: vaultInfo as object,
+      source: "vaultLens",
+    });
     const isRamping = targetTimestamp > vaultTimestamp;
 
     const collateral: EVaultCollateral = {
       address: ltvInfo.collateral,
-      borrowLTV: convertFrom1e4(ltvInfo.borrowLTV),
-      liquidationLTV: convertFrom1e4(ltvInfo.liquidationLTV),
+      borrowLTV: convertFrom1e4(ltvInfo.borrowLTV, `$.collaterals[${idx}].borrowLTV`, vaultInfo as object),
+      liquidationLTV: convertFrom1e4(
+        ltvInfo.liquidationLTV,
+        `$.collaterals[${idx}].liquidationLTV`,
+        vaultInfo as object
+      ),
       oraclePriceRaw,
     };
 
     if (isRamping) {
       collateral.ramping = {
-        initialLiquidationLTV: convertFrom1e4(ltvInfo.initialLiquidationLTV),
+        initialLiquidationLTV: convertFrom1e4(
+          ltvInfo.initialLiquidationLTV,
+          `$.collaterals[${idx}].ramping.initialLiquidationLTV`,
+          vaultInfo as object
+        ),
         targetTimestamp,
         rampDuration: ltvInfo.rampDuration,
       };
@@ -118,9 +184,13 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId:
   });
 
   // Convert liability price
-  const oraclePriceRaw = convertAssetPriceInfoToOraclePrice(vaultInfo.liabilityPriceInfo);
+  const oraclePriceRaw = convertAssetPriceInfoToOraclePrice(
+    vaultInfo.liabilityPriceInfo,
+    "$.oraclePriceRaw",
+    vaultInfo as object
+  );
 
-  return {
+  const result: IEVault = {
     type: VaultType.EVault,
     chainId,
     address: vaultInfo.vault,
@@ -145,8 +215,14 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId:
     interestRateModel,
     collaterals,
     oraclePriceRaw,
-    timestamp: Number(vaultInfo.timestamp),
+    timestamp: bigintToSafeNumber(vaultInfo.timestamp, {
+      path: "$.timestamp",
+      target: vaultInfo as object,
+      source: "vaultLens",
+    }),
   };
+  transferEntityDataIssues(vaultInfo as object, result as object);
+  return result;
 }
 
 
@@ -155,7 +231,10 @@ export function convertVaultInfoFullToIEVault(vaultInfo: VaultInfoFull, chainId:
  * @param irmInfo - The InterestRateModelDetailedInfo from the lens
  * @returns The decoded InterestRateModel
  */
-function convertInterestRateModel(irmInfo: InterestRateModelDetailedInfo): InterestRateModel {
+function convertInterestRateModel(
+  irmInfo: InterestRateModelDetailedInfo,
+  target: object
+): InterestRateModel {
   const { interestRateModel: address, interestRateModelType: type, interestRateModelParams: params } = irmInfo;
   let decodedParams: InterestRateModel["data"] = null;
 
@@ -164,7 +243,15 @@ function convertInterestRateModel(irmInfo: InterestRateModelDetailedInfo): Inter
       decodedParams = decodeIRMParams(type, params);
     } catch (error) {
       // If decoding fails, keep params as null
-      console.warn(`Failed to decode IRM params for type ${type}:`, error);
+      emitNormalizationIssue(target, {
+        code: "DECODE_FAILED",
+        severity: "warning",
+        message: `Failed to decode IRM params for type ${type}; data set to null.`,
+        path: "$.interestRateModel.data",
+        source: "vaultLens",
+        originalValue: error instanceof Error ? error.message : String(error),
+        normalizedValue: null,
+      });
     }
   }
 
@@ -175,7 +262,22 @@ function convertInterestRateModel(irmInfo: InterestRateModelDetailedInfo): Inter
   };
 }
 
-function convertAssetPriceInfoToOraclePrice(priceInfo: AssetPriceInfo): OraclePrice {
+function convertAssetPriceInfoToOraclePrice(
+  priceInfo: AssetPriceInfo,
+  path: string,
+  target: object
+): OraclePrice {
+  if (priceInfo.queryFailure) {
+    emitNormalizationIssue(target, {
+      code: "SOURCE_UNAVAILABLE",
+      severity: "warning",
+      message: "Oracle price query reported failure.",
+      path,
+      source: "vaultLens",
+      originalValue: priceInfo.queryFailureReason,
+      normalizedValue: "queryFailure:true",
+    });
+  }
   return {
     queryFailure: priceInfo.queryFailure,
     queryFailureReason: priceInfo.queryFailureReason,
@@ -183,7 +285,11 @@ function convertAssetPriceInfoToOraclePrice(priceInfo: AssetPriceInfo): OraclePr
     amountOutMid: priceInfo.amountOutMid,
     amountOutBid: priceInfo.amountOutBid,
     amountOutAsk: priceInfo.amountOutAsk,
-    timestamp: Number(priceInfo.timestamp),
+    timestamp: bigintToSafeNumber(priceInfo.timestamp, {
+      path: `${path}.timestamp`,
+      target,
+      source: "vaultLens",
+    }),
   };
 }
 
@@ -193,11 +299,19 @@ const MAX_1E4 = 10n**4n;
  * @param value - The bigint value in 1e4 scale
  * @returns The number value (value / 1e4)
  */
-function convertFrom1e4(value: bigint): number {
-  if (value > MAX_1E4) {
-    throw new Error('Value exceeds maximum 1e4 scale');
-  }
-  return Number(value) / 1e4;
+function convertFrom1e4(
+  value: bigint,
+  path: string,
+  target: object
+): number {
+  return bigintToScaledNumber(value, {
+    path,
+    target,
+    source: "vaultLens",
+    scale: 1e4,
+    maxUnscaled: MAX_1E4,
+    overflowMessage: "Value exceeded 1e4 scale and was clamped.",
+  });
 }
 
 /**

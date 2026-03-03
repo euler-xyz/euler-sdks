@@ -89,6 +89,7 @@ All docs are in [`./docs`](./docs).
 12. [Plugins](./docs/plugins.md) - Plugin system for read-path and plan-path extensions.
 13. [Labels](./docs/labels.md) - Label metadata model and usage.
 14. [Decoding Smart Contract Errors](./docs/decode-smart-contract-errors.md) - Revert decoding utilities for better error handling.
+15. [Entity Diagnostics](./docs/entity-diagnostics.md) - Sidecar metadata for data normalization, fallbacks, and per-field warnings.
 
 ## Examples
 

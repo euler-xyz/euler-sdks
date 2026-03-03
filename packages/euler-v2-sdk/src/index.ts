@@ -38,5 +38,7 @@ export * from "./utils/stateOverrides/index.js";
 export * from "./utils/oracle.js";
 export * from "./utils/accountComputations.js";
 export * from "./utils/callBundler.js";
+export * from "./utils/entityDiagnostics.js";
+export * from "./utils/normalization.js";
 export * from "./utils/decodeSmartContractErrors.js";
 export * from "./utils/eulerErrorSelectors.js";

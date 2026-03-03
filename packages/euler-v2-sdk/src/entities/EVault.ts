@@ -11,6 +11,7 @@ import type { IPriceService } from "../services/priceService/index.js";
 import { getAssetOraclePrice, getCollateralOraclePrice } from "../services/priceService/index.js";
 import type { VaultEntity } from "../services/vaults/vaultMetaService/index.js";
 import type { IVaultMetaService } from "../services/vaults/vaultMetaService/index.js";
+import { addEntityDataIssue, transferEntityDataIssues } from "../utils/entityDiagnostics.js";
 
 export type EVaultHookedOperations = {
   deposit: boolean;
@@ -136,6 +137,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
 
   constructor(args: IEVault) {
     super(args);
+    transferEntityDataIssues(args as object, this);
     this.unitOfAccount = args.unitOfAccount;
     this.totalCash = args.totalCash;
     this.totalBorrowed = args.totalBorrowed;
@@ -229,7 +231,18 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
 
     const collateralVaults = await Promise.all(
       addresses.map((addr) =>
-        vaultMetaService.fetchVault(this.chainId, addr).catch(() => undefined)
+        vaultMetaService.fetchVault(this.chainId, addr).catch((error) => {
+          addEntityDataIssue(this, {
+            code: "SOURCE_UNAVAILABLE",
+            severity: "warning",
+            message: "Failed to resolve collateral vault metadata.",
+            path: "$.collaterals",
+            source: "vaultMetaService",
+            originalValue: error instanceof Error ? error.message : String(error),
+            normalizedValue: "collateral-vault-missing",
+          });
+          return undefined;
+        })
       )
     );
 
@@ -245,14 +258,35 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
   }
 
   override async populateMarketPrices(priceService: IPriceService): Promise<void> {
-    this.marketPriceUsd = await this.fetchAssetMarketPriceUsd(priceService).catch(() => undefined);
+    this.marketPriceUsd = await this.fetchAssetMarketPriceUsd(priceService).catch((error) => {
+      addEntityDataIssue(this, {
+        code: "SOURCE_UNAVAILABLE",
+        severity: "warning",
+        message: "Failed to populate EVault market price.",
+        path: "$.marketPriceUsd",
+        source: "priceService",
+        originalValue: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    });
 
     await Promise.all(
       this.collaterals.map(async (collateral) => {
         if (!collateral.vault) return;
         const price = await priceService
           .getCollateralUsdPrice(this, collateral.vault as ERC4626Vault)
-          .catch(() => undefined);
+          .catch((error) => {
+            addEntityDataIssue(this, {
+              code: "SOURCE_UNAVAILABLE",
+              severity: "warning",
+              message: "Failed to populate collateral market price.",
+              path: "$.collaterals",
+              source: "priceService",
+              originalValue: error instanceof Error ? error.message : String(error),
+              normalizedValue: "collateral-market-price-missing",
+            });
+            return undefined;
+          });
         collateral.marketPriceUsd = price?.amountOutMid;
       })
     );
