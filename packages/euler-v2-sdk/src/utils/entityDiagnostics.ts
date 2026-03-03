@@ -67,17 +67,3 @@ export function transferEntityDataIssues(source: object, target: object): void {
   }
   diagnosticsStore.set(target, [...targetIssues, ...sourceIssues]);
 }
-
-export interface DataIssueCollector {
-  add(issue: DataIssueInput): void;
-}
-
-export function createDataIssueCollector(
-  onIssue?: (issue: DataIssueInput) => void
-): DataIssueCollector {
-  return {
-    add(issue: DataIssueInput): void {
-      onIssue?.(issue);
-    },
-  };
-}

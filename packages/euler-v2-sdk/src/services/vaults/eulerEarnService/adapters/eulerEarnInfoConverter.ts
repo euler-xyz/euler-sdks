@@ -3,11 +3,11 @@ import { IEulerEarn, EulerEarnStrategyInfo, EulerEarnGovernance, EulerEarnAlloca
 import { Token, VaultType } from "../../../../utils/types.js";
 import { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
 import {
+  addEntityDataIssue,
   transferEntityDataIssues,
 } from "../../../../utils/entityDiagnostics.js";
 import {
   bigintToSafeNumber,
-  emitNormalizationIssue,
 } from "../../../../utils/normalization.js";
 
 /**
@@ -135,7 +135,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
     performanceFee: (() => {
       const value = Number(formatUnits(vaultInfo.performanceFee, 18));
       if (Number.isFinite(value)) return value;
-      emitNormalizationIssue(vaultInfo as object, {
+      addEntityDataIssue(vaultInfo as object, {
         code: "PRECISION_LOSS",
         severity: "warning",
         message: "performanceFee could not be represented as a finite number; defaulted to 0.",

@@ -3,11 +3,11 @@ import type { ISubAccount, IAccountLiquidity, DaysToLiquidation } from "../../..
 import { AccountPosition } from "../../../entities/Account.js";
 import { EVCAccountInfo, VaultAccountInfo, AccountLiquidityInfo } from "./accountLensTypes.js";
 import {
+  addEntityDataIssue,
   transferEntityDataIssues,
 } from "../../../utils/entityDiagnostics.js";
 import {
   bigintToSafeNumber,
-  emitNormalizationIssue,
 } from "../../../utils/normalization.js";
 
 /**
@@ -36,7 +36,7 @@ import {
     const oracleMid = liquidityInfo.collateralValuesRaw[idx];
 
     if (borrowing === undefined) {
-      emitNormalizationIssue(liquidityInfo as object, {
+      addEntityDataIssue(liquidityInfo as object, {
         code: "DEFAULT_APPLIED",
         severity: "warning",
         message: "Missing collateral borrowing value; defaulted to 0.",
@@ -46,7 +46,7 @@ import {
       });
     }
     if (liquidation === undefined) {
-      emitNormalizationIssue(liquidityInfo as object, {
+      addEntityDataIssue(liquidityInfo as object, {
         code: "DEFAULT_APPLIED",
         severity: "warning",
         message: "Missing collateral liquidation value; defaulted to 0.",
@@ -56,7 +56,7 @@ import {
       });
     }
     if (oracleMid === undefined) {
-      emitNormalizationIssue(liquidityInfo as object, {
+      addEntityDataIssue(liquidityInfo as object, {
         code: "DEFAULT_APPLIED",
         severity: "warning",
         message: "Missing collateral oracleMid value; defaulted to 0.",
@@ -113,7 +113,7 @@ export function convertVaultAccountInfoToAccountPosition(
   if (vaultAccountInfo.borrowed !== 0n) {
     if (vaultAccountInfo.liquidityInfo.queryFailure) {
       const message = `Failed to fetch liquidity for position ${vaultAccountInfo.vault} for sub-account ${vaultAccountInfo.account}: ${vaultAccountInfo.liquidityInfo.queryFailureReason}`;
-      emitNormalizationIssue(vaultAccountInfo as object, {
+      addEntityDataIssue(vaultAccountInfo as object, {
         code: "SOURCE_UNAVAILABLE",
         severity: "warning",
         message,

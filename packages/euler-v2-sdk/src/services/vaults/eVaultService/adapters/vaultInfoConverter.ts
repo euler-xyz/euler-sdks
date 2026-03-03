@@ -5,12 +5,12 @@ import { VaultInfoFull, AssetPriceInfo, InterestRateModelType, InterestRateModel
 import { formatUnits, type Hex } from "viem";
 import { decodeIRMParams } from "../../../../utils/irm.js";
 import {
+  addEntityDataIssue,
   transferEntityDataIssues,
 } from "../../../../utils/entityDiagnostics.js";
 import {
   bigintToSafeNumber,
   bigintToScaledNumber,
-  emitNormalizationIssue,
 } from "../../../../utils/normalization.js";
 
 /**
@@ -135,7 +135,7 @@ export function convertVaultInfoFullToIEVault(
           timestamp: 0,
         };
     if (!priceInfo) {
-      emitNormalizationIssue(vaultInfo as object, {
+      addEntityDataIssue(vaultInfo as object, {
         code: "DEFAULT_APPLIED",
         severity: "warning",
         message: "Missing collateral price info; default zero-price placeholder applied.",
@@ -243,7 +243,7 @@ function convertInterestRateModel(
       decodedParams = decodeIRMParams(type, params);
     } catch (error) {
       // If decoding fails, keep params as null
-      emitNormalizationIssue(target, {
+      addEntityDataIssue(target, {
         code: "DECODE_FAILED",
         severity: "warning",
         message: `Failed to decode IRM params for type ${type}; data set to null.`,
@@ -268,7 +268,7 @@ function convertAssetPriceInfoToOraclePrice(
   target: object
 ): OraclePrice {
   if (priceInfo.queryFailure) {
-    emitNormalizationIssue(target, {
+    addEntityDataIssue(target, {
       code: "SOURCE_UNAVAILABLE",
       severity: "warning",
       message: "Oracle price query reported failure.",
