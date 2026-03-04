@@ -21,6 +21,8 @@ export enum StandardEulerEarnPerspectives {
 }
 
 export interface EulerEarnFetchOptions {
+  /** When true, enables all supported populate steps and overrides granular populate flags. */
+  populateAll?: boolean;
   populateStrategyVaults?: boolean;
   populateMarketPrices?: boolean;
   populateRewards?: boolean;
@@ -102,25 +104,26 @@ export class EulerEarnService implements IEulerEarnService {
     vault: Address,
     options?: EulerEarnFetchOptions
   ): Promise<ServiceResult<EulerEarn>> {
+    const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, [vault]);
     const errors: DataIssue[] = [...fetched.errors];
     if (fetched.result.length === 0) {
       throw new Error(`Vault not found for ${vault}`);
     }
     const eulerEarn = new EulerEarn(fetched.result[0]!);
-    if (options?.populateStrategyVaults) {
-      errors.push(...(await this.populateStrategyVaults([eulerEarn], options?.eVaultFetchOptions)));
+    if (resolvedOptions.populateStrategyVaults) {
+      errors.push(...(await this.populateStrategyVaults([eulerEarn], resolvedOptions.eVaultFetchOptions)));
     }
-    if (options?.populateMarketPrices) {
+    if (resolvedOptions.populateMarketPrices) {
       errors.push(...(await this.populateMarketPrices([eulerEarn])));
     }
-    if (options?.populateRewards) {
+    if (resolvedOptions.populateRewards) {
       errors.push(...(await this.populateRewards([eulerEarn])));
     }
-    if (options?.populateIntrinsicApy) {
+    if (resolvedOptions.populateIntrinsicApy) {
       errors.push(...(await this.populateIntrinsicApy([eulerEarn])));
     }
-    if (options?.populateLabels) {
+    if (resolvedOptions.populateLabels) {
       errors.push(...(await this.populateLabels([eulerEarn])));
     }
     return { result: eulerEarn, errors };
@@ -131,24 +134,25 @@ export class EulerEarnService implements IEulerEarnService {
     vaults: Address[],
     options?: EulerEarnFetchOptions
   ): Promise<ServiceResult<EulerEarn[]>> {
+    const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, vaults);
     const errors: DataIssue[] = [...fetched.errors];
     const eulerEarns = fetched.result.map(
       (vault) => new EulerEarn(vault)
     );
-    if (options?.populateStrategyVaults) {
-      errors.push(...(await this.populateStrategyVaults(eulerEarns, options?.eVaultFetchOptions)));
+    if (resolvedOptions.populateStrategyVaults) {
+      errors.push(...(await this.populateStrategyVaults(eulerEarns, resolvedOptions.eVaultFetchOptions)));
     }
-    if (options?.populateMarketPrices) {
+    if (resolvedOptions.populateMarketPrices) {
       errors.push(...(await this.populateMarketPrices(eulerEarns)));
     }
-    if (options?.populateRewards) {
+    if (resolvedOptions.populateRewards) {
       errors.push(...(await this.populateRewards(eulerEarns)));
     }
-    if (options?.populateIntrinsicApy) {
+    if (resolvedOptions.populateIntrinsicApy) {
       errors.push(...(await this.populateIntrinsicApy(eulerEarns)));
     }
-    if (options?.populateLabels) {
+    if (resolvedOptions.populateLabels) {
       errors.push(...(await this.populateLabels(eulerEarns)));
     }
     return { result: eulerEarns, errors };
@@ -326,5 +330,22 @@ export class EulerEarnService implements IEulerEarnService {
       perspectives
     );
     return this.fetchVaults(chainId, addresses, options);
+  }
+
+  private resolveFetchOptions(options?: EulerEarnFetchOptions): EulerEarnFetchOptions {
+    const resolved = options ?? {};
+    if (!resolved.populateAll) return resolved;
+    return {
+      ...resolved,
+      populateStrategyVaults: true,
+      populateMarketPrices: true,
+      populateRewards: true,
+      populateIntrinsicApy: true,
+      populateLabels: true,
+      eVaultFetchOptions: {
+        ...(resolved.eVaultFetchOptions ?? {}),
+        populateAll: true,
+      },
+    };
   }
 }

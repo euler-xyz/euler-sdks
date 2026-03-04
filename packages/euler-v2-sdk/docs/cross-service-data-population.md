@@ -7,10 +7,11 @@ Services in the SDK follow a standardized **populate** pattern for cross-service
 1. **Service-level populate method** — For every population there is a public `populateX(entities[])` method on the service that takes an array of basic entities and mutates them in-place.
 
 2. **FetchOptions flag** — For every population there is a `populateX?: boolean` flag in the service's fetch options. Default is `false`.
+3. **Global override** — Every fetch-options object also supports `populateAll?: boolean`. When `true`, all supported `populateX` steps for that service are enabled and granular flags are ignored.
 
-3. **Nested options for forwarding** — When a service forwards options to another service, level-2 flags are grouped in a nested object named after the target service's fetch options type (e.g. `eVaultFetchOptions`).
+4. **Nested options for forwarding** — When a service forwards options to another service, level-2 flags are grouped in a nested object named after the target service's fetch options type (e.g. `eVaultFetchOptions`).
 
-4. **Entity-level populate method** — Every entity that can be populated exposes a `populateX(requiredService)` async method that fetches data from the given service and mutates itself.
+5. **Entity-level populate method** — Every entity that can be populated exposes a `populateX(requiredService)` async method that fetches data from the given service, mutates itself, and returns `DataIssue[]`.
 
 ## Population Map
 
@@ -40,6 +41,7 @@ Services in the SDK follow a standardized **populate** pattern for cross-service
 
 ```typescript
 interface VaultFetchOptions {
+  populateAll?: boolean;
   populateMarketPrices?: boolean;
   populateCollaterals?: boolean;     // EVault-specific, ignored by other vault services
   populateStrategyVaults?: boolean;  // EulerEarn-specific, ignored by other vault services
@@ -54,6 +56,7 @@ interface VaultFetchOptions {
 
 ```typescript
 interface EVaultFetchOptions {
+  populateAll?: boolean;
   populateCollaterals?: boolean;
   populateMarketPrices?: boolean;
   populateRewards?: boolean;
@@ -66,6 +69,7 @@ interface EVaultFetchOptions {
 
 ```typescript
 interface EulerEarnFetchOptions {
+  populateAll?: boolean;
   populateStrategyVaults?: boolean;
   populateMarketPrices?: boolean;
   populateRewards?: boolean;
@@ -79,6 +83,7 @@ interface EulerEarnFetchOptions {
 
 ```typescript
 interface AccountFetchOptions {
+  populateAll?: boolean;
   populateVaults?: boolean;
   populateMarketPrices?: boolean;
   populateUserRewards?: boolean;
@@ -92,37 +97,21 @@ interface AccountFetchOptions {
 
 ```typescript
 // Account with fully resolved vaults, prices, and strategy collaterals
-const account = await accountService.fetchAccount(chainId, address, {
-  populateMarketPrices: true,
-  populateUserRewards: true,
+const { result: account } = await accountService.fetchAccount(chainId, address, {
+  populateAll: true,
   vaultFetchOptions: {
-    populateMarketPrices: true,
-    populateCollaterals: true,
-    populateStrategyVaults: true,
-    populateRewards: true,
-    populateIntrinsicApy: true,
-    populateLabels: true,
-    eVaultFetchOptions: { populateCollaterals: true },
+    populateAll: true,
   },
 });
 
 // EVault with collaterals and prices
-const vault = await eVaultService.fetchVault(chainId, address, {
-  populateCollaterals: true,
-  populateMarketPrices: true,
-  populateRewards: true,
-  populateIntrinsicApy: true,
-  populateLabels: true,
+const { result: vault } = await eVaultService.fetchVault(chainId, address, {
+  populateAll: true,
 });
 
 // EulerEarn with strategy vaults and collaterals on strategies
-const earn = await eulerEarnService.fetchVault(chainId, address, {
-  populateStrategyVaults: true,
-  populateMarketPrices: true,
-  populateRewards: true,
-  populateIntrinsicApy: true,
-  populateLabels: true,
-  eVaultFetchOptions: { populateCollaterals: true },
+const { result: earn } = await eulerEarnService.fetchVault(chainId, address, {
+  populateAll: true,
 });
 ```
 
@@ -130,27 +119,27 @@ const earn = await eulerEarnService.fetchVault(chainId, address, {
 
 ```typescript
 // Fetch basic vaults, then populate in bulk
-const vaults = await eVaultService.fetchVaults(chainId, addresses);
-await eVaultService.populateCollaterals(vaults);
-await eVaultService.populateMarketPrices(vaults);
+const { result: vaults } = await eVaultService.fetchVaults(chainId, addresses);
+const collateralIssues = await eVaultService.populateCollaterals(vaults);
+const marketIssues = await eVaultService.populateMarketPrices(vaults);
 ```
 
 ### Via entity populate methods (imperative, single entity)
 
 ```typescript
 // Fetch a basic vault, then populate step by step
-const vault = await eVaultService.fetchVault(chainId, address);
-await vault.populateCollaterals(vaultMetaService);
-await vault.populateMarketPrices(priceService);
+const { result: vault } = await eVaultService.fetchVault(chainId, address);
+const collateralIssues = await vault.populateCollaterals(vaultMetaService);
+const marketIssues = await vault.populateMarketPrices(priceService);
 
 // EulerEarn: populate strategies, then market price
-const earn = await eulerEarnService.fetchVault(chainId, address);
-await earn.populateStrategyVaults(eVaultService);
-await earn.populateMarketPrices(priceService);
+const { result: earn } = await eulerEarnService.fetchVault(chainId, address);
+const strategyIssues = await earn.populateStrategyVaults(eVaultService);
+const marketIssues = await earn.populateMarketPrices(priceService);
 
 // Account: populate vaults
-const account = await accountService.fetchAccount(chainId, address, { populateVaults: false });
-await account.populateVaults(vaultMetaService);
+const { result: account } = await accountService.fetchAccount(chainId, address, { populateVaults: false });
+const vaultIssues = await account.populateVaults(vaultMetaService);
 ```
 
 ## Options Forwarding

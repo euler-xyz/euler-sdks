@@ -116,7 +116,7 @@ async function borrowWithPythExample() {
   console.log(`Collateral vault: ${collateralVault.shares.name} (${collateralVault.asset.symbol})`);
 
   // Fetch account state
-  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false });
+  let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
 
   // Plan the borrow operation (deposits collateral + borrows in one batch)
   let borrowPlan = sdk.executionService.planBorrow({
@@ -161,12 +161,12 @@ async function borrowWithPythExample() {
   await executePlan(borrowPlan, sdk);
 
   // Fetch the updated sub-account and log the result
-  const subAccount = await sdk.accountService.fetchSubAccount(
+  const subAccount = (await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
     [LBTC_COLLATERAL_VAULT, WBTC_BORROW_VAULT],
     { populateVaults: false }
-  );
+  )).result;
 
   // Log the diff between before and after
   await logOperationResult(mainnet.id, accountData, [subAccount], sdk);

@@ -2,6 +2,8 @@ import { Address } from "viem";
 import type { ServiceResult } from "../../utils/entityDiagnostics.js";
 
 export interface VaultFetchOptions {
+  /** When true, enables all supported populate steps and overrides granular populate flags. */
+  populateAll?: boolean;
   populateMarketPrices?: boolean;
   populateCollaterals?: boolean;
   populateStrategyVaults?: boolean;
@@ -10,6 +12,7 @@ export interface VaultFetchOptions {
   populateLabels?: boolean;
   /** Options forwarded to EVaultService when populating strategy vaults (applies to EulerEarnService). */
   eVaultFetchOptions?: {
+    populateAll?: boolean;
     populateCollaterals?: boolean;
     populateMarketPrices?: boolean;
     populateRewards?: boolean;

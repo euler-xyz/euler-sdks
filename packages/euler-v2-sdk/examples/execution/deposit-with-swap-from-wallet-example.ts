@@ -75,7 +75,7 @@ async function depositWithSwapFromWalletExample() {
   const sdk = await buildEulerSDK({ rpcUrls });
 
   // Fetch the account
-  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false });
+  let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
 
   // ============================================================================
   // Step 1: Deposit USDC from wallet, swapping to wstETH
@@ -136,12 +136,12 @@ async function depositWithSwapFromWalletExample() {
   }
 
   // Fetch updated sub-account
-  const subAccountAfterDeposit = await sdk.accountService.fetchSubAccount(
+  const subAccountAfterDeposit = (await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
     [WSTETH_VAULT],
     { populateVaults: false }
-  );
+  )).result;
 
   await logOperationResult(mainnet.id, accountData, [subAccountAfterDeposit], sdk);
 
@@ -230,12 +230,12 @@ async function depositWithSwapFromWalletExample() {
   }
 
   // Fetch the updated sub-account and log the result
-  const subAccountAfterWithdraw = await sdk.accountService.fetchSubAccount(
+  const subAccountAfterWithdraw = (await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
     [WSTETH_VAULT],
     { populateVaults: false }
-  );
+  )).result;
 
   await logOperationResult(mainnet.id, accountData, [subAccountAfterWithdraw], sdk);
 

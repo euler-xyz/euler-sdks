@@ -1,5 +1,14 @@
 import { QueryClient, useQuery } from "@tanstack/react-query";
-import type { BuildQueryFn, VaultMetaPerspective, VaultRewardInfo } from "euler-v2-sdk";
+import type {
+  Account,
+  BuildQueryFn,
+  EVault,
+  EulerEarn,
+  Wallet,
+  VaultEntity,
+  VaultMetaPerspective,
+  VaultRewardInfo,
+} from "euler-v2-sdk";
 import type { Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import { recordExecution } from "./queryProfileStore.ts";
@@ -134,18 +143,64 @@ function useSdkReady() {
   return { ...ctx, enabled: !!ctx.sdk };
 }
 
+type DiagnosticIssue = {
+  severity?: "info" | "warning" | "error";
+  code?: string;
+  path?: string;
+};
+
+type MaybeServiceResult<T> = T | { result: T; errors?: DiagnosticIssue[] };
+
+function isServiceResult<T>(value: MaybeServiceResult<T>): value is { result: T; errors?: DiagnosticIssue[] } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "result" in value
+  );
+}
+
+function issueLabel(issue: DiagnosticIssue): string {
+  return `${issue.code ?? "UNKNOWN"} [${issue.severity ?? "warning"}] ${issue.path ?? "$"}`;
+}
+
+export function unwrapServiceResult<T>(
+  operation: string,
+  response: MaybeServiceResult<T>
+): T {
+  if (!isServiceResult(response)) {
+    return response;
+  }
+
+  const diagnostics = response.errors ?? [];
+  const blocking = diagnostics.filter((issue) => issue.severity === "error");
+  if (blocking.length > 0) {
+    const preview = blocking.slice(0, 3).map(issueLabel).join("; ");
+    throw new Error(
+      `${operation} returned ${blocking.length} blocking diagnostics: ${preview}`
+    );
+  }
+
+  if (diagnostics.length > 0) {
+    console.warn(
+      `[sdk diagnostics] ${operation}: ${diagnostics.length} non-blocking issue(s)`,
+      diagnostics
+    );
+  }
+
+  return response.result;
+}
+
 export function useVerifiedVaults(perspectives: VaultMetaPerspective[]) {
   const { sdk, chainId, enabled } = useSdkReady();
-  return useQuery({
+  return useQuery<VaultEntity[]>({
     queryKey: ["vaults", chainId, perspectives],
-    queryFn: () =>
-      sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
-        populateMarketPrices: true,
-        populateStrategyVaults: true,
-        populateRewards: true,
-        populateIntrinsicApy: true,
-        populateLabels: true,
-      }),
+    queryFn: async () =>
+      unwrapServiceResult(
+        "vaultMetaService.fetchVerifiedVaults",
+        await sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
+          populateAll: true,
+        })
+      ),
     enabled,
     staleTime: 1_000,
   });
@@ -153,16 +208,15 @@ export function useVerifiedVaults(perspectives: VaultMetaPerspective[]) {
 
 export function useVaultDetail(chainId: number, address: string | undefined) {
   const { sdk, enabled } = useSdkReady();
-  return useQuery({
+  return useQuery<EVault>({
     queryKey: ["vault", chainId, address],
-    queryFn: () =>
-      sdk!.eVaultService.fetchVault(chainId, address as Address, {
-        populateCollaterals: true,
-        populateMarketPrices: true,
-        populateRewards: true,
-        populateIntrinsicApy: true,
-        populateLabels: true,
-      }),
+    queryFn: async () =>
+      unwrapServiceResult(
+        "eVaultService.fetchVault",
+        await sdk!.eVaultService.fetchVault(chainId, address as Address, {
+          populateAll: true,
+        })
+      ),
     enabled: enabled && !!address,
     staleTime: 1_000,
   });
@@ -170,16 +224,15 @@ export function useVaultDetail(chainId: number, address: string | undefined) {
 
 export function useEulerEarnDetail(chainId: number, address: string | undefined) {
   const { sdk, enabled } = useSdkReady();
-  return useQuery({
+  return useQuery<EulerEarn>({
     queryKey: ["eulerEarn", chainId, address],
-    queryFn: () =>
-      sdk!.eulerEarnService.fetchVault(chainId, address as Address, {
-        populateStrategyVaults: true,
-        populateMarketPrices: true,
-        populateRewards: true,
-        populateIntrinsicApy: true,
-        populateLabels: true,
-      }),
+    queryFn: async () =>
+      unwrapServiceResult(
+        "eulerEarnService.fetchVault",
+        await sdk!.eulerEarnService.fetchVault(chainId, address as Address, {
+          populateAll: true,
+        })
+      ),
     enabled: enabled && !!address,
     staleTime: 1_000,
   });
@@ -187,20 +240,18 @@ export function useEulerEarnDetail(chainId: number, address: string | undefined)
 
 export function useAccount(chainId: number, address: string | undefined) {
   const { sdk, enabled } = useSdkReady();
-  return useQuery({
+  return useQuery<Account>({
     queryKey: ["account", chainId, address],
-    queryFn: () =>
-      sdk!.accountService.fetchAccount(chainId, address as Address, {
-        populateVaults: true,
-        populateMarketPrices: true,
-        populateUserRewards: true,
-        vaultFetchOptions: {
-          populateMarketPrices: true,
-          populateCollaterals: true,
-          populateRewards: true,
-          populateIntrinsicApy: true,
-        },
-      }),
+    queryFn: async () =>
+      unwrapServiceResult(
+        "accountService.fetchAccount",
+        await sdk!.accountService.fetchAccount(chainId, address as Address, {
+          populateAll: true,
+          vaultFetchOptions: {
+            populateAll: true,
+          },
+        })
+      ),
     enabled: enabled && !!address && address.length === 42,
     staleTime: 1_000,
   });
@@ -212,14 +263,15 @@ export function useWalletBalance(
   assetAddress: string | undefined
 ) {
   const { sdk, enabled } = useSdkReady();
-  return useQuery({
+  return useQuery<bigint | undefined>({
     queryKey: ["walletBalance", chainId, account, assetAddress],
     queryFn: async () => {
-      const wallet = await sdk!.walletService.fetchWallet(
-        chainId,
-        account as Address,
-        [{ asset: assetAddress as Address, spenders: [] }]
-      );
+      const wallet = unwrapServiceResult(
+        "walletService.fetchWallet",
+        await sdk!.walletService.fetchWallet(chainId, account as Address, [
+          { asset: assetAddress as Address, spenders: [] },
+        ])
+      ) as Wallet;
       return wallet.getBalance(assetAddress as Address);
     },
     enabled: enabled && !!account && !!assetAddress,

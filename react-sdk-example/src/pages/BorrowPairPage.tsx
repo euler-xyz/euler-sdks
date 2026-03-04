@@ -20,6 +20,7 @@ import {
 import { useSDK } from "../context/SdkContext.tsx";
 import {
   queryClient,
+  unwrapServiceResult,
   useAccount as useSdkAccount,
   useVaultDetail,
   useWalletBalance,
@@ -417,7 +418,7 @@ export function BorrowPairPage() {
 
   const previewPositionWithLiquidity = useMemo(() => {
     if (!previewSubAccount) return undefined;
-    return previewSubAccount.positions.find((p) => p.liquidity);
+    return previewSubAccount.positions.find((p: any) => p.liquidity);
   }, [previewSubAccount]);
 
   const previewCollateralLiquidationPriceUsd = useMemo(() => {
@@ -586,17 +587,15 @@ export function BorrowPairPage() {
   const getAccountData = useCallback(async () => {
     if (accountData) return accountData;
     if (!sdk || !walletAddress) throw new Error("Wallet not ready");
-    return sdk.accountService.fetchAccount(chainId, walletAddress as Address, {
-      populateVaults: true,
-      populateMarketPrices: true,
-      populateUserRewards: true,
-      vaultFetchOptions: {
-        populateMarketPrices: true,
-        populateCollaterals: true,
-        populateRewards: true,
-        populateIntrinsicApy: true,
-      },
-    });
+    return unwrapServiceResult<any>(
+      "accountService.fetchAccount",
+      await sdk.accountService.fetchAccount(chainId, walletAddress as Address, {
+        populateAll: true,
+        vaultFetchOptions: {
+          populateAll: true,
+        },
+      })
+    );
   }, [accountData, sdk, walletAddress, chainId]);
 
   useEffect(() => {

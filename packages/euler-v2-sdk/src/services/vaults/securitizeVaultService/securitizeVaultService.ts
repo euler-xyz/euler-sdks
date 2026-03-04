@@ -81,22 +81,23 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     vault: Address,
     options?: VaultFetchOptions
   ): Promise<ServiceResult<SecuritizeCollateralVault>> {
+    const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, [vault]);
     const errors: DataIssue[] = [...fetched.errors];
     if (fetched.result.length === 0) {
       throw new Error(`Securitize vault not found for ${vault}`);
     }
     const entity = new SecuritizeCollateralVault(fetched.result[0]!);
-    if (options?.populateMarketPrices) {
+    if (resolvedOptions.populateMarketPrices) {
       errors.push(...(await this.populateMarketPrices([entity])));
     }
-    if (options?.populateRewards) {
+    if (resolvedOptions.populateRewards) {
       errors.push(...(await this.populateRewards([entity])));
     }
-    if (options?.populateIntrinsicApy) {
+    if (resolvedOptions.populateIntrinsicApy) {
       errors.push(...(await this.populateIntrinsicApy([entity])));
     }
-    if (options?.populateLabels) {
+    if (resolvedOptions.populateLabels) {
       errors.push(...(await this.populateLabels([entity])));
     }
     return { result: entity, errors };
@@ -107,21 +108,22 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     vaults: Address[],
     options?: VaultFetchOptions
   ): Promise<ServiceResult<SecuritizeCollateralVault[]>> {
+    const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, vaults);
     const errors: DataIssue[] = [...fetched.errors];
     const entities = fetched.result.map(
       (v) => new SecuritizeCollateralVault(v)
     );
-    if (options?.populateMarketPrices) {
+    if (resolvedOptions.populateMarketPrices) {
       errors.push(...(await this.populateMarketPrices(entities)));
     }
-    if (options?.populateRewards) {
+    if (resolvedOptions.populateRewards) {
       errors.push(...(await this.populateRewards(entities)));
     }
-    if (options?.populateIntrinsicApy) {
+    if (resolvedOptions.populateIntrinsicApy) {
       errors.push(...(await this.populateIntrinsicApy(entities)));
     }
-    if (options?.populateLabels) {
+    if (resolvedOptions.populateLabels) {
       errors.push(...(await this.populateLabels(entities)));
     }
     return { result: entities, errors };
@@ -222,5 +224,17 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
       perspectives
     );
     return this.fetchVaults(chainId, addresses, options);
+  }
+
+  private resolveFetchOptions(options?: VaultFetchOptions): VaultFetchOptions {
+    const resolved = options ?? {};
+    if (!resolved.populateAll) return resolved;
+    return {
+      ...resolved,
+      populateMarketPrices: true,
+      populateRewards: true,
+      populateIntrinsicApy: true,
+      populateLabels: true,
+    };
   }
 }

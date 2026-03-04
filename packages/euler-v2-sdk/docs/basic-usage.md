@@ -22,7 +22,7 @@ import { parseUnits } from 'viem'
 
 const sdk = await buildEulerSDK({ rpcUrls: { 1: 'https://...' } })
 
-const account = await sdk.accountService.fetchAccount(1, '0xYourAddress...', {
+const { result: account } = await sdk.accountService.fetchAccount(1, '0xYourAddress...', {
   populateVaults: false,
 })
 
@@ -48,7 +48,7 @@ An account represents an Ethereum address and its Euler sub-accounts (up to 256 
 ### Basic fetch
 
 ```typescript
-const account = await sdk.accountService.fetchAccount(1, '0xOwner...')
+const { result: account } = await sdk.accountService.fetchAccount(1, '0xOwner...')
 
 for (const [address, subAccount] of Object.entries(account.subAccounts)) {
   for (const position of subAccount.positions) {
@@ -65,7 +65,7 @@ for (const [address, subAccount] of Object.entries(account.subAccounts)) {
 When you only need raw position data (addresses, balances), skip vault resolution:
 
 ```typescript
-const account = await sdk.accountService.fetchAccount(1, '0xOwner...', {
+const { result: account } = await sdk.accountService.fetchAccount(1, '0xOwner...', {
   populateVaults: false,
 })
 // position.vault is undefined, but position.vaultAddress, assets, borrowed are available
@@ -76,12 +76,10 @@ const account = await sdk.accountService.fetchAccount(1, '0xOwner...', {
 Pass level-2 flags to control how resolved vaults are fetched (options are forwarded to the underlying vault services):
 
 ```typescript
-const account = await sdk.accountService.fetchAccount(1, '0xOwner...', {
-  populateVaults: true,
-  populateMarketPrices: true,
+const { result: account } = await sdk.accountService.fetchAccount(1, '0xOwner...', {
+  populateAll: true,
   vaultFetchOptions: {
-    populateCollaterals: true,
-    populateStrategyVaults: true,
+    populateAll: true,
   },
 })
 // position.vault.marketPriceUsd is populated on each resolved vault
@@ -90,7 +88,7 @@ const account = await sdk.accountService.fetchAccount(1, '0xOwner...', {
 ### Fetching a single sub-account
 
 ```typescript
-const subAccount = await sdk.accountService.fetchSubAccount(
+const { result: subAccount } = await sdk.accountService.fetchSubAccount(
   1,
   '0xSubAccount...',
   ['0xVault1...', '0xVault2...'],  // Optional: specific vaults to query
@@ -104,7 +102,7 @@ Pass vault addresses when the subgraph may not have indexed recent changes (e.g.
 You can fetch without population first, then populate later:
 
 ```typescript
-const account = await sdk.accountService.fetchAccount(1, '0xOwner...', {
+const { result: account } = await sdk.accountService.fetchAccount(1, '0xOwner...', {
   populateVaults: false,
 })
 
@@ -117,16 +115,15 @@ await account.populateVaults(sdk.vaultMetaService)
 ### By address
 
 ```typescript
-const vault = await sdk.eVaultService.fetchVault(1, '0xVault...')
-const earn = await sdk.eulerEarnService.fetchVault(1, '0xEarn...')
+const { result: vault } = await sdk.eVaultService.fetchVault(1, '0xVault...')
+const { result: earn } = await sdk.eulerEarnService.fetchVault(1, '0xEarn...')
 ```
 
 With augmentations:
 
 ```typescript
-const vault = await sdk.eVaultService.fetchVault(1, '0xVault...', {
-  populateCollaterals: true,   // Populate collateral.vault entities
-  populateMarketPrices: true,  // Populate marketPriceUsd on vault and collaterals
+const { result: vault } = await sdk.eVaultService.fetchVault(1, '0xVault...', {
+  populateAll: true, // Overrides granular flags and enables all EVault enrichments
 })
 ```
 
@@ -135,7 +132,7 @@ const vault = await sdk.eVaultService.fetchVault(1, '0xVault...', {
 Use `vaultMetaService` — it detects the type automatically and routes to the correct service:
 
 ```typescript
-const vault = await sdk.vaultMetaService.fetchVault(1, '0xAny...')
+const { result: vault } = await sdk.vaultMetaService.fetchVault(1, '0xAny...')
 // Returns EVault | EulerEarn | SecuritizeCollateralVault | undefined
 ```
 
@@ -156,7 +153,7 @@ if (isEVault(vault)) {
 Batch fetch also routes automatically:
 
 ```typescript
-const vaults = await sdk.vaultMetaService.fetchVaults(1, [
+const { result: vaults } = await sdk.vaultMetaService.fetchVaults(1, [
   '0xEvault...',
   '0xEulerEarn...',
   '0xSecuritize...',
@@ -174,17 +171,17 @@ Perspectives are on-chain contracts that verify vaults meet certain criteria. Ea
 import { StandardEVaultPerspectives } from 'euler-v2-sdk'
 
 // GOVERNED — vaults with active governance
-const governed = await sdk.eVaultService.fetchVerifiedVaults(1, [
+const { result: governed } = await sdk.eVaultService.fetchVerifiedVaults(1, [
   StandardEVaultPerspectives.GOVERNED,
 ])
 
 // FACTORY — all vaults deployed via the EVK factory
-const all = await sdk.eVaultService.fetchVerifiedVaults(1, [
+const { result: all } = await sdk.eVaultService.fetchVerifiedVaults(1, [
   StandardEVaultPerspectives.FACTORY,
 ])
 
 // Multiple perspectives (results are merged and deduplicated)
-const vaults = await sdk.eVaultService.fetchVerifiedVaults(1, [
+const { result: vaults } = await sdk.eVaultService.fetchVerifiedVaults(1, [
   StandardEVaultPerspectives.GOVERNED,
   StandardEVaultPerspectives.ESCROW,
 ])
@@ -204,9 +201,9 @@ Available EVault perspectives:
 ```typescript
 import { StandardEulerEarnPerspectives } from 'euler-v2-sdk'
 
-const governed = await sdk.eulerEarnService.fetchVerifiedVaults(1, [
+const { result: governed } = await sdk.eulerEarnService.fetchVerifiedVaults(1, [
   StandardEulerEarnPerspectives.GOVERNED,
-], { populateStrategyVaults: true })
+], { populateAll: true })
 ```
 
 Available EulerEarn perspectives:
@@ -221,7 +218,7 @@ Available EulerEarn perspectives:
 You can pass raw perspective contract addresses instead of enum values:
 
 ```typescript
-const vaults = await sdk.eVaultService.fetchVerifiedVaults(1, [
+const { result: vaults } = await sdk.eVaultService.fetchVerifiedVaults(1, [
   '0xCustomPerspective...',
 ])
 ```
@@ -243,7 +240,7 @@ const addresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(1, [
 ```typescript
 import { StandardEVaultPerspectives, StandardEulerEarnPerspectives } from 'euler-v2-sdk'
 
-const allVaults = await sdk.vaultMetaService.fetchVerifiedVaults(1, [
+const { result: allVaults } = await sdk.vaultMetaService.fetchVerifiedVaults(1, [
   StandardEVaultPerspectives.GOVERNED,
   StandardEulerEarnPerspectives.GOVERNED,
 ])

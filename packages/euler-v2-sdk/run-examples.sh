@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Run each euler-v2-sdk example with a fresh Anvil instance: start anvil, run example, stop anvil, repeat.
+# Run euler-v2-sdk examples.
+# - Execution/simulation examples run against a fresh Anvil fork (per example).
+# - Account/vault read examples run directly against RPC_URL_1.
 # Requires: anvil (foundry), pnpm, and examples/.env with FORK_RPC_URL set.
-# Usage: from packages/euler-v2-sdk: ./run-examples-with-fresh-anvil.sh
+# Usage: from packages/euler-v2-sdk: ./run-examples.sh
 
-set -e
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -21,6 +23,9 @@ source examples/.env
 if [[ -z "${FORK_RPC_URL:-}" ]]; then
   echo "FORK_RPC_URL is not set in examples/.env."
   exit 1
+fi
+if [[ -z "${RPC_URL_1:-}" ]]; then
+  export RPC_URL_1="$FORK_RPC_URL"
 fi
 
 kill_anvil() {
@@ -53,35 +58,52 @@ wait_for_anvil() {
   return 1
 }
 
-EXAMPLES=(
-  deposit-example
-  mint-example
-  withdraw-example
-  redeem-example
-  borrow-example
-  repay-from-wallet-example
-  repay-from-deposit-example
-  repay-with-swap-example
-  multiply-example
-  swap-collateral-example
-  swap-debt-example
-  transfer-example
-  pull-debt-example
-  liquidation-example
+ANVIL_EXAMPLES=(
+  "examples/execution/deposit-example.ts"
+  "examples/execution/mint-example.ts"
+  "examples/execution/withdraw-example.ts"
+  "examples/execution/redeem-example.ts"
+  "examples/execution/borrow-example.ts"
+  "examples/execution/repay-from-wallet-example.ts"
+  "examples/execution/repay-from-deposit-example.ts"
+  "examples/execution/repay-with-swap-example.ts"
+  "examples/execution/multiply-example.ts"
+  "examples/execution/swap-collateral-example.ts"
+  "examples/execution/swap-debt-example.ts"
+  "examples/execution/transfer-example.ts"
+  "examples/execution/pull-debt-example.ts"
+  "examples/execution/liquidation-example.ts"
+  "examples/execution/merge-plans-example.ts"
+  "examples/execution/borrow-with-pyth-example.ts"
+  "examples/execution/deposit-with-swap-from-wallet-example.ts"
+  "examples/simulations/simulate-deposit-example.ts"
+)
+
+READONLY_EXAMPLES=(
+  "examples/accounts/fetch-account-example.ts"
+  "examples/vaults/fetch-apys-example.ts"
+  "examples/vaults/fetch-vault-details-example.ts"
 )
 
 FAILED=()
 PASSED=()
 
-for name in "${EXAMPLES[@]}"; do
+run_tsx_example() {
+  local path="$1"
+  node --import tsx "$path"
+}
+
+for path in "${ANVIL_EXAMPLES[@]}"; do
+  name="$(basename "$path" .ts)"
   echo "=============================================="
-  echo "Example: $name (fresh Anvil)"
+  echo "Example: $name (fresh Anvil fork)"
   echo "=============================================="
 
   kill_anvil
   sleep 1
 
-  anvil --fork-url "$FORK_RPC_URL" --auto-impersonate --port "$ANVIL_PORT" &
+  env -u ALL_PROXY -u HTTPS_PROXY -u HTTP_PROXY NO_PROXY="*" \
+    anvil --fork-url "$FORK_RPC_URL" --auto-impersonate --port "$ANVIL_PORT" &
   ANVIL_PID=$!
 
   if ! wait_for_anvil; then
@@ -90,7 +112,7 @@ for name in "${EXAMPLES[@]}"; do
     continue
   fi
 
-  if pnpm run "$name"; then
+  if run_tsx_example "$path"; then
     PASSED+=("$name")
   else
     FAILED+=("$name")
@@ -101,13 +123,30 @@ for name in "${EXAMPLES[@]}"; do
   kill_anvil
 done
 
+for path in "${READONLY_EXAMPLES[@]}"; do
+  name="$(basename "$path" .ts)"
+  echo "=============================================="
+  echo "Example: $name (direct RPC)"
+  echo "=============================================="
+
+  if run_tsx_example "$path"; then
+    PASSED+=("$name")
+  else
+    FAILED+=("$name")
+  fi
+done
+
 echo ""
 echo "=============================================="
 echo "Summary"
 echo "=============================================="
 echo "Passed: ${#PASSED[@]}"
-printf '  - %s\n' "${PASSED[@]}"
+if [[ ${#PASSED[@]} -gt 0 ]]; then
+  printf '  - %s\n' "${PASSED[@]}"
+fi
 echo "Failed: ${#FAILED[@]}"
-printf '  - %s\n' "${FAILED[@]}"
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+  printf '  - %s\n' "${FAILED[@]}"
+fi
 
 [[ ${#FAILED[@]} -eq 0 ]]

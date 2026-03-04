@@ -8,7 +8,6 @@ import type { IVaultTypeAdapter } from "./adapters/IVaultTypeAdapter.js";
 import { StandardEVaultPerspectives } from "../eVaultService/index.js";
 import { StandardEulerEarnPerspectives } from "../eulerEarnService/index.js";
 import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.js";
-import { withPathPrefix } from "../../../utils/entityDiagnostics.js";
 
 export type VaultMetaPerspective =
   | StandardEulerEarnPerspectives
@@ -211,12 +210,7 @@ export class VaultMetaService<TEntity = VaultEntity>
       Array.from(serviceToAddresses.entries()).map(
         async ([service, addrs]) => {
           const entities = await service.fetchVaults(chainId, addrs, options);
-          errors.push(
-            ...entities.errors.map((issue) => ({
-              ...issue,
-              path: withPathPrefix(issue.path, "$"),
-            }))
-          );
+          errors.push(...entities.errors);
           for (const e of entities.result) {
             resultsByAddress.set(
               getAddress((e as { address: Address }).address),

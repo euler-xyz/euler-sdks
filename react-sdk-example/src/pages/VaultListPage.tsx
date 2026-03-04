@@ -1,7 +1,12 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
-import { queryClient, useVerifiedVaults, useWalletBalance } from "../queries/sdkQueries.ts";
+import {
+  queryClient,
+  unwrapServiceResult,
+  useVerifiedVaults,
+  useWalletBalance,
+} from "../queries/sdkQueries.ts";
 import {
   StandardEVaultPerspectives,
   StandardEulerEarnPerspectives,
@@ -282,10 +287,11 @@ function DepositFormRow({
     setIsSubmitting(true);
 
     try {
-      const accountData = await sdk.accountService.fetchAccount(
-        chainId,
-        walletAddress as Address,
-        { populateVaults: false }
+      const accountData = unwrapServiceResult<any>(
+        "accountService.fetchAccount",
+        await sdk.accountService.fetchAccount(chainId, walletAddress as Address, {
+          populateVaults: false,
+        })
       );
 
       let plan = sdk.executionService.planDeposit({

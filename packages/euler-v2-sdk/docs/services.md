@@ -24,6 +24,8 @@ Some services below are lower-level building blocks and usually do not need to b
 
 These are often used indirectly through `vaultMetaService`, which handles vault type detection and routing.
 
+All fetch-option types support `populateAll?: boolean`. When `true`, the service enables all supported populate/enrichment steps and overrides granular `populateX` flags.
+
 ## Supporting and Infrastructure Services
 
 - `walletService`: Fetches wallet balances and allowances.

@@ -61,7 +61,7 @@ async function borrowExample() {
 
   // Fetch the account. NOTE: fetchAccount depends on indexing for sub-account discovery,
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
-  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false });
+  let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
 
 
   // Plan the borrow operation (will deposit collateral and borrow in one transaction)
@@ -95,12 +95,12 @@ async function borrowExample() {
   await executePlan(borrowPlan, sdk);
 
   // Fetch the updated sub-account and log the result
-  const subAccount = await sdk.accountService.fetchSubAccount(
+  const subAccount = (await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
     { populateVaults: false }
-  );
+  )).result;
 
   // Log the diff between before and after
   await logOperationResult(mainnet.id, accountData, [subAccount], sdk);

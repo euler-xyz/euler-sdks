@@ -58,10 +58,10 @@ async function simulateDeposit() {
   console.log(`Deposit:      ${formatUnits(DEPOSIT_AMOUNT, 6)} USDC -> Euler Prime USDC Vault\n`)
 
   // 1. Fetch account state (will have no positions — that's fine)
-  const accountData = await sdk.accountService.fetchAccount(
+  const accountData = (await sdk.accountService.fetchAccount(
     mainnet.id,
     TEST_ADDRESS,
-  )
+  )).result
 
   // 2. Create deposit plan
   const plan = sdk.executionService.planDeposit({

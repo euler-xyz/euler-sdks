@@ -30,11 +30,14 @@ async function fetchVaultDetailsExample() {
 
   console.log(`Fetching vault ${VAULT_ADDRESS} with resolved collaterals and prices...\n`);
 
-  const vault = await sdk.eVaultService.fetchVault(
+  const { result: vault, errors } = await sdk.eVaultService.fetchVault(
     mainnet.id,
     VAULT_ADDRESS,
-    { populateCollaterals: true, populateMarketPrices: true, populateLabels: true, populateRewards: true, populateIntrinsicApy: true },
+    { populateAll: true },
   );
+  if (errors.length > 0) {
+    console.log(`Diagnostics: ${errors.length} issues`);
+  }
 
   // Vault overview
   console.log("=".repeat(80));

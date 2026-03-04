@@ -37,6 +37,8 @@ Fetch/build services return diagnostics next to data:
 - `fetchVaults(...) -> { result, errors }`
 - `fetchVerifiedVaults(...) -> { result, errors }`
 
+Fetch option objects also support `populateAll: true` to force all enrichment steps on.
+
 Errors include issues from nested entities and populated sub-services, path-prefixed from the top-level result.
 
 ## Entity Populate Pattern

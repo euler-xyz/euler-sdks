@@ -73,7 +73,7 @@ async function repayWithSwapExample() {
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
-  let accountData = await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false });
+  let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
 
   // Step 1: Plan and execute borrow operation (deposit USDC collateral and borrow USDT)
   console.log('\n=== Step 1: Deposit USDC and Borrow USDT ===');
@@ -105,12 +105,12 @@ async function repayWithSwapExample() {
   await executePlan(borrowPlan, sdk);
 
   // Fetch updated sub-account after borrow (subgraph not available on local fork)
-  const subAccountAfterBorrow = await sdk.accountService.fetchSubAccount(
+  const subAccountAfterBorrow = (await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
     { populateVaults: false }
-  );
+  )).result;
   
   // Log the diff between before and after borrow
   await logOperationResult(mainnet.id, accountData, [subAccountAfterBorrow], sdk);
@@ -177,12 +177,12 @@ async function repayWithSwapExample() {
   }
 
   // Fetch the updated sub-account and log the result
-  const subAccountAfterRepay = await sdk.accountService.fetchSubAccount(
+  const subAccountAfterRepay = (await sdk.accountService.fetchSubAccount(
     mainnet.id,
     SUB_ACCOUNT_ADDRESS,
     [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
     { populateVaults: false }
-  );
+  )).result;
 
   // Log the diff between before and after repay
   // Note: accountData already has subAccountAfterBorrow in its subAccounts object

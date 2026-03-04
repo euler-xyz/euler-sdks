@@ -5,9 +5,11 @@ import type { IHasVaultAddress, IVaultEntity, ISubAccount } from "../../entities
 import type { VaultFetchOptions } from "../vaults/index.js";
 import type { IPriceService } from "../priceService/index.js";
 import type { IRewardsService } from "../rewardsService/index.js";
-import { type DataIssue, type ServiceResult, withPathPrefix } from "../../utils/entityDiagnostics.js";
+import { type DataIssue, type ServiceResult } from "../../utils/entityDiagnostics.js";
 
 export interface AccountFetchOptions {
+  /** When true, enables all supported populate steps and overrides granular populate flags. */
+  populateAll?: boolean;
   populateVaults?: boolean;
   /** When true, populates USD market prices on positions and liquidity. Requires `populateVaults` (default). */
   populateMarketPrices?: boolean;
@@ -79,6 +81,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
   }
 
   async fetchAccount(chainId: number, address: Address, options?: AccountFetchOptions): Promise<ServiceResult<Account<TVaultEntity>>> {
+    const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchAccount(chainId, address);
     const errors: DataIssue[] = [...fetched.errors];
     const account: Account<never> = fetched.result
@@ -91,15 +94,15 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
           subAccounts: {},
         });
 
-    if (Boolean(options?.populateVaults) === false) {
+    if (resolvedOptions.populateVaults === false) {
       return { result: account as Account<TVaultEntity>, errors };
     }
 
-    const populated = await this.populateVaults([account], options);
-    errors.push(...populated.errors.map((e) => ({ ...e, path: withPathPrefix(e.path, "$") })));
+    const populated = await this.populateVaults([account], resolvedOptions);
+    errors.push(...populated.errors);
     const result = populated.result[0]!;
 
-    if (options?.populateMarketPrices && this.priceService) {
+    if (resolvedOptions.populateMarketPrices && this.priceService) {
       try {
         errors.push(...(await result.populateMarketPrices(this.priceService)));
       } catch (error) {
@@ -114,7 +117,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
       }
     }
 
-    if (options?.populateUserRewards && this.rewardsService) {
+    if (resolvedOptions.populateUserRewards && this.rewardsService) {
       try {
         errors.push(...(await result.populateUserRewards(this.rewardsService)));
       } catch (error) {
@@ -138,12 +141,13 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     vaults?: Address[],
     options?: AccountFetchOptions
   ): Promise<ServiceResult<SubAccount<TVaultEntity> | undefined>> {
+    const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchSubAccount(chainId, subAccount, vaults);
     const errors: DataIssue[] = [...fetched.errors];
     const sa = fetched.result;
     if (!sa) return { result: undefined, errors };
 
-    if (options?.populateVaults === false) {
+    if (resolvedOptions.populateVaults === false) {
       return { result: new SubAccount(sa) as SubAccount<TVaultEntity>, errors };
     }
 
@@ -155,7 +159,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
       owner: sa.owner,
       subAccounts: { [getAddress(sa.account)]: sa },
     });
-    errors.push(...(await tempAccount.populateVaults(this.vaultMetaService, this.buildVaultFetchOptions(options))));
+    errors.push(...(await tempAccount.populateVaults(this.vaultMetaService, this.buildVaultFetchOptions(resolvedOptions))));
     return { result: tempAccount.getSubAccount(getAddress(sa.account)), errors };
   }
 
@@ -188,6 +192,41 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
   }
 
   private buildVaultFetchOptions(options?: AccountFetchOptions): VaultFetchOptions | undefined {
-    return options?.vaultFetchOptions;
+    if (!options?.vaultFetchOptions && options?.populateAll !== true) return undefined;
+    if (options?.populateAll === true) {
+      return {
+        ...(options.vaultFetchOptions ?? {}),
+        populateAll: true,
+        populateMarketPrices: true,
+        populateCollaterals: true,
+        populateStrategyVaults: true,
+        populateRewards: true,
+        populateIntrinsicApy: true,
+        populateLabels: true,
+        eVaultFetchOptions: {
+          ...(options.vaultFetchOptions?.eVaultFetchOptions ?? {}),
+          populateAll: true,
+          populateCollaterals: true,
+          populateMarketPrices: true,
+          populateRewards: true,
+          populateIntrinsicApy: true,
+        },
+      };
+    }
+    return {
+      ...(options?.vaultFetchOptions ?? {}),
+      populateAll: options?.vaultFetchOptions?.populateAll === true,
+    };
+  }
+
+  private resolveFetchOptions(options?: AccountFetchOptions): AccountFetchOptions {
+    if (!options?.populateAll) return options ?? {};
+    return {
+      ...options,
+      populateVaults: true,
+      populateMarketPrices: true,
+      populateUserRewards: true,
+      vaultFetchOptions: this.buildVaultFetchOptions(options),
+    };
   }
 }

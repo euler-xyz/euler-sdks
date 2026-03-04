@@ -27,16 +27,15 @@ async function fetchAccountExample() {
 
   console.log(`Fetching account for ${owner} on mainnet...\n`);
 
-  const account = await sdk.accountService.fetchAccount(mainnet.id, owner, {
-    populateVaults: true,
-    populateMarketPrices: true,
+  const { result: account, errors } = await sdk.accountService.fetchAccount(mainnet.id, owner, {
+    populateAll: true,
     vaultFetchOptions: {
-      populateCollaterals: true,
-      populateRewards: true,
-      populateLabels: true,
-      populateMarketPrices: true,
+      populateAll: true,
     },
   });
+  if (errors.length > 0) {
+    console.log(`Diagnostics: ${errors.length} issues`);
+  }
 
   // Account overview
   console.log("=".repeat(80));

@@ -23,6 +23,8 @@ export enum StandardEVaultPerspectives {
 }
 
 export interface EVaultFetchOptions {
+  /** When true, enables all supported populate steps and overrides granular populate flags. */
+  populateAll?: boolean;
   populateCollaterals?: boolean;
   populateMarketPrices?: boolean;
   populateRewards?: boolean;
@@ -99,6 +101,7 @@ export class EVaultService implements IEVaultService {
     vault: Address,
     options?: EVaultFetchOptions
   ): Promise<ServiceResult<EVault>> {
+    const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, [vault]);
     const errors: DataIssue[] = [...fetched.errors];
     if (fetched.result.length === 0) {
@@ -106,19 +109,19 @@ export class EVaultService implements IEVaultService {
     }
     const eVault = new EVault(fetched.result[0]!);
 
-    if (options?.populateCollaterals) {
+    if (resolvedOptions.populateCollaterals) {
       errors.push(...(await this.populateCollaterals([eVault])));
     }
-    if (options?.populateMarketPrices) {
+    if (resolvedOptions.populateMarketPrices) {
       errors.push(...(await this.populateMarketPrices([eVault])));
     }
-    if (options?.populateRewards) {
+    if (resolvedOptions.populateRewards) {
       errors.push(...(await this.populateRewards([eVault])));
     }
-    if (options?.populateIntrinsicApy) {
+    if (resolvedOptions.populateIntrinsicApy) {
       errors.push(...(await this.populateIntrinsicApy([eVault])));
     }
-    if (options?.populateLabels) {
+    if (resolvedOptions.populateLabels) {
       errors.push(...(await this.populateLabels([eVault])));
     }
     return { result: eVault, errors };
@@ -129,25 +132,26 @@ export class EVaultService implements IEVaultService {
     vaults: Address[],
     options?: EVaultFetchOptions
   ): Promise<ServiceResult<EVault[]>> {
+    const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, vaults);
     const errors: DataIssue[] = [...fetched.errors];
     const eVaults = fetched.result.map(
       (vault) => new EVault(vault)
     );
 
-    if (options?.populateCollaterals) {
+    if (resolvedOptions.populateCollaterals) {
       errors.push(...(await this.populateCollaterals(eVaults)));
     }
-    if (options?.populateMarketPrices) {
+    if (resolvedOptions.populateMarketPrices) {
       errors.push(...(await this.populateMarketPrices(eVaults)));
     }
-    if (options?.populateRewards) {
+    if (resolvedOptions.populateRewards) {
       errors.push(...(await this.populateRewards(eVaults)));
     }
-    if (options?.populateIntrinsicApy) {
+    if (resolvedOptions.populateIntrinsicApy) {
       errors.push(...(await this.populateIntrinsicApy(eVaults)));
     }
-    if (options?.populateLabels) {
+    if (resolvedOptions.populateLabels) {
       errors.push(...(await this.populateLabels(eVaults)));
     }
     return { result: eVaults, errors };
@@ -342,5 +346,17 @@ export class EVaultService implements IEVaultService {
       perspectives
     );
     return this.fetchVaults(chainId, addresses, options);
+  }
+
+  private resolveFetchOptions(options?: EVaultFetchOptions): EVaultFetchOptions {
+    if (!options?.populateAll) return options ?? {};
+    return {
+      ...options,
+      populateCollaterals: true,
+      populateMarketPrices: true,
+      populateRewards: true,
+      populateIntrinsicApy: true,
+      populateLabels: true,
+    };
   }
 }

@@ -430,10 +430,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
     if (addresses.length === 0) return [];
     const fetched = await vaultMetaService.fetchVaults(this.chainId, addresses, options);
     this.mapVaultsToPositions(fetched.result);
-    return fetched.errors.map((issue) => ({
-      ...issue,
-      path: withPathPrefix(issue.path, "$"),
-    }));
+    return fetched.errors;
   }
 
   /** Maps fetched vault entities onto positions and liquidity collaterals. Mutates in place. */
@@ -473,16 +470,38 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
     const ONE_18 = 10n ** 18n;
     const errors: DataIssue[] = [];
 
-    // Collect unique vault entities and populate their market prices
+    // Collect unique vault entities and where they are referenced in the account tree.
     const vaultEntities = new Map<string, TVaultEntity>();
-    for (const sa of Object.values(this.subAccounts ?? {})) {
+    const vaultPaths = new Map<string, Set<string>>();
+    const addVaultPath = (vaultAddress: Address, path: string): void => {
+      const key = getAddress(vaultAddress);
+      const paths = vaultPaths.get(key) ?? new Set<string>();
+      paths.add(path);
+      vaultPaths.set(key, paths);
+    };
+
+    for (const [subAccountAddress, sa] of Object.entries(this.subAccounts ?? {})) {
       if (!sa) continue;
-      for (const p of sa.positions) {
-        if (p.vault) vaultEntities.set(getAddress(p.vault.address), p.vault);
-        if (p.liquidity?.vault) vaultEntities.set(getAddress(p.liquidity.vault.address), p.liquidity.vault);
+      const subAccountPath = `$.subAccounts[${subAccountAddress}]`;
+      for (const [positionIndex, p] of sa.positions.entries()) {
+        const positionPath = `${subAccountPath}.positions[${positionIndex}]`;
+        if (p.vault) {
+          vaultEntities.set(getAddress(p.vault.address), p.vault);
+          addVaultPath(p.vault.address, `${positionPath}.vault`);
+        }
+        if (p.liquidity?.vault) {
+          vaultEntities.set(getAddress(p.liquidity.vault.address), p.liquidity.vault);
+          addVaultPath(p.liquidity.vault.address, `${positionPath}.liquidity.vault`);
+        }
         if (p.liquidity) {
-          for (const c of p.liquidity.collaterals) {
-            if (c.vault) vaultEntities.set(getAddress(c.vault.address), c.vault);
+          for (const [collateralIndex, c] of p.liquidity.collaterals.entries()) {
+            if (c.vault) {
+              vaultEntities.set(getAddress(c.vault.address), c.vault);
+              addVaultPath(
+                c.vault.address,
+                `${positionPath}.liquidity.collaterals[${collateralIndex}].vault`
+              );
+            }
           }
         }
       }
@@ -490,36 +509,45 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
 
     // Call populateMarketPrices on each unique vault entity (duck-typed)
     await Promise.all(
-      Array.from(vaultEntities.values()).map(async (vault) => {
+      Array.from(vaultEntities.entries()).map(async ([vaultAddress, vault]) => {
         if (typeof (vault as any).populateMarketPrices === "function") {
+          const paths = Array.from(vaultPaths.get(vaultAddress) ?? ["$"]);
           try {
             const vaultErrors = (await (vault as any).populateMarketPrices(priceService)) as
               | DataIssue[]
               | undefined;
             if (vaultErrors?.length) {
-              errors.push(...vaultErrors.map((issue) => ({
-                ...issue,
-                path: withPathPrefix(issue.path, "$"),
-              })));
+              for (const issue of vaultErrors) {
+                for (const pathPrefix of paths) {
+                  errors.push({
+                    ...issue,
+                    path: withPathPrefix(issue.path, pathPrefix),
+                  });
+                }
+              }
             }
           } catch (error) {
-            errors.push({
-              code: "SOURCE_UNAVAILABLE",
-              severity: "warning",
-              message: "Failed to populate market prices for nested vault entity.",
-              path: "$",
-              source: "priceService",
-              originalValue: error instanceof Error ? error.message : String(error),
-            });
+            for (const pathPrefix of paths) {
+              errors.push({
+                code: "SOURCE_UNAVAILABLE",
+                severity: "warning",
+                message: "Failed to populate market prices for nested vault entity.",
+                path: pathPrefix,
+                source: "priceService",
+                originalValue: error instanceof Error ? error.message : String(error),
+              });
+            }
           }
         }
       })
     );
 
     // Populate position USD values
-    for (const sa of Object.values(this.subAccounts ?? {})) {
+    for (const [subAccountAddress, sa] of Object.entries(this.subAccounts ?? {})) {
       if (!sa) continue;
-      for (const p of sa.positions) {
+      const subAccountPath = `$.subAccounts[${subAccountAddress}]`;
+      for (const [positionIndex, p] of sa.positions.entries()) {
+        const positionPath = `${subAccountPath}.positions[${positionIndex}]`;
         const vault = p.vault as any;
         if (vault?.marketPriceUsd != null && vault?.asset?.decimals != null) {
           const price = vault.marketPriceUsd as bigint;
@@ -542,7 +570,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
               code: "SOURCE_UNAVAILABLE",
               severity: "warning",
               message: "Failed to fetch unit-of-account USD rate for liquidity.",
-              path: "$",
+              path: `${positionPath}.liquidity.vault`,
               source: "priceService",
               originalValue: error instanceof Error ? error.message : String(error),
             });

@@ -27,12 +27,10 @@ async function fetchApysExample() {
 
   // Fetch all governed EVaults with rewards and intrinsic APY
   console.log("Fetching governed EVaults...");
-  const eVaults = await sdk.eVaultService.fetchVerifiedVaults(mainnet.id, [
+  const { result: eVaults } = await sdk.eVaultService.fetchVerifiedVaults(mainnet.id, [
     StandardEVaultPerspectives.GOVERNED,
   ], {
-    populateMarketPrices: true,
-    populateRewards: true,
-    populateIntrinsicApy: true,
+    populateAll: true,
   });
 
   eVaults.sort((a, b) => Number(b.interestRates.supplyAPY) - Number(a.interestRates.supplyAPY));
@@ -63,14 +61,11 @@ async function fetchApysExample() {
 
   // Fetch all governed EulerEarn vaults with rewards and intrinsic APY
   console.log("\nFetching governed EulerEarn vaults...");
-  const eulerEarnVaults =
+  const { result: eulerEarnVaults } =
     await sdk.eulerEarnService.fetchVerifiedVaults(mainnet.id, [
       StandardEulerEarnPerspectives.GOVERNED,
     ], {
-      populateStrategyVaults: true,
-      populateMarketPrices: true,
-      populateRewards: true,
-      populateIntrinsicApy: true,
+      populateAll: true,
     });
 
   eulerEarnVaults.sort((a, b) => (b.supplyApy ?? 0) - (a.supplyApy ?? 0));
