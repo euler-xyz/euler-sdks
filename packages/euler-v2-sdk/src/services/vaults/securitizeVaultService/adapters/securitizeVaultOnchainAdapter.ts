@@ -9,6 +9,8 @@ import { utilsLensAbi } from "./abis/utilsLensAbi.js";
 import { erc4626EvcCollateralSecuritizeAbi } from "./abis/erc4626EvcCollateralSecuritizeAbi.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
 import type { EVCBatchItem } from "../../../executionService/executionServiceTypes.js";
+import type { DataIssue, ServiceResult } from "../../../../utils/entityDiagnostics.js";
+import { prefixDataIssues } from "../../../../utils/entityDiagnostics.js";
 
 export const getVaultInfoERC4626LensBatchItem = (
   utilsLensAddress: Address,
@@ -93,8 +95,9 @@ export class SecuritizeVaultOnchainAdapter
   async fetchVaults(
     chainId: number,
     vaults: Address[]
-  ): Promise<ISecuritizeCollateralVault[]> {
-    if (vaults.length === 0) return [];
+  ): Promise<ServiceResult<ISecuritizeCollateralVault[]>> {
+    if (vaults.length === 0) return { result: [], errors: [] };
+    const errors: DataIssue[] = [];
 
     const provider = this.providerService.getProvider(chainId);
     const utilsLensAddress = this.deploymentService.getDeployment(chainId)
@@ -113,17 +116,22 @@ export class SecuritizeVaultOnchainAdapter
       const governor = governorResults[i] as `0x${string}`;
       const supplyCap = supplyCapResults[i] as bigint;
 
-      parsed.push(
-        convertToISecuritizeCollateralVault(
-          vaultInfo,
-          governor,
-          supplyCap,
-          chainId
-        )
+      const conversionErrors: DataIssue[] = [];
+      const parsedVault = convertToISecuritizeCollateralVault(
+        vaultInfo,
+        governor,
+        supplyCap,
+        chainId,
+        conversionErrors
       );
+      errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${i}]`));
+      parsed.push(parsedVault);
     }
 
-    return parsed;
+    return {
+      result: parsed,
+      errors,
+    };
   }
 
   async fetchVerifiedVaultsAddresses(

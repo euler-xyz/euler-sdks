@@ -7,6 +7,8 @@ import type { IVaultService, VaultFetchOptions } from "../index.js";
 import type { IVaultTypeAdapter } from "./adapters/IVaultTypeAdapter.js";
 import { StandardEVaultPerspectives } from "../eVaultService/index.js";
 import { StandardEulerEarnPerspectives } from "../eulerEarnService/index.js";
+import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.js";
+import { withPathPrefix } from "../../../utils/entityDiagnostics.js";
 
 export type VaultMetaPerspective =
   | StandardEulerEarnPerspectives
@@ -54,7 +56,7 @@ export interface IVaultMetaService<TEntity = VaultEntity>
   fetchVault(
     chainId: number,
     vault: Address
-  ): Promise<TEntity | undefined>;
+  ): Promise<ServiceResult<TEntity | undefined>>;
   /** Returns vault type for the given vault address, or undefined if unknown. */
   fetchVaultType(chainId: number, vault: Address): Promise<VaultTypeString | undefined>;
   /** Returns vault types for the given vault addresses (keyed by normalized vault address). */
@@ -151,10 +153,10 @@ export class VaultMetaService<TEntity = VaultEntity>
   async fetchVault(
     chainId: number,
     vault: Address
-  ): Promise<TEntity | undefined> {
+  ): Promise<ServiceResult<TEntity | undefined>> {
     const vaultToService = await this.getVaultToService(chainId, [vault]);
     const service = vaultToService.get(getAddress(vault));
-    if (!service) return undefined;
+    if (!service) return { result: undefined, errors: [] };
     return service.fetchVault(chainId, vault);
   }
 
@@ -188,8 +190,9 @@ export class VaultMetaService<TEntity = VaultEntity>
     chainId: number,
     vaults: Address[],
     options?: VaultFetchOptions
-  ): Promise<TEntity[]> {
-    if (vaults.length === 0) return [];
+  ): Promise<ServiceResult<TEntity[]>> {
+    if (vaults.length === 0) return { result: [], errors: [] };
+    const errors: DataIssue[] = [];
     const vaultToService = await this.getVaultToService(chainId, vaults);
     const serviceToAddresses = new Map<
       RegisteredVaultService<TEntity>,
@@ -208,7 +211,13 @@ export class VaultMetaService<TEntity = VaultEntity>
       Array.from(serviceToAddresses.entries()).map(
         async ([service, addrs]) => {
           const entities = await service.fetchVaults(chainId, addrs, options);
-          for (const e of entities) {
+          errors.push(
+            ...entities.errors.map((issue) => ({
+              ...issue,
+              path: withPathPrefix(issue.path, "$"),
+            }))
+          );
+          for (const e of entities.result) {
             resultsByAddress.set(
               getAddress((e as { address: Address }).address),
               e
@@ -217,9 +226,12 @@ export class VaultMetaService<TEntity = VaultEntity>
         }
       )
     );
-    return vaults
+    return {
+      result: vaults
       .map((v) => resultsByAddress.get(getAddress(v)))
-      .filter((e): e is TEntity => e != null);
+      .filter((e): e is TEntity => e != null),
+      errors,
+    };
   }
 
   async fetchVerifiedVaultAddresses(
@@ -252,7 +264,7 @@ export class VaultMetaService<TEntity = VaultEntity>
     chainId: number,
     perspectives: VaultMetaPerspective[],
     options?: VaultFetchOptions
-  ): Promise<TEntity[]> {
+  ): Promise<ServiceResult<TEntity[]>> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives

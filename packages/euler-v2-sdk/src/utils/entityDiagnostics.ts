@@ -14,56 +14,29 @@ export interface DataIssue {
   code: DataIssueCode;
   severity: DataIssueSeverity;
   message: string;
-  /** JSONPath-like, relative to the entity root object. */
+  /** JSONPath-like, relative to a fetch result root entity. */
   path: string;
   source?: string;
   originalValue?: unknown;
   normalizedValue?: unknown;
-  timestampMs: number;
-  handled: true;
 }
 
-export type DataIssueInput = Omit<DataIssue, "timestampMs" | "handled">;
-
-const diagnosticsStore = new WeakMap<object, DataIssue[]>();
-
-function getOrCreateStore(entity: object): DataIssue[] {
-  let store = diagnosticsStore.get(entity);
-  if (!store) {
-    store = [];
-    diagnosticsStore.set(entity, store);
-  }
-  return store;
+export interface ServiceResult<T> {
+  result: T;
+  errors: DataIssue[];
 }
 
-export function addEntityDataIssue(entity: object, issue: DataIssueInput): void {
-  const store = getOrCreateStore(entity);
-  store.push({
+export function withPathPrefix(path: string, prefix: string): string {
+  if (!prefix || prefix === "$") return path;
+  if (path === "$") return prefix;
+  if (path.startsWith("$.")) return `${prefix}${path.slice(1)}`;
+  if (path.startsWith("$[")) return `${prefix}${path.slice(1)}`;
+  return `${prefix}.${path}`;
+}
+
+export function prefixDataIssues(errors: DataIssue[], prefix: string): DataIssue[] {
+  return errors.map((issue) => ({
     ...issue,
-    timestampMs: Date.now(),
-    handled: true,
-  });
-}
-
-export function getEntityDataIssues(entity: object): readonly DataIssue[] {
-  return diagnosticsStore.get(entity) ?? [];
-}
-
-export function getEntityDataIssuesAtPath(entity: object, path: string): readonly DataIssue[] {
-  return getEntityDataIssues(entity).filter((issue) => issue.path === path);
-}
-
-export function hasEntityDataIssues(entity: object): boolean {
-  return getEntityDataIssues(entity).length > 0;
-}
-
-export function transferEntityDataIssues(source: object, target: object): void {
-  const sourceIssues = diagnosticsStore.get(source);
-  if (!sourceIssues || sourceIssues.length === 0) return;
-  const targetIssues = diagnosticsStore.get(target);
-  if (!targetIssues || targetIssues.length === 0) {
-    diagnosticsStore.set(target, [...sourceIssues]);
-    return;
-  }
-  diagnosticsStore.set(target, [...targetIssues, ...sourceIssues]);
+    path: withPathPrefix(issue.path, prefix),
+  }));
 }

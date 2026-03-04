@@ -1,24 +1,23 @@
 import {
-  addEntityDataIssue,
-  type DataIssueInput,
+  type DataIssue,
 } from "./entityDiagnostics.js";
 
 type BigintToSafeNumberParams = {
   path: string;
-  target: object;
+  errors: DataIssue[];
   source: string;
   message?: string;
 };
 
 export function bigintToSafeNumber(value: bigint, params: BigintToSafeNumberParams): number {
-  const { path, target, source } = params;
+  const { path, errors, source } = params;
 
   if (value <= BigInt(Number.MAX_SAFE_INTEGER) && value >= BigInt(Number.MIN_SAFE_INTEGER)) {
     return Number(value);
   }
 
   const clamped = value > 0n ? Number.MAX_SAFE_INTEGER : Number.MIN_SAFE_INTEGER;
-  addEntityDataIssue(target, {
+  errors.push({
     code: "OUT_OF_RANGE_CLAMPED",
     severity: "warning",
     message:
@@ -33,7 +32,7 @@ export function bigintToSafeNumber(value: bigint, params: BigintToSafeNumberPara
 
 type NumberLikeToSafeFiniteNumberParams = {
   path: string;
-  target: object;
+  errors: DataIssue[];
   source: string;
   fallback?: number;
   message?: string;
@@ -48,7 +47,7 @@ export function numberLikeToSafeFiniteNumber(
   if (typeof value === "bigint") {
     return bigintToSafeNumber(value, {
       path: params.path,
-      target: params.target,
+      errors: params.errors,
       source: params.source,
       message: params.message,
     });
@@ -56,7 +55,7 @@ export function numberLikeToSafeFiniteNumber(
 
   if (Number.isFinite(value)) return value;
 
-  addEntityDataIssue(params.target, {
+  params.errors.push({
     code: "DEFAULT_APPLIED",
     severity: "warning",
     message: params.message ?? "Non-finite number encountered and fallback value applied.",
@@ -70,7 +69,7 @@ export function numberLikeToSafeFiniteNumber(
 
 type BigintToScaledNumberParams = {
   path: string;
-  target: object;
+  errors: DataIssue[];
   source: string;
   scale: number;
   maxUnscaled?: bigint;
@@ -79,10 +78,10 @@ type BigintToScaledNumberParams = {
 };
 
 export function bigintToScaledNumber(value: bigint, params: BigintToScaledNumberParams): number {
-  const { path, target, source, maxUnscaled, minUnscaled, scale } = params;
+  const { path, errors, source, maxUnscaled, minUnscaled, scale } = params;
 
   if (maxUnscaled !== undefined && value > maxUnscaled) {
-    addEntityDataIssue(target, {
+    errors.push({
       code: "OUT_OF_RANGE_CLAMPED",
       severity: "warning",
       message: params.overflowMessage ?? "Value exceeded maximum allowed range and was clamped.",
@@ -95,7 +94,7 @@ export function bigintToScaledNumber(value: bigint, params: BigintToScaledNumber
   }
 
   if (minUnscaled !== undefined && value < minUnscaled) {
-    addEntityDataIssue(target, {
+    errors.push({
       code: "OUT_OF_RANGE_CLAMPED",
       severity: "warning",
       message: params.overflowMessage ?? "Value exceeded minimum allowed range and was clamped.",

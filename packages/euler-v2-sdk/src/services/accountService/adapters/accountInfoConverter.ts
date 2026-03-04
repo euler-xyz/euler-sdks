@@ -3,8 +3,7 @@ import type { ISubAccount, IAccountLiquidity, DaysToLiquidation } from "../../..
 import { AccountPosition } from "../../../entities/Account.js";
 import { EVCAccountInfo, VaultAccountInfo, AccountLiquidityInfo } from "./accountLensTypes.js";
 import {
-  addEntityDataIssue,
-  transferEntityDataIssues,
+  type DataIssue,
 } from "../../../utils/entityDiagnostics.js";
 import {
   bigintToSafeNumber,
@@ -16,7 +15,8 @@ import {
  * @returns The IAccountLiquidity object
  */
  function convertAccountLiquidityInfoToAccountLiquidity(
-  liquidityInfo: AccountLiquidityInfo
+  liquidityInfo: AccountLiquidityInfo,
+  errors: DataIssue[]
 ): IAccountLiquidity {
   const liabilityValue = {
     borrowing: liquidityInfo.liabilityValueBorrowing,
@@ -36,7 +36,7 @@ import {
     const oracleMid = liquidityInfo.collateralValuesRaw[idx];
 
     if (borrowing === undefined) {
-      addEntityDataIssue(liquidityInfo as object, {
+      errors.push({
         code: "DEFAULT_APPLIED",
         severity: "warning",
         message: "Missing collateral borrowing value; defaulted to 0.",
@@ -46,7 +46,7 @@ import {
       });
     }
     if (liquidation === undefined) {
-      addEntityDataIssue(liquidityInfo as object, {
+      errors.push({
         code: "DEFAULT_APPLIED",
         severity: "warning",
         message: "Missing collateral liquidation value; defaulted to 0.",
@@ -56,7 +56,7 @@ import {
       });
     }
     if (oracleMid === undefined) {
-      addEntityDataIssue(liquidityInfo as object, {
+      errors.push({
         code: "DEFAULT_APPLIED",
         severity: "warning",
         message: "Missing collateral oracleMid value; defaulted to 0.",
@@ -83,13 +83,13 @@ import {
     } else {
       daysToLiquidation = bigintToSafeNumber(liquidityInfo.timeToLiquidation, {
         path: "$.daysToLiquidation",
-        target: liquidityInfo as object,
+        errors,
         source: "accountLens",
       });
     }
   }
 
-  const liquidityData: IAccountLiquidity = {
+  return {
     vaultAddress: liquidityInfo.vault,
     unitOfAccount: liquidityInfo.unitOfAccount,
     daysToLiquidation,
@@ -97,8 +97,6 @@ import {
     totalCollateralValue,
     collaterals,
   };
-  transferEntityDataIssues(liquidityInfo as object, liquidityData as object);
-  return liquidityData;
 }
 
 /**
@@ -107,13 +105,14 @@ import {
  * @returns The AccountPosition object
  */
 export function convertVaultAccountInfoToAccountPosition(
-  vaultAccountInfo: VaultAccountInfo
+  vaultAccountInfo: VaultAccountInfo,
+  errors: DataIssue[]
 ): AccountPosition {
   let liquidity: IAccountLiquidity | undefined = undefined;
   if (vaultAccountInfo.borrowed !== 0n) {
     if (vaultAccountInfo.liquidityInfo.queryFailure) {
       const message = `Failed to fetch liquidity for position ${vaultAccountInfo.vault} for sub-account ${vaultAccountInfo.account}: ${vaultAccountInfo.liquidityInfo.queryFailureReason}`;
-      addEntityDataIssue(vaultAccountInfo as object, {
+      errors.push({
         code: "SOURCE_UNAVAILABLE",
         severity: "warning",
         message,
@@ -122,7 +121,7 @@ export function convertVaultAccountInfoToAccountPosition(
         originalValue: vaultAccountInfo.liquidityInfo.queryFailureReason,
       });
     } else {
-      liquidity = convertAccountLiquidityInfoToAccountLiquidity(vaultAccountInfo.liquidityInfo);
+      liquidity = convertAccountLiquidityInfoToAccountLiquidity(vaultAccountInfo.liquidityInfo, errors);
     }
   }
 
@@ -139,9 +138,6 @@ export function convertVaultAccountInfoToAccountPosition(
     liquidity,
     balanceForwarderEnabled: vaultAccountInfo.balanceForwarderEnabled,
   };
-  transferEntityDataIssues(vaultAccountInfo as object, positionData as object);
-  if (liquidity) transferEntityDataIssues(liquidity as object, positionData as object);
-
   return new AccountPosition(positionData);
 }
 
@@ -153,26 +149,26 @@ export function convertVaultAccountInfoToAccountPosition(
  */
 export function convertToSubAccount(
   evcAccountInfo: EVCAccountInfo,
-  vaultAccountInfos: VaultAccountInfo[]
+  vaultAccountInfos: VaultAccountInfo[],
+  errors: DataIssue[]
 ): ISubAccount {
-  const positions = vaultAccountInfos.map((info) => convertVaultAccountInfoToAccountPosition(info));
+  const positions = vaultAccountInfos.map((info) => convertVaultAccountInfoToAccountPosition(info, errors));
   const subAccountData: ISubAccount = {
     timestamp: bigintToSafeNumber(evcAccountInfo.timestamp, {
       path: "$.timestamp",
-      target: evcAccountInfo as object,
+      errors,
       source: "accountLens",
     }),
     account: evcAccountInfo.account,
     owner: evcAccountInfo.owner,
     lastAccountStatusCheckTimestamp: bigintToSafeNumber(evcAccountInfo.lastAccountStatusCheckTimestamp, {
       path: "$.lastAccountStatusCheckTimestamp",
-      target: evcAccountInfo as object,
+      errors,
       source: "accountLens",
     }),
     enabledControllers: evcAccountInfo.enabledControllers,
     enabledCollaterals: evcAccountInfo.enabledCollaterals,
     positions,
   };
-  transferEntityDataIssues(evcAccountInfo as object, subAccountData as object);
   return subAccountData;
 }

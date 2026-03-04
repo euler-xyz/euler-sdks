@@ -1,6 +1,6 @@
 import { Wallet, IWallet } from "../../entities/Wallet.js";
 import { Address } from "viem";
-import { addEntityDataIssue } from "../../utils/entityDiagnostics.js";
+import { type ServiceResult } from "../../utils/entityDiagnostics.js";
 
 export interface AssetWithSpenders {
   asset: Address;
@@ -8,11 +8,11 @@ export interface AssetWithSpenders {
 }
 
 export interface IWalletAdapter {
-  fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<IWallet | undefined>;
+  fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<ServiceResult<IWallet | undefined>>;
 }
 
 export interface IWalletService {
-  fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<Wallet>;
+  fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<ServiceResult<Wallet>>;
 }
 
 export class WalletService implements IWalletService {
@@ -24,21 +24,20 @@ export class WalletService implements IWalletService {
     this.adapter = adapter;
   }
 
-  async fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<Wallet> {
-    const walletData = await this.adapter.fetchWallet(chainId, account, assetsWithSpenders);
-    if (!walletData) {
+  async fetchWallet(chainId: number, account: Address, assetsWithSpenders: AssetWithSpenders[]): Promise<ServiceResult<Wallet>> {
+    const fetched = await this.adapter.fetchWallet(chainId, account, assetsWithSpenders);
+    if (!fetched.result) {
       const emptyWallet: IWallet = { chainId, account, assets: [] };
-      addEntityDataIssue(emptyWallet as object, {
+      return { result: new Wallet(emptyWallet), errors: [...fetched.errors, {
         code: "SOURCE_UNAVAILABLE",
         severity: "warning",
         message: "Wallet adapter returned no data; created empty wallet.",
         path: "$",
         source: "walletAdapter",
         normalizedValue: "empty-wallet",
-      });
-      return new Wallet(emptyWallet);
+      }] };
     }
 
-    return new Wallet(walletData);
+    return { result: new Wallet(fetched.result), errors: fetched.errors };
   }
 }

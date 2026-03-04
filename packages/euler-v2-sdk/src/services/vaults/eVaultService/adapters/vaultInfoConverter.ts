@@ -5,8 +5,7 @@ import { VaultInfoFull, AssetPriceInfo, InterestRateModelType, InterestRateModel
 import { formatUnits, type Hex } from "viem";
 import { decodeIRMParams } from "../../../../utils/irm.js";
 import {
-  addEntityDataIssue,
-  transferEntityDataIssues,
+  type DataIssue,
 } from "../../../../utils/entityDiagnostics.js";
 import {
   bigintToSafeNumber,
@@ -21,7 +20,8 @@ import {
  */
 export function convertVaultInfoFullToIEVault(
   vaultInfo: VaultInfoFull,
-  chainId: number
+  chainId: number,
+  errors: DataIssue[]
 ): IEVault {
   const oracle: OracleInfo = {
     oracle: vaultInfo.oracleInfo.oracle,
@@ -35,7 +35,7 @@ export function convertVaultInfoFullToIEVault(
     symbol: vaultInfo.vaultSymbol,
     decimals: bigintToSafeNumber(vaultInfo.vaultDecimals, {
       path: "$.shares.decimals",
-      target: vaultInfo as object,
+      errors,
       source: "vaultLens",
     }),
   };
@@ -46,7 +46,7 @@ export function convertVaultInfoFullToIEVault(
     symbol: vaultInfo.assetSymbol,
     decimals: bigintToSafeNumber(vaultInfo.assetDecimals, {
       path: "$.asset.decimals",
-      target: vaultInfo as object,
+      errors,
       source: "vaultLens",
     }),
   };
@@ -57,18 +57,18 @@ export function convertVaultInfoFullToIEVault(
     symbol: vaultInfo.unitOfAccountSymbol,
     decimals: bigintToSafeNumber(vaultInfo.unitOfAccountDecimals, {
       path: "$.unitOfAccount.decimals",
-      target: vaultInfo as object,
+      errors,
       source: "vaultLens",
     }),
   };
 
   const fees: EVaultFees = {
-    interestFee: convertFrom1e4(vaultInfo.interestFee, "$.fees.interestFee", vaultInfo as object),
+    interestFee: convertFrom1e4(vaultInfo.interestFee, "$.fees.interestFee", errors),
     accumulatedFeesShares: vaultInfo.accumulatedFeesShares,
     accumulatedFeesAssets: vaultInfo.accumulatedFeesAssets,
     governorFeeReceiver: vaultInfo.governorFeeReceiver,
     protocolFeeReceiver: vaultInfo.protocolFeeReceiver,
-    protocolFeeShare: convertFrom1e4(vaultInfo.protocolFeeShare, "$.fees.protocolFeeShare", vaultInfo as object),
+    protocolFeeShare: convertFrom1e4(vaultInfo.protocolFeeShare, "$.fees.protocolFeeShare", errors),
   };
 
   const hooks: EVaultHooks = {
@@ -86,11 +86,11 @@ export function convertVaultInfoFullToIEVault(
     maxLiquidationDiscount: convertFrom1e4(
       vaultInfo.maxLiquidationDiscount,
       "$.liquidation.maxLiquidationDiscount",
-      vaultInfo as object
+      errors
     ),
     liquidationCoolOffTime: bigintToSafeNumber(vaultInfo.liquidationCoolOffTime, {
       path: "$.liquidation.liquidationCoolOffTime",
-      target: vaultInfo as object,
+      errors,
       source: "vaultLens",
     }),
     socializeDebt: configFlags.socializeDebt,
@@ -113,7 +113,7 @@ export function convertVaultInfoFullToIEVault(
 
   const interestRateModel = convertInterestRateModel(
     vaultInfo.irmInfo.interestRateModelInfo,
-    vaultInfo as object
+    errors
   );
 
   // Convert collaterals
@@ -123,7 +123,7 @@ export function convertVaultInfoFullToIEVault(
       ? convertAssetPriceInfoToOraclePrice(
           priceInfo,
           `$.collaterals[${idx}].oraclePriceRaw`,
-          vaultInfo as object
+          errors
         )
       : {
           queryFailure: true,
@@ -135,7 +135,7 @@ export function convertVaultInfoFullToIEVault(
           timestamp: 0,
         };
     if (!priceInfo) {
-      addEntityDataIssue(vaultInfo as object, {
+      errors.push({
         code: "DEFAULT_APPLIED",
         severity: "warning",
         message: "Missing collateral price info; default zero-price placeholder applied.",
@@ -147,23 +147,23 @@ export function convertVaultInfoFullToIEVault(
 
     const targetTimestamp = bigintToSafeNumber(ltvInfo.targetTimestamp, {
       path: `$.collaterals[${idx}].ramping.targetTimestamp`,
-      target: vaultInfo as object,
+      errors,
       source: "vaultLens",
     });
     const vaultTimestamp = bigintToSafeNumber(vaultInfo.timestamp, {
       path: "$.timestamp",
-      target: vaultInfo as object,
+      errors,
       source: "vaultLens",
     });
     const isRamping = targetTimestamp > vaultTimestamp;
 
     const collateral: EVaultCollateral = {
       address: ltvInfo.collateral,
-      borrowLTV: convertFrom1e4(ltvInfo.borrowLTV, `$.collaterals[${idx}].borrowLTV`, vaultInfo as object),
+      borrowLTV: convertFrom1e4(ltvInfo.borrowLTV, `$.collaterals[${idx}].borrowLTV`, errors),
       liquidationLTV: convertFrom1e4(
         ltvInfo.liquidationLTV,
         `$.collaterals[${idx}].liquidationLTV`,
-        vaultInfo as object
+        errors
       ),
       oraclePriceRaw,
     };
@@ -173,7 +173,7 @@ export function convertVaultInfoFullToIEVault(
         initialLiquidationLTV: convertFrom1e4(
           ltvInfo.initialLiquidationLTV,
           `$.collaterals[${idx}].ramping.initialLiquidationLTV`,
-          vaultInfo as object
+          errors
         ),
         targetTimestamp,
         rampDuration: ltvInfo.rampDuration,
@@ -187,7 +187,7 @@ export function convertVaultInfoFullToIEVault(
   const oraclePriceRaw = convertAssetPriceInfoToOraclePrice(
     vaultInfo.liabilityPriceInfo,
     "$.oraclePriceRaw",
-    vaultInfo as object
+    errors
   );
 
   const result: IEVault = {
@@ -217,11 +217,10 @@ export function convertVaultInfoFullToIEVault(
     oraclePriceRaw,
     timestamp: bigintToSafeNumber(vaultInfo.timestamp, {
       path: "$.timestamp",
-      target: vaultInfo as object,
+      errors,
       source: "vaultLens",
     }),
   };
-  transferEntityDataIssues(vaultInfo as object, result as object);
   return result;
 }
 
@@ -233,7 +232,7 @@ export function convertVaultInfoFullToIEVault(
  */
 function convertInterestRateModel(
   irmInfo: InterestRateModelDetailedInfo,
-  target: object
+  errors: DataIssue[]
 ): InterestRateModel {
   const { interestRateModel: address, interestRateModelType: type, interestRateModelParams: params } = irmInfo;
   let decodedParams: InterestRateModel["data"] = null;
@@ -243,7 +242,7 @@ function convertInterestRateModel(
       decodedParams = decodeIRMParams(type, params);
     } catch (error) {
       // If decoding fails, keep params as null
-      addEntityDataIssue(target, {
+      errors.push({
         code: "DECODE_FAILED",
         severity: "warning",
         message: `Failed to decode IRM params for type ${type}; data set to null.`,
@@ -265,10 +264,10 @@ function convertInterestRateModel(
 function convertAssetPriceInfoToOraclePrice(
   priceInfo: AssetPriceInfo,
   path: string,
-  target: object
+  errors: DataIssue[]
 ): OraclePrice {
   if (priceInfo.queryFailure) {
-    addEntityDataIssue(target, {
+    errors.push({
       code: "SOURCE_UNAVAILABLE",
       severity: "warning",
       message: "Oracle price query reported failure.",
@@ -287,7 +286,7 @@ function convertAssetPriceInfoToOraclePrice(
     amountOutAsk: priceInfo.amountOutAsk,
     timestamp: bigintToSafeNumber(priceInfo.timestamp, {
       path: `${path}.timestamp`,
-      target,
+      errors,
       source: "vaultLens",
     }),
   };
@@ -302,11 +301,11 @@ const MAX_1E4 = 10n**4n;
 function convertFrom1e4(
   value: bigint,
   path: string,
-  target: object
+  errors: DataIssue[]
 ): number {
   return bigintToScaledNumber(value, {
     path,
-    target,
+    errors,
     source: "vaultLens",
     scale: 1e4,
     maxUnscaled: MAX_1E4,

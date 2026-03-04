@@ -15,6 +15,7 @@ import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js
 import type { EulerPlugin, PluginBatchItems } from "../../../plugins/types.js";
 import { executeBatchSimulation, BatchSimulationAdapter } from "../../../plugins/batchSimulation.js";
 import type { EVCBatchItem } from "../../executionService/executionServiceTypes.js";
+import { type DataIssue, type ServiceResult, prefixDataIssues } from "../../../utils/entityDiagnostics.js";
 
 export const getEVCAccountInfoLensBatchItem = (
   accountLensAddress: Address,
@@ -141,11 +142,12 @@ export class AccountOnchainAdapter implements IAccountAdapter {
   async fetchAccount(
     chainId: number,
     address: Address
-  ): Promise<IAccount | undefined> {
+  ): Promise<ServiceResult<IAccount | undefined>> {
+    const errors: DataIssue[] = [];
     const accountVaults = await this.positionsAdapter.getAccountVaults(chainId, address);
     const subAccountAddresses = [...new Set(Object.keys(accountVaults).map((subAccountAddress) => getAddress(subAccountAddress)))];
 
-    if (subAccountAddresses.length === 0) return undefined;
+    if (subAccountAddresses.length === 0) return { result: undefined, errors };
 
     const subAccountsArray = await Promise.all(subAccountAddresses.map(async (subAccountAddress) => {
       const vaults = [...new Set([
@@ -154,26 +156,36 @@ export class AccountOnchainAdapter implements IAccountAdapter {
       ])].map((vault) => getAddress(vault));
 
       return this.fetchSubAccount(chainId, subAccountAddress, vaults);
-    })).then((subAccounts) => subAccounts.filter((subAccount): subAccount is ISubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean } => subAccount !== undefined));
+    }));
+    const validSubs = subAccountsArray
+      .map((entry) => {
+        errors.push(...prefixDataIssues(entry.errors, `$.subAccounts[${entry.result?.account ?? "unknown"}]`));
+        return entry.result;
+      })
+      .filter((subAccount): subAccount is ISubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean } => subAccount !== undefined);
 
-    const subAccounts = subAccountsArray.reduce<Record<Address, ISubAccount>>((acc, sa) => {
+    const subAccounts = validSubs.reduce<Record<Address, ISubAccount>>((acc, sa) => {
       const { isLockdownMode: _lm, isPermitDisabledMode: _pm, ...subAccount } = sa;
       acc[getAddress(sa.account)] = subAccount;
       return acc;
     }, {});
 
-    const mainSubAccount = subAccountsArray.find((sa) => sa.account === sa.owner);
+    const mainSubAccount = validSubs.find((sa) => sa.account === sa.owner);
     return {
+      result: {
       chainId,
       owner: address,
       isLockdownMode: mainSubAccount?.isLockdownMode ?? false,
       isPermitDisabledMode: mainSubAccount?.isPermitDisabledMode ?? false,
       subAccounts,
+    },
+      errors,
     };
 
   }
 
-  async fetchSubAccount(chainId: number, subAccount: Address, vaults: Address[] = []): Promise<(ISubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean }) | undefined> {
+  async fetchSubAccount(chainId: number, subAccount: Address, vaults: Address[] = []): Promise<ServiceResult<(ISubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean }) | undefined>> {
+    const errors: DataIssue[] = [];
     const provider = this.providerService.getProvider(chainId);
     const deployment = this.deploymentService.getDeployment(chainId);
     const accountLensAddress = deployment.addresses.lensAddrs.accountLens;
@@ -182,12 +194,15 @@ export class AccountOnchainAdapter implements IAccountAdapter {
     // Get EVC account info
     const evcAccountInfoResult = await this.queryEVCAccountInfo(provider, accountLensAddress, evc, subAccount);
 
-    if (!evcAccountInfoResult) return undefined;
+    if (!evcAccountInfoResult) return { result: undefined, errors };
 
     const evcAccountInfo = evcAccountInfoResult as EVCAccountInfo;
 
     if (vaults.length === 0) {
-      return this.buildSubAccount(evcAccountInfo, []);
+      return {
+        result: this.buildSubAccount(evcAccountInfo, [], errors),
+        errors,
+      };
     }
 
     // Fetch vault account info, using batchSimulation when plugins provide prepend items
@@ -201,14 +216,18 @@ export class AccountOnchainAdapter implements IAccountAdapter {
       ) as VaultAccountInfo[];
     }
 
-    return this.buildSubAccount(evcAccountInfo, vaultAccountInfos);
+    return {
+      result: this.buildSubAccount(evcAccountInfo, vaultAccountInfos, errors),
+      errors,
+    };
   }
 
   buildSubAccount(
     evcAccountInfo: EVCAccountInfo,
     vaultAccountInfos: VaultAccountInfo[],
+    errors: DataIssue[],
   ): ISubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean } {
-    const subAccountData = convertToSubAccount(evcAccountInfo, vaultAccountInfos);
+    const subAccountData = convertToSubAccount(evcAccountInfo, vaultAccountInfos, errors);
     return {
       ...subAccountData,
       isLockdownMode: evcAccountInfo.isLockdownMode,
@@ -265,7 +284,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
     const vaultInfoResults = await Promise.all(
       vaults.map(vault =>
         this.queryEVaultInfoFull(provider, vaultLensAddress, vault)
-          .then((result) => new EVault(convertVaultInfoFullToIEVault(result as unknown as VaultInfoFull, chainId)))
+          .then((result) => new EVault(convertVaultInfoFullToIEVault(result as unknown as VaultInfoFull, chainId, [])))
           .catch(() => null),
       ),
     );

@@ -7,9 +7,11 @@ import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
 import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
+import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.js";
+import { withPathPrefix } from "../../../utils/entityDiagnostics.js";
 
 export interface IEulerEarnAdapter {
-  fetchVaults(chainId: number, vault: Address[]): Promise<IEulerEarn[]>;
+  fetchVaults(chainId: number, vault: Address[]): Promise<ServiceResult<IEulerEarn[]>>;
   fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]>;
 }
 
@@ -30,13 +32,24 @@ export interface EulerEarnFetchOptions {
 
 export interface IEulerEarnService
   extends IVaultService<EulerEarn, StandardEulerEarnPerspectives> {
-  fetchVault(chainId: number, vault: Address, options?: EulerEarnFetchOptions): Promise<EulerEarn>;
-  fetchVaults(chainId: number, vaults: Address[], options?: EulerEarnFetchOptions): Promise<EulerEarn[]>;
-  populateStrategyVaults(eulerEarns: EulerEarn[], eVaultFetchOptions?: EVaultFetchOptions): Promise<void>;
-  populateMarketPrices(eulerEarns: EulerEarn[]): Promise<void>;
-  populateRewards(eulerEarns: EulerEarn[]): Promise<void>;
-  populateIntrinsicApy(eulerEarns: EulerEarn[]): Promise<void>;
-  populateLabels(eulerEarns: EulerEarn[]): Promise<void>;
+  fetchVault(
+    chainId: number,
+    vault: Address,
+    options?: EulerEarnFetchOptions
+  ): Promise<ServiceResult<EulerEarn>>;
+  fetchVaults(
+    chainId: number,
+    vaults: Address[],
+    options?: EulerEarnFetchOptions
+  ): Promise<ServiceResult<EulerEarn[]>>;
+  populateStrategyVaults(
+    eulerEarns: EulerEarn[],
+    eVaultFetchOptions?: EVaultFetchOptions
+  ): Promise<DataIssue[]>;
+  populateMarketPrices(eulerEarns: EulerEarn[]): Promise<DataIssue[]>;
+  populateRewards(eulerEarns: EulerEarn[]): Promise<DataIssue[]>;
+  populateIntrinsicApy(eulerEarns: EulerEarn[]): Promise<DataIssue[]>;
+  populateLabels(eulerEarns: EulerEarn[]): Promise<DataIssue[]>;
 }
 
 export class EulerEarnService implements IEulerEarnService {
@@ -84,57 +97,69 @@ export class EulerEarnService implements IEulerEarnService {
       .eulerEarnFactory;
   }
 
-  async fetchVault(chainId: number, vault: Address, options?: EulerEarnFetchOptions): Promise<EulerEarn> {
-    const vaults = await this.adapter.fetchVaults(chainId, [vault]);
-    if (vaults.length === 0) {
+  async fetchVault(
+    chainId: number,
+    vault: Address,
+    options?: EulerEarnFetchOptions
+  ): Promise<ServiceResult<EulerEarn>> {
+    const fetched = await this.adapter.fetchVaults(chainId, [vault]);
+    const errors: DataIssue[] = [...fetched.errors];
+    if (fetched.result.length === 0) {
       throw new Error(`Vault not found for ${vault}`);
     }
-    const eulerEarn = new EulerEarn(vaults[0]!);
+    const eulerEarn = new EulerEarn(fetched.result[0]!);
     if (options?.populateStrategyVaults) {
-      await this.populateStrategyVaults([eulerEarn], options?.eVaultFetchOptions);
+      errors.push(...(await this.populateStrategyVaults([eulerEarn], options?.eVaultFetchOptions)));
     }
     if (options?.populateMarketPrices) {
-      await this.populateMarketPrices([eulerEarn]);
+      errors.push(...(await this.populateMarketPrices([eulerEarn])));
     }
     if (options?.populateRewards) {
-      await this.populateRewards([eulerEarn]);
+      errors.push(...(await this.populateRewards([eulerEarn])));
     }
     if (options?.populateIntrinsicApy) {
-      await this.populateIntrinsicApy([eulerEarn]);
+      errors.push(...(await this.populateIntrinsicApy([eulerEarn])));
     }
     if (options?.populateLabels) {
-      await this.populateLabels([eulerEarn]);
+      errors.push(...(await this.populateLabels([eulerEarn])));
     }
-    return eulerEarn;
+    return { result: eulerEarn, errors };
   }
 
-  async fetchVaults(chainId: number, vaults: Address[], options?: EulerEarnFetchOptions): Promise<EulerEarn[]> {
-    const eulerEarns = (await this.adapter.fetchVaults(chainId, vaults)).map(
+  async fetchVaults(
+    chainId: number,
+    vaults: Address[],
+    options?: EulerEarnFetchOptions
+  ): Promise<ServiceResult<EulerEarn[]>> {
+    const fetched = await this.adapter.fetchVaults(chainId, vaults);
+    const errors: DataIssue[] = [...fetched.errors];
+    const eulerEarns = fetched.result.map(
       (vault) => new EulerEarn(vault)
     );
     if (options?.populateStrategyVaults) {
-      await this.populateStrategyVaults(eulerEarns, options?.eVaultFetchOptions);
+      errors.push(...(await this.populateStrategyVaults(eulerEarns, options?.eVaultFetchOptions)));
     }
     if (options?.populateMarketPrices) {
-      await this.populateMarketPrices(eulerEarns);
+      errors.push(...(await this.populateMarketPrices(eulerEarns)));
     }
     if (options?.populateRewards) {
-      await this.populateRewards(eulerEarns);
+      errors.push(...(await this.populateRewards(eulerEarns)));
     }
     if (options?.populateIntrinsicApy) {
-      await this.populateIntrinsicApy(eulerEarns);
+      errors.push(...(await this.populateIntrinsicApy(eulerEarns)));
     }
     if (options?.populateLabels) {
-      await this.populateLabels(eulerEarns);
+      errors.push(...(await this.populateLabels(eulerEarns)));
     }
-    return eulerEarns;
+    return { result: eulerEarns, errors };
   }
 
   async populateStrategyVaults(
     eulerEarns: EulerEarn[],
     eVaultFetchOptions?: EVaultFetchOptions
-  ): Promise<void> {
-    if (!this.eVaultService || eulerEarns.length === 0) return;
+  ): Promise<DataIssue[]> {
+    if (!this.eVaultService || eulerEarns.length === 0) return [];
+    const errors: DataIssue[] = [];
 
     const allStrategyAddresses = [
       ...new Set(
@@ -142,13 +167,30 @@ export class EulerEarnService implements IEulerEarnService {
       ),
     ];
 
-    if (allStrategyAddresses.length === 0) return;
+    if (allStrategyAddresses.length === 0) return errors;
 
     const chainId = eulerEarns[0]!.chainId;
     const eVaults = await Promise.all(
-      allStrategyAddresses.map((addr) =>
-        this.eVaultService!.fetchVault(chainId, addr, eVaultFetchOptions).catch(() => undefined)
-      )
+      allStrategyAddresses.map(async (addr, index) => {
+        try {
+          const fetched = await this.eVaultService!.fetchVault(chainId, addr, eVaultFetchOptions);
+          errors.push(...fetched.errors.map((issue) => ({
+            ...issue,
+            path: withPathPrefix(issue.path, `$.strategyVaults[${index}]`),
+          })));
+          return fetched.result;
+        } catch (error) {
+          errors.push({
+            code: "SOURCE_UNAVAILABLE",
+            severity: "warning",
+            message: "Failed to fetch strategy vault.",
+            path: `$.strategyVaults[${index}]`,
+            source: "eVaultService",
+            originalValue: error instanceof Error ? error.message : String(error),
+          });
+          return undefined;
+        }
+      })
     );
 
     const eVaultByAddress = new Map(
@@ -162,35 +204,84 @@ export class EulerEarnService implements IEulerEarnService {
         strategy.vault = eVaultByAddress.get(strategy.address.toLowerCase());
       }
     }
+    return errors;
   }
 
   async populateMarketPrices(
     eulerEarns: EulerEarn[]
-  ): Promise<void> {
-    if (!this.priceService || eulerEarns.length === 0) return;
+  ): Promise<DataIssue[]> {
+    if (!this.priceService || eulerEarns.length === 0) return [];
+    const errors: DataIssue[] = [];
 
     await Promise.all(
-      eulerEarns.map(async (ee) => {
-        ee.marketPriceUsd = await ee
-          .fetchAssetMarketPriceUsd(this.priceService!)
-          .catch(() => undefined);
+      eulerEarns.map(async (ee, index) => {
+        try {
+          ee.marketPriceUsd = await ee.fetchAssetMarketPriceUsd(this.priceService!);
+        } catch (error) {
+          errors.push({
+            code: "SOURCE_UNAVAILABLE",
+            severity: "warning",
+            message: "Failed to populate asset market price.",
+            path: `$.eulerEarns[${index}].marketPriceUsd`,
+            source: "priceService",
+            originalValue: error instanceof Error ? error.message : String(error),
+          });
+          ee.marketPriceUsd = undefined;
+        }
       })
     );
+    return errors;
   }
 
-  async populateRewards(eulerEarns: EulerEarn[]): Promise<void> {
-    if (!this.rewardsService || eulerEarns.length === 0) return;
-    await this.rewardsService.populateRewards(eulerEarns);
+  async populateRewards(eulerEarns: EulerEarn[]): Promise<DataIssue[]> {
+    if (!this.rewardsService || eulerEarns.length === 0) return [];
+    try {
+      await this.rewardsService.populateRewards(eulerEarns);
+      return [];
+    } catch (error) {
+      return [{
+        code: "SOURCE_UNAVAILABLE",
+        severity: "warning",
+        message: "Failed to populate rewards.",
+        path: "$",
+        source: "rewardsService",
+        originalValue: error instanceof Error ? error.message : String(error),
+      }];
+    }
   }
 
-  async populateIntrinsicApy(eulerEarns: EulerEarn[]): Promise<void> {
-    if (!this.intrinsicApyService || eulerEarns.length === 0) return;
-    await this.intrinsicApyService.populateIntrinsicApy(eulerEarns);
+  async populateIntrinsicApy(eulerEarns: EulerEarn[]): Promise<DataIssue[]> {
+    if (!this.intrinsicApyService || eulerEarns.length === 0) return [];
+    try {
+      await this.intrinsicApyService.populateIntrinsicApy(eulerEarns);
+      return [];
+    } catch (error) {
+      return [{
+        code: "SOURCE_UNAVAILABLE",
+        severity: "warning",
+        message: "Failed to populate intrinsic APY.",
+        path: "$",
+        source: "intrinsicApyService",
+        originalValue: error instanceof Error ? error.message : String(error),
+      }];
+    }
   }
 
-  async populateLabels(eulerEarns: EulerEarn[]): Promise<void> {
-    if (!this.eulerLabelsService || eulerEarns.length === 0) return;
-    await this.eulerLabelsService.populateLabels(eulerEarns);
+  async populateLabels(eulerEarns: EulerEarn[]): Promise<DataIssue[]> {
+    if (!this.eulerLabelsService || eulerEarns.length === 0) return [];
+    try {
+      await this.eulerLabelsService.populateLabels(eulerEarns);
+      return [];
+    } catch (error) {
+      return [{
+        code: "SOURCE_UNAVAILABLE",
+        severity: "warning",
+        message: "Failed to populate labels.",
+        path: "$",
+        source: "eulerLabelsService",
+        originalValue: error instanceof Error ? error.message : String(error),
+      }];
+    }
   }
 
   async fetchVerifiedVaultAddresses(
@@ -229,7 +320,7 @@ export class EulerEarnService implements IEulerEarnService {
     chainId: number,
     perspectives: (StandardEulerEarnPerspectives | Address)[],
     options?: EulerEarnFetchOptions
-  ): Promise<EulerEarn[]> {
+  ): Promise<ServiceResult<EulerEarn[]>> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives

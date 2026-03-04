@@ -1721,7 +1721,8 @@ export class ExecutionService implements IExecutionService {
       })
     )
 
-    const wallet = await this.walletService.fetchWallet(chainId, account, assetsWithSpenders)
+    const walletFetch = await this.walletService.fetchWallet(chainId, account, assetsWithSpenders)
+    const wallet = walletFetch.result
 
     return this.resolveRequiredApprovalsWithWallet({
       plan,

@@ -6,7 +6,8 @@ import type { VaultFetchOptions } from "../services/vaults/index.js";
 import type { PriceWad } from "./ERC4626Vault.js";
 import type { IPriceService } from "../services/priceService/index.js";
 import type { IRewardsService, UserReward } from "../services/rewardsService/index.js";
-import { addEntityDataIssue, transferEntityDataIssues } from "../utils/entityDiagnostics.js";
+import type { DataIssue } from "../utils/entityDiagnostics.js";
+import { withPathPrefix } from "../utils/entityDiagnostics.js";
 import {
   computeHealthFactor,
   computeCurrentLTV,
@@ -88,7 +89,6 @@ export class AccountLiquidity<TVaultEntity extends IHasVaultAddress = never> imp
   totalCollateralValueUsd?: bigint;
 
   constructor(data: IAccountLiquidity<TVaultEntity>) {
-    transferEntityDataIssues(data as object, this);
     this.vaultAddress = data.vaultAddress;
     this.vault = data.vault;
     this.unitOfAccount = data.unitOfAccount;
@@ -172,7 +172,6 @@ export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
   borrowedValueUsd?: bigint;
 
   constructor(data: IAccountPosition<TVaultEntity>) {
-    transferEntityDataIssues(data as object, this);
     this.account = data.account;
     this.vaultAddress = data.vaultAddress;
     this.vault = data.vault;
@@ -274,7 +273,6 @@ export class SubAccount<TVaultEntity extends IHasVaultAddress = never> implement
   positions: AccountPosition<TVaultEntity>[];
 
   constructor(data: ISubAccount<TVaultEntity>) {
-    transferEntityDataIssues(data as object, this);
     this.timestamp = data.timestamp;
     this.account = data.account;
     this.owner = data.owner;
@@ -350,7 +348,6 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
   userRewards?: UserReward[];
 
   constructor(account: IAccount<TVaultEntity>) {
-    transferEntityDataIssues(account as object, this);
     this.chainId = account.chainId;
     this.owner = account.owner;
     this.isLockdownMode = account.isLockdownMode ?? false;
@@ -411,12 +408,12 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
 
   /**
    * Fetches vault entities from the service and maps them onto positions and liquidity collaterals.
-   * Mutates in place. Returns this account re-typed as Account<TResolved>.
+   * Mutates in place and returns diagnostics from vault fetching/enrichment.
    */
   async populateVaults<TResolved extends IHasVaultAddress>(
     vaultMetaService: IVaultMetaService<TResolved>,
     options?: VaultFetchOptions
-  ): Promise<Account<TResolved>> {
+  ): Promise<DataIssue[]> {
     const set = new Set<string>();
     const push = (a: Address) => set.add(getAddress(a));
     for (const sa of Object.values(this.subAccounts ?? {})) {
@@ -430,9 +427,13 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
       }
     }
     const addresses = Array.from(set, (s) => s as Address);
-    if (addresses.length === 0) return this as unknown as Account<TResolved>;
-    const vaults = await vaultMetaService.fetchVaults(this.chainId, addresses, options);
-    return this.mapVaultsToPositions(vaults);
+    if (addresses.length === 0) return [];
+    const fetched = await vaultMetaService.fetchVaults(this.chainId, addresses, options);
+    this.mapVaultsToPositions(fetched.result);
+    return fetched.errors.map((issue) => ({
+      ...issue,
+      path: withPathPrefix(issue.path, "$"),
+    }));
   }
 
   /** Maps fetched vault entities onto positions and liquidity collaterals. Mutates in place. */
@@ -466,10 +467,11 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
   /**
    * Populates USD market prices on positions and liquidity data.
    * Requires `populateVaults` to have been called first (vault entities must be resolved).
-   * Mutates in place and returns `this`.
+   * Mutates in place and returns diagnostics.
    */
-  async populateMarketPrices(priceService: IPriceService): Promise<this> {
+  async populateMarketPrices(priceService: IPriceService): Promise<DataIssue[]> {
     const ONE_18 = 10n ** 18n;
+    const errors: DataIssue[] = [];
 
     // Collect unique vault entities and populate their market prices
     const vaultEntities = new Map<string, TVaultEntity>();
@@ -490,7 +492,26 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
     await Promise.all(
       Array.from(vaultEntities.values()).map(async (vault) => {
         if (typeof (vault as any).populateMarketPrices === "function") {
-          await (vault as any).populateMarketPrices(priceService);
+          try {
+            const vaultErrors = (await (vault as any).populateMarketPrices(priceService)) as
+              | DataIssue[]
+              | undefined;
+            if (vaultErrors?.length) {
+              errors.push(...vaultErrors.map((issue) => ({
+                ...issue,
+                path: withPathPrefix(issue.path, "$"),
+              })));
+            }
+          } catch (error) {
+            errors.push({
+              code: "SOURCE_UNAVAILABLE",
+              severity: "warning",
+              message: "Failed to populate market prices for nested vault entity.",
+              path: "$",
+              source: "priceService",
+              originalValue: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
       })
     );
@@ -513,18 +534,20 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
         // Populate liquidity USD values
         if (p.liquidity?.vault) {
           const liqVault = p.liquidity.vault as any;
-          const uoaRate = await priceService.getUnitOfAccountUsdRate(liqVault).catch((error) => {
-            addEntityDataIssue(p, {
+          let uoaRate: bigint | undefined;
+          try {
+            uoaRate = await priceService.getUnitOfAccountUsdRate(liqVault);
+          } catch (error) {
+            errors.push({
               code: "SOURCE_UNAVAILABLE",
               severity: "warning",
-              message: "Failed to fetch unit-of-account USD rate for liquidity valuation.",
-              path: "$.liquidity",
+              message: "Failed to fetch unit-of-account USD rate for liquidity.",
+              path: "$",
               source: "priceService",
               originalValue: error instanceof Error ? error.message : String(error),
-              normalizedValue: "usd-liquidity-values-missing",
             });
-            return undefined;
-          });
+            uoaRate = undefined;
+          }
           if (uoaRate != null) {
             p.liquidity.liabilityValueUsd = (p.liquidity.liabilityValue.oracleMid * uoaRate) / ONE_18;
             p.liquidity.totalCollateralValueUsd =
@@ -542,7 +565,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
       }
     }
 
-    return this;
+    return errors;
   }
 
   /** Sum of `suppliedValueUsd` across all positions. `undefined` if no USD data populated. */
@@ -600,11 +623,23 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
 
   /**
    * Fetches per-user unclaimed rewards from Merkl and Brevis providers.
-   * Populates `this.userRewards`. Returns `this`.
+   * Populates `this.userRewards`.
    */
-  async populateUserRewards(rewardsService: IRewardsService): Promise<this> {
-    this.userRewards = await rewardsService.getUserRewards(this.chainId, this.owner);
-    return this;
+  async populateUserRewards(rewardsService: IRewardsService): Promise<DataIssue[]> {
+    try {
+      this.userRewards = await rewardsService.getUserRewards(this.chainId, this.owner);
+      return [];
+    } catch (error) {
+      this.userRewards = undefined;
+      return [{
+        code: "SOURCE_UNAVAILABLE",
+        severity: "warning",
+        message: "Failed to populate user rewards.",
+        path: "$.userRewards",
+        source: "rewardsService",
+        originalValue: error instanceof Error ? error.message : String(error),
+      }];
+    }
   }
 
   /**

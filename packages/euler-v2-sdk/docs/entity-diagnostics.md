@@ -1,170 +1,132 @@
 # Entity Diagnostics
 
-## Purpose
+## What Diagnostics Are
 
-Entity diagnostics provide optional metadata about normalization and fallback behavior without polluting entity shapes.
+A diagnostic is a structured note about data quality or fallback handling for one field in a fetched entity.
 
-Examples:
+Each diagnostic is a `DataIssue`:
 
-- backend price unavailable, on-chain fallback used
-- bigint value out of JS safe number range and clamped
-- source field missing and default value applied
+- `code`: category (`COERCED_TYPE`, `OUT_OF_RANGE_CLAMPED`, `SOURCE_UNAVAILABLE`, `FALLBACK_USED`, ...)
+- `severity`: `info | warning | error`
+- `message`: short human-readable explanation
+- `path`: JSONPath-like location from the fetch result root
+- optional `source`, `originalValue`, `normalizedValue`
 
-Diagnostics are stored in a sidecar `WeakMap<object, DataIssue[]>`, keyed by entity instance.
+Diagnostics are not entity state. They describe how the returned snapshot was built.
+
+## Why Diagnostics Are Useful
+
+They let consumers handle imperfect upstream data without guessing:
+
+- UI: show badges like “fallback price used” or “value clamped” on exact fields
+- Observability: count recurring source failures by `code`/`source`
+- Policy: decide in app code when to warn, ignore, retry, or throw
+- Safety: keep entity models clean while still exposing normalization/fallback behavior
+
+Because diagnostics paths target the fetched snapshot, they are most reliable right after fetch.  
+If callers mutate/reorder entities later, paths may no longer match.
+
+## Service Return Pattern
+
+Fetch/build services return diagnostics next to data:
+
+- `fetchAccount(...) -> { result, errors }`
+- `fetchSubAccount(...) -> { result, errors }`
+- `fetchWallet(...) -> { result, errors }`
+- `fetchVault(...) -> { result, errors }`
+- `fetchVaults(...) -> { result, errors }`
+- `fetchVerifiedVaults(...) -> { result, errors }`
+
+Errors include issues from nested entities and populated sub-services, path-prefixed from the top-level result.
+
+## Entity Populate Pattern
+
+Entity `populateX` methods mutate the entity and return diagnostics directly:
+
+- `populateVaults(...) -> DataIssue[]`
+- `populateCollaterals(...) -> DataIssue[]`
+- `populateStrategyVaults(...) -> DataIssue[]`
+- `populateMarketPrices(...) -> DataIssue[]`
+- `populateRewards(...) -> DataIssue[]`
+- `populateUserRewards(...) -> DataIssue[]`
 
 ## API
 
-Main functions:
+```ts
+import type { DataIssue, ServiceResult } from "euler-v2-sdk";
+```
 
-- `addEntityDataIssue(entity, issue)` adds an issue to an entity sidecar.
-- `getEntityDataIssues(entity)` returns all issues for that entity.
-- `getEntityDataIssuesAtPath(entity, path)` filters by field path.
-- `hasEntityDataIssues(entity)` quick boolean check.
-- `transferEntityDataIssues(source, target)` moves/merges diagnostics across wrappers.
-- `bigintToSafeNumber(...)`, `bigintToScaledNumber(...)`, `numberLikeToSafeFiniteNumber(...)` normalize values and automatically add diagnostics via `addEntityDataIssue`.
+- `DataIssue`: one normalization/fallback/source issue with JSONPath-like `path`.
+- `ServiceResult<T>`: `{ result: T, errors: DataIssue[] }`.
 
-## Path Convention
+## Paths
 
-Use JSONPath-like strings relative to the entity root:
+Paths are relative to top-level fetch result:
 
+- `$.subAccounts[0].positions[1].liquidity.daysToLiquidation`
 - `$.marketPriceUsd`
-- `$.liquidity.daysToLiquidation`
-- `$.collaterals[2].liquidationLTV`
+- `$.userRewards`
 
+## Consumer Policy
 
-## Reading Diagnostics in App/UI
-
-```ts
-const issues = getEntityDataIssues(vault);
-
-const marketPriceIssues = getEntityDataIssuesAtPath(vault, "$.marketPriceUsd");
-const usedFallback = marketPriceIssues.some((i) => i.code === "FALLBACK_USED");
-```
-
-Typical UI pattern:
-
-- show badge/icon when `hasEntityDataIssues(entity)` is true
-- show per-field hints/tooltips via `getEntityDataIssuesAtPath(...)`
-
-## Throw Policy
-
-Converters and services normalize and collect diagnostics by default.
-
-Decision to throw on conversion issues is up to the consumer:
-
-- read issues with `getEntityDataIssues(...)`
-- define your own blocking policy (by `severity`, `code`, `path`)
-- throw in your app boundary when policy conditions are met
-
-## Wiring for Custom Entities
-
-### 1) In custom converter/normalizer
+The SDK always collects diagnostics during fetch/build.
+Throw policy is consumer-defined.
 
 ```ts
-import {
-  bigintToSafeNumber,
-  transferEntityDataIssues,
-} from "euler-v2-sdk";
-
-export function convertCustomVault(raw: RawVault): CustomVaultData {
-  const decimals = bigintToSafeNumber(raw.decimals, {
-    path: "$.asset.decimals",
-    target: raw as object,
-    source: "customSource",
-  });
-
-  const result: CustomVaultData = {
-    address: raw.vault,
-    decimals,
-  };
-
-  transferEntityDataIssues(raw as object, result as object);
-  return result;
-}
-```
-
-### Consumer-side strict policy example
-
-```ts
-import { getEntityDataIssues } from "euler-v2-sdk";
-
-const issues = getEntityDataIssues(vault);
-const blocking = issues.find((i) => i.severity === "error");
+const { result: account, errors } = await sdk.accountService.fetchAccount(chainId, owner);
+const blocking = errors.find((e) => e.severity === "error");
 if (blocking) throw new Error(blocking.message);
 ```
 
-### 2) In custom entity class constructor
-
-If your class wraps plain converted data, transfer diagnostics from input object:
+UI usage example:
 
 ```ts
-import { transferEntityDataIssues } from "euler-v2-sdk";
-
-class CustomVaultEntity {
-  constructor(data: CustomVaultData) {
-    transferEntityDataIssues(data as object, this);
-    // assign fields...
-  }
-}
+const priceIssues = errors.filter((e) => e.path.includes("marketPriceUsd"));
+const hasFallback = priceIssues.some((e) => e.code === "FALLBACK_USED");
 ```
 
-This keeps diagnostics available after wrapping.
+## Custom Converter Pattern
 
-### 3) In custom services with fallback logic
-
-Record both source failure and fallback usage on the affected entity:
+Use normalization helpers and append issues to a local `errors` array.
 
 ```ts
-import { addEntityDataIssue } from "euler-v2-sdk";
+import { bigintToSafeNumber, type DataIssue } from "euler-v2-sdk";
 
-async function populateCustomPrice(entity: CustomVaultEntity): Promise<void> {
-  try {
-    const backend = await queryBackend(entity);
-    if (backend) {
-      entity.marketPriceUsd = backend;
-      return;
-    }
-    addEntityDataIssue(entity, {
-      code: "SOURCE_UNAVAILABLE",
-      severity: "warning",
-      message: "Backend price unavailable.",
-      path: "$.marketPriceUsd",
-      source: "customBackend",
-      normalizedValue: "fallback:onchain",
-    });
-  } catch (error) {
-    addEntityDataIssue(entity, {
-      code: "SOURCE_UNAVAILABLE",
-      severity: "warning",
-      message: "Backend price request failed.",
-      path: "$.marketPriceUsd",
-      source: "customBackend",
-      originalValue: error instanceof Error ? error.message : String(error),
-      normalizedValue: "fallback:onchain",
-    });
-  }
-
-  addEntityDataIssue(entity, {
-    code: "FALLBACK_USED",
-    severity: "info",
-    message: "On-chain fallback source used.",
-    path: "$.marketPriceUsd",
-    source: "customOracle",
+function convertCustom(raw: { decimals: bigint }, errors: DataIssue[]) {
+  const decimals = bigintToSafeNumber(raw.decimals, {
+    path: "$.decimals",
+    errors,
+    source: "customSource",
   });
-
-  entity.marketPriceUsd = await queryOnchain(entity);
+  return { decimals };
 }
 ```
 
-## Recommended Issue Codes
+## Custom Service Pattern
 
-Use shared codes for consistent downstream behavior:
+Build diagnostics in parallel with result data and return together:
 
-- `SOURCE_UNAVAILABLE`
-- `FALLBACK_USED`
-- `OUT_OF_RANGE_CLAMPED`
-- `DEFAULT_APPLIED`
-- `PRECISION_LOSS`
-- `DECODE_FAILED`
+```ts
+import type { DataIssue, ServiceResult } from "euler-v2-sdk";
 
-If you need app-specific codes, keep shared semantics in `message` and `source`.
+async function fetchCustom(): Promise<ServiceResult<{ price?: number }>> {
+  const errors: DataIssue[] = [];
+  const result: { price?: number } = {};
+
+  try {
+    result.price = await fetchPrimary();
+  } catch (error) {
+    errors.push({
+      code: "SOURCE_UNAVAILABLE",
+      severity: "warning",
+      message: "Primary source failed; fallback used.",
+      path: "$.price",
+      source: "primaryApi",
+      originalValue: error instanceof Error ? error.message : String(error),
+    });
+    result.price = await fetchFallback();
+  }
+
+  return { result, errors };
+}
+```

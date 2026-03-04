@@ -5,9 +5,8 @@ import { Address, getAddress, erc20Abi } from "viem";
 import { IWallet, WalletAsset, AssetAllowances } from "../../../entities/Wallet.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js";
 import {
-  addEntityDataIssue,
-  transferEntityDataIssues,
-  type DataIssueInput,
+  type DataIssue,
+  type ServiceResult,
 } from "../../../utils/entityDiagnostics.js";
 import { numberLikeToSafeFiniteNumber } from "../../../utils/normalization.js";
 
@@ -105,15 +104,14 @@ export class WalletOnchainAdapter implements IWalletAdapter {
     chainId: number,
     account: Address,
     assetsWithSpenders: AssetWithSpenders[]
-  ): Promise<IWallet | undefined> {
+  ): Promise<ServiceResult<IWallet | undefined>> {
     const provider = this.providerService.getProvider(chainId);
     const deployment = this.deploymentService.getDeployment(chainId);
     const permit2Address = deployment.addresses.coreAddrs.permit2;
+    const errors: DataIssue[] = [];
 
     try {
       const walletAssets: WalletAsset[] = [];
-      const pendingIssues: DataIssueInput[] = [];
-      const normalizationTarget: object = {};
 
       // Fetch all data in parallel
       const assetResults = await Promise.all(
@@ -151,7 +149,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
                 );
 
               if (assetForVault.failed) {
-                pendingIssues.push({
+                errors.push({
                   code: "SOURCE_UNAVAILABLE",
                   severity: "warning",
                   message: "Failed to fetch asset allowance for spender; defaulted to 0.",
@@ -161,7 +159,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
                 });
               }
               if (assetForPermit2.failed) {
-                pendingIssues.push({
+                errors.push({
                   code: "SOURCE_UNAVAILABLE",
                   severity: "warning",
                   message: "Failed to fetch Permit2 allowance approval; defaulted to 0.",
@@ -171,7 +169,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
                 });
               }
               if (permit2Allowance.failed) {
-                pendingIssues.push({
+                errors.push({
                   code: "SOURCE_UNAVAILABLE",
                   severity: "warning",
                   message: "Failed to fetch Permit2 spender allowance; defaulted to 0.",
@@ -192,7 +190,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
       for (const { assetAddress, balanceResult, spenders, spenderResults } of assetResults) {
         const balance = balanceResult.value;
         if (balance === undefined) {
-          pendingIssues.push({
+          errors.push({
             code: "SOURCE_UNAVAILABLE",
             severity: "warning",
             message: "Failed to fetch asset balance; asset entry omitted from wallet result.",
@@ -221,7 +219,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
             (permit2Result?.[1] ?? 0) as bigint | number,
             {
               path: `$.assets.allowances[${i}].permit2ExpirationTime`,
-              target: normalizationTarget,
+              errors,
               source: "permit2.allowance",
               fallback: 0,
             }
@@ -243,19 +241,22 @@ export class WalletOnchainAdapter implements IWalletAdapter {
         });
       }
 
-      const walletData: IWallet = {
+      return { result: {
         chainId,
         account,
         assets: walletAssets,
-      };
-      for (const issue of pendingIssues) {
-        addEntityDataIssue(walletData as object, issue);
-      }
-      transferEntityDataIssues(normalizationTarget, walletData as object);
-      return walletData;
+      }, errors };
     } catch (error) {
       console.error(`Failed to fetch wallet info for ${account}:`, error);
-      return undefined;
+      errors.push({
+        code: "SOURCE_UNAVAILABLE",
+        severity: "warning",
+        message: "Failed to fetch wallet info.",
+        path: "$",
+        source: "walletOnchainAdapter",
+        originalValue: error instanceof Error ? error.message : String(error),
+      });
+      return { result: undefined, errors };
     }
   }
 }

@@ -8,7 +8,6 @@ import type { DeploymentService } from "../deploymentService/deploymentService.j
 import { utilsLensPriceAbi } from "./utilsLensPriceAbi.js";
 import { PricingBackendClient, backendPriceToBigInt } from "./backendClient.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
-import { addEntityDataIssue } from "../../utils/entityDiagnostics.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -180,10 +179,8 @@ export class PriceService implements IPriceService {
       return ONE_18;
     }
 
-    let backendAttempted = false;
     // Try backend first
     if (this.backendClient?.isConfigured) {
-      backendAttempted = true;
       try {
         const backendPrice = await this.backendClient.queryBackendPrice({
           address: uoaAddress,
@@ -192,49 +189,13 @@ export class PriceService implements IPriceService {
         if (backendPrice) {
           const rate = backendPriceToBigInt(backendPrice.price);
           if (rate > 0n) return rate;
-          addEntityDataIssue(vault, {
-            code: "SOURCE_UNAVAILABLE",
-            severity: "warning",
-            message: "Backend unit-of-account price was invalid and ignored.",
-            path: "$.unitOfAccountUsdRate",
-            source: "pricingBackend",
-            originalValue: backendPrice.price,
-            normalizedValue: "fallback:onchain",
-          });
-        } else {
-          addEntityDataIssue(vault, {
-            code: "SOURCE_UNAVAILABLE",
-            severity: "warning",
-            message: "Backend unit-of-account price was unavailable.",
-            path: "$.unitOfAccountUsdRate",
-            source: "pricingBackend",
-            normalizedValue: "fallback:onchain",
-          });
         }
-      } catch (error) {
-        addEntityDataIssue(vault, {
-          code: "SOURCE_UNAVAILABLE",
-          severity: "warning",
-          message: "Backend unit-of-account price request failed.",
-          path: "$.unitOfAccountUsdRate",
-          source: "pricingBackend",
-          originalValue: error instanceof Error ? error.message : String(error),
-          normalizedValue: "fallback:onchain",
-        });
+      } catch {
         // Fall through to on-chain
       }
     }
 
     // On-chain: call utilsLens.getAssetPriceInfo(unitOfAccount, USD)
-    if (backendAttempted) {
-      addEntityDataIssue(vault, {
-        code: "FALLBACK_USED",
-        severity: "info",
-        message: "On-chain price source used for unit-of-account USD rate.",
-        path: "$.unitOfAccountUsdRate",
-        source: "utilsLens",
-      });
-    }
     const priceInfo = await this.fetchAssetPriceInfo(
       vault.chainId,
       uoaAddress
@@ -257,10 +218,8 @@ export class PriceService implements IPriceService {
   ): Promise<PriceResult | undefined> {
     if (!vault) return undefined;
 
-    let backendAttempted = false;
     // Try backend first
     if (this.backendClient?.isConfigured) {
-      backendAttempted = true;
       try {
         const backendPrice = await this.backendClient.queryBackendPrice({
           address: vault.asset.address,
@@ -269,48 +228,12 @@ export class PriceService implements IPriceService {
         if (backendPrice) {
           const result = backendPriceToPriceResult(backendPrice.price);
           if (result) return result;
-          addEntityDataIssue(vault, {
-            code: "SOURCE_UNAVAILABLE",
-            severity: "warning",
-            message: "Backend asset USD price was invalid and ignored.",
-            path: "$.marketPriceUsd",
-            source: "pricingBackend",
-            originalValue: backendPrice.price,
-            normalizedValue: "fallback:onchain",
-          });
-        } else {
-          addEntityDataIssue(vault, {
-            code: "SOURCE_UNAVAILABLE",
-            severity: "warning",
-            message: "Backend asset USD price was unavailable.",
-            path: "$.marketPriceUsd",
-            source: "pricingBackend",
-            normalizedValue: "fallback:onchain",
-          });
         }
-      } catch (error) {
-        addEntityDataIssue(vault, {
-          code: "SOURCE_UNAVAILABLE",
-          severity: "warning",
-          message: "Backend asset USD price request failed.",
-          path: "$.marketPriceUsd",
-          source: "pricingBackend",
-          originalValue: error instanceof Error ? error.message : String(error),
-          normalizedValue: "fallback:onchain",
-        });
+      } catch {
         // Fall through to on-chain
       }
     }
 
-    if (backendAttempted) {
-      addEntityDataIssue(vault, {
-        code: "FALLBACK_USED",
-        severity: "info",
-        message: "On-chain source used for asset USD price.",
-        path: "$.marketPriceUsd",
-        source: "oracle",
-      });
-    }
     return this.getAssetUsdPriceFromOracle(vault);
   }
 
@@ -325,10 +248,8 @@ export class PriceService implements IPriceService {
   ): Promise<PriceResult | undefined> {
     if (!liabilityVault || !collateralVault) return undefined;
 
-    let backendAttempted = false;
     // Try backend first
     if (this.backendClient?.isConfigured) {
-      backendAttempted = true;
       try {
         const backendPrice = await this.backendClient.queryBackendPrice({
           address: collateralVault.asset.address,
@@ -337,48 +258,12 @@ export class PriceService implements IPriceService {
         if (backendPrice) {
           const result = backendPriceToPriceResult(backendPrice.price);
           if (result) return result;
-          addEntityDataIssue(collateralVault, {
-            code: "SOURCE_UNAVAILABLE",
-            severity: "warning",
-            message: "Backend collateral USD price was invalid and ignored.",
-            path: "$.marketPriceUsd",
-            source: "pricingBackend",
-            originalValue: backendPrice.price,
-            normalizedValue: "fallback:onchain",
-          });
-        } else {
-          addEntityDataIssue(collateralVault, {
-            code: "SOURCE_UNAVAILABLE",
-            severity: "warning",
-            message: "Backend collateral USD price was unavailable.",
-            path: "$.marketPriceUsd",
-            source: "pricingBackend",
-            normalizedValue: "fallback:onchain",
-          });
         }
-      } catch (error) {
-        addEntityDataIssue(collateralVault, {
-          code: "SOURCE_UNAVAILABLE",
-          severity: "warning",
-          message: "Backend collateral USD price request failed.",
-          path: "$.marketPriceUsd",
-          source: "pricingBackend",
-          originalValue: error instanceof Error ? error.message : String(error),
-          normalizedValue: "fallback:onchain",
-        });
+      } catch {
         // Fall through to on-chain
       }
     }
 
-    if (backendAttempted) {
-      addEntityDataIssue(collateralVault, {
-        code: "FALLBACK_USED",
-        severity: "info",
-        message: "On-chain source used for collateral USD price.",
-        path: "$.marketPriceUsd",
-        source: "oracle",
-      });
-    }
     return this.getCollateralUsdPriceFromOracle(liabilityVault, collateralVault);
   }
 

@@ -10,6 +10,8 @@ import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery
 import type { EulerPlugin, PluginBatchItems } from "../../../../plugins/types.js";
 import { executeBatchSimulation, BatchSimulationAdapter } from "../../../../plugins/batchSimulation.js";
 import type { EVCBatchItem } from "../../../executionService/executionServiceTypes.js";
+import type { DataIssue, ServiceResult } from "../../../../utils/entityDiagnostics.js";
+import { prefixDataIssues } from "../../../../utils/entityDiagnostics.js";
 
 const verifiedArrayAbi = [
   {
@@ -92,27 +94,31 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
     this.queryEVaultVerifiedArray = fn;
   }
 
-  async fetchVaults(chainId: number, vaults: Address[]): Promise<IEVault[]> {
+  async fetchVaults(chainId: number, vaults: Address[]): Promise<ServiceResult<IEVault[]>> {
     const provider = this.providerService.getProvider(chainId);
     const deployment = this.deploymentService.getDeployment(chainId);
     const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
+    const errors: DataIssue[] = [];
 
     const results = await Promise.all(
       vaults.map(vault => this.queryEVaultInfoFull(provider, vaultLensAddress, vault))
     );
 
-    const parsedVaults: IEVault[] = results.map((result) => {
+    const parsedVaults: IEVault[] = results.map((result, index) => {
       const vaultInfo = result as unknown as VaultInfoFull;
-      return convertVaultInfoFullToIEVault(vaultInfo, chainId);
+      const conversionErrors: DataIssue[] = [];
+      const parsed = convertVaultInfoFullToIEVault(vaultInfo, chainId, conversionErrors);
+      errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${index}]`));
+      return parsed;
     });
 
     const eVaults = parsedVaults.map(vault => new EVault(vault));
 
     // Plugin enrichment: re-fetch vaults via batchSimulation when plugins provide prepend items
-    if (this.plugins.length === 0) return eVaults;
+    if (this.plugins.length === 0) return { result: eVaults, errors };
 
     const enriched = await Promise.all(
-      eVaults.map(async (eVault) => {
+      eVaults.map(async (eVault, vaultIndex) => {
         try {
           const prepend = await this.collectReadPrepend(chainId, [eVault]);
           if (!prepend || prepend.items.length === 0) return eVault;
@@ -132,14 +138,17 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
           );
 
           if (!result) return eVault;
-          return new EVault(convertVaultInfoFullToIEVault(result, chainId));
+          const conversionErrors: DataIssue[] = [];
+          const parsed = convertVaultInfoFullToIEVault(result, chainId, conversionErrors);
+          errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${vaultIndex}]`));
+          return new EVault(parsed);
         } catch {
           return eVault;
         }
       }),
     );
 
-    return enriched;
+    return { result: enriched, errors };
   }
 
   private async collectReadPrepend(chainId: number, vaults: EVault[]): Promise<PluginBatchItems | null> {

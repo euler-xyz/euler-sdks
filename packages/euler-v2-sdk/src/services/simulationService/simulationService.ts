@@ -270,7 +270,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
           functionName: "getVaultInfoFull",
           data: resultItem.result,
         }) as unknown as VaultInfoFull;
-        const entity = new EVault(convertVaultInfoFullToIEVault(decodedVault, chainId));
+        const entity = new EVault(convertVaultInfoFullToIEVault(decodedVault, chainId, []));
         vaultsByAddress.set(getAddress(meta.vault), entity);
       }
 
@@ -280,7 +280,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
           functionName: "getVaultInfoFull",
           data: resultItem.result,
         }) as unknown as EulerEarnVaultInfoFull;
-        const entity = new EulerEarn(convertEulerEarnVaultInfoFullToIEulerEarn(decodedVault, chainId));
+        const entity = new EulerEarn(convertEulerEarnVaultInfoFullToIEulerEarn(decodedVault, chainId, []));
         vaultsByAddress.set(getAddress(meta.vault), entity);
       }
 
@@ -348,7 +348,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
     const builtSubAccounts: ISubAccount[] = [];
     for (const [subAccount, evcInfo] of evcInfos.entries()) {
       const vaultInfos = vaultInfosBySub.get(subAccount) ?? [];
-      const built = this.accountAdapter.buildSubAccount(evcInfo, vaultInfos);
+      const built = this.accountAdapter.buildSubAccount(evcInfo, vaultInfos, []);
       const { isLockdownMode: _lm, isPermitDisabledMode: _pm, ...subAccountData } = built;
       builtSubAccounts.push(subAccountData);
     }
@@ -650,7 +650,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
 
     let wallet;
     try {
-      wallet = await this.walletService.fetchWallet(chainId, account, assetsWithSpenders);
+      wallet = (await this.walletService.fetchWallet(chainId, account, assetsWithSpenders)).result;
     } catch {
       return {};
     }

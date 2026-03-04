@@ -4,7 +4,6 @@ import {
   IERC4626Vault,
   IERC4626VaultConversion,
 } from "./ERC4626Vault.js";
-import { transferEntityDataIssues } from "../utils/entityDiagnostics.js";
 
 export interface ISecuritizeCollateralVault extends IERC4626Vault {
   governor: Address;
@@ -20,7 +19,6 @@ export class SecuritizeCollateralVault
 
   constructor(args: ISecuritizeCollateralVault) {
     super(args);
-    transferEntityDataIssues(args as object, this);
     this.governor = args.governor;
     this.supplyCap = args.supplyCap;
   }

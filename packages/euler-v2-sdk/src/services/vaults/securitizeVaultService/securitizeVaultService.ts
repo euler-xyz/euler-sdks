@@ -9,12 +9,13 @@ import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
 import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
+import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.js";
 
 export interface ISecuritizeCollateralAdapter {
   fetchVaults(
     chainId: number,
     vault: Address[]
-  ): Promise<ISecuritizeCollateralVault[]>;
+  ): Promise<ServiceResult<ISecuritizeCollateralVault[]>>;
   fetchVerifiedVaultsAddresses(
     chainId: number,
     perspectives: Address[]
@@ -29,10 +30,10 @@ export interface ISecuritizeVaultService
     SecuritizeCollateralVault,
     StandardSecuritizeCollateralPerspectives | Address
   > {
-  populateMarketPrices(vaults: SecuritizeCollateralVault[]): Promise<void>;
-  populateRewards(vaults: SecuritizeCollateralVault[]): Promise<void>;
-  populateIntrinsicApy(vaults: SecuritizeCollateralVault[]): Promise<void>;
-  populateLabels(vaults: SecuritizeCollateralVault[]): Promise<void>;
+  populateMarketPrices(vaults: SecuritizeCollateralVault[]): Promise<DataIssue[]>;
+  populateRewards(vaults: SecuritizeCollateralVault[]): Promise<DataIssue[]>;
+  populateIntrinsicApy(vaults: SecuritizeCollateralVault[]): Promise<DataIssue[]>;
+  populateLabels(vaults: SecuritizeCollateralVault[]): Promise<DataIssue[]>;
 }
 
 export class SecuritizeVaultService implements ISecuritizeVaultService {
@@ -79,77 +80,128 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     chainId: number,
     vault: Address,
     options?: VaultFetchOptions
-  ): Promise<SecuritizeCollateralVault> {
-    const vaults = await this.adapter.fetchVaults(chainId, [vault]);
-    if (vaults.length === 0) {
+  ): Promise<ServiceResult<SecuritizeCollateralVault>> {
+    const fetched = await this.adapter.fetchVaults(chainId, [vault]);
+    const errors: DataIssue[] = [...fetched.errors];
+    if (fetched.result.length === 0) {
       throw new Error(`Securitize vault not found for ${vault}`);
     }
-    const entity = new SecuritizeCollateralVault(vaults[0]!);
+    const entity = new SecuritizeCollateralVault(fetched.result[0]!);
     if (options?.populateMarketPrices) {
-      await this.populateMarketPrices([entity]);
+      errors.push(...(await this.populateMarketPrices([entity])));
     }
     if (options?.populateRewards) {
-      await this.populateRewards([entity]);
+      errors.push(...(await this.populateRewards([entity])));
     }
     if (options?.populateIntrinsicApy) {
-      await this.populateIntrinsicApy([entity]);
+      errors.push(...(await this.populateIntrinsicApy([entity])));
     }
     if (options?.populateLabels) {
-      await this.populateLabels([entity]);
+      errors.push(...(await this.populateLabels([entity])));
     }
-    return entity;
+    return { result: entity, errors };
   }
 
   async fetchVaults(
     chainId: number,
     vaults: Address[],
     options?: VaultFetchOptions
-  ): Promise<SecuritizeCollateralVault[]> {
-    const entities = (await this.adapter.fetchVaults(chainId, vaults)).map(
+  ): Promise<ServiceResult<SecuritizeCollateralVault[]>> {
+    const fetched = await this.adapter.fetchVaults(chainId, vaults);
+    const errors: DataIssue[] = [...fetched.errors];
+    const entities = fetched.result.map(
       (v) => new SecuritizeCollateralVault(v)
     );
     if (options?.populateMarketPrices) {
-      await this.populateMarketPrices(entities);
+      errors.push(...(await this.populateMarketPrices(entities)));
     }
     if (options?.populateRewards) {
-      await this.populateRewards(entities);
+      errors.push(...(await this.populateRewards(entities)));
     }
     if (options?.populateIntrinsicApy) {
-      await this.populateIntrinsicApy(entities);
+      errors.push(...(await this.populateIntrinsicApy(entities)));
     }
     if (options?.populateLabels) {
-      await this.populateLabels(entities);
+      errors.push(...(await this.populateLabels(entities)));
     }
-    return entities;
+    return { result: entities, errors };
   }
 
   async populateMarketPrices(
     vaults: SecuritizeCollateralVault[]
-  ): Promise<void> {
-    if (!this.priceService || vaults.length === 0) return;
+  ): Promise<DataIssue[]> {
+    if (!this.priceService || vaults.length === 0) return [];
+    const errors: DataIssue[] = [];
 
     await Promise.all(
-      vaults.map(async (v) => {
-        v.marketPriceUsd = await v
-          .fetchAssetMarketPriceUsd(this.priceService!)
-          .catch(() => undefined);
+      vaults.map(async (v, index) => {
+        try {
+          v.marketPriceUsd = await v.fetchAssetMarketPriceUsd(this.priceService!);
+        } catch (error) {
+          errors.push({
+            code: "SOURCE_UNAVAILABLE",
+            severity: "warning",
+            message: "Failed to populate asset market price.",
+            path: `$.vaults[${index}].marketPriceUsd`,
+            source: "priceService",
+            originalValue: error instanceof Error ? error.message : String(error),
+          });
+          v.marketPriceUsd = undefined;
+        }
       })
     );
+    return errors;
   }
 
-  async populateRewards(vaults: SecuritizeCollateralVault[]): Promise<void> {
-    if (!this.rewardsService || vaults.length === 0) return;
-    await this.rewardsService.populateRewards(vaults);
+  async populateRewards(vaults: SecuritizeCollateralVault[]): Promise<DataIssue[]> {
+    if (!this.rewardsService || vaults.length === 0) return [];
+    try {
+      await this.rewardsService.populateRewards(vaults);
+      return [];
+    } catch (error) {
+      return [{
+        code: "SOURCE_UNAVAILABLE",
+        severity: "warning",
+        message: "Failed to populate rewards.",
+        path: "$",
+        source: "rewardsService",
+        originalValue: error instanceof Error ? error.message : String(error),
+      }];
+    }
   }
 
-  async populateIntrinsicApy(vaults: SecuritizeCollateralVault[]): Promise<void> {
-    if (!this.intrinsicApyService || vaults.length === 0) return;
-    await this.intrinsicApyService.populateIntrinsicApy(vaults);
+  async populateIntrinsicApy(vaults: SecuritizeCollateralVault[]): Promise<DataIssue[]> {
+    if (!this.intrinsicApyService || vaults.length === 0) return [];
+    try {
+      await this.intrinsicApyService.populateIntrinsicApy(vaults);
+      return [];
+    } catch (error) {
+      return [{
+        code: "SOURCE_UNAVAILABLE",
+        severity: "warning",
+        message: "Failed to populate intrinsic APY.",
+        path: "$",
+        source: "intrinsicApyService",
+        originalValue: error instanceof Error ? error.message : String(error),
+      }];
+    }
   }
 
-  async populateLabels(vaults: SecuritizeCollateralVault[]): Promise<void> {
-    if (!this.eulerLabelsService || vaults.length === 0) return;
-    await this.eulerLabelsService.populateLabels(vaults);
+  async populateLabels(vaults: SecuritizeCollateralVault[]): Promise<DataIssue[]> {
+    if (!this.eulerLabelsService || vaults.length === 0) return [];
+    try {
+      await this.eulerLabelsService.populateLabels(vaults);
+      return [];
+    } catch (error) {
+      return [{
+        code: "SOURCE_UNAVAILABLE",
+        severity: "warning",
+        message: "Failed to populate labels.",
+        path: "$",
+        source: "eulerLabelsService",
+        originalValue: error instanceof Error ? error.message : String(error),
+      }];
+    }
   }
 
   async fetchVerifiedVaultAddresses(
@@ -164,7 +216,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     chainId: number,
     perspectives: (StandardSecuritizeCollateralPerspectives | Address)[],
     options?: VaultFetchOptions
-  ): Promise<SecuritizeCollateralVault[]> {
+  ): Promise<ServiceResult<SecuritizeCollateralVault[]>> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives

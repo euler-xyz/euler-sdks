@@ -1,4 +1,5 @@
 import { Address } from "viem";
+import type { ServiceResult } from "../../utils/entityDiagnostics.js";
 
 export interface VaultFetchOptions {
   populateMarketPrices?: boolean;
@@ -22,8 +23,16 @@ export interface VaultFetchOptions {
  * @typeParam TPerspective - Perspective type (string, or perspective enums like StandardEulerEarnPerspectives | StandardEVaultPerspectives)
  */
 export interface IVaultService<TVault, TPerspective> {
-  fetchVault(chainId: number, vault: Address, options?: VaultFetchOptions): Promise<TVault>;
-  fetchVaults(chainId: number, vaults: Address[], options?: VaultFetchOptions): Promise<TVault[]>;
+  fetchVault(
+    chainId: number,
+    vault: Address,
+    options?: VaultFetchOptions
+  ): Promise<ServiceResult<TVault>>;
+  fetchVaults(
+    chainId: number,
+    vaults: Address[],
+    options?: VaultFetchOptions
+  ): Promise<ServiceResult<TVault[]>>;
   fetchVerifiedVaultAddresses(
     chainId: number,
     perspectives: (TPerspective | Address)[]
@@ -32,6 +41,6 @@ export interface IVaultService<TVault, TPerspective> {
     chainId: number,
     perspectives: (TPerspective | Address)[],
     options?: VaultFetchOptions
-  ): Promise<TVault[]>;
+  ): Promise<ServiceResult<TVault[]>>;
   factory(chainId: number): Address;
 }

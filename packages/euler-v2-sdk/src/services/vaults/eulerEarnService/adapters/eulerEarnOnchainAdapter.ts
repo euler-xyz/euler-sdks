@@ -8,6 +8,8 @@ import { convertEulerEarnVaultInfoFullToIEulerEarn } from "./eulerEarnInfoConver
 import { eulerEarnVaultLensAbi } from "./abis/eulerEarnVaultLensAbi.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
 import type { EVCBatchItem } from "../../../executionService/executionServiceTypes.js";
+import type { DataIssue, ServiceResult } from "../../../../utils/entityDiagnostics.js";
+import { prefixDataIssues } from "../../../../utils/entityDiagnostics.js";
 
 const verifiedArrayAbi = [
   {
@@ -83,20 +85,24 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
     this.queryEulerEarnVerifiedArray = fn;
   }
 
-  async fetchVaults(chainId: number, vaults: Address[]): Promise<IEulerEarn[]> {
+  async fetchVaults(chainId: number, vaults: Address[]): Promise<ServiceResult<IEulerEarn[]>> {
     const provider = this.providerService.getProvider(chainId);
     const deployment = this.deploymentService.getDeployment(chainId);
     const lensAddress = deployment.addresses.lensAddrs.eulerEarnVaultLens;
+    const errors: DataIssue[] = [];
     const results = await Promise.all(
       vaults.map(vault => this.queryEulerEarnVaultInfoFull(provider, lensAddress, vault))
     );
 
     const parsedVaults: IEulerEarn[] = results.map((result, idx) => {
       const vaultInfo = result as unknown as EulerEarnVaultInfoFull;
-      return convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo, chainId);
+      const conversionErrors: DataIssue[] = [];
+      const parsed = convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo, chainId, conversionErrors);
+      errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${idx}]`));
+      return parsed;
     });
 
-    return parsedVaults.map(vault => new EulerEarn(vault));
+    return { result: parsedVaults.map(vault => new EulerEarn(vault)), errors };
   }
 
   async fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]> {

@@ -3,8 +3,7 @@ import { IEulerEarn, EulerEarnStrategyInfo, EulerEarnGovernance, EulerEarnAlloca
 import { Token, VaultType } from "../../../../utils/types.js";
 import { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
 import {
-  addEntityDataIssue,
-  transferEntityDataIssues,
+  type DataIssue,
 } from "../../../../utils/entityDiagnostics.js";
 import {
   bigintToSafeNumber,
@@ -18,7 +17,8 @@ import {
  */
 export function convertEulerEarnVaultInfoFullToIEulerEarn(
   vaultInfo: EulerEarnVaultInfoFull,
-  chainId: number
+  chainId: number,
+  errors: DataIssue[]
 ): IEulerEarn {
   const shares: Token = {
     address: vaultInfo.vault,
@@ -26,7 +26,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
     symbol: vaultInfo.vaultSymbol,
     decimals: bigintToSafeNumber(vaultInfo.vaultDecimals, {
       path: "$.shares.decimals",
-      target: vaultInfo as object,
+      errors,
       source: "eulerEarnLens",
     }),
   };
@@ -37,7 +37,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
     symbol: vaultInfo.assetSymbol,
     decimals: bigintToSafeNumber(vaultInfo.assetDecimals, {
       path: "$.asset.decimals",
-      target: vaultInfo as object,
+      errors,
       source: "eulerEarnLens",
     }),
   };
@@ -50,23 +50,23 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
     feeReceiver: vaultInfo.feeReceiver,
     timelock: bigintToSafeNumber(vaultInfo.timelock, {
       path: "$.governance.timelock",
-      target: vaultInfo as object,
+      errors,
       source: "eulerEarnLens",
     }),
     pendingTimelock: bigintToSafeNumber(vaultInfo.pendingTimelock, {
       path: "$.governance.pendingTimelock",
-      target: vaultInfo as object,
+      errors,
       source: "eulerEarnLens",
     }),
     pendingTimelockValidAt: bigintToSafeNumber(vaultInfo.pendingTimelockValidAt, {
       path: "$.governance.pendingTimelockValidAt",
-      target: vaultInfo as object,
+      errors,
       source: "eulerEarnLens",
     }),
     pendingGuardian: vaultInfo.pendingGuardian,
     pendingGuardianValidAt: bigintToSafeNumber(vaultInfo.pendingGuardianValidAt, {
       path: "$.governance.pendingGuardianValidAt",
-      target: vaultInfo as object,
+      errors,
       source: "eulerEarnLens",
     }),
   };
@@ -78,7 +78,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
       symbol: strategy.info.vaultSymbol,
       decimals: bigintToSafeNumber(strategy.info.vaultDecimals, {
         path: `$.strategies[${idx}].shares.decimals`,
-        target: vaultInfo as object,
+        errors,
         source: "eulerEarnLens",
       }),
     };
@@ -89,7 +89,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
       symbol: strategy.info.assetSymbol,
       decimals: bigintToSafeNumber(strategy.info.assetDecimals, {
         path: `$.strategies[${idx}].asset.decimals`,
-        target: vaultInfo as object,
+        errors,
         source: "eulerEarnLens",
       }),
     };
@@ -99,7 +99,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
       pending: strategy.pendingAllocationCap,
       pendingValidAt: bigintToSafeNumber(strategy.pendingAllocationCapValidAt, {
         path: `$.strategies[${idx}].allocationCap.pendingValidAt`,
-        target: vaultInfo as object,
+        errors,
         source: "eulerEarnLens",
       }),
     };
@@ -112,7 +112,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
       allocationCap,
       removableAt: bigintToSafeNumber(strategy.removableAt, {
         path: `$.strategies[${idx}].removableAt`,
-        target: vaultInfo as object,
+        errors,
         source: "eulerEarnLens",
       }),
       shares: strategyShares,
@@ -135,7 +135,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
     performanceFee: (() => {
       const value = Number(formatUnits(vaultInfo.performanceFee, 18));
       if (Number.isFinite(value)) return value;
-      addEntityDataIssue(vaultInfo as object, {
+      errors.push({
         code: "PRECISION_LOSS",
         severity: "warning",
         message: "performanceFee could not be represented as a finite number; defaulted to 0.",
@@ -151,10 +151,9 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
     strategies,
     timestamp: bigintToSafeNumber(vaultInfo.timestamp, {
       path: "$.timestamp",
-      target: vaultInfo as object,
+      errors,
       source: "eulerEarnLens",
     }),
   };
-  transferEntityDataIssues(vaultInfo as object, result as object);
   return result;
 }

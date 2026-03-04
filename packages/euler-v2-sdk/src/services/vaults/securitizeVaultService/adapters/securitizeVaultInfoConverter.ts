@@ -2,7 +2,7 @@ import { ISecuritizeCollateralVault } from "../../../../entities/SecuritizeColla
 import { Token, VaultType } from "../../../../utils/types.js";
 import type { VaultInfoERC4626 } from "./securitizeVaultLensTypes.js";
 import {
-  transferEntityDataIssues,
+  type DataIssue,
 } from "../../../../utils/entityDiagnostics.js";
 import { bigintToSafeNumber } from "../../../../utils/normalization.js";
 
@@ -10,7 +10,8 @@ export function convertToISecuritizeCollateralVault(
   vaultInfo: VaultInfoERC4626,
   governor: `0x${string}`,
   supplyCap: bigint,
-  chainId: number
+  chainId: number,
+  errors: DataIssue[]
 ): ISecuritizeCollateralVault {
   const shares: Token = {
     address: vaultInfo.vault,
@@ -18,7 +19,7 @@ export function convertToISecuritizeCollateralVault(
     symbol: vaultInfo.vaultSymbol,
     decimals: bigintToSafeNumber(vaultInfo.vaultDecimals, {
       path: "$.shares.decimals",
-      target: vaultInfo as object,
+      errors,
       source: "securitizeLens",
     }),
   };
@@ -29,7 +30,7 @@ export function convertToISecuritizeCollateralVault(
     symbol: vaultInfo.assetSymbol,
     decimals: bigintToSafeNumber(vaultInfo.assetDecimals, {
       path: "$.asset.decimals",
-      target: vaultInfo as object,
+      errors,
       source: "securitizeLens",
     }),
   };
@@ -45,6 +46,5 @@ export function convertToISecuritizeCollateralVault(
     governor,
     supplyCap,
   };
-  transferEntityDataIssues(vaultInfo as object, result as object);
   return result;
 }

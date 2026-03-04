@@ -5,6 +5,7 @@ import type { IHasVaultAddress, IVaultEntity, ISubAccount } from "../../entities
 import type { VaultFetchOptions } from "../vaults/index.js";
 import type { IPriceService } from "../priceService/index.js";
 import type { IRewardsService } from "../rewardsService/index.js";
+import { type DataIssue, type ServiceResult, withPathPrefix } from "../../utils/entityDiagnostics.js";
 
 export interface AccountFetchOptions {
   populateVaults?: boolean;
@@ -31,23 +32,23 @@ function collectVaultAddressesFromSubAccountPositionsAndLiquidity(sa: ISubAccoun
 }
 
 export interface IAccountAdapter {
-  fetchAccount(chainId: number, address: Address): Promise<IAccount | undefined>;
+  fetchAccount(chainId: number, address: Address): Promise<ServiceResult<IAccount | undefined>>;
   fetchSubAccount(
     chainId: number,
     subAccount: Address,
     vaults?: Address[]
-  ): Promise<ISubAccount | undefined>;
+  ): Promise<ServiceResult<ISubAccount | undefined>>;
 }
 
 export interface IAccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity> {
-  fetchAccount(chainId: number, address: Address, options?: AccountFetchOptions): Promise<Account<TVaultEntity>>;
+  fetchAccount(chainId: number, address: Address, options?: AccountFetchOptions): Promise<ServiceResult<Account<TVaultEntity>>>;
   fetchSubAccount(
     chainId: number,
     subAccount: Address,
     vaults?: Address[],
     options?: AccountFetchOptions
-  ): Promise<SubAccount<TVaultEntity> | undefined>;
-  populateVaults(accounts: Account<never>[], options?: AccountFetchOptions): Promise<Account<TVaultEntity>[]>;
+  ): Promise<ServiceResult<SubAccount<TVaultEntity> | undefined>>;
+  populateVaults(accounts: Account<never>[], options?: AccountFetchOptions): Promise<ServiceResult<Account<TVaultEntity>[]>>;
 }
 
 export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity>
@@ -77,10 +78,11 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     this.rewardsService = rewardsService;
   }
 
-  async fetchAccount(chainId: number, address: Address, options?: AccountFetchOptions): Promise<Account<TVaultEntity>> {
-    const accountData = await this.adapter.fetchAccount(chainId, address);
-    const account: Account<never> = accountData
-      ? new Account(accountData)
+  async fetchAccount(chainId: number, address: Address, options?: AccountFetchOptions): Promise<ServiceResult<Account<TVaultEntity>>> {
+    const fetched = await this.adapter.fetchAccount(chainId, address);
+    const errors: DataIssue[] = [...fetched.errors];
+    const account: Account<never> = fetched.result
+      ? new Account(fetched.result)
       : new Account({
           chainId,
           owner: address,
@@ -90,21 +92,44 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
         });
 
     if (Boolean(options?.populateVaults) === false) {
-      return account as Account<TVaultEntity>;
+      return { result: account as Account<TVaultEntity>, errors };
     }
 
     const populated = await this.populateVaults([account], options);
-    const result = populated[0]!;
+    errors.push(...populated.errors.map((e) => ({ ...e, path: withPathPrefix(e.path, "$") })));
+    const result = populated.result[0]!;
 
     if (options?.populateMarketPrices && this.priceService) {
-      await result.populateMarketPrices(this.priceService);
+      try {
+        errors.push(...(await result.populateMarketPrices(this.priceService)));
+      } catch (error) {
+        errors.push({
+          code: "SOURCE_UNAVAILABLE",
+          severity: "warning",
+          message: "Failed to populate market prices for account.",
+          path: "$",
+          source: "priceService",
+          originalValue: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     if (options?.populateUserRewards && this.rewardsService) {
-      await result.populateUserRewards(this.rewardsService);
+      try {
+        errors.push(...(await result.populateUserRewards(this.rewardsService)));
+      } catch (error) {
+        errors.push({
+          code: "SOURCE_UNAVAILABLE",
+          severity: "warning",
+          message: "Failed to populate user rewards for account.",
+          path: "$.userRewards",
+          source: "rewardsService",
+          originalValue: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
-    return result;
+    return { result, errors };
   }
 
   async fetchSubAccount(
@@ -112,32 +137,54 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     subAccount: Address,
     vaults?: Address[],
     options?: AccountFetchOptions
-  ): Promise<SubAccount<TVaultEntity> | undefined> {
-    const sa = await this.adapter.fetchSubAccount(chainId, subAccount, vaults);
-    if (!sa) return undefined;
+  ): Promise<ServiceResult<SubAccount<TVaultEntity> | undefined>> {
+    const fetched = await this.adapter.fetchSubAccount(chainId, subAccount, vaults);
+    const errors: DataIssue[] = [...fetched.errors];
+    const sa = fetched.result;
+    if (!sa) return { result: undefined, errors };
 
     if (options?.populateVaults === false) {
-      return new SubAccount(sa) as SubAccount<TVaultEntity>;
+      return { result: new SubAccount(sa) as SubAccount<TVaultEntity>, errors };
     }
 
     const addresses = vaults?.length ? vaults : collectVaultAddressesFromSubAccountPositionsAndLiquidity(sa);
-    if (addresses.length === 0) return new SubAccount(sa) as SubAccount<TVaultEntity>;
+    if (addresses.length === 0) return { result: new SubAccount(sa) as SubAccount<TVaultEntity>, errors };
 
     const tempAccount = new Account<never>({
       chainId,
       owner: sa.owner,
       subAccounts: { [getAddress(sa.account)]: sa },
     });
-    const populated = await tempAccount.populateVaults(this.vaultMetaService, this.buildVaultFetchOptions(options));
-    return populated.getSubAccount(getAddress(sa.account));
+    errors.push(...(await tempAccount.populateVaults(this.vaultMetaService, this.buildVaultFetchOptions(options))));
+    return { result: tempAccount.getSubAccount(getAddress(sa.account)), errors };
   }
 
-  async populateVaults(accounts: Account<never>[], options?: AccountFetchOptions): Promise<Account<TVaultEntity>[]> {
+  async populateVaults(accounts: Account<never>[], options?: AccountFetchOptions): Promise<ServiceResult<Account<TVaultEntity>[]>> {
     const vaultFetchOptions = this.buildVaultFetchOptions(options);
+    const errors: DataIssue[] = [];
 
-    return Promise.all(
-      accounts.map((account) => account.populateVaults(this.vaultMetaService, vaultFetchOptions))
+    const result = await Promise.all(
+      accounts.map((account) =>
+        account
+          .populateVaults(this.vaultMetaService, vaultFetchOptions)
+          .then((accountErrors) => {
+            errors.push(...accountErrors);
+            return account as unknown as Account<TVaultEntity>;
+          })
+          .catch((error) => {
+            errors.push({
+              code: "SOURCE_UNAVAILABLE",
+              severity: "warning",
+              message: "Failed to populate vault entities for account.",
+              path: "$",
+              source: "vaultMetaService",
+              originalValue: error instanceof Error ? error.message : String(error),
+            });
+            return account as unknown as Account<TVaultEntity>;
+          })
+      )
     );
+    return { result, errors };
   }
 
   private buildVaultFetchOptions(options?: AccountFetchOptions): VaultFetchOptions | undefined {
