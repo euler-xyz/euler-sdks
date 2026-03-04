@@ -8,6 +8,7 @@ import type { DeploymentService } from "../deploymentService/deploymentService.j
 import { utilsLensPriceAbi } from "./utilsLensPriceAbi.js";
 import { PricingBackendClient, backendPriceToBigInt } from "./backendClient.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
+import type { DataIssue, ServiceResult } from "../../utils/entityDiagnostics.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -73,15 +74,28 @@ export interface IPriceService {
 
   // UoA → USD rate (async — may call utilsLens or backend)
   getUnitOfAccountUsdRate(vault: EVault): Promise<bigint | undefined>;
+  getUnitOfAccountUsdRateWithDiagnostics(
+    vault: EVault,
+    path?: string
+  ): Promise<ServiceResult<bigint | undefined>>;
 
   // Layer 2: USD Prices (async — tries backend first, falls back to on-chain)
   getAssetUsdPrice(
     vault: ERC4626Vault
   ): Promise<PriceResult | undefined>;
+  getAssetUsdPriceWithDiagnostics(
+    vault: ERC4626Vault,
+    path?: string
+  ): Promise<ServiceResult<PriceResult | undefined>>;
   getCollateralUsdPrice(
     liabilityVault: EVault,
     collateralVault: ERC4626Vault
   ): Promise<PriceResult | undefined>;
+  getCollateralUsdPriceWithDiagnostics(
+    liabilityVault: EVault,
+    collateralVault: ERC4626Vault,
+    path?: string
+  ): Promise<ServiceResult<PriceResult | undefined>>;
 
   // Display helpers
   formatAssetValue(
@@ -171,16 +185,28 @@ export class PriceService implements IPriceService {
    * Falls back to on-chain utilsLens call.
    */
   async getUnitOfAccountUsdRate(vault: EVault): Promise<bigint | undefined> {
+    return (await this.getUnitOfAccountUsdRateWithDiagnostics(vault)).result;
+  }
+
+  async getUnitOfAccountUsdRateWithDiagnostics(
+    vault: EVault,
+    path = "$"
+  ): Promise<ServiceResult<bigint | undefined>> {
+    const errors: DataIssue[] = [];
     const uoaAddress = vault.unitOfAccount.address;
-    if (!uoaAddress) return undefined;
+    if (!uoaAddress) return { result: undefined, errors };
 
     // USD unit of account → 1.0
     if (getAddress(uoaAddress) === getAddress(USD_ADDRESS)) {
-      return ONE_18;
+      return { result: ONE_18, errors };
     }
+
+    let backendError: unknown;
+    let backendAttempted = false;
 
     // Try backend first
     if (this.backendClient?.isConfigured) {
+      backendAttempted = true;
       try {
         const backendPrice = await this.backendClient.queryBackendPrice({
           address: uoaAddress,
@@ -188,10 +214,10 @@ export class PriceService implements IPriceService {
         });
         if (backendPrice) {
           const rate = backendPriceToBigInt(backendPrice.price);
-          if (rate > 0n) return rate;
+          if (rate > 0n) return { result: rate, errors };
         }
-      } catch {
-        // Fall through to on-chain
+      } catch (error) {
+        backendError = error;
       }
     }
 
@@ -200,7 +226,19 @@ export class PriceService implements IPriceService {
       vault.chainId,
       uoaAddress
     );
-    return priceInfo?.amountOutMid || undefined;
+    const fallbackRate = priceInfo?.amountOutMid || undefined;
+    if (backendAttempted && fallbackRate) {
+      errors.push({
+        code: "FALLBACK_USED",
+        severity: "info",
+        message: "Backend UoA/USD rate unavailable; used on-chain fallback.",
+        path,
+        source: "priceService",
+        originalValue: backendError instanceof Error ? backendError.message : undefined,
+        normalizedValue: fallbackRate.toString(),
+      });
+    }
+    return { result: fallbackRate, errors };
   }
 
   // -----------------------------------------------------------------------
@@ -216,10 +254,22 @@ export class PriceService implements IPriceService {
   async getAssetUsdPrice(
     vault: ERC4626Vault
   ): Promise<PriceResult | undefined> {
-    if (!vault) return undefined;
+    return (await this.getAssetUsdPriceWithDiagnostics(vault)).result;
+  }
+
+  async getAssetUsdPriceWithDiagnostics(
+    vault: ERC4626Vault,
+    path = "$"
+  ): Promise<ServiceResult<PriceResult | undefined>> {
+    const errors: DataIssue[] = [];
+    if (!vault) return { result: undefined, errors };
+
+    let backendError: unknown;
+    let backendAttempted = false;
 
     // Try backend first
     if (this.backendClient?.isConfigured) {
+      backendAttempted = true;
       try {
         const backendPrice = await this.backendClient.queryBackendPrice({
           address: vault.asset.address,
@@ -227,14 +277,27 @@ export class PriceService implements IPriceService {
         });
         if (backendPrice) {
           const result = backendPriceToPriceResult(backendPrice.price);
-          if (result) return result;
+          if (result) return { result, errors };
         }
-      } catch {
-        // Fall through to on-chain
+      } catch (error) {
+        backendError = error;
       }
     }
 
-    return this.getAssetUsdPriceFromOracle(vault);
+    const fallbackPrice = await this.getAssetUsdPriceFromOracle(vault);
+    if (backendAttempted && fallbackPrice) {
+      errors.push({
+        code: "FALLBACK_USED",
+        severity: "info",
+        message: "Backend asset/USD price unavailable; used on-chain fallback.",
+        path,
+        source: "priceService",
+        originalValue: backendError instanceof Error ? backendError.message : undefined,
+        normalizedValue: fallbackPrice.amountOutMid.toString(),
+      });
+    }
+
+    return { result: fallbackPrice, errors };
   }
 
   /**
@@ -246,10 +309,28 @@ export class PriceService implements IPriceService {
     liabilityVault: EVault,
     collateralVault: ERC4626Vault
   ): Promise<PriceResult | undefined> {
-    if (!liabilityVault || !collateralVault) return undefined;
+    return (
+      await this.getCollateralUsdPriceWithDiagnostics(
+        liabilityVault,
+        collateralVault
+      )
+    ).result;
+  }
+
+  async getCollateralUsdPriceWithDiagnostics(
+    liabilityVault: EVault,
+    collateralVault: ERC4626Vault,
+    path = "$"
+  ): Promise<ServiceResult<PriceResult | undefined>> {
+    const errors: DataIssue[] = [];
+    if (!liabilityVault || !collateralVault) return { result: undefined, errors };
+
+    let backendError: unknown;
+    let backendAttempted = false;
 
     // Try backend first
     if (this.backendClient?.isConfigured) {
+      backendAttempted = true;
       try {
         const backendPrice = await this.backendClient.queryBackendPrice({
           address: collateralVault.asset.address,
@@ -257,14 +338,30 @@ export class PriceService implements IPriceService {
         });
         if (backendPrice) {
           const result = backendPriceToPriceResult(backendPrice.price);
-          if (result) return result;
+          if (result) return { result, errors };
         }
-      } catch {
-        // Fall through to on-chain
+      } catch (error) {
+        backendError = error;
       }
     }
 
-    return this.getCollateralUsdPriceFromOracle(liabilityVault, collateralVault);
+    const fallbackPrice = await this.getCollateralUsdPriceFromOracle(
+      liabilityVault,
+      collateralVault
+    );
+    if (backendAttempted && fallbackPrice) {
+      errors.push({
+        code: "FALLBACK_USED",
+        severity: "info",
+        message: "Backend collateral/USD price unavailable; used on-chain fallback.",
+        path,
+        source: "priceService",
+        originalValue: backendError instanceof Error ? backendError.message : undefined,
+        normalizedValue: fallbackPrice.amountOutMid.toString(),
+      });
+    }
+
+    return { result: fallbackPrice, errors };
   }
 
   // -----------------------------------------------------------------------

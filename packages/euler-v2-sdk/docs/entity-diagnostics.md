@@ -52,6 +52,14 @@ Entity `populateX` methods mutate the entity and return diagnostics directly:
 - `populateRewards(...) -> DataIssue[]`
 - `populateUserRewards(...) -> DataIssue[]`
 
+PriceService also exposes diagnostics-aware methods for direct callers:
+
+- `getAssetUsdPriceWithDiagnostics(...) -> { result, errors }`
+- `getCollateralUsdPriceWithDiagnostics(...) -> { result, errors }`
+- `getUnitOfAccountUsdRateWithDiagnostics(...) -> { result, errors }`
+
+These methods emit `FALLBACK_USED` when backend pricing is unavailable and on-chain pricing is used instead.
+
 ## API
 
 ```ts

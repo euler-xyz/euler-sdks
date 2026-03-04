@@ -75,8 +75,9 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
 
   async populateMarketPrices(priceService: IPriceService): Promise<DataIssue[]> {
     try {
-      this.marketPriceUsd = await this.fetchAssetMarketPriceUsd(priceService);
-      return [];
+      const priced = await priceService.getAssetUsdPriceWithDiagnostics(this, "$.marketPriceUsd");
+      this.marketPriceUsd = priced.result?.amountOutMid;
+      return priced.errors;
     } catch (error) {
       this.marketPriceUsd = undefined;
       return [{

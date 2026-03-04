@@ -256,7 +256,9 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
   override async populateMarketPrices(priceService: IPriceService): Promise<DataIssue[]> {
     const errors: DataIssue[] = [];
     try {
-      this.marketPriceUsd = await this.fetchAssetMarketPriceUsd(priceService);
+      const priced = await priceService.getAssetUsdPriceWithDiagnostics(this, "$.marketPriceUsd");
+      this.marketPriceUsd = priced.result?.amountOutMid;
+      errors.push(...priced.errors);
     } catch (error) {
       errors.push({
         code: "SOURCE_UNAVAILABLE",
@@ -273,9 +275,13 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
       this.collaterals.map(async (collateral, index) => {
         if (!collateral.vault) return;
         try {
-          const price = await priceService
-            .getCollateralUsdPrice(this, collateral.vault as ERC4626Vault);
-          collateral.marketPriceUsd = price?.amountOutMid;
+          const priced = await priceService.getCollateralUsdPriceWithDiagnostics(
+            this,
+            collateral.vault as ERC4626Vault,
+            `$.collaterals[${index}].marketPriceUsd`
+          );
+          collateral.marketPriceUsd = priced.result?.amountOutMid;
+          errors.push(...priced.errors);
         } catch (error) {
           errors.push({
             code: "SOURCE_UNAVAILABLE",

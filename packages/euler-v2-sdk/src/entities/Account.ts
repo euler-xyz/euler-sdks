@@ -530,7 +530,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
             for (const pathPrefix of paths) {
               errors.push({
                 code: "SOURCE_UNAVAILABLE",
-                severity: "warning",
+                severity: "error",
                 message: "Failed to populate market prices for nested vault entity.",
                 path: pathPrefix,
                 source: "priceService",
@@ -564,11 +564,16 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
           const liqVault = p.liquidity.vault as any;
           let uoaRate: bigint | undefined;
           try {
-            uoaRate = await priceService.getUnitOfAccountUsdRate(liqVault);
+            const priced = await priceService.getUnitOfAccountUsdRateWithDiagnostics(
+              liqVault,
+              `${positionPath}.liquidity`
+            );
+            uoaRate = priced.result;
+            errors.push(...priced.errors);
           } catch (error) {
             errors.push({
               code: "SOURCE_UNAVAILABLE",
-              severity: "warning",
+              severity: "error",
               message: "Failed to fetch unit-of-account USD rate for liquidity.",
               path: `${positionPath}.liquidity.vault`,
               source: "priceService",
@@ -661,7 +666,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
       this.userRewards = undefined;
       return [{
         code: "SOURCE_UNAVAILABLE",
-        severity: "warning",
+        severity: "error",
         message: "Failed to populate user rewards.",
         path: "$.userRewards",
         source: "rewardsService",

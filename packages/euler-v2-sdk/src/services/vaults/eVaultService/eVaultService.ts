@@ -215,7 +215,12 @@ export class EVaultService implements IEVaultService {
       eVaults.map(async (eVault, vaultIndex) => {
         // Vault asset USD price
         try {
-          eVault.marketPriceUsd = await eVault.fetchAssetMarketPriceUsd(this.priceService!);
+          const priced = await this.priceService!.getAssetUsdPriceWithDiagnostics(
+            eVault,
+            `$.eVaults[${vaultIndex}].marketPriceUsd`
+          );
+          eVault.marketPriceUsd = priced.result?.amountOutMid;
+          errors.push(...priced.errors);
         } catch (error) {
           errors.push({
             code: "SOURCE_UNAVAILABLE",
@@ -233,8 +238,13 @@ export class EVaultService implements IEVaultService {
           eVault.collaterals.map(async (collateral, collateralIndex) => {
             if (!collateral.vault) return;
             try {
-              const price = await this.priceService!.getCollateralUsdPrice(eVault, collateral.vault);
-              collateral.marketPriceUsd = price?.amountOutMid;
+              const priced = await this.priceService!.getCollateralUsdPriceWithDiagnostics(
+                eVault,
+                collateral.vault,
+                `$.eVaults[${vaultIndex}].collaterals[${collateralIndex}].marketPriceUsd`
+              );
+              collateral.marketPriceUsd = priced.result?.amountOutMid;
+              errors.push(...priced.errors);
             } catch (error) {
               errors.push({
                 code: "SOURCE_UNAVAILABLE",
