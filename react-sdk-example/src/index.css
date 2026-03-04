@@ -1081,3 +1081,60 @@ tr.clickable {
     grid-template-columns: 1fr;
   }
 }
+
+.interceptor-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5000;
+  padding: 20px;
+}
+
+.interceptor-modal {
+  width: min(980px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #fff;
+  border: 2px solid #000;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.interceptor-modal h2 {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.interceptor-query {
+  font-size: 12px;
+  color: #444;
+  word-break: break-all;
+}
+
+.interceptor-textarea {
+  width: 100%;
+  min-height: 420px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid #000;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.interceptor-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.interceptor-error {
+  color: #b00020;
+  font-size: 12px;
+}

@@ -12,6 +12,7 @@ import type {
 import type { Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import { recordExecution } from "./queryProfileStore.ts";
+import { interceptSdkDataIfEnabled } from "./dataInterceptorStore.ts";
 
 // ---------------------------------------------------------------------------
 // Query client
@@ -111,15 +112,28 @@ const STALE_TIMES: Record<string, number> = {
 
 const DEFAULT_STALE_TIME = MINUTE;
 
+function withDataInterceptor(
+  queryName: string,
+  fetcher: (...args: unknown[]) => Promise<unknown>
+) {
+  return async (...args: unknown[]) => {
+    const data = await fetcher(...args);
+    return interceptSdkDataIfEnabled(queryName, data);
+  };
+}
+
 export const sdkBuildQuery: BuildQueryFn = (queryName, fn, target) => {
   const staleTime = STALE_TIMES[queryName] ?? DEFAULT_STALE_TIME;
+  const interceptedFetcher = withDataInterceptor(queryName, (...args) =>
+    fn(...args)
+  );
 
   const wrapped = (...args: unknown[]) =>
     queryClient.fetchQuery({
       queryKey: ["sdk", queryName, ...args.map(serializeArg)],
       queryFn: async () => {
         recordExecution(queryName);
-        const result = await fn(...args);
+        const result = await interceptedFetcher(...args);
         // react-query treats undefined as missing data — use null instead
         return result === undefined ? null : result;
       },

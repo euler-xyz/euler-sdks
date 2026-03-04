@@ -3,6 +3,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./queries/sdkQueries.ts";
 import { SdkProvider } from "./context/SdkContext.tsx";
 import { TopBar } from "./components/TopBar.tsx";
+import { DataInterceptorModal } from "./components/DataInterceptorModal.tsx";
 import { QueryProfiler } from "./components/QueryProfiler.tsx";
 import { VaultListPage } from "./pages/VaultListPage.tsx";
 import { VaultDetailPage } from "./pages/VaultDetailPage.tsx";
@@ -17,6 +18,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <SdkProvider>
         <TopBar />
+        <DataInterceptorModal />
         <div className="app-layout">
           <div className="app-main">
             <div className="container">

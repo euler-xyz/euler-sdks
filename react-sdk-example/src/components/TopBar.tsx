@@ -1,11 +1,16 @@
 import { useSDK } from "../context/SdkContext.tsx";
 import { useNavigate, useLocation } from "react-router-dom";
 import { WalletConnectButton } from "./WalletConnectButton.tsx";
+import {
+  setDataInterceptorEnabled,
+  useDataInterceptorEnabled,
+} from "../queries/dataInterceptorStore.ts";
 
 export function TopBar() {
   const { chainId, setChainId, chainNames } = useSDK();
   const navigate = useNavigate();
   const location = useLocation();
+  const interceptorEnabled = useDataInterceptorEnabled();
 
   const isVaults =
     location.pathname === "/" ||
@@ -64,6 +69,12 @@ export function TopBar() {
             ))}
           </select>
         </label>
+        <button
+          className="wallet-button"
+          onClick={() => setDataInterceptorEnabled(!interceptorEnabled)}
+        >
+          Interceptor: {interceptorEnabled ? "ON" : "OFF"}
+        </button>
         <WalletConnectButton
           appChainId={chainId}
           appChainName={chainNames[chainId] ?? String(chainId)}
