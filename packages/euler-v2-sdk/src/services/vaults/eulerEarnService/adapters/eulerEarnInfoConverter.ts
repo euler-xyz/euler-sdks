@@ -20,6 +20,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
   chainId: number,
   errors: DataIssue[]
 ): IEulerEarn {
+  const vaultEntityId = vaultInfo.vault;
   const shares: Token = {
     address: vaultInfo.vault,
     name: vaultInfo.vaultName,
@@ -28,6 +29,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
       path: "$.shares.decimals",
       errors,
       source: "eulerEarnLens",
+      entityId: vaultEntityId,
     }),
   };
 
@@ -39,6 +41,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
       path: "$.asset.decimals",
       errors,
       source: "eulerEarnLens",
+      entityId: vaultEntityId,
     }),
   };
 
@@ -52,22 +55,26 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
       path: "$.governance.timelock",
       errors,
       source: "eulerEarnLens",
+      entityId: vaultEntityId,
     }),
     pendingTimelock: bigintToSafeNumber(vaultInfo.pendingTimelock, {
       path: "$.governance.pendingTimelock",
       errors,
       source: "eulerEarnLens",
+      entityId: vaultEntityId,
     }),
     pendingTimelockValidAt: bigintToSafeNumber(vaultInfo.pendingTimelockValidAt, {
       path: "$.governance.pendingTimelockValidAt",
       errors,
       source: "eulerEarnLens",
+      entityId: vaultEntityId,
     }),
     pendingGuardian: vaultInfo.pendingGuardian,
     pendingGuardianValidAt: bigintToSafeNumber(vaultInfo.pendingGuardianValidAt, {
       path: "$.governance.pendingGuardianValidAt",
       errors,
       source: "eulerEarnLens",
+      entityId: vaultEntityId,
     }),
   };
 
@@ -80,6 +87,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
         path: `$.strategies[${idx}].shares.decimals`,
         errors,
         source: "eulerEarnLens",
+        entityId: strategy.strategy,
       }),
     };
 
@@ -91,6 +99,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
         path: `$.strategies[${idx}].asset.decimals`,
         errors,
         source: "eulerEarnLens",
+        entityId: strategy.strategy,
       }),
     };
 
@@ -101,6 +110,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
         path: `$.strategies[${idx}].allocationCap.pendingValidAt`,
         errors,
         source: "eulerEarnLens",
+        entityId: strategy.strategy,
       }),
     };
 
@@ -114,6 +124,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
         path: `$.strategies[${idx}].removableAt`,
         errors,
         source: "eulerEarnLens",
+        entityId: strategy.strategy,
       }),
       shares: strategyShares,
       asset: strategyAsset,
@@ -141,6 +152,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
         message: "performanceFee could not be represented as a finite number; defaulted to 0.",
         path: "$.performanceFee",
         source: "eulerEarnLens",
+        entityId: vaultEntityId,
         originalValue: formatUnits(vaultInfo.performanceFee, 18),
         normalizedValue: 0,
       });
@@ -153,6 +165,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
       path: "$.timestamp",
       errors,
       source: "eulerEarnLens",
+      entityId: vaultEntityId,
     }),
   };
   return result;

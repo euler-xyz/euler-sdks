@@ -16,7 +16,7 @@ export interface ISecuritizeCollateralAdapter {
   fetchVaults(
     chainId: number,
     vault: Address[]
-  ): Promise<ServiceResult<ISecuritizeCollateralVault[]>>;
+  ): Promise<ServiceResult<(ISecuritizeCollateralVault | undefined)[]>>;
   fetchVerifiedVaultsAddresses(
     chainId: number,
     perspectives: Address[]
@@ -85,10 +85,11 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, [vault]);
     const errors: DataIssue[] = [...fetched.errors];
-    if (fetched.result.length === 0) {
+    const fetchedVault = fetched.result[0];
+    if (!fetchedVault) {
       throw new Error(`Securitize vault not found for ${vault}`);
     }
-    const entity = new SecuritizeCollateralVault(fetched.result[0]!);
+    const entity = new SecuritizeCollateralVault(fetchedVault);
     if (resolvedOptions.populateMarketPrices) {
       errors.push(...(await this.populateMarketPrices([entity])));
     }
@@ -108,24 +109,25 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     chainId: number,
     vaults: Address[],
     options?: VaultFetchOptions
-  ): Promise<ServiceResult<SecuritizeCollateralVault[]>> {
+  ): Promise<ServiceResult<(SecuritizeCollateralVault | undefined)[]>> {
     const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, vaults);
     const errors: DataIssue[] = [...fetched.errors];
-    const entities = fetched.result.map(
-      (v) => new SecuritizeCollateralVault(v)
+    const entities = fetched.result.map((v) =>
+      v ? new SecuritizeCollateralVault(v) : undefined
     );
+    const resolvedVaults = entities.filter((vault): vault is SecuritizeCollateralVault => vault !== undefined);
     if (resolvedOptions.populateMarketPrices) {
-      errors.push(...(await this.populateMarketPrices(entities)));
+      errors.push(...(await this.populateMarketPrices(resolvedVaults)));
     }
     if (resolvedOptions.populateRewards) {
-      errors.push(...(await this.populateRewards(entities)));
+      errors.push(...(await this.populateRewards(resolvedVaults)));
     }
     if (resolvedOptions.populateIntrinsicApy) {
-      errors.push(...(await this.populateIntrinsicApy(entities)));
+      errors.push(...(await this.populateIntrinsicApy(resolvedVaults)));
     }
     if (resolvedOptions.populateLabels) {
-      errors.push(...(await this.populateLabels(entities)));
+      errors.push(...(await this.populateLabels(resolvedVaults)));
     }
     return { result: entities, errors };
   }
@@ -142,6 +144,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
         errors.push(...vaultErrors.map((issue) => ({
           ...issue,
           path: withPathPrefix(issue.path, `$.vaults[${index}]`),
+          entityId: issue.entityId ?? v.address,
         })));
       })
     );
@@ -159,6 +162,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
         severity: "warning",
         message: "Failed to populate rewards.",
         path: "$",
+        entityId: vaults[0]?.address,
         source: "rewardsService",
         originalValue: error instanceof Error ? error.message : String(error),
       }];
@@ -176,6 +180,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
         severity: "warning",
         message: "Failed to populate intrinsic APY.",
         path: "$",
+        entityId: vaults[0]?.address,
         source: "intrinsicApyService",
         originalValue: error instanceof Error ? error.message : String(error),
       }];
@@ -193,6 +198,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
         severity: "warning",
         message: "Failed to populate labels.",
         path: "$",
+        entityId: vaults[0]?.address,
         source: "eulerLabelsService",
         originalValue: error instanceof Error ? error.message : String(error),
       }];
@@ -211,7 +217,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     chainId: number,
     perspectives: (StandardSecuritizeCollateralPerspectives | Address)[],
     options?: VaultFetchOptions
-  ): Promise<ServiceResult<SecuritizeCollateralVault[]>> {
+  ): Promise<ServiceResult<(SecuritizeCollateralVault | undefined)[]>> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives

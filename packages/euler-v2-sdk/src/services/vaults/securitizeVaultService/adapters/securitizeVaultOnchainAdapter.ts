@@ -1,7 +1,7 @@
 import type { ISecuritizeCollateralAdapter } from "../securitizeVaultService.js";
 import { ProviderService } from "../../../providerService/index.js";
 import { DeploymentService } from "../../../deploymentService/index.js";
-import { Address, encodeFunctionData, zeroAddress } from "viem";
+import { Address, encodeFunctionData, getAddress, zeroAddress } from "viem";
 import { ISecuritizeCollateralVault } from "../../../../entities/SecuritizeCollateralVault.js";
 import { VaultInfoERC4626 } from "./securitizeVaultLensTypes.js";
 import { convertToISecuritizeCollateralVault } from "./securitizeVaultInfoConverter.js";
@@ -95,7 +95,7 @@ export class SecuritizeVaultOnchainAdapter
   async fetchVaults(
     chainId: number,
     vaults: Address[]
-  ): Promise<ServiceResult<ISecuritizeCollateralVault[]>> {
+  ): Promise<ServiceResult<(ISecuritizeCollateralVault | undefined)[]>> {
     if (vaults.length === 0) return { result: [], errors: [] };
     const errors: DataIssue[] = [];
 
@@ -103,30 +103,46 @@ export class SecuritizeVaultOnchainAdapter
     const utilsLensAddress = this.deploymentService.getDeployment(chainId)
       .addresses.lensAddrs.utilsLens;
 
-    const [infoResults, governorResults, supplyCapResults] = await Promise.all([
-      Promise.all(vaults.map(vault => this.queryVaultInfoERC4626(provider, utilsLensAddress, vault))),
-      Promise.all(vaults.map(vault => this.querySecuritizeVaultGovernorAdmin(provider, vault))),
-      Promise.all(vaults.map(vault => this.querySecuritizeVaultSupplyCapResolved(provider, vault))),
-    ]);
+    const parsed = await Promise.all(
+      vaults.map(async (vault, index) => {
+        try {
+          const [vaultInfoRaw, governorRaw, supplyCapRaw] = await Promise.all([
+            this.queryVaultInfoERC4626(provider, utilsLensAddress, vault),
+            this.querySecuritizeVaultGovernorAdmin(provider, vault),
+            this.querySecuritizeVaultSupplyCapResolved(provider, vault),
+          ]);
 
-    const parsed: ISecuritizeCollateralVault[] = [];
+          const vaultInfo = vaultInfoRaw as unknown as VaultInfoERC4626;
+          const governor = governorRaw as `0x${string}`;
+          const supplyCap = supplyCapRaw as bigint;
 
-    for (let i = 0; i < vaults.length; i++) {
-      const vaultInfo = infoResults[i] as unknown as VaultInfoERC4626;
-      const governor = governorResults[i] as `0x${string}`;
-      const supplyCap = supplyCapResults[i] as bigint;
-
-      const conversionErrors: DataIssue[] = [];
-      const parsedVault = convertToISecuritizeCollateralVault(
-        vaultInfo,
-        governor,
-        supplyCap,
-        chainId,
-        conversionErrors
-      );
-      errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${i}]`));
-      parsed.push(parsedVault);
-    }
+          const conversionErrors: DataIssue[] = [];
+          const parsedVault = convertToISecuritizeCollateralVault(
+            vaultInfo,
+            governor,
+            supplyCap,
+            chainId,
+            conversionErrors
+          );
+          errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${index}]`).map((issue) => ({
+            ...issue,
+            entityId: issue.entityId ?? getAddress(vault),
+          })));
+          return parsedVault;
+        } catch (error) {
+          errors.push({
+            code: "SOURCE_UNAVAILABLE",
+            severity: "warning",
+            message: `Failed to fetch securitize vault ${getAddress(vault)}.`,
+            path: `$.vaults[${index}]`,
+            entityId: getAddress(vault),
+            source: "utilsLens",
+            originalValue: error instanceof Error ? error.message : String(error),
+          });
+          return undefined;
+        }
+      })
+    );
 
     return {
       result: parsed,

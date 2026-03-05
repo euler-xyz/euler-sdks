@@ -6,11 +6,12 @@ type BigintToSafeNumberParams = {
   path: string;
   errors: DataIssue[];
   source: string;
+  entityId?: string;
   message?: string;
 };
 
 export function bigintToSafeNumber(value: bigint, params: BigintToSafeNumberParams): number {
-  const { path, errors, source } = params;
+  const { path, errors, source, entityId } = params;
 
   if (value <= BigInt(Number.MAX_SAFE_INTEGER) && value >= BigInt(Number.MIN_SAFE_INTEGER)) {
     return Number(value);
@@ -24,6 +25,7 @@ export function bigintToSafeNumber(value: bigint, params: BigintToSafeNumberPara
       params.message ?? "BigInt value exceeded JavaScript safe number range and was clamped.",
     path,
     source,
+    entityId,
     originalValue: value.toString(),
     normalizedValue: clamped,
   });
@@ -34,6 +36,7 @@ type NumberLikeToSafeFiniteNumberParams = {
   path: string;
   errors: DataIssue[];
   source: string;
+  entityId?: string;
   fallback?: number;
   message?: string;
 };
@@ -49,6 +52,7 @@ export function numberLikeToSafeFiniteNumber(
       path: params.path,
       errors: params.errors,
       source: params.source,
+      entityId: params.entityId,
       message: params.message,
     });
   }
@@ -61,6 +65,7 @@ export function numberLikeToSafeFiniteNumber(
     message: params.message ?? "Non-finite number encountered and fallback value applied.",
     path: params.path,
     source: params.source,
+    entityId: params.entityId,
     originalValue: String(value),
     normalizedValue: fallback,
   });
@@ -71,6 +76,7 @@ type BigintToScaledNumberParams = {
   path: string;
   errors: DataIssue[];
   source: string;
+  entityId?: string;
   scale: number;
   maxUnscaled?: bigint;
   minUnscaled?: bigint;
@@ -78,7 +84,7 @@ type BigintToScaledNumberParams = {
 };
 
 export function bigintToScaledNumber(value: bigint, params: BigintToScaledNumberParams): number {
-  const { path, errors, source, maxUnscaled, minUnscaled, scale } = params;
+  const { path, errors, source, entityId, maxUnscaled, minUnscaled, scale } = params;
 
   if (maxUnscaled !== undefined && value > maxUnscaled) {
     errors.push({
@@ -87,6 +93,7 @@ export function bigintToScaledNumber(value: bigint, params: BigintToScaledNumber
       message: params.overflowMessage ?? "Value exceeded maximum allowed range and was clamped.",
       path,
       source,
+      entityId,
       originalValue: value.toString(),
       normalizedValue: maxUnscaled.toString(),
     });
@@ -100,6 +107,7 @@ export function bigintToScaledNumber(value: bigint, params: BigintToScaledNumber
       message: params.overflowMessage ?? "Value exceeded minimum allowed range and was clamped.",
       path,
       source,
+      entityId,
       originalValue: value.toString(),
       normalizedValue: minUnscaled.toString(),
     });

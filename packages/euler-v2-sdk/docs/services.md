@@ -31,6 +31,7 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 - `walletService`: Fetches wallet balances and allowances.
 - `simulationService`: Simulates account state/results for planned operations (including state-override flows).
 - `priceService`: Resolves market prices used for valuation and computed account metrics.
+- `oracleAdapterService`: Fetches oracle adapter metadata/checks (provider, methodology, checks) from the oracle checks dataset and builds address-keyed maps for UI/tooling.
 - `rewardsService`: Fetches reward campaign data used to populate vault/account rewards.
 - `intrinsicApyService`: Fetches intrinsic APY data used by vault enrichments.
 - `tokenlistService`: Provides token metadata/list data.
@@ -43,11 +44,12 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 
 | Service | Fetch Vaults | Market Prices | Rewards | Intrinsic APY | Labels | Notes |
 |---|---|---|---|---|---|---|
-| `vaultMetaService` | Yes (type-routed) | Via forwarded options | Via forwarded options | Via forwarded options | Via forwarded options | Best entry point when vault type is unknown/mixed |
-| `eVaultService` | Yes (`EVault`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | Also supports `populateCollaterals` |
-| `eulerEarnService` | Yes (`EulerEarn`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | Also supports `populateStrategyVaults` |
-| `securitizeVaultService` | Yes (`SecuritizeCollateralVault`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | No standard perspectives for verified-vault discovery |
+| `vaultMetaService` | Yes (type-routed) | Via forwarded options | Via forwarded options | Via forwarded options | Via forwarded options | Batch methods preserve input order and may return `undefined` entries for per-vault failures; check `errors` |
+| `eVaultService` | Yes (`EVault`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | Also supports `populateCollaterals`; batch methods may return `undefined` entries |
+| `eulerEarnService` | Yes (`EulerEarn`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | Also supports `populateStrategyVaults`; batch methods may return `undefined` entries |
+| `securitizeVaultService` | Yes (`SecuritizeCollateralVault`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | No standard perspectives for verified-vault discovery; batch methods may return `undefined` entries |
 | `accountService` | Account/sub-account data | Yes (`populateMarketPrices`) | Yes (`populateUserRewards`) | Via `vaultFetchOptions` | Via `vaultFetchOptions` | Vault enrichment goes through `vaultMetaService` |
 | `executionService` | No (planning/encoding only) | No | No | No | No | Produces transaction plans and batch payloads |
 | `swapService` | No (quotes only) | No | No | No | No | Returns swap quotes/providers for execution plans |
 | `simulationService` | Simulates plans | Can populate in results | Can populate in results | Can populate in results | Can populate in results | Uses `accountFetchOptions` / `vaultFetchOptions` |
+| `oracleAdapterService` | No | No | No | No | No | Oracle adapter metadata API (`getOracleAdapters`, `getOracleAdapterMap`, `enrichAdapters`) |

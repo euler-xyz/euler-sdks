@@ -9,7 +9,7 @@ import type {
   VaultMetaPerspective,
   VaultRewardInfo,
 } from "euler-v2-sdk";
-import type { Address } from "viem";
+import { isAddress, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import { recordExecution, registerKnownQueries } from "./queryProfileStore.ts";
 import { interceptSdkDataIfEnabled } from "./dataInterceptorStore.ts";
@@ -165,7 +165,22 @@ export type DiagnosticIssue = {
   path?: string;
   message?: string;
   source?: string;
+  entityId?: string;
+  originalValue?: unknown;
 };
+
+export type OracleAdapterMetadataMap = Record<
+  string,
+  {
+    address: string;
+    provider?: string;
+    methodology?: string;
+    label?: string;
+    name?: string;
+    checks?: Array<{ id?: string; pass?: boolean; [key: string]: unknown }>;
+    [key: string]: unknown;
+  }
+>;
 
 type MaybeServiceResult<T> = T | { result: T; errors?: DiagnosticIssue[] };
 
@@ -251,6 +266,42 @@ export function unwrapServiceResultWithDiagnostics<T>(
   return { result: response.result, diagnostics };
 }
 
+export type FailedVaultFetch = {
+  address: string;
+  details: string;
+};
+
+function extractVaultIndex(path: string | undefined): number | undefined {
+  if (!path) return undefined;
+  const match = path.match(/^\$\.vaults\[(\d+)\]/);
+  if (!match) return undefined;
+  return Number(match[1]);
+}
+
+function formatIssueRaw(issue: DiagnosticIssue): string {
+  return JSON.stringify(issue, null, 2);
+}
+
+function buildFailedVaultFetches(diagnostics: DiagnosticIssue[]): FailedVaultFetch[] {
+  const byAddress = new Map<string, string[]>();
+
+  for (const issue of diagnostics) {
+    if (!issue.entityId || !isAddress(issue.entityId)) continue;
+
+    const msg = issue.message ?? issue.code ?? "Vault fetch failed";
+    const address = issue.entityId;
+
+    const entries = byAddress.get(address) ?? [];
+    entries.push(msg);
+    byAddress.set(address, entries);
+  }
+
+  return Array.from(byAddress.entries()).map(([address, messages]) => ({
+    address,
+    details: Array.from(new Set(messages)).join("\n"),
+  }));
+}
+
 export function unwrapServiceResult<T>(
   operation: string,
   response: MaybeServiceResult<T>
@@ -262,13 +313,88 @@ export function useVerifiedVaults(perspectives: VaultMetaPerspective[]) {
   const { sdk, chainId, enabled } = useSdkReady();
   return useQuery<VaultEntity[]>({
     queryKey: ["vaults", chainId, perspectives],
-    queryFn: async () =>
-      unwrapServiceResult(
+    queryFn: async () => {
+      const fetched = unwrapServiceResultWithDiagnostics(
         "vaultMetaService.fetchVerifiedVaults",
         await sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
           populateAll: true,
         })
-      ),
+      );
+      return (fetched.result as Array<VaultEntity | undefined>).filter(
+        (vault): vault is VaultEntity => vault !== undefined
+      );
+    },
+    enabled,
+    staleTime: 1_000,
+  });
+}
+
+export function useVerifiedVaultsWithDiagnostics(
+  perspectives: VaultMetaPerspective[]
+) {
+  const { sdk, chainId, enabled } = useSdkReady();
+  return useQuery<{
+    vaults: VaultEntity[];
+    diagnostics: DiagnosticIssue[];
+    failedVaults: FailedVaultFetch[];
+    vaultErrorDetailsByAddress: Record<string, string>;
+  }>({
+    queryKey: ["vaultsWithDiagnostics", chainId, perspectives],
+    queryFn: async () => {
+      const fetched = unwrapServiceResultWithDiagnostics(
+        "vaultMetaService.fetchVerifiedVaults",
+        await sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
+          populateAll: true,
+        })
+      );
+      const rawVaults = fetched.result as Array<VaultEntity | undefined>;
+      const vaults = rawVaults.filter(
+        (vault): vault is VaultEntity => vault !== undefined
+      );
+      const rowIssuesByAddress = new Map<string, DiagnosticIssue[]>();
+      const failedIssuesByAddress = new Map<string, DiagnosticIssue[]>();
+
+      for (const issue of fetched.diagnostics) {
+        const vaultIndex = extractVaultIndex(issue.path);
+
+        if (vaultIndex !== undefined) {
+          const rowVault = rawVaults[vaultIndex];
+          if (rowVault) {
+            const key = rowVault.address.toLowerCase();
+            const list = rowIssuesByAddress.get(key) ?? [];
+            list.push(issue);
+            rowIssuesByAddress.set(key, list);
+            continue;
+          }
+
+          if (issue.entityId && isAddress(issue.entityId)) {
+            const key = issue.entityId.toLowerCase();
+            const list = failedIssuesByAddress.get(key) ?? [];
+            list.push(issue);
+            failedIssuesByAddress.set(key, list);
+          }
+          continue;
+        }
+      }
+
+      const vaultErrorDetailsByAddress = Object.fromEntries(
+        Array.from(rowIssuesByAddress.entries()).map(([address, issues]) => [
+          address,
+          issues.map(formatIssueRaw).join("\n\n"),
+        ])
+      );
+      const failedVaults = Array.from(failedIssuesByAddress.entries()).map(([address, issues]) => ({
+        address,
+        details: issues.map(formatIssueRaw).join("\n\n"),
+      }));
+
+      return {
+        vaults,
+        diagnostics: fetched.diagnostics,
+        failedVaults,
+        vaultErrorDetailsByAddress,
+      };
+    },
     enabled,
     staleTime: 1_000,
   });
@@ -295,16 +421,42 @@ export function useVaultDetailWithDiagnostics(
   address: string | undefined
 ) {
   const { sdk, enabled } = useSdkReady();
-  return useQuery<{ vault: EVault; diagnostics: DiagnosticIssue[] }>({
+  return useQuery<{
+    vault?: EVault;
+    diagnostics: DiagnosticIssue[];
+    failedVaults: FailedVaultFetch[];
+  }>({
     queryKey: ["vaultWithDiagnostics", chainId, address],
     queryFn: async () => {
-      const fetched = unwrapServiceResultWithDiagnostics(
-        "eVaultService.fetchVault",
-        await sdk!.eVaultService.fetchVault(chainId, address as Address, {
-          populateAll: true,
-        })
-      );
-      return { vault: fetched.result, diagnostics: fetched.diagnostics };
+      try {
+        const fetched = unwrapServiceResultWithDiagnostics(
+          "eVaultService.fetchVault",
+          await sdk!.eVaultService.fetchVault(chainId, address as Address, {
+            populateAll: true,
+          })
+        );
+        return {
+          vault: fetched.result,
+          diagnostics: fetched.diagnostics,
+          failedVaults: buildFailedVaultFetches(fetched.diagnostics),
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const diagnostics: DiagnosticIssue[] = [{
+          code: "SOURCE_UNAVAILABLE",
+          severity: "error",
+          message,
+          path: "$",
+          source: "eVaultService.fetchVault",
+          entityId: address,
+          originalValue: address,
+        }];
+        return {
+          vault: undefined,
+          diagnostics,
+          failedVaults: buildFailedVaultFetches(diagnostics),
+        };
+      }
     },
     enabled: enabled && !!address,
     staleTime: 1_000,
@@ -341,6 +493,39 @@ export function useAccount(chainId: number, address: string | undefined) {
           },
         })
       ),
+    enabled: enabled && !!address && address.length === 42,
+    staleTime: 1_000,
+  });
+}
+
+export function useAccountWithDiagnostics(
+  chainId: number,
+  address: string | undefined
+) {
+  const { sdk, enabled } = useSdkReady();
+  return useQuery<{
+    account: Account;
+    diagnostics: DiagnosticIssue[];
+    failedVaults: FailedVaultFetch[];
+  }>({
+    queryKey: ["accountWithDiagnostics", chainId, address],
+    queryFn: async () => {
+      const fetched = unwrapServiceResultWithDiagnostics(
+        "accountService.fetchAccount",
+        await sdk!.accountService.fetchAccount(chainId, address as Address, {
+          populateAll: true,
+          vaultFetchOptions: {
+            populateAll: true,
+          },
+        })
+      );
+
+      return {
+        account: fetched.result,
+        diagnostics: fetched.diagnostics,
+        failedVaults: buildFailedVaultFetches(fetched.diagnostics),
+      };
+    },
     enabled: enabled && !!address && address.length === 42,
     staleTime: 1_000,
   });
@@ -384,5 +569,15 @@ export function useChainRewards() {
     },
     enabled,
     staleTime: 60_000,
+  });
+}
+
+export function useOracleAdapterMetadataMap(chainId: number) {
+  const { sdk, enabled } = useSdkReady();
+  return useQuery<OracleAdapterMetadataMap>({
+    queryKey: ["oracleAdapterMetadataMap", chainId],
+    queryFn: async () => sdk!.oracleAdapterService.getOracleAdapterMap(chainId),
+    enabled: enabled && Number.isFinite(chainId),
+    staleTime: 10 * MINUTE,
   });
 }

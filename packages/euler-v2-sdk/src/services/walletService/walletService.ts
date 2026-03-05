@@ -33,6 +33,7 @@ export class WalletService implements IWalletService {
         severity: "warning",
         message: "Wallet adapter returned no data; created empty wallet.",
         path: "$",
+        entityId: account,
         source: "walletAdapter",
         normalizedValue: "empty-wallet",
       }] };

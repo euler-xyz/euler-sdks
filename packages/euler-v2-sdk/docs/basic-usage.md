@@ -153,12 +153,14 @@ if (isEVault(vault)) {
 Batch fetch also routes automatically:
 
 ```typescript
-const { result: vaults } = await sdk.vaultMetaService.fetchVaults(1, [
+const inputAddresses = [
   '0xEvault...',
   '0xEulerEarn...',
   '0xSecuritize...',
-])
-// Each element is the correct entity type
+];
+const { result: vaults, errors } = await sdk.vaultMetaService.fetchVaults(1, inputAddresses);
+// `vaults[i]` matches `inputAddresses[i]`.
+// On per-vault failure, `vaults[i]` is undefined and diagnostics include `entityId = inputAddresses[i]`.
 ```
 
 ## Fetching Verified Vaults (Perspectives)
@@ -244,7 +246,17 @@ const { result: allVaults } = await sdk.vaultMetaService.fetchVerifiedVaults(1, 
   StandardEVaultPerspectives.GOVERNED,
   StandardEulerEarnPerspectives.GOVERNED,
 ])
-// Returns (EVault | EulerEarn | SecuritizeCollateralVault)[]
+// Returns (EVault | EulerEarn | SecuritizeCollateralVault | undefined)[]
+```
+
+## Oracle Adapter Metadata
+
+Use `oracleAdapterService` to get adapter provider/methodology/check metadata for oracle adapter addresses:
+
+```typescript
+const adapterMap = await sdk.oracleAdapterService.getOracleAdapterMap(1);
+const metadata = adapterMap['0xAdapterAddress...'.toLowerCase()];
+console.log(metadata?.provider, metadata?.methodology, metadata?.checks);
 ```
 
 ## How Vault Types Work

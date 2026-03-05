@@ -148,7 +148,7 @@ See [Cross-Service Data Population](./cross-service-data-population.md) for the 
 3. **Typed vault services** — `EVaultService`, `EulerEarnService`, `SecuritizeVaultService`, each with their adapter
 4. **VaultMetaService** — wraps all vault services + `VaultTypeSubgraphAdapter`
 5. **AccountService** — depends on `AccountOnchainAdapter` + `VaultMetaService`
-6. **Support services** — `PriceService`, `RewardsService`, `EulerLabelsService`, `WalletService`, etc.
+6. **Support services** — `PriceService`, `OracleAdapterService`, `RewardsService`, `EulerLabelsService`, `WalletService`, etc.
 7. **Post-construction wiring** — setter-based cross-service injection (`setPriceService`, `setRewardsService`, etc.)
 
 ## Flexibility and Customization

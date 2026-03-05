@@ -16,6 +16,8 @@ export interface DataIssue {
   message: string;
   /** JSONPath-like, relative to a fetch result root entity. */
   path: string;
+  /** Stable entity identifier (address for vault/account/subaccount/wallet/asset when known). */
+  entityId?: string;
   source?: string;
   originalValue?: unknown;
   normalizedValue?: unknown;

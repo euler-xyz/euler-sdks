@@ -4,7 +4,7 @@ import { useSDK } from "../context/SdkContext.tsx";
 import {
   queryClient,
   unwrapServiceResult,
-  useVerifiedVaults,
+  useVerifiedVaultsWithDiagnostics,
   useWalletBalance,
 } from "../queries/sdkQueries.ts";
 import {
@@ -26,6 +26,7 @@ import {
 import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
+import { ErrorIcon } from "../components/ErrorIcon.tsx";
 import { executePlanWithProgress } from "../utils/txExecutor.ts";
 
 const ALL_PERSPECTIVES = [
@@ -458,7 +459,10 @@ export function VaultListPage() {
   const { isConnected } = useAccount();
   const [openDeposit, setOpenDeposit] = useState<string | null>(null);
 
-  const { data: allVaults, isLoading, error } = useVerifiedVaults(ALL_PERSPECTIVES);
+  const { data: vaultData, isLoading, error } = useVerifiedVaultsWithDiagnostics(ALL_PERSPECTIVES);
+  const allVaults = vaultData?.vaults ?? [];
+  const failedVaults = vaultData?.failedVaults ?? [];
+  const vaultErrorDetailsByAddress = vaultData?.vaultErrorDetailsByAddress ?? {};
 
   const eVaults = allVaults?.filter(isEVault) ?? [];
   const earnVaults = allVaults?.filter(isEulerEarn) ?? [];
@@ -555,10 +559,36 @@ export function VaultListPage() {
             <div className="status-message">Loading EVaults...</div>
           ) : error ? (
             <div className="error-message">Error: {String(error)}</div>
-          ) : eVaults.length === 0 ? (
-            <div className="status-message">No EVaults found</div>
           ) : (
             <>
+              {failedVaults.length > 0 && (
+                <div className="failed-vaults-panel">
+                  <div className="failed-vaults-title">Failed Vault Fetches</div>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Address</th>
+                        <th>Error</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {failedVaults.map((failed) => (
+                        <tr key={`failed-evault-${failed.address}`}>
+                          <td><CopyAddress address={failed.address as Address} /></td>
+                          <td>
+                            <ErrorIcon details={failed.details} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {eVaults.length === 0 ? (
+                <div className="status-message">No EVaults found</div>
+              ) : (
+              <>
               <div className="filter-bar">
                 <div className="filter-group">
                   <label className="filter-label" htmlFor="vault-market-filter">
@@ -655,7 +685,15 @@ export function VaultListPage() {
                             navigate(`/vault/${chainId}/${vault.address}`)
                           }
                         >
-                          <td>{vault.shares.name || "-"}</td>
+                          <td>
+                            {vaultErrorDetailsByAddress[vault.address.toLowerCase()] && (
+                              <ErrorIcon
+                                details={vaultErrorDetailsByAddress[vault.address.toLowerCase()]}
+                                position="leading"
+                              />
+                            )}
+                            {vault.shares.name || "-"}
+                          </td>
                           <td>{vault.asset.symbol}</td>
                           <td><CopyAddress address={vault.address} /></td>
                           <td>
@@ -707,6 +745,8 @@ export function VaultListPage() {
                   </tbody>
                 </table>
               )}
+              </>
+              )}
             </>
           )}
         </>
@@ -718,9 +758,34 @@ export function VaultListPage() {
             <div className="status-message">Loading Euler Earn vaults...</div>
           ) : error ? (
             <div className="error-message">Error: {String(error)}</div>
-          ) : earnVaults.length === 0 ? (
-            <div className="status-message">No Euler Earn vaults found</div>
           ) : (
+            <>
+              {failedVaults.length > 0 && (
+                <div className="failed-vaults-panel">
+                  <div className="failed-vaults-title">Failed Vault Fetches</div>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Address</th>
+                        <th>Error</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {failedVaults.map((failed) => (
+                        <tr key={`failed-earn-${failed.address}`}>
+                          <td><CopyAddress address={failed.address as Address} /></td>
+                          <td>
+                            <ErrorIcon details={failed.details} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {earnVaults.length === 0 ? (
+                <div className="status-message">No Euler Earn vaults found</div>
+              ) : (
             <table>
               <thead>
                 <tr>
@@ -757,7 +822,15 @@ export function VaultListPage() {
                       navigate(`/earn/${chainId}/${vault.address}`)
                     }
                   >
-                    <td>{vault.shares.name || "-"}</td>
+                    <td>
+                      {vaultErrorDetailsByAddress[vault.address.toLowerCase()] && (
+                        <ErrorIcon
+                          details={vaultErrorDetailsByAddress[vault.address.toLowerCase()]}
+                          position="leading"
+                        />
+                      )}
+                      {vault.shares.name || "-"}
+                    </td>
                     <td>{vault.asset.symbol}</td>
                     <td><CopyAddress address={vault.address} /></td>
                     <td>
@@ -775,6 +848,8 @@ export function VaultListPage() {
                 ))}
               </tbody>
             </table>
+              )}
+            </>
           )}
         </>
       )}

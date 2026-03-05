@@ -2,7 +2,7 @@
 // Numeric on-chain values use bigint to avoid precision loss.
 
 import { Address, maxUint256 } from "viem";
-import { OracleInfo, OraclePrice } from "../utils/oracle.js";
+import { OracleAdapterEntry, OracleInfo, OraclePrice, selectLeafAdaptersForPair } from "../utils/oracle.js";
 import { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultLensTypes.js";
 import { Token } from "../utils/types.js";
 import { IRMParams } from "../utils/irm.js";
@@ -76,6 +76,7 @@ export interface EVaultCollateral {
   ramping?: EVaultCollateralRamping;
   oraclePriceRaw: OraclePrice; // shouldn't be used directly, use EVault price getters instead
   vault?: VaultEntity;
+  oracleAdapters?: OracleAdapterEntry[];
   marketPriceUsd?: PriceWad;
 }
 
@@ -249,6 +250,30 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
 
     for (const collateral of this.collaterals) {
       collateral.vault = vaultByAddress.get(collateral.address.toLowerCase());
+      if (!collateral.vault) {
+        collateral.oracleAdapters = [];
+        continue;
+      }
+
+      const collateralAsset = collateral.vault.asset.address;
+      const collateralVault = collateral.address;
+      const quote = this.unitOfAccount.address;
+      const byAsset = selectLeafAdaptersForPair(
+        this.oracle.adapters,
+        collateralAsset,
+        quote,
+      );
+      const byVault = selectLeafAdaptersForPair(
+        this.oracle.adapters,
+        collateralVault,
+        quote,
+      );
+      const deduped = new Map<string, (typeof byAsset)[number]>();
+      [...byAsset, ...byVault].forEach((adapter) => {
+        const key = `${adapter.oracle.toLowerCase()}:${adapter.base.toLowerCase()}:${adapter.quote.toLowerCase()}`;
+        if (!deduped.has(key)) deduped.set(key, adapter);
+      });
+      collateral.oracleAdapters = [...deduped.values()];
     }
     return errors;
   }
@@ -265,6 +290,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
         severity: "error",
         message: "Failed to populate asset market price.",
         path: "$.marketPriceUsd",
+        entityId: this.asset.address,
         source: "priceService",
         originalValue: error instanceof Error ? error.message : String(error),
       });
@@ -288,6 +314,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
             severity: "error",
             message: "Failed to populate collateral market price.",
             path: `$.collaterals[${index}].marketPriceUsd`,
+            entityId: collateral.vault?.asset.address ?? collateral.address,
             source: "priceService",
             originalValue: error instanceof Error ? error.message : String(error),
           });

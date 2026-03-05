@@ -19,6 +19,11 @@ import { ExecutionService, IExecutionService } from "../services/executionServic
 import { PriceService, IPriceService, type BackendConfig, PricingBackendClient } from "../services/priceService/index.js";
 import { RewardsService, IRewardsService, type RewardsServiceConfig } from "../services/rewardsService/index.js";
 import { IntrinsicApyService, IIntrinsicApyService, type IntrinsicApyServiceConfig } from "../services/intrinsicApyService/index.js";
+import {
+  OracleAdapterService,
+  type IOracleAdapterService,
+  type OracleAdapterServiceConfig,
+} from "../services/oracleAdapterService/index.js";
 import { SimulationService, ISimulationService } from "../services/simulationService/index.js";
 import { defaultAccountVaultsAdapterConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLAdapterConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeAdapterConfig } from "./defaultConfig.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
@@ -56,6 +61,7 @@ export interface BuildSDKOverrides<TVaultEntity extends IVaultEntity = VaultEnti
   priceService?: IPriceService;
   rewardsService?: IRewardsService;
   intrinsicApyService?: IIntrinsicApyService;
+  oracleAdapterService?: IOracleAdapterService;
 }
 
 export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity> {
@@ -70,6 +76,7 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   backendConfig?: BackendConfig;
   rewardsServiceConfig?: RewardsServiceConfig;
   intrinsicApyServiceConfig?: IntrinsicApyServiceConfig;
+  oracleAdapterServiceConfig?: OracleAdapterServiceConfig;
   /** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
   buildQuery?: BuildQueryFn;
   /** Plugins that enrich on-chain reads (via batchSimulation) and transaction plans (via processPlan). */
@@ -80,7 +87,7 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
 export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   options: BuildSDKOptions<TVaultEntity>
 ): Promise<EulerSDK<TVaultEntity>> {
-  const { rpcUrls, accountVaultsAdapterConfig, vaultTypeAdapterConfig, additionalVaultServices, eulerLabelsAdapterConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, intrinsicApyServiceConfig, buildQuery, plugins, servicesOverrides } = options;
+  const { rpcUrls, accountVaultsAdapterConfig, vaultTypeAdapterConfig, additionalVaultServices, eulerLabelsAdapterConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, intrinsicApyServiceConfig, oracleAdapterServiceConfig, buildQuery, plugins, servicesOverrides } = options;
 
   // Build core services (these may be needed for adapters even if overridden)
   const abiService = servicesOverrides?.abiService ?? new ABIService(buildQuery);
@@ -246,6 +253,9 @@ export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEnt
 
   // Build intrinsic APY service if not overridden
   const intrinsicApyService = servicesOverrides?.intrinsicApyService ?? new IntrinsicApyService(intrinsicApyServiceConfig, buildQuery);
+  const oracleAdapterService =
+    servicesOverrides?.oracleAdapterService ??
+    new OracleAdapterService(oracleAdapterServiceConfig, buildQuery);
 
   // Build simulation service if not overridden
   const simulationService = servicesOverrides?.simulationService ?? new SimulationService<TVaultEntity>(
@@ -328,6 +338,7 @@ export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEnt
     priceService,
     rewardsService,
     intrinsicApyService,
+    oracleAdapterService,
     plugins,
   });
 }

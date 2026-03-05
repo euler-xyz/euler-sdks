@@ -189,43 +189,77 @@ export class VaultMetaService<TEntity = VaultEntity>
     chainId: number,
     vaults: Address[],
     options?: VaultFetchOptions
-  ): Promise<ServiceResult<TEntity[]>> {
+  ): Promise<ServiceResult<(TEntity | undefined)[]>> {
     if (vaults.length === 0) return { result: [], errors: [] };
     const errors: DataIssue[] = [];
     const vaultToService = await this.getVaultToService(chainId, vaults);
+    const result: (TEntity | undefined)[] = Array.from(
+      { length: vaults.length },
+      () => undefined
+    );
     const serviceToAddresses = new Map<
       RegisteredVaultService<TEntity>,
-      Address[]
+      Array<{ address: Address; index: number }>
     >();
-    for (const v of vaults) {
+    for (const [index, v] of vaults.entries()) {
       const service = vaultToService.get(getAddress(v));
       if (service) {
         const list = serviceToAddresses.get(service) ?? [];
-        list.push(v);
+        list.push({ address: v, index });
         serviceToAddresses.set(service, list);
+      } else {
+        errors.push({
+          code: "SOURCE_UNAVAILABLE",
+          severity: "warning",
+          message: `No registered vault service for ${getAddress(v)}.`,
+          path: `$.vaults[${index}]`,
+          entityId: getAddress(v),
+          source: "vaultTypeAdapter",
+          originalValue: getAddress(v),
+        });
       }
     }
-    const resultsByAddress = new Map<string, TEntity>();
+
     await Promise.all(
       Array.from(serviceToAddresses.entries()).map(
-        async ([service, addrs]) => {
-          const entities = await service.fetchVaults(chainId, addrs, options);
-          errors.push(...entities.errors);
-          for (const e of entities.result) {
-            resultsByAddress.set(
-              getAddress((e as { address: Address }).address),
-              e
-            );
+        async ([service, entries]) => {
+          try {
+            const addresses = entries.map((entry) => entry.address);
+            const entities = await service.fetchVaults(chainId, addresses, options);
+            errors.push(...entities.errors);
+            for (const [entryIndex, entry] of entries.entries()) {
+              const entity = entities.result[entryIndex];
+              if (entity === undefined) {
+                errors.push({
+                  code: "SOURCE_UNAVAILABLE",
+                  severity: "warning",
+                  message: `Failed to fetch vault ${getAddress(entry.address)}.`,
+                  path: `$.vaults[${entry.index}]`,
+                  entityId: getAddress(entry.address),
+                  source: "vaultService",
+                  originalValue: getAddress(entry.address),
+                });
+                continue;
+              }
+              result[entry.index] = entity;
+            }
+          } catch (error) {
+            for (const entry of entries) {
+              errors.push({
+                code: "SOURCE_UNAVAILABLE",
+                severity: "warning",
+                message: `Failed to fetch vault ${getAddress(entry.address)}.`,
+                path: `$.vaults[${entry.index}]`,
+                entityId: getAddress(entry.address),
+                source: "vaultService",
+                originalValue: error instanceof Error ? error.message : String(error),
+              });
+            }
           }
         }
       )
     );
-    return {
-      result: vaults
-      .map((v) => resultsByAddress.get(getAddress(v)))
-      .filter((e): e is TEntity => e != null),
-      errors,
-    };
+    return { result, errors };
   }
 
   async fetchVerifiedVaultAddresses(
@@ -258,7 +292,7 @@ export class VaultMetaService<TEntity = VaultEntity>
     chainId: number,
     perspectives: VaultMetaPerspective[],
     options?: VaultFetchOptions
-  ): Promise<ServiceResult<TEntity[]>> {
+  ): Promise<ServiceResult<(TEntity | undefined)[]>> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives

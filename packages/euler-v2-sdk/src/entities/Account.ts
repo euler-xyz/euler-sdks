@@ -435,10 +435,11 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
 
   /** Maps fetched vault entities onto positions and liquidity collaterals. Mutates in place. */
   mapVaultsToPositions<TResolved extends IHasVaultAddress>(
-    vaults: TResolved[]
+    vaults: Array<TResolved | undefined>
   ): Account<TResolved> {
     const byAddress = new Map<string, TResolved>();
     for (const v of vaults) {
+      if (!v) continue;
       byAddress.set(getAddress(v.address), v);
     }
     const resolve = (addr: Address): TResolved | undefined => byAddress.get(getAddress(addr));
@@ -533,6 +534,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
                 severity: "error",
                 message: "Failed to populate market prices for nested vault entity.",
                 path: pathPrefix,
+                entityId: vaultAddress,
                 source: "priceService",
                 originalValue: error instanceof Error ? error.message : String(error),
               });
@@ -576,6 +578,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
               severity: "error",
               message: "Failed to fetch unit-of-account USD rate for liquidity.",
               path: `${positionPath}.liquidity.vault`,
+              entityId: liqVault.address ?? p.vaultAddress,
               source: "priceService",
               originalValue: error instanceof Error ? error.message : String(error),
             });
@@ -669,6 +672,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
         severity: "error",
         message: "Failed to populate user rewards.",
         path: "$.userRewards",
+        entityId: this.owner,
         source: "rewardsService",
         originalValue: error instanceof Error ? error.message : String(error),
       }];

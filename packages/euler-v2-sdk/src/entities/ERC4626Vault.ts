@@ -79,6 +79,7 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
         severity: "error",
         message: "Failed to populate asset market price.",
         path: "$.marketPriceUsd",
+        entityId: this.asset.address,
         source: "priceService",
         originalValue: error instanceof Error ? error.message : String(error),
       }];
@@ -96,6 +97,7 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
         severity: "error",
         message: "Failed to populate rewards.",
         path: "$.rewards",
+        entityId: this.address,
         source: "rewardsService",
         originalValue: error instanceof Error ? error.message : String(error),
       }];

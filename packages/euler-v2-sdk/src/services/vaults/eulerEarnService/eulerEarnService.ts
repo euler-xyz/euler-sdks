@@ -1,5 +1,5 @@
 import { EulerEarn, IEulerEarn } from "../../../entities/EulerEarn.js";
-import { Address } from "viem";
+import { Address, getAddress } from "viem";
 import { DeploymentService } from "../../deploymentService/index.js";
 import type { IVaultService } from "../index.js";
 import type { IEVaultService, EVaultFetchOptions } from "../eVaultService/index.js";
@@ -11,7 +11,7 @@ import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.
 import { withPathPrefix } from "../../../utils/entityDiagnostics.js";
 
 export interface IEulerEarnAdapter {
-  fetchVaults(chainId: number, vault: Address[]): Promise<ServiceResult<IEulerEarn[]>>;
+  fetchVaults(chainId: number, vault: Address[]): Promise<ServiceResult<(IEulerEarn | undefined)[]>>;
   fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]>;
 }
 
@@ -43,7 +43,7 @@ export interface IEulerEarnService
     chainId: number,
     vaults: Address[],
     options?: EulerEarnFetchOptions
-  ): Promise<ServiceResult<EulerEarn[]>>;
+  ): Promise<ServiceResult<(EulerEarn | undefined)[]>>;
   populateStrategyVaults(
     eulerEarns: EulerEarn[],
     eVaultFetchOptions?: EVaultFetchOptions
@@ -107,10 +107,11 @@ export class EulerEarnService implements IEulerEarnService {
     const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, [vault]);
     const errors: DataIssue[] = [...fetched.errors];
-    if (fetched.result.length === 0) {
+    const fetchedVault = fetched.result[0];
+    if (!fetchedVault) {
       throw new Error(`Vault not found for ${vault}`);
     }
-    const eulerEarn = new EulerEarn(fetched.result[0]!);
+    const eulerEarn = new EulerEarn(fetchedVault);
     if (resolvedOptions.populateStrategyVaults) {
       errors.push(...(await this.populateStrategyVaults([eulerEarn], resolvedOptions.eVaultFetchOptions)));
     }
@@ -133,27 +134,28 @@ export class EulerEarnService implements IEulerEarnService {
     chainId: number,
     vaults: Address[],
     options?: EulerEarnFetchOptions
-  ): Promise<ServiceResult<EulerEarn[]>> {
+  ): Promise<ServiceResult<(EulerEarn | undefined)[]>> {
     const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, vaults);
     const errors: DataIssue[] = [...fetched.errors];
-    const eulerEarns = fetched.result.map(
-      (vault) => new EulerEarn(vault)
+    const eulerEarns = fetched.result.map((vault) =>
+      vault ? new EulerEarn(vault) : undefined
     );
+    const resolvedVaults = eulerEarns.filter((vault): vault is EulerEarn => vault !== undefined);
     if (resolvedOptions.populateStrategyVaults) {
-      errors.push(...(await this.populateStrategyVaults(eulerEarns, resolvedOptions.eVaultFetchOptions)));
+      errors.push(...(await this.populateStrategyVaults(resolvedVaults, resolvedOptions.eVaultFetchOptions)));
     }
     if (resolvedOptions.populateMarketPrices) {
-      errors.push(...(await this.populateMarketPrices(eulerEarns)));
+      errors.push(...(await this.populateMarketPrices(resolvedVaults)));
     }
     if (resolvedOptions.populateRewards) {
-      errors.push(...(await this.populateRewards(eulerEarns)));
+      errors.push(...(await this.populateRewards(resolvedVaults)));
     }
     if (resolvedOptions.populateIntrinsicApy) {
-      errors.push(...(await this.populateIntrinsicApy(eulerEarns)));
+      errors.push(...(await this.populateIntrinsicApy(resolvedVaults)));
     }
     if (resolvedOptions.populateLabels) {
-      errors.push(...(await this.populateLabels(eulerEarns)));
+      errors.push(...(await this.populateLabels(resolvedVaults)));
     }
     return { result: eulerEarns, errors };
   }
@@ -181,14 +183,16 @@ export class EulerEarnService implements IEulerEarnService {
           errors.push(...fetched.errors.map((issue) => ({
             ...issue,
             path: withPathPrefix(issue.path, `$.strategyVaults[${index}]`),
+            entityId: issue.entityId ?? getAddress(addr),
           })));
           return fetched.result;
         } catch (error) {
           errors.push({
             code: "SOURCE_UNAVAILABLE",
             severity: "warning",
-            message: "Failed to fetch strategy vault.",
+            message: `Failed to fetch strategy vault ${getAddress(addr)}.`,
             path: `$.strategyVaults[${index}]`,
+            entityId: getAddress(addr),
             source: "eVaultService",
             originalValue: error instanceof Error ? error.message : String(error),
           });
@@ -223,6 +227,7 @@ export class EulerEarnService implements IEulerEarnService {
         errors.push(...eeErrors.map((issue) => ({
           ...issue,
           path: withPathPrefix(issue.path, `$.eulerEarns[${index}]`),
+          entityId: issue.entityId ?? ee.address,
         })));
       })
     );
@@ -240,6 +245,7 @@ export class EulerEarnService implements IEulerEarnService {
         severity: "warning",
         message: "Failed to populate rewards.",
         path: "$",
+        entityId: eulerEarns[0]?.address,
         source: "rewardsService",
         originalValue: error instanceof Error ? error.message : String(error),
       }];
@@ -257,6 +263,7 @@ export class EulerEarnService implements IEulerEarnService {
         severity: "warning",
         message: "Failed to populate intrinsic APY.",
         path: "$",
+        entityId: eulerEarns[0]?.address,
         source: "intrinsicApyService",
         originalValue: error instanceof Error ? error.message : String(error),
       }];
@@ -274,6 +281,7 @@ export class EulerEarnService implements IEulerEarnService {
         severity: "warning",
         message: "Failed to populate labels.",
         path: "$",
+        entityId: eulerEarns[0]?.address,
         source: "eulerLabelsService",
         originalValue: error instanceof Error ? error.message : String(error),
       }];
@@ -316,7 +324,7 @@ export class EulerEarnService implements IEulerEarnService {
     chainId: number,
     perspectives: (StandardEulerEarnPerspectives | Address)[],
     options?: EulerEarnFetchOptions
-  ): Promise<ServiceResult<EulerEarn[]>> {
+  ): Promise<ServiceResult<(EulerEarn | undefined)[]>> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives

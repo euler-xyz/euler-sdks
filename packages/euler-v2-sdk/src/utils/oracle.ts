@@ -68,6 +68,7 @@ export type OracleAdapterEntry = {
 }
 
 const isChainlinkOracleName = (name: string) => name.toLowerCase().includes('chainlink')
+const isCrossAdapterName = (name: string) => name.toLowerCase() === 'crossadapter'
 
 type OracleAdapterOptions = {
   base?: Address
@@ -374,4 +375,63 @@ export const collectPythFeedsFromAdapters = (adapters: OracleAdapterEntry[]): Py
     }
   }
   return [...deduped.values()]
+}
+
+/**
+ * Select adapters representing leaf pricing route(s) for a base->quote pair.
+ * Falls back to direct pair matches when no leaf route is found.
+ */
+export const selectLeafAdaptersForPair = (
+  adapters: OracleAdapterEntry[],
+  base: Address,
+  quote: Address,
+  maxDepth = 4,
+): OracleAdapterEntry[] => {
+  const baseKey = base.toLowerCase()
+  const quoteKey = quote.toLowerCase()
+  const directMatches = adapters.filter(
+    (adapter) =>
+      adapter.base.toLowerCase() === baseKey && adapter.quote.toLowerCase() === quoteKey,
+  )
+
+  const leafCandidates = adapters.filter(adapter => !isCrossAdapterName(adapter.name))
+  if (leafCandidates.length === 0) return directMatches
+
+  const byBase = new Map<string, OracleAdapterEntry[]>()
+  for (const adapter of leafCandidates) {
+    const key = adapter.base.toLowerCase()
+    const list = byBase.get(key) ?? []
+    list.push(adapter)
+    byBase.set(key, list)
+  }
+
+  const used = new Set<string>()
+  const makeKey = (adapter: OracleAdapterEntry) =>
+    `${adapter.oracle.toLowerCase()}:${adapter.base.toLowerCase()}:${adapter.quote.toLowerCase()}`
+
+  const dfs = (current: string, depth: number, visiting: Set<string>): boolean => {
+    if (depth > maxDepth) return false
+    if (current === quoteKey) return true
+    if (visiting.has(current)) return false
+    visiting.add(current)
+
+    const nextAdapters = byBase.get(current) ?? []
+    let found = false
+    for (const adapter of nextAdapters) {
+      const next = adapter.quote.toLowerCase()
+      const pathFound = dfs(next, depth + 1, visiting)
+      if (pathFound) {
+        used.add(makeKey(adapter))
+        found = true
+      }
+    }
+
+    visiting.delete(current)
+    return found
+  }
+
+  const hasLeafRoute = dfs(baseKey, 0, new Set<string>())
+  if (!hasLeafRoute || used.size === 0) return directMatches
+
+  return leafCandidates.filter(adapter => used.has(makeKey(adapter)))
 }

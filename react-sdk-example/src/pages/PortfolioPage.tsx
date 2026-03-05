@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
 import { useAccount as useWagmiAccount, useChainId } from "wagmi";
-import { useAccount as useSdkAccount } from "../queries/sdkQueries.ts";
+import { useAccountWithDiagnostics } from "../queries/sdkQueries.ts";
 import { getSubAccountId } from "euler-v2-sdk";
 import type { Address } from "viem";
 import { formatBigInt, formatPriceUsd, formatWad, formatWadPercent } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { RoeCell } from "../components/RoeCell.tsx";
+import { ErrorIcon } from "../components/ErrorIcon.tsx";
 import type { VaultEntity, AccountPosition, UserReward } from "euler-v2-sdk";
 
 // Persist across navigations but not across full page reloads
@@ -25,7 +26,16 @@ export function PortfolioPage() {
   const [input, setInput] = useState(lastAddress ?? "");
   const [address, setAddress] = useState<string | undefined>(lastAddress);
 
-  const { data: account, isLoading, error } = useSdkAccount(chainId, address);
+  const { data, isLoading, error } = useAccountWithDiagnostics(chainId, address);
+  const account = data?.account;
+  const failedVaults = data?.failedVaults ?? [];
+  const failedVaultDetailsByAddress = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const failed of failedVaults) {
+      map.set(failed.address.toLowerCase(), failed.details);
+    }
+    return map;
+  }, [failedVaults]);
 
   useEffect(() => {
     if (!lastAddress && isConnected && walletAddress) {
@@ -305,7 +315,14 @@ export function PortfolioPage() {
                                 {pos.vault
                                   ? pos.vault.shares.name ||
                                     pos.vault.asset.symbol
-                                  : <CopyAddress address={pos.vaultAddress} />}
+                                  : (
+                                    <>
+                                      <CopyAddress address={pos.vaultAddress} />
+                                      {failedVaultDetailsByAddress.has(pos.vaultAddress.toLowerCase()) && (
+                                        <ErrorIcon details={failedVaultDetailsByAddress.get(pos.vaultAddress.toLowerCase())} />
+                                      )}
+                                    </>
+                                  )}
                               </Link>
                             </td>
                             <td>
@@ -376,7 +393,14 @@ export function PortfolioPage() {
                                 {p.vault
                                   ? p.vault.shares.name ||
                                       p.vault.asset.symbol
-                                    : <CopyAddress address={p.vaultAddress} />}
+                                    : (
+                                      <>
+                                        <CopyAddress address={p.vaultAddress} />
+                                        {failedVaultDetailsByAddress.has(p.vaultAddress.toLowerCase()) && (
+                                          <ErrorIcon details={failedVaultDetailsByAddress.get(p.vaultAddress.toLowerCase())} />
+                                        )}
+                                      </>
+                                    )}
                                 </td>
                               <td>
                                 {String(liq.daysToLiquidation)}
@@ -390,7 +414,14 @@ export function PortfolioPage() {
                                         {c.vault
                                           ? c.vault.shares.name ||
                                             c.vault.asset.symbol
-                                          : <CopyAddress address={c.address} />}
+                                          : (
+                                            <>
+                                              <CopyAddress address={c.address} />
+                                              {failedVaultDetailsByAddress.has(c.address.toLowerCase()) && (
+                                                <ErrorIcon details={failedVaultDetailsByAddress.get(c.address.toLowerCase())} />
+                                              )}
+                                            </>
+                                          )}
                                       </span>
                                     ))}
                               </td>

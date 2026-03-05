@@ -158,8 +158,14 @@ export class AccountOnchainAdapter implements IAccountAdapter {
       return this.fetchSubAccount(chainId, subAccountAddress, vaults);
     }));
     const validSubs = subAccountsArray
-      .map((entry) => {
-        errors.push(...prefixDataIssues(entry.errors, `$.subAccounts[${entry.result?.account ?? "unknown"}]`));
+      .map((entry, idx) => {
+        const subAccountAddress = subAccountAddresses[idx];
+        errors.push(
+          ...prefixDataIssues(entry.errors, `$.subAccounts[${entry.result?.account ?? subAccountAddress ?? "unknown"}]`).map((issue) => ({
+            ...issue,
+            entityId: issue.entityId ?? entry.result?.account ?? subAccountAddress,
+          }))
+        );
         return entry.result;
       })
       .filter((subAccount): subAccount is ISubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean } => subAccount !== undefined);

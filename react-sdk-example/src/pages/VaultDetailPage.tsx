@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
 import {
   type DiagnosticIssue,
+  useOracleAdapterMetadataMap,
   useVaultDetailWithDiagnostics,
 } from "../queries/sdkQueries.ts";
 import {
@@ -13,6 +14,21 @@ import {
 } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
+import { ErrorIcon } from "../components/ErrorIcon.tsx";
+import { OracleAdaptersInfo } from "../components/OracleAdaptersInfo.tsx";
+
+function formatIssueRaw(issue: DiagnosticIssue): string {
+  return JSON.stringify(issue, null, 2);
+}
+
+function normalizeVaultDetailPath(path: string | undefined): string | undefined {
+  if (!path) return path;
+  if (path === "$.eVaults[0]") return "$";
+  if (path.startsWith("$.eVaults[0].")) return `$.${path.slice("$.eVaults[0].".length)}`;
+  if (path === "$.vaults[0]") return "$";
+  if (path.startsWith("$.vaults[0].")) return `$.${path.slice("$.vaults[0].".length)}`;
+  return path;
+}
 
 export function VaultDetailPage() {
   const { chainId: chainIdParam, address } = useParams<{
@@ -28,16 +44,45 @@ export function VaultDetailPage() {
   }, [chainId, setChainId]);
 
   const { data, isLoading, error } = useVaultDetailWithDiagnostics(chainId, address);
+  const { data: oracleAdapterMetadataMap } = useOracleAdapterMetadataMap(chainId);
   const vault = data?.vault;
   const diagnostics = data?.diagnostics ?? [];
+  const failedVaults = data?.failedVaults ?? [];
   const visibleDiagnostics = useMemo(
     () => diagnostics.filter((issue) => issue.severity === "warning" || issue.severity === "error"),
     [diagnostics]
   );
+  const collateralDiagnosticsByAddress = useMemo(() => {
+    if (!vault) return {} as Record<string, string>;
+
+    const byAddress = new Map<string, DiagnosticIssue[]>();
+    for (const issue of diagnostics) {
+      const path = normalizeVaultDetailPath(issue.path);
+      const directMatch = path?.match(/^\$\.collaterals\[(\d+)\]/);
+      const eVaultMatch = path?.match(/^\$\.eVaults\[\d+\]\.collaterals\[(\d+)\]/);
+      const idxRaw = directMatch?.[1] ?? eVaultMatch?.[1];
+      if (!idxRaw) continue;
+      const idx = Number(idxRaw);
+      const collateral = vault.collaterals[idx];
+      if (!collateral) continue;
+
+      const key = collateral.address.toLowerCase();
+      const list = byAddress.get(key) ?? [];
+      list.push(issue);
+      byAddress.set(key, list);
+    }
+
+    return Object.fromEntries(
+      Array.from(byAddress.entries()).map(([addressKey, issues]) => [
+        addressKey,
+        issues.map(formatIssueRaw).join("\n\n"),
+      ])
+    ) as Record<string, string>;
+  }, [diagnostics, vault]);
 
   const fieldDiagnostics = (paths: string[]): DiagnosticIssue[] => {
     return visibleDiagnostics.filter((issue) => {
-      const issuePath = issue.path ?? "";
+      const issuePath = normalizeVaultDetailPath(issue.path) ?? "";
       return paths.some((path) => (
         issuePath === path ||
         issuePath.startsWith(`${path}.`) ||
@@ -71,7 +116,35 @@ export function VaultDetailPage() {
   if (isLoading) return <div className="status-message">Loading vault...</div>;
   if (error)
     return <div className="error-message">Error: {String(error)}</div>;
-  if (!vault) return <div className="status-message">Vault not found</div>;
+  if (!vault) {
+    const fallbackDetails = visibleDiagnostics.map((issue) => issue.message ?? issue.code ?? "Unknown error").join("\n");
+    return (
+      <>
+        <Link to="/" className="back-link">
+          &larr; Back to vaults
+        </Link>
+        <div className="failed-vaults-panel">
+          <div className="failed-vaults-title">Vault Fetch Failed</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Address</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>{address ?? "-"}</td>
+                <td>
+                  <ErrorIcon details={(failedVaults[0]?.details ?? fallbackDetails) || "Failed to fetch vault"} />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -321,6 +394,12 @@ export function VaultDetailPage() {
             {vault.collaterals.map((col) => (
               <tr key={col.address}>
                 <td>
+                  {collateralDiagnosticsByAddress[col.address.toLowerCase()] && (
+                    <ErrorIcon
+                      details={collateralDiagnosticsByAddress[col.address.toLowerCase()]}
+                      position="leading"
+                    />
+                  )}
                   {col.vault ? (
                     <Link to={`/vault/${chainId}/${col.address}`}>
                       {col.vault.shares.name || col.vault.asset.symbol}
@@ -332,7 +411,14 @@ export function VaultDetailPage() {
                 <td><CopyAddress address={col.address} /></td>
                 <td>{formatPercent(col.borrowLTV)}</td>
                 <td>{formatPercent(col.liquidationLTV)}</td>
-                <td>{formatPriceUsd(col.marketPriceUsd)}</td>
+                <td>
+                  <OracleAdaptersInfo
+                    chainId={chainId}
+                    adapters={col.oracleAdapters}
+                    metadataMap={oracleAdapterMetadataMap}
+                  />
+                  {formatPriceUsd(col.marketPriceUsd)}
+                </td>
               </tr>
             ))}
           </tbody>

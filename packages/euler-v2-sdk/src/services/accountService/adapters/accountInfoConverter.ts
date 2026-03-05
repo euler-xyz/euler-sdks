@@ -14,10 +14,11 @@ import {
  * @param liquidityInfo - The AccountLiquidityInfo object to convert
  * @returns The IAccountLiquidity object
  */
- function convertAccountLiquidityInfoToAccountLiquidity(
+function convertAccountLiquidityInfoToAccountLiquidity(
   liquidityInfo: AccountLiquidityInfo,
   errors: DataIssue[]
 ): IAccountLiquidity {
+  const vaultEntityId = liquidityInfo.vault;
   const liabilityValue = {
     borrowing: liquidityInfo.liabilityValueBorrowing,
     liquidation: liquidityInfo.liabilityValueLiquidation,
@@ -42,6 +43,7 @@ import {
         message: "Missing collateral borrowing value; defaulted to 0.",
         path: `$.collaterals[${idx}].value.borrowing`,
         source: "accountLens",
+        entityId: collateral,
         normalizedValue: "0",
       });
     }
@@ -52,6 +54,7 @@ import {
         message: "Missing collateral liquidation value; defaulted to 0.",
         path: `$.collaterals[${idx}].value.liquidation`,
         source: "accountLens",
+        entityId: collateral,
         normalizedValue: "0",
       });
     }
@@ -62,6 +65,7 @@ import {
         message: "Missing collateral oracleMid value; defaulted to 0.",
         path: `$.collaterals[${idx}].value.oracleMid`,
         source: "accountLens",
+        entityId: collateral,
         normalizedValue: "0",
       });
     }
@@ -85,6 +89,7 @@ import {
         path: "$.daysToLiquidation",
         errors,
         source: "accountLens",
+        entityId: vaultEntityId,
       });
     }
   }
@@ -117,6 +122,7 @@ export function convertVaultAccountInfoToAccountPosition(
         severity: "warning",
         message,
         path: "$.liquidity",
+        entityId: vaultAccountInfo.vault,
         source: "accountLens",
         originalValue: vaultAccountInfo.liquidityInfo.queryFailureReason,
       });
@@ -158,6 +164,7 @@ export function convertToSubAccount(
       path: "$.timestamp",
       errors,
       source: "accountLens",
+      entityId: evcAccountInfo.account,
     }),
     account: evcAccountInfo.account,
     owner: evcAccountInfo.owner,
@@ -165,6 +172,7 @@ export function convertToSubAccount(
       path: "$.lastAccountStatusCheckTimestamp",
       errors,
       source: "accountLens",
+      entityId: evcAccountInfo.account,
     }),
     enabledControllers: evcAccountInfo.enabledControllers,
     enabledCollaterals: evcAccountInfo.enabledCollaterals,

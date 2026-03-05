@@ -1,5 +1,6 @@
-import { type Address } from "viem";
+import { getAddress, type Address } from "viem";
 import { EVault, IEVault } from "../../../entities/EVault.js";
+import { selectLeafAdaptersForPair } from "../../../utils/oracle.js";
 import { DeploymentService } from "../../deploymentService/index.js";
 import type { IVaultService, VaultFetchOptions } from "../index.js";
 import type { IVaultMetaService } from "../vaultMetaService/index.js";
@@ -11,7 +12,7 @@ import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.
 import { withPathPrefix } from "../../../utils/entityDiagnostics.js";
 
 export interface IEVaultAdapter {
-  fetchVaults(chainId: number, vault: Address[]): Promise<ServiceResult<IEVault[]>>;
+  fetchVaults(chainId: number, vault: Address[]): Promise<ServiceResult<(IEVault | undefined)[]>>;
   fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]>;
 }
 
@@ -43,7 +44,7 @@ export interface IEVaultService
     chainId: number,
     vaults: Address[],
     options?: EVaultFetchOptions
-  ): Promise<ServiceResult<EVault[]>>;
+  ): Promise<ServiceResult<(EVault | undefined)[]>>;
   populateCollaterals(eVaults: EVault[]): Promise<DataIssue[]>;
   populateMarketPrices(eVaults: EVault[]): Promise<DataIssue[]>;
   populateRewards(eVaults: EVault[]): Promise<DataIssue[]>;
@@ -104,10 +105,11 @@ export class EVaultService implements IEVaultService {
     const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, [vault]);
     const errors: DataIssue[] = [...fetched.errors];
-    if (fetched.result.length === 0) {
+    const fetchedVault = fetched.result[0];
+    if (!fetchedVault) {
       throw new Error(`Vault not found for ${vault}`);
     }
-    const eVault = new EVault(fetched.result[0]!);
+    const eVault = new EVault(fetchedVault);
 
     if (resolvedOptions.populateCollaterals) {
       errors.push(...(await this.populateCollaterals([eVault])));
@@ -131,28 +133,29 @@ export class EVaultService implements IEVaultService {
     chainId: number,
     vaults: Address[],
     options?: EVaultFetchOptions
-  ): Promise<ServiceResult<EVault[]>> {
+  ): Promise<ServiceResult<(EVault | undefined)[]>> {
     const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, vaults);
     const errors: DataIssue[] = [...fetched.errors];
-    const eVaults = fetched.result.map(
-      (vault) => new EVault(vault)
+    const eVaults = fetched.result.map((vault) =>
+      vault ? new EVault(vault) : undefined
     );
+    const resolvedVaults = eVaults.filter((vault): vault is EVault => vault !== undefined);
 
     if (resolvedOptions.populateCollaterals) {
-      errors.push(...(await this.populateCollaterals(eVaults)));
+      errors.push(...(await this.populateCollaterals(resolvedVaults)));
     }
     if (resolvedOptions.populateMarketPrices) {
-      errors.push(...(await this.populateMarketPrices(eVaults)));
+      errors.push(...(await this.populateMarketPrices(resolvedVaults)));
     }
     if (resolvedOptions.populateRewards) {
-      errors.push(...(await this.populateRewards(eVaults)));
+      errors.push(...(await this.populateRewards(resolvedVaults)));
     }
     if (resolvedOptions.populateIntrinsicApy) {
-      errors.push(...(await this.populateIntrinsicApy(eVaults)));
+      errors.push(...(await this.populateIntrinsicApy(resolvedVaults)));
     }
     if (resolvedOptions.populateLabels) {
-      errors.push(...(await this.populateLabels(eVaults)));
+      errors.push(...(await this.populateLabels(resolvedVaults)));
     }
     return { result: eVaults, errors };
   }
@@ -177,14 +180,16 @@ export class EVaultService implements IEVaultService {
           errors.push(...fetched.errors.map((issue) => ({
             ...issue,
             path: withPathPrefix(issue.path, `$.collateralVaults[${index}]`),
+            entityId: issue.entityId ?? getAddress(addr),
           })));
           return fetched.result;
         } catch (error) {
           errors.push({
             code: "SOURCE_UNAVAILABLE",
             severity: "warning",
-            message: "Failed to fetch collateral vault.",
+            message: `Failed to fetch collateral vault ${getAddress(addr)}.`,
             path: `$.collateralVaults[${index}]`,
+            entityId: getAddress(addr),
             source: "vaultMetaService",
             originalValue: error instanceof Error ? error.message : String(error),
           });
@@ -202,6 +207,30 @@ export class EVaultService implements IEVaultService {
     for (const eVault of eVaults) {
       for (const collateral of eVault.collaterals) {
         collateral.vault = vaultByAddress.get(collateral.address.toLowerCase());
+        if (!collateral.vault) {
+          collateral.oracleAdapters = [];
+          continue;
+        }
+
+        const collateralAsset = collateral.vault.asset.address;
+        const collateralVault = collateral.address;
+        const quote = eVault.unitOfAccount.address;
+        const byAsset = selectLeafAdaptersForPair(
+          eVault.oracle.adapters,
+          collateralAsset,
+          quote,
+        );
+        const byVault = selectLeafAdaptersForPair(
+          eVault.oracle.adapters,
+          collateralVault,
+          quote,
+        );
+        const deduped = new Map<string, (typeof byAsset)[number]>();
+        [...byAsset, ...byVault].forEach((adapter) => {
+          const key = `${adapter.oracle.toLowerCase()}:${adapter.base.toLowerCase()}:${adapter.quote.toLowerCase()}`;
+          if (!deduped.has(key)) deduped.set(key, adapter);
+        });
+        collateral.oracleAdapters = [...deduped.values()];
       }
     }
     return errors;
@@ -227,6 +256,7 @@ export class EVaultService implements IEVaultService {
             severity: "warning",
             message: "Failed to populate asset market price.",
             path: `$.eVaults[${vaultIndex}].marketPriceUsd`,
+            entityId: eVault.asset.address,
             source: "priceService",
             originalValue: error instanceof Error ? error.message : String(error),
           });
@@ -251,6 +281,7 @@ export class EVaultService implements IEVaultService {
                 severity: "warning",
                 message: "Failed to populate collateral market price.",
                 path: `$.eVaults[${vaultIndex}].collaterals[${collateralIndex}].marketPriceUsd`,
+                entityId: collateral.vault?.asset.address ?? collateral.address,
                 source: "priceService",
                 originalValue: error instanceof Error ? error.message : String(error),
               });
@@ -274,6 +305,7 @@ export class EVaultService implements IEVaultService {
         severity: "warning",
         message: "Failed to populate rewards.",
         path: "$",
+        entityId: eVaults[0]?.address,
         source: "rewardsService",
         originalValue: error instanceof Error ? error.message : String(error),
       }];
@@ -291,6 +323,7 @@ export class EVaultService implements IEVaultService {
         severity: "warning",
         message: "Failed to populate intrinsic APY.",
         path: "$",
+        entityId: eVaults[0]?.address,
         source: "intrinsicApyService",
         originalValue: error instanceof Error ? error.message : String(error),
       }];
@@ -308,6 +341,7 @@ export class EVaultService implements IEVaultService {
         severity: "warning",
         message: "Failed to populate labels.",
         path: "$",
+        entityId: eVaults[0]?.address,
         source: "eulerLabelsService",
         originalValue: error instanceof Error ? error.message : String(error),
       }];
@@ -350,7 +384,7 @@ export class EVaultService implements IEVaultService {
     chainId: number,
     perspectives: (StandardEVaultPerspectives | Address)[],
     options?: EVaultFetchOptions
-  ): Promise<ServiceResult<EVault[]>> {
+  ): Promise<ServiceResult<(EVault | undefined)[]>> {
     const addresses = await this.fetchVerifiedVaultAddresses(
       chainId,
       perspectives

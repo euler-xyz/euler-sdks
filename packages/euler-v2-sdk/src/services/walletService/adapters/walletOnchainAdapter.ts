@@ -154,6 +154,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
                   severity: "warning",
                   message: "Failed to fetch asset allowance for spender; defaulted to 0.",
                   path: `$.assets[${assetIdx}].allowances[${spenderIdx}].assetForVault`,
+                  entityId: assetAddress,
                   source: "erc20.allowance",
                   normalizedValue: "0",
                 });
@@ -164,6 +165,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
                   severity: "warning",
                   message: "Failed to fetch Permit2 allowance approval; defaulted to 0.",
                   path: `$.assets[${assetIdx}].allowances[${spenderIdx}].assetForPermit2`,
+                  entityId: assetAddress,
                   source: "erc20.allowance",
                   normalizedValue: "0",
                 });
@@ -174,6 +176,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
                   severity: "warning",
                   message: "Failed to fetch Permit2 spender allowance; defaulted to 0.",
                   path: `$.assets[${assetIdx}].allowances[${spenderIdx}].assetForVaultInPermit2`,
+                  entityId: assetAddress,
                   source: "permit2.allowance",
                   normalizedValue: "0",
                 });
@@ -195,6 +198,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
             severity: "warning",
             message: "Failed to fetch asset balance; asset entry omitted from wallet result.",
             path: "$.assets",
+            entityId: assetAddress,
             source: "erc20.balanceOf",
             originalValue: assetAddress,
             normalizedValue: "asset-omitted",
@@ -253,6 +257,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
         severity: "warning",
         message: "Failed to fetch wallet info.",
         path: "$",
+        entityId: account,
         source: "walletOnchainAdapter",
         originalValue: error instanceof Error ? error.message : String(error),
       });

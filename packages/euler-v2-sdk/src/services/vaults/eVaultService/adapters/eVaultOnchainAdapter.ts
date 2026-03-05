@@ -1,7 +1,7 @@
 import { IEVaultAdapter } from "../eVaultService.js";
 import { ProviderService } from "../../../providerService/index.js";
 import { DeploymentService } from "../../../deploymentService/index.js";
-import { type Address, type Abi, encodeFunctionData } from "viem";
+import { getAddress, type Address, type Abi, encodeFunctionData } from "viem";
 import { EVault, IEVault } from "../../../../entities/EVault.js";
 import { VaultInfoFull } from "./eVaultLensTypes.js";
 import { convertVaultInfoFullToIEVault } from "./vaultInfoConverter.js";
@@ -94,31 +94,45 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
     this.queryEVaultVerifiedArray = fn;
   }
 
-  async fetchVaults(chainId: number, vaults: Address[]): Promise<ServiceResult<IEVault[]>> {
+  async fetchVaults(chainId: number, vaults: Address[]): Promise<ServiceResult<(IEVault | undefined)[]>> {
     const provider = this.providerService.getProvider(chainId);
     const deployment = this.deploymentService.getDeployment(chainId);
     const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
     const errors: DataIssue[] = [];
 
-    const results = await Promise.all(
-      vaults.map(vault => this.queryEVaultInfoFull(provider, vaultLensAddress, vault))
+    const eVaults = await Promise.all(
+      vaults.map(async (vault, index) => {
+        try {
+          const result = await this.queryEVaultInfoFull(provider, vaultLensAddress, vault);
+          const vaultInfo = result as unknown as VaultInfoFull;
+          const conversionErrors: DataIssue[] = [];
+          const parsed = convertVaultInfoFullToIEVault(vaultInfo, chainId, conversionErrors);
+          errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${index}]`).map((issue) => ({
+            ...issue,
+            entityId: issue.entityId ?? getAddress(vault),
+          })));
+          return new EVault(parsed);
+        } catch (error) {
+          errors.push({
+            code: "SOURCE_UNAVAILABLE",
+            severity: "warning",
+            message: `Failed to fetch eVault ${getAddress(vault)}.`,
+            path: `$.vaults[${index}]`,
+            entityId: getAddress(vault),
+            source: "vaultLens",
+            originalValue: error instanceof Error ? error.message : String(error),
+          });
+          return undefined;
+        }
+      })
     );
-
-    const parsedVaults: IEVault[] = results.map((result, index) => {
-      const vaultInfo = result as unknown as VaultInfoFull;
-      const conversionErrors: DataIssue[] = [];
-      const parsed = convertVaultInfoFullToIEVault(vaultInfo, chainId, conversionErrors);
-      errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${index}]`));
-      return parsed;
-    });
-
-    const eVaults = parsedVaults.map(vault => new EVault(vault));
 
     // Plugin enrichment: re-fetch vaults via batchSimulation when plugins provide prepend items
     if (this.plugins.length === 0) return { result: eVaults, errors };
 
     const enriched = await Promise.all(
       eVaults.map(async (eVault, vaultIndex) => {
+        if (!eVault) return undefined;
         try {
           const prepend = await this.collectReadPrepend(chainId, [eVault]);
           if (!prepend || prepend.items.length === 0) return eVault;
@@ -140,7 +154,10 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
           if (!result) return eVault;
           const conversionErrors: DataIssue[] = [];
           const parsed = convertVaultInfoFullToIEVault(result, chainId, conversionErrors);
-          errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${vaultIndex}]`));
+          errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${vaultIndex}]`).map((issue) => ({
+            ...issue,
+            entityId: issue.entityId ?? getAddress(eVault.address),
+          })));
           return new EVault(parsed);
         } catch {
           return eVault;

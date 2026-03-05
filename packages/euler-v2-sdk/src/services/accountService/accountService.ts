@@ -111,6 +111,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
           severity: "error",
           message: "Failed to populate market prices for account.",
           path: "$",
+          entityId: result.owner,
           source: "priceService",
           originalValue: error instanceof Error ? error.message : String(error),
         });
@@ -126,6 +127,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
           severity: "error",
           message: "Failed to populate user rewards for account.",
           path: "$.userRewards",
+          entityId: result.owner,
           source: "rewardsService",
           originalValue: error instanceof Error ? error.message : String(error),
         });
@@ -181,6 +183,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
               severity: "error",
               message: "Failed to populate vault entities for account.",
               path: "$",
+              entityId: account.owner,
               source: "vaultMetaService",
               originalValue: error instanceof Error ? error.message : String(error),
             });

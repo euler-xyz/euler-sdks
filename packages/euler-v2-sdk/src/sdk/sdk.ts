@@ -19,6 +19,7 @@ import { IWalletService } from "../services/walletService/index.js";
 import { IPriceService } from "../services/priceService/index.js";
 import { IRewardsService } from "../services/rewardsService/index.js";
 import { IIntrinsicApyService } from "../services/intrinsicApyService/index.js";
+import { IOracleAdapterService } from "../services/oracleAdapterService/index.js";
 import type { EulerPlugin, ProcessPluginsArgs, WritePluginContext } from "../plugins/types.js";
 import type { TransactionPlan } from "../services/executionService/executionServiceTypes.js";
 
@@ -40,6 +41,7 @@ export interface EulerSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   priceService: IPriceService;
   rewardsService: IRewardsService;
   intrinsicApyService: IIntrinsicApyService;
+  oracleAdapterService: IOracleAdapterService;
   plugins?: EulerPlugin[];
 }
 
@@ -61,6 +63,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
   public readonly priceService: IPriceService;
   public readonly rewardsService: IRewardsService;
   public readonly intrinsicApyService: IIntrinsicApyService;
+  public readonly oracleAdapterService: IOracleAdapterService;
   public readonly plugins: EulerPlugin[];
 
   constructor(options: EulerSDKOptions<TVaultEntity>) {
@@ -81,6 +84,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
     this.priceService = options.priceService;
     this.rewardsService = options.rewardsService;
     this.intrinsicApyService = options.intrinsicApyService;
+    this.oracleAdapterService = options.oracleAdapterService;
     this.plugins = options.plugins ?? [];
   }
 

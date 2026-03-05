@@ -1,7 +1,7 @@
 import { IEulerEarnAdapter } from "../eulerEarnService.js";
 import { ProviderService } from "../../../providerService/index.js";
 import { DeploymentService } from "../../../deploymentService/index.js";
-import { Address, encodeFunctionData } from "viem";
+import { Address, encodeFunctionData, getAddress } from "viem";
 import { EulerEarn, IEulerEarn } from "../../../../entities/EulerEarn.js";
 import { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
 import { convertEulerEarnVaultInfoFullToIEulerEarn } from "./eulerEarnInfoConverter.js";
@@ -85,24 +85,39 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
     this.queryEulerEarnVerifiedArray = fn;
   }
 
-  async fetchVaults(chainId: number, vaults: Address[]): Promise<ServiceResult<IEulerEarn[]>> {
+  async fetchVaults(chainId: number, vaults: Address[]): Promise<ServiceResult<(IEulerEarn | undefined)[]>> {
     const provider = this.providerService.getProvider(chainId);
     const deployment = this.deploymentService.getDeployment(chainId);
     const lensAddress = deployment.addresses.lensAddrs.eulerEarnVaultLens;
     const errors: DataIssue[] = [];
-    const results = await Promise.all(
-      vaults.map(vault => this.queryEulerEarnVaultInfoFull(provider, lensAddress, vault))
+    const parsedVaults = await Promise.all(
+      vaults.map(async (vault, idx) => {
+        try {
+          const result = await this.queryEulerEarnVaultInfoFull(provider, lensAddress, vault);
+          const vaultInfo = result as unknown as EulerEarnVaultInfoFull;
+          const conversionErrors: DataIssue[] = [];
+          const parsed = convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo, chainId, conversionErrors);
+          errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${idx}]`).map((issue) => ({
+            ...issue,
+            entityId: issue.entityId ?? getAddress(vault),
+          })));
+          return new EulerEarn(parsed);
+        } catch (error) {
+          errors.push({
+            code: "SOURCE_UNAVAILABLE",
+            severity: "warning",
+            message: `Failed to fetch EulerEarn vault ${getAddress(vault)}.`,
+            path: `$.vaults[${idx}]`,
+            entityId: getAddress(vault),
+            source: "eulerEarnLens",
+            originalValue: error instanceof Error ? error.message : String(error),
+          });
+          return undefined;
+        }
+      })
     );
 
-    const parsedVaults: IEulerEarn[] = results.map((result, idx) => {
-      const vaultInfo = result as unknown as EulerEarnVaultInfoFull;
-      const conversionErrors: DataIssue[] = [];
-      const parsed = convertEulerEarnVaultInfoFullToIEulerEarn(vaultInfo, chainId, conversionErrors);
-      errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${idx}]`));
-      return parsed;
-    });
-
-    return { result: parsedVaults.map(vault => new EulerEarn(vault)), errors };
+    return { result: parsedVaults, errors };
   }
 
   async fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]> {

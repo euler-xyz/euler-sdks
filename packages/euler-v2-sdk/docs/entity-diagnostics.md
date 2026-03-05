@@ -10,6 +10,7 @@ Each diagnostic is a `DataIssue`:
 - `severity`: `info | warning | error`
 - `message`: short human-readable explanation
 - `path`: JSONPath-like location from the fetch result root
+- `entityId`: stable entity identifier when known (address for account/subaccount/vault/wallet/asset)
 - optional `source`, `originalValue`, `normalizedValue`
 
 Diagnostics are not entity state. They describe how the returned snapshot was built.
@@ -36,6 +37,8 @@ Fetch/build services return diagnostics next to data:
 - `fetchVault(...) -> { result, errors }`
 - `fetchVaults(...) -> { result, errors }`
 - `fetchVerifiedVaults(...) -> { result, errors }`
+
+For batch vault fetches (`fetchVaults`, `fetchVerifiedVaults`), `result` preserves the input order and may contain `undefined` for per-vault failures. Those failures are reported in `errors` with `entityId` set to the affected vault address.
 
 Fetch option objects also support `populateAll: true` to force all enrichment steps on.
 
@@ -93,6 +96,22 @@ UI usage example:
 ```ts
 const priceIssues = errors.filter((e) => e.path.includes("marketPriceUsd"));
 const hasFallback = priceIssues.some((e) => e.code === "FALLBACK_USED");
+```
+
+Batch vault usage example:
+
+```ts
+const { result: vaults, errors } = await sdk.vaultMetaService.fetchVaults(chainId, addresses);
+
+vaults.forEach((vault, i) => {
+  const address = addresses[i].toLowerCase();
+  if (!vault) {
+    // hard failure for this address
+    return;
+  }
+  const rowIssues = errors.filter((e) => e.entityId?.toLowerCase() === address);
+  // render vault row + warning/error indicators
+});
 ```
 
 ## Custom Converter Pattern

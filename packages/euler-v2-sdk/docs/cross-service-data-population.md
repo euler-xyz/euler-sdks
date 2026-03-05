@@ -119,9 +119,12 @@ const { result: earn } = await eulerEarnService.fetchVault(chainId, address, {
 
 ```typescript
 // Fetch basic vaults, then populate in bulk
-const { result: vaults } = await eVaultService.fetchVaults(chainId, addresses);
-const collateralIssues = await eVaultService.populateCollaterals(vaults);
-const marketIssues = await eVaultService.populateMarketPrices(vaults);
+const { result: vaults, errors: fetchErrors } = await eVaultService.fetchVaults(chainId, addresses);
+const resolvedVaults = vaults.filter((v) => v !== undefined);
+const collateralIssues = await eVaultService.populateCollaterals(resolvedVaults);
+const marketIssues = await eVaultService.populateMarketPrices(resolvedVaults);
+// `vaults` preserves input order and may contain `undefined` for per-vault failures.
+// Use `fetchErrors` + `entityId` to map failures back to requested addresses.
 ```
 
 ### Via entity populate methods (imperative, single entity)
