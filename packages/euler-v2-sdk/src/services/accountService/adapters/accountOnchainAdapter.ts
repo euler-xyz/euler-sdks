@@ -161,7 +161,10 @@ export class AccountOnchainAdapter implements IAccountAdapter {
       .map((entry, idx) => {
         const subAccountAddress = subAccountAddresses[idx];
         errors.push(
-          ...prefixDataIssues(entry.errors, `$.subAccounts[${entry.result?.account ?? subAccountAddress ?? "unknown"}]`).map((issue) => ({
+          ...prefixDataIssues(
+            entry.errors,
+            `$.subAccounts['${entry.result?.account ?? subAccountAddress ?? "unknown"}']`
+          ).map((issue) => ({
             ...issue,
             entityId: issue.entityId ?? entry.result?.account ?? subAccountAddress,
           }))

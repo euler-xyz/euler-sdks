@@ -123,7 +123,8 @@ export class WalletOnchainAdapter implements IWalletAdapter {
             .catch(() => ({ value: undefined, failed: true as const }));
 
           const spenderResults = await Promise.all(
-            spenders.map(async (spender, spenderIdx) => {
+            spenders.map(async (spender) => {
+              const spenderAddress = getAddress(spender);
               const assetForVault = await this.queryAllowance(provider, assetAddress, account, spender)
                 .then((value) => ({ value, failed: false as const }))
                 .catch(() => ({ value: 0n, failed: true as const }));
@@ -153,7 +154,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
                   code: "SOURCE_UNAVAILABLE",
                   severity: "warning",
                   message: "Failed to fetch asset allowance for spender; defaulted to 0.",
-                  path: `$.assets[${assetIdx}].allowances[${spenderIdx}].assetForVault`,
+                  path: `$.assets[${assetIdx}].allowances['${spenderAddress}'].assetForVault`,
                   entityId: assetAddress,
                   source: "erc20.allowance",
                   normalizedValue: "0",
@@ -164,7 +165,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
                   code: "SOURCE_UNAVAILABLE",
                   severity: "warning",
                   message: "Failed to fetch Permit2 allowance approval; defaulted to 0.",
-                  path: `$.assets[${assetIdx}].allowances[${spenderIdx}].assetForPermit2`,
+                  path: `$.assets[${assetIdx}].allowances['${spenderAddress}'].assetForPermit2`,
                   entityId: assetAddress,
                   source: "erc20.allowance",
                   normalizedValue: "0",
@@ -175,22 +176,22 @@ export class WalletOnchainAdapter implements IWalletAdapter {
                   code: "SOURCE_UNAVAILABLE",
                   severity: "warning",
                   message: "Failed to fetch Permit2 spender allowance; defaulted to 0.",
-                  path: `$.assets[${assetIdx}].allowances[${spenderIdx}].assetForVaultInPermit2`,
+                  path: `$.assets[${assetIdx}].allowances['${spenderAddress}'].assetForVaultInPermit2`,
                   entityId: assetAddress,
                   source: "permit2.allowance",
                   normalizedValue: "0",
                 });
               }
 
-              return { spender, assetForVault, assetForPermit2, permit2Allowance };
+              return { spender, spenderAddress, assetForVault, assetForPermit2, permit2Allowance };
             })
           );
 
-          return { assetAddress, balanceResult, spenders, spenderResults };
+          return { assetAddress, assetIdx, balanceResult, spenders, spenderResults };
         })
       );
 
-      for (const { assetAddress, balanceResult, spenders, spenderResults } of assetResults) {
+      for (const { assetAddress, assetIdx, balanceResult, spenders, spenderResults } of assetResults) {
         const balance = balanceResult.value;
         if (balance === undefined) {
           errors.push({
@@ -214,6 +215,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 
           const result = spenderResults[i];
           if (!result) continue;
+          const spenderAddress = result.spenderAddress;
           const assetForVault = result.assetForVault.value;
           const assetForPermit2 = result.assetForPermit2.value;
           const permit2Result = result.permit2Allowance.value;
@@ -222,7 +224,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
           const permit2ExpirationTime = numberLikeToSafeFiniteNumber(
             (permit2Result?.[1] ?? 0) as bigint | number,
             {
-              path: `$.assets.allowances[${i}].permit2ExpirationTime`,
+              path: `$.assets[${assetIdx}].allowances['${spenderAddress}'].permit2ExpirationTime`,
               errors,
               source: "permit2.allowance",
               fallback: 0,

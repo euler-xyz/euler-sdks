@@ -226,16 +226,6 @@ export function OracleAdaptersInfo({
                         Open oracle details
                       </a>
                     </div>
-                    <pre className="oracle-tooltip-raw">
-                      {JSON.stringify(
-                        {
-                          ...adapter,
-                          metadata,
-                        },
-                        null,
-                        2
-                      )}
-                    </pre>
                   </div>
                 );
               })}

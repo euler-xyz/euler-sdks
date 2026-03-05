@@ -11,6 +11,13 @@ import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.js";
 import { withPathPrefix } from "../../../utils/entityDiagnostics.js";
 
+function normalizeSingleVaultPath(path: string): string {
+  if (path === "$.vaults[0]" || path === "$.eVaults[0]") return "$";
+  if (path.startsWith("$.vaults[0].")) return `$.${path.slice("$.vaults[0].".length)}`;
+  if (path.startsWith("$.eVaults[0].")) return `$.${path.slice("$.eVaults[0].".length)}`;
+  return path;
+}
+
 export interface IEVaultAdapter {
   fetchVaults(chainId: number, vault: Address[]): Promise<ServiceResult<(IEVault | undefined)[]>>;
   fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]>;
@@ -45,8 +52,14 @@ export interface IEVaultService
     vaults: Address[],
     options?: EVaultFetchOptions
   ): Promise<ServiceResult<(EVault | undefined)[]>>;
-  populateCollaterals(eVaults: EVault[]): Promise<DataIssue[]>;
-  populateMarketPrices(eVaults: EVault[]): Promise<DataIssue[]>;
+  populateCollaterals(
+    eVaults: EVault[],
+    getVaultPathPrefix?: (vaultIndex: number) => string
+  ): Promise<DataIssue[]>;
+  populateMarketPrices(
+    eVaults: EVault[],
+    getVaultPathPrefix?: (vaultIndex: number) => string
+  ): Promise<DataIssue[]>;
   populateRewards(eVaults: EVault[]): Promise<DataIssue[]>;
   populateIntrinsicApy(eVaults: EVault[]): Promise<DataIssue[]>;
   populateLabels(eVaults: EVault[]): Promise<DataIssue[]>;
@@ -104,7 +117,10 @@ export class EVaultService implements IEVaultService {
   ): Promise<ServiceResult<EVault>> {
     const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, [vault]);
-    const errors: DataIssue[] = [...fetched.errors];
+    const errors: DataIssue[] = fetched.errors.map((issue) => ({
+      ...issue,
+      path: normalizeSingleVaultPath(issue.path),
+    }));
     const fetchedVault = fetched.result[0];
     if (!fetchedVault) {
       throw new Error(`Vault not found for ${vault}`);
@@ -112,10 +128,10 @@ export class EVaultService implements IEVaultService {
     const eVault = new EVault(fetchedVault);
 
     if (resolvedOptions.populateCollaterals) {
-      errors.push(...(await this.populateCollaterals([eVault])));
+      errors.push(...(await this.populateCollaterals([eVault], () => "$")));
     }
     if (resolvedOptions.populateMarketPrices) {
-      errors.push(...(await this.populateMarketPrices([eVault])));
+      errors.push(...(await this.populateMarketPrices([eVault], () => "$")));
     }
     if (resolvedOptions.populateRewards) {
       errors.push(...(await this.populateRewards([eVault])));
@@ -143,10 +159,20 @@ export class EVaultService implements IEVaultService {
     const resolvedVaults = eVaults.filter((vault): vault is EVault => vault !== undefined);
 
     if (resolvedOptions.populateCollaterals) {
-      errors.push(...(await this.populateCollaterals(resolvedVaults)));
+      errors.push(
+        ...(await this.populateCollaterals(
+          resolvedVaults,
+          (vaultIndex) => `$.eVaults[${vaultIndex}]`
+        ))
+      );
     }
     if (resolvedOptions.populateMarketPrices) {
-      errors.push(...(await this.populateMarketPrices(resolvedVaults)));
+      errors.push(
+        ...(await this.populateMarketPrices(
+          resolvedVaults,
+          (vaultIndex) => `$.eVaults[${vaultIndex}]`
+        ))
+      );
     }
     if (resolvedOptions.populateRewards) {
       errors.push(...(await this.populateRewards(resolvedVaults)));
@@ -160,39 +186,68 @@ export class EVaultService implements IEVaultService {
     return { result: eVaults, errors };
   }
 
-  async populateCollaterals(eVaults: EVault[]): Promise<DataIssue[]> {
+  async populateCollaterals(
+    eVaults: EVault[],
+    getVaultPathPrefix: (vaultIndex: number) => string = (vaultIndex) => `$.eVaults[${vaultIndex}]`
+  ): Promise<DataIssue[]> {
     if (!this.vaultMetaService || eVaults.length === 0) return [];
     const errors: DataIssue[] = [];
 
-    const allCollateralAddresses = [
-      ...new Set(
-        eVaults.flatMap((v) => v.collaterals.map((c) => c.address))
-      ),
-    ];
+    const occurrencesByAddress = new Map<
+      string,
+      Array<{ vaultIndex: number; collateralIndex: number }>
+    >();
+
+    eVaults.forEach((eVault, vaultIndex) => {
+      eVault.collaterals.forEach((collateral, collateralIndex) => {
+        const key = collateral.address.toLowerCase();
+        const list = occurrencesByAddress.get(key) ?? [];
+        list.push({ vaultIndex, collateralIndex });
+        occurrencesByAddress.set(key, list);
+      });
+    });
+
+    const allCollateralAddresses = [...occurrencesByAddress.keys()].map(
+      (address) => getAddress(address)
+    );
 
     if (allCollateralAddresses.length === 0) return errors;
 
     const chainId = eVaults[0]!.chainId;
     const collateralVaults = await Promise.all(
-      allCollateralAddresses.map(async (addr, index) => {
+      allCollateralAddresses.map(async (addr) => {
+        const key = addr.toLowerCase();
+        const occurrences = occurrencesByAddress.get(key) ?? [];
+        const collateralPathPrefix = (vaultIndex: number, collateralIndex: number) =>
+          `${getVaultPathPrefix(vaultIndex)}.collaterals[${collateralIndex}].vault`;
+
         try {
           const fetched = await this.vaultMetaService!.fetchVault(chainId, addr);
-          errors.push(...fetched.errors.map((issue) => ({
-            ...issue,
-            path: withPathPrefix(issue.path, `$.collateralVaults[${index}]`),
-            entityId: issue.entityId ?? getAddress(addr),
-          })));
+          for (const issue of fetched.errors) {
+            for (const occurrence of occurrences) {
+              errors.push({
+                ...issue,
+                path: withPathPrefix(
+                  issue.path,
+                  collateralPathPrefix(occurrence.vaultIndex, occurrence.collateralIndex)
+                ),
+                entityId: issue.entityId ?? getAddress(addr),
+              });
+            }
+          }
           return fetched.result;
         } catch (error) {
-          errors.push({
-            code: "SOURCE_UNAVAILABLE",
-            severity: "warning",
-            message: `Failed to fetch collateral vault ${getAddress(addr)}.`,
-            path: `$.collateralVaults[${index}]`,
-            entityId: getAddress(addr),
-            source: "vaultMetaService",
-            originalValue: error instanceof Error ? error.message : String(error),
-          });
+          for (const occurrence of occurrences) {
+            errors.push({
+              code: "SOURCE_UNAVAILABLE",
+              severity: "warning",
+              message: `Failed to fetch collateral vault ${getAddress(addr)}.`,
+              path: collateralPathPrefix(occurrence.vaultIndex, occurrence.collateralIndex),
+              entityId: getAddress(addr),
+              source: "vaultMetaService",
+              originalValue: error instanceof Error ? error.message : String(error),
+            });
+          }
           return undefined;
         }
       })
@@ -236,17 +291,21 @@ export class EVaultService implements IEVaultService {
     return errors;
   }
 
-  async populateMarketPrices(eVaults: EVault[]): Promise<DataIssue[]> {
+  async populateMarketPrices(
+    eVaults: EVault[],
+    getVaultPathPrefix: (vaultIndex: number) => string = (vaultIndex) => `$.eVaults[${vaultIndex}]`
+  ): Promise<DataIssue[]> {
     if (!this.priceService || eVaults.length === 0) return [];
     const errors: DataIssue[] = [];
 
     await Promise.all(
       eVaults.map(async (eVault, vaultIndex) => {
+        const vaultPath = getVaultPathPrefix(vaultIndex);
         // Vault asset USD price
         try {
           const priced = await this.priceService!.getAssetUsdPriceWithDiagnostics(
             eVault,
-            `$.eVaults[${vaultIndex}].marketPriceUsd`
+            `${vaultPath}.marketPriceUsd`
           );
           eVault.marketPriceUsd = priced.result?.amountOutMid;
           errors.push(...priced.errors);
@@ -255,7 +314,7 @@ export class EVaultService implements IEVaultService {
             code: "SOURCE_UNAVAILABLE",
             severity: "warning",
             message: "Failed to populate asset market price.",
-            path: `$.eVaults[${vaultIndex}].marketPriceUsd`,
+            path: `${vaultPath}.marketPriceUsd`,
             entityId: eVault.asset.address,
             source: "priceService",
             originalValue: error instanceof Error ? error.message : String(error),
@@ -271,7 +330,7 @@ export class EVaultService implements IEVaultService {
               const priced = await this.priceService!.getCollateralUsdPriceWithDiagnostics(
                 eVault,
                 collateral.vault,
-                `$.eVaults[${vaultIndex}].collaterals[${collateralIndex}].marketPriceUsd`
+                `${vaultPath}.collaterals[${collateralIndex}].marketPriceUsd`
               );
               collateral.marketPriceUsd = priced.result?.amountOutMid;
               errors.push(...priced.errors);
@@ -280,7 +339,7 @@ export class EVaultService implements IEVaultService {
                 code: "SOURCE_UNAVAILABLE",
                 severity: "warning",
                 message: "Failed to populate collateral market price.",
-                path: `$.eVaults[${vaultIndex}].collaterals[${collateralIndex}].marketPriceUsd`,
+                path: `${vaultPath}.collaterals[${collateralIndex}].marketPriceUsd`,
                 entityId: collateral.vault?.asset.address ?? collateral.address,
                 source: "priceService",
                 originalValue: error instanceof Error ? error.message : String(error),

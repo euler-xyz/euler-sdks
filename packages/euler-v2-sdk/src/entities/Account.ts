@@ -483,7 +483,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
 
     for (const [subAccountAddress, sa] of Object.entries(this.subAccounts ?? {})) {
       if (!sa) continue;
-      const subAccountPath = `$.subAccounts[${subAccountAddress}]`;
+      const subAccountPath = `$.subAccounts['${subAccountAddress}']`;
       for (const [positionIndex, p] of sa.positions.entries()) {
         const positionPath = `${subAccountPath}.positions[${positionIndex}]`;
         if (p.vault) {
@@ -547,7 +547,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
     // Populate position USD values
     for (const [subAccountAddress, sa] of Object.entries(this.subAccounts ?? {})) {
       if (!sa) continue;
-      const subAccountPath = `$.subAccounts[${subAccountAddress}]`;
+      const subAccountPath = `$.subAccounts['${subAccountAddress}']`;
       for (const [positionIndex, p] of sa.positions.entries()) {
         const positionPath = `${subAccountPath}.positions[${positionIndex}]`;
         const vault = p.vault as any;

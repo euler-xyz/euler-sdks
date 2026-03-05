@@ -2,7 +2,7 @@ import { decodeOracleInfo, OracleInfo, OraclePrice } from "../../../../utils/ora
 import { IEVault, EVaultFees, EVaultHooks, EVaultCaps, EVaultLiquidation, InterestRates, InterestRateModel, EVaultCollateral, EVaultCollateralRamping, EVaultHookedOperations } from "../../../../entities/EVault.js";
 import { Token, VaultType } from "../../../../utils/types.js";
 import { VaultInfoFull, AssetPriceInfo, InterestRateModelType, InterestRateModelDetailedInfo } from "./eVaultLensTypes.js";
-import { formatUnits, type Hex } from "viem";
+import { formatUnits, type Hex, zeroAddress } from "viem";
 import { decodeIRMParams } from "../../../../utils/irm.js";
 import {
   type DataIssue,
@@ -197,11 +197,16 @@ export function convertVaultInfoFullToIEVault(
   });
 
   // Convert liability price
+  const hasDisabledOracle =
+    vaultInfo.oracleInfo.oracle.toLowerCase() === zeroAddress.toLowerCase();
   const oraclePriceRaw = convertAssetPriceInfoToOraclePrice(
     vaultInfo.liabilityPriceInfo,
     "$.oraclePriceRaw",
     errors,
-    vaultInfo.asset
+    vaultInfo.asset,
+    {
+      suppressQueryFailureIssue: hasDisabledOracle,
+    }
   );
 
   const result: IEVault = {
@@ -282,9 +287,12 @@ function convertAssetPriceInfoToOraclePrice(
   priceInfo: AssetPriceInfo,
   path: string,
   errors: DataIssue[],
-  entityId?: string
+  entityId?: string,
+  options?: {
+    suppressQueryFailureIssue?: boolean;
+  }
 ): OraclePrice {
-  if (priceInfo.queryFailure) {
+  if (priceInfo.queryFailure && !options?.suppressQueryFailureIssue) {
     errors.push({
       code: "SOURCE_UNAVAILABLE",
       severity: "warning",

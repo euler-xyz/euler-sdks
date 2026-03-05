@@ -61,5 +61,13 @@ export function createEntityDiagnosticIndex({
       .map((entry) => entry.issue);
   };
 
-  return { getEntityIssues, getFieldIssues };
+  const getExactFieldIssues = (entityKey: string, paths: string[]): DiagnosticIssue[] => {
+    const entries = byEntity.get(entityKey);
+    if (!entries || paths.length === 0) return [];
+    return entries
+      .filter((entry) => paths.some((target) => entry.path === target))
+      .map((entry) => entry.issue);
+  };
+
+  return { getEntityIssues, getFieldIssues, getExactFieldIssues };
 }

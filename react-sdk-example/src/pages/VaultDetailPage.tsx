@@ -86,7 +86,7 @@ export function VaultDetailPage() {
   }, [diagnostics, vault, diagnosticsDataUpdatedAt]);
 
   const renderCollateralFieldIcon = (collateralAddress: string, paths: string[]) => {
-    const issues = collateralDiagnosticIndex.getFieldIssues(collateralAddress.toLowerCase(), paths);
+    const issues = collateralDiagnosticIndex.getExactFieldIssues(collateralAddress.toLowerCase(), paths);
     if (issues.length === 0) return null;
     return <ErrorIcon details={formatDiagnosticIssues(issues)} position="leading" />;
   };

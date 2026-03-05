@@ -31,7 +31,10 @@ export interface ISecuritizeVaultService
     SecuritizeCollateralVault,
     StandardSecuritizeCollateralPerspectives | Address
   > {
-  populateMarketPrices(vaults: SecuritizeCollateralVault[]): Promise<DataIssue[]>;
+  populateMarketPrices(
+    vaults: SecuritizeCollateralVault[],
+    getVaultPathPrefix?: (vaultIndex: number) => string
+  ): Promise<DataIssue[]>;
   populateRewards(vaults: SecuritizeCollateralVault[]): Promise<DataIssue[]>;
   populateIntrinsicApy(vaults: SecuritizeCollateralVault[]): Promise<DataIssue[]>;
   populateLabels(vaults: SecuritizeCollateralVault[]): Promise<DataIssue[]>;
@@ -91,7 +94,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     }
     const entity = new SecuritizeCollateralVault(fetchedVault);
     if (resolvedOptions.populateMarketPrices) {
-      errors.push(...(await this.populateMarketPrices([entity])));
+      errors.push(...(await this.populateMarketPrices([entity], () => "$")));
     }
     if (resolvedOptions.populateRewards) {
       errors.push(...(await this.populateRewards([entity])));
@@ -118,7 +121,12 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     );
     const resolvedVaults = entities.filter((vault): vault is SecuritizeCollateralVault => vault !== undefined);
     if (resolvedOptions.populateMarketPrices) {
-      errors.push(...(await this.populateMarketPrices(resolvedVaults)));
+      errors.push(
+        ...(await this.populateMarketPrices(
+          resolvedVaults,
+          (vaultIndex) => `$.vaults[${vaultIndex}]`
+        ))
+      );
     }
     if (resolvedOptions.populateRewards) {
       errors.push(...(await this.populateRewards(resolvedVaults)));
@@ -133,7 +141,8 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
   }
 
   async populateMarketPrices(
-    vaults: SecuritizeCollateralVault[]
+    vaults: SecuritizeCollateralVault[],
+    getVaultPathPrefix: (vaultIndex: number) => string = (vaultIndex) => `$.vaults[${vaultIndex}]`
   ): Promise<DataIssue[]> {
     if (!this.priceService || vaults.length === 0) return [];
     const errors: DataIssue[] = [];
@@ -143,7 +152,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
         const vaultErrors = await v.populateMarketPrices(this.priceService!);
         errors.push(...vaultErrors.map((issue) => ({
           ...issue,
-          path: withPathPrefix(issue.path, `$.vaults[${index}]`),
+          path: withPathPrefix(issue.path, getVaultPathPrefix(index)),
           entityId: issue.entityId ?? v.address,
         })));
       })

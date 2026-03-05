@@ -46,9 +46,13 @@ export interface IEulerEarnService
   ): Promise<ServiceResult<(EulerEarn | undefined)[]>>;
   populateStrategyVaults(
     eulerEarns: EulerEarn[],
-    eVaultFetchOptions?: EVaultFetchOptions
+    eVaultFetchOptions?: EVaultFetchOptions,
+    getVaultPathPrefix?: (vaultIndex: number) => string
   ): Promise<DataIssue[]>;
-  populateMarketPrices(eulerEarns: EulerEarn[]): Promise<DataIssue[]>;
+  populateMarketPrices(
+    eulerEarns: EulerEarn[],
+    getVaultPathPrefix?: (vaultIndex: number) => string
+  ): Promise<DataIssue[]>;
   populateRewards(eulerEarns: EulerEarn[]): Promise<DataIssue[]>;
   populateIntrinsicApy(eulerEarns: EulerEarn[]): Promise<DataIssue[]>;
   populateLabels(eulerEarns: EulerEarn[]): Promise<DataIssue[]>;
@@ -113,10 +117,16 @@ export class EulerEarnService implements IEulerEarnService {
     }
     const eulerEarn = new EulerEarn(fetchedVault);
     if (resolvedOptions.populateStrategyVaults) {
-      errors.push(...(await this.populateStrategyVaults([eulerEarn], resolvedOptions.eVaultFetchOptions)));
+      errors.push(
+        ...(await this.populateStrategyVaults(
+          [eulerEarn],
+          resolvedOptions.eVaultFetchOptions,
+          () => "$"
+        ))
+      );
     }
     if (resolvedOptions.populateMarketPrices) {
-      errors.push(...(await this.populateMarketPrices([eulerEarn])));
+      errors.push(...(await this.populateMarketPrices([eulerEarn], () => "$")));
     }
     if (resolvedOptions.populateRewards) {
       errors.push(...(await this.populateRewards([eulerEarn])));
@@ -143,10 +153,21 @@ export class EulerEarnService implements IEulerEarnService {
     );
     const resolvedVaults = eulerEarns.filter((vault): vault is EulerEarn => vault !== undefined);
     if (resolvedOptions.populateStrategyVaults) {
-      errors.push(...(await this.populateStrategyVaults(resolvedVaults, resolvedOptions.eVaultFetchOptions)));
+      errors.push(
+        ...(await this.populateStrategyVaults(
+          resolvedVaults,
+          resolvedOptions.eVaultFetchOptions,
+          (vaultIndex) => `$.eulerEarns[${vaultIndex}]`
+        ))
+      );
     }
     if (resolvedOptions.populateMarketPrices) {
-      errors.push(...(await this.populateMarketPrices(resolvedVaults)));
+      errors.push(
+        ...(await this.populateMarketPrices(
+          resolvedVaults,
+          (vaultIndex) => `$.eulerEarns[${vaultIndex}]`
+        ))
+      );
     }
     if (resolvedOptions.populateRewards) {
       errors.push(...(await this.populateRewards(resolvedVaults)));
@@ -162,40 +183,66 @@ export class EulerEarnService implements IEulerEarnService {
 
   async populateStrategyVaults(
     eulerEarns: EulerEarn[],
-    eVaultFetchOptions?: EVaultFetchOptions
+    eVaultFetchOptions?: EVaultFetchOptions,
+    getVaultPathPrefix: (vaultIndex: number) => string = (vaultIndex) => `$.eulerEarns[${vaultIndex}]`
   ): Promise<DataIssue[]> {
     if (!this.eVaultService || eulerEarns.length === 0) return [];
     const errors: DataIssue[] = [];
 
-    const allStrategyAddresses = [
-      ...new Set(
-        eulerEarns.flatMap((ee) => ee.strategies.map((s) => s.address))
-      ),
-    ];
+    const occurrencesByAddress = new Map<
+      string,
+      Array<{ vaultIndex: number; strategyIndex: number }>
+    >();
+
+    eulerEarns.forEach((ee, vaultIndex) => {
+      ee.strategies.forEach((strategy, strategyIndex) => {
+        const key = strategy.address.toLowerCase();
+        const list = occurrencesByAddress.get(key) ?? [];
+        list.push({ vaultIndex, strategyIndex });
+        occurrencesByAddress.set(key, list);
+      });
+    });
+
+    const allStrategyAddresses = [...occurrencesByAddress.keys()].map(
+      (address) => getAddress(address)
+    );
 
     if (allStrategyAddresses.length === 0) return errors;
 
     const chainId = eulerEarns[0]!.chainId;
     const eVaults = await Promise.all(
-      allStrategyAddresses.map(async (addr, index) => {
+      allStrategyAddresses.map(async (addr) => {
+        const key = addr.toLowerCase();
+        const occurrences = occurrencesByAddress.get(key) ?? [];
+        const strategyPathPrefix = (vaultIndex: number, strategyIndex: number) =>
+          `${getVaultPathPrefix(vaultIndex)}.strategies[${strategyIndex}].vault`;
         try {
           const fetched = await this.eVaultService!.fetchVault(chainId, addr, eVaultFetchOptions);
-          errors.push(...fetched.errors.map((issue) => ({
-            ...issue,
-            path: withPathPrefix(issue.path, `$.strategyVaults[${index}]`),
-            entityId: issue.entityId ?? getAddress(addr),
-          })));
+          for (const issue of fetched.errors) {
+            for (const occurrence of occurrences) {
+              errors.push({
+                ...issue,
+                path: withPathPrefix(
+                  issue.path,
+                  strategyPathPrefix(occurrence.vaultIndex, occurrence.strategyIndex)
+                ),
+                entityId: issue.entityId ?? getAddress(addr),
+              });
+            }
+          }
           return fetched.result;
         } catch (error) {
-          errors.push({
-            code: "SOURCE_UNAVAILABLE",
-            severity: "warning",
-            message: `Failed to fetch strategy vault ${getAddress(addr)}.`,
-            path: `$.strategyVaults[${index}]`,
-            entityId: getAddress(addr),
-            source: "eVaultService",
-            originalValue: error instanceof Error ? error.message : String(error),
-          });
+          for (const occurrence of occurrences) {
+            errors.push({
+              code: "SOURCE_UNAVAILABLE",
+              severity: "warning",
+              message: `Failed to fetch strategy vault ${getAddress(addr)}.`,
+              path: strategyPathPrefix(occurrence.vaultIndex, occurrence.strategyIndex),
+              entityId: getAddress(addr),
+              source: "eVaultService",
+              originalValue: error instanceof Error ? error.message : String(error),
+            });
+          }
           return undefined;
         }
       })
@@ -216,7 +263,8 @@ export class EulerEarnService implements IEulerEarnService {
   }
 
   async populateMarketPrices(
-    eulerEarns: EulerEarn[]
+    eulerEarns: EulerEarn[],
+    getVaultPathPrefix: (vaultIndex: number) => string = (vaultIndex) => `$.eulerEarns[${vaultIndex}]`
   ): Promise<DataIssue[]> {
     if (!this.priceService || eulerEarns.length === 0) return [];
     const errors: DataIssue[] = [];
@@ -226,7 +274,7 @@ export class EulerEarnService implements IEulerEarnService {
         const eeErrors = await ee.populateMarketPrices(this.priceService!);
         errors.push(...eeErrors.map((issue) => ({
           ...issue,
-          path: withPathPrefix(issue.path, `$.eulerEarns[${index}]`),
+          path: withPathPrefix(issue.path, getVaultPathPrefix(index)),
           entityId: issue.entityId ?? ee.address,
         })));
       })
