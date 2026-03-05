@@ -12,14 +12,14 @@ import {
   formatPercent,
   formatPriceUsd,
 } from "../utils/format.ts";
+import {
+  createEntityDiagnosticIndex,
+  formatDiagnosticIssues,
+} from "../utils/diagnosticIndex.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
 import { OracleAdaptersInfo } from "../components/OracleAdaptersInfo.tsx";
-
-function formatIssueRaw(issue: DiagnosticIssue): string {
-  return JSON.stringify(issue, null, 2);
-}
 
 function normalizeVaultDetailPath(path: string | undefined): string | undefined {
   if (!path) return path;
@@ -43,7 +43,12 @@ export function VaultDetailPage() {
     setChainId(chainId);
   }, [chainId, setChainId]);
 
-  const { data, isLoading, error } = useVaultDetailWithDiagnostics(chainId, address);
+  const {
+    data,
+    isLoading,
+    error,
+    dataUpdatedAt: diagnosticsDataUpdatedAt,
+  } = useVaultDetailWithDiagnostics(chainId, address);
   const { data: oracleAdapterMetadataMap } = useOracleAdapterMetadataMap(chainId);
   const vault = data?.vault;
   const diagnostics = data?.diagnostics ?? [];
@@ -52,33 +57,39 @@ export function VaultDetailPage() {
     () => diagnostics.filter((issue) => issue.severity === "warning" || issue.severity === "error"),
     [diagnostics]
   );
-  const collateralDiagnosticsByAddress = useMemo(() => {
-    if (!vault) return {} as Record<string, string>;
-
-    const byAddress = new Map<string, DiagnosticIssue[]>();
-    for (const issue of diagnostics) {
-      const path = normalizeVaultDetailPath(issue.path);
-      const directMatch = path?.match(/^\$\.collaterals\[(\d+)\]/);
-      const eVaultMatch = path?.match(/^\$\.eVaults\[\d+\]\.collaterals\[(\d+)\]/);
-      const idxRaw = directMatch?.[1] ?? eVaultMatch?.[1];
-      if (!idxRaw) continue;
-      const idx = Number(idxRaw);
-      const collateral = vault.collaterals[idx];
-      if (!collateral) continue;
-
-      const key = collateral.address.toLowerCase();
-      const list = byAddress.get(key) ?? [];
-      list.push(issue);
-      byAddress.set(key, list);
+  const collateralDiagnosticIndex = useMemo(() => {
+    if (!vault) {
+      return createEntityDiagnosticIndex({
+        diagnostics: [],
+        resolveEntityKey: () => undefined,
+      });
     }
 
-    return Object.fromEntries(
-      Array.from(byAddress.entries()).map(([addressKey, issues]) => [
-        addressKey,
-        issues.map(formatIssueRaw).join("\n\n"),
-      ])
-    ) as Record<string, string>;
-  }, [diagnostics, vault]);
+    return createEntityDiagnosticIndex({
+      diagnostics,
+      resolveEntityKey: (issue) => {
+        const path = normalizeVaultDetailPath(issue.path);
+        const match = path?.match(/^\$\.collaterals\[(\d+)\](?:\.|$)/);
+        if (!match) return undefined;
+        const collateral = vault.collaterals[Number(match[1])];
+        if (!collateral) return undefined;
+        return collateral.address.toLowerCase();
+      },
+      normalizePath: (path) => {
+        const normalizedPath = normalizeVaultDetailPath(path);
+        if (!normalizedPath) return "$";
+        const match = normalizedPath.match(/^\$\.collaterals\[\d+\](?:\.(.*))?$/);
+        if (!match) return normalizedPath;
+        return match[1] ? `$.${match[1]}` : "$";
+      },
+    });
+  }, [diagnostics, vault, diagnosticsDataUpdatedAt]);
+
+  const renderCollateralFieldIcon = (collateralAddress: string, paths: string[]) => {
+    const issues = collateralDiagnosticIndex.getFieldIssues(collateralAddress.toLowerCase(), paths);
+    if (issues.length === 0) return null;
+    return <ErrorIcon details={formatDiagnosticIssues(issues)} position="leading" />;
+  };
 
   const fieldDiagnostics = (paths: string[]): DiagnosticIssue[] => {
     return visibleDiagnostics.filter((issue) => {
@@ -394,12 +405,7 @@ export function VaultDetailPage() {
             {vault.collaterals.map((col) => (
               <tr key={col.address}>
                 <td>
-                  {collateralDiagnosticsByAddress[col.address.toLowerCase()] && (
-                    <ErrorIcon
-                      details={collateralDiagnosticsByAddress[col.address.toLowerCase()]}
-                      position="leading"
-                    />
-                  )}
+                  {renderCollateralFieldIcon(col.address, ["$", "$.vault"])}
                   {col.vault ? (
                     <Link to={`/vault/${chainId}/${col.address}`}>
                       {col.vault.shares.name || col.vault.asset.symbol}
@@ -408,10 +414,20 @@ export function VaultDetailPage() {
                     <CopyAddress address={col.address} />
                   )}
                 </td>
-                <td><CopyAddress address={col.address} /></td>
-                <td>{formatPercent(col.borrowLTV)}</td>
-                <td>{formatPercent(col.liquidationLTV)}</td>
                 <td>
+                  {renderCollateralFieldIcon(col.address, ["$.address"])}
+                  <CopyAddress address={col.address} />
+                </td>
+                <td>
+                  {renderCollateralFieldIcon(col.address, ["$.borrowLTV"])}
+                  {formatPercent(col.borrowLTV)}
+                </td>
+                <td>
+                  {renderCollateralFieldIcon(col.address, ["$.liquidationLTV"])}
+                  {formatPercent(col.liquidationLTV)}
+                </td>
+                <td>
+                  {renderCollateralFieldIcon(col.address, ["$.marketPriceUsd", "$.oracleAdapters"])}
                   <OracleAdaptersInfo
                     chainId={chainId}
                     adapters={col.oracleAdapters}

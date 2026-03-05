@@ -12,7 +12,7 @@ import type {
 import { isAddress, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import { recordExecution, registerKnownQueries } from "./queryProfileStore.ts";
-import { interceptSdkDataIfEnabled } from "./dataInterceptorStore.ts";
+import { interceptSdkDataIfEnabled, isQueryIntercepted } from "./dataInterceptorStore.ts";
 
 // ---------------------------------------------------------------------------
 // Query client
@@ -140,6 +140,9 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn, target) => {
         return result === undefined ? null : result;
       },
       staleTime,
+      // When manually intercepting a query in the profiler, a "throw" should
+      // fail that exact call path instead of being retried transparently.
+      retry: isQueryIntercepted(queryName) ? false : undefined,
     });
 
   return wrapped as typeof fn;
@@ -273,9 +276,13 @@ export type FailedVaultFetch = {
 
 function extractVaultIndex(path: string | undefined): number | undefined {
   if (!path) return undefined;
-  const match = path.match(/^\$\.vaults\[(\d+)\]/);
+  const match = path.match(/^\$\.(?:vaults|eVaults)\[(\d+)\]$/);
   if (!match) return undefined;
   return Number(match[1]);
+}
+
+function isVaultFetchFailureIssue(issue: DiagnosticIssue): boolean {
+  return issue.code === "SOURCE_UNAVAILABLE" && extractVaultIndex(issue.path) !== undefined;
 }
 
 function formatIssueRaw(issue: DiagnosticIssue): string {
@@ -314,12 +321,19 @@ export function useVerifiedVaults(perspectives: VaultMetaPerspective[]) {
   return useQuery<VaultEntity[]>({
     queryKey: ["vaults", chainId, perspectives],
     queryFn: async () => {
-      const fetched = unwrapServiceResultWithDiagnostics(
-        "vaultMetaService.fetchVerifiedVaults",
-        await sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
-          populateAll: true,
-        })
-      );
+      const response = await sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
+        populateAll: true,
+      });
+      const fetched = isServiceResult(response)
+        ? { result: response.result, diagnostics: response.errors ?? [] }
+        : { result: response, diagnostics: [] };
+
+      if (fetched.diagnostics.length > 0) {
+        console.warn(
+          "[sdk diagnostics] vaultMetaService.fetchVerifiedVaults",
+          fetched.diagnostics
+        );
+      }
       return (fetched.result as Array<VaultEntity | undefined>).filter(
         (vault): vault is VaultEntity => vault !== undefined
       );
@@ -337,52 +351,86 @@ export function useVerifiedVaultsWithDiagnostics(
     vaults: VaultEntity[];
     diagnostics: DiagnosticIssue[];
     failedVaults: FailedVaultFetch[];
-    vaultErrorDetailsByAddress: Record<string, string>;
   }>({
     queryKey: ["vaultsWithDiagnostics", chainId, perspectives],
     queryFn: async () => {
-      const fetched = unwrapServiceResultWithDiagnostics(
-        "vaultMetaService.fetchVerifiedVaults",
-        await sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
-          populateAll: true,
-        })
-      );
+      const response = await sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
+        populateAll: true,
+      });
+      const fetched = isServiceResult(response)
+        ? { result: response.result, diagnostics: response.errors ?? [] }
+        : { result: response, diagnostics: [] };
+
+      if (fetched.diagnostics.length > 0) {
+        console.warn(
+          "[sdk diagnostics] vaultMetaService.fetchVerifiedVaults",
+          fetched.diagnostics
+        );
+      }
       const rawVaults = fetched.result as Array<VaultEntity | undefined>;
       const vaults = rawVaults.filter(
         (vault): vault is VaultEntity => vault !== undefined
       );
-      const rowIssuesByAddress = new Map<string, DiagnosticIssue[]>();
+      const loadedVaultAddresses = new Set(
+        vaults.map((vault) => vault.address.toLowerCase())
+      );
       const failedIssuesByAddress = new Map<string, DiagnosticIssue[]>();
+      const diagnostics: DiagnosticIssue[] = fetched.diagnostics.map((issue) => {
+        if (issue.entityId && isAddress(issue.entityId)) return issue;
 
-      for (const issue of fetched.diagnostics) {
         const vaultIndex = extractVaultIndex(issue.path);
+        if (vaultIndex === undefined) return issue;
+
+        const rowVault = rawVaults[vaultIndex];
+        if (!rowVault) return issue;
+
+        return { ...issue, entityId: rowVault.address };
+      });
+
+      for (const issue of diagnostics) {
+        const vaultIndex = extractVaultIndex(issue.path);
+        const issueAddress = issue.entityId && isAddress(issue.entityId)
+          ? issue.entityId.toLowerCase()
+          : undefined;
+        const addFailedIssue = () => {
+          if (!issueAddress) return;
+          const list = failedIssuesByAddress.get(issueAddress) ?? [];
+          list.push(issue);
+          failedIssuesByAddress.set(issueAddress, list);
+        };
 
         if (vaultIndex !== undefined) {
           const rowVault = rawVaults[vaultIndex];
           if (rowVault) {
-            const key = rowVault.address.toLowerCase();
-            const list = rowIssuesByAddress.get(key) ?? [];
-            list.push(issue);
-            rowIssuesByAddress.set(key, list);
+            // Child vault services emit paths with service-local vault indices.
+            // If that local index points to a different vault in the merged array,
+            // rely on entityId + SOURCE_UNAVAILABLE to retain the failed vault entry.
+            if (
+              issueAddress &&
+              isVaultFetchFailureIssue(issue) &&
+              rowVault.address.toLowerCase() !== issueAddress &&
+              !loadedVaultAddresses.has(issueAddress)
+            ) {
+              addFailedIssue();
+            }
             continue;
           }
 
-          if (issue.entityId && isAddress(issue.entityId)) {
-            const key = issue.entityId.toLowerCase();
-            const list = failedIssuesByAddress.get(key) ?? [];
-            list.push(issue);
-            failedIssuesByAddress.set(key, list);
+          if (issueAddress && isVaultFetchFailureIssue(issue)) {
+            addFailedIssue();
           }
           continue;
         }
+
+        if (
+          issueAddress &&
+          isVaultFetchFailureIssue(issue) &&
+          !loadedVaultAddresses.has(issueAddress)
+        ) {
+          addFailedIssue();
+        }
       }
 
-      const vaultErrorDetailsByAddress = Object.fromEntries(
-        Array.from(rowIssuesByAddress.entries()).map(([address, issues]) => [
-          address,
-          issues.map(formatIssueRaw).join("\n\n"),
-        ])
-      );
       const failedVaults = Array.from(failedIssuesByAddress.entries()).map(([address, issues]) => ({
         address,
         details: issues.map(formatIssueRaw).join("\n\n"),
@@ -390,9 +438,8 @@ export function useVerifiedVaultsWithDiagnostics(
 
       return {
         vaults,
-        diagnostics: fetched.diagnostics,
+        diagnostics,
         failedVaults,
-        vaultErrorDetailsByAddress,
       };
     },
     enabled,

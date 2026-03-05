@@ -24,6 +24,10 @@ import {
   useWalletClient,
 } from "wagmi";
 import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
+import {
+  createEntityDiagnosticIndex,
+  formatDiagnosticIssues,
+} from "../utils/diagnosticIndex.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
@@ -459,10 +463,15 @@ export function VaultListPage() {
   const { isConnected } = useAccount();
   const [openDeposit, setOpenDeposit] = useState<string | null>(null);
 
-  const { data: vaultData, isLoading, error } = useVerifiedVaultsWithDiagnostics(ALL_PERSPECTIVES);
+  const {
+    data: vaultData,
+    isLoading,
+    error,
+    dataUpdatedAt: diagnosticsDataUpdatedAt,
+  } = useVerifiedVaultsWithDiagnostics(ALL_PERSPECTIVES);
   const allVaults = vaultData?.vaults ?? [];
   const failedVaults = vaultData?.failedVaults ?? [];
-  const vaultErrorDetailsByAddress = vaultData?.vaultErrorDetailsByAddress ?? {};
+  const diagnostics = vaultData?.diagnostics ?? [];
 
   const eVaults = allVaults?.filter(isEVault) ?? [];
   const earnVaults = allVaults?.filter(isEulerEarn) ?? [];
@@ -524,6 +533,34 @@ export function VaultListPage() {
 
   const eVaultSort = useSorted(filteredEVaults, "totalSupply" as EVaultSortKey, getEVaultSortValue);
   const earnSort = useSorted(earnVaults, "totalAssets" as EarnSortKey, getEarnSortValue);
+
+  const vaultDiagnosticIndex = useMemo(
+    () =>
+      createEntityDiagnosticIndex({
+        diagnostics,
+        resolveEntityKey: (issue) => {
+          if (!issue.entityId || issue.entityId.length !== 42) return undefined;
+          return issue.entityId.toLowerCase();
+        },
+        normalizePath: (path) => {
+          if (!path) return "$";
+          const match = path.match(/^\$\.vaults\[\d+\](?:\.(.*))?$/);
+          if (!match) return path;
+          return match[1] ? `$.${match[1]}` : "$";
+        },
+      }),
+    [diagnostics, diagnosticsDataUpdatedAt]
+  );
+
+  const renderFieldIcon = (
+    address: string,
+    paths: string[],
+    position: "leading" | "trailing" = "leading"
+  ) => {
+    const issues = vaultDiagnosticIndex.getFieldIssues(address.toLowerCase(), paths);
+    if (issues.length === 0) return null;
+    return <ErrorIcon details={formatDiagnosticIssues(issues)} position={position} />;
+  };
 
   if (sdkLoading)
     return <div className="status-message">Initializing SDK...</div>;
@@ -686,23 +723,27 @@ export function VaultListPage() {
                           }
                         >
                           <td>
-                            {vaultErrorDetailsByAddress[vault.address.toLowerCase()] && (
-                              <ErrorIcon
-                                details={vaultErrorDetailsByAddress[vault.address.toLowerCase()]}
-                                position="leading"
-                              />
-                            )}
+                            {renderFieldIcon(vault.address, ["$.shares.name", "$.eulerLabel.vault.name", "$.eulerLabel.products"])}
                             {vault.shares.name || "-"}
                           </td>
-                          <td>{vault.asset.symbol}</td>
-                          <td><CopyAddress address={vault.address} /></td>
                           <td>
+                            {renderFieldIcon(vault.address, ["$.asset.symbol", "$.asset.name"])}
+                            {vault.asset.symbol}
+                          </td>
+                          <td>
+                            {renderFieldIcon(vault.address, ["$.address"])}
+                            <CopyAddress address={vault.address} />
+                          </td>
+                          <td>
+                            {renderFieldIcon(vault.address, ["$.totalAssets"])}
                             {formatBigInt(vault.totalAssets, vault.asset.decimals)}
                           </td>
                           <td>
+                            {renderFieldIcon(vault.address, ["$.totalBorrowed"])}
                             {formatBigInt(vault.totalBorrowed, vault.asset.decimals)}
                           </td>
                           <td>
+                            {renderFieldIcon(vault.address, ["$.interestRates.supplyAPY", "$.rewards", "$.intrinsicApy"])}
                             <ApyCell
                               baseApy={Number(vault.interestRates.supplyAPY)}
                               rewards={vault.rewards}
@@ -710,12 +751,19 @@ export function VaultListPage() {
                             />
                           </td>
                           <td>
+                            {renderFieldIcon(vault.address, ["$.interestRates.borrowAPY"])}
                             <ApyCell
                               baseApy={Number(vault.interestRates.borrowAPY)}
                             />
                           </td>
-                          <td>{formatPriceUsd(vault.marketPriceUsd)}</td>
-                          <td>{vault.collaterals.length}</td>
+                          <td>
+                            {renderFieldIcon(vault.address, ["$.marketPriceUsd"])}
+                            {formatPriceUsd(vault.marketPriceUsd)}
+                          </td>
+                          <td>
+                            {renderFieldIcon(vault.address, ["$.collaterals"])}
+                            {vault.collaterals.length}
+                          </td>
                           <td>
                             <button
                               type="button"
@@ -823,27 +871,39 @@ export function VaultListPage() {
                     }
                   >
                     <td>
-                      {vaultErrorDetailsByAddress[vault.address.toLowerCase()] && (
-                        <ErrorIcon
-                          details={vaultErrorDetailsByAddress[vault.address.toLowerCase()]}
-                          position="leading"
-                        />
-                      )}
+                      {renderFieldIcon(vault.address, ["$.shares.name", "$.eulerLabel.vault.name"], "leading")}
                       {vault.shares.name || "-"}
                     </td>
-                    <td>{vault.asset.symbol}</td>
-                    <td><CopyAddress address={vault.address} /></td>
                     <td>
+                      {renderFieldIcon(vault.address, ["$.asset.symbol", "$.asset.name"])}
+                      {vault.asset.symbol}
+                    </td>
+                    <td>
+                      {renderFieldIcon(vault.address, ["$.address"])}
+                      <CopyAddress address={vault.address} />
+                    </td>
+                    <td>
+                      {renderFieldIcon(vault.address, ["$.totalAssets"])}
                       {formatBigInt(vault.totalAssets, vault.asset.decimals)}
                     </td>
                     <td>
+                      {renderFieldIcon(vault.address, ["$.supplyApy", "$.rewards", "$.intrinsicApy"])}
                       {vault.supplyApy !== undefined
                         ? <ApyCell baseApy={vault.supplyApy} rewards={vault.rewards} intrinsicApy={vault.intrinsicApy} />
                         : "-"}
                     </td>
-                    <td>{formatPriceUsd(vault.marketPriceUsd)}</td>
-                    <td>{vault.strategies.length}</td>
-                    <td>{(vault.performanceFee * 100).toFixed(1)}%</td>
+                    <td>
+                      {renderFieldIcon(vault.address, ["$.marketPriceUsd"])}
+                      {formatPriceUsd(vault.marketPriceUsd)}
+                    </td>
+                    <td>
+                      {renderFieldIcon(vault.address, ["$.strategies"])}
+                      {vault.strategies.length}
+                    </td>
+                    <td>
+                      {renderFieldIcon(vault.address, ["$.performanceFee"])}
+                      {(vault.performanceFee * 100).toFixed(1)}%
+                    </td>
                   </tr>
                 ))}
               </tbody>
