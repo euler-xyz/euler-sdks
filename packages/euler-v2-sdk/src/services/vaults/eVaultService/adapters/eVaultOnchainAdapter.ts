@@ -103,9 +103,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
     const eVaults = await Promise.all(
       vaults.map(async (vault, index) => {
         try {
-          console.log(1);
           const result = await this.queryEVaultInfoFull(provider, vaultLensAddress, vault);
-          console.log(2);
           const vaultInfo = result as unknown as VaultInfoFull;
           const conversionErrors: DataIssue[] = [];
           const parsed = convertVaultInfoFullToIEVault(vaultInfo, chainId, conversionErrors);
@@ -115,7 +113,6 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
           })));
           return new EVault(parsed);
         } catch (error) {
-          console.log("HERER");
           errors.push({
             code: "SOURCE_UNAVAILABLE",
             severity: "error",
