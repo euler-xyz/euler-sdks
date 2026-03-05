@@ -219,19 +219,11 @@ export class EulerEarnService implements IEulerEarnService {
 
     await Promise.all(
       eulerEarns.map(async (ee, index) => {
-        try {
-          ee.marketPriceUsd = await ee.fetchAssetMarketPriceUsd(this.priceService!);
-        } catch (error) {
-          errors.push({
-            code: "SOURCE_UNAVAILABLE",
-            severity: "warning",
-            message: "Failed to populate asset market price.",
-            path: `$.eulerEarns[${index}].marketPriceUsd`,
-            source: "priceService",
-            originalValue: error instanceof Error ? error.message : String(error),
-          });
-          ee.marketPriceUsd = undefined;
-        }
+        const eeErrors = await ee.populateMarketPrices(this.priceService!);
+        errors.push(...eeErrors.map((issue) => ({
+          ...issue,
+          path: withPathPrefix(issue.path, `$.eulerEarns[${index}]`),
+        })));
       })
     );
     return errors;

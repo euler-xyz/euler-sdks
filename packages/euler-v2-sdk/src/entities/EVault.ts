@@ -262,7 +262,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
     } catch (error) {
       errors.push({
         code: "SOURCE_UNAVAILABLE",
-        severity: "warning",
+        severity: "error",
         message: "Failed to populate asset market price.",
         path: "$.marketPriceUsd",
         source: "priceService",
@@ -285,7 +285,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
         } catch (error) {
           errors.push({
             code: "SOURCE_UNAVAILABLE",
-            severity: "warning",
+            severity: "error",
             message: "Failed to populate collateral market price.",
             path: `$.collaterals[${index}].marketPriceUsd`,
             source: "priceService",

@@ -19,16 +19,31 @@ export interface QueryRowSnapshot {
 }
 
 const rows = new Map<string, Row>();
+const knownQueries = new Set<string>();
 const listeners = new Set<() => void>();
 let snapshot: QueryRowSnapshot[] = [];
 
 function emit() {
-  snapshot = Array.from(rows.values()).map((r) => ({
-    queryName: r.queryName,
-    count: r.count,
-    state: r.state,
-    fadeStartTime: r.fadeStartTime,
-  }));
+  snapshot = Array.from(knownQueries)
+    .sort((a, b) => a.localeCompare(b))
+    .map((queryName) => {
+      const row = rows.get(queryName);
+      if (!row) {
+        return {
+          queryName,
+          count: 0,
+          state: "active" as const,
+          fadeStartTime: null,
+        };
+      }
+
+      return {
+        queryName: row.queryName,
+        count: row.count,
+        state: row.state,
+        fadeStartTime: row.fadeStartTime,
+      };
+    });
   for (const l of listeners) l();
 }
 
@@ -49,6 +64,9 @@ function startFade(queryName: string) {
 }
 
 export function recordExecution(queryName: string) {
+  if (!knownQueries.has(queryName)) {
+    knownQueries.add(queryName);
+  }
   const existing = rows.get(queryName);
 
   if (existing) {
@@ -73,6 +91,18 @@ export function recordExecution(queryName: string) {
   }
 
   emit();
+}
+
+export function registerKnownQueries(queryNames: string[]) {
+  let changed = false;
+  for (const queryName of queryNames) {
+    if (!knownQueries.has(queryName)) {
+      knownQueries.add(queryName);
+      changed = true;
+    }
+  }
+
+  if (changed) emit();
 }
 
 function subscribe(listener: () => void): () => void {

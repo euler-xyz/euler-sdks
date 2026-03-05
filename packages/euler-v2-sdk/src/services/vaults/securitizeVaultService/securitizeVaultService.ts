@@ -10,6 +10,7 @@ import type { IRewardsService } from "../../rewardsService/index.js";
 import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.js";
+import { withPathPrefix } from "../../../utils/entityDiagnostics.js";
 
 export interface ISecuritizeCollateralAdapter {
   fetchVaults(
@@ -137,19 +138,11 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 
     await Promise.all(
       vaults.map(async (v, index) => {
-        try {
-          v.marketPriceUsd = await v.fetchAssetMarketPriceUsd(this.priceService!);
-        } catch (error) {
-          errors.push({
-            code: "SOURCE_UNAVAILABLE",
-            severity: "warning",
-            message: "Failed to populate asset market price.",
-            path: `$.vaults[${index}].marketPriceUsd`,
-            source: "priceService",
-            originalValue: error instanceof Error ? error.message : String(error),
-          });
-          v.marketPriceUsd = undefined;
-        }
+        const vaultErrors = await v.populateMarketPrices(this.priceService!);
+        errors.push(...vaultErrors.map((issue) => ({
+          ...issue,
+          path: withPathPrefix(issue.path, `$.vaults[${index}]`),
+        })));
       })
     );
     return errors;

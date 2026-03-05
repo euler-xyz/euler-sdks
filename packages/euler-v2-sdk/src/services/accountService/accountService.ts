@@ -108,7 +108,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
       } catch (error) {
         errors.push({
           code: "SOURCE_UNAVAILABLE",
-          severity: "warning",
+          severity: "error",
           message: "Failed to populate market prices for account.",
           path: "$",
           source: "priceService",
@@ -123,7 +123,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
       } catch (error) {
         errors.push({
           code: "SOURCE_UNAVAILABLE",
-          severity: "warning",
+          severity: "error",
           message: "Failed to populate user rewards for account.",
           path: "$.userRewards",
           source: "rewardsService",
@@ -178,7 +178,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
           .catch((error) => {
             errors.push({
               code: "SOURCE_UNAVAILABLE",
-              severity: "warning",
+              severity: "error",
               message: "Failed to populate vault entities for account.",
               path: "$",
               source: "vaultMetaService",

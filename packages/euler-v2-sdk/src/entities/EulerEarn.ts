@@ -3,7 +3,6 @@ import { ERC4626Data, Token, VaultType } from "../utils/types.js";
 import { ERC4626Vault, IERC4626Vault, IERC4626VaultConversion, VIRTUAL_DEPOSIT_AMOUNT } from "./ERC4626Vault.js";
 import type { EVault } from "./EVault.js";
 import type { IEVaultService } from "../services/vaults/eVaultService/eVaultService.js";
-import type { IPriceService } from "../services/priceService/index.js";
 import type { DataIssue } from "../utils/entityDiagnostics.js";
 import { withPathPrefix } from "../utils/entityDiagnostics.js";
 
@@ -146,22 +145,5 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
       strategy.vault = eVaultByAddress.get(strategy.address.toLowerCase());
     }
     return errors;
-  }
-
-  override async populateMarketPrices(priceService: IPriceService): Promise<DataIssue[]> {
-    try {
-      this.marketPriceUsd = await this.fetchAssetMarketPriceUsd(priceService);
-      return [];
-    } catch (error) {
-      this.marketPriceUsd = undefined;
-      return [{
-        code: "SOURCE_UNAVAILABLE",
-        severity: "warning",
-        message: "Failed to populate asset market price.",
-        path: "$.marketPriceUsd",
-        source: "priceService",
-        originalValue: error instanceof Error ? error.message : String(error),
-      }];
-    }
   }
 }

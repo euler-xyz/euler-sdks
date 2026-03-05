@@ -138,22 +138,49 @@ a:hover {
   font-style: italic;
 }
 
-.profiler-row {
+.profiler-table {
   display: flex;
-  gap: 8px;
-  padding: 3px 0;
-  opacity: 1;
-  transition: none;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.profiler-row.fading {
-  opacity: 0;
-  transition: opacity 3s linear;
+.profiler-head-row {
+  display: grid;
+  grid-template-columns: 20px 1fr 44px;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid #ddd;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.profiler-head-check,
+.profiler-check {
+  display: flex;
+  justify-content: center;
+}
+
+.profiler-row {
+  display: grid;
+  grid-template-columns: 20px 1fr 44px;
+  gap: 8px;
+  padding: 3px 0;
+  align-items: center;
 }
 
 .profiler-count {
+  text-align: right;
   font-weight: 700;
-  min-width: 28px;
+  min-width: 44px;
+  opacity: 1;
+  transition: opacity 3s linear;
+}
+
+.profiler-count.fading {
+  opacity: 0;
 }
 
 .profiler-name {
@@ -292,6 +319,26 @@ tr.clickable {
   font-size: 14px;
   font-weight: 700;
   word-break: break-all;
+}
+
+.field-diagnostics {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-diagnostic {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.field-diagnostic.warning {
+  color: #8a5d00;
+}
+
+.field-diagnostic.error {
+  color: #c00;
 }
 
 /* Back link */

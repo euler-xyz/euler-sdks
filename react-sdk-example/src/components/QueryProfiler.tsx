@@ -1,11 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryProfile } from "../queries/queryProfileStore.ts";
+import {
+  setInterceptedQueries,
+  setQueryIntercepted,
+  useSelectedInterceptedQueries,
+} from "../queries/dataInterceptorStore.ts";
 
 const STORAGE_KEY = "query-profiler-collapsed";
 
 export function QueryProfiler() {
   const rows = useQueryProfile();
+  const selectedQueries = useSelectedInterceptedQueries();
   const [collapsed, setCollapsed] = useState(false);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -19,6 +26,18 @@ export function QueryProfiler() {
       return next;
     });
   };
+
+  const selectedCount = useMemo(
+    () => rows.filter((row) => selectedQueries.has(row.queryName)).length,
+    [rows, selectedQueries]
+  );
+  const allSelected = rows.length > 0 && selectedCount === rows.length;
+  const someSelected = selectedCount > 0 && selectedCount < rows.length;
+
+  useEffect(() => {
+    if (!selectAllRef.current) return;
+    selectAllRef.current.indeterminate = someSelected;
+  }, [someSelected]);
 
   return (
     <div className={`profiler-panel ${collapsed ? "collapsed" : ""}`}>
@@ -35,16 +54,49 @@ export function QueryProfiler() {
       </div>
       {!collapsed &&
         (rows.length === 0 ? (
-          <div className="profiler-empty">No recent queries</div>
+          <div className="profiler-empty">No queries available</div>
         ) : (
-          <div className="profiler-rows">
+          <div className="profiler-table">
+            <div className="profiler-head-row">
+              <span className="profiler-head-check">
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={(event) => {
+                    if (event.target.checked) {
+                      setInterceptedQueries(rows.map((row) => row.queryName));
+                    } else {
+                      setInterceptedQueries([]);
+                    }
+                  }}
+                  title={allSelected ? "Deselect all queries" : "Select all queries"}
+                />
+              </span>
+              <span className="profiler-head-name">Query</span>
+              <span className="profiler-head-count">Count</span>
+            </div>
             {rows.map((row) => (
               <div
                 key={row.queryName}
-                className={`profiler-row ${row.state === "fading" ? "fading" : ""}`}
+                className="profiler-row"
               >
-                <span className="profiler-count">{row.count}x</span>
+                <span className="profiler-check">
+                  <input
+                    type="checkbox"
+                    checked={selectedQueries.has(row.queryName)}
+                    onChange={(event) =>
+                      setQueryIntercepted(row.queryName, event.target.checked)
+                    }
+                    title={`Intercept ${row.queryName}`}
+                  />
+                </span>
                 <span className="profiler-name">{row.queryName}</span>
+                <span
+                  className={`profiler-count ${row.state === "fading" ? "fading" : ""}`}
+                >
+                  {row.count > 0 ? `${row.count}x` : ""}
+                </span>
               </div>
             ))}
           </div>

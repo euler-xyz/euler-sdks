@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-const STORAGE_KEY = "sdk-data-interceptor-enabled";
+const STORAGE_KEY = "sdk-data-interceptor-selected-queries";
 const BIGINT_PREFIX = "__interceptor_bigint__:";
 
 type InterceptionRequest = {
@@ -18,7 +18,7 @@ export type ActiveInterceptionSnapshot = {
   initialText: string;
 } | null;
 
-let enabled = readEnabledFromStorage();
+let selectedQueries = readSelectedQueriesFromStorage();
 let nextId = 1;
 let activeRequest: InterceptionRequest | null = null;
 let activeSnapshot: ActiveInterceptionSnapshot = null;
@@ -34,14 +34,22 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
-function readEnabledFromStorage() {
-  if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(STORAGE_KEY) === "1";
+function readSelectedQueriesFromStorage() {
+  if (typeof window === "undefined") return new Set<string>();
+  try {
+    const value = window.localStorage.getItem(STORAGE_KEY);
+    if (!value) return new Set<string>();
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return new Set<string>();
+    return new Set(parsed.filter((queryName) => typeof queryName === "string"));
+  } catch {
+    return new Set<string>();
+  }
 }
 
-function writeEnabledToStorage(value: boolean) {
+function writeSelectedQueriesToStorage(value: Set<string>) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, value ? "1" : "0");
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(value)));
 }
 
 function toEditableText(value: unknown): string {
@@ -103,16 +111,71 @@ function flushPendingWithOriginalData() {
   activeSnapshot = null;
 }
 
-export function useDataInterceptorEnabled() {
-  return useSyncExternalStore(subscribe, () => enabled, () => enabled);
+function flushRequestsForQuery(queryName: string) {
+  if (activeRequest?.queryName === queryName) {
+    activeRequest.resolve(activeRequest.originalData);
+    activeRequest = null;
+    activeSnapshot = null;
+  }
+
+  for (let index = queue.length - 1; index >= 0; index -= 1) {
+    const request = queue[index];
+    if (request.queryName !== queryName) continue;
+    request.resolve(request.originalData);
+    queue.splice(index, 1);
+  }
+
+  activateNext();
 }
 
-export function setDataInterceptorEnabled(value: boolean) {
-  enabled = value;
-  writeEnabledToStorage(value);
-  if (!value) {
-    flushPendingWithOriginalData();
+export function useSelectedInterceptedQueries() {
+  return useSyncExternalStore(
+    subscribe,
+    () => selectedQueries,
+    () => selectedQueries
+  );
+}
+
+export function isQueryIntercepted(queryName: string): boolean {
+  return selectedQueries.has(queryName);
+}
+
+export function setQueryIntercepted(queryName: string, value: boolean) {
+  if (value) {
+    selectedQueries = new Set(selectedQueries).add(queryName);
+  } else {
+    const next = new Set(selectedQueries);
+    next.delete(queryName);
+    selectedQueries = next;
+    flushRequestsForQuery(queryName);
   }
+
+  writeSelectedQueriesToStorage(selectedQueries);
+  emitChange();
+}
+
+export function setInterceptedQueries(queryNames: string[]) {
+  selectedQueries = new Set(queryNames);
+  writeSelectedQueriesToStorage(selectedQueries);
+  if (selectedQueries.size === 0) {
+    flushPendingWithOriginalData();
+  } else {
+    // Resolve and drop queued requests for deselected queries.
+    for (let index = queue.length - 1; index >= 0; index -= 1) {
+      const request = queue[index];
+      if (selectedQueries.has(request.queryName)) continue;
+      request.resolve(request.originalData);
+      queue.splice(index, 1);
+    }
+
+    if (activeRequest && !selectedQueries.has(activeRequest.queryName)) {
+      activeRequest.resolve(activeRequest.originalData);
+      activeRequest = null;
+      activeSnapshot = null;
+      activateNext();
+    }
+  }
+
   emitChange();
 }
 
@@ -124,7 +187,7 @@ export async function interceptSdkDataIfEnabled(
   queryName: string,
   data: unknown
 ): Promise<unknown> {
-  if (!enabled) return data;
+  if (!selectedQueries.has(queryName)) return data;
 
   return new Promise((resolve, reject) => {
     queue.push({
@@ -168,6 +231,11 @@ export function throwActiveInterceptionError() {
   clearActiveAndAdvance();
 }
 
-export function continueAndDisableInterceptor() {
-  setDataInterceptorEnabled(false);
+export function stopInterceptingCurrentQuery() {
+  if (!activeRequest) return;
+  setQueryIntercepted(activeRequest.queryName, false);
+}
+
+export function stopInterceptingAllQueries() {
+  setInterceptedQueries([]);
 }

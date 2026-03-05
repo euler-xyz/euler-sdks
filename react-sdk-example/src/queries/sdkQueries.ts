@@ -11,7 +11,7 @@ import type {
 } from "euler-v2-sdk";
 import type { Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
-import { recordExecution } from "./queryProfileStore.ts";
+import { recordExecution, registerKnownQueries } from "./queryProfileStore.ts";
 import { interceptSdkDataIfEnabled } from "./dataInterceptorStore.ts";
 
 // ---------------------------------------------------------------------------
@@ -112,6 +112,8 @@ const STALE_TIMES: Record<string, number> = {
 
 const DEFAULT_STALE_TIME = MINUTE;
 
+registerKnownQueries(Object.keys(STALE_TIMES));
+
 function withDataInterceptor(
   queryName: string,
   fetcher: (...args: unknown[]) => Promise<unknown>
@@ -157,10 +159,12 @@ function useSdkReady() {
   return { ...ctx, enabled: !!ctx.sdk };
 }
 
-type DiagnosticIssue = {
+export type DiagnosticIssue = {
   severity?: "info" | "warning" | "error";
   code?: string;
   path?: string;
+  message?: string;
+  source?: string;
 };
 
 type MaybeServiceResult<T> = T | { result: T; errors?: DiagnosticIssue[] };
@@ -177,15 +181,58 @@ function issueLabel(issue: DiagnosticIssue): string {
   return `${issue.code ?? "UNKNOWN"} [${issue.severity ?? "warning"}] ${issue.path ?? "$"}`;
 }
 
-export function unwrapServiceResult<T>(
+function parseDiagnosticPath(path: string | undefined): Array<string | number> {
+  if (!path || !path.startsWith("$")) return [];
+  const segments: Array<string | number> = [];
+  const pattern = /\.([A-Za-z0-9_$]+)|\[(\d+)\]/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(path)) !== null) {
+    if (match[1]) {
+      segments.push(match[1]);
+      continue;
+    }
+    if (match[2]) {
+      segments.push(Number(match[2]));
+    }
+  }
+
+  return segments;
+}
+
+function getOwnerForDiagnosticPath(root: unknown, path: string | undefined): unknown {
+  const segments = parseDiagnosticPath(path);
+  if (segments.length === 0) return root;
+  const ownerSegments = segments.slice(0, -1);
+
+  let cursor: unknown = root;
+  for (const segment of ownerSegments) {
+    if (cursor === null || cursor === undefined) return undefined;
+    if (typeof cursor !== "object") return undefined;
+    cursor = (cursor as Record<string, unknown>)[String(segment)];
+  }
+
+  return cursor;
+}
+
+export function unwrapServiceResultWithDiagnostics<T>(
   operation: string,
   response: MaybeServiceResult<T>
-): T {
+): { result: T; diagnostics: DiagnosticIssue[] } {
   if (!isServiceResult(response)) {
-    return response;
+    return { result: response, diagnostics: [] };
   }
 
   const diagnostics = response.errors ?? [];
+  const diagnosticsWithOwner = diagnostics.map((issue) => ({
+    ...issue,
+    ownerRef: getOwnerForDiagnosticPath(response.result, issue.path),
+  }));
+  console.log(`[sdk service result] ${operation}`, {
+    result: response.result,
+    errors: diagnosticsWithOwner,
+  });
+
   const blocking = diagnostics.filter((issue) => issue.severity === "error");
   if (blocking.length > 0) {
     const preview = blocking.slice(0, 3).map(issueLabel).join("; ");
@@ -197,11 +244,18 @@ export function unwrapServiceResult<T>(
   if (diagnostics.length > 0) {
     console.warn(
       `[sdk diagnostics] ${operation}: ${diagnostics.length} non-blocking issue(s)`,
-      diagnostics
+      diagnosticsWithOwner
     );
   }
 
-  return response.result;
+  return { result: response.result, diagnostics };
+}
+
+export function unwrapServiceResult<T>(
+  operation: string,
+  response: MaybeServiceResult<T>
+): T {
+  return unwrapServiceResultWithDiagnostics(operation, response).result;
 }
 
 export function useVerifiedVaults(perspectives: VaultMetaPerspective[]) {
@@ -231,6 +285,27 @@ export function useVaultDetail(chainId: number, address: string | undefined) {
           populateAll: true,
         })
       ),
+    enabled: enabled && !!address,
+    staleTime: 1_000,
+  });
+}
+
+export function useVaultDetailWithDiagnostics(
+  chainId: number,
+  address: string | undefined
+) {
+  const { sdk, enabled } = useSdkReady();
+  return useQuery<{ vault: EVault; diagnostics: DiagnosticIssue[] }>({
+    queryKey: ["vaultWithDiagnostics", chainId, address],
+    queryFn: async () => {
+      const fetched = unwrapServiceResultWithDiagnostics(
+        "eVaultService.fetchVault",
+        await sdk!.eVaultService.fetchVault(chainId, address as Address, {
+          populateAll: true,
+        })
+      );
+      return { vault: fetched.result, diagnostics: fetched.diagnostics };
+    },
     enabled: enabled && !!address,
     staleTime: 1_000,
   });

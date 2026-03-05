@@ -1,7 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
-import { useVaultDetail } from "../queries/sdkQueries.ts";
+import {
+  type DiagnosticIssue,
+  useVaultDetailWithDiagnostics,
+} from "../queries/sdkQueries.ts";
 import {
   formatBigInt,
   formatAPY,
@@ -24,7 +27,42 @@ export function VaultDetailPage() {
     setChainId(chainId);
   }, [chainId, setChainId]);
 
-  const { data: vault, isLoading, error } = useVaultDetail(chainId, address);
+  const { data, isLoading, error } = useVaultDetailWithDiagnostics(chainId, address);
+  const vault = data?.vault;
+  const diagnostics = data?.diagnostics ?? [];
+  const visibleDiagnostics = useMemo(
+    () => diagnostics.filter((issue) => issue.severity === "warning" || issue.severity === "error"),
+    [diagnostics]
+  );
+
+  const fieldDiagnostics = (paths: string[]): DiagnosticIssue[] => {
+    return visibleDiagnostics.filter((issue) => {
+      const issuePath = issue.path ?? "";
+      return paths.some((path) => (
+        issuePath === path ||
+        issuePath.startsWith(`${path}.`) ||
+        issuePath.startsWith(`${path}[`)
+      ));
+    });
+  };
+
+  const renderDiagnostics = (paths: string[]) => {
+    const matches = fieldDiagnostics(paths);
+    if (matches.length === 0) return null;
+
+    return (
+      <div className="field-diagnostics">
+        {matches.map((issue, index) => (
+          <div
+            key={`${issue.path ?? "unknown"}-${issue.code ?? "issue"}-${index}`}
+            className={`field-diagnostic ${issue.severity === "error" ? "error" : "warning"}`}
+          >
+            {issue.message ?? issue.code ?? "Diagnostic issue"}
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   if (sdkLoading)
     return <div className="status-message">Initializing SDK...</div>;
@@ -66,20 +104,24 @@ export function VaultDetailPage() {
           <div className="value">
             {vault.asset.symbol} ({vault.asset.name})
           </div>
+          {renderDiagnostics(["$.asset"])}
         </div>
         <div className="detail-item">
           <div className="label">Asset Address</div>
           <div className="value">{vault.asset.address}</div>
+          {renderDiagnostics(["$.asset.address"])}
         </div>
         <div className="detail-item">
           <div className="label">Unit of Account</div>
           <div className="value">
             {vault.unitOfAccount.symbol} ({vault.unitOfAccount.name})
           </div>
+          {renderDiagnostics(["$.unitOfAccount"])}
         </div>
         <div className="detail-item">
           <div className="label">Asset USD Price</div>
           <div className="value">{formatPriceUsd(vault.marketPriceUsd)}</div>
+          {renderDiagnostics(["$.marketPriceUsd"])}
         </div>
         <div className="detail-item">
           <div className="label">Total Assets</div>
@@ -87,6 +129,7 @@ export function VaultDetailPage() {
             {formatBigInt(vault.totalAssets, vault.asset.decimals)}{" "}
             {vault.asset.symbol}
           </div>
+          {renderDiagnostics(["$.totalAssets"])}
         </div>
         <div className="detail-item">
           <div className="label">Total Borrowed</div>
@@ -94,6 +137,7 @@ export function VaultDetailPage() {
             {formatBigInt(vault.totalBorrowed, vault.asset.decimals)}{" "}
             {vault.asset.symbol}
           </div>
+          {renderDiagnostics(["$.totalBorrowed"])}
         </div>
         <div className="detail-item">
           <div className="label">Total Cash</div>
@@ -101,12 +145,14 @@ export function VaultDetailPage() {
             {formatBigInt(vault.totalCash, vault.asset.decimals)}{" "}
             {vault.asset.symbol}
           </div>
+          {renderDiagnostics(["$.totalCash"])}
         </div>
         <div className="detail-item">
           <div className="label">Total Shares</div>
           <div className="value">
             {formatBigInt(vault.totalShares, vault.shares.decimals)}
           </div>
+          {renderDiagnostics(["$.totalShares"])}
         </div>
         <div className="detail-item">
           <div className="label">Supply APY</div>
@@ -117,12 +163,14 @@ export function VaultDetailPage() {
               intrinsicApy={vault.intrinsicApy}
             />
           </div>
+          {renderDiagnostics(["$.interestRates.supplyAPY", "$.rewards", "$.intrinsicApy"])}
         </div>
         <div className="detail-item">
           <div className="label">Borrow APY</div>
           <div className="value">
             {formatAPY(vault.interestRates.borrowAPY)}
           </div>
+          {renderDiagnostics(["$.interestRates.borrowAPY"])}
         </div>
         <div className="detail-item">
           <div className="label">Supply Cap</div>
@@ -131,6 +179,7 @@ export function VaultDetailPage() {
               ? "Unlimited"
               : formatBigInt(vault.caps.supplyCap, vault.asset.decimals)}
           </div>
+          {renderDiagnostics(["$.caps.supplyCap"])}
         </div>
         <div className="detail-item">
           <div className="label">Borrow Cap</div>
@@ -139,24 +188,29 @@ export function VaultDetailPage() {
               ? "Unlimited"
               : formatBigInt(vault.caps.borrowCap, vault.asset.decimals)}
           </div>
+          {renderDiagnostics(["$.caps.borrowCap"])}
         </div>
         <div className="detail-item">
           <div className="label">Governor</div>
           <div className="value"><CopyAddress address={vault.governorAdmin} /></div>
+          {renderDiagnostics(["$.governorAdmin"])}
         </div>
         <div className="detail-item">
           <div className="label">Interest Fee</div>
           <div className="value">{formatPercent(vault.fees.interestFee)}</div>
+          {renderDiagnostics(["$.fees.interestFee"])}
         </div>
         <div className="detail-item">
           <div className="label">Oracle</div>
           <div className="value">
             {vault.oracle.name || <CopyAddress address={vault.oracle.oracle} />}
           </div>
+          {renderDiagnostics(["$.oracle"])}
         </div>
         <div className="detail-item">
           <div className="label">IRM Type</div>
           <div className="value">{vault.interestRateModel.type}</div>
+          {renderDiagnostics(["$.interestRateModel"])}
         </div>
       </div>
 

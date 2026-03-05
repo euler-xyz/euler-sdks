@@ -61,12 +61,6 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
     return assets;
   }
 
-  async fetchAssetMarketPriceUsd(priceService: IPriceService): Promise<PriceWad | undefined> {
-    const price = await priceService.getAssetUsdPrice(this);
-    if (!price) return undefined;
-    return price.amountOutMid;
-  }
-
   async fetchAssetMarketValueUsd(amount: bigint, priceService: IPriceService): Promise<bigint | undefined> {
     const price = await priceService.getAssetUsdPrice(this);
     if (!price) return undefined;
@@ -82,7 +76,7 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
       this.marketPriceUsd = undefined;
       return [{
         code: "SOURCE_UNAVAILABLE",
-        severity: "warning",
+        severity: "error",
         message: "Failed to populate asset market price.",
         path: "$.marketPriceUsd",
         source: "priceService",
@@ -99,7 +93,7 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
       this.rewards = undefined;
       return [{
         code: "SOURCE_UNAVAILABLE",
-        severity: "warning",
+        severity: "error",
         message: "Failed to populate rewards.",
         path: "$.rewards",
         source: "rewardsService",

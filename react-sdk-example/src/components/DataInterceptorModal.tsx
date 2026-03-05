@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  continueAndDisableInterceptor,
+  stopInterceptingAllQueries,
+  stopInterceptingCurrentQuery,
   submitActiveInterception,
   throwActiveInterceptionError,
   useActiveInterception,
@@ -45,8 +46,11 @@ export function DataInterceptorModal() {
           <button className="wallet-button" onClick={throwActiveInterceptionError}>
             Throw error
           </button>
-          <button className="wallet-button" onClick={continueAndDisableInterceptor}>
-            Turn interceptor off
+          <button className="wallet-button" onClick={stopInterceptingCurrentQuery}>
+            Stop intercepting this query
+          </button>
+          <button className="wallet-button" onClick={stopInterceptingAllQueries}>
+            Stop intercepting all queries
           </button>
         </div>
       </div>
