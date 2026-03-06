@@ -609,3 +609,18 @@ export function useOracleAdapterMetadataMap(chainId: number) {
     staleTime: 10 * MINUTE,
   });
 }
+
+export function useTokenSymbolMap(chainId: number) {
+  const { sdk, enabled } = useSdkReady();
+  return useQuery<Record<string, string>>({
+    queryKey: ["tokenSymbolMap", chainId],
+    queryFn: async () => {
+      const tokens = await sdk!.tokenlistService.loadTokenlist(chainId);
+      return Object.fromEntries(
+        tokens.map((token) => [token.address.toLowerCase(), token.symbol || token.name || token.address])
+      );
+    },
+    enabled: enabled && Number.isFinite(chainId),
+    staleTime: Infinity,
+  });
+}

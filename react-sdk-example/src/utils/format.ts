@@ -54,3 +54,18 @@ export function formatPriceUsd(priceWad: bigint | undefined): string {
     maximumFractionDigits: 2,
   })}`;
 }
+
+export function formatPriceInUnit(
+  price: bigint | undefined,
+  decimals: number,
+  symbol: string
+): string {
+  if (price === undefined) return "-";
+  const formatted = Number(formatUnits(price, decimals));
+  if (formatted === 0) return `0 ${symbol}`;
+  if (formatted < 0.0001) return `<0.0001 ${symbol}`;
+  return `${formatted.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  })} ${symbol}`;
+}

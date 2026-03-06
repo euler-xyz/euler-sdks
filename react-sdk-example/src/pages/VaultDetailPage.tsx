@@ -4,6 +4,7 @@ import { useSDK } from "../context/SdkContext.tsx";
 import {
   type DiagnosticIssue,
   useOracleAdapterMetadataMap,
+  useTokenSymbolMap,
   useVaultDetailWithDiagnostics,
 } from "../queries/sdkQueries.ts";
 import {
@@ -11,6 +12,7 @@ import {
   formatAPY,
   formatPercent,
   formatPriceUsd,
+  formatPriceInUnit,
 } from "../utils/format.ts";
 import {
   createEntityDiagnosticIndex,
@@ -20,6 +22,7 @@ import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
 import { OracleAdaptersInfo } from "../components/OracleAdaptersInfo.tsx";
+import { getAdapterMismatchDetails } from "../utils/oracleDiagnostics.ts";
 
 function normalizeVaultDetailPath(path: string | undefined): string | undefined {
   if (!path) return path;
@@ -50,6 +53,7 @@ export function VaultDetailPage() {
     dataUpdatedAt: diagnosticsDataUpdatedAt,
   } = useVaultDetailWithDiagnostics(chainId, address);
   const { data: oracleAdapterMetadataMap } = useOracleAdapterMetadataMap(chainId);
+  const { data: tokenSymbolMap } = useTokenSymbolMap(chainId);
   const vault = data?.vault;
   const diagnostics = data?.diagnostics ?? [];
   const failedVaults = data?.failedVaults ?? [];
@@ -398,11 +402,23 @@ export function VaultDetailPage() {
               <th>Address</th>
               <th>Borrow LTV</th>
               <th>Liquidation LTV</th>
+              <th>Adapter Price</th>
               <th>USD Price</th>
             </tr>
           </thead>
           <tbody>
-            {vault.collaterals.map((col) => (
+            {vault.collaterals.map((col) => {
+              const adapterPairMismatchDetails = getAdapterMismatchDetails(
+                {
+                  chainId,
+                  collateral: col,
+                  unitOfAccountAddress: vault.unitOfAccount.address,
+                  metadataMap: oracleAdapterMetadataMap as Record<string, Record<string, unknown>> | undefined,
+                  tokenSymbolMap,
+                }
+              );
+
+              return (
               <tr key={col.address}>
                 <td>
                   {renderCollateralFieldIcon(col.address, ["$", "$.vault"])}
@@ -427,16 +443,26 @@ export function VaultDetailPage() {
                   {formatPercent(col.liquidationLTV)}
                 </td>
                 <td>
-                  {renderCollateralFieldIcon(col.address, ["$.marketPriceUsd", "$.oracleAdapters"])}
+                  {!adapterPairMismatchDetails && renderCollateralFieldIcon(col.address, ["$.oraclePriceRaw", "$.oracleAdapters"])}
                   <OracleAdaptersInfo
                     chainId={chainId}
                     adapters={col.oracleAdapters}
                     metadataMap={oracleAdapterMetadataMap}
                   />
+                  {adapterPairMismatchDetails && <ErrorIcon details={adapterPairMismatchDetails} />}
+                  {formatPriceInUnit(
+                    col.oraclePriceRaw?.amountOutMid,
+                    vault.unitOfAccount.decimals,
+                    vault.unitOfAccount.symbol
+                  )}
+                </td>
+                <td>
+                  {renderCollateralFieldIcon(col.address, ["$.marketPriceUsd", "$.oracleAdapters"])}
                   {formatPriceUsd(col.marketPriceUsd)}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       )}
