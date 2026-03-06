@@ -123,13 +123,29 @@ export function convertVaultInfoFullToIEVault(
     vaultEntityId
   );
 
+  const vaultTimestamp = bigintToSafeNumber(vaultInfo.timestamp, {
+    path: "$.timestamp",
+    errors,
+    source: "vaultLens",
+    entityId: vaultEntityId,
+  });
+
   // Convert collaterals
-  const collaterals: EVaultCollateral[] = vaultInfo.collateralLTVInfo.map((ltvInfo, idx) => {
+  const collaterals: EVaultCollateral[] = [];
+  for (let idx = 0; idx < vaultInfo.collateralLTVInfo.length; idx += 1) {
+    const ltvInfo = vaultInfo.collateralLTVInfo[idx]!;
+    const isRemovedCollateral = ltvInfo.borrowLTV === 0n
+      && ltvInfo.liquidationLTV === 0n
+      && ltvInfo.targetTimestamp < vaultInfo.timestamp;
+
+    if (isRemovedCollateral) continue;
+
+    const outputIndex = collaterals.length;
     const priceInfo = vaultInfo.collateralPriceInfo[idx];
     const oraclePriceRaw = priceInfo
       ? convertAssetPriceInfoToOraclePrice(
           priceInfo,
-          `$.collaterals[${idx}].oraclePriceRaw`,
+          `$.collaterals[${outputIndex}].oraclePriceRaw`,
           errors,
           ltvInfo.collateral
         )
@@ -147,7 +163,7 @@ export function convertVaultInfoFullToIEVault(
         code: "DEFAULT_APPLIED",
         severity: "warning",
         message: "Missing collateral price info; default zero-price placeholder applied.",
-        path: `$.collaterals[${idx}].oraclePriceRaw`,
+        path: `$.collaterals[${outputIndex}].oraclePriceRaw`,
         entityId: ltvInfo.collateral,
         source: "vaultLens",
         normalizedValue: "queryFailure:true",
@@ -155,25 +171,24 @@ export function convertVaultInfoFullToIEVault(
     }
 
     const targetTimestamp = bigintToSafeNumber(ltvInfo.targetTimestamp, {
-      path: `$.collaterals[${idx}].ramping.targetTimestamp`,
+      path: `$.collaterals[${outputIndex}].ramping.targetTimestamp`,
       errors,
       source: "vaultLens",
       entityId: ltvInfo.collateral,
-    });
-    const vaultTimestamp = bigintToSafeNumber(vaultInfo.timestamp, {
-      path: "$.timestamp",
-      errors,
-      source: "vaultLens",
-      entityId: vaultEntityId,
     });
     const isRamping = targetTimestamp > vaultTimestamp;
 
     const collateral: EVaultCollateral = {
       address: ltvInfo.collateral,
-      borrowLTV: convertFrom1e4(ltvInfo.borrowLTV, `$.collaterals[${idx}].borrowLTV`, errors, ltvInfo.collateral),
+      borrowLTV: convertFrom1e4(
+        ltvInfo.borrowLTV,
+        `$.collaterals[${outputIndex}].borrowLTV`,
+        errors,
+        ltvInfo.collateral
+      ),
       liquidationLTV: convertFrom1e4(
         ltvInfo.liquidationLTV,
-        `$.collaterals[${idx}].liquidationLTV`,
+        `$.collaterals[${outputIndex}].liquidationLTV`,
         errors,
         ltvInfo.collateral
       ),
@@ -184,7 +199,7 @@ export function convertVaultInfoFullToIEVault(
       collateral.ramping = {
         initialLiquidationLTV: convertFrom1e4(
           ltvInfo.initialLiquidationLTV,
-          `$.collaterals[${idx}].ramping.initialLiquidationLTV`,
+          `$.collaterals[${outputIndex}].ramping.initialLiquidationLTV`,
           errors,
           ltvInfo.collateral
         ),
@@ -193,8 +208,8 @@ export function convertVaultInfoFullToIEVault(
       };
     }
 
-    return collateral;
-  });
+    collaterals.push(collateral);
+  }
 
   // Convert liability price
   const hasDisabledOracle =
@@ -234,12 +249,7 @@ export function convertVaultInfoFullToIEVault(
     interestRateModel,
     collaterals,
     oraclePriceRaw,
-    timestamp: bigintToSafeNumber(vaultInfo.timestamp, {
-      path: "$.timestamp",
-      errors,
-      source: "vaultLens",
-      entityId: vaultEntityId,
-    }),
+    timestamp: vaultTimestamp,
   };
   return result;
 }

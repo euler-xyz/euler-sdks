@@ -214,7 +214,12 @@ export class EVaultService implements IEVaultService {
       (address) => getAddress(address)
     );
 
-    if (allCollateralAddresses.length === 0) return errors;
+    if (allCollateralAddresses.length === 0) {
+      for (const eVault of eVaults) {
+        eVault.populated.collaterals = true;
+      }
+      return errors;
+    }
 
     const chainId = eVaults[0]!.chainId;
     const collateralVaults = await Promise.all(
@@ -290,6 +295,7 @@ export class EVaultService implements IEVaultService {
         });
         collateral.oracleAdapters = [...deduped.values()];
       }
+      eVault.populated.collaterals = true;
     }
     return errors;
   }
@@ -351,6 +357,7 @@ export class EVaultService implements IEVaultService {
             }
           })
         );
+        eVault.populated.marketPrices = true;
       })
     );
     return errors;
