@@ -1,0 +1,111 @@
+# Configuration Reference
+
+`buildEulerSDK()` accepts a `BuildSDKOptions` object. Only `rpcUrls` is required — everything else has sensible defaults or is optional.
+
+## Full example
+
+```typescript
+const sdk = await buildEulerSDK({
+  // Required: RPC endpoints keyed by chain ID
+  rpcUrls: {
+    1: "https://your-mainnet-rpc",
+    8453: "https://your-base-rpc",
+  },
+
+  // Optional: override the pricing backend endpoint (default: indexer.euler.finance)
+  backendConfig: {
+    endpoint: "https://your-pricing-api",
+  },
+
+  // Optional: swap API endpoint (default: https://swap.euler.finance)
+  swapServiceConfig: {
+    swapApiUrl: "https://swap.euler.finance",
+    defaultDeadline: 1800, // seconds
+  },
+
+  // Optional: rewards API endpoints
+  rewardsServiceConfig: {
+    merklApiUrl: "https://...",
+    brevisApiUrl: "https://...",
+  },
+
+  // Optional: intrinsic APY data sources
+  intrinsicApyServiceConfig: {
+    defillamaYieldsUrl: "https://...",
+    pendleApiUrl: "https://...",
+  },
+
+  // Optional: oracle adapter metadata API
+  oracleAdapterServiceConfig: {
+    baseUrl: "https://...",
+    cacheMs: 60000,
+  },
+
+  // Optional: subgraph URLs for account vault discovery
+  accountVaultsAdapterConfig: {
+    subgraphURLs: { 1: "https://..." },
+  },
+
+  // Optional: subgraph URLs for vault type resolution
+  vaultTypeAdapterConfig: {
+    subgraphURLs: { 1: "https://..." },
+  },
+
+  // Optional: euler-labels metadata URLs
+  eulerLabelsAdapterConfig: {
+    getEulerLabelsVaultsUrl: (chainId) => `https://.../${chainId}/vaults.json`,
+    // ...
+  },
+
+  // Optional: token list API
+  tokenlistServiceConfig: {
+    getTokenListUrl: (chainId) => `https://...?chainId=${chainId}`,
+  },
+
+  // Optional: global query decorator for caching/logging/profiling
+  buildQuery: (queryFn) => queryFn,
+
+  // Optional: plugins for read-path and plan-path extensions
+  plugins: [],
+
+  // Optional: replace any built-in service with a custom implementation
+  servicesOverrides: {
+    priceService: myCustomPriceService,
+    // any service can be overridden
+  },
+});
+```
+
+## Key options
+
+| Option | Default | What it enables |
+|---|---|---|
+| `rpcUrls` | _(required)_ | On-chain data reads for all services |
+| `backendConfig` | `indexer.euler.finance` | Off-chain USD pricing backend (backend-first, on-chain oracle fallback). Override to point at a different pricing API. |
+| `swapServiceConfig` | Euler swap API | Swap quote fetching |
+| `rewardsServiceConfig` | Merkl + Brevis defaults | Reward campaign data |
+| `intrinsicApyServiceConfig` | DefiLlama + Pendle | Underlying yield data for vault assets |
+| `buildQuery` | identity | Wrap all external queries (useful for caching, see [Caching docs](./caching-external-data-queries.md)) |
+| `plugins` | `[]` | Extend on-chain reads and transaction plans (see [Plugins docs](./plugins.md)) |
+| `servicesOverrides` | `{}` | Replace any built-in service with a custom implementation |
+
+## Environment variables
+
+Several defaults can be overridden via environment variables without changing code:
+
+| Variable | What it overrides | Default |
+|---|---|---|
+| `PRICING_API_URL` | `backendConfig.endpoint` | `https://indexer.euler.finance` |
+| `SWAP_API_URL` | `swapServiceConfig.swapApiUrl` | `https://swap.euler.finance` |
+| `DEPLOYMENTS_URL` | Deployments JSON URL | `https://raw.githubusercontent.com/euler-xyz/euler-interfaces/.../EulerChains.json` |
+| `TOKENLIST_API_BASE` | Token list API base URL | `https://indexer.euler.finance` |
+
+Environment variables are only used when the corresponding config option is not explicitly provided to `buildEulerSDK()`. Explicit config always takes precedence.
+
+## Defaults
+
+Most services ship with built-in default URLs (subgraphs, labels, swap API, pricing, token lists). See `src/sdk/defaultConfig.ts` for the full list. You only need to override a config if you want to point at a different data source.
+
+## Service overrides
+
+Any built-in service can be replaced via `servicesOverrides`. This is useful for testing or when you need a custom implementation of a specific service. See [SDK Architecture Overview](./sdk-architecture-overview.md) for more on the dependency injection model.

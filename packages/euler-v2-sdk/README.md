@@ -72,25 +72,30 @@ const simulation = await sdk.simulationService.simulateTransactionPlan(
 
 The SDK is built with dependency injection, so you can use `buildEulerSDK()` for a default setup, run individual services in isolation, or provide custom service implementations.
 
+## Configuration
+
+Only `rpcUrls` is required. All other options (pricing backend, swap API, rewards, subgraphs, plugins, etc.) have sensible defaults or are optional. See the full [Configuration Reference](./docs/configuration.md) for all options and defaults.
+
 ## Docs Table of Contents
 
 All docs are in [`./docs`](./docs).
 
-1. [Basic Usage](./docs/basic-usage.md) - Fast setup and common account/vault usage patterns.
-2. [SDK Architecture Overview](./docs/sdk-architecture-overview.md) - High-level architecture, dependency injection model, and composition options.
-3. [Services](./docs/services.md) - Service map, top-level entry points, and lower-level support services.
-4. [Execution Service](./docs/execution-service.md) - `encodeX` vs `planX`, approvals flow, `mergePlans`, and `describeBatch`.
-5. [Simulations and State Overrides](./docs/simulations-and-state-overrides.md) - Plan simulation flow, validation output, and state override utilities.
-6. [Swaps](./docs/swaps.md) - Swap quote APIs and how swap payloads fit into plans.
-7. [Pricing System](./docs/pricing-system.md) - Price data pipeline, fallback behavior, and pricing integration points.
-8. [Data Architecture](./docs/data-architecture.md) - Entities/adapters/services layering, population model, and data flow.
-9. [Cross-Service Data Population](./docs/cross-service-data-population.md) - How services enrich entities with prices, rewards, labels, and nested vaults.
-10. [Account Computed Properties](./docs/account-computed-properties.md) - Health factor/LTV/net-value computed fields and data prerequisites.
-11. [Caching External Data Queries](./docs/caching-external-data-queries.md) - `query*` decoration pattern for caching/logging/profiling.
-12. [Plugins](./docs/plugins.md) - Plugin system for read-path and plan-path extensions.
-13. [Labels](./docs/labels.md) - Label metadata model and usage.
-14. [Decoding Smart Contract Errors](./docs/decode-smart-contract-errors.md) - Revert decoding utilities for better error handling.
-15. [Entity Diagnostics](./docs/entity-diagnostics.md) - Sidecar metadata for data normalization, fallbacks, and per-field warnings.
+1. [Configuration](./docs/configuration.md) - All `buildEulerSDK()` options, defaults, and service overrides.
+2. [Basic Usage](./docs/basic-usage.md) - Fast setup and common account/vault usage patterns.
+3. [SDK Architecture Overview](./docs/sdk-architecture-overview.md) - High-level architecture, dependency injection model, and composition options.
+4. [Services](./docs/services.md) - Service map, top-level entry points, and lower-level support services.
+5. [Execution Service](./docs/execution-service.md) - `encodeX` vs `planX`, approvals flow, `mergePlans`, and `describeBatch`.
+6. [Simulations and State Overrides](./docs/simulations-and-state-overrides.md) - Plan simulation flow, validation output, and state override utilities.
+7. [Swaps](./docs/swaps.md) - Swap quote APIs and how swap payloads fit into plans.
+8. [Pricing System](./docs/pricing-system.md) - Price data pipeline, fallback behavior, and pricing integration points.
+9. [Data Architecture](./docs/data-architecture.md) - Entities/adapters/services layering, population model, and data flow.
+10. [Cross-Service Data Population](./docs/cross-service-data-population.md) - How services enrich entities with prices, rewards, labels, and nested vaults.
+11. [Account Computed Properties](./docs/account-computed-properties.md) - Health factor/LTV/net-value computed fields and data prerequisites.
+12. [Caching External Data Queries](./docs/caching-external-data-queries.md) - `query*` decoration pattern for caching/logging/profiling.
+13. [Plugins](./docs/plugins.md) - Plugin system for read-path and plan-path extensions.
+14. [Labels](./docs/labels.md) - Label metadata model and usage.
+15. [Decoding Smart Contract Errors](./docs/decode-smart-contract-errors.md) - Revert decoding utilities for better error handling.
+16. [Entity Diagnostics](./docs/entity-diagnostics.md) - Sidecar metadata for data normalization, fallbacks, and per-field warnings.
 
 ## Examples
 

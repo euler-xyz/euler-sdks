@@ -25,7 +25,7 @@ import {
   type OracleAdapterServiceConfig,
 } from "../services/oracleAdapterService/index.js";
 import { SimulationService, ISimulationService } from "../services/simulationService/index.js";
-import { defaultAccountVaultsAdapterConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLAdapterConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeAdapterConfig } from "./defaultConfig.js";
+import { defaultAccountVaultsAdapterConfig, defaultBackendConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLAdapterConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeAdapterConfig } from "./defaultConfig.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
 import { EVaultOnchainAdapter } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter.js";
 import {
@@ -239,7 +239,8 @@ export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEnt
 
   // Build price service if not overridden
   const priceService = servicesOverrides?.priceService ?? (() => {
-    const backendClient = backendConfig ? new PricingBackendClient(backendConfig, buildQuery) : undefined;
+    const resolvedBackendConfig = backendConfig ?? defaultBackendConfig;
+    const backendClient = new PricingBackendClient(resolvedBackendConfig, buildQuery);
     return new PriceService(
       providerService as ProviderService,
       deploymentService as DeploymentService,

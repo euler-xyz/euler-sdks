@@ -4,6 +4,7 @@ import type { VaultTypeSubgraphAdapterConfig } from "../services/vaults/vaultMet
 import { EulerLabelsURLAdapterConfig } from "../services/eulerLabelsService/index.js"
 import type { SwapServiceConfig } from "../services/swapService/index.js"
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js"
+import type { BackendConfig } from "../services/priceService/index.js"
 
 export const defaultAccountVaultsAdapterConfig: AccountVaultsSubgraphAdapterConfig = {
   subgraphURLs: {
@@ -41,6 +42,10 @@ export const defaultEulerLabelsURLAdapterConfig: EulerLabelsURLAdapterConfig = {
   getEulerLabelsPointsUrl: (chainId: number) => `${EULER_LABELS_BASE}/${chainId}/points.json`,
   getEulerLabelsEarnVaultsUrl: (chainId: number) => `${EULER_LABELS_BASE}/${chainId}/eulerEarnVaults.json`,
   getEulerLabelsLogoUrl: (filename: string) => `${EULER_LABELS_BASE}/logo/${filename}`,
+}
+
+export const defaultBackendConfig: BackendConfig = {
+  endpoint: process.env.PRICING_API_URL || "https://indexer.euler.finance",
 }
 
 export const defaultSwapServiceConfig: SwapServiceConfig = {

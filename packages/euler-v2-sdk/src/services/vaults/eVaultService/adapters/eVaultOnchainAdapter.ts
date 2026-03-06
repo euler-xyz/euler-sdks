@@ -98,7 +98,9 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
     const provider = this.providerService.getProvider(chainId);
     const deployment = this.deploymentService.getDeployment(chainId);
     const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
-    const errors: DataIssue[] = [];
+    const firstPassErrorsByIndex = new Map<number, DataIssue[]>();
+    const finalPassErrorsByIndex = new Map<number, DataIssue[]>();
+    const secondPassIndices = new Set<number>();
 
     const eVaults = await Promise.all(
       vaults.map(async (vault, index) => {
@@ -107,28 +109,36 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
           const vaultInfo = result as unknown as VaultInfoFull;
           const conversionErrors: DataIssue[] = [];
           const parsed = convertVaultInfoFullToIEVault(vaultInfo, chainId, conversionErrors);
-          errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${index}]`).map((issue) => ({
+          const issues = prefixDataIssues(conversionErrors, `$.vaults[${index}]`).map((issue) => ({
             ...issue,
             entityId: issue.entityId ?? getAddress(vault),
-          })));
+          }));
+          firstPassErrorsByIndex.set(index, issues);
           return new EVault(parsed);
         } catch (error) {
-          errors.push({
-            code: "SOURCE_UNAVAILABLE",
-            severity: "error",
-            message: `Failed to fetch eVault ${getAddress(vault)}.`,
-            path: `$.vaults[${index}]`,
-            entityId: getAddress(vault),
-            source: "vaultLens",
-            originalValue: error instanceof Error ? error.message : String(error),
-          });
+          firstPassErrorsByIndex.set(index, [
+            {
+              code: "SOURCE_UNAVAILABLE",
+              severity: "error",
+              message: `Failed to fetch eVault ${getAddress(vault)}.`,
+              path: `$.vaults[${index}]`,
+              entityId: getAddress(vault),
+              source: "vaultLens",
+              originalValue: error instanceof Error ? error.message : String(error),
+            },
+          ]);
           return undefined;
         }
       })
     );
 
     // Plugin enrichment: re-fetch vaults via batchSimulation when plugins provide prepend items
-    if (this.plugins.length === 0) return { result: eVaults, errors };
+    if (this.plugins.length === 0) {
+      return {
+        result: eVaults,
+        errors: vaults.flatMap((_, index) => firstPassErrorsByIndex.get(index) ?? []),
+      };
+    }
 
     const enriched = await Promise.all(
       eVaults.map(async (eVault, vaultIndex) => {
@@ -136,6 +146,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
         try {
           const prepend = await this.collectReadPrepend(chainId, [eVault]);
           if (!prepend || prepend.items.length === 0) return eVault;
+          secondPassIndices.add(vaultIndex);
 
           const result = await executeBatchSimulation<VaultInfoFull>(
             {
@@ -154,15 +165,20 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
           if (!result) return eVault;
           const conversionErrors: DataIssue[] = [];
           const parsed = convertVaultInfoFullToIEVault(result, chainId, conversionErrors);
-          errors.push(...prefixDataIssues(conversionErrors, `$.vaults[${vaultIndex}]`).map((issue) => ({
+          const issues = prefixDataIssues(conversionErrors, `$.vaults[${vaultIndex}]`).map((issue) => ({
             ...issue,
             entityId: issue.entityId ?? getAddress(eVault.address),
-          })));
+          }));
+          finalPassErrorsByIndex.set(vaultIndex, issues);
           return new EVault(parsed);
         } catch {
           return eVault;
         }
       }),
+    );
+
+    const errors = vaults.flatMap((_, index) =>
+      secondPassIndices.has(index) ? (finalPassErrorsByIndex.get(index) ?? []) : (firstPassErrorsByIndex.get(index) ?? [])
     );
 
     return { result: enriched, errors };

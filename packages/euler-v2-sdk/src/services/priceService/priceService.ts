@@ -299,6 +299,17 @@ export class PriceService implements IPriceService {
       });
     }
 
+    if (!fallbackPrice) {
+      errors.push({
+        code: "SOURCE_UNAVAILABLE",
+        severity: "error",
+        message: "Failed to get asset USD price.",
+        path,
+        entityId: vault.asset.address,
+        source: "priceService",
+      });
+    }
+
     return { result: fallbackPrice, errors };
   }
 
@@ -418,17 +429,17 @@ export class PriceService implements IPriceService {
     // EVault: use oracle router (oraclePriceRaw + UoA conversion)
     if (vault.type === VaultType.EVault) {
       const oraclePrice = this.getAssetOraclePrice(vault as EVault);
-      if (!oraclePrice) return undefined;
-
-      const uoaRate = await this.getUnitOfAccountUsdRate(vault as EVault);
-      if (!uoaRate) return undefined;
-
-      return {
-        amountOutMid: (oraclePrice.amountOutMid * uoaRate) / ONE_18,
-        amountOutAsk: (oraclePrice.amountOutAsk * uoaRate) / ONE_18,
-        amountOutBid: (oraclePrice.amountOutBid * uoaRate) / ONE_18,
-        decimals: USD_DECIMALS,
-      };
+      if (oraclePrice) {
+        const uoaRate = await this.getUnitOfAccountUsdRate(vault as EVault);
+        if (uoaRate) {
+          return {
+            amountOutMid: (oraclePrice.amountOutMid * uoaRate) / ONE_18,
+            amountOutAsk: (oraclePrice.amountOutAsk * uoaRate) / ONE_18,
+            amountOutBid: (oraclePrice.amountOutBid * uoaRate) / ONE_18,
+            decimals: USD_DECIMALS,
+          };
+        }
+      }
     }
 
     // EulerEarn / SecuritizeCollateral: use utilsLens (direct USD price)
