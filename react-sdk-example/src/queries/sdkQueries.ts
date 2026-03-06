@@ -242,29 +242,24 @@ export function unwrapServiceResultWithDiagnostics<T>(
   }
 
   const diagnostics = response.errors ?? [];
-  const diagnosticsWithOwner = diagnostics.map((issue) => ({
-    ...issue,
-    ownerRef: getOwnerForDiagnosticPath(response.result, issue.path),
-  }));
+  const diagnosticsWithOwner = diagnostics.map((issue) => {
+    const ownerRef = getOwnerForDiagnosticPath(response.result, issue.path);
+    if (ownerRef === null || typeof ownerRef !== "object") {
+      console.error(`[sdk diagnostics] ${operation}: invalid ownerRef`, {
+        issue,
+        ownerRef,
+      });
+    }
+
+    return {
+      ...issue,
+      ownerRef,
+    };
+  });
   console.log(`[sdk service result] ${operation}`, {
     result: response.result,
     errors: diagnosticsWithOwner,
   });
-
-  const blocking = diagnostics.filter((issue) => issue.severity === "error");
-  if (blocking.length > 0) {
-    const preview = blocking.slice(0, 3).map(issueLabel).join("; ");
-    throw new Error(
-      `${operation} returned ${blocking.length} blocking diagnostics: ${preview}`
-    );
-  }
-
-  if (diagnostics.length > 0) {
-    console.warn(
-      `[sdk diagnostics] ${operation}: ${diagnostics.length} non-blocking issue(s)`,
-      diagnosticsWithOwner
-    );
-  }
 
   return { result: response.result, diagnostics };
 }
@@ -321,19 +316,12 @@ export function useVerifiedVaults(perspectives: VaultMetaPerspective[]) {
   return useQuery<VaultEntity[]>({
     queryKey: ["vaults", chainId, perspectives],
     queryFn: async () => {
-      const response = await sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
-        populateAll: true,
-      });
-      const fetched = isServiceResult(response)
-        ? { result: response.result, diagnostics: response.errors ?? [] }
-        : { result: response, diagnostics: [] };
-
-      if (fetched.diagnostics.length > 0) {
-        console.warn(
-          "[sdk diagnostics] vaultMetaService.fetchVerifiedVaults",
-          fetched.diagnostics
-        );
-      }
+      const fetched = unwrapServiceResultWithDiagnostics(
+        "vaultMetaService.fetchVerifiedVaults",
+        await sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
+          populateAll: true,
+        })
+      );
       return (fetched.result as Array<VaultEntity | undefined>).filter(
         (vault): vault is VaultEntity => vault !== undefined
       );
@@ -354,19 +342,12 @@ export function useVerifiedVaultsWithDiagnostics(
   }>({
     queryKey: ["vaultsWithDiagnostics", chainId, perspectives],
     queryFn: async () => {
-      const response = await sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
-        populateAll: true,
-      });
-      const fetched = isServiceResult(response)
-        ? { result: response.result, diagnostics: response.errors ?? [] }
-        : { result: response, diagnostics: [] };
-
-      if (fetched.diagnostics.length > 0) {
-        console.warn(
-          "[sdk diagnostics] vaultMetaService.fetchVerifiedVaults",
-          fetched.diagnostics
-        );
-      }
+      const fetched = unwrapServiceResultWithDiagnostics(
+        "vaultMetaService.fetchVerifiedVaults",
+        await sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
+          populateAll: true,
+        })
+      );
       const rawVaults = fetched.result as Array<VaultEntity | undefined>;
       const vaults = rawVaults.filter(
         (vault): vault is VaultEntity => vault !== undefined

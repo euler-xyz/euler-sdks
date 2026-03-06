@@ -10,7 +10,10 @@ import type { IRewardsService } from "../../rewardsService/index.js";
 import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.js";
-import { withPathPrefix } from "../../../utils/entityDiagnostics.js";
+import {
+  normalizeTopLevelVaultArrayPath,
+  withPathPrefix,
+} from "../../../utils/entityDiagnostics.js";
 
 export interface ISecuritizeCollateralAdapter {
   fetchVaults(
@@ -231,7 +234,14 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
       chainId,
       perspectives
     );
-    return this.fetchVaults(chainId, addresses, options);
+    const fetched = await this.fetchVaults(chainId, addresses, options);
+    return {
+      ...fetched,
+      errors: fetched.errors.map((issue) => ({
+        ...issue,
+        path: normalizeTopLevelVaultArrayPath(issue.path),
+      })),
+    };
   }
 
   private resolveFetchOptions(options?: VaultFetchOptions): VaultFetchOptions {

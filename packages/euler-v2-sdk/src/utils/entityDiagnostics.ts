@@ -42,3 +42,14 @@ export function prefixDataIssues(errors: DataIssue[], prefix: string): DataIssue
     path: withPathPrefix(issue.path, prefix),
   }));
 }
+
+/**
+ * Normalizes list-root diagnostics like "$.vaults[0].x" to "$[0].x" for
+ * service methods that return top-level arrays.
+ */
+export function normalizeTopLevelVaultArrayPath(path: string): string {
+  return path.replace(
+    /^\$\.(?:vaults|eVaults|eulerEarns)\[(\d+)\](?=\.|$)/,
+    (_match, index: string) => `$[${index}]`
+  );
+}

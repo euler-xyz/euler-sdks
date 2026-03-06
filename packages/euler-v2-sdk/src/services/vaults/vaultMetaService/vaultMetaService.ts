@@ -8,6 +8,24 @@ import type { IVaultTypeAdapter } from "./adapters/IVaultTypeAdapter.js";
 import { StandardEVaultPerspectives } from "../eVaultService/index.js";
 import { StandardEulerEarnPerspectives } from "../eulerEarnService/index.js";
 import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.js";
+import { normalizeTopLevelVaultArrayPath } from "../../../utils/entityDiagnostics.js";
+
+function remapServiceLocalVaultPath(
+  path: string,
+  entries: Array<{ address: Address; index: number }>
+): string {
+  const match = path.match(/^\$(?:\.(?:vaults|eVaults|eulerEarns))?\[(\d+)\](?=\.|$)/);
+  if (!match) return path;
+
+  const localIndex = Number(match[1]);
+  const entry = entries[localIndex];
+  if (!entry) return path;
+
+  return path.replace(
+    /^\$(?:\.(?:vaults|eVaults|eulerEarns))?\[\d+\]/,
+    `$.vaults[${entry.index}]`
+  );
+}
 
 export type VaultMetaPerspective =
   | StandardEulerEarnPerspectives
@@ -226,7 +244,12 @@ export class VaultMetaService<TEntity = VaultEntity>
           try {
             const addresses = entries.map((entry) => entry.address);
             const entities = await service.fetchVaults(chainId, addresses, options);
-            errors.push(...entities.errors);
+            errors.push(
+              ...entities.errors.map((issue) => ({
+                ...issue,
+                path: remapServiceLocalVaultPath(issue.path, entries),
+              }))
+            );
             for (const [entryIndex, entry] of entries.entries()) {
               const entity = entities.result[entryIndex];
               if (entity === undefined) {
@@ -297,6 +320,13 @@ export class VaultMetaService<TEntity = VaultEntity>
       chainId,
       perspectives
     );
-    return this.fetchVaults(chainId, addresses, options);
+    const fetched = await this.fetchVaults(chainId, addresses, options);
+    return {
+      ...fetched,
+      errors: fetched.errors.map((issue) => ({
+        ...issue,
+        path: normalizeTopLevelVaultArrayPath(issue.path),
+      })),
+    };
   }
 }
