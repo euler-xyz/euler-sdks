@@ -1,6 +1,12 @@
 import { Address } from "viem";
 import { ERC4626Data, Token, VaultType } from "../utils/types.js";
-import { ERC4626Vault, IERC4626Vault, IERC4626VaultConversion, VIRTUAL_DEPOSIT_AMOUNT } from "./ERC4626Vault.js";
+import {
+  ERC4626Vault,
+  type ERC4626VaultPopulated,
+  IERC4626Vault,
+  IERC4626VaultConversion,
+  VIRTUAL_DEPOSIT_AMOUNT,
+} from "./ERC4626Vault.js";
 import type { EVault } from "./EVault.js";
 import type { IEVaultService } from "../services/vaults/eVaultService/eVaultService.js";
 import type { DataIssue } from "../utils/entityDiagnostics.js";
@@ -49,6 +55,11 @@ export interface IEulerEarn extends IERC4626Vault {
   strategies: EulerEarnStrategyInfo[];
 
   timestamp: number;
+  populated?: Partial<EulerEarnPopulated>;
+}
+
+export interface EulerEarnPopulated extends ERC4626VaultPopulated {
+  strategyVaults: boolean;
 }
 
 export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626VaultConversion {
@@ -62,6 +73,7 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
   strategies: EulerEarnStrategyInfo[];
 
   timestamp: number;
+  declare populated: EulerEarnPopulated;
 
   constructor(args: IEulerEarn) {
     super(args);
@@ -75,6 +87,12 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
     this.strategies = args.strategies;
 
     this.timestamp = args.timestamp;
+    const hasResolvedStrategyVaults = this.strategies.length > 0
+      && this.strategies.every((strategy) => strategy.vault !== undefined);
+    this.populated = {
+      ...this.populated,
+      strategyVaults: args.populated?.strategyVaults ?? hasResolvedStrategyVaults,
+    };
   }
 
   isPendingRemoval(strategy: EulerEarnStrategyInfo): boolean {
@@ -121,7 +139,10 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
 
   async populateStrategyVaults(eVaultService: IEVaultService): Promise<DataIssue[]> {
     const allStrategyAddresses = [...new Set(this.strategies.map((s) => s.address))];
-    if (allStrategyAddresses.length === 0) return [];
+    if (allStrategyAddresses.length === 0) {
+      this.populated.strategyVaults = true;
+      return [];
+    }
     const errors: DataIssue[] = [];
 
     const eVaults = await Promise.all(
@@ -144,6 +165,7 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
     for (const strategy of this.strategies) {
       strategy.vault = eVaultByAddress.get(strategy.address.toLowerCase());
     }
+    this.populated.strategyVaults = true;
     return errors;
   }
 }

@@ -47,6 +47,14 @@ await vault.populateMarketPrices(priceService)
 // vault.marketPriceUsd is now set
 ```
 
+Populatable entities also expose `populated` boolean flags so consumers can reliably check enrichment state:
+
+```typescript
+vault.populated.marketPrices // true after market price population
+account.populated.vaults     // true after vault mapping/population
+earn.populated.strategyVaults // true after strategy vault population
+```
+
 ### Computed properties
 
 Some properties are derived from populated data. For example, `Account` attaches computed getters (`healthFactor`, `currentLTV`, `liquidationLTV`, `netValueUsd`) that calculate from position data and USD prices. These **depend on prior population** — e.g. `netValueUsd` requires that vaults have been populated with market prices first. If the underlying data hasn't been populated, computed values may be `undefined` or zero.

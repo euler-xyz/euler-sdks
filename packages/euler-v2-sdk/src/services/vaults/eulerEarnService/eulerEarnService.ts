@@ -210,7 +210,12 @@ export class EulerEarnService implements IEulerEarnService {
       (address) => getAddress(address)
     );
 
-    if (allStrategyAddresses.length === 0) return errors;
+    if (allStrategyAddresses.length === 0) {
+      for (const ee of eulerEarns) {
+        ee.populated.strategyVaults = true;
+      }
+      return errors;
+    }
 
     const chainId = eulerEarns[0]!.chainId;
     const eVaults = await Promise.all(
@@ -261,6 +266,7 @@ export class EulerEarnService implements IEulerEarnService {
       for (const strategy of ee.strategies) {
         strategy.vault = eVaultByAddress.get(strategy.address.toLowerCase());
       }
+      ee.populated.strategyVaults = true;
     }
     return errors;
   }

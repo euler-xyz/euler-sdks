@@ -127,6 +127,7 @@ export class IntrinsicApyService implements IIntrinsicApyService {
           if (info) {
             vault.intrinsicApy = info;
           }
+          vault.populated.intrinsicApy = true;
         }
       })
     );

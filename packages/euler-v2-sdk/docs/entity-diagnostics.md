@@ -55,6 +55,9 @@ Entity `populateX` methods mutate the entity and return diagnostics directly:
 - `populateRewards(...) -> DataIssue[]`
 - `populateUserRewards(...) -> DataIssue[]`
 
+In addition to diagnostics, entities maintain enrichment state in `entity.populated` flags.
+Use diagnostics (`DataIssue[]`) for quality/fallback/source details, and `populated` for whether a populate step has been executed.
+
 PriceService also exposes diagnostics-aware methods for direct callers:
 
 - `getAssetUsdPriceWithDiagnostics(...) -> { result, errors }`

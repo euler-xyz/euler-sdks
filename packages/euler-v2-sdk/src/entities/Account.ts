@@ -33,6 +33,12 @@ export interface IHasVaultAddress {
 
 export type IVaultEntity = VaultEntity;
 
+export interface AccountPopulated {
+  vaults: boolean;
+  marketPrices: boolean;
+  userRewards: boolean;
+}
+
 
 export interface AssetValue {
   liquidation: bigint;
@@ -336,6 +342,7 @@ export interface IAccount<TVaultEntity extends IHasVaultAddress = never> {
   subAccounts: Partial<Record<Address, ISubAccount<TVaultEntity>>>;
   isLockdownMode?: boolean;
   isPermitDisabledMode?: boolean;
+  populated?: Partial<AccountPopulated>;
 }
 
 export class Account<TVaultEntity extends IHasVaultAddress = never> implements IAccount<TVaultEntity> {
@@ -346,6 +353,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
   subAccounts: SubAccountsMap<TVaultEntity>;
   /** Per-user unclaimed rewards from Merkl/Brevis. Populated by `populateUserRewards`. */
   userRewards?: UserReward[];
+  populated: AccountPopulated;
 
   constructor(account: IAccount<TVaultEntity>) {
     this.chainId = account.chainId;
@@ -361,6 +369,11 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
       }
     }
     this.subAccounts = wrapped;
+    this.populated = {
+      vaults: account.populated?.vaults ?? false,
+      marketPrices: account.populated?.marketPrices ?? false,
+      userRewards: account.populated?.userRewards ?? false,
+    };
   }
 
   getSubAccount(account: Address): SubAccount<TVaultEntity> | undefined {
@@ -427,9 +440,13 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
       }
     }
     const addresses = Array.from(set, (s) => s as Address);
-    if (addresses.length === 0) return [];
+    if (addresses.length === 0) {
+      this.populated.vaults = true;
+      return [];
+    }
     const fetched = await vaultMetaService.fetchVaults(this.chainId, addresses, options);
     this.mapVaultsToPositions(fetched.result);
+    this.populated.vaults = true;
     return fetched.errors;
   }
 
@@ -459,6 +476,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
         }
       }
     }
+    this.populated.vaults = true;
     return this as unknown as Account<TResolved>;
   }
 
@@ -601,6 +619,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
       }
     }
 
+    this.populated.marketPrices = true;
     return errors;
   }
 
@@ -664,9 +683,11 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
   async populateUserRewards(rewardsService: IRewardsService): Promise<DataIssue[]> {
     try {
       this.userRewards = await rewardsService.getUserRewards(this.chainId, this.owner);
+      this.populated.userRewards = true;
       return [];
     } catch (error) {
       this.userRewards = undefined;
+      this.populated.userRewards = false;
       return [{
         code: "SOURCE_UNAVAILABLE",
         severity: "error",

@@ -172,6 +172,7 @@ export class RewardsService implements IRewardsService {
         const rewardsMap = await this.getChainRewards(chainId);
         for (const vault of chainVaults) {
           vault.rewards = rewardsMap.get(vault.address.toLowerCase());
+          vault.populated.rewards = true;
         }
       })
     );

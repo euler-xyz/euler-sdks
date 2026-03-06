@@ -6,7 +6,14 @@ import { OracleAdapterEntry, OracleInfo, OraclePrice, selectLeafAdaptersForPair 
 import { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultLensTypes.js";
 import { Token } from "../utils/types.js";
 import { IRMParams } from "../utils/irm.js";
-import { ERC4626Vault, IERC4626Vault, IERC4626VaultConversion, VIRTUAL_DEPOSIT_AMOUNT, type PriceWad } from "./ERC4626Vault.js";
+import {
+  ERC4626Vault,
+  type ERC4626VaultPopulated,
+  IERC4626Vault,
+  IERC4626VaultConversion,
+  VIRTUAL_DEPOSIT_AMOUNT,
+  type PriceWad,
+} from "./ERC4626Vault.js";
 import type { IPriceService } from "../services/priceService/index.js";
 import { getAssetOraclePrice, getCollateralOraclePrice } from "../services/priceService/index.js";
 import type { VaultEntity } from "../services/vaults/vaultMetaService/index.js";
@@ -115,6 +122,11 @@ export interface IEVault extends IERC4626Vault {
 
   oraclePriceRaw: OraclePrice; // shouldn't be used directly, use EVault price getters instead
   timestamp: number;
+  populated?: Partial<EVaultPopulated>;
+}
+
+export interface EVaultPopulated extends ERC4626VaultPopulated {
+  collaterals: boolean;
 }
 
 export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConversion {
@@ -136,6 +148,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
   evcCompatibleAsset: boolean;
   oraclePriceRaw: OraclePrice;
   timestamp: number;
+  declare populated: EVaultPopulated;
 
   constructor(args: IEVault) {
     super(args);
@@ -157,6 +170,10 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
     this.evcCompatibleAsset = args.evcCompatibleAsset;
     this.oraclePriceRaw = args.oraclePriceRaw;
     this.timestamp = args.timestamp;
+    this.populated = {
+      ...this.populated,
+      collaterals: args.populated?.collaterals ?? false,
+    };
   }
 
   /** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
@@ -228,7 +245,10 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
 
   async populateCollaterals(vaultMetaService: IVaultMetaService): Promise<DataIssue[]> {
     const addresses = this.collaterals.map((c) => c.address);
-    if (addresses.length === 0) return [];
+    if (addresses.length === 0) {
+      this.populated.collaterals = true;
+      return [];
+    }
     const errors: DataIssue[] = [];
 
     const collateralVaults = await Promise.all(
@@ -275,6 +295,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
       });
       collateral.oracleAdapters = [...deduped.values()];
     }
+    this.populated.collaterals = true;
     return errors;
   }
 
@@ -322,6 +343,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
         }
       })
     );
+    this.populated.marketPrices = true;
     return errors;
   }
 

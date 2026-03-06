@@ -99,7 +99,10 @@ export class EulerLabelsService implements IEulerLabelsService {
       for (const vault of vaults) {
         const addrLower = vault.address.toLowerCase();
         const vaultLabel = labelsVaultsLower.get(addrLower);
-        if (!vaultLabel) continue;
+        if (!vaultLabel) {
+          vault.populated.labels = true;
+          continue;
+        }
 
         // Resolve entities from the vault's entity field
         const entitySlugs = Array.isArray(vaultLabel.entity)
@@ -139,6 +142,7 @@ export class EulerLabelsService implements IEulerLabelsService {
             deprecationReason,
           }),
         };
+        vault.populated.labels = true;
       }
     }
 }

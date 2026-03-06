@@ -12,6 +12,46 @@ Services in the SDK follow a standardized **populate** pattern for cross-service
 4. **Nested options for forwarding** — When a service forwards options to another service, level-2 flags are grouped in a nested object named after the target service's fetch options type (e.g. `eVaultFetchOptions`).
 
 5. **Entity-level populate method** — Every entity that can be populated exposes a `populateX(requiredService)` async method that fetches data from the given service, mutates itself, and returns `DataIssue[]`.
+6. **Population state flags** — Populatable entities expose a `populated` object. Each population step sets a corresponding boolean flag to indicate that step has run (for example `marketPrices: true`).
+
+## Populated Flags
+
+Use `entity.populated` to check which enrichment stages have been executed.
+
+```typescript
+// ERC4626Vault base (also inherited by EVault, EulerEarn, SecuritizeCollateralVault)
+interface ERC4626VaultPopulated {
+  marketPrices: boolean;
+  rewards: boolean;
+  intrinsicApy: boolean;
+  labels: boolean;
+}
+
+interface EVaultPopulated extends ERC4626VaultPopulated {
+  collaterals: boolean;
+}
+
+interface EulerEarnPopulated extends ERC4626VaultPopulated {
+  strategyVaults: boolean;
+}
+
+interface AccountPopulated {
+  vaults: boolean;
+  marketPrices: boolean;
+  userRewards: boolean;
+}
+```
+
+Example:
+
+```typescript
+const { result: earn } = await eulerEarnService.fetchVault(chainId, address, {
+  populateStrategyVaults: true,
+});
+
+earn.populated.strategyVaults; // true
+earn.populated.marketPrices;   // false (unless requested/populated separately)
+```
 
 ## Population Map
 

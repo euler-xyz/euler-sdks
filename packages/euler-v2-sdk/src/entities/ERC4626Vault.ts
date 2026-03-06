@@ -12,6 +12,13 @@ export const VIRTUAL_DEPOSIT_AMOUNT = 1_000_000n;
 /** Price scaled to 18 decimals (WAD precision). */
 export type PriceWad = bigint;
 
+export interface ERC4626VaultPopulated {
+  marketPrices: boolean;
+  rewards: boolean;
+  intrinsicApy: boolean;
+  labels: boolean;
+}
+
 export interface IERC4626Vault extends ERC4626Data {
   type: string;
   chainId: number;
@@ -20,6 +27,7 @@ export interface IERC4626Vault extends ERC4626Data {
   asset: Token;
   totalShares: bigint;
   totalAssets: bigint;
+  populated?: Partial<ERC4626VaultPopulated>;
 }
 
 /** Interface for ERC4626 share/asset conversion methods (not part of data shape). */
@@ -40,6 +48,7 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
   rewards?: VaultRewardInfo;
   intrinsicApy?: IntrinsicApyInfo;
   eulerLabel?: EulerLabel;
+  populated: ERC4626VaultPopulated;
 
   constructor(args: IERC4626Vault) {
     this.type = args.type;
@@ -49,6 +58,12 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
     this.asset = args.asset;
     this.totalShares = args.totalShares;
     this.totalAssets = args.totalAssets;
+    this.populated = {
+      marketPrices: args.populated?.marketPrices ?? false,
+      rewards: args.populated?.rewards ?? false,
+      intrinsicApy: args.populated?.intrinsicApy ?? false,
+      labels: args.populated?.labels ?? false,
+    };
   }
 
   /** 1:1 conversion (standard ERC4626 when totalShares === totalAssets). */
@@ -71,9 +86,11 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
     try {
       const priced = await priceService.getAssetUsdPriceWithDiagnostics(this, "$.marketPriceUsd");
       this.marketPriceUsd = priced.result?.amountOutMid;
+      this.populated.marketPrices = true;
       return priced.errors;
     } catch (error) {
       this.marketPriceUsd = undefined;
+      this.populated.marketPrices = false;
       return [{
         code: "SOURCE_UNAVAILABLE",
         severity: "error",
@@ -89,9 +106,11 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
   async populateRewards(rewardsService: IRewardsService): Promise<DataIssue[]> {
     try {
       this.rewards = await rewardsService.getVaultRewards(this.chainId, this.address);
+      this.populated.rewards = true;
       return [];
     } catch (error) {
       this.rewards = undefined;
+      this.populated.rewards = false;
       return [{
         code: "SOURCE_UNAVAILABLE",
         severity: "error",
