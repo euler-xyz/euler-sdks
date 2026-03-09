@@ -238,7 +238,9 @@ export function PortfolioPage() {
                         </td>
                         <td>{reward.provider}</td>
                         <td>
-                          <CopyAddress address={reward.claimAddress} />
+                          {reward.claimAddress
+                            ? <CopyAddress address={reward.claimAddress} />
+                            : "-"}
                         </td>
                       </tr>
                     )

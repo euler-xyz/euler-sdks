@@ -71,7 +71,11 @@ export function RewardsPage() {
                   <td>{c.source}</td>
                   <td>{c.action}</td>
                   <td>{c.rewardTokenSymbol}</td>
-                  <td><CopyAddress address={c.rewardTokenAddress} /></td>
+                  <td>
+                    {c.rewardTokenAddress
+                      ? <CopyAddress address={c.rewardTokenAddress} />
+                      : "-"}
+                  </td>
                   <td>{formatPercent(c.apr)}</td>
                   <td>{c.dailyRewards?.toLocaleString() ?? "-"}</td>
                   <td>

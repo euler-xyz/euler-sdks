@@ -8,4 +8,8 @@ export type {
   RewardsServiceConfig,
   UserReward,
   UserRewardToken,
+  FuulClaimCheck,
+  FuulIncentive,
+  FuulTotals,
+  FuulTotalEntry,
 } from "./rewardsServiceTypes.js";

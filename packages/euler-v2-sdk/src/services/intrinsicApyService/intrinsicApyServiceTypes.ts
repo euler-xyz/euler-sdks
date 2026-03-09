@@ -16,11 +16,14 @@ export interface IntrinsicApyInfo {
 
 export type IntrinsicApySourceConfig =
   | { provider: "defillama"; address: string; chainId: number; poolId: string; useSpotApy?: boolean }
-  | { provider: "pendle"; address: string; chainId: number; pendleMarket: string; crossChainSourceChainId?: number };
+  | { provider: "pendle"; address: string; chainId: number; pendleMarket: string; crossChainSourceChainId?: number }
+  | { provider: "stablewatch"; address: string; chainId: number };
 
 export interface IntrinsicApyServiceConfig {
   defillamaYieldsUrl?: string;
   pendleApiUrl?: string;
+  stablewatchPoolsUrl?: string;
+  stablewatchSourceUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -47,6 +50,21 @@ export interface DefiLlamaPool {
 export interface PendleMarketData {
   impliedApy?: number;
   timestamp?: string;
+}
+
+export interface StablewatchPool {
+  metrics?: {
+    apy?: {
+      avg7d?: number | string;
+    };
+  };
+  token?: {
+    chains?: Record<string, string[]>;
+  };
+}
+
+export interface StablewatchResponse {
+  data?: StablewatchPool[];
 }
 
 // ---------------------------------------------------------------------------

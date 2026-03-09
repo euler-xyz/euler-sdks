@@ -42,6 +42,14 @@ export function SdkProvider({ children }: { children: ReactNode }) {
       swapServiceConfig: {
         swapApiUrl: "http://localhost:3002",
       },
+      rewardsServiceConfig: {
+        fuulApiUrl: "https://api.fuul.xyz/api/v1",
+        fuulTotalsUrl: "/api/fuul/totals",
+        fuulClaimChecksUrl: "/api/fuul/claim-checks",
+      },
+      intrinsicApyServiceConfig: {
+        stablewatchPoolsUrl: "/api/stablewatch-pools",
+      },
       plugins: [createPythPlugin({ buildQuery: sdkBuildQuery })],
     })
       .then((instance) => {

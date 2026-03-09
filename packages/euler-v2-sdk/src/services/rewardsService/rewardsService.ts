@@ -11,6 +11,9 @@ import type {
   BrevisCampaignsResponse,
   MerklUserChainRewards,
   BrevisUserRewardsBatchResponse,
+  FuulClaimCheck,
+  FuulIncentive,
+  FuulTotals,
 } from "./rewardsServiceTypes.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 
@@ -23,11 +26,13 @@ const DEFAULT_BREVIS_API_URL =
   "https://incentra-prd.brevis.network/sdk/v1/eulerCampaigns";
 const DEFAULT_BREVIS_PROOFS_API_URL =
   "https://incentra-prd.brevis.network/v1/getMerkleProofsBatch";
+const DEFAULT_FUUL_API_URL = "https://api.fuul.xyz/api/v1";
 const DEFAULT_BREVIS_CHAIN_IDS = [1];
 const DEFAULT_CACHE_TTL_MS = 300_000; // 5 minutes
 
 /** Standard Merkl Distributor contract address (same on all EVM chains via CREATE2). */
 const DEFAULT_MERKL_DISTRIBUTOR: Address = "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae";
+const DEFAULT_FUUL_MANAGER: Address = "0x8a0836dA623ea1083c85acB958DeEa3716b39dc6";
 
 // Brevis action codes
 const BREVIS_LEND = 2002;
@@ -50,18 +55,32 @@ export class RewardsService implements IRewardsService {
   private merklApiUrl: string;
   private brevisApiUrl: string;
   private brevisProofsApiUrl: string;
+  private fuulApiUrl: string;
+  private fuulTotalsUrl?: string;
+  private fuulClaimChecksUrl?: string;
   private brevisChainIds: number[];
   private cacheTtlMs: number;
   private merklDistributorAddress: Address;
+  private fuulManagerAddress: Address;
+  private enableMerkl: boolean;
+  private enableBrevis: boolean;
+  private enableFuul: boolean;
   private cache = new Map<number, CacheEntry>();
 
   constructor(config?: RewardsServiceConfig, buildQuery?: BuildQueryFn) {
     this.merklApiUrl = config?.merklApiUrl ?? DEFAULT_MERKL_API_URL;
     this.brevisApiUrl = config?.brevisApiUrl ?? DEFAULT_BREVIS_API_URL;
     this.brevisProofsApiUrl = config?.brevisProofsApiUrl ?? DEFAULT_BREVIS_PROOFS_API_URL;
+    this.fuulApiUrl = config?.fuulApiUrl ?? DEFAULT_FUUL_API_URL;
+    this.fuulTotalsUrl = config?.fuulTotalsUrl;
+    this.fuulClaimChecksUrl = config?.fuulClaimChecksUrl;
     this.brevisChainIds = config?.brevisChainIds ?? DEFAULT_BREVIS_CHAIN_IDS;
     this.cacheTtlMs = config?.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.merklDistributorAddress = config?.merklDistributorAddress ?? DEFAULT_MERKL_DISTRIBUTOR;
+    this.fuulManagerAddress = config?.fuulManagerAddress ?? DEFAULT_FUUL_MANAGER;
+    this.enableMerkl = config?.enableMerkl ?? true;
+    this.enableBrevis = config?.enableBrevis ?? true;
+    this.enableFuul = config?.enableFuul ?? true;
     if (buildQuery) applyBuildQuery(this, buildQuery);
   }
 
@@ -125,6 +144,49 @@ export class RewardsService implements IRewardsService {
     this.queryBrevisUserProofs = fn;
   }
 
+  queryFuulIncentives = async (url: string): Promise<FuulIncentive[]> => {
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data as FuulIncentive[] : [];
+  };
+
+  setQueryFuulIncentives(fn: typeof this.queryFuulIncentives): void {
+    this.queryFuulIncentives = fn;
+  }
+
+  queryFuulTotals = async (url: string): Promise<FuulTotals> => {
+    const res = await fetch(url);
+    if (!res.ok) return { claimed: [], unclaimed: [] };
+    const data = await res.json() as Partial<FuulTotals>;
+    return {
+      claimed: Array.isArray(data.claimed) ? data.claimed : [],
+      unclaimed: Array.isArray(data.unclaimed) ? data.unclaimed : [],
+    };
+  };
+
+  setQueryFuulTotals(fn: typeof this.queryFuulTotals): void {
+    this.queryFuulTotals = fn;
+  }
+
+  queryFuulClaimChecks = async (
+    url: string,
+    body: object
+  ): Promise<FuulClaimCheck[]> => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data as FuulClaimCheck[] : [];
+  };
+
+  setQueryFuulClaimChecks(fn: typeof this.queryFuulClaimChecks): void {
+    this.queryFuulClaimChecks = fn;
+  }
+
   // -----------------------------------------------------------------------
   // Public API
   // -----------------------------------------------------------------------
@@ -143,14 +205,19 @@ export class RewardsService implements IRewardsService {
       return cached.data;
     }
 
-    const [merklCampaigns, brevisCampaigns] = await Promise.all([
-      this.fetchMerklCampaigns(chainId),
-      this.brevisChainIds.includes(chainId)
+    const [merklCampaigns, brevisCampaigns, fuulCampaigns] = await Promise.all([
+      this.enableMerkl ? this.fetchMerklCampaigns(chainId) : Promise.resolve([]),
+      this.enableBrevis && this.brevisChainIds.includes(chainId)
         ? this.fetchBrevisCampaigns(chainId)
         : Promise.resolve([]),
+      this.enableFuul ? this.fetchFuulCampaigns(chainId) : Promise.resolve([]),
     ]);
 
-    const rewardsMap = this.mergeCampaigns(merklCampaigns, brevisCampaigns);
+    const rewardsMap = this.mergeCampaigns(
+      merklCampaigns,
+      brevisCampaigns,
+      fuulCampaigns
+    );
 
     this.cache.set(chainId, { timestamp: Date.now(), data: rewardsMap });
     return rewardsMap;
@@ -179,14 +246,19 @@ export class RewardsService implements IRewardsService {
   }
 
   async getUserRewards(chainId: number, address: Address): Promise<UserReward[]> {
-    const [merklRewards, brevisRewards] = await Promise.all([
-      this.fetchMerklUserRewards(chainId, address),
-      this.brevisChainIds.includes(chainId)
+    const [merklRewards, brevisRewards, fuulRewards] = await Promise.all([
+      this.enableMerkl ? this.fetchMerklUserRewards(chainId, address) : Promise.resolve([]),
+      this.enableBrevis && this.brevisChainIds.includes(chainId)
         ? this.fetchBrevisUserRewards(chainId, address)
         : Promise.resolve([]),
+      this.enableFuul ? this.fetchFuulUserRewards(chainId, address) : Promise.resolve([]),
     ]);
 
-    return [...merklRewards, ...brevisRewards];
+    return [
+      ...merklRewards,
+      ...brevisRewards,
+      ...fuulRewards,
+    ];
   }
 
   // -----------------------------------------------------------------------
@@ -264,18 +336,43 @@ export class RewardsService implements IRewardsService {
   }
 
   // -----------------------------------------------------------------------
+  // Internal: Fuul campaigns
+  // -----------------------------------------------------------------------
+
+  private async fetchFuulCampaigns(
+    chainId: number
+  ): Promise<RewardCampaign[]> {
+    const url = `${this.fuulApiUrl}/incentives?protocol=euler&chain_id=${chainId}`;
+    const incentives = await this.queryFuulIncentives(url).catch(() => []);
+
+    return incentives
+      .filter((item) => item.trigger?.context?.token_address)
+      .map((item) => ({
+        campaignId: `${item.protocol}:${item.project}:${item.trigger.context.token_address.toLowerCase()}`,
+        source: "fuul" as const,
+        action: "LEND" as const,
+        apr: item.apr / 100,
+        rewardTokenSymbol: item.project,
+        endTimestamp: 0,
+        _vaultAddress: item.trigger.context.token_address.toLowerCase(),
+      } as RewardCampaign & { _vaultAddress: string }));
+  }
+
+  // -----------------------------------------------------------------------
   // Internal: Merge
   // -----------------------------------------------------------------------
 
   private mergeCampaigns(
     merklCampaigns: RewardCampaign[],
-    brevisCampaigns: RewardCampaign[]
+    brevisCampaigns: RewardCampaign[],
+    fuulCampaigns: RewardCampaign[] = []
   ): Map<string, VaultRewardInfo> {
     const map = new Map<string, VaultRewardInfo>();
 
     const all = [
       ...merklCampaigns,
       ...brevisCampaigns,
+      ...fuulCampaigns,
     ] as (RewardCampaign & { _vaultAddress: string })[];
 
     for (const campaign of all) {
@@ -413,6 +510,55 @@ export class RewardsService implements IRewardsService {
         claimAddress: getAddress(batch.claimContractAddr) as Address,
         cumulativeAmounts: batch.cumulativeRewards,
         epoch: batch.epoch,
+      });
+    }
+
+    return rewards;
+  }
+
+  // -----------------------------------------------------------------------
+  // Internal/Public: Fuul user rewards
+  // -----------------------------------------------------------------------
+
+  async getFuulTotals(address: Address): Promise<FuulTotals> {
+    if (!this.fuulTotalsUrl) return { claimed: [], unclaimed: [] };
+    const separator = this.fuulTotalsUrl.includes("?") ? "&" : "?";
+    const url = `${this.fuulTotalsUrl}${separator}user_identifier=${encodeURIComponent(address)}&user_identifier_type=evm_address`;
+    return this.queryFuulTotals(url).catch(() => ({ claimed: [], unclaimed: [] }));
+  }
+
+  async getFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]> {
+    if (!this.fuulClaimChecksUrl) return [];
+    return this.queryFuulClaimChecks(this.fuulClaimChecksUrl, {
+      userIdentifier: address,
+      userIdentifierType: "evm_address",
+    }).catch(() => []);
+  }
+
+  private async fetchFuulUserRewards(
+    chainId: number,
+    address: Address
+  ): Promise<UserReward[]> {
+    const totals = await this.getFuulTotals(address);
+    const rewards: UserReward[] = [];
+
+    for (const reward of totals.unclaimed) {
+      if (reward.chain_id !== chainId) continue;
+      const tokenAddress = getAddress(reward.currency) as Address;
+      rewards.push({
+        chainId: reward.chain_id,
+        token: {
+          address: tokenAddress,
+          chainId: reward.chain_id,
+          symbol: tokenAddress,
+          name: tokenAddress,
+          decimals: 18,
+        },
+        tokenPrice: 0,
+        provider: "fuul",
+        accumulated: reward.amount,
+        unclaimed: reward.amount,
+        claimAddress: this.fuulManagerAddress,
       });
     }
 

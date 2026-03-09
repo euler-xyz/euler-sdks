@@ -7,6 +7,10 @@
     "module": "ESNext",
     "types": ["vite/client"],
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "euler-v2-sdk": ["../packages/euler-v2-sdk/dist/src/index.d.ts"]
+    },
 
     /* Bundler mode */
     "moduleResolution": "bundler",

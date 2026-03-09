@@ -92,12 +92,16 @@ const STALE_TIMES: Record<string, number> = {
   // Rewards — external API data
   queryMerklOpportunities: 5 * MINUTE,
   queryBrevisCampaigns: 5 * MINUTE,
+  queryFuulIncentives: 5 * MINUTE,
   queryMerklUserRewards: MINUTE,
   queryBrevisUserProofs: MINUTE,
+  queryFuulTotals: MINUTE,
+  queryFuulClaimChecks: MINUTE,
 
   // Intrinsic APY — external API data
   queryDefiLlamaPools: 5 * MINUTE,
   queryPendleMarketData: 5 * MINUTE,
+  queryStablewatchPools: 5 * MINUTE,
 
   // Account / subgraph lookups — moderate
   queryAccountVaults: 30_000,
@@ -521,7 +525,7 @@ export function useEulerEarnDetail(chainId: number, address: string | undefined)
 
 export function useAccount(chainId: number, address: string | undefined) {
   const { sdk, enabled } = useSdkReady();
-  return useQuery<Account>({
+  return useQuery<Account<VaultEntity>>({
     queryKey: ["account", chainId, address],
     queryFn: async () =>
       unwrapServiceResult(
@@ -544,7 +548,7 @@ export function useAccountWithDiagnostics(
 ) {
   const { sdk, enabled } = useSdkReady();
   return useQuery<{
-    account: Account;
+    account: Account<VaultEntity>;
     diagnostics: DiagnosticIssue[];
     failedVaults: FailedVaultFetch[];
   }>({

@@ -5,7 +5,7 @@ import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
 // Public types
 // ---------------------------------------------------------------------------
 
-export type RewardSource = "merkl" | "brevis";
+export type RewardSource = "merkl" | "brevis" | "fuul";
 export type RewardAction = "LEND" | "BORROW";
 
 export interface RewardCampaign {
@@ -14,7 +14,7 @@ export interface RewardCampaign {
   action: RewardAction;
   /** APR as a decimal fraction (0.05 = 5%). */
   apr: number;
-  rewardTokenAddress: Address;
+  rewardTokenAddress?: Address;
   rewardTokenSymbol: string;
   dailyRewards?: number;
   /** Campaign end time in seconds (unix timestamp). */
@@ -49,9 +49,9 @@ export interface UserReward {
   /** Unclaimed reward amount (raw, unscaled bigint as string). */
   unclaimed: string;
   /** Merkle proof for claiming. */
-  proof: Hex[];
+  proof?: Hex[];
   /** Contract address to call for claiming rewards. */
-  claimAddress: Address;
+  claimAddress?: Address;
   /** Cumulative amounts for epoch-based claiming (Brevis). */
   cumulativeAmounts?: string[];
   /** Epoch identifier (Brevis). */
@@ -63,12 +63,24 @@ export interface RewardsServiceConfig {
   brevisApiUrl?: string;
   /** URL for Brevis user rewards proofs endpoint. */
   brevisProofsApiUrl?: string;
+  /** Public Fuul incentives API base URL. */
+  fuulApiUrl?: string;
+  /** Optional app-hosted endpoint for Fuul totals. */
+  fuulTotalsUrl?: string;
+  /** Optional app-hosted endpoint for Fuul claim checks. */
+  fuulClaimChecksUrl?: string;
   /** Chain IDs for which Brevis campaigns should be fetched (default: [1]). */
   brevisChainIds?: number[];
   /** Cache TTL in milliseconds (default: 300_000 = 5 min). */
   cacheTtlMs?: number;
   /** Override the Merkl distributor contract address (default: standard Merkl Distributor). */
   merklDistributorAddress?: Address;
+  /** Optional Fuul claim manager address for user reward display / future claim flows. */
+  fuulManagerAddress?: Address;
+  /** Feature flags for individual providers. */
+  enableMerkl?: boolean;
+  enableBrevis?: boolean;
+  enableFuul?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +92,8 @@ export interface IRewardsService {
   getChainRewards(chainId: number): Promise<Map<string, VaultRewardInfo>>;
   populateRewards(vaults: ERC4626Vault[]): Promise<void>;
   getUserRewards(chainId: number, address: Address): Promise<UserReward[]>;
+  getFuulTotals(address: Address): Promise<FuulTotals>;
+  getFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -187,4 +201,59 @@ export interface BrevisUserRewardBatchEntry {
 export interface BrevisUserRewardsBatchResponse {
   err?: { code: string; msg: string } | null;
   rewardsBatch: BrevisUserRewardBatchEntry[] | null;
+}
+
+// ---------------------------------------------------------------------------
+// Internal: Fuul API types
+// ---------------------------------------------------------------------------
+
+export interface FuulPool {
+  name: string;
+  token0_symbol: string;
+  token0_address: string;
+}
+
+export interface FuulTrigger {
+  type: string;
+  context: {
+    chain_id: number;
+    token_address: string;
+  };
+}
+
+export interface FuulIncentive {
+  conversion: string;
+  project: string;
+  protocol: string;
+  chain_id: number;
+  pool: FuulPool;
+  trigger: FuulTrigger;
+  apr: number;
+  tvl: number;
+  refreshed_at: string;
+}
+
+export interface FuulClaimCheck {
+  project_address: string;
+  to: string;
+  currency: string;
+  currency_type: number;
+  amount: string;
+  reason: number;
+  token_id: string;
+  deadline: string;
+  proof: string;
+  signatures: string[];
+}
+
+export interface FuulTotalEntry {
+  currency: string;
+  currency_type: number;
+  amount: string;
+  chain_id: number;
+}
+
+export interface FuulTotals {
+  claimed: FuulTotalEntry[];
+  unclaimed: FuulTotalEntry[];
 }

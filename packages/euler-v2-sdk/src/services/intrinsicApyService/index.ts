@@ -4,5 +4,7 @@ export type {
   IntrinsicApyInfo,
   IntrinsicApySourceConfig,
   IntrinsicApyServiceConfig,
+  StablewatchPool,
+  StablewatchResponse,
 } from "./intrinsicApyServiceTypes.js";
 export { intrinsicApySources } from "./intrinsicApySources.js";

@@ -166,4 +166,35 @@ export const intrinsicApySources: readonly IntrinsicApySourceConfig[] = [
   { provider: "pendle", address: "0xFFaF49f320b8Ae1Bb9Ea596197040077a3666105", chainId: 9745, pendleMarket: "0x23180d15651FE6e4415ce27b212Cf8e5d2dEDa96" },
   { provider: "pendle", address: "0xD516188daf64EFa04a8d60872F891f2cC811A561", chainId: 9745, pendleMarket: "0x15735f2F53c5cd25A57dFf83B11C93EcEaf72073" },
   { provider: "pendle", address: "0xedac81b27790e0728f54dEa3B7718e5437E85353", chainId: 9745, pendleMarket: "0x0d7d9abEE602c7f0A242EA7e200e47C372aCba84" },
+
+  // Stablewatch tokens — Ethereum (1)
+  { provider: "stablewatch", chainId: 1, address: "0x89E93172AEF8261Db8437b90c3dCb61545a05317" },
+  { provider: "stablewatch", chainId: 1, address: "0x1CE7D9942ff78c328A4181b9F3826fEE6D845A97" },
+  { provider: "stablewatch", chainId: 1, address: "0x0aBd93dA8387B5Ef0511a2859d85D84fe4519e94" },
+
+  // Stablewatch tokens — BSC (56)
+  { provider: "stablewatch", chainId: 56, address: "0x7788A3538C5fc7F9c7C8A74EAC4c898fC8d87d92" },
+
+  // Stablewatch tokens — Sonic (146)
+  { provider: "stablewatch", chainId: 146, address: "0x3D75F2BB8aBcDBd1e27443cB5CBCE8A668046C81" },
+  { provider: "stablewatch", chainId: 146, address: "0x9fb76f7ce5FCeAA2C42887ff441D46095E494206" },
+
+  // Stablewatch tokens — TAC (239)
+  { provider: "stablewatch", chainId: 239, address: "0x2a52B289bA68bBd02676640aA9F605700c9e5699" },
+  { provider: "stablewatch", chainId: 239, address: "0x35533f54740F1F1aA4179E57bA37039dfa16868B" },
+  { provider: "stablewatch", chainId: 239, address: "0x5Ced7F73B76A555CCB372cc0F0137bEc5665F81E" },
+
+  // Stablewatch tokens — Plasma (9745)
+  { provider: "stablewatch", chainId: 9745, address: "0x211Cc4DD073734dA055fbF44a2b4667d5E5fE5d2" },
+  { provider: "stablewatch", chainId: 9745, address: "0x0B2b2B2076d95dda7817e785989fE353fe955ef9" },
+  { provider: "stablewatch", chainId: 9745, address: "0x35533f54740F1F1aA4179E57bA37039dfa16868B" },
+  { provider: "stablewatch", chainId: 9745, address: "0x616185600989Bf8339b58aC9e539d49536598343" },
+  { provider: "stablewatch", chainId: 9745, address: "0xC8A8DF9B210243c55D31c73090F06787aD0A1Bf6" },
+  { provider: "stablewatch", chainId: 9745, address: "0xEbFC8C2Fe73C431Ef2A371AeA9132110aaB50DCa" },
+  { provider: "stablewatch", chainId: 9745, address: "0xfDD22Ce6D1F66bc0Ec89b20BF16CcB6670F55A5a" },
+
+  // Stablewatch tokens — Arbitrum (42161)
+  { provider: "stablewatch", chainId: 42161, address: "0xfDD22Ce6D1F66bc0Ec89b20BF16CcB6670F55A5a" },
+  { provider: "stablewatch", chainId: 42161, address: "0x0B2b2B2076d95dda7817e785989fE353fe955ef9" },
+  { provider: "stablewatch", chainId: 42161, address: "0x62dDf301B21970e7Cc12c34cAAc9CE9bC975c0a9" },
 ];
