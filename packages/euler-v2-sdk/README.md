@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-pnpm install euler-v2-sdk
+npm install euler-v2-sdk
 ```
 
 ## Example Usage (Multiply + Simulation)
@@ -70,7 +70,7 @@ const simulation = await sdk.simulationService.simulateTransactionPlan(
 - handling swaps, pricing, rewards, labels, and deployed addresses
 - fetching oracle adapter metadata/checks (provider, methodology, checks)
 
-The SDK is built with dependency injection, so you can use `buildEulerSDK()` for a default setup, run individual services in isolation, or provide custom service implementations.
+The SDK is built with dependency injection, so you can use `buildEulerSDK()` for a default setup, run individual services in isolation, or modify the behavior with your custom implementations.
 
 ## Configuration
 

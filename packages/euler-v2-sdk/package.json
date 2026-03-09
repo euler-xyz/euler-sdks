@@ -1,8 +1,18 @@
 {
   "name": "euler-v2-sdk",
-  "version": "1.0.0",
+  "version": "0.0.1-alpha",
   "description": "SDK for interacting with Euler V2 Lending Platform",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/euler-xyz/euler-sdks.git",
+    "directory": "packages/euler-v2-sdk"
+  },
+  "homepage": "https://github.com/euler-xyz/euler-sdks/tree/main/packages/euler-v2-sdk",
+  "bugs": {
+    "url": "https://github.com/euler-xyz/euler-sdks/issues"
+  },
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "exports": {
@@ -10,6 +20,7 @@
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
     },
+    "./package.json": "./package.json",
     "./AGENTS.md": "./AGENTS.md",
     "./skills/*": "./skills/*"
   },
@@ -23,16 +34,29 @@
     "build:watch": "tsc --project tsconfig.json --watch",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
+    "release:check": "pnpm run clean && pnpm run build && pnpm run typecheck && pnpm pack --dry-run",
+    "prepublishOnly": "pnpm run release:check",
+    "publish:public": "npm publish --access public --provenance",
     "anvil": "source examples/.env && anvil --fork-url $FORK_RPC_URL --auto-impersonate"
   },
   "keywords": [
+    "euler",
+    "defi",
+    "lending",
+    "ethereum",
+    "evm",
+    "sdk",
     "typescript",
-    "node",
-    "boilerplate",
-    "esm",
-    "npm-package"
+    "viem"
   ],
   "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "dependencies": {
     "viem": "^2.43.3"
   },
