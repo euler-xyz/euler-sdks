@@ -55,6 +55,22 @@ account.populated.vaults     // true after vault mapping/population
 earn.populated.strategyVaults // true after strategy vault population
 ```
 
+### Linking vaults together
+
+Vault entities are not stored in a global in-memory graph keyed by address. Population works on the current entity instances and creates new nested entity instances as needed.
+
+For example, assume two EVaults:
+
+- Vault A lists Vault B as collateral
+- Vault B lists Vault A as collateral
+
+If you call `populateCollaterals()` on Vault A, the SDK creates a Vault B entity inside `A.collaterals[i].vault`.  
+If you then call `populateCollaterals()` on that Vault B entity, it creates a new copy of Vault A inside `B.collaterals[j].vault`. Repeating this process can keep expanding the object graph indefinitely.
+
+This behavior is intentional. It keeps entity population deterministic and allows caching strategies at the source-data level (see `Query methods`), instead of enforcing identity-sharing rules in entity objects.
+
+If your use case requires no per-population copies, use your own caching/identity layer and link entities manually, or provide a custom adapter/service implementation that caches per entity address.
+
 ### Computed properties
 
 Some properties are derived from populated data. For example, `Account` attaches computed getters (`healthFactor`, `currentLTV`, `liquidationLTV`, `netValueUsd`) that calculate from position data and USD prices. These **depend on prior population** — e.g. `netValueUsd` requires that vaults have been populated with market prices first. If the underlying data hasn't been populated, computed values may be `undefined` or zero.

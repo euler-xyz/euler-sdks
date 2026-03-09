@@ -1,0 +1,23 @@
+{
+  "version": "1.1.0",
+  "organization": "Euler Labs",
+  "date": "March 2026",
+  "abstract": "Euler V2 SDK integration guide for building production UIs, automation scripts, and developer tooling on top of euler-v2-sdk.",
+  "tldr": "Use buildEulerSDK once, fetch via accountService/vaultMetaService, plan with executionService, simulate before execute, and apply buildQuery caching plus plugins for robust UI and bot flows.",
+  "triggers": [
+    "euler sdk",
+    "euler-v2-sdk",
+    "buildEulerSDK",
+    "executionService",
+    "simulationService",
+    "vaultMetaService",
+    "accountService",
+    "Euler SDK UI",
+    "Euler SDK scripts",
+    "Euler SDK tooling"
+  ],
+  "references": [
+    "https://github.com/euler-xyz/euler-sdks",
+    "https://docs.euler.finance"
+  ]
+}

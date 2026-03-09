@@ -9,10 +9,14 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
-    }
+    },
+    "./AGENTS.md": "./AGENTS.md",
+    "./skills/*": "./skills/*"
   },
   "files": [
-    "dist"
+    "dist",
+    "AGENTS.md",
+    "skills"
   ],
   "scripts": {
     "build": "tsc --project tsconfig.json",

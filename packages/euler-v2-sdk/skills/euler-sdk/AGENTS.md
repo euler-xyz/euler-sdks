@@ -1,0 +1,154 @@
+# Euler SDK Agent Skill
+
+**Version 1.1.0**  
+Euler Labs  
+March 2026
+
+---
+
+## Abstract
+
+Integration guide for `euler-v2-sdk` focused on building production UIs, automation scripts, and developer tools. Covers service boundaries, entity population, transaction planning, approvals, simulation safety, caching via `buildQuery`, plugin integration, swap flows, and script templates.
+
+---
+
+## Table of Contents
+
+1. [SDK Foundations](#1-sdk-foundations) — **HIGH**
+2. [Execution Safety](#2-execution-safety) — **CRITICAL**
+3. [Runtime Performance](#3-runtime-performance) — **HIGH**
+4. [Integration Patterns](#4-integration-patterns) — **HIGH**
+
+---
+
+## 1. SDK Foundations
+
+### 1.1 Architecture and Service Selection
+
+Use `buildEulerSDK` as the composition root and route reads through top-level services:
+
+- `accountService` for account/sub-account state
+- `vaultMetaService` for mixed or unknown vault types
+- `executionService` for planning/encoding tx batches
+- `simulationService` for pre-trade validation
+- `swapService` for quotes and providers
+- `oracleAdapterService` for oracle adapter metadata (provider/methodology/checks)
+
+Do not assume all vaults are `EVault`. Use `vaultMetaService` for polymorphic routing.
+
+### 1.2 UI Data Population Contract
+
+Computed account metrics depend on populated data. For portfolio screens, set:
+
+- `populateVaults: true`
+- `populateMarketPrices: true`
+- `populateUserRewards: true`
+- `vaultFetchOptions` with needed enrichments (`collaterals`, `strategyVaults`, `rewards`, `intrinsicApy`, `labels`)
+
+Without these flags, metrics like `healthFactor`, `netAssetValueUsd`, and `roe` may be missing or incomplete.
+
+For batch vault reads (`fetchVaults`, `fetchVerifiedVaults`), results preserve input order and can include `undefined` entries for per-vault failures; use diagnostics `entityId` to map failures to addresses.
+
+Use entity `populated` flags to verify enrichment state in UI logic:
+
+- `account.populated.vaults | marketPrices | userRewards`
+- `vault.populated.marketPrices | rewards | intrinsicApy | labels`
+- `eVault.populated.collaterals`
+- `eulerEarn.populated.strategyVaults`
+
+---
+
+## 2. Execution Safety
+
+### 2.1 Planning and Approvals
+
+Prefer `planX` APIs over `encodeX` for user-facing transaction flows. Resolve required approvals before sending EVC batch transactions.
+
+Execution order:
+
+1. Build plan (`planDeposit`, `planBorrow`, `planRepayWithSwap`, etc.)
+2. Resolve approvals (`approve` or Permit2 signature path)
+3. Send `evcBatch` transaction(s)
+4. Wait for receipts and refresh UI state
+
+Use `mergePlans` to atomically combine user intents and `describeBatch` for previews.
+
+### 2.2 Simulation Gate
+
+Simulate non-trivial plans before execution:
+
+- swap-based repayment
+- leverage / multiply
+- debt migration
+- liquidation flows
+
+Block execution when `canExecute` is false or when status checks/insufficiency fields fail. Surface decoded errors to users.
+
+---
+
+## 3. Runtime Performance
+
+### 3.1 buildQuery Caching Strategy
+
+Decorate SDK `query*` methods via `buildQuery` (e.g., with React Query).
+
+Use per-query stale times:
+
+- hours (e.g. 12-24h): deployments, ABIs, token lists, static labels
+- minutes: perspectives/providers/reward catalogs
+- 10-30s: account/vault/wallet state
+- ~10s: swap quotes and Pyth update payloads
+
+This keeps repeated service-level `fetch*` calls inexpensive.
+
+### 3.2 Plugins for Preconditions
+
+Use plugins when vault interactions require side data/actions:
+
+- `createPythPlugin` to inject price updates before reads/writes
+- `createKeyringPlugin` to inject credential creation when required
+
+Keep plugin ordering deterministic. Use shared caching decorators for plugin query paths.
+
+---
+
+## 4. Integration Patterns
+
+### 4.1 Swap Workflows
+
+Pattern:
+
+1. fetch quotes (`getDepositQuote`, `getRepayQuotes`)
+2. pick quote (best-first ordering)
+3. build plan (`planRepayWithSwap`, `planSwapCollateral`, `planSwapDebt`, `planMultiplyWithSwap`)
+4. simulate
+5. execute
+
+Re-quote near submission time and compare providers for advanced routing UIs.
+
+### 4.2 Scripts and Automation
+
+Use SDK examples as templates:
+
+- `examples/execution/*` for transaction flows
+- `examples/simulations/*` for pre-checks
+- `examples/utils/executor.ts` for approval + Permit2 + EVC logic
+- `run-examples.sh` for fork-based regression runs
+
+Promote constants to config/env and add explicit chain/account flags in CLI tools.
+
+---
+
+## Primary References
+
+- `packages/euler-v2-sdk/README.md`
+- `packages/euler-v2-sdk/docs/basic-usage.md`
+- `packages/euler-v2-sdk/docs/services.md`
+- `packages/euler-v2-sdk/docs/execution-service.md`
+- `packages/euler-v2-sdk/docs/simulations-and-state-overrides.md`
+- `packages/euler-v2-sdk/docs/caching-external-data-queries.md`
+- `packages/euler-v2-sdk/docs/plugins.md`
+- `packages/euler-v2-sdk/docs/swaps.md`
+- `react-sdk-example/src/context/SdkContext.tsx`
+- `react-sdk-example/src/queries/sdkQueries.ts`
+- `react-sdk-example/src/utils/txExecutor.ts`
