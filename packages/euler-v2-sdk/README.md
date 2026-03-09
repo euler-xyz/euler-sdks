@@ -1,5 +1,7 @@
 # Euler V2 SDK
 
+# NOTE this is an alpha version, not production ready, loss of funds is possible!
+
 ## Installation
 
 ```bash
