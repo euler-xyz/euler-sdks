@@ -8,7 +8,7 @@ import type { DeploymentService } from "../deploymentService/deploymentService.j
 import { utilsLensPriceAbi } from "./utilsLensPriceAbi.js";
 import { PricingBackendClient, backendPriceToBigInt } from "./backendClient.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
-import type { DataIssue, ServiceResult } from "../../utils/entityDiagnostics.js";
+import { compressDataIssues, type DataIssue, type ServiceResult } from "../../utils/entityDiagnostics.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -232,14 +232,14 @@ export class PriceService implements IPriceService {
         code: "FALLBACK_USED",
         severity: "info",
         message: "Backend UoA/USD rate unavailable; used on-chain fallback.",
-        path,
+        paths: [path],
         entityId: uoaAddress,
         source: "priceService",
         originalValue: backendError instanceof Error ? backendError.message : undefined,
         normalizedValue: fallbackRate.toString(),
       });
     }
-    return { result: fallbackRate, errors };
+    return { result: fallbackRate, errors: compressDataIssues(errors) };
   }
 
   // -----------------------------------------------------------------------
@@ -291,8 +291,8 @@ export class PriceService implements IPriceService {
         code: "FALLBACK_USED",
         severity: "info",
         message: "Backend asset/USD price unavailable; used on-chain fallback.",
-        path,
-        entityId: vault.asset.address,
+        paths: [path],
+        entityId: vault.address,
         source: "priceService",
         originalValue: backendError instanceof Error ? backendError.message : undefined,
         normalizedValue: fallbackPrice.amountOutMid.toString(),
@@ -304,13 +304,13 @@ export class PriceService implements IPriceService {
         code: "SOURCE_UNAVAILABLE",
         severity: "error",
         message: "Failed to get asset USD price.",
-        path,
-        entityId: vault.asset.address,
+        paths: [path],
+        entityId: vault.address,
         source: "priceService",
       });
     }
 
-    return { result: fallbackPrice, errors };
+    return { result: fallbackPrice, errors: compressDataIssues(errors) };
   }
 
   /**
@@ -367,7 +367,7 @@ export class PriceService implements IPriceService {
         code: "FALLBACK_USED",
         severity: "info",
         message: "Backend collateral/USD price unavailable; used on-chain fallback.",
-        path,
+        paths: [path],
         entityId: collateralVault.asset.address,
         source: "priceService",
         originalValue: backendError instanceof Error ? backendError.message : undefined,
@@ -375,7 +375,7 @@ export class PriceService implements IPriceService {
       });
     }
 
-    return { result: fallbackPrice, errors };
+    return { result: fallbackPrice, errors: compressDataIssues(errors) };
   }
 
   // -----------------------------------------------------------------------

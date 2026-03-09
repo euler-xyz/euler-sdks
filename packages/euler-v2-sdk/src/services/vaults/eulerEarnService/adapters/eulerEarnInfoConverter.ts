@@ -150,7 +150,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
         code: "PRECISION_LOSS",
         severity: "warning",
         message: "performanceFee could not be represented as a finite number; defaulted to 0.",
-        path: "$.performanceFee",
+        paths: ["$.performanceFee"],
         source: "eulerEarnLens",
         entityId: vaultEntityId,
         originalValue: formatUnits(vaultInfo.performanceFee, 18),

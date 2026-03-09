@@ -19,7 +19,7 @@ import { getAssetOraclePrice, getCollateralOraclePrice } from "../services/price
 import type { VaultEntity } from "../services/vaults/vaultMetaService/index.js";
 import type { IVaultMetaService } from "../services/vaults/vaultMetaService/index.js";
 import type { DataIssue } from "../utils/entityDiagnostics.js";
-import { withPathPrefix } from "../utils/entityDiagnostics.js";
+import { mapDataIssuePaths, withPathPrefix } from "../utils/entityDiagnostics.js";
 
 export type EVaultHookedOperations = {
   deposit: boolean;
@@ -255,8 +255,10 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
       addresses.map(async (addr, index) => {
         const fetched = await vaultMetaService.fetchVault(this.chainId, addr);
         errors.push(...fetched.errors.map((issue) => ({
-          ...issue,
-          path: withPathPrefix(issue.path, `$.collaterals[${index}].vault`),
+          ...mapDataIssuePaths(
+            issue,
+            (path) => withPathPrefix(path, `$.collaterals[${index}].vault`)
+          ),
         })));
         return fetched.result;
       })
@@ -310,7 +312,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
         code: "SOURCE_UNAVAILABLE",
         severity: "error",
         message: "Failed to populate asset market price.",
-        path: "$.marketPriceUsd",
+        paths: ["$.marketPriceUsd"],
         entityId: this.asset.address,
         source: "priceService",
         originalValue: error instanceof Error ? error.message : String(error),
@@ -330,14 +332,14 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
           collateral.marketPriceUsd = priced.result?.amountOutMid;
           errors.push(...priced.errors);
         } catch (error) {
-          errors.push({
-            code: "SOURCE_UNAVAILABLE",
-            severity: "error",
-            message: "Failed to populate collateral market price.",
-            path: `$.collaterals[${index}].marketPriceUsd`,
-            entityId: collateral.vault?.asset.address ?? collateral.address,
-            source: "priceService",
-            originalValue: error instanceof Error ? error.message : String(error),
+            errors.push({
+              code: "SOURCE_UNAVAILABLE",
+              severity: "error",
+              message: "Failed to populate collateral market price.",
+              paths: [`$.collaterals[${index}].marketPriceUsd`],
+              entityId: collateral.vault?.asset.address ?? collateral.address,
+              source: "priceService",
+              originalValue: error instanceof Error ? error.message : String(error),
           });
           collateral.marketPriceUsd = undefined;
         }

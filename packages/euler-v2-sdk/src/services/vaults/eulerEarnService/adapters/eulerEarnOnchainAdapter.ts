@@ -107,7 +107,7 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
             code: "SOURCE_UNAVAILABLE",
             severity: "warning",
             message: `Failed to fetch EulerEarn vault ${getAddress(vault)}.`,
-            path: `$.vaults[${idx}]`,
+            paths: [`$.vaults[${idx}]`],
             entityId: getAddress(vault),
             source: "eulerEarnLens",
             originalValue: error instanceof Error ? error.message : String(error),

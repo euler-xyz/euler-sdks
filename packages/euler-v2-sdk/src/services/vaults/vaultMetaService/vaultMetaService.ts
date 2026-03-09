@@ -8,7 +8,11 @@ import type { IVaultTypeAdapter } from "./adapters/IVaultTypeAdapter.js";
 import { StandardEVaultPerspectives } from "../eVaultService/index.js";
 import { StandardEulerEarnPerspectives } from "../eulerEarnService/index.js";
 import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.js";
-import { normalizeTopLevelVaultArrayPath } from "../../../utils/entityDiagnostics.js";
+import {
+  compressDataIssues,
+  mapDataIssuePaths,
+  normalizeTopLevelVaultArrayPath,
+} from "../../../utils/entityDiagnostics.js";
 
 function remapServiceLocalVaultPath(
   path: string,
@@ -25,6 +29,13 @@ function remapServiceLocalVaultPath(
     /^\$(?:\.(?:vaults|eVaults|eulerEarns))?\[\d+\]/,
     `$.vaults[${entry.index}]`
   );
+}
+
+function remapServiceLocalVaultPaths(
+  paths: string[],
+  entries: Array<{ address: Address; index: number }>
+): string[] {
+  return paths.map((path) => remapServiceLocalVaultPath(path, entries));
 }
 
 export type VaultMetaPerspective =
@@ -230,7 +241,7 @@ export class VaultMetaService<TEntity = VaultEntity>
           code: "SOURCE_UNAVAILABLE",
           severity: "warning",
           message: `No registered vault service for ${getAddress(v)}.`,
-          path: `$.vaults[${index}]`,
+          paths: [`$.vaults[${index}]`],
           entityId: getAddress(v),
           source: "vaultTypeAdapter",
           originalValue: getAddress(v),
@@ -247,7 +258,7 @@ export class VaultMetaService<TEntity = VaultEntity>
             errors.push(
               ...entities.errors.map((issue) => ({
                 ...issue,
-                path: remapServiceLocalVaultPath(issue.path, entries),
+                paths: remapServiceLocalVaultPaths(issue.paths, entries),
               }))
             );
             for (const [entryIndex, entry] of entries.entries()) {
@@ -257,7 +268,7 @@ export class VaultMetaService<TEntity = VaultEntity>
                   code: "SOURCE_UNAVAILABLE",
                   severity: "warning",
                   message: `Failed to fetch vault ${getAddress(entry.address)}.`,
-                  path: `$.vaults[${entry.index}]`,
+                  paths: [`$.vaults[${entry.index}]`],
                   entityId: getAddress(entry.address),
                   source: "vaultService",
                   originalValue: getAddress(entry.address),
@@ -272,7 +283,7 @@ export class VaultMetaService<TEntity = VaultEntity>
                 code: "SOURCE_UNAVAILABLE",
                 severity: "warning",
                 message: `Failed to fetch vault ${getAddress(entry.address)}.`,
-                path: `$.vaults[${entry.index}]`,
+                paths: [`$.vaults[${entry.index}]`],
                 entityId: getAddress(entry.address),
                 source: "vaultService",
                 originalValue: error instanceof Error ? error.message : String(error),
@@ -282,7 +293,7 @@ export class VaultMetaService<TEntity = VaultEntity>
         }
       )
     );
-    return { result, errors };
+    return { result, errors: compressDataIssues(errors) };
   }
 
   async fetchVerifiedVaultAddresses(
@@ -323,10 +334,11 @@ export class VaultMetaService<TEntity = VaultEntity>
     const fetched = await this.fetchVaults(chainId, addresses, options);
     return {
       ...fetched,
-      errors: fetched.errors.map((issue) => ({
-        ...issue,
-        path: normalizeTopLevelVaultArrayPath(issue.path),
-      })),
+      errors: compressDataIssues(
+        fetched.errors.map((issue) =>
+          mapDataIssuePaths(issue, normalizeTopLevelVaultArrayPath)
+        )
+      ),
     };
   }
 }

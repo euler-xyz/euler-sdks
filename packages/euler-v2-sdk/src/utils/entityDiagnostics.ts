@@ -15,7 +15,7 @@ export interface DataIssue {
   severity: DataIssueSeverity;
   message: string;
   /** JSONPath-like, relative to a fetch result root entity. */
-  path: string;
+  paths: string[];
   /** Stable entity identifier (address for vault/account/subaccount/wallet/asset when known). */
   entityId?: string;
   source?: string;
@@ -36,11 +36,26 @@ export function withPathPrefix(path: string, prefix: string): string {
   return `${prefix}.${path}`;
 }
 
-export function prefixDataIssues(errors: DataIssue[], prefix: string): DataIssue[] {
-  return errors.map((issue) => ({
+function uniquePaths(paths: string[]): string[] {
+  return Array.from(new Set(paths));
+}
+
+export function mapDataIssuePaths(
+  issue: DataIssue,
+  mapPath: (path: string) => string
+): DataIssue {
+  return {
     ...issue,
-    path: withPathPrefix(issue.path, prefix),
-  }));
+    paths: uniquePaths(issue.paths.map(mapPath)),
+  };
+}
+
+export function prefixDataIssue(issue: DataIssue, prefix: string): DataIssue {
+  return mapDataIssuePaths(issue, (path) => withPathPrefix(path, prefix));
+}
+
+export function prefixDataIssues(errors: DataIssue[], prefix: string): DataIssue[] {
+  return errors.map((issue) => prefixDataIssue(issue, prefix));
 }
 
 /**
@@ -52,4 +67,46 @@ export function normalizeTopLevelVaultArrayPath(path: string): string {
     /^\$\.(?:vaults|eVaults|eulerEarns)\[(\d+)\](?=\.|$)/,
     (_match, index: string) => `$[${index}]`
   );
+}
+
+function stableSerialize(value: unknown): string {
+  if (typeof value === "bigint") return `bigint:${value.toString()}`;
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableSerialize(entry)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableSerialize(entry)}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+export function compressDataIssues(errors: DataIssue[]): DataIssue[] {
+  const byFingerprint = new Map<string, DataIssue>();
+
+  for (const issue of errors) {
+    const fingerprint = stableSerialize({
+      code: issue.code,
+      severity: issue.severity,
+      message: issue.message,
+      entityId: issue.entityId,
+      source: issue.source,
+      originalValue: issue.originalValue,
+      normalizedValue: issue.normalizedValue,
+    });
+    const existing = byFingerprint.get(fingerprint);
+    if (!existing) {
+      byFingerprint.set(fingerprint, {
+        ...issue,
+        paths: uniquePaths(issue.paths),
+      });
+      continue;
+    }
+
+    existing.paths = uniquePaths([...existing.paths, ...issue.paths]);
+  }
+
+  return Array.from(byFingerprint.values());
 }

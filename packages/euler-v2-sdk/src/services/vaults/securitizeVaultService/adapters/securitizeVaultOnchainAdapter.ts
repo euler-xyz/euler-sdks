@@ -134,7 +134,7 @@ export class SecuritizeVaultOnchainAdapter
             code: "SOURCE_UNAVAILABLE",
             severity: "warning",
             message: `Failed to fetch securitize vault ${getAddress(vault)}.`,
-            path: `$.vaults[${index}]`,
+            paths: [`$.vaults[${index}]`],
             entityId: getAddress(vault),
             source: "utilsLens",
             originalValue: error instanceof Error ? error.message : String(error),

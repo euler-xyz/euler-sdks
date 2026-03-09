@@ -10,7 +10,7 @@ import {
 import type { EVault } from "./EVault.js";
 import type { IEVaultService } from "../services/vaults/eVaultService/eVaultService.js";
 import type { DataIssue } from "../utils/entityDiagnostics.js";
-import { withPathPrefix } from "../utils/entityDiagnostics.js";
+import { mapDataIssuePaths, withPathPrefix } from "../utils/entityDiagnostics.js";
 
 
 export interface EulerEarnAllocationCap {
@@ -149,8 +149,10 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
       allStrategyAddresses.map(async (addr, index) => {
         const fetched = await eVaultService.fetchVault(this.chainId, addr);
         errors.push(...fetched.errors.map((issue) => ({
-          ...issue,
-          path: withPathPrefix(issue.path, `$.strategies[${index}].vault`),
+          ...mapDataIssuePaths(
+            issue,
+            (path) => withPathPrefix(path, `$.strategies[${index}].vault`)
+          ),
         })));
         return fetched.result;
       })

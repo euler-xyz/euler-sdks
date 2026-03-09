@@ -10,6 +10,8 @@ import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.js";
 import {
+  compressDataIssues,
+  mapDataIssuePaths,
   normalizeTopLevelVaultArrayPath,
   withPathPrefix,
 } from "../../../utils/entityDiagnostics.js";
@@ -120,10 +122,9 @@ export class EVaultService implements IEVaultService {
   ): Promise<ServiceResult<EVault>> {
     const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, [vault]);
-    const errors: DataIssue[] = fetched.errors.map((issue) => ({
-      ...issue,
-      path: normalizeSingleVaultPath(issue.path),
-    }));
+    const errors: DataIssue[] = fetched.errors.map((issue) =>
+      mapDataIssuePaths(issue, normalizeSingleVaultPath)
+    );
     const fetchedVault = fetched.result[0];
     if (!fetchedVault) {
       throw new Error(`Vault not found for ${vault}`);
@@ -145,7 +146,7 @@ export class EVaultService implements IEVaultService {
     if (resolvedOptions.populateLabels) {
       errors.push(...(await this.populateLabels([eVault])));
     }
-    return { result: eVault, errors };
+    return { result: eVault, errors: compressDataIssues(errors) };
   }
 
   async fetchVaults(
@@ -186,7 +187,7 @@ export class EVaultService implements IEVaultService {
     if (resolvedOptions.populateLabels) {
       errors.push(...(await this.populateLabels(resolvedVaults)));
     }
-    return { result: eVaults, errors };
+    return { result: eVaults, errors: compressDataIssues(errors) };
   }
 
   async populateCollaterals(
@@ -234,10 +235,13 @@ export class EVaultService implements IEVaultService {
           for (const issue of fetched.errors) {
             for (const occurrence of occurrences) {
               errors.push({
-                ...issue,
-                path: withPathPrefix(
-                  issue.path,
-                  collateralPathPrefix(occurrence.vaultIndex, occurrence.collateralIndex)
+                ...mapDataIssuePaths(
+                  issue,
+                  (path) =>
+                    withPathPrefix(
+                      path,
+                      collateralPathPrefix(occurrence.vaultIndex, occurrence.collateralIndex)
+                    )
                 ),
                 entityId: issue.entityId ?? getAddress(addr),
               });
@@ -250,7 +254,7 @@ export class EVaultService implements IEVaultService {
               code: "SOURCE_UNAVAILABLE",
               severity: "warning",
               message: `Failed to fetch collateral vault ${getAddress(addr)}.`,
-              path: collateralPathPrefix(occurrence.vaultIndex, occurrence.collateralIndex),
+              paths: [collateralPathPrefix(occurrence.vaultIndex, occurrence.collateralIndex)],
               entityId: getAddress(addr),
               source: "vaultMetaService",
               originalValue: error instanceof Error ? error.message : String(error),
@@ -323,7 +327,7 @@ export class EVaultService implements IEVaultService {
             code: "SOURCE_UNAVAILABLE",
             severity: "warning",
             message: "Failed to populate asset market price.",
-            path: `${vaultPath}.marketPriceUsd`,
+            paths: [`${vaultPath}.marketPriceUsd`],
             entityId: eVault.asset.address,
             source: "priceService",
             originalValue: error instanceof Error ? error.message : String(error),
@@ -348,7 +352,7 @@ export class EVaultService implements IEVaultService {
                 code: "SOURCE_UNAVAILABLE",
                 severity: "warning",
                 message: "Failed to populate collateral market price.",
-                path: `${vaultPath}.collaterals[${collateralIndex}].marketPriceUsd`,
+                paths: [`${vaultPath}.collaterals[${collateralIndex}].marketPriceUsd`],
                 entityId: collateral.vault?.asset.address ?? collateral.address,
                 source: "priceService",
                 originalValue: error instanceof Error ? error.message : String(error),
@@ -373,7 +377,7 @@ export class EVaultService implements IEVaultService {
         code: "SOURCE_UNAVAILABLE",
         severity: "warning",
         message: "Failed to populate rewards.",
-        path: "$",
+        paths: ["$"],
         entityId: eVaults[0]?.address,
         source: "rewardsService",
         originalValue: error instanceof Error ? error.message : String(error),
@@ -391,7 +395,7 @@ export class EVaultService implements IEVaultService {
         code: "SOURCE_UNAVAILABLE",
         severity: "warning",
         message: "Failed to populate intrinsic APY.",
-        path: "$",
+        paths: ["$"],
         entityId: eVaults[0]?.address,
         source: "intrinsicApyService",
         originalValue: error instanceof Error ? error.message : String(error),
@@ -409,7 +413,7 @@ export class EVaultService implements IEVaultService {
         code: "SOURCE_UNAVAILABLE",
         severity: "warning",
         message: "Failed to populate labels.",
-        path: "$",
+        paths: ["$"],
         entityId: eVaults[0]?.address,
         source: "eulerLabelsService",
         originalValue: error instanceof Error ? error.message : String(error),
@@ -461,10 +465,11 @@ export class EVaultService implements IEVaultService {
     const fetched = await this.fetchVaults(chainId, addresses, options);
     return {
       ...fetched,
-      errors: fetched.errors.map((issue) => ({
-        ...issue,
-        path: normalizeTopLevelVaultArrayPath(issue.path),
-      })),
+      errors: compressDataIssues(
+        fetched.errors.map((issue) =>
+          mapDataIssuePaths(issue, normalizeTopLevelVaultArrayPath)
+        )
+      ),
     };
   }
 

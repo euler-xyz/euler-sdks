@@ -11,6 +11,10 @@ type CreateEntityDiagnosticIndexParams = {
   normalizePath?: (path: string | undefined) => string | undefined;
 };
 
+function getIssuePaths(issue: DiagnosticIssue): string[] {
+  return issue.paths?.length ? issue.paths : ["$"];
+}
+
 function isVisibleIssue(issue: DiagnosticIssue): boolean {
   return issue.severity === "warning" || issue.severity === "error";
 }
@@ -44,9 +48,11 @@ export function createEntityDiagnosticIndex({
     const entityKey = resolveEntityKey(issue);
     if (!entityKey) continue;
 
-    const path = normalizeIssuePath(normalizePath ? normalizePath(issue.path) : issue.path);
     const list = byEntity.get(entityKey) ?? [];
-    list.push({ issue, path });
+    for (const issuePath of getIssuePaths(issue)) {
+      const path = normalizeIssuePath(normalizePath ? normalizePath(issuePath) : issuePath);
+      list.push({ issue, path });
+    }
     byEntity.set(entityKey, list);
   }
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
+import { maxUint256 } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import {
   type DiagnosticIssue,
@@ -31,6 +32,16 @@ function normalizeVaultDetailPath(path: string | undefined): string | undefined 
   if (path === "$.vaults[0]") return "$";
   if (path.startsWith("$.vaults[0].")) return `$.${path.slice("$.vaults[0].".length)}`;
   return path;
+}
+
+function getIssuePaths(issue: DiagnosticIssue): string[] {
+  return issue.paths?.length ? issue.paths : ["$"];
+}
+
+function formatVaultCap(cap: bigint, decimals: number): string {
+  if (cap === maxUint256) return "-";
+  if (cap === 0n) return "Unlimited";
+  return formatBigInt(cap, decimals);
 }
 
 export function VaultDetailPage() {
@@ -72,12 +83,15 @@ export function VaultDetailPage() {
     return createEntityDiagnosticIndex({
       diagnostics,
       resolveEntityKey: (issue) => {
-        const path = normalizeVaultDetailPath(issue.path);
-        const match = path?.match(/^\$\.collaterals\[(\d+)\](?:\.|$)/);
-        if (!match) return undefined;
-        const collateral = vault.collaterals[Number(match[1])];
-        if (!collateral) return undefined;
-        return collateral.address.toLowerCase();
+        for (const issuePath of getIssuePaths(issue)) {
+          const path = normalizeVaultDetailPath(issuePath);
+          const match = path?.match(/^\$\.collaterals\[(\d+)\](?:\.|$)/);
+          if (!match) continue;
+          const collateral = vault.collaterals[Number(match[1])];
+          if (!collateral) continue;
+          return collateral.address.toLowerCase();
+        }
+        return undefined;
       },
       normalizePath: (path) => {
         const normalizedPath = normalizeVaultDetailPath(path);
@@ -97,12 +111,14 @@ export function VaultDetailPage() {
 
   const fieldDiagnostics = (paths: string[]): DiagnosticIssue[] => {
     return visibleDiagnostics.filter((issue) => {
-      const issuePath = normalizeVaultDetailPath(issue.path) ?? "";
-      return paths.some((path) => (
-        issuePath === path ||
-        issuePath.startsWith(`${path}.`) ||
-        issuePath.startsWith(`${path}[`)
-      ));
+      return getIssuePaths(issue).some((issuePathRaw) => {
+        const issuePath = normalizeVaultDetailPath(issuePathRaw) ?? "";
+        return paths.some((path) => (
+          issuePath === path ||
+          issuePath.startsWith(`${path}.`) ||
+          issuePath.startsWith(`${path}[`)
+        ));
+      });
     });
   };
 
@@ -114,7 +130,7 @@ export function VaultDetailPage() {
       <div className="field-diagnostics">
         {matches.map((issue, index) => (
           <div
-            key={`${issue.path ?? "unknown"}-${issue.code ?? "issue"}-${index}`}
+            key={`${(issue.paths ?? ["unknown"]).join("|")}-${issue.code ?? "issue"}-${index}`}
             className={`field-diagnostic ${issue.severity === "error" ? "error" : "warning"}`}
           >
             {issue.message ?? issue.code ?? "Diagnostic issue"}
@@ -263,18 +279,14 @@ export function VaultDetailPage() {
         <div className="detail-item">
           <div className="label">Supply Cap</div>
           <div className="value">
-            {vault.caps.supplyCap === 0n
-              ? "Unlimited"
-              : formatBigInt(vault.caps.supplyCap, vault.asset.decimals)}
+            {formatVaultCap(vault.caps.supplyCap, vault.asset.decimals)}
           </div>
           {renderDiagnostics(["$.caps.supplyCap"])}
         </div>
         <div className="detail-item">
           <div className="label">Borrow Cap</div>
           <div className="value">
-            {vault.caps.borrowCap === 0n
-              ? "Unlimited"
-              : formatBigInt(vault.caps.borrowCap, vault.asset.decimals)}
+            {formatVaultCap(vault.caps.borrowCap, vault.asset.decimals)}
           </div>
           {renderDiagnostics(["$.caps.borrowCap"])}
         </div>

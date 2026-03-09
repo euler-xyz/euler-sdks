@@ -11,6 +11,8 @@ import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.js";
 import {
+  compressDataIssues,
+  mapDataIssuePaths,
   normalizeTopLevelVaultArrayPath,
   withPathPrefix,
 } from "../../../utils/entityDiagnostics.js";
@@ -140,7 +142,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     if (resolvedOptions.populateLabels) {
       errors.push(...(await this.populateLabels(resolvedVaults)));
     }
-    return { result: entities, errors };
+    return { result: entities, errors: compressDataIssues(errors) };
   }
 
   async populateMarketPrices(
@@ -154,8 +156,10 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
       vaults.map(async (v, index) => {
         const vaultErrors = await v.populateMarketPrices(this.priceService!);
         errors.push(...vaultErrors.map((issue) => ({
-          ...issue,
-          path: withPathPrefix(issue.path, getVaultPathPrefix(index)),
+          ...mapDataIssuePaths(
+            issue,
+            (path) => withPathPrefix(path, getVaultPathPrefix(index))
+          ),
           entityId: issue.entityId ?? v.address,
         })));
       })
@@ -173,7 +177,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
         code: "SOURCE_UNAVAILABLE",
         severity: "warning",
         message: "Failed to populate rewards.",
-        path: "$",
+        paths: ["$"],
         entityId: vaults[0]?.address,
         source: "rewardsService",
         originalValue: error instanceof Error ? error.message : String(error),
@@ -191,7 +195,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
         code: "SOURCE_UNAVAILABLE",
         severity: "warning",
         message: "Failed to populate intrinsic APY.",
-        path: "$",
+        paths: ["$"],
         entityId: vaults[0]?.address,
         source: "intrinsicApyService",
         originalValue: error instanceof Error ? error.message : String(error),
@@ -209,7 +213,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
         code: "SOURCE_UNAVAILABLE",
         severity: "warning",
         message: "Failed to populate labels.",
-        path: "$",
+        paths: ["$"],
         entityId: vaults[0]?.address,
         source: "eulerLabelsService",
         originalValue: error instanceof Error ? error.message : String(error),
@@ -237,10 +241,11 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     const fetched = await this.fetchVaults(chainId, addresses, options);
     return {
       ...fetched,
-      errors: fetched.errors.map((issue) => ({
-        ...issue,
-        path: normalizeTopLevelVaultArrayPath(issue.path),
-      })),
+      errors: compressDataIssues(
+        fetched.errors.map((issue) =>
+          mapDataIssuePaths(issue, normalizeTopLevelVaultArrayPath)
+        )
+      ),
     };
   }
 

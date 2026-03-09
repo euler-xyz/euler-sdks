@@ -9,6 +9,8 @@ import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.js";
 import {
+  compressDataIssues,
+  mapDataIssuePaths,
   normalizeTopLevelVaultArrayPath,
   withPathPrefix,
 } from "../../../utils/entityDiagnostics.js";
@@ -140,7 +142,7 @@ export class EulerEarnService implements IEulerEarnService {
     if (resolvedOptions.populateLabels) {
       errors.push(...(await this.populateLabels([eulerEarn])));
     }
-    return { result: eulerEarn, errors };
+    return { result: eulerEarn, errors: compressDataIssues(errors) };
   }
 
   async fetchVaults(
@@ -181,7 +183,7 @@ export class EulerEarnService implements IEulerEarnService {
     if (resolvedOptions.populateLabels) {
       errors.push(...(await this.populateLabels(resolvedVaults)));
     }
-    return { result: eulerEarns, errors };
+    return { result: eulerEarns, errors: compressDataIssues(errors) };
   }
 
   async populateStrategyVaults(
@@ -229,10 +231,13 @@ export class EulerEarnService implements IEulerEarnService {
           for (const issue of fetched.errors) {
             for (const occurrence of occurrences) {
               errors.push({
-                ...issue,
-                path: withPathPrefix(
-                  issue.path,
-                  strategyPathPrefix(occurrence.vaultIndex, occurrence.strategyIndex)
+                ...mapDataIssuePaths(
+                  issue,
+                  (path) =>
+                    withPathPrefix(
+                      path,
+                      strategyPathPrefix(occurrence.vaultIndex, occurrence.strategyIndex)
+                    )
                 ),
                 entityId: issue.entityId ?? getAddress(addr),
               });
@@ -245,7 +250,7 @@ export class EulerEarnService implements IEulerEarnService {
               code: "SOURCE_UNAVAILABLE",
               severity: "warning",
               message: `Failed to fetch strategy vault ${getAddress(addr)}.`,
-              path: strategyPathPrefix(occurrence.vaultIndex, occurrence.strategyIndex),
+              paths: [strategyPathPrefix(occurrence.vaultIndex, occurrence.strategyIndex)],
               entityId: getAddress(addr),
               source: "eVaultService",
               originalValue: error instanceof Error ? error.message : String(error),
@@ -282,8 +287,10 @@ export class EulerEarnService implements IEulerEarnService {
       eulerEarns.map(async (ee, index) => {
         const eeErrors = await ee.populateMarketPrices(this.priceService!);
         errors.push(...eeErrors.map((issue) => ({
-          ...issue,
-          path: withPathPrefix(issue.path, getVaultPathPrefix(index)),
+          ...mapDataIssuePaths(
+            issue,
+            (path) => withPathPrefix(path, getVaultPathPrefix(index))
+          ),
           entityId: issue.entityId ?? ee.address,
         })));
       })
@@ -301,7 +308,7 @@ export class EulerEarnService implements IEulerEarnService {
         code: "SOURCE_UNAVAILABLE",
         severity: "warning",
         message: "Failed to populate rewards.",
-        path: "$",
+        paths: ["$"],
         entityId: eulerEarns[0]?.address,
         source: "rewardsService",
         originalValue: error instanceof Error ? error.message : String(error),
@@ -319,7 +326,7 @@ export class EulerEarnService implements IEulerEarnService {
         code: "SOURCE_UNAVAILABLE",
         severity: "warning",
         message: "Failed to populate intrinsic APY.",
-        path: "$",
+        paths: ["$"],
         entityId: eulerEarns[0]?.address,
         source: "intrinsicApyService",
         originalValue: error instanceof Error ? error.message : String(error),
@@ -337,7 +344,7 @@ export class EulerEarnService implements IEulerEarnService {
         code: "SOURCE_UNAVAILABLE",
         severity: "warning",
         message: "Failed to populate labels.",
-        path: "$",
+        paths: ["$"],
         entityId: eulerEarns[0]?.address,
         source: "eulerLabelsService",
         originalValue: error instanceof Error ? error.message : String(error),
@@ -389,10 +396,11 @@ export class EulerEarnService implements IEulerEarnService {
     const fetched = await this.fetchVaults(chainId, addresses, options);
     return {
       ...fetched,
-      errors: fetched.errors.map((issue) => ({
-        ...issue,
-        path: normalizeTopLevelVaultArrayPath(issue.path),
-      })),
+      errors: compressDataIssues(
+        fetched.errors.map((issue) =>
+          mapDataIssuePaths(issue, normalizeTopLevelVaultArrayPath)
+        )
+      ),
     };
   }
 

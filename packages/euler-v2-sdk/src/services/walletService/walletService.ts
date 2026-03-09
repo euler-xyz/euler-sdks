@@ -1,6 +1,6 @@
 import { Wallet, IWallet } from "../../entities/Wallet.js";
 import { Address } from "viem";
-import { type ServiceResult } from "../../utils/entityDiagnostics.js";
+import { compressDataIssues, type ServiceResult } from "../../utils/entityDiagnostics.js";
 
 export interface AssetWithSpenders {
   asset: Address;
@@ -32,13 +32,13 @@ export class WalletService implements IWalletService {
         code: "SOURCE_UNAVAILABLE",
         severity: "warning",
         message: "Wallet adapter returned no data; created empty wallet.",
-        path: "$",
+        paths: ["$"],
         entityId: account,
         source: "walletAdapter",
         normalizedValue: "empty-wallet",
       }] };
     }
 
-    return { result: new Wallet(fetched.result), errors: fetched.errors };
+    return { result: new Wallet(fetched.result), errors: compressDataIssues(fetched.errors) };
   }
 }

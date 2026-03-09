@@ -121,7 +121,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
               code: "SOURCE_UNAVAILABLE",
               severity: "error",
               message: `Failed to fetch eVault ${getAddress(vault)}.`,
-              path: `$.vaults[${index}]`,
+              paths: [`$.vaults[${index}]`],
               entityId: getAddress(vault),
               source: "vaultLens",
               originalValue: error instanceof Error ? error.message : String(error),

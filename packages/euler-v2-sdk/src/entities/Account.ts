@@ -7,7 +7,7 @@ import type { PriceWad } from "./ERC4626Vault.js";
 import type { IPriceService } from "../services/priceService/index.js";
 import type { IRewardsService, UserReward } from "../services/rewardsService/index.js";
 import type { DataIssue } from "../utils/entityDiagnostics.js";
-import { withPathPrefix } from "../utils/entityDiagnostics.js";
+import { mapDataIssuePaths, withPathPrefix } from "../utils/entityDiagnostics.js";
 import {
   computeHealthFactor,
   computeCurrentLTV,
@@ -539,8 +539,10 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
               for (const issue of vaultErrors) {
                 for (const pathPrefix of paths) {
                   errors.push({
-                    ...issue,
-                    path: withPathPrefix(issue.path, pathPrefix),
+                    ...mapDataIssuePaths(
+                      issue,
+                      (path) => withPathPrefix(path, pathPrefix)
+                    ),
                   });
                 }
               }
@@ -551,7 +553,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
                 code: "SOURCE_UNAVAILABLE",
                 severity: "error",
                 message: "Failed to populate market prices for nested vault entity.",
-                path: pathPrefix,
+                paths: [pathPrefix],
                 entityId: vaultAddress,
                 source: "priceService",
                 originalValue: error instanceof Error ? error.message : String(error),
@@ -595,7 +597,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
               code: "SOURCE_UNAVAILABLE",
               severity: "error",
               message: "Failed to fetch unit-of-account USD rate for liquidity.",
-              path: `${positionPath}.liquidity.vault`,
+              paths: [`${positionPath}.liquidity.vault`],
               entityId: liqVault.address ?? p.vaultAddress,
               source: "priceService",
               originalValue: error instanceof Error ? error.message : String(error),
@@ -692,7 +694,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
         code: "SOURCE_UNAVAILABLE",
         severity: "error",
         message: "Failed to populate user rewards.",
-        path: "$.userRewards",
+        paths: ["$.userRewards"],
         entityId: this.owner,
         source: "rewardsService",
         originalValue: error instanceof Error ? error.message : String(error),

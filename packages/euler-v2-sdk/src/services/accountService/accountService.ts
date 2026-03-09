@@ -5,7 +5,7 @@ import type { IHasVaultAddress, IVaultEntity, ISubAccount } from "../../entities
 import type { VaultFetchOptions } from "../vaults/index.js";
 import type { IPriceService } from "../priceService/index.js";
 import type { IRewardsService } from "../rewardsService/index.js";
-import { type DataIssue, type ServiceResult } from "../../utils/entityDiagnostics.js";
+import { compressDataIssues, type DataIssue, type ServiceResult } from "../../utils/entityDiagnostics.js";
 
 export interface AccountFetchOptions {
   /** When true, enables all supported populate steps and overrides granular populate flags. */
@@ -110,7 +110,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
           code: "SOURCE_UNAVAILABLE",
           severity: "error",
           message: "Failed to populate market prices for account.",
-          path: "$",
+          paths: ["$"],
           entityId: result.owner,
           source: "priceService",
           originalValue: error instanceof Error ? error.message : String(error),
@@ -126,7 +126,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
           code: "SOURCE_UNAVAILABLE",
           severity: "error",
           message: "Failed to populate user rewards for account.",
-          path: "$.userRewards",
+          paths: ["$.userRewards"],
           entityId: result.owner,
           source: "rewardsService",
           originalValue: error instanceof Error ? error.message : String(error),
@@ -134,7 +134,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
       }
     }
 
-    return { result, errors };
+    return { result, errors: compressDataIssues(errors) };
   }
 
   async fetchSubAccount(
@@ -147,14 +147,14 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     const fetched = await this.adapter.fetchSubAccount(chainId, subAccount, vaults);
     const errors: DataIssue[] = [...fetched.errors];
     const sa = fetched.result;
-    if (!sa) return { result: undefined, errors };
+    if (!sa) return { result: undefined, errors: compressDataIssues(errors) };
 
     if (resolvedOptions.populateVaults === false) {
-      return { result: new SubAccount(sa) as SubAccount<TVaultEntity>, errors };
+      return { result: new SubAccount(sa) as SubAccount<TVaultEntity>, errors: compressDataIssues(errors) };
     }
 
     const addresses = vaults?.length ? vaults : collectVaultAddressesFromSubAccountPositionsAndLiquidity(sa);
-    if (addresses.length === 0) return { result: new SubAccount(sa) as SubAccount<TVaultEntity>, errors };
+    if (addresses.length === 0) return { result: new SubAccount(sa) as SubAccount<TVaultEntity>, errors: compressDataIssues(errors) };
 
     const tempAccount = new Account<never>({
       chainId,
@@ -162,7 +162,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
       subAccounts: { [getAddress(sa.account)]: sa },
     });
     errors.push(...(await tempAccount.populateVaults(this.vaultMetaService, this.buildVaultFetchOptions(resolvedOptions))));
-    return { result: tempAccount.getSubAccount(getAddress(sa.account)), errors };
+    return { result: tempAccount.getSubAccount(getAddress(sa.account)), errors: compressDataIssues(errors) };
   }
 
   async populateVaults(accounts: Account<never>[], options?: AccountFetchOptions): Promise<ServiceResult<Account<TVaultEntity>[]>> {
@@ -182,7 +182,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
               code: "SOURCE_UNAVAILABLE",
               severity: "error",
               message: "Failed to populate vault entities for account.",
-              path: "$",
+              paths: ["$"],
               entityId: account.owner,
               source: "vaultMetaService",
               originalValue: error instanceof Error ? error.message : String(error),
@@ -191,7 +191,7 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
           })
       )
     );
-    return { result, errors };
+    return { result, errors: compressDataIssues(errors) };
   }
 
   private buildVaultFetchOptions(options?: AccountFetchOptions): VaultFetchOptions | undefined {

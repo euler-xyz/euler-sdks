@@ -165,7 +165,7 @@ function useSdkReady() {
 export type DiagnosticIssue = {
   severity?: "info" | "warning" | "error";
   code?: string;
-  path?: string;
+  paths?: string[];
   message?: string;
   source?: string;
   entityId?: string;
@@ -196,7 +196,11 @@ function isServiceResult<T>(value: MaybeServiceResult<T>): value is { result: T;
 }
 
 function issueLabel(issue: DiagnosticIssue): string {
-  return `${issue.code ?? "UNKNOWN"} [${issue.severity ?? "warning"}] ${issue.path ?? "$"}`;
+  return `${issue.code ?? "UNKNOWN"} [${issue.severity ?? "warning"}] ${(issue.paths ?? ["$"]).join(", ")}`;
+}
+
+function getDiagnosticPaths(issue: DiagnosticIssue): string[] {
+  return issue.paths?.length ? issue.paths : ["$"];
 }
 
 function parseDiagnosticPath(path: string | undefined): Array<string | number> {
@@ -243,17 +247,19 @@ export function unwrapServiceResultWithDiagnostics<T>(
 
   const diagnostics = response.errors ?? [];
   const diagnosticsWithOwner = diagnostics.map((issue) => {
-    const ownerRef = getOwnerForDiagnosticPath(response.result, issue.path);
-    if (ownerRef === null || typeof ownerRef !== "object") {
+    const ownerRefs = getDiagnosticPaths(issue).map((path) =>
+      getOwnerForDiagnosticPath(response.result, path)
+    );
+    if (ownerRefs.some((ownerRef) => ownerRef === null || typeof ownerRef !== "object")) {
       console.error(`[sdk diagnostics] ${operation}: invalid ownerRef`, {
         issue,
-        ownerRef,
+        ownerRefs,
       });
     }
 
     return {
       ...issue,
-      ownerRef,
+      ownerRefs,
     };
   });
   console.log(`[sdk service result] ${operation}`, {
@@ -276,8 +282,14 @@ function extractVaultIndex(path: string | undefined): number | undefined {
   return Number(match[1]);
 }
 
+function extractVaultIndexFromIssue(issue: DiagnosticIssue): number | undefined {
+  return getDiagnosticPaths(issue)
+    .map((path) => extractVaultIndex(path))
+    .find((index): index is number => index !== undefined);
+}
+
 function isVaultFetchFailureIssue(issue: DiagnosticIssue): boolean {
-  return issue.code === "SOURCE_UNAVAILABLE" && extractVaultIndex(issue.path) !== undefined;
+  return issue.code === "SOURCE_UNAVAILABLE" && extractVaultIndexFromIssue(issue) !== undefined;
 }
 
 function formatIssueRaw(issue: DiagnosticIssue): string {
@@ -359,7 +371,7 @@ export function useVerifiedVaultsWithDiagnostics(
       const diagnostics: DiagnosticIssue[] = fetched.diagnostics.map((issue) => {
         if (issue.entityId && isAddress(issue.entityId)) return issue;
 
-        const vaultIndex = extractVaultIndex(issue.path);
+        const vaultIndex = extractVaultIndexFromIssue(issue);
         if (vaultIndex === undefined) return issue;
 
         const rowVault = rawVaults[vaultIndex];
@@ -369,7 +381,7 @@ export function useVerifiedVaultsWithDiagnostics(
       });
 
       for (const issue of diagnostics) {
-        const vaultIndex = extractVaultIndex(issue.path);
+        const vaultIndex = extractVaultIndexFromIssue(issue);
         const issueAddress = issue.entityId && isAddress(issue.entityId)
           ? issue.entityId.toLowerCase()
           : undefined;
@@ -474,7 +486,7 @@ export function useVaultDetailWithDiagnostics(
           code: "SOURCE_UNAVAILABLE",
           severity: "error",
           message,
-          path: "$",
+          paths: ["$"],
           source: "eVaultService.fetchVault",
           entityId: address,
           originalValue: address,
