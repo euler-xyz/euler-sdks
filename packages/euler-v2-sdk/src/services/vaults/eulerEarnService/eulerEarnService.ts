@@ -43,7 +43,7 @@ export interface IEulerEarnService
     chainId: number,
     vault: Address,
     options?: EulerEarnFetchOptions
-  ): Promise<ServiceResult<EulerEarn>>;
+  ): Promise<ServiceResult<EulerEarn | undefined>>;
   fetchVaults(
     chainId: number,
     vaults: Address[],
@@ -112,37 +112,24 @@ export class EulerEarnService implements IEulerEarnService {
     chainId: number,
     vault: Address,
     options?: EulerEarnFetchOptions
-  ): Promise<ServiceResult<EulerEarn>> {
-    const resolvedOptions = this.resolveFetchOptions(options);
-    const fetched = await this.adapter.fetchVaults(chainId, [vault]);
-    const errors: DataIssue[] = [...fetched.errors];
-    const fetchedVault = fetched.result[0];
-    if (!fetchedVault) {
-      throw new Error(`Vault not found for ${vault}`);
+  ): Promise<ServiceResult<EulerEarn | undefined>> {
+    const fetched = await this.fetchVaults(chainId, [vault], options);
+    const result = fetched.result[0];
+    const errors = fetched.errors.map((issue) =>
+      mapDataIssuePaths(issue, normalizeTopLevelVaultArrayPath)
+    );
+    if (result === undefined) {
+      errors.push({
+        code: "SOURCE_UNAVAILABLE",
+        severity: "error",
+        message: `Vault not found for ${getAddress(vault)}.`,
+        paths: ["$"],
+        entityId: getAddress(vault),
+        source: "eulerEarnService",
+        originalValue: getAddress(vault),
+      });
     }
-    const eulerEarn = new EulerEarn(fetchedVault);
-    if (resolvedOptions.populateStrategyVaults) {
-      errors.push(
-        ...(await this.populateStrategyVaults(
-          [eulerEarn],
-          resolvedOptions.eVaultFetchOptions,
-          () => "$"
-        ))
-      );
-    }
-    if (resolvedOptions.populateMarketPrices) {
-      errors.push(...(await this.populateMarketPrices([eulerEarn], () => "$")));
-    }
-    if (resolvedOptions.populateRewards) {
-      errors.push(...(await this.populateRewards([eulerEarn])));
-    }
-    if (resolvedOptions.populateIntrinsicApy) {
-      errors.push(...(await this.populateIntrinsicApy([eulerEarn])));
-    }
-    if (resolvedOptions.populateLabels) {
-      errors.push(...(await this.populateLabels([eulerEarn])));
-    }
-    return { result: eulerEarn, errors: compressDataIssues(errors) };
+    return { result, errors: compressDataIssues(errors) };
   }
 
   async fetchVaults(

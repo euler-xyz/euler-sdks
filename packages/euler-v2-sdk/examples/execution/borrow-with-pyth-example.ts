@@ -107,10 +107,15 @@ async function borrowWithPythExample() {
   });
 
   // Fetch vault entities — the Pyth plugin needs oracle adapter info from these
-  const [borrowVault, collateralVault] = await Promise.all([
+  const [borrowVaultResult, collateralVaultResult] = await Promise.all([
     sdk.eVaultService.fetchVault(mainnet.id, WBTC_BORROW_VAULT),
     sdk.eVaultService.fetchVault(mainnet.id, LBTC_COLLATERAL_VAULT),
   ]);
+  const borrowVault = borrowVaultResult.result;
+  const collateralVault = collateralVaultResult.result;
+  if (!borrowVault || !collateralVault) {
+    throw new Error("Failed to load borrow or collateral vault");
+  }
 
   console.log(`Borrow vault:     ${borrowVault.shares.name} (${borrowVault.asset.symbol})`);
   console.log(`Collateral vault: ${collateralVault.shares.name} (${collateralVault.asset.symbol})`);

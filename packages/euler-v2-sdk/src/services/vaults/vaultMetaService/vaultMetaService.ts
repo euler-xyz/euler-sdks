@@ -77,14 +77,9 @@ export type VaultServiceEntry<TEntity = VaultEntity> =
 
 /** Meta vault service; TEntity is the union of all registered vault entity types (default EVault | EulerEarn). Extend with a wider union when registering more services. */
 export interface IVaultMetaService<TEntity = VaultEntity>
-  extends Omit<IVaultService<TEntity, VaultMetaPerspective>, "fetchVault" | "factory"> {
+  extends Omit<IVaultService<TEntity, VaultMetaPerspective>, "factory"> {
   /** Register a vault service; use { type, service } to make the type available to getFactoryByType(chainId, type). */
   registerVaultService(entry: VaultServiceEntry<TEntity>): void;
-  /** Fetches a single vault; returns undefined if the vault type is unknown (no matching registered service). */
-  fetchVault(
-    chainId: number,
-    vault: Address
-  ): Promise<ServiceResult<TEntity | undefined>>;
   /** Returns vault type for the given vault address, or undefined if unknown. */
   fetchVaultType(chainId: number, vault: Address): Promise<VaultTypeString | undefined>;
   /** Returns vault types for the given vault addresses (keyed by normalized vault address). */
@@ -180,12 +175,29 @@ export class VaultMetaService<TEntity = VaultEntity>
 
   async fetchVault(
     chainId: number,
-    vault: Address
+    vault: Address,
+    options?: VaultFetchOptions
   ): Promise<ServiceResult<TEntity | undefined>> {
-    const vaultToService = await this.getVaultToService(chainId, [vault]);
-    const service = vaultToService.get(getAddress(vault));
-    if (!service) return { result: undefined, errors: [] };
-    return service.fetchVault(chainId, vault);
+    const fetched = await this.fetchVaults(chainId, [vault], options);
+    const result = fetched.result[0];
+    const errors = fetched.errors.map((issue) =>
+      mapDataIssuePaths(issue, normalizeTopLevelVaultArrayPath)
+    );
+    if (result === undefined) {
+      errors.push({
+        code: "SOURCE_UNAVAILABLE",
+        severity: "error",
+        message: `Vault not found for ${getAddress(vault)}.`,
+        paths: ["$"],
+        entityId: getAddress(vault),
+        source: "vaultMetaService",
+        originalValue: getAddress(vault),
+      });
+    }
+    return {
+      result,
+      errors: compressDataIssues(errors),
+    };
   }
 
   async fetchVaultType(chainId: number, vault: Address): Promise<VaultTypeString | undefined> {

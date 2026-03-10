@@ -30,7 +30,7 @@ export interface IVaultService<TVault, TPerspective> {
     chainId: number,
     vault: Address,
     options?: VaultFetchOptions
-  ): Promise<ServiceResult<TVault>>;
+  ): Promise<ServiceResult<TVault | undefined>>;
   fetchVaults(
     chainId: number,
     vaults: Address[],

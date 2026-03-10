@@ -51,7 +51,7 @@ export interface IEVaultService
     chainId: number,
     vault: Address,
     options?: EVaultFetchOptions
-  ): Promise<ServiceResult<EVault>>;
+  ): Promise<ServiceResult<EVault | undefined>>;
   fetchVaults(
     chainId: number,
     vaults: Address[],
@@ -119,34 +119,24 @@ export class EVaultService implements IEVaultService {
     chainId: number,
     vault: Address,
     options?: EVaultFetchOptions
-  ): Promise<ServiceResult<EVault>> {
-    const resolvedOptions = this.resolveFetchOptions(options);
-    const fetched = await this.adapter.fetchVaults(chainId, [vault]);
-    const errors: DataIssue[] = fetched.errors.map((issue) =>
-      mapDataIssuePaths(issue, normalizeSingleVaultPath)
+  ): Promise<ServiceResult<EVault | undefined>> {
+    const fetched = await this.fetchVaults(chainId, [vault], options);
+    const result = fetched.result[0];
+    const errors = fetched.errors.map((issue) =>
+      mapDataIssuePaths(issue, normalizeTopLevelVaultArrayPath)
     );
-    const fetchedVault = fetched.result[0];
-    if (!fetchedVault) {
-      throw new Error(`Vault not found for ${vault}`);
+    if (result === undefined) {
+      errors.push({
+        code: "SOURCE_UNAVAILABLE",
+        severity: "error",
+        message: `Vault not found for ${getAddress(vault)}.`,
+        paths: ["$"],
+        entityId: getAddress(vault),
+        source: "eVaultService",
+        originalValue: getAddress(vault),
+      });
     }
-    const eVault = new EVault(fetchedVault);
-
-    if (resolvedOptions.populateCollaterals) {
-      errors.push(...(await this.populateCollaterals([eVault], () => "$")));
-    }
-    if (resolvedOptions.populateMarketPrices) {
-      errors.push(...(await this.populateMarketPrices([eVault], () => "$")));
-    }
-    if (resolvedOptions.populateRewards) {
-      errors.push(...(await this.populateRewards([eVault])));
-    }
-    if (resolvedOptions.populateIntrinsicApy) {
-      errors.push(...(await this.populateIntrinsicApy([eVault])));
-    }
-    if (resolvedOptions.populateLabels) {
-      errors.push(...(await this.populateLabels([eVault])));
-    }
-    return { result: eVault, errors: compressDataIssues(errors) };
+    return { result, errors: compressDataIssues(errors) };
   }
 
   async fetchVaults(

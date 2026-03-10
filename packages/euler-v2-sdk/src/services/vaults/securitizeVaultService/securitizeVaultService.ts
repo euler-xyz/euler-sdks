@@ -89,28 +89,24 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     chainId: number,
     vault: Address,
     options?: VaultFetchOptions
-  ): Promise<ServiceResult<SecuritizeCollateralVault>> {
-    const resolvedOptions = this.resolveFetchOptions(options);
-    const fetched = await this.adapter.fetchVaults(chainId, [vault]);
-    const errors: DataIssue[] = [...fetched.errors];
-    const fetchedVault = fetched.result[0];
-    if (!fetchedVault) {
-      throw new Error(`Securitize vault not found for ${vault}`);
+  ): Promise<ServiceResult<SecuritizeCollateralVault | undefined>> {
+    const fetched = await this.fetchVaults(chainId, [vault], options);
+    const result = fetched.result[0];
+    const errors = fetched.errors.map((issue) =>
+      mapDataIssuePaths(issue, normalizeTopLevelVaultArrayPath)
+    );
+    if (result === undefined) {
+      errors.push({
+        code: "SOURCE_UNAVAILABLE",
+        severity: "error",
+        message: `Securitize vault not found for ${getAddress(vault)}.`,
+        paths: ["$"],
+        entityId: getAddress(vault),
+        source: "securitizeVaultService",
+        originalValue: getAddress(vault),
+      });
     }
-    const entity = new SecuritizeCollateralVault(fetchedVault);
-    if (resolvedOptions.populateMarketPrices) {
-      errors.push(...(await this.populateMarketPrices([entity], () => "$")));
-    }
-    if (resolvedOptions.populateRewards) {
-      errors.push(...(await this.populateRewards([entity])));
-    }
-    if (resolvedOptions.populateIntrinsicApy) {
-      errors.push(...(await this.populateIntrinsicApy([entity])));
-    }
-    if (resolvedOptions.populateLabels) {
-      errors.push(...(await this.populateLabels([entity])));
-    }
-    return { result: entity, errors };
+    return { result, errors: compressDataIssues(errors) };
   }
 
   async fetchVaults(

@@ -38,6 +38,10 @@ async function fetchVaultDetailsExample() {
   if (errors.length > 0) {
     console.log(`Diagnostics: ${errors.length} issues`);
   }
+  if (!vault) {
+    console.error(`Vault ${VAULT_ADDRESS} was not found.`);
+    return;
+  }
 
   // Vault overview
   console.log("=".repeat(80));

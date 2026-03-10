@@ -39,15 +39,16 @@ When `populateMarketPrices` is set, the service populates:
 
 ```typescript
 // EVault with prices and collateral prices
-const vault = await sdk.eVaultService.fetchVault(1, '0x...', {
+const { result: vault } = await sdk.eVaultService.fetchVault(1, '0x...', {
   populateCollaterals: true,
   populateMarketPrices: true,
 })
+
 vault.marketPriceUsd               // => 1000000000000000000n ($1.00)
 vault.collaterals[0].marketPriceUsd // => 2500000000000000000000n ($2500.00)
 
 // EulerEarn / Securitize with prices
-const ee = await sdk.eulerEarnService.fetchVault(1, '0x...', { populateMarketPrices: true })
+const { result: ee } = await sdk.eulerEarnService.fetchVault(1, '0x...', { populateMarketPrices: true })
 ee.marketPriceUsd  // => PriceWad
 ```
 
@@ -106,7 +107,7 @@ const sdk = await buildEulerSDK({
 })
 
 // Option 1: Auto-populated prices via fetch options (recommended)
-const vault = await sdk.eVaultService.fetchVault(1, '0x...', {
+const { result: vault } = await sdk.eVaultService.fetchVault(1, '0x...', {
   populateCollaterals: true,
   populateMarketPrices: true,
 })
@@ -114,13 +115,13 @@ vault.marketPriceUsd                 // already populated
 vault.collaterals[0].marketPriceUsd  // already populated
 
 // Option 2: On-demand price helpers
-const vault2 = await sdk.eVaultService.fetchVault(1, '0x...')
+const { result: vault2 } = await sdk.eVaultService.fetchVault(1, '0x...')
 
 // Risk prices (sync — from oracle data, all PriceWad = 18-decimal bigint)
 const assetRisk = vault2.assetRiskPrice
 // => { priceLiquidation: 1000000000000000000n, priceBorrowing: 1000100000000000000n }
 
-const collateralVault = await sdk.eVaultService.fetchVault(1, '0x...')
+const { result: collateralVault } = await sdk.eVaultService.fetchVault(1, '0x...')
 const collateralRisk = vault2.getCollateralRiskPrice(collateralVault)
 
 // USD market prices (async, PriceWad)

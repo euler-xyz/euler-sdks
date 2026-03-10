@@ -446,7 +446,7 @@ export function useVerifiedVaultsWithDiagnostics(
 
 export function useVaultDetail(chainId: number, address: string | undefined) {
   const { sdk, enabled } = useSdkReady();
-  return useQuery<EVault>({
+  return useQuery<EVault | undefined>({
     queryKey: ["vault", chainId, address],
     queryFn: async () =>
       unwrapServiceResult(
@@ -472,35 +472,17 @@ export function useVaultDetailWithDiagnostics(
   }>({
     queryKey: ["vaultWithDiagnostics", chainId, address],
     queryFn: async () => {
-      try {
-        const fetched = unwrapServiceResultWithDiagnostics(
-          "eVaultService.fetchVault",
-          await sdk!.eVaultService.fetchVault(chainId, address as Address, {
-            populateAll: true,
-          })
-        );
-        return {
-          vault: fetched.result,
-          diagnostics: fetched.diagnostics,
-          failedVaults: buildFailedVaultFetches(fetched.diagnostics),
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const diagnostics: DiagnosticIssue[] = [{
-          code: "SOURCE_UNAVAILABLE",
-          severity: "error",
-          message,
-          paths: ["$"],
-          source: "eVaultService.fetchVault",
-          entityId: address,
-          originalValue: address,
-        }];
-        return {
-          vault: undefined,
-          diagnostics,
-          failedVaults: buildFailedVaultFetches(diagnostics),
-        };
-      }
+      const fetched = unwrapServiceResultWithDiagnostics(
+        "eVaultService.fetchVault",
+        await sdk!.eVaultService.fetchVault(chainId, address as Address, {
+          populateAll: true,
+        })
+      );
+      return {
+        vault: fetched.result,
+        diagnostics: fetched.diagnostics,
+        failedVaults: buildFailedVaultFetches(fetched.diagnostics),
+      };
     },
     enabled: enabled && !!address,
     staleTime: 1_000,
@@ -509,7 +491,7 @@ export function useVaultDetailWithDiagnostics(
 
 export function useEulerEarnDetail(chainId: number, address: string | undefined) {
   const { sdk, enabled } = useSdkReady();
-  return useQuery<EulerEarn>({
+  return useQuery<EulerEarn | undefined>({
     queryKey: ["eulerEarn", chainId, address],
     queryFn: async () =>
       unwrapServiceResult(
