@@ -254,7 +254,7 @@ const { result: allVaults } = await sdk.vaultMetaService.fetchVerifiedVaults(1, 
 Use `oracleAdapterService` to get adapter provider/methodology/check metadata for oracle adapter addresses:
 
 ```typescript
-const adapterMap = await sdk.oracleAdapterService.getOracleAdapterMap(1);
+const adapterMap = await sdk.oracleAdapterService.fetchOracleAdapterMap(1);
 const metadata = adapterMap['0xAdapterAddress...'.toLowerCase()];
 console.log(metadata?.provider, metadata?.methodology, metadata?.checks);
 ```

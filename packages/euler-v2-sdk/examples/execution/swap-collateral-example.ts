@@ -115,7 +115,7 @@ async function swapCollateralExample() {
   // Update account data with the fetched sub-account
   accountData.subAccounts = { [getAddress(subAccountAfterBorrow!.account)]: subAccountAfterBorrow! };
 
-  const swapQuotes = await sdk.swapService.getDepositQuote({
+  const swapQuotes = await sdk.swapService.fetchDepositQuote({
     chainId: mainnet.id,
     fromVault: EULER_PRIME_USDC_VAULT,
     toVault: EULER_PRIME_WETH_VAULT,

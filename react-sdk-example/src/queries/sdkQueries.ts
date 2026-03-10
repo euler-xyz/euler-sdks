@@ -584,7 +584,7 @@ export function useChainRewards() {
   return useQuery({
     queryKey: ["chainRewards", chainId],
     queryFn: async () => {
-      const map = await sdk!.rewardsService.getChainRewards(chainId);
+      const map = await sdk!.rewardsService.fetchChainRewards(chainId);
       // Convert Map to a serialisable array for display
       const entries: { vaultAddress: string; info: VaultRewardInfo }[] = [];
       for (const [vaultAddress, info] of map) {
@@ -602,7 +602,7 @@ export function useOracleAdapterMetadataMap(chainId: number) {
   const { sdk, enabled } = useSdkReady();
   return useQuery<OracleAdapterMetadataMap>({
     queryKey: ["oracleAdapterMetadataMap", chainId],
-    queryFn: async () => sdk!.oracleAdapterService.getOracleAdapterMap(chainId),
+    queryFn: async () => sdk!.oracleAdapterService.fetchOracleAdapterMap(chainId),
     enabled: enabled && Number.isFinite(chainId),
     staleTime: 10 * MINUTE,
   });

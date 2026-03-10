@@ -31,8 +31,8 @@ export interface IntrinsicApyServiceConfig {
 // ---------------------------------------------------------------------------
 
 export interface IIntrinsicApyService {
-  getIntrinsicApy(chainId: number, assetAddress: Address): Promise<IntrinsicApyInfo | undefined>;
-  getChainIntrinsicApys(chainId: number): Promise<Map<string, IntrinsicApyInfo>>;
+  fetchIntrinsicApy(chainId: number, assetAddress: Address): Promise<IntrinsicApyInfo | undefined>;
+  fetchChainIntrinsicApys(chainId: number): Promise<Map<string, IntrinsicApyInfo>>;
   populateIntrinsicApy(vaults: ERC4626Vault[]): Promise<void>;
 }
 

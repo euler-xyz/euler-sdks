@@ -88,12 +88,12 @@ export interface RewardsServiceConfig {
 // ---------------------------------------------------------------------------
 
 export interface IRewardsService {
-  getVaultRewards(chainId: number, vaultAddress: Address): Promise<VaultRewardInfo | undefined>;
-  getChainRewards(chainId: number): Promise<Map<string, VaultRewardInfo>>;
+  fetchVaultRewards(chainId: number, vaultAddress: Address): Promise<VaultRewardInfo | undefined>;
+  fetchChainRewards(chainId: number): Promise<Map<string, VaultRewardInfo>>;
   populateRewards(vaults: ERC4626Vault[]): Promise<void>;
-  getUserRewards(chainId: number, address: Address): Promise<UserReward[]>;
-  getFuulTotals(address: Address): Promise<FuulTotals>;
-  getFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]>;
+  fetchUserRewards(chainId: number, address: Address): Promise<UserReward[]>;
+  fetchFuulTotals(address: Address): Promise<FuulTotals>;
+  fetchFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]>;
 }
 
 // ---------------------------------------------------------------------------

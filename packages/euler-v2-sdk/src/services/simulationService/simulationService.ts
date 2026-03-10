@@ -96,7 +96,7 @@ export type SimulationStateOverrideOptions = {
 };
 
 export interface ISimulationService<TVaultEntity extends VaultEntity = VaultEntity> {
-  getStateOverrides(
+  deriveStateOverrides(
     chainId: number,
     account: Address,
     transactionPlan: TransactionPlan,
@@ -132,7 +132,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
     private eulerLabelsService?: IEulerLabelsService,
     private walletService?: IWalletService,
   ) {
-    const emptyPositionsAdapter = { getAccountVaults: async () => ({}) };
+    const emptyPositionsAdapter = { fetchAccountVaults: async () => ({}) };
     this.accountAdapter = new AccountOnchainAdapter(
       providerService,
       deploymentService,
@@ -140,7 +140,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
     );
   }
 
-  async getStateOverrides(
+  async deriveStateOverrides(
     chainId: number,
     account: Address,
     transactionPlan: TransactionPlan,
@@ -179,7 +179,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
     const useStateOverrides = options?.stateOverrides ?? true;
     let effectiveStateOverrides: StateOverride | undefined = undefined;
     if (useStateOverrides) {
-      effectiveStateOverrides = await this.getStateOverrides(chainId, owner, transactionPlan);
+      effectiveStateOverrides = await this.deriveStateOverrides(chainId, owner, transactionPlan);
     }
 
     const batch = transactionPlan.flatMap((item) => (item.type === "evcBatch" ? item.items : []));
@@ -190,7 +190,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
         canExecute: false,
       };
     }
-    const diagnostics = await this.getSimulationDiagnostics(
+    const diagnostics = await this.fetchSimulationDiagnostics(
       chainId,
       owner,
       transactionPlan,
@@ -618,7 +618,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
     return { batchResults, accountStatusErrors, vaultStatusErrors };
   }
 
-  private async getSimulationDiagnostics(
+  private async fetchSimulationDiagnostics(
     chainId: number,
     account: Address,
     transactionPlan?: TransactionPlan,

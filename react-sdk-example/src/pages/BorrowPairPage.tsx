@@ -494,7 +494,7 @@ export function BorrowPairPage() {
         throw new Error("Invalid multiply amount.");
       }
 
-      const providers = await sdk.swapService.getProviders(chainId);
+      const providers = await sdk.swapService.fetchProviders(chainId);
       if (cancelled || quoteRequestId.current !== requestId) return;
       setProvidersCount(providers.length);
 
@@ -505,7 +505,7 @@ export function BorrowPairPage() {
       const providersTotal = providers.length;
       const fetchProviderQuote = async (provider: string) => {
         try {
-          const quotes = await sdk.swapService.getDepositQuote({
+          const quotes = await sdk.swapService.fetchDepositQuote({
             chainId,
             fromVault: debtVault.address,
             toVault: collateralVault.address,
@@ -584,7 +584,7 @@ export function BorrowPairPage() {
     }
   }, [quoteCards, selectedProvider]);
 
-  const getAccountData = useCallback(async () => {
+  const fetchAccountData = useCallback(async () => {
     if (accountData) return accountData;
     if (!sdk || !walletAddress) throw new Error("Wallet not ready");
     return unwrapServiceResult<any>(
@@ -617,7 +617,7 @@ export function BorrowPairPage() {
     setQuoteFailure(null);
 
     (async () => {
-      const account = await getAccountData();
+      const account = await fetchAccountData();
 
       let liabilityRaw: bigint;
       try {
@@ -762,7 +762,7 @@ export function BorrowPairPage() {
     isSubmitting,
     multiplyAmount,
     collateralAmount,
-    getAccountData,
+    fetchAccountData,
     selectedQuote,
     selectedProvider,
     targetSubAccount,
@@ -823,7 +823,7 @@ export function BorrowPairPage() {
       }
 
       setIsSubmitting(true);
-      const account = await getAccountData();
+      const account = await fetchAccountData();
 
       let plan = sdk!.executionService.planBorrow({
         vault: debtVault.address,
@@ -912,7 +912,7 @@ export function BorrowPairPage() {
       }
 
       setIsSubmitting(true);
-      const account = await getAccountData();
+      const account = await fetchAccountData();
 
       let plan;
       if (collateralVault.asset.address.toLowerCase() === debtVault.asset.address.toLowerCase()) {

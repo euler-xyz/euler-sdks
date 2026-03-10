@@ -586,7 +586,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
           const liqVault = p.liquidity.vault as any;
           let uoaRate: bigint | undefined;
           try {
-            const priced = await priceService.getUnitOfAccountUsdRateWithDiagnostics(
+            const priced = await priceService.fetchUnitOfAccountUsdRateWithDiagnostics(
               liqVault,
               `${positionPath}.liquidity`
             );
@@ -684,7 +684,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
    */
   async populateUserRewards(rewardsService: IRewardsService): Promise<DataIssue[]> {
     try {
-      this.userRewards = await rewardsService.getUserRewards(this.chainId, this.owner);
+      this.userRewards = await rewardsService.fetchUserRewards(this.chainId, this.owner);
       this.populated.userRewards = true;
       return [];
     } catch (error) {

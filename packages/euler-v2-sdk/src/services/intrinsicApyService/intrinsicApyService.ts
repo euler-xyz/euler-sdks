@@ -122,15 +122,15 @@ export class IntrinsicApyService implements IIntrinsicApyService {
   // Public API
   // -----------------------------------------------------------------------
 
-  async getIntrinsicApy(
+  async fetchIntrinsicApy(
     chainId: number,
     assetAddress: Address
   ): Promise<IntrinsicApyInfo | undefined> {
-    const chainMap = await this.getChainIntrinsicApys(chainId);
+    const chainMap = await this.fetchChainIntrinsicApys(chainId);
     return chainMap.get(assetAddress.toLowerCase());
   }
 
-  async getChainIntrinsicApys(
+  async fetchChainIntrinsicApys(
     chainId: number
   ): Promise<Map<string, IntrinsicApyInfo>> {
     const results = await Promise.allSettled([
@@ -163,7 +163,7 @@ export class IntrinsicApyService implements IIntrinsicApyService {
 
     await Promise.all(
       Array.from(byChain.entries()).map(async ([chainId, chainVaults]) => {
-        const apyMap = await this.getChainIntrinsicApys(chainId);
+        const apyMap = await this.fetchChainIntrinsicApys(chainId);
         for (const vault of chainVaults) {
           const info = apyMap.get(vault.asset.address.toLowerCase());
           if (info) {

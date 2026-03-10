@@ -191,15 +191,15 @@ export class RewardsService implements IRewardsService {
   // Public API
   // -----------------------------------------------------------------------
 
-  async getVaultRewards(
+  async fetchVaultRewards(
     chainId: number,
     vaultAddress: Address
   ): Promise<VaultRewardInfo | undefined> {
-    const chainMap = await this.getChainRewards(chainId);
+    const chainMap = await this.fetchChainRewards(chainId);
     return chainMap.get(vaultAddress.toLowerCase());
   }
 
-  async getChainRewards(chainId: number): Promise<Map<string, VaultRewardInfo>> {
+  async fetchChainRewards(chainId: number): Promise<Map<string, VaultRewardInfo>> {
     const cached = this.cache.get(chainId);
     if (cached && Date.now() - cached.timestamp < this.cacheTtlMs) {
       return cached.data;
@@ -236,7 +236,7 @@ export class RewardsService implements IRewardsService {
 
     await Promise.all(
       Array.from(byChain.entries()).map(async ([chainId, chainVaults]) => {
-        const rewardsMap = await this.getChainRewards(chainId);
+        const rewardsMap = await this.fetchChainRewards(chainId);
         for (const vault of chainVaults) {
           vault.rewards = rewardsMap.get(vault.address.toLowerCase());
           vault.populated.rewards = true;
@@ -245,7 +245,7 @@ export class RewardsService implements IRewardsService {
     );
   }
 
-  async getUserRewards(chainId: number, address: Address): Promise<UserReward[]> {
+  async fetchUserRewards(chainId: number, address: Address): Promise<UserReward[]> {
     const [merklRewards, brevisRewards, fuulRewards] = await Promise.all([
       this.enableMerkl ? this.fetchMerklUserRewards(chainId, address) : Promise.resolve([]),
       this.enableBrevis && this.brevisChainIds.includes(chainId)
@@ -520,14 +520,14 @@ export class RewardsService implements IRewardsService {
   // Internal/Public: Fuul user rewards
   // -----------------------------------------------------------------------
 
-  async getFuulTotals(address: Address): Promise<FuulTotals> {
+  async fetchFuulTotals(address: Address): Promise<FuulTotals> {
     if (!this.fuulTotalsUrl) return { claimed: [], unclaimed: [] };
     const separator = this.fuulTotalsUrl.includes("?") ? "&" : "?";
     const url = `${this.fuulTotalsUrl}${separator}user_identifier=${encodeURIComponent(address)}&user_identifier_type=evm_address`;
     return this.queryFuulTotals(url).catch(() => ({ claimed: [], unclaimed: [] }));
   }
 
-  async getFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]> {
+  async fetchFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]> {
     if (!this.fuulClaimChecksUrl) return [];
     return this.queryFuulClaimChecks(this.fuulClaimChecksUrl, {
       userIdentifier: address,
@@ -539,7 +539,7 @@ export class RewardsService implements IRewardsService {
     chainId: number,
     address: Address
   ): Promise<UserReward[]> {
-    const totals = await this.getFuulTotals(address);
+    const totals = await this.fetchFuulTotals(address);
     const rewards: UserReward[] = [];
 
     for (const reward of totals.unclaimed) {

@@ -147,7 +147,7 @@ export class VaultMetaService<TEntity = VaultEntity>
     return map;
   }
 
-  private async getVaultToService(
+  private async fetchVaultToService(
     chainId: number,
     vaultAddresses: Address[]
   ): Promise<Map<Address, RegisteredVaultService<TEntity>>> {
@@ -201,7 +201,7 @@ export class VaultMetaService<TEntity = VaultEntity>
   }
 
   async fetchVaultType(chainId: number, vault: Address): Promise<VaultTypeString | undefined> {
-    const vaultToService = await this.getVaultToService(chainId, [vault]);
+    const vaultToService = await this.fetchVaultToService(chainId, [vault]);
     const service = vaultToService.get(getAddress(vault));
     if (!service) return undefined;
     return this.serviceToType.get(service);
@@ -213,7 +213,7 @@ export class VaultMetaService<TEntity = VaultEntity>
   ): Promise<Partial<Record<Address, VaultTypeString>>> {
     if (vaults.length === 0) return {};
 
-    const vaultToService = await this.getVaultToService(chainId, vaults);
+    const vaultToService = await this.fetchVaultToService(chainId, vaults);
     const out: Partial<Record<Address, VaultTypeString>> = {};
     for (const vault of vaults) {
       const key = getAddress(vault);
@@ -233,7 +233,7 @@ export class VaultMetaService<TEntity = VaultEntity>
   ): Promise<ServiceResult<(TEntity | undefined)[]>> {
     if (vaults.length === 0) return { result: [], errors: [] };
     const errors: DataIssue[] = [];
-    const vaultToService = await this.getVaultToService(chainId, vaults);
+    const vaultToService = await this.fetchVaultToService(chainId, vaults);
     const result: (TEntity | undefined)[] = Array.from(
       { length: vaults.length },
       () => undefined

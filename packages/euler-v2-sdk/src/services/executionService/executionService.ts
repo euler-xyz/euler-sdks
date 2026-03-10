@@ -824,7 +824,7 @@ export class ExecutionService implements IExecutionService {
 
   /**
    * Encodes EVC batch items for repaying debt by swapping collateral (withdraw from vaultIn → swap → verify/repay debtMax).
-   * Swap quote must come from swapService.getRepayQuotes() or match the same structure (verify type debtMax).
+   * Swap quote must come from swapService.fetchRepayQuotes() or match the same structure (verify type debtMax).
    *
    * @param args - Repay-with-swap encoding arguments
    * @param args.chainId - Chain ID (used for EVC disableController when applicable)
@@ -953,7 +953,7 @@ export class ExecutionService implements IExecutionService {
 
   /**
    * Encodes EVC batch items for swapping collateral: withdraw from vaultIn → swap → verify/skim to receiver; optional enable/disable collateral.
-   * Swap quote should come from swapService.getDepositQuote() or match the same structure (verify type skimMin).
+   * Swap quote should come from swapService.fetchDepositQuote() or match the same structure (verify type skimMin).
    *
    * @param args - Swap-collateral encoding arguments
    * @param args.chainId - Chain ID (used for EVC enableCollateral/disableCollateral)
@@ -1021,7 +1021,7 @@ export class ExecutionService implements IExecutionService {
 
   /**
    * Encodes EVC batch items for swapping debt: enableController → borrow from vaultIn → swap → verify/repay (debtMax).
-   * Swap quote should come from swapService.getRepayQuotes() or match the same structure (verify type debtMax).
+   * Swap quote should come from swapService.fetchRepayQuotes() or match the same structure (verify type debtMax).
    *
    * @param args - Swap-debt encoding arguments
    * @param args.chainId - Chain ID (used for EVC enableController/disableController)
@@ -2162,7 +2162,7 @@ export class ExecutionService implements IExecutionService {
    * Use when the repayment asset differs from the collateral asset.
    *
    * @param args - Repay-with-swap plan arguments
-   * @param args.swapQuote - Quote from swap service (e.g. getRepayQuotes); defines vaultIn, accountIn, accountOut, receiver, swap and verify steps
+   * @param args.swapQuote - Quote from swap service (e.g. fetchRepayQuotes); defines vaultIn, accountIn, accountOut, receiver, swap and verify steps
    * @param args.account - Account entity; used for chainId and positions (to compute isMax and maxWithdraw)
    * @returns Array of transaction plan items (EVC batch: withdraw, swap, verify/repay). Throws if positions not found or liability is zero.
    */
@@ -2248,7 +2248,7 @@ export class ExecutionService implements IExecutionService {
    * Builds a transaction plan for swapping collateral from one vault to another (withdraw → swap → deposit/skim).
    *
    * @param args - Swap-collateral plan arguments
-   * @param args.swapQuote - Quote from swap service (e.g. getDepositQuote); defines vaultIn, accountIn, accountOut, receiver, swap and verify (skimMin) steps
+   * @param args.swapQuote - Quote from swap service (e.g. fetchDepositQuote); defines vaultIn, accountIn, accountOut, receiver, swap and verify (skimMin) steps
    * @param args.account - Account entity; used for chainId and positions (to determine isMax and whether to enable collateral on destination)
    * @returns Array of transaction plan items (EVC batch: withdraw, swap, verify/skim, optional enable/disable collateral)
    */
@@ -2287,7 +2287,7 @@ export class ExecutionService implements IExecutionService {
    * Builds a transaction plan for swapping debt from one liability vault to another (borrow from source → swap → repay to destination).
    *
    * @param args - Swap-debt plan arguments
-   * @param args.swapQuote - Quote from swap service (e.g. getRepayQuotes for the new debt); defines vaultIn, accountIn, accountOut, swap and verify (debtMax) steps
+   * @param args.swapQuote - Quote from swap service (e.g. fetchRepayQuotes for the new debt); defines vaultIn, accountIn, accountOut, swap and verify (debtMax) steps
    * @param args.account - Account entity; used for chainId and controller state (enableController, isMax, disableControllerOnMax)
    * @returns Array of transaction plan items (EVC batch: enableController, borrow, swap, verify/repay, optional disableController)
    */

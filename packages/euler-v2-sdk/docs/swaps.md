@@ -20,7 +20,7 @@ The [orderlow router API](https://github.com/euler-xyz/euler-orderflow-router) i
 Withdraw collateral, swap it to the liability asset, and repay debt. Used when you want to reduce debt using existing collateral.
 
 ```typescript
-const quotes = await sdk.swapService.getRepayQuotes({
+const quotes = await sdk.swapService.fetchRepayQuotes({
   chainId: 1,
   fromVault: COLLATERAL_VAULT,
   fromAsset: USDC,
@@ -46,7 +46,7 @@ const plan = sdk.executionService.planRepayWithSwap({
 Withdraw from one collateral vault, swap, and deposit into another. Used for rebalancing collateral composition.
 
 ```typescript
-const quotes = await sdk.swapService.getDepositQuote({
+const quotes = await sdk.swapService.fetchDepositQuote({
   chainId: 1,
   fromVault: USDC_VAULT,
   toVault: WETH_VAULT,
@@ -70,7 +70,7 @@ const plan = sdk.executionService.planSwapCollateral({
 Borrow a new asset, swap it to the current debt asset, and repay. Used for refinancing into a different debt asset.
 
 ```typescript
-const quotes = await sdk.swapService.getRepayQuotes({
+const quotes = await sdk.swapService.fetchRepayQuotes({
   chainId: 1,
   fromVault: NEW_DEBT_VAULT,   // vault to borrow from
   fromAsset: USDC,
@@ -99,7 +99,7 @@ Open a leveraged position by depositing collateral, borrowing against it, swappi
 
 ```typescript
 // Get a swap quote: borrow USDT, swap to WETH
-const quotes = await sdk.swapService.getDepositQuote({
+const quotes = await sdk.swapService.fetchDepositQuote({
   chainId: 1,
   fromVault: LIABILITY_VAULT,  // vault to borrow from
   toVault: LONG_VAULT,         // vault to deposit swapped asset into
@@ -150,17 +150,17 @@ The swap API is a meta-aggregator — each call queries all available providers 
 
 ```typescript
 // Fetch available providers for a chain (cacheable for a long time)
-const providers = await sdk.swapService.getProviders(1)
+const providers = await sdk.swapService.fetchProviders(1)
 // ["1inch", "uniswap", "odos", "paraswap", ...]
 
 // Fetch a quote from a specific provider
-const quotes = await sdk.swapService.getDepositQuote({
+const quotes = await sdk.swapService.fetchDepositQuote({
   // ...same args as before
   provider: "1inch",
 })
 ```
 
-With the `getProviders` endpoint and `provider` filter, it is possible to build a [LlamaSwap](https://swap.defillama.com/)-like meta-aggregation UI by sending one request per provider in parallel, letting users compare quotes across all sources. The providers list changes rarely and can be cached for a long time.
+With the `fetchProviders` endpoint and `provider` filter, it is possible to build a [LlamaSwap](https://swap.defillama.com/)-like meta-aggregation UI by sending one request per provider in parallel, letting users compare quotes across all sources. The providers list changes rarely and can be cached for a long time.
 
 ## Swap Verification
 

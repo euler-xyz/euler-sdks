@@ -306,7 +306,7 @@ export class EVaultService implements IEVaultService {
         const vaultPath = getVaultPathPrefix(vaultIndex);
         // Vault asset USD price
         try {
-          const priced = await this.priceService!.getAssetUsdPriceWithDiagnostics(
+          const priced = await this.priceService!.fetchAssetUsdPriceWithDiagnostics(
             eVault,
             `${vaultPath}.marketPriceUsd`
           );
@@ -330,7 +330,7 @@ export class EVaultService implements IEVaultService {
           eVault.collaterals.map(async (collateral, collateralIndex) => {
             if (!collateral.vault) return;
             try {
-              const priced = await this.priceService!.getCollateralUsdPriceWithDiagnostics(
+              const priced = await this.priceService!.fetchCollateralUsdPriceWithDiagnostics(
                 eVault,
                 collateral.vault,
                 `${vaultPath}.collaterals[${collateralIndex}].marketPriceUsd`

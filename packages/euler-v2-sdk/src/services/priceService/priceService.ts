@@ -73,25 +73,25 @@ export interface IPriceService {
   ): PriceResult | undefined;
 
   // UoA → USD rate (async — may call utilsLens or backend)
-  getUnitOfAccountUsdRate(vault: EVault): Promise<bigint | undefined>;
-  getUnitOfAccountUsdRateWithDiagnostics(
+  fetchUnitOfAccountUsdRate(vault: EVault): Promise<bigint | undefined>;
+  fetchUnitOfAccountUsdRateWithDiagnostics(
     vault: EVault,
     path?: string
   ): Promise<ServiceResult<bigint | undefined>>;
 
   // Layer 2: USD Prices (async — tries backend first, falls back to on-chain)
-  getAssetUsdPrice(
+  fetchAssetUsdPrice(
     vault: ERC4626Vault
   ): Promise<PriceResult | undefined>;
-  getAssetUsdPriceWithDiagnostics(
+  fetchAssetUsdPriceWithDiagnostics(
     vault: ERC4626Vault,
     path?: string
   ): Promise<ServiceResult<PriceResult | undefined>>;
-  getCollateralUsdPrice(
+  fetchCollateralUsdPrice(
     liabilityVault: EVault,
     collateralVault: ERC4626Vault
   ): Promise<PriceResult | undefined>;
-  getCollateralUsdPriceWithDiagnostics(
+  fetchCollateralUsdPriceWithDiagnostics(
     liabilityVault: EVault,
     collateralVault: ERC4626Vault,
     path?: string
@@ -184,11 +184,11 @@ export class PriceService implements IPriceService {
    * using off-chain rates doesn't affect health factor/LTV ratios).
    * Falls back to on-chain utilsLens call.
    */
-  async getUnitOfAccountUsdRate(vault: EVault): Promise<bigint | undefined> {
-    return (await this.getUnitOfAccountUsdRateWithDiagnostics(vault)).result;
+  async fetchUnitOfAccountUsdRate(vault: EVault): Promise<bigint | undefined> {
+    return (await this.fetchUnitOfAccountUsdRateWithDiagnostics(vault)).result;
   }
 
-  async getUnitOfAccountUsdRateWithDiagnostics(
+  async fetchUnitOfAccountUsdRateWithDiagnostics(
     vault: EVault,
     path = "$"
   ): Promise<ServiceResult<bigint | undefined>> {
@@ -252,13 +252,13 @@ export class PriceService implements IPriceService {
    * EVault: oraclePrice × uoaRate.
    * EulerEarn / SecuritizeCollateral: utilsLens or backend.
    */
-  async getAssetUsdPrice(
+  async fetchAssetUsdPrice(
     vault: ERC4626Vault
   ): Promise<PriceResult | undefined> {
-    return (await this.getAssetUsdPriceWithDiagnostics(vault)).result;
+    return (await this.fetchAssetUsdPriceWithDiagnostics(vault)).result;
   }
 
-  async getAssetUsdPriceWithDiagnostics(
+  async fetchAssetUsdPriceWithDiagnostics(
     vault: ERC4626Vault,
     path = "$"
   ): Promise<ServiceResult<PriceResult | undefined>> {
@@ -285,7 +285,7 @@ export class PriceService implements IPriceService {
       }
     }
 
-    const fallbackPrice = await this.getAssetUsdPriceFromOracle(vault);
+    const fallbackPrice = await this.fetchAssetUsdPriceFromOracle(vault);
     if (backendAttempted && fallbackPrice) {
       errors.push({
         code: "FALLBACK_USED",
@@ -318,19 +318,19 @@ export class PriceService implements IPriceService {
    * Tries backend first, falls back to on-chain oracle.
    * Collateral pricing ALWAYS uses the liability vault's oracle for on-chain fallback.
    */
-  async getCollateralUsdPrice(
+  async fetchCollateralUsdPrice(
     liabilityVault: EVault,
     collateralVault: ERC4626Vault
   ): Promise<PriceResult | undefined> {
     return (
-      await this.getCollateralUsdPriceWithDiagnostics(
+      await this.fetchCollateralUsdPriceWithDiagnostics(
         liabilityVault,
         collateralVault
       )
     ).result;
   }
 
-  async getCollateralUsdPriceWithDiagnostics(
+  async fetchCollateralUsdPriceWithDiagnostics(
     liabilityVault: EVault,
     collateralVault: ERC4626Vault,
     path = "$"
@@ -358,7 +358,7 @@ export class PriceService implements IPriceService {
       }
     }
 
-    const fallbackPrice = await this.getCollateralUsdPriceFromOracle(
+    const fallbackPrice = await this.fetchCollateralUsdPriceFromOracle(
       liabilityVault,
       collateralVault
     );
@@ -400,7 +400,7 @@ export class PriceService implements IPriceService {
     const assetAmount = +formatUnits(amount, vault.asset.decimals);
     const symbol = vault.asset.symbol;
 
-    const price = await this.getAssetUsdPrice(vault);
+    const price = await this.fetchAssetUsdPrice(vault);
 
     if (!price) {
       const display = assetAmount.toLocaleString("en-US", {
@@ -423,14 +423,14 @@ export class PriceService implements IPriceService {
    * EVault: oraclePriceRaw × UoA rate.
    * EulerEarn / SecuritizeCollateral: utilsLens.getAssetPriceInfo.
    */
-  private async getAssetUsdPriceFromOracle(
+  private async fetchAssetUsdPriceFromOracle(
     vault: ERC4626Vault
   ): Promise<PriceResult | undefined> {
     // EVault: use oracle router (oraclePriceRaw + UoA conversion)
     if (vault.type === VaultType.EVault) {
       const oraclePrice = this.getAssetOraclePrice(vault as EVault);
       if (oraclePrice) {
-        const uoaRate = await this.getUnitOfAccountUsdRate(vault as EVault);
+        const uoaRate = await this.fetchUnitOfAccountUsdRate(vault as EVault);
         if (uoaRate) {
           return {
             amountOutMid: (oraclePrice.amountOutMid * uoaRate) / ONE_18,
@@ -462,7 +462,7 @@ export class PriceService implements IPriceService {
   /**
    * Get collateral USD price from on-chain oracles.
    */
-  private async getCollateralUsdPriceFromOracle(
+  private async fetchCollateralUsdPriceFromOracle(
     liabilityVault: EVault,
     collateralVault: ERC4626Vault
   ): Promise<PriceResult | undefined> {
@@ -472,7 +472,7 @@ export class PriceService implements IPriceService {
     );
     if (!oraclePrice) return undefined;
 
-    const uoaRate = await this.getUnitOfAccountUsdRate(liabilityVault);
+    const uoaRate = await this.fetchUnitOfAccountUsdRate(liabilityVault);
     if (!uoaRate) return undefined;
 
     return {

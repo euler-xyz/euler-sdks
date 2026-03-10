@@ -35,7 +35,7 @@ export interface SwapQuoteRequest {
   unusedInputReceiver?: Address; // address to receive unused input instead of depositing to vaultIn/accountIn
   transferOutputToReceiver?: boolean; // transfer output tokens to receiver instead of depositing. Not valid for repay swaps
   skipSweepDepositOut?: boolean; // don't add a final deposit of the output token, leave assets in Swapper
-  provider?: string; // preselected provider, see getProviders
+  provider?: string; // preselected provider, see fetchProviders
 }
 // TODO parse this to bigint
 export interface SwapQuote {
@@ -89,7 +89,7 @@ export interface GetRepayQuoteArgs {
   collateralAmount?: bigint; // amount to sell for debt in EXACT_IN mode
   deadline?: number;
   unusedInputReceiver?: Address; // address to receive unused input instead of depositing to vaultIn/accountIn
-  provider?: string; // preselected provider, see getProviders
+  provider?: string; // preselected provider, see fetchProviders
 }
 
 export interface GetDepositQuoteArgs {
@@ -106,7 +106,7 @@ export interface GetDepositQuoteArgs {
   deadline?: number;
   unusedInputReceiver?: Address; // address to receive unused input instead of depositing to vaultIn/accountIn
   skipSweepDepositOut?: boolean; // don't add a final deposit of the output token, leave assets in Swapper
-  provider?: string; // preselected provider, see getProviders
+  provider?: string; // preselected provider, see fetchProviders
 }
 
 

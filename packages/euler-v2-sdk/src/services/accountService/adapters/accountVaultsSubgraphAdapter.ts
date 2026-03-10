@@ -76,7 +76,7 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
     this.queryAccountVaults = fn;
   }
 
-  async getAccountVaults(chainId: number, account: Address): Promise<AccountVaults> {
+  async fetchAccountVaults(chainId: number, account: Address): Promise<AccountVaults> {
     const parseResult = (type: "deposits" | "borrows", results: AccountVaults, data: any) => {
       data.forEach((entry: any) => {
         const subAccount = getAddress(entry.substring(0, 42));

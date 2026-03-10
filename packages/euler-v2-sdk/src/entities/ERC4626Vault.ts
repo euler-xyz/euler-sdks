@@ -77,14 +77,14 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
   }
 
   async fetchAssetMarketValueUsd(amount: bigint, priceService: IPriceService): Promise<bigint | undefined> {
-    const price = await priceService.getAssetUsdPrice(this);
+    const price = await priceService.fetchAssetUsdPrice(this);
     if (!price) return undefined;
     return (amount * price.amountOutMid) / 10n ** BigInt(this.asset.decimals);
   }
 
   async populateMarketPrices(priceService: IPriceService): Promise<DataIssue[]> {
     try {
-      const priced = await priceService.getAssetUsdPriceWithDiagnostics(this, "$.marketPriceUsd");
+      const priced = await priceService.fetchAssetUsdPriceWithDiagnostics(this, "$.marketPriceUsd");
       this.marketPriceUsd = priced.result?.amountOutMid;
       this.populated.marketPrices = true;
       return priced.errors;
@@ -105,7 +105,7 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
 
   async populateRewards(rewardsService: IRewardsService): Promise<DataIssue[]> {
     try {
-      this.rewards = await rewardsService.getVaultRewards(this.chainId, this.address);
+      this.rewards = await rewardsService.fetchVaultRewards(this.chainId, this.address);
       this.populated.rewards = true;
       return [];
     } catch (error) {

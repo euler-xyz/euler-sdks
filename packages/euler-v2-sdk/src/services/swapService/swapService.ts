@@ -17,14 +17,14 @@ export interface SwapServiceConfig {
 }
 
 export interface ISwapService {
-  /** Fetches raw swap quotes from the API. Prefer getRepayQuotes or getDepositQuote for repay/collateral-swap flows. */
-  getSwapQuotes(args: SwapQuoteRequest): Promise<SwapQuote[]>;
+  /** Fetches raw swap quotes from the API. Prefer fetchRepayQuotes or fetchDepositQuote for repay/collateral-swap flows. */
+  fetchSwapQuotes(args: SwapQuoteRequest): Promise<SwapQuote[]>;
   /** Fetches swap quotes for repaying debt by swapping collateral (withdraw → swap → repay). */
-  getRepayQuotes(args: GetRepayQuoteArgs): Promise<SwapQuote[]>;
+  fetchRepayQuotes(args: GetRepayQuoteArgs): Promise<SwapQuote[]>;
   /** Fetches swap quotes for swapping collateral between vaults (withdraw → swap → deposit). */
-  getDepositQuote(args: GetDepositQuoteArgs): Promise<SwapQuote[]>;
+  fetchDepositQuote(args: GetDepositQuoteArgs): Promise<SwapQuote[]>;
   /** Fetches available swap providers for a given chain. */
-  getProviders(chainId: number): Promise<string[]>;
+  fetchProviders(chainId: number): Promise<string[]>;
 }
 
 const DEFAULT_DEADLINE = 1800; // 30 minutes
@@ -78,7 +78,7 @@ export class SwapService implements ISwapService {
 
   /**
    * Fetches swap quotes from the swap API for a given token pair and amount.
-   * Validates verifier data for each quote. Use getRepayQuotes or getDepositQuote for repay/collateral-swap flows.
+   * Validates verifier data for each quote. Use fetchRepayQuotes or fetchDepositQuote for repay/collateral-swap flows.
    *
    * @param request - Swap quote request
    * @param request.chainId - Chain ID
@@ -97,10 +97,10 @@ export class SwapService implements ISwapService {
    * @param request.currentDebt - Current debt of the account (required when isRepay is true)
    * @param request.deadline - Quote deadline timestamp in seconds (defaults to config defaultDeadline from now)
    * @param request.dustAccount - Account receiving dust from over-swap repays (defaults to origin)
-   * @param request.provider - Optional preselected provider (see getProviders)
+   * @param request.provider - Optional preselected provider (see fetchProviders)
    * @returns Promise of array of swap quotes (amounts, swap calldata, verifier calldata). Throws if tokenIn === tokenOut, origin is zero, or API/verifier validation fails.
    */
-  async getSwapQuotes(request: SwapQuoteRequest): Promise<SwapQuote[]> {
+  async fetchSwapQuotes(request: SwapQuoteRequest): Promise<SwapQuote[]> {
     if (request.tokenIn === request.tokenOut) {
       throw new Error("Token in and token out cannot be the same");
     }
@@ -133,7 +133,7 @@ export class SwapService implements ISwapService {
    * @param chainId - Chain ID
    * @returns Promise of array of provider name strings
    */
-  async getProviders(chainId: number): Promise<string[]> {
+  async fetchProviders(chainId: number): Promise<string[]> {
     const params = new URLSearchParams({ chainId: chainId.toString() });
 
     const jsonData = await this.querySwapProviders(
@@ -266,7 +266,7 @@ export class SwapService implements ISwapService {
 
   /**
    * Fetches swap quotes for repaying debt by swapping collateral (e.g. withdraw collateral → swap → repay).
-   * Delegates to getSwapQuotes with isRepay true. fromAsset and liabilityAsset must differ.
+   * Delegates to fetchSwapQuotes with isRepay true. fromAsset and liabilityAsset must differ.
    *
    * @param args - Repay quote arguments
    * @param args.chainId - Chain ID
@@ -285,7 +285,7 @@ export class SwapService implements ISwapService {
    * @param args.deadline - Quote deadline timestamp in seconds (optional)
    * @returns Promise of array of swap quotes for repay (verify type debtMax). Throws if currentDebt <= 0, fromAsset === liabilityAsset, or no quotes.
    */
-  async getRepayQuotes(
+  async fetchRepayQuotes(
     args: GetRepayQuoteArgs,
   ): Promise<SwapQuote[]> {
     const {
@@ -336,7 +336,7 @@ export class SwapService implements ISwapService {
       amount = currentDebt === liabilityAmount ? currentDebt - targetDebt : liabilityAmount;
     }
 
-    const quotes = await this.getSwapQuotes({
+    const quotes = await this.fetchSwapQuotes({
       chainId,
       tokenIn: fromAsset,
       tokenOut: liabilityAsset,
@@ -365,10 +365,10 @@ export class SwapService implements ISwapService {
 
   /**
    * Fetches swap quotes for swapping one asset to another and depositing into a destination vault.
-   * Delegates to getSwapQuotes with isRepay false and EXACT_IN mode.
+   * Delegates to fetchSwapQuotes with isRepay false and EXACT_IN mode.
    *
    * The swapped output tokens are always deposited into `toVault` for `toAccount` (verify type skimMin).
-   * Use `getSwapQuotes` directly with `transferOutputToReceiver` if you need to transfer output
+   * Use `fetchSwapQuotes` directly with `transferOutputToReceiver` if you need to transfer output
    * tokens to an address instead of depositing into a vault.
    *
    * `unusedInputReceiver` can redirect leftover input tokens to a wallet address instead of
@@ -394,7 +394,7 @@ export class SwapService implements ISwapService {
    * @param args.skipSweepDepositOut - If true, output tokens are left in the Swapper (no deposit of output). (optional)
    * @returns Promise of array of swap quotes (verify type skimMin). Throws if slippage invalid or no quotes.
    */
-  async getDepositQuote(
+  async fetchDepositQuote(
     args: GetDepositQuoteArgs,
   ): Promise<SwapQuote[]> {
     const {
@@ -413,7 +413,7 @@ export class SwapService implements ISwapService {
 
     this.validateSlippage(slippage);
 
-    const quotes = await this.getSwapQuotes({
+    const quotes = await this.fetchSwapQuotes({
       chainId,
       tokenIn: fromAsset,
       tokenOut: toAsset,

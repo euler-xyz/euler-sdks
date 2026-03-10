@@ -85,7 +85,7 @@ async function depositWithSwapFromWalletExample() {
 
   // Request a swap quote with unusedInputReceiver set to user's wallet
   // vaultIn and accountIn are zero address since we're not withdrawing from a vault
-  const depositSwapQuotes = await sdk.swapService.getDepositQuote({
+  const depositSwapQuotes = await sdk.swapService.fetchDepositQuote({
     chainId: mainnet.id,
     fromVault: zeroAddress,
     toVault: WSTETH_VAULT,
@@ -159,9 +159,9 @@ async function depositWithSwapFromWalletExample() {
   console.log(`Position assets: ${redeemAssets} wstETH`);
   console.log('Fetching swap quote from wstETH to USDC with transferOutputToReceiver...');
 
-  // Use getSwapQuotes directly with transferOutputToReceiver set to true
+  // Use fetchSwapQuotes directly with transferOutputToReceiver set to true
   // This means the output USDC will be transferred to receiver (user's wallet) instead of deposited to a vault
-  const withdrawSwapQuotes = await sdk.swapService.getSwapQuotes({
+  const withdrawSwapQuotes = await sdk.swapService.fetchSwapQuotes({
     chainId: mainnet.id,
     tokenIn: WSTETH_ADDRESS,
     tokenOut: USDC_ADDRESS,

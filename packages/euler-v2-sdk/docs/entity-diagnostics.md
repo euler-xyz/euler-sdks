@@ -60,9 +60,9 @@ Use diagnostics (`DataIssue[]`) for quality/fallback/source details, and `popula
 
 PriceService also exposes diagnostics-aware methods for direct callers:
 
-- `getAssetUsdPriceWithDiagnostics(...) -> { result, errors }`
-- `getCollateralUsdPriceWithDiagnostics(...) -> { result, errors }`
-- `getUnitOfAccountUsdRateWithDiagnostics(...) -> { result, errors }`
+- `fetchAssetUsdPriceWithDiagnostics(...) -> { result, errors }`
+- `fetchCollateralUsdPriceWithDiagnostics(...) -> { result, errors }`
+- `fetchUnitOfAccountUsdRateWithDiagnostics(...) -> { result, errors }`
 
 These methods emit `FALLBACK_USED` when backend pricing is unavailable and on-chain pricing is used instead.
 

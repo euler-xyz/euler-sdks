@@ -10,7 +10,7 @@ import { getBalanceOverrides } from "./balanceOverrides.js"
 import { getApprovalOverrides } from "./approvalOverrides.js"
 import { mergeStateOverrides } from "./mergeStateOverrides.js"
 
-export type GetStateOverridesOptions = {
+export type DeriveStateOverridesOptions = {
   /** Override the native (ETH) balance. Defaults to 1000 ETH. Set to 0n to skip. */
   nativeBalance?: bigint
   /** Permit2 contract address. Required for approval overrides. */
@@ -88,15 +88,15 @@ function extractApprovalRequirements(
  * ```ts
  * const plan = sdk.executionService.planDeposit({ ... })
  * const permit2 = sdk.deploymentService.getDeployment(chainId).addresses.coreAddrs.permit2
- * const overrides = await getStateOverrides(client, plan, account, { permit2Address: permit2 })
+ * const overrides = await deriveStateOverrides(client, plan, account, { permit2Address: permit2 })
  * // Use overrides with simulateContract or eth_call
  * ```
  */
-export async function getStateOverrides(
+export async function deriveStateOverrides(
   client: PublicClient,
   plan: TransactionPlan,
   account: Address,
-  options: GetStateOverridesOptions,
+  options: DeriveStateOverridesOptions,
 ): Promise<StateOverride> {
   const { nativeBalance = parseEther("1000"), permit2Address } = options
 

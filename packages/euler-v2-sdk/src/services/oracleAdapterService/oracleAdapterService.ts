@@ -29,8 +29,8 @@ export interface OracleAdapterServiceConfig {
 }
 
 export interface IOracleAdapterService {
-  getOracleAdapters(chainId: number): Promise<OracleAdapterMetadata[]>;
-  getOracleAdapterMap(
+  fetchOracleAdapters(chainId: number): Promise<OracleAdapterMetadata[]>;
+  fetchOracleAdapterMap(
     chainId: number
   ): Promise<Record<string, OracleAdapterMetadata>>;
   enrichAdapters(
@@ -70,7 +70,7 @@ export class OracleAdapterService implements IOracleAdapterService {
     this.queryOracleAdapters = fn;
   }
 
-  async getOracleAdapters(chainId: number): Promise<OracleAdapterMetadata[]> {
+  async fetchOracleAdapters(chainId: number): Promise<OracleAdapterMetadata[]> {
     const now = Date.now();
     const cached = this.cache.get(chainId);
     if (cached && cached.expiresAt > now) return cached.value;
@@ -84,10 +84,10 @@ export class OracleAdapterService implements IOracleAdapterService {
     return parsed;
   }
 
-  async getOracleAdapterMap(
+  async fetchOracleAdapterMap(
     chainId: number
   ): Promise<Record<string, OracleAdapterMetadata>> {
-    const adapters = await this.getOracleAdapters(chainId);
+    const adapters = await this.fetchOracleAdapters(chainId);
     return Object.fromEntries(
       adapters.map((adapter) => [adapter.address.toLowerCase(), adapter])
     );
@@ -98,7 +98,7 @@ export class OracleAdapterService implements IOracleAdapterService {
     adapters: OracleAdapterEntry[]
   ): Promise<EnrichedOracleAdapterEntry[]> {
     if (adapters.length === 0) return [];
-    const metadata = await this.getOracleAdapterMap(chainId);
+    const metadata = await this.fetchOracleAdapterMap(chainId);
     return adapters.map((adapter) => ({
       ...adapter,
       metadata: metadata[adapter.oracle.toLowerCase()],

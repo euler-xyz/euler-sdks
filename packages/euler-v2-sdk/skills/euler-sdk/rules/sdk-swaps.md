@@ -12,7 +12,7 @@ Use `swapService` as the first step for any swap-driven action, then feed select
 **Correct flow:**
 
 ```typescript
-const quotes = await sdk.swapService.getRepayQuotes({
+const quotes = await sdk.swapService.fetchRepayQuotes({
   chainId,
   fromVault,
   fromAsset,

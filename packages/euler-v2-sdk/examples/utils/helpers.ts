@@ -11,7 +11,7 @@ export function printHeader(msg: string) {
   console.log();
 }
 
-export async function getBalance(tokenAddress: Address, accountAddress: Address) {
+export async function fetchBalance(tokenAddress: Address, accountAddress: Address) {
   return await publicClient.readContract({
     address: tokenAddress,
     abi: erc20Abi,
@@ -20,7 +20,7 @@ export async function getBalance(tokenAddress: Address, accountAddress: Address)
   });
 }
 
-export async function getDecimals(tokenAddress: Address) {
+export async function fetchDecimals(tokenAddress: Address) {
   return await publicClient.readContract({
     address: tokenAddress,
     abi: erc20Abi,
@@ -28,7 +28,7 @@ export async function getDecimals(tokenAddress: Address) {
   });
 }
 
-export async function getSymbol(tokenAddress: Address) {
+export async function fetchSymbol(tokenAddress: Address) {
   return await publicClient.readContract({
     address: tokenAddress,
     abi: erc20Abi,
@@ -37,16 +37,16 @@ export async function getSymbol(tokenAddress: Address) {
 }
 
 export async function logWalletBalance(tokenAddress: Address, accountAddress: Address) {
-  const balance = await getBalance(tokenAddress, accountAddress);
-  const symbol = await getSymbol(tokenAddress);
-  console.log(`  Wallet ${symbol} balance: ${formatUnits(balance, await getDecimals(tokenAddress))} ${symbol}`);
+  const balance = await fetchBalance(tokenAddress, accountAddress);
+  const symbol = await fetchSymbol(tokenAddress);
+  console.log(`  Wallet ${symbol} balance: ${formatUnits(balance, await fetchDecimals(tokenAddress))} ${symbol}`);
 }
 
 export async function logVaultBalance(vaultAddress: Address, account: Account<IHasVaultAddress>, subAccountId: number) {
   const position = account.getPosition(getSubAccountAddress(account.owner, subAccountId), vaultAddress);
   const vaultBalance = position?.assets ?? 0n;
-  const symbol = await getSymbol(vaultAddress);
-  console.log(`  Vault ${symbol} balance: ${formatUnits(vaultBalance, await getDecimals(vaultAddress))} ${symbol}`);
+  const symbol = await fetchSymbol(vaultAddress);
+  console.log(`  Vault ${symbol} balance: ${formatUnits(vaultBalance, await fetchDecimals(vaultAddress))} ${symbol}`);
 }
 
 export function logAccount(account: Account<IHasVaultAddress>) {
@@ -120,7 +120,7 @@ async function fetchVaultMetadata(chainId: number, vaultAddress: Address, assetA
   const [assetMetadata, vaultMetadata, labels] = await Promise.all([
     fetchTokenMetadata(chainId, assetAddress, sdk),
     fetchTokenMetadata(chainId, vaultAddress, sdk), // Vault token decimals (for shares)
-    sdk.eulerLabelsService.getEulerLabelsVaults(chainId).catch(() => ({} as Record<Address, any>)),
+    sdk.eulerLabelsService.fetchEulerLabelsVaults(chainId).catch(() => ({} as Record<Address, any>)),
   ]);
 
   const labelInfo = labels[vaultAddress.toLowerCase() as Address];
@@ -274,9 +274,9 @@ function findPosition(subAccount: SubAccount<IHasVaultAddress>, vaultAddress: Ad
 /**
  * Fetch vault name for address
  */
-async function getVaultName(chainId: number, vaultAddress: Address, sdk: EulerSDK): Promise<string> {
+async function fetchVaultName(chainId: number, vaultAddress: Address, sdk: EulerSDK): Promise<string> {
   try {
-    const labels = await sdk.eulerLabelsService.getEulerLabelsVaults(chainId);
+    const labels = await sdk.eulerLabelsService.fetchEulerLabelsVaults(chainId);
     const labelInfo = labels[vaultAddress.toLowerCase() as Address] as any;
     return labelInfo?.name || truncateAddress(vaultAddress);
   } catch {
@@ -290,7 +290,7 @@ async function getVaultName(chainId: number, vaultAddress: Address, sdk: EulerSD
 async function formatVaultList(chainId: number, vaultAddresses: Address[], sdk: EulerSDK): Promise<string> {
   if (vaultAddresses.length === 0) return "none";
   const names = await Promise.all(
-    vaultAddresses.map(addr => getVaultName(chainId, addr, sdk))
+    vaultAddresses.map(addr => fetchVaultName(chainId, addr, sdk))
   );
   return names.join(", ");
 }

@@ -129,7 +129,7 @@ async function repayWithSwapExample() {
   // Update account data with the fetched sub-account
   accountData.subAccounts = { [getAddress(subAccountAfterBorrow!.account)]: subAccountAfterBorrow! };
 
-  const repayQuotes = await sdk.swapService.getRepayQuotes({
+  const repayQuotes = await sdk.swapService.fetchRepayQuotes({
     chainId: mainnet.id,
     fromVault: EULER_PRIME_USDC_VAULT,
     fromAsset: USDC_ADDRESS,

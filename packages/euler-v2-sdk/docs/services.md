@@ -52,4 +52,4 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 | `executionService` | No (planning/encoding only) | No | No | No | No | Produces transaction plans and batch payloads |
 | `swapService` | No (quotes only) | No | No | No | No | Returns swap quotes/providers for execution plans |
 | `simulationService` | Simulates plans | Can populate in results | Can populate in results | Can populate in results | Can populate in results | Uses `accountFetchOptions` / `vaultFetchOptions` |
-| `oracleAdapterService` | No | No | No | No | No | Oracle adapter metadata API (`getOracleAdapters`, `getOracleAdapterMap`, `enrichAdapters`) |
+| `oracleAdapterService` | No | No | No | No | No | Oracle adapter metadata API (`fetchOracleAdapters`, `fetchOracleAdapterMap`, `enrichAdapters`) |

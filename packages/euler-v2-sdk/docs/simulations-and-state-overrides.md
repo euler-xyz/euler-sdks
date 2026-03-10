@@ -80,14 +80,14 @@ const result = await sdk.simulationService.simulateTransactionPlan(
 
 All exports are available from the top-level `euler-v2-sdk` package.
 
-### `getStateOverrides(client, plan, account, options)`
+### `deriveStateOverrides(client, plan, account, options)`
 
 Utility helper that generates the override set for a plan. Internally it uses `eth_createAccessList` (EIP-2930) to discover storage slots for balances and approvals.
 
 Low-level utility. Takes a `TransactionPlan` and generates all overrides needed for `eth_simulateContract` simulation from `account`.
 
 ```typescript
-const stateOverride = await getStateOverrides(client, plan, account, {
+const stateOverride = await deriveStateOverrides(client, plan, account, {
   permit2Address: deployment.addresses.coreAddrs.permit2,
   nativeBalance: parseEther("1000"), // optional, defaults to 1000 ETH
 })

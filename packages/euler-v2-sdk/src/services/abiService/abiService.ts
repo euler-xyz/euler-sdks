@@ -2,7 +2,7 @@ import { Abi } from "viem";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 
 export interface IABIService {
-  getABI(chainId: number, contract: string): Promise<Abi>;
+  fetchABI(chainId: number, contract: string): Promise<Abi>;
 }
 
 export class ABIService implements IABIService {
@@ -25,7 +25,7 @@ export class ABIService implements IABIService {
     this.queryABI = fn;
   }
 
-  async getABI(_: number, contract: string): Promise<Abi> {
+  async fetchABI(_: number, contract: string): Promise<Abi> {
     if (!this.abis[contract]) {
       this.abis[contract] = await this.queryABI(this.getABIURL(_, contract));
     }

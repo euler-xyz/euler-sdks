@@ -50,7 +50,7 @@ export const getVaultAccountInfoLensBatchItem = (
 });
 
 export interface IAccountVaultsAdapter {
-  getAccountVaults(chainId: number, account: Address): Promise<AccountVaults>;
+  fetchAccountVaults(chainId: number, account: Address): Promise<AccountVaults>;
 }
 
 export class AccountOnchainAdapter implements IAccountAdapter {
@@ -144,7 +144,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
     address: Address
   ): Promise<ServiceResult<IAccount | undefined>> {
     const errors: DataIssue[] = [];
-    const accountVaults = await this.positionsAdapter.getAccountVaults(chainId, address);
+    const accountVaults = await this.positionsAdapter.fetchAccountVaults(chainId, address);
     const subAccountAddresses = [...new Set(Object.keys(accountVaults).map((subAccountAddress) => getAddress(subAccountAddress)))];
 
     if (subAccountAddresses.length === 0) return { result: undefined, errors };

@@ -16,9 +16,9 @@ const sdk = await buildEulerSDK({ rpcUrls: { 1: 'https://...' } })
 
 // Fetch labels for a chain
 const [vaults, entities, products] = await Promise.all([
-  sdk.eulerLabelsService.getEulerLabelsVaults(1),
-  sdk.eulerLabelsService.getEulerLabelsEntities(1),
-  sdk.eulerLabelsService.getEulerLabelsProducts(1),
+  sdk.eulerLabelsService.fetchEulerLabelsVaults(1),
+  sdk.eulerLabelsService.fetchEulerLabelsEntities(1),
+  sdk.eulerLabelsService.fetchEulerLabelsProducts(1),
 ])
 
 // Look up a specific vault

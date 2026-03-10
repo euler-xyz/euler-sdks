@@ -192,7 +192,7 @@ Pass `backendConfig` when building the SDK to enable backend pricing. When `back
 ```
 +-------------------------------------------------------------+
 |                   Layer 2: USD Prices                        |
-|        getAssetUsdPrice(), getCollateralUsdPrice()          |
+|        fetchAssetUsdPrice(), fetchCollateralUsdPrice()          |
 |                                                              |
 |   Always: try backend first, fall back to on-chain.         |
 |   Routes based on vault type:                                |
@@ -205,7 +205,7 @@ Pass `backendConfig` when building the SDK to enable backend pricing. When `back
 +-------------------------------------------------------------+
 |              Layer 1: Raw Oracle Prices (UoA)               |
 |    getAssetOraclePrice(), getCollateralOraclePrice()        |
-|    getUnitOfAccountUsdRate()                                |
+|    fetchUnitOfAccountUsdRate()                                |
 |                                                              |
 |   Sources:                                                   |
 |   - EVault.oraclePriceRaw         (asset price in UoA)      |
@@ -239,7 +239,7 @@ These are **synchronous** — they read directly from vault entity data.
 
 ### UoA -> USD Rate
 
-- **`getUnitOfAccountUsdRate(vault: EVault)`** — Returns the UoA -> USD conversion rate (async)
+- **`fetchUnitOfAccountUsdRate(vault: EVault)`** — Returns the UoA -> USD conversion rate (async)
   - If `unitOfAccount.address === USD_ADDRESS` (`0x...0348`), returns `1e18` (hardcoded)
   - Always tries backend first, falls back to on-chain `utilsLens.getAssetPriceInfo(unitOfAccount, USD_ADDRESS)`
 
@@ -247,25 +247,25 @@ These are **synchronous** — they read directly from vault entity data.
 
 These are **async** — they try backend first, then fall back to on-chain.
 
-- **`getAssetUsdPrice(vault: ERC4626Vault)`** — Routes based on vault type:
+- **`fetchAssetUsdPrice(vault: ERC4626Vault)`** — Routes based on vault type:
   - `EVault`: `oraclePriceRaw * uoaRate`
   - `EulerEarn` / `SecuritizeCollateralVault`: `utilsLens.getAssetPriceInfo(asset, USD_ADDRESS)`
   - Tries backend first for direct asset USD price
 
-- **`getCollateralUsdPrice(liabilityVault: EVault, collateralVault: ERC4626Vault)`** — Collateral price in USD using the liability vault's oracle and UoA rate
+- **`fetchCollateralUsdPrice(liabilityVault: EVault, collateralVault: ERC4626Vault)`** — Collateral price in USD using the liability vault's oracle and UoA rate
   - Tries backend with collateral asset address first
 
 ## USD Price Calculation for EVault
 
 ```
-getAssetUsdPrice(vault):
+fetchAssetUsdPrice(vault):
   1. If backend configured:
      - Try backend for direct asset USD price
      - If available, return backend price
 
   2. Oracle calculation (fallback):
      a. oraclePrice = vault.oraclePriceRaw   // Always on-chain
-     b. uoaRate = await getUnitOfAccountUsdRate(vault)
+     b. uoaRate = await fetchUnitOfAccountUsdRate(vault)
         - Always tries backend first, falls back to utilsLens call
         - Returns 1e18 if vault.unitOfAccount.address === USD_ADDRESS
      c. return (oraclePrice * uoaRate) / 1e18
@@ -280,7 +280,7 @@ For escrow vaults (EVaults with `unitOfAccount === USD_ADDRESS`): the UoA rate i
 When vault A (liability) accepts vault B (collateral), the price of B is determined by vault A's oracle router, NOT vault B's own oracle.
 
 ```
-getCollateralUsdPrice(liabilityVault, collateralVault):
+fetchCollateralUsdPrice(liabilityVault, collateralVault):
   1. If backend configured:
      - Try backend for direct collateral USD price
      - If available, return backend price
@@ -290,7 +290,7 @@ getCollateralUsdPrice(liabilityVault, collateralVault):
      b. assetPrice = sharePrice * (totalShares / totalAssets)
         // Special case: if totalAssets=0 AND totalShares=0 (empty vault),
         // ERC-4626 standard defines 1:1 ratio, so use sharePrice directly
-     c. uoaRate = await getUnitOfAccountUsdRate(liabilityVault)
+     c. uoaRate = await fetchUnitOfAccountUsdRate(liabilityVault)
         // Use LIABILITY's UoA - always tries backend first
      d. return (assetPrice * uoaRate) / 1e18
 ```

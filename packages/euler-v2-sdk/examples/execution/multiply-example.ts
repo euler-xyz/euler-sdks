@@ -75,7 +75,7 @@ async function multiplyExample() {
 
   // Step 1: Get swap quote from USDT (liability asset) to WETH (long asset)
   console.log('\n✓ Fetching swap quote from USDT to WETH...');
-  const swapQuotes = await sdk.swapService.getDepositQuote({
+  const swapQuotes = await sdk.swapService.fetchDepositQuote({
     chainId: mainnet.id,
     fromVault: EULER_PRIME_USDT_VAULT,
     toVault: EULER_PRIME_WETH_VAULT,

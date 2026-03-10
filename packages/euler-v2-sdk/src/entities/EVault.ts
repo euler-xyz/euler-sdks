@@ -221,14 +221,14 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
   }
 
   async fetchUnitOfAccountMarketPriceUsd(priceService: IPriceService): Promise<PriceWad | undefined> {
-    return priceService.getUnitOfAccountUsdRate(this);
+    return priceService.fetchUnitOfAccountUsdRate(this);
   }
 
   async fetchCollateralMarketPriceUsd(
     collateralVault: ERC4626Vault,
     priceService: IPriceService
   ): Promise<PriceWad | undefined> {
-    const price = await priceService.getCollateralUsdPrice(this, collateralVault);
+    const price = await priceService.fetchCollateralUsdPrice(this, collateralVault);
     if (!price) return undefined;
     return price.amountOutMid;
   }
@@ -238,7 +238,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
     collateralVault: ERC4626Vault,
     priceService: IPriceService
   ): Promise<bigint | undefined> {
-    const price = await priceService.getCollateralUsdPrice(this, collateralVault);
+    const price = await priceService.fetchCollateralUsdPrice(this, collateralVault);
     if (!price) return undefined;
     return (amount * price.amountOutMid) / 10n ** BigInt(collateralVault.asset.decimals);
   }
@@ -304,7 +304,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
   override async populateMarketPrices(priceService: IPriceService): Promise<DataIssue[]> {
     const errors: DataIssue[] = [];
     try {
-      const priced = await priceService.getAssetUsdPriceWithDiagnostics(this, "$.marketPriceUsd");
+      const priced = await priceService.fetchAssetUsdPriceWithDiagnostics(this, "$.marketPriceUsd");
       this.marketPriceUsd = priced.result?.amountOutMid;
       errors.push(...priced.errors);
     } catch (error) {
@@ -324,7 +324,7 @@ export class EVault extends ERC4626Vault implements IEVault, IERC4626VaultConver
       this.collaterals.map(async (collateral, index) => {
         if (!collateral.vault) return;
         try {
-          const priced = await priceService.getCollateralUsdPriceWithDiagnostics(
+          const priced = await priceService.fetchCollateralUsdPriceWithDiagnostics(
             this,
             collateral.vault as ERC4626Vault,
             `$.collaterals[${index}].marketPriceUsd`

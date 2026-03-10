@@ -118,7 +118,7 @@ Keep plugin ordering deterministic. Use shared caching decorators for plugin que
 
 Pattern:
 
-1. fetch quotes (`getDepositQuote`, `getRepayQuotes`)
+1. fetch quotes (`fetchDepositQuote`, `fetchRepayQuotes`)
 2. pick quote (best-first ordering)
 3. build plan (`planRepayWithSwap`, `planSwapCollateral`, `planSwapDebt`, `planMultiplyWithSwap`)
 4. simulate

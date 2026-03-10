@@ -4,17 +4,17 @@ import { Address } from "viem";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 
 export interface IEulerLabelsAdapter {
-  getEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>>;
-  getEulerLabelsEntities(chainId: number): Promise<Record<string, EulerLabelEntity>>;
-  getEulerLabelsProducts(chainId: number): Promise<Record<string, EulerLabelProduct>>;
-  getEulerLabelsPoints(chainId: number): Promise<EulerLabelPoint[]>;
+  fetchEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>>;
+  fetchEulerLabelsEntities(chainId: number): Promise<Record<string, EulerLabelEntity>>;
+  fetchEulerLabelsProducts(chainId: number): Promise<Record<string, EulerLabelProduct>>;
+  fetchEulerLabelsPoints(chainId: number): Promise<EulerLabelPoint[]>;
 }
 
 export interface IEulerLabelsService {
-  getEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>>;
-  getEulerLabelsEntities(chainId: number): Promise<Record<string, EulerLabelEntity>>;
-  getEulerLabelsProducts(chainId: number): Promise<Record<string, EulerLabelProduct>>;
-  getEulerLabelsPoints(chainId: number): Promise<EulerLabelPoint[]>;
+  fetchEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>>;
+  fetchEulerLabelsEntities(chainId: number): Promise<Record<string, EulerLabelEntity>>;
+  fetchEulerLabelsProducts(chainId: number): Promise<Record<string, EulerLabelProduct>>;
+  fetchEulerLabelsPoints(chainId: number): Promise<EulerLabelPoint[]>;
   resolveLogoUrl(filename: string): string;
   populateLabels(vaults: ERC4626Vault[]): Promise<void>;
 }
@@ -33,17 +33,17 @@ export class EulerLabelsService implements IEulerLabelsService {
       return this.resolveLogoUrlFn ? this.resolveLogoUrlFn(filename) : filename;
     }
 
-    async getEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>> {
-        return this.adapter.getEulerLabelsVaults(chainId);
+    async fetchEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>> {
+        return this.adapter.fetchEulerLabelsVaults(chainId);
     }
-    async getEulerLabelsEntities(chainId: number): Promise<Record<string, EulerLabelEntity>> {
-        return this.adapter.getEulerLabelsEntities(chainId);
+    async fetchEulerLabelsEntities(chainId: number): Promise<Record<string, EulerLabelEntity>> {
+        return this.adapter.fetchEulerLabelsEntities(chainId);
     }
-    async getEulerLabelsProducts(chainId: number): Promise<Record<string, EulerLabelProduct>> {
-        return this.adapter.getEulerLabelsProducts(chainId);
+    async fetchEulerLabelsProducts(chainId: number): Promise<Record<string, EulerLabelProduct>> {
+        return this.adapter.fetchEulerLabelsProducts(chainId);
     }
-    async getEulerLabelsPoints(chainId: number): Promise<EulerLabelPoint[]> {
-        return this.adapter.getEulerLabelsPoints(chainId);
+    async fetchEulerLabelsPoints(chainId: number): Promise<EulerLabelPoint[]> {
+        return this.adapter.fetchEulerLabelsPoints(chainId);
     }
 
     async populateLabels(vaults: ERC4626Vault[]): Promise<void> {
@@ -52,10 +52,10 @@ export class EulerLabelsService implements IEulerLabelsService {
       const chainId = vaults[0]!.chainId;
 
       const [labelsVaults, labelsEntities, labelsProducts, labelsPoints] = await Promise.all([
-        this.getEulerLabelsVaults(chainId).catch(() => ({} as Record<Address, EulerLabelVault>)),
-        this.getEulerLabelsEntities(chainId).catch(() => ({} as Record<string, EulerLabelEntity>)),
-        this.getEulerLabelsProducts(chainId).catch(() => ({} as Record<string, EulerLabelProduct>)),
-        this.getEulerLabelsPoints(chainId).catch(() => [] as EulerLabelPoint[]),
+        this.fetchEulerLabelsVaults(chainId).catch(() => ({} as Record<Address, EulerLabelVault>)),
+        this.fetchEulerLabelsEntities(chainId).catch(() => ({} as Record<string, EulerLabelEntity>)),
+        this.fetchEulerLabelsProducts(chainId).catch(() => ({} as Record<string, EulerLabelProduct>)),
+        this.fetchEulerLabelsPoints(chainId).catch(() => [] as EulerLabelPoint[]),
       ]);
 
       // Build a lowercase address -> vault label lookup
@@ -211,16 +211,16 @@ export class EulerLabelsURLAdapter implements IEulerLabelsAdapter {
     this.queryEulerLabelsPoints = fn;
   }
 
-  async getEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>> {
+  async fetchEulerLabelsVaults(chainId: number): Promise<Record<Address, EulerLabelVault>> {
     return this.queryEulerLabelsVaults(this.config.getEulerLabelsVaultsUrl(chainId));
   }
-  async getEulerLabelsEntities(chainId: number): Promise<Record<string, EulerLabelEntity>> {
+  async fetchEulerLabelsEntities(chainId: number): Promise<Record<string, EulerLabelEntity>> {
     return this.queryEulerLabelsEntities(this.config.getEulerLabelsEntitiesUrl(chainId));
   }
-  async getEulerLabelsProducts(chainId: number): Promise<Record<string, EulerLabelProduct>> {
+  async fetchEulerLabelsProducts(chainId: number): Promise<Record<string, EulerLabelProduct>> {
     return this.queryEulerLabelsProducts(this.config.getEulerLabelsProductsUrl(chainId));
   }
-  async getEulerLabelsPoints(chainId: number): Promise<EulerLabelPoint[]> {
+  async fetchEulerLabelsPoints(chainId: number): Promise<EulerLabelPoint[]> {
     return this.queryEulerLabelsPoints(this.config.getEulerLabelsPointsUrl(chainId));
   }
 }
