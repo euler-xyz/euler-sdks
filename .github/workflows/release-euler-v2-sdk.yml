@@ -1,0 +1,127 @@
+name: Release euler-v2-sdk
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "package-lock.json"
+      - "packages/euler-v2-sdk/**"
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-euler-v2-sdk
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      should_release: ${{ steps.version.outputs.should_release }}
+    env:
+      PACKAGE_DIR: packages/euler-v2-sdk
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+          cache-dependency-path: |
+            package-lock.json
+            packages/euler-v2-sdk/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm -C "$PACKAGE_DIR" install --frozen-lockfile
+
+      - name: Resolve version and release tag
+        id: version
+        run: |
+          VERSION="$(node -p "require('./$PACKAGE_DIR/package.json').version")"
+          TAG_NAME="euler-v2-sdk-v$VERSION"
+          if git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null; then
+            echo "Tag already exists locally: $TAG_NAME"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          elif git ls-remote --exit-code --tags origin "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Tag already exists on origin: $TAG_NAME"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Release checks
+        run: pnpm -C "$PACKAGE_DIR" run release:check
+
+      - name: Dry run publish
+        if: steps.version.outputs.should_release == 'true'
+        run: pnpm -C "$PACKAGE_DIR" publish --access public --provenance --tag latest --dry-run --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  release:
+    needs: verify
+    if: needs.verify.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE_DIR: packages/euler-v2-sdk
+      TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+          cache-dependency-path: |
+            package-lock.json
+            packages/euler-v2-sdk/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm -C "$PACKAGE_DIR" install --frozen-lockfile
+
+      - name: Publish package
+        run: pnpm -C "$PACKAGE_DIR" publish --access public --provenance --tag latest --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create and push release tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          generate_release_notes: true

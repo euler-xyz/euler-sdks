@@ -102,3 +102,12 @@ All docs are in [`./docs`](./docs).
 ## Examples
 
 Runnable examples are in [`./examples`](./examples), including end-to-end execution flows and simulations against a fork.
+
+## Release Process
+
+This package is published via GitHub Actions, not by running `npm publish` locally.
+
+1. Open a PR targeting `main` that bumps the version in [`package.json`](./package.json).
+2. Update [`CHANGELOG.md`](./CHANGELOG.md) and refresh [`RELEASE_NOTES.md`](./RELEASE_NOTES.md) in the same PR.
+3. Let the `Validate euler-v2-sdk PR` workflow pass. It enforces that the package version changed and runs `release:check`.
+4. Merge the PR. The `Release euler-v2-sdk` workflow runs automatically on the merge commit, publishes the package to npm, creates the `euler-v2-sdk-v<version>` tag, and creates a GitHub release.
