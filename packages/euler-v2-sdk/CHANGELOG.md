@@ -2,7 +2,7 @@
 
 All notable changes to `euler-v2-sdk` should be documented in this file.
 
-## [0.0.10-alpha] - 2026-03-18
+## [0.0.11-alpha] - 2026-03-18
 
 ### Added
 
