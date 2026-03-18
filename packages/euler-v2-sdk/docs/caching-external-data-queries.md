@@ -40,7 +40,7 @@ const sdk = await buildEulerSDK({
 
 ## React Example — Wrapping Queries with react-query Cache
 
-The `react-sdk-example` shows how to use `buildQuery` to give every SDK network call its own react-query cache entry with per-query stale times.
+The `examples/react-sdk-example` app shows how to use `buildQuery` to give every SDK network call its own react-query cache entry with per-query stale times.
 
 ### The `buildQuery` wrapper
 

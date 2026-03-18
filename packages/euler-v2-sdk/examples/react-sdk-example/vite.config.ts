@@ -8,7 +8,7 @@ export default defineConfig({
     alias: {
       "euler-v2-sdk": path.resolve(
         __dirname,
-        "../packages/euler-v2-sdk/dist/src/index.js",
+        "../../dist/src/index.js",
       ),
     },
   },

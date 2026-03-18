@@ -67,7 +67,7 @@ Reward plans run through the same app executor as core Euler plans:
 Reference executors:
 
 - [`examples/utils/executor.ts`](../examples/utils/executor.ts)
-- [`react-sdk-example/src/utils/txExecutor.ts`](../../react-sdk-example/src/utils/txExecutor.ts)
+- [`examples/react-sdk-example/src/utils/txExecutor.ts`](../examples/react-sdk-example/src/utils/txExecutor.ts)
 
 ## Configuration
 

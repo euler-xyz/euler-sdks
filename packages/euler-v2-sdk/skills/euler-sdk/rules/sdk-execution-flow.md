@@ -52,4 +52,4 @@ Execution checklist:
 
 Use `mergePlans` to atomically combine multiple intents and `describeBatch` for previews/logging.
 
-Reference: `packages/euler-v2-sdk/docs/execution-service.md`, `examples/utils/executor.ts`, `react-sdk-example/src/utils/txExecutor.ts`
+Reference: `packages/euler-v2-sdk/docs/execution-service.md`, `examples/utils/executor.ts`, `examples/react-sdk-example/src/utils/txExecutor.ts`
