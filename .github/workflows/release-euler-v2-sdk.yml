@@ -53,7 +53,7 @@ jobs:
           echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
 
       - name: Publish package
-        run: pnpm -C "$PACKAGE_DIR" publish --access public --tag latest --no-git-checks
+        run: pnpm -C "$PACKAGE_DIR" publish
 
       - name: Create and push release tag
         run: |
