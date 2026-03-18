@@ -1,4 +1,7 @@
-See [euler-v2-sdk](./packages/euler-v2-sdk/README.md)
+## Euler SDKs
+A monorepo for Euler SDKs and tools.
+
+- [euler-v2-sdk](./packages/euler-v2-sdk/README.md) Main SDK for interacting with Euler V2 lending platform.
 
 ## Agent Skills
 
