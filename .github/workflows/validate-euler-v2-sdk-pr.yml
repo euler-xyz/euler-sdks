@@ -67,7 +67,7 @@ jobs:
         if: steps.package_changes.outputs.package_changed == 'true'
         run: |
           HEAD_VERSION="$(node -p "require('./$PACKAGE_DIR/package.json').version")"
-          if ! rg -n "^## \\[$HEAD_VERSION\\]( |$)" "$PACKAGE_DIR/CHANGELOG.md" >/dev/null; then
+          if ! grep -Eq "^## \\[$HEAD_VERSION\\]( |$)" "$PACKAGE_DIR/CHANGELOG.md"; then
             echo "CHANGELOG.md must contain a release entry for version $HEAD_VERSION."
             exit 1
           fi
