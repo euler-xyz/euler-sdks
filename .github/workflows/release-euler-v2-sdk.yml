@@ -72,8 +72,9 @@ jobs:
 
       - name: Dry run publish
         if: steps.version.outputs.should_release == 'true'
-        run: pnpm -C "$PACKAGE_DIR" publish --access public --tag latest --dry-run --no-git-checks --provenance=false
+        run: pnpm -C "$PACKAGE_DIR" publish --access public --tag latest --dry-run --no-git-checks
         env:
+          NPM_CONFIG_PROVENANCE: "false"
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   release:
