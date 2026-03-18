@@ -36,7 +36,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org
           cache: pnpm
           cache-dependency-path: |
@@ -53,9 +53,7 @@ jobs:
           echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
 
       - name: Publish package
-        run: pnpm -C "$PACKAGE_DIR" publish --access public --provenance --tag latest --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm -C "$PACKAGE_DIR" publish --access public --tag latest --no-git-checks
 
       - name: Create and push release tag
         run: |
