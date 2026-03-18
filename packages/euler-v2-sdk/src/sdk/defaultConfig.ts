@@ -1,3 +1,4 @@
+import type { AccountV3AdapterConfig } from "../services/accountService/accountServiceConfig.js"
 import { DeploymentServiceConfig } from "src/services/deploymentService/deploymentService.js"
 import { AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter.js"
 import type { VaultTypeSubgraphAdapterConfig } from "../services/vaults/vaultMetaService/index.js"
@@ -27,6 +28,10 @@ export const defaultAccountVaultsAdapterConfig: AccountVaultsSubgraphAdapterConf
     60808: 'https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-bob/latest/gn',
     80094: 'https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-berachain/latest/gn',
   }
+}
+
+export const defaultAccountV3AdapterConfig: AccountV3AdapterConfig = {
+  endpoint: process.env.EULER_ACCOUNT_V3_API_URL || "https://v3staging.eul.dev",
 }
 
 /** Same subgraph endpoints as account vaults; used by VaultMetaService to resolve vault type from factory. */

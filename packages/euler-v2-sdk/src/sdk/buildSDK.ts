@@ -4,7 +4,9 @@ import { DeploymentService, IDeploymentService } from "../services/deploymentSer
 import { ProviderService, IProviderService } from "../services/providerService/index.js";
 import { AccountService, IAccountService } from "../services/accountService/index.js";
 import { AccountOnchainAdapter } from "../services/accountService/adapters/accountOnchainAdapter.js";
+import { AccountV3Adapter } from "../services/accountService/adapters/accountV3Adapter.js";
 import { AccountVaultsSubgraphAdapter, AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter.js";
+import type { AccountServiceConfig } from "../services/accountService/accountServiceConfig.js";
 import { WalletService, IWalletService } from "../services/walletService/index.js";
 import { WalletOnchainAdapter } from "../services/walletService/adapters/walletOnchainAdapter.js";
 import { EVaultService, IEVaultService } from "../services/vaults/eVaultService/index.js";
@@ -25,7 +27,7 @@ import {
   type OracleAdapterServiceConfig,
 } from "../services/oracleAdapterService/index.js";
 import { SimulationService, ISimulationService } from "../services/simulationService/index.js";
-import { defaultAccountVaultsAdapterConfig, defaultBackendConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLAdapterConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeAdapterConfig } from "./defaultConfig.js";
+import { defaultAccountV3AdapterConfig, defaultAccountVaultsAdapterConfig, defaultBackendConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLAdapterConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeAdapterConfig } from "./defaultConfig.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
 import { EVaultOnchainAdapter } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter.js";
 import {
@@ -66,6 +68,7 @@ export interface BuildSDKOverrides<TVaultEntity extends IVaultEntity = VaultEnti
 
 export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity> {
   rpcUrls: Record<number, string>;
+  accountServiceConfig?: AccountServiceConfig;
   accountVaultsAdapterConfig?: AccountVaultsSubgraphAdapterConfig;
   vaultTypeAdapterConfig?: VaultTypeSubgraphAdapterConfig;
   /** Additional vault services to register; use { type, service } to register a custom vault type for getFactoryByType(chainId, type). Pass the extended entity type as the generic (e.g. buildEulerSDK<VaultEntity | CustomVault>({ ..., additionalVaultServices: [{ type: 'CustomVault', service: customService }] })). */
@@ -87,7 +90,7 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
 export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   options: BuildSDKOptions<TVaultEntity>
 ): Promise<EulerSDK<TVaultEntity>> {
-  const { rpcUrls, accountVaultsAdapterConfig, vaultTypeAdapterConfig, additionalVaultServices, eulerLabelsAdapterConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, intrinsicApyServiceConfig, oracleAdapterServiceConfig, buildQuery, plugins, servicesOverrides } = options;
+  const { rpcUrls, accountServiceConfig, accountVaultsAdapterConfig, vaultTypeAdapterConfig, additionalVaultServices, eulerLabelsAdapterConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, intrinsicApyServiceConfig, oracleAdapterServiceConfig, buildQuery, plugins, servicesOverrides } = options;
 
   // Build core services (these may be needed for adapters even if overridden)
   const abiService = servicesOverrides?.abiService ?? new ABIService(buildQuery);
@@ -95,13 +98,22 @@ export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEnt
   const providerService = servicesOverrides?.providerService ?? new ProviderService(rpcUrls);
 
   // Account adapter is built early so it can be used when building account service (after vault meta service)
+  const resolvedAccountServiceConfig = accountServiceConfig ?? {};
   const accountVaultsAdapter = new AccountVaultsSubgraphAdapter(accountVaultsAdapterConfig || defaultAccountVaultsAdapterConfig, buildQuery);
-  const accountAdapter = new AccountOnchainAdapter(
+  const accountOnchainAdapter = new AccountOnchainAdapter(
     providerService as ProviderService,
     deploymentService as DeploymentService,
     accountVaultsAdapter,
     buildQuery,
   );
+  const accountV3Adapter = new AccountV3Adapter(
+    resolvedAccountServiceConfig.v3AdapterConfig ?? defaultAccountV3AdapterConfig,
+    buildQuery,
+  );
+  const accountAdapter =
+    resolvedAccountServiceConfig.adapter === "onchain"
+      ? accountOnchainAdapter
+      : accountV3Adapter;
 
   // Build wallet service if not overridden
   let walletService: IWalletService;
@@ -202,8 +214,8 @@ export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEnt
       eVaultAdapter.setPlugins(plugins);
       eVaultAdapter.setBatchSimulationAdapter(pluginBatchSimDs);
     }
-    accountAdapter.setPlugins(plugins);
-    accountAdapter.setBatchSimulationAdapter(pluginBatchSimDs);
+    accountOnchainAdapter.setPlugins(plugins);
+    accountOnchainAdapter.setBatchSimulationAdapter(pluginBatchSimDs);
   }
 
   // Build account service if not overridden (requires vaultMetaService for fetchAccountWithVaults / fetchVaults)

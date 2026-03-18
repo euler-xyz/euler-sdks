@@ -39,10 +39,18 @@ export function SdkProvider({ children }: { children: ReactNode }) {
     buildEulerSDK({
       rpcUrls: RPC_URLS,
       buildQuery: sdkBuildQuery,
+      accountServiceConfig: {
+        adapter: "v3",
+        v3AdapterConfig: {
+          endpoint: "/api/euler-v3",
+        },
+      },
       swapServiceConfig: {
         swapApiUrl: "http://localhost:3002",
       },
       rewardsServiceConfig: {
+        brevisApiUrl: "/api/brevis-campaigns",
+        brevisProofsApiUrl: "/api/brevis-proofs",
         fuulApiUrl: "https://api.fuul.xyz/api/v1",
         fuulTotalsUrl: "/api/fuul/totals",
         fuulClaimChecksUrl: "/api/fuul/claim-checks",
