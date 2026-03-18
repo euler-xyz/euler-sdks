@@ -101,7 +101,7 @@ export interface IExecutionService {
   resolveRequiredApprovals(args: ResolveRequiredApprovalsArgs): Promise<TransactionPlan>;
   getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData;
   describeBatch(batch: EVCBatchItem[], extraAbis?: Abi[]): BatchItemDescription[];
-  /** Merges multiple plans into one: required approvals for the same (token, owner, spender) are summed; EVC batch items are concatenated in order. */
+  /** Merges multiple plans into one: required approvals for the same (token, owner, spender) are summed; executable items are preserved in order and adjacent EVC batches are concatenated. */
   mergePlans(plans: TransactionPlan[]): TransactionPlan;
   /** Converts EVC batch items into a transaction plan (single evcBatch, no required approvals). */
   convertBatchItemsToPlan(items: EVCBatchItem[]): TransactionPlan;
@@ -1365,15 +1365,15 @@ export class ExecutionService implements IExecutionService {
   /**
    * Merges multiple transaction plans into a single plan.
    * Required approvals for the same (token, owner, spender) are summed.
-   * EVC batch items from all plans are concatenated in order into one evcBatch.
+   * Executable items are preserved in order; adjacent EVC batch items are concatenated.
    * Can be used to construct a transaction queue.
    *
    * @param plans - Array of transaction plans to merge
-   * @returns Single plan: summed required approvals first, then one evcBatch with concatenated items
+   * @returns Single plan: summed required approvals first, followed by executable items in order
    */
   mergePlans(plans: TransactionPlan[]): TransactionPlan {
     const approvalByKey = new Map<string, RequiredApproval>()
-    const allBatchItems: EVCBatchItem[] = []
+    const executableItems: TransactionPlanItem[] = []
 
     for (const plan of plans) {
       for (const item of plan) {
@@ -1388,16 +1388,19 @@ export class ExecutionService implements IExecutionService {
             approvalByKey.set(key, { ...rest, resolved: undefined })
           }
         } else if (item.type === "evcBatch") {
-          allBatchItems.push(...item.items)
+          const previous = executableItems[executableItems.length - 1]
+          if (previous?.type === "evcBatch") {
+            previous.items.push(...item.items)
+          } else {
+            executableItems.push({ type: "evcBatch", items: [...item.items] })
+          }
+        } else {
+          executableItems.push(item)
         }
       }
     }
 
-    const merged: TransactionPlan = [...approvalByKey.values()]
-    if (allBatchItems.length > 0) {
-      merged.push({ type: "evcBatch", items: allBatchItems })
-    }
-    return merged
+    return [...approvalByKey.values(), ...executableItems]
   }
 
   /**

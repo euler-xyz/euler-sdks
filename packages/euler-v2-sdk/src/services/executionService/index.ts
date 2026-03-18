@@ -27,6 +27,7 @@ export type {
   TransactionPlanItem,
   ApproveCall,
   Permit2DataToSign,
+  ContractCall,
   EVCBatchItems,
   PlanDepositArgs,
   PlanMintArgs,

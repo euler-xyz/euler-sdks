@@ -30,9 +30,11 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 - `accountService` for account/sub-account state
 - `vaultMetaService` for mixed or unknown vault types
 - `executionService` for planning/encoding tx batches
+  - executes generic `TransactionPlan` items, including direct `contractCall` items
 - `simulationService` for pre-trade validation
 - `swapService` for quotes and providers
 - `oracleAdapterService` for oracle adapter metadata (provider/methodology/checks)
+- `rewardsService` for reward reads and provider-specific reward claim planning
 
 Do not assume all vaults are `EVault`. Use `vaultMetaService` for polymorphic routing.
 
@@ -66,10 +68,11 @@ Prefer `planX` APIs over `encodeX` for user-facing transaction flows. Resolve re
 
 Execution order:
 
-1. Build plan (`planDeposit`, `planBorrow`, `planRepayWithSwap`, etc.)
+1. Build plan (`planDeposit`, `planBorrow`, `planRepayWithSwap`, etc.) or reward claim plan in `rewardsService`
 2. Resolve approvals (`approve` or Permit2 signature path)
-3. Send `evcBatch` transaction(s)
-4. Wait for receipts and refresh UI state
+3. Execute `contractCall` items directly when present
+4. Send `evcBatch` transaction(s)
+5. Wait for receipts and refresh UI state
 
 Use `mergePlans` to atomically combine user intents and `describeBatch` for previews.
 

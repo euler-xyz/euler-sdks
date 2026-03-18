@@ -29,6 +29,7 @@ A plan typically contains:
 
 - `requiredApproval` items (what approvals/signatures are needed)
 - one or more `evcBatch` items (the encoded protocol calls)
+- optional `contractCall` items (direct non-EVC calls, used by reward claim planners and similar extensions)
 
 The planner layer uses the account/vault context you pass in to drive the right encoder path and include approval requirements.
 
@@ -56,7 +57,8 @@ This example shows a practical flow:
 
 1. Process `requiredApproval` items (approve or Permit2 path)
 2. Collect/append Permit2 calls when needed
-3. Send the final EVC batch transaction
+3. Execute `contractCall` items directly
+4. Send the final EVC batch transaction
 
 ## Embedding Payloads in Higher-Level Flows
 
@@ -68,9 +70,11 @@ This example shows a practical flow:
 
 Use `convertBatchItemsToPlan(...)` when you already have raw batch items and want to integrate them into a plan-based pipeline.
 
+Reward claim planning is intentionally kept out of `executionService`. Provider-specific claim payloads for Merkl, Brevis, and Fuul are built in [`rewardsService`](./rewards-service.md), which returns standard `TransactionPlan` items that your executor can run alongside core Euler plans.
+
 ## `mergePlans` and `describeBatch`
 
-- `mergePlans(plans)`: merges multiple plans into one plan. Required approvals for the same `(token, owner, spender)` are summed, and EVC batch items are concatenated in order.
+- `mergePlans(plans)`: merges multiple plans into one plan. Required approvals for the same `(token, owner, spender)` are summed, executable items keep their order, and adjacent EVC batch items are concatenated.
 - `describeBatch(batch, extraAbis?)`: decodes batch item calldata into human-readable function names and arguments. Useful for logs, debugging, previews, and safety checks.
 
 `describeBatch` is a decoder/inspector only; it does not execute anything.

@@ -27,6 +27,12 @@ const sdk = await buildEulerSDK({
   rewardsServiceConfig: {
     merklApiUrl: "https://...",
     brevisApiUrl: "https://...",
+    brevisProofsApiUrl: "https://...",
+    fuulApiUrl: "https://...",
+    fuulTotalsUrl: "https://your-app/api/fuul/totals",
+    fuulClaimChecksUrl: "https://your-app/api/fuul/claim-checks",
+    fuulManagerAddress: "0x...",
+    fuulFactoryAddress: "0x...",
   },
 
   // Optional: intrinsic APY data sources
@@ -83,7 +89,7 @@ const sdk = await buildEulerSDK({
 | `rpcUrls` | _(required)_ | On-chain data reads for all services |
 | `backendConfig` | `indexer.euler.finance` | Off-chain USD pricing backend (backend-first, on-chain oracle fallback). Override to point at a different pricing API. |
 | `swapServiceConfig` | Euler swap API | Swap quote fetching |
-| `rewardsServiceConfig` | Merkl + Brevis defaults | Reward campaign data |
+| `rewardsServiceConfig` | Merkl + Brevis defaults, Fuul optional | Reward campaign data and reward claim planning |
 | `intrinsicApyServiceConfig` | DefiLlama + Pendle | Underlying yield data for vault assets |
 | `buildQuery` | identity | Wrap all external queries (useful for caching, see [Caching docs](./caching-external-data-queries.md)) |
 | `plugins` | `[]` | Extend on-chain reads and transaction plans (see [Plugins docs](./plugins.md)) |

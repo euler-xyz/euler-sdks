@@ -1,5 +1,6 @@
 import type { Address, Hex } from "viem";
 import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
+import type { TransactionPlan } from "../executionService/index.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -77,10 +78,27 @@ export interface RewardsServiceConfig {
   merklDistributorAddress?: Address;
   /** Optional Fuul claim manager address for user reward display / future claim flows. */
   fuulManagerAddress?: Address;
+  /** Override the Fuul factory address used to read per-project claim fees. */
+  fuulFactoryAddress?: Address;
   /** Feature flags for individual providers. */
   enableMerkl?: boolean;
   enableBrevis?: boolean;
   enableFuul?: boolean;
+}
+
+export interface BuildRewardClaimPlanArgs {
+  reward: UserReward;
+  account: Address;
+}
+
+export interface BuildRewardClaimsPlanArgs {
+  rewards: UserReward[];
+  account: Address;
+}
+
+export interface BuildRewardClaimAllPlanArgs {
+  chainId: number;
+  account: Address;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +112,9 @@ export interface IRewardsService {
   fetchUserRewards(chainId: number, address: Address): Promise<UserReward[]>;
   fetchFuulTotals(address: Address): Promise<FuulTotals>;
   fetchFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]>;
+  buildClaimPlan(args: BuildRewardClaimPlanArgs): Promise<TransactionPlan>;
+  buildClaimPlans(args: BuildRewardClaimsPlanArgs): Promise<TransactionPlan>;
+  buildClaimAllPlan(args: BuildRewardClaimAllPlanArgs): Promise<TransactionPlan>;
 }
 
 // ---------------------------------------------------------------------------

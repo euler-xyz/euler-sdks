@@ -1,5 +1,6 @@
 import { type Address, type Hex, getAddress } from "viem";
 import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
+import type { ProviderService } from "../providerService/index.js";
 import type {
   IRewardsService,
   RewardsServiceConfig,
@@ -14,8 +15,12 @@ import type {
   FuulClaimCheck,
   FuulIncentive,
   FuulTotals,
+  BuildRewardClaimPlanArgs,
+  BuildRewardClaimsPlanArgs,
+  BuildRewardClaimAllPlanArgs,
 } from "./rewardsServiceTypes.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
+import type { ContractCall, TransactionPlan } from "../executionService/index.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -33,10 +38,90 @@ const DEFAULT_CACHE_TTL_MS = 300_000; // 5 minutes
 /** Standard Merkl Distributor contract address (same on all EVM chains via CREATE2). */
 const DEFAULT_MERKL_DISTRIBUTOR: Address = "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae";
 const DEFAULT_FUUL_MANAGER: Address = "0x8a0836dA623ea1083c85acB958DeEa3716b39dc6";
+const DEFAULT_FUUL_FACTORY: Address = "0xa0080A60EE9f1985151161Fa6b09652Dc46afdEF";
 
 // Brevis action codes
 const BREVIS_LEND = 2002;
 const BREVIS_BORROW = 2001;
+
+const MERKL_DISTRIBUTOR_ABI = [
+  {
+    type: "function",
+    name: "claim",
+    inputs: [
+      { name: "users", type: "address[]", internalType: "address[]" },
+      { name: "tokens", type: "address[]", internalType: "address[]" },
+      { name: "amounts", type: "uint256[]", internalType: "uint256[]" },
+      { name: "proofs", type: "bytes32[][]", internalType: "bytes32[][]" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+] as const;
+
+const BREVIS_CLAIM_ABI = [
+  {
+    type: "function",
+    name: "claim",
+    inputs: [
+      { name: "earner", type: "address", internalType: "address" },
+      { name: "cumulativeAmounts", type: "uint256[]", internalType: "uint256[]" },
+      { name: "epoch", type: "uint64", internalType: "uint64" },
+      { name: "proof", type: "bytes32[]", internalType: "bytes32[]" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+] as const;
+
+const FUUL_MANAGER_ABI = [
+  {
+    type: "function",
+    name: "claim",
+    inputs: [
+      {
+        name: "claimChecks",
+        type: "tuple[]",
+        internalType: "struct ClaimCheck[]",
+        components: [
+          { name: "projectAddress", type: "address", internalType: "address" },
+          { name: "to", type: "address", internalType: "address" },
+          { name: "currency", type: "address", internalType: "address" },
+          { name: "currencyType", type: "uint8", internalType: "enum IFuulProject.TokenType" },
+          { name: "amount", type: "uint256", internalType: "uint256" },
+          { name: "reason", type: "uint8", internalType: "enum ClaimReason" },
+          { name: "tokenId", type: "uint256", internalType: "uint256" },
+          { name: "deadline", type: "uint256", internalType: "uint256" },
+          { name: "proof", type: "bytes32", internalType: "bytes32" },
+          { name: "signatures", type: "bytes[]", internalType: "bytes[]" },
+        ],
+      },
+    ],
+    outputs: [],
+    stateMutability: "payable",
+  },
+] as const;
+
+const FUUL_FACTORY_ABI = [
+  {
+    type: "function",
+    name: "getFeesInformation",
+    inputs: [{ name: "projectAddress", type: "address", internalType: "address" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        internalType: "struct FeesInformation",
+        components: [
+          { name: "projectOwnerClaimFee", type: "uint256", internalType: "uint256" },
+          { name: "nativeUserClaimFee", type: "uint256", internalType: "uint256" },
+          { name: "tokenUserClaimFee", type: "uint256", internalType: "uint256" },
+        ],
+      },
+    ],
+    stateMutability: "view",
+  },
+] as const;
 
 // ---------------------------------------------------------------------------
 // Cache entry
@@ -52,6 +137,7 @@ interface CacheEntry {
 // ---------------------------------------------------------------------------
 
 export class RewardsService implements IRewardsService {
+  private providerService?: ProviderService;
   private merklApiUrl: string;
   private brevisApiUrl: string;
   private brevisProofsApiUrl: string;
@@ -62,6 +148,7 @@ export class RewardsService implements IRewardsService {
   private cacheTtlMs: number;
   private merklDistributorAddress: Address;
   private fuulManagerAddress: Address;
+  private fuulFactoryAddress: Address;
   private enableMerkl: boolean;
   private enableBrevis: boolean;
   private enableFuul: boolean;
@@ -78,10 +165,15 @@ export class RewardsService implements IRewardsService {
     this.cacheTtlMs = config?.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.merklDistributorAddress = config?.merklDistributorAddress ?? DEFAULT_MERKL_DISTRIBUTOR;
     this.fuulManagerAddress = config?.fuulManagerAddress ?? DEFAULT_FUUL_MANAGER;
+    this.fuulFactoryAddress = config?.fuulFactoryAddress ?? DEFAULT_FUUL_FACTORY;
     this.enableMerkl = config?.enableMerkl ?? true;
     this.enableBrevis = config?.enableBrevis ?? true;
     this.enableFuul = config?.enableFuul ?? true;
     if (buildQuery) applyBuildQuery(this, buildQuery);
+  }
+
+  setProviderService(providerService: ProviderService): void {
+    this.providerService = providerService;
   }
 
   // -----------------------------------------------------------------------
@@ -259,6 +351,57 @@ export class RewardsService implements IRewardsService {
       ...brevisRewards,
       ...fuulRewards,
     ];
+  }
+
+  async buildClaimPlan(args: BuildRewardClaimPlanArgs): Promise<TransactionPlan> {
+    return this.buildClaimPlans({ rewards: [args.reward], account: args.account });
+  }
+
+  async buildClaimPlans(args: BuildRewardClaimsPlanArgs): Promise<TransactionPlan> {
+    const account = getAddress(args.account) as Address;
+    const rewards = args.rewards.filter((reward) => BigInt(reward.unclaimed) > 0n);
+    if (rewards.length === 0) return [];
+
+    const plan: TransactionPlan = [];
+
+    const merklRewards = rewards.filter((reward) => reward.provider === "merkl");
+    if (merklRewards.length > 0) {
+      const groupedMerklRewards = new Map<string, UserReward[]>();
+      for (const reward of merklRewards) {
+        if (!reward.claimAddress || !reward.proof?.length) {
+          throw new Error("Missing Merkl claim data");
+        }
+        const key = `${reward.chainId}:${reward.claimAddress.toLowerCase()}`;
+        const group = groupedMerklRewards.get(key) ?? [];
+        group.push(reward);
+        groupedMerklRewards.set(key, group);
+      }
+
+      for (const group of groupedMerklRewards.values()) {
+        plan.push(this.buildMerklContractCall(group, account));
+      }
+    }
+
+    for (const reward of rewards) {
+      if (reward.provider !== "brevis") continue;
+      plan.push(this.buildBrevisContractCall(reward, account));
+    }
+
+    const fuulRewards = rewards.filter((reward) => reward.provider === "fuul");
+    if (fuulRewards.length > 0) {
+      const chainIds = new Set(fuulRewards.map((reward) => reward.chainId));
+      if (chainIds.size > 1) {
+        throw new Error("Fuul claim planning requires rewards from a single chain");
+      }
+      plan.push(await this.buildFuulContractCall(fuulRewards[0]!.chainId, account));
+    }
+
+    return plan;
+  }
+
+  async buildClaimAllPlan(args: BuildRewardClaimAllPlanArgs): Promise<TransactionPlan> {
+    const rewards = await this.fetchUserRewards(args.chainId, args.account);
+    return this.buildClaimPlans({ rewards, account: args.account });
   }
 
   // -----------------------------------------------------------------------
@@ -533,6 +676,108 @@ export class RewardsService implements IRewardsService {
       userIdentifier: address,
       userIdentifierType: "evm_address",
     }).catch(() => []);
+  }
+
+  private buildMerklContractCall(rewards: UserReward[], account: Address): ContractCall {
+    const firstReward = rewards[0];
+    if (!firstReward?.claimAddress) {
+      throw new Error("Missing Merkl claim address");
+    }
+
+    return {
+      type: "contractCall",
+      chainId: firstReward.chainId,
+      to: firstReward.claimAddress,
+      abi: MERKL_DISTRIBUTOR_ABI,
+      functionName: "claim",
+      args: [
+        rewards.map(() => account),
+        rewards.map((reward) => reward.token.address),
+        rewards.map((reward) => BigInt(reward.accumulated)),
+        rewards.map((reward) => reward.proof ?? []),
+      ],
+      value: 0n,
+    };
+  }
+
+  private buildBrevisContractCall(reward: UserReward, account: Address): ContractCall {
+    if (!reward.claimAddress || !reward.cumulativeAmounts?.length || !reward.epoch || !reward.proof?.length) {
+      throw new Error("Missing Brevis claim data");
+    }
+
+    return {
+      type: "contractCall",
+      chainId: reward.chainId,
+      to: reward.claimAddress,
+      abi: BREVIS_CLAIM_ABI,
+      functionName: "claim",
+      args: [
+        account,
+        reward.cumulativeAmounts.map((amount) => BigInt(amount)),
+        BigInt(reward.epoch),
+        reward.proof,
+      ],
+      value: 0n,
+    };
+  }
+
+  private async buildFuulContractCall(chainId: number, account: Address): Promise<ContractCall> {
+    const claimChecks = await this.fetchFuulClaimChecks(account);
+    if (claimChecks.length === 0) {
+      throw new Error("No claimable Fuul rewards found");
+    }
+
+    const uniqueProjects = [...new Set(claimChecks.map((check) => getAddress(check.project_address)))];
+    const feePairs = await Promise.all(
+      uniqueProjects.map(async (projectAddress) => [
+        projectAddress,
+        await this.readFuulClaimFee(chainId, projectAddress),
+      ] as const)
+    );
+    const feeMap = new Map(feePairs);
+    const totalFee = claimChecks.reduce(
+      (sum, check) => sum + (feeMap.get(getAddress(check.project_address)) ?? 0n),
+      0n
+    );
+
+    return {
+      type: "contractCall",
+      chainId,
+      to: this.fuulManagerAddress,
+      abi: FUUL_MANAGER_ABI,
+      functionName: "claim",
+      args: [
+        claimChecks.map((check) => ({
+          projectAddress: getAddress(check.project_address) as Address,
+          to: getAddress(check.to) as Address,
+          currency: getAddress(check.currency) as Address,
+          currencyType: check.currency_type,
+          amount: BigInt(check.amount),
+          reason: check.reason,
+          tokenId: BigInt(check.token_id),
+          deadline: BigInt(check.deadline),
+          proof: check.proof as Hex,
+          signatures: check.signatures as Hex[],
+        })),
+      ],
+      value: totalFee,
+    };
+  }
+
+  private async readFuulClaimFee(chainId: number, projectAddress: Address): Promise<bigint> {
+    if (!this.providerService) {
+      throw new Error("RewardsService providerService not configured");
+    }
+
+    const provider = this.providerService.getProvider(chainId);
+    const feesInfo = await provider.readContract({
+      address: this.fuulFactoryAddress,
+      abi: FUUL_FACTORY_ABI,
+      functionName: "getFeesInformation",
+      args: [projectAddress],
+    });
+
+    return feesInfo.nativeUserClaimFee;
   }
 
   private async fetchFuulUserRewards(

@@ -1,4 +1,4 @@
-import { Address, Hex, TypedDataDomain } from "viem";
+import { Abi, Address, Hex, TypedDataDomain } from "viem";
 import type { Account, ISubAccount, IHasVaultAddress } from "../../entities/Account.js";
 import type { Wallet } from "../../entities/Wallet.js";
 import type {
@@ -308,7 +308,17 @@ export type EVCBatchItems = {
   items: EVCBatchItem[]
 }
 
-export type TransactionPlanItem = RequiredApproval | EVCBatchItems
+export type ContractCall = {
+  type: "contractCall"
+  chainId: number
+  to: Address
+  abi: Abi
+  functionName: string
+  args: readonly unknown[]
+  value: bigint
+}
+
+export type TransactionPlanItem = RequiredApproval | EVCBatchItems | ContractCall
 
 export type TransactionPlan = TransactionPlanItem[]
 

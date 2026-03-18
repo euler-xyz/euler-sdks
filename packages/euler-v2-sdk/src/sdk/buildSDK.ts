@@ -299,6 +299,10 @@ export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEnt
     securitizeVaultService.setRewardsService(rewardsService);
   }
 
+  if (rewardsService instanceof RewardsService) {
+    rewardsService.setProviderService(providerService as ProviderService);
+  }
+
   // Wire intrinsicApyService into vault services for intrinsic APY population
   if (eVaultService instanceof EVaultService) {
     eVaultService.setIntrinsicApyService(intrinsicApyService);

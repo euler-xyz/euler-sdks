@@ -1,5 +1,5 @@
 import { EVCBatchItem, TransactionPlanItem, EulerSDK, decodeSmartContractErrors } from "euler-v2-sdk";
-import { maxUint256, WalletClient } from "viem";
+import { encodeFunctionData, maxUint256, WalletClient } from "viem";
 import { mainnet } from "viem/chains";
 import { publicClient, walletClient } from "./config.js";
 
@@ -7,6 +7,7 @@ import { publicClient, walletClient } from "./config.js";
  * Executes a transaction plan by handling different types of plan items:
  * - requiredApproval: Processes resolved approvals (approve calls or permit2 signatures)
  * - evcBatch: Prepends any permit2 batch items and sends to EVC.batch
+ * - contractCall: Sends a direct contract call transaction
  */
 export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK, wc: WalletClient = walletClient): Promise<void> {
   const permit2BatchItems: EVCBatchItem[] = [];
@@ -110,6 +111,26 @@ export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK, wc
         description.forEach(desc => {
           console.log(`    - ${desc.functionName}`); 
         });
+      } else if (item.type === "contractCall") {
+        if (item.chainId !== mainnet.id) {
+          throw new Error(`Executor is configured for chain ${mainnet.id}, but plan item requires chain ${item.chainId}`);
+        }
+
+        const hash = await wc.sendTransaction({
+          to: item.to,
+          data: encodeFunctionData({
+            abi: item.abi,
+            functionName: item.functionName,
+            args: item.args,
+          }),
+          account: wc.account!,
+          chain: mainnet,
+          value: item.value,
+        });
+
+        await publicClient.waitForTransactionReceipt({ hash });
+        permit2BatchItems.length = 0;
+        console.log(`  ✓ ${item.functionName}`);
       }
     }
   } catch (error) {
