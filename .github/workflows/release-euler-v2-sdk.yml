@@ -53,7 +53,8 @@ jobs:
           echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
 
       - name: Publish package
-        run: pnpm -C "$PACKAGE_DIR" publish
+        working-directory: packages/euler-v2-sdk
+        run: npm publish --access public --tag latest
 
       - name: Create and push release tag
         run: |
