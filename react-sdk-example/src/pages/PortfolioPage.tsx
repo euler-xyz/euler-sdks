@@ -1,15 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
-import { useAccount as useWagmiAccount, useChainId } from "wagmi";
-import { useAccountWithDiagnostics } from "../queries/sdkQueries.ts";
+import {
+  useAccount as useWagmiAccount,
+  useChainId,
+  usePublicClient,
+  useSwitchChain,
+  useWalletClient,
+} from "wagmi";
+import { queryClient, useAccountWithDiagnostics } from "../queries/sdkQueries.ts";
 import { getSubAccountId } from "euler-v2-sdk";
-import type { Address } from "viem";
+import { getAddress, type Address } from "viem";
 import { formatBigInt, formatPriceUsd, formatWad, formatWadPercent } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { RoeCell } from "../components/RoeCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
 import type { VaultEntity, AccountPosition, UserReward } from "euler-v2-sdk";
+import { executePlanWithProgress, type PlanProgress } from "../utils/txExecutor.ts";
 
 // Persist across navigations but not across full page reloads
 let lastAddress: string | undefined;
@@ -20,11 +27,18 @@ function formatUsdValue(value: bigint | undefined): string {
 }
 
 export function PortfolioPage() {
-  const { chainId, loading: sdkLoading, error: sdkError } = useSDK();
+  const { sdk, chainId, loading: sdkLoading, error: sdkError } = useSDK();
   const { address: walletAddress, isConnected } = useWagmiAccount();
   const walletChainId = useChainId();
+  const { data: walletClient } = useWalletClient({ chainId });
+  const publicClient = usePublicClient({ chainId });
+  const { switchChain, isPending: isSwitching } = useSwitchChain();
   const [input, setInput] = useState(lastAddress ?? "");
   const [address, setAddress] = useState<string | undefined>(lastAddress);
+  const [claimError, setClaimError] = useState<string | null>(null);
+  const [claimSuccess, setClaimSuccess] = useState<string | null>(null);
+  const [claimProgress, setClaimProgress] = useState<PlanProgress | null>(null);
+  const [activeClaimKey, setActiveClaimKey] = useState<string | null>(null);
 
   const { data, isLoading, error } = useAccountWithDiagnostics(chainId, address);
   const account = data?.account;
@@ -44,6 +58,124 @@ export function PortfolioPage() {
       setAddress(walletAddress);
     }
   }, [isConnected, walletAddress]);
+
+  const connectedWalletMatchesViewedAccount =
+    !!walletAddress &&
+    !!account &&
+    getAddress(walletAddress) === getAddress(account.owner);
+
+  const resetClaimMessages = () => {
+    setClaimError(null);
+    setClaimSuccess(null);
+  };
+
+  const invalidateRewardQueries = async (accountAddress: Address) => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["account", chainId, accountAddress] }),
+      queryClient.invalidateQueries({ queryKey: ["accountWithDiagnostics", chainId, accountAddress] }),
+      queryClient.invalidateQueries({ queryKey: ["sdk", "queryMerklUserRewards"] }),
+      queryClient.invalidateQueries({ queryKey: ["sdk", "queryBrevisUserProofs"] }),
+      queryClient.invalidateQueries({ queryKey: ["sdk", "queryFuulTotals"] }),
+      queryClient.invalidateQueries({ queryKey: ["sdk", "queryFuulClaimChecks"] }),
+    ]);
+  };
+
+  const ensureWalletReady = async (): Promise<boolean> => {
+    if (!walletAddress) {
+      throw new Error("Connect a wallet to claim rewards.");
+    }
+    if (!walletClient || !publicClient) {
+      throw new Error("Wallet client not ready.");
+    }
+    if (walletChainId !== chainId) {
+      if (!switchChain) {
+        throw new Error(`Switch your wallet to chain ${chainId} before claiming.`);
+      }
+      await switchChain({ chainId });
+      return false;
+    }
+    if (!account) {
+      throw new Error("Account data not loaded.");
+    }
+    if (getAddress(walletAddress) !== getAddress(account.owner)) {
+      throw new Error("Connect the same wallet as the viewed account to claim rewards.");
+    }
+    return true;
+  };
+
+  const handleClaim = async (reward?: UserReward) => {
+    resetClaimMessages();
+
+    try {
+      const ready = await ensureWalletReady();
+      if (!ready || !walletAddress || !walletClient || !publicClient || !account) return;
+
+      const claimRewards = !reward
+        ? account.userRewards ?? []
+        : reward.provider === "merkl"
+          ? (account.userRewards ?? []).filter(
+              (candidate) =>
+                candidate.provider === "merkl" &&
+                candidate.chainId === reward.chainId &&
+                (candidate.claimAddress?.toLowerCase() ?? "") ===
+                  (reward.claimAddress?.toLowerCase() ?? "")
+            )
+          : [reward];
+
+      const claimKey = !reward
+        ? "all"
+        : reward.provider === "merkl"
+          ? `merkl:${reward.chainId}:${reward.claimAddress ?? "none"}`
+          : `${reward.provider}:${reward.token.address}:${reward.claimAddress ?? "none"}`;
+      setActiveClaimKey(claimKey);
+
+      const plan = reward
+        ? await sdk!.rewardsService.buildClaimPlans({
+            rewards: claimRewards,
+            account: walletAddress as Address,
+          })
+        : await sdk!.rewardsService.buildClaimAllPlan({
+            chainId,
+            account: walletAddress as Address,
+          });
+
+      if (plan.length === 0) {
+        throw new Error("No claimable rewards found.");
+      }
+
+      setClaimProgress({ completed: 0, total: plan.length });
+
+      await executePlanWithProgress({
+        plan,
+        sdk: sdk!,
+        chainId,
+        walletClient,
+        publicClient,
+        account: walletAddress as Address,
+        onProgress: (progress) => {
+          setClaimProgress({
+            completed: progress.completed,
+            total: progress.total,
+            status: progress.status,
+          });
+        },
+      });
+
+      await invalidateRewardQueries(walletAddress as Address);
+      setClaimSuccess(
+        reward
+          ? reward.provider === "merkl" && claimRewards.length > 1
+            ? `Claimed ${claimRewards.length} Merkl rewards in one transaction.`
+            : `Claimed ${reward.token.symbol} rewards.`
+          : "Claimed all rewards."
+      );
+    } catch (err) {
+      setClaimError(String(err));
+    } finally {
+      setClaimProgress(null);
+      setActiveClaimKey(null);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -196,17 +328,75 @@ export function PortfolioPage() {
 
           {account.userRewards && account.userRewards.length > 0 && (
             <div style={{ marginBottom: 24 }}>
-              <h4
+              <div
                 style={{
-                  fontSize: 12,
-                  textTransform: "uppercase",
-                  letterSpacing: 1,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
                   marginBottom: 8,
-                  color: "#666",
+                  flexWrap: "wrap",
                 }}
               >
-                Your Rewards
-              </h4>
+                <h4
+                  style={{
+                    fontSize: 12,
+                    textTransform: "uppercase",
+                    letterSpacing: 1,
+                    marginBottom: 0,
+                    color: "#666",
+                  }}
+                >
+                  Your Rewards
+                </h4>
+                <button
+                  type="button"
+                  disabled={
+                    !connectedWalletMatchesViewedAccount ||
+                    !!claimProgress ||
+                    isSwitching
+                  }
+                  onClick={() => void handleClaim()}
+                  style={{
+                    fontFamily: "inherit",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    padding: "6px 12px",
+                    border: "2px solid #000",
+                    background:
+                      !connectedWalletMatchesViewedAccount || claimProgress || isSwitching
+                        ? "#eee"
+                        : "#000",
+                    color:
+                      !connectedWalletMatchesViewedAccount || claimProgress || isSwitching
+                        ? "#777"
+                        : "#fff",
+                    cursor:
+                      !connectedWalletMatchesViewedAccount || claimProgress || isSwitching
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  {activeClaimKey === "all" && claimProgress
+                    ? `Claiming... ${claimProgress.completed}/${claimProgress.total}`
+                    : "Claim All"}
+                </button>
+              </div>
+              {!connectedWalletMatchesViewedAccount && (
+                <div className="status-message" style={{ marginBottom: 12 }}>
+                  Connect the viewed account to claim rewards.
+                </div>
+              )}
+              {claimError && (
+                <div className="error-message" style={{ marginBottom: 12 }}>
+                  {claimError}
+                </div>
+              )}
+              {claimSuccess && (
+                <div className="status-message" style={{ marginBottom: 12 }}>
+                  {claimSuccess}
+                </div>
+              )}
               <table>
                 <thead>
                   <tr>
@@ -215,6 +405,7 @@ export function PortfolioPage() {
                     <th>Token Price</th>
                     <th>Provider</th>
                     <th>Claim Address</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -241,6 +432,44 @@ export function PortfolioPage() {
                           {reward.claimAddress
                             ? <CopyAddress address={reward.claimAddress} />
                             : "-"}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            disabled={
+                              !connectedWalletMatchesViewedAccount ||
+                              !!claimProgress ||
+                              isSwitching
+                            }
+                            onClick={() => void handleClaim(reward)}
+                            style={{
+                              fontFamily: "inherit",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              padding: "4px 10px",
+                              border: "2px solid #000",
+                              background:
+                                !connectedWalletMatchesViewedAccount || claimProgress || isSwitching
+                                  ? "#eee"
+                                  : "#fff",
+                              color:
+                                !connectedWalletMatchesViewedAccount || claimProgress || isSwitching
+                                  ? "#777"
+                                  : "#000",
+                              cursor:
+                                !connectedWalletMatchesViewedAccount || claimProgress || isSwitching
+                                  ? "not-allowed"
+                                  : "pointer",
+                            }}
+                          >
+                            {activeClaimKey ===
+                              (reward.provider === "merkl"
+                                ? `merkl:${reward.chainId}:${reward.claimAddress ?? "none"}`
+                                : `${reward.provider}:${reward.token.address}:${reward.claimAddress ?? "none"}`) &&
+                            claimProgress
+                              ? `Claiming... ${claimProgress.completed}/${claimProgress.total}`
+                              : "Claim"}
+                          </button>
                         </td>
                       </tr>
                     )

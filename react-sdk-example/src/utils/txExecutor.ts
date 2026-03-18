@@ -6,7 +6,7 @@ import {
   type TransactionPlanItem,
 } from "euler-v2-sdk";
 import type { Address, PublicClient, WalletClient } from "viem";
-import { maxUint256 } from "viem";
+import { encodeFunctionData, maxUint256 } from "viem";
 
 const PERMIT2_ABI = [
   {
@@ -282,6 +282,26 @@ export async function executePlanWithProgress(args: {
           account,
           chain: publicClient.chain,
           gas: gasWithBuffer,
+        });
+
+        await publicClient.waitForTransactionReceipt({ hash });
+        permit2BatchItems.length = 0;
+      } else if (item.type === "contractCall") {
+        if (item.chainId !== chainId) {
+          throw new Error(`Plan item targets chain ${item.chainId}, but executor is configured for chain ${chainId}`);
+        }
+
+        update(item, item.functionName);
+        const hash = await walletClient.sendTransaction({
+          to: item.to,
+          data: encodeFunctionData({
+            abi: item.abi,
+            functionName: item.functionName,
+            args: item.args,
+          }),
+          value: item.value,
+          account,
+          chain: publicClient.chain,
         });
 
         await publicClient.waitForTransactionReceipt({ hash });
