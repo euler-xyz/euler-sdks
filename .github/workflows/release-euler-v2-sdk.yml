@@ -72,7 +72,7 @@ jobs:
 
       - name: Dry run publish
         if: steps.version.outputs.should_release == 'true'
-        run: pnpm -C "$PACKAGE_DIR" publish --access public --provenance --tag latest --dry-run --no-git-checks
+        run: pnpm -C "$PACKAGE_DIR" publish --access public --tag latest --dry-run --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
