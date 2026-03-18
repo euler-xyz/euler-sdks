@@ -17,12 +17,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify:
+  release:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag_name: ${{ steps.version.outputs.tag_name }}
-      should_release: ${{ steps.version.outputs.should_release }}
     env:
       PACKAGE_DIR: packages/euler-v2-sdk
 
@@ -50,64 +46,11 @@ jobs:
       - name: Install dependencies
         run: pnpm -C "$PACKAGE_DIR" install --frozen-lockfile
 
-      - name: Resolve version and release tag
-        id: version
+      - name: Resolve release tag
         run: |
           VERSION="$(node -p "require('./$PACKAGE_DIR/package.json').version")"
           TAG_NAME="euler-v2-sdk-v$VERSION"
-          if git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null; then
-            echo "Tag already exists locally: $TAG_NAME"
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-          elif git ls-remote --exit-code --tags origin "$TAG_NAME" >/dev/null 2>&1; then
-            echo "Tag already exists on origin: $TAG_NAME"
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
-
-      - name: Release checks
-        run: pnpm -C "$PACKAGE_DIR" run release:check
-
-      - name: Dry run publish
-        if: steps.version.outputs.should_release == 'true'
-        run: pnpm -C "$PACKAGE_DIR" publish --access public --tag latest --dry-run --no-git-checks
-        env:
-          NPM_CONFIG_PROVENANCE: "false"
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-  release:
-    needs: verify
-    if: needs.verify.outputs.should_release == 'true'
-    runs-on: ubuntu-latest
-    env:
-      PACKAGE_DIR: packages/euler-v2-sdk
-      TAG_NAME: ${{ needs.verify.outputs.tag_name }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          registry-url: https://registry.npmjs.org
-          cache: pnpm
-          cache-dependency-path: |
-            package-lock.json
-            packages/euler-v2-sdk/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm -C "$PACKAGE_DIR" install --frozen-lockfile
+          echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
 
       - name: Publish package
         run: pnpm -C "$PACKAGE_DIR" publish --access public --provenance --tag latest --no-git-checks
