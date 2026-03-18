@@ -5,14 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:sdk": "pnpm -C ../packages/euler-v2-sdk run build:watch & pnpm run dev",
+    "dev:sdk": "pnpm -C ../.. run build:watch & pnpm run dev",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.21",
-    "euler-v2-sdk": "file:../packages/euler-v2-sdk",
+    "euler-v2-sdk": "file:../..",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.0",

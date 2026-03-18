@@ -37,4 +37,4 @@ Recommended stale-time strategy:
 
 This keeps service-level `fetch*` orchestration cheap because underlying `query*` calls are cached.
 
-Reference: `packages/euler-v2-sdk/docs/caching-external-data-queries.md`, `react-sdk-example/src/queries/sdkQueries.ts`
+Reference: `packages/euler-v2-sdk/docs/caching-external-data-queries.md`, `examples/react-sdk-example/src/queries/sdkQueries.ts`

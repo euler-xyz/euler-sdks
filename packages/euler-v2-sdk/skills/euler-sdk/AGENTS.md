@@ -152,6 +152,6 @@ Promote constants to config/env and add explicit chain/account flags in CLI tool
 - `packages/euler-v2-sdk/docs/caching-external-data-queries.md`
 - `packages/euler-v2-sdk/docs/plugins.md`
 - `packages/euler-v2-sdk/docs/swaps.md`
-- `react-sdk-example/src/context/SdkContext.tsx`
-- `react-sdk-example/src/queries/sdkQueries.ts`
-- `react-sdk-example/src/utils/txExecutor.ts`
+- `examples/react-sdk-example/src/context/SdkContext.tsx`
+- `examples/react-sdk-example/src/queries/sdkQueries.ts`
+- `examples/react-sdk-example/src/utils/txExecutor.ts`
