@@ -220,6 +220,13 @@ export class AccountV3Adapter implements IAccountAdapter {
     this.config = config;
   }
 
+  private getHeaders(): Record<string, string> {
+    return {
+      Accept: "application/json",
+      ...(this.config.apiKey ? { "X-API-Key": this.config.apiKey } : {}),
+    };
+  }
+
   queryAccountPositions = async (
     endpoint: string,
     chainId: number,
@@ -230,10 +237,8 @@ export class AccountV3Adapter implements IAccountAdapter {
 
     const response = await fetch(url.toString(), {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: this.getHeaders(),
     });
-
-    console.log('response: ', response);
     if (!response.ok) {
       throw new Error(`accountV3 ${response.status} ${response.statusText}`);
     }
@@ -246,7 +251,6 @@ export class AccountV3Adapter implements IAccountAdapter {
   }
 
   async fetchAccount(chainId: number, address: Address): Promise<ServiceResult<IAccount | undefined>> {
-    console.log('fetchAccount 111: ', chainId, address);
     const errors: DataIssue[] = [];
     const rows = await this.fetchPositions(chainId, address, errors);
     if (rows.length === 0) return { result: undefined, errors };
@@ -318,10 +322,8 @@ export class AccountV3Adapter implements IAccountAdapter {
         getAddress(address),
         this.config.forceFresh,
       );
-      console.log('response: ', response);
       return response.data ?? [];
     } catch (error) {
-      console.log('error: ', error);
       errors.push({
         code: "SOURCE_UNAVAILABLE",
         severity: "error",

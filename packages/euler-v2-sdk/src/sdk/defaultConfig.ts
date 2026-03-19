@@ -1,6 +1,7 @@
 import type { AccountV3AdapterConfig } from "../services/accountService/accountServiceConfig.js"
 import { DeploymentServiceConfig } from "src/services/deploymentService/deploymentService.js"
 import { AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter.js"
+import type { EVaultV3AdapterConfig } from "../services/vaults/eVaultService/eVaultServiceConfig.js"
 import type { VaultTypeSubgraphAdapterConfig } from "../services/vaults/vaultMetaService/index.js"
 import { EulerLabelsURLAdapterConfig } from "../services/eulerLabelsService/index.js"
 import type { SwapServiceConfig } from "../services/swapService/index.js"
@@ -32,6 +33,10 @@ export const defaultAccountVaultsAdapterConfig: AccountVaultsSubgraphAdapterConf
 
 export const defaultAccountV3AdapterConfig: AccountV3AdapterConfig = {
   endpoint: process.env.EULER_ACCOUNT_V3_API_URL || "https://v3staging.eul.dev",
+}
+
+export const defaultEVaultV3AdapterConfig: EVaultV3AdapterConfig = {
+  endpoint: process.env.EULER_EVAULT_V3_API_URL || "https://v3staging.eul.dev",
 }
 
 /** Same subgraph endpoints as account vaults; used by VaultMetaService to resolve vault type from factory. */

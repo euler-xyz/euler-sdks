@@ -38,8 +38,15 @@ export function SdkProvider({ children }: { children: ReactNode }) {
 
     buildEulerSDK({
       rpcUrls: RPC_URLS,
+      v3ApiKey: import.meta.env.VITE_EULER_V3_API_KEY,
       buildQuery: sdkBuildQuery,
       accountServiceConfig: {
+        adapter: "v3",
+        v3AdapterConfig: {
+          endpoint: "/api/euler-v3",
+        },
+      },
+      eVaultServiceConfig: {
         adapter: "v3",
         v3AdapterConfig: {
           endpoint: "/api/euler-v3",

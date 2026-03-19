@@ -12,6 +12,9 @@ const sdk = await buildEulerSDK({
     8453: "https://your-base-rpc",
   },
 
+  // Optional: shared API key for built-in V3 account/vault adapters
+  v3ApiKey: process.env.EULER_V3_API_KEY,
+
   // Optional: override the pricing backend endpoint (default: indexer.euler.finance)
   backendConfig: {
     endpoint: "https://your-pricing-api",
@@ -57,6 +60,20 @@ const sdk = await buildEulerSDK({
     subgraphURLs: { 1: "https://..." },
   },
 
+  // Optional: V3 HTTP adapters for account/vault reads
+  accountServiceConfig: {
+    adapter: "v3",
+    v3AdapterConfig: {
+      endpoint: "https://your-v3-api",
+    },
+  },
+  eVaultServiceConfig: {
+    adapter: "v3",
+    v3AdapterConfig: {
+      endpoint: "https://your-v3-api",
+    },
+  },
+
   // Optional: euler-labels metadata URLs
   eulerLabelsAdapterConfig: {
     getEulerLabelsVaultsUrl: (chainId) => `https://.../${chainId}/vaults.json`,
@@ -87,6 +104,7 @@ const sdk = await buildEulerSDK({
 | Option | Default | What it enables |
 |---|---|---|
 | `rpcUrls` | _(required)_ | On-chain data reads for all services |
+| `v3ApiKey` | none | Shared `X-API-Key` header for built-in V3 account/vault adapters |
 | `backendConfig` | `indexer.euler.finance` | Off-chain USD pricing backend (backend-first, on-chain oracle fallback). Override to point at a different pricing API. |
 | `swapServiceConfig` | Euler swap API | Swap quote fetching |
 | `rewardsServiceConfig` | Merkl + Brevis defaults, Fuul optional | Reward campaign data and reward claim planning |
@@ -94,6 +112,12 @@ const sdk = await buildEulerSDK({
 | `buildQuery` | identity | Wrap all external queries (useful for caching, see [Caching docs](./caching-external-data-queries.md)) |
 | `plugins` | `[]` | Extend on-chain reads and transaction plans (see [Plugins docs](./plugins.md)) |
 | `servicesOverrides` | `{}` | Replace any built-in service with a custom implementation |
+
+## V3 adapter config
+
+When `accountServiceConfig.adapter` or `eVaultServiceConfig.adapter` is set to `v3`, the SDK forwards `v3ApiKey` as an `X-API-Key` request header for both built-in adapters. There is no default API key in SDK config; provide it explicitly when your V3 deployment requires authentication.
+
+If you need different keys per adapter, `accountServiceConfig.v3AdapterConfig.apiKey` and `eVaultServiceConfig.v3AdapterConfig.apiKey` still override the top-level value.
 
 ## Environment variables
 
