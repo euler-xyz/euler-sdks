@@ -4,6 +4,7 @@ import type {
   BuildQueryFn,
   EVault,
   EulerEarn,
+  FeeFlowState,
   Wallet,
   VaultEntity,
   VaultMetaPerspective,
@@ -13,6 +14,7 @@ import { isAddress, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import { recordExecution, registerKnownQueries } from "./queryProfileStore.ts";
 import { interceptSdkDataIfEnabled, isQueryIntercepted } from "./dataInterceptorStore.ts";
+import { StandardEVaultPerspectives, isEVault } from "euler-v2-sdk";
 
 // ---------------------------------------------------------------------------
 // Query client
@@ -277,6 +279,14 @@ export function unwrapServiceResultWithDiagnostics<T>(
 export type FailedVaultFetch = {
   address: string;
   details: string;
+};
+
+export type FeeFlowCandidate = {
+  vault: EVault;
+  protocolFeesAssets: bigint;
+  feeFlowAssets: bigint;
+  claimableAssets: bigint;
+  claimableValueUsd: bigint;
 };
 
 function extractVaultIndex(path: string | undefined): number | undefined {
@@ -620,5 +630,96 @@ export function useTokenSymbolMap(chainId: number) {
     },
     enabled: enabled && Number.isFinite(chainId),
     staleTime: Infinity,
+  });
+}
+
+export function useFeeFlowPageData() {
+  const { sdk, chainId, enabled } = useSdkReady();
+  return useQuery<{
+    state: FeeFlowState;
+    paymentTokenMeta?: { symbol?: string; decimals?: number; name?: string };
+    candidates: FeeFlowCandidate[];
+  }>({
+    queryKey: ["feeFlowPageData", chainId],
+    queryFn: async () => {
+      const state = await sdk!.feeFlowService.fetchState(chainId);
+      const verifiedAddresses = await sdk!.vaultMetaService.fetchVerifiedVaultAddresses(chainId, [
+        StandardEVaultPerspectives.GOVERNED,
+        StandardEVaultPerspectives.ESCROW,
+      ]);
+
+      const fetched = unwrapServiceResult(
+        "vaultMetaService.fetchVaults",
+        await sdk!.vaultMetaService.fetchVaults(chainId, verifiedAddresses, {
+          populateAll: true,
+        })
+      );
+
+      const eVaults = fetched
+        .filter((vault): vault is VaultEntity => vault !== undefined)
+        .filter(isEVault)
+        .filter((vault) => !vault.eulerLabel?.deprecated);
+      const eligibleVaults = sdk!.feeFlowService.getEligibleVaults(eVaults, chainId);
+      const feeFlowSubAccount = unwrapServiceResult(
+        "accountService.fetchSubAccount",
+        await sdk!.accountService.fetchSubAccount(
+          chainId,
+          state.feeFlowControllerAddress,
+          eligibleVaults.map((vault) => vault.address),
+          { populateVaults: false }
+        )
+      );
+
+      const feeFlowAssetsByVault = new Map<string, bigint>();
+      for (const position of feeFlowSubAccount?.positions ?? []) {
+        const key = position.vaultAddress.toLowerCase();
+        feeFlowAssetsByVault.set(key, (feeFlowAssetsByVault.get(key) ?? 0n) + position.assets);
+      }
+
+      const candidates = eligibleVaults
+        .map<FeeFlowCandidate>((vault) => {
+          const protocolFeeBps = BigInt(Math.round(vault.fees.protocolFeeShare * 10_000));
+          const protocolFeesAssets = (vault.fees.accumulatedFeesAssets * protocolFeeBps) / 10_000n;
+          const feeFlowAssets = feeFlowAssetsByVault.get(vault.address.toLowerCase()) ?? 0n;
+          const claimableAssets = protocolFeesAssets + feeFlowAssets;
+          const claimableValueUsd =
+            vault.marketPriceUsd === undefined
+              ? 0n
+              : (claimableAssets * vault.marketPriceUsd) / 10n ** BigInt(vault.asset.decimals);
+
+          return {
+            vault,
+            protocolFeesAssets,
+            feeFlowAssets,
+            claimableAssets,
+            claimableValueUsd,
+          };
+        })
+        .filter((candidate) => candidate.claimableAssets > 0n)
+        .sort((a, b) =>
+          a.claimableValueUsd === b.claimableValueUsd
+            ? a.claimableAssets === b.claimableAssets
+              ? 0
+              : a.claimableAssets > b.claimableAssets
+                ? -1
+                : 1
+            : a.claimableValueUsd > b.claimableValueUsd
+              ? -1
+              : 1
+        );
+
+      const tokenList = await sdk!.tokenlistService.loadTokenlist(chainId);
+      const paymentTokenMeta = tokenList.find(
+        (token) => token.address.toLowerCase() === state.paymentToken.toLowerCase()
+      );
+
+      return {
+        state,
+        paymentTokenMeta,
+        candidates,
+      };
+    },
+    enabled,
+    staleTime: 15_000,
   });
 }

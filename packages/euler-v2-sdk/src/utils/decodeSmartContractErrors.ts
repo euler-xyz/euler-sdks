@@ -220,7 +220,6 @@ export async function decodeSmartContractErrors(
   input: unknown,
   options: DecodeSmartContractErrorsOptions = {},
 ): Promise<DecodedSmartContractError[]> {
-  console.log('input: ', input);
   const fetchTimeout = typeof options.fetchTimeout === "number" && options.fetchTimeout >= 0
     ? options.fetchTimeout
     : 5000;
@@ -342,7 +341,6 @@ export async function decodeSmartContractErrors(
   }
 
   const initialCandidates = collectCandidateStrings(input);
-  console.log('initialCandidates: ', initialCandidates);
   for (const candidate of initialCandidates) {
     await processCandidateString(candidate);
   }

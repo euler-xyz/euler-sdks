@@ -218,11 +218,15 @@ export class AccountOnchainAdapter implements IAccountAdapter {
     let vaultAccountInfos: VaultAccountInfo[];
 
     if (this.plugins.length > 0) {
-      vaultAccountInfos = await this.fetchVaultAccountInfosWithPlugins(chainId, provider, accountLensAddress, subAccount, vaults);
+      vaultAccountInfos = await this.fetchVaultAccountInfosWithPlugins(chainId, provider, accountLensAddress, subAccount, vaults, errors);
     } else {
-      vaultAccountInfos = await Promise.all(
-        vaults.map(vault => this.queryVaultAccountInfo(provider, accountLensAddress, subAccount, vault))
-      ) as VaultAccountInfo[];
+      vaultAccountInfos = await this.queryVaultAccountInfosGracefully(
+        provider,
+        accountLensAddress,
+        subAccount,
+        vaults,
+        errors,
+      );
     }
 
     return {
@@ -284,6 +288,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
     accountLensAddress: Address,
     subAccount: Address,
     vaults: Address[],
+    errors: DataIssue[],
   ): Promise<VaultAccountInfo[]> {
     const deployment = this.deploymentService.getDeployment(chainId);
     const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
@@ -305,13 +310,17 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 
     // If no prepend items, fall back to normal queries
     if (!prepend || prepend.items.length === 0) {
-      return Promise.all(
-        vaults.map(vault => this.queryVaultAccountInfo(provider, accountLensAddress, subAccount, vault))
-      ) as Promise<VaultAccountInfo[]>;
+      return this.queryVaultAccountInfosGracefully(
+        provider,
+        accountLensAddress,
+        subAccount,
+        vaults,
+        errors,
+      );
     }
 
     // Re-fetch each vault's account info via batchSimulation with prepend items
-    return Promise.all(
+    const results = await Promise.allSettled(
       vaults.map(async (vault) => {
         try {
           const result = await executeBatchSimulation<VaultAccountInfo>(
@@ -336,6 +345,53 @@ export class AccountOnchainAdapter implements IAccountAdapter {
         return this.queryVaultAccountInfo(provider, accountLensAddress, subAccount, vault) as Promise<VaultAccountInfo>;
       }),
     );
+
+    return this.collectSettledVaultAccountInfos(results, subAccount, vaults, errors);
+  }
+
+  private async queryVaultAccountInfosGracefully(
+    provider: ReturnType<ProviderService["getProvider"]>,
+    accountLensAddress: Address,
+    subAccount: Address,
+    vaults: Address[],
+    errors: DataIssue[],
+  ): Promise<VaultAccountInfo[]> {
+    const results = await Promise.allSettled(
+      vaults.map((vault) => this.queryVaultAccountInfo(provider, accountLensAddress, subAccount, vault)),
+    );
+
+    return this.collectSettledVaultAccountInfos(results, subAccount, vaults, errors);
+  }
+
+  private collectSettledVaultAccountInfos(
+    results: PromiseSettledResult<unknown>[],
+    subAccount: Address,
+    vaults: Address[],
+    errors: DataIssue[],
+  ): VaultAccountInfo[] {
+    const vaultAccountInfos: VaultAccountInfo[] = [];
+
+    results.forEach((result, index) => {
+      const vault = vaults[index];
+      if (!vault) return;
+
+      if (result.status === "fulfilled") {
+        vaultAccountInfos.push(result.value as VaultAccountInfo);
+        return;
+      }
+
+      errors.push({
+        code: "SOURCE_UNAVAILABLE",
+        severity: "warning",
+        message: `Failed to fetch vault account info for ${getAddress(vault)}.`,
+        paths: ["$.positions"],
+        entityId: subAccount,
+        source: "accountLens",
+        originalValue: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
+    });
+
+    return vaultAccountInfos;
   }
 
   private async collectReadPrepend(chainId: number, vaults: EVault[]): Promise<PluginBatchItems | null> {

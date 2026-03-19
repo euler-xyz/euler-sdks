@@ -12,6 +12,7 @@ import { BorrowPage } from "./pages/BorrowPage.tsx";
 import { BorrowPairPage } from "./pages/BorrowPairPage.tsx";
 import { PortfolioPage } from "./pages/PortfolioPage.tsx";
 import { RewardsPage } from "./pages/RewardsPage.tsx";
+import { FeeFlowPage } from "./pages/FeeFlowPage.tsx";
 
 function App() {
   return (
@@ -40,6 +41,7 @@ function App() {
                 />
                 <Route path="/portfolio" element={<PortfolioPage />} />
                 <Route path="/rewards" element={<RewardsPage />} />
+                <Route path="/fee-flow" element={<FeeFlowPage />} />
               </Routes>
             </div>
           </div>
