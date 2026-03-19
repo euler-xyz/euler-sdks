@@ -121,23 +121,33 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
       v ? new SecuritizeCollateralVault(v) : undefined
     );
     const resolvedVaults = entities.filter((vault): vault is SecuritizeCollateralVault => vault !== undefined);
-    if (resolvedOptions.populateMarketPrices) {
-      errors.push(
-        ...(await this.populateMarketPrices(
-          resolvedVaults,
-          (vaultIndex) => `$.vaults[${vaultIndex}]`
-        ))
-      );
-    }
-    if (resolvedOptions.populateRewards) {
-      errors.push(...(await this.populateRewards(resolvedVaults)));
-    }
-    if (resolvedOptions.populateIntrinsicApy) {
-      errors.push(...(await this.populateIntrinsicApy(resolvedVaults)));
-    }
-    if (resolvedOptions.populateLabels) {
-      errors.push(...(await this.populateLabels(resolvedVaults)));
-    }
+    await Promise.all([
+      (async () => {
+        if (resolvedOptions.populateMarketPrices) {
+          errors.push(
+            ...(await this.populateMarketPrices(
+              resolvedVaults,
+              (vaultIndex) => `$.vaults[${vaultIndex}]`
+            ))
+          );
+        }
+      })(),
+      (async () => {
+        if (resolvedOptions.populateRewards) {
+          errors.push(...(await this.populateRewards(resolvedVaults)));
+        }
+      })(),
+      (async () => {
+        if (resolvedOptions.populateIntrinsicApy) {
+          errors.push(...(await this.populateIntrinsicApy(resolvedVaults)));
+        }
+      })(),
+      (async () => {
+        if (resolvedOptions.populateLabels) {
+          errors.push(...(await this.populateLabels(resolvedVaults)));
+        }
+      })(),
+    ]);
     return { result: entities, errors: compressDataIssues(errors) };
   }
 

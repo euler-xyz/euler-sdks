@@ -160,23 +160,33 @@ export class EVaultService implements IEVaultService {
         ))
       );
     }
-    if (resolvedOptions.populateMarketPrices) {
-      errors.push(
-        ...(await this.populateMarketPrices(
-          resolvedVaults,
-          (vaultIndex) => `$.eVaults[${vaultIndex}]`
-        ))
-      );
-    }
-    if (resolvedOptions.populateRewards) {
-      errors.push(...(await this.populateRewards(resolvedVaults)));
-    }
-    if (resolvedOptions.populateIntrinsicApy) {
-      errors.push(...(await this.populateIntrinsicApy(resolvedVaults)));
-    }
-    if (resolvedOptions.populateLabels) {
-      errors.push(...(await this.populateLabels(resolvedVaults)));
-    }
+    await Promise.all([
+      (async () => {
+        if (resolvedOptions.populateMarketPrices) {
+          errors.push(
+            ...(await this.populateMarketPrices(
+              resolvedVaults,
+              (vaultIndex) => `$.eVaults[${vaultIndex}]`
+            ))
+          );
+        }
+      })(),
+      (async () => {
+        if (resolvedOptions.populateRewards) {
+          errors.push(...(await this.populateRewards(resolvedVaults)));
+        }
+      })(),
+      (async () => {
+        if (resolvedOptions.populateIntrinsicApy) {
+          errors.push(...(await this.populateIntrinsicApy(resolvedVaults)));
+        }
+      })(),
+      (async () => {
+        if (resolvedOptions.populateLabels) {
+          errors.push(...(await this.populateLabels(resolvedVaults)));
+        }
+      })(),
+    ]);
     return { result: eVaults, errors: compressDataIssues(errors) };
   }
 

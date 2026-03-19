@@ -144,32 +144,44 @@ export class EulerEarnService implements IEulerEarnService {
       vault ? new EulerEarn(vault) : undefined
     );
     const resolvedVaults = eulerEarns.filter((vault): vault is EulerEarn => vault !== undefined);
-    if (resolvedOptions.populateStrategyVaults) {
-      errors.push(
-        ...(await this.populateStrategyVaults(
-          resolvedVaults,
-          resolvedOptions.eVaultFetchOptions,
-          (vaultIndex) => `$.eulerEarns[${vaultIndex}]`
-        ))
-      );
-    }
-    if (resolvedOptions.populateMarketPrices) {
-      errors.push(
-        ...(await this.populateMarketPrices(
-          resolvedVaults,
-          (vaultIndex) => `$.eulerEarns[${vaultIndex}]`
-        ))
-      );
-    }
-    if (resolvedOptions.populateRewards) {
-      errors.push(...(await this.populateRewards(resolvedVaults)));
-    }
-    if (resolvedOptions.populateIntrinsicApy) {
-      errors.push(...(await this.populateIntrinsicApy(resolvedVaults)));
-    }
-    if (resolvedOptions.populateLabels) {
-      errors.push(...(await this.populateLabels(resolvedVaults)));
-    }
+    await Promise.all([
+      (async () => {
+        if (resolvedOptions.populateStrategyVaults) {
+          errors.push(
+            ...(await this.populateStrategyVaults(
+              resolvedVaults,
+              resolvedOptions.eVaultFetchOptions,
+              (vaultIndex) => `$.eulerEarns[${vaultIndex}]`
+            ))
+          );
+        }
+      })(),
+      (async () => {
+        if (resolvedOptions.populateMarketPrices) {
+          errors.push(
+            ...(await this.populateMarketPrices(
+              resolvedVaults,
+              (vaultIndex) => `$.eulerEarns[${vaultIndex}]`
+            ))
+          );
+        }
+      })(),
+      (async () => {
+        if (resolvedOptions.populateRewards) {
+          errors.push(...(await this.populateRewards(resolvedVaults)));
+        }
+      })(),
+      (async () => {
+        if (resolvedOptions.populateIntrinsicApy) {
+          errors.push(...(await this.populateIntrinsicApy(resolvedVaults)));
+        }
+      })(),
+      (async () => {
+        if (resolvedOptions.populateLabels) {
+          errors.push(...(await this.populateLabels(resolvedVaults)));
+        }
+      })(),
+    ]);
     return { result: eulerEarns, errors: compressDataIssues(errors) };
   }
 

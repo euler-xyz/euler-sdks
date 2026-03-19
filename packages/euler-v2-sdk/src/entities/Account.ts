@@ -486,6 +486,10 @@ export class Account<TVaultEntity extends IHasVaultAddress = never> implements I
    * Mutates in place and returns diagnostics.
    */
   async populateMarketPrices(priceService: IPriceService): Promise<DataIssue[]> {
+    if (!this.populated.vaults) {
+      throw new Error("populateMarketPrices requires populateVaults to be called first.");
+    }
+
     const ONE_18 = 10n ** 18n;
     const errors: DataIssue[] = [];
 

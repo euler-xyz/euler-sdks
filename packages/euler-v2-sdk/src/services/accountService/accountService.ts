@@ -102,37 +102,42 @@ export class AccountService<TVaultEntity extends IHasVaultAddress = IVaultEntity
     errors.push(...populated.errors);
     const result = populated.result[0]!;
 
-    if (resolvedOptions.populateMarketPrices && this.priceService) {
-      try {
-        errors.push(...(await result.populateMarketPrices(this.priceService)));
-      } catch (error) {
-        errors.push({
-          code: "SOURCE_UNAVAILABLE",
-          severity: "error",
-          message: "Failed to populate market prices for account.",
-          paths: ["$"],
-          entityId: result.owner,
-          source: "priceService",
-          originalValue: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    if (resolvedOptions.populateUserRewards && this.rewardsService) {
-      try {
-        errors.push(...(await result.populateUserRewards(this.rewardsService)));
-      } catch (error) {
-        errors.push({
-          code: "SOURCE_UNAVAILABLE",
-          severity: "error",
-          message: "Failed to populate user rewards for account.",
-          paths: ["$.userRewards"],
-          entityId: result.owner,
-          source: "rewardsService",
-          originalValue: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
+    await Promise.all([
+      (async () => {
+        if (resolvedOptions.populateMarketPrices && this.priceService) {
+          try {
+            errors.push(...(await result.populateMarketPrices(this.priceService)));
+          } catch (error) {
+            errors.push({
+              code: "SOURCE_UNAVAILABLE",
+              severity: "error",
+              message: "Failed to populate market prices for account.",
+              paths: ["$"],
+              entityId: result.owner,
+              source: "priceService",
+              originalValue: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      })(),
+      (async () => {
+        if (resolvedOptions.populateUserRewards && this.rewardsService) {
+          try {
+            errors.push(...(await result.populateUserRewards(this.rewardsService)));
+          } catch (error) {
+            errors.push({
+              code: "SOURCE_UNAVAILABLE",
+              severity: "error",
+              message: "Failed to populate user rewards for account.",
+              paths: ["$.userRewards"],
+              entityId: result.owner,
+              source: "rewardsService",
+              originalValue: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      })(),
+    ]);
 
     return { result, errors: compressDataIssues(errors) };
   }
