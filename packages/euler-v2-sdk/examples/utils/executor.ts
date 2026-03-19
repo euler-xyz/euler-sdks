@@ -3,6 +3,14 @@ import { encodeFunctionData, maxUint256, WalletClient } from "viem";
 import { mainnet } from "viem/chains";
 import { publicClient, walletClient } from "./config.js";
 
+async function waitForSuccessfulReceipt(hash: `0x${string}`) {
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") {
+    throw new Error(`Transaction ${hash} reverted`);
+  }
+  return receipt;
+}
+
 /**
  * Executes a transaction plan by handling different types of plan items:
  * - requiredApproval: Processes resolved approvals (approve calls or permit2 signatures)
@@ -30,7 +38,7 @@ export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK, wc
               chain: mainnet,
             });
 
-            await publicClient.waitForTransactionReceipt({ hash });
+            await waitForSuccessfulReceipt(hash);
             console.log(`  ✓ Approval ${resolvedItem.amount == maxUint256 ? 'unlimited' : resolvedItem.amount}`);
           } else if (resolvedItem.type === "permit2") {
             // Get Permit2 contract address
@@ -104,7 +112,7 @@ export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK, wc
           gas: gasWithBuffer,
         });
 
-        await publicClient.waitForTransactionReceipt({ hash });
+        await waitForSuccessfulReceipt(hash);
 
         permit2BatchItems.length = 0;
         console.log("  ✓ EVC batch");
@@ -128,7 +136,7 @@ export async function executePlan(plan: TransactionPlanItem[], sdk: EulerSDK, wc
           value: item.value,
         });
 
-        await publicClient.waitForTransactionReceipt({ hash });
+        await waitForSuccessfulReceipt(hash);
         permit2BatchItems.length = 0;
         console.log(`  ✓ ${item.functionName}`);
       }

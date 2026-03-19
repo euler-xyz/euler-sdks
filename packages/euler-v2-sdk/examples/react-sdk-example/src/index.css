@@ -1363,3 +1363,63 @@ tr.clickable {
   color: #b00020;
   font-size: 12px;
 }
+
+.fee-flow-header {
+  margin-bottom: 20px;
+}
+
+.fee-flow-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid #000;
+  background: #fafafa;
+}
+
+.fee-flow-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.fee-flow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.action-button {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 12px;
+  border: 2px solid #000;
+  background: #000;
+  color: #fff;
+  cursor: pointer;
+}
+
+.action-button.secondary {
+  background: #fff;
+  color: #000;
+}
+
+.action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (max-width: 900px) {
+  .fee-flow-toolbar {
+    flex-direction: column;
+  }
+
+  .fee-flow-actions {
+    justify-content: flex-start;
+  }
+}
