@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import type { ERC4626Data, VaultType } from "../utils/types.js";
+import type { VaultType } from "../utils/types.js";
 import {
   ERC4626Vault,
   type ERC4626VaultPopulated,
@@ -19,7 +19,7 @@ export interface EulerEarnAllocationCap {
   pendingValidAt: number;
 }
 
-export interface EulerEarnStrategyInfo extends ERC4626Data {
+export interface EulerEarnStrategyInfo {
   address: Address;
   vaultType: VaultType;
   allocatedAssets: bigint;
@@ -52,6 +52,7 @@ export interface IEulerEarn extends IERC4626Vault {
   governance: EulerEarnGovernance;
 
   supplyQueue: Address[];
+  withdrawQueue: Address[];
   strategies: EulerEarnStrategyInfo[];
 
   timestamp: number;
@@ -70,6 +71,7 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
   governance: EulerEarnGovernance;
 
   supplyQueue: Address[];
+  withdrawQueue: Address[];
   strategies: EulerEarnStrategyInfo[];
 
   timestamp: number;
@@ -84,6 +86,7 @@ export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626Vault
     this.governance = args.governance;
 
     this.supplyQueue = args.supplyQueue;
+    this.withdrawQueue = args.withdrawQueue;
     this.strategies = args.strategies;
 
     this.timestamp = args.timestamp;

@@ -79,30 +79,6 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
   };
 
   const strategies: EulerEarnStrategyInfo[] = vaultInfo.strategies.map((strategy, idx) => {
-    const strategyShares: Token = {
-      address: strategy.info.vault,
-      name: strategy.info.vaultName,
-      symbol: strategy.info.vaultSymbol,
-      decimals: bigintToSafeNumber(strategy.info.vaultDecimals, {
-        path: `$.strategies[${idx}].shares.decimals`,
-        errors,
-        source: "eulerEarnLens",
-        entityId: strategy.strategy,
-      }),
-    };
-
-    const strategyAsset: Token = {
-      address: strategy.info.asset,
-      name: strategy.info.assetName,
-      symbol: strategy.info.assetSymbol,
-      decimals: bigintToSafeNumber(strategy.info.assetDecimals, {
-        path: `$.strategies[${idx}].asset.decimals`,
-        errors,
-        source: "eulerEarnLens",
-        entityId: strategy.strategy,
-      }),
-    };
-
     const allocationCap: EulerEarnAllocationCap = {
       current: strategy.currentAllocationCap,
       pending: strategy.pendingAllocationCap,
@@ -126,10 +102,6 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
         source: "eulerEarnLens",
         entityId: strategy.strategy,
       }),
-      shares: strategyShares,
-      asset: strategyAsset,
-      totalShares: strategy.info.totalShares,
-      totalAssets: strategy.info.totalAssets,
     };
   });
 
@@ -160,6 +132,9 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
     })(),
     governance,
     supplyQueue: vaultInfo.supplyQueue,
+    // The lens contract builds strategies by iterating withdrawQueue(i), so the
+    // returned strategy order is the withdraw queue order.
+    withdrawQueue: vaultInfo.strategies.map((strategy) => strategy.strategy),
     strategies,
     timestamp: bigintToSafeNumber(vaultInfo.timestamp, {
       path: "$.timestamp",

@@ -45,8 +45,17 @@ type V3EulerEarnStrategy = {
   suppliedAssets?: string;
   withdrawnAssets?: string;
   allocatedAssets?: string;
+  availableAssets?: string;
   inSupplyQueue?: boolean;
+  inWithdrawQueue?: boolean;
   supplyQueueIndex?: number;
+  withdrawQueueIndex?: number;
+  allocationCap?: {
+    current?: string;
+    pending?: string;
+    pendingValidAt?: number;
+  };
+  removableAt?: number;
 };
 
 type V3EulerEarnDetail = {
@@ -58,8 +67,21 @@ type V3EulerEarnDetail = {
   asset: V3Token;
   totalAssets: string;
   totalShares: string;
+  lostAssets?: string;
   availableAssets?: string;
   strategies?: V3EulerEarnStrategy[];
+  governance?: {
+    owner?: string;
+    creator?: string;
+    curator?: string;
+    guardian?: string;
+    feeReceiver?: string;
+    timelock?: number;
+    pendingTimelock?: number;
+    pendingTimelockValidAt?: number;
+    pendingGuardian?: string;
+    pendingGuardianValidAt?: number;
+  };
   management?: {
     owner?: string;
     guardian?: string;
@@ -202,16 +224,16 @@ function convertGovernance(
   errors: DataIssue[],
 ): EulerEarnGovernance {
   return {
-    owner: parseAddressField(detail.management?.owner, "$.governance.owner", entityId, errors),
-    creator: parseAddressField(undefined, "$.governance.creator", entityId, errors),
-    curator: parseAddressField(undefined, "$.governance.curator", entityId, errors),
-    guardian: parseAddressField(detail.management?.guardian, "$.governance.guardian", entityId, errors),
-    feeReceiver: parseAddressField(undefined, "$.governance.feeReceiver", entityId, errors),
-    timelock: detail.management?.timelockSeconds ?? 0,
-    pendingTimelock: 0,
-    pendingTimelockValidAt: 0,
-    pendingGuardian: ZERO_ADDRESS,
-    pendingGuardianValidAt: 0,
+    owner: parseAddressField(detail.governance?.owner ?? detail.management?.owner, "$.governance.owner", entityId, errors),
+    creator: parseAddressField(detail.governance?.creator, "$.governance.creator", entityId, errors),
+    curator: parseAddressField(detail.governance?.curator, "$.governance.curator", entityId, errors),
+    guardian: parseAddressField(detail.governance?.guardian ?? detail.management?.guardian, "$.governance.guardian", entityId, errors),
+    feeReceiver: parseAddressField(detail.governance?.feeReceiver, "$.governance.feeReceiver", entityId, errors),
+    timelock: detail.governance?.timelock ?? detail.management?.timelockSeconds ?? 0,
+    pendingTimelock: detail.governance?.pendingTimelock ?? 0,
+    pendingTimelockValidAt: detail.governance?.pendingTimelockValidAt ?? 0,
+    pendingGuardian: parseAddressField(detail.governance?.pendingGuardian, "$.governance.pendingGuardian", entityId, errors),
+    pendingGuardianValidAt: detail.governance?.pendingGuardianValidAt ?? 0,
   };
 }
 
@@ -219,6 +241,13 @@ function buildSupplyQueue(strategies: V3EulerEarnStrategy[]): Address[] {
   return strategies
     .filter((strategy) => strategy.inSupplyQueue)
     .sort((a, b) => (a.supplyQueueIndex ?? Number.MAX_SAFE_INTEGER) - (b.supplyQueueIndex ?? Number.MAX_SAFE_INTEGER))
+    .map((strategy) => getAddress(strategy.address));
+}
+
+function buildWithdrawQueue(strategies: V3EulerEarnStrategy[]): Address[] {
+  return strategies
+    .filter((strategy) => strategy.inWithdrawQueue)
+    .sort((a, b) => (a.withdrawQueueIndex ?? Number.MAX_SAFE_INTEGER) - (b.withdrawQueueIndex ?? Number.MAX_SAFE_INTEGER))
     .map((strategy) => getAddress(strategy.address));
 }
 
@@ -237,29 +266,36 @@ function convertStrategies(
       strategyAddress,
       errors,
     );
+    const availableAssets = parseBigIntField(
+      strategy.availableAssets,
+      `$.strategies[${index}].availableAssets`,
+      strategyAddress,
+      errors,
+    );
 
     const allocationCap: EulerEarnAllocationCap = {
-      current: 0n,
-      pending: 0n,
-      pendingValidAt: 0,
+      current: parseBigIntField(
+        strategy.allocationCap?.current,
+        `$.strategies[${index}].allocationCap.current`,
+        strategyAddress,
+        errors,
+      ),
+      pending: parseBigIntField(
+        strategy.allocationCap?.pending,
+        `$.strategies[${index}].allocationCap.pending`,
+        strategyAddress,
+        errors,
+      ),
+      pendingValidAt: strategy.allocationCap?.pendingValidAt ?? 0,
     };
 
     return {
       address: strategyAddress,
       vaultType: VaultType.EVault,
       allocatedAssets,
-      availableAssets: 0n,
+      availableAssets,
       allocationCap,
-      removableAt: 0,
-      shares: {
-        address: strategyAddress,
-        name: strategy.name ?? strategy.symbol ?? getAddress(strategy.address),
-        symbol: strategy.symbol ?? "",
-        decimals: strategy.decimals ?? detail.decimals,
-      },
-      asset,
-      totalShares: 0n,
-      totalAssets: allocatedAssets,
+      removableAt: strategy.removableAt ?? 0,
     };
   });
 }
@@ -285,7 +321,7 @@ function convertEulerEarn(detail: V3EulerEarnDetail, errors: DataIssue[]): IEule
     ),
     totalShares: parseBigIntField(detail.totalShares, "$.totalShares", entityId, errors),
     totalAssets: parseBigIntField(detail.totalAssets, "$.totalAssets", entityId, errors),
-    lostAssets: 0n,
+    lostAssets: parseBigIntField(detail.lostAssets, "$.lostAssets", entityId, errors),
     availableAssets: parseBigIntField(detail.availableAssets, "$.availableAssets", entityId, errors),
     performanceFee: parsePerformanceFee(
       detail.management?.performanceFee,
@@ -295,6 +331,7 @@ function convertEulerEarn(detail: V3EulerEarnDetail, errors: DataIssue[]): IEule
     ),
     governance: convertGovernance(detail, entityId, errors),
     supplyQueue: buildSupplyQueue(detail.strategies ?? []),
+    withdrawQueue: buildWithdrawQueue(detail.strategies ?? []),
     strategies: convertStrategies(detail, entityId, errors),
     timestamp: parseTimestampField(detail.snapshotTimestamp, "$.timestamp", entityId, errors),
   };
@@ -435,14 +472,16 @@ export class EulerEarnV3Adapter implements IEulerEarnAdapter {
     while (true) {
       const response = await this.queryV3EulerEarnList(this.config.endpoint, chainId, offset, limit);
       const rows = response.data ?? [];
+      const effectiveLimit = response.meta?.limit ?? limit;
       if (rows.length === 0) break;
 
       for (const row of rows) {
         addresses.push(getAddress(row.address));
       }
 
-      if (rows.length < limit) break;
+      if (effectiveLimit === 0 || rows.length < effectiveLimit) break;
       offset += rows.length;
+      if (response.meta?.total !== undefined && offset >= response.meta.total) break;
     }
 
     return this.fetchVaults(chainId, addresses);

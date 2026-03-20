@@ -116,6 +116,12 @@ function calcVaultSupplyUsd(vault: EVault): bigint | undefined {
   return (vault.totalAssets * vault.marketPriceUsd) / (10n ** decimals);
 }
 
+function calcVaultBorrowsUsd(vault: EVault): bigint | undefined {
+  if (vault.marketPriceUsd === undefined) return undefined;
+  const decimals = BigInt(vault.asset.decimals ?? 18);
+  return (vault.totalBorrowed * vault.marketPriceUsd) / (10n ** decimals);
+}
+
 // ---------------------------------------------------------------------------
 // Generic sort helper
 // ---------------------------------------------------------------------------
@@ -487,9 +493,11 @@ export function VaultListPage() {
   const eVaultAssets = useMemo(() => {
     const assets = new Map<string, string>();
     for (const vault of eVaults) {
-      assets.set(vault.asset.address.toLowerCase(), vault.asset.symbol);
+      assets.set(vault.asset.address.toLowerCase(), vault.asset.symbol || vault.asset.address);
     }
-    return Array.from(assets.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+    return Array.from(assets.entries()).sort((a, b) =>
+      (a[1] || a[0]).localeCompare(b[1] || b[0])
+    );
   }, [eVaults]);
 
   const searchedEVaultMarkets = useMemo(() => {
@@ -727,12 +735,12 @@ export function VaultListPage() {
                             <CopyAddress address={vault.address} />
                           </td>
                           <td>
-                            {renderFieldIcon(vault.address, ["$.totalAssets"])}
-                            {formatBigInt(vault.totalAssets, vault.asset.decimals)}
+                            {renderFieldIcon(vault.address, ["$.totalAssets", "$.marketPriceUsd"])}
+                            {formatPriceUsd(calcVaultSupplyUsd(vault))}
                           </td>
                           <td>
-                            {renderFieldIcon(vault.address, ["$.totalBorrowed"])}
-                            {formatBigInt(vault.totalBorrowed, vault.asset.decimals)}
+                            {renderFieldIcon(vault.address, ["$.totalBorrowed", "$.marketPriceUsd"])}
+                            {formatPriceUsd(calcVaultBorrowsUsd(vault))}
                           </td>
                           <td>
                             {renderFieldIcon(vault.address, ["$.interestRates.supplyAPY", "$.rewards", "$.intrinsicApy"])}

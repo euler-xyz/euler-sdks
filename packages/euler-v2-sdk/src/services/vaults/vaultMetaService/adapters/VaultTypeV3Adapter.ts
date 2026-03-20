@@ -19,10 +19,16 @@ type V3ResolveRow = {
   found: boolean;
   vaultType?: string | null;
   resource?: string | null;
+  factory?: string | null;
+  factoryAddress?: string | null;
 };
 
 type V3ResolveResponse = {
   data?: V3ResolveRow[];
+};
+
+type V3ResolvedVaultResult = VaultResolvedTypeResult & {
+  factory?: Address;
 };
 
 export interface VaultTypeV3AdapterConfig {
@@ -91,8 +97,19 @@ export class VaultTypeV3Adapter implements IVaultTypeAdapter {
     return undefined;
   }
 
+  private resolveFactoryAddress(row: V3ResolveRow): Address | undefined {
+    const value = row.factoryAddress ?? row.factory;
+    if (!value) return undefined;
+
+    try {
+      return getAddress(value);
+    } catch {
+      return undefined;
+    }
+  }
+
   queryV3VaultResolve = createCallBundler(
-    async (keys: { address: Address; chainId: number }[]): Promise<(VaultResolvedTypeResult | undefined)[]> => {
+    async (keys: { address: Address; chainId: number }[]): Promise<(V3ResolvedVaultResult | undefined)[]> => {
       const byChain = new Map<number, Address[]>();
       for (const key of keys) {
         const addresses = byChain.get(key.chainId) ?? [];
@@ -100,7 +117,7 @@ export class VaultTypeV3Adapter implements IVaultTypeAdapter {
         byChain.set(key.chainId, addresses);
       }
 
-      const chainResults = new Map<number, Map<string, string>>();
+      const chainResults = new Map<number, Map<string, V3ResolvedVaultResult>>();
 
       for (const [chainId, addresses] of byChain) {
         const uniqueAddresses = [...new Set(addresses.map((address) => getAddress(address)))];
@@ -119,19 +136,25 @@ export class VaultTypeV3Adapter implements IVaultTypeAdapter {
         }
 
         const json = (await response.json()) as V3ResolveResponse;
-        const resolved = new Map<string, string>();
+        const resolved = new Map<string, V3ResolvedVaultResult>();
         for (const row of json.data ?? []) {
           if (!row.found) continue;
+          const address = getAddress(row.address);
           const sdkVaultType = this.resolveSdkVaultType(row);
-          if (!sdkVaultType) continue;
-          resolved.set(getAddress(row.address).toLowerCase(), sdkVaultType);
+          const factory = this.resolveFactoryAddress(row);
+          if (!sdkVaultType && !factory) continue;
+
+          resolved.set(address.toLowerCase(), {
+            id: address,
+            type: sdkVaultType ?? VaultType.Unknown,
+            ...(factory ? { factory } : {}),
+          });
         }
         chainResults.set(chainId, resolved);
       }
 
       return keys.map((key) => {
-        const type = chainResults.get(key.chainId)?.get(getAddress(key.address).toLowerCase());
-        return type ? { id: getAddress(key.address), type } : undefined;
+        return chainResults.get(key.chainId)?.get(getAddress(key.address).toLowerCase());
       });
     },
   );
@@ -152,13 +175,30 @@ export class VaultTypeV3Adapter implements IVaultTypeAdapter {
       ),
     );
 
-    return results.filter((result): result is VaultResolvedTypeResult => result != null);
+    return results.filter((result): result is VaultResolvedTypeResult =>
+      result != null && result.type !== VaultType.Unknown
+    );
   }
 
   async fetchVaultFactories(
-    _chainId: number,
-    _vaultAddresses: Address[],
+    chainId: number,
+    vaultAddresses: Address[],
   ): Promise<VaultFactoryResult[]> {
-    return [];
+    if (vaultAddresses.length === 0) return [];
+
+    const results = await Promise.all(
+      vaultAddresses.map((address) =>
+        this.queryV3VaultResolve({ address, chainId }),
+      ),
+    );
+
+    return results
+      .filter((result): result is V3ResolvedVaultResult =>
+        result != null && result.factory != null
+      )
+      .map((result) => ({
+        id: result.id,
+        factory: result.factory!,
+      }));
   }
 }

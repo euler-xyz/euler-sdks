@@ -549,10 +549,11 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 
       const total = response.meta?.total;
       const batchSize = rows.length;
+      const effectiveLimit = response.meta?.limit ?? limit;
       if (batchSize === 0) break;
       offset += batchSize;
       if (total !== undefined && offset >= total) break;
-      if ((response.meta?.limit ?? batchSize) === 0 || batchSize < limit) break;
+      if (effectiveLimit === 0 || batchSize < effectiveLimit) break;
     }
 
     return this.fetchVaults(chainId, [...new Set(addresses)]);

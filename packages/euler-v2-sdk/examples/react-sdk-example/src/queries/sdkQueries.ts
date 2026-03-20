@@ -284,12 +284,6 @@ export function unwrapServiceResultWithDiagnostics<T>(
     const ownerRefs = getDiagnosticPaths(issue).map((path) =>
       getOwnerForDiagnosticPath(response.result, path)
     );
-    if (ownerRefs.some((ownerRef) => ownerRef === null || typeof ownerRef !== "object")) {
-      console.error(`[sdk diagnostics] ${operation}: invalid ownerRef`, {
-        issue,
-        ownerRefs,
-      });
-    }
 
     return {
       ...issue,
