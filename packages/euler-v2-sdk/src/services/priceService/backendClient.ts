@@ -35,7 +35,7 @@ export type BackendConfig = {
 export const backendPriceToBigInt = (price: string | number): bigint => {
   try {
     const priceNum = typeof price === "number" ? price : parseFloat(price);
-    if (isNaN(priceNum) || priceNum < 0) {
+    if (Number.isNaN(priceNum) || priceNum < 0) {
       return 0n;
     }
     const priceString = priceNum.toFixed(18);

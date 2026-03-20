@@ -8,7 +8,6 @@ import type {
   DefiLlamaPool,
   PendleMarketData,
   StablewatchResponse,
-  StablewatchPool,
 } from "./intrinsicApyServiceTypes.js";
 import { intrinsicApySources } from "./intrinsicApySources.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";

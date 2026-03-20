@@ -1,9 +1,8 @@
-import { Address, getAddress } from "viem";
+import { type Address, getAddress } from "viem";
 import {
   SecuritizeCollateralVault,
-  ISecuritizeCollateralVault,
+  type ISecuritizeCollateralVault,
 } from "../../../entities/SecuritizeCollateralVault.js";
-import { DeploymentService } from "../../deploymentService/index.js";
 import type { IVaultService, VaultFetchOptions } from "../index.js";
 import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
@@ -51,17 +50,10 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
   private intrinsicApyService?: IIntrinsicApyService;
   private eulerLabelsService?: IEulerLabelsService;
 
-  constructor(
-    private adapter: ISecuritizeCollateralAdapter,
-    private deploymentService: DeploymentService
-  ) {}
+  constructor(private adapter: ISecuritizeCollateralAdapter) {}
 
   setAdapter(adapter: ISecuritizeCollateralAdapter): void {
     this.adapter = adapter;
-  }
-
-  setDeploymentService(deploymentService: DeploymentService): void {
-    this.deploymentService = deploymentService;
   }
 
   setPriceService(service: IPriceService): void {
@@ -80,7 +72,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     this.eulerLabelsService = service;
   }
 
-  factory(chainId: number): Address {
+  factory(_chainId: number): Address {
     // TODO fix this
     return getAddress("0x5f51d980f15fe6075ae30394dc35de57a4f76cbb");
   }

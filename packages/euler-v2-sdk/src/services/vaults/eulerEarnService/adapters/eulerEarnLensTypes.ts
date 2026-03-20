@@ -1,4 +1,4 @@
-import { Address } from "viem";
+import type { Address } from "viem";
 
 // TypeScript equivalents for EulerEarnVaultLens structs (from evk-periphery/src/Lens/EulerEarnVaultLens.sol).
 // Numeric on-chain values use bigint to avoid precision loss.

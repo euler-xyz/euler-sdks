@@ -171,7 +171,7 @@ function convertPosition(
 }
 
 function buildSubAccount(
-  chainId: number,
+  _chainId: number,
   account: Address,
   rows: V3AccountPositionRow[],
   errors: DataIssue[],

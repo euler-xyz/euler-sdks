@@ -1,12 +1,12 @@
-import { IWalletAdapter, AssetWithSpenders } from "../walletService.js";
-import { ProviderService } from "../../providerService/index.js";
-import { DeploymentService } from "../../deploymentService/index.js";
-import { Address, getAddress, erc20Abi } from "viem";
-import { IWallet, WalletAsset, AssetAllowances } from "../../../entities/Wallet.js";
+import type { IWalletAdapter, AssetWithSpenders } from "../walletService.js";
+import type { ProviderService } from "../../providerService/index.js";
+import type { DeploymentService } from "../../deploymentService/index.js";
+import { type Address, getAddress, erc20Abi } from "viem";
+import type { IWallet, WalletAsset, AssetAllowances } from "../../../entities/Wallet.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js";
-import {
-  type DataIssue,
-  type ServiceResult,
+import type {
+  DataIssue,
+  ServiceResult,
 } from "../../../utils/entityDiagnostics.js";
 import { numberLikeToSafeFiniteNumber } from "../../../utils/normalization.js";
 
@@ -40,10 +40,6 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 
   setProviderService(providerService: ProviderService): void {
     this.providerService = providerService;
-  }
-
-  setDeploymentService(deploymentService: DeploymentService): void {
-    this.deploymentService = deploymentService;
   }
 
   queryBalanceOf = async (

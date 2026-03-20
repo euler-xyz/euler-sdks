@@ -1,12 +1,10 @@
-import { encodeFunctionData, getAddress, Hex, maxUint256, type Address, zeroAddress, maxUint160, maxUint48, TypedDataDefinition, erc20Abi, decodeFunctionData, type Abi, isAddressEqual } from "viem";
-import { DeploymentService } from "../deploymentService/index.js";
+import { encodeFunctionData, getAddress, type Hex, maxUint256, type Address, zeroAddress, maxUint160, maxUint48, erc20Abi, decodeFunctionData, type Abi } from "viem";
+import type { DeploymentService } from "../deploymentService/index.js";
 import { ethereumVaultConnectorAbi } from "./abis/ethereumVaultConnectorAbi.js";
 import { eVaultAbi } from "./abis/eVaultAbi.js";
 import { permit2PermitAbi } from "./abis/permit2PermitAbi.js";
 import { swapperAbi } from "./abis/swapperAbi.js";
 import { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
-import type { Account, AccountPosition } from "../../entities/Account.js";
-import type { Wallet } from "../../entities/Wallet.js";
 import type { AssetWithSpenders, IWalletService } from "../walletService/index.js";
 import type { EulerPlugin } from "../../plugins/types.js";
 import {
@@ -27,13 +25,12 @@ import {
   type EncodeSwapCollateralArgs,
   type EncodePermit2CallArgs,
   PERMIT2_TYPES,
-  GetPermit2TypedDataArgs,
-  Permit2Data,
+  type GetPermit2TypedDataArgs,
+  type Permit2Data,
   type TransactionPlanItem,
   type TransactionPlan,
   type ApproveCall,
   type Permit2DataToSign,
-  type EVCBatchItems,
   type PlanDepositArgs,
   type PlanMintArgs,
   type PlanWithdrawArgs,
@@ -54,7 +51,7 @@ import {
   type PlanMultiplyWithSwapArgs,
   type PlanMultiplySameAssetArgs,
   type PermitSingleTypedData,
-  PermitSingleMessage,
+  type PermitSingleMessage,
   type RequiredApproval,
   type ResolveRequiredApprovalsArgs,
   type ResolveRequiredApprovalsWithWalletArgs,
@@ -119,10 +116,6 @@ export class ExecutionService implements IExecutionService {
     private deploymentService: DeploymentService,
     private walletService: IWalletService,
   ) {}
-
-  setDeploymentService(deploymentService: DeploymentService): void {
-    this.deploymentService = deploymentService;
-  }
 
   setWalletService(walletService: IWalletService): void {
     this.walletService = walletService;
@@ -838,7 +831,6 @@ export class ExecutionService implements IExecutionService {
     args: EncodeRepayWithSwapArgs,
   ): EVCBatchItem[] {
     const {
-      chainId,
       swapQuote,
       maxWithdraw,
       isMax = false,
@@ -1329,8 +1321,6 @@ export class ExecutionService implements IExecutionService {
           decoded = true
           break
         } catch {
-          // Try next ABI
-          continue
         }
       }
       // Fall back to plugins
@@ -1345,7 +1335,6 @@ export class ExecutionService implements IExecutionService {
               break
             }
           } catch {
-            continue
           }
         }
       }
@@ -1420,7 +1409,7 @@ export class ExecutionService implements IExecutionService {
    * Encodes batch items for repaying with shares from the same asset and vault
    */
   private encodeRepayWithSharesSameAssetAndVault({
-    chainId,
+    chainId: _chainId,
     vault,
     amount,
     from,

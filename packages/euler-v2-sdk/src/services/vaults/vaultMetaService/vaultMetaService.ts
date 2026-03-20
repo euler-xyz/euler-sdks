@@ -1,12 +1,12 @@
-import { Address, getAddress } from "viem";
-import { EVault } from "../../../entities/EVault.js";
-import { EulerEarn } from "../../../entities/EulerEarn.js";
-import { SecuritizeCollateralVault } from "../../../entities/SecuritizeCollateralVault.js";
+import { type Address, getAddress } from "viem";
+import type { EVault } from "../../../entities/EVault.js";
+import type { EulerEarn } from "../../../entities/EulerEarn.js";
+import type { SecuritizeCollateralVault } from "../../../entities/SecuritizeCollateralVault.js";
 import { VaultType } from "../../../utils/types.js";
 import type { IVaultService, VaultFetchOptions } from "../index.js";
 import type { IVaultTypeAdapter } from "./adapters/IVaultTypeAdapter.js";
-import { StandardEVaultPerspectives } from "../eVaultService/index.js";
-import { StandardEulerEarnPerspectives } from "../eulerEarnService/index.js";
+import type { StandardEVaultPerspectives } from "../eVaultService/index.js";
+import type { StandardEulerEarnPerspectives } from "../eulerEarnService/index.js";
 import type { DataIssue, ServiceResult } from "../../../utils/entityDiagnostics.js";
 import {
   compressDataIssues,

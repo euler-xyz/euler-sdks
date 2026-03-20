@@ -1,6 +1,6 @@
-import { EulerEarn, IEulerEarn } from "../../../entities/EulerEarn.js";
-import { Address, getAddress } from "viem";
-import { DeploymentService } from "../../deploymentService/index.js";
+import { EulerEarn, type IEulerEarn } from "../../../entities/EulerEarn.js";
+import { type Address, getAddress } from "viem";
+import type { DeploymentService } from "../../deploymentService/index.js";
 import type { IVaultService } from "../index.js";
 import type { IEVaultService, EVaultFetchOptions } from "../eVaultService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
@@ -77,10 +77,6 @@ export class EulerEarnService implements IEulerEarnService {
 
   setAdapter(adapter: IEulerEarnAdapter): void {
     this.adapter = adapter;
-  }
-
-  setDeploymentService(deploymentService: DeploymentService): void {
-    this.deploymentService = deploymentService;
   }
 
   setEVaultService(eVaultService: IEVaultService): void {

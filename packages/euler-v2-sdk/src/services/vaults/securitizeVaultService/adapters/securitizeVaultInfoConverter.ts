@@ -1,8 +1,8 @@
-import { ISecuritizeCollateralVault } from "../../../../entities/SecuritizeCollateralVault.js";
-import { Token, VaultType } from "../../../../utils/types.js";
+import type { ISecuritizeCollateralVault } from "../../../../entities/SecuritizeCollateralVault.js";
+import { type Token, VaultType } from "../../../../utils/types.js";
 import type { VaultInfoERC4626 } from "./securitizeVaultLensTypes.js";
-import {
-  type DataIssue,
+import type {
+  DataIssue,
 } from "../../../../utils/entityDiagnostics.js";
 import { bigintToSafeNumber } from "../../../../utils/normalization.js";
 

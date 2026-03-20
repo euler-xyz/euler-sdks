@@ -1,4 +1,4 @@
-import { Address } from "viem";
+import type { Address } from "viem";
 
 /** TypeScript equivalent of VaultInfoERC4626 from evk-periphery LensTypes.sol (UtilsLens.getVaultInfoERC4626). */
 export interface VaultInfoERC4626 {

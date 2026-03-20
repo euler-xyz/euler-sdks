@@ -1,6 +1,6 @@
-import { EulerLabelEntity, EulerLabelVault, EulerLabelProduct, EulerLabelPoint } from "../../entities/EulerLabels.js";
+import type { EulerLabelEntity, EulerLabelVault, EulerLabelProduct, EulerLabelPoint } from "../../entities/EulerLabels.js";
 import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
-import { Address } from "viem";
+import type { Address } from "viem";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 
 export interface IEulerLabelsAdapter {

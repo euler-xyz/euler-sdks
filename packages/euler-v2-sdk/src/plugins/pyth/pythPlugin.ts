@@ -142,8 +142,6 @@ async function buildPythBatchItems(
       });
       totalValue += fee;
     } catch {
-      // Skip this Pyth contract on error — operation proceeds without its update
-      continue;
     }
   }
 

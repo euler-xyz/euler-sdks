@@ -1,4 +1,4 @@
-import { Abi } from "viem";
+import type { Abi } from "viem";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 
 export interface IABIService {

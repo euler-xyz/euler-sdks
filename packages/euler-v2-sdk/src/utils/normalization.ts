@@ -1,5 +1,5 @@
-import {
-  type DataIssue,
+import type {
+  DataIssue,
 } from "./entityDiagnostics.js";
 
 type BigintToSafeNumberParams = {

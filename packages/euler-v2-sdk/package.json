@@ -33,6 +33,8 @@
     "build": "tsc --project tsconfig.json",
     "build:watch": "tsc --project tsconfig.json --watch",
     "typecheck": "tsc --noEmit",
+    "lint": "biome lint src",
+    "lint:fix": "biome lint --write src",
     "clean": "rm -rf dist",
     "release:check": "pnpm run clean && pnpm run build && pnpm run typecheck && pnpm pack --dry-run",
     "prepublishOnly": "pnpm run release:check",
@@ -61,8 +63,9 @@
     "viem": "^2.43.3"
   },
   "devDependencies": {
-    "dotenv": "^16.4.7",
+    "@biomejs/biome": "^2.4.8",
     "@types/node": "^22.7.8",
+    "dotenv": "^16.4.7",
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"

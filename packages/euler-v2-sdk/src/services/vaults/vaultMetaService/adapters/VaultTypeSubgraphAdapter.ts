@@ -1,4 +1,4 @@
-import { Address, getAddress } from "viem";
+import { type Address, getAddress } from "viem";
 import type {
   IVaultTypeAdapter,
   VaultFactoryResult,

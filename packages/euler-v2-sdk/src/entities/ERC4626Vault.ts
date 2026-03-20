@@ -1,5 +1,5 @@
-import { Address } from "viem";
-import { ERC4626Data, Token } from "../utils/types.js";
+import type { Address } from "viem";
+import type { ERC4626Data, Token } from "../utils/types.js";
 import type { IPriceService } from "../services/priceService/index.js";
 import type { IRewardsService, VaultRewardInfo } from "../services/rewardsService/index.js";
 import type { IntrinsicApyInfo } from "../services/intrinsicApyService/index.js";

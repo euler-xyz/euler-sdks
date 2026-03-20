@@ -1,8 +1,8 @@
 import { getAddress, type Address } from "viem";
-import { EVault, IEVault } from "../../../entities/EVault.js";
+import { EVault, type IEVault } from "../../../entities/EVault.js";
 import { selectLeafAdaptersForPair } from "../../../utils/oracle.js";
-import { DeploymentService } from "../../deploymentService/index.js";
-import type { IVaultService, VaultFetchOptions } from "../index.js";
+import type { DeploymentService } from "../../deploymentService/index.js";
+import type { IVaultService } from "../index.js";
 import type { IVaultMetaService } from "../vaultMetaService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
@@ -15,13 +15,6 @@ import {
   normalizeTopLevelVaultArrayPath,
   withPathPrefix,
 } from "../../../utils/entityDiagnostics.js";
-
-function normalizeSingleVaultPath(path: string): string {
-  if (path === "$.vaults[0]" || path === "$.eVaults[0]") return "$";
-  if (path.startsWith("$.vaults[0].")) return `$.${path.slice("$.vaults[0].".length)}`;
-  if (path.startsWith("$.eVaults[0].")) return `$.${path.slice("$.eVaults[0].".length)}`;
-  return path;
-}
 
 export interface IEVaultAdapter {
   fetchVaults(chainId: number, vault: Address[]): Promise<ServiceResult<(IEVault | undefined)[]>>;
@@ -84,10 +77,6 @@ export class EVaultService implements IEVaultService {
 
   setAdapter(adapter: IEVaultAdapter): void {
     this.adapter = adapter;
-  }
-
-  setDeploymentService(deploymentService: DeploymentService): void {
-    this.deploymentService = deploymentService;
   }
 
   setVaultMetaService(service: IVaultMetaService): void {

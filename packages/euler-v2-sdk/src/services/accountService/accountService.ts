@@ -1,5 +1,5 @@
-import { Account, IAccount, SubAccount } from "../../entities/Account.js";
-import { Address, getAddress } from "viem";
+import { Account, type IAccount, SubAccount } from "../../entities/Account.js";
+import { type Address, getAddress } from "viem";
 import type { IVaultMetaService } from "../vaults/vaultMetaService/index.js";
 import type { IHasVaultAddress, IVaultEntity, ISubAccount } from "../../entities/Account.js";
 import type { VaultFetchOptions } from "../vaults/index.js";

@@ -140,7 +140,6 @@ export function decodeIRMParams(
       };
     }
 
-    case InterestRateModelType.UNKNOWN:
     default:
       throw new Error(
         `Cannot decode IRM params for type: ${InterestRateModelType[type]}`

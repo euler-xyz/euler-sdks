@@ -1,5 +1,5 @@
-import { EVCBatchItem } from "src/services/executionService/executionServiceTypes.js"
-import { Address, encodeFunctionData, Hex } from "viem"
+import type { EVCBatchItem } from "src/services/executionService/executionServiceTypes.js"
+import { encodeFunctionData } from "viem"
 
 
 export const encodeEVCBatch = (items: EVCBatchItem[]) => {

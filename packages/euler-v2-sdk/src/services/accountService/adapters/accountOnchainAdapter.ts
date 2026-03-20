@@ -1,19 +1,19 @@
-import { IAccountAdapter } from "../accountService.js";
-import { ProviderService } from "../../providerService/index.js";
-import { DeploymentService } from "../../deploymentService/index.js";
+import type { IAccountAdapter } from "../accountService.js";
+import type { ProviderService } from "../../providerService/index.js";
+import type { DeploymentService } from "../../deploymentService/index.js";
 import { type Address, type Abi, encodeFunctionData, getAddress } from "viem";
-import { IAccount, type ISubAccount } from "../../../entities/Account.js";
+import type { IAccount, ISubAccount } from "../../../entities/Account.js";
 import { EVault } from "../../../entities/EVault.js";
-import { VaultAccountInfo, EVCAccountInfo } from "./accountLensTypes.js";
+import type { VaultAccountInfo, EVCAccountInfo } from "./accountLensTypes.js";
 import { convertToSubAccount } from "./accountInfoConverter.js";
-import { AccountVaults } from "./accountVaultsSubgraphAdapter.js";
+import type { AccountVaults } from "./accountVaultsSubgraphAdapter.js";
 import { accountLensAbi } from "./abis/accountLensAbi.js";
 import { vaultLensAbi } from "../../vaults/eVaultService/adapters/abis/vaultLensAbi.js";
 import type { VaultInfoFull } from "../../vaults/eVaultService/adapters/eVaultLensTypes.js";
 import { convertVaultInfoFullToIEVault } from "../../vaults/eVaultService/adapters/vaultInfoConverter.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js";
 import type { EulerPlugin, PluginBatchItems } from "../../../plugins/types.js";
-import { executeBatchSimulation, BatchSimulationAdapter } from "../../../plugins/batchSimulation.js";
+import { executeBatchSimulation, type BatchSimulationAdapter } from "../../../plugins/batchSimulation.js";
 import type { EVCBatchItem } from "../../executionService/executionServiceTypes.js";
 import { type DataIssue, type ServiceResult, prefixDataIssues } from "../../../utils/entityDiagnostics.js";
 
@@ -68,10 +68,6 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 
   setProviderService(providerService: ProviderService): void {
     this.providerService = providerService;
-  }
-
-  setDeploymentService(deploymentService: DeploymentService): void {
-    this.deploymentService = deploymentService;
   }
 
   setPositionsAdapter(positionsAdapter: IAccountVaultsAdapter): void {

@@ -6,7 +6,7 @@ import { VaultType } from "../../utils/types.js";
 import type { ProviderService } from "../providerService/providerService.js";
 import type { DeploymentService } from "../deploymentService/deploymentService.js";
 import { utilsLensPriceAbi } from "./utilsLensPriceAbi.js";
-import { PricingBackendClient, backendPriceToBigInt } from "./backendClient.js";
+import { type PricingBackendClient, backendPriceToBigInt } from "./backendClient.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 import { compressDataIssues, type DataIssue, type ServiceResult } from "../../utils/entityDiagnostics.js";
 
@@ -122,10 +122,6 @@ export class PriceService implements IPriceService {
 
   setProviderService(providerService: ProviderService): void {
     this.providerService = providerService;
-  }
-
-  setDeploymentService(deploymentService: DeploymentService): void {
-    this.deploymentService = deploymentService;
   }
 
   setBackendClient(backendClient: PricingBackendClient | undefined): void {

@@ -1,4 +1,4 @@
-import { createPublicClient, extractChain, http, PublicClient, Chain } from "viem";
+import { createPublicClient, extractChain, http, type PublicClient, type Chain } from "viem";
 import { mainnet, base, arbitrum, bsc, linea, sonic, unichain, berachain, bob, tac, plasma, monad, swellchain, avalanche } from "viem/chains";
 
 const defaultChains = [mainnet, base, arbitrum, bsc, linea, sonic, unichain, berachain, bob, tac, plasma, monad, swellchain, avalanche];

@@ -1,8 +1,8 @@
-import { Address } from "viem";
+import type { Address } from "viem";
 import {
   ERC4626Vault,
-  IERC4626Vault,
-  IERC4626VaultConversion,
+  type IERC4626Vault,
+  type IERC4626VaultConversion,
 } from "./ERC4626Vault.js";
 
 export interface ISecuritizeCollateralVault extends IERC4626Vault {

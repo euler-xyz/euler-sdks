@@ -1,4 +1,4 @@
-import { Address } from "viem";
+import type { Address } from "viem";
 import type { ServiceResult } from "../../utils/entityDiagnostics.js";
 
 export interface VaultFetchOptions {

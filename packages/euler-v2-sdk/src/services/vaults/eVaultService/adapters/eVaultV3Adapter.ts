@@ -2,7 +2,7 @@ import { type Address, type Hex, getAddress } from "viem";
 import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
 import type { OracleAdapterEntry, OracleInfo, OraclePrice } from "../../../../utils/oracle.js";
 import { type DataIssue, compressDataIssues, prefixDataIssues, type ServiceResult } from "../../../../utils/entityDiagnostics.js";
-import { type EVaultCollateral, type EVaultCollateralRamping, type EVaultCaps, type EVaultFees, type EVaultHooks, type EVaultLiquidation, type EVaultHookedOperations, type IEVault, type InterestRateModel, type InterestRates } from "../../../../entities/EVault.js";
+import type { EVaultCollateral, EVaultCollateralRamping, EVaultCaps, EVaultFees, EVaultHooks, EVaultLiquidation, EVaultHookedOperations, IEVault, InterestRateModel, InterestRates } from "../../../../entities/EVault.js";
 import { type Token, VaultType } from "../../../../utils/types.js";
 import { InterestRateModelType } from "./eVaultLensTypes.js";
 import type { EVaultV3AdapterConfig } from "../eVaultServiceConfig.js";

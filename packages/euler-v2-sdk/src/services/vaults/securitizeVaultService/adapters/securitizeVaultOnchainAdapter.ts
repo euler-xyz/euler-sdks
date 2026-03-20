@@ -1,9 +1,9 @@
 import type { ISecuritizeCollateralAdapter } from "../securitizeVaultService.js";
-import { ProviderService } from "../../../providerService/index.js";
-import { DeploymentService } from "../../../deploymentService/index.js";
-import { Address, encodeFunctionData, getAddress, zeroAddress } from "viem";
-import { ISecuritizeCollateralVault } from "../../../../entities/SecuritizeCollateralVault.js";
-import { VaultInfoERC4626 } from "./securitizeVaultLensTypes.js";
+import type { ProviderService } from "../../../providerService/index.js";
+import type { DeploymentService } from "../../../deploymentService/index.js";
+import { type Address, encodeFunctionData, getAddress, zeroAddress } from "viem";
+import type { ISecuritizeCollateralVault } from "../../../../entities/SecuritizeCollateralVault.js";
+import type { VaultInfoERC4626 } from "./securitizeVaultLensTypes.js";
 import { convertToISecuritizeCollateralVault } from "./securitizeVaultInfoConverter.js";
 import { utilsLensAbi } from "./abis/utilsLensAbi.js";
 import { erc4626EvcCollateralSecuritizeAbi } from "./abis/erc4626EvcCollateralSecuritizeAbi.js";
@@ -39,10 +39,6 @@ export class SecuritizeVaultOnchainAdapter
 
   setProviderService(providerService: ProviderService): void {
     this.providerService = providerService;
-  }
-
-  setDeploymentService(deploymentService: DeploymentService): void {
-    this.deploymentService = deploymentService;
   }
 
   queryVaultInfoERC4626 = async (

@@ -1,4 +1,4 @@
-import { Address, Hex, encodeFunctionData, getAddress, maxUint256 } from "viem";
+import { type Address, encodeFunctionData, getAddress } from "viem";
 import type {
   SwapQuote,
   SwapQuoteRequest,

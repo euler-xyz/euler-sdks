@@ -1,10 +1,10 @@
-import { Address } from "viem";
-import { ERC4626Data, Token, VaultType } from "../utils/types.js";
+import type { Address } from "viem";
+import type { ERC4626Data, VaultType } from "../utils/types.js";
 import {
   ERC4626Vault,
   type ERC4626VaultPopulated,
-  IERC4626Vault,
-  IERC4626VaultConversion,
+  type IERC4626Vault,
+  type IERC4626VaultConversion,
   VIRTUAL_DEPOSIT_AMOUNT,
 } from "./ERC4626Vault.js";
 import type { EVault } from "./EVault.js";

@@ -4,7 +4,7 @@
  */
 
 import type { Address } from "viem";
-import type { IAccountLiquidity, AccountPosition, IHasVaultAddress, ISubAccount } from "../entities/Account.js";
+import type { IAccountLiquidity, IHasVaultAddress, ISubAccount } from "../entities/Account.js";
 
 const WAD = 10n ** 18n;
 

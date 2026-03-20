@@ -1,9 +1,9 @@
 import { formatUnits } from "viem";
-import { IEulerEarn, EulerEarnStrategyInfo, EulerEarnGovernance, EulerEarnAllocationCap } from "../../../../entities/EulerEarn.js";
-import { Token, VaultType } from "../../../../utils/types.js";
-import { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
-import {
-  type DataIssue,
+import type { IEulerEarn, EulerEarnStrategyInfo, EulerEarnGovernance, EulerEarnAllocationCap } from "../../../../entities/EulerEarn.js";
+import { type Token, VaultType } from "../../../../utils/types.js";
+import type { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
+import type {
+  DataIssue,
 } from "../../../../utils/entityDiagnostics.js";
 import {
   bigintToSafeNumber,

@@ -1,5 +1,5 @@
-import { OracleDetailedInfo } from "src/utils/oracle.js";
-import { Address, Hex } from "viem";
+import type { OracleDetailedInfo } from "src/utils/oracle.js";
+import type { Address, Hex } from "viem";
 
 export interface LTVInfo {
   collateral: Address;

@@ -7,7 +7,7 @@ import {
   decodeFunctionData,
   zeroAddress,
 } from "viem";
-import type { EulerPlugin, PluginBatchItems, ReadPluginContext, WritePluginContext } from "../types.js";
+import type { EulerPlugin, WritePluginContext } from "../types.js";
 import { prependToBatch } from "../types.js";
 import type { BatchItemDescription, EVCBatchItem, TransactionPlan } from "../../services/executionService/executionServiceTypes.js";
 import type { EVault } from "../../entities/EVault.js";
@@ -212,8 +212,6 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
             }),
           });
         } catch {
-          // Skip this vault's keyring handling on error
-          continue;
         }
       }
 

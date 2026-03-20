@@ -1,42 +1,42 @@
 import { EulerSDK } from "./sdk.js";
-import { ABIService, IABIService } from "../services/abiService/index.js";
-import { DeploymentService, IDeploymentService } from "../services/deploymentService/index.js";
-import { ProviderService, IProviderService } from "../services/providerService/index.js";
-import { AccountService, IAccountService } from "../services/accountService/index.js";
+import { ABIService, type IABIService } from "../services/abiService/index.js";
+import { DeploymentService, type IDeploymentService } from "../services/deploymentService/index.js";
+import { ProviderService, type IProviderService } from "../services/providerService/index.js";
+import { AccountService, type IAccountService } from "../services/accountService/index.js";
 import { AccountOnchainAdapter } from "../services/accountService/adapters/accountOnchainAdapter.js";
 import { AccountV3Adapter } from "../services/accountService/adapters/accountV3Adapter.js";
-import { AccountVaultsSubgraphAdapter, AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter.js";
+import { AccountVaultsSubgraphAdapter, type AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter.js";
 import type { AccountServiceConfig } from "../services/accountService/accountServiceConfig.js";
-import { WalletService, IWalletService } from "../services/walletService/index.js";
+import { WalletService, type IWalletService } from "../services/walletService/index.js";
 import { WalletOnchainAdapter } from "../services/walletService/adapters/walletOnchainAdapter.js";
-import { EVaultService, IEVaultService } from "../services/vaults/eVaultService/index.js";
+import { EVaultService, type IEVaultService } from "../services/vaults/eVaultService/index.js";
 import type { EVaultServiceConfig } from "../services/vaults/eVaultService/eVaultServiceConfig.js";
-import { EulerEarnService, IEulerEarnService } from "../services/vaults/eulerEarnService/index.js";
+import { EulerEarnService, type IEulerEarnService } from "../services/vaults/eulerEarnService/index.js";
 import { EulerEarnOnchainAdapter } from "../services/vaults/eulerEarnService/adapters/eulerEarnOnchainAdapter.js";
-import { SecuritizeVaultService, ISecuritizeVaultService } from "../services/vaults/securitizeVaultService/index.js";
+import { SecuritizeVaultService, type ISecuritizeVaultService } from "../services/vaults/securitizeVaultService/index.js";
 import { SecuritizeVaultOnchainAdapter } from "../services/vaults/securitizeVaultService/adapters/securitizeVaultOnchainAdapter.js";
-import { EulerLabelsService, EulerLabelsURLAdapter, EulerLabelsURLAdapterConfig, IEulerLabelsService } from "../services/eulerLabelsService/index.js";
-import { TokenlistService, ITokenlistService } from "../services/tokenlistService/index.js";
-import { SwapService, ISwapService, SwapServiceConfig } from "../services/swapService/index.js";
-import { ExecutionService, IExecutionService } from "../services/executionService/index.js";
-import { PriceService, IPriceService, type BackendConfig, PricingBackendClient } from "../services/priceService/index.js";
-import { RewardsService, IRewardsService, type RewardsServiceConfig } from "../services/rewardsService/index.js";
-import { IntrinsicApyService, IIntrinsicApyService, type IntrinsicApyServiceConfig } from "../services/intrinsicApyService/index.js";
+import { EulerLabelsService, EulerLabelsURLAdapter, type EulerLabelsURLAdapterConfig, type IEulerLabelsService } from "../services/eulerLabelsService/index.js";
+import { TokenlistService, type ITokenlistService } from "../services/tokenlistService/index.js";
+import { SwapService, type ISwapService, type SwapServiceConfig } from "../services/swapService/index.js";
+import { ExecutionService, type IExecutionService } from "../services/executionService/index.js";
+import { PriceService, type IPriceService, type BackendConfig, PricingBackendClient } from "../services/priceService/index.js";
+import { RewardsService, type IRewardsService, type RewardsServiceConfig } from "../services/rewardsService/index.js";
+import { IntrinsicApyService, type IIntrinsicApyService, type IntrinsicApyServiceConfig } from "../services/intrinsicApyService/index.js";
 import {
   OracleAdapterService,
   type IOracleAdapterService,
   type OracleAdapterServiceConfig,
 } from "../services/oracleAdapterService/index.js";
-import { SimulationService, ISimulationService } from "../services/simulationService/index.js";
+import { SimulationService, type ISimulationService } from "../services/simulationService/index.js";
 import { defaultAccountV3AdapterConfig, defaultAccountVaultsAdapterConfig, defaultBackendConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLAdapterConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeAdapterConfig } from "./defaultConfig.js";
 import { defaultEVaultV3AdapterConfig } from "./defaultConfig.js";
-import { FeeFlowService, IFeeFlowService, type FeeFlowServiceConfig } from "../services/feeFlowService/index.js";
+import { FeeFlowService, type IFeeFlowService, type FeeFlowServiceConfig } from "../services/feeFlowService/index.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
 import { EVaultOnchainAdapter } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter.js";
 import { EVaultV3Adapter } from "../services/vaults/eVaultService/adapters/eVaultV3Adapter.js";
 import {
   VaultMetaService,
-  IVaultMetaService,
+  type IVaultMetaService,
   VaultTypeSubgraphAdapter,
   type RegisteredVaultService,
   type VaultEntity,
@@ -202,10 +202,7 @@ export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEnt
       deploymentService as DeploymentService,
       buildQuery,
     );
-    securitizeVaultService = new SecuritizeVaultService(
-      securitizeVaultAdapter,
-      deploymentService as DeploymentService
-    );
+    securitizeVaultService = new SecuritizeVaultService(securitizeVaultAdapter);
   }
 
   // Build vault meta service (vault type subgraph + eVault + eulerEarn + additionalVaultServices); type reflects extended entity when additionalVaultServices is used with buildEulerSDK<TExtendedEntity>

@@ -1,4 +1,4 @@
-import { Address, getAddress, isAddressEqual } from "viem";
+import { type Address, getAddress, isAddressEqual } from "viem";
 import { getSubAccountAddress } from "../utils/subAccounts.js";
 import type { VaultEntity } from "../services/vaults/vaultMetaService/index.js";
 import type { IVaultMetaService } from "../services/vaults/vaultMetaService/index.js";

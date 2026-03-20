@@ -1,5 +1,5 @@
-import { AddressPrefix } from "../entities/Account.js";
-import { Address, getAddress, pad, toHex } from "viem";
+import type { AddressPrefix } from "../entities/Account.js";
+import { type Address, getAddress, pad, toHex } from "viem";
 
 const SUB_ACCOUNT_MAX_ID = 255;
 

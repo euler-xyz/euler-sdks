@@ -1,4 +1,4 @@
-import { Abi, Address, Hex, TypedDataDomain } from "viem";
+import type { Abi, Address, Hex, TypedDataDomain } from "viem";
 import type { Account, ISubAccount, IHasVaultAddress } from "../../entities/Account.js";
 import type { Wallet } from "../../entities/Wallet.js";
 import type {

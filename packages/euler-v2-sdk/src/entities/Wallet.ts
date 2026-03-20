@@ -1,4 +1,4 @@
-import { Address, isAddressEqual } from "viem";
+import { type Address, isAddressEqual } from "viem";
 
 export interface IWallet {
   chainId: number;

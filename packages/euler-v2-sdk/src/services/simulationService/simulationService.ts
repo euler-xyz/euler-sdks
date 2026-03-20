@@ -6,10 +6,9 @@ import {
   encodeFunctionData,
   getAddress,
   parseEther,
-  stringify,
 } from "viem";
-import { ProviderService } from "../providerService/index.js";
-import { DeploymentService } from "../deploymentService/index.js";
+import type { ProviderService } from "../providerService/index.js";
+import type { DeploymentService } from "../deploymentService/index.js";
 import type { IVaultMetaService, VaultEntity } from "../vaults/vaultMetaService/index.js";
 import type { VaultFetchOptions } from "../vaults/index.js";
 import { VaultType } from "../../utils/types.js";
@@ -31,9 +30,8 @@ import { Account, type IAccount, type ISubAccount } from "../../entities/Account
 import { EVault } from "../../entities/EVault.js";
 import { EulerEarn } from "../../entities/EulerEarn.js";
 import { AccountOnchainAdapter, getEVCAccountInfoLensBatchItem, getVaultAccountInfoLensBatchItem } from "../accountService/adapters/accountOnchainAdapter.js";
-import { EVaultOnchainAdapter, getVaultInfoFullLensBatchItem } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter.js";
-import { EulerEarnOnchainAdapter, getEulerEarnVaultInfoFullLensBatchItem } from "../vaults/eulerEarnService/adapters/eulerEarnOnchainAdapter.js";
-import { SecuritizeVaultOnchainAdapter } from "../vaults/securitizeVaultService/adapters/securitizeVaultOnchainAdapter.js";
+import { getVaultInfoFullLensBatchItem } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter.js";
+import { getEulerEarnVaultInfoFullLensBatchItem } from "../vaults/eulerEarnService/adapters/eulerEarnOnchainAdapter.js";
 import { accountLensAbi } from "../accountService/adapters/abis/accountLensAbi.js";
 import { vaultLensAbi } from "../vaults/eVaultService/adapters/abis/vaultLensAbi.js";
 import { eulerEarnVaultLensAbi } from "../vaults/eulerEarnService/adapters/abis/eulerEarnVaultLensAbi.js";
@@ -177,7 +175,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
   ): Promise<SimulateBatchResult<TVaultEntity>> {
     const owner = getAddress(account);
     const useStateOverrides = options?.stateOverrides ?? true;
-    let effectiveStateOverrides: StateOverride | undefined = undefined;
+    let effectiveStateOverrides: StateOverride | undefined ;
     if (useStateOverrides) {
       effectiveStateOverrides = await this.deriveStateOverrides(chainId, owner, transactionPlan);
     }
@@ -195,7 +193,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
       owner,
       transactionPlan,
     );
-    const { fullBatch, lensMeta, evcAddress, totalValue, calldata } =
+    const { fullBatch, lensMeta, evcAddress, totalValue } =
       await this.buildSimulationBatch(chainId, owner, batch);
 
     const simulationResult = await this.runSimulation(
@@ -519,11 +517,11 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
       const target = getAddress(item.targetContract);
 
       if (fn === "transfer" || fn === "transferfrom") {
-        const to = item.args["to"] as Address | undefined;
+        const to = item.args.to as Address | undefined;
         const from =
           fn === "transferfrom"
-            ? (item.args["from"] as Address | undefined)
-            : (item.args["from"] as Address | undefined) ?? item.onBehalfOfAccount;
+            ? (item.args.from as Address | undefined)
+            : (item.args.from as Address | undefined) ?? item.onBehalfOfAccount;
 
         if (from) addSubAccountVault(from, target);
         if (to) addSubAccountVault(to, target);
@@ -532,7 +530,7 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
       }
 
       if (fn === "deposit" || fn === "skim" || fn === "mint") {
-        const receiver = item.args["receiver"] as Address | undefined;
+        const receiver = item.args.receiver as Address | undefined;
         if (receiver) addSubAccountVault(receiver, target);
         addCandidateVault(target);
       }

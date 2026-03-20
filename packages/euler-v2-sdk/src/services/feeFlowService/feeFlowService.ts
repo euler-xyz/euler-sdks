@@ -2,7 +2,7 @@ import { getAddress, type Address } from "viem";
 import type { EVault } from "../../entities/EVault.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
 import type { ProviderService } from "../providerService/index.js";
-import { type ContractCall, type TransactionPlan } from "../executionService/index.js";
+import type { ContractCall, TransactionPlan } from "../executionService/index.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 import type {
   BuildFeeFlowBuyPlanArgs,

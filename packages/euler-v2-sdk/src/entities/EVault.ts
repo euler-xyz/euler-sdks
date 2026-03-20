@@ -1,16 +1,16 @@
 // TypeScript equivalents for VaultLens structs (from evk-periphery/src/Lens/LensTypes.sol).
 // Numeric on-chain values use bigint to avoid precision loss.
 
-import { Address, maxUint256 } from "viem";
-import { OracleAdapterEntry, OracleInfo, OraclePrice, selectLeafAdaptersForPair } from "../utils/oracle.js";
-import { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultLensTypes.js";
-import { Token } from "../utils/types.js";
-import { IRMParams } from "../utils/irm.js";
+import { type Address, maxUint256 } from "viem";
+import { type OracleAdapterEntry, type OracleInfo, type OraclePrice, selectLeafAdaptersForPair } from "../utils/oracle.js";
+import type { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultLensTypes.js";
+import type { Token } from "../utils/types.js";
+import type { IRMParams } from "../utils/irm.js";
 import {
   ERC4626Vault,
   type ERC4626VaultPopulated,
-  IERC4626Vault,
-  IERC4626VaultConversion,
+  type IERC4626Vault,
+  type IERC4626VaultConversion,
   VIRTUAL_DEPOSIT_AMOUNT,
   type PriceWad,
 } from "./ERC4626Vault.js";

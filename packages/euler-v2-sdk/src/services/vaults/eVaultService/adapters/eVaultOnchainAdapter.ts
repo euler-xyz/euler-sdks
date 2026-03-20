@@ -1,14 +1,14 @@
-import { IEVaultAdapter } from "../eVaultService.js";
-import { ProviderService } from "../../../providerService/index.js";
-import { DeploymentService } from "../../../deploymentService/index.js";
+import type { IEVaultAdapter } from "../eVaultService.js";
+import type { ProviderService } from "../../../providerService/index.js";
+import type { DeploymentService } from "../../../deploymentService/index.js";
 import { getAddress, type Address, type Abi, encodeFunctionData } from "viem";
-import { EVault, IEVault } from "../../../../entities/EVault.js";
-import { VaultInfoFull } from "./eVaultLensTypes.js";
+import { EVault, type IEVault } from "../../../../entities/EVault.js";
+import type { VaultInfoFull } from "./eVaultLensTypes.js";
 import { convertVaultInfoFullToIEVault } from "./vaultInfoConverter.js";
 import { vaultLensAbi } from "./abis/vaultLensAbi.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
 import type { EulerPlugin, PluginBatchItems } from "../../../../plugins/types.js";
-import { executeBatchSimulation, BatchSimulationAdapter } from "../../../../plugins/batchSimulation.js";
+import { executeBatchSimulation, type BatchSimulationAdapter } from "../../../../plugins/batchSimulation.js";
 import type { EVCBatchItem } from "../../../executionService/executionServiceTypes.js";
 import type { DataIssue, ServiceResult } from "../../../../utils/entityDiagnostics.js";
 import { prefixDataIssues } from "../../../../utils/entityDiagnostics.js";
@@ -48,10 +48,6 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 
   setProviderService(providerService: ProviderService): void {
     this.providerService = providerService;
-  }
-
-  setDeploymentService(deploymentService: DeploymentService): void {
-    this.deploymentService = deploymentService;
   }
 
   setPlugins(plugins: EulerPlugin[]): void {

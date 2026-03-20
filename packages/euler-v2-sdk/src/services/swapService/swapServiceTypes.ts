@@ -1,4 +1,4 @@
-import { Address, Hex } from "viem";
+import type { Address, Hex } from "viem";
 
 export enum SwapperMode {
   // 0 - exact input swap

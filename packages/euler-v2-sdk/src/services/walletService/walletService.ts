@@ -1,5 +1,5 @@
-import { Wallet, IWallet } from "../../entities/Wallet.js";
-import { Address } from "viem";
+import { Wallet, type IWallet } from "../../entities/Wallet.js";
+import type { Address } from "viem";
 import { compressDataIssues, type ServiceResult } from "../../utils/entityDiagnostics.js";
 
 export interface AssetWithSpenders {

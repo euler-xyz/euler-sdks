@@ -1,11 +1,11 @@
-import { decodeOracleInfo, OracleInfo, OraclePrice } from "../../../../utils/oracle.js";
-import { IEVault, EVaultFees, EVaultHooks, EVaultCaps, EVaultLiquidation, InterestRates, InterestRateModel, EVaultCollateral, EVaultCollateralRamping, EVaultHookedOperations } from "../../../../entities/EVault.js";
-import { Token, VaultType } from "../../../../utils/types.js";
-import { VaultInfoFull, AssetPriceInfo, InterestRateModelType, InterestRateModelDetailedInfo } from "./eVaultLensTypes.js";
+import { decodeOracleInfo, type OracleInfo, type OraclePrice } from "../../../../utils/oracle.js";
+import type { IEVault, EVaultFees, EVaultHooks, EVaultCaps, EVaultLiquidation, InterestRates, InterestRateModel, EVaultCollateral, EVaultHookedOperations } from "../../../../entities/EVault.js";
+import { type Token, VaultType } from "../../../../utils/types.js";
+import { type VaultInfoFull, type AssetPriceInfo, InterestRateModelType, type InterestRateModelDetailedInfo } from "./eVaultLensTypes.js";
 import { formatUnits, type Hex, zeroAddress } from "viem";
 import { decodeIRMParams } from "../../../../utils/irm.js";
-import {
-  type DataIssue,
+import type {
+  DataIssue,
 } from "../../../../utils/entityDiagnostics.js";
 import {
   bigintToSafeNumber,

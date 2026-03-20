@@ -1,4 +1,4 @@
-import { Address } from "viem";
+import type { Address } from "viem";
 import type { BuildQueryFn } from "../../utils/buildQuery.js";
 
 export interface Deployment {

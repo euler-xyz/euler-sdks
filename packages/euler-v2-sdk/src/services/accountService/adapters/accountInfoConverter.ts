@@ -1,9 +1,9 @@
 import { maxInt256 } from "viem";
 import type { ISubAccount, IAccountLiquidity, DaysToLiquidation } from "../../../entities/Account.js";
 import { AccountPosition } from "../../../entities/Account.js";
-import { EVCAccountInfo, VaultAccountInfo, AccountLiquidityInfo } from "./accountLensTypes.js";
-import {
-  type DataIssue,
+import type { EVCAccountInfo, VaultAccountInfo, AccountLiquidityInfo } from "./accountLensTypes.js";
+import type {
+  DataIssue,
 } from "../../../utils/entityDiagnostics.js";
 import {
   bigintToSafeNumber,
@@ -113,7 +113,7 @@ export function convertVaultAccountInfoToAccountPosition(
   vaultAccountInfo: VaultAccountInfo,
   errors: DataIssue[]
 ): AccountPosition {
-  let liquidity: IAccountLiquidity | undefined = undefined;
+  let liquidity: IAccountLiquidity | undefined ;
   if (vaultAccountInfo.borrowed !== 0n) {
     if (vaultAccountInfo.liquidityInfo.queryFailure) {
       const message = `Failed to fetch liquidity for position ${vaultAccountInfo.vault} for sub-account ${vaultAccountInfo.account}: ${vaultAccountInfo.liquidityInfo.queryFailureReason}`;

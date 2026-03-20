@@ -1,9 +1,9 @@
-import { IEulerEarnAdapter } from "../eulerEarnService.js";
-import { ProviderService } from "../../../providerService/index.js";
-import { DeploymentService } from "../../../deploymentService/index.js";
-import { Address, encodeFunctionData, getAddress } from "viem";
-import { EulerEarn, IEulerEarn } from "../../../../entities/EulerEarn.js";
-import { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
+import type { IEulerEarnAdapter } from "../eulerEarnService.js";
+import type { ProviderService } from "../../../providerService/index.js";
+import type { DeploymentService } from "../../../deploymentService/index.js";
+import { type Address, encodeFunctionData, getAddress } from "viem";
+import { EulerEarn, type IEulerEarn } from "../../../../entities/EulerEarn.js";
+import type { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
 import { convertEulerEarnVaultInfoFullToIEulerEarn } from "./eulerEarnInfoConverter.js";
 import { eulerEarnVaultLensAbi } from "./abis/eulerEarnVaultLensAbi.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
@@ -47,10 +47,6 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 
   setProviderService(providerService: ProviderService): void {
     this.providerService = providerService;
-  }
-
-  setDeploymentService(deploymentService: DeploymentService): void {
-    this.deploymentService = deploymentService;
   }
 
   queryEulerEarnVaultInfoFull = async (
