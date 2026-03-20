@@ -1,6 +1,6 @@
 import type { AccountV3AdapterConfig } from "../services/accountService/accountServiceConfig.js"
 import type { DeploymentServiceConfig } from "src/services/deploymentService/deploymentService.js"
-import type { AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter.js"
+import type { AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter/accountVaultsSubgraphAdapter.js"
 import type { EVaultV3AdapterConfig } from "../services/vaults/eVaultService/eVaultServiceConfig.js"
 import type { VaultTypeSubgraphAdapterConfig } from "../services/vaults/vaultMetaService/index.js"
 import type { EulerLabelsURLAdapterConfig } from "../services/eulerLabelsService/index.js"

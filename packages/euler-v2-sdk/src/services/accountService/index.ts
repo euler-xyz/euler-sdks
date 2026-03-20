@@ -8,8 +8,8 @@ export {
   AccountOnchainAdapter,
   getEVCAccountInfoLensBatchItem,
   getVaultAccountInfoLensBatchItem,
-} from "./adapters/accountOnchainAdapter.js";
-export { AccountV3Adapter } from "./adapters/accountV3Adapter.js";
+} from "./adapters/accountOnchainAdapter/accountOnchainAdapter.js";
+export { AccountV3Adapter } from "./adapters/accountV3Adapter/accountV3Adapter.js";
 export type {
   IAccountService,
   IAccountAdapter,

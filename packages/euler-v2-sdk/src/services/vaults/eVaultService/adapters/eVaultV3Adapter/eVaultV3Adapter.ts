@@ -1,12 +1,12 @@
 import { type Address, type Hex, getAddress } from "viem";
-import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
-import type { OracleAdapterEntry, OracleInfo, OraclePrice } from "../../../../utils/oracle.js";
-import { type DataIssue, compressDataIssues, prefixDataIssues, type ServiceResult } from "../../../../utils/entityDiagnostics.js";
-import type { EVaultCollateral, EVaultCollateralRamping, EVaultCaps, EVaultFees, EVaultHooks, EVaultLiquidation, EVaultHookedOperations, IEVault, InterestRateModel, InterestRates } from "../../../../entities/EVault.js";
-import { type Token, VaultType } from "../../../../utils/types.js";
-import { InterestRateModelType } from "./eVaultLensTypes.js";
-import type { EVaultV3AdapterConfig } from "../eVaultServiceConfig.js";
-import type { IEVaultAdapter } from "../eVaultService.js";
+import { type BuildQueryFn, applyBuildQuery } from "../../../../../utils/buildQuery.js";
+import type { OracleAdapterEntry, OracleInfo, OraclePrice } from "../../../../../utils/oracle.js";
+import { type DataIssue, compressDataIssues, prefixDataIssues, type ServiceResult } from "../../../../../utils/entityDiagnostics.js";
+import type { EVaultCollateral, EVaultCollateralRamping, EVaultCaps, EVaultFees, EVaultHooks, EVaultLiquidation, EVaultHookedOperations, IEVault, InterestRateModel, InterestRates } from "../../../../../entities/EVault.js";
+import { type Token, VaultType } from "../../../../../utils/types.js";
+import { InterestRateModelType } from "../eVaultOnchainAdapter/eVaultLensTypes.js";
+import type { EVaultV3AdapterConfig } from "../../eVaultServiceConfig.js";
+import type { IEVaultAdapter } from "../../eVaultService.js";
 
 type V3Envelope<T> = {
   data?: T;

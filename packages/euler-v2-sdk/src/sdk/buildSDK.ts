@@ -3,9 +3,9 @@ import { ABIService, type IABIService } from "../services/abiService/index.js";
 import { DeploymentService, type IDeploymentService } from "../services/deploymentService/index.js";
 import { ProviderService, type IProviderService } from "../services/providerService/index.js";
 import { AccountService, type IAccountService } from "../services/accountService/index.js";
-import { AccountOnchainAdapter } from "../services/accountService/adapters/accountOnchainAdapter.js";
-import { AccountV3Adapter } from "../services/accountService/adapters/accountV3Adapter.js";
-import { AccountVaultsSubgraphAdapter, type AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter.js";
+import { AccountOnchainAdapter } from "../services/accountService/adapters/accountOnchainAdapter/accountOnchainAdapter.js";
+import { AccountV3Adapter } from "../services/accountService/adapters/accountV3Adapter/accountV3Adapter.js";
+import { AccountVaultsSubgraphAdapter, type AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter/accountVaultsSubgraphAdapter.js";
 import type { AccountServiceConfig } from "../services/accountService/accountServiceConfig.js";
 import { WalletService, type IWalletService } from "../services/walletService/index.js";
 import { WalletOnchainAdapter } from "../services/walletService/adapters/walletOnchainAdapter.js";
@@ -32,8 +32,8 @@ import { defaultAccountV3AdapterConfig, defaultAccountVaultsAdapterConfig, defau
 import { defaultEVaultV3AdapterConfig } from "./defaultConfig.js";
 import { FeeFlowService, type IFeeFlowService, type FeeFlowServiceConfig } from "../services/feeFlowService/index.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
-import { EVaultOnchainAdapter } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter.js";
-import { EVaultV3Adapter } from "../services/vaults/eVaultService/adapters/eVaultV3Adapter.js";
+import { EVaultOnchainAdapter } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultOnchainAdapter.js";
+import { EVaultV3Adapter } from "../services/vaults/eVaultService/adapters/eVaultV3Adapter/eVaultV3Adapter.js";
 import {
   VaultMetaService,
   type IVaultMetaService,

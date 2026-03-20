@@ -1,21 +1,21 @@
-import type { IAccountAdapter } from "../accountService.js";
-import type { ProviderService } from "../../providerService/index.js";
-import type { DeploymentService } from "../../deploymentService/index.js";
+import type { IAccountAdapter } from "../../accountService.js";
+import type { ProviderService } from "../../../providerService/index.js";
+import type { DeploymentService } from "../../../deploymentService/index.js";
 import { type Address, type Abi, encodeFunctionData, getAddress } from "viem";
-import type { IAccount, ISubAccount } from "../../../entities/Account.js";
-import { EVault } from "../../../entities/EVault.js";
+import type { IAccount, ISubAccount } from "../../../../entities/Account.js";
+import { EVault } from "../../../../entities/EVault.js";
 import type { VaultAccountInfo, EVCAccountInfo } from "./accountLensTypes.js";
 import { convertToSubAccount } from "./accountInfoConverter.js";
-import type { AccountVaults } from "./accountVaultsSubgraphAdapter.js";
+import type { AccountVaults } from "../accountVaultsSubgraphAdapter/accountVaultsSubgraphAdapter.js";
 import { accountLensAbi } from "./abis/accountLensAbi.js";
-import { vaultLensAbi } from "../../vaults/eVaultService/adapters/abis/vaultLensAbi.js";
-import type { VaultInfoFull } from "../../vaults/eVaultService/adapters/eVaultLensTypes.js";
-import { convertVaultInfoFullToIEVault } from "../../vaults/eVaultService/adapters/vaultInfoConverter.js";
-import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js";
-import type { EulerPlugin, PluginBatchItems } from "../../../plugins/types.js";
-import { executeBatchSimulation, type BatchSimulationAdapter } from "../../../plugins/batchSimulation.js";
-import type { EVCBatchItem } from "../../executionService/executionServiceTypes.js";
-import { type DataIssue, type ServiceResult, prefixDataIssues } from "../../../utils/entityDiagnostics.js";
+import { vaultLensAbi } from "../../../vaults/eVaultService/adapters/eVaultOnchainAdapter/abis/vaultLensAbi.js";
+import type { VaultInfoFull } from "../../../vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
+import { convertVaultInfoFullToIEVault } from "../../../vaults/eVaultService/adapters/eVaultOnchainAdapter/vaultInfoConverter.js";
+import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
+import type { EulerPlugin, PluginBatchItems } from "../../../../plugins/types.js";
+import { executeBatchSimulation, type BatchSimulationAdapter } from "../../../../plugins/batchSimulation.js";
+import type { EVCBatchItem } from "../../../executionService/executionServiceTypes.js";
+import { type DataIssue, type ServiceResult, prefixDataIssues } from "../../../../utils/entityDiagnostics.js";
 
 export const getEVCAccountInfoLensBatchItem = (
   accountLensAddress: Address,

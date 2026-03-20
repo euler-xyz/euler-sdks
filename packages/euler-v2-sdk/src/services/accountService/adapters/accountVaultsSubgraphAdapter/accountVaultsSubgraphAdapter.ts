@@ -1,8 +1,8 @@
 import { type Address, getAddress } from "viem";
-import type { IAccountVaultsAdapter } from "./accountOnchainAdapter.js";
-import { getAddressPrefix } from "../../../utils/subAccounts.js";
-import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js";
-import { createCallBundler } from "../../../utils/callBundler.js";
+import type { IAccountVaultsAdapter } from "../accountOnchainAdapter/accountOnchainAdapter.js";
+import { getAddressPrefix } from "../../../../utils/subAccounts.js";
+import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
+import { createCallBundler } from "../../../../utils/callBundler.js";
 
 export interface AccountVaults {
   [vault: Address]: {

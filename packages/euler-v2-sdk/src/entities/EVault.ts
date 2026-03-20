@@ -3,7 +3,7 @@
 
 import { type Address, maxUint256 } from "viem";
 import { type OracleAdapterEntry, type OracleInfo, type OraclePrice, selectLeafAdaptersForPair } from "../utils/oracle.js";
-import type { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultLensTypes.js";
+import type { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
 import type { Token } from "../utils/types.js";
 import type { IRMParams } from "../utils/irm.js";
 import {

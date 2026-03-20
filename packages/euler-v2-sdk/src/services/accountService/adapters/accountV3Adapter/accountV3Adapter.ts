@@ -1,9 +1,9 @@
 import { type Address, getAddress } from "viem";
-import type { IAccount, IAccountLiquidity, IAccountPosition, ISubAccount, DaysToLiquidation } from "../../../entities/Account.js";
-import { type BuildQueryFn, applyBuildQuery } from "../../../utils/buildQuery.js";
-import { compressDataIssues, type DataIssue, type ServiceResult } from "../../../utils/entityDiagnostics.js";
-import type { AccountV3AdapterConfig } from "../accountServiceConfig.js";
-import type { IAccountAdapter } from "../accountService.js";
+import type { IAccount, IAccountLiquidity, IAccountPosition, ISubAccount, DaysToLiquidation } from "../../../../entities/Account.js";
+import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
+import { compressDataIssues, type DataIssue, type ServiceResult } from "../../../../utils/entityDiagnostics.js";
+import type { AccountV3AdapterConfig } from "../../accountServiceConfig.js";
+import type { IAccountAdapter } from "../../accountService.js";
 
 type V3PositionsResponse = {
   data?: V3AccountPositionRow[];

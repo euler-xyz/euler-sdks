@@ -1,13 +1,13 @@
 import { maxInt256 } from "viem";
-import type { ISubAccount, IAccountLiquidity, DaysToLiquidation } from "../../../entities/Account.js";
-import { AccountPosition } from "../../../entities/Account.js";
+import type { ISubAccount, IAccountLiquidity, DaysToLiquidation } from "../../../../entities/Account.js";
+import { AccountPosition } from "../../../../entities/Account.js";
 import type { EVCAccountInfo, VaultAccountInfo, AccountLiquidityInfo } from "./accountLensTypes.js";
 import type {
   DataIssue,
-} from "../../../utils/entityDiagnostics.js";
+} from "../../../../utils/entityDiagnostics.js";
 import {
   bigintToSafeNumber,
-} from "../../../utils/normalization.js";
+} from "../../../../utils/normalization.js";
 
 /**
  * Converts AccountLens's AccountLiquidityInfo object to an IAccountLiquidity object
