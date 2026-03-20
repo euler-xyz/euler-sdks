@@ -319,12 +319,24 @@ export class EulerEarnV3Adapter implements IEulerEarnAdapter {
     };
   }
 
+  private buildUrl(endpoint: string, path: string, search?: Record<string, string>): string {
+    const normalizedEndpoint = endpoint.replace(/\/+$/, "");
+    const joined = normalizedEndpoint.startsWith("http://") || normalizedEndpoint.startsWith("https://")
+      ? new URL(path, `${normalizedEndpoint}/`).toString()
+      : `${normalizedEndpoint}${path}`;
+
+    if (!search || Object.keys(search).length === 0) return joined;
+
+    const params = new URLSearchParams(search);
+    return `${joined}?${params.toString()}`;
+  }
+
   queryV3EulerEarnDetail = async (
     endpoint: string,
     chainId: number,
     vault: Address,
   ): Promise<V3Envelope<V3EulerEarnDetail>> => {
-    const url = `${endpoint.replace(/\/+$/, "")}/v3/earn/vaults/${chainId}/${vault}`;
+    const url = this.buildUrl(endpoint, `/v3/earn/vaults/${chainId}/${vault}`);
     const response = await fetch(url, {
       method: "GET",
       headers: this.getHeaders(),
@@ -343,12 +355,13 @@ export class EulerEarnV3Adapter implements IEulerEarnAdapter {
     offset: number,
     limit: number,
   ): Promise<V3ListEnvelope<V3EulerEarnListRow>> => {
-    const url = new URL(`${endpoint.replace(/\/+$/, "")}/v3/earn/vaults`);
-    url.searchParams.set("chainId", String(chainId));
-    url.searchParams.set("offset", String(offset));
-    url.searchParams.set("limit", String(limit));
+    const url = this.buildUrl(endpoint, "/v3/earn/vaults", {
+      chainId: String(chainId),
+      offset: String(offset),
+      limit: String(limit),
+    });
 
-    const response = await fetch(url.toString(), {
+    const response = await fetch(url, {
       method: "GET",
       headers: this.getHeaders(),
     });

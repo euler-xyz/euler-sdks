@@ -52,6 +52,12 @@ export function SdkProvider({ children }: { children: ReactNode }) {
           endpoint: "/api/euler-v3",
         },
       },
+      eulerEarnServiceConfig: {
+        adapter: "v3",
+        v3AdapterConfig: {
+          endpoint: "/api/euler-v3",
+        },
+      },
       swapServiceConfig: {
         swapApiUrl: "http://localhost:3002",
       },
