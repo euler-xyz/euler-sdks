@@ -14,8 +14,13 @@ export {
 export type {
   IVaultTypeAdapter,
   VaultFactoryResult,
+  VaultResolvedTypeResult,
 } from "./adapters/IVaultTypeAdapter.js";
 export {
   VaultTypeSubgraphAdapter,
   type VaultTypeSubgraphAdapterConfig,
 } from "./adapters/VaultTypeSubgraphAdapter.js";
+export {
+  VaultTypeV3Adapter,
+  type VaultTypeV3AdapterConfig,
+} from "./adapters/VaultTypeV3Adapter.js";

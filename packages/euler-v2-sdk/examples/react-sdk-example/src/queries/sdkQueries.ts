@@ -1,4 +1,9 @@
-import { QueryClient, useQuery } from "@tanstack/react-query";
+import {
+  QueryClient,
+  useQuery,
+  type FetchQueryOptions,
+  type QueryKey,
+} from "@tanstack/react-query";
 import type {
   Account,
   BuildQueryFn,
@@ -7,14 +12,14 @@ import type {
   FeeFlowState,
   Wallet,
   VaultEntity,
-  VaultMetaPerspective,
   VaultRewardInfo,
 } from "euler-v2-sdk";
 import { isAddress, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import { recordExecution, registerKnownQueries } from "./queryProfileStore.ts";
 import { interceptSdkDataIfEnabled, isQueryIntercepted } from "./dataInterceptorStore.ts";
-import { StandardEVaultPerspectives, isEVault } from "euler-v2-sdk";
+import { getQueryBuildOverrides } from "./queryOptionsStore.ts";
+import { isEVault } from "euler-v2-sdk";
 
 // ---------------------------------------------------------------------------
 // Query client
@@ -136,9 +141,12 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn, target) => {
     fn(...args)
   );
 
-  const wrapped = (...args: unknown[]) =>
-    queryClient.fetchQuery({
-      queryKey: ["sdk", queryName, ...args.map(serializeArg)],
+  const wrapped = async (...args: unknown[]) => {
+    const queryKey = ["sdk", queryName, ...args.map(serializeArg)] as QueryKey;
+    const { disableCache, fetchQueryOptions: overrides } = getQueryBuildOverrides();
+
+    const fetchOptions: FetchQueryOptions<unknown, Error, unknown, QueryKey> = {
+      queryKey,
       queryFn: async () => {
         recordExecution(queryName);
         const result = await interceptedFetcher(...args);
@@ -146,10 +154,30 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn, target) => {
         return result === undefined ? null : result;
       },
       staleTime,
+      ...(overrides as Omit<
+        FetchQueryOptions<unknown, Error, unknown, QueryKey>,
+        "queryKey" | "queryFn"
+      >),
       // When manually intercepting a query in the profiler, a "throw" should
       // fail that exact call path instead of being retried transparently.
-      retry: isQueryIntercepted(queryName) ? false : undefined,
-    });
+      retry: isQueryIntercepted(queryName)
+        ? false
+        : (overrides.retry as FetchQueryOptions<
+            unknown,
+            Error,
+            unknown,
+            QueryKey
+          >["retry"]),
+    };
+
+    try {
+      return await queryClient.fetchQuery(fetchOptions);
+    } finally {
+      if (disableCache) {
+        queryClient.removeQueries({ queryKey, exact: true });
+      }
+    }
+  };
 
   return wrapped as typeof fn;
 };
@@ -337,15 +365,20 @@ export function unwrapServiceResult<T>(
   return unwrapServiceResultWithDiagnostics(operation, response).result;
 }
 
-export function useVerifiedVaults(perspectives: VaultMetaPerspective[]) {
+export function useAllVaults() {
   const { sdk, chainId, enabled } = useSdkReady();
   return useQuery<VaultEntity[]>({
-    queryKey: ["vaults", chainId, perspectives],
+    queryKey: ["vaults", chainId, "all"],
     queryFn: async () => {
       const fetched = unwrapServiceResultWithDiagnostics(
-        "vaultMetaService.fetchVerifiedVaults",
-        await sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
-          populateAll: true,
+        "vaultMetaService.fetchAllVaults",
+        await sdk!.vaultMetaService.fetchAllVaults(chainId, {
+          options: {
+            populateMarketPrices: true,
+            populateRewards: true,
+            populateIntrinsicApy: true,
+            populateLabels: true,
+          },
         })
       );
       return (fetched.result as Array<VaultEntity | undefined>).filter(
@@ -357,21 +390,24 @@ export function useVerifiedVaults(perspectives: VaultMetaPerspective[]) {
   });
 }
 
-export function useVerifiedVaultsWithDiagnostics(
-  perspectives: VaultMetaPerspective[]
-) {
+export function useAllVaultsWithDiagnostics() {
   const { sdk, chainId, enabled } = useSdkReady();
   return useQuery<{
     vaults: VaultEntity[];
     diagnostics: DiagnosticIssue[];
     failedVaults: FailedVaultFetch[];
   }>({
-    queryKey: ["vaultsWithDiagnostics", chainId, perspectives],
+    queryKey: ["vaultsWithDiagnostics", chainId, "all"],
     queryFn: async () => {
       const fetched = unwrapServiceResultWithDiagnostics(
-        "vaultMetaService.fetchVerifiedVaults",
-        await sdk!.vaultMetaService.fetchVerifiedVaults(chainId, perspectives, {
-          populateAll: true,
+        "vaultMetaService.fetchAllVaults",
+        await sdk!.vaultMetaService.fetchAllVaults(chainId, {
+          options: {
+            populateMarketPrices: true,
+            populateRewards: true,
+            populateIntrinsicApy: true,
+            populateLabels: true,
+          },
         })
       );
       const rawVaults = fetched.result as Array<VaultEntity | undefined>;
@@ -643,21 +679,22 @@ export function useFeeFlowPageData() {
     queryKey: ["feeFlowPageData", chainId],
     queryFn: async () => {
       const state = await sdk!.feeFlowService.fetchState(chainId);
-      const verifiedAddresses = await sdk!.vaultMetaService.fetchVerifiedVaultAddresses(chainId, [
-        StandardEVaultPerspectives.GOVERNED,
-        StandardEVaultPerspectives.ESCROW,
-      ]);
-
       const fetched = unwrapServiceResult(
-        "vaultMetaService.fetchVaults",
-        await sdk!.vaultMetaService.fetchVaults(chainId, verifiedAddresses, {
-          populateAll: true,
+        "vaultMetaService.fetchAllVaults",
+        await sdk!.vaultMetaService.fetchAllVaults(chainId, {
+          options: {
+            populateMarketPrices: true,
+            populateRewards: true,
+            populateIntrinsicApy: true,
+            populateLabels: true,
+          },
+          filter: async (vault) => isEVault(vault),
         })
       );
 
       const eVaults = fetched
         .filter((vault): vault is VaultEntity => vault !== undefined)
-        .filter(isEVault)
+        .filter((vault): vault is EVault => isEVault(vault))
         .filter((vault) => !vault.eulerLabel?.deprecated);
       const eligibleVaults = sdk!.feeFlowService.getEligibleVaults(eVaults, chainId);
       const feeFlowSubAccount = unwrapServiceResult(

@@ -3,7 +3,11 @@ import type { EVault } from "../../../entities/EVault.js";
 import type { EulerEarn } from "../../../entities/EulerEarn.js";
 import type { SecuritizeCollateralVault } from "../../../entities/SecuritizeCollateralVault.js";
 import { VaultType } from "../../../utils/types.js";
-import type { IVaultService, VaultFetchOptions } from "../index.js";
+import type {
+  FetchAllVaultsArgs,
+  IVaultService,
+  VaultFetchOptions,
+} from "../index.js";
 import type { IVaultTypeAdapter } from "./adapters/IVaultTypeAdapter.js";
 import type { StandardEVaultPerspectives } from "../eVaultService/index.js";
 import type { StandardEulerEarnPerspectives } from "../eulerEarnService/index.js";
@@ -152,13 +156,33 @@ export class VaultMetaService<TEntity = VaultEntity>
     vaultAddresses: Address[]
   ): Promise<Map<Address, RegisteredVaultService<TEntity>>> {
     if (vaultAddresses.length === 0) return new Map();
+    const map = new Map<Address, RegisteredVaultService<TEntity>>();
+    const resolvedAddresses = new Set<string>();
+
+    if (this.config.vaultTypeAdapter.fetchVaultTypes) {
+      const typeResults = await this.config.vaultTypeAdapter.fetchVaultTypes(
+        chainId,
+        vaultAddresses
+      );
+      for (const { id, type } of typeResults) {
+        const service = this.typeToService.get(type);
+        if (!service) continue;
+        const address = getAddress(id);
+        map.set(address, service);
+        resolvedAddresses.add(address.toLowerCase());
+      }
+    }
+
+    const unresolvedVaults = vaultAddresses.filter(
+      (vault) => !resolvedAddresses.has(getAddress(vault).toLowerCase())
+    );
+    if (unresolvedVaults.length === 0) return map;
+
     const results = await this.config.vaultTypeAdapter.fetchVaultFactories(
       chainId,
-      vaultAddresses
+      unresolvedVaults
     );
-
     const factoryToService = this.getFactoryToServiceMap(chainId);
-    const map = new Map<Address, RegisteredVaultService<TEntity>>();
     for (const { id, factory } of results) {
       const service = factoryToService.get(getAddress(factory));
       if (service) {
@@ -351,6 +375,27 @@ export class VaultMetaService<TEntity = VaultEntity>
           mapDataIssuePaths(issue, normalizeTopLevelVaultArrayPath)
         )
       ),
+    };
+  }
+
+  /**
+   * Fetches all discoverable vaults across registered vault services.
+   * The optional async `filter` runs after the first fetch in each service and before populate/enrichment work,
+   * so rejected vaults are skipped before additional resources are spent on them.
+   */
+  async fetchAllVaults(
+    chainId: number,
+    args?: FetchAllVaultsArgs<TEntity, VaultFetchOptions>
+  ): Promise<ServiceResult<(TEntity | undefined)[]>> {
+    const allFetched = await Promise.all(
+      this.vaultServices.map((service) =>
+        service.fetchAllVaults(chainId, args as FetchAllVaultsArgs<TEntity, VaultFetchOptions>)
+      )
+    );
+
+    return {
+      result: allFetched.flatMap((entry) => entry.result),
+      errors: compressDataIssues(allFetched.flatMap((entry) => entry.errors)),
     };
   }
 }

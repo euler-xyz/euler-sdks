@@ -47,10 +47,10 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 
 | Service | Fetch Vaults | Market Prices | Rewards | Intrinsic APY | Labels | Notes |
 |---|---|---|---|---|---|---|
-| `vaultMetaService` | Yes (type-routed) | Via forwarded options | Via forwarded options | Via forwarded options | Via forwarded options | Batch methods preserve input order and may return `undefined` entries for per-vault failures; check `errors` |
-| `eVaultService` | Yes (`EVault`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | Also supports `populateCollaterals`; batch methods may return `undefined` entries |
-| `eulerEarnService` | Yes (`EulerEarn`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | Also supports `populateStrategyVaults`; batch methods may return `undefined` entries |
-| `securitizeVaultService` | Yes (`SecuritizeCollateralVault`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | No standard perspectives for verified-vault discovery; batch methods may return `undefined` entries |
+| `vaultMetaService` | Yes (type-routed) | Via forwarded options | Via forwarded options | Via forwarded options | Via forwarded options | Supports `fetchAllVaults()` across all registered vault services; batch methods may return `undefined` entries |
+| `eVaultService` | Yes (`EVault`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | Also supports `populateCollaterals` and `fetchAllVaults()`; batch methods may return `undefined` entries |
+| `eulerEarnService` | Yes (`EulerEarn`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | Also supports `populateStrategyVaults` and `fetchAllVaults()`; batch methods may return `undefined` entries |
+| `securitizeVaultService` | Yes (`SecuritizeCollateralVault`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | No standard perspectives for verified-vault discovery; `fetchAllVaults()` currently depends on adapter discovery support |
 | `accountService` | Account/sub-account data | Yes (`populateMarketPrices`) | Yes (`populateUserRewards`) | Via `vaultFetchOptions` | Via `vaultFetchOptions` | Vault enrichment goes through `vaultMetaService` |
 | `executionService` | No (planning/encoding only) | No | No | No | No | Produces generic transaction plans and EVC batch payloads |
 | `swapService` | No (quotes only) | No | No | No | No | Returns swap quotes/providers for execution plans |

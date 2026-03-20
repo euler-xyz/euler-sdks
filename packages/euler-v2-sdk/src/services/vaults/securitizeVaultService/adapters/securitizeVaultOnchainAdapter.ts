@@ -152,4 +152,13 @@ export class SecuritizeVaultOnchainAdapter
   ): Promise<Address[]> {
     return [];
   }
+
+  async fetchAllVaults(
+    _chainId: number
+  ): Promise<ServiceResult<(ISecuritizeCollateralVault | undefined)[]>> {
+    return {
+      result: [],
+      errors: [],
+    };
+  }
 }

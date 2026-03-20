@@ -127,4 +127,15 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 
     return addresses;
   }
+
+  async fetchAllVaults(chainId: number): Promise<ServiceResult<(IEulerEarn | undefined)[]>> {
+    const deployment = this.deploymentService.getDeployment(chainId);
+    const perspective = deployment.addresses.peripheryAddrs?.eulerEarnFactoryPerspective;
+    if (!perspective) {
+      throw new Error("Perspective address not found for eulerEarnFactoryPerspective");
+    }
+
+    const addresses = await this.fetchVerifiedVaultsAddresses(chainId, [perspective]);
+    return this.fetchVaults(chainId, addresses);
+  }
 }

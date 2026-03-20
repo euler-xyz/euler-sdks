@@ -20,6 +20,19 @@ export interface VaultFetchOptions {
   };
 }
 
+export type VaultFilter<TVault> = (
+  vault: TVault
+) => boolean | Promise<boolean>;
+
+export interface FetchAllVaultsArgs<TVault, TOptions> {
+  options?: TOptions;
+  /**
+   * Optional async predicate applied after the initial vault fetch and before any populate/enrichment work.
+   * Use this to discard vaults early so the SDK does not spend resources populating vaults you will throw away.
+   */
+  filter?: VaultFilter<TVault>;
+}
+
 /**
  * Unified interface for vault services (Euler Earn, EVault).
  * @typeParam TVault - Vault entity type (EulerEarn | EVault)
@@ -35,6 +48,15 @@ export interface IVaultService<TVault, TPerspective> {
     chainId: number,
     vaults: Address[],
     options?: VaultFetchOptions
+  ): Promise<ServiceResult<(TVault | undefined)[]>>;
+  /**
+   * Fetches all discoverable vaults for the service.
+   * The optional async `filter` runs after the first fetch and before populate/enrichment work,
+   * so rejected vaults are skipped before additional resources are spent on them.
+   */
+  fetchAllVaults(
+    chainId: number,
+    args?: FetchAllVaultsArgs<TVault, VaultFetchOptions>
   ): Promise<ServiceResult<(TVault | undefined)[]>>;
   fetchVerifiedVaultAddresses(
     chainId: number,

@@ -4,12 +4,10 @@ import { useSDK } from "../context/SdkContext.tsx";
 import {
   queryClient,
   unwrapServiceResult,
-  useVerifiedVaultsWithDiagnostics,
+  useAllVaultsWithDiagnostics,
   useWalletBalance,
 } from "../queries/sdkQueries.ts";
 import {
-  StandardEVaultPerspectives,
-  StandardEulerEarnPerspectives,
   isEVault,
   isEulerEarn,
   type EVault,
@@ -32,12 +30,6 @@ import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
 import { executePlanWithProgress } from "../utils/txExecutor.ts";
-
-const ALL_PERSPECTIVES = [
-  StandardEVaultPerspectives.GOVERNED,
-  StandardEVaultPerspectives.ESCROW,
-  StandardEulerEarnPerspectives.GOVERNED,
-];
 
 type Tab = "evaults" | "eulerEarn" | "securitize";
 type SortDir = "asc" | "desc";
@@ -468,7 +460,7 @@ export function VaultListPage() {
     isLoading,
     error,
     dataUpdatedAt: diagnosticsDataUpdatedAt,
-  } = useVerifiedVaultsWithDiagnostics(ALL_PERSPECTIVES);
+  } = useAllVaultsWithDiagnostics();
   const allVaults = vaultData?.vaults ?? [];
   const failedVaults = vaultData?.failedVaults ?? [];
   const diagnostics = vaultData?.diagnostics ?? [];

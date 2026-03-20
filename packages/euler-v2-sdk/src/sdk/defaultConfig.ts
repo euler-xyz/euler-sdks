@@ -1,8 +1,9 @@
 import type { AccountV3AdapterConfig } from "../services/accountService/accountServiceConfig.js"
 import type { DeploymentServiceConfig } from "src/services/deploymentService/deploymentService.js"
-import type { AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter/accountVaultsSubgraphAdapter.js"
+import type { AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountOnchainAdapter/accountVaultsSubgraphAdapter.js"
 import type { EVaultV3AdapterConfig } from "../services/vaults/eVaultService/eVaultServiceConfig.js"
-import type { VaultTypeSubgraphAdapterConfig } from "../services/vaults/vaultMetaService/index.js"
+import type { EulerEarnV3AdapterConfig } from "../services/vaults/eulerEarnService/index.js"
+import type { VaultTypeSubgraphAdapterConfig, VaultTypeV3AdapterConfig } from "../services/vaults/vaultMetaService/index.js"
 import type { EulerLabelsURLAdapterConfig } from "../services/eulerLabelsService/index.js"
 import type { SwapServiceConfig } from "../services/swapService/index.js"
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js"
@@ -39,8 +40,16 @@ export const defaultEVaultV3AdapterConfig: EVaultV3AdapterConfig = {
   endpoint: process.env.EULER_EVAULT_V3_API_URL || "https://v3staging.eul.dev",
 }
 
-/** Same subgraph endpoints as account vaults; used by VaultMetaService to resolve vault type from factory. */
-export const defaultVaultTypeAdapterConfig: VaultTypeSubgraphAdapterConfig =
+export const defaultEulerEarnV3AdapterConfig: EulerEarnV3AdapterConfig = {
+  endpoint: process.env.EULER_EULER_EARN_V3_API_URL || "https://v3staging.eul.dev",
+}
+
+export const defaultVaultTypeAdapterConfig: VaultTypeV3AdapterConfig = {
+  endpoint: process.env.EULER_VAULT_TYPE_V3_API_URL || "https://v3staging.eul.dev",
+}
+
+/** Same subgraph endpoints as account vaults; kept for explicit subgraph-based vault type resolution. */
+export const defaultVaultTypeSubgraphAdapterConfig: VaultTypeSubgraphAdapterConfig =
   defaultAccountVaultsAdapterConfig;
 
 const EULER_LABELS_BASE = 'https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master';

@@ -6,7 +6,7 @@ import type { IAccount, ISubAccount } from "../../../../entities/Account.js";
 import { EVault } from "../../../../entities/EVault.js";
 import type { VaultAccountInfo, EVCAccountInfo } from "./accountLensTypes.js";
 import { convertToSubAccount } from "./accountInfoConverter.js";
-import type { AccountVaults } from "../accountVaultsSubgraphAdapter/accountVaultsSubgraphAdapter.js";
+import type { AccountVaults } from "./accountVaultsSubgraphAdapter.js";
 import { accountLensAbi } from "./abis/accountLensAbi.js";
 import { vaultLensAbi } from "../../../vaults/eVaultService/adapters/eVaultOnchainAdapter/abis/vaultLensAbi.js";
 import type { VaultInfoFull } from "../../../vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";

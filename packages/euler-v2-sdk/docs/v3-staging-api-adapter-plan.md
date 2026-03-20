@@ -22,7 +22,7 @@ Scope:
 
 ### List envelope
 
-Observed on `/v3/chains`, `/v3/vaults`, `/v3/accounts/.../positions`:
+Observed on `/v3/chains`, `/v3/evk/vaults`, `/v3/accounts/.../positions`:
 
 ```json
 {
@@ -39,7 +39,7 @@ Observed on `/v3/chains`, `/v3/vaults`, `/v3/accounts/.../positions`:
 
 ### Detail envelope
 
-Observed on `/v3/vaults/{chainId}/{address}`:
+Observed on `/v3/evk/vaults/{chainId}/{address}`:
 
 ```json
 {
@@ -54,7 +54,7 @@ Observed on `/v3/vaults/{chainId}/{address}`:
 
 ### Freshness envelope
 
-Observed on `/v3/accounts/{address}/positions` and `/v3/vaults/{chainId}/{address}/totals`:
+Observed on `/v3/accounts/{address}/positions` and `/v3/evk/vaults/{chainId}/{address}/totals`:
 
 ```json
 {
@@ -76,7 +76,7 @@ Observed on `/v3/accounts/{address}/positions` and `/v3/vaults/{chainId}/{addres
 
 ### Time-series envelope
 
-Observed on `/v3/vaults/{chainId}/{address}/totals`:
+Observed on `/v3/evk/vaults/{chainId}/{address}/totals`:
 
 ```json
 {
@@ -140,24 +140,25 @@ Observed on `/v3/vaults/{chainId}/{address}/totals`:
 
 ### Vaults
 
-- `GET /v3/vaults`
-- `GET /v3/vaults/borrowable`
-- `GET /v3/vaults/health/utilization`
-- `GET /v3/vaults/health/caps`
-- `GET /v3/vaults/{chainId}/{address}`
-- `GET /v3/vaults/{chainId}/{address}/labels`
-- `GET /v3/vaults/{chainId}/{address}/visibility`
-- `GET /v3/vaults/{chainId}/{address}/positions`
-- `GET /v3/vaults/{chainId}/{address}/config-history`
-- `GET /v3/vaults/{chainId}/{address}/collaterals`
-- `GET /v3/vaults/{chainId}/{address}/ltv-history`
-- `GET /v3/vaults/{chainId}/{address}/cap-history`
-- `GET /v3/vaults/{chainId}/{address}/irm-history`
-- `GET /v3/vaults/{chainId}/{address}/events`
-- `GET /v3/vaults/{chainId}/{address}/totals`
-- `GET /v3/vaults/{chainId}/{address}/holders`
-- `GET /v3/vaults/{chainId}/{address}/debt-holders`
-- `GET /v3/vaults/open-interest`
+- `GET /v3/evk/vaults`
+- `GET /v3/evk/vaults/borrowable`
+- `GET /v3/evk/vaults/health/utilization`
+- `GET /v3/evk/vaults/health/caps`
+- `POST /v3/evk/vaults/resolve`
+- `GET /v3/evk/vaults/{chainId}/{address}`
+- `GET /v3/evk/vaults/{chainId}/{address}/labels`
+- `GET /v3/evk/vaults/{chainId}/{address}/visibility`
+- `GET /v3/evk/vaults/{chainId}/{address}/positions`
+- `GET /v3/evk/vaults/{chainId}/{address}/config-history`
+- `GET /v3/evk/vaults/{chainId}/{address}/collaterals`
+- `GET /v3/evk/vaults/{chainId}/{address}/ltv-history`
+- `GET /v3/evk/vaults/{chainId}/{address}/cap-history`
+- `GET /v3/evk/vaults/{chainId}/{address}/irm-history`
+- `GET /v3/evk/vaults/{chainId}/{address}/events`
+- `GET /v3/evk/vaults/{chainId}/{address}/totals`
+- `GET /v3/evk/vaults/{chainId}/{address}/holders`
+- `GET /v3/evk/vaults/{chainId}/{address}/debt-holders`
+- `GET /v3/evk/vaults/open-interest`
 
 ### Accounts
 
@@ -177,7 +178,7 @@ Observed on `/v3/vaults/{chainId}/{address}/totals`:
 
 ### APYs
 
-- `GET /v3/vaults/{chainId}/{address}/apy`
+- `GET /v3/evk/vaults/{chainId}/{address}/apy`
 - `GET /v3/apys/intrinsic`
 - `GET /v3/apys/intrinsic/history`
 - `GET /v3/apys/rewards`
@@ -248,7 +249,7 @@ Live `/v3/chains?` sample:
 
 ### Vault list summary
 
-Live `/v3/vaults?chainId=1&limit=1` sample:
+Live `/v3/evk/vaults?chainId=1&limit=1` sample:
 
 ```json
 {
@@ -280,7 +281,7 @@ Docs-rendered list schema also shows `shares` and `asset` fields, but live list 
 
 ### EVault detail
 
-Live `/v3/vaults/{chainId}/{address}` sample includes nearly all fields needed for `IEVault`:
+Live `/v3/evk/vaults/{chainId}/{address}` sample includes nearly all fields needed for `IEVault`:
 
 - ERC4626 core: `chainId`, `address`, `name`, `symbol`, `decimals`, `shares`, `asset`, `totalShares`, `totalAssets`
 - EVault core: `dToken`, `creator`, `governor`, `governorAdmin`, `balanceTracker`
@@ -298,14 +299,14 @@ Live `/v3/vaults/{chainId}/{address}` sample includes nearly all fields needed f
 - timestamps: `timestamp`, `snapshotTimestamp`, `createdAtBlock`, `createdAt`
 
 Important gap:
-- Live detail did not include `collaterals`; that appears to come from `GET /v3/vaults/{chainId}/{address}/collaterals`.
+- Live detail did not include `collaterals`; that appears to come from `GET /v3/evk/vaults/{chainId}/{address}/collaterals`.
 
 ### Vault collaterals
 
 Docs models show `CollateralConfig` and `VaultCollateralDetail`.
 
 Expected use:
-- `GET /v3/vaults/{chainId}/{address}/collaterals`
+- `GET /v3/evk/vaults/{chainId}/{address}/collaterals`
 - Build `EVault.collaterals[]`
 - Each row should carry at least collateral vault address, LTV config, and price-related data.
 
@@ -326,7 +327,7 @@ Live sample on a zero-collateral vault returned:
 
 ### Vault totals series
 
-Live `/v3/vaults/{chainId}/{address}/totals` sample:
+Live `/v3/evk/vaults/{chainId}/{address}/totals` sample:
 
 - `data.current.totalAssets`
 - `data.current.totalBorrows`
@@ -487,7 +488,7 @@ Open questions for one follow-up live read:
 
 ### Securitize / non-EVK vaults
 
-The vault APIs appear unified under `/v3/vaults`, keyed by `vaultType`.
+The EVK vault APIs appear unified under `/v3/evk/vaults`, keyed by `vaultType`.
 
 What still needs verification:
 - actual `vaultType` values beyond `"evk"`
@@ -533,8 +534,8 @@ Why this is better than the current path:
 ### 3. Build EVault entities from detail + collaterals
 
 New EVault adapter plan:
-- primary call: `GET /v3/vaults/{chainId}/{address}`
-- secondary call: `GET /v3/vaults/{chainId}/{address}/collaterals`
+- primary call: `GET /v3/evk/vaults/{chainId}/{address}`
+- secondary call: `GET /v3/evk/vaults/{chainId}/{address}/collaterals`
 - merge both responses into `IEVault`
 
 Field mapping:
@@ -551,13 +552,10 @@ If the collaterals endpoint only returns addresses + config:
 Current `vaultMetaService` needs a way to route unknown vault addresses.
 
 Preferred plan:
-- add a new resolver adapter that probes APIs in order:
-- try `/v3/vaults/{chainId}/{address}`
-- if 404, try `/v3/earn/vaults/{chainId}/{address}`
-- if vault detail succeeds, map `vaultType`
-- if earn detail succeeds, map to `VaultType.EulerEarn`
-
-If v3 eventually exposes a cheap address-to-type endpoint, use that instead.
+- add a resolver adapter backed by `POST /v3/evk/vaults/resolve`
+- send `{ chainId, addresses }` batches
+- map returned `vaultType` and `resource` to SDK vault types
+- keep factory-based fallback support for adapters that only know how to resolve factories
 
 ### 5. Build EulerEarn from earn detail, not the list endpoint
 
@@ -631,4 +629,4 @@ Implementation guidance:
 - Sample one non-empty account from `/v3/accounts/{address}/positions` and verify row-to-`IAccountPosition` mapping end to end.
 - Sample `/v3/accounts/{address}/sub-accounts` and confirm whether the request address is the owner or can be a sub-account.
 - Sample `/v3/earn/vaults/{chainId}/{address}` after rate-limit reset and verify the full detail shape.
-- Sample one non-EVK vault from `/v3/vaults/{chainId}/{address}` to confirm whether Securitize-compatible fields exist.
+- Sample one non-EVK vault from the corresponding non-EVK detail endpoint and confirm whether Securitize-compatible fields exist.

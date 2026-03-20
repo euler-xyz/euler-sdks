@@ -5,13 +5,18 @@ import { ProviderService, type IProviderService } from "../services/providerServ
 import { AccountService, type IAccountService } from "../services/accountService/index.js";
 import { AccountOnchainAdapter } from "../services/accountService/adapters/accountOnchainAdapter/accountOnchainAdapter.js";
 import { AccountV3Adapter } from "../services/accountService/adapters/accountV3Adapter/accountV3Adapter.js";
-import { AccountVaultsSubgraphAdapter, type AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter/accountVaultsSubgraphAdapter.js";
+import { AccountVaultsSubgraphAdapter, type AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountOnchainAdapter/accountVaultsSubgraphAdapter.js";
 import type { AccountServiceConfig } from "../services/accountService/accountServiceConfig.js";
 import { WalletService, type IWalletService } from "../services/walletService/index.js";
 import { WalletOnchainAdapter } from "../services/walletService/adapters/walletOnchainAdapter.js";
 import { EVaultService, type IEVaultService } from "../services/vaults/eVaultService/index.js";
 import type { EVaultServiceConfig } from "../services/vaults/eVaultService/eVaultServiceConfig.js";
-import { EulerEarnService, type IEulerEarnService } from "../services/vaults/eulerEarnService/index.js";
+import {
+  EulerEarnService,
+  EulerEarnV3Adapter,
+  type EulerEarnServiceConfig,
+  type IEulerEarnService,
+} from "../services/vaults/eulerEarnService/index.js";
 import { EulerEarnOnchainAdapter } from "../services/vaults/eulerEarnService/adapters/eulerEarnOnchainAdapter.js";
 import { SecuritizeVaultService, type ISecuritizeVaultService } from "../services/vaults/securitizeVaultService/index.js";
 import { SecuritizeVaultOnchainAdapter } from "../services/vaults/securitizeVaultService/adapters/securitizeVaultOnchainAdapter.js";
@@ -28,7 +33,17 @@ import {
   type OracleAdapterServiceConfig,
 } from "../services/oracleAdapterService/index.js";
 import { SimulationService, type ISimulationService } from "../services/simulationService/index.js";
-import { defaultAccountV3AdapterConfig, defaultAccountVaultsAdapterConfig, defaultBackendConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLAdapterConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeAdapterConfig } from "./defaultConfig.js";
+import {
+  defaultAccountV3AdapterConfig,
+  defaultAccountVaultsAdapterConfig,
+  defaultBackendConfig,
+  defaultDeploymentServiceConfig,
+  defaultEulerEarnV3AdapterConfig,
+  defaultEulerLabelsURLAdapterConfig,
+  defaultSwapServiceConfig,
+  defaultTokenlistServiceConfig,
+  defaultVaultTypeAdapterConfig,
+} from "./defaultConfig.js";
 import { defaultEVaultV3AdapterConfig } from "./defaultConfig.js";
 import { FeeFlowService, type IFeeFlowService, type FeeFlowServiceConfig } from "../services/feeFlowService/index.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
@@ -38,12 +53,16 @@ import {
   VaultMetaService,
   type IVaultMetaService,
   VaultTypeSubgraphAdapter,
+  VaultTypeV3Adapter,
   type RegisteredVaultService,
   type VaultEntity,
   type VaultServiceEntry,
 } from "../services/vaults/vaultMetaService/index.js";
 import { VaultType } from "../utils/types.js";
-import type { VaultTypeSubgraphAdapterConfig } from "../services/vaults/vaultMetaService/index.js";
+import type {
+  VaultTypeSubgraphAdapterConfig,
+  VaultTypeV3AdapterConfig,
+} from "../services/vaults/vaultMetaService/index.js";
 import type { IVaultEntity } from "../entities/Account.js";
 import type { BuildQueryFn } from "../utils/buildQuery.js";
 import type { EulerPlugin } from "../plugins/types.js";
@@ -77,8 +96,9 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
   v3ApiKey?: string;
   accountServiceConfig?: AccountServiceConfig;
   eVaultServiceConfig?: EVaultServiceConfig;
+  eulerEarnServiceConfig?: EulerEarnServiceConfig;
   accountVaultsAdapterConfig?: AccountVaultsSubgraphAdapterConfig;
-  vaultTypeAdapterConfig?: VaultTypeSubgraphAdapterConfig;
+  vaultTypeAdapterConfig?: VaultTypeSubgraphAdapterConfig | VaultTypeV3AdapterConfig;
   /** Additional vault services to register; use { type, service } to register a custom vault type for getFactoryByType(chainId, type). Pass the extended entity type as the generic (e.g. buildEulerSDK<VaultEntity | CustomVault>({ ..., additionalVaultServices: [{ type: 'CustomVault', service: customService }] })). */
   additionalVaultServices?: VaultServiceEntry<TVaultEntity>[];
   eulerLabelsAdapterConfig?: EulerLabelsURLAdapterConfig;
@@ -99,7 +119,7 @@ export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity
 export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
   options: BuildSDKOptions<TVaultEntity>
 ): Promise<EulerSDK<TVaultEntity>> {
-  const { rpcUrls, v3ApiKey, accountServiceConfig, eVaultServiceConfig, accountVaultsAdapterConfig, vaultTypeAdapterConfig, additionalVaultServices, eulerLabelsAdapterConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, intrinsicApyServiceConfig, oracleAdapterServiceConfig, buildQuery, plugins, servicesOverrides, feeFlowServiceConfig } = options;
+  const { rpcUrls, v3ApiKey, accountServiceConfig, eVaultServiceConfig, eulerEarnServiceConfig, accountVaultsAdapterConfig, vaultTypeAdapterConfig, additionalVaultServices, eulerLabelsAdapterConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, intrinsicApyServiceConfig, oracleAdapterServiceConfig, buildQuery, plugins, servicesOverrides, feeFlowServiceConfig } = options;
 
   // Build core services (these may be needed for adapters even if overridden)
   const abiService = servicesOverrides?.abiService ?? new ABIService(buildQuery);
@@ -180,11 +200,23 @@ export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEnt
   if (servicesOverrides?.eulerEarnService) {
     eulerEarnService = servicesOverrides.eulerEarnService;
   } else {
-    const eulerEarnAdapter = new EulerEarnOnchainAdapter(
-      providerService as ProviderService,
-      deploymentService as DeploymentService,
-      buildQuery,
-    );
+    const resolvedEulerEarnServiceConfig = eulerEarnServiceConfig ?? {};
+    const eulerEarnAdapter = resolvedEulerEarnServiceConfig.adapter === "onchain"
+      ? new EulerEarnOnchainAdapter(
+          providerService as ProviderService,
+          deploymentService as DeploymentService,
+          buildQuery,
+        )
+      : new EulerEarnV3Adapter(
+          {
+            ...(resolvedEulerEarnServiceConfig.v3AdapterConfig ?? defaultEulerEarnV3AdapterConfig),
+            ...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+            ...(resolvedEulerEarnServiceConfig.v3AdapterConfig?.apiKey !== undefined
+              ? { apiKey: resolvedEulerEarnServiceConfig.v3AdapterConfig.apiKey }
+              : {}),
+          },
+          buildQuery,
+        );
     eulerEarnService = new EulerEarnService(
       eulerEarnAdapter,
       deploymentService as DeploymentService,
@@ -210,10 +242,23 @@ export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEnt
   if (servicesOverrides?.vaultMetaService) {
     vaultMetaService = servicesOverrides.vaultMetaService;
   } else {
-    const vaultTypeAdapter = new VaultTypeSubgraphAdapter(
-      vaultTypeAdapterConfig ?? defaultVaultTypeAdapterConfig,
-      buildQuery,
-    );
+    const resolvedVaultTypeAdapterConfig = vaultTypeAdapterConfig ?? defaultVaultTypeAdapterConfig;
+    const vaultTypeAdapter = "subgraphURLs" in resolvedVaultTypeAdapterConfig
+      ? new VaultTypeSubgraphAdapter(
+          resolvedVaultTypeAdapterConfig,
+          buildQuery,
+        )
+      : new VaultTypeV3Adapter(
+          {
+            ...resolvedVaultTypeAdapterConfig,
+            ...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+            ...("apiKey" in resolvedVaultTypeAdapterConfig &&
+            resolvedVaultTypeAdapterConfig.apiKey !== undefined
+              ? { apiKey: resolvedVaultTypeAdapterConfig.apiKey }
+              : {}),
+          },
+          buildQuery,
+        );
     const allVaultServices: VaultServiceEntry<TVaultEntity>[] = [
       { type: VaultType.EVault, service: eVaultService as unknown as RegisteredVaultService<TVaultEntity> },
       { type: VaultType.EulerEarn, service: eulerEarnService as unknown as RegisteredVaultService<TVaultEntity> },

@@ -1,23 +1,15 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  StandardEVaultPerspectives,
-  StandardEulerEarnPerspectives,
   isEVault,
   getMaxMultiplier,
   getMaxRoe,
   type EVault,
 } from "euler-v2-sdk";
 import { useSDK } from "../context/SdkContext.tsx";
-import { useVerifiedVaults } from "../queries/sdkQueries.ts";
+import { useAllVaults } from "../queries/sdkQueries.ts";
 import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
-
-const ALL_PERSPECTIVES = [
-  StandardEVaultPerspectives.GOVERNED,
-  StandardEVaultPerspectives.ESCROW,
-  StandardEulerEarnPerspectives.GOVERNED,
-];
 
 type BorrowSortKey =
   | "collateral"
@@ -130,7 +122,7 @@ export function BorrowPage() {
   const [collateralAssetSearch, setCollateralAssetSearch] = useState<string>("");
   const [debtAssetSearch, setDebtAssetSearch] = useState<string>("");
 
-  const { data: allVaults, isLoading, error } = useVerifiedVaults(ALL_PERSPECTIVES);
+  const { data: allVaults, isLoading, error } = useAllVaults();
 
   const eVaults = useMemo(() => (allVaults?.filter(isEVault) ?? []), [allVaults]);
 

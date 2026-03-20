@@ -1,1 +1,6 @@
-export type { IVaultService, VaultFetchOptions } from "./IVaultService.js";
+export type {
+  FetchAllVaultsArgs,
+  IVaultService,
+  VaultFetchOptions,
+  VaultFilter,
+} from "./IVaultService.js";

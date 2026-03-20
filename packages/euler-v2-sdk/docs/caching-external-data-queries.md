@@ -166,11 +166,17 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 |-------|------|-------|------|-------------|
 | `queryEVaultInfoFull` | rpc | `EVaultOnchainAdapter` | `(provider, vaultLensAddress, vault)` | Read full vault state via VaultLens |
 | `queryEVaultVerifiedArray` | rpc | `EVaultOnchainAdapter` | `(provider, perspective)` | Read verified vault list from Perspective |
+| `queryV3VaultDetail` | url | `EVaultV3Adapter` | `(endpoint, chainId, vault)` | Fetch EVault detail via V3 |
+| `queryV3VaultCollaterals` | url | `EVaultV3Adapter` | `(endpoint, chainId, vault)` | Fetch EVault collateral rows via V3 |
+| `queryV3VaultList` | url | `EVaultV3Adapter` | `(endpoint, chainId, offset, limit)` | Fetch paginated EVault list via V3 |
 | `queryEulerEarnVaultInfoFull` | rpc | `EulerEarnOnchainAdapter` | `(provider, lensAddress, vault)` | Read EulerEarn vault state via EulerEarnVaultLens |
 | `queryEulerEarnVerifiedArray` | rpc | `EulerEarnOnchainAdapter` | `(provider, perspective)` | Read verified EulerEarn vault list |
+| `queryV3EulerEarnDetail` | url | `EulerEarnV3Adapter` | `(endpoint, chainId, vault)` | Fetch EulerEarn detail via V3 |
+| `queryV3EulerEarnList` | url | `EulerEarnV3Adapter` | `(endpoint, chainId, offset, limit)` | Fetch paginated EulerEarn vault list via V3 |
 | `queryVaultInfoERC4626` | rpc | `SecuritizeVaultOnchainAdapter` | `(provider, utilsLensAddress, vault)` | Read ERC4626 vault info |
 | `querySecuritizeVaultGovernorAdmin` | rpc | `SecuritizeVaultOnchainAdapter` | `(provider, vault)` | Read governor admin address |
 | `querySecuritizeVaultSupplyCapResolved` | rpc | `SecuritizeVaultOnchainAdapter` | `(provider, vault)` | Read resolved supply cap |
+| `queryV3VaultResolve` | url | `VaultTypeV3Adapter` | `({ address, chainId })` | Resolve vault type for a single vault via `POST /v3/evk/vaults/resolve` (auto-bundled) |
 | `queryVaultFactories` | gql | `VaultTypeSubgraphAdapter` | `({ address, chainId })` | Fetch vault factory for a single vault (auto-bundled) |
 
 ### Account Adapters
@@ -180,6 +186,7 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 | `queryEVCAccountInfo` | rpc | `AccountOnchainAdapter` | `(provider, accountLensAddress, evc, subAccount)` | Read EVC account state (controllers, collaterals) |
 | `queryVaultAccountInfo` | rpc | `AccountOnchainAdapter` | `(provider, accountLensAddress, subAccount, vault)` | Read per-vault account position |
 | `queryEVaultInfoFull` | rpc | `AccountOnchainAdapter` | `(provider, vaultLensAddress, vault)` | Read vault info for account context |
+| `queryAccountPositions` | url | `AccountV3Adapter` | `(endpoint, chainId, address, forceFresh?)` | Fetch account positions via V3 |
 | `queryAccountVaults` | gql | `AccountVaultsSubgraphAdapter` | `({ chainId, account })` | Query account vault history from subgraph (auto-bundled) |
 
 ### Wallet Adapter

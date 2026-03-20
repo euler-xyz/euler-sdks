@@ -3,7 +3,12 @@ import {
   SecuritizeCollateralVault,
   type ISecuritizeCollateralVault,
 } from "../../../entities/SecuritizeCollateralVault.js";
-import type { IVaultService, VaultFetchOptions } from "../index.js";
+import type {
+  FetchAllVaultsArgs,
+  IVaultService,
+  VaultFetchOptions,
+  VaultFilter,
+} from "../index.js";
 import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
 import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
@@ -21,6 +26,9 @@ export interface ISecuritizeCollateralAdapter {
     chainId: number,
     vault: Address[]
   ): Promise<ServiceResult<(ISecuritizeCollateralVault | undefined)[]>>;
+  fetchAllVaults(
+    chainId: number
+  ): Promise<ServiceResult<(ISecuritizeCollateralVault | undefined)[]>>;
   fetchVerifiedVaultsAddresses(
     chainId: number,
     perspectives: Address[]
@@ -35,6 +43,15 @@ export interface ISecuritizeVaultService
     SecuritizeCollateralVault,
     StandardSecuritizeCollateralPerspectives | Address
   > {
+  /**
+   * Fetches all discoverable Securitize collateral vaults.
+   * The optional async `filter` runs after the first fetch and before populate/enrichment work,
+   * so rejected vaults are skipped before additional resources are spent on them.
+   */
+  fetchAllVaults(
+    chainId: number,
+    args?: FetchAllVaultsArgs<SecuritizeCollateralVault, VaultFetchOptions>
+  ): Promise<ServiceResult<(SecuritizeCollateralVault | undefined)[]>>;
   populateMarketPrices(
     vaults: SecuritizeCollateralVault[],
     getVaultPathPrefix?: (vaultIndex: number) => string
@@ -106,13 +123,43 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
     vaults: Address[],
     options?: VaultFetchOptions
   ): Promise<ServiceResult<(SecuritizeCollateralVault | undefined)[]>> {
-    const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, vaults);
+    return this.hydrateFetchedVaults(
+      fetched,
+      this.resolveFetchOptions(options)
+    );
+  }
+
+  async fetchAllVaults(
+    chainId: number,
+    args?: FetchAllVaultsArgs<SecuritizeCollateralVault, VaultFetchOptions>
+  ): Promise<ServiceResult<(SecuritizeCollateralVault | undefined)[]>> {
+    const fetched = await this.adapter.fetchAllVaults(chainId);
+    return this.hydrateFetchedVaults(
+      fetched,
+      this.resolveFetchOptions(args?.options),
+      args?.filter
+    );
+  }
+
+  private async hydrateFetchedVaults(
+    fetched: ServiceResult<(ISecuritizeCollateralVault | undefined)[]>,
+    resolvedOptions: VaultFetchOptions,
+    filter?: VaultFilter<SecuritizeCollateralVault>
+  ): Promise<ServiceResult<(SecuritizeCollateralVault | undefined)[]>> {
     const errors: DataIssue[] = [...fetched.errors];
     const entities = fetched.result.map((v) =>
       v ? new SecuritizeCollateralVault(v) : undefined
     );
-    const resolvedVaults = entities.filter((vault): vault is SecuritizeCollateralVault => vault !== undefined);
+    const included = filter
+      ? await Promise.all(
+          entities.map(async (vault) => (vault ? await filter(vault) : false))
+        )
+      : entities.map((vault) => vault !== undefined);
+    const result = entities.map((vault, index) =>
+      vault && included[index] ? vault : undefined
+    );
+    const resolvedVaults = result.filter((vault): vault is SecuritizeCollateralVault => vault !== undefined);
     await Promise.all([
       (async () => {
         if (resolvedOptions.populateMarketPrices) {
@@ -140,7 +187,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
         }
       })(),
     ]);
-    return { result: entities, errors: compressDataIssues(errors) };
+    return { result, errors: compressDataIssues(errors) };
   }
 
   async populateMarketPrices(

@@ -55,9 +55,9 @@ const sdk = await buildEulerSDK({
     subgraphURLs: { 1: "https://..." },
   },
 
-  // Optional: subgraph URLs for vault type resolution
+  // Optional: V3 or subgraph config for vault type resolution
   vaultTypeAdapterConfig: {
-    subgraphURLs: { 1: "https://..." },
+    endpoint: "https://your-v3-api",
   },
 
   // Optional: V3 HTTP adapters for account/vault reads
@@ -68,6 +68,12 @@ const sdk = await buildEulerSDK({
     },
   },
   eVaultServiceConfig: {
+    adapter: "v3",
+    v3AdapterConfig: {
+      endpoint: "https://your-v3-api",
+    },
+  },
+  eulerEarnServiceConfig: {
     adapter: "v3",
     v3AdapterConfig: {
       endpoint: "https://your-v3-api",
@@ -115,9 +121,17 @@ const sdk = await buildEulerSDK({
 
 ## V3 adapter config
 
-When `accountServiceConfig.adapter` or `eVaultServiceConfig.adapter` is set to `v3`, the SDK forwards `v3ApiKey` as an `X-API-Key` request header for both built-in adapters. There is no default API key in SDK config; provide it explicitly when your V3 deployment requires authentication.
+When `accountServiceConfig.adapter`, `eVaultServiceConfig.adapter`, `eulerEarnServiceConfig.adapter`, or `vaultTypeAdapterConfig` use V3, the SDK forwards `v3ApiKey` as an `X-API-Key` request header for all built-in V3 adapters. There is no default API key in SDK config; provide it explicitly when your V3 deployment requires authentication.
 
-If you need different keys per adapter, `accountServiceConfig.v3AdapterConfig.apiKey` and `eVaultServiceConfig.v3AdapterConfig.apiKey` still override the top-level value.
+If you need different keys per adapter, `accountServiceConfig.v3AdapterConfig.apiKey`, `eVaultServiceConfig.v3AdapterConfig.apiKey`, `eulerEarnServiceConfig.v3AdapterConfig.apiKey`, and `vaultTypeAdapterConfig.apiKey` still override the top-level value.
+
+`vaultTypeAdapterConfig` now defaults to the V3 `POST /v3/evk/vaults/resolve` endpoint. If you need the legacy behavior, you can still pass subgraph config instead:
+
+```typescript
+vaultTypeAdapterConfig: {
+  subgraphURLs: { 1: "https://..." },
+}
+```
 
 ## Environment variables
 

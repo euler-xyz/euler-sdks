@@ -5,13 +5,20 @@ import {
   setQueryIntercepted,
   useSelectedInterceptedQueries,
 } from "../queries/dataInterceptorStore.ts";
+import {
+  hasActiveQueryOptionsOverrides,
+  useQueryOptionsSettings,
+} from "../queries/queryOptionsStore.ts";
+import { QueryOptionsModal } from "./QueryOptionsModal.tsx";
 
 const STORAGE_KEY = "query-profiler-collapsed";
 
 export function QueryProfiler() {
   const rows = useQueryProfile();
   const selectedQueries = useSelectedInterceptedQueries();
+  const queryOptionsSettings = useQueryOptionsSettings();
   const [collapsed, setCollapsed] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -40,67 +47,94 @@ export function QueryProfiler() {
   }, [someSelected]);
 
   return (
-    <div className={`profiler-panel ${collapsed ? "collapsed" : ""}`}>
-      <div className="profiler-header">
-        {!collapsed && <div className="profiler-title">Query Profiler</div>}
-        <button
-          type="button"
-          className="profiler-toggle"
-          onClick={handleToggle}
-          title={collapsed ? "Show Query Profiler" : "Hide Query Profiler"}
-        >
-          {collapsed ? "<" : "Hide"}
-        </button>
-      </div>
-      {!collapsed &&
-        (rows.length === 0 ? (
-          <div className="profiler-empty">No queries available</div>
-        ) : (
-          <div className="profiler-table">
-            <div className="profiler-head-row">
-              <span className="profiler-head-check">
-                <input
-                  ref={selectAllRef}
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={(event) => {
-                    if (event.target.checked) {
-                      setInterceptedQueries(rows.map((row) => row.queryName));
-                    } else {
-                      setInterceptedQueries([]);
-                    }
-                  }}
-                  title={allSelected ? "Deselect all queries" : "Select all queries"}
-                />
-              </span>
-              <span className="profiler-head-name">Query</span>
-              <span className="profiler-head-count">Count</span>
-            </div>
-            {rows.map((row) => (
-              <div
-                key={row.queryName}
-                className="profiler-row"
+    <>
+      <div className={`profiler-panel ${collapsed ? "collapsed" : ""}`}>
+        <div className="profiler-header">
+          {!collapsed && <div className="profiler-title">Query Profiler</div>}
+          {!collapsed && (
+            <div className="profiler-actions">
+              <button
+                type="button"
+                className={`profiler-config-button ${
+                  hasActiveQueryOptionsOverrides(queryOptionsSettings) ? "active" : ""
+                }`}
+                onClick={() => setOptionsOpen(true)}
+                title="Configure React Query options used by sdkBuildQuery"
               >
-                <span className="profiler-check">
+                Options
+              </button>
+              <button
+                type="button"
+                className="profiler-toggle"
+                onClick={handleToggle}
+                title="Hide Query Profiler"
+              >
+                Hide
+              </button>
+            </div>
+          )}
+          {collapsed && (
+            <button
+              type="button"
+              className="profiler-toggle"
+              onClick={handleToggle}
+              title="Show Query Profiler"
+            >
+              {"<"}
+            </button>
+          )}
+        </div>
+        {!collapsed &&
+          (rows.length === 0 ? (
+            <div className="profiler-empty">No queries available</div>
+          ) : (
+            <div className="profiler-table">
+              <div className="profiler-head-row">
+                <span className="profiler-head-check">
                   <input
+                    ref={selectAllRef}
                     type="checkbox"
-                    checked={selectedQueries.has(row.queryName)}
-                    onChange={(event) =>
-                      setQueryIntercepted(row.queryName, event.target.checked)
-                    }
-                    title={`Intercept ${row.queryName}`}
+                    checked={allSelected}
+                    onChange={(event) => {
+                      if (event.target.checked) {
+                        setInterceptedQueries(rows.map((row) => row.queryName));
+                      } else {
+                        setInterceptedQueries([]);
+                      }
+                    }}
+                    title={allSelected ? "Deselect all queries" : "Select all queries"}
                   />
                 </span>
-                <span className="profiler-name">{row.queryName}</span>
-                <span
-                  className={`profiler-count ${row.state === "fading" ? "fading" : ""}`}
-                >
-                  {row.count > 0 ? `${row.count}x` : ""}
-                </span>
+                <span className="profiler-head-name">Query</span>
+                <span className="profiler-head-count">Count</span>
               </div>
-            ))}
-          </div>
-        ))}
-    </div>
+              {rows.map((row) => (
+                <div
+                  key={row.queryName}
+                  className="profiler-row"
+                >
+                  <span className="profiler-check">
+                    <input
+                      type="checkbox"
+                      checked={selectedQueries.has(row.queryName)}
+                      onChange={(event) =>
+                        setQueryIntercepted(row.queryName, event.target.checked)
+                      }
+                      title={`Intercept ${row.queryName}`}
+                    />
+                  </span>
+                  <span className="profiler-name">{row.queryName}</span>
+                  <span
+                    className={`profiler-count ${row.state === "fading" ? "fading" : ""}`}
+                  >
+                    {row.count > 0 ? `${row.count}x` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
+      </div>
+      <QueryOptionsModal open={optionsOpen} onClose={() => setOptionsOpen(false)} />
+    </>
   );
 }

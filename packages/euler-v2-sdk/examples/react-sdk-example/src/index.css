@@ -122,6 +122,12 @@ a:hover {
   border-bottom: 1px solid #000;
 }
 
+.profiler-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .profiler-toggle {
   font-family: inherit;
   font-size: 10px;
@@ -131,6 +137,22 @@ a:hover {
   padding: 2px 6px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.profiler-config-button {
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid #000;
+  background: #fff;
+  padding: 2px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.profiler-config-button.active {
+  background: #000;
+  color: #fff;
 }
 
 .profiler-empty {
@@ -1362,6 +1384,67 @@ tr.clickable {
 .interceptor-error {
   color: #b00020;
   font-size: 12px;
+}
+
+.query-options-modal {
+  width: min(760px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #fff;
+  border: 2px solid #000;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.query-options-modal h2 {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.query-options-summary {
+  font-size: 12px;
+  color: #444;
+}
+
+.query-options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.query-options-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.query-options-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.query-options-textarea {
+  min-height: 220px;
+}
+
+.query-options-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .query-options-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .fee-flow-header {

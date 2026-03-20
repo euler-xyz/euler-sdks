@@ -2,7 +2,7 @@ import { getAddress, type Address } from "viem";
 import { EVault, type IEVault } from "../../../entities/EVault.js";
 import { selectLeafAdaptersForPair } from "../../../utils/oracle.js";
 import type { DeploymentService } from "../../deploymentService/index.js";
-import type { IVaultService } from "../index.js";
+import type { FetchAllVaultsArgs, IVaultService, VaultFilter } from "../index.js";
 import type { IVaultMetaService } from "../vaultMetaService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
@@ -18,6 +18,7 @@ import {
 
 export interface IEVaultAdapter {
   fetchVaults(chainId: number, vault: Address[]): Promise<ServiceResult<(IEVault | undefined)[]>>;
+  fetchAllVaults(chainId: number): Promise<ServiceResult<(IEVault | undefined)[]>>;
   fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]>;
 }
 
@@ -49,6 +50,15 @@ export interface IEVaultService
     chainId: number,
     vaults: Address[],
     options?: EVaultFetchOptions
+  ): Promise<ServiceResult<(EVault | undefined)[]>>;
+  /**
+   * Fetches all discoverable EVaults.
+   * The optional async `filter` runs after the first fetch and before populate/enrichment work,
+   * so rejected vaults are skipped before additional resources are spent on them.
+   */
+  fetchAllVaults(
+    chainId: number,
+    args?: FetchAllVaultsArgs<EVault, EVaultFetchOptions>
   ): Promise<ServiceResult<(EVault | undefined)[]>>;
   populateCollaterals(
     eVaults: EVault[],
@@ -133,13 +143,43 @@ export class EVaultService implements IEVaultService {
     vaults: Address[],
     options?: EVaultFetchOptions
   ): Promise<ServiceResult<(EVault | undefined)[]>> {
-    const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, vaults);
+    return this.hydrateFetchedVaults(
+      fetched,
+      this.resolveFetchOptions(options)
+    );
+  }
+
+  async fetchAllVaults(
+    chainId: number,
+    args?: FetchAllVaultsArgs<EVault, EVaultFetchOptions>
+  ): Promise<ServiceResult<(EVault | undefined)[]>> {
+    const fetched = await this.adapter.fetchAllVaults(chainId);
+    return this.hydrateFetchedVaults(
+      fetched,
+      this.resolveFetchOptions(args?.options),
+      args?.filter
+    );
+  }
+
+  private async hydrateFetchedVaults(
+    fetched: ServiceResult<(IEVault | undefined)[]>,
+    resolvedOptions: EVaultFetchOptions,
+    filter?: VaultFilter<EVault>
+  ): Promise<ServiceResult<(EVault | undefined)[]>> {
     const errors: DataIssue[] = [...fetched.errors];
     const eVaults = fetched.result.map((vault) =>
       vault ? new EVault(vault) : undefined
     );
-    const resolvedVaults = eVaults.filter((vault): vault is EVault => vault !== undefined);
+    const included = filter
+      ? await Promise.all(
+          eVaults.map(async (vault) => (vault ? await filter(vault) : false))
+        )
+      : eVaults.map((vault) => vault !== undefined);
+    const result = eVaults.map((vault, index) =>
+      vault && included[index] ? vault : undefined
+    );
+    const resolvedVaults = result.filter((vault): vault is EVault => vault !== undefined);
 
     if (resolvedOptions.populateCollaterals) {
       errors.push(
@@ -176,7 +216,7 @@ export class EVaultService implements IEVaultService {
         }
       })(),
     ]);
-    return { result: eVaults, errors: compressDataIssues(errors) };
+    return { result, errors: compressDataIssues(errors) };
   }
 
   async populateCollaterals(

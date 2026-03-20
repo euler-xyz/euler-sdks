@@ -1,7 +1,7 @@
 import { EulerEarn, type IEulerEarn } from "../../../entities/EulerEarn.js";
 import { type Address, getAddress } from "viem";
 import type { DeploymentService } from "../../deploymentService/index.js";
-import type { IVaultService } from "../index.js";
+import type { FetchAllVaultsArgs, IVaultService, VaultFilter } from "../index.js";
 import type { IEVaultService, EVaultFetchOptions } from "../eVaultService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
@@ -17,6 +17,7 @@ import {
 
 export interface IEulerEarnAdapter {
   fetchVaults(chainId: number, vault: Address[]): Promise<ServiceResult<(IEulerEarn | undefined)[]>>;
+  fetchAllVaults(chainId: number): Promise<ServiceResult<(IEulerEarn | undefined)[]>>;
   fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]>;
 }
 
@@ -48,6 +49,15 @@ export interface IEulerEarnService
     chainId: number,
     vaults: Address[],
     options?: EulerEarnFetchOptions
+  ): Promise<ServiceResult<(EulerEarn | undefined)[]>>;
+  /**
+   * Fetches all discoverable EulerEarn vaults.
+   * The optional async `filter` runs after the first fetch and before populate/enrichment work,
+   * so rejected vaults are skipped before additional resources are spent on them.
+   */
+  fetchAllVaults(
+    chainId: number,
+    args?: FetchAllVaultsArgs<EulerEarn, EulerEarnFetchOptions>
   ): Promise<ServiceResult<(EulerEarn | undefined)[]>>;
   populateStrategyVaults(
     eulerEarns: EulerEarn[],
@@ -133,13 +143,43 @@ export class EulerEarnService implements IEulerEarnService {
     vaults: Address[],
     options?: EulerEarnFetchOptions
   ): Promise<ServiceResult<(EulerEarn | undefined)[]>> {
-    const resolvedOptions = this.resolveFetchOptions(options);
     const fetched = await this.adapter.fetchVaults(chainId, vaults);
+    return this.hydrateFetchedVaults(
+      fetched,
+      this.resolveFetchOptions(options)
+    );
+  }
+
+  async fetchAllVaults(
+    chainId: number,
+    args?: FetchAllVaultsArgs<EulerEarn, EulerEarnFetchOptions>
+  ): Promise<ServiceResult<(EulerEarn | undefined)[]>> {
+    const fetched = await this.adapter.fetchAllVaults(chainId);
+    return this.hydrateFetchedVaults(
+      fetched,
+      this.resolveFetchOptions(args?.options),
+      args?.filter
+    );
+  }
+
+  private async hydrateFetchedVaults(
+    fetched: ServiceResult<(IEulerEarn | undefined)[]>,
+    resolvedOptions: EulerEarnFetchOptions,
+    filter?: VaultFilter<EulerEarn>
+  ): Promise<ServiceResult<(EulerEarn | undefined)[]>> {
     const errors: DataIssue[] = [...fetched.errors];
     const eulerEarns = fetched.result.map((vault) =>
       vault ? new EulerEarn(vault) : undefined
     );
-    const resolvedVaults = eulerEarns.filter((vault): vault is EulerEarn => vault !== undefined);
+    const included = filter
+      ? await Promise.all(
+          eulerEarns.map(async (vault) => (vault ? await filter(vault) : false))
+        )
+      : eulerEarns.map((vault) => vault !== undefined);
+    const result = eulerEarns.map((vault, index) =>
+      vault && included[index] ? vault : undefined
+    );
+    const resolvedVaults = result.filter((vault): vault is EulerEarn => vault !== undefined);
     await Promise.all([
       (async () => {
         if (resolvedOptions.populateStrategyVaults) {
@@ -178,7 +218,7 @@ export class EulerEarnService implements IEulerEarnService {
         }
       })(),
     ]);
-    return { result: eulerEarns, errors: compressDataIssues(errors) };
+    return { result, errors: compressDataIssues(errors) };
   }
 
   async populateStrategyVaults(

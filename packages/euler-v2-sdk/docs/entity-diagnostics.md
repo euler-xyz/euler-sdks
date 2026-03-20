@@ -37,8 +37,9 @@ Fetch/build services return diagnostics next to data:
 - `fetchVault(...) -> { result, errors }`
 - `fetchVaults(...) -> { result, errors }`
 - `fetchVerifiedVaults(...) -> { result, errors }`
+- `fetchAllVaults(...) -> { result, errors }`
 
-For batch vault fetches (`fetchVaults`, `fetchVerifiedVaults`), `result` preserves the input order and may contain `undefined` for per-vault failures. Those failures are reported in `errors` with `entityId` set to the affected vault address.
+For batch vault fetches (`fetchVaults`, `fetchVerifiedVaults`, `fetchAllVaults`), `result` may contain `undefined` entries for per-vault failures. Those failures are reported in `errors` with `entityId` set to the affected vault address. For `fetchVaults` and `fetchVerifiedVaults`, result order matches the input/discovery order. For `fetchAllVaults`, entries rejected by the optional pre-population filter are also returned as `undefined`.
 
 Fetch option objects also support `populateAll: true` to force all enrichment steps on.
 

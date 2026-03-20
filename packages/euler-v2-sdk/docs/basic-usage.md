@@ -249,6 +249,16 @@ const { result: allVaults } = await sdk.vaultMetaService.fetchVerifiedVaults(1, 
 // Returns (EVault | EulerEarn | SecuritizeCollateralVault | undefined)[]
 ```
 
+## Fetching All Discoverable Vaults
+
+Use `fetchAllVaults()` when you want each service's full discoverable set without manually wiring factory perspectives.
+
+```typescript
+const { result: eVaultsOnly } = await sdk.vaultMetaService.fetchAllVaults(1, {
+  options: { populateAll: true }
+})
+```
+
 ## Oracle Adapter Metadata
 
 Use `oracleAdapterService` to get adapter provider/methodology/check metadata for oracle adapter addresses:
@@ -268,10 +278,10 @@ The SDK handles three vault types: `EVault`, `EulerEarn`, and `SecuritizeCollate
 Every vault is deployed from a factory contract. The `vaultMetaService` looks up each vault's factory address and maps it to the correct service:
 
 ```
-vault address -> factory address (via subgraph) -> registered service -> correct entity type
+vault address -> vault type resolver -> registered service -> correct entity type
 ```
 
-This happens transparently in `vaultMetaService.fetchVault(s)` and in `accountService.fetchAccount` (when resolving vaults for positions).
+By default the resolver uses `POST /v3/evk/vaults/resolve`, with the legacy subgraph factory lookup still available when explicitly configured. This happens transparently in `vaultMetaService.fetchVault(s)` and in `accountService.fetchAccount` (when resolving vaults for positions).
 
 ### Entity hierarchy
 

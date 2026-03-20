@@ -211,4 +211,15 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 
     return [...new Set(addresses)];
   }
+
+  async fetchAllVaults(chainId: number): Promise<ServiceResult<(IEVault | undefined)[]>> {
+    const deployment = this.deploymentService.getDeployment(chainId);
+    const perspective = deployment.addresses.peripheryAddrs?.evkFactoryPerspective;
+    if (!perspective) {
+      throw new Error("Perspective address not found for evkFactoryPerspective");
+    }
+
+    const addresses = await this.fetchVerifiedVaultsAddresses(chainId, [perspective]);
+    return this.fetchVaults(chainId, addresses);
+  }
 }

@@ -14,6 +14,11 @@ type V3Envelope<T> = {
 
 type V3ListEnvelope<T> = {
   data?: T[];
+  meta?: {
+    total?: number;
+    offset?: number;
+    limit?: number;
+  };
 };
 
 type V3VaultDetail = {
@@ -109,6 +114,10 @@ type V3CollateralRow = {
   targetTimestamp: number;
   rampDuration: number;
   oraclePriceRaw?: V3OraclePrice;
+};
+
+type V3VaultListRow = {
+  address: string;
 };
 
 const unsupportedError = new Error("unsupported");
@@ -383,7 +392,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
   }
 
   queryV3VaultDetail = async (endpoint: string, chainId: number, vault: Address): Promise<V3Envelope<V3VaultDetail>> => {
-    const url = `${endpoint.replace(/\/+$/, "")}/v3/vaults/${chainId}/${vault}`;
+    const url = `${endpoint.replace(/\/+$/, "")}/v3/evk/vaults/${chainId}/${vault}`;
     const response = await fetch(url, {
       method: "GET",
       headers: this.getHeaders(),
@@ -401,7 +410,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
     chainId: number,
     vault: Address,
   ): Promise<V3ListEnvelope<V3CollateralRow>> => {
-    const url = `${endpoint.replace(/\/+$/, "")}/v3/vaults/${chainId}/${vault}/collaterals`;
+    const url = `${endpoint.replace(/\/+$/, "")}/v3/evk/vaults/${chainId}/${vault}/collaterals`;
     const response = await fetch(url, {
       method: "GET",
       headers: this.getHeaders(),
@@ -412,6 +421,29 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 
   setQueryV3VaultCollaterals(fn: typeof this.queryV3VaultCollaterals): void {
     this.queryV3VaultCollaterals = fn;
+  }
+
+  queryV3VaultList = async (
+    endpoint: string,
+    chainId: number,
+    offset: number,
+    limit: number,
+  ): Promise<V3ListEnvelope<V3VaultListRow> | V3VaultListRow[]> => {
+    const url = new URL(`${endpoint.replace(/\/+$/, "")}/v3/evk/vaults`);
+    url.searchParams.set("chainId", String(chainId));
+    url.searchParams.set("offset", String(offset));
+    url.searchParams.set("limit", String(limit));
+
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) throw new Error(`eVaultV3 list ${response.status} ${response.statusText}`);
+    return response.json() as Promise<V3ListEnvelope<V3VaultListRow> | V3VaultListRow[]>;
+  };
+
+  setQueryV3VaultList(fn: typeof this.queryV3VaultList): void {
+    this.queryV3VaultList = fn;
   }
 
   async fetchVaults(chainId: number, vaults: Address[]): Promise<ServiceResult<(IEVault | undefined)[]>> {
@@ -471,5 +503,45 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 
   async fetchVerifiedVaultsAddresses(_chainId: number, _perspectives: Address[]): Promise<Address[]> {
     throw unsupportedError;
+  }
+
+  async fetchAllVaults(chainId: number): Promise<ServiceResult<(IEVault | undefined)[]>> {
+    const limit = 200;
+    let offset = 0;
+    const addresses: Address[] = [];
+
+    while (true) {
+      const response = await this.queryV3VaultList(
+        this.config.endpoint,
+        chainId,
+        offset,
+        limit
+      );
+      const rows = Array.isArray(response)
+        ? response
+        : (response.data ?? []);
+
+      addresses.push(
+        ...rows
+          .map((row) => row.address)
+          .filter((address): address is Address => typeof address === "string")
+          .map((address) => getAddress(address))
+      );
+
+      if (Array.isArray(response)) {
+        if (rows.length < limit) break;
+        offset += rows.length;
+        continue;
+      }
+
+      const total = response.meta?.total;
+      const batchSize = rows.length;
+      if (batchSize === 0) break;
+      offset += batchSize;
+      if (total !== undefined && offset >= total) break;
+      if ((response.meta?.limit ?? batchSize) === 0 || batchSize < limit) break;
+    }
+
+    return this.fetchVaults(chainId, [...new Set(addresses)]);
   }
 }

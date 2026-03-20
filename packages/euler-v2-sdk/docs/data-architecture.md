@@ -85,7 +85,7 @@ Adapters are the SDK's I/O boundary. They implement focused interfaces (e.g. `IE
 |------|----------|------------|
 | **Onchain** | `EVaultOnchainAdapter`, `AccountOnchainAdapter`, `WalletOnchainAdapter` | Lens contracts via RPC (`VaultLens`, `AccountLens`, `UtilsLens`) |
 | **Subgraph** | `VaultTypeSubgraphAdapter`, `AccountVaultsSubgraphAdapter` | The Graph (indexed chain data — vault factories, account vault history) |
-| **Backend / API** | `PricingBackendClient`, `EulerLabelsURLAdapter` | REST APIs (pricing, labels, rewards) |
+| **Backend / API** | `VaultTypeV3Adapter`, `PricingBackendClient`, `EulerLabelsURLAdapter` | REST APIs (vault type resolution, pricing, labels, rewards) |
 
 ### Adapter → entity interface
 
@@ -161,7 +161,7 @@ See [Cross-Service Data Population](./cross-service-data-population.md) for the 
 
 ### VaultMetaService — polymorphic routing
 
-`VaultMetaService` is the orchestration layer that handles multiple vault types transparently. It maps vault addresses to the correct typed service by looking up each vault's factory address (via subgraph) and matching it to a registered service. This powers `accountService.fetchAccount()` (resolving mixed vault types on positions) and `vaultMetaService.fetchVault()` (type-agnostic fetch).
+`VaultMetaService` is the orchestration layer that handles multiple vault types transparently. It maps vault addresses to the correct typed service by resolving each vault's type and matching it to a registered service. By default this happens through the V3 resolver endpoint, while the legacy subgraph factory lookup remains available as an alternate adapter. This powers `accountService.fetchAccount()` (resolving mixed vault types on positions) and `vaultMetaService.fetchVault()` (type-agnostic fetch).
 
 ## Wiring — `buildEulerSDK()`
 
@@ -170,7 +170,7 @@ See [Cross-Service Data Population](./cross-service-data-population.md) for the 
 1. **Core infrastructure** — `ProviderService` (RPC clients), `DeploymentService` (chain addresses), `ABIService`
 2. **Adapters** — each constructed with `ProviderService`, `DeploymentService`, and optional `buildQuery`
 3. **Typed vault services** — `EVaultService`, `EulerEarnService`, `SecuritizeVaultService`, each with their adapter
-4. **VaultMetaService** — wraps all vault services + `VaultTypeSubgraphAdapter`
+4. **VaultMetaService** — wraps all vault services
 5. **AccountService** — depends on `AccountOnchainAdapter` + `VaultMetaService`
 6. **Support services** — `PriceService`, `OracleAdapterService`, `RewardsService`, `EulerLabelsService`, `WalletService`, etc.
 7. **Post-construction wiring** — setter-based cross-service injection (`setPriceService`, `setRewardsService`, etc.)
