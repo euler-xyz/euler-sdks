@@ -33,6 +33,9 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 - `priceService`: Resolves market prices used for valuation and computed account metrics.
 - `oracleAdapterService`: Fetches oracle adapter metadata/checks (provider, methodology, checks) from the oracle checks dataset and builds address-keyed maps for UI/tooling.
 - `rewardsService`: Fetches reward campaign data used to populate vault/account rewards and builds provider-specific reward claim plans.
+  See: [`rewards-service.md`](./rewards-service.md)
+- `feeFlowService`: Fetches FeeFlow state, filters eligible vaults, and builds FeeFlow buy plans.
+  See: [`fee-flow-service.md`](./fee-flow-service.md)
 - `intrinsicApyService`: Fetches intrinsic APY data used by vault enrichments.
 - `tokenlistService`: Provides token metadata/list data.
 - `eulerLabelsService`: Provides human-readable labels and metadata for protocol entities.
@@ -54,4 +57,4 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 | `simulationService` | Simulates plans | Can populate in results | Can populate in results | Can populate in results | Can populate in results | Uses `accountFetchOptions` / `vaultFetchOptions` |
 | `oracleAdapterService` | No | No | No | No | No | Oracle adapter metadata API (`fetchOracleAdapters`, `fetchOracleAdapterMap`, `enrichAdapters`) |
 
-See also: [`rewards-service.md`](./rewards-service.md) and [`execution-service.md`](./execution-service.md).
+See also: [`execution-service.md`](./execution-service.md).
