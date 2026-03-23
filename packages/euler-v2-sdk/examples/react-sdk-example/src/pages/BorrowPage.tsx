@@ -127,6 +127,7 @@ export function BorrowPage() {
   const eVaults = useMemo(() => (allVaults?.filter(isEVault) ?? []), [allVaults]);
 
   const rows = useMemo(() => {
+    console.time("ROWS");
     const byAddress = new Map<string, EVault>(
       eVaults.map((v) => [v.address.toLowerCase(), v])
     );
@@ -182,6 +183,8 @@ export function BorrowPage() {
       }
     }
 
+    console.log('nextRows: ', nextRows.length);
+    console.timeEnd("ROWS");
     return nextRows;
   }, [eVaults]);
 

@@ -520,7 +520,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		return `${joined}?${params.toString()}`;
 	}
 
-	queryV3VaultDetail = async (
+	queryV3EVaultDetail = async (
 		endpoint: string,
 		chainId: number,
 		vault: Address,
@@ -537,11 +537,11 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		return response.json() as Promise<V3Envelope<V3VaultDetail>>;
 	};
 
-	setQueryV3VaultDetail(fn: typeof this.queryV3VaultDetail): void {
-		this.queryV3VaultDetail = fn;
+	setQueryV3EVaultDetail(fn: typeof this.queryV3EVaultDetail): void {
+		this.queryV3EVaultDetail = fn;
 	}
 
-	queryV3VaultCollaterals = async (
+	queryV3EVaultCollaterals = async (
 		endpoint: string,
 		chainId: number,
 		vault: Address,
@@ -561,11 +561,11 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		return response.json() as Promise<V3ListEnvelope<V3CollateralRow>>;
 	};
 
-	setQueryV3VaultCollaterals(fn: typeof this.queryV3VaultCollaterals): void {
-		this.queryV3VaultCollaterals = fn;
+	setQueryV3EVaultCollaterals(fn: typeof this.queryV3EVaultCollaterals): void {
+		this.queryV3EVaultCollaterals = fn;
 	}
 
-	queryV3VaultList = async (
+	queryV3EVaultList = async (
 		endpoint: string,
 		chainId: number,
 		offset: number,
@@ -590,22 +590,23 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		>;
 	};
 
-	setQueryV3VaultList(fn: typeof this.queryV3VaultList): void {
-		this.queryV3VaultList = fn;
+	setQueryV3EVaultList(fn: typeof this.queryV3EVaultList): void {
+		this.queryV3EVaultList = fn;
 	}
 
 	async fetchVaults(
 		chainId: number,
 		vaults: Address[],
 	): Promise<ServiceResult<(IEVault | undefined)[]>> {
+    console.time("EVaultV3Adapter.fetchVaults");
 		const results: Array<{ result: IEVault | undefined; errors: DataIssue[] }> =
 			await Promise.all(
 				vaults.map(async (vault, index) => {
 					const errors: DataIssue[] = [];
 					try {
 						const [detailResponse, collateralsResponse] = await Promise.all([
-							this.queryV3VaultDetail(this.config.endpoint, chainId, vault),
-							this.queryV3VaultCollaterals(
+							this.queryV3EVaultDetail(this.config.endpoint, chainId, vault),
+							this.queryV3EVaultCollaterals(
 								this.config.endpoint,
 								chainId,
 								vault,
@@ -659,7 +660,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 					}
 				}),
 			);
-
+    console.timeEnd("EVaultV3Adapter.fetchVaults");
 		return {
 			result: results.map((entry) => entry.result),
 			errors: compressDataIssues(results.flatMap((entry) => entry.errors)),
@@ -681,7 +682,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		const addresses: Address[] = [];
 
 		while (true) {
-			const response = await this.queryV3VaultList(
+			const response = await this.queryV3EVaultList(
 				this.config.endpoint,
 				chainId,
 				offset,

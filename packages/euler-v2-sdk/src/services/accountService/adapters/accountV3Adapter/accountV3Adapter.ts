@@ -291,7 +291,7 @@ export class AccountV3Adapter implements IAccountAdapter {
 		};
 	}
 
-	queryAccountPositions = async (
+	queryV3AccountPositions = async (
 		endpoint: string,
 		chainId: number,
 		address: Address,
@@ -310,8 +310,8 @@ export class AccountV3Adapter implements IAccountAdapter {
 		return response.json() as Promise<V3PositionsResponse>;
 	};
 
-	setQueryAccountPositions(fn: typeof this.queryAccountPositions): void {
-		this.queryAccountPositions = fn;
+	setQueryV3AccountPositions(fn: typeof this.queryV3AccountPositions): void {
+		this.queryV3AccountPositions = fn;
 	}
 
 	async fetchAccount(
@@ -412,7 +412,7 @@ export class AccountV3Adapter implements IAccountAdapter {
 		errors: DataIssue[],
 	): Promise<V3AccountPositionRow[]> {
 		try {
-			const response = await this.queryAccountPositions(
+			const response = await this.queryV3AccountPositions(
 				this.config.endpoint,
 				chainId,
 				getAddress(address),

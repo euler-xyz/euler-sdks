@@ -10,7 +10,11 @@ export type RetryStrategy =
   | "count"
   | "always";
 
+export type SdkAdapterMode = "v3" | "onchain";
+
 export interface QueryOptionsSettings {
+  adapterMode: SdkAdapterMode;
+  showQueryProfiler: boolean;
   disableCache: boolean;
   staleTimeMs: number | null;
   gcTimeMs: number | null;
@@ -27,6 +31,8 @@ export interface QueryBuildOverrides {
 }
 
 const DEFAULT_SETTINGS: QueryOptionsSettings = {
+  adapterMode: "v3",
+  showQueryProfiler: true,
   disableCache: false,
   staleTimeMs: null,
   gcTimeMs: null,
@@ -96,6 +102,14 @@ function sanitizeSettings(value: unknown): QueryOptionsSettings {
       : DEFAULT_SETTINGS.networkMode;
 
   return {
+    adapterMode:
+      candidate.adapterMode === "onchain" || candidate.adapterMode === "v3"
+        ? candidate.adapterMode
+        : DEFAULT_SETTINGS.adapterMode,
+    showQueryProfiler:
+      typeof candidate.showQueryProfiler === "boolean"
+        ? candidate.showQueryProfiler
+        : DEFAULT_SETTINGS.showQueryProfiler,
     disableCache: candidate.disableCache === true,
     staleTimeMs: asFiniteNumber(candidate.staleTimeMs),
     gcTimeMs: asFiniteNumber(candidate.gcTimeMs),
@@ -146,6 +160,30 @@ export function useQueryOptionsSettings() {
   return useSyncExternalStore(subscribe, currentSnapshot, currentSnapshot);
 }
 
+function currentAdapterModeSnapshot() {
+  return currentSettings.adapterMode;
+}
+
+export function useSdkAdapterMode() {
+  return useSyncExternalStore(
+    subscribe,
+    currentAdapterModeSnapshot,
+    currentAdapterModeSnapshot
+  );
+}
+
+function currentShowQueryProfilerSnapshot() {
+  return currentSettings.showQueryProfiler;
+}
+
+export function useShowQueryProfiler() {
+  return useSyncExternalStore(
+    subscribe,
+    currentShowQueryProfilerSnapshot,
+    currentShowQueryProfilerSnapshot
+  );
+}
+
 export function getQueryOptionsSettings() {
   return currentSettings;
 }
@@ -167,6 +205,8 @@ export function hasActiveQueryOptionsOverrides(
   settings: QueryOptionsSettings
 ): boolean {
   return (
+    settings.adapterMode !== DEFAULT_SETTINGS.adapterMode ||
+    settings.showQueryProfiler !== DEFAULT_SETTINGS.showQueryProfiler ||
     settings.disableCache ||
     settings.staleTimeMs !== null ||
     settings.gcTimeMs !== null ||

@@ -8,15 +8,16 @@ import type {
   Account,
   BuildQueryFn,
   EVault,
+  EulerSDK,
   EulerEarn,
   FeeFlowState,
   Wallet,
   VaultEntity,
   VaultRewardInfo,
 } from "euler-v2-sdk";
-import { isAddress, type Address } from "viem";
+import { getAddress, isAddress, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
-import { recordExecution, registerKnownQueries } from "./queryProfileStore.ts";
+import { recordExecution, recordFailure, registerKnownQueries } from "./queryProfileStore.ts";
 import { interceptSdkDataIfEnabled, isQueryIntercepted } from "./dataInterceptorStore.ts";
 import { getQueryBuildOverrides } from "./queryOptionsStore.ts";
 import { isEVault } from "euler-v2-sdk";
@@ -74,7 +75,7 @@ const STALE_TIMES: Record<string, number> = {
   queryEVaultVerifiedArray: 5 * MINUTE,
   queryEulerEarnVerifiedArray: 5 * MINUTE,
   queryVaultFactories: 5 * MINUTE,
-  queryV3VaultList: 5 * MINUTE,
+  queryV3EVaultList: 5 * MINUTE,
   queryV3EulerEarnList: 5 * MINUTE,
   queryV3VaultResolve: 5 * MINUTE,
 
@@ -82,8 +83,8 @@ const STALE_TIMES: Record<string, number> = {
   queryEVaultInfoFull: 20_000,
   queryEulerEarnVaultInfoFull: 20_000,
   queryVaultInfoERC4626: 20_000,
-  queryV3VaultDetail: 20_000,
-  queryV3VaultCollaterals: 20_000,
+  queryV3EVaultDetail: 20_000,
+  queryV3EVaultCollaterals: 20_000,
   queryV3EulerEarnDetail: 20_000,
   
   // Vault config, probably ok to be cached for a while
@@ -122,7 +123,7 @@ const STALE_TIMES: Record<string, number> = {
   queryStablewatchPools: 5 * MINUTE,
 
   // Account / subgraph lookups — moderate
-  queryAccountPositions: 30_000,
+  queryV3AccountPositions: 30_000,
   queryAccountVaults: 30_000,
 
   // Static-ish external metadata
@@ -135,11 +136,23 @@ const STALE_TIMES: Record<string, number> = {
   queryAllowance: 15_000,
   queryPermit2Allowance: 15_000,
   queryKeyringCheckCredential: 15_000,
+
+  // UI hook queries
+  vaults: 10_000,
+  vaultsWithDiagnostics: 10_000,
+  vault: 10_000,
+  vaultWithDiagnostics: 10_000,
+  eulerEarn: 10_000,
+  account: 10_000,
+  accountWithDiagnostics: 10_000,
+  walletBalance: 5_000,
+  chainRewards: 60_000,
+  oracleAdapterMetadataMap: 10 * MINUTE,
+  tokenSymbolMap: Infinity,
+  feeFlowPageData: 15_000,
 };
 
 const DEFAULT_STALE_TIME = MINUTE;
-
-registerKnownQueries(Object.keys(STALE_TIMES));
 
 function withDataInterceptor(
   queryName: string,
@@ -153,18 +166,19 @@ function withDataInterceptor(
 
 export const sdkBuildQuery: BuildQueryFn = (queryName, fn, target) => {
   const staleTime = STALE_TIMES[queryName] ?? DEFAULT_STALE_TIME;
+  registerKnownQueries([queryName]);
   const interceptedFetcher = withDataInterceptor(queryName, (...args) =>
     fn(...args)
   );
 
   const wrapped = async (...args: unknown[]) => {
+    recordExecution(queryName);
     const queryKey = ["sdk", queryName, ...args.map(serializeArg)] as QueryKey;
     const { disableCache, fetchQueryOptions: overrides } = getQueryBuildOverrides();
 
     const fetchOptions: FetchQueryOptions<unknown, Error, unknown, QueryKey> = {
       queryKey,
       queryFn: async () => {
-        recordExecution(queryName);
         const result = await interceptedFetcher(...args);
         // react-query treats undefined as missing data — use null instead
         return result === undefined ? null : result;
@@ -188,6 +202,9 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn, target) => {
 
     try {
       return await queryClient.fetchQuery(fetchOptions);
+    } catch (error) {
+      recordFailure(queryName);
+      throw error;
     } finally {
       if (disableCache) {
         queryClient.removeQueries({ queryKey, exact: true });
@@ -375,28 +392,65 @@ export function unwrapServiceResult<T>(
   return unwrapServiceResultWithDiagnostics(operation, response).result;
 }
 
+async function fetchVaultAddressesFromLabelProducts(
+  sdk: EulerSDK,
+  chainId: number
+): Promise<Address[]> {
+  const products = await sdk.eulerLabelsService.fetchEulerLabelsProducts(chainId);
+  const seen = new Set<string>();
+  const addresses: Address[] = [];
+
+  for (const product of Object.values(products)) {
+    for (const vault of product.vaults ?? []) {
+      try {
+        const normalized = getAddress(vault);
+        const key = normalized.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        addresses.push(normalized);
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return addresses;
+}
+
+async function fetchLabeledVaultsWithDiagnostics(
+  sdk: EulerSDK,
+  chainId: number
+) {
+  console.time("fetchLabeledVaultsWithDiagnostics");
+  const addresses = await fetchVaultAddressesFromLabelProducts(sdk, chainId);
+  console.timeEnd("fetchLabeledVaultsWithDiagnostics");
+  console.time("unwrapServiceResultWithDiagnostics");
+  const res = unwrapServiceResultWithDiagnostics(
+    "vaultMetaService.fetchVaults",
+    await sdk.vaultMetaService.fetchVaults(chainId, addresses, {
+      populateMarketPrices: true,
+      populateRewards: true,
+      populateIntrinsicApy: true,
+      populateLabels: true,
+    })
+  );
+  console.timeEnd("unwrapServiceResultWithDiagnostics");
+  return res;
+}
+
 export function useAllVaults() {
   const { sdk, chainId, enabled } = useSdkReady();
   return useQuery<VaultEntity[]>({
     queryKey: ["vaults", chainId, "all"],
     queryFn: async () => {
-      const fetched = unwrapServiceResultWithDiagnostics(
-        "vaultMetaService.fetchAllVaults",
-        await sdk!.vaultMetaService.fetchAllVaults(chainId, {
-          options: {
-            populateMarketPrices: true,
-            populateRewards: true,
-            populateIntrinsicApy: true,
-            populateLabels: true,
-          },
-        })
-      );
-      return (fetched.result as Array<VaultEntity | undefined>).filter(
+      const fetched = await fetchLabeledVaultsWithDiagnostics(sdk!, chainId);
+      const res = (fetched.result as Array<VaultEntity | undefined>).filter(
         (vault): vault is VaultEntity => vault !== undefined
       );
+      return res;
     },
     enabled,
-    staleTime: 1_000,
+    staleTime: STALE_TIMES.vaults,
   });
 }
 
@@ -409,17 +463,7 @@ export function useAllVaultsWithDiagnostics() {
   }>({
     queryKey: ["vaultsWithDiagnostics", chainId, "all"],
     queryFn: async () => {
-      const fetched = unwrapServiceResultWithDiagnostics(
-        "vaultMetaService.fetchAllVaults",
-        await sdk!.vaultMetaService.fetchAllVaults(chainId, {
-          options: {
-            populateMarketPrices: true,
-            populateRewards: true,
-            populateIntrinsicApy: true,
-            populateLabels: true,
-          },
-        })
-      );
+      const fetched = await fetchLabeledVaultsWithDiagnostics(sdk!, chainId);
       const rawVaults = fetched.result as Array<VaultEntity | undefined>;
       const vaults = rawVaults.filter(
         (vault): vault is VaultEntity => vault !== undefined
@@ -496,7 +540,7 @@ export function useAllVaultsWithDiagnostics() {
       };
     },
     enabled,
-    staleTime: 1_000,
+    staleTime: STALE_TIMES.vaultsWithDiagnostics,
   });
 }
 
@@ -512,7 +556,7 @@ export function useVaultDetail(chainId: number, address: string | undefined) {
         })
       ),
     enabled: enabled && !!address,
-    staleTime: 1_000,
+    staleTime: STALE_TIMES.vault,
   });
 }
 
@@ -541,7 +585,7 @@ export function useVaultDetailWithDiagnostics(
       };
     },
     enabled: enabled && !!address,
-    staleTime: 1_000,
+    staleTime: STALE_TIMES.vaultWithDiagnostics,
   });
 }
 
@@ -557,7 +601,7 @@ export function useEulerEarnDetail(chainId: number, address: string | undefined)
         })
       ),
     enabled: enabled && !!address,
-    staleTime: 1_000,
+    staleTime: STALE_TIMES.eulerEarn,
   });
 }
 
@@ -576,7 +620,7 @@ export function useAccount(chainId: number, address: string | undefined) {
         })
       ),
     enabled: enabled && !!address && address.length === 42,
-    staleTime: 1_000,
+    staleTime: STALE_TIMES.account,
   });
 }
 
@@ -609,7 +653,7 @@ export function useAccountWithDiagnostics(
       };
     },
     enabled: enabled && !!address && address.length === 42,
-    staleTime: 1_000,
+    staleTime: STALE_TIMES.accountWithDiagnostics,
   });
 }
 
@@ -631,7 +675,7 @@ export function useWalletBalance(
       return wallet.getBalance(assetAddress as Address);
     },
     enabled: enabled && !!account && !!assetAddress,
-    staleTime: 5_000,
+    staleTime: STALE_TIMES.walletBalance,
   });
 }
 
@@ -650,7 +694,7 @@ export function useChainRewards() {
       return entries;
     },
     enabled,
-    staleTime: 60_000,
+    staleTime: STALE_TIMES.chainRewards,
   });
 }
 
@@ -660,7 +704,7 @@ export function useOracleAdapterMetadataMap(chainId: number) {
     queryKey: ["oracleAdapterMetadataMap", chainId],
     queryFn: async () => sdk!.oracleAdapterService.fetchOracleAdapterMap(chainId),
     enabled: enabled && Number.isFinite(chainId),
-    staleTime: 10 * MINUTE,
+    staleTime: STALE_TIMES.oracleAdapterMetadataMap,
   });
 }
 
@@ -675,7 +719,7 @@ export function useTokenSymbolMap(chainId: number) {
       );
     },
     enabled: enabled && Number.isFinite(chainId),
-    staleTime: Infinity,
+    staleTime: STALE_TIMES.tokenSymbolMap,
   });
 }
 
@@ -690,16 +734,17 @@ export function useFeeFlowPageData() {
     queryFn: async () => {
       const state = await sdk!.feeFlowService.fetchState(chainId);
       const fetched = unwrapServiceResult(
-        "vaultMetaService.fetchAllVaults",
-        await sdk!.vaultMetaService.fetchAllVaults(chainId, {
-          options: {
+        "vaultMetaService.fetchVaults",
+        await sdk!.vaultMetaService.fetchVaults(
+          chainId,
+          await fetchVaultAddressesFromLabelProducts(sdk!, chainId),
+          {
             populateMarketPrices: true,
             populateRewards: true,
             populateIntrinsicApy: true,
             populateLabels: true,
-          },
-          filter: async (vault) => isEVault(vault),
-        })
+          }
+        )
       );
 
       const eVaults = fetched
@@ -767,6 +812,6 @@ export function useFeeFlowPageData() {
       };
     },
     enabled,
-    staleTime: 15_000,
+    staleTime: STALE_TIMES.feeFlowPageData,
   });
 }

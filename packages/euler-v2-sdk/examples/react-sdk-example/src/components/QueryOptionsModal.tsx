@@ -4,6 +4,7 @@ import {
   hasActiveQueryOptionsOverrides,
   resetQueryOptionsSettings,
   setQueryOptionsSettings,
+  type SdkAdapterMode,
   type QueryOptionsSettings,
   useQueryOptionsSettings,
 } from "../queries/queryOptionsStore.ts";
@@ -14,6 +15,8 @@ type Props = {
 };
 
 type FormState = {
+  adapterMode: SdkAdapterMode;
+  showQueryProfiler: boolean;
   disableCache: boolean;
   staleTimeMs: string;
   gcTimeMs: string;
@@ -26,6 +29,8 @@ type FormState = {
 
 function toFormState(settings: QueryOptionsSettings): FormState {
   return {
+    adapterMode: settings.adapterMode,
+    showQueryProfiler: settings.showQueryProfiler,
     disableCache: settings.disableCache,
     staleTimeMs: settings.staleTimeMs === null ? "" : String(settings.staleTimeMs),
     gcTimeMs: settings.gcTimeMs === null ? "" : String(settings.gcTimeMs),
@@ -59,6 +64,8 @@ function toSettings(form: FormState): QueryOptionsSettings {
   }
 
   return {
+    adapterMode: form.adapterMode,
+    showQueryProfiler: form.showQueryProfiler,
     disableCache: form.disableCache,
     staleTimeMs: parseOptionalNumber(form.staleTimeMs, "Stale time"),
     gcTimeMs: parseOptionalNumber(form.gcTimeMs, "GC time"),
@@ -74,11 +81,15 @@ export function QueryOptionsModal({ open, onClose }: Props) {
   const settings = useQueryOptionsSettings();
   const [form, setForm] = useState<FormState>(() => toFormState(settings));
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"general" | "react-query">(
+    "general"
+  );
 
   useEffect(() => {
     if (!open) return;
     setForm(toFormState(getQueryOptionsSettings()));
     setError(null);
+    setActiveTab("general");
   }, [open, settings]);
 
   if (!open) return null;
@@ -86,126 +97,218 @@ export function QueryOptionsModal({ open, onClose }: Props) {
   return (
     <div className="interceptor-overlay" role="dialog" aria-modal="true">
       <div className="query-options-modal">
-        <h2>React Query Build Options</h2>
-        <div className="query-options-summary">
-          These overrides are applied to every `queryClient.fetchQuery()` call created by
-          `sdkBuildQuery`. Function-valued React Query options are not supported in this form.
+        <h2>SDK Tools</h2>
+        <div className="query-options-tabs" role="tablist" aria-label="Options sections">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "general"}
+            className={`query-options-tab ${
+              activeTab === "general" ? "active" : ""
+            }`}
+            onClick={() => setActiveTab("general")}
+          >
+            General
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "react-query"}
+            className={`query-options-tab ${
+              activeTab === "react-query" ? "active" : ""
+            }`}
+            onClick={() => setActiveTab("react-query")}
+          >
+            React Query
+          </button>
         </div>
 
-        <div className="query-options-grid">
-          <label className="query-options-checkbox">
-            <input
-              type="checkbox"
-              checked={form.disableCache}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, disableCache: event.target.checked }))
-              }
-            />
-            <span>Disable cache after each fetch</span>
-          </label>
+        {activeTab === "general" ? (
+          <>
+            <div className="query-options-summary">
+              General SDK settings for the example app. Adapter mode applies to
+              the built-in account, EVault, and EulerEarn services.
+            </div>
 
-          <label className="query-options-field">
-            <span>Stale time (ms)</span>
-            <input
-              className="filter-input"
-              value={form.staleTimeMs}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, staleTimeMs: event.target.value }))
-              }
-              placeholder="leave blank to keep per-query defaults"
-            />
-          </label>
+            <div className="query-options-grid query-options-grid-single">
+              <label className="query-options-toggle-card">
+                <span className="query-options-toggle-copy">
+                  <span className="query-options-toggle-title">
+                    Show Query Profiler
+                  </span>
+                  <span className="query-options-toggle-description">
+                    Show or hide the right-side query profiler panel.
+                  </span>
+                </span>
+                <span className="query-options-switch">
+                  <input
+                    type="checkbox"
+                    checked={form.showQueryProfiler}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        showQueryProfiler: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span className="query-options-switch-track">
+                    <span className="query-options-switch-thumb" />
+                  </span>
+                </span>
+              </label>
 
-          <label className="query-options-field">
-            <span>GC time (ms)</span>
-            <input
-              className="filter-input"
-              value={form.gcTimeMs}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, gcTimeMs: event.target.value }))
-              }
-              placeholder="leave blank to inherit"
-            />
-          </label>
+              <label className="query-options-toggle-card">
+                <span className="query-options-toggle-copy">
+                  <span className="query-options-toggle-title">
+                    Use V3 adapters
+                  </span>
+                  <span className="query-options-toggle-description">
+                    On enables V3 HTTP adapters. Off rebuilds the SDK with
+                    onchain adapters where available.
+                  </span>
+                </span>
+                <span className="query-options-switch">
+                  <input
+                    type="checkbox"
+                    checked={form.adapterMode === "v3"}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        adapterMode: event.target.checked ? "v3" : "onchain",
+                      }))
+                    }
+                  />
+                  <span className="query-options-switch-track">
+                    <span className="query-options-switch-thumb" />
+                  </span>
+                </span>
+              </label>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="query-options-summary">
+              These overrides are applied to every `queryClient.fetchQuery()`
+              call created by `sdkBuildQuery`. Function-valued React Query
+              options are not supported in this form.
+            </div>
 
-          <label className="query-options-field">
-            <span>Retry strategy</span>
-            <select
-              className="filter-select"
-              value={form.retryStrategy}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  retryStrategy: event.target.value as FormState["retryStrategy"],
-                }))
-              }
-            >
-              <option value="inherit">inherit app default</option>
-              <option value="off">disable retries</option>
-              <option value="once">retry once</option>
-              <option value="count">retry N times</option>
-              <option value="always">always retry</option>
-            </select>
-          </label>
+            <div className="query-options-grid">
+              <label className="query-options-checkbox">
+                <input
+                  type="checkbox"
+                  checked={form.disableCache}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, disableCache: event.target.checked }))
+                  }
+                />
+                <span>Disable cache after each fetch</span>
+              </label>
 
-          <label className="query-options-field">
-            <span>Retry count</span>
-            <input
-              className="filter-input"
-              value={form.retryCount}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, retryCount: event.target.value }))
-              }
-              disabled={form.retryStrategy !== "count"}
-            />
-          </label>
+              <label className="query-options-field">
+                <span>Stale time (ms)</span>
+                <input
+                  className="filter-input"
+                  value={form.staleTimeMs}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, staleTimeMs: event.target.value }))
+                  }
+                  placeholder="leave blank to keep per-query defaults"
+                />
+              </label>
 
-          <label className="query-options-field">
-            <span>Retry delay (ms)</span>
-            <input
-              className="filter-input"
-              value={form.retryDelayMs}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, retryDelayMs: event.target.value }))
-              }
-              placeholder="leave blank to inherit"
-            />
-          </label>
+              <label className="query-options-field">
+                <span>GC time (ms)</span>
+                <input
+                  className="filter-input"
+                  value={form.gcTimeMs}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, gcTimeMs: event.target.value }))
+                  }
+                  placeholder="leave blank to inherit"
+                />
+              </label>
 
-          <label className="query-options-field">
-            <span>Network mode</span>
-            <select
-              className="filter-select"
-              value={form.networkMode}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  networkMode: event.target.value as FormState["networkMode"],
-                }))
-              }
-            >
-              <option value="inherit">inherit app default</option>
-              <option value="online">online</option>
-              <option value="always">always</option>
-              <option value="offlineFirst">offlineFirst</option>
-            </select>
-          </label>
-        </div>
+              <label className="query-options-field">
+                <span>Retry strategy</span>
+                <select
+                  className="filter-select"
+                  value={form.retryStrategy}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      retryStrategy: event.target.value as FormState["retryStrategy"],
+                    }))
+                  }
+                >
+                  <option value="inherit">inherit app default</option>
+                  <option value="off">disable retries</option>
+                  <option value="once">retry once</option>
+                  <option value="count">retry N times</option>
+                  <option value="always">always retry</option>
+                </select>
+              </label>
 
-        <label className="query-options-field">
-          <span>Advanced fetchQuery options (JSON object)</span>
-          <textarea
-            className="interceptor-textarea query-options-textarea"
-            value={form.advancedOptionsText}
-            onChange={(event) =>
-              setForm((prev) => ({
-                ...prev,
-                advancedOptionsText: event.target.value,
-              }))
-            }
-            placeholder={`{\n  "meta": { "source": "profiler" }\n}`}
-          />
-        </label>
+              <label className="query-options-field">
+                <span>Retry count</span>
+                <input
+                  className="filter-input"
+                  value={form.retryCount}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, retryCount: event.target.value }))
+                  }
+                  disabled={form.retryStrategy !== "count"}
+                />
+              </label>
+
+              <label className="query-options-field">
+                <span>Retry delay (ms)</span>
+                <input
+                  className="filter-input"
+                  value={form.retryDelayMs}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, retryDelayMs: event.target.value }))
+                  }
+                  placeholder="leave blank to inherit"
+                />
+              </label>
+
+              <label className="query-options-field">
+                <span>Network mode</span>
+                <select
+                  className="filter-select"
+                  value={form.networkMode}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      networkMode: event.target.value as FormState["networkMode"],
+                    }))
+                  }
+                >
+                  <option value="inherit">inherit app default</option>
+                  <option value="online">online</option>
+                  <option value="always">always</option>
+                  <option value="offlineFirst">offlineFirst</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="query-options-field">
+              <span>Advanced fetchQuery options (JSON object)</span>
+              <textarea
+                className="interceptor-textarea query-options-textarea"
+                value={form.advancedOptionsText}
+                onChange={(event) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    advancedOptionsText: event.target.value,
+                  }))
+                }
+                placeholder={`{\n  "meta": { "source": "profiler" }\n}`}
+              />
+            </label>
+          </>
+        )}
 
         {error ? <div className="interceptor-error">{error}</div> : null}
 

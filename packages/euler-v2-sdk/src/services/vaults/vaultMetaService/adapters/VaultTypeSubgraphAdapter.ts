@@ -27,6 +27,7 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 		async (
 			keys: { address: Address; chainId: number }[],
 		): Promise<(VaultFactoryResult | undefined)[]> => {
+      console.time("VaultTypeSubgraphAdapter.queryVaultFactories");
 			const byChain = new Map<number, Address[]>();
 			for (const key of keys) {
 				const arr = byChain.get(key.chainId) ?? [];
@@ -51,7 +52,7 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 				for (let i = 0; i < ids.length; i += PAGE_SIZE) {
 					const pageIds = ids.slice(i, i + PAGE_SIZE);
 					const response = await fetch(subgraphUrl, {
-						method: "POST",
+            method: "POST",
 						headers: { "Content-Type": "application/json" },
 						body: JSON.stringify({ query, variables: { ids: pageIds } }),
 					});
@@ -65,7 +66,7 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 
 				chainResults.set(chainId, map);
 			}
-
+      console.timeEnd("VaultTypeSubgraphAdapter.queryVaultFactories");
 			return keys.map((key) => {
 				const factory = chainResults
 					.get(key.chainId)

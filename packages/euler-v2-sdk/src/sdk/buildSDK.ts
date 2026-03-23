@@ -214,31 +214,34 @@ export async function buildEulerSDK<
 
 	// Account adapter is built early so it can be used when building account service (after vault meta service)
 	const resolvedAccountServiceConfig = accountServiceConfig ?? {};
-	const accountVaultsAdapter = new AccountVaultsSubgraphAdapter(
-		accountVaultsAdapterConfig || defaultAccountVaultsAdapterConfig,
-		buildQuery,
-	);
-	const accountOnchainAdapter = new AccountOnchainAdapter(
-		providerService as ProviderService,
-		deploymentService as DeploymentService,
-		accountVaultsAdapter,
-		buildQuery,
-	);
-	const accountV3Adapter = new AccountV3Adapter(
-		{
-			...(resolvedAccountServiceConfig.v3AdapterConfig ??
-				defaultAccountV3AdapterConfig),
-			...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
-			...(resolvedAccountServiceConfig.v3AdapterConfig?.apiKey !== undefined
-				? { apiKey: resolvedAccountServiceConfig.v3AdapterConfig.apiKey }
-				: {}),
-		},
-		buildQuery,
-	);
+	let accountOnchainAdapter: AccountOnchainAdapter | undefined;
 	const accountAdapter =
 		resolvedAccountServiceConfig.adapter === "onchain"
-			? accountOnchainAdapter
-			: accountV3Adapter;
+			? (() => {
+					const accountVaultsAdapter = new AccountVaultsSubgraphAdapter(
+						accountVaultsAdapterConfig || defaultAccountVaultsAdapterConfig,
+						buildQuery,
+					);
+					accountOnchainAdapter = new AccountOnchainAdapter(
+						providerService as ProviderService,
+						deploymentService as DeploymentService,
+						accountVaultsAdapter,
+						buildQuery,
+					);
+					return accountOnchainAdapter;
+				})()
+			: new AccountV3Adapter(
+					{
+						...(resolvedAccountServiceConfig.v3AdapterConfig ??
+							defaultAccountV3AdapterConfig),
+						...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+						...(resolvedAccountServiceConfig.v3AdapterConfig?.apiKey !==
+						undefined
+							? { apiKey: resolvedAccountServiceConfig.v3AdapterConfig.apiKey }
+							: {}),
+					},
+					buildQuery,
+				);
 
 	// Build wallet service if not overridden
 	let walletService: IWalletService;
@@ -396,8 +399,10 @@ export async function buildEulerSDK<
 			eVaultAdapter.setPlugins(plugins);
 			eVaultAdapter.setBatchSimulationAdapter(pluginBatchSimDs);
 		}
-		accountOnchainAdapter.setPlugins(plugins);
-		accountOnchainAdapter.setBatchSimulationAdapter(pluginBatchSimDs);
+		if (accountOnchainAdapter) {
+			accountOnchainAdapter.setPlugins(plugins);
+			accountOnchainAdapter.setBatchSimulationAdapter(pluginBatchSimDs);
+		}
 	}
 
 	// Build account service if not overridden (requires vaultMetaService for fetchAccountWithVaults / fetchVaults)

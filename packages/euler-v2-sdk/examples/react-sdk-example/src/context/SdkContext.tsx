@@ -8,6 +8,8 @@ import {
 } from "react";
 import { buildEulerSDK, createPythPlugin, type EulerSDK } from "euler-v2-sdk";
 import { sdkBuildQuery } from "../queries/sdkQueries.ts";
+import { useSdkAdapterMode } from "../queries/queryOptionsStore.ts";
+import { resetQueryProfile } from "../queries/queryProfileStore.ts";
 import {
   CHAIN_NAMES,
   DEFAULT_CHAIN,
@@ -25,7 +27,23 @@ interface SdkContextValue {
 
 const SdkContext = createContext<SdkContextValue | null>(null);
 
+const VAULT_TYPE_SUBGRAPH_URLS: Record<number, string> = {
+  1: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-mainnet/latest/gn",
+  56: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-bsc/latest/gn",
+  130: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-unichain/latest/gn",
+  146: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-sonic/latest/gn",
+  239: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-tac/latest/gn",
+  1923: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-swell/latest/gn",
+  8453: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-base/latest/gn",
+  9745: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-plasma/latest/gn",
+  42161: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-arbitrum/latest/gn",
+  43114: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-avalanche/latest/gn",
+  60808: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-bob/latest/gn",
+  80094: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-berachain/latest/gn",
+};
+
 export function SdkProvider({ children }: { children: ReactNode }) {
+  const adapterMode = useSdkAdapterMode();
   const [sdk, setSdk] = useState<EulerSDK | null>(null);
   const [chainId, setChainId] = useState(DEFAULT_CHAIN);
   const [loading, setLoading] = useState(true);
@@ -35,28 +53,33 @@ export function SdkProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setSdk(null);
+    resetQueryProfile();
 
     buildEulerSDK({
       rpcUrls: RPC_URLS,
       v3ApiKey: import.meta.env.VITE_EULER_V3_API_KEY,
       buildQuery: sdkBuildQuery,
       accountServiceConfig: {
-        adapter: "v3",
+        adapter: adapterMode,
         v3AdapterConfig: {
           endpoint: "/api/euler-v3",
         },
       },
       eVaultServiceConfig: {
-        adapter: "v3",
+        adapter: adapterMode,
         v3AdapterConfig: {
           endpoint: "/api/euler-v3",
         },
       },
       eulerEarnServiceConfig: {
-        adapter: "v3",
+        adapter: adapterMode,
         v3AdapterConfig: {
           endpoint: "/api/euler-v3",
         },
+      },
+      vaultTypeAdapterConfig: {
+        subgraphURLs: VAULT_TYPE_SUBGRAPH_URLS,
       },
       swapServiceConfig: {
         swapApiUrl: "http://localhost:3002",
@@ -89,7 +112,7 @@ export function SdkProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [adapterMode]);
 
   const handleSetChainId = useCallback((id: number) => {
     setChainId(id);
