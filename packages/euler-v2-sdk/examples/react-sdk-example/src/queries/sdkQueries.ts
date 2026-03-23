@@ -74,19 +74,30 @@ const STALE_TIMES: Record<string, number> = {
   queryEVaultVerifiedArray: 5 * MINUTE,
   queryEulerEarnVerifiedArray: 5 * MINUTE,
   queryVaultFactories: 5 * MINUTE,
+  queryV3VaultList: 5 * MINUTE,
+  queryV3EulerEarnList: 5 * MINUTE,
+  queryV3VaultResolve: 5 * MINUTE,
 
   // On-chain vault state — moderate refresh
   queryEVaultInfoFull: 20_000,
   queryEulerEarnVaultInfoFull: 20_000,
   queryVaultInfoERC4626: 20_000,
+  queryV3VaultDetail: 20_000,
+  queryV3VaultCollaterals: 20_000,
+  queryV3EulerEarnDetail: 20_000,
   
   // Vault config, probably ok to be cached for a while
   querySecuritizeVaultGovernorAdmin: 60 * MINUTE,
   querySecuritizeVaultSupplyCapResolved: 60 * MINUTE,
+  queryKeyringPolicyId: 60 * MINUTE,
+  queryKeyringAddress: 60 * MINUTE,
 
   // Prices
   queryAssetPriceInfo: MINUTE,
   queryBackendPrice: MINUTE,
+
+  // Simulations and quote-like reads — short-lived
+  queryBatchSimulation: 10_000,
 
   // Swap quotes — very short-lived
   querySwapQuotes: 10_000,
@@ -111,7 +122,11 @@ const STALE_TIMES: Record<string, number> = {
   queryStablewatchPools: 5 * MINUTE,
 
   // Account / subgraph lookups — moderate
+  queryAccountPositions: 30_000,
   queryAccountVaults: 30_000,
+
+  // Static-ish external metadata
+  queryOracleAdapters: 10 * MINUTE,
 
   // Per-user on-chain state — changes on every tx
   queryEVCAccountInfo: 15_000,
@@ -119,6 +134,7 @@ const STALE_TIMES: Record<string, number> = {
   queryBalanceOf: 15_000,
   queryAllowance: 15_000,
   queryPermit2Allowance: 15_000,
+  queryKeyringCheckCredential: 15_000,
 };
 
 const DEFAULT_STALE_TIME = MINUTE;
