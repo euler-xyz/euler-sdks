@@ -63,6 +63,44 @@ a:hover {
   padding: 24px;
 }
 
+.sdk-tools-launcher {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: auto;
+  height: auto;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  font-family: inherit;
+  font-size: 56px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  -webkit-text-stroke: 2px #000;
+}
+
+.sdk-tools-launcher.active {
+  color: transparent;
+}
+
+.sdk-tools-launcher-icon {
+  line-height: 1;
+}
+
+@media (max-width: 1200px) {
+  .sdk-tools-launcher {
+    bottom: 16px;
+  }
+}
+
 /* Query Profiler */
 .profiler-panel {
   width: 280px;
@@ -76,20 +114,6 @@ a:hover {
   max-height: 100vh;
   overflow-y: auto;
   background: #fff;
-  transition: width 160ms ease, padding 160ms ease;
-}
-
-.profiler-panel.collapsed {
-  width: 30px;
-  padding: 8px 4px;
-  overflow: hidden;
-}
-
-.profiler-panel.collapsed .profiler-header {
-  margin: 0;
-  padding: 0;
-  border-bottom: 0;
-  justify-content: center;
 }
 
 @media (max-width: 1200px) {

@@ -1,13 +1,17 @@
 import { defineConfig } from "vite";
+import type { ProxyOptions } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
+import { pluginHttp2Proxy } from "./http2ProxyPlugin";
 
 const proxyStartKey = Symbol("proxyStart");
 
-function withProxyProfiling(label: string) {
-  return (proxy: {
+function withProxyProfiling(
+  label: string,
+): NonNullable<ProxyOptions["configure"]> {
+  return ((proxy: {
     on: (
-      event: string,
+      event: "error" | "proxyReq" | "proxyRes",
       listener: (...args: unknown[]) => void
     ) => void;
   }) => {
@@ -56,11 +60,11 @@ function withProxyProfiling(label: string) {
         `[proxy:${label}] ${method} ${url} failed in ${elapsedMs ?? "?"}ms: ${message}`
       );
     });
-  };
+  }) as NonNullable<ProxyOptions["configure"]>;
 }
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), pluginHttp2Proxy()],
   server: {
     proxy: {
       "/api/euler-v3": {
