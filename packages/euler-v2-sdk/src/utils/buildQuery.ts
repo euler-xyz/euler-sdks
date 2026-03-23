@@ -7,19 +7,22 @@
  * @returns A wrapped version of the query function
  */
 export type BuildQueryFn = <T extends (...args: any[]) => Promise<any>>(
-  queryName: string,
-  fn: T,
-  target: object,
+	queryName: string,
+	fn: T,
+	target: object,
 ) => T;
 
 /**
  * Applies a buildQuery decorator to all `query*` properties on a target object.
  * Call this at the end of a constructor to decorate all queries.
  */
-export function applyBuildQuery(target: object, buildQuery: BuildQueryFn): void {
-  for (const key of Object.getOwnPropertyNames(target)) {
-    if (key.startsWith("query") && typeof (target as any)[key] === "function") {
-      (target as any)[key] = buildQuery(key, (target as any)[key], target);
-    }
-  }
+export function applyBuildQuery(
+	target: object,
+	buildQuery: BuildQueryFn,
+): void {
+	for (const key of Object.getOwnPropertyNames(target)) {
+		if (key.startsWith("query") && typeof (target as any)[key] === "function") {
+			(target as any)[key] = buildQuery(key, (target as any)[key], target);
+		}
+	}
 }

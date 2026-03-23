@@ -1,118 +1,134 @@
-import type {
-  DataIssue,
-} from "./entityDiagnostics.js";
+import type { DataIssue } from "./entityDiagnostics.js";
 
 type BigintToSafeNumberParams = {
-  path: string;
-  errors: DataIssue[];
-  source: string;
-  entityId?: string;
-  message?: string;
+	path: string;
+	errors: DataIssue[];
+	source: string;
+	entityId?: string;
+	message?: string;
 };
 
-export function bigintToSafeNumber(value: bigint, params: BigintToSafeNumberParams): number {
-  const { path, errors, source, entityId } = params;
+export function bigintToSafeNumber(
+	value: bigint,
+	params: BigintToSafeNumberParams,
+): number {
+	const { path, errors, source, entityId } = params;
 
-  if (value <= BigInt(Number.MAX_SAFE_INTEGER) && value >= BigInt(Number.MIN_SAFE_INTEGER)) {
-    return Number(value);
-  }
+	if (
+		value <= BigInt(Number.MAX_SAFE_INTEGER) &&
+		value >= BigInt(Number.MIN_SAFE_INTEGER)
+	) {
+		return Number(value);
+	}
 
-  const clamped = value > 0n ? Number.MAX_SAFE_INTEGER : Number.MIN_SAFE_INTEGER;
-  errors.push({
-    code: "OUT_OF_RANGE_CLAMPED",
-    severity: "warning",
-    message:
-      params.message ?? "BigInt value exceeded JavaScript safe number range and was clamped.",
-    paths: [path],
-    source,
-    entityId,
-    originalValue: value.toString(),
-    normalizedValue: clamped,
-  });
-  return clamped;
+	const clamped =
+		value > 0n ? Number.MAX_SAFE_INTEGER : Number.MIN_SAFE_INTEGER;
+	errors.push({
+		code: "OUT_OF_RANGE_CLAMPED",
+		severity: "warning",
+		message:
+			params.message ??
+			"BigInt value exceeded JavaScript safe number range and was clamped.",
+		paths: [path],
+		source,
+		entityId,
+		originalValue: value.toString(),
+		normalizedValue: clamped,
+	});
+	return clamped;
 }
 
 type NumberLikeToSafeFiniteNumberParams = {
-  path: string;
-  errors: DataIssue[];
-  source: string;
-  entityId?: string;
-  fallback?: number;
-  message?: string;
+	path: string;
+	errors: DataIssue[];
+	source: string;
+	entityId?: string;
+	fallback?: number;
+	message?: string;
 };
 
 export function numberLikeToSafeFiniteNumber(
-  value: bigint | number,
-  params: NumberLikeToSafeFiniteNumberParams
+	value: bigint | number,
+	params: NumberLikeToSafeFiniteNumberParams,
 ): number {
-  const fallback = params.fallback ?? 0;
+	const fallback = params.fallback ?? 0;
 
-  if (typeof value === "bigint") {
-    return bigintToSafeNumber(value, {
-      path: params.path,
-      errors: params.errors,
-      source: params.source,
-      entityId: params.entityId,
-      message: params.message,
-    });
-  }
+	if (typeof value === "bigint") {
+		return bigintToSafeNumber(value, {
+			path: params.path,
+			errors: params.errors,
+			source: params.source,
+			entityId: params.entityId,
+			message: params.message,
+		});
+	}
 
-  if (Number.isFinite(value)) return value;
+	if (Number.isFinite(value)) return value;
 
-  params.errors.push({
-    code: "DEFAULT_APPLIED",
-    severity: "warning",
-    message: params.message ?? "Non-finite number encountered and fallback value applied.",
-    paths: [params.path],
-    source: params.source,
-    entityId: params.entityId,
-    originalValue: String(value),
-    normalizedValue: fallback,
-  });
-  return fallback;
+	params.errors.push({
+		code: "DEFAULT_APPLIED",
+		severity: "warning",
+		message:
+			params.message ??
+			"Non-finite number encountered and fallback value applied.",
+		paths: [params.path],
+		source: params.source,
+		entityId: params.entityId,
+		originalValue: String(value),
+		normalizedValue: fallback,
+	});
+	return fallback;
 }
 
 type BigintToScaledNumberParams = {
-  path: string;
-  errors: DataIssue[];
-  source: string;
-  entityId?: string;
-  scale: number;
-  maxUnscaled?: bigint;
-  minUnscaled?: bigint;
-  overflowMessage?: string;
+	path: string;
+	errors: DataIssue[];
+	source: string;
+	entityId?: string;
+	scale: number;
+	maxUnscaled?: bigint;
+	minUnscaled?: bigint;
+	overflowMessage?: string;
 };
 
-export function bigintToScaledNumber(value: bigint, params: BigintToScaledNumberParams): number {
-  const { path, errors, source, entityId, maxUnscaled, minUnscaled, scale } = params;
+export function bigintToScaledNumber(
+	value: bigint,
+	params: BigintToScaledNumberParams,
+): number {
+	const { path, errors, source, entityId, maxUnscaled, minUnscaled, scale } =
+		params;
 
-  if (maxUnscaled !== undefined && value > maxUnscaled) {
-    errors.push({
-      code: "OUT_OF_RANGE_CLAMPED",
-      severity: "warning",
-      message: params.overflowMessage ?? "Value exceeded maximum allowed range and was clamped.",
-      paths: [path],
-      source,
-      entityId,
-      originalValue: value.toString(),
-      normalizedValue: maxUnscaled.toString(),
-    });
-    return Number(maxUnscaled) / scale;
-  }
+	if (maxUnscaled !== undefined && value > maxUnscaled) {
+		errors.push({
+			code: "OUT_OF_RANGE_CLAMPED",
+			severity: "warning",
+			message:
+				params.overflowMessage ??
+				"Value exceeded maximum allowed range and was clamped.",
+			paths: [path],
+			source,
+			entityId,
+			originalValue: value.toString(),
+			normalizedValue: maxUnscaled.toString(),
+		});
+		return Number(maxUnscaled) / scale;
+	}
 
-  if (minUnscaled !== undefined && value < minUnscaled) {
-    errors.push({
-      code: "OUT_OF_RANGE_CLAMPED",
-      severity: "warning",
-      message: params.overflowMessage ?? "Value exceeded minimum allowed range and was clamped.",
-      paths: [path],
-      source,
-      entityId,
-      originalValue: value.toString(),
-      normalizedValue: minUnscaled.toString(),
-    });
-    return Number(minUnscaled) / scale;
-  }
+	if (minUnscaled !== undefined && value < minUnscaled) {
+		errors.push({
+			code: "OUT_OF_RANGE_CLAMPED",
+			severity: "warning",
+			message:
+				params.overflowMessage ??
+				"Value exceeded minimum allowed range and was clamped.",
+			paths: [path],
+			source,
+			entityId,
+			originalValue: value.toString(),
+			normalizedValue: minUnscaled.toString(),
+		});
+		return Number(minUnscaled) / scale;
+	}
 
-  return Number(value) / scale;
+	return Number(value) / scale;
 }

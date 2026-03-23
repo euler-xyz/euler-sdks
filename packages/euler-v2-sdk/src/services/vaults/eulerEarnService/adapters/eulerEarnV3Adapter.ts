@@ -1,489 +1,613 @@
 import { formatUnits, type Address, getAddress } from "viem";
-import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
-import type { DataIssue, ServiceResult } from "../../../../utils/entityDiagnostics.js";
-import { compressDataIssues, prefixDataIssues } from "../../../../utils/entityDiagnostics.js";
+import {
+	type BuildQueryFn,
+	applyBuildQuery,
+} from "../../../../utils/buildQuery.js";
+import type {
+	DataIssue,
+	ServiceResult,
+} from "../../../../utils/entityDiagnostics.js";
+import {
+	compressDataIssues,
+	prefixDataIssues,
+} from "../../../../utils/entityDiagnostics.js";
 import { VaultType, type Token } from "../../../../utils/types.js";
 import type {
-  EulerEarnAllocationCap,
-  EulerEarnGovernance,
-  EulerEarnStrategyInfo,
-  IEulerEarn,
+	EulerEarnAllocationCap,
+	EulerEarnGovernance,
+	EulerEarnStrategyInfo,
+	IEulerEarn,
 } from "../../../../entities/EulerEarn.js";
 import type { EulerEarnV3AdapterConfig } from "../eulerEarnServiceConfig.js";
 import type { IEulerEarnAdapter } from "../eulerEarnService.js";
 
 type V3Envelope<T> = {
-  data?: T;
-  meta?: {
-    total?: number;
-    offset?: number;
-    limit?: number;
-  };
+	data?: T;
+	meta?: {
+		total?: number;
+		offset?: number;
+		limit?: number;
+	};
 };
 
 type V3ListEnvelope<T> = {
-  data?: T[];
-  meta?: {
-    total?: number;
-    offset?: number;
-    limit?: number;
-  };
+	data?: T[];
+	meta?: {
+		total?: number;
+		offset?: number;
+		limit?: number;
+	};
 };
 
 type V3Token = {
-  address: string;
-  symbol?: string;
-  decimals: number;
-  name?: string;
+	address: string;
+	symbol?: string;
+	decimals: number;
+	name?: string;
 };
 
 type V3EulerEarnStrategy = {
-  address: string;
-  symbol?: string;
-  name?: string;
-  decimals?: number;
-  suppliedAssets?: string;
-  withdrawnAssets?: string;
-  allocatedAssets?: string;
-  availableAssets?: string;
-  inSupplyQueue?: boolean;
-  inWithdrawQueue?: boolean;
-  supplyQueueIndex?: number;
-  withdrawQueueIndex?: number;
-  allocationCap?: {
-    current?: string;
-    pending?: string;
-    pendingValidAt?: number;
-  };
-  removableAt?: number;
+	address: string;
+	symbol?: string;
+	name?: string;
+	decimals?: number;
+	suppliedAssets?: string;
+	withdrawnAssets?: string;
+	allocatedAssets?: string;
+	availableAssets?: string;
+	inSupplyQueue?: boolean;
+	inWithdrawQueue?: boolean;
+	supplyQueueIndex?: number;
+	withdrawQueueIndex?: number;
+	allocationCap?: {
+		current?: string;
+		pending?: string;
+		pendingValidAt?: number;
+	};
+	removableAt?: number;
 };
 
 type V3EulerEarnDetail = {
-  chainId: number;
-  address: string;
-  name: string;
-  symbol: string;
-  decimals: number;
-  asset: V3Token;
-  totalAssets: string;
-  totalShares: string;
-  lostAssets?: string;
-  availableAssets?: string;
-  strategies?: V3EulerEarnStrategy[];
-  governance?: {
-    owner?: string;
-    creator?: string;
-    curator?: string;
-    guardian?: string;
-    feeReceiver?: string;
-    timelock?: number;
-    pendingTimelock?: number;
-    pendingTimelockValidAt?: number;
-    pendingGuardian?: string;
-    pendingGuardianValidAt?: number;
-  };
-  management?: {
-    owner?: string;
-    guardian?: string;
-    timelockSeconds?: number;
-    performanceFee?: string;
-  };
-  snapshotTimestamp?: string;
+	chainId: number;
+	address: string;
+	name: string;
+	symbol: string;
+	decimals: number;
+	asset: V3Token;
+	totalAssets: string;
+	totalShares: string;
+	lostAssets?: string;
+	availableAssets?: string;
+	strategies?: V3EulerEarnStrategy[];
+	governance?: {
+		owner?: string;
+		creator?: string;
+		curator?: string;
+		guardian?: string;
+		feeReceiver?: string;
+		timelock?: number;
+		pendingTimelock?: number;
+		pendingTimelockValidAt?: number;
+		pendingGuardian?: string;
+		pendingGuardianValidAt?: number;
+	};
+	management?: {
+		owner?: string;
+		guardian?: string;
+		timelockSeconds?: number;
+		performanceFee?: string;
+	};
+	snapshotTimestamp?: string;
 };
 
 type V3EulerEarnListRow = {
-  address: string;
+	address: string;
 };
 
 const unsupportedError = new Error("unsupported");
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 
 const parseBigIntField = (
-  value: string | undefined,
-  path: string,
-  entityId: Address,
-  errors: DataIssue[],
+	value: string | undefined,
+	path: string,
+	entityId: Address,
+	errors: DataIssue[],
 ): bigint => {
-  try {
-    return BigInt(value ?? "0");
-  } catch {
-    errors.push({
-      code: "DEFAULT_APPLIED",
-      severity: "warning",
-      message: `Failed to parse bigint at ${path}; defaulted to 0.`,
-      paths: [path],
-      entityId,
-      source: "eulerEarnV3",
-      originalValue: value,
-      normalizedValue: "0",
-    });
-    return 0n;
-  }
+	try {
+		return BigInt(value ?? "0");
+	} catch {
+		errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message: `Failed to parse bigint at ${path}; defaulted to 0.`,
+			paths: [path],
+			entityId,
+			source: "eulerEarnV3",
+			originalValue: value,
+			normalizedValue: "0",
+		});
+		return 0n;
+	}
 };
 
 const parseTimestampField = (
-  value: string | undefined,
-  path: string,
-  entityId: Address,
-  errors: DataIssue[],
+	value: string | undefined,
+	path: string,
+	entityId: Address,
+	errors: DataIssue[],
 ): number => {
-  if (!value) {
-    errors.push({
-      code: "DEFAULT_APPLIED",
-      severity: "warning",
-      message: `Missing timestamp at ${path}; defaulted to 0.`,
-      paths: [path],
-      entityId,
-      source: "eulerEarnV3",
-      normalizedValue: 0,
-    });
-    return 0;
-  }
+	if (!value) {
+		errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message: `Missing timestamp at ${path}; defaulted to 0.`,
+			paths: [path],
+			entityId,
+			source: "eulerEarnV3",
+			normalizedValue: 0,
+		});
+		return 0;
+	}
 
-  const parsed = Date.parse(value);
-  if (Number.isFinite(parsed)) return Math.floor(parsed / 1000);
+	const parsed = Date.parse(value);
+	if (Number.isFinite(parsed)) return Math.floor(parsed / 1000);
 
-  errors.push({
-    code: "DEFAULT_APPLIED",
-    severity: "warning",
-    message: `Failed to parse timestamp at ${path}; defaulted to 0.`,
-    paths: [path],
-    entityId,
-    source: "eulerEarnV3",
-    originalValue: value,
-    normalizedValue: 0,
-  });
-  return 0;
+	errors.push({
+		code: "DEFAULT_APPLIED",
+		severity: "warning",
+		message: `Failed to parse timestamp at ${path}; defaulted to 0.`,
+		paths: [path],
+		entityId,
+		source: "eulerEarnV3",
+		originalValue: value,
+		normalizedValue: 0,
+	});
+	return 0;
 };
 
 const parseAddressField = (
-  value: string | undefined,
-  path: string,
-  entityId: Address,
-  errors: DataIssue[],
+	value: string | undefined,
+	path: string,
+	entityId: Address,
+	errors: DataIssue[],
 ): Address => {
-  if (value) {
-    try {
-      return getAddress(value);
-    } catch {
-      // handled below
-    }
-  }
+	if (value) {
+		try {
+			return getAddress(value);
+		} catch {
+			// handled below
+		}
+	}
 
-  errors.push({
-    code: "DEFAULT_APPLIED",
-    severity: "warning",
-    message: `Missing or invalid address at ${path}; defaulted to zero address.`,
-    paths: [path],
-    entityId,
-    source: "eulerEarnV3",
-    originalValue: value,
-    normalizedValue: ZERO_ADDRESS,
-  });
-  return ZERO_ADDRESS;
+	errors.push({
+		code: "DEFAULT_APPLIED",
+		severity: "warning",
+		message: `Missing or invalid address at ${path}; defaulted to zero address.`,
+		paths: [path],
+		entityId,
+		source: "eulerEarnV3",
+		originalValue: value,
+		normalizedValue: ZERO_ADDRESS,
+	});
+	return ZERO_ADDRESS;
 };
 
 const parsePerformanceFee = (
-  value: string | undefined,
-  path: string,
-  entityId: Address,
-  errors: DataIssue[],
+	value: string | undefined,
+	path: string,
+	entityId: Address,
+	errors: DataIssue[],
 ): number => {
-  try {
-    const parsed = Number(formatUnits(BigInt(value ?? "0"), 18));
-    if (Number.isFinite(parsed)) return parsed;
-  } catch {
-    // handled below
-  }
+	try {
+		const parsed = Number(formatUnits(BigInt(value ?? "0"), 18));
+		if (Number.isFinite(parsed)) return parsed;
+	} catch {
+		// handled below
+	}
 
-  errors.push({
-    code: "DEFAULT_APPLIED",
-    severity: "warning",
-    message: `Failed to parse performance fee at ${path}; defaulted to 0.`,
-    paths: [path],
-    entityId,
-    source: "eulerEarnV3",
-    originalValue: value,
-    normalizedValue: 0,
-  });
-  return 0;
+	errors.push({
+		code: "DEFAULT_APPLIED",
+		severity: "warning",
+		message: `Failed to parse performance fee at ${path}; defaulted to 0.`,
+		paths: [path],
+		entityId,
+		source: "eulerEarnV3",
+		originalValue: value,
+		normalizedValue: 0,
+	});
+	return 0;
 };
 
-function convertToken(token: V3Token, fallbackAddress: Address, fallbackName: string, fallbackSymbol: string): Token {
-  return {
-    address: token.address ? getAddress(token.address) : fallbackAddress,
-    name: token.name ?? fallbackName,
-    symbol: token.symbol ?? fallbackSymbol,
-    decimals: token.decimals,
-  };
+function convertToken(
+	token: V3Token,
+	fallbackAddress: Address,
+	fallbackName: string,
+	fallbackSymbol: string,
+): Token {
+	return {
+		address: token.address ? getAddress(token.address) : fallbackAddress,
+		name: token.name ?? fallbackName,
+		symbol: token.symbol ?? fallbackSymbol,
+		decimals: token.decimals,
+	};
 }
 
 function convertGovernance(
-  detail: V3EulerEarnDetail,
-  entityId: Address,
-  errors: DataIssue[],
+	detail: V3EulerEarnDetail,
+	entityId: Address,
+	errors: DataIssue[],
 ): EulerEarnGovernance {
-  return {
-    owner: parseAddressField(detail.governance?.owner ?? detail.management?.owner, "$.governance.owner", entityId, errors),
-    creator: parseAddressField(detail.governance?.creator, "$.governance.creator", entityId, errors),
-    curator: parseAddressField(detail.governance?.curator, "$.governance.curator", entityId, errors),
-    guardian: parseAddressField(detail.governance?.guardian ?? detail.management?.guardian, "$.governance.guardian", entityId, errors),
-    feeReceiver: parseAddressField(detail.governance?.feeReceiver, "$.governance.feeReceiver", entityId, errors),
-    timelock: detail.governance?.timelock ?? detail.management?.timelockSeconds ?? 0,
-    pendingTimelock: detail.governance?.pendingTimelock ?? 0,
-    pendingTimelockValidAt: detail.governance?.pendingTimelockValidAt ?? 0,
-    pendingGuardian: parseAddressField(detail.governance?.pendingGuardian, "$.governance.pendingGuardian", entityId, errors),
-    pendingGuardianValidAt: detail.governance?.pendingGuardianValidAt ?? 0,
-  };
+	return {
+		owner: parseAddressField(
+			detail.governance?.owner ?? detail.management?.owner,
+			"$.governance.owner",
+			entityId,
+			errors,
+		),
+		creator: parseAddressField(
+			detail.governance?.creator,
+			"$.governance.creator",
+			entityId,
+			errors,
+		),
+		curator: parseAddressField(
+			detail.governance?.curator,
+			"$.governance.curator",
+			entityId,
+			errors,
+		),
+		guardian: parseAddressField(
+			detail.governance?.guardian ?? detail.management?.guardian,
+			"$.governance.guardian",
+			entityId,
+			errors,
+		),
+		feeReceiver: parseAddressField(
+			detail.governance?.feeReceiver,
+			"$.governance.feeReceiver",
+			entityId,
+			errors,
+		),
+		timelock:
+			detail.governance?.timelock ?? detail.management?.timelockSeconds ?? 0,
+		pendingTimelock: detail.governance?.pendingTimelock ?? 0,
+		pendingTimelockValidAt: detail.governance?.pendingTimelockValidAt ?? 0,
+		pendingGuardian: parseAddressField(
+			detail.governance?.pendingGuardian,
+			"$.governance.pendingGuardian",
+			entityId,
+			errors,
+		),
+		pendingGuardianValidAt: detail.governance?.pendingGuardianValidAt ?? 0,
+	};
 }
 
 function buildSupplyQueue(strategies: V3EulerEarnStrategy[]): Address[] {
-  return strategies
-    .filter((strategy) => strategy.inSupplyQueue)
-    .sort((a, b) => (a.supplyQueueIndex ?? Number.MAX_SAFE_INTEGER) - (b.supplyQueueIndex ?? Number.MAX_SAFE_INTEGER))
-    .map((strategy) => getAddress(strategy.address));
+	return strategies
+		.filter((strategy) => strategy.inSupplyQueue)
+		.sort(
+			(a, b) =>
+				(a.supplyQueueIndex ?? Number.MAX_SAFE_INTEGER) -
+				(b.supplyQueueIndex ?? Number.MAX_SAFE_INTEGER),
+		)
+		.map((strategy) => getAddress(strategy.address));
 }
 
 function buildWithdrawQueue(strategies: V3EulerEarnStrategy[]): Address[] {
-  return strategies
-    .filter((strategy) => strategy.inWithdrawQueue)
-    .sort((a, b) => (a.withdrawQueueIndex ?? Number.MAX_SAFE_INTEGER) - (b.withdrawQueueIndex ?? Number.MAX_SAFE_INTEGER))
-    .map((strategy) => getAddress(strategy.address));
+	return strategies
+		.filter((strategy) => strategy.inWithdrawQueue)
+		.sort(
+			(a, b) =>
+				(a.withdrawQueueIndex ?? Number.MAX_SAFE_INTEGER) -
+				(b.withdrawQueueIndex ?? Number.MAX_SAFE_INTEGER),
+		)
+		.map((strategy) => getAddress(strategy.address));
 }
 
 function convertStrategies(
-  detail: V3EulerEarnDetail,
-  entityId: Address,
-  errors: DataIssue[],
+	detail: V3EulerEarnDetail,
+	entityId: Address,
+	errors: DataIssue[],
 ): EulerEarnStrategyInfo[] {
-  const asset = convertToken(detail.asset, ZERO_ADDRESS, detail.asset.name ?? "Unknown Asset", detail.asset.symbol ?? "UNKNOWN");
+	const asset = convertToken(
+		detail.asset,
+		ZERO_ADDRESS,
+		detail.asset.name ?? "Unknown Asset",
+		detail.asset.symbol ?? "UNKNOWN",
+	);
 
-  return (detail.strategies ?? []).map((strategy, index) => {
-    const strategyAddress = getAddress(strategy.address);
-    const allocatedAssets = parseBigIntField(
-      strategy.allocatedAssets,
-      `$.strategies[${index}].allocatedAssets`,
-      strategyAddress,
-      errors,
-    );
-    const availableAssets = parseBigIntField(
-      strategy.availableAssets,
-      `$.strategies[${index}].availableAssets`,
-      strategyAddress,
-      errors,
-    );
+	return (detail.strategies ?? []).map((strategy, index) => {
+		const strategyAddress = getAddress(strategy.address);
+		const allocatedAssets = parseBigIntField(
+			strategy.allocatedAssets,
+			`$.strategies[${index}].allocatedAssets`,
+			strategyAddress,
+			errors,
+		);
+		const availableAssets = parseBigIntField(
+			strategy.availableAssets,
+			`$.strategies[${index}].availableAssets`,
+			strategyAddress,
+			errors,
+		);
 
-    const allocationCap: EulerEarnAllocationCap = {
-      current: parseBigIntField(
-        strategy.allocationCap?.current,
-        `$.strategies[${index}].allocationCap.current`,
-        strategyAddress,
-        errors,
-      ),
-      pending: parseBigIntField(
-        strategy.allocationCap?.pending,
-        `$.strategies[${index}].allocationCap.pending`,
-        strategyAddress,
-        errors,
-      ),
-      pendingValidAt: strategy.allocationCap?.pendingValidAt ?? 0,
-    };
+		const allocationCap: EulerEarnAllocationCap = {
+			current: parseBigIntField(
+				strategy.allocationCap?.current,
+				`$.strategies[${index}].allocationCap.current`,
+				strategyAddress,
+				errors,
+			),
+			pending: parseBigIntField(
+				strategy.allocationCap?.pending,
+				`$.strategies[${index}].allocationCap.pending`,
+				strategyAddress,
+				errors,
+			),
+			pendingValidAt: strategy.allocationCap?.pendingValidAt ?? 0,
+		};
 
-    return {
-      address: strategyAddress,
-      vaultType: VaultType.EVault,
-      allocatedAssets,
-      availableAssets,
-      allocationCap,
-      removableAt: strategy.removableAt ?? 0,
-    };
-  });
+		return {
+			address: strategyAddress,
+			vaultType: VaultType.EVault,
+			allocatedAssets,
+			availableAssets,
+			allocationCap,
+			removableAt: strategy.removableAt ?? 0,
+		};
+	});
 }
 
-function convertEulerEarn(detail: V3EulerEarnDetail, errors: DataIssue[]): IEulerEarn {
-  const entityId = getAddress(detail.address);
+function convertEulerEarn(
+	detail: V3EulerEarnDetail,
+	errors: DataIssue[],
+): IEulerEarn {
+	const entityId = getAddress(detail.address);
 
-  return {
-    type: VaultType.EulerEarn,
-    chainId: detail.chainId,
-    address: entityId,
-    shares: {
-      address: entityId,
-      name: detail.name,
-      symbol: detail.symbol,
-      decimals: detail.decimals,
-    },
-    asset: convertToken(
-      detail.asset,
-      ZERO_ADDRESS,
-      detail.asset.name ?? "Unknown Asset",
-      detail.asset.symbol ?? "UNKNOWN",
-    ),
-    totalShares: parseBigIntField(detail.totalShares, "$.totalShares", entityId, errors),
-    totalAssets: parseBigIntField(detail.totalAssets, "$.totalAssets", entityId, errors),
-    lostAssets: parseBigIntField(detail.lostAssets, "$.lostAssets", entityId, errors),
-    availableAssets: parseBigIntField(detail.availableAssets, "$.availableAssets", entityId, errors),
-    performanceFee: parsePerformanceFee(
-      detail.management?.performanceFee,
-      "$.performanceFee",
-      entityId,
-      errors,
-    ),
-    governance: convertGovernance(detail, entityId, errors),
-    supplyQueue: buildSupplyQueue(detail.strategies ?? []),
-    withdrawQueue: buildWithdrawQueue(detail.strategies ?? []),
-    strategies: convertStrategies(detail, entityId, errors),
-    timestamp: parseTimestampField(detail.snapshotTimestamp, "$.timestamp", entityId, errors),
-  };
+	return {
+		type: VaultType.EulerEarn,
+		chainId: detail.chainId,
+		address: entityId,
+		shares: {
+			address: entityId,
+			name: detail.name,
+			symbol: detail.symbol,
+			decimals: detail.decimals,
+		},
+		asset: convertToken(
+			detail.asset,
+			ZERO_ADDRESS,
+			detail.asset.name ?? "Unknown Asset",
+			detail.asset.symbol ?? "UNKNOWN",
+		),
+		totalShares: parseBigIntField(
+			detail.totalShares,
+			"$.totalShares",
+			entityId,
+			errors,
+		),
+		totalAssets: parseBigIntField(
+			detail.totalAssets,
+			"$.totalAssets",
+			entityId,
+			errors,
+		),
+		lostAssets: parseBigIntField(
+			detail.lostAssets,
+			"$.lostAssets",
+			entityId,
+			errors,
+		),
+		availableAssets: parseBigIntField(
+			detail.availableAssets,
+			"$.availableAssets",
+			entityId,
+			errors,
+		),
+		performanceFee: parsePerformanceFee(
+			detail.management?.performanceFee,
+			"$.performanceFee",
+			entityId,
+			errors,
+		),
+		governance: convertGovernance(detail, entityId, errors),
+		supplyQueue: buildSupplyQueue(detail.strategies ?? []),
+		withdrawQueue: buildWithdrawQueue(detail.strategies ?? []),
+		strategies: convertStrategies(detail, entityId, errors),
+		timestamp: parseTimestampField(
+			detail.snapshotTimestamp,
+			"$.timestamp",
+			entityId,
+			errors,
+		),
+	};
 }
 
 export class EulerEarnV3Adapter implements IEulerEarnAdapter {
-  constructor(
-    private config: EulerEarnV3AdapterConfig,
-    buildQuery?: BuildQueryFn,
-  ) {
-    if (buildQuery) applyBuildQuery(this, buildQuery);
-  }
+	constructor(
+		private config: EulerEarnV3AdapterConfig,
+		buildQuery?: BuildQueryFn,
+	) {
+		if (buildQuery) applyBuildQuery(this, buildQuery);
+	}
 
-  setConfig(config: EulerEarnV3AdapterConfig): void {
-    this.config = config;
-  }
+	setConfig(config: EulerEarnV3AdapterConfig): void {
+		this.config = config;
+	}
 
-  private getHeaders(): Record<string, string> {
-    return {
-      Accept: "application/json",
-      ...(this.config.apiKey ? { "X-API-Key": this.config.apiKey } : {}),
-    };
-  }
+	private getHeaders(): Record<string, string> {
+		return {
+			Accept: "application/json",
+			...(this.config.apiKey ? { "X-API-Key": this.config.apiKey } : {}),
+		};
+	}
 
-  private buildUrl(endpoint: string, path: string, search?: Record<string, string>): string {
-    const normalizedEndpoint = endpoint.replace(/\/+$/, "");
-    const joined = normalizedEndpoint.startsWith("http://") || normalizedEndpoint.startsWith("https://")
-      ? new URL(path, `${normalizedEndpoint}/`).toString()
-      : `${normalizedEndpoint}${path}`;
+	private buildUrl(
+		endpoint: string,
+		path: string,
+		search?: Record<string, string>,
+	): string {
+		const normalizedEndpoint = endpoint.replace(/\/+$/, "");
+		const joined =
+			normalizedEndpoint.startsWith("http://") ||
+			normalizedEndpoint.startsWith("https://")
+				? new URL(path, `${normalizedEndpoint}/`).toString()
+				: `${normalizedEndpoint}${path}`;
 
-    if (!search || Object.keys(search).length === 0) return joined;
+		if (!search || Object.keys(search).length === 0) return joined;
 
-    const params = new URLSearchParams(search);
-    return `${joined}?${params.toString()}`;
-  }
+		const params = new URLSearchParams(search);
+		return `${joined}?${params.toString()}`;
+	}
 
-  queryV3EulerEarnDetail = async (
-    endpoint: string,
-    chainId: number,
-    vault: Address,
-  ): Promise<V3Envelope<V3EulerEarnDetail>> => {
-    const url = this.buildUrl(endpoint, `/v3/earn/vaults/${chainId}/${vault}`);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: this.getHeaders(),
-    });
-    if (!response.ok) throw new Error(`eulerEarnV3 detail ${response.status} ${response.statusText}`);
-    return response.json() as Promise<V3Envelope<V3EulerEarnDetail>>;
-  };
+	queryV3EulerEarnDetail = async (
+		endpoint: string,
+		chainId: number,
+		vault: Address,
+	): Promise<V3Envelope<V3EulerEarnDetail>> => {
+		const url = this.buildUrl(endpoint, `/v3/earn/vaults/${chainId}/${vault}`);
+		const response = await fetch(url, {
+			method: "GET",
+			headers: this.getHeaders(),
+		});
+		if (!response.ok)
+			throw new Error(
+				`eulerEarnV3 detail ${response.status} ${response.statusText}`,
+			);
+		return response.json() as Promise<V3Envelope<V3EulerEarnDetail>>;
+	};
 
-  setQueryV3EulerEarnDetail(fn: typeof this.queryV3EulerEarnDetail): void {
-    this.queryV3EulerEarnDetail = fn;
-  }
+	setQueryV3EulerEarnDetail(fn: typeof this.queryV3EulerEarnDetail): void {
+		this.queryV3EulerEarnDetail = fn;
+	}
 
-  queryV3EulerEarnList = async (
-    endpoint: string,
-    chainId: number,
-    offset: number,
-    limit: number,
-  ): Promise<V3ListEnvelope<V3EulerEarnListRow>> => {
-    const url = this.buildUrl(endpoint, "/v3/earn/vaults", {
-      chainId: String(chainId),
-      offset: String(offset),
-      limit: String(limit),
-    });
+	queryV3EulerEarnList = async (
+		endpoint: string,
+		chainId: number,
+		offset: number,
+		limit: number,
+	): Promise<V3ListEnvelope<V3EulerEarnListRow>> => {
+		const url = this.buildUrl(endpoint, "/v3/earn/vaults", {
+			chainId: String(chainId),
+			offset: String(offset),
+			limit: String(limit),
+		});
 
-    const response = await fetch(url, {
-      method: "GET",
-      headers: this.getHeaders(),
-    });
-    if (!response.ok) throw new Error(`eulerEarnV3 list ${response.status} ${response.statusText}`);
-    return response.json() as Promise<V3ListEnvelope<V3EulerEarnListRow>>;
-  };
+		const response = await fetch(url, {
+			method: "GET",
+			headers: this.getHeaders(),
+		});
+		if (!response.ok)
+			throw new Error(
+				`eulerEarnV3 list ${response.status} ${response.statusText}`,
+			);
+		return response.json() as Promise<V3ListEnvelope<V3EulerEarnListRow>>;
+	};
 
-  setQueryV3EulerEarnList(fn: typeof this.queryV3EulerEarnList): void {
-    this.queryV3EulerEarnList = fn;
-  }
+	setQueryV3EulerEarnList(fn: typeof this.queryV3EulerEarnList): void {
+		this.queryV3EulerEarnList = fn;
+	}
 
-  async fetchVaults(chainId: number, vaults: Address[]): Promise<ServiceResult<(IEulerEarn | undefined)[]>> {
-    const results: Array<{ result: IEulerEarn | undefined; errors: DataIssue[] }> = await Promise.all(
-      vaults.map(async (vault, index) => {
-        const errors: DataIssue[] = [];
-        try {
-          const response = await this.queryV3EulerEarnDetail(this.config.endpoint, chainId, vault);
-          const detail = response.data;
-          if (!detail) {
-            errors.push({
-              code: "SOURCE_UNAVAILABLE",
-              severity: "warning",
-              message: `EulerEarn detail missing for ${getAddress(vault)}.`,
-              paths: [`$.vaults[${index}]`],
-              entityId: getAddress(vault),
-              source: "eulerEarnV3",
-            });
-            return { result: undefined, errors };
-          }
+	async fetchVaults(
+		chainId: number,
+		vaults: Address[],
+	): Promise<ServiceResult<(IEulerEarn | undefined)[]>> {
+		const results: Array<{
+			result: IEulerEarn | undefined;
+			errors: DataIssue[];
+		}> = await Promise.all(
+			vaults.map(async (vault, index) => {
+				const errors: DataIssue[] = [];
+				try {
+					const response = await this.queryV3EulerEarnDetail(
+						this.config.endpoint,
+						chainId,
+						vault,
+					);
+					const detail = response.data;
+					if (!detail) {
+						errors.push({
+							code: "SOURCE_UNAVAILABLE",
+							severity: "warning",
+							message: `EulerEarn detail missing for ${getAddress(vault)}.`,
+							paths: [`$.vaults[${index}]`],
+							entityId: getAddress(vault),
+							source: "eulerEarnV3",
+						});
+						return { result: undefined, errors };
+					}
 
-          const converted = convertEulerEarn(detail, errors);
-          return {
-            result: converted,
-            errors: prefixDataIssues(errors, `$.vaults[${index}]`).map((issue) => ({
-              ...issue,
-              entityId: issue.entityId ?? getAddress(vault),
-            })),
-          };
-        } catch (error) {
-          return {
-            result: undefined,
-            errors: [{
-              code: "SOURCE_UNAVAILABLE",
-              severity: "warning",
-              message: `Failed to fetch EulerEarn vault ${getAddress(vault)}.`,
-              paths: [`$.vaults[${index}]`],
-              entityId: getAddress(vault),
-              source: "eulerEarnV3",
-              originalValue: error instanceof Error ? error.message : String(error),
-            }],
-          };
-        }
-      }),
-    );
+					const converted = convertEulerEarn(detail, errors);
+					return {
+						result: converted,
+						errors: prefixDataIssues(errors, `$.vaults[${index}]`).map(
+							(issue) => ({
+								...issue,
+								entityId: issue.entityId ?? getAddress(vault),
+							}),
+						),
+					};
+				} catch (error) {
+					return {
+						result: undefined,
+						errors: [
+							{
+								code: "SOURCE_UNAVAILABLE",
+								severity: "warning",
+								message: `Failed to fetch EulerEarn vault ${getAddress(vault)}.`,
+								paths: [`$.vaults[${index}]`],
+								entityId: getAddress(vault),
+								source: "eulerEarnV3",
+								originalValue:
+									error instanceof Error ? error.message : String(error),
+							},
+						],
+					};
+				}
+			}),
+		);
 
-    return {
-      result: results.map((entry) => entry.result),
-      errors: compressDataIssues(results.flatMap((entry) => entry.errors)),
-    };
-  }
+		return {
+			result: results.map((entry) => entry.result),
+			errors: compressDataIssues(results.flatMap((entry) => entry.errors)),
+		};
+	}
 
-  async fetchVerifiedVaultsAddresses(_chainId: number, _perspectives: Address[]): Promise<Address[]> {
-    throw unsupportedError;
-  }
+	async fetchVerifiedVaultsAddresses(
+		_chainId: number,
+		_perspectives: Address[],
+	): Promise<Address[]> {
+		throw unsupportedError;
+	}
 
-  async fetchAllVaults(chainId: number): Promise<ServiceResult<(IEulerEarn | undefined)[]>> {
-    const limit = 200;
-    let offset = 0;
-    const addresses: Address[] = [];
+	async fetchAllVaults(
+		chainId: number,
+	): Promise<ServiceResult<(IEulerEarn | undefined)[]>> {
+		const limit = 200;
+		let offset = 0;
+		const addresses: Address[] = [];
 
-    while (true) {
-      const response = await this.queryV3EulerEarnList(this.config.endpoint, chainId, offset, limit);
-      const rows = response.data ?? [];
-      const effectiveLimit = response.meta?.limit ?? limit;
-      if (rows.length === 0) break;
+		while (true) {
+			const response = await this.queryV3EulerEarnList(
+				this.config.endpoint,
+				chainId,
+				offset,
+				limit,
+			);
+			const rows = response.data ?? [];
+			const effectiveLimit = response.meta?.limit ?? limit;
+			if (rows.length === 0) break;
 
-      for (const row of rows) {
-        addresses.push(getAddress(row.address));
-      }
+			for (const row of rows) {
+				addresses.push(getAddress(row.address));
+			}
 
-      if (effectiveLimit === 0 || rows.length < effectiveLimit) break;
-      offset += rows.length;
-      if (response.meta?.total !== undefined && offset >= response.meta.total) break;
-    }
+			if (effectiveLimit === 0 || rows.length < effectiveLimit) break;
+			offset += rows.length;
+			if (response.meta?.total !== undefined && offset >= response.meta.total)
+				break;
+		}
 
-    return this.fetchVaults(chainId, addresses);
-  }
+		return this.fetchVaults(chainId, addresses);
+	}
 }

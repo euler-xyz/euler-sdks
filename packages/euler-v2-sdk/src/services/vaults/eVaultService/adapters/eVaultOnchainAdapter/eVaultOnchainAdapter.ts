@@ -6,220 +6,283 @@ import { EVault, type IEVault } from "../../../../../entities/EVault.js";
 import type { VaultInfoFull } from "./eVaultLensTypes.js";
 import { convertVaultInfoFullToIEVault } from "./vaultInfoConverter.js";
 import { vaultLensAbi } from "./abis/vaultLensAbi.js";
-import { type BuildQueryFn, applyBuildQuery } from "../../../../../utils/buildQuery.js";
-import type { EulerPlugin, PluginBatchItems } from "../../../../../plugins/types.js";
-import { executeBatchSimulation, type BatchSimulationAdapter } from "../../../../../plugins/batchSimulation.js";
+import {
+	type BuildQueryFn,
+	applyBuildQuery,
+} from "../../../../../utils/buildQuery.js";
+import type {
+	EulerPlugin,
+	PluginBatchItems,
+} from "../../../../../plugins/types.js";
+import {
+	executeBatchSimulation,
+	type BatchSimulationAdapter,
+} from "../../../../../plugins/batchSimulation.js";
 import type { EVCBatchItem } from "../../../../executionService/executionServiceTypes.js";
-import type { DataIssue, ServiceResult } from "../../../../../utils/entityDiagnostics.js";
+import type {
+	DataIssue,
+	ServiceResult,
+} from "../../../../../utils/entityDiagnostics.js";
 import { prefixDataIssues } from "../../../../../utils/entityDiagnostics.js";
 
 const verifiedArrayAbi = [
-  {
-    type: "function",
-    name: "verifiedArray",
-    inputs: [],
-    outputs: [{ name: "", type: "address[]", internalType: "address[]" }],
-    stateMutability: "view",
-  },
+	{
+		type: "function",
+		name: "verifiedArray",
+		inputs: [],
+		outputs: [{ name: "", type: "address[]", internalType: "address[]" }],
+		stateMutability: "view",
+	},
 ] as const;
 
 export const getVaultInfoFullLensBatchItem = (
-  vaultLensAddress: Address,
-  vault: Address,
-  onBehalfOfAccount: Address,
+	vaultLensAddress: Address,
+	vault: Address,
+	onBehalfOfAccount: Address,
 ): EVCBatchItem => ({
-  targetContract: vaultLensAddress,
-  onBehalfOfAccount,
-  value: 0n,
-  data: encodeFunctionData({
-    abi: vaultLensAbi,
-    functionName: "getVaultInfoFull",
-    args: [vault],
-  }),
+	targetContract: vaultLensAddress,
+	onBehalfOfAccount,
+	value: 0n,
+	data: encodeFunctionData({
+		abi: vaultLensAbi,
+		functionName: "getVaultInfoFull",
+		args: [vault],
+	}),
 });
 
 export class EVaultOnchainAdapter implements IEVaultAdapter {
-  private plugins: EulerPlugin[] = [];
-  private batchSimulationAdapter?: BatchSimulationAdapter;
+	private plugins: EulerPlugin[] = [];
+	private batchSimulationAdapter?: BatchSimulationAdapter;
 
-  constructor(private providerService: ProviderService, private deploymentService: DeploymentService, buildQuery?: BuildQueryFn) {
-    if (buildQuery) applyBuildQuery(this, buildQuery);
-  }
+	constructor(
+		private providerService: ProviderService,
+		private deploymentService: DeploymentService,
+		buildQuery?: BuildQueryFn,
+	) {
+		if (buildQuery) applyBuildQuery(this, buildQuery);
+	}
 
-  setProviderService(providerService: ProviderService): void {
-    this.providerService = providerService;
-  }
+	setProviderService(providerService: ProviderService): void {
+		this.providerService = providerService;
+	}
 
-  setPlugins(plugins: EulerPlugin[]): void {
-    this.plugins = plugins;
-  }
+	setPlugins(plugins: EulerPlugin[]): void {
+		this.plugins = plugins;
+	}
 
-  setBatchSimulationAdapter(adapter: BatchSimulationAdapter): void {
-    this.batchSimulationAdapter = adapter;
-  }
+	setBatchSimulationAdapter(adapter: BatchSimulationAdapter): void {
+		this.batchSimulationAdapter = adapter;
+	}
 
-  queryEVaultInfoFull = async (
-    provider: ReturnType<ProviderService["getProvider"]>,
-    vaultLensAddress: Address,
-    vault: Address,
-  ) => {
-    return provider.readContract({
-      address: vaultLensAddress,
-      abi: vaultLensAbi,
-      functionName: "getVaultInfoFull",
-      args: [vault],
-    });
-  };
+	queryEVaultInfoFull = async (
+		provider: ReturnType<ProviderService["getProvider"]>,
+		vaultLensAddress: Address,
+		vault: Address,
+	) => {
+		return provider.readContract({
+			address: vaultLensAddress,
+			abi: vaultLensAbi,
+			functionName: "getVaultInfoFull",
+			args: [vault],
+		});
+	};
 
-  setQueryEVaultInfoFull(fn: typeof this.queryEVaultInfoFull): void {
-    this.queryEVaultInfoFull = fn;
-  }
+	setQueryEVaultInfoFull(fn: typeof this.queryEVaultInfoFull): void {
+		this.queryEVaultInfoFull = fn;
+	}
 
-  queryEVaultVerifiedArray = async (
-    provider: ReturnType<ProviderService["getProvider"]>,
-    perspective: Address
-  ) => {
-    return provider.readContract({
-      address: perspective,
-      abi: verifiedArrayAbi,
-      functionName: "verifiedArray",
-    });
-  };
+	queryEVaultVerifiedArray = async (
+		provider: ReturnType<ProviderService["getProvider"]>,
+		perspective: Address,
+	) => {
+		return provider.readContract({
+			address: perspective,
+			abi: verifiedArrayAbi,
+			functionName: "verifiedArray",
+		});
+	};
 
-  setQueryEVaultVerifiedArray(fn: typeof this.queryEVaultVerifiedArray): void {
-    this.queryEVaultVerifiedArray = fn;
-  }
+	setQueryEVaultVerifiedArray(fn: typeof this.queryEVaultVerifiedArray): void {
+		this.queryEVaultVerifiedArray = fn;
+	}
 
-  async fetchVaults(chainId: number, vaults: Address[]): Promise<ServiceResult<(IEVault | undefined)[]>> {
-    const provider = this.providerService.getProvider(chainId);
-    const deployment = this.deploymentService.getDeployment(chainId);
-    const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
-    const firstPassErrorsByIndex = new Map<number, DataIssue[]>();
-    const finalPassErrorsByIndex = new Map<number, DataIssue[]>();
-    const secondPassIndices = new Set<number>();
+	async fetchVaults(
+		chainId: number,
+		vaults: Address[],
+	): Promise<ServiceResult<(IEVault | undefined)[]>> {
+		const provider = this.providerService.getProvider(chainId);
+		const deployment = this.deploymentService.getDeployment(chainId);
+		const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
+		const firstPassErrorsByIndex = new Map<number, DataIssue[]>();
+		const finalPassErrorsByIndex = new Map<number, DataIssue[]>();
+		const secondPassIndices = new Set<number>();
 
-    const eVaults = await Promise.all(
-      vaults.map(async (vault, index) => {
-        try {
-          const result = await this.queryEVaultInfoFull(provider, vaultLensAddress, vault);
-          const vaultInfo = result as unknown as VaultInfoFull;
-          const conversionErrors: DataIssue[] = [];
-          const parsed = convertVaultInfoFullToIEVault(vaultInfo, chainId, conversionErrors);
-          const issues = prefixDataIssues(conversionErrors, `$.vaults[${index}]`).map((issue) => ({
-            ...issue,
-            entityId: issue.entityId ?? getAddress(vault),
-          }));
-          firstPassErrorsByIndex.set(index, issues);
-          return new EVault(parsed);
-        } catch (error) {
-          firstPassErrorsByIndex.set(index, [
-            {
-              code: "SOURCE_UNAVAILABLE",
-              severity: "error",
-              message: `Failed to fetch eVault ${getAddress(vault)}.`,
-              paths: [`$.vaults[${index}]`],
-              entityId: getAddress(vault),
-              source: "vaultLens",
-              originalValue: error instanceof Error ? error.message : String(error),
-            },
-          ]);
-          return undefined;
-        }
-      })
-    );
+		const eVaults = await Promise.all(
+			vaults.map(async (vault, index) => {
+				try {
+					const result = await this.queryEVaultInfoFull(
+						provider,
+						vaultLensAddress,
+						vault,
+					);
+					const vaultInfo = result as unknown as VaultInfoFull;
+					const conversionErrors: DataIssue[] = [];
+					const parsed = convertVaultInfoFullToIEVault(
+						vaultInfo,
+						chainId,
+						conversionErrors,
+					);
+					const issues = prefixDataIssues(
+						conversionErrors,
+						`$.vaults[${index}]`,
+					).map((issue) => ({
+						...issue,
+						entityId: issue.entityId ?? getAddress(vault),
+					}));
+					firstPassErrorsByIndex.set(index, issues);
+					return new EVault(parsed);
+				} catch (error) {
+					firstPassErrorsByIndex.set(index, [
+						{
+							code: "SOURCE_UNAVAILABLE",
+							severity: "error",
+							message: `Failed to fetch eVault ${getAddress(vault)}.`,
+							paths: [`$.vaults[${index}]`],
+							entityId: getAddress(vault),
+							source: "vaultLens",
+							originalValue:
+								error instanceof Error ? error.message : String(error),
+						},
+					]);
+					return undefined;
+				}
+			}),
+		);
 
-    // Plugin enrichment: re-fetch vaults via batchSimulation when plugins provide prepend items
-    if (this.plugins.length === 0) {
-      return {
-        result: eVaults,
-        errors: vaults.flatMap((_, index) => firstPassErrorsByIndex.get(index) ?? []),
-      };
-    }
+		// Plugin enrichment: re-fetch vaults via batchSimulation when plugins provide prepend items
+		if (this.plugins.length === 0) {
+			return {
+				result: eVaults,
+				errors: vaults.flatMap(
+					(_, index) => firstPassErrorsByIndex.get(index) ?? [],
+				),
+			};
+		}
 
-    const enriched = await Promise.all(
-      eVaults.map(async (eVault, vaultIndex) => {
-        if (!eVault) return undefined;
-        try {
-          const prepend = await this.collectReadPrepend(chainId, [eVault]);
-          if (!prepend || prepend.items.length === 0) return eVault;
-          secondPassIndices.add(vaultIndex);
+		const enriched = await Promise.all(
+			eVaults.map(async (eVault, vaultIndex) => {
+				if (!eVault) return undefined;
+				try {
+					const prepend = await this.collectReadPrepend(chainId, [eVault]);
+					if (!prepend || prepend.items.length === 0) return eVault;
+					secondPassIndices.add(vaultIndex);
 
-          const result = await executeBatchSimulation<VaultInfoFull>(
-            {
-              provider,
-              evcAddress: deployment.addresses.coreAddrs.evc,
-              prependItems: prepend.items,
-              totalValue: prepend.totalValue,
-              lensAddress: vaultLensAddress,
-              lensAbi: vaultLensAbi as unknown as Abi,
-              lensFunctionName: "getVaultInfoFull",
-              lensArgs: [eVault.address],
-            },
-            this.batchSimulationAdapter,
-          );
+					const result = await executeBatchSimulation<VaultInfoFull>(
+						{
+							provider,
+							evcAddress: deployment.addresses.coreAddrs.evc,
+							prependItems: prepend.items,
+							totalValue: prepend.totalValue,
+							lensAddress: vaultLensAddress,
+							lensAbi: vaultLensAbi as unknown as Abi,
+							lensFunctionName: "getVaultInfoFull",
+							lensArgs: [eVault.address],
+						},
+						this.batchSimulationAdapter,
+					);
 
-          if (!result) return eVault;
-          const conversionErrors: DataIssue[] = [];
-          const parsed = convertVaultInfoFullToIEVault(result, chainId, conversionErrors);
-          const issues = prefixDataIssues(conversionErrors, `$.vaults[${vaultIndex}]`).map((issue) => ({
-            ...issue,
-            entityId: issue.entityId ?? getAddress(eVault.address),
-          }));
-          finalPassErrorsByIndex.set(vaultIndex, issues);
-          return new EVault(parsed);
-        } catch {
-          return eVault;
-        }
-      }),
-    );
+					if (!result) return eVault;
+					const conversionErrors: DataIssue[] = [];
+					const parsed = convertVaultInfoFullToIEVault(
+						result,
+						chainId,
+						conversionErrors,
+					);
+					const issues = prefixDataIssues(
+						conversionErrors,
+						`$.vaults[${vaultIndex}]`,
+					).map((issue) => ({
+						...issue,
+						entityId: issue.entityId ?? getAddress(eVault.address),
+					}));
+					finalPassErrorsByIndex.set(vaultIndex, issues);
+					return new EVault(parsed);
+				} catch {
+					return eVault;
+				}
+			}),
+		);
 
-    const errors = vaults.flatMap((_, index) =>
-      secondPassIndices.has(index) ? (finalPassErrorsByIndex.get(index) ?? []) : (firstPassErrorsByIndex.get(index) ?? [])
-    );
+		const errors = vaults.flatMap((_, index) =>
+			secondPassIndices.has(index)
+				? (finalPassErrorsByIndex.get(index) ?? [])
+				: (firstPassErrorsByIndex.get(index) ?? []),
+		);
 
-    return { result: enriched, errors };
-  }
+		return { result: enriched, errors };
+	}
 
-  private async collectReadPrepend(chainId: number, vaults: EVault[]): Promise<PluginBatchItems | null> {
-    const provider = this.providerService.getProvider(chainId);
-    const allItems: PluginBatchItems = { items: [], totalValue: 0n };
+	private async collectReadPrepend(
+		chainId: number,
+		vaults: EVault[],
+	): Promise<PluginBatchItems | null> {
+		const provider = this.providerService.getProvider(chainId);
+		const allItems: PluginBatchItems = { items: [], totalValue: 0n };
 
-    for (const plugin of this.plugins) {
-      if (!plugin.getReadPrepend) continue;
-      try {
-        const result = await plugin.getReadPrepend({ chainId, vaults, provider });
-        if (result) {
-          allItems.items.push(...result.items);
-          allItems.totalValue += result.totalValue;
-        }
-      } catch {
-        // Plugin failed — skip it gracefully
-      }
-    }
+		for (const plugin of this.plugins) {
+			if (!plugin.getReadPrepend) continue;
+			try {
+				const result = await plugin.getReadPrepend({
+					chainId,
+					vaults,
+					provider,
+				});
+				if (result) {
+					allItems.items.push(...result.items);
+					allItems.totalValue += result.totalValue;
+				}
+			} catch {
+				// Plugin failed — skip it gracefully
+			}
+		}
 
-    return allItems.items.length > 0 ? allItems : null;
-  }
+		return allItems.items.length > 0 ? allItems : null;
+	}
 
-  async fetchVerifiedVaultsAddresses(chainId: number, perspectives: Address[]): Promise<Address[]> {
-    const provider = this.providerService.getProvider(chainId);
+	async fetchVerifiedVaultsAddresses(
+		chainId: number,
+		perspectives: Address[],
+	): Promise<Address[]> {
+		const provider = this.providerService.getProvider(chainId);
 
-    const results = await Promise.all(
-      perspectives.map(perspective => this.queryEVaultVerifiedArray(provider, perspective))
-    );
+		const results = await Promise.all(
+			perspectives.map((perspective) =>
+				this.queryEVaultVerifiedArray(provider, perspective),
+			),
+		);
 
-    const addresses: Address[] = results.flatMap(result => result as Address[]);
+		const addresses: Address[] = results.flatMap(
+			(result) => result as Address[],
+		);
 
-    return [...new Set(addresses)];
-  }
+		return [...new Set(addresses)];
+	}
 
-  async fetchAllVaults(chainId: number): Promise<ServiceResult<(IEVault | undefined)[]>> {
-    const deployment = this.deploymentService.getDeployment(chainId);
-    const perspective = deployment.addresses.peripheryAddrs?.evkFactoryPerspective;
-    if (!perspective) {
-      throw new Error("Perspective address not found for evkFactoryPerspective");
-    }
+	async fetchAllVaults(
+		chainId: number,
+	): Promise<ServiceResult<(IEVault | undefined)[]>> {
+		const deployment = this.deploymentService.getDeployment(chainId);
+		const perspective =
+			deployment.addresses.peripheryAddrs?.evkFactoryPerspective;
+		if (!perspective) {
+			throw new Error(
+				"Perspective address not found for evkFactoryPerspective",
+			);
+		}
 
-    const addresses = await this.fetchVerifiedVaultsAddresses(chainId, [perspective]);
-    return this.fetchVaults(chainId, addresses);
-  }
+		const addresses = await this.fetchVerifiedVaultsAddresses(chainId, [
+			perspective,
+		]);
+		return this.fetchVaults(chainId, addresses);
+	}
 }

@@ -1,1 +1,5 @@
-export { createPythPlugin, PythPluginAdapter, type PythPluginConfig } from "./pythPlugin.js";
+export {
+	createPythPlugin,
+	PythPluginAdapter,
+	type PythPluginConfig,
+} from "./pythPlugin.js";
