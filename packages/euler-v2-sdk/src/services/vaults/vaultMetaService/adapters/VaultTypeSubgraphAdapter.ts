@@ -28,7 +28,6 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 		async (
 			keys: { address: Address; chainId: number }[],
 		): Promise<(VaultFactoryResult | undefined)[]> => {
-      console.time("VaultTypeSubgraphAdapter.queryVaultFactories");
 			const byChain = new Map<number, Address[]>();
 			for (const key of keys) {
 				const arr = byChain.get(key.chainId) ?? [];
@@ -64,10 +63,8 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 						map.set(v.id.toLowerCase(), getAddress(v.factory));
 					}
 				}
-
 				chainResults.set(chainId, map);
 			}
-      console.timeEnd("VaultTypeSubgraphAdapter.queryVaultFactories");
 			return keys.map((key) => {
 				const factory = chainResults
 					.get(key.chainId)

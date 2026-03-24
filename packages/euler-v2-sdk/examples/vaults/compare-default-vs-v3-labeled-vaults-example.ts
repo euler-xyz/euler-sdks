@@ -1,17 +1,17 @@
 /**
- * COMPARE DEFAULT VS EXPLICIT V3 LABELED VAULT FETCHES
+ * COMPARE DEFAULT VS EXPLICIT ONCHAIN LABELED VAULT FETCHES
  *
  * Fetches all vault addresses referenced by Euler label products on mainnet,
  * then compares `vaultMetaService.fetchVaults(..., { populateAll: true })`
  * across:
  * - the SDK's default built-in adapter set
- * - an SDK configured with explicit V3 adapters
+ * - an SDK configured with explicit onchain adapters
  *
  * The script:
  * 1. Builds the default SDK
  * 2. Loads all vault addresses from label products
  * 3. Fetches fully populated vaults and records the result
- * 4. Builds an SDK with explicit V3 adapters
+ * 4. Builds an SDK with explicit onchain adapters
  * 5. Fetches the same vault set again
  * 6. Prints a diff, allowing numeric values to differ by up to 1%
  *
@@ -31,7 +31,6 @@ import { getRpcUrls } from "../utils/config.js";
 import {
   buildEulerSDK,
   type BuildSDKOptions,
-  type DataIssue,
   type ServiceResult,
   type VaultEntity,
 } from "euler-v2-sdk";
@@ -40,9 +39,8 @@ const CHAIN_ID = mainnet.id;
 const NUMERIC_TOLERANCE = 0.01;
 const BIGINT_TOLERANCE_BPS = 100n;
 const DIFF_PREVIEW_LIMIT = 200;
-const V3_DEFAULT_ENDPOINT = "https://v3staging.eul.dev";
 
-type ScenarioName = "default-adapter-set" | "explicit-v3-adapters";
+type ScenarioName = "default-adapter-set" | "explicit-onchain-adapters";
 
 type JsonValue =
   | null
@@ -62,50 +60,29 @@ type SnapshotRecord = {
   vaultAddresses: Address[];
   unresolvedVaults: Address[];
   resolvedVaultCount: number;
-  errorCount: number;
-  errorSummary: string;
-  errors: ComparableValue;
   result: ComparableValue;
 };
 
 type Difference = {
   path: string;
   reason: string;
-  left: ComparableValue;
-  right: ComparableValue;
+  default: ComparableValue;
+  onchain: ComparableValue;
 };
 
-function getV3Endpoint(envVarName: string): string {
-  return process.env[envVarName] || V3_DEFAULT_ENDPOINT;
-}
-
-function buildExplicitV3Options(rpcUrls: Record<number, string>): BuildSDKOptions {
-  const v3ApiKey = process.env.EULER_V3_API_KEY;
-
+function buildExplicitOnchainOptions(
+  rpcUrls: Record<number, string>,
+): BuildSDKOptions {
   return {
     rpcUrls,
-    ...(v3ApiKey ? { v3ApiKey } : {}),
     accountServiceConfig: {
-      adapter: "v3",
-      v3AdapterConfig: {
-        endpoint: getV3Endpoint("EULER_ACCOUNT_V3_API_URL"),
-      },
+      adapter: "onchain",
     },
     eVaultServiceConfig: {
-      adapter: "v3",
-      v3AdapterConfig: {
-        endpoint: getV3Endpoint("EULER_EVAULT_V3_API_URL"),
-      },
+      adapter: "onchain",
     },
     eulerEarnServiceConfig: {
-      adapter: "v3",
-      v3AdapterConfig: {
-        endpoint: getV3Endpoint("EULER_EULER_EARN_V3_API_URL"),
-      },
-    },
-    vaultTypeAdapterConfig: {
-      endpoint: getV3Endpoint("EULER_VAULT_TYPE_V3_API_URL"),
-      ...(v3ApiKey ? { apiKey: v3ApiKey } : {}),
+      adapter: "onchain",
     },
   };
 }
@@ -151,9 +128,6 @@ async function fetchSnapshot(
     vaultAddresses,
     unresolvedVaults,
     resolvedVaultCount: vaultAddresses.length - unresolvedVaults.length,
-    errorCount: response.errors.length,
-    errorSummary: formatIssueSummary(response.errors),
-    errors: toComparableValue(response.errors),
     result: toComparableValue(response.result),
   };
 }
@@ -267,6 +241,16 @@ function bigIntsDifferWithinTolerance(left: bigint, right: bigint): boolean {
   return diff * 10_000n > maxAbs * BIGINT_TOLERANCE_BPS;
 }
 
+function getComparableSortKey(value: ComparableValue): string {
+  return JSON.stringify(value);
+}
+
+function sortComparableArray(values: ComparableValue[]): ComparableValue[] {
+  return [...values].sort((left, right) =>
+    getComparableSortKey(left).localeCompare(getComparableSortKey(right)),
+  );
+}
+
 function compareValues(
   left: ComparableValue,
   right: ComparableValue,
@@ -278,8 +262,8 @@ function compareValues(
       differences.push({
         path,
         reason: "numeric values differ by more than 1%",
-        left,
-        right,
+        default: left,
+        onchain: right,
       });
     }
     return;
@@ -290,45 +274,53 @@ function compareValues(
       differences.push({
         path,
         reason: "bigint values differ by more than 1%",
-        left,
-        right,
+        default: left,
+        onchain: right,
       });
     }
     return;
   }
 
   if (Array.isArray(left) && Array.isArray(right)) {
-    if (left.length !== right.length) {
+    const sortedLeft = sortComparableArray(left);
+    const sortedRight = sortComparableArray(right);
+
+    if (sortedLeft.length !== sortedRight.length) {
       differences.push({
         path,
         reason: "array length mismatch",
-        left: left.length,
-        right: right.length,
+        default: sortedLeft.length,
+        onchain: sortedRight.length,
       });
     }
 
-    const maxLength = Math.max(left.length, right.length);
+    const maxLength = Math.max(sortedLeft.length, sortedRight.length);
     for (let index = 0; index < maxLength; index += 1) {
-      if (index >= left.length) {
+      if (index >= sortedLeft.length) {
         differences.push({
           path: `${path}[${index}]`,
-          reason: "missing on left",
-          left: { __type: "undefined" },
-          right: right[index]!,
+          reason: "missing on default",
+          default: { __type: "undefined" },
+          onchain: sortedRight[index]!,
         });
         continue;
       }
-      if (index >= right.length) {
+      if (index >= sortedRight.length) {
         differences.push({
           path: `${path}[${index}]`,
-          reason: "missing on right",
-          left: left[index]!,
-          right: { __type: "undefined" },
+          reason: "missing on onchain",
+          default: sortedLeft[index]!,
+          onchain: { __type: "undefined" },
         });
         continue;
       }
 
-      compareValues(left[index]!, right[index]!, `${path}[${index}]`, differences);
+      compareValues(
+        sortedLeft[index]!,
+        sortedRight[index]!,
+        `${path}[${index}]`,
+        differences,
+      );
     }
     return;
   }
@@ -340,18 +332,18 @@ function compareValues(
       if (!(key in left)) {
         differences.push({
           path: `${path}.${key}`,
-          reason: "missing on left",
-          left: { __type: "undefined" },
-          right: right[key]!,
+          reason: "missing on default",
+          default: { __type: "undefined" },
+          onchain: right[key]!,
         });
         continue;
       }
       if (!(key in right)) {
         differences.push({
           path: `${path}.${key}`,
-          reason: "missing on right",
-          left: left[key]!,
-          right: { __type: "undefined" },
+          reason: "missing on onchain",
+          default: left[key]!,
+          onchain: { __type: "undefined" },
         });
         continue;
       }
@@ -365,24 +357,10 @@ function compareValues(
     differences.push({
       path,
       reason: "value mismatch",
-      left,
-      right,
+      default: left,
+      onchain: right,
     });
   }
-}
-
-function formatIssueSummary(errors: DataIssue[]): string {
-  if (errors.length === 0) return "none";
-
-  const byCode = new Map<string, number>();
-  for (const error of errors) {
-    byCode.set(error.code, (byCode.get(error.code) ?? 0) + 1);
-  }
-
-  return Array.from(byCode.entries())
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([code, count]) => `${code}=${count}`)
-    .join(", ");
 }
 
 function printDiffSummary(
@@ -392,10 +370,10 @@ function printDiffSummary(
 ) {
   console.log(`Fetched ${left.vaultAddresses.length} labeled vault addresses from label products.`);
   console.log(
-    `${left.scenario}: ${left.resolvedVaultCount}/${left.vaultAddresses.length} resolved, ${left.errorCount} diagnostics (${left.errorSummary})`,
+    `${left.scenario}: ${left.resolvedVaultCount}/${left.vaultAddresses.length} resolved`,
   );
   console.log(
-    `${right.scenario}: ${right.resolvedVaultCount}/${right.vaultAddresses.length} resolved, ${right.errorCount} diagnostics (${right.errorSummary})`,
+    `${right.scenario}: ${right.resolvedVaultCount}/${right.vaultAddresses.length} resolved`,
   );
   console.log();
 
@@ -409,8 +387,8 @@ function printDiffSummary(
 
   for (const difference of differences.slice(0, DIFF_PREVIEW_LIMIT)) {
     console.log(`${difference.path}: ${difference.reason}`);
-    console.log(`  left:  ${JSON.stringify(difference.left)}`);
-    console.log(`  right: ${JSON.stringify(difference.right)}`);
+    console.log(`  ${left.scenario}: ${JSON.stringify(difference.default)}`);
+    console.log(`  ${right.scenario}: ${JSON.stringify(difference.onchain)}`);
   }
 
   if (differences.length > DIFF_PREVIEW_LIMIT) {
@@ -421,27 +399,27 @@ function printDiffSummary(
 
 async function writeArtifacts(
   defaultSnapshot: SnapshotRecord,
-  explicitV3Snapshot: SnapshotRecord,
+  explicitOnchainSnapshot: SnapshotRecord,
   differences: Difference[],
 ) {
   const outputDir = await mkdtemp(join(tmpdir(), "euler-sdk-vault-compare-"));
 
   const defaultPath = join(outputDir, "default-adapter-set.json");
-  const v3Path = join(outputDir, "explicit-v3-adapters.json");
+  const onchainPath = join(outputDir, "explicit-onchain-adapters.json");
   const diffPath = join(outputDir, "diff.json");
 
   await writeFile(defaultPath, JSON.stringify(defaultSnapshot, null, 2));
-  await writeFile(v3Path, JSON.stringify(explicitV3Snapshot, null, 2));
+  await writeFile(onchainPath, JSON.stringify(explicitOnchainSnapshot, null, 2));
   await writeFile(diffPath, JSON.stringify(differences, null, 2));
 
   console.log();
   console.log(`Artifacts written to ${outputDir}`);
   console.log(`  default snapshot: ${defaultPath}`);
-  console.log(`  explicit V3 snapshot: ${v3Path}`);
+  console.log(`  explicit onchain snapshot: ${onchainPath}`);
   console.log(`  diff report: ${diffPath}`);
 }
 
-async function compareDefaultVsExplicitV3LabeledVaultsExample() {
+async function compareDefaultVsExplicitOnchainLabeledVaultsExample() {
   const rpcUrls = getRpcUrls();
   const vaultAddresses = await fetchVaultAddressesFromLabelProducts();
 
@@ -452,28 +430,32 @@ async function compareDefaultVsExplicitV3LabeledVaultsExample() {
     vaultAddresses,
   );
 
-  console.log("Fetching the same labeled vaults with explicit V3 adapters...");
-  const explicitV3Snapshot = await fetchSnapshot(
-    "explicit-v3-adapters",
-    buildExplicitV3Options(rpcUrls),
+  console.log("Fetching the same labeled vaults with explicit onchain adapters...");
+  const explicitOnchainSnapshot = await fetchSnapshot(
+    "explicit-onchain-adapters",
+    buildExplicitOnchainOptions(rpcUrls),
     vaultAddresses,
   );
 
   const differences: Difference[] = [];
-  compareValues(defaultSnapshot.result, explicitV3Snapshot.result, "$.result", differences);
-  compareValues(defaultSnapshot.errors, explicitV3Snapshot.errors, "$.errors", differences);
+  compareValues(
+    defaultSnapshot.result,
+    explicitOnchainSnapshot.result,
+    "$.result",
+    differences,
+  );
   compareValues(
     toComparableValue(defaultSnapshot.unresolvedVaults),
-    toComparableValue(explicitV3Snapshot.unresolvedVaults),
+    toComparableValue(explicitOnchainSnapshot.unresolvedVaults),
     "$.unresolvedVaults",
     differences,
   );
 
-  printDiffSummary(defaultSnapshot, explicitV3Snapshot, differences);
-  await writeArtifacts(defaultSnapshot, explicitV3Snapshot, differences);
+  printDiffSummary(defaultSnapshot, explicitOnchainSnapshot, differences);
+  await writeArtifacts(defaultSnapshot, explicitOnchainSnapshot, differences);
 }
 
-compareDefaultVsExplicitV3LabeledVaultsExample().catch((error) => {
+compareDefaultVsExplicitOnchainLabeledVaultsExample().catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });

@@ -156,92 +156,87 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		chainId: number,
 		vaults: Address[],
 	): Promise<ServiceResult<(IEVault | undefined)[]>> {
-		console.time("EVaultV3Adapter.fetchVaults");
-		try {
-			const results: Array<{ result: IEVault | undefined; errors: DataIssue[] }> =
-				await Promise.all(
-					vaults.map(async (vault, index) => {
-						const errors: DataIssue[] = [];
-						let detail: V3VaultDetailWithIncludes | undefined;
+		const results: Array<{ result: IEVault | undefined; errors: DataIssue[] }> =
+			await Promise.all(
+				vaults.map(async (vault, index) => {
+					const errors: DataIssue[] = [];
+					let detail: V3VaultDetailWithIncludes | undefined;
 
-						try {
-							detail = await this.queryV3EVaultDetail({ address: vault, chainId });
-						} catch (error) {
-							return {
-								result: undefined,
-								errors: [
-									{
-										code: "SOURCE_UNAVAILABLE",
-										severity: "warning",
-										message: `Failed to fetch eVault ${getAddress(vault)}.`,
-										paths: [`$.vaults[${index}]`],
-										entityId: getAddress(vault),
-										source: "eVaultV3",
-										originalValue:
-											error instanceof Error ? error.message : String(error),
-									},
-								],
-							};
-						}
+					try {
+						detail = await this.queryV3EVaultDetail({ address: vault, chainId });
+					} catch (error) {
+						return {
+							result: undefined,
+							errors: [
+								{
+									code: "SOURCE_UNAVAILABLE",
+									severity: "warning",
+									message: `Failed to fetch eVault ${getAddress(vault)}.`,
+									paths: [`$.vaults[${index}]`],
+									entityId: getAddress(vault),
+									source: "eVaultV3",
+									originalValue:
+										error instanceof Error ? error.message : String(error),
+								},
+							],
+						};
+					}
 
-						if (!detail) {
-							return {
-								result: undefined,
-								errors: [
-									{
-										code: "SOURCE_UNAVAILABLE",
-										severity: "warning",
-										message: `Vault detail missing for ${getAddress(vault)}.`,
-										paths: [`$.vaults[${index}]`],
-										entityId: getAddress(vault),
-										source: "eVaultV3",
-									},
-								],
-							};
-						}
+					if (!detail) {
+						return {
+							result: undefined,
+							errors: [
+								{
+									code: "SOURCE_UNAVAILABLE",
+									severity: "warning",
+									message: `Vault detail missing for ${getAddress(vault)}.`,
+									paths: [`$.vaults[${index}]`],
+									entityId: getAddress(vault),
+									source: "eVaultV3",
+								},
+							],
+						};
+					}
 
-						try {
-							return {
-								result: convertVault(
-									detail,
-									detail.collaterals ?? [],
-									errors,
-									vault,
-								),
-								errors: prefixDataIssues(errors, `$.vaults[${index}]`).map(
-									(issue) => ({
-										...issue,
-										entityId: issue.entityId ?? getAddress(vault),
-									}),
-								),
-							};
-						} catch (error) {
-							return {
-								result: undefined,
-								errors: [
-									{
-										code: "DECODE_FAILED",
-										severity: "warning",
-										message: `Failed to decode eVault ${getAddress(vault)}.`,
-										paths: [`$.vaults[${index}]`],
-										entityId: getAddress(vault),
-										source: "eVaultV3",
-										originalValue:
-											error instanceof Error ? error.message : String(error),
-									},
-								],
-							};
-						}
-					}),
-				);
+					try {
+						return {
+							result: convertVault(
+								detail,
+								detail.collaterals ?? [],
+								errors,
+								vault,
+							),
+							errors: prefixDataIssues(errors, `$.vaults[${index}]`).map(
+								(issue) => ({
+									...issue,
+									entityId: issue.entityId ?? getAddress(vault),
+								}),
+							),
+						};
+					} catch (error) {
+						return {
+							result: undefined,
+							errors: [
+								{
+									code: "DECODE_FAILED",
+									severity: "warning",
+									message: `Failed to decode eVault ${getAddress(vault)}.`,
+									paths: [`$.vaults[${index}]`],
+									entityId: getAddress(vault),
+									source: "eVaultV3",
+									originalValue:
+										error instanceof Error ? error.message : String(error),
+								},
+							],
+						};
+					}
+				}),
+			);
 
-			return {
-				result: results.map((entry) => entry.result),
-				errors: compressDataIssues(results.flatMap((entry) => entry.errors)),
-			};
-		} finally {
-			console.timeEnd("EVaultV3Adapter.fetchVaults");
-		}
+		return {
+			result: results.map((entry) => entry.result),
+			errors: compressDataIssues(results.flatMap((entry) => entry.errors)),
+		};
 	}
 
 	async fetchVerifiedVaultsAddresses(

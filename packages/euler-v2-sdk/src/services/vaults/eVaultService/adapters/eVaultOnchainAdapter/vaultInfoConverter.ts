@@ -28,6 +28,19 @@ import {
 	bigintToSafeNumber,
 	bigintToScaledNumber,
 } from "../../../../../utils/normalization.js";
+import { USD_ADDRESS } from "../../../../priceService/priceService.js";
+
+function normalizeUnitOfAccountToken(token: Token): Token {
+	if (token.address.toLowerCase() !== USD_ADDRESS.toLowerCase()) {
+		return token;
+	}
+
+	return {
+		...token,
+		name: token.name || "US Dollar",
+		symbol: token.symbol || "USD",
+	};
+}
 
 /**
  * Converts VaultLens's VaultInfoFull object to an IEVault object
@@ -71,7 +84,7 @@ export function convertVaultInfoFullToIEVault(
 		}),
 	};
 
-	const unitOfAccount: Token = {
+	const unitOfAccount: Token = normalizeUnitOfAccountToken({
 		address: vaultInfo.unitOfAccount,
 		name: vaultInfo.unitOfAccountName,
 		symbol: vaultInfo.unitOfAccountSymbol,
@@ -81,7 +94,7 @@ export function convertVaultInfoFullToIEVault(
 			source: "vaultLens",
 			entityId: vaultEntityId,
 		}),
-	};
+	});
 
 	const fees: EVaultFees = {
 		interestFee: convertFrom1e4(

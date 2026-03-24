@@ -261,10 +261,6 @@ export class SwapService implements ISwapService {
 		});
 
 		if (quote.verify.verifierData !== expectedVerifierData) {
-			console.warn("[SwapService] SwapVerifier data mismatch", {
-				expected: expectedVerifierData,
-				received: quote.verify.verifierData,
-			});
 			throw new Error("SwapVerifier data mismatch");
 		}
 	}

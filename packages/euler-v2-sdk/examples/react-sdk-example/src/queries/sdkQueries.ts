@@ -382,6 +382,7 @@ async function fetchLabeledVaultsWithDiagnostics(
     })
   );
   console.timeEnd("unwrapServiceResultWithDiagnostics");
+  console.log('fetchVaults: ', res);
   return res;
 }
 
@@ -410,81 +411,86 @@ export function useAllVaultsWithDiagnostics() {
   }>({
     queryKey: ["vaultsWithDiagnostics", chainId, "all"],
     queryFn: async () => {
-      const fetched = await fetchLabeledVaultsWithDiagnostics(sdk!, chainId);
-      const rawVaults = fetched.result as Array<VaultEntity | undefined>;
-      const vaults = rawVaults.filter(
-        (vault): vault is VaultEntity => vault !== undefined
-      );
-      const loadedVaultAddresses = new Set(
-        vaults.map((vault) => vault.address.toLowerCase())
-      );
-      const failedIssuesByAddress = new Map<string, DiagnosticIssue[]>();
-      const diagnostics: DiagnosticIssue[] = fetched.diagnostics.map((issue) => {
-        if (issue.entityId && isAddress(issue.entityId)) return issue;
+      console.time("vaultListPage:query");
+      try {
+        const fetched = await fetchLabeledVaultsWithDiagnostics(sdk!, chainId);
+        const rawVaults = fetched.result as Array<VaultEntity | undefined>;
+        const vaults = rawVaults.filter(
+          (vault): vault is VaultEntity => vault !== undefined
+        );
+        const loadedVaultAddresses = new Set(
+          vaults.map((vault) => vault.address.toLowerCase())
+        );
+        const failedIssuesByAddress = new Map<string, DiagnosticIssue[]>();
+        const diagnostics: DiagnosticIssue[] = fetched.diagnostics.map((issue) => {
+          if (issue.entityId && isAddress(issue.entityId)) return issue;
 
-        const vaultIndex = extractVaultIndexFromIssue(issue);
-        if (vaultIndex === undefined) return issue;
+          const vaultIndex = extractVaultIndexFromIssue(issue);
+          if (vaultIndex === undefined) return issue;
 
-        const rowVault = rawVaults[vaultIndex];
-        if (!rowVault) return issue;
-
-        return { ...issue, entityId: rowVault.address };
-      });
-
-      for (const issue of diagnostics) {
-        const vaultIndex = extractVaultIndexFromIssue(issue);
-        const issueAddress = issue.entityId && isAddress(issue.entityId)
-          ? issue.entityId.toLowerCase()
-          : undefined;
-        const addFailedIssue = () => {
-          if (!issueAddress) return;
-          const list = failedIssuesByAddress.get(issueAddress) ?? [];
-          list.push(issue);
-          failedIssuesByAddress.set(issueAddress, list);
-        };
-
-        if (vaultIndex !== undefined) {
           const rowVault = rawVaults[vaultIndex];
-          if (rowVault) {
-            // Child vault services emit paths with service-local vault indices.
-            // If that local index points to a different vault in the merged array,
-            // rely on entityId + SOURCE_UNAVAILABLE to retain the failed vault entry.
-            if (
-              issueAddress &&
-              isVaultFetchFailureIssue(issue) &&
-              rowVault.address.toLowerCase() !== issueAddress &&
-              !loadedVaultAddresses.has(issueAddress)
-            ) {
+          if (!rowVault) return issue;
+
+          return { ...issue, entityId: rowVault.address };
+        });
+
+        for (const issue of diagnostics) {
+          const vaultIndex = extractVaultIndexFromIssue(issue);
+          const issueAddress = issue.entityId && isAddress(issue.entityId)
+            ? issue.entityId.toLowerCase()
+            : undefined;
+          const addFailedIssue = () => {
+            if (!issueAddress) return;
+            const list = failedIssuesByAddress.get(issueAddress) ?? [];
+            list.push(issue);
+            failedIssuesByAddress.set(issueAddress, list);
+          };
+
+          if (vaultIndex !== undefined) {
+            const rowVault = rawVaults[vaultIndex];
+            if (rowVault) {
+              // Child vault services emit paths with service-local vault indices.
+              // If that local index points to a different vault in the merged array,
+              // rely on entityId + SOURCE_UNAVAILABLE to retain the failed vault entry.
+              if (
+                issueAddress &&
+                isVaultFetchFailureIssue(issue) &&
+                rowVault.address.toLowerCase() !== issueAddress &&
+                !loadedVaultAddresses.has(issueAddress)
+              ) {
+                addFailedIssue();
+              }
+              continue;
+            }
+
+            if (issueAddress && isVaultFetchFailureIssue(issue)) {
               addFailedIssue();
             }
             continue;
           }
 
-          if (issueAddress && isVaultFetchFailureIssue(issue)) {
+          if (
+            issueAddress &&
+            isVaultFetchFailureIssue(issue) &&
+            !loadedVaultAddresses.has(issueAddress)
+          ) {
             addFailedIssue();
           }
-          continue;
         }
 
-        if (
-          issueAddress &&
-          isVaultFetchFailureIssue(issue) &&
-          !loadedVaultAddresses.has(issueAddress)
-        ) {
-          addFailedIssue();
-        }
+        const failedVaults = Array.from(failedIssuesByAddress.entries()).map(([address, issues]) => ({
+          address,
+          details: issues.map(formatIssueRaw).join("\n\n"),
+        }));
+
+        return {
+          vaults,
+          diagnostics,
+          failedVaults,
+        };
+      } finally {
+        console.timeEnd("vaultListPage:query");
       }
-
-      const failedVaults = Array.from(failedIssuesByAddress.entries()).map(([address, issues]) => ({
-        address,
-        details: issues.map(formatIssueRaw).join("\n\n"),
-      }));
-
-      return {
-        vaults,
-        diagnostics,
-        failedVaults,
-      };
     },
     enabled,
     staleTime: STALE_TIMES.vaultsWithDiagnostics,
