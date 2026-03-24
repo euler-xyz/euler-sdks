@@ -127,7 +127,7 @@ export function BorrowPage() {
   const eVaults = useMemo(() => (allVaults?.filter(isEVault) ?? []), [allVaults]);
 
   const rows = useMemo(() => {
-    console.time("ROWS");
+    console.time("borrowRows:derive");
     const byAddress = new Map<string, EVault>(
       eVaults.map((v) => [v.address.toLowerCase(), v])
     );
@@ -153,7 +153,10 @@ export function BorrowPage() {
       for (const collateral of debtVault.collaterals) {
         const lltv = normalizeLltv(collateral.liquidationLTV as number | bigint);
         const collateralVault = byAddress.get(collateral.address.toLowerCase());
-        if (!collateralVault) continue;
+        if (!collateralVault) {
+          console.log('missing collateral', debtVault.address, collateral.address);
+          continue;
+        }
         const relationExists = debtVault.collaterals.some(
           (c) => c.address.toLowerCase() === collateralVault.address.toLowerCase()
         );
@@ -183,8 +186,8 @@ export function BorrowPage() {
       }
     }
 
-    console.log('nextRows: ', nextRows.length);
-    console.timeEnd("ROWS");
+    console.timeEnd("borrowRows:derive");
+    console.log('borrowRows.length: ', nextRows.length);
     return nextRows;
   }, [eVaults]);
 
@@ -397,6 +400,7 @@ export function BorrowPage() {
             <table>
               <thead>
                 <tr>
+                  <th>#</th>
                   <th className="sortable" onClick={() => toggleSort("collateral")}>
                     Collateral Asset{indicator("collateral")}
                   </th>
@@ -424,7 +428,7 @@ export function BorrowPage() {
                 </tr>
               </thead>
               <tbody>
-                {sortedRows.map((row) => (
+                {sortedRows.map((row, index) => (
                   <tr
                     key={row.id}
                     className="clickable"
@@ -432,6 +436,7 @@ export function BorrowPage() {
                       navigate(`/borrow/${chainId}/${row.collateralAddress}/${row.debtAddress}`)
                     }
                   >
+                    <td>{index + 1}</td>
                     <td>
                       <div>{row.collateralVault.asset.symbol}</div>
                       <div className="table-subline">{getMarketName(row.collateralVault) ?? "-"}</div>

@@ -56,6 +56,8 @@ const defaultTypeMap: Record<string, string> = {
 	securitizeCollateral: VaultType.SecuritizeCollateral,
 };
 
+const V3_VAULT_RESOLVE_BATCH_SIZE = 100;
+
 function normalizeTypeKey(value: string): string {
 	return value.replace(/[^a-z0-9]/gi, "").toLowerCase();
 }
@@ -134,36 +136,46 @@ export class VaultTypeV3Adapter implements IVaultTypeAdapter {
 				const uniqueAddresses = [
 					...new Set(addresses.map((address) => getAddress(address))),
 				];
-				const requestBody: V3ResolveRequest = {
-					chainId,
-					addresses: uniqueAddresses,
-				};
-				const url = `${this.config.endpoint.replace(/\/+$/, "")}/v3/evk/vaults/resolve`;
-				const response = await fetch(url, {
-					method: "POST",
-					headers: this.getHeaders(),
-					body: JSON.stringify(requestBody),
-				});
-				if (!response.ok) {
-					throw new Error(
-						`vaultTypeV3 resolve ${response.status} ${response.statusText}`,
-					);
-				}
-
-				const json = (await response.json()) as V3ResolveResponse;
+				const url = `${this.config.endpoint.replace(/\/+$/, "")}/v3/resolve/vaults`;
 				const resolved = new Map<string, V3ResolvedVaultResult>();
-				for (const row of json.data ?? []) {
-					if (!row.found) continue;
-					const address = getAddress(row.address);
-					const sdkVaultType = this.resolveSdkVaultType(row);
-					const factory = this.resolveFactoryAddress(row);
-					if (!sdkVaultType && !factory) continue;
 
-					resolved.set(address.toLowerCase(), {
-						id: address,
-						type: sdkVaultType ?? VaultType.Unknown,
-						...(factory ? { factory } : {}),
+				for (
+					let offset = 0;
+					offset < uniqueAddresses.length;
+					offset += V3_VAULT_RESOLVE_BATCH_SIZE
+				) {
+					const requestBody: V3ResolveRequest = {
+						chainId,
+						addresses: uniqueAddresses.slice(
+							offset,
+							offset + V3_VAULT_RESOLVE_BATCH_SIZE,
+						),
+					};
+					const response = await fetch(url, {
+						method: "POST",
+						headers: this.getHeaders(),
+						body: JSON.stringify(requestBody),
 					});
+					if (!response.ok) {
+						throw new Error(
+							`vaultTypeV3 resolve ${response.status} ${response.statusText}`,
+						);
+					}
+
+					const json = (await response.json()) as V3ResolveResponse;
+					for (const row of json.data ?? []) {
+						if (!row.found) continue;
+						const address = getAddress(row.address);
+						const sdkVaultType = this.resolveSdkVaultType(row);
+						const factory = this.resolveFactoryAddress(row);
+						if (!sdkVaultType && !factory) continue;
+
+						resolved.set(address.toLowerCase(), {
+							id: address,
+							type: sdkVaultType ?? VaultType.Unknown,
+							...(factory ? { factory } : {}),
+						});
+					}
 				}
 				chainResults.set(chainId, resolved);
 			}

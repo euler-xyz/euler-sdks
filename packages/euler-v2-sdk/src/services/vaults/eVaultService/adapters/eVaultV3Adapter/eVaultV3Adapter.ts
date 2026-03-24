@@ -50,15 +50,15 @@ type V3VaultDetail = {
 	name: string;
 	symbol: string;
 	decimals: number;
-	shares: V3Token;
-	asset: V3Token;
+	shares?: V3Token;
+	asset?: V3Token;
 	dToken: string;
-	oracle: {
+	oracle?: {
 		oracle: string;
 		name: string;
 		adapters: V3OracleAdapter[];
 	};
-	unitOfAccount: V3Token;
+	unitOfAccount?: V3Token;
 	creator: string;
 	governorAdmin: string;
 	totalShares: string;
@@ -67,7 +67,7 @@ type V3VaultDetail = {
 	totalBorrowed: string;
 	totalCash: string;
 	balanceTracker: string;
-	fees: {
+	fees?: {
 		interestFee: number;
 		accumulatedFeesShares: string;
 		accumulatedFeesAssets: string;
@@ -75,31 +75,31 @@ type V3VaultDetail = {
 		protocolFeeReceiver: string;
 		protocolFeeShare: number;
 	};
-	hooks: {
-		hookedOperations: Record<keyof EVaultHookedOperations, boolean>;
+	hooks?: {
+		hookedOperations?: Partial<Record<keyof EVaultHookedOperations, boolean>>;
 		hookTarget: string;
 	};
-	caps: {
+	caps?: {
 		supplyCap: string;
 		borrowCap: string;
 	};
-	liquidation: {
+	liquidation?: {
 		maxLiquidationDiscount: number;
 		liquidationCoolOffTime: number;
 		socializeDebt: boolean;
 	};
-	interestRates: {
+	interestRates?: {
 		borrowSPY: string;
 		borrowAPY: string;
 		supplyAPY: string;
 	};
-	interestRateModel: {
+	interestRateModel?: {
 		address: string;
 		type: string;
 		data: unknown;
 	};
 	evcCompatibleAsset: boolean;
-	oraclePriceRaw: V3OraclePrice;
+	oraclePriceRaw?: V3OraclePrice;
 	timestamp: number;
 };
 
@@ -144,6 +144,66 @@ type V3VaultListRow = {
 };
 
 const unsupportedError = new Error("unsupported");
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
+const DEFAULT_HOOKED_OPERATIONS: EVaultHookedOperations = {
+	deposit: false,
+	mint: false,
+	withdraw: false,
+	redeem: false,
+	transfer: false,
+	skim: false,
+	borrow: false,
+	repay: false,
+	repayWithShares: false,
+	pullDebt: false,
+	convertFees: false,
+	liquidate: false,
+	flashloan: false,
+	touch: false,
+	vaultStatusCheck: false,
+};
+const DEFAULT_TOKEN_BLOCK: V3Token = {
+	address: ZERO_ADDRESS,
+	symbol: "",
+	decimals: 0,
+	name: "",
+};
+const DEFAULT_ORACLE_BLOCK: NonNullable<V3VaultDetail["oracle"]> = {
+	oracle: ZERO_ADDRESS,
+	name: "",
+	adapters: [],
+};
+const DEFAULT_CAPS_BLOCK: NonNullable<V3VaultDetail["caps"]> = {
+	supplyCap: "0",
+	borrowCap: "0",
+};
+const DEFAULT_LIQUIDATION_BLOCK: NonNullable<V3VaultDetail["liquidation"]> = {
+	maxLiquidationDiscount: 0,
+	liquidationCoolOffTime: 0,
+	socializeDebt: false,
+};
+const DEFAULT_INTEREST_RATES_BLOCK: NonNullable<V3VaultDetail["interestRates"]> =
+	{
+		borrowSPY: "0",
+		borrowAPY: "0",
+		supplyAPY: "0",
+	};
+const DEFAULT_INTEREST_RATE_MODEL_BLOCK: NonNullable<
+	V3VaultDetail["interestRateModel"]
+> = {
+	address: ZERO_ADDRESS,
+	type: "unknown",
+	data: null,
+};
+const DEFAULT_ORACLE_PRICE_BLOCK: V3OraclePrice = {
+	queryFailure: true,
+	queryFailureReason: "0x",
+	amountIn: "0",
+	amountOutMid: "0",
+	amountOutBid: "0",
+	amountOutAsk: "0",
+	timestamp: 0,
+};
 
 const parseBigIntField = (
 	value: string,
@@ -189,6 +249,97 @@ const parseRatio1e4 = (
 	return 0;
 };
 
+const parseAddressField = (
+	value: string | undefined,
+	path: string,
+	entityId: Address,
+	errors: DataIssue[],
+	fallback: Address = ZERO_ADDRESS,
+): Address => {
+	if (value) {
+		try {
+			return getAddress(value);
+		} catch {
+			// handled below
+		}
+	}
+
+	errors.push({
+		code: "DEFAULT_APPLIED",
+		severity: "warning",
+		message: `Missing or invalid address at ${path}; defaulted to zero address.`,
+		paths: [path],
+		entityId,
+		source: "eVaultV3",
+		originalValue: value,
+		normalizedValue: fallback,
+	});
+	return fallback;
+};
+
+const parseStringField = (
+	value: string | undefined,
+	path: string,
+	entityId: Address,
+	errors: DataIssue[],
+	fallback = "",
+): string => {
+	if (typeof value === "string") return value;
+	errors.push({
+		code: "DEFAULT_APPLIED",
+		severity: "warning",
+		message: `Missing string at ${path}; defaulted to ${JSON.stringify(fallback)}.`,
+		paths: [path],
+		entityId,
+		source: "eVaultV3",
+		originalValue: value,
+		normalizedValue: fallback,
+	});
+	return fallback;
+};
+
+const parseNumberField = (
+	value: number | undefined,
+	path: string,
+	entityId: Address,
+	errors: DataIssue[],
+	fallback = 0,
+): number => {
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	errors.push({
+		code: "DEFAULT_APPLIED",
+		severity: "warning",
+		message: `Missing or invalid number at ${path}; defaulted to ${fallback}.`,
+		paths: [path],
+		entityId,
+		source: "eVaultV3",
+		originalValue: value,
+		normalizedValue: fallback,
+	});
+	return fallback;
+};
+
+const parseBooleanField = (
+	value: boolean | undefined,
+	path: string,
+	entityId: Address,
+	errors: DataIssue[],
+	fallback = false,
+): boolean => {
+	if (typeof value === "boolean") return value;
+	errors.push({
+		code: "DEFAULT_APPLIED",
+		severity: "warning",
+		message: `Missing boolean at ${path}; defaulted to ${fallback}.`,
+		paths: [path],
+		entityId,
+		source: "eVaultV3",
+		originalValue: value,
+		normalizedValue: fallback,
+	});
+	return fallback;
+};
+
 function mapInterestRateModelType(type: string): InterestRateModelType {
 	switch (type.toLowerCase()) {
 		case "kink":
@@ -206,12 +357,22 @@ function mapInterestRateModelType(type: string): InterestRateModelType {
 	}
 }
 
-function convertToken(token: V3Token): Token {
+function convertToken(
+	token: V3Token,
+	path: string,
+	entityId: Address,
+	errors: DataIssue[],
+): Token {
 	return {
-		address: getAddress(token.address),
-		name: token.name,
-		symbol: token.symbol,
-		decimals: token.decimals,
+		address: parseAddressField(token.address, `${path}.address`, entityId, errors),
+		name: parseStringField(token.name, `${path}.name`, entityId, errors),
+		symbol: parseStringField(token.symbol, `${path}.symbol`, entityId, errors),
+		decimals: parseNumberField(
+			token.decimals,
+			`${path}.decimals`,
+			entityId,
+			errors,
+		),
 	};
 }
 
@@ -222,8 +383,20 @@ function convertOraclePrice(
 	entityId: Address,
 ): OraclePrice {
 	const converted = {
-		queryFailure: price.queryFailure,
-		queryFailureReason: (price.queryFailureReason || "0x") as Hex,
+		queryFailure: parseBooleanField(
+			price.queryFailure,
+			`${path}.queryFailure`,
+			entityId,
+			errors,
+			true,
+		),
+		queryFailureReason: parseStringField(
+			price.queryFailureReason,
+			`${path}.queryFailureReason`,
+			entityId,
+			errors,
+			"0x",
+		) as Hex,
 		amountIn: parseBigIntField(
 			price.amountIn,
 			`${path}.amountIn`,
@@ -248,7 +421,12 @@ function convertOraclePrice(
 			entityId,
 			errors,
 		),
-		timestamp: price.timestamp,
+		timestamp: parseNumberField(
+			price.timestamp,
+			`${path}.timestamp`,
+			entityId,
+			errors,
+		),
 	};
 
 	if (converted.queryFailure) {
@@ -270,12 +448,18 @@ function convertOraclePrice(
 function convertCollaterals(
 	rows: V3CollateralRow[],
 	vaultTimestamp: number,
+	vaultEntityId: Address,
 	errors: DataIssue[],
 ): EVaultCollateral[] {
 	const collaterals: EVaultCollateral[] = [];
 
 	for (const [index, row] of rows.entries()) {
-		const collateralAddress = getAddress(row.collateral);
+		const collateralAddress = parseAddressField(
+			row.collateral,
+			`$.collaterals[${index}].collateral`,
+			vaultEntityId,
+			errors,
+		);
 		const borrowLTV = parseRatio1e4(
 			row.borrowLTV,
 			`$.collaterals[${index}].borrowLTV`,
@@ -288,7 +472,14 @@ function convertCollaterals(
 			collateralAddress,
 			errors,
 		);
-		const targetTimestamp = Number(row.targetTimestamp);
+		const targetTimestamp = parseNumberField(
+			typeof row.targetTimestamp === "number"
+				? row.targetTimestamp
+				: Number(row.targetTimestamp),
+			`$.collaterals[${index}].targetTimestamp`,
+			collateralAddress,
+			errors,
+		);
 		const isRemovedCollateral =
 			borrowLTV === 0 &&
 			liquidationLTV === 0 &&
@@ -340,7 +531,12 @@ function convertCollaterals(
 					errors,
 				),
 				targetTimestamp,
-				rampDuration: BigInt(row.rampDuration),
+				rampDuration: parseBigIntField(
+					String(row.rampDuration ?? 0),
+					`$.collaterals[${collaterals.length}].ramping.rampDuration`,
+					collateralAddress,
+					errors,
+				),
 			};
 			collateral.ramping = ramping;
 		}
@@ -351,91 +547,379 @@ function convertCollaterals(
 	return collaterals;
 }
 
+function logMissingDetailBlocks(
+	detail: V3VaultDetail,
+	detailUrl: string,
+	entityId: Address,
+): void {
+	const missingBlocks: string[] = [];
+
+	if (!detail.oracle) missingBlocks.push("$.oracle");
+	if (!detail.shares) missingBlocks.push("$.shares");
+	if (!detail.asset) missingBlocks.push("$.asset");
+	if (!detail.unitOfAccount) missingBlocks.push("$.unitOfAccount");
+	if (!detail.fees) missingBlocks.push("$.fees");
+	if (!detail.hooks) missingBlocks.push("$.hooks");
+	if (!detail.hooks?.hookedOperations) {
+		missingBlocks.push("$.hooks.hookedOperations");
+	}
+	if (!detail.caps) missingBlocks.push("$.caps");
+	if (!detail.liquidation) missingBlocks.push("$.liquidation");
+	if (!detail.interestRates) missingBlocks.push("$.interestRates");
+	if (!detail.interestRateModel) missingBlocks.push("$.interestRateModel");
+	if (!detail.oraclePriceRaw) missingBlocks.push("$.oraclePriceRaw");
+
+	if (missingBlocks.length === 0) return;
+
+	console.warn("[eVaultV3] Missing blocks in detail response", {
+		vault: entityId,
+		url: detailUrl,
+		missingBlocks,
+		response: detail,
+	});
+}
+
 function convertVault(
 	detail: V3VaultDetail,
 	collateralRows: V3CollateralRow[],
 	errors: DataIssue[],
+	fallbackAddress: Address,
+	detailUrl: string,
 ): IEVault {
-	const entityId = getAddress(detail.address);
+	const entityId = parseAddressField(
+		detail.address,
+		"$.address",
+		fallbackAddress,
+		errors,
+		fallbackAddress,
+	);
+	logMissingDetailBlocks(detail, detailUrl, entityId);
+
+	if (!detail.oracle) {
+		errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message: "Missing oracle block; defaulted all oracle fields to 0/empty.",
+			paths: ["$.oracle"],
+			entityId,
+			source: "eVaultV3",
+			normalizedValue: DEFAULT_ORACLE_BLOCK,
+		});
+	}
+	const oracleData = detail.oracle ?? DEFAULT_ORACLE_BLOCK;
 	const oracle: OracleInfo = {
-		oracle: getAddress(detail.oracle.oracle),
-		name: detail.oracle.name,
-		adapters: detail.oracle.adapters.map((adapter) => ({
-			oracle: getAddress(adapter.oracle),
-			name: adapter.name,
-			base: getAddress(adapter.base),
-			quote: getAddress(adapter.quote),
+		oracle: parseAddressField(
+			oracleData.oracle,
+			"$.oracle.oracle",
+			entityId,
+			errors,
+		),
+		name: parseStringField(oracleData.name, "$.oracle.name", entityId, errors),
+		adapters: oracleData.adapters.map((adapter) => ({
+			oracle: parseAddressField(
+				adapter.oracle,
+				"$.oracle.adapters[].oracle",
+				entityId,
+				errors,
+			),
+			name: parseStringField(
+				adapter.name,
+				"$.oracle.adapters[].name",
+				entityId,
+				errors,
+			),
+			base: parseAddressField(
+				adapter.base,
+				"$.oracle.adapters[].base",
+				entityId,
+				errors,
+			),
+			quote: parseAddressField(
+				adapter.quote,
+				"$.oracle.adapters[].quote",
+				entityId,
+				errors,
+			),
 			pythDetail: adapter.pythDetail,
 			chainlinkDetail: adapter.chainlinkDetail
-				? { oracle: getAddress(adapter.chainlinkDetail.oracle) }
+				? {
+						oracle: parseAddressField(
+							adapter.chainlinkDetail.oracle,
+							"$.oracle.adapters[].chainlinkDetail.oracle",
+							entityId,
+							errors,
+						),
+					}
 				: undefined,
 		})),
 	};
 
+	if (!detail.shares) {
+		errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message: "Missing shares block; defaulted all share token fields to 0/empty.",
+			paths: ["$.shares"],
+			entityId,
+			source: "eVaultV3",
+			normalizedValue: DEFAULT_TOKEN_BLOCK,
+		});
+	}
+	const sharesData = detail.shares ?? DEFAULT_TOKEN_BLOCK;
+
+	if (!detail.asset) {
+		errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message: "Missing asset block; defaulted all asset token fields to 0/empty.",
+			paths: ["$.asset"],
+			entityId,
+			source: "eVaultV3",
+			normalizedValue: DEFAULT_TOKEN_BLOCK,
+		});
+	}
+	const assetData = detail.asset ?? DEFAULT_TOKEN_BLOCK;
+
+	if (!detail.unitOfAccount) {
+		errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message:
+				"Missing unitOfAccount block; defaulted all unit-of-account fields to 0/empty.",
+			paths: ["$.unitOfAccount"],
+			entityId,
+			source: "eVaultV3",
+			normalizedValue: DEFAULT_TOKEN_BLOCK,
+		});
+	}
+	const unitOfAccountData = detail.unitOfAccount ?? DEFAULT_TOKEN_BLOCK;
+
+	if (!detail.fees) {
+		errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message: "Missing fees object; defaulted all fee fields to 0.",
+			paths: ["$.fees"],
+			entityId,
+			source: "eVaultV3",
+			normalizedValue: {
+				interestFee: 0,
+				accumulatedFeesShares: "0",
+				accumulatedFeesAssets: "0",
+				governorFeeReceiver: ZERO_ADDRESS,
+				protocolFeeReceiver: ZERO_ADDRESS,
+				protocolFeeShare: 0,
+			},
+		});
+	}
+
+	const feeData = detail.fees ?? {
+		interestFee: 0,
+		accumulatedFeesShares: "0",
+		accumulatedFeesAssets: "0",
+		governorFeeReceiver: ZERO_ADDRESS,
+		protocolFeeReceiver: ZERO_ADDRESS,
+		protocolFeeShare: 0,
+	};
+
 	const fees: EVaultFees = {
-		interestFee: detail.fees.interestFee,
+		interestFee: feeData.interestFee ?? 0,
 		accumulatedFeesShares: parseBigIntField(
-			detail.fees.accumulatedFeesShares,
+			feeData.accumulatedFeesShares ?? "0",
 			"$.fees.accumulatedFeesShares",
 			entityId,
 			errors,
 		),
 		accumulatedFeesAssets: parseBigIntField(
-			detail.fees.accumulatedFeesAssets,
+			feeData.accumulatedFeesAssets ?? "0",
 			"$.fees.accumulatedFeesAssets",
 			entityId,
 			errors,
 		),
-		governorFeeReceiver: getAddress(detail.fees.governorFeeReceiver),
-		protocolFeeReceiver: getAddress(detail.fees.protocolFeeReceiver),
-		protocolFeeShare: detail.fees.protocolFeeShare,
+		governorFeeReceiver: parseAddressField(
+			feeData.governorFeeReceiver,
+			"$.fees.governorFeeReceiver",
+			entityId,
+			errors,
+		),
+		protocolFeeReceiver: parseAddressField(
+			feeData.protocolFeeReceiver,
+			"$.fees.protocolFeeReceiver",
+			entityId,
+			errors,
+		),
+		protocolFeeShare: feeData.protocolFeeShare ?? 0,
 	};
 
 	const hooks: EVaultHooks = {
-		hookedOperations: detail.hooks.hookedOperations,
-		hookTarget: getAddress(detail.hooks.hookTarget),
+		hookedOperations: {
+			...DEFAULT_HOOKED_OPERATIONS,
+			...(detail.hooks?.hookedOperations ?? {}),
+		},
+		hookTarget: parseAddressField(
+			detail.hooks?.hookTarget,
+			"$.hooks.hookTarget",
+			entityId,
+			errors,
+		),
 	};
+	if (!detail.hooks?.hookedOperations) {
+		errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message: "Missing hookedOperations; defaulted all operations to false.",
+			paths: ["$.hooks.hookedOperations"],
+			entityId,
+			source: "eVaultV3",
+			normalizedValue: DEFAULT_HOOKED_OPERATIONS,
+		});
+	}
 
+	if (!detail.caps) {
+		errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message: "Missing caps block; defaulted all cap fields to 0.",
+			paths: ["$.caps"],
+			entityId,
+			source: "eVaultV3",
+			normalizedValue: DEFAULT_CAPS_BLOCK,
+		});
+	}
+	const capsData = detail.caps ?? DEFAULT_CAPS_BLOCK;
 	const caps: EVaultCaps = {
 		supplyCap: parseBigIntField(
-			detail.caps.supplyCap,
+			capsData.supplyCap ?? "0",
 			"$.caps.supplyCap",
 			entityId,
 			errors,
 		),
 		borrowCap: parseBigIntField(
-			detail.caps.borrowCap,
+			capsData.borrowCap ?? "0",
 			"$.caps.borrowCap",
 			entityId,
 			errors,
 		),
 	};
 
+	if (!detail.liquidation) {
+		errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message: "Missing liquidation block; defaulted all liquidation fields to 0/false.",
+			paths: ["$.liquidation"],
+			entityId,
+			source: "eVaultV3",
+			normalizedValue: {
+				maxLiquidationDiscount: 0,
+				liquidationCoolOffTime: 0,
+				socializeDebt: false,
+			},
+		});
+	}
+	const liquidationData = detail.liquidation ?? DEFAULT_LIQUIDATION_BLOCK;
 	const liquidation: EVaultLiquidation = {
-		maxLiquidationDiscount: detail.liquidation.maxLiquidationDiscount,
-		liquidationCoolOffTime: detail.liquidation.liquidationCoolOffTime,
-		socializeDebt: detail.liquidation.socializeDebt,
+		maxLiquidationDiscount: liquidationData.maxLiquidationDiscount ?? 0,
+		liquidationCoolOffTime: liquidationData.liquidationCoolOffTime ?? 0,
+		socializeDebt: liquidationData.socializeDebt ?? false,
 	};
 
+	if (!detail.interestRates) {
+		errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message: "Missing interestRates block; defaulted all rate fields to 0.",
+			paths: ["$.interestRates"],
+			entityId,
+			source: "eVaultV3",
+			normalizedValue: DEFAULT_INTEREST_RATES_BLOCK,
+		});
+	}
+	const interestRatesData =
+		detail.interestRates ?? DEFAULT_INTEREST_RATES_BLOCK;
 	const interestRates: InterestRates = {
-		borrowSPY: detail.interestRates.borrowSPY,
-		borrowAPY: detail.interestRates.borrowAPY,
-		supplyAPY: detail.interestRates.supplyAPY,
+		borrowSPY: parseStringField(
+			interestRatesData.borrowSPY,
+			"$.interestRates.borrowSPY",
+			entityId,
+			errors,
+			"0",
+		),
+		borrowAPY: parseStringField(
+			interestRatesData.borrowAPY,
+			"$.interestRates.borrowAPY",
+			entityId,
+			errors,
+			"0",
+		),
+		supplyAPY: parseStringField(
+			interestRatesData.supplyAPY,
+			"$.interestRates.supplyAPY",
+			entityId,
+			errors,
+			"0",
+		),
 	};
 
+	if (!detail.interestRateModel) {
+		errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message:
+				"Missing interestRateModel block; defaulted all model fields to 0/unknown.",
+			paths: ["$.interestRateModel"],
+			entityId,
+			source: "eVaultV3",
+			normalizedValue: DEFAULT_INTEREST_RATE_MODEL_BLOCK,
+		});
+	}
+	const interestRateModelData =
+		detail.interestRateModel ?? DEFAULT_INTEREST_RATE_MODEL_BLOCK;
 	const interestRateModel: InterestRateModel = {
-		address: getAddress(detail.interestRateModel.address),
-		type: mapInterestRateModelType(detail.interestRateModel.type),
-		data: detail.interestRateModel.data as InterestRateModel["data"],
+		address: parseAddressField(
+			interestRateModelData.address,
+			"$.interestRateModel.address",
+			entityId,
+			errors,
+		),
+		type: mapInterestRateModelType(
+			parseStringField(
+				interestRateModelData.type,
+				"$.interestRateModel.type",
+				entityId,
+				errors,
+				"unknown",
+			),
+		),
+		data: interestRateModelData.data as InterestRateModel["data"],
 	};
+
+	if (!detail.oraclePriceRaw) {
+		errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message:
+				"Missing oraclePriceRaw block; defaulted all oracle price fields to 0.",
+			paths: ["$.oraclePriceRaw"],
+			entityId,
+			source: "eVaultV3",
+			normalizedValue: DEFAULT_ORACLE_PRICE_BLOCK,
+		});
+	}
+	const oraclePriceData = detail.oraclePriceRaw ?? DEFAULT_ORACLE_PRICE_BLOCK;
 
 	return {
 		type: VaultType.EVault,
 		chainId: detail.chainId,
 		address: entityId,
-		shares: convertToken(detail.shares),
-		asset: convertToken(detail.asset),
-		unitOfAccount: convertToken(detail.unitOfAccount),
+		shares: convertToken(sharesData, "$.shares", entityId, errors),
+		asset: convertToken(assetData, "$.asset", entityId, errors),
+		unitOfAccount: convertToken(
+			unitOfAccountData,
+			"$.unitOfAccount",
+			entityId,
+			errors,
+		),
 		totalShares: parseBigIntField(
 			detail.totalShares,
 			"$.totalShares",
@@ -460,10 +944,25 @@ function convertVault(
 			entityId,
 			errors,
 		),
-		creator: getAddress(detail.creator),
-		governorAdmin: getAddress(detail.governorAdmin),
-		dToken: getAddress(detail.dToken),
-		balanceTracker: getAddress(detail.balanceTracker),
+		creator: parseAddressField(
+			detail.creator,
+			"$.creator",
+			entityId,
+			errors,
+		),
+		governorAdmin: parseAddressField(
+			detail.governorAdmin,
+			"$.governorAdmin",
+			entityId,
+			errors,
+		),
+		dToken: parseAddressField(detail.dToken, "$.dToken", entityId, errors),
+		balanceTracker: parseAddressField(
+			detail.balanceTracker,
+			"$.balanceTracker",
+			entityId,
+			errors,
+		),
 		fees,
 		hooks,
 		caps,
@@ -471,15 +970,30 @@ function convertVault(
 		oracle,
 		interestRates,
 		interestRateModel,
-		collaterals: convertCollaterals(collateralRows, detail.timestamp, errors),
-		evcCompatibleAsset: detail.evcCompatibleAsset,
+		collaterals: convertCollaterals(
+			collateralRows,
+			detail.timestamp,
+			entityId,
+			errors,
+		),
+		evcCompatibleAsset: parseBooleanField(
+			detail.evcCompatibleAsset,
+			"$.evcCompatibleAsset",
+			entityId,
+			errors,
+		),
 		oraclePriceRaw: convertOraclePrice(
-			detail.oraclePriceRaw,
+			oraclePriceData,
 			errors,
 			"$.oraclePriceRaw",
 			entityId,
 		),
-		timestamp: detail.timestamp,
+		timestamp: parseNumberField(
+			detail.timestamp,
+			"$.timestamp",
+			entityId,
+			errors,
+		),
 	};
 }
 
@@ -598,13 +1112,19 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		chainId: number,
 		vaults: Address[],
 	): Promise<ServiceResult<(IEVault | undefined)[]>> {
-    console.time("EVaultV3Adapter.fetchVaults");
 		const results: Array<{ result: IEVault | undefined; errors: DataIssue[] }> =
 			await Promise.all(
 				vaults.map(async (vault, index) => {
 					const errors: DataIssue[] = [];
+					let detailResponse: V3Envelope<V3VaultDetail>;
+					let collateralsResponse: V3ListEnvelope<V3CollateralRow>;
+					const detailUrl = this.buildUrl(
+						this.config.endpoint,
+						`/v3/evk/vaults/${chainId}/${vault}`,
+					);
+
 					try {
-						const [detailResponse, collateralsResponse] = await Promise.all([
+						[detailResponse, collateralsResponse] = await Promise.all([
 							this.queryV3EVaultDetail(this.config.endpoint, chainId, vault),
 							this.queryV3EVaultCollaterals(
 								this.config.endpoint,
@@ -612,34 +1132,6 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 								vault,
 							),
 						]);
-
-						const detail = detailResponse.data;
-						if (!detail) {
-							errors.push({
-								code: "SOURCE_UNAVAILABLE",
-								severity: "warning",
-								message: `Vault detail missing for ${getAddress(vault)}.`,
-								paths: [`$.vaults[${index}]`],
-								entityId: getAddress(vault),
-								source: "eVaultV3",
-							});
-							return { result: undefined, errors };
-						}
-
-						const converted = convertVault(
-							detail,
-							collateralsResponse.data ?? [],
-							errors,
-						);
-						return {
-							result: converted,
-							errors: prefixDataIssues(errors, `$.vaults[${index}]`).map(
-								(issue) => ({
-									...issue,
-									entityId: issue.entityId ?? getAddress(vault),
-								}),
-							),
-						};
 					} catch (error) {
 						const fetchErrors: DataIssue[] = [
 							{
@@ -658,9 +1150,57 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 							errors: fetchErrors,
 						};
 					}
+
+						const detail = detailResponse.data;
+						if (!detail) {
+							errors.push({
+								code: "SOURCE_UNAVAILABLE",
+								severity: "warning",
+								message: `Vault detail missing for ${getAddress(vault)}.`,
+								paths: [`$.vaults[${index}]`],
+								entityId: getAddress(vault),
+								source: "eVaultV3",
+							});
+							return { result: undefined, errors };
+						}
+
+					try {
+						const converted = convertVault(
+							detail,
+							collateralsResponse.data ?? [],
+							errors,
+							vault,
+							detailUrl,
+						);
+						return {
+							result: converted,
+							errors: prefixDataIssues(errors, `$.vaults[${index}]`).map(
+								(issue) => ({
+									...issue,
+									entityId: issue.entityId ?? getAddress(vault),
+									}),
+								),
+						};
+					} catch (error) {
+						const decodeErrors: DataIssue[] = [
+							{
+								code: "DECODE_FAILED",
+								severity: "warning",
+								message: `Failed to decode eVault ${getAddress(vault)}.`,
+								paths: [`$.vaults[${index}]`],
+								entityId: getAddress(vault),
+								source: "eVaultV3",
+								originalValue:
+									error instanceof Error ? error.message : String(error),
+							},
+						];
+						return {
+							result: undefined,
+							errors: decodeErrors,
+						};
+					}
 				}),
 			);
-    console.timeEnd("EVaultV3Adapter.fetchVaults");
 		return {
 			result: results.map((entry) => entry.result),
 			errors: compressDataIssues(results.flatMap((entry) => entry.errors)),
