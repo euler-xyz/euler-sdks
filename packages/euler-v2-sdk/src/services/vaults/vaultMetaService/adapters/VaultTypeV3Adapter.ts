@@ -192,6 +192,15 @@ export class VaultTypeV3Adapter implements IVaultTypeAdapter {
 		this.queryV3VaultResolve = fn;
 	}
 
+	async fetchVaultType(
+		chainId: number,
+		vaultAddress: Address,
+	): Promise<string | undefined> {
+		const result = await this.queryV3VaultResolve({ address: vaultAddress, chainId });
+		if (!result || result.type === VaultType.Unknown) return undefined;
+		return result.type;
+	}
+
 	async fetchVaultTypes(
 		chainId: number,
 		vaultAddresses: Address[],

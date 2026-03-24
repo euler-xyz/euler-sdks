@@ -2,6 +2,7 @@ import { type Address, getAddress } from "viem";
 import type {
 	IVaultTypeAdapter,
 	VaultFactoryResult,
+	VaultResolvedTypeResult,
 } from "./IVaultTypeAdapter.js";
 import {
 	type BuildQueryFn,
@@ -78,6 +79,34 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 
 	setQueryVaultFactories(fn: typeof this.queryVaultFactories): void {
 		this.queryVaultFactories = fn;
+	}
+
+	async fetchVaultType(
+		chainId: number,
+		vaultAddress: Address,
+	): Promise<string | undefined> {
+		const result = await this.queryVaultFactories({ address: vaultAddress, chainId });
+		return result?.factory;
+	}
+
+	async fetchVaultTypes(
+		chainId: number,
+		vaultAddresses: Address[],
+	): Promise<VaultResolvedTypeResult[]> {
+		if (vaultAddresses.length === 0) return [];
+
+		const results = await Promise.all(
+			vaultAddresses.map((address) =>
+				this.queryVaultFactories({ address, chainId }),
+			),
+		);
+
+		return results
+			.filter((result): result is VaultFactoryResult => result != null)
+			.map((result) => ({
+				id: result.id,
+				type: result.factory,
+			}));
 	}
 
 	async fetchVaultFactories(

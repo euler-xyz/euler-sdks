@@ -262,50 +262,12 @@ function isServiceResult<T>(value: MaybeServiceResult<T>): value is { result: T;
   );
 }
 
-function issueLabel(issue: DiagnosticIssue): string {
-  return `${issue.code ?? "UNKNOWN"} [${issue.severity ?? "warning"}] ${(issue.paths ?? ["$"]).join(", ")}`;
-}
-
 function getDiagnosticPaths(issue: DiagnosticIssue): string[] {
   return issue.paths?.length ? issue.paths : ["$"];
 }
 
-function parseDiagnosticPath(path: string | undefined): Array<string | number> {
-  if (!path || !path.startsWith("$")) return [];
-  const segments: Array<string | number> = [];
-  const pattern = /\.([A-Za-z0-9_$]+)|\[(\d+)\]/g;
-  let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(path)) !== null) {
-    if (match[1]) {
-      segments.push(match[1]);
-      continue;
-    }
-    if (match[2]) {
-      segments.push(Number(match[2]));
-    }
-  }
-
-  return segments;
-}
-
-function getOwnerForDiagnosticPath(root: unknown, path: string | undefined): unknown {
-  const segments = parseDiagnosticPath(path);
-  if (segments.length === 0) return root;
-  const ownerSegments = segments.slice(0, -1);
-
-  let cursor: unknown = root;
-  for (const segment of ownerSegments) {
-    if (cursor === null || cursor === undefined) return undefined;
-    if (typeof cursor !== "object") return undefined;
-    cursor = (cursor as Record<string, unknown>)[String(segment)];
-  }
-
-  return cursor;
-}
-
 export function unwrapServiceResultWithDiagnostics<T>(
-  operation: string,
+  _operation: string,
   response: MaybeServiceResult<T>
 ): { result: T; diagnostics: DiagnosticIssue[] } {
   if (!isServiceResult(response)) {
@@ -313,28 +275,6 @@ export function unwrapServiceResultWithDiagnostics<T>(
   }
 
   const diagnostics = response.errors ?? [];
-  const diagnosticsWithOwner = diagnostics.map((issue) => {
-    const ownerRefs = getDiagnosticPaths(issue).map((path) =>
-      getOwnerForDiagnosticPath(response.result, path)
-    );
-
-    return {
-      ...issue,
-      ownerRefs,
-    };
-  });
-  const oracleFailureEntityIds = new Set(
-    diagnostics
-      .filter((issue) => issue.message === "Oracle price query reported failure.")
-      .map((issue) => issue.entityId)
-      .filter((entityId): entityId is string => Boolean(entityId))
-  );
-  console.log(`[sdk service result] ${operation}`, {
-    result: response.result,
-    errors: diagnosticsWithOwner,
-    oraclePriceQueryFailureEntityIdCount: oracleFailureEntityIds.size,
-  });
-
   return { result: response.result, diagnostics };
 }
 

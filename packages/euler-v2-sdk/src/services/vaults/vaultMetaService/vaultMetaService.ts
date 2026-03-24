@@ -168,43 +168,36 @@ export class VaultMetaService<TEntity = VaultEntity>
 		return map;
 	}
 
+	private getServiceByResolvedType(
+		chainId: number,
+		resolvedType: string,
+	): RegisteredVaultService<TEntity> | undefined {
+		const typedService = this.typeToService.get(resolvedType);
+		if (typedService) return typedService;
+
+		try {
+			return this.getFactoryToServiceMap(chainId).get(
+				getAddress(resolvedType),
+			);
+		} catch {
+			return undefined;
+		}
+	}
+
 	private async fetchVaultToService(
 		chainId: number,
 		vaultAddresses: Address[],
 	): Promise<Map<Address, RegisteredVaultService<TEntity>>> {
 		if (vaultAddresses.length === 0) return new Map();
 		const map = new Map<Address, RegisteredVaultService<TEntity>>();
-		const resolvedAddresses = new Set<string>();
-
-		if (this.config.vaultTypeAdapter.fetchVaultTypes) {
-			const typeResults = await this.config.vaultTypeAdapter.fetchVaultTypes(
-				chainId,
-				vaultAddresses,
-			);
-			for (const { id, type } of typeResults) {
-				const service = this.typeToService.get(type);
-				if (!service) continue;
-				const address = getAddress(id);
-				map.set(address, service);
-				resolvedAddresses.add(address.toLowerCase());
-			}
-		}
-
-		const unresolvedVaults = vaultAddresses.filter(
-			(vault) => !resolvedAddresses.has(getAddress(vault).toLowerCase()),
-		);
-		if (unresolvedVaults.length === 0) return map;
-
-		const results = await this.config.vaultTypeAdapter.fetchVaultFactories(
+		const typeResults = await this.config.vaultTypeAdapter.fetchVaultTypes(
 			chainId,
-			unresolvedVaults,
+			vaultAddresses,
 		);
-		const factoryToService = this.getFactoryToServiceMap(chainId);
-		for (const { id, factory } of results) {
-			const service = factoryToService.get(getAddress(factory));
-			if (service) {
-				map.set(getAddress(id), service);
-			}
+		for (const { id, type } of typeResults) {
+			const service = this.getServiceByResolvedType(chainId, type);
+			if (!service) continue;
+			map.set(getAddress(id), service);
 		}
 		return map;
 	}
