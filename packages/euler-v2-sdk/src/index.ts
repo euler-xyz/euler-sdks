@@ -37,6 +37,7 @@ export * from "./plugins/index.js";
 // Utils
 export * from "./utils/subAccounts.js";
 export { type BuildQueryFn, applyBuildQuery } from "./utils/buildQuery.js";
+export type { EulerSDKQueryName, QueryMethodName } from "./utils/queryNames.js";
 export * from "./utils/stateOverrides/index.js";
 export * from "./utils/oracle.js";
 export * from "./utils/accountComputations.js";

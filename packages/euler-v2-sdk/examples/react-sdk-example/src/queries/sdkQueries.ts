@@ -7,6 +7,7 @@ import {
 import type {
   Account,
   BuildQueryFn,
+  EulerSDKQueryName,
   EVault,
   EulerSDK,
   EulerEarn,
@@ -61,7 +62,7 @@ function serializeArg(arg: unknown): unknown {
 
 const MINUTE = 60_000;
 
-const STALE_TIMES: Record<string, number> = {
+const STALE_TIMES = {
   // Static metadata — essentially never changes
   queryDeployments: Infinity,
   queryABI: Infinity,
@@ -84,7 +85,6 @@ const STALE_TIMES: Record<string, number> = {
   queryEulerEarnVaultInfoFull: 20_000,
   queryVaultInfoERC4626: 20_000,
   queryV3EVaultDetail: 20_000,
-  queryV3EVaultCollaterals: 20_000,
   queryV3EulerEarnDetail: 20_000,
   
   // Vault config, probably ok to be cached for a while
@@ -150,7 +150,7 @@ const STALE_TIMES: Record<string, number> = {
   oracleAdapterMetadataMap: 10 * MINUTE,
   tokenSymbolMap: Infinity,
   feeFlowPageData: 15_000,
-};
+} satisfies Partial<Record<EulerSDKQueryName, number>>;
 
 const DEFAULT_STALE_TIME = MINUTE;
 
@@ -165,7 +165,7 @@ function withDataInterceptor(
 }
 
 export const sdkBuildQuery: BuildQueryFn = (queryName, fn, target) => {
-  const staleTime = STALE_TIMES[queryName] ?? DEFAULT_STALE_TIME;
+  const staleTime = STALE_TIMES[queryName as EulerSDKQueryName] ?? DEFAULT_STALE_TIME;
   registerKnownQueries([queryName]);
   const interceptedFetcher = withDataInterceptor(queryName, (...args) =>
     fn(...args)
