@@ -6,7 +6,12 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import { buildEulerSDK, createPythPlugin, type EulerSDK } from "euler-v2-sdk";
+import {
+  buildEulerSDK,
+  createPythPlugin,
+  defaultVaultTypeSubgraphAdapterConfig,
+  type EulerSDK,
+} from "euler-v2-sdk";
 import { sdkBuildQuery } from "../queries/sdkQueries.ts";
 import { useSdkAdapterMode } from "../queries/queryOptionsStore.ts";
 import { resetQueryProfile } from "../queries/queryProfileStore.ts";
@@ -60,7 +65,7 @@ export function SdkProvider({ children }: { children: ReactNode }) {
         ? {
             endpoint: "https://v3staging.eul.dev",
           }
-        : null,
+        : defaultVaultTypeSubgraphAdapterConfig,
       swapServiceConfig: {
         swapApiUrl: "http://localhost:3002",
       },

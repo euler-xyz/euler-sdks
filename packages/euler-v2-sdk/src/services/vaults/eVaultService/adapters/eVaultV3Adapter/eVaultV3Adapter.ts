@@ -14,6 +14,15 @@ import {
 	prefixDataIssues,
 	type ServiceResult,
 } from "../../../../../utils/entityDiagnostics.js";
+import {
+	parseAddressField,
+	parseBigIntField,
+	parseBooleanField,
+	parseNumberField,
+	parseRatio1e4,
+	parseStringField,
+	ZERO_ADDRESS,
+} from "../../../../../utils/parsing.js";
 import type {
 	EVaultCollateral,
 	EVaultCollateralRamping,
@@ -144,7 +153,6 @@ type V3VaultListRow = {
 };
 
 const unsupportedError = new Error("unsupported");
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 const DEFAULT_HOOKED_OPERATIONS: EVaultHookedOperations = {
 	deposit: false,
 	mint: false,
@@ -205,141 +213,6 @@ const DEFAULT_ORACLE_PRICE_BLOCK: V3OraclePrice = {
 	timestamp: 0,
 };
 
-const parseBigIntField = (
-	value: string,
-	path: string,
-	entityId: Address,
-	errors: DataIssue[],
-): bigint => {
-	try {
-		return BigInt(value);
-	} catch {
-		errors.push({
-			code: "DEFAULT_APPLIED",
-			severity: "warning",
-			message: `Failed to parse bigint at ${path}; defaulted to 0.`,
-			paths: [path],
-			entityId,
-			source: "eVaultV3",
-			originalValue: value,
-			normalizedValue: "0",
-		});
-		return 0n;
-	}
-};
-
-const parseRatio1e4 = (
-	value: string,
-	path: string,
-	entityId: Address,
-	errors: DataIssue[],
-): number => {
-	const parsed = Number(value);
-	if (Number.isFinite(parsed)) return parsed / 1e4;
-	errors.push({
-		code: "DEFAULT_APPLIED",
-		severity: "warning",
-		message: `Failed to parse ratio at ${path}; defaulted to 0.`,
-		paths: [path],
-		entityId,
-		source: "eVaultV3",
-		originalValue: value,
-		normalizedValue: 0,
-	});
-	return 0;
-};
-
-const parseAddressField = (
-	value: string | undefined,
-	path: string,
-	entityId: Address,
-	errors: DataIssue[],
-	fallback: Address = ZERO_ADDRESS,
-): Address => {
-	if (value) {
-		try {
-			return getAddress(value);
-		} catch {
-			// handled below
-		}
-	}
-
-	errors.push({
-		code: "DEFAULT_APPLIED",
-		severity: "warning",
-		message: `Missing or invalid address at ${path}; defaulted to zero address.`,
-		paths: [path],
-		entityId,
-		source: "eVaultV3",
-		originalValue: value,
-		normalizedValue: fallback,
-	});
-	return fallback;
-};
-
-const parseStringField = (
-	value: string | undefined,
-	path: string,
-	entityId: Address,
-	errors: DataIssue[],
-	fallback = "",
-): string => {
-	if (typeof value === "string") return value;
-	errors.push({
-		code: "DEFAULT_APPLIED",
-		severity: "warning",
-		message: `Missing string at ${path}; defaulted to ${JSON.stringify(fallback)}.`,
-		paths: [path],
-		entityId,
-		source: "eVaultV3",
-		originalValue: value,
-		normalizedValue: fallback,
-	});
-	return fallback;
-};
-
-const parseNumberField = (
-	value: number | undefined,
-	path: string,
-	entityId: Address,
-	errors: DataIssue[],
-	fallback = 0,
-): number => {
-	if (typeof value === "number" && Number.isFinite(value)) return value;
-	errors.push({
-		code: "DEFAULT_APPLIED",
-		severity: "warning",
-		message: `Missing or invalid number at ${path}; defaulted to ${fallback}.`,
-		paths: [path],
-		entityId,
-		source: "eVaultV3",
-		originalValue: value,
-		normalizedValue: fallback,
-	});
-	return fallback;
-};
-
-const parseBooleanField = (
-	value: boolean | undefined,
-	path: string,
-	entityId: Address,
-	errors: DataIssue[],
-	fallback = false,
-): boolean => {
-	if (typeof value === "boolean") return value;
-	errors.push({
-		code: "DEFAULT_APPLIED",
-		severity: "warning",
-		message: `Missing boolean at ${path}; defaulted to ${fallback}.`,
-		paths: [path],
-		entityId,
-		source: "eVaultV3",
-		originalValue: value,
-		normalizedValue: fallback,
-	});
-	return fallback;
-};
-
 function mapInterestRateModelType(type: string): InterestRateModelType {
 	switch (type.toLowerCase()) {
 		case "kink":
@@ -364,14 +237,27 @@ function convertToken(
 	errors: DataIssue[],
 ): Token {
 	return {
-		address: parseAddressField(token.address, `${path}.address`, entityId, errors),
-		name: parseStringField(token.name, `${path}.name`, entityId, errors),
-		symbol: parseStringField(token.symbol, `${path}.symbol`, entityId, errors),
-		decimals: parseNumberField(
-			token.decimals,
-			`${path}.decimals`,
+		address: parseAddressField(token.address, {
+			path: `${path}.address`,
 			entityId,
 			errors,
+			source: "eVaultV3",
+		}),
+		name: parseStringField(token.name, {
+			path: `${path}.name`,
+			entityId,
+			errors,
+			source: "eVaultV3",
+		}),
+		symbol: parseStringField(token.symbol, {
+			path: `${path}.symbol`,
+			entityId,
+			errors,
+			source: "eVaultV3",
+		}),
+		decimals: parseNumberField(
+			token.decimals,
+			{ path: `${path}.decimals`, entityId, errors, source: "eVaultV3" },
 		),
 	};
 }
@@ -385,47 +271,43 @@ function convertOraclePrice(
 	const converted = {
 		queryFailure: parseBooleanField(
 			price.queryFailure,
-			`${path}.queryFailure`,
-			entityId,
-			errors,
-			true,
+			{
+				path: `${path}.queryFailure`,
+				entityId,
+				errors,
+				source: "eVaultV3",
+				fallback: true,
+			},
 		),
 		queryFailureReason: parseStringField(
 			price.queryFailureReason,
-			`${path}.queryFailureReason`,
-			entityId,
-			errors,
-			"0x",
+			{
+				path: `${path}.queryFailureReason`,
+				entityId,
+				errors,
+				source: "eVaultV3",
+				fallback: "0x",
+			},
 		) as Hex,
 		amountIn: parseBigIntField(
 			price.amountIn,
-			`${path}.amountIn`,
-			entityId,
-			errors,
+			{ path: `${path}.amountIn`, entityId, errors, source: "eVaultV3" },
 		),
 		amountOutMid: parseBigIntField(
 			price.amountOutMid,
-			`${path}.amountOutMid`,
-			entityId,
-			errors,
+			{ path: `${path}.amountOutMid`, entityId, errors, source: "eVaultV3" },
 		),
 		amountOutBid: parseBigIntField(
 			price.amountOutBid,
-			`${path}.amountOutBid`,
-			entityId,
-			errors,
+			{ path: `${path}.amountOutBid`, entityId, errors, source: "eVaultV3" },
 		),
 		amountOutAsk: parseBigIntField(
 			price.amountOutAsk,
-			`${path}.amountOutAsk`,
-			entityId,
-			errors,
+			{ path: `${path}.amountOutAsk`, entityId, errors, source: "eVaultV3" },
 		),
 		timestamp: parseNumberField(
 			price.timestamp,
-			`${path}.timestamp`,
-			entityId,
-			errors,
+			{ path: `${path}.timestamp`, entityId, errors, source: "eVaultV3" },
 		),
 	};
 
@@ -456,29 +338,41 @@ function convertCollaterals(
 	for (const [index, row] of rows.entries()) {
 		const collateralAddress = parseAddressField(
 			row.collateral,
-			`$.collaterals[${index}].collateral`,
-			vaultEntityId,
-			errors,
+			{
+				path: `$.collaterals[${index}].collateral`,
+				entityId: vaultEntityId,
+				errors,
+				source: "eVaultV3",
+			},
 		);
 		const borrowLTV = parseRatio1e4(
 			row.borrowLTV,
-			`$.collaterals[${index}].borrowLTV`,
-			collateralAddress,
-			errors,
+			{
+				path: `$.collaterals[${index}].borrowLTV`,
+				entityId: collateralAddress,
+				errors,
+				source: "eVaultV3",
+			},
 		);
 		const liquidationLTV = parseRatio1e4(
 			row.liquidationLTV,
-			`$.collaterals[${index}].liquidationLTV`,
-			collateralAddress,
-			errors,
+			{
+				path: `$.collaterals[${index}].liquidationLTV`,
+				entityId: collateralAddress,
+				errors,
+				source: "eVaultV3",
+			},
 		);
 		const targetTimestamp = parseNumberField(
 			typeof row.targetTimestamp === "number"
 				? row.targetTimestamp
 				: Number(row.targetTimestamp),
-			`$.collaterals[${index}].targetTimestamp`,
-			collateralAddress,
-			errors,
+			{
+				path: `$.collaterals[${index}].targetTimestamp`,
+				entityId: collateralAddress,
+				errors,
+				source: "eVaultV3",
+			},
 		);
 		const isRemovedCollateral =
 			borrowLTV === 0 &&
@@ -526,16 +420,22 @@ function convertCollaterals(
 			const ramping: EVaultCollateralRamping = {
 				initialLiquidationLTV: parseRatio1e4(
 					row.initialLiquidationLTV,
-					`$.collaterals[${collaterals.length}].ramping.initialLiquidationLTV`,
-					collateralAddress,
-					errors,
+					{
+						path: `$.collaterals[${collaterals.length}].ramping.initialLiquidationLTV`,
+						entityId: collateralAddress,
+						errors,
+						source: "eVaultV3",
+					},
 				),
 				targetTimestamp,
 				rampDuration: parseBigIntField(
 					String(row.rampDuration ?? 0),
-					`$.collaterals[${collaterals.length}].ramping.rampDuration`,
-					collateralAddress,
-					errors,
+					{
+						path: `$.collaterals[${collaterals.length}].ramping.rampDuration`,
+						entityId: collateralAddress,
+						errors,
+						source: "eVaultV3",
+					},
 				),
 			};
 			collateral.ramping = ramping;
@@ -551,13 +451,16 @@ function logMissingDetailBlocks(
 	detail: V3VaultDetail,
 	detailUrl: string,
 	entityId: Address,
+	skipUnitOfAccount = false,
 ): void {
 	const missingBlocks: string[] = [];
 
 	if (!detail.oracle) missingBlocks.push("$.oracle");
 	if (!detail.shares) missingBlocks.push("$.shares");
 	if (!detail.asset) missingBlocks.push("$.asset");
-	if (!detail.unitOfAccount) missingBlocks.push("$.unitOfAccount");
+	if (!skipUnitOfAccount && !detail.unitOfAccount) {
+		missingBlocks.push("$.unitOfAccount");
+	}
 	if (!detail.fees) missingBlocks.push("$.fees");
 	if (!detail.hooks) missingBlocks.push("$.hooks");
 	if (!detail.hooks?.hookedOperations) {
@@ -586,14 +489,27 @@ function convertVault(
 	fallbackAddress: Address,
 	detailUrl: string,
 ): IEVault {
+	const hasZeroOracleAddress =
+		detail.oracle?.oracle !== undefined &&
+		(() => {
+			try {
+				return getAddress(detail.oracle.oracle) === ZERO_ADDRESS;
+			} catch {
+				return false;
+			}
+		})();
 	const entityId = parseAddressField(
 		detail.address,
-		"$.address",
-		fallbackAddress,
-		errors,
-		fallbackAddress,
+		{
+			path: "$.address",
+			entityId: fallbackAddress,
+			errors,
+			source: "eVaultV3",
+			fallback: fallbackAddress,
+			fallbackLabel: "requested vault address",
+		},
 	);
-	logMissingDetailBlocks(detail, detailUrl, entityId);
+	logMissingDetailBlocks(detail, detailUrl, entityId, hasZeroOracleAddress);
 
 	if (!detail.oracle) {
 		errors.push({
@@ -610,49 +526,68 @@ function convertVault(
 	const oracle: OracleInfo = {
 		oracle: parseAddressField(
 			oracleData.oracle,
-			"$.oracle.oracle",
+			{ path: "$.oracle.oracle", entityId, errors, source: "eVaultV3" },
+		),
+		name: parseStringField(oracleData.name, {
+			path: "$.oracle.name",
 			entityId,
 			errors,
-		),
-		name: parseStringField(oracleData.name, "$.oracle.name", entityId, errors),
+			source: "eVaultV3",
+		}),
 		adapters: oracleData.adapters.map((adapter) => ({
 			oracle: parseAddressField(
 				adapter.oracle,
-				"$.oracle.adapters[].oracle",
-				entityId,
-				errors,
+				{
+					path: "$.oracle.adapters[].oracle",
+					entityId,
+					errors,
+					source: "eVaultV3",
+				},
 			),
 			name: parseStringField(
 				adapter.name,
-				"$.oracle.adapters[].name",
-				entityId,
-				errors,
+				{
+					path: "$.oracle.adapters[].name",
+					entityId,
+					errors,
+					source: "eVaultV3",
+				},
 			),
 			base: parseAddressField(
 				adapter.base,
-				"$.oracle.adapters[].base",
-				entityId,
-				errors,
+				{
+					path: "$.oracle.adapters[].base",
+					entityId,
+					errors,
+					source: "eVaultV3",
+				},
 			),
 			quote: parseAddressField(
 				adapter.quote,
-				"$.oracle.adapters[].quote",
-				entityId,
-				errors,
+				{
+					path: "$.oracle.adapters[].quote",
+					entityId,
+					errors,
+					source: "eVaultV3",
+				},
 			),
 			pythDetail: adapter.pythDetail,
 			chainlinkDetail: adapter.chainlinkDetail
 				? {
 						oracle: parseAddressField(
 							adapter.chainlinkDetail.oracle,
-							"$.oracle.adapters[].chainlinkDetail.oracle",
-							entityId,
-							errors,
+							{
+								path: "$.oracle.adapters[].chainlinkDetail.oracle",
+								entityId,
+								errors,
+								source: "eVaultV3",
+							},
 						),
 					}
 				: undefined,
 		})),
 	};
+	const suppressUnitOfAccountDiagnostics = oracle.oracle === ZERO_ADDRESS;
 
 	if (!detail.shares) {
 		errors.push({
@@ -680,7 +615,7 @@ function convertVault(
 	}
 	const assetData = detail.asset ?? DEFAULT_TOKEN_BLOCK;
 
-	if (!detail.unitOfAccount) {
+	if (!detail.unitOfAccount && !suppressUnitOfAccountDiagnostics) {
 		errors.push({
 			code: "DEFAULT_APPLIED",
 			severity: "warning",
@@ -693,6 +628,7 @@ function convertVault(
 		});
 	}
 	const unitOfAccountData = detail.unitOfAccount ?? DEFAULT_TOKEN_BLOCK;
+	const unitOfAccountErrors = suppressUnitOfAccountDiagnostics ? [] : errors;
 
 	if (!detail.fees) {
 		errors.push({
@@ -726,27 +662,39 @@ function convertVault(
 		interestFee: feeData.interestFee ?? 0,
 		accumulatedFeesShares: parseBigIntField(
 			feeData.accumulatedFeesShares ?? "0",
-			"$.fees.accumulatedFeesShares",
-			entityId,
-			errors,
+			{
+				path: "$.fees.accumulatedFeesShares",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			},
 		),
 		accumulatedFeesAssets: parseBigIntField(
 			feeData.accumulatedFeesAssets ?? "0",
-			"$.fees.accumulatedFeesAssets",
-			entityId,
-			errors,
+			{
+				path: "$.fees.accumulatedFeesAssets",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			},
 		),
 		governorFeeReceiver: parseAddressField(
 			feeData.governorFeeReceiver,
-			"$.fees.governorFeeReceiver",
-			entityId,
-			errors,
+			{
+				path: "$.fees.governorFeeReceiver",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			},
 		),
 		protocolFeeReceiver: parseAddressField(
 			feeData.protocolFeeReceiver,
-			"$.fees.protocolFeeReceiver",
-			entityId,
-			errors,
+			{
+				path: "$.fees.protocolFeeReceiver",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			},
 		),
 		protocolFeeShare: feeData.protocolFeeShare ?? 0,
 	};
@@ -758,9 +706,7 @@ function convertVault(
 		},
 		hookTarget: parseAddressField(
 			detail.hooks?.hookTarget,
-			"$.hooks.hookTarget",
-			entityId,
-			errors,
+			{ path: "$.hooks.hookTarget", entityId, errors, source: "eVaultV3" },
 		),
 	};
 	if (!detail.hooks?.hookedOperations) {
@@ -790,15 +736,11 @@ function convertVault(
 	const caps: EVaultCaps = {
 		supplyCap: parseBigIntField(
 			capsData.supplyCap ?? "0",
-			"$.caps.supplyCap",
-			entityId,
-			errors,
+			{ path: "$.caps.supplyCap", entityId, errors, source: "eVaultV3" },
 		),
 		borrowCap: parseBigIntField(
 			capsData.borrowCap ?? "0",
-			"$.caps.borrowCap",
-			entityId,
-			errors,
+			{ path: "$.caps.borrowCap", entityId, errors, source: "eVaultV3" },
 		),
 	};
 
@@ -840,24 +782,33 @@ function convertVault(
 	const interestRates: InterestRates = {
 		borrowSPY: parseStringField(
 			interestRatesData.borrowSPY,
-			"$.interestRates.borrowSPY",
-			entityId,
-			errors,
-			"0",
+			{
+				path: "$.interestRates.borrowSPY",
+				entityId,
+				errors,
+				source: "eVaultV3",
+				fallback: "0",
+			},
 		),
 		borrowAPY: parseStringField(
 			interestRatesData.borrowAPY,
-			"$.interestRates.borrowAPY",
-			entityId,
-			errors,
-			"0",
+			{
+				path: "$.interestRates.borrowAPY",
+				entityId,
+				errors,
+				source: "eVaultV3",
+				fallback: "0",
+			},
 		),
 		supplyAPY: parseStringField(
 			interestRatesData.supplyAPY,
-			"$.interestRates.supplyAPY",
-			entityId,
-			errors,
-			"0",
+			{
+				path: "$.interestRates.supplyAPY",
+				entityId,
+				errors,
+				source: "eVaultV3",
+				fallback: "0",
+			},
 		),
 	};
 
@@ -878,17 +829,23 @@ function convertVault(
 	const interestRateModel: InterestRateModel = {
 		address: parseAddressField(
 			interestRateModelData.address,
-			"$.interestRateModel.address",
-			entityId,
-			errors,
+			{
+				path: "$.interestRateModel.address",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			},
 		),
 		type: mapInterestRateModelType(
 			parseStringField(
 				interestRateModelData.type,
-				"$.interestRateModel.type",
-				entityId,
-				errors,
-				"unknown",
+				{
+					path: "$.interestRateModel.type",
+					entityId,
+					errors,
+					source: "eVaultV3",
+					fallback: "unknown",
+				},
 			),
 		),
 		data: interestRateModelData.data as InterestRateModel["data"],
@@ -918,50 +875,41 @@ function convertVault(
 			unitOfAccountData,
 			"$.unitOfAccount",
 			entityId,
-			errors,
+			unitOfAccountErrors,
 		),
 		totalShares: parseBigIntField(
 			detail.totalShares,
-			"$.totalShares",
-			entityId,
-			errors,
+			{ path: "$.totalShares", entityId, errors, source: "eVaultV3" },
 		),
 		totalAssets: parseBigIntField(
 			detail.totalAssets,
-			"$.totalAssets",
-			entityId,
-			errors,
+			{ path: "$.totalAssets", entityId, errors, source: "eVaultV3" },
 		),
 		totalCash: parseBigIntField(
 			detail.totalCash,
-			"$.totalCash",
-			entityId,
-			errors,
+			{ path: "$.totalCash", entityId, errors, source: "eVaultV3" },
 		),
 		totalBorrowed: parseBigIntField(
 			detail.totalBorrowed,
-			"$.totalBorrowed",
-			entityId,
-			errors,
+			{ path: "$.totalBorrowed", entityId, errors, source: "eVaultV3" },
 		),
 		creator: parseAddressField(
 			detail.creator,
-			"$.creator",
-			entityId,
-			errors,
+			{ path: "$.creator", entityId, errors, source: "eVaultV3" },
 		),
 		governorAdmin: parseAddressField(
 			detail.governorAdmin,
-			"$.governorAdmin",
+			{ path: "$.governorAdmin", entityId, errors, source: "eVaultV3" },
+		),
+		dToken: parseAddressField(detail.dToken, {
+			path: "$.dToken",
 			entityId,
 			errors,
-		),
-		dToken: parseAddressField(detail.dToken, "$.dToken", entityId, errors),
+			source: "eVaultV3",
+		}),
 		balanceTracker: parseAddressField(
 			detail.balanceTracker,
-			"$.balanceTracker",
-			entityId,
-			errors,
+			{ path: "$.balanceTracker", entityId, errors, source: "eVaultV3" },
 		),
 		fees,
 		hooks,
@@ -978,9 +926,12 @@ function convertVault(
 		),
 		evcCompatibleAsset: parseBooleanField(
 			detail.evcCompatibleAsset,
-			"$.evcCompatibleAsset",
-			entityId,
-			errors,
+			{
+				path: "$.evcCompatibleAsset",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			},
 		),
 		oraclePriceRaw: convertOraclePrice(
 			oraclePriceData,
@@ -990,9 +941,7 @@ function convertVault(
 		),
 		timestamp: parseNumberField(
 			detail.timestamp,
-			"$.timestamp",
-			entityId,
-			errors,
+			{ path: "$.timestamp", entityId, errors, source: "eVaultV3" },
 		),
 	};
 }

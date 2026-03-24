@@ -323,9 +323,16 @@ export function unwrapServiceResultWithDiagnostics<T>(
       ownerRefs,
     };
   });
+  const oracleFailureEntityIds = new Set(
+    diagnostics
+      .filter((issue) => issue.message === "Oracle price query reported failure.")
+      .map((issue) => issue.entityId)
+      .filter((entityId): entityId is string => Boolean(entityId))
+  );
   console.log(`[sdk service result] ${operation}`, {
     result: response.result,
     errors: diagnosticsWithOwner,
+    oraclePriceQueryFailureEntityIdCount: oracleFailureEntityIds.size,
   });
 
   return { result: response.result, diagnostics };

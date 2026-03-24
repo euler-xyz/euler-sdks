@@ -6,6 +6,7 @@ export * from "./entities/EulerEarn.js";
 export * from "./entities/EulerLabels.js";
 export * from "./sdk/sdk.js";
 export * from "./sdk/buildSDK.js";
+export { defaultVaultTypeSubgraphAdapterConfig } from "./sdk/defaultConfig.js";
 /** @deprecated Use `buildEulerSDK` instead. */
 export { buildEulerSDK as buildSDK } from "./sdk/buildSDK.js";
 
@@ -42,5 +43,6 @@ export * from "./utils/accountComputations.js";
 export * from "./utils/callBundler.js";
 export * from "./utils/entityDiagnostics.js";
 export * from "./utils/normalization.js";
+export * from "./utils/parsing.js";
 export * from "./utils/decodeSmartContractErrors.js";
 export * from "./utils/eulerErrorSelectors.js";

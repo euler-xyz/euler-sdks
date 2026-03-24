@@ -1,4 +1,4 @@
-import { formatUnits, type Address, getAddress } from "viem";
+import { type Address, getAddress } from "viem";
 import {
 	type BuildQueryFn,
 	applyBuildQuery,
@@ -11,6 +11,13 @@ import {
 	compressDataIssues,
 	prefixDataIssues,
 } from "../../../../utils/entityDiagnostics.js";
+import {
+	parseAddressField,
+	parseBigIntField,
+	parsePerformanceFee,
+	parseTimestampField,
+	ZERO_ADDRESS,
+} from "../../../../utils/parsing.js";
 import { VaultType, type Token } from "../../../../utils/types.js";
 import type {
 	EulerEarnAllocationCap,
@@ -105,118 +112,6 @@ type V3EulerEarnListRow = {
 };
 
 const unsupportedError = new Error("unsupported");
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
-
-const parseBigIntField = (
-	value: string | undefined,
-	path: string,
-	entityId: Address,
-	errors: DataIssue[],
-): bigint => {
-	try {
-		return BigInt(value ?? "0");
-	} catch {
-		errors.push({
-			code: "DEFAULT_APPLIED",
-			severity: "warning",
-			message: `Failed to parse bigint at ${path}; defaulted to 0.`,
-			paths: [path],
-			entityId,
-			source: "eulerEarnV3",
-			originalValue: value,
-			normalizedValue: "0",
-		});
-		return 0n;
-	}
-};
-
-const parseTimestampField = (
-	value: string | undefined,
-	path: string,
-	entityId: Address,
-	errors: DataIssue[],
-): number => {
-	if (!value) {
-		errors.push({
-			code: "DEFAULT_APPLIED",
-			severity: "warning",
-			message: `Missing timestamp at ${path}; defaulted to 0.`,
-			paths: [path],
-			entityId,
-			source: "eulerEarnV3",
-			normalizedValue: 0,
-		});
-		return 0;
-	}
-
-	const parsed = Date.parse(value);
-	if (Number.isFinite(parsed)) return Math.floor(parsed / 1000);
-
-	errors.push({
-		code: "DEFAULT_APPLIED",
-		severity: "warning",
-		message: `Failed to parse timestamp at ${path}; defaulted to 0.`,
-		paths: [path],
-		entityId,
-		source: "eulerEarnV3",
-		originalValue: value,
-		normalizedValue: 0,
-	});
-	return 0;
-};
-
-const parseAddressField = (
-	value: string | undefined,
-	path: string,
-	entityId: Address,
-	errors: DataIssue[],
-): Address => {
-	if (value) {
-		try {
-			return getAddress(value);
-		} catch {
-			// handled below
-		}
-	}
-
-	errors.push({
-		code: "DEFAULT_APPLIED",
-		severity: "warning",
-		message: `Missing or invalid address at ${path}; defaulted to zero address.`,
-		paths: [path],
-		entityId,
-		source: "eulerEarnV3",
-		originalValue: value,
-		normalizedValue: ZERO_ADDRESS,
-	});
-	return ZERO_ADDRESS;
-};
-
-const parsePerformanceFee = (
-	value: string | undefined,
-	path: string,
-	entityId: Address,
-	errors: DataIssue[],
-): number => {
-	try {
-		const parsed = Number(formatUnits(BigInt(value ?? "0"), 18));
-		if (Number.isFinite(parsed)) return parsed;
-	} catch {
-		// handled below
-	}
-
-	errors.push({
-		code: "DEFAULT_APPLIED",
-		severity: "warning",
-		message: `Failed to parse performance fee at ${path}; defaulted to 0.`,
-		paths: [path],
-		entityId,
-		source: "eulerEarnV3",
-		originalValue: value,
-		normalizedValue: 0,
-	});
-	return 0;
-};
 
 function convertToken(
 	token: V3Token,
@@ -240,33 +135,28 @@ function convertGovernance(
 	return {
 		owner: parseAddressField(
 			detail.governance?.owner ?? detail.management?.owner,
-			"$.governance.owner",
-			entityId,
-			errors,
+			{ path: "$.governance.owner", entityId, errors, source: "eulerEarnV3" },
 		),
 		creator: parseAddressField(
 			detail.governance?.creator,
-			"$.governance.creator",
-			entityId,
-			errors,
+			{ path: "$.governance.creator", entityId, errors, source: "eulerEarnV3" },
 		),
 		curator: parseAddressField(
 			detail.governance?.curator,
-			"$.governance.curator",
-			entityId,
-			errors,
+			{ path: "$.governance.curator", entityId, errors, source: "eulerEarnV3" },
 		),
 		guardian: parseAddressField(
 			detail.governance?.guardian ?? detail.management?.guardian,
-			"$.governance.guardian",
-			entityId,
-			errors,
+			{ path: "$.governance.guardian", entityId, errors, source: "eulerEarnV3" },
 		),
 		feeReceiver: parseAddressField(
 			detail.governance?.feeReceiver,
-			"$.governance.feeReceiver",
-			entityId,
-			errors,
+			{
+				path: "$.governance.feeReceiver",
+				entityId,
+				errors,
+				source: "eulerEarnV3",
+			},
 		),
 		timelock:
 			detail.governance?.timelock ?? detail.management?.timelockSeconds ?? 0,
@@ -274,9 +164,12 @@ function convertGovernance(
 		pendingTimelockValidAt: detail.governance?.pendingTimelockValidAt ?? 0,
 		pendingGuardian: parseAddressField(
 			detail.governance?.pendingGuardian,
-			"$.governance.pendingGuardian",
-			entityId,
-			errors,
+			{
+				path: "$.governance.pendingGuardian",
+				entityId,
+				errors,
+				source: "eulerEarnV3",
+			},
 		),
 		pendingGuardianValidAt: detail.governance?.pendingGuardianValidAt ?? 0,
 	};
@@ -319,30 +212,42 @@ function convertStrategies(
 	return (detail.strategies ?? []).map((strategy, index) => {
 		const strategyAddress = getAddress(strategy.address);
 		const allocatedAssets = parseBigIntField(
-			strategy.allocatedAssets,
-			`$.strategies[${index}].allocatedAssets`,
-			strategyAddress,
-			errors,
+			strategy.allocatedAssets ?? "0",
+			{
+				path: `$.strategies[${index}].allocatedAssets`,
+				entityId: strategyAddress,
+				errors,
+				source: "eulerEarnV3",
+			},
 		);
 		const availableAssets = parseBigIntField(
-			strategy.availableAssets,
-			`$.strategies[${index}].availableAssets`,
-			strategyAddress,
-			errors,
+			strategy.availableAssets ?? "0",
+			{
+				path: `$.strategies[${index}].availableAssets`,
+				entityId: strategyAddress,
+				errors,
+				source: "eulerEarnV3",
+			},
 		);
 
 		const allocationCap: EulerEarnAllocationCap = {
 			current: parseBigIntField(
-				strategy.allocationCap?.current,
-				`$.strategies[${index}].allocationCap.current`,
-				strategyAddress,
-				errors,
+				strategy.allocationCap?.current ?? "0",
+				{
+					path: `$.strategies[${index}].allocationCap.current`,
+					entityId: strategyAddress,
+					errors,
+					source: "eulerEarnV3",
+				},
 			),
 			pending: parseBigIntField(
-				strategy.allocationCap?.pending,
-				`$.strategies[${index}].allocationCap.pending`,
-				strategyAddress,
-				errors,
+				strategy.allocationCap?.pending ?? "0",
+				{
+					path: `$.strategies[${index}].allocationCap.pending`,
+					entityId: strategyAddress,
+					errors,
+					source: "eulerEarnV3",
+				},
 			),
 			pendingValidAt: strategy.allocationCap?.pendingValidAt ?? 0,
 		};
@@ -381,34 +286,24 @@ function convertEulerEarn(
 			detail.asset.symbol ?? "UNKNOWN",
 		),
 		totalShares: parseBigIntField(
-			detail.totalShares,
-			"$.totalShares",
-			entityId,
-			errors,
+			detail.totalShares ?? "0",
+			{ path: "$.totalShares", entityId, errors, source: "eulerEarnV3" },
 		),
 		totalAssets: parseBigIntField(
-			detail.totalAssets,
-			"$.totalAssets",
-			entityId,
-			errors,
+			detail.totalAssets ?? "0",
+			{ path: "$.totalAssets", entityId, errors, source: "eulerEarnV3" },
 		),
 		lostAssets: parseBigIntField(
-			detail.lostAssets,
-			"$.lostAssets",
-			entityId,
-			errors,
+			detail.lostAssets ?? "0",
+			{ path: "$.lostAssets", entityId, errors, source: "eulerEarnV3" },
 		),
 		availableAssets: parseBigIntField(
-			detail.availableAssets,
-			"$.availableAssets",
-			entityId,
-			errors,
+			detail.availableAssets ?? "0",
+			{ path: "$.availableAssets", entityId, errors, source: "eulerEarnV3" },
 		),
 		performanceFee: parsePerformanceFee(
 			detail.management?.performanceFee,
-			"$.performanceFee",
-			entityId,
-			errors,
+			{ path: "$.performanceFee", entityId, errors, source: "eulerEarnV3" },
 		),
 		governance: convertGovernance(detail, entityId, errors),
 		supplyQueue: buildSupplyQueue(detail.strategies ?? []),
@@ -416,9 +311,7 @@ function convertEulerEarn(
 		strategies: convertStrategies(detail, entityId, errors),
 		timestamp: parseTimestampField(
 			detail.snapshotTimestamp,
-			"$.timestamp",
-			entityId,
-			errors,
+			{ path: "$.timestamp", entityId, errors, source: "eulerEarnV3" },
 		),
 	};
 }
