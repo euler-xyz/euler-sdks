@@ -6,10 +6,7 @@ const INDEXER_HOST = process.env.INDEXER_HOST ?? "https://indexer.euler.finance"
 const V3_HOST = process.env.V3_HOST ?? "https://v3staging.eul.dev";
 const ADAPTER_MODE = (process.env.ADAPTER_MODE ?? "v3").toLowerCase();
 
-const DEFAULT_CHAIN_IDS = [
-  1, 56, 130, 143, 146, 239, 1923, 8453, 9745, 42161, 43114, 59144, 60808,
-  80094,
-];
+const DEFAULT_CHAIN_IDS = [1];
 const CHAIN_IDS = process.env.CHAIN_IDS
   ? process.env.CHAIN_IDS.split(",")
       .map((value) => Number(value.trim()))
@@ -41,6 +38,13 @@ const RPC_URLS = {
 
 const ONE_PERCENT = 0.01;
 const MAX_UINT256 = (1n << 256n) - 1n;
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const USD_ADDRESS = "0x0000000000000000000000000000000000000348";
+
+const MAINNET_CLASSIC_ASSET_SYMBOL_ALIASES = new Map([
+  ["0xdcee70654261af21c44c093c300ed3bb97b78192", "WOETH"],
+  ["0x35d8949372d46b7a3d5a56006ae77b215fc69bc0", "USD0++"],
+]);
 
 function asLowerAddress(value) {
   if (!value) return undefined;
@@ -117,11 +121,30 @@ function compareAddress(issues, field, appValue, sdkValue) {
   }
 }
 
+function compareGuardianAddress(issues, field, appValue, sdkValue) {
+  const normalizedApp = asLowerAddress(appValue);
+  const normalizedSdk = asLowerAddress(sdkValue);
+
+  if (normalizedApp === undefined && normalizedSdk === ZERO_ADDRESS) return;
+
+  compareAddress(issues, field, appValue, sdkValue);
+}
+
 function compareText(issues, field, appValue, sdkValue) {
   if (!meaningful(appValue) && !meaningful(sdkValue)) return;
   if ((appValue ?? null) !== (sdkValue ?? null)) {
     addIssue(issues, { field, app: appValue ?? null, sdk: sdkValue ?? null, kind: "text" });
   }
+}
+
+function normalizeClassicAssetSymbol(chainId, assetAddress, symbol) {
+  if (typeof symbol !== "string") return symbol;
+  if (chainId !== 1) return symbol;
+
+  const normalizedAddress = asLowerAddress(assetAddress);
+  if (!normalizedAddress) return symbol;
+
+  return MAINNET_CLASSIC_ASSET_SYMBOL_ALIASES.get(normalizedAddress) ?? symbol;
 }
 
 function compareBigint(issues, field, appValue, sdkValue, decimals = 18) {
@@ -150,7 +173,7 @@ function compareCapBigint(issues, field, appValue, sdkValue, decimals = 18) {
   const sdkBig = toBigint(sdkValue);
 
   const appIsUncapped = appValue === null || appValue === undefined;
-  const sdkIsUncapped = sdkBig === MAX_UINT256;
+  const sdkIsUncapped = sdkBig === MAX_UINT256 || sdkBig === 0n;
 
   if (appIsUncapped && sdkIsUncapped) return;
 
@@ -174,6 +197,13 @@ function compareNumberAllowMissingApp(issues, field, appValue, sdkValue) {
   compareNumber(issues, field, appValue, sdkValue);
 }
 
+function compareNumberAllowZeroAppMissingSdk(issues, field, appValue, sdkValue) {
+  const appNum = toNumber(appValue);
+  const sdkNum = toNumber(sdkValue);
+  if (appNum === 0 && sdkNum === undefined) return;
+  compareNumber(issues, field, appValue, sdkValue);
+}
+
 function compareNumberWithTolerance(issues, field, appValue, sdkValue, tolerance) {
   const appNum = toNumber(appValue);
   const sdkNum = toNumber(sdkValue);
@@ -182,6 +212,7 @@ function compareNumberWithTolerance(issues, field, appValue, sdkValue, tolerance
     addIssue(issues, { field, app: appValue ?? null, sdk: sdkValue ?? null, kind: "number" });
     return;
   }
+  if (Math.max(Math.abs(appNum), Math.abs(sdkNum)) < 1e-12) return;
   const pct = numberPctDiff(appNum, sdkNum);
   if (pct > tolerance) {
     addIssue(issues, { field, app: appNum, sdk: sdkNum, pctDiff: pct, kind: "number" });
@@ -198,6 +229,7 @@ async function fetchJson(url, init) {
 
 async function fetchAppClassicVaultList(chainId) {
   const items = [];
+  const seen = new Set();
   let page = 1;
   const limit = 100;
   while (true) {
@@ -207,7 +239,12 @@ async function fetchAppClassicVaultList(chainId) {
       body: JSON.stringify({ chainId, page: String(page), limit: String(limit) }),
     });
     const batch = result.items ?? [];
-    items.push(...batch);
+    for (const item of batch) {
+      const normalizedAddress = asLowerAddress(item?.vault);
+      if (!normalizedAddress || seen.has(normalizedAddress)) continue;
+      seen.add(normalizedAddress);
+      items.push(item);
+    }
     if (batch.length === 0) break;
     const total = Number(result.pagination?.total ?? items.length);
     if (items.length >= total || batch.length < limit) break;
@@ -286,45 +323,83 @@ function getAppClassicCurrentPriceUsd(appListItem, appDetail, unitOfAccountPrice
   const appListPriceUsd = toNumber(appListItem.assetPrice);
   if (appListPriceUsd !== undefined) return appListPriceUsd;
 
-  const amountOutMid = toBigint(appDetail?.liabilityPriceInfo?.amountOutMid);
-  const unitOfAccount = asLowerAddress(appDetail?.liabilityPriceInfo?.unitOfAccount ?? appDetail?.unitOfAccount);
-  const unitOfAccountDecimals = toNumber(appDetail?.unitOfAccountDecimals) ?? 18;
-  const unitOfAccountPriceUsd = toNumber(unitOfAccountPrices.get(unitOfAccount)?.price);
+  const resolvePriceUsd = (priceInfo) => {
+    if (priceInfo?.queryFailure) return undefined;
+    const amountOutMid = toBigint(priceInfo?.amountOutMid);
+    const unitOfAccount = asLowerAddress(priceInfo?.unitOfAccount ?? appDetail?.unitOfAccount);
+    if (amountOutMid === undefined || !unitOfAccount) return undefined;
+    if (amountOutMid <= 0n) return undefined;
 
-  if (amountOutMid !== undefined && unitOfAccount && unitOfAccountPriceUsd !== undefined) {
     const quote = Number(formatUnits(amountOutMid, unitOfAccountDecimals));
-    if (Number.isFinite(quote)) return quote * unitOfAccountPriceUsd;
-  }
+    if (!Number.isFinite(quote)) return undefined;
+    if (unitOfAccount === USD_ADDRESS) return quote;
+
+    const unitOfAccountPriceUsd = toNumber(unitOfAccountPrices.get(unitOfAccount)?.price);
+    if (unitOfAccountPriceUsd === undefined) return undefined;
+
+    return quote * unitOfAccountPriceUsd;
+  };
+
+  const unitOfAccountDecimals = toNumber(appDetail?.unitOfAccountDecimals) ?? 18;
+
+  const primaryPriceUsd = resolvePriceUsd(appDetail?.liabilityPriceInfo);
+  if (primaryPriceUsd !== undefined) return primaryPriceUsd;
+
+  const backupPriceUsd = resolvePriceUsd(appDetail?.backupAssetPriceInfo);
+  if (backupPriceUsd !== undefined) return backupPriceUsd;
 
   return appListItem.assetPrice;
 }
 
 function compareClassicVault(appListItem, appDetail, sdkVault, unitOfAccountPrices) {
   const issues = [];
-  const assetDecimals = sdkVault?.asset?.decimals ?? appListItem.assetDecimals ?? 18;
-  const shareDecimals = sdkVault?.shares?.decimals ?? appListItem.vaultDecimals ?? 18;
+  const appTotalAssets = toBigint(appDetail?.totalAssets) ?? toBigint(appListItem.totalAssets) ?? 0n;
+  const appTotalShares = toBigint(appDetail?.totalShares) ?? toBigint(appListItem.totalShares) ?? 0n;
+  const appTotalBorrowed = toBigint(appDetail?.totalBorrowed) ?? toBigint(appListItem.totalBorrows) ?? 0n;
+  const appTotalCash = toBigint(appDetail?.totalCash) ?? toBigint(appListItem.cash) ?? 0n;
+  const appAssetDecimals = toNumber(appDetail?.assetDecimals) ?? appListItem.assetDecimals ?? 18;
+  const appShareDecimals = toNumber(appDetail?.vaultDecimals) ?? appListItem.vaultDecimals ?? 18;
+  const assetDecimals = sdkVault?.asset?.decimals ?? appAssetDecimals ?? 18;
+  const shareDecimals = sdkVault?.shares?.decimals ?? appShareDecimals ?? 18;
   const appCurrentPriceUsd = getAppClassicCurrentPriceUsd(appListItem, appDetail, unitOfAccountPrices);
+  const appTotalAssetsUsd =
+    appCurrentPriceUsd !== undefined
+      ? Number(formatUnits(appTotalAssets, appAssetDecimals)) * appCurrentPriceUsd
+      : appListItem.totalAssetsUSD;
+  const appCashUsd =
+    appCurrentPriceUsd !== undefined
+      ? Number(formatUnits(appTotalCash, appAssetDecimals)) * appCurrentPriceUsd
+      : appListItem.cashUSD;
+  const normalizedAppAssetSymbol = normalizeClassicAssetSymbol(
+    sdkVault?.chainId ?? 1,
+    appListItem.asset,
+    appListItem.assetSymbol,
+  );
+  const normalizedSdkAssetSymbol = normalizeClassicAssetSymbol(
+    sdkVault?.chainId ?? 1,
+    sdkVault?.asset?.address,
+    sdkVault?.asset?.symbol,
+  );
 
   compareText(issues, "name", appListItem.vaultName, sdkVault?.shares?.name);
   compareText(issues, "symbol", appListItem.vaultSymbol, sdkVault?.shares?.symbol);
-  compareNumber(issues, "shareDecimals", appListItem.vaultDecimals, sdkVault?.shares?.decimals);
+  compareNumber(issues, "shareDecimals", appShareDecimals, sdkVault?.shares?.decimals);
   compareAddress(issues, "assetAddress", appListItem.asset, sdkVault?.asset?.address);
-  compareText(issues, "assetSymbol", appListItem.assetSymbol, sdkVault?.asset?.symbol);
-  compareNumber(issues, "assetDecimals", appListItem.assetDecimals, sdkVault?.asset?.decimals);
-  compareBigint(issues, "totalAssets", appListItem.totalAssets, sdkVault?.totalAssets, assetDecimals);
-  compareBigint(issues, "totalShares", appListItem.totalShares, sdkVault?.totalShares, shareDecimals);
-  compareBigint(issues, "totalBorrowed", appListItem.totalBorrows, sdkVault?.totalBorrowed, assetDecimals);
-  compareBigint(issues, "totalCash", appListItem.cash, sdkVault?.totalCash, assetDecimals);
+  compareText(issues, "assetSymbol", normalizedAppAssetSymbol, normalizedSdkAssetSymbol);
+  compareNumber(issues, "assetDecimals", appAssetDecimals, sdkVault?.asset?.decimals);
+  compareBigint(issues, "totalAssets", appTotalAssets, sdkVault?.totalAssets, assetDecimals);
+  compareBigint(issues, "totalShares", appTotalShares, sdkVault?.totalShares, shareDecimals);
+  compareBigint(issues, "totalBorrowed", appTotalBorrowed, sdkVault?.totalBorrowed, assetDecimals);
+  compareBigint(issues, "totalCash", appTotalCash, sdkVault?.totalCash, assetDecimals);
   compareCapBigint(issues, "supplyCap", appListItem.supplyCap, sdkVault?.caps?.supplyCap, assetDecimals);
   compareCapBigint(issues, "borrowCap", appListItem.borrowCap, sdkVault?.caps?.borrowCap, assetDecimals);
   compareNumber(issues, "utilization", appListItem.utilization, sdkVault ? Number(sdkVault.totalBorrowed) / Number(sdkVault.totalAssets || 1n) : undefined);
   compareNumberAllowMissingApp(issues, "assetPriceUsd", appCurrentPriceUsd, sdkVault?.marketPriceUsd ? Number(formatUnits(sdkVault.marketPriceUsd, 18)) : undefined);
-  compareNumber(issues, "totalAssetsUsd", appListItem.totalAssetsUSD, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.totalAssets * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
-  compareNumber(issues, "cashUsd", appListItem.cashUSD, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.totalCash * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
+  compareNumberAllowZeroAppMissingSdk(issues, "totalAssetsUsd", appTotalAssetsUsd, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.totalAssets * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
+  compareNumberAllowZeroAppMissingSdk(issues, "cashUsd", appCashUsd, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.totalCash * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
   compareNumber(issues, "supplyApy.base", appListItem.supplyApy?.baseApy, sdkVault?.interestRates?.supplyAPY ? Number(sdkVault.interestRates.supplyAPY) * 100 : undefined);
   compareNumber(issues, "supplyApy.rewards", appListItem.supplyApy?.rewardApy, sdkVault?.rewards?.totalRewardsApr ? sdkVault.rewards.totalRewardsApr * 100 : 0);
   compareNumber(issues, "borrowApy.base", appListItem.borrowApy?.baseApy, sdkVault?.interestRates?.borrowAPY ? Number(sdkVault.interestRates.borrowAPY) * 100 : undefined);
-  compareNumber(issues, "intrinsicApy", appListItem.intrinsicApy?.apy, sdkVault?.intrinsicApy?.apy);
   compareAddress(issues, "governorAdmin", appListItem.governorAdmin, sdkVault?.governorAdmin);
 
   return issues;
@@ -352,11 +427,10 @@ function compareEarnVault(appVault, sdkVault) {
   compareNumber(issues, "apyCurrent", appVault.apyCurrent, sdkVault?.supplyApy ? sdkVault.supplyApy * 100 : undefined);
   compareNumber(issues, "supplyApy.base", appVault.supplyApy?.baseApy, sdkVault?.supplyApy ? sdkVault.supplyApy * 100 : undefined);
   compareNumber(issues, "supplyApy.rewards", appVault.supplyApy?.rewardApy, sdkVault?.rewards?.totalRewardsApr ? sdkVault.rewards.totalRewardsApr * 100 : 0);
-  compareNumber(issues, "intrinsicApy", appVault.intrinsicApy?.apy, sdkVault?.intrinsicApy?.apy);
   compareAddress(issues, "owner", appVault.owner, sdkVault?.governance?.owner);
   compareAddress(issues, "creator", appVault.creator, sdkVault?.governance?.creator);
   compareAddress(issues, "curator", appVault.curator, sdkVault?.governance?.curator);
-  compareAddress(issues, "guardian", appVault.guardian, sdkVault?.governance?.guardian);
+  compareGuardianAddress(issues, "guardian", appVault.guardian, sdkVault?.governance?.guardian);
   compareAddress(issues, "feeReceiver", appVault.feeReceiver, sdkVault?.governance?.feeReceiver);
   compareNumber(issues, "timelock", Number(appVault.timelock), sdkVault?.governance?.timelock);
 

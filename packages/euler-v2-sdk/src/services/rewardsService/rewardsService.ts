@@ -65,6 +65,11 @@ const MERKL_DISTRIBUTOR_ABI = [
 	},
 ] as const;
 
+const extractMerklVaultAddress = (identifier: string): string | undefined => {
+	const match = identifier.match(/^0x[a-fA-F0-9]{40}/);
+	return match ? match[0]!.toLowerCase() : undefined;
+};
+
 const BREVIS_CLAIM_ABI = [
 	{
 		type: "function",
@@ -485,6 +490,8 @@ export class RewardsService implements IRewardsService {
 
 		for (const opp of opportunities) {
 			if (opp.status !== "LIVE") continue;
+			const vaultAddress = extractMerklVaultAddress(opp.identifier);
+			if (!vaultAddress) continue;
 
 			for (const c of opp.campaigns ?? []) {
 				campaigns.push({
@@ -498,7 +505,7 @@ export class RewardsService implements IRewardsService {
 					dailyRewards: c.dailyRewards,
 					endTimestamp: c.endTimestamp,
 					// attach the vault address via a private field pattern below
-					_vaultAddress: opp.identifier.toLowerCase(),
+					_vaultAddress: vaultAddress,
 				} as RewardCampaign & { _vaultAddress: string });
 			}
 		}
