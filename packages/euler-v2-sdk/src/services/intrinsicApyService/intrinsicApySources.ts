@@ -1,4 +1,19 @@
-import type { IntrinsicApySourceConfig } from "./intrinsicApyServiceTypes.js";
+export type IntrinsicApySourceConfig =
+	| {
+			provider: "defillama";
+			address: string;
+			chainId: number;
+			poolId: string;
+			useSpotApy?: boolean;
+	  }
+	| {
+			provider: "pendle";
+			address: string;
+			chainId: number;
+			pendleMarket: string;
+			crossChainSourceChainId?: number;
+	  }
+	| { provider: "stablewatch"; address: string; chainId: number };
 
 export const intrinsicApySources: readonly IntrinsicApySourceConfig[] = [
 	// DefiLlama pools — Ethereum (1)

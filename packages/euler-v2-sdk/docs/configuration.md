@@ -40,8 +40,11 @@ const sdk = await buildEulerSDK({
 
   // Optional: intrinsic APY data sources
   intrinsicApyServiceConfig: {
-    defillamaYieldsUrl: "https://...",
-    pendleApiUrl: "https://...",
+    adapter: "direct",
+    directAdapterConfig: {
+      defillamaYieldsUrl: "https://...",
+      pendleApiUrl: "https://...",
+    },
   },
 
   // Optional: oracle adapter metadata API

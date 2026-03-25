@@ -61,6 +61,9 @@ export function SdkProvider({ children }: { children: ReactNode }) {
       eulerEarnServiceConfig: {
         adapter: useV3Adapters ? "v3" : "onchain",
       },
+      intrinsicApyServiceConfig: {
+        adapter: useV3Adapters ? "v3" : "direct",
+      },
       vaultTypeAdapterConfig: useV3Adapters
         ? {
             endpoint: "https://v3staging.eul.dev",

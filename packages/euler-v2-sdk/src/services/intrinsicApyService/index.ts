@@ -1,10 +1,17 @@
 export { IntrinsicApyService } from "./intrinsicApyService.js";
+export { IntrinsicApyDirectAdapter } from "./adapters/intrinsicApyDirectAdapter/index.js";
+export { IntrinsicApyV3Adapter } from "./adapters/intrinsicApyV3Adapter/index.js";
 export type {
+	IIntrinsicApyAdapter,
 	IIntrinsicApyService,
 	IntrinsicApyInfo,
-	IntrinsicApySourceConfig,
 	IntrinsicApyServiceConfig,
+} from "./intrinsicApyService.js";
+export type {
+	IntrinsicApyDirectAdapterConfig,
 	StablewatchPool,
 	StablewatchResponse,
-} from "./intrinsicApyServiceTypes.js";
+} from "./adapters/intrinsicApyDirectAdapter/index.js";
+export type { IntrinsicApyV3AdapterConfig } from "./adapters/intrinsicApyV3Adapter/index.js";
 export { intrinsicApySources } from "./intrinsicApySources.js";
+export type { IntrinsicApySourceConfig } from "./intrinsicApySources.js";

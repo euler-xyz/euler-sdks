@@ -4,7 +4,8 @@ import type { AccountVaultsSubgraphAdapter } from "../services/accountService/ad
 import type { AccountV3Adapter } from "../services/accountService/adapters/accountV3Adapter/accountV3Adapter.js";
 import type { DeploymentService } from "../services/deploymentService/deploymentService.js";
 import type { EulerLabelsURLAdapter } from "../services/eulerLabelsService/eulerLabelsService.js";
-import type { IntrinsicApyService } from "../services/intrinsicApyService/intrinsicApyService.js";
+import type { IntrinsicApyDirectAdapter } from "../services/intrinsicApyService/adapters/intrinsicApyDirectAdapter/index.js";
+import type { IntrinsicApyV3Adapter } from "../services/intrinsicApyService/adapters/intrinsicApyV3Adapter/index.js";
 import type { OracleAdapterService } from "../services/oracleAdapterService/oracleAdapterService.js";
 import type { PricingBackendClient } from "../services/priceService/backendClient.js";
 import type { PriceService } from "../services/priceService/priceService.js";
@@ -32,7 +33,8 @@ export type EulerSDKQueryName =
 	| QueryMethodName<AccountV3Adapter>
 	| QueryMethodName<typeof DeploymentService>
 	| QueryMethodName<EulerLabelsURLAdapter>
-	| QueryMethodName<IntrinsicApyService>
+	| QueryMethodName<IntrinsicApyDirectAdapter>
+	| QueryMethodName<IntrinsicApyV3Adapter>
 	| QueryMethodName<OracleAdapterService>
 	| QueryMethodName<PricingBackendClient>
 	| QueryMethodName<PriceService>

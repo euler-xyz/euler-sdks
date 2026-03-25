@@ -17,7 +17,7 @@
  *
  * USAGE:
  *   Set RPC_URL_1 in examples/.env for mainnet access, then run:
- *   npx tsx examples/vaults/compare-default-vs-v3-labeled-vaults-example.ts
+ *   npx tsx test/parity/compare-default-vs-v3-labeled-vaults-example.ts
  */
 
 import "dotenv/config";
@@ -27,7 +27,7 @@ import { join } from "node:path";
 import { getAddress, type Address } from "viem";
 import { mainnet } from "viem/chains";
 
-import { getRpcUrls } from "../utils/config.js";
+import { getRpcUrls } from "../../examples/utils/config.js";
 import {
   buildEulerSDK,
   type BuildSDKOptions,

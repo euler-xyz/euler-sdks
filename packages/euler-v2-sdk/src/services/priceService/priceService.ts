@@ -29,6 +29,8 @@ export const USD_ADDRESS: Address =
 
 const USD_DECIMALS = 18;
 
+const getDecimalScale = (decimals: number): bigint => 10n ** BigInt(decimals);
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -453,10 +455,11 @@ export class PriceService implements IPriceService {
 			if (oraclePrice) {
 				const uoaRate = await this.fetchUnitOfAccountUsdRate(vault as EVault);
 				if (uoaRate) {
+					const oracleScale = getDecimalScale(oraclePrice.decimals);
 					return {
-						amountOutMid: (oraclePrice.amountOutMid * uoaRate) / ONE_18,
-						amountOutAsk: (oraclePrice.amountOutAsk * uoaRate) / ONE_18,
-						amountOutBid: (oraclePrice.amountOutBid * uoaRate) / ONE_18,
+						amountOutMid: (oraclePrice.amountOutMid * uoaRate) / oracleScale,
+						amountOutAsk: (oraclePrice.amountOutAsk * uoaRate) / oracleScale,
+						amountOutBid: (oraclePrice.amountOutBid * uoaRate) / oracleScale,
 						decimals: USD_DECIMALS,
 					};
 				}
@@ -495,11 +498,12 @@ export class PriceService implements IPriceService {
 
 		const uoaRate = await this.fetchUnitOfAccountUsdRate(liabilityVault);
 		if (!uoaRate) return undefined;
+		const oracleScale = getDecimalScale(oraclePrice.decimals);
 
 		return {
-			amountOutMid: (oraclePrice.amountOutMid * uoaRate) / ONE_18,
-			amountOutAsk: (oraclePrice.amountOutAsk * uoaRate) / ONE_18,
-			amountOutBid: (oraclePrice.amountOutBid * uoaRate) / ONE_18,
+			amountOutMid: (oraclePrice.amountOutMid * uoaRate) / oracleScale,
+			amountOutAsk: (oraclePrice.amountOutAsk * uoaRate) / oracleScale,
+			amountOutBid: (oraclePrice.amountOutBid * uoaRate) / oracleScale,
 			decimals: USD_DECIMALS,
 		};
 	}

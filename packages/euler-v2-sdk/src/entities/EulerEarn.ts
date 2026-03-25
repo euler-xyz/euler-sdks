@@ -31,6 +31,11 @@ export interface EulerEarnStrategyInfo {
 	vault?: EVault;
 }
 
+export type EulerEarnStrategyStatus =
+	| "active"
+	| "inactive"
+	| "pendingRemoval";
+
 export interface EulerEarnGovernance {
 	owner: Address;
 	creator: Address;
@@ -106,9 +111,21 @@ export class EulerEarn
 	}
 
 	isPendingRemoval(strategy: EulerEarnStrategyInfo): boolean {
-		return this.strategies.some(
-			(s) => s.address === strategy.address && s.removableAt > this.timestamp,
-		);
+		return this.getStrategyStatus(strategy) === "pendingRemoval";
+	}
+
+	getStrategyStatus(
+		strategy: EulerEarnStrategyInfo,
+	): EulerEarnStrategyStatus {
+		if (strategy.removableAt > 0) {
+			return "pendingRemoval";
+		}
+
+		if (strategy.allocationCap.current > 0n) {
+			return "active";
+		}
+
+		return "inactive";
 	}
 
 	/** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */

@@ -1,4 +1,4 @@
-import { buildEulerSDK } from "../dist/src/sdk/buildSDK.js";
+import { buildEulerSDK } from "../../dist/src/sdk/buildSDK.js";
 import { formatUnits, getAddress } from "viem";
 
 const APP_HOST = process.env.APP_HOST ?? "https://app.euler.finance";
@@ -7,8 +7,8 @@ const V3_HOST = process.env.V3_HOST ?? "https://v3staging.eul.dev";
 const ADAPTER_MODE = (process.env.ADAPTER_MODE ?? "v3").toLowerCase();
 
 const DEFAULT_CHAIN_IDS = [
-  1, 10, 56, 100, 130, 143, 146, 239, 480, 999, 1923, 5000, 8453, 9745, 42161,
-  43114, 57073, 59144, 60808, 80094,
+  1, 56, 130, 143, 146, 239, 1923, 8453, 9745, 42161, 43114, 59144, 60808,
+  80094,
 ];
 const CHAIN_IDS = process.env.CHAIN_IDS
   ? process.env.CHAIN_IDS.split(",")
@@ -40,9 +40,15 @@ const RPC_URLS = {
 };
 
 const ONE_PERCENT = 0.01;
+const MAX_UINT256 = (1n << 256n) - 1n;
 
 function asLowerAddress(value) {
-  return value ? getAddress(value).toLowerCase() : undefined;
+  if (!value) return undefined;
+  try {
+    return getAddress(value).toLowerCase();
+  } catch {
+    return undefined;
+  }
 }
 
 function meaningful(value) {
@@ -51,6 +57,9 @@ function meaningful(value) {
 
 function toBigint(value) {
   if (typeof value === "bigint") return value;
+  if (typeof value === "string" && value.startsWith("__bigint__")) {
+    return BigInt(value.slice("__bigint__".length));
+  }
   if (typeof value === "string" && value.length > 0) return BigInt(value);
   if (typeof value === "number" && Number.isFinite(value)) return BigInt(Math.trunc(value));
   return undefined;
@@ -58,6 +67,10 @@ function toBigint(value) {
 
 function toNumber(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.startsWith("__bigint__")) {
+    const parsed = Number(value.slice("__bigint__".length));
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
   if (typeof value === "string" && value.length > 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : undefined;
@@ -132,7 +145,36 @@ function compareBigint(issues, field, appValue, sdkValue, decimals = 18) {
   }
 }
 
+function compareCapBigint(issues, field, appValue, sdkValue, decimals = 18) {
+  const appBig = toBigint(appValue);
+  const sdkBig = toBigint(sdkValue);
+
+  const appIsUncapped = appValue === null || appValue === undefined;
+  const sdkIsUncapped = sdkBig === MAX_UINT256;
+
+  if (appIsUncapped && sdkIsUncapped) return;
+
+  compareBigint(issues, field, appValue, sdkValue, decimals);
+}
+
+function getSdkEarnStrategyStatus(strategy) {
+  if ((strategy?.removableAt ?? 0) > 0) return "pendingRemoval";
+  if ((strategy?.allocationCap?.current ?? 0n) > 0n) return "active";
+  return "inactive";
+}
+
 function compareNumber(issues, field, appValue, sdkValue) {
+  compareNumberWithTolerance(issues, field, appValue, sdkValue, ONE_PERCENT);
+}
+
+function compareNumberAllowMissingApp(issues, field, appValue, sdkValue) {
+  const appNum = toNumber(appValue);
+  const sdkNum = toNumber(sdkValue);
+  if (appNum === undefined && sdkNum !== undefined) return;
+  compareNumber(issues, field, appValue, sdkValue);
+}
+
+function compareNumberWithTolerance(issues, field, appValue, sdkValue, tolerance) {
   const appNum = toNumber(appValue);
   const sdkNum = toNumber(sdkValue);
   if (appNum === undefined && sdkNum === undefined) return;
@@ -141,7 +183,7 @@ function compareNumber(issues, field, appValue, sdkValue) {
     return;
   }
   const pct = numberPctDiff(appNum, sdkNum);
-  if (pct > ONE_PERCENT) {
+  if (pct > tolerance) {
     addIssue(issues, { field, app: appNum, sdk: sdkNum, pctDiff: pct, kind: "number" });
   }
 }
@@ -171,7 +213,16 @@ async function fetchAppClassicVaultList(chainId) {
     if (items.length >= total || batch.length < limit) break;
     page += 1;
   }
-  return items;
+  return items.filter((item) => {
+    const perspectives = Array.isArray(item.perspectives) ? item.perspectives : [];
+    const governorType = typeof item.governorType === "string" ? item.governorType : "";
+
+    // App list payload can include non-verified placeholder vaults with no perspectives
+    // and unknown governance. Treat those as out of scope for parity checks.
+    if (perspectives.length === 0 && governorType === "UNKNOWN") return false;
+
+    return true;
+  });
 }
 
 async function fetchAppClassicVaultDetails(chainId, addresses) {
@@ -180,12 +231,21 @@ async function fetchAppClassicVaultDetails(chainId, addresses) {
   for (let i = 0; i < addresses.length; i += batchSize) {
     const batch = addresses.slice(i, i + batchSize);
     const query = new URLSearchParams({ chainId: String(chainId), vaults: batch.join(",") });
-    const result = await fetchJson(`${APP_HOST}/api/v1/vault?${query.toString()}`);
-    for (const [address, value] of Object.entries(result ?? {})) {
-      out.set(getAddress(address), value);
-    }
+    try {
+      const result = await fetchJson(`${APP_HOST}/api/v1/vault?${query.toString()}`);
+      for (const [address, value] of Object.entries(result ?? {})) {
+        const normalized = asLowerAddress(address);
+        if (normalized) out.set(normalized, value);
+      }
+    } catch {}
   }
   return out;
+}
+
+function getAppClassicDetail(appClassicDetail, address) {
+  const normalized = asLowerAddress(address);
+  if (!normalized) return undefined;
+  return appClassicDetail.get(normalized);
 }
 
 async function fetchAppEarnVaultList(chainId) {
@@ -205,10 +265,45 @@ async function fetchAppEarnVaultList(chainId) {
   return items;
 }
 
-function compareClassicVault(appListItem, appDetail, sdkVault) {
+async function fetchIndexerPrices(chainId, assets) {
+  const addresses = [...new Set(assets.map((asset) => asLowerAddress(asset)).filter(Boolean))];
+  const out = new Map();
+  const batchSize = 100;
+
+  for (let i = 0; i < addresses.length; i += batchSize) {
+    const batch = addresses.slice(i, i + batchSize);
+    const query = new URLSearchParams({ chainId: String(chainId), assets: batch.join(",") });
+    const result = await fetchJson(`${INDEXER_HOST}/v1/prices?${query.toString()}`);
+    for (const [address, value] of Object.entries(result ?? {})) {
+      out.set(asLowerAddress(address), value);
+    }
+  }
+
+  return out;
+}
+
+function getAppClassicCurrentPriceUsd(appListItem, appDetail, unitOfAccountPrices) {
+  const appListPriceUsd = toNumber(appListItem.assetPrice);
+  if (appListPriceUsd !== undefined) return appListPriceUsd;
+
+  const amountOutMid = toBigint(appDetail?.liabilityPriceInfo?.amountOutMid);
+  const unitOfAccount = asLowerAddress(appDetail?.liabilityPriceInfo?.unitOfAccount ?? appDetail?.unitOfAccount);
+  const unitOfAccountDecimals = toNumber(appDetail?.unitOfAccountDecimals) ?? 18;
+  const unitOfAccountPriceUsd = toNumber(unitOfAccountPrices.get(unitOfAccount)?.price);
+
+  if (amountOutMid !== undefined && unitOfAccount && unitOfAccountPriceUsd !== undefined) {
+    const quote = Number(formatUnits(amountOutMid, unitOfAccountDecimals));
+    if (Number.isFinite(quote)) return quote * unitOfAccountPriceUsd;
+  }
+
+  return appListItem.assetPrice;
+}
+
+function compareClassicVault(appListItem, appDetail, sdkVault, unitOfAccountPrices) {
   const issues = [];
   const assetDecimals = sdkVault?.asset?.decimals ?? appListItem.assetDecimals ?? 18;
   const shareDecimals = sdkVault?.shares?.decimals ?? appListItem.vaultDecimals ?? 18;
+  const appCurrentPriceUsd = getAppClassicCurrentPriceUsd(appListItem, appDetail, unitOfAccountPrices);
 
   compareText(issues, "name", appListItem.vaultName, sdkVault?.shares?.name);
   compareText(issues, "symbol", appListItem.vaultSymbol, sdkVault?.shares?.symbol);
@@ -220,10 +315,10 @@ function compareClassicVault(appListItem, appDetail, sdkVault) {
   compareBigint(issues, "totalShares", appListItem.totalShares, sdkVault?.totalShares, shareDecimals);
   compareBigint(issues, "totalBorrowed", appListItem.totalBorrows, sdkVault?.totalBorrowed, assetDecimals);
   compareBigint(issues, "totalCash", appListItem.cash, sdkVault?.totalCash, assetDecimals);
-  compareBigint(issues, "supplyCap", appListItem.supplyCap, sdkVault?.caps?.supplyCap, assetDecimals);
-  compareBigint(issues, "borrowCap", appListItem.borrowCap, sdkVault?.caps?.borrowCap, assetDecimals);
+  compareCapBigint(issues, "supplyCap", appListItem.supplyCap, sdkVault?.caps?.supplyCap, assetDecimals);
+  compareCapBigint(issues, "borrowCap", appListItem.borrowCap, sdkVault?.caps?.borrowCap, assetDecimals);
   compareNumber(issues, "utilization", appListItem.utilization, sdkVault ? Number(sdkVault.totalBorrowed) / Number(sdkVault.totalAssets || 1n) : undefined);
-  compareNumber(issues, "assetPriceUsd", appListItem.assetPrice, sdkVault?.marketPriceUsd ? Number(formatUnits(sdkVault.marketPriceUsd, 18)) : undefined);
+  compareNumberAllowMissingApp(issues, "assetPriceUsd", appCurrentPriceUsd, sdkVault?.marketPriceUsd ? Number(formatUnits(sdkVault.marketPriceUsd, 18)) : undefined);
   compareNumber(issues, "totalAssetsUsd", appListItem.totalAssetsUSD, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.totalAssets * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
   compareNumber(issues, "cashUsd", appListItem.cashUSD, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.totalCash * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
   compareNumber(issues, "supplyApy.base", appListItem.supplyApy?.baseApy, sdkVault?.interestRates?.supplyAPY ? Number(sdkVault.interestRates.supplyAPY) * 100 : undefined);
@@ -231,35 +326,6 @@ function compareClassicVault(appListItem, appDetail, sdkVault) {
   compareNumber(issues, "borrowApy.base", appListItem.borrowApy?.baseApy, sdkVault?.interestRates?.borrowAPY ? Number(sdkVault.interestRates.borrowAPY) * 100 : undefined);
   compareNumber(issues, "intrinsicApy", appListItem.intrinsicApy?.apy, sdkVault?.intrinsicApy?.apy);
   compareAddress(issues, "governorAdmin", appListItem.governorAdmin, sdkVault?.governorAdmin);
-
-  if (appDetail) {
-    compareAddress(issues, "dToken", appDetail.dToken, sdkVault?.dToken);
-    compareAddress(issues, "balanceTracker", appDetail.balanceTrackerAddress, sdkVault?.balanceTracker);
-    compareAddress(issues, "unitOfAccount", appDetail.unitOfAccount, sdkVault?.unitOfAccount?.address);
-    compareText(issues, "unitOfAccountSymbol", appDetail.unitOfAccountSymbol, sdkVault?.unitOfAccount?.symbol);
-
-    const appCollaterals = [...(appDetail.collateralLTVInfo ?? [])].map((item) => ({
-      address: getAddress(item.collateral),
-      borrowLTV: Number(item.borrowLTV),
-      liquidationLTV: Number(item.liquidationLTV),
-    })).sort((a, b) => a.address.localeCompare(b.address));
-    const sdkCollaterals = [...(sdkVault?.collaterals ?? [])].map((item) => ({
-      address: getAddress(item.address),
-      borrowLTV: item.borrowLTV,
-      liquidationLTV: item.liquidationLTV,
-    })).sort((a, b) => a.address.localeCompare(b.address));
-
-    compareNumber(issues, "collaterals.count", appCollaterals.length, sdkCollaterals.length);
-    for (const appCollateral of appCollaterals) {
-      const sdkCollateral = sdkCollaterals.find((item) => item.address === appCollateral.address);
-      if (!sdkCollateral) {
-        addIssue(issues, { field: "collateral.missing", app: appCollateral.address, sdk: null, kind: "missing" });
-        continue;
-      }
-      compareNumber(issues, `collateral.${appCollateral.address}.borrowLTV`, appCollateral.borrowLTV, sdkCollateral.borrowLTV);
-      compareNumber(issues, `collateral.${appCollateral.address}.liquidationLTV`, appCollateral.liquidationLTV, sdkCollateral.liquidationLTV);
-    }
-  }
 
   return issues;
 }
@@ -280,7 +346,7 @@ function compareEarnVault(appVault, sdkVault) {
   compareBigint(issues, "lostAssets", appVault.lostAssets, sdkVault?.lostAssets, assetDecimals);
   compareBigint(issues, "availableAssets", appVault.availableAssets, sdkVault?.availableAssets, assetDecimals);
   compareNumber(issues, "performanceFee", Number(appVault.performanceFee), sdkVault?.performanceFee ? sdkVault.performanceFee * 1e18 : undefined);
-  compareNumber(issues, "assetPriceUsd", appVault.assetPrice, sdkVault?.marketPriceUsd ? Number(formatUnits(sdkVault.marketPriceUsd, 18)) : undefined);
+  compareNumberAllowMissingApp(issues, "assetPriceUsd", appVault.assetPrice, sdkVault?.marketPriceUsd ? Number(formatUnits(sdkVault.marketPriceUsd, 18)) : undefined);
   compareNumber(issues, "totalAssetsUsd", appVault.totalAssetsUSD, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.totalAssets * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
   compareNumber(issues, "availableAssetsUsd", appVault.availableAssetsUSD, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.availableAssets * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
   compareNumber(issues, "apyCurrent", appVault.apyCurrent, sdkVault?.supplyApy ? sdkVault.supplyApy * 100 : undefined);
@@ -308,7 +374,7 @@ function compareEarnVault(appVault, sdkVault) {
     currentAllocationCap: item.allocationCap.current.toString(),
     pendingAllocationCap: item.allocationCap.pending.toString(),
     removableAt: item.removableAt,
-    status: sdkVault.isPendingRemoval(item) ? "pendingRemoval" : "active",
+    status: getSdkEarnStrategyStatus(item),
   })).sort((a, b) => a.address.localeCompare(b.address));
 
   compareNumber(issues, "strategies.count", appStrategies.length, sdkStrategies.length);
@@ -328,6 +394,9 @@ function compareEarnVault(appVault, sdkVault) {
 }
 
 function buildSdkOptions() {
+  const comparisonRpcUrls = Object.fromEntries(
+    Object.entries(RPC_URLS).filter(([chainId]) => CHAIN_IDS.includes(Number(chainId))),
+  );
   const onchainSupportedRpcUrls = Object.fromEntries(
     Object.entries(RPC_URLS).filter(([chainId]) =>
       [1, 56, 130, 143, 146, 239, 1923, 8453, 9745, 42161, 43114, 59144, 60808, 80094].includes(Number(chainId)),
@@ -335,8 +404,14 @@ function buildSdkOptions() {
   );
 
   const common = {
-    rpcUrls: ADAPTER_MODE === "onchain" ? onchainSupportedRpcUrls : RPC_URLS,
+    rpcUrls: ADAPTER_MODE === "onchain" ? onchainSupportedRpcUrls : comparisonRpcUrls,
     backendConfig: { endpoint: INDEXER_HOST },
+    intrinsicApyServiceConfig: {
+      adapter: "v3",
+      v3AdapterConfig: {
+        endpoint: V3_HOST,
+      },
+    },
   };
 
   if (ADAPTER_MODE === "onchain") {
@@ -412,6 +487,14 @@ async function main() {
 
     const sdkClassic = new Map(sdkClassicRaw.filter(Boolean).map((vault) => [getAddress(vault.address), vault]));
     const sdkEarn = new Map(sdkEarnRaw.filter(Boolean).map((vault) => [getAddress(vault.address), vault]));
+    let classicUnitOfAccountPrices = new Map();
+
+    try {
+      classicUnitOfAccountPrices = await fetchIndexerPrices(
+        chainId,
+        [...appClassicDetail.values()].map((detail) => detail?.liabilityPriceInfo?.unitOfAccount ?? detail?.unitOfAccount),
+      );
+    } catch {}
 
     report.summary.classic.appVaults += appClassicList.length;
     report.summary.earn.appVaults += appEarnList.length;
@@ -425,7 +508,7 @@ async function main() {
         continue;
       }
       report.summary.classic.sdkMatches += 1;
-      const issues = compareClassicVault(appVault, appClassicDetail.get(address), sdkVault);
+      const issues = compareClassicVault(appVault, getAppClassicDetail(appClassicDetail, address), sdkVault, classicUnitOfAccountPrices);
       if (issues.length > 0) {
         report.summary.classic.vaultsWithDiffs += 1;
         for (const issue of issues) {

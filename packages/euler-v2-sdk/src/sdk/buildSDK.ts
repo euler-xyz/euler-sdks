@@ -72,7 +72,9 @@ import {
 	type RewardsServiceConfig,
 } from "../services/rewardsService/index.js";
 import {
+	IntrinsicApyDirectAdapter,
 	IntrinsicApyService,
+	IntrinsicApyV3Adapter,
 	type IIntrinsicApyService,
 	type IntrinsicApyServiceConfig,
 } from "../services/intrinsicApyService/index.js";
@@ -92,6 +94,7 @@ import {
 	defaultDeploymentServiceConfig,
 	defaultEulerEarnV3AdapterConfig,
 	defaultEulerLabelsURLAdapterConfig,
+	defaultIntrinsicApyV3AdapterConfig,
 	defaultSwapServiceConfig,
 	defaultTokenlistServiceConfig,
 	defaultVaultTypeAdapterConfig,
@@ -482,7 +485,44 @@ export async function buildEulerSDK<
 	// Build intrinsic APY service if not overridden
 	const intrinsicApyService =
 		servicesOverrides?.intrinsicApyService ??
-		new IntrinsicApyService(intrinsicApyServiceConfig, buildQuery);
+		(() => {
+			const resolvedIntrinsicApyServiceConfig = intrinsicApyServiceConfig ?? {};
+			const legacyDirectAdapterConfig = {
+				defillamaYieldsUrl:
+					resolvedIntrinsicApyServiceConfig.defillamaYieldsUrl,
+				pendleApiUrl: resolvedIntrinsicApyServiceConfig.pendleApiUrl,
+				stablewatchPoolsUrl:
+					resolvedIntrinsicApyServiceConfig.stablewatchPoolsUrl,
+				stablewatchSourceUrl:
+					resolvedIntrinsicApyServiceConfig.stablewatchSourceUrl,
+			};
+			const intrinsicApyAdapter =
+				resolvedIntrinsicApyServiceConfig.adapter === "direct"
+					? new IntrinsicApyDirectAdapter(
+							{
+								...legacyDirectAdapterConfig,
+								...(resolvedIntrinsicApyServiceConfig.directAdapterConfig ?? {}),
+							},
+							buildQuery,
+						)
+					: new IntrinsicApyV3Adapter(
+							{
+								...(resolvedIntrinsicApyServiceConfig.v3AdapterConfig ??
+									defaultIntrinsicApyV3AdapterConfig),
+								...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+								...(resolvedIntrinsicApyServiceConfig.v3AdapterConfig?.apiKey !==
+								undefined
+									? {
+											apiKey:
+												resolvedIntrinsicApyServiceConfig.v3AdapterConfig.apiKey,
+										}
+									: {}),
+							},
+							buildQuery,
+						);
+
+			return new IntrinsicApyService(intrinsicApyAdapter);
+		})();
 	const oracleAdapterService =
 		servicesOverrides?.oracleAdapterService ??
 		new OracleAdapterService(oracleAdapterServiceConfig, buildQuery);
