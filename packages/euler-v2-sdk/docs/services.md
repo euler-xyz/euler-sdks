@@ -19,7 +19,7 @@ Some services below are lower-level building blocks and usually do not need to b
 ## Vault-Specific Services
 
 - `eVaultService`: EVault-specific reads and enrichment (interest rates, collaterals, optional prices/rewards/labels).
-- `eulerEarnService`: Euler Earn-specific reads and enrichment (strategies, APY, optional prices/rewards/labels).
+- `eulerEarnService`: Euler Earn-specific reads and enrichment (strategies, adapter-provided 1h supply APY, optional prices/rewards/labels).
 - `securitizeVaultService`: Securitize collateral vault-specific reads and enrichment.
 
 These are often used indirectly through `vaultMetaService`, which handles vault type detection and routing.

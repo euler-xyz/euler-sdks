@@ -5,6 +5,11 @@ export interface IntrinsicApyV3AdapterConfig {
 	apiKey?: string;
 	/** Optional page size override used when fetching paginated intrinsic APYs. */
 	pageSize?: number;
+	/**
+	 * Optional max number of asset addresses sent in a single filtered request.
+	 * Used by the bundled single-asset query path to avoid oversized URLs.
+	 */
+	maxAssetsPerRequest?: number;
 }
 
 export type V3ListEnvelope<T> = {

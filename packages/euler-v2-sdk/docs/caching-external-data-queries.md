@@ -91,6 +91,9 @@ const STALE_TIMES: Record<string, number> = {
   // On-chain vault state — moderate refresh
   queryEVaultInfoFull: 20_000,
   queryEulerEarnVaultInfoFull: 20_000,
+  queryEulerEarnConvertToAssets: 20_000,
+  queryBlockNumber: 10_000,
+  queryBlock: 10_000,
   queryVaultInfoERC4626: 20_000,
 
   // Vault config — slow-changing
@@ -112,6 +115,7 @@ const STALE_TIMES: Record<string, number> = {
   // Intrinsic APY — external API data
   queryDefiLlamaPools: 5 * MINUTE,
   queryPendleMarketData: 5 * MINUTE,
+  queryV3IntrinsicApy: 5 * MINUTE,
 
   // Account / subgraph lookups
   queryAccountVaults: 30_000,
@@ -170,7 +174,10 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 | `queryV3EVaultCollaterals` | url | `EVaultV3Adapter` | `(endpoint, chainId, vault)` | Fetch EVault collateral rows via V3 |
 | `queryV3EVaultList` | url | `EVaultV3Adapter` | `(endpoint, chainId, offset, limit)` | Fetch paginated EVault list via V3 |
 | `queryEulerEarnVaultInfoFull` | rpc | `EulerEarnOnchainAdapter` | `(provider, lensAddress, vault)` | Read EulerEarn vault state via EulerEarnVaultLens |
+| `queryEulerEarnConvertToAssets` | rpc | `EulerEarnOnchainAdapter` | `(provider, vault, shares, blockNumber?)` | Read `convertToAssets` for current or historical 1h APY sampling |
 | `queryEulerEarnVerifiedArray` | rpc | `EulerEarnOnchainAdapter` | `(provider, perspective)` | Read verified EulerEarn vault list |
+| `queryBlockNumber` | rpc | `EulerEarnOnchainAdapter` | `(provider)` | Read current block number for 1h APY sampling |
+| `queryBlock` | rpc | `EulerEarnOnchainAdapter` | `(provider, blockNumber)` | Read block timestamp for 1h APY sampling |
 | `queryV3EulerEarnDetail` | url | `EulerEarnV3Adapter` | `(endpoint, chainId, vault)` | Fetch EulerEarn detail via V3 |
 | `queryV3EulerEarnList` | url | `EulerEarnV3Adapter` | `(endpoint, chainId, offset, limit)` | Fetch paginated EulerEarn vault list via V3 |
 | `queryVaultInfoERC4626` | rpc | `SecuritizeVaultOnchainAdapter` | `(provider, utilsLensAddress, vault)` | Read ERC4626 vault info |
@@ -228,6 +235,7 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 |-------|------|-------|------|-------------|
 | `queryDefiLlamaPools` | url | `IntrinsicApyService` | `(url)` | Fetch yield pool data from DefiLlama |
 | `queryPendleMarketData` | url | `IntrinsicApyService` | `(url)` | Fetch market data from Pendle API |
+| `queryV3IntrinsicApy` | url | `IntrinsicApyV3Adapter` | `({ chainId, assetAddress })` | Fetch a single asset intrinsic APY; concurrent calls are backend-bundled via `assets=` |
 
 ### Plugins
 

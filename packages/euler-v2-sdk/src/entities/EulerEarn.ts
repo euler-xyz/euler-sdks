@@ -55,6 +55,7 @@ export interface IEulerEarn extends IERC4626Vault {
 	lostAssets: bigint;
 	availableAssets: bigint;
 	performanceFee: number;
+	supplyApy1h: number | undefined;
 
 	governance: EulerEarnGovernance;
 
@@ -77,6 +78,7 @@ export class EulerEarn
 	lostAssets: bigint;
 	availableAssets: bigint;
 	performanceFee: number;
+	supplyApy1h: number | undefined;
 
 	governance: EulerEarnGovernance;
 
@@ -92,6 +94,7 @@ export class EulerEarn
 		this.lostAssets = args.lostAssets;
 		this.availableAssets = args.availableAssets;
 		this.performanceFee = args.performanceFee;
+		this.supplyApy1h = args.supplyApy1h;
 
 		this.governance = args.governance;
 
@@ -140,31 +143,6 @@ export class EulerEarn
 		const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
 		const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
 		return (assets * totalSharesAdjusted) / totalAssetsAdjusted;
-	}
-
-	/** Weighted supply APY derived from underlying strategy EVault APYs, net of performance fee. */
-	get supplyApy(): number | undefined {
-		if (this.totalAssets === 0n) return undefined;
-
-		const strategiesWithVault = this.strategies.filter((s) => s.vault);
-		if (strategiesWithVault.length === 0) return undefined;
-
-		let weightedSum = 0;
-		let totalAllocated = 0;
-		for (const strategy of strategiesWithVault) {
-			const apy = parseFloat(strategy.vault!.interestRates.supplyAPY);
-			const allocated =
-				strategy.allocatedAssets <= BigInt(Number.MAX_SAFE_INTEGER)
-					? Number(strategy.allocatedAssets)
-					: Number.MAX_SAFE_INTEGER;
-			weightedSum += allocated * apy;
-			totalAllocated += allocated;
-		}
-
-		if (totalAllocated === 0) return undefined;
-
-		const grossApy = weightedSum / totalAllocated;
-		return grossApy * (1 - this.performanceFee);
 	}
 
 	async populateStrategyVaults(

@@ -40,10 +40,10 @@ const sdk = await buildEulerSDK({
 
   // Optional: intrinsic APY data sources
   intrinsicApyServiceConfig: {
-    adapter: "direct",
-    directAdapterConfig: {
-      defillamaYieldsUrl: "https://...",
-      pendleApiUrl: "https://...",
+    adapter: "v3",
+    v3AdapterConfig: {
+      endpoint: "https://your-v3-api",
+      maxAssetsPerRequest: 50,
     },
   },
 

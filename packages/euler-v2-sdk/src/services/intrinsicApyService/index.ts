@@ -13,5 +13,5 @@ export type {
 	StablewatchResponse,
 } from "./adapters/intrinsicApyDirectAdapter/index.js";
 export type { IntrinsicApyV3AdapterConfig } from "./adapters/intrinsicApyV3Adapter/index.js";
-export { intrinsicApySources } from "./intrinsicApySources.js";
-export type { IntrinsicApySourceConfig } from "./intrinsicApySources.js";
+export { intrinsicApySources } from "./adapters/intrinsicApyDirectAdapter/intrinsicApySources.js";
+export type { IntrinsicApySourceConfig } from "./adapters/intrinsicApyDirectAdapter/intrinsicApySources.js";

@@ -83,6 +83,9 @@ const STALE_TIMES = {
   // On-chain vault state — moderate refresh
   queryEVaultInfoFull: 20_000,
   queryEulerEarnVaultInfoFull: 20_000,
+  queryEulerEarnConvertToAssets: 20_000,
+  queryBlockNumber: 10_000,
+  queryBlock: 10_000,
   queryVaultInfoERC4626: 20_000,
   queryV3EVaultDetail: 20_000,
   queryV3EulerEarnDetail: 20_000,

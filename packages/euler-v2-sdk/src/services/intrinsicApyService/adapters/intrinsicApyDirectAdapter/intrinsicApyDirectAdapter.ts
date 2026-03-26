@@ -10,7 +10,7 @@ import type {
 	IIntrinsicApyAdapter,
 	IntrinsicApyInfo,
 } from "../../intrinsicApyService.js";
-import { intrinsicApySources } from "../../intrinsicApySources.js";
+import { intrinsicApySources } from "./intrinsicApySources.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../../../utils/buildQuery.js";
 
 const DEFAULT_DEFILLAMA_YIELDS_URL = "https://yields.llama.fi/pools";

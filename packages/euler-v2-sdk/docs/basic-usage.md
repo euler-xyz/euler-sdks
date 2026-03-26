@@ -145,7 +145,8 @@ if (isEVault(vault)) {
   console.log(vault.interestRates.supplyAPY)
   console.log(vault.collaterals.length)
 } else if (isEulerEarn(vault)) {
-  console.log(vault.supplyApy)
+  console.log(vault.supplyApy)   // alias of vault.supplyApy1h
+  console.log(vault.supplyApy1h)
   console.log(vault.strategies.length)
 }
 ```

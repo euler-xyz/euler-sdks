@@ -28,7 +28,7 @@ Entities are the SDK's domain objects. Each entity has two parts:
 ```
 ERC4626Vault (base — address, shares, asset, totals)
   ├── EVault              (+ oracle, collaterals, interest rates, caps, hooks)
-  ├── EulerEarn           (+ strategies, performance fee, supply APY)
+  ├── EulerEarn           (+ strategies, performance fee, adapter-provided 1h supply APY)
   └── SecuritizeCollateralVault  (+ governor, supply cap)
 
 Account<TVaultEntity>    (owner, sub-accounts, positions, liquidity)
@@ -296,6 +296,8 @@ accountService.fetchAccount(chainId, owner, { populateVaults: true, populateMark
   │    │    → route addresses to correct services
   │    ├─ EVaultOnchainAdapter.queryEVaultInfoFull()          ← RPC (VaultLens)
   │    ├─ EulerEarnOnchainAdapter.queryEulerEarnVaultInfoFull() ← RPC
+  │    ├─ EulerEarnOnchainAdapter.queryEulerEarnConvertToAssets() ← RPC
+  │    ├─ EulerEarnOnchainAdapter.queryBlockNumber() / queryBlock() ← RPC
   │    │    → convert, construct typed entities
   │    └─ assign vault entities to position.vault fields
   │

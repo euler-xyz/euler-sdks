@@ -7,7 +7,7 @@ import type {
 	IVaultService,
 	VaultFilter,
 } from "../index.js";
-import type { IVaultMetaService } from "../vaultMetaService/index.js";
+import type { IVaultMetaService, VaultEntity } from "../vaultMetaService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
 import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
@@ -270,60 +270,87 @@ export class EVaultService implements IEVaultService {
 		}
 
 		const chainId = eVaults[0]!.chainId;
-		const collateralVaults = await Promise.all(
-			allCollateralAddresses.map(async (addr) => {
-				const key = addr.toLowerCase();
-				const occurrences = occurrencesByAddress.get(key) ?? [];
-				const collateralPathPrefix = (
-					vaultIndex: number,
-					collateralIndex: number,
-				) =>
-					`${getVaultPathPrefix(vaultIndex)}.collaterals[${collateralIndex}].vault`;
+		const collateralPathPrefix = (
+			vaultIndex: number,
+			collateralIndex: number,
+		) => `${getVaultPathPrefix(vaultIndex)}.collaterals[${collateralIndex}].vault`;
+		const remapCollateralPath = (
+			path: string,
+			vaultIndex: number,
+			collateralIndex: number,
+		) => {
+			const prefix = collateralPathPrefix(vaultIndex, collateralIndex);
+			return path.replace(/^\$\.vaults\[\d+\]/, prefix);
+		};
 
-				try {
-					const fetched = await this.vaultMetaService!.fetchVault(
-						chainId,
-						addr,
+		let collateralVaults: (VaultEntity | undefined)[];
+
+		try {
+			const fetched = await this.vaultMetaService.fetchVaults(
+				chainId,
+				allCollateralAddresses,
+			);
+			collateralVaults = fetched.result;
+
+			for (const issue of fetched.errors) {
+				const issueOccurrences = issue.paths.flatMap((path) => {
+					const match = path.match(/^\$\.vaults\[(\d+)\]/);
+					if (!match) return [];
+
+					const index = Number(match[1]);
+					const address = allCollateralAddresses[index];
+					if (!address) return [];
+
+					return (
+						occurrencesByAddress.get(address.toLowerCase())?.map((occurrence) => ({
+							address,
+							occurrence,
+						})) ?? []
 					);
-					for (const issue of fetched.errors) {
-						for (const occurrence of occurrences) {
-							errors.push({
-								...mapDataIssuePaths(issue, (path) =>
-									withPathPrefix(
-										path,
-										collateralPathPrefix(
-											occurrence.vaultIndex,
-											occurrence.collateralIndex,
-										),
-									),
-								),
-								entityId: issue.entityId ?? getAddress(addr),
-							});
-						}
-					}
-					return fetched.result;
-				} catch (error) {
-					for (const occurrence of occurrences) {
-						errors.push({
-							code: "SOURCE_UNAVAILABLE",
-							severity: "warning",
-							message: `Failed to fetch collateral vault ${getAddress(addr)}.`,
-							paths: [
-								collateralPathPrefix(
-									occurrence.vaultIndex,
-									occurrence.collateralIndex,
-								),
-							],
-							entityId: getAddress(addr),
-							source: "vaultMetaService",
-							originalValue:
-								error instanceof Error ? error.message : String(error),
-						});
-					}
-					return undefined;
+				});
+
+				if (issueOccurrences.length === 0) {
+					errors.push(issue);
+					continue;
 				}
-			}),
-		);
+
+				for (const { address, occurrence } of issueOccurrences) {
+					errors.push({
+						...mapDataIssuePaths(issue, (path) =>
+							remapCollateralPath(
+								path,
+								occurrence.vaultIndex,
+								occurrence.collateralIndex,
+							),
+						),
+						entityId: issue.entityId ?? getAddress(address),
+					});
+				}
+			}
+		} catch (error) {
+			collateralVaults = allCollateralAddresses.map(() => undefined);
+
+			for (const addr of allCollateralAddresses) {
+				const occurrences = occurrencesByAddress.get(addr.toLowerCase()) ?? [];
+				for (const occurrence of occurrences) {
+					errors.push({
+						code: "SOURCE_UNAVAILABLE",
+						severity: "warning",
+						message: `Failed to fetch collateral vault ${getAddress(addr)}.`,
+						paths: [
+							collateralPathPrefix(
+								occurrence.vaultIndex,
+								occurrence.collateralIndex,
+							),
+						],
+						entityId: getAddress(addr),
+						source: "vaultMetaService",
+						originalValue:
+							error instanceof Error ? error.message : String(error),
+					});
+				}
+			}
+		}
 
 		const vaultByAddress = new Map(
 			collateralVaults

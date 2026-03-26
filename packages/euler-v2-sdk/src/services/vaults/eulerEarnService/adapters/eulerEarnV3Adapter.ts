@@ -83,6 +83,7 @@ type V3EulerEarnDetail = {
 	asset: V3Token;
 	totalAssets: string;
 	totalShares: string;
+	supplyApy: number;
 	lostAssets?: string;
 	availableAssets?: string;
 	strategies?: V3EulerEarnStrategy[];
@@ -285,6 +286,7 @@ function convertEulerEarn(
 			detail.asset.name ?? "Unknown Asset",
 			detail.asset.symbol ?? "UNKNOWN",
 		),
+		supplyApy1h: detail.supplyApy,
 		totalShares: parseBigIntField(
 			detail.totalShares ?? "0",
 			{ path: "$.totalShares", entityId, errors, source: "eulerEarnV3" },

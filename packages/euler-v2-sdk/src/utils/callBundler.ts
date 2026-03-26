@@ -2,6 +2,8 @@ export type BatchFn<K, V> = (keys: K[]) => Promise<V[]>;
 
 export interface CallBundlerOptions {
 	maxBatchSize?: number;
+	debounceMs?: number;
+	maxConcurrentBatches?: number;
 }
 
 interface QueueItem<K, V> {
@@ -12,7 +14,7 @@ interface QueueItem<K, V> {
 
 /**
  * Creates a load function that bundles individual calls within the same
- * microtask into a single batch invocation.
+ * debounce window into a single batch invocation.
  */
 export function createCallBundler<K, V>(
 	batchFn: BatchFn<K, V>,
@@ -24,8 +26,9 @@ export function createCallBundler<K, V>(
 
 /**
  * Wraps a batch function `(keys: K[]) => Promise<V>` into a function with the
- * same signature, where keys from concurrent calls within the same microtask
- * are merged into a single batch invocation. All callers receive the same result.
+ * same signature, where keys from concurrent calls within the same debounce
+ * window are merged into a single batch invocation. All callers receive the same
+ * result.
  */
 export function createBundledCall<K, V>(
 	batchFn: (keys: K[]) => Promise<V>,
@@ -46,39 +49,64 @@ export function createBundledCall<K, V>(
 export class CallBundler<K, V> {
 	private batchFn: BatchFn<K, V>;
 	private maxBatchSize: number;
+	private debounceMs: number;
+	private maxConcurrentBatches: number;
 	private queue: QueueItem<K, V>[] = [];
 	private scheduled = false;
+	private activeBatchCount = 0;
 
 	constructor(batchFn: BatchFn<K, V>, options?: CallBundlerOptions) {
 		this.batchFn = batchFn;
 		this.maxBatchSize = options?.maxBatchSize ?? Infinity;
+		this.debounceMs = Math.max(0, options?.debounceMs ?? 5);
+		this.maxConcurrentBatches = Math.max(
+			1,
+			options?.maxConcurrentBatches ?? 4,
+		);
 	}
 
 	load(key: K): Promise<V> {
 		return new Promise<V>((resolve, reject) => {
 			this.queue.push({ key, resolve, reject });
-			if (!this.scheduled) {
-				this.scheduled = true;
-				queueMicrotask(() => this.dispatch());
-			}
+			this.scheduleDispatch();
 		});
 	}
 
-	private dispatch(): void {
-		this.scheduled = false;
-		const batch = this.queue.splice(0, this.maxBatchSize);
+	private scheduleDispatch(): void {
+		if (this.scheduled) return;
+		this.scheduled = true;
 
-		if (batch.length === 0) return;
-
-		if (this.queue.length > 0) {
-			this.scheduled = true;
-			queueMicrotask(() => this.dispatch());
+		if (this.debounceMs === 0) {
+			queueMicrotask(() => this.drainQueue());
+			return;
 		}
 
+		setTimeout(() => this.drainQueue(), this.debounceMs);
+	}
+
+	private drainQueue(): void {
+		this.scheduled = false;
+
+		while (
+			this.activeBatchCount < this.maxConcurrentBatches &&
+			this.queue.length > 0
+		) {
+			const batch = this.queue.splice(0, this.maxBatchSize);
+			if (batch.length === 0) break;
+			this.dispatchBatch(batch);
+		}
+
+		if (this.queue.length > 0) {
+			this.scheduleDispatch();
+		}
+	}
+
+	private dispatchBatch(batch: QueueItem<K, V>[]): void {
+		this.activeBatchCount += 1;
 		const keys = batch.map((item) => item.key);
 
-		this.batchFn(keys).then(
-			(values) => {
+		this.batchFn(keys)
+			.then((values) => {
 				if (values.length !== keys.length) {
 					const error = new Error(
 						`CallBundler: batch function returned ${values.length} results for ${keys.length} keys`,
@@ -87,10 +115,15 @@ export class CallBundler<K, V> {
 					return;
 				}
 				batch.forEach((item, i) => item.resolve(values[i]!));
-			},
-			(error) => {
+			})
+			.catch((error) => {
 				batch.forEach((item) => item.reject(error));
-			},
-		);
+			})
+			.finally(() => {
+				this.activeBatchCount -= 1;
+				if (this.queue.length > 0) {
+					this.scheduleDispatch();
+				}
+			});
 	}
 }

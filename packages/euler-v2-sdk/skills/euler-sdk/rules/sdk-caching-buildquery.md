@@ -8,6 +8,7 @@ tags: caching, buildQuery, react-query, performance
 ## Query Decoration and Caching with buildQuery
 
 Wrap SDK `query*` methods through `buildQuery` instead of adding ad-hoc caches around service calls.
+When adding a new RPC/API dependency, expose it as a `query*` method on the adapter or service rather than calling it directly from orchestration code.
 
 **Correct pattern:**
 
@@ -32,6 +33,7 @@ Recommended stale-time strategy:
 
 - hours (e.g. 12-24h): deployments, ABI, token list, static labels
 - minutes: perspectives, providers, reward campaign catalogs
+- minutes: external intrinsic APY queries such as `queryV3IntrinsicApy`
 - 10-30s: vault/account/wallet state
 - ~10s: swap quotes and Pyth update payloads
 

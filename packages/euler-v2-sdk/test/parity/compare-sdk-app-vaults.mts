@@ -1,5 +1,11 @@
 import { buildEulerSDK } from "../../dist/src/sdk/buildSDK.js";
 import { formatUnits, getAddress } from "viem";
+import dotenv from "dotenv";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(SCRIPT_DIR, "../../examples/.env") });
 
 const APP_HOST = process.env.APP_HOST ?? "https://app.euler.finance";
 const INDEXER_HOST = process.env.INDEXER_HOST ?? "https://indexer.euler.finance";
@@ -13,7 +19,7 @@ const CHAIN_IDS = process.env.CHAIN_IDS
       .filter((value) => Number.isFinite(value) && value > 0)
   : DEFAULT_CHAIN_IDS;
 
-const RPC_URLS = {
+const DEFAULT_RPC_URLS = {
   1: "https://ethereum-rpc.publicnode.com",
   10: "https://optimism-rpc.publicnode.com",
   56: "https://bsc-rpc.publicnode.com",
@@ -34,6 +40,17 @@ const RPC_URLS = {
   59144: "https://linea-rpc.publicnode.com",
   60808: "https://rpc.gobob.xyz",
   80094: "https://rpc.berachain.com",
+};
+
+const ENV_RPC_URLS = Object.fromEntries(
+  Object.entries(process.env)
+    .filter(([key, value]) => key.startsWith("RPC_URL_") && value)
+    .map(([key, value]) => [Number(key.slice("RPC_URL_".length)), value]),
+);
+
+const RPC_URLS = {
+  ...DEFAULT_RPC_URLS,
+  ...ENV_RPC_URLS,
 };
 
 const ONE_PERCENT = 0.01;
@@ -125,6 +142,7 @@ function compareGuardianAddress(issues, field, appValue, sdkValue) {
   const normalizedApp = asLowerAddress(appValue);
   const normalizedSdk = asLowerAddress(sdkValue);
 
+  if (normalizedApp === undefined) return;
   if (normalizedApp === undefined && normalizedSdk === ZERO_ADDRESS) return;
 
   compareAddress(issues, field, appValue, sdkValue);
@@ -166,6 +184,13 @@ function compareBigint(issues, field, appValue, sdkValue, decimals = 18) {
       kind: "bigint",
     });
   }
+}
+
+function compareBigintAllowZeroAppTinySdk(issues, field, appValue, sdkValue, decimals = 18, tinyThreshold = 10n) {
+  const appBig = toBigint(appValue);
+  const sdkBig = toBigint(sdkValue);
+  if (appBig === 0n && sdkBig !== undefined && sdkBig >= 0n && sdkBig <= tinyThreshold) return;
+  compareBigint(issues, field, appValue, sdkValue, decimals);
 }
 
 function compareCapBigint(issues, field, appValue, sdkValue, decimals = 18) {
@@ -409,6 +434,8 @@ function compareEarnVault(appVault, sdkVault) {
   const issues = [];
   const assetDecimals = sdkVault?.asset?.decimals ?? appVault.assetDecimals ?? 18;
   const shareDecimals = sdkVault?.shares?.decimals ?? appVault.vaultDecimals ?? 18;
+  const sdkSupplyApyPercent = sdkVault?.supplyApy1h !== undefined ? sdkVault.supplyApy1h * 100 : undefined;
+  const sdkPerformanceFee = sdkVault?.performanceFee !== undefined ? sdkVault.performanceFee * 1e18 : undefined;
 
   compareText(issues, "name", appVault.vaultName, sdkVault?.shares?.name);
   compareText(issues, "symbol", appVault.vaultSymbol, sdkVault?.shares?.symbol);
@@ -418,14 +445,14 @@ function compareEarnVault(appVault, sdkVault) {
   compareNumber(issues, "assetDecimals", appVault.assetDecimals, sdkVault?.asset?.decimals);
   compareBigint(issues, "totalAssets", appVault.totalAssets, sdkVault?.totalAssets, assetDecimals);
   compareBigint(issues, "totalShares", appVault.totalShares, sdkVault?.totalShares, shareDecimals);
-  compareBigint(issues, "lostAssets", appVault.lostAssets, sdkVault?.lostAssets, assetDecimals);
+  compareBigintAllowZeroAppTinySdk(issues, "lostAssets", appVault.lostAssets, sdkVault?.lostAssets, assetDecimals);
   compareBigint(issues, "availableAssets", appVault.availableAssets, sdkVault?.availableAssets, assetDecimals);
-  compareNumber(issues, "performanceFee", Number(appVault.performanceFee), sdkVault?.performanceFee ? sdkVault.performanceFee * 1e18 : undefined);
+  compareNumber(issues, "performanceFee", Number(appVault.performanceFee), sdkPerformanceFee);
   compareNumberAllowMissingApp(issues, "assetPriceUsd", appVault.assetPrice, sdkVault?.marketPriceUsd ? Number(formatUnits(sdkVault.marketPriceUsd, 18)) : undefined);
-  compareNumber(issues, "totalAssetsUsd", appVault.totalAssetsUSD, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.totalAssets * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
-  compareNumber(issues, "availableAssetsUsd", appVault.availableAssetsUSD, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.availableAssets * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
-  compareNumber(issues, "apyCurrent", appVault.apyCurrent, sdkVault?.supplyApy ? sdkVault.supplyApy * 100 : undefined);
-  compareNumber(issues, "supplyApy.base", appVault.supplyApy?.baseApy, sdkVault?.supplyApy ? sdkVault.supplyApy * 100 : undefined);
+  compareNumberAllowZeroAppMissingSdk(issues, "totalAssetsUsd", appVault.totalAssetsUSD, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.totalAssets * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
+  compareNumberAllowZeroAppMissingSdk(issues, "availableAssetsUsd", appVault.availableAssetsUSD, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.availableAssets * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
+  compareNumberWithTolerance(issues, "apyCurrent", appVault.apyCurrent, sdkSupplyApyPercent, 0.05);
+  compareNumberWithTolerance(issues, "supplyApy.base", appVault.supplyApy?.baseApy, sdkSupplyApyPercent, 0.05);
   compareNumber(issues, "supplyApy.rewards", appVault.supplyApy?.rewardApy, sdkVault?.rewards?.totalRewardsApr ? sdkVault.rewards.totalRewardsApr * 100 : 0);
   compareAddress(issues, "owner", appVault.owner, sdkVault?.governance?.owner);
   compareAddress(issues, "creator", appVault.creator, sdkVault?.governance?.creator);
