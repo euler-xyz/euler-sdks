@@ -329,7 +329,7 @@ function toBigIntValue(data: object, key: string): bigint | null {
 function spyToApyPercent(spy: bigint): number {
 	const spyPerSecond = Number(formatUnits(spy, 27));
 	if (!Number.isFinite(spyPerSecond)) return Number.POSITIVE_INFINITY;
-	return (Math.pow(1 + spyPerSecond, SECONDS_PER_YEAR) - 1) * 100;
+	return ((1 + spyPerSecond) ** SECONDS_PER_YEAR - 1) * 100;
 }
 
 function bigintToPercent(value: bigint, scale: bigint): number {
