@@ -231,13 +231,6 @@ export class EVault
 		this.interestRates = args.interestRates;
 		this.interestRateModel = args.interestRateModel;
 		this.collaterals = args.collaterals;
-		for (const collateral of this.collaterals) {
-			collateral.oracleAdapters = buildOracleAdaptersForPair(
-				this.oracle.adapters,
-				collateral.address,
-				this.unitOfAccount.address,
-			);
-		}
 		this.evcCompatibleAsset = args.evcCompatibleAsset;
 		this.oraclePriceRaw = args.oraclePriceRaw;
 		this.timestamp = args.timestamp;
@@ -357,6 +350,28 @@ export class EVault
 
 		for (const collateral of this.collaterals) {
 			collateral.vault = vaultByAddress.get(collateral.address.toLowerCase());
+			if (!collateral.vault) {
+				collateral.oracleAdapters = [];
+				continue;
+			}
+
+			const quoteAddress = this.unitOfAccount.address;
+			const byAsset = buildOracleAdaptersForPair(
+				this.oracle.adapters,
+				collateral.vault.asset.address,
+				quoteAddress,
+			);
+			const byVault = buildOracleAdaptersForPair(
+				this.oracle.adapters,
+				collateral.address,
+				quoteAddress,
+			);
+			const deduped = new Map<string, (typeof byAsset)[number]>();
+			[...byAsset, ...byVault].forEach((adapter) => {
+				const key = `${adapter.oracle.toLowerCase()}:${adapter.base.toLowerCase()}:${adapter.quote.toLowerCase()}`;
+				if (!deduped.has(key)) deduped.set(key, adapter);
+			});
+			collateral.oracleAdapters = [...deduped.values()];
 		}
 		this.populated.collaterals = true;
 		return errors;
