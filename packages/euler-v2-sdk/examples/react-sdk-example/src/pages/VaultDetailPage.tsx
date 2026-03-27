@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { maxUint256 } from "viem";
+import type { OracleAdapterEntry } from "euler-v2-sdk";
 import { useSDK } from "../context/SdkContext.tsx";
 import {
   type DiagnosticIssue,
@@ -44,6 +45,30 @@ function formatVaultCap(cap: bigint, decimals: number): string {
   return formatBigInt(cap, decimals);
 }
 
+function normalizeCollateralDisplayAdapters(
+  adapters: OracleAdapterEntry[] | undefined,
+  underlyingAssetAddress: string | undefined
+): OracleAdapterEntry[] {
+  if (!adapters?.length) return [];
+
+  const underlyingKey = underlyingAssetAddress?.toLowerCase();
+  const sorted = [...adapters].sort((left, right) => {
+    const leftPriority = left.base.toLowerCase() === underlyingKey ? 0 : 1;
+    const rightPriority = right.base.toLowerCase() === underlyingKey ? 0 : 1;
+    return leftPriority - rightPriority;
+  });
+
+  const deduped = new Map<string, OracleAdapterEntry>();
+  for (const adapter of sorted) {
+    const key = adapter.oracle.toLowerCase();
+    if (!deduped.has(key)) {
+      deduped.set(key, adapter);
+    }
+  }
+
+  return [...deduped.values()];
+}
+
 export function VaultDetailPage() {
   const { chainId: chainIdParam, address } = useParams<{
     chainId: string;
@@ -72,6 +97,16 @@ export function VaultDetailPage() {
     () => diagnostics.filter((issue) => issue.severity === "warning" || issue.severity === "error"),
     [diagnostics]
   );
+
+  useEffect(() => {
+    if (!data) return;
+    console.log("VaultDetailPage.fetchVault", {
+      chainId,
+      address,
+      data,
+    });
+  }, [address, chainId, data]);
+
   const collateralDiagnosticIndex = useMemo(() => {
     if (!vault) {
       return createEntityDiagnosticIndex({
@@ -420,10 +455,17 @@ export function VaultDetailPage() {
           </thead>
           <tbody>
             {vault.collaterals.map((col) => {
+              const displayAdapters = normalizeCollateralDisplayAdapters(
+                col.oracleAdapters,
+                col.vault?.asset.address
+              );
               const adapterPairMismatchDetails = getAdapterMismatchDetails(
                 {
                   chainId,
-                  collateral: col,
+                  collateral: {
+                    ...col,
+                    oracleAdapters: displayAdapters,
+                  },
                   unitOfAccountAddress: vault.unitOfAccount.address,
                   metadataMap: oracleAdapterMetadataMap as Record<string, Record<string, unknown>> | undefined,
                   tokenSymbolMap,
@@ -458,7 +500,7 @@ export function VaultDetailPage() {
                   {!adapterPairMismatchDetails && renderCollateralFieldIcon(col.address, ["$.oraclePriceRaw", "$.oracleAdapters"])}
                   <OracleAdaptersInfo
                     chainId={chainId}
-                    adapters={col.oracleAdapters}
+                    adapters={displayAdapters}
                     metadataMap={oracleAdapterMetadataMap}
                   />
                   {adapterPairMismatchDetails && <ErrorIcon details={adapterPairMismatchDetails} />}

@@ -172,6 +172,18 @@ export interface EVaultPopulated extends ERC4626VaultPopulated {
 	collaterals: boolean;
 }
 
+function buildOracleAdaptersForPair(
+	vaultOracleAdapters: OracleAdapterEntry[],
+	baseAddress: Address,
+	quoteAddress: Address,
+): OracleAdapterEntry[] {
+	return selectLeafAdaptersForPair(
+		vaultOracleAdapters,
+		baseAddress,
+		quoteAddress,
+	);
+}
+
 export class EVault
 	extends ERC4626Vault
 	implements IEVault, IERC4626VaultConversion
@@ -188,6 +200,7 @@ export class EVault
 	caps: EVaultCaps;
 	liquidation: EVaultLiquidation;
 	oracle: OracleInfo;
+	debtPricingOracleAdapters: OracleAdapterEntry[];
 	interestRates: InterestRates;
 	interestRateModel: InterestRateModel;
 	collaterals: EVaultCollateral[];
@@ -210,9 +223,21 @@ export class EVault
 		this.caps = args.caps;
 		this.liquidation = args.liquidation;
 		this.oracle = args.oracle;
+		this.debtPricingOracleAdapters = buildOracleAdaptersForPair(
+			this.oracle.adapters,
+			this.asset.address,
+			this.unitOfAccount.address,
+		);
 		this.interestRates = args.interestRates;
 		this.interestRateModel = args.interestRateModel;
 		this.collaterals = args.collaterals;
+		for (const collateral of this.collaterals) {
+			collateral.oracleAdapters = buildOracleAdaptersForPair(
+				this.oracle.adapters,
+				collateral.address,
+				this.unitOfAccount.address,
+			);
+		}
 		this.evcCompatibleAsset = args.evcCompatibleAsset;
 		this.oraclePriceRaw = args.oraclePriceRaw;
 		this.timestamp = args.timestamp;
@@ -332,30 +357,6 @@ export class EVault
 
 		for (const collateral of this.collaterals) {
 			collateral.vault = vaultByAddress.get(collateral.address.toLowerCase());
-			if (!collateral.vault) {
-				collateral.oracleAdapters = [];
-				continue;
-			}
-
-			const collateralAsset = collateral.vault.asset.address;
-			const collateralVault = collateral.address;
-			const quote = this.unitOfAccount.address;
-			const byAsset = selectLeafAdaptersForPair(
-				this.oracle.adapters,
-				collateralAsset,
-				quote,
-			);
-			const byVault = selectLeafAdaptersForPair(
-				this.oracle.adapters,
-				collateralVault,
-				quote,
-			);
-			const deduped = new Map<string, (typeof byAsset)[number]>();
-			[...byAsset, ...byVault].forEach((adapter) => {
-				const key = `${adapter.oracle.toLowerCase()}:${adapter.base.toLowerCase()}:${adapter.quote.toLowerCase()}`;
-				if (!deduped.has(key)) deduped.set(key, adapter);
-			});
-			collateral.oracleAdapters = [...deduped.values()];
 		}
 		this.populated.collaterals = true;
 		return errors;
