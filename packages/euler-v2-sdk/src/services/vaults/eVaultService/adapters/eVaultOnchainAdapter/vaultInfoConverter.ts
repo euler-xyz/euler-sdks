@@ -22,7 +22,14 @@ import {
 	type InterestRateModelDetailedInfo,
 } from "./eVaultLensTypes.js";
 import { formatUnits, type Hex, zeroAddress } from "viem";
-import { decodeIRMParams } from "../../../../../utils/irm.js";
+import {
+	decodeIRMParams,
+	decorateIRMParams,
+	type KinkIRMInfo,
+	type AdaptiveCurveIRMInfo,
+	type KinkyIRMInfo,
+	type FixedCyclicalBinaryIRMInfo,
+} from "../../../../../utils/irm.js";
 import type { DataIssue } from "../../../../../utils/entityDiagnostics.js";
 import {
 	bigintToSafeNumber,
@@ -162,6 +169,7 @@ export function convertVaultInfoFullToIEVault(
 
 	const interestRateModel = convertInterestRateModel(
 		vaultInfo.irmInfo.interestRateModelInfo,
+		fees.interestFee,
 		errors,
 		vaultEntityId,
 	);
@@ -306,6 +314,7 @@ export function convertVaultInfoFullToIEVault(
  */
 function convertInterestRateModel(
 	irmInfo: InterestRateModelDetailedInfo,
+	interestFee: number,
 	errors: DataIssue[],
 	entityId?: string,
 ): InterestRateModel {
@@ -314,7 +323,7 @@ function convertInterestRateModel(
 		interestRateModelType: type,
 		interestRateModelParams: params,
 	} = irmInfo;
-	let decodedParams: InterestRateModel["data"] = null;
+	let decodedParams: ReturnType<typeof decodeIRMParams> | null = null;
 
 	if (type !== InterestRateModelType.UNKNOWN && params) {
 		try {
@@ -324,8 +333,8 @@ function convertInterestRateModel(
 			errors.push({
 				code: "DECODE_FAILED",
 				severity: "warning",
-				message: `Failed to decode IRM params for type ${type}; data set to null.`,
-				paths: ["$.interestRateModel.data"],
+				message: `Failed to decode IRM params for type ${type}; params set to null.`,
+				paths: ["$.interestRateModel.params"],
 				source: "vaultLens",
 				entityId,
 				originalValue: error instanceof Error ? error.message : String(error),
@@ -334,11 +343,54 @@ function convertInterestRateModel(
 		}
 	}
 
-	return {
-		address,
-		type,
-		data: decodedParams,
-	};
+	switch (type) {
+		case InterestRateModelType.KINK:
+			return {
+				address,
+				type,
+				data: decodedParams as KinkIRMInfo | null,
+				params: decorateIRMParams(
+					type,
+					decodedParams as KinkIRMInfo | null,
+					interestFee,
+				),
+			};
+		case InterestRateModelType.ADAPTIVE_CURVE:
+			return {
+				address,
+				type,
+				data: decodedParams as AdaptiveCurveIRMInfo | null,
+				params: decorateIRMParams(
+					type,
+					decodedParams as AdaptiveCurveIRMInfo | null,
+					interestFee,
+				),
+			};
+		case InterestRateModelType.KINKY:
+			return {
+				address,
+				type,
+				data: decodedParams as KinkyIRMInfo | null,
+				params: decorateIRMParams(
+					type,
+					decodedParams as KinkyIRMInfo | null,
+					interestFee,
+				),
+			};
+		case InterestRateModelType.FIXED_CYCLICAL_BINARY:
+			return {
+				address,
+				type,
+				data: decodedParams as FixedCyclicalBinaryIRMInfo | null,
+				params: decorateIRMParams(
+					type,
+					decodedParams as FixedCyclicalBinaryIRMInfo | null,
+					interestFee,
+				),
+			};
+		default:
+			return { address, type: InterestRateModelType.UNKNOWN, data: null, params: null };
+	}
 }
 
 function convertAssetPriceInfoToOraclePrice(

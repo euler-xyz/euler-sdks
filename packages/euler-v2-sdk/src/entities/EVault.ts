@@ -10,7 +10,13 @@ import {
 } from "../utils/oracle.js";
 import type { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
 import type { Token } from "../utils/types.js";
-import type { IRMParams } from "../utils/irm.js";
+import type {
+	AdaptiveCurveIRMInfo,
+	FixedCyclicalBinaryIRMInfo,
+	KinkIRMInfo,
+	KinkyIRMInfo,
+	LinearKinkIRMParams,
+} from "../utils/irm.js";
 import {
 	ERC4626Vault,
 	type ERC4626VaultPopulated,
@@ -81,11 +87,37 @@ export interface InterestRates {
 	supplyAPY: string;
 }
 
-export interface InterestRateModel {
-	address: Address;
-	type: InterestRateModelType;
-	data: IRMParams | null; // Decoded IRM parameters, null for UNKNOWN type
-}
+export type InterestRateModel =
+	| {
+			address: Address;
+			type: InterestRateModelType.KINK;
+			data: KinkIRMInfo | null;
+			params: LinearKinkIRMParams | null;
+	  }
+	| {
+			address: Address;
+			type: InterestRateModelType.ADAPTIVE_CURVE;
+			data: AdaptiveCurveIRMInfo | null;
+			params: null;
+	  }
+	| {
+			address: Address;
+			type: InterestRateModelType.KINKY;
+			data: KinkyIRMInfo | null;
+			params: null;
+	  }
+	| {
+			address: Address;
+			type: InterestRateModelType.FIXED_CYCLICAL_BINARY;
+			data: FixedCyclicalBinaryIRMInfo | null;
+			params: null;
+	  }
+	| {
+			address: Address;
+			type: InterestRateModelType.UNKNOWN;
+			data: null;
+			params: null;
+	  };
 
 export interface EVaultCollateral {
 	address: Address;

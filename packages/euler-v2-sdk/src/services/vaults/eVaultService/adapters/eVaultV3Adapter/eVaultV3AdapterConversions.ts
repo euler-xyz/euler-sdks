@@ -33,6 +33,14 @@ import type {
 	V3Token,
 	V3VaultDetail,
 } from "./eVaultV3AdapterTypes.js";
+import {
+	normalizeIRMParams,
+	decorateIRMParams,
+	type KinkIRMInfo,
+	type AdaptiveCurveIRMInfo,
+	type KinkyIRMInfo,
+	type FixedCyclicalBinaryIRMInfo,
+} from "../../../../../utils/irm.js";
 
 const DEFAULT_HOOKED_OPERATIONS: EVaultHookedOperations = {
 	deposit: false,
@@ -636,24 +644,77 @@ export function convertVault(
 	}
 	const interestRateModelData =
 		detail.interestRateModel ?? DEFAULT_INTEREST_RATE_MODEL_BLOCK;
-	const interestRateModel: InterestRateModel = {
-		address: parseAddressField(interestRateModelData.address, {
-			path: "$.interestRateModel.address",
+	const interestRateModelType = mapInterestRateModelType(
+		parseStringField(interestRateModelData.type, {
+			path: "$.interestRateModel.type",
 			entityId,
 			errors,
 			source: "eVaultV3",
+			fallback: "unknown",
 		}),
-		type: mapInterestRateModelType(
-			parseStringField(interestRateModelData.type, {
-				path: "$.interestRateModel.type",
-				entityId,
-				errors,
-				source: "eVaultV3",
-				fallback: "unknown",
-			}),
-		),
-		data: interestRateModelData.data as InterestRateModel["data"],
-	};
+	);
+	const normalizedIRMData = normalizeIRMParams(
+		interestRateModelType,
+		interestRateModelData.data,
+	);
+	const interestRateModelAddress = parseAddressField(interestRateModelData.address, {
+		path: "$.interestRateModel.address",
+		entityId,
+		errors,
+		source: "eVaultV3",
+	});
+	const interestRateModel: InterestRateModel =
+		interestRateModelType === InterestRateModelType.KINK
+			? {
+					address: interestRateModelAddress,
+					type: InterestRateModelType.KINK,
+					data: normalizedIRMData as KinkIRMInfo | null,
+					params: decorateIRMParams(
+						interestRateModelType,
+						normalizedIRMData as KinkIRMInfo | null,
+						fees.interestFee,
+					),
+				}
+			: interestRateModelType === InterestRateModelType.ADAPTIVE_CURVE
+				? {
+						address: interestRateModelAddress,
+						type: InterestRateModelType.ADAPTIVE_CURVE,
+						data: normalizedIRMData as AdaptiveCurveIRMInfo | null,
+						params: decorateIRMParams(
+							interestRateModelType,
+							normalizedIRMData as AdaptiveCurveIRMInfo | null,
+							fees.interestFee,
+						),
+					}
+				: interestRateModelType === InterestRateModelType.KINKY
+					? {
+							address: interestRateModelAddress,
+							type: InterestRateModelType.KINKY,
+							data: normalizedIRMData as KinkyIRMInfo | null,
+							params: decorateIRMParams(
+								interestRateModelType,
+								normalizedIRMData as KinkyIRMInfo | null,
+								fees.interestFee,
+							),
+						}
+					: interestRateModelType ===
+							  InterestRateModelType.FIXED_CYCLICAL_BINARY
+						? {
+								address: interestRateModelAddress,
+								type: InterestRateModelType.FIXED_CYCLICAL_BINARY,
+								data: normalizedIRMData as FixedCyclicalBinaryIRMInfo | null,
+								params: decorateIRMParams(
+									interestRateModelType,
+									normalizedIRMData as FixedCyclicalBinaryIRMInfo | null,
+									fees.interestFee,
+								),
+							}
+						: {
+								address: interestRateModelAddress,
+								type: InterestRateModelType.UNKNOWN,
+								data: null,
+								params: null,
+							};
 
 	if (!detail.oraclePriceRaw) {
 		errors.push({
