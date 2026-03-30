@@ -102,7 +102,7 @@ This keeps adapters thin and conversion logic pure and testable.
 
 All external calls within adapters are defined as `query*` arrow-function properties. The [`BuildQueryFn`](./caching-external-data-queries.md) decorator wraps every `query*` method at construction time, enabling global caching, logging, or profiling without modifying SDK internals.
 
-In the default SDK build, `buildEulerSDK()` installs a short-lived in-memory cache around all decorated `query*` methods. The default cache TTL is `1000ms`, which keeps bursty fetch paths from repeating identical RPC or HTTP requests while preserving near-real-time behavior. If a consumer provides `buildQuery`, that custom decorator replaces the built-in cache layer for SDK queries.
+In the default SDK build, `buildEulerSDK()` installs a short-lived in-memory cache around all decorated `query*` methods. The default cache TTL is `5000ms`, which keeps bursty fetch paths from repeating identical RPC or HTTP requests while preserving near-real-time behavior. If a consumer provides `buildQuery`, that custom decorator replaces the built-in cache layer for SDK queries.
 
 ```typescript
 class EVaultOnchainAdapter {
@@ -180,7 +180,7 @@ See [Cross-Service Data Population](./cross-service-data-population.md) for the 
 The resolved query decorator is selected as:
 
 1. Consumer-provided `buildQuery`, if present
-2. Otherwise the built-in in-memory cache from `queryCacheConfig` (enabled by default with `ttlMs: 1000`)
+2. Otherwise the built-in in-memory cache from `queryCacheConfig` (enabled by default with `ttlMs: 5000`)
 
 This means custom query decorators replace the SDK's default cache rather than layering on top of it automatically.
 

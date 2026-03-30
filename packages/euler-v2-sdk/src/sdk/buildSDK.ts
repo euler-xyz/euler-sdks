@@ -178,7 +178,7 @@ export interface BuildSDKOptions<
 	intrinsicApyServiceConfig?: IntrinsicApyServiceConfig;
 	oracleAdapterServiceConfig?: OracleAdapterServiceConfig;
 	feeFlowServiceConfig?: FeeFlowServiceConfig;
-	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with a 1s TTL. */
+	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with a 5s TTL. */
 	queryCacheConfig?: QueryCacheConfig;
 	/** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
 	buildQuery?: BuildQueryFn;

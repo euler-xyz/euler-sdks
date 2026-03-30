@@ -17,7 +17,7 @@ export interface QueryCacheConfig {
 	ttlMs?: number;
 }
 
-const DEFAULT_QUERY_CACHE_TTL_MS = 1_000;
+const DEFAULT_QUERY_CACHE_TTL_MS = 5_000;
 
 function serializeQueryArgs(args: unknown[]): string | null {
 	try {

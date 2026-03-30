@@ -2,7 +2,7 @@
 
 All external data fetching in the SDK (RPC calls, subgraph queries, HTTP requests) goes through **injectable `query*` methods**. This lets consumers wrap every network call with caching, logging, profiling, or any other cross-cutting concern without modifying SDK internals.
 
-By default, `buildEulerSDK()` applies a short-lived in-memory cache to every decorated `query*` method. The built-in cache is enabled automatically with a `1000ms` TTL and helps deduplicate bursts of identical reads during normal SDK usage. You can change this behavior by providing your own `buildQuery` wrapper.
+By default, `buildEulerSDK()` applies a short-lived in-memory cache to every decorated `query*` method. The built-in cache is enabled automatically with a `5000ms` TTL and helps deduplicate bursts of identical reads during normal SDK usage. You can change this behavior by providing your own `buildQuery` wrapper.
 
 ## How It Works
 
@@ -35,7 +35,7 @@ Pass `buildQuery` once when building the SDK and it propagates to every service 
 ```typescript
 const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },
-  queryCacheConfig: { ttlMs: 1000 }, // Optional: default is enabled with a 1s TTL
+  queryCacheConfig: { ttlMs: 5000 }, // Optional: default is enabled with a 5s TTL
   buildQuery: myBuildQueryFn,
   plugins: [createPythPlugin({ buildQuery: myBuildQueryFn })],
 })
@@ -52,7 +52,7 @@ const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },
   queryCacheConfig: {
     enabled: true, // default
-    ttlMs: 1000,   // default
+    ttlMs: 5000,   // default
   },
 })
 ```
