@@ -186,7 +186,7 @@ function toDataIssueSnapshot(issue: unknown): DataIssueSnapshot {
 
 function toComparableValue(
   input: unknown,
-  seen = new WeakSet<object>(),
+  ancestors = new WeakSet<object>(),
 ): ComparableValue {
   if (input === null) return null;
   if (input === undefined) return { __type: "undefined" };
@@ -207,7 +207,7 @@ function toComparableValue(
   }
 
   if (Array.isArray(input)) {
-    return input.map((value) => toComparableValue(value, seen));
+    return input.map((value) => toComparableValue(value, ancestors));
   }
 
   if (input instanceof Date) {
@@ -215,10 +215,10 @@ function toComparableValue(
   }
 
   if (input && inputType === "object") {
-    if (seen.has(input as object)) {
+    if (ancestors.has(input as object)) {
       return "[circular]";
     }
-    seen.add(input as object);
+    ancestors.add(input as object);
 
     const output: Record<string, ComparableValue> = {};
     const entries = Object.entries(input as Record<string, unknown>).sort(([a], [b]) =>
@@ -227,8 +227,10 @@ function toComparableValue(
 
     for (const [key, value] of entries) {
       if (typeof value === "function") continue;
-      output[key] = toComparableValue(value, seen);
+      output[key] = toComparableValue(value, ancestors);
     }
+
+    ancestors.delete(input as object);
 
     return output;
   }
@@ -260,6 +262,48 @@ function isPlainObject(
   value: ComparableValue,
 ): value is Record<string, ComparableValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNormalizedPythNumericPath(path: string): boolean {
+  return (
+    path.endsWith(".pythDetail.maxConfWidth") ||
+    path.endsWith(".pythDetail.maxStaleness")
+  );
+}
+
+function isSupplyApyPath(path: string): boolean {
+  return path.endsWith(".interestRates.supplyAPY");
+}
+
+function toFiniteNumberLike(value: ComparableValue): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function toBigIntLike(value: ComparableValue): bigint | null {
+  if (typeof value === "string" && /^-?\d+$/.test(value)) {
+    return BigInt(value);
+  }
+
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return BigInt(value);
+  }
+
+  if (isBigIntSnapshot(value)) {
+    return BigInt(value.value);
+  }
+
+  return null;
 }
 
 function valuesDifferWithinTolerance(left: number, right: number): boolean {
@@ -306,7 +350,51 @@ function compareValues(
   path: string,
   differences: Issue[],
 ) {
+  if (isNormalizedPythNumericPath(path)) {
+    const leftBigInt = toBigIntLike(left);
+    const rightBigInt = toBigIntLike(right);
+    if (leftBigInt !== null && rightBigInt !== null) {
+      if (leftBigInt !== rightBigInt) {
+        differences.push({
+          path,
+          reason: "value mismatch",
+          default: left,
+          onchain: right,
+        });
+      }
+      return;
+    }
+  }
+
+  if (isSupplyApyPath(path)) {
+    const leftNumber = toFiniteNumberLike(left);
+    const rightNumber = toFiniteNumberLike(right);
+    if (leftNumber !== null && rightNumber !== null) {
+      if (valuesDifferWithinTolerance(leftNumber, rightNumber)) {
+        differences.push({
+          path,
+          reason: "numeric values differ by more than 1%",
+          default: left,
+          onchain: right,
+        });
+      }
+      return;
+    }
+  }
+
   if (typeof left === "number" && typeof right === "number") {
+    if (path.endsWith(".interestRateModel.type")) {
+      if (!Object.is(left, right)) {
+        differences.push({
+          path,
+          reason: "enum value mismatch",
+          default: left,
+          onchain: right,
+        });
+      }
+      return;
+    }
+
     if (valuesDifferWithinTolerance(left, right)) {
       differences.push({
         path,
@@ -579,6 +667,127 @@ function formatIssueValue(value: ComparableValue): string {
   return `\`${JSON.stringify(value)}\``;
 }
 
+function tokenizePath(path: string): Array<string | number> {
+  if (!path.startsWith("$")) return [];
+
+  const tokens: Array<string | number> = [];
+  let index = 1;
+  while (index < path.length) {
+    const char = path[index];
+    if (char === ".") {
+      index += 1;
+      let end = index;
+      while (end < path.length && path[end] !== "." && path[end] !== "[") {
+        end += 1;
+      }
+      if (end > index) {
+        tokens.push(path.slice(index, end));
+      }
+      index = end;
+      continue;
+    }
+
+    if (char === "[") {
+      const end = path.indexOf("]", index);
+      if (end === -1) break;
+      const value = Number(path.slice(index + 1, end));
+      if (Number.isInteger(value)) {
+        tokens.push(value);
+      }
+      index = end + 1;
+      continue;
+    }
+
+    index += 1;
+  }
+
+  return tokens;
+}
+
+function findDeepestAddressForPath(
+  root: ComparableValue | undefined,
+  path: string,
+): { address?: string; depth: number } {
+  if (!root) return { depth: -1 };
+
+  const tokens = tokenizePath(path);
+  let current: ComparableValue | undefined = root;
+  let bestAddress: string | undefined;
+  let bestDepth = -1;
+
+  const updateBestAddress = (value: ComparableValue | undefined, depth: number) => {
+    if (!isPlainObject(value)) return;
+    const address = value.address;
+    if (typeof address === "string") {
+      bestAddress = address;
+      bestDepth = depth;
+    }
+  };
+
+  updateBestAddress(current, -1);
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+
+    if (typeof token === "string") {
+      if (!isPlainObject(current) || !(token in current)) break;
+      current = current[token];
+    } else {
+      if (!Array.isArray(current) || token < 0 || token >= current.length) break;
+      current = current[token];
+    }
+
+    updateBestAddress(current, index);
+  }
+
+  return { address: bestAddress, depth: bestDepth };
+}
+
+function getSnapshotValue(
+  report: Report,
+  chainId: number,
+  scenario: ScenarioName,
+  address: Address,
+): ComparableValue | undefined {
+  const snapshots = scenario === "default-v3-adapters"
+    ? report.snapshots.default
+    : report.snapshots.onchain;
+  const snapshot = snapshots.find((entry) => entry.chainId === chainId);
+  const vault = snapshot?.vaults.find(
+    (entry) => entry.address.toLowerCase() === address.toLowerCase(),
+  );
+  return vault?.value;
+}
+
+function getIssueVaultAddress(
+  report: Report,
+  row: VaultReportRow,
+  issue: Issue,
+): string | undefined {
+  const defaultValue = getSnapshotValue(
+    report,
+    row.chainId,
+    "default-v3-adapters",
+    row.address,
+  );
+  const onchainValue = getSnapshotValue(
+    report,
+    row.chainId,
+    "explicit-onchain-adapters",
+    row.address,
+  );
+
+  const candidates = [
+    findDeepestAddressForPath(defaultValue, issue.path),
+    findDeepestAddressForPath(onchainValue, issue.path),
+  ].filter((candidate) => candidate.address);
+
+  if (candidates.length === 0) return undefined;
+
+  candidates.sort((left, right) => right.depth - left.depth);
+  return candidates[0]!.address;
+}
+
 function isRateLimitError(error: unknown): boolean {
   const message =
     error instanceof Error ? error.message : typeof error === "string" ? error : "";
@@ -632,7 +841,12 @@ function renderChainSection(chainId: number, report: Report): string {
   const diffLines = diffs
     .map((row) => {
       const issue = row.issues[0]!;
-      return `- \`${row.address}\` (${row.type}): \`${issue.path}\` ${issue.reason}; default ${formatIssueValue(issue.default)} vs onchain ${formatIssueValue(issue.onchain)}`;
+      const issueVaultAddress = getIssueVaultAddress(report, row, issue);
+      const issueVaultSuffix =
+        issueVaultAddress && issueVaultAddress.toLowerCase() !== row.address.toLowerCase()
+          ? `; issue vault \`${issueVaultAddress}\``
+          : "";
+      return `- root \`${row.address}\` (${row.type})${issueVaultSuffix}: \`${issue.path}\` ${issue.reason}; default ${formatIssueValue(issue.default)} vs onchain ${formatIssueValue(issue.onchain)}`;
     })
     .join("\n");
 

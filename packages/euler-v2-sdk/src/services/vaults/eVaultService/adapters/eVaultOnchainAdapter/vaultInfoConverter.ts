@@ -14,6 +14,7 @@ import type {
 	EVaultCollateral,
 	EVaultHookedOperations,
 } from "../../../../../entities/EVault.js";
+import { hasActiveBorrowableLtv } from "../../../../../entities/EVault.js";
 import { type Token, VaultType } from "../../../../../utils/types.js";
 import {
 	type VaultInfoFull,
@@ -36,8 +37,13 @@ import {
 	bigintToScaledNumber,
 } from "../../../../../utils/normalization.js";
 import { USD_ADDRESS } from "../../../../priceService/priceService.js";
+import { ZERO_ADDRESS } from "../../../../../utils/parsing.js";
 
-function normalizeUnitOfAccountToken(token: Token): Token {
+function normalizeUnitOfAccountToken(token: Token): Token | undefined {
+	if (token.address.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
+		return undefined;
+	}
+
 	if (token.address.toLowerCase() !== USD_ADDRESS.toLowerCase()) {
 		return token;
 	}
@@ -64,7 +70,13 @@ export function convertVaultInfoFullToIEVault(
 	const oracle: OracleInfo = {
 		oracle: vaultInfo.oracleInfo.oracle,
 		name: vaultInfo.oracleInfo.name,
-		adapters: decodeOracleInfo(vaultInfo.oracleInfo),
+		adapters: decodeOracleInfo(vaultInfo.oracleInfo, 3, {
+			base: vaultInfo.asset,
+			quote:
+				vaultInfo.unitOfAccount.toLowerCase() === ZERO_ADDRESS.toLowerCase()
+					? undefined
+					: vaultInfo.unitOfAccount,
+		}),
 	};
 
 	const shares: Token = {
@@ -91,7 +103,7 @@ export function convertVaultInfoFullToIEVault(
 		}),
 	};
 
-	const unitOfAccount: Token = normalizeUnitOfAccountToken({
+	const unitOfAccount = normalizeUnitOfAccountToken({
 		address: vaultInfo.unitOfAccount,
 		name: vaultInfo.unitOfAccountName,
 		symbol: vaultInfo.unitOfAccountSymbol,
@@ -301,6 +313,7 @@ export function convertVaultInfoFullToIEVault(
 		interestRates,
 		interestRateModel,
 		collaterals,
+		isBorrowable: hasActiveBorrowableLtv(collaterals, vaultTimestamp),
 		oraclePriceRaw,
 		timestamp: vaultTimestamp,
 	};

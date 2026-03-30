@@ -123,6 +123,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
 		type: VaultType.EulerEarn,
 		chainId,
 		address: vaultInfo.vault,
+		isBorrowable: false,
 		shares,
 		asset,
 		totalShares: vaultInfo.totalShares,

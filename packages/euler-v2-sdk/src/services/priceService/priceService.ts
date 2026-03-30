@@ -3,6 +3,7 @@ import type { OraclePrice } from "../../utils/oracle.js";
 import type { EVault } from "../../entities/EVault.js";
 import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
 import { VaultType } from "../../utils/types.js";
+import { ZERO_ADDRESS } from "../../utils/parsing.js";
 import type { ProviderService } from "../providerService/providerService.js";
 import type { DeploymentService } from "../deploymentService/deploymentService.js";
 import { utilsLensPriceAbi } from "./utilsLensPriceAbi.js";
@@ -195,8 +196,10 @@ export class PriceService implements IPriceService {
 		path = "$",
 	): Promise<ServiceResult<bigint | undefined>> {
 		const errors: DataIssue[] = [];
-		const uoaAddress = vault.unitOfAccount.address;
-		if (!uoaAddress) return { result: undefined, errors };
+		const uoaAddress = vault.unitOfAccount?.address;
+		if (!uoaAddress || uoaAddress === ZERO_ADDRESS) {
+			return { result: undefined, errors };
+		}
 
 		// USD unit of account → 1.0
 		if (getAddress(uoaAddress) === getAddress(USD_ADDRESS)) {
@@ -552,7 +555,8 @@ export class PriceService implements IPriceService {
  */
 export function getAssetOraclePrice(vault: EVault): PriceResult | undefined {
 	const { oraclePriceRaw, unitOfAccount } = vault;
-	if (!oraclePriceRaw || !oraclePriceRaw.amountOutMid) return undefined;
+	if (!oraclePriceRaw || !oraclePriceRaw.amountOutMid || !unitOfAccount)
+		return undefined;
 
 	const { amountOutMid, amountOutAsk, amountOutBid } = oraclePriceRaw;
 	const ask = amountOutAsk && amountOutAsk > 0n ? amountOutAsk : amountOutMid;
@@ -610,6 +614,7 @@ export function getCollateralOraclePrice(
 	if (!sharePrice) return undefined;
 
 	const { totalAssets, totalShares } = collateralVault;
+	if (!liabilityVault.unitOfAccount) return undefined;
 	const uoaDecimals = liabilityVault.unitOfAccount.decimals;
 
 	// Empty vault (both 0): ERC-4626 standard defines 1:1 ratio

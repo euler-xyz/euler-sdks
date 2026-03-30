@@ -30,6 +30,7 @@ export interface IERC4626Vault extends ERC4626Data {
 	asset: Token;
 	totalShares: bigint;
 	totalAssets: bigint;
+	readonly isBorrowable: boolean;
 	populated?: Partial<ERC4626VaultPopulated>;
 }
 
@@ -67,6 +68,10 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
 			intrinsicApy: args.populated?.intrinsicApy ?? false,
 			labels: args.populated?.labels ?? false,
 		};
+	}
+
+	get isBorrowable(): boolean {
+		return false;
 	}
 
 	/** 1:1 conversion (standard ERC4626 when totalShares === totalAssets). */

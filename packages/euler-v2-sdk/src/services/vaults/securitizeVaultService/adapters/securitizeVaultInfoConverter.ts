@@ -37,6 +37,7 @@ export function convertToISecuritizeCollateralVault(
 		type: VaultType.SecuritizeCollateral,
 		chainId,
 		address: vaultInfo.vault,
+		isBorrowable: false,
 		shares,
 		asset,
 		totalShares: vaultInfo.totalShares,

@@ -50,7 +50,13 @@ async function fetchVaultDetailsExample() {
   console.log(`  Name:            ${vault.shares.name}`);
   console.log(`  Address:         ${vault.address}`);
   console.log(`  Asset:           ${vault.asset.symbol} (${vault.asset.address})`);
-  console.log(`  Unit of Account: ${vault.unitOfAccount.symbol} (${vault.unitOfAccount.address})`);
+  console.log(
+    `  Unit of Account: ${
+      vault.unitOfAccount
+        ? `${vault.unitOfAccount.symbol} (${vault.unitOfAccount.address})`
+        : "None"
+    }`,
+  );
   console.log(`  Total Assets:    ${formatUnits(vault.totalAssets, vault.asset.decimals)} ${vault.asset.symbol}`);
   console.log(`  Total Borrowed:  ${formatUnits(vault.totalBorrowed, vault.asset.decimals)} ${vault.asset.symbol}`);
   console.log(`  Total Cash:      ${formatUnits(vault.totalCash, vault.asset.decimals)} ${vault.asset.symbol}`);

@@ -1,5 +1,6 @@
 import { type Address, type Hex, getAddress } from "viem";
 import type {
+	OracleAdapterEntry,
 	OracleInfo,
 	OraclePrice,
 } from "../../../../../utils/oracle.js";
@@ -13,7 +14,7 @@ import {
 	parseStringField,
 	ZERO_ADDRESS,
 } from "../../../../../utils/parsing.js";
-import type {
+import {
 	EVaultCollateral,
 	EVaultCollateralRamping,
 	EVaultCaps,
@@ -24,12 +25,14 @@ import type {
 	IEVault,
 	InterestRateModel,
 	InterestRates,
+	hasActiveBorrowableLtv,
 } from "../../../../../entities/EVault.js";
 import { type Token, VaultType } from "../../../../../utils/types.js";
 import { InterestRateModelType } from "../eVaultOnchainAdapter/eVaultLensTypes.js";
 import type {
 	V3CollateralRow,
 	V3OraclePrice,
+	V3OracleAdapter,
 	V3Token,
 	V3VaultDetail,
 } from "./eVaultV3AdapterTypes.js";
@@ -108,6 +111,17 @@ const DEFAULT_ORACLE_PRICE_BLOCK: V3OraclePrice = {
 	amountOutAsk: "0",
 	timestamp: 0,
 };
+
+function normalizeUnitOfAccountToken(token: Token): Token | undefined {
+	if (token.address.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
+		return undefined;
+	}
+
+	return {
+		...token,
+		decimals: token.decimals > 0 ? token.decimals : 18,
+	};
+}
 
 function mapInterestRateModelType(type: string): InterestRateModelType {
 	switch (type.toLowerCase()) {
@@ -224,6 +238,94 @@ function convertOraclePrice(
 			originalValue: converted.queryFailureReason,
 			normalizedValue: "queryFailure:true",
 		});
+	}
+
+	return converted;
+}
+
+function convertOracleAdapter(
+	adapter: V3OracleAdapter,
+	entityId: Address,
+	errors: DataIssue[],
+): OracleAdapterEntry {
+	const converted: OracleAdapterEntry = {
+		oracle: parseAddressField(adapter.oracle, {
+			path: "$.oracle.adapters[].oracle",
+			entityId,
+			errors,
+			source: "eVaultV3",
+		}),
+		name: parseStringField(adapter.name, {
+			path: "$.oracle.adapters[].name",
+			entityId,
+			errors,
+			source: "eVaultV3",
+		}),
+		base: parseAddressField(adapter.base, {
+			path: "$.oracle.adapters[].base",
+			entityId,
+			errors,
+			source: "eVaultV3",
+		}),
+		quote: parseAddressField(adapter.quote, {
+			path: "$.oracle.adapters[].quote",
+			entityId,
+			errors,
+			source: "eVaultV3",
+		}),
+	};
+
+	if (adapter.pythDetail) {
+		converted.pythDetail = {
+			pyth: parseAddressField(adapter.pythDetail.pyth, {
+				path: "$.oracle.adapters[].pythDetail.pyth",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			}),
+			base: parseAddressField(adapter.pythDetail.base, {
+				path: "$.oracle.adapters[].pythDetail.base",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			}),
+			quote: parseAddressField(adapter.pythDetail.quote, {
+				path: "$.oracle.adapters[].pythDetail.quote",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			}),
+			feedId: parseStringField(adapter.pythDetail.feedId, {
+				path: "$.oracle.adapters[].pythDetail.feedId",
+				entityId,
+				errors,
+				source: "eVaultV3",
+				fallback: "0x",
+			}) as Hex,
+			maxStaleness: parseBigIntField(String(adapter.pythDetail.maxStaleness), {
+				path: "$.oracle.adapters[].pythDetail.maxStaleness",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			}),
+			maxConfWidth: parseBigIntField(String(adapter.pythDetail.maxConfWidth), {
+				path: "$.oracle.adapters[].pythDetail.maxConfWidth",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			}),
+		};
+	}
+
+	if (adapter.chainlinkDetail) {
+		converted.chainlinkDetail = {
+			oracle: parseAddressField(adapter.chainlinkDetail.oracle, {
+				path: "$.oracle.adapters[].chainlinkDetail.oracle",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			}),
+		};
 	}
 
 	return converted;
@@ -383,43 +485,9 @@ export function convertVault(
 			errors,
 			source: "eVaultV3",
 		}),
-		adapters: oracleData.adapters.map((adapter) => ({
-			oracle: parseAddressField(adapter.oracle, {
-				path: "$.oracle.adapters[].oracle",
-				entityId,
-				errors,
-				source: "eVaultV3",
-			}),
-			name: parseStringField(adapter.name, {
-				path: "$.oracle.adapters[].name",
-				entityId,
-				errors,
-				source: "eVaultV3",
-			}),
-			base: parseAddressField(adapter.base, {
-				path: "$.oracle.adapters[].base",
-				entityId,
-				errors,
-				source: "eVaultV3",
-			}),
-			quote: parseAddressField(adapter.quote, {
-				path: "$.oracle.adapters[].quote",
-				entityId,
-				errors,
-				source: "eVaultV3",
-			}),
-			pythDetail: adapter.pythDetail,
-			chainlinkDetail: adapter.chainlinkDetail
-				? {
-						oracle: parseAddressField(adapter.chainlinkDetail.oracle, {
-							path: "$.oracle.adapters[].chainlinkDetail.oracle",
-							entityId,
-							errors,
-							source: "eVaultV3",
-						}),
-					}
-				: undefined,
-		})),
+		adapters: oracleData.adapters.map((adapter) =>
+			convertOracleAdapter(adapter, entityId, errors),
+		),
 	};
 	const suppressUnitOfAccountDiagnostics = hasZeroOracleAddress;
 
@@ -729,6 +797,18 @@ export function convertVault(
 		});
 	}
 	const oraclePriceData = detail.oraclePriceRaw ?? DEFAULT_ORACLE_PRICE_BLOCK;
+	const timestamp = parseNumberField(detail.timestamp, {
+		path: "$.timestamp",
+		entityId,
+		errors,
+		source: "eVaultV3",
+	});
+	const collaterals = convertCollaterals(
+		collateralRows,
+		timestamp,
+		entityId,
+		errors,
+	);
 
 	return {
 		type: VaultType.EVault,
@@ -736,11 +816,13 @@ export function convertVault(
 		address: entityId,
 		shares: convertToken(sharesData, "$.shares", entityId, errors),
 		asset: convertToken(assetData, "$.asset", entityId, errors),
-		unitOfAccount: convertToken(
-			unitOfAccountData,
-			"$.unitOfAccount",
-			entityId,
-			unitOfAccountErrors,
+		unitOfAccount: normalizeUnitOfAccountToken(
+			convertToken(
+				unitOfAccountData,
+				"$.unitOfAccount",
+				entityId,
+				unitOfAccountErrors,
+			),
 		),
 		totalShares: parseBigIntField(detail.totalShares, {
 			path: "$.totalShares",
@@ -797,12 +879,8 @@ export function convertVault(
 		oracle,
 		interestRates,
 		interestRateModel,
-		collaterals: convertCollaterals(
-			collateralRows,
-			detail.timestamp,
-			entityId,
-			errors,
-		),
+		collaterals,
+		isBorrowable: hasActiveBorrowableLtv(collaterals, timestamp),
 		evcCompatibleAsset: parseBooleanField(detail.evcCompatibleAsset, {
 			path: "$.evcCompatibleAsset",
 			entityId,
@@ -815,11 +893,6 @@ export function convertVault(
 			"$.oraclePriceRaw",
 			entityId,
 		),
-		timestamp: parseNumberField(detail.timestamp, {
-			path: "$.timestamp",
-			entityId,
-			errors,
-			source: "eVaultV3",
-		}),
+		timestamp,
 	};
 }

@@ -72,6 +72,47 @@ export type OracleAdapterEntry = {
 	chainlinkDetail?: { oracle: Address };
 };
 
+function oracleAdapterStableRepr(
+	value: OracleAdapterEntry | PythOracleInfo | { oracle: Address } | Address | Hex | bigint | string | null | undefined,
+): unknown {
+	if (value === null || value === undefined) return undefined;
+	if (typeof value === "bigint") return { __type: "bigint", value: value.toString() };
+	if (Array.isArray(value)) return value.map((entry) => oracleAdapterStableRepr(entry));
+	if (typeof value === "object") {
+		const out: Record<string, unknown> = {};
+		for (const key of Object.keys(value).sort()) {
+			const nested = oracleAdapterStableRepr(
+				(value as Record<string, unknown>)[key] as
+					| OracleAdapterEntry
+					| PythOracleInfo
+					| { oracle: Address }
+					| Address
+					| Hex
+					| bigint
+					| string
+					| null
+					| undefined,
+			);
+			if (nested !== undefined) out[key] = nested;
+		}
+		return out;
+	}
+
+	return value;
+}
+
+export function getOracleAdapterSortKey(adapter: OracleAdapterEntry): string {
+	return JSON.stringify(oracleAdapterStableRepr(adapter));
+}
+
+export function sortOracleAdapters(
+	adapters: OracleAdapterEntry[],
+): OracleAdapterEntry[] {
+	return [...adapters].sort((left, right) =>
+		getOracleAdapterSortKey(left).localeCompare(getOracleAdapterSortKey(right)),
+	);
+}
+
 const isChainlinkOracleName = (name: string) =>
 	name.toLowerCase().includes("chainlink");
 const isCrossAdapterName = (name: string) =>
@@ -263,6 +304,10 @@ export const decodeOracleInfo = (
 	const adapters: OracleAdapterEntry[] = [];
 	const visited = new Set<string>();
 	const leafOnly = options.leafOnly ?? false;
+	const rootFallbackPair = resolveAdapterPair({
+		base: options.base,
+		quote: options.quote,
+	}) ?? undefined;
 
 	const addAdapter = (
 		info: OracleDetailedInfo,
@@ -346,7 +391,11 @@ export const decodeOracleInfo = (
 			const decoded = decodePythOracleInfo(info.oracleInfo);
 			const pair = resolveAdapterPair(
 				context,
-				decoded ? { base: decoded.base, quote: decoded.quote } : undefined,
+				decoded
+					? { base: decoded.base, quote: decoded.quote }
+					: depth === 0
+						? rootFallbackPair
+						: undefined,
 			);
 			if (pair) {
 				addAdapter(
@@ -359,7 +408,10 @@ export const decodeOracleInfo = (
 			return;
 		}
 
-		const pair = resolveAdapterPair(context);
+		const pair = resolveAdapterPair(
+			context,
+			depth === 0 ? rootFallbackPair : undefined,
+		);
 		if (pair) {
 			const extra = isChainlinkOracleName(info.name)
 				? { chainlinkDetail: { oracle: info.oracle } }
@@ -368,7 +420,7 @@ export const decodeOracleInfo = (
 		}
 	};
 
-	visit(oracleInfo, 0, { base: options.base, quote: options.quote });
+	visit(oracleInfo, 0, {});
 
 	const deduped = new Map<string, OracleAdapterEntry>();
 	adapters.forEach((adapter) => {

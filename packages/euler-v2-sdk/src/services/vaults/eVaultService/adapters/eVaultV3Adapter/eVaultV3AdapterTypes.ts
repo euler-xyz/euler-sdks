@@ -1,4 +1,4 @@
-import type { OracleAdapterEntry } from "../../../../../utils/oracle.js";
+import type { Hex } from "viem";
 import type { EVaultHookedOperations } from "../../../../../entities/EVault.js";
 
 export type V3Envelope<T> = {
@@ -21,12 +21,21 @@ export type V3Token = {
 	name: string;
 };
 
+export type V3PythOracleDetail = {
+	pyth: string;
+	base: string;
+	quote: string;
+	feedId: Hex | string;
+	maxStaleness: string | bigint;
+	maxConfWidth: string | bigint;
+};
+
 export type V3OracleAdapter = {
 	oracle: string;
 	name: string;
 	base: string;
 	quote: string;
-	pythDetail?: OracleAdapterEntry["pythDetail"];
+	pythDetail?: V3PythOracleDetail;
 	chainlinkDetail?: { oracle: string };
 };
 

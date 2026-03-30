@@ -113,6 +113,10 @@ export class EulerEarn
 		};
 	}
 
+	override get isBorrowable(): boolean {
+		return false;
+	}
+
 	isPendingRemoval(strategy: EulerEarnStrategyInfo): boolean {
 		return this.getStrategyStatus(strategy) === "pendingRemoval";
 	}
