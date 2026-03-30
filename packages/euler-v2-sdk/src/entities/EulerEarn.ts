@@ -7,13 +7,14 @@ import {
 	type IERC4626VaultConversion,
 	VIRTUAL_DEPOSIT_AMOUNT,
 } from "./ERC4626Vault.js";
-import type { EVault } from "./EVault.js";
-import type { IEVaultService } from "../services/vaults/eVaultService/eVaultService.js";
+import type { IVaultEntity } from "./Account.js";
+import type { IVaultMetaService } from "../services/vaults/vaultMetaService/index.js";
 import type { DataIssue } from "../utils/entityDiagnostics.js";
 import {
 	mapDataIssuePaths,
 	withPathPrefix,
 } from "../utils/entityDiagnostics.js";
+import { VaultType as VaultTypeEnum } from "../utils/types.js";
 
 export interface EulerEarnAllocationCap {
 	current: bigint;
@@ -28,7 +29,7 @@ export interface EulerEarnStrategyInfo {
 	availableAssets: bigint;
 	allocationCap: EulerEarnAllocationCap;
 	removableAt: number;
-	vault?: EVault;
+	vault?: IVaultEntity;
 }
 
 export type EulerEarnStrategyStatus =
@@ -150,10 +151,14 @@ export class EulerEarn
 	}
 
 	async populateStrategyVaults(
-		eVaultService: IEVaultService,
+		vaultMetaService: IVaultMetaService,
 	): Promise<DataIssue[]> {
 		const allStrategyAddresses = [
-			...new Set(this.strategies.map((s) => s.address)),
+			...new Set(
+				this.strategies
+					.filter((s) => s.vaultType !== VaultTypeEnum.Unknown)
+					.map((s) => s.address),
+			),
 		];
 		if (allStrategyAddresses.length === 0) {
 			this.populated.strategyVaults = true;
@@ -161,9 +166,9 @@ export class EulerEarn
 		}
 		const errors: DataIssue[] = [];
 
-		const eVaults = await Promise.all(
+		const vaults = await Promise.all(
 			allStrategyAddresses.map(async (addr, index) => {
-				const fetched = await eVaultService.fetchVault(this.chainId, addr);
+				const fetched = await vaultMetaService.fetchVault(this.chainId, addr);
 				errors.push(
 					...fetched.errors.map((issue) => ({
 						...mapDataIssuePaths(issue, (path) =>
@@ -175,14 +180,15 @@ export class EulerEarn
 			}),
 		);
 
-		const eVaultByAddress = new Map(
-			eVaults
+		const vaultByAddress = new Map(
+			vaults
 				.filter((v) => v !== undefined)
 				.map((v) => [v.address.toLowerCase(), v]),
 		);
 
 		for (const strategy of this.strategies) {
-			strategy.vault = eVaultByAddress.get(strategy.address.toLowerCase());
+			if (strategy.vaultType === VaultTypeEnum.Unknown) continue;
+			strategy.vault = vaultByAddress.get(strategy.address.toLowerCase());
 		}
 		this.populated.strategyVaults = true;
 		return errors;

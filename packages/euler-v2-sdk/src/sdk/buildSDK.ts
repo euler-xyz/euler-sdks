@@ -407,6 +407,11 @@ export async function buildEulerSDK<
 	if (eVaultService instanceof EVaultService) {
 		eVaultService.setVaultMetaService(vaultMetaService as IVaultMetaService);
 	}
+	if (eulerEarnService instanceof EulerEarnService) {
+		eulerEarnService.setVaultMetaService(
+			vaultMetaService as unknown as IVaultMetaService<VaultEntity>,
+		);
+	}
 
 	// Wire plugins into onchain adapters for read-path enrichment
 	if (plugins?.length) {
