@@ -1,6 +1,8 @@
 # Caching External Data Queries
 
-All external data fetching in the SDK (RPC calls, subgraph queries, HTTP requests) goes through **injectable `query*` methods**. This lets consumers wrap every network call with caching, logging, profiling, or any other cross-cutting concern — without modifying SDK internals.
+All external data fetching in the SDK (RPC calls, subgraph queries, HTTP requests) goes through **injectable `query*` methods**. This lets consumers wrap every network call with caching, logging, profiling, or any other cross-cutting concern without modifying SDK internals.
+
+By default, `buildEulerSDK()` applies a short-lived in-memory cache to every decorated `query*` method. The built-in cache is enabled automatically with a `1000ms` TTL and helps deduplicate bursts of identical reads during normal SDK usage. You can change this behavior by providing your own `buildQuery` wrapper.
 
 ## How It Works
 
@@ -28,19 +30,54 @@ type BuildQueryFn = <T extends (...args: any[]) => Promise<any>>(
 ) => T;
 ```
 
-Pass `buildQuery` once when building the SDK — it propagates to every service and adapter:
+Pass `buildQuery` once when building the SDK and it propagates to every service and adapter:
 
 ```typescript
 const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },
+  queryCacheConfig: { ttlMs: 1000 }, // Optional: default is enabled with a 1s TTL
   buildQuery: myBuildQueryFn,
   plugins: [createPythPlugin({ buildQuery: myBuildQueryFn })],
 })
 ```
 
+If you provide `buildQuery`, it fully replaces the default cache layer for SDK queries. The built-in cache only applies when `buildQuery` is omitted.
+
+## Default Cache Configuration
+
+Configure the built-in cache through `queryCacheConfig`:
+
+```typescript
+const sdk = await buildEulerSDK({
+  rpcUrls: { 1: 'https://...' },
+  queryCacheConfig: {
+    enabled: true, // default
+    ttlMs: 1000,   // default
+  },
+})
+```
+
+Disable it entirely:
+
+```typescript
+const sdk = await buildEulerSDK({
+  rpcUrls: { 1: 'https://...' },
+  queryCacheConfig: { enabled: false },
+})
+```
+
+Provide your own `buildQuery` if you want full control over query decoration:
+
+```typescript
+const sdk = await buildEulerSDK({
+  rpcUrls: { 1: 'https://...' },
+  buildQuery: myBuildQueryFn, // Replaces the default cache layer
+})
+```
+
 ## React Example — Wrapping Queries with react-query Cache
 
-The `examples/react-sdk-example` app shows how to use `buildQuery` to give every SDK network call its own react-query cache entry with per-query stale times.
+The `examples/react-sdk-example` app shows how to use `buildQuery` to give every SDK network call its own react-query cache entry with per-query stale times. In this setup, the custom `buildQuery` replaces the SDK's default cache layer for those queries.
 
 ### The `buildQuery` wrapper
 

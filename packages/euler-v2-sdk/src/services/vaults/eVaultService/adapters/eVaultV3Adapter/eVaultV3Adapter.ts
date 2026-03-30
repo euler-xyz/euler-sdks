@@ -67,6 +67,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		async (
 			keys: { address: Address; chainId: number }[],
 		): Promise<(V3VaultDetailWithIncludes | undefined)[]> => {
+			console.log('batch');
 			const byChain = new Map<number, Address[]>();
 			for (const key of keys) {
 				const addresses = byChain.get(key.chainId) ?? [];
@@ -130,6 +131,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		offset: number,
 		limit: number,
 	): Promise<V3ListEnvelope<V3VaultListRow> | V3VaultListRow[]> => {
+		console.log('list');
 		const url = this.buildUrl(endpoint, "/v3/evk/vaults", {
 			chainId: String(chainId),
 			offset: String(offset),
@@ -249,7 +251,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 	async fetchAllVaults(
 		chainId: number,
 	): Promise<ServiceResult<(IEVault | undefined)[]>> {
-		const limit = 200;
+		const limit = 100;
 		let offset = 0;
 		const addresses: Address[] = [];
 

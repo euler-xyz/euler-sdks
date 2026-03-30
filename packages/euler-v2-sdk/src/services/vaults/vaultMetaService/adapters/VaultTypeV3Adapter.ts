@@ -56,7 +56,7 @@ const defaultTypeMap: Record<string, string> = {
 	securitizeCollateral: VaultType.SecuritizeCollateral,
 };
 
-const V3_VAULT_RESOLVE_BATCH_SIZE = 500;
+const V3_VAULT_RESOLVE_BATCH_SIZE = 100;
 
 function normalizeTypeKey(value: string): string {
 	return value.replace(/[^a-z0-9]/gi, "").toLowerCase();

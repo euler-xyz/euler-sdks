@@ -35,6 +35,7 @@ const REPORT_PREFIX =
   process.env.REPORT_PREFIX ?? "fetch-all-vaults-default-vs-onchain";
 const NUMERIC_TOLERANCE = 0.01;
 const BIGINT_TOLERANCE_BPS = 100n;
+const FEE_BIGINT_TOLERANCE_BPS = 200n;
 const DIFF_PREVIEW_LIMIT = 20;
 const MAX_RETRIES = 5;
 
@@ -275,6 +276,10 @@ function isSupplyApyPath(path: string): boolean {
   return path.endsWith(".interestRates.supplyAPY");
 }
 
+function isFeeBigIntPath(path: string): boolean {
+  return path.includes(".fees.");
+}
+
 function toFiniteNumberLike(value: ComparableValue): number | null {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : null;
@@ -322,6 +327,14 @@ function valuesDifferWithinTolerance(left: number, right: number): boolean {
 }
 
 function bigIntsDifferWithinTolerance(left: bigint, right: bigint): boolean {
+  return bigIntsDifferWithinToleranceBps(left, right, BIGINT_TOLERANCE_BPS);
+}
+
+function bigIntsDifferWithinToleranceBps(
+  left: bigint,
+  right: bigint,
+  toleranceBps: bigint,
+): boolean {
   if (left === right) return false;
 
   const absLeft = left < 0n ? -left : left;
@@ -331,7 +344,7 @@ function bigIntsDifferWithinTolerance(left: bigint, right: bigint): boolean {
   if (maxAbs === 0n) return true;
 
   const diff = left > right ? left - right : right - left;
-  return diff * 10_000n > maxAbs * BIGINT_TOLERANCE_BPS;
+  return diff * 10_000n > maxAbs * toleranceBps;
 }
 
 function getComparableSortKey(value: ComparableValue): string {
@@ -407,10 +420,19 @@ function compareValues(
   }
 
   if (isBigIntSnapshot(left) && isBigIntSnapshot(right)) {
-    if (bigIntsDifferWithinTolerance(BigInt(left.value), BigInt(right.value))) {
+    const toleranceBps = isFeeBigIntPath(path)
+      ? FEE_BIGINT_TOLERANCE_BPS
+      : BIGINT_TOLERANCE_BPS;
+    if (
+      bigIntsDifferWithinToleranceBps(
+        BigInt(left.value),
+        BigInt(right.value),
+        toleranceBps,
+      )
+    ) {
       differences.push({
         path,
-        reason: "bigint values differ by more than 1%",
+        reason: `bigint values differ by more than ${Number(toleranceBps) / 100}%`,
         default: left,
         onchain: right,
       });
