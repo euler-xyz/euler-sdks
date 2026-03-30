@@ -15,16 +15,16 @@ import {
 	ZERO_ADDRESS,
 } from "../../../../../utils/parsing.js";
 import {
-	EVaultCollateral,
-	EVaultCollateralRamping,
-	EVaultCaps,
-	EVaultFees,
-	EVaultHooks,
-	EVaultLiquidation,
-	EVaultHookedOperations,
-	IEVault,
-	InterestRateModel,
-	InterestRates,
+	type EVaultCollateral,
+	type EVaultCollateralRamping,
+	type EVaultCaps,
+	type EVaultFees,
+	type EVaultHooks,
+	type EVaultLiquidation,
+	type EVaultHookedOperations,
+	type IEVault,
+	type InterestRateModel,
+	type InterestRates,
 	hasActiveBorrowableLtv,
 } from "../../../../../entities/EVault.js";
 import { type Token, VaultType } from "../../../../../utils/types.js";
