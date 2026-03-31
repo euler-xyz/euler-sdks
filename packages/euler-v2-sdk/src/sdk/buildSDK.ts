@@ -67,7 +67,9 @@ import {
 	PricingBackendClient,
 } from "../services/priceService/index.js";
 import {
+	RewardsDirectAdapter,
 	RewardsService,
+	RewardsV3Adapter,
 	type IRewardsService,
 	type RewardsServiceConfig,
 } from "../services/rewardsService/index.js";
@@ -95,6 +97,7 @@ import {
 	defaultEulerEarnV3AdapterConfig,
 	defaultEulerLabelsURLAdapterConfig,
 	defaultIntrinsicApyV3AdapterConfig,
+	defaultRewardsV3AdapterConfig,
 	defaultSwapServiceConfig,
 	defaultTokenlistServiceConfig,
 	defaultVaultTypeAdapterConfig,
@@ -501,7 +504,64 @@ export async function buildEulerSDK<
 	// Build rewards service if not overridden
 	const rewardsService =
 		servicesOverrides?.rewardsService ??
-		new RewardsService(rewardsServiceConfig, resolvedBuildQuery);
+		(() => {
+			const resolvedRewardsServiceConfig = rewardsServiceConfig ?? {};
+			const legacyDirectAdapterConfig = {
+				merklApiUrl: resolvedRewardsServiceConfig.merklApiUrl,
+				brevisApiUrl: resolvedRewardsServiceConfig.brevisApiUrl,
+				brevisProofsApiUrl: resolvedRewardsServiceConfig.brevisProofsApiUrl,
+				fuulApiUrl: resolvedRewardsServiceConfig.fuulApiUrl,
+				fuulTotalsUrl: resolvedRewardsServiceConfig.fuulTotalsUrl,
+				fuulClaimChecksUrl: resolvedRewardsServiceConfig.fuulClaimChecksUrl,
+				brevisChainIds: resolvedRewardsServiceConfig.brevisChainIds,
+				merklDistributorAddress:
+					resolvedRewardsServiceConfig.merklDistributorAddress,
+				fuulManagerAddress: resolvedRewardsServiceConfig.fuulManagerAddress,
+				fuulFactoryAddress: resolvedRewardsServiceConfig.fuulFactoryAddress,
+				enableMerkl: resolvedRewardsServiceConfig.enableMerkl,
+				enableBrevis: resolvedRewardsServiceConfig.enableBrevis,
+				enableFuul: resolvedRewardsServiceConfig.enableFuul,
+			};
+			const directAdapterConfig = {
+				...legacyDirectAdapterConfig,
+				...(resolvedRewardsServiceConfig.directAdapterConfig ?? {}),
+			};
+			const directAdapter = new RewardsDirectAdapter(
+				directAdapterConfig,
+				resolvedBuildQuery,
+			);
+			const rewardsAdapter =
+				resolvedRewardsServiceConfig.adapter === "direct"
+					? directAdapter
+					: new RewardsV3Adapter(
+							{
+								...(resolvedRewardsServiceConfig.v3AdapterConfig ??
+									defaultRewardsV3AdapterConfig),
+								...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+								...(resolvedRewardsServiceConfig.v3AdapterConfig?.apiKey !==
+								undefined
+									? {
+											apiKey:
+												resolvedRewardsServiceConfig.v3AdapterConfig.apiKey,
+										}
+									: {}),
+							},
+							resolvedBuildQuery,
+						);
+
+			return new RewardsService(
+				rewardsAdapter,
+				resolvedRewardsServiceConfig.adapter === "direct"
+					? undefined
+					: directAdapter,
+				{
+				merklDistributorAddress:
+					directAdapter.getMerklDistributorAddress(),
+				fuulManagerAddress: directAdapter.getFuulManagerAddress(),
+				fuulFactoryAddress: directAdapter.getFuulFactoryAddress(),
+				},
+			);
+		})();
 
 	// Build intrinsic APY service if not overridden
 	const intrinsicApyService =

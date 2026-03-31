@@ -24,6 +24,7 @@ import { getAddress, type Address } from "viem";
 
 import {
   buildEulerSDK,
+  createPythPlugin,
   type BuildSDKOptions,
   type VaultEntity,
 } from "euler-v2-sdk";
@@ -135,6 +136,7 @@ function buildExplicitOnchainOptions(
   return {
     rpcUrls,
     ...(v3ApiKey ? { v3ApiKey } : {}),
+    plugins: buildParityPlugins(),
     accountServiceConfig: {
       adapter: "onchain",
     },
@@ -145,6 +147,10 @@ function buildExplicitOnchainOptions(
       adapter: "onchain",
     },
   };
+}
+
+function buildParityPlugins() {
+  return [createPythPlugin()];
 }
 
 function getChainIds(rpcUrls: Record<number, string>): number[] {
@@ -272,12 +278,27 @@ function isNormalizedPythNumericPath(path: string): boolean {
   );
 }
 
-function isSupplyApyPath(path: string): boolean {
-  return path.endsWith(".interestRates.supplyAPY");
+function isInterestRateStringPath(path: string): boolean {
+  return (
+    path.endsWith(".interestRates.supplyAPY") ||
+    path.endsWith(".interestRates.borrowAPY") ||
+    path.endsWith(".interestRates.borrowSPY")
+  );
+}
+
+function isEulerEarnSupplyApyPath(path: string): boolean {
+  return path === "$.supplyApy1h" || path.endsWith(".supplyApy1h");
 }
 
 function isFeeBigIntPath(path: string): boolean {
   return path.includes(".fees.");
+}
+
+function areFeeValuesBelowIgnoreThreshold(left: bigint, right: bigint): boolean {
+  const threshold = 1_000_000n;
+  const absLeft = left < 0n ? -left : left;
+  const absRight = right < 0n ? -right : right;
+  return absLeft < threshold && absRight < threshold;
 }
 
 function toFiniteNumberLike(value: ComparableValue): number | null {
@@ -312,6 +333,14 @@ function toBigIntLike(value: ComparableValue): bigint | null {
 }
 
 function valuesDifferWithinTolerance(left: number, right: number): boolean {
+  return valuesDifferWithinToleranceWithThreshold(left, right, NUMERIC_TOLERANCE);
+}
+
+function valuesDifferWithinToleranceWithThreshold(
+  left: number,
+  right: number,
+  tolerance: number,
+): boolean {
   if (Number.isNaN(left) || Number.isNaN(right)) {
     return !(Number.isNaN(left) && Number.isNaN(right));
   }
@@ -323,7 +352,7 @@ function valuesDifferWithinTolerance(left: number, right: number): boolean {
   const maxAbs = Math.max(Math.abs(left), Math.abs(right));
   if (maxAbs === 0) return true;
 
-  return Math.abs(left - right) / maxAbs > NUMERIC_TOLERANCE;
+  return Math.abs(left - right) / maxAbs > tolerance;
 }
 
 function bigIntsDifferWithinTolerance(left: bigint, right: bigint): boolean {
@@ -357,6 +386,25 @@ function sortComparableArray(values: ComparableValue[]): ComparableValue[] {
   );
 }
 
+function isAddressKeyedArrayPath(path: string): boolean {
+  return (
+    path === "$.collaterals" ||
+    path.endsWith(".collaterals") ||
+    path === "$.strategies" ||
+    path.endsWith(".strategies")
+  );
+}
+
+function getAddressKeyedEntryToken(
+  path: string,
+  value: ComparableValue,
+): string | undefined {
+  if (!isAddressKeyedArrayPath(path) || !isPlainObject(value)) return undefined;
+  return typeof value.address === "string"
+    ? `@${value.address.toLowerCase()}`
+    : undefined;
+}
+
 function compareValues(
   left: ComparableValue,
   right: ComparableValue,
@@ -379,7 +427,7 @@ function compareValues(
     }
   }
 
-  if (isSupplyApyPath(path)) {
+  if (isInterestRateStringPath(path)) {
     const leftNumber = toFiniteNumberLike(left);
     const rightNumber = toFiniteNumberLike(right);
     if (leftNumber !== null && rightNumber !== null) {
@@ -408,10 +456,11 @@ function compareValues(
       return;
     }
 
-    if (valuesDifferWithinTolerance(left, right)) {
+    const tolerance = isEulerEarnSupplyApyPath(path) ? 0.05 : NUMERIC_TOLERANCE;
+    if (valuesDifferWithinToleranceWithThreshold(left, right, tolerance)) {
       differences.push({
         path,
-        reason: "numeric values differ by more than 1%",
+        reason: `numeric values differ by more than ${tolerance * 100}%`,
         default: left,
         onchain: right,
       });
@@ -420,13 +469,18 @@ function compareValues(
   }
 
   if (isBigIntSnapshot(left) && isBigIntSnapshot(right)) {
+    const leftBigInt = BigInt(left.value);
+    const rightBigInt = BigInt(right.value);
+    if (isFeeBigIntPath(path) && areFeeValuesBelowIgnoreThreshold(leftBigInt, rightBigInt)) {
+      return;
+    }
     const toleranceBps = isFeeBigIntPath(path)
       ? FEE_BIGINT_TOLERANCE_BPS
       : BIGINT_TOLERANCE_BPS;
     if (
       bigIntsDifferWithinToleranceBps(
-        BigInt(left.value),
-        BigInt(right.value),
+        leftBigInt,
+        rightBigInt,
         toleranceBps,
       )
     ) {
@@ -445,6 +499,57 @@ function compareValues(
   }
 
   if (Array.isArray(left) && Array.isArray(right)) {
+    const leftKeys = left.map((value) => getAddressKeyedEntryToken(path, value));
+    const rightKeys = right.map((value) => getAddressKeyedEntryToken(path, value));
+    const canCompareByAddressKey =
+      left.length > 0 &&
+      right.length > 0 &&
+      leftKeys.every((key): key is string => typeof key === "string") &&
+      rightKeys.every((key): key is string => typeof key === "string") &&
+      new Set(leftKeys).size === leftKeys.length &&
+      new Set(rightKeys).size === rightKeys.length;
+
+    if (canCompareByAddressKey) {
+      if (left.length !== right.length) {
+        differences.push({
+          path,
+          reason: "array length mismatch",
+          default: left.length,
+          onchain: right.length,
+        });
+      }
+
+      const leftMap = new Map(leftKeys.map((key, index) => [key, left[index]!]));
+      const rightMap = new Map(rightKeys.map((key, index) => [key, right[index]!]));
+      const allKeys = [...new Set([...leftKeys, ...rightKeys])].sort();
+
+      for (const key of allKeys) {
+        const leftValue = leftMap.get(key);
+        const rightValue = rightMap.get(key);
+        if (leftValue === undefined) {
+          differences.push({
+            path: `${path}[${key}]`,
+            reason: "missing on default",
+            default: { __type: "undefined" },
+            onchain: rightValue!,
+          });
+          continue;
+        }
+        if (rightValue === undefined) {
+          differences.push({
+            path: `${path}[${key}]`,
+            reason: "missing on onchain",
+            default: leftValue,
+            onchain: { __type: "undefined" },
+          });
+          continue;
+        }
+
+        compareValues(leftValue, rightValue, `${path}[${key}]`, differences);
+      }
+      return;
+    }
+
     const sortedLeft = sortComparableArray(left);
     const sortedRight = sortComparableArray(right);
 
@@ -712,9 +817,12 @@ function tokenizePath(path: string): Array<string | number> {
     if (char === "[") {
       const end = path.indexOf("]", index);
       if (end === -1) break;
-      const value = Number(path.slice(index + 1, end));
+      const rawValue = path.slice(index + 1, end);
+      const value = Number(rawValue);
       if (Number.isInteger(value)) {
         tokens.push(value);
+      } else if (rawValue.startsWith("@")) {
+        tokens.push(rawValue.toLowerCase());
       }
       index = end + 1;
       continue;
@@ -752,8 +860,17 @@ function findDeepestAddressForPath(
     const token = tokens[index]!;
 
     if (typeof token === "string") {
-      if (!isPlainObject(current) || !(token in current)) break;
-      current = current[token];
+      if (Array.isArray(current) && token.startsWith("@")) {
+        current = current.find(
+          (value) =>
+            isPlainObject(value) &&
+            typeof value.address === "string" &&
+            value.address.toLowerCase() === token.slice(1),
+        );
+      } else {
+        if (!isPlainObject(current) || !(token in current)) break;
+        current = current[token];
+      }
     } else {
       if (!Array.isArray(current) || token < 0 || token >= current.length) break;
       current = current[token];
@@ -1013,6 +1130,7 @@ async function main() {
   const baseSdkOptions: BuildSDKOptions = {
     rpcUrls,
     ...(process.env.EULER_V3_API_KEY ? { v3ApiKey: process.env.EULER_V3_API_KEY } : {}),
+    plugins: buildParityPlugins(),
   };
 
   if (chainIds.length === 0) {

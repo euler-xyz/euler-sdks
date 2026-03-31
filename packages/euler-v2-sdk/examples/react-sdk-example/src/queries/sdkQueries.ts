@@ -119,6 +119,7 @@ const STALE_TIMES = {
   queryBrevisUserProofs: MINUTE,
   queryFuulTotals: MINUTE,
   queryFuulClaimChecks: MINUTE,
+  queryV3RewardsBreakdown: MINUTE,
 
   // Intrinsic APY — external API data
   queryDefiLlamaPools: 5 * MINUTE,
@@ -156,6 +157,16 @@ const STALE_TIMES = {
 } satisfies Partial<Record<EulerSDKQueryName, number>>;
 
 const DEFAULT_STALE_TIME = MINUTE;
+let timingSequence = 0;
+
+function shouldConsoleTimeQuery(queryName: string) {
+  return queryName === "queryVaultFactories";
+}
+
+function createConsoleTimerLabel(base: string) {
+  timingSequence += 1;
+  return `${base}#${timingSequence}`;
+}
 
 function withDataInterceptor(
   queryName: string,
@@ -178,11 +189,23 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn, target) => {
     recordExecution(queryName);
     const queryKey = ["sdk", queryName, ...args.map(serializeArg)] as QueryKey;
     const { disableCache, fetchQueryOptions: overrides } = getQueryBuildOverrides();
+    const timerLabel = shouldConsoleTimeQuery(queryName)
+      ? createConsoleTimerLabel(`sdk:${queryName}`)
+      : null;
+    let timerActive = false;
 
     const fetchOptions: FetchQueryOptions<unknown, Error, unknown, QueryKey> = {
       queryKey,
       queryFn: async () => {
+        if (timerLabel) {
+          console.time(timerLabel);
+          timerActive = true;
+        }
         const result = await interceptedFetcher(...args);
+        if (timerLabel && timerActive) {
+          console.timeEnd(timerLabel);
+          timerActive = false;
+        }
         // react-query treats undefined as missing data — use null instead
         return result === undefined ? null : result;
       },
@@ -206,6 +229,10 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn, target) => {
     try {
       return await queryClient.fetchQuery(fetchOptions);
     } catch (error) {
+      if (timerLabel && timerActive) {
+        console.timeEnd(timerLabel);
+        timerActive = false;
+      }
       recordFailure(queryName);
       throw error;
     } finally {
@@ -371,10 +398,10 @@ async function fetchLabeledVaultsWithDiagnostics(
   sdk: EulerSDK,
   chainId: number
 ) {
-  console.time("fetchLabeledVaultsWithDiagnostics");
+  console.time("vaultList:fetchVaultAddressesFromLabelProducts");
   const addresses = await fetchVaultAddressesFromLabelProducts(sdk, chainId);
-  console.timeEnd("fetchLabeledVaultsWithDiagnostics");
-  console.time("unwrapServiceResultWithDiagnostics");
+  console.timeEnd("vaultList:fetchVaultAddressesFromLabelProducts");
+  console.time(`vaultList:vaultMetaService.fetchVaults(${addresses.length})`);
   const res = unwrapServiceResultWithDiagnostics(
     "vaultMetaService.fetchVaults",
     await sdk.vaultMetaService.fetchVaults(chainId, addresses, {
@@ -384,8 +411,7 @@ async function fetchLabeledVaultsWithDiagnostics(
       populateLabels: true,
     })
   );
-  console.timeEnd("unwrapServiceResultWithDiagnostics");
-  console.log('fetchVaults: ', res);
+  console.timeEnd(`vaultList:vaultMetaService.fetchVaults(${addresses.length})`);
   return res;
 }
 

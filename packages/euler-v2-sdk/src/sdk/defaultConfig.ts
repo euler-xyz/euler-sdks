@@ -12,6 +12,7 @@ import type { SwapServiceConfig } from "../services/swapService/index.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
 import type { BackendConfig } from "../services/priceService/index.js";
 import type { IntrinsicApyV3AdapterConfig } from "../services/intrinsicApyService/index.js";
+import type { RewardsV3AdapterConfig } from "../services/rewardsService/index.js";
 
 export const defaultAccountVaultsAdapterConfig: AccountVaultsSubgraphAdapterConfig =
 	{
@@ -64,6 +65,11 @@ export const defaultVaultTypeAdapterConfig: VaultTypeV3AdapterConfig = {
 export const defaultIntrinsicApyV3AdapterConfig: IntrinsicApyV3AdapterConfig = {
 	endpoint:
 		process.env.EULER_INTRINSIC_APY_V3_API_URL || "https://v3staging.eul.dev",
+};
+
+export const defaultRewardsV3AdapterConfig: RewardsV3AdapterConfig = {
+	endpoint:
+		process.env.EULER_REWARDS_V3_API_URL || "https://v3staging.eul.dev",
 };
 
 /** Same subgraph endpoints as account vaults; kept for explicit subgraph-based vault type resolution. */

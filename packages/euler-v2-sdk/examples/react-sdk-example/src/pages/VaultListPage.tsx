@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
 import {
@@ -460,6 +460,7 @@ export function VaultListPage() {
   const [assetSearch, setAssetSearch] = useState<string>("");
   const { isConnected } = useAccount();
   const [openDeposit, setOpenDeposit] = useState<string | null>(null);
+  const coldLoadTimerLabelRef = useRef<string | null>(null);
 
   const {
     data: vaultData,
@@ -473,6 +474,41 @@ export function VaultListPage() {
 
   const eVaults = allVaults?.filter(isEVault) ?? [];
   const earnVaults = allVaults?.filter(isEulerEarn) ?? [];
+
+  useEffect(() => {
+    const nextLabel = `vaultListPage:coldLoad:chain-${chainId}`;
+    if ((sdkLoading || isLoading) && coldLoadTimerLabelRef.current === null) {
+      coldLoadTimerLabelRef.current = nextLabel;
+      console.time(nextLabel);
+      return;
+    }
+
+    if (
+      coldLoadTimerLabelRef.current &&
+      !sdkLoading &&
+      !isLoading &&
+      (vaultData !== undefined || error)
+    ) {
+      console.timeEnd(coldLoadTimerLabelRef.current);
+      coldLoadTimerLabelRef.current = null;
+    }
+  }, [chainId, error, isLoading, sdkLoading, vaultData]);
+
+  useEffect(() => {
+    if (coldLoadTimerLabelRef.current) {
+      console.timeEnd(coldLoadTimerLabelRef.current);
+      coldLoadTimerLabelRef.current = null;
+    }
+  }, [chainId]);
+
+  useEffect(() => {
+    return () => {
+      if (coldLoadTimerLabelRef.current) {
+        console.timeEnd(coldLoadTimerLabelRef.current);
+        coldLoadTimerLabelRef.current = null;
+      }
+    };
+  }, []);
 
   const eVaultMarkets = useMemo(() => {
     const byName = new Map<string, bigint>();

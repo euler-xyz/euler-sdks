@@ -39,9 +39,64 @@ import {
 import { USD_ADDRESS } from "../../../../priceService/priceService.js";
 import { ZERO_ADDRESS } from "../../../../../utils/parsing.js";
 
+const BTC_PLACEHOLDER_ADDRESS =
+	"0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB".toLowerCase();
+
+function normalizeTokenMetadata(
+	token: Token,
+	path: "$.shares" | "$.asset" | "$.unitOfAccount",
+	entityId: `0x${string}`,
+	errors: DataIssue[],
+): Token {
+	if (token.symbol.trim() === "") {
+		if (token.name.trim() !== "") {
+			errors.push({
+				code: "DEFAULT_APPLIED",
+				severity: "warning",
+				message: `Missing symbol at ${path}.symbol with non-empty name; normalized both name and symbol to empty strings.`,
+				paths: [`${path}.name`, `${path}.symbol`],
+				entityId,
+				source: "vaultLens",
+				originalValue: { name: token.name, symbol: token.symbol },
+				normalizedValue: { name: "", symbol: "" },
+			});
+		}
+		return {
+			...token,
+			name: "",
+			symbol: "",
+		};
+	}
+
+	if (token.name.trim() !== "") return token;
+	errors.push({
+		code: "DEFAULT_APPLIED",
+		severity: "warning",
+		message: `Empty string at ${path}.name; defaulted to "Unknown Asset".`,
+		paths: [`${path}.name`],
+		entityId,
+		source: "vaultLens",
+		originalValue: token.name,
+		normalizedValue: "Unknown Asset",
+	});
+	return {
+		...token,
+		name: "Unknown Asset",
+	};
+}
+
 function normalizeUnitOfAccountToken(token: Token): Token | undefined {
 	if (token.address.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
 		return undefined;
+	}
+
+	if (token.address.toLowerCase() === BTC_PLACEHOLDER_ADDRESS) {
+		return {
+			...token,
+			name: "Bitcoin",
+			symbol: "BTC",
+			decimals: 8,
+		};
 	}
 
 	if (token.address.toLowerCase() !== USD_ADDRESS.toLowerCase()) {
@@ -79,7 +134,7 @@ export function convertVaultInfoFullToIEVault(
 		}),
 	};
 
-	const shares: Token = {
+	const shares = normalizeTokenMetadata({
 		address: vaultInfo.vault,
 		name: vaultInfo.vaultName,
 		symbol: vaultInfo.vaultSymbol,
@@ -89,9 +144,9 @@ export function convertVaultInfoFullToIEVault(
 			source: "vaultLens",
 			entityId: vaultEntityId,
 		}),
-	};
+	}, "$.shares", vaultEntityId, errors);
 
-	const asset: Token = {
+	const asset = normalizeTokenMetadata({
 		address: vaultInfo.asset,
 		name: vaultInfo.assetName,
 		symbol: vaultInfo.assetSymbol,
@@ -101,9 +156,9 @@ export function convertVaultInfoFullToIEVault(
 			source: "vaultLens",
 			entityId: vaultEntityId,
 		}),
-	};
+	}, "$.asset", vaultEntityId, errors);
 
-	const unitOfAccount = normalizeUnitOfAccountToken({
+	const unitOfAccount = normalizeUnitOfAccountToken(normalizeTokenMetadata({
 		address: vaultInfo.unitOfAccount,
 		name: vaultInfo.unitOfAccountName,
 		symbol: vaultInfo.unitOfAccountSymbol,
@@ -113,7 +168,7 @@ export function convertVaultInfoFullToIEVault(
 			source: "vaultLens",
 			entityId: vaultEntityId,
 		}),
-	});
+	}, "$.unitOfAccount", vaultEntityId, errors));
 
 	const fees: EVaultFees = {
 		interestFee: convertFrom1e4(

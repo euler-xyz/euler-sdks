@@ -4,6 +4,27 @@ import type { VaultInfoERC4626 } from "./securitizeVaultLensTypes.js";
 import type { DataIssue } from "../../../../utils/entityDiagnostics.js";
 import { bigintToSafeNumber } from "../../../../utils/normalization.js";
 
+function normalizeTokenString(
+	value: string,
+	fallback: string,
+	path: string,
+	entityId: `0x${string}`,
+	errors: DataIssue[],
+): string {
+	if (value.trim() !== "") return value;
+	errors.push({
+		code: "DEFAULT_APPLIED",
+		severity: "warning",
+		message: `Empty string at ${path}; defaulted to ${JSON.stringify(fallback)}.`,
+		paths: [path],
+		entityId,
+		source: "securitizeLens",
+		originalValue: value,
+		normalizedValue: fallback,
+	});
+	return fallback;
+}
+
 export function convertToISecuritizeCollateralVault(
 	vaultInfo: VaultInfoERC4626,
 	governor: `0x${string}`,
@@ -13,8 +34,20 @@ export function convertToISecuritizeCollateralVault(
 ): ISecuritizeCollateralVault {
 	const shares: Token = {
 		address: vaultInfo.vault,
-		name: vaultInfo.vaultName,
-		symbol: vaultInfo.vaultSymbol,
+		name: normalizeTokenString(
+			vaultInfo.vaultName,
+			"Unknown Vault",
+			"$.shares.name",
+			vaultInfo.vault,
+			errors,
+		),
+		symbol: normalizeTokenString(
+			vaultInfo.vaultSymbol,
+			"UNKNOWN",
+			"$.shares.symbol",
+			vaultInfo.vault,
+			errors,
+		),
 		decimals: bigintToSafeNumber(vaultInfo.vaultDecimals, {
 			path: "$.shares.decimals",
 			errors,
@@ -24,8 +57,20 @@ export function convertToISecuritizeCollateralVault(
 
 	const asset: Token = {
 		address: vaultInfo.asset,
-		name: vaultInfo.assetName,
-		symbol: vaultInfo.assetSymbol,
+		name: normalizeTokenString(
+			vaultInfo.assetName,
+			"Unknown Asset",
+			"$.asset.name",
+			vaultInfo.vault,
+			errors,
+		),
+		symbol: normalizeTokenString(
+			vaultInfo.assetSymbol,
+			"UNKNOWN",
+			"$.asset.symbol",
+			vaultInfo.vault,
+			errors,
+		),
 		decimals: bigintToSafeNumber(vaultInfo.assetDecimals, {
 			path: "$.asset.decimals",
 			errors,

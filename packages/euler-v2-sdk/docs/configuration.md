@@ -26,16 +26,22 @@ const sdk = await buildEulerSDK({
     defaultDeadline: 1800, // seconds
   },
 
-  // Optional: rewards API endpoints
+  // Optional: rewards adapters
   rewardsServiceConfig: {
-    merklApiUrl: "https://...",
-    brevisApiUrl: "https://...",
-    brevisProofsApiUrl: "https://...",
-    fuulApiUrl: "https://...",
-    fuulTotalsUrl: "https://your-app/api/fuul/totals",
-    fuulClaimChecksUrl: "https://your-app/api/fuul/claim-checks",
-    fuulManagerAddress: "0x...",
-    fuulFactoryAddress: "0x...",
+    adapter: "v3",
+    v3AdapterConfig: {
+      endpoint: "https://your-v3-api",
+    },
+    directAdapterConfig: {
+      merklApiUrl: "https://...",
+      brevisApiUrl: "https://...",
+      brevisProofsApiUrl: "https://...",
+      fuulApiUrl: "https://...",
+      fuulTotalsUrl: "https://your-app/api/fuul/totals",
+      fuulClaimChecksUrl: "https://your-app/api/fuul/claim-checks",
+      fuulManagerAddress: "0x...",
+      fuulFactoryAddress: "0x...",
+    },
   },
 
   // Optional: intrinsic APY data sources
@@ -116,7 +122,7 @@ const sdk = await buildEulerSDK({
 | `v3ApiKey` | none | Shared `X-API-Key` header for built-in V3 account/vault adapters |
 | `backendConfig` | `indexer.euler.finance` | Off-chain USD pricing backend (backend-first, on-chain oracle fallback). Override to point at a different pricing API. |
 | `swapServiceConfig` | Euler swap API | Swap quote fetching |
-| `rewardsServiceConfig` | Merkl + Brevis defaults, Fuul optional | Reward campaign data and reward claim planning |
+| `rewardsServiceConfig` | `v3` adapter with direct fallback reads | Reward campaign data, per-user rewards, and reward claim planning |
 | `intrinsicApyServiceConfig` | DefiLlama + Pendle | Underlying yield data for vault assets |
 | `buildQuery` | identity | Wrap all external queries (useful for caching, see [Caching docs](./caching-external-data-queries.md)) |
 | `plugins` | `[]` | Extend on-chain reads and transaction plans (see [Plugins docs](./plugins.md)) |
@@ -124,9 +130,9 @@ const sdk = await buildEulerSDK({
 
 ## V3 adapter config
 
-When `accountServiceConfig.adapter`, `eVaultServiceConfig.adapter`, `eulerEarnServiceConfig.adapter`, or `vaultTypeAdapterConfig` use V3, the SDK forwards `v3ApiKey` as an `X-API-Key` request header for all built-in V3 adapters. There is no default API key in SDK config; provide it explicitly when your V3 deployment requires authentication.
+When `accountServiceConfig.adapter`, `eVaultServiceConfig.adapter`, `eulerEarnServiceConfig.adapter`, `vaultTypeAdapterConfig`, or `rewardsServiceConfig.adapter` use V3, the SDK forwards `v3ApiKey` as an `X-API-Key` request header for all built-in V3 adapters. There is no default API key in SDK config; provide it explicitly when your V3 deployment requires authentication.
 
-If you need different keys per adapter, `accountServiceConfig.v3AdapterConfig.apiKey`, `eVaultServiceConfig.v3AdapterConfig.apiKey`, `eulerEarnServiceConfig.v3AdapterConfig.apiKey`, and `vaultTypeAdapterConfig.apiKey` still override the top-level value.
+If you need different keys per adapter, `accountServiceConfig.v3AdapterConfig.apiKey`, `eVaultServiceConfig.v3AdapterConfig.apiKey`, `eulerEarnServiceConfig.v3AdapterConfig.apiKey`, `vaultTypeAdapterConfig.apiKey`, and `rewardsServiceConfig.v3AdapterConfig.apiKey` still override the top-level value.
 
 `vaultTypeAdapterConfig` now defaults to the V3 `POST /v3/evk/vaults/resolve` endpoint. If you need the legacy behavior, you can still pass subgraph config instead:
 

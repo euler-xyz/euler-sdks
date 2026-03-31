@@ -59,7 +59,7 @@ export interface UserReward {
 	epoch?: string;
 }
 
-export interface RewardsServiceConfig {
+export interface RewardsDirectAdapterConfig {
 	merklApiUrl?: string;
 	brevisApiUrl?: string;
 	/** URL for Brevis user rewards proofs endpoint. */
@@ -72,8 +72,6 @@ export interface RewardsServiceConfig {
 	fuulClaimChecksUrl?: string;
 	/** Chain IDs for which Brevis campaigns should be fetched (default: [1]). */
 	brevisChainIds?: number[];
-	/** Cache TTL in milliseconds (default: 300_000 = 5 min). */
-	cacheTtlMs?: number;
 	/** Override the Merkl distributor contract address (default: standard Merkl Distributor). */
 	merklDistributorAddress?: Address;
 	/** Optional Fuul claim manager address for user reward display / future claim flows. */
@@ -84,6 +82,41 @@ export interface RewardsServiceConfig {
 	enableMerkl?: boolean;
 	enableBrevis?: boolean;
 	enableFuul?: boolean;
+}
+
+export interface RewardsV3AdapterConfig {
+	/** Base HTTP endpoint, for example `https://v3staging.eul.dev`. */
+	endpoint: string;
+	/** Optional API key sent as `X-API-Key` on V3 HTTP requests. */
+	apiKey?: string;
+}
+
+export interface RewardsServiceConfig {
+	adapter?: "v3" | "direct";
+	merklApiUrl?: string;
+	brevisApiUrl?: string;
+	/** URL for Brevis user rewards proofs endpoint. */
+	brevisProofsApiUrl?: string;
+	/** Public Fuul incentives API base URL. */
+	fuulApiUrl?: string;
+	/** Optional app-hosted endpoint for Fuul totals. */
+	fuulTotalsUrl?: string;
+	/** Optional app-hosted endpoint for Fuul claim checks. */
+	fuulClaimChecksUrl?: string;
+	/** Chain IDs for which Brevis campaigns should be fetched (default: [1]). */
+	brevisChainIds?: number[];
+	/** Override the Merkl distributor contract address (default: standard Merkl Distributor). */
+	merklDistributorAddress?: Address;
+	/** Optional Fuul claim manager address for user reward display / future claim flows. */
+	fuulManagerAddress?: Address;
+	/** Override the Fuul factory address used to read per-project claim fees. */
+	fuulFactoryAddress?: Address;
+	/** Feature flags for individual providers. */
+	enableMerkl?: boolean;
+	enableBrevis?: boolean;
+	enableFuul?: boolean;
+	directAdapterConfig?: RewardsDirectAdapterConfig;
+	v3AdapterConfig?: RewardsV3AdapterConfig;
 }
 
 export interface BuildRewardClaimPlanArgs {
@@ -120,6 +153,17 @@ export interface IRewardsService {
 	buildClaimAllPlan(
 		args: BuildRewardClaimAllPlanArgs,
 	): Promise<TransactionPlan>;
+}
+
+export interface IRewardsAdapter {
+	fetchVaultRewards(
+		chainId: number,
+		vaultAddress: Address,
+	): Promise<VaultRewardInfo | undefined>;
+	fetchChainRewards(chainId: number): Promise<Map<string, VaultRewardInfo>>;
+	fetchUserRewards(chainId: number, address: Address): Promise<UserReward[]>;
+	fetchFuulTotals(address: Address): Promise<FuulTotals>;
+	fetchFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]>;
 }
 
 // ---------------------------------------------------------------------------

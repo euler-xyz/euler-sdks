@@ -57,6 +57,7 @@ type V3Token = {
 
 type V3EulerEarnStrategy = {
 	address: string;
+	vaultType?: string;
 	symbol?: string;
 	name?: string;
 	decimals?: number;
@@ -290,15 +291,38 @@ function convertStrategies(
 	entityId: Address,
 	errors: DataIssue[],
 ): EulerEarnStrategyInfo[] {
-	const asset = convertToken(
-		detail.asset,
-		"$.asset",
-		entityId,
-		errors,
-		ZERO_ADDRESS,
-		detail.asset.name ?? "Unknown Asset",
-		detail.asset.symbol ?? "UNKNOWN",
-	);
+	function normalizeStrategyVaultType(
+		value: string | undefined,
+		path: string,
+		strategyAddress: Address,
+	): VaultType {
+		switch (value?.toLowerCase()) {
+			case "evault":
+			case "evk":
+				return VaultType.EVault;
+			case "eulerearn":
+			case "earn":
+				return VaultType.EulerEarn;
+			case "securitizecollateral":
+			case "securitize":
+				return VaultType.SecuritizeCollateral;
+			case "unknown":
+			case undefined:
+				return VaultType.Unknown;
+			default:
+				errors.push({
+					code: "DEFAULT_APPLIED",
+					severity: "warning",
+					message: `Unsupported strategy vaultType '${value}'; defaulted to Unknown.`,
+					paths: [path],
+					entityId: strategyAddress,
+					source: "eulerEarnV3",
+					originalValue: value,
+					normalizedValue: VaultType.Unknown,
+				});
+				return VaultType.Unknown;
+		}
+	}
 
 	return getWithdrawQueueStrategies(detail.strategies ?? []).map(
 		(strategy, index) => {
@@ -359,7 +383,11 @@ function convertStrategies(
 
 		return {
 			address: strategyAddress,
-			vaultType: VaultType.EVault,
+			vaultType: normalizeStrategyVaultType(
+				strategy.vaultType,
+				`$.strategies[${index}].vaultType`,
+				strategyAddress,
+			),
 			allocatedAssets,
 			availableAssets,
 			allocationCap,

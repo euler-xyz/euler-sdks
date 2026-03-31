@@ -261,10 +261,14 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 
 | Query | Type | Class | Args | Description |
 |-------|------|-------|------|-------------|
-| `queryMerklOpportunities` | url | `RewardsService` | `(url)` | Fetch Merkl reward opportunities |
-| `queryBrevisCampaigns` | url | `RewardsService` | `(url, body)` | Fetch Brevis reward campaigns |
-| `queryMerklUserRewards` | url | `RewardsService` | `(url)` | Fetch Merkl user reward balances |
-| `queryBrevisUserProofs` | url | `RewardsService` | `(url, body)` | Fetch Brevis user reward proofs |
+| `queryMerklOpportunities` | url | `RewardsDirectAdapter` | `(url)` | Fetch Merkl reward opportunities |
+| `queryBrevisCampaigns` | url | `RewardsDirectAdapter` | `(url, body)` | Fetch Brevis reward campaigns |
+| `queryMerklUserRewards` | url | `RewardsDirectAdapter` | `(url)` | Fetch Merkl user reward balances |
+| `queryBrevisUserProofs` | url | `RewardsDirectAdapter` | `(url, body)` | Fetch Brevis user reward proofs |
+| `queryFuulIncentives` | url | `RewardsDirectAdapter` | `(url)` | Fetch Fuul incentive campaigns |
+| `queryFuulTotals` | url | `RewardsDirectAdapter` | `(url)` | Fetch Fuul claimed/unclaimed totals |
+| `queryFuulClaimChecks` | url | `RewardsDirectAdapter` | `(url, body)` | Fetch Fuul claim payloads |
+| `queryV3RewardsBreakdown` | url | `RewardsV3Adapter` | `(chainId, account, vault?)` | Fetch per-user V3 reward breakdown rows |
 
 ### Intrinsic APY Service
 
