@@ -98,7 +98,7 @@ const STALE_TIMES = {
 
   // Prices
   queryAssetPriceInfo: MINUTE,
-  queryBackendPrice: MINUTE,
+  queryV3Price: MINUTE,
 
   // Simulations and quote-like reads — short-lived
   queryBatchSimulation: 10_000,
@@ -166,6 +166,25 @@ function shouldConsoleTimeQuery(queryName: string) {
 function createConsoleTimerLabel(base: string) {
   timingSequence += 1;
   return `${base}#${timingSequence}`;
+}
+
+function createVaultListProfile(prefix: string) {
+  const labels = {
+    total: createConsoleTimerLabel(`${prefix}:total`),
+    addresses: createConsoleTimerLabel(`${prefix}:addresses`),
+    fetchVaults: createConsoleTimerLabel(`${prefix}:fetchVaults`),
+    normalize: createConsoleTimerLabel(`${prefix}:normalize`),
+  };
+
+  return {
+    labels,
+    start(label: keyof typeof labels) {
+      console.time(labels[label]);
+    },
+    end(label: keyof typeof labels) {
+      console.timeEnd(labels[label]);
+    },
+  };
 }
 
 function withDataInterceptor(
@@ -396,12 +415,14 @@ async function fetchVaultAddressesFromLabelProducts(
 
 async function fetchLabeledVaultsWithDiagnostics(
   sdk: EulerSDK,
-  chainId: number
+  chainId: number,
+  profile?: ReturnType<typeof createVaultListProfile>
 ) {
-  console.time("vaultList:fetchVaultAddressesFromLabelProducts");
+  profile?.start("addresses");
   const addresses = await fetchVaultAddressesFromLabelProducts(sdk, chainId);
-  console.timeEnd("vaultList:fetchVaultAddressesFromLabelProducts");
-  console.time(`vaultList:vaultMetaService.fetchVaults(${addresses.length})`);
+  profile?.end("addresses");
+
+  profile?.start("fetchVaults");
   const res = unwrapServiceResultWithDiagnostics(
     "vaultMetaService.fetchVaults",
     await sdk.vaultMetaService.fetchVaults(chainId, addresses, {
@@ -411,7 +432,7 @@ async function fetchLabeledVaultsWithDiagnostics(
       populateLabels: true,
     })
   );
-  console.timeEnd(`vaultList:vaultMetaService.fetchVaults(${addresses.length})`);
+  profile?.end("fetchVaults");
   return res;
 }
 
@@ -440,9 +461,13 @@ export function useAllVaultsWithDiagnostics() {
   }>({
     queryKey: ["vaultsWithDiagnostics", chainId, "all"],
     queryFn: async () => {
-      console.time("vaultListPage:query");
+      const profile = createVaultListProfile(`vaultListPage:query:chain-${chainId}`);
+      let normalizeStarted = false;
+      profile.start("total");
       try {
-        const fetched = await fetchLabeledVaultsWithDiagnostics(sdk!, chainId);
+        const fetched = await fetchLabeledVaultsWithDiagnostics(sdk!, chainId, profile);
+        profile.start("normalize");
+        normalizeStarted = true;
         const rawVaults = fetched.result as Array<VaultEntity | undefined>;
         const vaults = rawVaults.filter(
           (vault): vault is VaultEntity => vault !== undefined
@@ -518,7 +543,10 @@ export function useAllVaultsWithDiagnostics() {
           failedVaults,
         };
       } finally {
-        console.timeEnd("vaultListPage:query");
+        if (normalizeStarted) {
+          profile.end("normalize");
+        }
+        profile.end("total");
       }
     },
     enabled,

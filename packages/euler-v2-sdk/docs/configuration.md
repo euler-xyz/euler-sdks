@@ -15,9 +15,9 @@ const sdk = await buildEulerSDK({
   // Optional: shared API key for built-in V3 account/vault adapters
   v3ApiKey: process.env.EULER_V3_API_KEY,
 
-  // Optional: override the pricing backend endpoint (default: indexer.euler.finance)
+  // Optional: override the pricing backend endpoint (default: V3 prices API)
   backendConfig: {
-    endpoint: "https://your-pricing-api",
+    endpoint: "https://your-v3-api",
   },
 
   // Optional: swap API endpoint (default: https://swap.euler.finance)
@@ -120,7 +120,7 @@ const sdk = await buildEulerSDK({
 |---|---|---|
 | `rpcUrls` | _(required)_ | On-chain data reads for all services |
 | `v3ApiKey` | none | Shared `X-API-Key` header for built-in V3 account/vault adapters |
-| `backendConfig` | `indexer.euler.finance` | Off-chain USD pricing backend (backend-first, on-chain oracle fallback). Override to point at a different pricing API. |
+| `backendConfig` | `v3staging.eul.dev` | Off-chain USD pricing backend (backend-first, on-chain oracle fallback). Built-in client uses `GET /v3/prices`. |
 | `swapServiceConfig` | Euler swap API | Swap quote fetching |
 | `rewardsServiceConfig` | `v3` adapter with direct fallback reads | Reward campaign data, per-user rewards, and reward claim planning |
 | `intrinsicApyServiceConfig` | DefiLlama + Pendle | Underlying yield data for vault assets |
@@ -130,9 +130,9 @@ const sdk = await buildEulerSDK({
 
 ## V3 adapter config
 
-When `accountServiceConfig.adapter`, `eVaultServiceConfig.adapter`, `eulerEarnServiceConfig.adapter`, `vaultTypeAdapterConfig`, or `rewardsServiceConfig.adapter` use V3, the SDK forwards `v3ApiKey` as an `X-API-Key` request header for all built-in V3 adapters. There is no default API key in SDK config; provide it explicitly when your V3 deployment requires authentication.
+When `accountServiceConfig.adapter`, `eVaultServiceConfig.adapter`, `eulerEarnServiceConfig.adapter`, `vaultTypeAdapterConfig`, `rewardsServiceConfig.adapter`, or the built-in pricing backend use V3, the SDK forwards `v3ApiKey` as an `X-API-Key` request header for all built-in V3 adapters. There is no default API key in SDK config; provide it explicitly when your V3 deployment requires authentication.
 
-If you need different keys per adapter, `accountServiceConfig.v3AdapterConfig.apiKey`, `eVaultServiceConfig.v3AdapterConfig.apiKey`, `eulerEarnServiceConfig.v3AdapterConfig.apiKey`, `vaultTypeAdapterConfig.apiKey`, and `rewardsServiceConfig.v3AdapterConfig.apiKey` still override the top-level value.
+If you need different keys per adapter, `accountServiceConfig.v3AdapterConfig.apiKey`, `eVaultServiceConfig.v3AdapterConfig.apiKey`, `eulerEarnServiceConfig.v3AdapterConfig.apiKey`, `vaultTypeAdapterConfig.apiKey`, `rewardsServiceConfig.v3AdapterConfig.apiKey`, and `backendConfig.apiKey` still override the top-level value.
 
 `vaultTypeAdapterConfig` now defaults to the V3 `POST /v3/evk/vaults/resolve` endpoint. If you need the legacy behavior, you can still pass subgraph config instead:
 
@@ -148,7 +148,7 @@ Several defaults can be overridden via environment variables without changing co
 
 | Variable | What it overrides | Default |
 |---|---|---|
-| `PRICING_API_URL` | `backendConfig.endpoint` | `https://indexer.euler.finance` |
+| `PRICING_API_URL` | `backendConfig.endpoint` | `https://v3staging.eul.dev` |
 | `SWAP_API_URL` | `swapServiceConfig.swapApiUrl` | `https://swap.euler.finance` |
 | `DEPLOYMENTS_URL` | Deployments JSON URL | `https://raw.githubusercontent.com/euler-xyz/euler-interfaces/.../EulerChains.json` |
 | `TOKENLIST_API_BASE` | Token list API base URL | `https://indexer.euler.finance` |

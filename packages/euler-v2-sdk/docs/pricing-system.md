@@ -101,7 +101,7 @@ import { buildEulerSDK } from 'euler-v2-sdk'
 const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },
   backendConfig: {
-    endpoint: 'https://pricing.euler.finance',
+    endpoint: 'https://v3staging.eul.dev',
     chainId: 1,
   },
 })
@@ -338,14 +338,14 @@ Pyth price update simulation (via EVC `batchSimulation`) is not built into the S
 The `PricingBackendClient` (`services/priceService/backendClient.ts`) provides price fetching with automatic optimizations:
 
 **API Endpoint:**
-- URL: `GET /v1/prices?chainId={chainId}&assets={addr1},{addr2},...`
+- URL: `GET /v3/prices?chainId={chainId}&assets={addr1},{addr2},...`
 - Response: `Record<string, BackendPriceData>` keyed by lowercase address
 
 **Request Batching:**
 - Concurrent calls are bundled per microtask and grouped by chainId (addresses deduplicated per request)
 
 **Key Functions:**
-- `queryBackendPrice({ address, chainId })` — Single-key query API with automatic bundling
+- `queryV3Price({ address, chainId })` — Single-key query API with automatic bundling
 - `backendPriceToBigInt(price)` — Convert to 18-decimal bigint
 
 ## Design Principles

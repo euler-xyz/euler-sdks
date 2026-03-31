@@ -139,7 +139,7 @@ const STALE_TIMES: Record<string, number> = {
 
   // Prices
   queryAssetPriceInfo: MINUTE,
-  queryBackendPrice: MINUTE,
+  queryV3Price: MINUTE,
 
   // Swap quotes — very short-lived
   querySwapQuotes: 10_000,
@@ -246,7 +246,7 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 | Query | Type | Class | Args | Description |
 |-------|------|-------|------|-------------|
 | `queryAssetPriceInfo` | rpc | `PriceService` | `(provider, utilsLensAddress, assetAddress)` | Read on-chain oracle price for an asset |
-| `queryBackendPrice` | url | `PricingBackendClient` | `({ address, chainId })` | Fetch asset price from pricing backend (auto-bundled) |
+| `queryV3Price` | url | `PricingBackendClient` | `({ address, chainId })` | Fetch asset price from `GET /v3/prices` (auto-bundled) |
 
 ### Labels Service
 

@@ -9,7 +9,7 @@ const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },           // chainId -> RPC URL
   queryCacheConfig: { ttlMs: 5000 },       // Optional: default cache is 5s
   backendConfig: {                           // Optional: enables backend pricing
-    endpoint: 'https://pricing.euler.finance',
+    endpoint: 'https://v3staging.eul.dev',
     chainId: 1,
   },
 })

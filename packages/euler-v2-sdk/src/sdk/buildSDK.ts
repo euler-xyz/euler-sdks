@@ -490,7 +490,13 @@ export async function buildEulerSDK<
 		(() => {
 			const resolvedBackendConfig = backendConfig ?? defaultBackendConfig;
 			const backendClient = new PricingBackendClient(
-				resolvedBackendConfig,
+				{
+					...resolvedBackendConfig,
+					...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+					...(resolvedBackendConfig.apiKey !== undefined
+						? { apiKey: resolvedBackendConfig.apiKey }
+						: {}),
+				},
 				resolvedBuildQuery,
 			);
 			return new PriceService(

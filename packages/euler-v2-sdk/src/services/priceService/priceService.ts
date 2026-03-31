@@ -213,7 +213,7 @@ export class PriceService implements IPriceService {
 		if (this.backendClient?.isConfigured) {
 			backendAttempted = true;
 			try {
-				const backendPrice = await this.backendClient.queryBackendPrice({
+				const backendPrice = await this.backendClient.queryV3Price({
 					address: uoaAddress,
 					chainId: vault.chainId,
 				});
@@ -275,7 +275,7 @@ export class PriceService implements IPriceService {
 		if (this.backendClient?.isConfigured) {
 			backendAttempted = true;
 			try {
-				const backendPrice = await this.backendClient.queryBackendPrice({
+				const backendPrice = await this.backendClient.queryV3Price({
 					address: vault.asset.address,
 					chainId: vault.chainId,
 				});
@@ -350,7 +350,7 @@ export class PriceService implements IPriceService {
 		if (this.backendClient?.isConfigured) {
 			backendAttempted = true;
 			try {
-				const backendPrice = await this.backendClient.queryBackendPrice({
+				const backendPrice = await this.backendClient.queryV3Price({
 					address: collateralVault.asset.address,
 					chainId: collateralVault.chainId,
 				});

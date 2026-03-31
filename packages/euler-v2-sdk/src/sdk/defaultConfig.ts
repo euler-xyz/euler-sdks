@@ -95,7 +95,7 @@ export const defaultEulerLabelsURLAdapterConfig: EulerLabelsURLAdapterConfig = {
 };
 
 export const defaultBackendConfig: BackendConfig = {
-	endpoint: process.env.PRICING_API_URL || "https://indexer.euler.finance",
+	endpoint: process.env.PRICING_API_URL || "https://v3staging.eul.dev",
 };
 
 export const defaultSwapServiceConfig: SwapServiceConfig = {

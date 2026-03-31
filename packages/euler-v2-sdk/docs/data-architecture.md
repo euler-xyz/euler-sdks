@@ -311,7 +311,7 @@ accountService.fetchAccount(chainId, owner, { populateVaults: true, populateMark
   │    └─ assign vault entities to position.vault fields
   │
   └─ account.populateMarketPrices(priceService)
-       ├─ PricingBackendClient.queryBackendPrice()            ← HTTP (backend, bundled)
+       ├─ PricingBackendClient.queryV3Price()                 ← HTTP (backend, bundled)
        │   or PriceService.queryAssetPriceInfo()              ← RPC (fallback)
        └─ set marketPriceUsd on each vault
             → computed getters (healthFactor, netValueUsd, ...) now resolve
