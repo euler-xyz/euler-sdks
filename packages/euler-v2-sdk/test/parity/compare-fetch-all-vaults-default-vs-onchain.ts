@@ -24,6 +24,7 @@ import { getAddress, type Address } from "viem";
 
 import {
   buildEulerSDK,
+  type BuildQueryFn,
   createPythPlugin,
   type BuildSDKOptions,
   type VaultEntity,
@@ -39,6 +40,7 @@ const BIGINT_TOLERANCE_BPS = 100n;
 const FEE_BIGINT_TOLERANCE_BPS = 200n;
 const DIFF_PREVIEW_LIMIT = 20;
 const MAX_RETRIES = 5;
+const PARITY_QUERY_CACHE_TTL_MS = 60_000;
 
 type ScenarioName = "default-v3-adapters" | "explicit-onchain-adapters";
 
@@ -151,6 +153,79 @@ function buildExplicitOnchainOptions(
 
 function buildParityPlugins() {
   return [createPythPlugin()];
+}
+
+function serializeQueryArgs(args: unknown[]): string | null {
+  try {
+    return JSON.stringify(args, (_key, value) => {
+      if (typeof value === "bigint") {
+        return { __type: "bigint", value: value.toString() };
+      }
+      if (typeof value === "function") return "[function]";
+      return value;
+    });
+  } catch {
+    return null;
+  }
+}
+
+function createSharedParityBuildQuery(
+  ttlMs = PARITY_QUERY_CACHE_TTL_MS,
+): BuildQueryFn {
+  const cache = new Map<
+    string,
+    {
+      expiresAt: number;
+      value?: unknown;
+      promise?: Promise<unknown>;
+    }
+  >();
+
+  return <T extends (...args: any[]) => Promise<any>>(
+    queryName: string,
+    fn: T,
+  ): T => {
+    const wrapped = (async (...args: Parameters<T>) => {
+      const serializedArgs = serializeQueryArgs(args);
+      if (serializedArgs === null) {
+        return fn(...args);
+      }
+
+      const cacheKey = `${queryName}:${serializedArgs}`;
+      const now = Date.now();
+      const cached = cache.get(cacheKey);
+
+      if (cached && cached.expiresAt > now) {
+        if (cached.promise) return cached.promise as Awaited<ReturnType<T>>;
+        if ("value" in cached) return cached.value as Awaited<ReturnType<T>>;
+      }
+
+      const promise = fn(...args)
+        .then((value) => {
+          cache.set(cacheKey, {
+            expiresAt: Date.now() + ttlMs,
+            value,
+          });
+          return value;
+        })
+        .catch((error) => {
+          const current = cache.get(cacheKey);
+          if (current?.promise === promise) {
+            cache.delete(cacheKey);
+          }
+          throw error;
+        });
+
+      cache.set(cacheKey, {
+        expiresAt: now + ttlMs,
+        promise,
+      });
+
+      return promise as Awaited<ReturnType<T>>;
+    }) as T;
+
+    return wrapped;
+  };
 }
 
 function getChainIds(rpcUrls: Record<number, string>): number[] {
@@ -1127,10 +1202,12 @@ async function main() {
 
   const rpcUrls = getRpcUrls();
   const chainIds = getChainIds(rpcUrls);
+  const sharedBuildQuery = createSharedParityBuildQuery();
   const baseSdkOptions: BuildSDKOptions = {
     rpcUrls,
     ...(process.env.EULER_V3_API_KEY ? { v3ApiKey: process.env.EULER_V3_API_KEY } : {}),
     plugins: buildParityPlugins(),
+    buildQuery: sharedBuildQuery,
   };
 
   if (chainIds.length === 0) {
@@ -1167,7 +1244,10 @@ async function main() {
       () =>
         fetchScenarioSnapshot(
           "explicit-onchain-adapters",
-          buildExplicitOnchainOptions(rpcUrls),
+          {
+            ...buildExplicitOnchainOptions(rpcUrls),
+            buildQuery: sharedBuildQuery,
+          },
           chainId,
         ),
     );

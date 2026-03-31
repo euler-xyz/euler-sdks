@@ -122,16 +122,21 @@ export function convertVaultInfoFullToIEVault(
 	errors: DataIssue[],
 ): IEVault {
 	const vaultEntityId = vaultInfo.vault;
+	const rootOracleInfoEmpty = vaultInfo.oracleInfo.oracleInfo === "0x";
+	const shouldSuppressRootOracleAdapter =
+		rootOracleInfoEmpty && vaultInfo.oracleInfo.name.trim().length === 0;
 	const oracle: OracleInfo = {
 		oracle: vaultInfo.oracleInfo.oracle,
 		name: vaultInfo.oracleInfo.name,
-		adapters: decodeOracleInfo(vaultInfo.oracleInfo, 3, {
-			base: vaultInfo.asset,
-			quote:
-				vaultInfo.unitOfAccount.toLowerCase() === ZERO_ADDRESS.toLowerCase()
-					? undefined
-					: vaultInfo.unitOfAccount,
-		}),
+		adapters: shouldSuppressRootOracleAdapter
+			? []
+			: decodeOracleInfo(vaultInfo.oracleInfo, 3, {
+					base: vaultInfo.asset,
+					quote:
+						vaultInfo.unitOfAccount.toLowerCase() === ZERO_ADDRESS.toLowerCase()
+							? undefined
+							: vaultInfo.unitOfAccount,
+				}),
 	};
 
 	const shares = normalizeTokenMetadata({

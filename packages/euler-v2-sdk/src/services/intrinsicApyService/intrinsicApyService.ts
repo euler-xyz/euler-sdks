@@ -75,9 +75,19 @@ export class IntrinsicApyService implements IIntrinsicApyService {
 
 		await Promise.all(
 			Array.from(byChain.entries()).map(async ([chainId, chainVaults]) => {
+				const assetAddresses = Array.from(
+					new Map(
+						chainVaults.map((vault) => [
+							vault.asset.address.toLowerCase(),
+							vault.asset.address,
+						]),
+					).entries(),
+				)
+					.sort(([left], [right]) => left.localeCompare(right))
+					.map(([, address]) => address);
 				const apyMap = await this.adapter.fetchChainIntrinsicApys(
 					chainId,
-					chainVaults.map((vault) => vault.asset.address),
+					assetAddresses,
 				);
 				for (const vault of chainVaults) {
 					const info = apyMap.get(vault.asset.address.toLowerCase());

@@ -56,13 +56,13 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 		return `${joined}?${params.toString()}`;
 	}
 
-	private async queryV3IntrinsicApysPage(
+	queryV3IntrinsicApysPage = async (
 		endpoint: string,
 		chainId: number,
 		offset: number,
 		limit: number,
 		assets?: Address[],
-	): Promise<V3ListEnvelope<V3IntrinsicApyRow>> {
+	): Promise<V3ListEnvelope<V3IntrinsicApyRow>> => {
 		const url = this.buildUrl(endpoint, "/v3/apys/intrinsic", {
 			chainId: String(chainId),
 			offset: String(offset),
@@ -80,6 +80,61 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 			);
 		}
 		return response.json() as Promise<V3ListEnvelope<V3IntrinsicApyRow>>;
+	};
+
+	private mapRowsToApyMap(
+		rows: V3IntrinsicApyRow[],
+	): Map<string, IntrinsicApyInfo> {
+		const apyMap = new Map<string, IntrinsicApyInfo>();
+
+		for (const row of rows) {
+			if (!row.address || typeof row.apy !== "number" || !row.provider) continue;
+			apyMap.set(normalize(row.address), {
+				apy: row.apy,
+				provider: row.provider,
+				source: row.source,
+			});
+		}
+
+		return apyMap;
+	}
+
+	private async fetchChunkedIntrinsicApys(
+		chainId: number,
+		assetAddresses: Address[],
+	): Promise<Map<string, IntrinsicApyInfo>> {
+		const uniqueAssetAddresses = [
+			...new Set(assetAddresses.map((address) => normalize(address))),
+		] as Address[];
+		const apyMap = new Map<string, IntrinsicApyInfo>();
+		const maxAssetsPerRequest = Math.max(
+			1,
+			this.config.maxAssetsPerRequest ?? DEFAULT_MAX_ASSETS_PER_REQUEST,
+		);
+
+		for (
+			let offset = 0;
+			offset < uniqueAssetAddresses.length;
+			offset += maxAssetsPerRequest
+		) {
+			const chunk = uniqueAssetAddresses.slice(
+				offset,
+				offset + maxAssetsPerRequest,
+			);
+			const page = await this.queryV3IntrinsicApysPage(
+				this.config.endpoint,
+				chainId,
+				0,
+				Math.max(chunk.length, DEFAULT_PAGE_SIZE),
+				chunk,
+			);
+			const rows = Array.isArray(page.data) ? page.data : [];
+			for (const [address, info] of this.mapRowsToApyMap(rows)) {
+				apyMap.set(address, info);
+			}
+		}
+
+		return apyMap;
 	}
 
 	queryV3IntrinsicApy = createCallBundler(
@@ -100,41 +155,10 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 			);
 
 			for (const [chainId, assetAddresses] of byChain) {
-				const uniqueAssetAddresses = [
-					...new Set(assetAddresses.map((address) => normalize(address))),
-				] as Address[];
-				const apyMap = new Map<string, IntrinsicApyInfo>();
-
-				for (
-					let offset = 0;
-					offset < uniqueAssetAddresses.length;
-					offset += maxAssetsPerRequest
-				) {
-					const chunk = uniqueAssetAddresses.slice(
-						offset,
-						offset + maxAssetsPerRequest,
-					);
-					const page = await this.queryV3IntrinsicApysPage(
-						this.config.endpoint,
-						chainId,
-						0,
-						Math.max(chunk.length, DEFAULT_PAGE_SIZE),
-						chunk,
-					);
-					const rows = Array.isArray(page.data) ? page.data : [];
-
-					for (const row of rows) {
-						if (!row.address || typeof row.apy !== "number" || !row.provider) {
-							continue;
-						}
-						apyMap.set(normalize(row.address), {
-							apy: row.apy,
-							provider: row.provider,
-							source: row.source,
-						});
-					}
-				}
-
+				const apyMap = await this.fetchChunkedIntrinsicApys(
+					chainId,
+					assetAddresses,
+				);
 				chainResults.set(chainId, apyMap);
 			}
 
@@ -163,20 +187,7 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 		assetAddresses?: Address[],
 	): Promise<Map<string, IntrinsicApyInfo>> {
 		if (assetAddresses?.length) {
-			const uniqueAssetAddresses = [
-				...new Set(assetAddresses.map((address) => normalize(address))),
-			] as Address[];
-			const results = await Promise.all(
-				uniqueAssetAddresses.map((assetAddress) =>
-					this.queryV3IntrinsicApy({ chainId, assetAddress }),
-				),
-			);
-			const apyMap = new Map<string, IntrinsicApyInfo>();
-			for (const [index, info] of results.entries()) {
-				if (!info) continue;
-				apyMap.set(normalize(uniqueAssetAddresses[index]!), info);
-			}
-			return apyMap;
+			return this.fetchChunkedIntrinsicApys(chainId, assetAddresses);
 		}
 
 		const pageSize = Math.max(1, this.config.pageSize ?? DEFAULT_PAGE_SIZE);
@@ -192,13 +203,8 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 			);
 			const rows = Array.isArray(page.data) ? page.data : [];
 
-			for (const row of rows) {
-				if (!row.address || typeof row.apy !== "number" || !row.provider) continue;
-				apyMap.set(normalize(row.address), {
-					apy: row.apy,
-					provider: row.provider,
-					source: row.source,
-				});
+			for (const [address, info] of this.mapRowsToApyMap(rows)) {
+				apyMap.set(address, info);
 			}
 
 			if (rows.length < pageSize) break;
