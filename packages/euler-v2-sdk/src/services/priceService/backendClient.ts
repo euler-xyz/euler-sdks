@@ -3,21 +3,41 @@ import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 import { createCallBundler } from "../../utils/callBundler.js";
 
 /**
- * Response shape from the price backend (indexer /v1/prices endpoint).
+ * Normalized response shape from the price backend.
  */
 export type BackendPriceData = {
 	address: string;
 	price: number;
 	source: string;
-	symbol: string;
-	timestamp: number;
+	symbol?: string;
+	timestamp?: number;
 };
 
 /**
- * Response from /v1/prices endpoint.
+ * Legacy response from /v1/prices endpoint.
  * Flat object keyed by lowercase address.
  */
 export type BackendPriceResponse = Record<string, BackendPriceData>;
+
+export type V3PriceRow = {
+	address?: string;
+	price?: number;
+	priceUsd?: number;
+	source?: string;
+	symbol?: string;
+	timestamp?: string;
+};
+
+export type V3PriceResponse = {
+	data?: V3PriceRow[];
+	meta?: {
+		total?: number;
+		offset?: number;
+		limit?: number;
+		timestamp?: string;
+		chainId?: string;
+	};
+};
 
 /**
  * Backend configuration for the price service.
@@ -25,6 +45,8 @@ export type BackendPriceResponse = Record<string, BackendPriceData>;
 export type BackendConfig = {
 	/** Backend API endpoint URL. */
 	endpoint: string;
+	/** Optional API key sent as `X-API-Key` for V3-style backend requests. */
+	apiKey?: string;
 	/** Default chain ID for requests. */
 	chainId?: number;
 };
@@ -52,9 +74,11 @@ export const backendPriceToBigInt = (price: string | number): bigint => {
  */
 export class PricingBackendClient {
 	private readonly endpoint: string;
+	private readonly apiKey?: string;
 
 	constructor(config: BackendConfig, buildQuery?: BuildQueryFn) {
 		this.endpoint = config.endpoint;
+		this.apiKey = config.apiKey;
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
 
@@ -62,11 +86,55 @@ export class PricingBackendClient {
 		return !!this.endpoint;
 	}
 
+	private getHeaders(): Record<string, string> {
+		return {
+			Accept: "application/json",
+			...(this.apiKey ? { "X-API-Key": this.apiKey } : {}),
+		};
+	}
+
+	private parseResponse(
+		data: BackendPriceResponse | V3PriceResponse,
+	): Map<string, BackendPriceData> {
+		const map = new Map<string, BackendPriceData>();
+
+		if (
+			data &&
+			typeof data === "object" &&
+			"data" in data &&
+			Array.isArray((data as V3PriceResponse).data)
+		) {
+			for (const row of (data as V3PriceResponse).data ?? []) {
+				if (!row.address) continue;
+				const price = row.priceUsd ?? row.price;
+				if (typeof price !== "number") continue;
+				const timestamp = row.timestamp
+					? Math.floor(new Date(row.timestamp).getTime() / 1000)
+					: undefined;
+				map.set(row.address.toLowerCase(), {
+					address: row.address,
+					price,
+					source: row.source ?? "v3",
+					symbol: row.symbol,
+					timestamp,
+				});
+			}
+			return map;
+		}
+
+		for (const [addr, priceData] of Object.entries(
+			data as BackendPriceResponse,
+		)) {
+			map.set(addr.toLowerCase(), priceData);
+		}
+		return map;
+	}
+
 	/**
 	 * Fetch a single asset price. Concurrent calls within the same microtask
 	 * are bundled into a single request per chainId.
 	 */
-	queryBackendPrice = createCallBundler(
+	queryV3Price = createCallBundler(
 		async (keys: { address: Address; chainId: number }[]) => {
 			// Group by chainId
 			const byChain = new Map<number, Address[]>();
@@ -82,22 +150,20 @@ export class PricingBackendClient {
 				const unique = [
 					...new Set(addresses.map((a) => a.toLowerCase())),
 				] as Address[];
-				const url = new URL("/v1/prices", this.endpoint);
+				const url = new URL("/v3/prices", this.endpoint);
 				url.searchParams.set("chainId", String(chainId));
 				url.searchParams.set("assets", unique.join(","));
 
 				const response = await fetch(url.toString(), {
 					method: "GET",
-					headers: { Accept: "application/json" },
+					headers: this.getHeaders(),
 				});
 
 				if (response.ok) {
-					const data = (await response.json()) as BackendPriceResponse;
-					const map = new Map<string, BackendPriceData>();
-					for (const [addr, priceData] of Object.entries(data)) {
-						map.set(addr.toLowerCase(), priceData);
-					}
-					chainResults.set(chainId, map);
+					const data = (await response.json()) as
+						| BackendPriceResponse
+						| V3PriceResponse;
+					chainResults.set(chainId, this.parseResponse(data));
 				}
 			}
 
@@ -107,7 +173,7 @@ export class PricingBackendClient {
 		},
 	);
 
-	setQueryPrice(fn: typeof this.queryBackendPrice): void {
-		this.queryBackendPrice = fn;
+	setQueryV3Price(fn: typeof this.queryV3Price): void {
+		this.queryV3Price = fn;
 	}
 }

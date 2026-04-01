@@ -102,6 +102,8 @@ This keeps adapters thin and conversion logic pure and testable.
 
 All external calls within adapters are defined as `query*` arrow-function properties. The [`BuildQueryFn`](./caching-external-data-queries.md) decorator wraps every `query*` method at construction time, enabling global caching, logging, or profiling without modifying SDK internals.
 
+In the default SDK build, `buildEulerSDK()` installs a short-lived in-memory cache around all decorated `query*` methods. The default cache TTL is `5000ms`, which keeps bursty fetch paths from repeating identical RPC or HTTP requests while preserving near-real-time behavior. If a consumer provides `buildQuery`, that custom decorator replaces the built-in cache layer for SDK queries.
+
 ```typescript
 class EVaultOnchainAdapter {
   queryEVaultInfoFull = async (provider, lensAddress, vault) => {
@@ -168,12 +170,19 @@ See [Cross-Service Data Population](./cross-service-data-population.md) for the 
 `buildEulerSDK()` is the composition root that constructs the full dependency graph:
 
 1. **Core infrastructure** — `ProviderService` (RPC clients), `DeploymentService` (chain addresses), `ABIService`
-2. **Adapters** — each constructed with `ProviderService`, `DeploymentService`, and optional `buildQuery`
+2. **Adapters** — each constructed with `ProviderService`, `DeploymentService`, and a resolved query decorator
 3. **Typed vault services** — `EVaultService`, `EulerEarnService`, `SecuritizeVaultService`, each with their adapter
 4. **VaultMetaService** — wraps all vault services
 5. **AccountService** — depends on `AccountOnchainAdapter` + `VaultMetaService`
 6. **Support services** — `PriceService`, `OracleAdapterService`, `RewardsService`, `EulerLabelsService`, `WalletService`, etc.
 7. **Post-construction wiring** — setter-based cross-service injection (`setPriceService`, `setRewardsService`, etc.)
+
+The resolved query decorator is selected as:
+
+1. Consumer-provided `buildQuery`, if present
+2. Otherwise the built-in in-memory cache from `queryCacheConfig` (enabled by default with `ttlMs: 5000`)
+
+This means custom query decorators replace the SDK's default cache rather than layering on top of it automatically.
 
 ## Flexibility and Customization
 
@@ -302,7 +311,7 @@ accountService.fetchAccount(chainId, owner, { populateVaults: true, populateMark
   │    └─ assign vault entities to position.vault fields
   │
   └─ account.populateMarketPrices(priceService)
-       ├─ PricingBackendClient.queryBackendPrice()            ← HTTP (backend, bundled)
+       ├─ PricingBackendClient.queryV3Price()                 ← HTTP (backend, bundled)
        │   or PriceService.queryAssetPriceInfo()              ← RPC (fallback)
        └─ set marketPriceUsd on each vault
             → computed getters (healthFactor, netValueUsd, ...) now resolve

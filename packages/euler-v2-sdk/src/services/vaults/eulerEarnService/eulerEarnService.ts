@@ -10,10 +10,12 @@ import type {
 	IEVaultService,
 	EVaultFetchOptions,
 } from "../eVaultService/index.js";
+import type { IVaultMetaService, VaultEntity } from "../vaultMetaService/index.js";
 import type { IPriceService } from "../../priceService/index.js";
 import type { IRewardsService } from "../../rewardsService/index.js";
 import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
 import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
+import { VaultType } from "../../../utils/types.js";
 import type {
 	DataIssue,
 	ServiceResult,
@@ -96,6 +98,7 @@ export class EulerEarnService implements IEulerEarnService {
 	private rewardsService?: IRewardsService;
 	private intrinsicApyService?: IIntrinsicApyService;
 	private eulerLabelsService?: IEulerLabelsService;
+	private vaultMetaService?: IVaultMetaService<VaultEntity>;
 
 	constructor(
 		private adapter: IEulerEarnAdapter,
@@ -109,6 +112,10 @@ export class EulerEarnService implements IEulerEarnService {
 
 	setEVaultService(eVaultService: IEVaultService): void {
 		this.eVaultService = eVaultService;
+	}
+
+	setVaultMetaService(vaultMetaService: IVaultMetaService<VaultEntity>): void {
+		this.vaultMetaService = vaultMetaService;
 	}
 
 	setPriceService(service: IPriceService): void {
@@ -249,7 +256,7 @@ export class EulerEarnService implements IEulerEarnService {
 		getVaultPathPrefix: (vaultIndex: number) => string = (vaultIndex) =>
 			`$.eulerEarns[${vaultIndex}]`,
 	): Promise<DataIssue[]> {
-		if (!this.eVaultService || eulerEarns.length === 0) return [];
+		if (!this.vaultMetaService || eulerEarns.length === 0) return [];
 		const errors: DataIssue[] = [];
 
 		const occurrencesByAddress = new Map<
@@ -259,6 +266,7 @@ export class EulerEarnService implements IEulerEarnService {
 
 		eulerEarns.forEach((ee, vaultIndex) => {
 			ee.strategies.forEach((strategy, strategyIndex) => {
+				if (strategy.vaultType === VaultType.Unknown) return;
 				const key = strategy.address.toLowerCase();
 				const list = occurrencesByAddress.get(key) ?? [];
 				list.push({ vaultIndex, strategyIndex });
@@ -278,7 +286,7 @@ export class EulerEarnService implements IEulerEarnService {
 		}
 
 		const chainId = eulerEarns[0]!.chainId;
-		const eVaults = await Promise.all(
+		const fetchedVaults = await Promise.all(
 			allStrategyAddresses.map(async (addr) => {
 				const key = addr.toLowerCase();
 				const occurrences = occurrencesByAddress.get(key) ?? [];
@@ -288,7 +296,7 @@ export class EulerEarnService implements IEulerEarnService {
 				) =>
 					`${getVaultPathPrefix(vaultIndex)}.strategies[${strategyIndex}].vault`;
 				try {
-					const fetched = await this.eVaultService!.fetchVault(
+					const fetched = await this.vaultMetaService!.fetchVault(
 						chainId,
 						addr,
 						eVaultFetchOptions,
@@ -333,15 +341,16 @@ export class EulerEarnService implements IEulerEarnService {
 			}),
 		);
 
-		const eVaultByAddress = new Map(
-			eVaults
+		const vaultByAddress = new Map(
+			fetchedVaults
 				.filter((v) => v !== undefined)
 				.map((v) => [v.address.toLowerCase(), v]),
 		);
 
 		for (const ee of eulerEarns) {
 			for (const strategy of ee.strategies) {
-				strategy.vault = eVaultByAddress.get(strategy.address.toLowerCase());
+				if (strategy.vaultType === VaultType.Unknown) continue;
+				strategy.vault = vaultByAddress.get(strategy.address.toLowerCase());
 			}
 			ee.populated.strategyVaults = true;
 		}

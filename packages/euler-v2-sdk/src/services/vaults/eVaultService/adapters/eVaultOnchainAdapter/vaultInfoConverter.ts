@@ -14,6 +14,7 @@ import type {
 	EVaultCollateral,
 	EVaultHookedOperations,
 } from "../../../../../entities/EVault.js";
+import { hasActiveBorrowableLtv } from "../../../../../entities/EVault.js";
 import { type Token, VaultType } from "../../../../../utils/types.js";
 import {
 	type VaultInfoFull,
@@ -36,8 +37,68 @@ import {
 	bigintToScaledNumber,
 } from "../../../../../utils/normalization.js";
 import { USD_ADDRESS } from "../../../../priceService/priceService.js";
+import { ZERO_ADDRESS } from "../../../../../utils/parsing.js";
 
-function normalizeUnitOfAccountToken(token: Token): Token {
+const BTC_PLACEHOLDER_ADDRESS =
+	"0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB".toLowerCase();
+
+function normalizeTokenMetadata(
+	token: Token,
+	path: "$.shares" | "$.asset" | "$.unitOfAccount",
+	entityId: `0x${string}`,
+	errors: DataIssue[],
+): Token {
+	if (token.symbol.trim() === "") {
+		if (token.name.trim() !== "") {
+			errors.push({
+				code: "DEFAULT_APPLIED",
+				severity: "warning",
+				message: `Missing symbol at ${path}.symbol with non-empty name; normalized both name and symbol to empty strings.`,
+				paths: [`${path}.name`, `${path}.symbol`],
+				entityId,
+				source: "vaultLens",
+				originalValue: { name: token.name, symbol: token.symbol },
+				normalizedValue: { name: "", symbol: "" },
+			});
+		}
+		return {
+			...token,
+			name: "",
+			symbol: "",
+		};
+	}
+
+	if (token.name.trim() !== "") return token;
+	errors.push({
+		code: "DEFAULT_APPLIED",
+		severity: "warning",
+		message: `Empty string at ${path}.name; defaulted to "Unknown Asset".`,
+		paths: [`${path}.name`],
+		entityId,
+		source: "vaultLens",
+		originalValue: token.name,
+		normalizedValue: "Unknown Asset",
+	});
+	return {
+		...token,
+		name: "Unknown Asset",
+	};
+}
+
+function normalizeUnitOfAccountToken(token: Token): Token | undefined {
+	if (token.address.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
+		return undefined;
+	}
+
+	if (token.address.toLowerCase() === BTC_PLACEHOLDER_ADDRESS) {
+		return {
+			...token,
+			name: "Bitcoin",
+			symbol: "BTC",
+			decimals: 8,
+		};
+	}
+
 	if (token.address.toLowerCase() !== USD_ADDRESS.toLowerCase()) {
 		return token;
 	}
@@ -61,13 +122,24 @@ export function convertVaultInfoFullToIEVault(
 	errors: DataIssue[],
 ): IEVault {
 	const vaultEntityId = vaultInfo.vault;
+	const rootOracleInfoEmpty = vaultInfo.oracleInfo.oracleInfo === "0x";
+	const shouldSuppressRootOracleAdapter =
+		rootOracleInfoEmpty && vaultInfo.oracleInfo.name.trim().length === 0;
 	const oracle: OracleInfo = {
 		oracle: vaultInfo.oracleInfo.oracle,
 		name: vaultInfo.oracleInfo.name,
-		adapters: decodeOracleInfo(vaultInfo.oracleInfo),
+		adapters: shouldSuppressRootOracleAdapter
+			? []
+			: decodeOracleInfo(vaultInfo.oracleInfo, 3, {
+					base: vaultInfo.asset,
+					quote:
+						vaultInfo.unitOfAccount.toLowerCase() === ZERO_ADDRESS.toLowerCase()
+							? undefined
+							: vaultInfo.unitOfAccount,
+				}),
 	};
 
-	const shares: Token = {
+	const shares = normalizeTokenMetadata({
 		address: vaultInfo.vault,
 		name: vaultInfo.vaultName,
 		symbol: vaultInfo.vaultSymbol,
@@ -77,9 +149,9 @@ export function convertVaultInfoFullToIEVault(
 			source: "vaultLens",
 			entityId: vaultEntityId,
 		}),
-	};
+	}, "$.shares", vaultEntityId, errors);
 
-	const asset: Token = {
+	const asset = normalizeTokenMetadata({
 		address: vaultInfo.asset,
 		name: vaultInfo.assetName,
 		symbol: vaultInfo.assetSymbol,
@@ -89,9 +161,9 @@ export function convertVaultInfoFullToIEVault(
 			source: "vaultLens",
 			entityId: vaultEntityId,
 		}),
-	};
+	}, "$.asset", vaultEntityId, errors);
 
-	const unitOfAccount: Token = normalizeUnitOfAccountToken({
+	const unitOfAccount = normalizeUnitOfAccountToken(normalizeTokenMetadata({
 		address: vaultInfo.unitOfAccount,
 		name: vaultInfo.unitOfAccountName,
 		symbol: vaultInfo.unitOfAccountSymbol,
@@ -101,7 +173,7 @@ export function convertVaultInfoFullToIEVault(
 			source: "vaultLens",
 			entityId: vaultEntityId,
 		}),
-	});
+	}, "$.unitOfAccount", vaultEntityId, errors));
 
 	const fees: EVaultFees = {
 		interestFee: convertFrom1e4(
@@ -301,6 +373,7 @@ export function convertVaultInfoFullToIEVault(
 		interestRates,
 		interestRateModel,
 		collaterals,
+		isBorrowable: hasActiveBorrowableLtv(collaterals, vaultTimestamp),
 		oraclePriceRaw,
 		timestamp: vaultTimestamp,
 	};

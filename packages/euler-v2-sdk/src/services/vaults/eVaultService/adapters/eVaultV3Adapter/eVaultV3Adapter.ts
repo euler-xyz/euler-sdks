@@ -249,7 +249,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 	async fetchAllVaults(
 		chainId: number,
 	): Promise<ServiceResult<(IEVault | undefined)[]>> {
-		const limit = 200;
+		const limit = 100;
 		let offset = 0;
 		const addresses: Address[] = [];
 

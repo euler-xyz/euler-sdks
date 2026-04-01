@@ -1,15 +1,14 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
 import {
   queryClient,
   unwrapServiceResult,
-  useAllVaultsWithDiagnostics,
+  useAllEulerEarnVaultsWithDiagnostics,
+  useLabeledEVaultsWithDiagnostics,
   useWalletBalance,
 } from "../queries/sdkQueries.ts";
 import {
-  isEVault,
-  isEulerEarn,
   type EVault,
   type EulerEarn,
 } from "euler-v2-sdk";
@@ -460,19 +459,124 @@ export function VaultListPage() {
   const [assetSearch, setAssetSearch] = useState<string>("");
   const { isConnected } = useAccount();
   const [openDeposit, setOpenDeposit] = useState<string | null>(null);
+  const [showFailedVaults, setShowFailedVaults] = useState(false);
+  const coldLoadTimerLabelRef = useRef<string | null>(null);
+  const coldLoadStartedAtRef = useRef<number | null>(null);
+  const sdkReadyAtRef = useRef<number | null>(null);
+  const queryReadyAtRef = useRef<number | null>(null);
+  const coldLoadSummaryLabelRef = useRef<string | null>(null);
 
   const {
-    data: vaultData,
-    isLoading,
-    error,
-    dataUpdatedAt: diagnosticsDataUpdatedAt,
-  } = useAllVaultsWithDiagnostics();
-  const allVaults = vaultData?.vaults ?? [];
-  const failedVaults = vaultData?.failedVaults ?? [];
-  const diagnostics = vaultData?.diagnostics ?? [];
+    data: eVaultData,
+    isLoading: isEVaultsLoading,
+    error: eVaultError,
+    dataUpdatedAt: eVaultDiagnosticsUpdatedAt,
+  } = useLabeledEVaultsWithDiagnostics(tab === "evaults");
+  const {
+    data: earnData,
+    isLoading: isEarnLoading,
+    error: earnError,
+    dataUpdatedAt: earnDiagnosticsUpdatedAt,
+  } = useAllEulerEarnVaultsWithDiagnostics(tab === "eulerEarn");
 
-  const eVaults = allVaults?.filter(isEVault) ?? [];
-  const earnVaults = allVaults?.filter(isEulerEarn) ?? [];
+  const eVaults = eVaultData?.vaults ?? [];
+  const earnVaults = earnData?.vaults ?? [];
+  const failedVaults = tab === "eulerEarn"
+    ? (earnData?.failedVaults ?? [])
+    : (eVaultData?.failedVaults ?? []);
+  const diagnostics = tab === "eulerEarn"
+    ? (earnData?.diagnostics ?? [])
+    : (eVaultData?.diagnostics ?? []);
+  const diagnosticsDataUpdatedAt = tab === "eulerEarn"
+    ? earnDiagnosticsUpdatedAt
+    : eVaultDiagnosticsUpdatedAt;
+  const isLoading = tab === "eulerEarn" ? isEarnLoading : isEVaultsLoading;
+  const error = tab === "eulerEarn" ? earnError : eVaultError;
+  const activeData = tab === "eulerEarn" ? earnData : eVaultData;
+
+  useEffect(() => {
+    const nextLabel = `vaultListPage:coldLoad:chain-${chainId}`;
+    const nextSummaryLabel = `vaultListPage:stages:chain-${chainId}`;
+    if ((sdkLoading || isLoading) && coldLoadTimerLabelRef.current === null) {
+      coldLoadTimerLabelRef.current = nextLabel;
+      coldLoadSummaryLabelRef.current = nextSummaryLabel;
+      coldLoadStartedAtRef.current = performance.now();
+      sdkReadyAtRef.current = sdkLoading ? null : coldLoadStartedAtRef.current;
+      queryReadyAtRef.current = null;
+      console.time(nextLabel);
+      return;
+    }
+
+    if (
+      coldLoadStartedAtRef.current !== null &&
+      sdkReadyAtRef.current === null &&
+      !sdkLoading
+    ) {
+      sdkReadyAtRef.current = performance.now();
+    }
+
+    if (
+      coldLoadStartedAtRef.current !== null &&
+      queryReadyAtRef.current === null &&
+      !isLoading &&
+      (activeData !== undefined || error)
+    ) {
+      queryReadyAtRef.current = performance.now();
+    }
+
+    if (
+      coldLoadTimerLabelRef.current &&
+      !sdkLoading &&
+      !isLoading &&
+      (activeData !== undefined || error)
+    ) {
+      const now = performance.now();
+      const startedAt = coldLoadStartedAtRef.current ?? now;
+      const sdkReadyAt = sdkReadyAtRef.current ?? startedAt;
+      const queryReadyAt = queryReadyAtRef.current ?? now;
+      console.log(coldLoadSummaryLabelRef.current ?? nextSummaryLabel, {
+        totalMs: Math.round(now - startedAt),
+        sdkInitMs: Math.round(Math.max(0, sdkReadyAt - startedAt)),
+        dataQueryMs: Math.round(Math.max(0, queryReadyAt - sdkReadyAt)),
+        renderCommitMs: Math.round(Math.max(0, now - queryReadyAt)),
+      });
+      console.timeEnd(coldLoadTimerLabelRef.current);
+      coldLoadTimerLabelRef.current = null;
+      coldLoadSummaryLabelRef.current = null;
+      coldLoadStartedAtRef.current = null;
+      sdkReadyAtRef.current = null;
+      queryReadyAtRef.current = null;
+    }
+  }, [activeData, chainId, error, isLoading, sdkLoading, tab]);
+
+  useEffect(() => {
+    if (coldLoadTimerLabelRef.current) {
+      console.timeEnd(coldLoadTimerLabelRef.current);
+      coldLoadTimerLabelRef.current = null;
+    }
+    setShowFailedVaults(false);
+    coldLoadSummaryLabelRef.current = null;
+    coldLoadStartedAtRef.current = null;
+    sdkReadyAtRef.current = null;
+    queryReadyAtRef.current = null;
+  }, [chainId]);
+
+  useEffect(() => {
+    setShowFailedVaults(false);
+  }, [tab]);
+
+  useEffect(() => {
+    return () => {
+      if (coldLoadTimerLabelRef.current) {
+        console.timeEnd(coldLoadTimerLabelRef.current);
+        coldLoadTimerLabelRef.current = null;
+      }
+      coldLoadSummaryLabelRef.current = null;
+      coldLoadStartedAtRef.current = null;
+      sdkReadyAtRef.current = null;
+      queryReadyAtRef.current = null;
+    };
+  }, []);
 
   const eVaultMarkets = useMemo(() => {
     const byName = new Map<string, bigint>();
@@ -567,6 +671,47 @@ export function VaultListPage() {
   if (sdkError)
     return <div className="error-message">SDK Error: {sdkError}</div>;
 
+  const renderFailedVaultPanel = (keyPrefix: string) => {
+    if (failedVaults.length === 0) return null;
+
+    return (
+      <div className="failed-vaults-panel">
+        <div className="failed-vaults-summary">
+          <div className="failed-vaults-title">
+            Failed Vault Fetches ({failedVaults.length})
+          </div>
+          <button
+            type="button"
+            className="failed-vaults-toggle"
+            onClick={() => setShowFailedVaults((current) => !current)}
+          >
+            {showFailedVaults ? "Hide details" : "Show details"}
+          </button>
+        </div>
+        {showFailedVaults && (
+          <table>
+            <thead>
+              <tr>
+                <th>Address</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {failedVaults.map((failed) => (
+                <tr key={`${keyPrefix}-${failed.address}`}>
+                  <td><CopyAddress address={failed.address as Address} /></td>
+                  <td>
+                    <ErrorIcon details={failed.details} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
       <div className="tabs">
@@ -574,13 +719,13 @@ export function VaultListPage() {
           className={`tab ${tab === "evaults" ? "active" : ""}`}
           onClick={() => setTab("evaults")}
         >
-          EVaults ({isLoading ? "..." : eVaults.length})
+          EVaults{tab === "evaults" ? ` (${isLoading ? "..." : eVaults.length})` : ""}
         </button>
         <button
           className={`tab ${tab === "eulerEarn" ? "active" : ""}`}
           onClick={() => setTab("eulerEarn")}
         >
-          Euler Earn ({isLoading ? "..." : earnVaults.length})
+          Euler Earn{tab === "eulerEarn" ? ` (${isLoading ? "..." : earnVaults.length})` : ""}
         </button>
         <button
           className={`tab ${tab === "securitize" ? "active" : ""}`}
@@ -598,29 +743,7 @@ export function VaultListPage() {
             <div className="error-message">Error: {String(error)}</div>
           ) : (
             <>
-              {failedVaults.length > 0 && (
-                <div className="failed-vaults-panel">
-                  <div className="failed-vaults-title">Failed Vault Fetches</div>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Address</th>
-                        <th>Error</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {failedVaults.map((failed) => (
-                        <tr key={`failed-evault-${failed.address}`}>
-                          <td><CopyAddress address={failed.address as Address} /></td>
-                          <td>
-                            <ErrorIcon details={failed.details} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {renderFailedVaultPanel("failed-evault")}
 
               {eVaults.length === 0 ? (
                 <div className="status-message">No EVaults found</div>
@@ -808,29 +931,7 @@ export function VaultListPage() {
             <div className="error-message">Error: {String(error)}</div>
           ) : (
             <>
-              {failedVaults.length > 0 && (
-                <div className="failed-vaults-panel">
-                  <div className="failed-vaults-title">Failed Vault Fetches</div>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Address</th>
-                        <th>Error</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {failedVaults.map((failed) => (
-                        <tr key={`failed-earn-${failed.address}`}>
-                          <td><CopyAddress address={failed.address as Address} /></td>
-                          <td>
-                            <ErrorIcon details={failed.details} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {renderFailedVaultPanel("failed-earn")}
               {earnVaults.length === 0 ? (
                 <div className="status-message">No Euler Earn vaults found</div>
               ) : (

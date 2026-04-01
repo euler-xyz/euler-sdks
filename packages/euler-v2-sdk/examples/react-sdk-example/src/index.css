@@ -442,13 +442,35 @@ tr.clickable {
   margin-bottom: 16px;
 }
 
+.failed-vaults-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
 .failed-vaults-title {
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  margin-bottom: 8px;
   color: #c00;
+}
+
+.failed-vaults-toggle {
+  border: 1px solid #d8d8d8;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.failed-vaults-toggle:hover {
+  border-color: #bdbdbd;
 }
 
 .error-icon {

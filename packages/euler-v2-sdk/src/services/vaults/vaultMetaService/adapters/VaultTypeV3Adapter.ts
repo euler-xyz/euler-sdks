@@ -56,7 +56,8 @@ const defaultTypeMap: Record<string, string> = {
 	securitizeCollateral: VaultType.SecuritizeCollateral,
 };
 
-const V3_VAULT_RESOLVE_BATCH_SIZE = 500;
+const V3_VAULT_RESOLVE_BATCH_SIZE = 100;
+const V3_VAULT_RESOLVE_CONCURRENCY = 4;
 
 function normalizeTypeKey(value: string): string {
 	return value.replace(/[^a-z0-9]/gi, "").toLowerCase();
@@ -116,6 +117,25 @@ export class VaultTypeV3Adapter implements IVaultTypeAdapter {
 		}
 	}
 
+	private async queryResolveChunk(
+		url: string,
+		requestBody: V3ResolveRequest,
+	): Promise<V3ResolveRow[]> {
+		const response = await fetch(url, {
+			method: "POST",
+			headers: this.getHeaders(),
+			body: JSON.stringify(requestBody),
+		});
+		if (!response.ok) {
+			throw new Error(
+				`vaultTypeV3 resolve ${response.status} ${response.statusText}`,
+			);
+		}
+
+		const json = (await response.json()) as V3ResolveResponse;
+		return json.data ?? [];
+	}
+
 	queryV3VaultResolve = createCallBundler(
 		async (
 			keys: { address: Address; chainId: number }[],
@@ -138,32 +158,40 @@ export class VaultTypeV3Adapter implements IVaultTypeAdapter {
 				];
 				const url = `${this.config.endpoint.replace(/\/+$/, "")}/v3/resolve/vaults`;
 				const resolved = new Map<string, V3ResolvedVaultResult>();
+				const chunks: Address[][] = [];
 
 				for (
 					let offset = 0;
 					offset < uniqueAddresses.length;
 					offset += V3_VAULT_RESOLVE_BATCH_SIZE
 				) {
-					const requestBody: V3ResolveRequest = {
-						chainId,
-						addresses: uniqueAddresses.slice(
+					chunks.push(
+						uniqueAddresses.slice(
 							offset,
 							offset + V3_VAULT_RESOLVE_BATCH_SIZE,
 						),
-					};
-					const response = await fetch(url, {
-						method: "POST",
-						headers: this.getHeaders(),
-						body: JSON.stringify(requestBody),
-					});
-					if (!response.ok) {
-						throw new Error(
-							`vaultTypeV3 resolve ${response.status} ${response.statusText}`,
-						);
-					}
+					);
+				}
 
-					const json = (await response.json()) as V3ResolveResponse;
-					for (const row of json.data ?? []) {
+				for (
+					let chunkOffset = 0;
+					chunkOffset < chunks.length;
+					chunkOffset += V3_VAULT_RESOLVE_CONCURRENCY
+				) {
+					const chunkGroup = chunks.slice(
+						chunkOffset,
+						chunkOffset + V3_VAULT_RESOLVE_CONCURRENCY,
+					);
+					const results = await Promise.all(
+						chunkGroup.map((chunk) =>
+							this.queryResolveChunk(url, {
+								chainId,
+								addresses: chunk,
+							}),
+						),
+					);
+
+					for (const row of results.flat()) {
 						if (!row.found) continue;
 						const address = getAddress(row.address);
 						const sdkVaultType = this.resolveSdkVaultType(row);

@@ -23,6 +23,10 @@ export class SecuritizeCollateralVault
 		this.supplyCap = args.supplyCap;
 	}
 
+	override get isBorrowable(): boolean {
+		return false;
+	}
+
 	/** 1:1 conversion (standard ERC4626 when totalShares === totalAssets). */
 	override convertToAssets(shares: bigint): bigint {
 		return shares;

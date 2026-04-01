@@ -10,6 +10,27 @@ import type { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
 import type { DataIssue } from "../../../../utils/entityDiagnostics.js";
 import { bigintToSafeNumber } from "../../../../utils/normalization.js";
 
+function normalizeTokenString(
+	value: string,
+	fallback: string,
+	path: string,
+	entityId: `0x${string}`,
+	errors: DataIssue[],
+): string {
+	if (value.trim() !== "") return value;
+	errors.push({
+		code: "DEFAULT_APPLIED",
+		severity: "warning",
+		message: `Empty string at ${path}; defaulted to ${JSON.stringify(fallback)}.`,
+		paths: [path],
+		entityId,
+		source: "eulerEarnLens",
+		originalValue: value,
+		normalizedValue: fallback,
+	});
+	return fallback;
+}
+
 /**
  * Converts EulerEarnVaultLens's EulerEarnVaultInfoFull object to an IEulerEarn object
  * @param vaultInfo - The EulerEarnVaultInfoFull object to convert
@@ -24,8 +45,20 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
 	const vaultEntityId = vaultInfo.vault;
 	const shares: Token = {
 		address: vaultInfo.vault,
-		name: vaultInfo.vaultName,
-		symbol: vaultInfo.vaultSymbol,
+		name: normalizeTokenString(
+			vaultInfo.vaultName,
+			"Unknown Vault",
+			"$.shares.name",
+			vaultEntityId,
+			errors,
+		),
+		symbol: normalizeTokenString(
+			vaultInfo.vaultSymbol,
+			"UNKNOWN",
+			"$.shares.symbol",
+			vaultEntityId,
+			errors,
+		),
 		decimals: bigintToSafeNumber(vaultInfo.vaultDecimals, {
 			path: "$.shares.decimals",
 			errors,
@@ -36,8 +69,20 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
 
 	const asset: Token = {
 		address: vaultInfo.asset,
-		name: vaultInfo.assetName,
-		symbol: vaultInfo.assetSymbol,
+		name: normalizeTokenString(
+			vaultInfo.assetName,
+			"Unknown Asset",
+			"$.asset.name",
+			vaultEntityId,
+			errors,
+		),
+		symbol: normalizeTokenString(
+			vaultInfo.assetSymbol,
+			"UNKNOWN",
+			"$.asset.symbol",
+			vaultEntityId,
+			errors,
+		),
 		decimals: bigintToSafeNumber(vaultInfo.assetDecimals, {
 			path: "$.asset.decimals",
 			errors,
@@ -123,6 +168,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
 		type: VaultType.EulerEarn,
 		chainId,
 		address: vaultInfo.vault,
+		isBorrowable: false,
 		shares,
 		asset,
 		totalShares: vaultInfo.totalShares,

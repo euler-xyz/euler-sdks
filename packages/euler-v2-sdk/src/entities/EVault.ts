@@ -6,6 +6,7 @@ import {
 	type OracleAdapterEntry,
 	type OracleInfo,
 	type OraclePrice,
+	sortOracleAdapters,
 	selectLeafAdaptersForPair,
 } from "../utils/oracle.js";
 import type { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
@@ -142,7 +143,7 @@ export type RiskPrice = {
 };
 
 export interface IEVault extends IERC4626Vault {
-	unitOfAccount: Token;
+	unitOfAccount?: Token;
 
 	totalCash: bigint;
 	totalBorrowed: bigint;
@@ -177,10 +178,34 @@ function buildOracleAdaptersForPair(
 	baseAddress: Address,
 	quoteAddress: Address,
 ): OracleAdapterEntry[] {
-	return selectLeafAdaptersForPair(
-		vaultOracleAdapters,
-		baseAddress,
-		quoteAddress,
+	return sortOracleAdapters(
+		selectLeafAdaptersForPair(vaultOracleAdapters, baseAddress, quoteAddress),
+	);
+}
+
+function collateralHasActiveLtv(
+	collateral: EVaultCollateral,
+	vaultTimestamp: number,
+): boolean {
+	if (collateral.borrowLTV > 0 || collateral.liquidationLTV > 0) {
+		return true;
+	}
+
+	// During an active ramp-down, target LTVs can already be zero while the
+	// current liquidation LTV is still non-zero until targetTimestamp.
+	return (
+		collateral.ramping !== undefined &&
+		collateral.ramping.targetTimestamp > vaultTimestamp &&
+		collateral.ramping.initialLiquidationLTV > 0
+	);
+}
+
+export function hasActiveBorrowableLtv(
+	collaterals: EVaultCollateral[],
+	vaultTimestamp: number,
+): boolean {
+	return collaterals.some((collateral) =>
+		collateralHasActiveLtv(collateral, vaultTimestamp),
 	);
 }
 
@@ -188,7 +213,7 @@ export class EVault
 	extends ERC4626Vault
 	implements IEVault, IERC4626VaultConversion
 {
-	unitOfAccount: Token;
+	unitOfAccount?: Token;
 	totalCash: bigint;
 	totalBorrowed: bigint;
 	creator: Address;
@@ -222,22 +247,31 @@ export class EVault
 		this.hooks = args.hooks;
 		this.caps = args.caps;
 		this.liquidation = args.liquidation;
-		this.oracle = args.oracle;
-		this.debtPricingOracleAdapters = buildOracleAdaptersForPair(
-			this.oracle.adapters,
-			this.asset.address,
-			this.unitOfAccount.address,
-		);
+		this.oracle = {
+			...args.oracle,
+			adapters: sortOracleAdapters(args.oracle.adapters),
+		};
 		this.interestRates = args.interestRates;
 		this.interestRateModel = args.interestRateModel;
 		this.collaterals = args.collaterals;
+		this.timestamp = args.timestamp;
+		this.debtPricingOracleAdapters = this.isBorrowable && this.unitOfAccount
+			? buildOracleAdaptersForPair(
+					this.oracle.adapters,
+					this.asset.address,
+					this.unitOfAccount.address,
+				)
+			: [];
 		this.evcCompatibleAsset = args.evcCompatibleAsset;
 		this.oraclePriceRaw = args.oraclePriceRaw;
-		this.timestamp = args.timestamp;
 		this.populated = {
 			...this.populated,
 			collaterals: args.populated?.collaterals ?? false,
 		};
+	}
+
+	override get isBorrowable(): boolean {
+		return hasActiveBorrowableLtv(this.collaterals, this.timestamp);
 	}
 
 	/** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
@@ -274,6 +308,7 @@ export class EVault
 	}
 
 	getCollateralRiskPrice(collateralVault: ERC4626Vault): RiskPrice | undefined {
+		if (!this.unitOfAccount) return undefined;
 		const price = getCollateralOraclePrice(this, collateralVault);
 		if (!price) return undefined;
 
@@ -351,6 +386,11 @@ export class EVault
 		for (const collateral of this.collaterals) {
 			collateral.vault = vaultByAddress.get(collateral.address.toLowerCase());
 			if (!collateral.vault) {
+				collateral.oracleAdapters = [];
+				continue;
+			}
+
+			if (!this.unitOfAccount) {
 				collateral.oracleAdapters = [];
 				continue;
 			}

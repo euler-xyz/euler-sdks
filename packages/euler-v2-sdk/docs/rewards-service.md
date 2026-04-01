@@ -1,10 +1,10 @@
 # Rewards Service
 
-`rewardsService` owns reward-provider integrations in the SDK.
+`rewardsService` owns reward reads and reward claim planning in the SDK.
 
 It handles two separate concerns:
 
-- reward discovery and account/vault reward reads
+- reward discovery and account/vault reward reads through pluggable adapters
 - reward-specific claim planning for Merkl, Brevis, and Fuul
 
 `executionService` remains generic. It executes `TransactionPlan` items, but it does not know how to fetch reward proofs, Fuul claim checks, or provider-specific calldata.
@@ -19,6 +19,19 @@ Use these methods for reward discovery and display:
 - `fetchUserRewards(chainId, address)` for claimable user rewards
 - `fetchFuulTotals(address)` for Fuul claimed/unclaimed totals
 - `fetchFuulClaimChecks(address)` for Fuul claim payloads
+
+## Adapters
+
+`rewardsService` now uses an internal read adapter:
+
+- `v3` (default)
+  - uses `GET /v3/apys/rewards` for vault reward APR catalogs
+  - uses `GET /v3/rewards/breakdown` for per-account reward reads
+  - Fuul helper reads that are not available in V3 are handled by `rewardsService` itself via the direct adapter
+- `direct`
+  - uses the legacy Merkl, Brevis, and Fuul provider endpoints directly
+
+This split makes V3 the default for both vault reward APR catalogs and per-user reward breakdowns, without coupling the V3 adapter to the direct adapter implementation.
 
 `fetchUserRewards(...)` returns normalized `UserReward` objects with provider-specific claim metadata already attached:
 
@@ -73,6 +86,9 @@ Reference executors:
 
 Relevant `rewardsServiceConfig` fields:
 
+- `adapter`
+- `directAdapterConfig`
+- `v3AdapterConfig`
 - `merklApiUrl`
 - `brevisApiUrl`
 - `brevisProofsApiUrl`
@@ -82,5 +98,7 @@ Relevant `rewardsServiceConfig` fields:
 - `merklDistributorAddress`
 - `fuulManagerAddress`
 - `fuulFactoryAddress`
+
+The top-level provider URL fields remain supported for backward compatibility. They are treated as `directAdapterConfig` inputs.
 
 For Fuul claim planning, the SDK also needs a configured `providerService` so it can read claim fees from the Fuul factory contract.

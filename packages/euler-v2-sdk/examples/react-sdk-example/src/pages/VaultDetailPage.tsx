@@ -253,7 +253,9 @@ export function VaultDetailPage() {
         <div className="detail-item">
           <div className="label">Unit of Account</div>
           <div className="value">
-            {vault.unitOfAccount.symbol} ({vault.unitOfAccount.name})
+            {vault.unitOfAccount
+              ? `${vault.unitOfAccount.symbol} (${vault.unitOfAccount.name})`
+              : "None"}
           </div>
           {renderDiagnostics(["$.unitOfAccount"])}
         </div>
@@ -460,16 +462,21 @@ export function VaultDetailPage() {
                 col.vault?.asset.address
               );
               const adapterPairMismatchDetails = getAdapterMismatchDetails(
-                {
-                  chainId,
-                  collateral: {
-                    ...col,
-                    oracleAdapters: displayAdapters,
-                  },
-                  unitOfAccountAddress: vault.unitOfAccount.address,
-                  metadataMap: oracleAdapterMetadataMap as Record<string, Record<string, unknown>> | undefined,
-                  tokenSymbolMap,
-                }
+                vault.unitOfAccount
+                  ? {
+                      chainId,
+                      collateral: {
+                        ...col,
+                        oracleAdapters: displayAdapters,
+                      },
+                      unitOfAccountAddress: vault.unitOfAccount.address,
+                      metadataMap:
+                        oracleAdapterMetadataMap as
+                          | Record<string, Record<string, unknown>>
+                          | undefined,
+                      tokenSymbolMap,
+                    }
+                  : undefined
               );
 
               return (
@@ -504,11 +511,13 @@ export function VaultDetailPage() {
                     metadataMap={oracleAdapterMetadataMap}
                   />
                   {adapterPairMismatchDetails && <ErrorIcon details={adapterPairMismatchDetails} />}
-                  {formatPriceInUnit(
-                    col.oraclePriceRaw?.amountOutMid,
-                    vault.unitOfAccount.decimals,
-                    vault.unitOfAccount.symbol
-                  )}
+                  {vault.unitOfAccount
+                    ? formatPriceInUnit(
+                        col.oraclePriceRaw?.amountOutMid,
+                        vault.unitOfAccount.decimals,
+                        vault.unitOfAccount.symbol,
+                      )
+                    : "N/A"}
                 </td>
                 <td>
                   {renderCollateralFieldIcon(col.address, ["$.marketPriceUsd", "$.oracleAdapters"])}

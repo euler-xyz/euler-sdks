@@ -67,7 +67,9 @@ import {
 	PricingBackendClient,
 } from "../services/priceService/index.js";
 import {
+	RewardsDirectAdapter,
 	RewardsService,
+	RewardsV3Adapter,
 	type IRewardsService,
 	type RewardsServiceConfig,
 } from "../services/rewardsService/index.js";
@@ -95,6 +97,7 @@ import {
 	defaultEulerEarnV3AdapterConfig,
 	defaultEulerLabelsURLAdapterConfig,
 	defaultIntrinsicApyV3AdapterConfig,
+	defaultRewardsV3AdapterConfig,
 	defaultSwapServiceConfig,
 	defaultTokenlistServiceConfig,
 	defaultVaultTypeAdapterConfig,
@@ -123,7 +126,11 @@ import type {
 	VaultTypeV3AdapterConfig,
 } from "../services/vaults/vaultMetaService/index.js";
 import type { IVaultEntity } from "../entities/Account.js";
-import type { BuildQueryFn } from "../utils/buildQuery.js";
+import {
+	createQueryCacheBuildQuery,
+	type BuildQueryFn,
+	type QueryCacheConfig,
+} from "../utils/buildQuery.js";
 import type { EulerPlugin } from "../plugins/types.js";
 import { BatchSimulationAdapter } from "../plugins/batchSimulation.js";
 
@@ -174,6 +181,8 @@ export interface BuildSDKOptions<
 	intrinsicApyServiceConfig?: IntrinsicApyServiceConfig;
 	oracleAdapterServiceConfig?: OracleAdapterServiceConfig;
 	feeFlowServiceConfig?: FeeFlowServiceConfig;
+	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with a 5s TTL. */
+	queryCacheConfig?: QueryCacheConfig;
 	/** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
 	buildQuery?: BuildQueryFn;
 	/** Plugins that enrich on-chain reads (via batchSimulation) and transaction plans (via processPlan). */
@@ -200,18 +209,25 @@ export async function buildEulerSDK<
 		rewardsServiceConfig,
 		intrinsicApyServiceConfig,
 		oracleAdapterServiceConfig,
+		queryCacheConfig,
 		buildQuery,
 		plugins,
 		servicesOverrides,
 		feeFlowServiceConfig,
 	} = options;
 
+	const resolvedBuildQuery =
+		buildQuery ?? createQueryCacheBuildQuery(queryCacheConfig);
+
 	// Build core services (these may be needed for adapters even if overridden)
 	const abiService =
-		servicesOverrides?.abiService ?? new ABIService(buildQuery);
+		servicesOverrides?.abiService ?? new ABIService(resolvedBuildQuery);
 	const deploymentService =
 		servicesOverrides?.deploymentService ??
-		(await DeploymentService.build(defaultDeploymentServiceConfig, buildQuery));
+		(await DeploymentService.build(
+			defaultDeploymentServiceConfig,
+			resolvedBuildQuery,
+		));
 	const providerService =
 		servicesOverrides?.providerService ?? new ProviderService(rpcUrls);
 
@@ -223,13 +239,13 @@ export async function buildEulerSDK<
 			? (() => {
 					const accountVaultsAdapter = new AccountVaultsSubgraphAdapter(
 						accountVaultsAdapterConfig || defaultAccountVaultsAdapterConfig,
-						buildQuery,
+						resolvedBuildQuery,
 					);
 					accountOnchainAdapter = new AccountOnchainAdapter(
 						providerService as ProviderService,
 						deploymentService as DeploymentService,
 						accountVaultsAdapter,
-						buildQuery,
+						resolvedBuildQuery,
 					);
 					return accountOnchainAdapter;
 				})()
@@ -243,7 +259,7 @@ export async function buildEulerSDK<
 							? { apiKey: resolvedAccountServiceConfig.v3AdapterConfig.apiKey }
 							: {}),
 					},
-					buildQuery,
+					resolvedBuildQuery,
 				);
 
 	// Build wallet service if not overridden
@@ -254,7 +270,7 @@ export async function buildEulerSDK<
 		const walletAdapter = new WalletOnchainAdapter(
 			providerService as ProviderService,
 			deploymentService as DeploymentService,
-			buildQuery,
+			resolvedBuildQuery,
 		);
 		walletService = new WalletService(walletAdapter);
 	}
@@ -272,7 +288,7 @@ export async function buildEulerSDK<
 						eVaultAdapter = new EVaultOnchainAdapter(
 							providerService as ProviderService,
 							deploymentService as DeploymentService,
-							buildQuery,
+							resolvedBuildQuery,
 						);
 						return eVaultAdapter;
 					})()
@@ -286,7 +302,7 @@ export async function buildEulerSDK<
 								? { apiKey: resolvedEVaultServiceConfig.v3AdapterConfig.apiKey }
 								: {}),
 						},
-						buildQuery,
+						resolvedBuildQuery,
 					);
 		eVaultService = new EVaultService(
 			selectedEVaultAdapter,
@@ -305,7 +321,7 @@ export async function buildEulerSDK<
 				? new EulerEarnOnchainAdapter(
 						providerService as ProviderService,
 						deploymentService as DeploymentService,
-						buildQuery,
+						resolvedBuildQuery,
 					)
 				: new EulerEarnV3Adapter(
 						{
@@ -320,7 +336,7 @@ export async function buildEulerSDK<
 									}
 								: {}),
 						},
-						buildQuery,
+						resolvedBuildQuery,
 					);
 		eulerEarnService = new EulerEarnService(
 			eulerEarnAdapter,
@@ -337,7 +353,7 @@ export async function buildEulerSDK<
 		const securitizeVaultAdapter = new SecuritizeVaultOnchainAdapter(
 			providerService as ProviderService,
 			deploymentService as DeploymentService,
-			buildQuery,
+			resolvedBuildQuery,
 		);
 		securitizeVaultService = new SecuritizeVaultService(securitizeVaultAdapter);
 	}
@@ -353,7 +369,7 @@ export async function buildEulerSDK<
 			"subgraphURLs" in resolvedVaultTypeAdapterConfig
 				? new VaultTypeSubgraphAdapter(
 						resolvedVaultTypeAdapterConfig,
-						buildQuery,
+						resolvedBuildQuery,
 					)
 				: new VaultTypeV3Adapter(
 						{
@@ -364,7 +380,7 @@ export async function buildEulerSDK<
 								? { apiKey: resolvedVaultTypeAdapterConfig.apiKey }
 								: {}),
 						},
-						buildQuery,
+						resolvedBuildQuery,
 					);
 		const allVaultServices: VaultServiceEntry<TVaultEntity>[] = [
 			{
@@ -394,10 +410,15 @@ export async function buildEulerSDK<
 	if (eVaultService instanceof EVaultService) {
 		eVaultService.setVaultMetaService(vaultMetaService as IVaultMetaService);
 	}
+	if (eulerEarnService instanceof EulerEarnService) {
+		eulerEarnService.setVaultMetaService(
+			vaultMetaService as unknown as IVaultMetaService<VaultEntity>,
+		);
+	}
 
 	// Wire plugins into onchain adapters for read-path enrichment
 	if (plugins?.length) {
-		const pluginBatchSimDs = new BatchSimulationAdapter(buildQuery);
+		const pluginBatchSimDs = new BatchSimulationAdapter(resolvedBuildQuery);
 		if (eVaultAdapter) {
 			eVaultAdapter.setPlugins(plugins);
 			eVaultAdapter.setBatchSimulationAdapter(pluginBatchSimDs);
@@ -427,7 +448,7 @@ export async function buildEulerSDK<
 		(() => {
 			const eulerLabelsAdapter = new EulerLabelsURLAdapter(
 				eulerLabelsConfig,
-				buildQuery,
+				resolvedBuildQuery,
 			);
 			return new EulerLabelsService(
 				eulerLabelsAdapter,
@@ -440,13 +461,16 @@ export async function buildEulerSDK<
 		servicesOverrides?.tokenlistService ??
 		new TokenlistService(
 			tokenlistServiceConfig || defaultTokenlistServiceConfig,
-			buildQuery,
+			resolvedBuildQuery,
 		);
 
 	// Build swap service if not overridden
 	const swapService =
 		servicesOverrides?.swapService ??
-		new SwapService(swapServiceConfig || defaultSwapServiceConfig, buildQuery);
+		new SwapService(
+			swapServiceConfig || defaultSwapServiceConfig,
+			resolvedBuildQuery,
+		);
 
 	// Build execution service if not overridden
 	const executionService =
@@ -466,21 +490,84 @@ export async function buildEulerSDK<
 		(() => {
 			const resolvedBackendConfig = backendConfig ?? defaultBackendConfig;
 			const backendClient = new PricingBackendClient(
-				resolvedBackendConfig,
-				buildQuery,
+				{
+					...resolvedBackendConfig,
+					...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+					...(resolvedBackendConfig.apiKey !== undefined
+						? { apiKey: resolvedBackendConfig.apiKey }
+						: {}),
+				},
+				resolvedBuildQuery,
 			);
 			return new PriceService(
 				providerService as ProviderService,
 				deploymentService as DeploymentService,
 				backendClient,
-				buildQuery,
+				resolvedBuildQuery,
 			);
 		})();
 
 	// Build rewards service if not overridden
 	const rewardsService =
 		servicesOverrides?.rewardsService ??
-		new RewardsService(rewardsServiceConfig, buildQuery);
+		(() => {
+			const resolvedRewardsServiceConfig = rewardsServiceConfig ?? {};
+			const legacyDirectAdapterConfig = {
+				merklApiUrl: resolvedRewardsServiceConfig.merklApiUrl,
+				brevisApiUrl: resolvedRewardsServiceConfig.brevisApiUrl,
+				brevisProofsApiUrl: resolvedRewardsServiceConfig.brevisProofsApiUrl,
+				fuulApiUrl: resolvedRewardsServiceConfig.fuulApiUrl,
+				fuulTotalsUrl: resolvedRewardsServiceConfig.fuulTotalsUrl,
+				fuulClaimChecksUrl: resolvedRewardsServiceConfig.fuulClaimChecksUrl,
+				brevisChainIds: resolvedRewardsServiceConfig.brevisChainIds,
+				merklDistributorAddress:
+					resolvedRewardsServiceConfig.merklDistributorAddress,
+				fuulManagerAddress: resolvedRewardsServiceConfig.fuulManagerAddress,
+				fuulFactoryAddress: resolvedRewardsServiceConfig.fuulFactoryAddress,
+				enableMerkl: resolvedRewardsServiceConfig.enableMerkl,
+				enableBrevis: resolvedRewardsServiceConfig.enableBrevis,
+				enableFuul: resolvedRewardsServiceConfig.enableFuul,
+			};
+			const directAdapterConfig = {
+				...legacyDirectAdapterConfig,
+				...(resolvedRewardsServiceConfig.directAdapterConfig ?? {}),
+			};
+			const directAdapter = new RewardsDirectAdapter(
+				directAdapterConfig,
+				resolvedBuildQuery,
+			);
+			const rewardsAdapter =
+				resolvedRewardsServiceConfig.adapter === "direct"
+					? directAdapter
+					: new RewardsV3Adapter(
+							{
+								...(resolvedRewardsServiceConfig.v3AdapterConfig ??
+									defaultRewardsV3AdapterConfig),
+								...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+								...(resolvedRewardsServiceConfig.v3AdapterConfig?.apiKey !==
+								undefined
+									? {
+											apiKey:
+												resolvedRewardsServiceConfig.v3AdapterConfig.apiKey,
+										}
+									: {}),
+							},
+							resolvedBuildQuery,
+						);
+
+			return new RewardsService(
+				rewardsAdapter,
+				resolvedRewardsServiceConfig.adapter === "direct"
+					? undefined
+					: directAdapter,
+				{
+				merklDistributorAddress:
+					directAdapter.getMerklDistributorAddress(),
+				fuulManagerAddress: directAdapter.getFuulManagerAddress(),
+				fuulFactoryAddress: directAdapter.getFuulFactoryAddress(),
+				},
+			);
+		})();
 
 	// Build intrinsic APY service if not overridden
 	const intrinsicApyService =
@@ -503,7 +590,7 @@ export async function buildEulerSDK<
 								...legacyDirectAdapterConfig,
 								...(resolvedIntrinsicApyServiceConfig.directAdapterConfig ?? {}),
 							},
-							buildQuery,
+							resolvedBuildQuery,
 						)
 					: new IntrinsicApyV3Adapter(
 							{
@@ -518,17 +605,20 @@ export async function buildEulerSDK<
 										}
 									: {}),
 							},
-							buildQuery,
+							resolvedBuildQuery,
 						);
 
 			return new IntrinsicApyService(intrinsicApyAdapter);
 		})();
 	const oracleAdapterService =
 		servicesOverrides?.oracleAdapterService ??
-		new OracleAdapterService(oracleAdapterServiceConfig, buildQuery);
+		new OracleAdapterService(
+			oracleAdapterServiceConfig,
+			resolvedBuildQuery,
+		);
 	const feeFlowService =
 		servicesOverrides?.feeFlowService ??
-		new FeeFlowService(feeFlowServiceConfig, buildQuery);
+		new FeeFlowService(feeFlowServiceConfig, resolvedBuildQuery);
 
 	// Build simulation service if not overridden
 	const simulationService =
