@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
 import {
+  type ChainScopedVault,
   queryClient,
   unwrapServiceResult,
   useAllEulerEarnVaultsWithDiagnostics,
@@ -38,6 +39,7 @@ type SortDir = "asc" | "desc";
 // ---------------------------------------------------------------------------
 
 type EVaultSortKey =
+  | "chain"
   | "name"
   | "asset"
   | "totalSupply"
@@ -47,8 +49,10 @@ type EVaultSortKey =
   | "usdPrice"
   | "collaterals";
 
-function getEVaultSortValue(vault: EVault, key: EVaultSortKey): number | string {
+function getEVaultSortValue(vault: ChainScopedVault<EVault>, key: EVaultSortKey): number | string {
   switch (key) {
+    case "chain":
+      return vault.chainName.toLowerCase();
     case "name":
       return (vault.shares.name || "").toLowerCase();
     case "asset":
@@ -79,6 +83,7 @@ function getEVaultSortValue(vault: EVault, key: EVaultSortKey): number | string 
 // ---------------------------------------------------------------------------
 
 type EarnSortKey =
+  | "chain"
   | "name"
   | "asset"
   | "totalAssets"
@@ -87,8 +92,10 @@ type EarnSortKey =
   | "strategies"
   | "perfFee";
 
-function getEarnSortValue(vault: EulerEarn, key: EarnSortKey): number | string {
+function getEarnSortValue(vault: ChainScopedVault<EulerEarn>, key: EarnSortKey): number | string {
   switch (key) {
+    case "chain":
+      return vault.chainName.toLowerCase();
     case "name":
       return (vault.shares.name || "").toLowerCase();
     case "asset":
@@ -450,9 +457,10 @@ function DepositFormRow({
 // ---------------------------------------------------------------------------
 
 export function VaultListPage() {
-  const { chainId, loading: sdkLoading, error: sdkError } = useSDK();
+  const { chainNames, loading: sdkLoading, error: sdkError } = useSDK();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("evaults");
+  const [chainFilter, setChainFilter] = useState<string>("all");
   const [marketFilter, setMarketFilter] = useState<string>("all");
   const [assetFilter, setAssetFilter] = useState<string>("all");
   const [marketSearch, setMarketSearch] = useState<string>("");
@@ -461,10 +469,6 @@ export function VaultListPage() {
   const [openDeposit, setOpenDeposit] = useState<string | null>(null);
   const [showFailedVaults, setShowFailedVaults] = useState(false);
   const coldLoadTimerLabelRef = useRef<string | null>(null);
-  const coldLoadStartedAtRef = useRef<number | null>(null);
-  const sdkReadyAtRef = useRef<number | null>(null);
-  const queryReadyAtRef = useRef<number | null>(null);
-  const coldLoadSummaryLabelRef = useRef<string | null>(null);
 
   const {
     data: eVaultData,
@@ -495,33 +499,11 @@ export function VaultListPage() {
   const activeData = tab === "eulerEarn" ? earnData : eVaultData;
 
   useEffect(() => {
-    const nextLabel = `vaultListPage:coldLoad:chain-${chainId}`;
-    const nextSummaryLabel = `vaultListPage:stages:chain-${chainId}`;
+    const nextLabel = `vaultListPage:coldLoad:all-chains:${tab}`;
     if (isLoading && coldLoadTimerLabelRef.current === null) {
       coldLoadTimerLabelRef.current = nextLabel;
-      coldLoadSummaryLabelRef.current = nextSummaryLabel;
-      coldLoadStartedAtRef.current = performance.now();
-      sdkReadyAtRef.current = coldLoadStartedAtRef.current;
-      queryReadyAtRef.current = null;
       console.time(nextLabel);
       return;
-    }
-
-    if (
-      coldLoadStartedAtRef.current !== null &&
-      sdkReadyAtRef.current === null &&
-      !sdkLoading
-    ) {
-      sdkReadyAtRef.current = performance.now();
-    }
-
-    if (
-      coldLoadStartedAtRef.current !== null &&
-      queryReadyAtRef.current === null &&
-      !isLoading &&
-      (activeData !== undefined || error)
-    ) {
-      queryReadyAtRef.current = performance.now();
     }
 
     if (
@@ -530,36 +512,10 @@ export function VaultListPage() {
       !isLoading &&
       (activeData !== undefined || error)
     ) {
-      const now = performance.now();
-      const startedAt = coldLoadStartedAtRef.current ?? now;
-      const sdkReadyAt = sdkReadyAtRef.current ?? startedAt;
-      const queryReadyAt = queryReadyAtRef.current ?? now;
-      console.log(coldLoadSummaryLabelRef.current ?? nextSummaryLabel, {
-        totalMs: Math.round(now - startedAt),
-        sdkInitMs: Math.round(Math.max(0, sdkReadyAt - startedAt)),
-        dataQueryMs: Math.round(Math.max(0, queryReadyAt - sdkReadyAt)),
-        renderCommitMs: Math.round(Math.max(0, now - queryReadyAt)),
-      });
-      console.timeEnd(coldLoadTimerLabelRef.current);
-      coldLoadTimerLabelRef.current = null;
-      coldLoadSummaryLabelRef.current = null;
-      coldLoadStartedAtRef.current = null;
-      sdkReadyAtRef.current = null;
-      queryReadyAtRef.current = null;
-    }
-  }, [activeData, chainId, error, isLoading, sdkLoading, tab]);
-
-  useEffect(() => {
-    if (coldLoadTimerLabelRef.current) {
       console.timeEnd(coldLoadTimerLabelRef.current);
       coldLoadTimerLabelRef.current = null;
     }
-    setShowFailedVaults(false);
-    coldLoadSummaryLabelRef.current = null;
-    coldLoadStartedAtRef.current = null;
-    sdkReadyAtRef.current = null;
-    queryReadyAtRef.current = null;
-  }, [chainId]);
+  }, [activeData, error, isLoading, sdkLoading, tab]);
 
   useEffect(() => {
     setShowFailedVaults(false);
@@ -571,10 +527,6 @@ export function VaultListPage() {
         console.timeEnd(coldLoadTimerLabelRef.current);
         coldLoadTimerLabelRef.current = null;
       }
-      coldLoadSummaryLabelRef.current = null;
-      coldLoadStartedAtRef.current = null;
-      sdkReadyAtRef.current = null;
-      queryReadyAtRef.current = null;
     };
   }, []);
 
@@ -622,8 +574,18 @@ export function VaultListPage() {
     );
   }, [eVaultAssets, assetSearch, assetFilter]);
 
+  const availableChains = useMemo(() => {
+    const ids = new Set<number>();
+    for (const vault of eVaults) ids.add(vault.chainId);
+    for (const vault of earnVaults) ids.add(vault.chainId);
+    return Array.from(ids).sort((a, b) => a - b);
+  }, [eVaults, earnVaults]);
+
   const filteredEVaults = useMemo(() => {
     return eVaults.filter((vault) => {
+      if (chainFilter !== "all" && String(vault.chainId) !== chainFilter) {
+        return false;
+      }
       if (marketFilter !== "all") {
         const market = vault.eulerLabel?.products[0]?.name ?? vault.eulerLabel?.vault.name;
         if (market !== marketFilter) return false;
@@ -633,18 +595,29 @@ export function VaultListPage() {
       }
       return true;
     });
-  }, [eVaults, marketFilter, assetFilter]);
+  }, [assetFilter, chainFilter, eVaults, marketFilter]);
+
+  const filteredEarnVaults = useMemo(() => {
+    return earnVaults.filter((vault) =>
+      chainFilter === "all" ? true : String(vault.chainId) === chainFilter
+    );
+  }, [chainFilter, earnVaults]);
 
   const eVaultSort = useSorted(filteredEVaults, "totalSupply" as EVaultSortKey, getEVaultSortValue);
-  const earnSort = useSorted(earnVaults, "totalAssets" as EarnSortKey, getEarnSortValue);
+  const earnSort = useSorted(filteredEarnVaults, "totalAssets" as EarnSortKey, getEarnSortValue);
+
+  const getDiagnosticEntityKey = (chainId: number, address: string) =>
+    `${chainId}:${address.toLowerCase()}`;
 
   const vaultDiagnosticIndex = useMemo(
     () =>
       createEntityDiagnosticIndex({
         diagnostics,
         resolveEntityKey: (issue) => {
-          if (!issue.entityId || issue.entityId.length !== 42) return undefined;
-          return issue.entityId.toLowerCase();
+          if (!issue.entityId || issue.entityId.length !== 42 || issue.chainId === undefined) {
+            return undefined;
+          }
+          return getDiagnosticEntityKey(issue.chainId, issue.entityId);
         },
         normalizePath: (path) => {
           if (!path) return "$";
@@ -657,11 +630,15 @@ export function VaultListPage() {
   );
 
   const renderFieldIcon = (
+    chainId: number,
     address: string,
     paths: string[],
     position: "leading" | "trailing" = "leading"
   ) => {
-    const issues = vaultDiagnosticIndex.getFieldIssues(address.toLowerCase(), paths);
+    const issues = vaultDiagnosticIndex.getFieldIssues(
+      getDiagnosticEntityKey(chainId, address),
+      paths
+    );
     if (issues.length === 0) return null;
     return <ErrorIcon details={formatDiagnosticIssues(issues)} position={position} />;
   };
@@ -692,14 +669,22 @@ export function VaultListPage() {
           <table>
             <thead>
               <tr>
+                <th>Chain</th>
                 <th>Address</th>
                 <th>Error</th>
               </tr>
             </thead>
             <tbody>
               {failedVaults.map((failed) => (
-                <tr key={`${keyPrefix}-${failed.address}`}>
-                  <td><CopyAddress address={failed.address as Address} /></td>
+                <tr key={`${keyPrefix}-${failed.chainId ?? "na"}-${failed.address ?? "na"}`}>
+                  <td>{failed.chainName ?? (failed.chainId !== undefined ? chainNames[failed.chainId] : "-") ?? "-"}</td>
+                  <td>
+                    {failed.address ? (
+                      <CopyAddress address={failed.address as Address} />
+                    ) : (
+                      "-"
+                    )}
+                  </td>
                   <td>
                     <ErrorIcon details={failed.details} />
                   </td>
@@ -750,6 +735,24 @@ export function VaultListPage() {
               ) : (
               <>
               <div className="filter-bar">
+                <div className="filter-group">
+                  <label className="filter-label" htmlFor="vault-chain-filter">
+                    Chain
+                  </label>
+                  <select
+                    id="vault-chain-filter"
+                    className="filter-select"
+                    value={chainFilter}
+                    onChange={(e) => setChainFilter(e.target.value)}
+                  >
+                    <option value="all">All chains</option>
+                    {availableChains.map((id) => (
+                      <option key={id} value={id}>
+                        {chainNames[id] ?? `Chain ${id}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="filter-group">
                   <label className="filter-label" htmlFor="vault-market-filter">
                     Market
@@ -808,6 +811,9 @@ export function VaultListPage() {
                 <table>
                   <thead>
                     <tr>
+                      <th className="sortable" onClick={() => eVaultSort.toggleSort("chain")}>
+                        Chain{eVaultSort.indicator("chain")}
+                      </th>
                       <th className="sortable" onClick={() => eVaultSort.toggleSort("name")}>
                         Name{eVaultSort.indicator("name")}
                       </th>
@@ -838,35 +844,36 @@ export function VaultListPage() {
                   </thead>
                   <tbody>
                     {eVaultSort.sorted.map((vault) => (
-                      <Fragment key={vault.address}>
+                      <Fragment key={`${vault.chainId}:${vault.address}`}>
                         <tr
                           className="clickable"
                           onClick={() =>
-                            navigate(`/vault/${chainId}/${vault.address}`)
+                            navigate(`/vault/${vault.chainId}/${vault.address}`)
                           }
                         >
+                          <td>{vault.chainName}</td>
                           <td>
-                            {renderFieldIcon(vault.address, ["$.shares.name", "$.eulerLabel.vault.name", "$.eulerLabel.products"])}
+                            {renderFieldIcon(vault.chainId, vault.address, ["$.shares.name", "$.eulerLabel.vault.name", "$.eulerLabel.products"])}
                             {vault.shares.name || "-"}
                           </td>
                           <td>
-                            {renderFieldIcon(vault.address, ["$.asset.symbol", "$.asset.name"])}
+                            {renderFieldIcon(vault.chainId, vault.address, ["$.asset.symbol", "$.asset.name"])}
                             {vault.asset.symbol}
                           </td>
                           <td>
-                            {renderFieldIcon(vault.address, ["$.address"])}
+                            {renderFieldIcon(vault.chainId, vault.address, ["$.address"])}
                             <CopyAddress address={vault.address} />
                           </td>
                           <td>
-                            {renderFieldIcon(vault.address, ["$.totalAssets", "$.marketPriceUsd"])}
+                            {renderFieldIcon(vault.chainId, vault.address, ["$.totalAssets", "$.marketPriceUsd"])}
                             {formatPriceUsd(calcVaultSupplyUsd(vault))}
                           </td>
                           <td>
-                            {renderFieldIcon(vault.address, ["$.totalBorrowed", "$.marketPriceUsd"])}
+                            {renderFieldIcon(vault.chainId, vault.address, ["$.totalBorrowed", "$.marketPriceUsd"])}
                             {formatPriceUsd(calcVaultBorrowsUsd(vault))}
                           </td>
                           <td>
-                            {renderFieldIcon(vault.address, ["$.interestRates.supplyAPY", "$.rewards", "$.intrinsicApy"])}
+                            {renderFieldIcon(vault.chainId, vault.address, ["$.interestRates.supplyAPY", "$.rewards", "$.intrinsicApy"])}
                             <ApyCell
                               baseApy={Number(vault.interestRates.supplyAPY)}
                               rewards={vault.rewards}
@@ -874,17 +881,17 @@ export function VaultListPage() {
                             />
                           </td>
                           <td>
-                            {renderFieldIcon(vault.address, ["$.interestRates.borrowAPY"])}
+                            {renderFieldIcon(vault.chainId, vault.address, ["$.interestRates.borrowAPY"])}
                             <ApyCell
                               baseApy={Number(vault.interestRates.borrowAPY)}
                             />
                           </td>
                           <td>
-                            {renderFieldIcon(vault.address, ["$.marketPriceUsd"])}
+                            {renderFieldIcon(vault.chainId, vault.address, ["$.marketPriceUsd"])}
                             {formatPriceUsd(vault.marketPriceUsd)}
                           </td>
                           <td>
-                            {renderFieldIcon(vault.address, ["$.collaterals"])}
+                            {renderFieldIcon(vault.chainId, vault.address, ["$.collaterals"])}
                             {vault.collaterals.length}
                           </td>
                           <td>
@@ -895,7 +902,9 @@ export function VaultListPage() {
                                 e.stopPropagation();
                                 if (!isConnected) return;
                                 setOpenDeposit((prev) =>
-                                  prev === vault.address ? null : vault.address
+                                  prev === `${vault.chainId}:${vault.address}`
+                                    ? null
+                                    : `${vault.chainId}:${vault.address}`
                                 );
                               }}
                               disabled={!isConnected}
@@ -904,10 +913,10 @@ export function VaultListPage() {
                             </button>
                           </td>
                         </tr>
-                        {openDeposit === vault.address && (
+                        {openDeposit === `${vault.chainId}:${vault.address}` && (
                           <DepositFormRow
                             vault={vault}
-                            chainId={chainId}
+                            chainId={vault.chainId}
                             onClose={() => setOpenDeposit(null)}
                           />
                         )}
@@ -935,80 +944,111 @@ export function VaultListPage() {
               {earnVaults.length === 0 ? (
                 <div className="status-message">No Euler Earn vaults found</div>
               ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th className="sortable" onClick={() => earnSort.toggleSort("name")}>
-                    Name{earnSort.indicator("name")}
-                  </th>
-                  <th className="sortable" onClick={() => earnSort.toggleSort("asset")}>
-                    Asset{earnSort.indicator("asset")}
-                  </th>
-                  <th>Address</th>
-                  <th className="sortable" onClick={() => earnSort.toggleSort("totalAssets")}>
-                    Total Assets{earnSort.indicator("totalAssets")}
-                  </th>
-                  <th className="sortable" onClick={() => earnSort.toggleSort("supplyAPY")}>
-                    Supply APY{earnSort.indicator("supplyAPY")}
-                  </th>
-                  <th className="sortable" onClick={() => earnSort.toggleSort("usdPrice")}>
-                    USD Price{earnSort.indicator("usdPrice")}
-                  </th>
-                  <th className="sortable" onClick={() => earnSort.toggleSort("strategies")}>
-                    Strategies{earnSort.indicator("strategies")}
-                  </th>
-                  <th className="sortable" onClick={() => earnSort.toggleSort("perfFee")}>
-                    Perf. Fee{earnSort.indicator("perfFee")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {earnSort.sorted.map((vault) => (
-                  <tr
-                    key={vault.address}
-                    className="clickable"
-                    onClick={() =>
-                      navigate(`/earn/${chainId}/${vault.address}`)
-                    }
-                  >
-                    <td>
-                      {renderFieldIcon(vault.address, ["$.shares.name", "$.eulerLabel.vault.name"], "leading")}
-                      {vault.shares.name || "-"}
-                    </td>
-                    <td>
-                      {renderFieldIcon(vault.address, ["$.asset.symbol", "$.asset.name"])}
-                      {vault.asset.symbol}
-                    </td>
-                    <td>
-                      {renderFieldIcon(vault.address, ["$.address"])}
-                      <CopyAddress address={vault.address} />
-                    </td>
-                    <td>
-                      {renderFieldIcon(vault.address, ["$.totalAssets"])}
-                      {formatBigInt(vault.totalAssets, vault.asset.decimals)}
-                    </td>
-                    <td>
-                      {renderFieldIcon(vault.address, ["$.supplyApy", "$.rewards", "$.intrinsicApy"])}
-                      {vault.supplyApy !== undefined
-                        ? <ApyCell baseApy={vault.supplyApy} rewards={vault.rewards} intrinsicApy={vault.intrinsicApy} />
-                        : "-"}
-                    </td>
-                    <td>
-                      {renderFieldIcon(vault.address, ["$.marketPriceUsd"])}
-                      {formatPriceUsd(vault.marketPriceUsd)}
-                    </td>
-                    <td>
-                      {renderFieldIcon(vault.address, ["$.strategies"])}
-                      {vault.strategies.length}
-                    </td>
-                    <td>
-                      {renderFieldIcon(vault.address, ["$.performanceFee"])}
-                      {(vault.performanceFee * 100).toFixed(1)}%
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                <>
+                  <div className="filter-bar">
+                    <div className="filter-group">
+                      <label className="filter-label" htmlFor="earn-chain-filter">
+                        Chain
+                      </label>
+                      <select
+                        id="earn-chain-filter"
+                        className="filter-select"
+                        value={chainFilter}
+                        onChange={(e) => setChainFilter(e.target.value)}
+                      >
+                        <option value="all">All chains</option>
+                        {availableChains.map((id) => (
+                          <option key={id} value={id}>
+                            {chainNames[id] ?? `Chain ${id}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {earnSort.sorted.length === 0 ? (
+                    <div className="status-message">No Euler Earn vaults match the selected chain.</div>
+                  ) : (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th className="sortable" onClick={() => earnSort.toggleSort("chain")}>
+                            Chain{earnSort.indicator("chain")}
+                          </th>
+                          <th className="sortable" onClick={() => earnSort.toggleSort("name")}>
+                            Name{earnSort.indicator("name")}
+                          </th>
+                          <th className="sortable" onClick={() => earnSort.toggleSort("asset")}>
+                            Asset{earnSort.indicator("asset")}
+                          </th>
+                          <th>Address</th>
+                          <th className="sortable" onClick={() => earnSort.toggleSort("totalAssets")}>
+                            Total Assets{earnSort.indicator("totalAssets")}
+                          </th>
+                          <th className="sortable" onClick={() => earnSort.toggleSort("supplyAPY")}>
+                            Supply APY{earnSort.indicator("supplyAPY")}
+                          </th>
+                          <th className="sortable" onClick={() => earnSort.toggleSort("usdPrice")}>
+                            USD Price{earnSort.indicator("usdPrice")}
+                          </th>
+                          <th className="sortable" onClick={() => earnSort.toggleSort("strategies")}>
+                            Strategies{earnSort.indicator("strategies")}
+                          </th>
+                          <th className="sortable" onClick={() => earnSort.toggleSort("perfFee")}>
+                            Perf. Fee{earnSort.indicator("perfFee")}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {earnSort.sorted.map((vault) => (
+                          <tr
+                            key={`${vault.chainId}:${vault.address}`}
+                            className="clickable"
+                            onClick={() =>
+                              navigate(`/earn/${vault.chainId}/${vault.address}`)
+                            }
+                          >
+                            <td>{vault.chainName}</td>
+                            <td>
+                              {renderFieldIcon(vault.chainId, vault.address, ["$.shares.name", "$.eulerLabel.vault.name"], "leading")}
+                              {vault.shares.name || "-"}
+                            </td>
+                            <td>
+                              {renderFieldIcon(vault.chainId, vault.address, ["$.asset.symbol", "$.asset.name"])}
+                              {vault.asset.symbol}
+                            </td>
+                            <td>
+                              {renderFieldIcon(vault.chainId, vault.address, ["$.address"])}
+                              <CopyAddress address={vault.address} />
+                            </td>
+                            <td>
+                              {renderFieldIcon(vault.chainId, vault.address, ["$.totalAssets"])}
+                              {formatBigInt(vault.totalAssets, vault.asset.decimals)}
+                            </td>
+                            <td>
+                              {renderFieldIcon(vault.chainId, vault.address, ["$.supplyApy", "$.rewards", "$.intrinsicApy"])}
+                              {vault.supplyApy !== undefined
+                                ? <ApyCell baseApy={vault.supplyApy} rewards={vault.rewards} intrinsicApy={vault.intrinsicApy} />
+                                : "-"}
+                            </td>
+                            <td>
+                              {renderFieldIcon(vault.chainId, vault.address, ["$.marketPriceUsd"])}
+                              {formatPriceUsd(vault.marketPriceUsd)}
+                            </td>
+                            <td>
+                              {renderFieldIcon(vault.chainId, vault.address, ["$.strategies"])}
+                              {vault.strategies.length}
+                            </td>
+                            <td>
+                              {renderFieldIcon(vault.chainId, vault.address, ["$.performanceFee"])}
+                              {(vault.performanceFee * 100).toFixed(1)}%
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </>
               )}
             </>
           )}

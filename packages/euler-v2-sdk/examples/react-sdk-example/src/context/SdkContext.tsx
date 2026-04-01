@@ -21,7 +21,8 @@ import {
   RPC_URLS,
 } from "../config/chains.ts";
 
-const V3_PROXY_ENDPOINT = "/api/v3";
+const V3_API_ENDPOINT =
+  import.meta.env.VITE_EULER_V3_ENDPOINT ?? "https://v3staging.eul.dev";
 const SWAP_PROXY_ENDPOINT = "/api/swap";
 
 interface SdkContextValue {
@@ -57,38 +58,38 @@ export function SdkProvider({ children }: { children: ReactNode }) {
       accountServiceConfig: {
         adapter: useV3Adapters ? "v3" : "onchain",
         v3AdapterConfig: {
-          endpoint: V3_PROXY_ENDPOINT,
+          endpoint: V3_API_ENDPOINT,
         },
       },
       eVaultServiceConfig: {
         adapter: useV3Adapters ? "v3" : "onchain",
         v3AdapterConfig: {
-          endpoint: V3_PROXY_ENDPOINT,
+          endpoint: V3_API_ENDPOINT,
         },
       },
       eulerEarnServiceConfig: {
         adapter: useV3Adapters ? "v3" : "onchain",
         v3AdapterConfig: {
-          endpoint: V3_PROXY_ENDPOINT,
+          endpoint: V3_API_ENDPOINT,
         },
       },
       intrinsicApyServiceConfig: {
         adapter: useV3Adapters ? "v3" : "direct",
         v3AdapterConfig: {
-          endpoint: V3_PROXY_ENDPOINT,
+          endpoint: V3_API_ENDPOINT,
         },
       },
       backendConfig: {
-        endpoint: V3_PROXY_ENDPOINT,
+        endpoint: V3_API_ENDPOINT,
       },
       rewardsServiceConfig: {
         v3AdapterConfig: {
-          endpoint: V3_PROXY_ENDPOINT,
+          endpoint: V3_API_ENDPOINT,
         },
       },
       vaultTypeAdapterConfig: useV3Adapters
         ? {
-            endpoint: V3_PROXY_ENDPOINT,
+            endpoint: V3_API_ENDPOINT,
           }
         : defaultVaultTypeSubgraphAdapterConfig,
       swapServiceConfig: {

@@ -6,11 +6,6 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/api/v3": {
-        target: "https://v3staging.eul.dev",
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/v3/, ""),
-      },
       "/api/swap": {
         target: "http://localhost:3002",
         changeOrigin: true,

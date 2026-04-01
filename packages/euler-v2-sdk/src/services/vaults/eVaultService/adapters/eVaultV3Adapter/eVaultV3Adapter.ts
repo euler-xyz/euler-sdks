@@ -23,7 +23,7 @@ import type {
 } from "./eVaultV3AdapterTypes.js";
 
 const unsupportedError = new Error("unsupported");
-const BATCH_LIMIT = 1000;
+const DEFAULT_BATCH_LIMIT = 100;
 
 export class EVaultV3Adapter implements IEVaultAdapter {
 	constructor(
@@ -63,6 +63,19 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		return `${joined}?${params.toString()}`;
 	}
 
+	private getBatchLimit(): number {
+		const configured = this.config.batchSize;
+		if (
+			typeof configured === "number" &&
+			Number.isFinite(configured) &&
+			configured > 0
+		) {
+			return Math.floor(configured);
+		}
+
+		return DEFAULT_BATCH_LIMIT;
+	}
+
 	queryV3EVaultDetail = createCallBundler(
 		async (
 			keys: { address: Address; chainId: number }[],
@@ -75,40 +88,57 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 			}
 
 			const chainResults = new Map<number, Map<string, V3VaultDetailWithIncludes>>();
-
-			for (const [chainId, addresses] of byChain) {
-				const resolved = new Map<string, V3VaultDetailWithIncludes>();
-				const dedupedAddresses = [
-					...new Set(addresses.map((address) => getAddress(address))),
-				];
-
-				for (
-					let offset = 0;
-					offset < dedupedAddresses.length;
-					offset += BATCH_LIMIT
-				) {
-					const requestBody: V3VaultBatchRequest = {
-						chainId,
-						addresses: dedupedAddresses.slice(offset, offset + BATCH_LIMIT),
-						include: ["collaterals"],
-					};
-					const url = this.buildUrl(this.config.endpoint, "/v3/evk/vaults/batch");
-					const response = await fetch(url, {
-						method: "POST",
-						headers: this.getHeaders("application/json"),
-						body: JSON.stringify(requestBody),
-					});
-					if (!response.ok) {
-						throw new Error(
-							`eVaultV3 batch ${response.status} ${response.statusText}`,
-						);
+			const chainEntries = await Promise.all(
+				Array.from(byChain.entries()).map(async ([chainId, addresses]) => {
+					const resolved = new Map<string, V3VaultDetailWithIncludes>();
+					const dedupedAddresses = [
+						...new Set(addresses.map((address) => getAddress(address))),
+					];
+					const batchLimit = this.getBatchLimit();
+					const requestBodies: V3VaultBatchRequest[] = [];
+					for (
+						let offset = 0;
+						offset < dedupedAddresses.length;
+						offset += batchLimit
+					) {
+						requestBodies.push({
+							chainId,
+							addresses: dedupedAddresses.slice(offset, offset + batchLimit),
+							include: ["collaterals"],
+						});
 					}
-					const batch = (await response.json()) as V3VaultBatchResponse;
-					for (const detail of batch.data ?? []) {
-						resolved.set(getAddress(detail.address).toLowerCase(), detail);
-					}
-				}
 
+					const batches = await Promise.all(
+						requestBodies.map(async (requestBody) => {
+							const url = this.buildUrl(
+								this.config.endpoint,
+								"/v3/evk/vaults/batch",
+							);
+							const response = await fetch(url, {
+								method: "POST",
+								headers: this.getHeaders("application/json"),
+								body: JSON.stringify(requestBody),
+							});
+							if (!response.ok) {
+								throw new Error(
+									`eVaultV3 batch ${response.status} ${response.statusText}`,
+								);
+							}
+							return (await response.json()) as V3VaultBatchResponse;
+						}),
+					);
+
+					for (const batch of batches) {
+						for (const detail of batch.data ?? []) {
+							resolved.set(getAddress(detail.address).toLowerCase(), detail);
+						}
+					}
+
+					return [chainId, resolved] as const;
+				}),
+			);
+
+			for (const [chainId, resolved] of chainEntries) {
 				chainResults.set(chainId, resolved);
 			}
 

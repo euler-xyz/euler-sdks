@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { WalletConnectButton } from "./WalletConnectButton.tsx";
 
 export function TopBar() {
-  const { chainId, setChainId, chainNames } = useSDK();
+  const { chainId, chainNames } = useSDK();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -56,21 +56,6 @@ export function TopBar() {
         </nav>
       </div>
       <div className="topbar-right">
-        <label>
-          Chain:{" "}
-          <select
-            value={chainId}
-            onChange={(e) => {
-              setChainId(Number(e.target.value));
-            }}
-          >
-            {Object.entries(chainNames).map(([id, name]) => (
-              <option key={id} value={id}>
-                {name} ({id})
-              </option>
-            ))}
-          </select>
-        </label>
         <WalletConnectButton
           appChainId={chainId}
           appChainName={chainNames[chainId] ?? String(chainId)}

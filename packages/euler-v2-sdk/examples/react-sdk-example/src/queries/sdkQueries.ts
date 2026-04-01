@@ -22,6 +22,7 @@ import { recordExecution, recordFailure, registerKnownQueries } from "./queryPro
 import { interceptSdkDataIfEnabled, isQueryIntercepted } from "./dataInterceptorStore.ts";
 import { getQueryBuildOverrides } from "./queryOptionsStore.ts";
 import { isEVault } from "euler-v2-sdk";
+import { CHAIN_NAMES } from "../config/chains.ts";
 
 // ---------------------------------------------------------------------------
 // Query client
@@ -157,36 +158,9 @@ const STALE_TIMES = {
 } satisfies Partial<Record<EulerSDKQueryName, number>>;
 
 const DEFAULT_STALE_TIME = MINUTE;
-let timingSequence = 0;
-
-function shouldConsoleTimeQuery(queryName: string) {
-  return queryName === "queryVaultFactories";
-}
-
-function createConsoleTimerLabel(base: string) {
-  timingSequence += 1;
-  return `${base}#${timingSequence}`;
-}
-
-function createVaultListProfile(prefix: string) {
-  const labels = {
-    total: createConsoleTimerLabel(`${prefix}:total`),
-    addresses: createConsoleTimerLabel(`${prefix}:addresses`),
-    fetchVaults: createConsoleTimerLabel(`${prefix}:fetchVaults`),
-    fetchAllVaults: createConsoleTimerLabel(`${prefix}:fetchAllVaults`),
-    normalize: createConsoleTimerLabel(`${prefix}:normalize`),
-  };
-
-  return {
-    labels,
-    start(label: keyof typeof labels) {
-      console.time(labels[label]);
-    },
-    end(label: keyof typeof labels) {
-      console.timeEnd(labels[label]);
-    },
-  };
-}
+const ALL_CHAIN_IDS = Object.keys(CHAIN_NAMES)
+  .map(Number)
+  .sort((a, b) => a - b);
 
 function withDataInterceptor(
   queryName: string,
@@ -209,23 +183,11 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn, target) => {
     recordExecution(queryName);
     const queryKey = ["sdk", queryName, ...args.map(serializeArg)] as QueryKey;
     const { disableCache, fetchQueryOptions: overrides } = getQueryBuildOverrides();
-    const timerLabel = shouldConsoleTimeQuery(queryName)
-      ? createConsoleTimerLabel(`sdk:${queryName}`)
-      : null;
-    let timerActive = false;
 
     const fetchOptions: FetchQueryOptions<unknown, Error, unknown, QueryKey> = {
       queryKey,
       queryFn: async () => {
-        if (timerLabel) {
-          console.time(timerLabel);
-          timerActive = true;
-        }
         const result = await interceptedFetcher(...args);
-        if (timerLabel && timerActive) {
-          console.timeEnd(timerLabel);
-          timerActive = false;
-        }
         // react-query treats undefined as missing data — use null instead
         return result === undefined ? null : result;
       },
@@ -249,10 +211,6 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn, target) => {
     try {
       return await queryClient.fetchQuery(fetchOptions);
     } catch (error) {
-      if (timerLabel && timerActive) {
-        console.timeEnd(timerLabel);
-        timerActive = false;
-      }
       recordFailure(queryName);
       throw error;
     } finally {
@@ -286,6 +244,7 @@ export type DiagnosticIssue = {
   message?: string;
   source?: string;
   entityId?: string;
+  chainId?: number;
   originalValue?: unknown;
 };
 
@@ -329,8 +288,15 @@ export function unwrapServiceResultWithDiagnostics<T>(
 }
 
 export type FailedVaultFetch = {
-  address: string;
+  address?: string;
+  chainId?: number;
+  chainName?: string;
   details: string;
+};
+
+export type ChainScopedVault<TVault extends VaultEntity> = TVault & {
+  chainId: number;
+  chainName: string;
 };
 
 export type FeeFlowCandidate = {
@@ -363,23 +329,33 @@ function formatIssueRaw(issue: DiagnosticIssue): string {
 }
 
 function buildFailedVaultFetches(diagnostics: DiagnosticIssue[]): FailedVaultFetch[] {
-  const byAddress = new Map<string, string[]>();
+  const byKey = new Map<string, FailedVaultFetch>();
 
   for (const issue of diagnostics) {
     if (!issue.entityId || !isAddress(issue.entityId)) continue;
+    if (issue.code !== "SOURCE_UNAVAILABLE") continue;
 
     const msg = issue.message ?? issue.code ?? "Vault fetch failed";
-    const address = issue.entityId;
+    const chainId = issue.chainId;
+    const key = `${chainId ?? "unknown"}:${issue.entityId.toLowerCase()}`;
+    const existing = byKey.get(key);
 
-    const entries = byAddress.get(address) ?? [];
-    entries.push(msg);
-    byAddress.set(address, entries);
+    if (existing) {
+      existing.details = Array.from(
+        new Set([...existing.details.split("\n"), msg])
+      ).join("\n");
+      continue;
+    }
+
+    byKey.set(key, {
+      address: issue.entityId,
+      chainId,
+      chainName: chainId !== undefined ? CHAIN_NAMES[chainId] : undefined,
+      details: msg,
+    });
   }
 
-  return Array.from(byAddress.entries()).map(([address, messages]) => ({
-    address,
-    details: Array.from(new Set(messages)).join("\n"),
-  }));
+  return Array.from(byKey.values());
 }
 
 function resolveDiagnosticsWithFailedVaults<TVault extends { address: string }>(
@@ -490,14 +466,10 @@ async function fetchVaultAddressesFromLabelProducts(
 
 async function fetchLabeledVaultsWithDiagnostics(
   sdk: EulerSDK,
-  chainId: number,
-  profile?: ReturnType<typeof createVaultListProfile>
+  chainId: number
 ) {
-  profile?.start("addresses");
   const addresses = await fetchVaultAddressesFromLabelProducts(sdk, chainId);
-  profile?.end("addresses");
 
-  profile?.start("fetchVaults");
   const res = unwrapServiceResultWithDiagnostics(
     "eVaultService.fetchVaults",
     await sdk.eVaultService.fetchVaults(chainId, addresses, {
@@ -507,23 +479,13 @@ async function fetchLabeledVaultsWithDiagnostics(
       populateLabels: true,
     })
   );
-  console.log("eVaultService.fetchVaults result", {
-    chainId,
-    requestedAddresses: addresses,
-    vaultCount: Array.isArray(res.result) ? res.result.length : undefined,
-    vaults: res.result,
-    diagnostics: res.diagnostics,
-  });
-  profile?.end("fetchVaults");
   return res;
 }
 
 async function fetchEulerEarnVaultsWithDiagnostics(
   sdk: EulerSDK,
-  chainId: number,
-  profile?: ReturnType<typeof createVaultListProfile>
+  chainId: number
 ) {
-  profile?.start("fetchAllVaults");
   const res = unwrapServiceResultWithDiagnostics(
     "eulerEarnService.fetchAllVaults",
     await sdk.eulerEarnService.fetchAllVaults(chainId, {
@@ -535,7 +497,6 @@ async function fetchEulerEarnVaultsWithDiagnostics(
       },
     })
   );
-  profile?.end("fetchAllVaults");
   return res;
 }
 
@@ -544,6 +505,83 @@ type VaultListDiagnosticsResult<TVault extends VaultEntity> = {
   diagnostics: DiagnosticIssue[];
   failedVaults: FailedVaultFetch[];
 };
+
+type ChainFetchResult<TVault extends VaultEntity> = {
+  vaults: ChainScopedVault<TVault>[];
+  diagnostics: DiagnosticIssue[];
+  failedVaults: FailedVaultFetch[];
+};
+
+function addChainMetadataToDiagnostics(
+  diagnostics: DiagnosticIssue[],
+  chainId: number
+): DiagnosticIssue[] {
+  return diagnostics.map((issue) => ({ ...issue, chainId }));
+}
+
+function addChainMetadataToFailedVaults(
+  failedVaults: FailedVaultFetch[],
+  chainId: number
+): FailedVaultFetch[] {
+  const chainName = CHAIN_NAMES[chainId] ?? String(chainId);
+  return failedVaults.map((failed) => ({
+    ...failed,
+    chainId,
+    chainName,
+  }));
+}
+
+async function fetchAllChainsVaultDiagnostics<TVault extends VaultEntity>(
+  fetcher: (chainId: number) => Promise<{
+    result: Array<TVault | undefined>;
+    diagnostics: DiagnosticIssue[];
+  }>
+): Promise<ChainFetchResult<TVault>> {
+  const settled = await Promise.all(
+    ALL_CHAIN_IDS.map(async (chainId) => {
+      const chainName = CHAIN_NAMES[chainId] ?? String(chainId);
+
+      try {
+        const fetched = await fetcher(chainId);
+        const resolved = resolveDiagnosticsWithFailedVaults(
+          fetched.result,
+          addChainMetadataToDiagnostics(fetched.diagnostics, chainId)
+        );
+
+        return {
+          vaults: resolved.vaults.map((vault) => ({
+            ...vault,
+            chainId,
+            chainName,
+          })),
+          diagnostics: resolved.diagnostics,
+          failedVaults: addChainMetadataToFailedVaults(resolved.failedVaults, chainId),
+        } satisfies ChainFetchResult<TVault>;
+      } catch (error) {
+        return {
+          vaults: [],
+          diagnostics: [
+            {
+              code: "SOURCE_UNAVAILABLE",
+              severity: "warning",
+              source: "vaultList",
+              chainId,
+              message: `Failed to load vaults for ${chainName}.`,
+              originalValue: error instanceof Error ? error.message : String(error),
+            },
+          ],
+          failedVaults: [],
+        } satisfies ChainFetchResult<TVault>;
+      }
+    })
+  );
+
+  return {
+    vaults: settled.flatMap((item) => item.vaults),
+    diagnostics: settled.flatMap((item) => item.diagnostics),
+    failedVaults: settled.flatMap((item) => item.failedVaults),
+  };
+}
 
 export function useAllVaults() {
   const { sdk, chainId, enabled } = useSdkReady();
@@ -570,21 +608,9 @@ export function useAllVaultsWithDiagnostics() {
   }>({
     queryKey: ["vaultsWithDiagnostics", chainId, "all"],
     queryFn: async () => {
-      const profile = createVaultListProfile(`vaultListPage:query:chain-${chainId}`);
-      let normalizeStarted = false;
-      profile.start("total");
-      try {
-        const fetched = await fetchLabeledVaultsWithDiagnostics(sdk!, chainId, profile);
-        profile.start("normalize");
-        normalizeStarted = true;
-        const rawVaults = fetched.result as Array<VaultEntity | undefined>;
-        return resolveDiagnosticsWithFailedVaults(rawVaults, fetched.diagnostics);
-      } finally {
-        if (normalizeStarted) {
-          profile.end("normalize");
-        }
-        profile.end("total");
-      }
+      const fetched = await fetchLabeledVaultsWithDiagnostics(sdk!, chainId);
+      const rawVaults = fetched.result as Array<VaultEntity | undefined>;
+      return resolveDiagnosticsWithFailedVaults(rawVaults, fetched.diagnostics);
     },
     enabled,
     staleTime: STALE_TIMES.vaultsWithDiagnostics,
@@ -592,52 +618,32 @@ export function useAllVaultsWithDiagnostics() {
 }
 
 export function useLabeledEVaultsWithDiagnostics(enabledOverride = true) {
-  const { sdk, chainId, enabled } = useSdkReady();
-  return useQuery<VaultListDiagnosticsResult<EVault>>({
-    queryKey: ["vaultsWithDiagnostics", chainId, "evaults"],
-    queryFn: async () => {
-      const profile = createVaultListProfile(`vaultListPage:evaults:chain-${chainId}`);
-      let normalizeStarted = false;
-      profile.start("total");
-      try {
-        const fetched = await fetchLabeledVaultsWithDiagnostics(sdk!, chainId, profile);
-        profile.start("normalize");
-        normalizeStarted = true;
-        const rawVaults = fetched.result as Array<EVault | undefined>;
-        return resolveDiagnosticsWithFailedVaults(rawVaults, fetched.diagnostics);
-      } finally {
-        if (normalizeStarted) {
-          profile.end("normalize");
-        }
-        profile.end("total");
-      }
-    },
+  const { sdk, enabled } = useSdkReady();
+  return useQuery<ChainFetchResult<EVault>>({
+    queryKey: ["vaultsWithDiagnostics", "allChains", "evaults"],
+    queryFn: async () =>
+      fetchAllChainsVaultDiagnostics<EVault>((chainId) =>
+        fetchLabeledVaultsWithDiagnostics(sdk!, chainId) as Promise<{
+          result: Array<EVault | undefined>;
+          diagnostics: DiagnosticIssue[];
+        }>
+      ),
     enabled: enabled && enabledOverride,
     staleTime: STALE_TIMES.vaultsWithDiagnostics,
   });
 }
 
 export function useAllEulerEarnVaultsWithDiagnostics(enabledOverride = true) {
-  const { sdk, chainId, enabled } = useSdkReady();
-  return useQuery<VaultListDiagnosticsResult<EulerEarn>>({
-    queryKey: ["vaultsWithDiagnostics", chainId, "eulerEarns"],
-    queryFn: async () => {
-      const profile = createVaultListProfile(`vaultListPage:eulerEarns:chain-${chainId}`);
-      let normalizeStarted = false;
-      profile.start("total");
-      try {
-        const fetched = await fetchEulerEarnVaultsWithDiagnostics(sdk!, chainId, profile);
-        profile.start("normalize");
-        normalizeStarted = true;
-        const rawVaults = fetched.result as Array<EulerEarn | undefined>;
-        return resolveDiagnosticsWithFailedVaults(rawVaults, fetched.diagnostics);
-      } finally {
-        if (normalizeStarted) {
-          profile.end("normalize");
-        }
-        profile.end("total");
-      }
-    },
+  const { sdk, enabled } = useSdkReady();
+  return useQuery<ChainFetchResult<EulerEarn>>({
+    queryKey: ["vaultsWithDiagnostics", "allChains", "eulerEarns"],
+    queryFn: async () =>
+      fetchAllChainsVaultDiagnostics<EulerEarn>((chainId) =>
+        fetchEulerEarnVaultsWithDiagnostics(sdk!, chainId) as Promise<{
+          result: Array<EulerEarn | undefined>;
+          diagnostics: DiagnosticIssue[];
+        }>
+      ),
     enabled: enabled && enabledOverride,
     staleTime: STALE_TIMES.vaultsWithDiagnostics,
   });
