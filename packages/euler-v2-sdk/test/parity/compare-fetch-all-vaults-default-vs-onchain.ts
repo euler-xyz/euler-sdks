@@ -741,11 +741,66 @@ async function fetchScenarioSnapshot(
   chainId: number,
 ): Promise<ScenarioSnapshot> {
   const sdk = await buildEulerSDK(sdkOptions);
-  const response = await sdk.vaultMetaService.fetchAllVaults(chainId, {
+  const fetchArgs = {
     options: {
       populateAll: true,
     },
-  });
+  } as const;
+
+  const response = await sdk.vaultMetaService
+    .fetchAllVaults(chainId, fetchArgs)
+    .catch(async (error) => {
+      const serviceFetches = await Promise.allSettled([
+        sdk.eVaultService.fetchAllVaults(chainId, fetchArgs),
+        sdk.eulerEarnService.fetchAllVaults(chainId, fetchArgs),
+        sdk.securitizeVaultService.fetchAllVaults(chainId, fetchArgs),
+      ]);
+
+      const fallbackErrors: DataIssueSnapshot[] = [
+        {
+          code: "SOURCE_UNAVAILABLE",
+          severity: "warning",
+          message: `vaultMetaService.fetchAllVaults() failed for ${scenario}; falling back to per-service fetches.`,
+          source: "compare-fetch-all-vaults",
+          paths: ["$"],
+          entityId: undefined,
+        },
+        {
+          code: "SOURCE_UNAVAILABLE",
+          severity: "warning",
+          message: error instanceof Error ? error.message : String(error),
+          source: "vaultMetaService",
+          paths: ["$"],
+          entityId: undefined,
+        },
+      ];
+
+      const fulfilled = serviceFetches.flatMap((entry, index) => {
+        if (entry.status === "fulfilled") return [entry.value];
+
+        const source =
+          index === 0
+            ? "eVaultService"
+            : index === 1
+              ? "eulerEarnService"
+              : "securitizeVaultService";
+        fallbackErrors.push({
+          code: "SOURCE_UNAVAILABLE",
+          severity: "warning",
+          message:
+            entry.reason instanceof Error ? entry.reason.message : String(entry.reason),
+          source,
+          paths: ["$"],
+          entityId: undefined,
+        });
+        return [];
+      });
+
+      return {
+        result: fulfilled.flatMap((entry) => entry.result),
+        errors: fallbackErrors,
+      };
+    });
 
   const vaultMap = toVaultMap(response.result);
 

@@ -21,6 +21,8 @@ import {
   RPC_URLS,
 } from "../config/chains.ts";
 
+const V3_PROXY_ENDPOINT = "/api/v3";
+const SWAP_PROXY_ENDPOINT = "/api/swap";
 
 interface SdkContextValue {
   sdk: EulerSDK | null;
@@ -54,23 +56,43 @@ export function SdkProvider({ children }: { children: ReactNode }) {
       buildQuery: sdkBuildQuery,
       accountServiceConfig: {
         adapter: useV3Adapters ? "v3" : "onchain",
+        v3AdapterConfig: {
+          endpoint: V3_PROXY_ENDPOINT,
+        },
       },
       eVaultServiceConfig: {
         adapter: useV3Adapters ? "v3" : "onchain",
+        v3AdapterConfig: {
+          endpoint: V3_PROXY_ENDPOINT,
+        },
       },
       eulerEarnServiceConfig: {
         adapter: useV3Adapters ? "v3" : "onchain",
+        v3AdapterConfig: {
+          endpoint: V3_PROXY_ENDPOINT,
+        },
       },
       intrinsicApyServiceConfig: {
         adapter: useV3Adapters ? "v3" : "direct",
+        v3AdapterConfig: {
+          endpoint: V3_PROXY_ENDPOINT,
+        },
+      },
+      backendConfig: {
+        endpoint: V3_PROXY_ENDPOINT,
+      },
+      rewardsServiceConfig: {
+        v3AdapterConfig: {
+          endpoint: V3_PROXY_ENDPOINT,
+        },
       },
       vaultTypeAdapterConfig: useV3Adapters
         ? {
-            endpoint: "https://v3staging.eul.dev",
+            endpoint: V3_PROXY_ENDPOINT,
           }
         : defaultVaultTypeSubgraphAdapterConfig,
       swapServiceConfig: {
-        swapApiUrl: "http://localhost:3002",
+        swapApiUrl: SWAP_PROXY_ENDPOINT,
       },
       plugins: [createPythPlugin({ buildQuery: sdkBuildQuery })],
     })

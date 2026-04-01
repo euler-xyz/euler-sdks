@@ -111,23 +111,30 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 			1,
 			this.config.maxAssetsPerRequest ?? DEFAULT_MAX_ASSETS_PER_REQUEST,
 		);
-
+		const chunks: Address[][] = [];
 		for (
 			let offset = 0;
 			offset < uniqueAssetAddresses.length;
 			offset += maxAssetsPerRequest
 		) {
-			const chunk = uniqueAssetAddresses.slice(
-				offset,
-				offset + maxAssetsPerRequest,
+			chunks.push(
+				uniqueAssetAddresses.slice(offset, offset + maxAssetsPerRequest),
 			);
-			const page = await this.queryV3IntrinsicApysPage(
-				this.config.endpoint,
-				chainId,
-				0,
-				Math.max(chunk.length, DEFAULT_PAGE_SIZE),
-				chunk,
-			);
+		}
+
+		const pages = await Promise.all(
+			chunks.map((chunk) =>
+				this.queryV3IntrinsicApysPage(
+					this.config.endpoint,
+					chainId,
+					0,
+					Math.max(chunk.length, DEFAULT_PAGE_SIZE),
+					chunk,
+				),
+			),
+		);
+
+		for (const page of pages) {
 			const rows = Array.isArray(page.data) ? page.data : [];
 			for (const [address, info] of this.mapRowsToApyMap(rows)) {
 				apyMap.set(address, info);

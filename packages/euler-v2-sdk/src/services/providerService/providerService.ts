@@ -39,6 +39,18 @@ const defaultChains = [
 	avalanche,
 ];
 
+const VIEM_HTTP_BATCH_CONFIG = {
+	batchSize: 100,
+	wait: 10,
+} as const;
+
+const VIEM_MULTICALL_BATCH_CONFIG = {
+	multicall: {
+		batchSize: 2048,
+		wait: 10,
+	},
+} as const;
+
 export interface IProviderService {
 	getProvider(chainId: number): PublicClient;
 	getSupportedChainIds(): number[];
@@ -59,7 +71,11 @@ export class ProviderService implements IProviderService {
 				}
 				return [
 					Number(chainId),
-					createPublicClient({ chain, transport: http(rpcUrl) }),
+					createPublicClient({
+						chain,
+						batch: VIEM_MULTICALL_BATCH_CONFIG,
+						transport: http(rpcUrl, { batch: VIEM_HTTP_BATCH_CONFIG }),
+					}),
 				];
 			}),
 		);

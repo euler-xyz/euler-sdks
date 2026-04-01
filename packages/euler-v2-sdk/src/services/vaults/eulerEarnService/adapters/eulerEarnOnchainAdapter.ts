@@ -219,16 +219,18 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 		const parsedVaults = await Promise.all(
 			vaults.map(async (vault, idx) => {
 				try {
-					const vaultInfoPromise = this.queryEulerEarnVaultInfoFull(
-						provider,
-						lensAddress,
-						vault,
-					);
-					const supplyApyWindow = await supplyApyWindowPromise;
+					const [vaultInfoResult, supplyApyWindow] = await Promise.allSettled([
+						this.queryEulerEarnVaultInfoFull(provider, lensAddress, vault),
+						supplyApyWindowPromise,
+					]);
+					if (vaultInfoResult.status === "rejected") {
+						throw vaultInfoResult.reason;
+					}
 					const supplyApyRatesPromise: Promise<
 						[PromiseSettledResult<bigint>, PromiseSettledResult<bigint>] | undefined
 					> =
-						supplyApyWindow instanceof Error
+						supplyApyWindow.status === "fulfilled" &&
+							supplyApyWindow.value instanceof Error
 							? Promise.resolve(undefined)
 							: Promise.allSettled([
 									this.queryEulerEarnConvertToAssets(
@@ -240,11 +242,16 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 										provider,
 										vault,
 										APY_SHARE_PROBE,
-										supplyApyWindow.oneHourAgoBlockNumber,
+										(
+											supplyApyWindow as PromiseFulfilledResult<{
+												currentBlockNumber: bigint;
+												oneHourAgoBlockNumber: bigint;
+												elapsedSeconds: number;
+											}>
+										).value.oneHourAgoBlockNumber,
 									),
 								]);
-					const result = await vaultInfoPromise;
-					const vaultInfo = result as unknown as EulerEarnVaultInfoFull;
+					const vaultInfo = vaultInfoResult.value as unknown as EulerEarnVaultInfoFull;
 					const conversionErrors: DataIssue[] = [];
 					const parsed = convertEulerEarnVaultInfoFullToIEulerEarn(
 						vaultInfo,
@@ -259,7 +266,10 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 							}),
 						),
 					);
-					if (supplyApyWindow instanceof Error) {
+					if (
+						supplyApyWindow.status === "rejected" ||
+						supplyApyWindow.value instanceof Error
+					) {
 						errors.push({
 							code: "SOURCE_UNAVAILABLE",
 							severity: "warning",
@@ -267,7 +277,12 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 							paths: [`$.vaults[${idx}].supplyApy1h`],
 							entityId: getAddress(vault),
 							source: "eulerEarnOnchainAdapter",
-							originalValue: supplyApyWindow.message,
+							originalValue:
+								supplyApyWindow.status === "rejected"
+									? supplyApyWindow.reason instanceof Error
+										? supplyApyWindow.reason.message
+										: String(supplyApyWindow.reason)
+									: supplyApyWindow.value.message,
 						});
 					} else {
 						const [currentRateResult, oldRateResult] =
@@ -280,7 +295,7 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 							parsed.supplyApy1h = this.computeSupplyApy1h(
 								currentRateResult.value,
 								oldRateResult.value,
-								supplyApyWindow.elapsedSeconds,
+								supplyApyWindow.value.elapsedSeconds,
 							);
 						} else {
 							const apyReadErrors = [currentRateResult, oldRateResult]

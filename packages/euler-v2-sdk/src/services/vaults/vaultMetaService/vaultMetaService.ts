@@ -184,6 +184,17 @@ export class VaultMetaService<TEntity = VaultEntity>
 		}
 	}
 
+	private getServiceLabel(service: RegisteredVaultService<TEntity>): string {
+		const registeredType = this.serviceToType.get(service);
+		if (registeredType) return registeredType;
+
+		const constructorName = (service as { constructor?: { name?: string } })
+			.constructor?.name;
+		if (constructorName && constructorName !== "Object") return constructorName;
+
+		return "unknownVaultService";
+	}
+
 	private async fetchVaultToService(
 		chainId: number,
 		vaultAddresses: Address[],
@@ -405,7 +416,7 @@ export class VaultMetaService<TEntity = VaultEntity>
 		chainId: number,
 		args?: FetchAllVaultsArgs<TEntity, VaultFetchOptions>,
 	): Promise<ServiceResult<(TEntity | undefined)[]>> {
-		const allFetched = await Promise.all(
+		const allFetched = await Promise.allSettled(
 			this.vaultServices.map((service) =>
 				service.fetchAllVaults(
 					chainId,
@@ -414,9 +425,35 @@ export class VaultMetaService<TEntity = VaultEntity>
 			),
 		);
 
+		const errors: DataIssue[] = [];
+		const results: ServiceResult<(TEntity | undefined)[]>[] = [];
+
+		for (const [index, entry] of allFetched.entries()) {
+			if (entry.status === "fulfilled") {
+				results.push(entry.value);
+				continue;
+			}
+
+			const service = this.vaultServices[index];
+			errors.push({
+				code: "SOURCE_UNAVAILABLE",
+				severity: "warning",
+				message: `Failed to fetch all vaults for ${service ? this.getServiceLabel(service) : "unknownVaultService"}.`,
+				paths: ["$"],
+				source: "vaultMetaService",
+				originalValue:
+					entry.reason instanceof Error
+						? entry.reason.message
+						: String(entry.reason),
+			});
+		}
+
 		return {
-			result: allFetched.flatMap((entry) => entry.result),
-			errors: compressDataIssues(allFetched.flatMap((entry) => entry.errors)),
+			result: results.flatMap((entry) => entry.result),
+			errors: compressDataIssues([
+				...errors,
+				...results.flatMap((entry) => entry.errors),
+			]),
 		};
 	}
 }

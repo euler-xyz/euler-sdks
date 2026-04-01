@@ -497,11 +497,11 @@ export function VaultListPage() {
   useEffect(() => {
     const nextLabel = `vaultListPage:coldLoad:chain-${chainId}`;
     const nextSummaryLabel = `vaultListPage:stages:chain-${chainId}`;
-    if ((sdkLoading || isLoading) && coldLoadTimerLabelRef.current === null) {
+    if (isLoading && coldLoadTimerLabelRef.current === null) {
       coldLoadTimerLabelRef.current = nextLabel;
       coldLoadSummaryLabelRef.current = nextSummaryLabel;
       coldLoadStartedAtRef.current = performance.now();
-      sdkReadyAtRef.current = sdkLoading ? null : coldLoadStartedAtRef.current;
+      sdkReadyAtRef.current = coldLoadStartedAtRef.current;
       queryReadyAtRef.current = null;
       console.time(nextLabel);
       return;
