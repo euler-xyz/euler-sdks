@@ -94,6 +94,15 @@ export interface IPriceService {
 		vault: ERC4626Vault,
 		path?: string,
 	): Promise<ServiceResult<PriceResult | undefined>>;
+	fetchAssetUsdPriceByAddress(
+		chainId: number,
+		assetAddress: Address,
+	): Promise<PriceResult | undefined>;
+	fetchAssetUsdPriceByAddressWithDiagnostics(
+		chainId: number,
+		assetAddress: Address,
+		path?: string,
+	): Promise<ServiceResult<PriceResult | undefined>>;
 	fetchCollateralUsdPrice(
 		liabilityVault: EVault,
 		collateralVault: ERC4626Vault,
@@ -315,6 +324,80 @@ export class PriceService implements IPriceService {
 	}
 
 	/**
+	 * Get a standalone asset price in USD by token address.
+	 * Tries backend first, then falls back to utilsLens.getAssetPriceInfo(asset, USD).
+	 */
+	async fetchAssetUsdPriceByAddress(
+		chainId: number,
+		assetAddress: Address,
+	): Promise<PriceResult | undefined> {
+		return (
+			await this.fetchAssetUsdPriceByAddressWithDiagnostics(
+				chainId,
+				assetAddress,
+			)
+		).result;
+	}
+
+	async fetchAssetUsdPriceByAddressWithDiagnostics(
+		chainId: number,
+		assetAddress: Address,
+		path = "$",
+	): Promise<ServiceResult<PriceResult | undefined>> {
+		const errors: DataIssue[] = [];
+		let backendError: unknown;
+		let backendAttempted = false;
+
+		// Try backend first
+		if (this.backendClient?.isConfigured) {
+			backendAttempted = true;
+			try {
+				const backendPrice = await this.backendClient.queryBackendPrice({
+					address: assetAddress,
+					chainId,
+				});
+				if (backendPrice) {
+					const result = backendPriceToPriceResult(backendPrice.price);
+					if (result) return { result, errors };
+				}
+			} catch (error) {
+				backendError = error;
+			}
+		}
+
+		const fallbackPrice = await this.fetchDirectAssetUsdPriceFromOracle(
+			chainId,
+			assetAddress,
+		);
+		if (backendAttempted && fallbackPrice) {
+			errors.push({
+				code: "FALLBACK_USED",
+				severity: "info",
+				message: "Backend asset/USD price unavailable; used on-chain fallback.",
+				paths: [path],
+				entityId: assetAddress,
+				source: "priceService",
+				originalValue:
+					backendError instanceof Error ? backendError.message : undefined,
+				normalizedValue: fallbackPrice.amountOutMid.toString(),
+			});
+		}
+
+		if (!fallbackPrice) {
+			errors.push({
+				code: "SOURCE_UNAVAILABLE",
+				severity: "error",
+				message: "Failed to get asset USD price.",
+				paths: [path],
+				entityId: assetAddress,
+				source: "priceService",
+			});
+		}
+
+		return { result: fallbackPrice, errors: compressDataIssues(errors) };
+	}
+
+	/**
 	 * Get collateral price in USD in the context of a liability vault.
 	 * Tries backend first, falls back to on-chain oracle.
 	 * Collateral pricing ALWAYS uses the liability vault's oracle for on-chain fallback.
@@ -466,11 +549,14 @@ export class PriceService implements IPriceService {
 			}
 		}
 
-		// EulerEarn / SecuritizeCollateral: use utilsLens (direct USD price)
-		const priceInfo = await this.fetchAssetPriceInfo(
-			vault.chainId,
-			vault.asset.address,
-		);
+		return this.fetchDirectAssetUsdPriceFromOracle(vault.chainId, vault.asset.address);
+	}
+
+	private async fetchDirectAssetUsdPriceFromOracle(
+		chainId: number,
+		assetAddress: Address,
+	): Promise<PriceResult | undefined> {
+		const priceInfo = await this.fetchAssetPriceInfo(chainId, assetAddress);
 
 		if (!priceInfo?.amountOutMid) return undefined;
 
