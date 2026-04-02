@@ -1486,14 +1486,12 @@ export class ExecutionService implements IExecutionService {
 				}
 			}
 			if (!decoded) {
-				return [
-					{
-						targetContract: item.targetContract,
-						onBehalfOfAccount: item.onBehalfOfAccount,
-						functionName: "Unknown",
-						args: {},
-					},
-				];
+				decodedBatchItems.push({
+					targetContract: item.targetContract,
+					onBehalfOfAccount: item.onBehalfOfAccount,
+					functionName: "Unknown",
+					args: {},
+				});
 			}
 		}
 

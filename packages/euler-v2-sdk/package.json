@@ -33,6 +33,7 @@
     "build": "tsc --project tsconfig.json",
     "build:watch": "tsc --project tsconfig.json --watch",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
     "format": "biome format --write src",
     "lint": "biome lint src",
     "lint:fix": "biome lint --write src",

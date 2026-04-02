@@ -1858,6 +1858,7 @@ packages:
 
   euler-v2-sdk@file:../..:
     resolution: {directory: ../.., type: directory}
+    engines: {node: '>=18'}
 
   eventemitter2@6.4.9:
     resolution: {integrity: sha512-JEPTiaOt9f04oa6NOkc4aH+nVp5I3wEjpHbIPqfgCdD5v5bUzy7xQqwcVO2aDQgOWhI28da57HksMrzK9HlRxg==}
