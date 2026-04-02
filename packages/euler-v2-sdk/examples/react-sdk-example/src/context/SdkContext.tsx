@@ -51,7 +51,7 @@ export function SdkProvider({ children }: { children: ReactNode }) {
     setSdk(null);
     resetQueryProfile();
 
-    buildEulerSDK({
+    const sdkConfig = {
       rpcUrls: RPC_URLS,
       v3ApiKey: import.meta.env.VITE_EULER_V3_API_KEY,
       buildQuery: sdkBuildQuery,
@@ -79,10 +79,8 @@ export function SdkProvider({ children }: { children: ReactNode }) {
           endpoint: V3_API_ENDPOINT,
         },
       },
-      backendConfig: {
-        endpoint: V3_API_ENDPOINT,
-      },
       rewardsServiceConfig: {
+        adapter: useV3Adapters ? "v3" : "direct",
         v3AdapterConfig: {
           endpoint: V3_API_ENDPOINT,
         },
@@ -96,7 +94,16 @@ export function SdkProvider({ children }: { children: ReactNode }) {
         swapApiUrl: SWAP_PROXY_ENDPOINT,
       },
       plugins: [createPythPlugin({ buildQuery: sdkBuildQuery })],
-    })
+      ...(useV3Adapters
+        ? {
+            backendConfig: {
+              endpoint: V3_API_ENDPOINT,
+            },
+          }
+        : {}),
+    };
+
+    buildEulerSDK(sdkConfig)
       .then((instance) => {
         if (!cancelled) {
           setSdk(instance);

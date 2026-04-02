@@ -16,6 +16,13 @@ export const CHAIN_NAMES: Record<number, string> = {
   80094: "Berachain",
 };
 
+export const ALL_CHAIN_IDS = Object.keys(CHAIN_NAMES)
+  .map(Number)
+  .sort((a, b) => a - b);
+
+// Verified against the configured V3 endpoint on 2026-04-02.
+export const DEFAULT_ENABLED_V3_CHAIN_IDS = [1, 143, 146, 8453, 42161];
+
 export const DEFAULT_CHAIN = 1;
 
 // Public RPC fallbacks — override per chain with VITE_RPC_URL_<chainId> in .env

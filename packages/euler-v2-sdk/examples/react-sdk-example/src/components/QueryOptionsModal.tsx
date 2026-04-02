@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ALL_CHAIN_IDS, CHAIN_NAMES } from "../config/chains.ts";
 import {
   getQueryOptionsSettings,
   hasActiveQueryOptionsOverrides,
@@ -16,6 +17,7 @@ type Props = {
 
 type FormState = {
   adapterMode: SdkAdapterMode;
+  enabledChainIds: number[];
   showQueryProfiler: boolean;
   disableCache: boolean;
   staleTimeMs: string;
@@ -30,6 +32,7 @@ type FormState = {
 function toFormState(settings: QueryOptionsSettings): FormState {
   return {
     adapterMode: settings.adapterMode,
+    enabledChainIds: settings.enabledChainIds,
     showQueryProfiler: settings.showQueryProfiler,
     disableCache: settings.disableCache,
     staleTimeMs: settings.staleTimeMs === null ? "" : String(settings.staleTimeMs),
@@ -65,6 +68,7 @@ function toSettings(form: FormState): QueryOptionsSettings {
 
   return {
     adapterMode: form.adapterMode,
+    enabledChainIds: [...form.enabledChainIds].sort((a, b) => a - b),
     showQueryProfiler: form.showQueryProfiler,
     disableCache: form.disableCache,
     staleTimeMs: parseOptionalNumber(form.staleTimeMs, "Stale time"),
@@ -87,9 +91,18 @@ export function QueryOptionsModal({ open, onClose }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    setForm(toFormState(getQueryOptionsSettings()));
-    setError(null);
-    setActiveTab("general");
+
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setForm(toFormState(getQueryOptionsSettings()));
+      setError(null);
+      setActiveTab("general");
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [open, settings]);
 
   if (!open) return null;
@@ -183,6 +196,45 @@ export function QueryOptionsModal({ open, onClose }: Props) {
                   </span>
                 </span>
               </label>
+
+              <div className="query-options-field" style={{ gridColumn: "1 / -1" }}>
+                <span>Enabled chains for all-chain vault queries</span>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                    gap: 12,
+                    marginTop: 12,
+                  }}
+                >
+                  {ALL_CHAIN_IDS.map((chainId) => {
+                    const checked = form.enabledChainIds.includes(chainId);
+                    const disableUncheck =
+                      checked && form.enabledChainIds.length === 1;
+                    return (
+                      <label key={chainId} className="query-options-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={disableUncheck}
+                          onChange={(event) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              enabledChainIds: event.target.checked
+                                ? [...prev.enabledChainIds, chainId].sort((a, b) => a - b)
+                                : prev.enabledChainIds.filter((id) => id !== chainId),
+                            }))
+                          }
+                        />
+                        <span>{CHAIN_NAMES[chainId] ?? `Chain ${chainId}`}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="query-options-summary" style={{ marginTop: 12 }}>
+                  Applies to the app&apos;s all-chain EVault and Euler Earn lists.
+                </div>
+              </div>
             </div>
           </>
         ) : (

@@ -1,5 +1,9 @@
 import type { NetworkMode } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
+import {
+  ALL_CHAIN_IDS,
+  DEFAULT_ENABLED_V3_CHAIN_IDS,
+} from "../config/chains.ts";
 
 const STORAGE_KEY = "sdk-query-profiler-react-query-options";
 
@@ -14,6 +18,7 @@ export type SdkAdapterMode = "v3" | "onchain";
 
 export interface QueryOptionsSettings {
   adapterMode: SdkAdapterMode;
+  enabledChainIds: number[];
   showQueryProfiler: boolean;
   disableCache: boolean;
   staleTimeMs: number | null;
@@ -32,6 +37,7 @@ export interface QueryBuildOverrides {
 
 const DEFAULT_SETTINGS: QueryOptionsSettings = {
   adapterMode: "v3",
+  enabledChainIds: DEFAULT_ENABLED_V3_CHAIN_IDS,
   showQueryProfiler: true,
   disableCache: false,
   staleTimeMs: null,
@@ -80,6 +86,24 @@ function asFiniteNumber(value: unknown): number | null {
   return value;
 }
 
+function sanitizeEnabledChainIds(value: unknown): number[] {
+  if (!Array.isArray(value)) return DEFAULT_SETTINGS.enabledChainIds;
+
+  const allowed = new Set(ALL_CHAIN_IDS);
+  const selected = Array.from(
+    new Set(
+      value.filter(
+        (candidate): candidate is number =>
+          typeof candidate === "number" &&
+          Number.isInteger(candidate) &&
+          allowed.has(candidate)
+      )
+    )
+  ).sort((a, b) => a - b);
+
+  return selected.length > 0 ? selected : DEFAULT_SETTINGS.enabledChainIds;
+}
+
 function sanitizeSettings(value: unknown): QueryOptionsSettings {
   if (!value || typeof value !== "object") return DEFAULT_SETTINGS;
 
@@ -106,6 +130,7 @@ function sanitizeSettings(value: unknown): QueryOptionsSettings {
       candidate.adapterMode === "onchain" || candidate.adapterMode === "v3"
         ? candidate.adapterMode
         : DEFAULT_SETTINGS.adapterMode,
+    enabledChainIds: sanitizeEnabledChainIds(candidate.enabledChainIds),
     showQueryProfiler:
       typeof candidate.showQueryProfiler === "boolean"
         ? candidate.showQueryProfiler
@@ -172,6 +197,18 @@ export function useSdkAdapterMode() {
   );
 }
 
+function currentEnabledChainIdsSnapshot() {
+  return currentSettings.enabledChainIds;
+}
+
+export function useEnabledChainIds() {
+  return useSyncExternalStore(
+    subscribe,
+    currentEnabledChainIdsSnapshot,
+    currentEnabledChainIdsSnapshot
+  );
+}
+
 function currentShowQueryProfilerSnapshot() {
   return currentSettings.showQueryProfiler;
 }
@@ -206,6 +243,10 @@ export function hasActiveQueryOptionsOverrides(
 ): boolean {
   return (
     settings.adapterMode !== DEFAULT_SETTINGS.adapterMode ||
+    settings.enabledChainIds.length !== DEFAULT_SETTINGS.enabledChainIds.length ||
+    settings.enabledChainIds.some(
+      (chainId, index) => chainId !== DEFAULT_SETTINGS.enabledChainIds[index]
+    ) ||
     settings.showQueryProfiler !== DEFAULT_SETTINGS.showQueryProfiler ||
     settings.disableCache ||
     settings.staleTimeMs !== null ||

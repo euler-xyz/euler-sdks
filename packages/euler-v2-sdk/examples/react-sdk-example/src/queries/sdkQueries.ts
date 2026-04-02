@@ -20,7 +20,7 @@ import { getAddress, isAddress, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import { recordExecution, recordFailure, registerKnownQueries } from "./queryProfileStore.ts";
 import { interceptSdkDataIfEnabled, isQueryIntercepted } from "./dataInterceptorStore.ts";
-import { getQueryBuildOverrides } from "./queryOptionsStore.ts";
+import { getQueryBuildOverrides, useEnabledChainIds } from "./queryOptionsStore.ts";
 import { isEVault } from "euler-v2-sdk";
 import { CHAIN_NAMES } from "../config/chains.ts";
 
@@ -158,10 +158,6 @@ const STALE_TIMES = {
 } satisfies Partial<Record<EulerSDKQueryName, number>>;
 
 const DEFAULT_STALE_TIME = MINUTE;
-const ALL_CHAIN_IDS = Object.keys(CHAIN_NAMES)
-  .map(Number)
-  .sort((a, b) => a - b);
-
 function withDataInterceptor(
   queryName: string,
   fetcher: (...args: unknown[]) => Promise<unknown>
@@ -172,7 +168,7 @@ function withDataInterceptor(
   };
 }
 
-export const sdkBuildQuery: BuildQueryFn = (queryName, fn, target) => {
+export const sdkBuildQuery: BuildQueryFn = (queryName, fn) => {
   const staleTime = STALE_TIMES[queryName as EulerSDKQueryName] ?? DEFAULT_STALE_TIME;
   registerKnownQueries([queryName]);
   const interceptedFetcher = withDataInterceptor(queryName, (...args) =>
@@ -532,13 +528,14 @@ function addChainMetadataToFailedVaults(
 }
 
 async function fetchAllChainsVaultDiagnostics<TVault extends VaultEntity>(
+  chainIds: number[],
   fetcher: (chainId: number) => Promise<{
     result: Array<TVault | undefined>;
     diagnostics: DiagnosticIssue[];
   }>
 ): Promise<ChainFetchResult<TVault>> {
   const settled = await Promise.all(
-    ALL_CHAIN_IDS.map(async (chainId) => {
+    chainIds.map(async (chainId) => {
       const chainName = CHAIN_NAMES[chainId] ?? String(chainId);
 
       try {
@@ -619,10 +616,11 @@ export function useAllVaultsWithDiagnostics() {
 
 export function useLabeledEVaultsWithDiagnostics(enabledOverride = true) {
   const { sdk, enabled } = useSdkReady();
+  const enabledChainIds = useEnabledChainIds();
   return useQuery<ChainFetchResult<EVault>>({
-    queryKey: ["vaultsWithDiagnostics", "allChains", "evaults"],
+    queryKey: ["vaultsWithDiagnostics", "allChains", "evaults", enabledChainIds],
     queryFn: async () =>
-      fetchAllChainsVaultDiagnostics<EVault>((chainId) =>
+      fetchAllChainsVaultDiagnostics<EVault>(enabledChainIds, (chainId) =>
         fetchLabeledVaultsWithDiagnostics(sdk!, chainId) as Promise<{
           result: Array<EVault | undefined>;
           diagnostics: DiagnosticIssue[];
@@ -635,10 +633,11 @@ export function useLabeledEVaultsWithDiagnostics(enabledOverride = true) {
 
 export function useAllEulerEarnVaultsWithDiagnostics(enabledOverride = true) {
   const { sdk, enabled } = useSdkReady();
+  const enabledChainIds = useEnabledChainIds();
   return useQuery<ChainFetchResult<EulerEarn>>({
-    queryKey: ["vaultsWithDiagnostics", "allChains", "eulerEarns"],
+    queryKey: ["vaultsWithDiagnostics", "allChains", "eulerEarns", enabledChainIds],
     queryFn: async () =>
-      fetchAllChainsVaultDiagnostics<EulerEarn>((chainId) =>
+      fetchAllChainsVaultDiagnostics<EulerEarn>(enabledChainIds, (chainId) =>
         fetchEulerEarnVaultsWithDiagnostics(sdk!, chainId) as Promise<{
           result: Array<EulerEarn | undefined>;
           diagnostics: DiagnosticIssue[];
