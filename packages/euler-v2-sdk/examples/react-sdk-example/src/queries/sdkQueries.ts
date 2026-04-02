@@ -482,15 +482,15 @@ async function fetchEulerEarnVaultsWithDiagnostics(
   sdk: EulerSDK,
   chainId: number
 ) {
+  const addresses = await fetchVaultAddressesFromLabelProducts(sdk, chainId);
+
   const res = unwrapServiceResultWithDiagnostics(
-    "eulerEarnService.fetchAllVaults",
-    await sdk.eulerEarnService.fetchAllVaults(chainId, {
-      options: {
-        populateMarketPrices: true,
-        populateRewards: true,
-        populateIntrinsicApy: true,
-        populateStrategyVaults: true,
-      },
+    "eulerEarnService.fetchVaults",
+    await sdk.eulerEarnService.fetchVaults(chainId, addresses, {
+      populateMarketPrices: true,
+      populateRewards: true,
+      populateIntrinsicApy: true,
+      populateStrategyVaults: true,
     })
   );
   return res;
