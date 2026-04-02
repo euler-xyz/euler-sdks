@@ -89,7 +89,7 @@ export const defaultEulerLabelsURLAdapterConfig: EulerLabelsURLAdapterConfig = {
 	getEulerLabelsPointsUrl: (chainId: number) =>
 		`${EULER_LABELS_BASE}/${chainId}/points.json`,
 	getEulerLabelsEarnVaultsUrl: (chainId: number) =>
-		`${EULER_LABELS_BASE}/${chainId}/eulerEarnVaults.json`,
+		`${EULER_LABELS_BASE}/${chainId}/earn-vaults.json`,
 	getEulerLabelsLogoUrl: (filename: string) =>
 		`${EULER_LABELS_BASE}/logo/${filename}`,
 };
