@@ -62,6 +62,8 @@ function serializeArg(arg: unknown): unknown {
 }
 
 const MINUTE = 60_000;
+const EULER_LABELS_BASE =
+  "https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master";
 
 const STALE_TIMES = {
   // Static metadata — essentially never changes
@@ -460,6 +462,73 @@ async function fetchVaultAddressesFromLabelProducts(
   return addresses;
 }
 
+async function fetchEarnVaultAddressesFromLabels(
+  chainId: number
+): Promise<Address[]> {
+  const response = await fetch(`${EULER_LABELS_BASE}/${chainId}/earn-vaults.json`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch Euler labels earn vaults: ${response.statusText}`);
+  }
+
+  const payload = (await response.json()) as unknown;
+  if (!Array.isArray(payload)) return [];
+
+  const seen = new Set<string>();
+  const addresses: Address[] = [];
+
+  for (const entry of payload) {
+    const rawAddress =
+      typeof entry === "string"
+        ? entry
+        : typeof entry === "object" &&
+            entry !== null &&
+            "address" in entry &&
+            typeof entry.address === "string"
+          ? entry.address
+          : undefined;
+
+    if (!rawAddress) continue;
+
+    try {
+      const normalized = getAddress(rawAddress);
+      const key = normalized.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      addresses.push(normalized);
+    } catch {
+      continue;
+    }
+  }
+
+  return addresses;
+}
+
+function logVaultFetchResults(
+  kind: "eVault" | "eulerEarn",
+  chainId: number,
+  addresses: Address[],
+  result: Array<VaultEntity | undefined>,
+  diagnostics: DiagnosticIssue[]
+) {
+  console.log(`[react-sdk-example] ${kind} fetch`, {
+    chainId,
+    requestedCount: addresses.length,
+    requestedAddresses: addresses,
+    resolvedCount: result.filter((vault): vault is VaultEntity => vault !== undefined).length,
+    resolvedVaults: result
+      .filter((vault): vault is VaultEntity => vault !== undefined)
+      .map((vault) => ({
+        address: vault.address,
+        name: vault.name,
+        symbol: vault.symbol,
+      })),
+    missingAddresses: result
+      .map((vault, index) => (vault === undefined ? addresses[index] : undefined))
+      .filter((address): address is Address => address !== undefined),
+    diagnostics,
+  });
+}
+
 async function fetchLabeledVaultsWithDiagnostics(
   sdk: EulerSDK,
   chainId: number
@@ -475,6 +544,7 @@ async function fetchLabeledVaultsWithDiagnostics(
       populateLabels: true,
     })
   );
+  logVaultFetchResults("eVault", chainId, addresses, res.result as Array<VaultEntity | undefined>, res.diagnostics);
   return res;
 }
 
@@ -482,7 +552,7 @@ async function fetchEulerEarnVaultsWithDiagnostics(
   sdk: EulerSDK,
   chainId: number
 ) {
-  const addresses = await fetchVaultAddressesFromLabelProducts(sdk, chainId);
+  const addresses = await fetchEarnVaultAddressesFromLabels(chainId);
 
   const res = unwrapServiceResultWithDiagnostics(
     "eulerEarnService.fetchVaults",
@@ -491,8 +561,10 @@ async function fetchEulerEarnVaultsWithDiagnostics(
       populateRewards: true,
       populateIntrinsicApy: true,
       populateStrategyVaults: true,
+      populateLabels: true,
     })
   );
+  logVaultFetchResults("eulerEarn", chainId, addresses, res.result as Array<VaultEntity | undefined>, res.diagnostics);
   return res;
 }
 

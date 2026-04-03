@@ -21,6 +21,7 @@ const SECONDS_IN_YEAR = 365 * 24 * 60 * 60;
 const TARGET_TIME_AGO_SECONDS = 60 * 60;
 const SAMPLE_DISTANCE_BLOCKS = 100;
 const APY_SHARE_PROBE = 10n ** 18n;
+const EULER_EARN_FETCH_BATCH_SIZE = 4;
 
 const verifiedArrayAbi = [
 	{
@@ -216,95 +217,75 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 		const supplyApyWindowPromise = this.getSupplyApyWindow(provider).catch(
 			(error) => error,
 		);
-		const parsedVaults = await Promise.all(
-			vaults.map(async (vault, idx) => {
-				try {
-					const [vaultInfoResult, supplyApyWindow] = await Promise.allSettled([
-						this.queryEulerEarnVaultInfoFull(provider, lensAddress, vault),
-						supplyApyWindowPromise,
-					]);
-					if (vaultInfoResult.status === "rejected") {
-						throw vaultInfoResult.reason;
-					}
-					const supplyApyRatesPromise: Promise<
-						[PromiseSettledResult<bigint>, PromiseSettledResult<bigint>] | undefined
-					> =
-						supplyApyWindow.status === "fulfilled" &&
-							supplyApyWindow.value instanceof Error
-							? Promise.resolve(undefined)
-							: Promise.allSettled([
-									this.queryEulerEarnConvertToAssets(
-										provider,
-										vault,
-										APY_SHARE_PROBE,
-									),
-									this.queryEulerEarnConvertToAssets(
-										provider,
-										vault,
-										APY_SHARE_PROBE,
-										(
-											supplyApyWindow as PromiseFulfilledResult<{
-												currentBlockNumber: bigint;
-												oneHourAgoBlockNumber: bigint;
-												elapsedSeconds: number;
-											}>
-										).value.oneHourAgoBlockNumber,
-									),
-								]);
-					const vaultInfo = vaultInfoResult.value as unknown as EulerEarnVaultInfoFull;
-					const conversionErrors: DataIssue[] = [];
-					const parsed = convertEulerEarnVaultInfoFullToIEulerEarn(
-						vaultInfo,
-						chainId,
-						conversionErrors,
-					);
-					errors.push(
-						...prefixDataIssues(conversionErrors, `$.vaults[${idx}]`).map(
-							(issue) => ({
-								...issue,
-								entityId: issue.entityId ?? getAddress(vault),
-							}),
-						),
-					);
-					if (
-						supplyApyWindow.status === "rejected" ||
-						supplyApyWindow.value instanceof Error
-					) {
-						errors.push({
-							code: "SOURCE_UNAVAILABLE",
-							severity: "warning",
-							message: "Failed to populate 1h EulerEarn APY from onchain exchange rates.",
-							paths: [`$.vaults[${idx}].supplyApy1h`],
-							entityId: getAddress(vault),
-							source: "eulerEarnOnchainAdapter",
-							originalValue:
-								supplyApyWindow.status === "rejected"
-									? supplyApyWindow.reason instanceof Error
-										? supplyApyWindow.reason.message
-										: String(supplyApyWindow.reason)
-									: supplyApyWindow.value.message,
-						});
-					} else {
-						const [currentRateResult, oldRateResult] =
-							(await supplyApyRatesPromise)!;
-
+		const parsedVaults: (IEulerEarn | undefined)[] = [];
+		for (
+			let batchStart = 0;
+			batchStart < vaults.length;
+			batchStart += EULER_EARN_FETCH_BATCH_SIZE
+		) {
+			const batch = vaults.slice(
+				batchStart,
+				batchStart + EULER_EARN_FETCH_BATCH_SIZE,
+			);
+			const batchResults = await Promise.all(
+				batch.map(async (vault, batchIdx) => {
+					const idx = batchStart + batchIdx;
+					try {
+						const [vaultInfoResult, supplyApyWindow] = await Promise.allSettled([
+							this.queryEulerEarnVaultInfoFull(provider, lensAddress, vault),
+							supplyApyWindowPromise,
+						]);
+						if (vaultInfoResult.status === "rejected") {
+							throw vaultInfoResult.reason;
+						}
+						const supplyApyRatesPromise: Promise<
+							[
+								PromiseSettledResult<bigint>,
+								PromiseSettledResult<bigint>,
+							] | undefined
+						> =
+							supplyApyWindow.status === "fulfilled" &&
+								supplyApyWindow.value instanceof Error
+								? Promise.resolve(undefined)
+								: Promise.allSettled([
+										this.queryEulerEarnConvertToAssets(
+											provider,
+											vault,
+											APY_SHARE_PROBE,
+										),
+										this.queryEulerEarnConvertToAssets(
+											provider,
+											vault,
+											APY_SHARE_PROBE,
+											(
+												supplyApyWindow as PromiseFulfilledResult<{
+													currentBlockNumber: bigint;
+													oneHourAgoBlockNumber: bigint;
+													elapsedSeconds: number;
+												}>
+											).value.oneHourAgoBlockNumber,
+										),
+									]);
+						const vaultInfo =
+							vaultInfoResult.value as unknown as EulerEarnVaultInfoFull;
+						const conversionErrors: DataIssue[] = [];
+						const parsed = convertEulerEarnVaultInfoFullToIEulerEarn(
+							vaultInfo,
+							chainId,
+							conversionErrors,
+						);
+						errors.push(
+							...prefixDataIssues(conversionErrors, `$.vaults[${idx}]`).map(
+								(issue) => ({
+									...issue,
+									entityId: issue.entityId ?? getAddress(vault),
+								}),
+							),
+						);
 						if (
-							currentRateResult.status === "fulfilled" &&
-							oldRateResult.status === "fulfilled"
+							supplyApyWindow.status === "rejected" ||
+							supplyApyWindow.value instanceof Error
 						) {
-							parsed.supplyApy1h = this.computeSupplyApy1h(
-								currentRateResult.value,
-								oldRateResult.value,
-								supplyApyWindow.value.elapsedSeconds,
-							);
-						} else {
-							const apyReadErrors = [currentRateResult, oldRateResult]
-								.filter((result) => result.status === "rejected")
-								.map((result) =>
-									result.reason instanceof Error
-										? result.reason.message
-										: String(result.reason),
-								);
 							errors.push({
 								code: "SOURCE_UNAVAILABLE",
 								severity: "warning",
@@ -313,26 +294,64 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 								paths: [`$.vaults[${idx}].supplyApy1h`],
 								entityId: getAddress(vault),
 								source: "eulerEarnOnchainAdapter",
-								originalValue: apyReadErrors.join(" | "),
+								originalValue:
+									supplyApyWindow.status === "rejected"
+										? supplyApyWindow.reason instanceof Error
+											? supplyApyWindow.reason.message
+											: String(supplyApyWindow.reason)
+										: supplyApyWindow.value.message,
 							});
+						} else {
+							const [currentRateResult, oldRateResult] =
+								(await supplyApyRatesPromise)!;
+
+							if (
+								currentRateResult.status === "fulfilled" &&
+								oldRateResult.status === "fulfilled"
+							) {
+								parsed.supplyApy1h = this.computeSupplyApy1h(
+									currentRateResult.value,
+									oldRateResult.value,
+									supplyApyWindow.value.elapsedSeconds,
+								);
+							} else {
+								const apyReadErrors = [currentRateResult, oldRateResult]
+									.filter((result) => result.status === "rejected")
+									.map((result) =>
+										result.reason instanceof Error
+											? result.reason.message
+											: String(result.reason),
+									);
+								errors.push({
+									code: "SOURCE_UNAVAILABLE",
+									severity: "warning",
+									message:
+										"Failed to populate 1h EulerEarn APY from onchain exchange rates.",
+									paths: [`$.vaults[${idx}].supplyApy1h`],
+									entityId: getAddress(vault),
+									source: "eulerEarnOnchainAdapter",
+									originalValue: apyReadErrors.join(" | "),
+								});
+							}
 						}
+						return new EulerEarn(parsed);
+					} catch (error) {
+						errors.push({
+							code: "SOURCE_UNAVAILABLE",
+							severity: "warning",
+							message: `Failed to fetch EulerEarn vault ${getAddress(vault)}.`,
+							paths: [`$.vaults[${idx}]`],
+							entityId: getAddress(vault),
+							source: "eulerEarnLens",
+							originalValue:
+								error instanceof Error ? error.message : String(error),
+						});
+						return undefined;
 					}
-					return new EulerEarn(parsed);
-				} catch (error) {
-					errors.push({
-						code: "SOURCE_UNAVAILABLE",
-						severity: "warning",
-						message: `Failed to fetch EulerEarn vault ${getAddress(vault)}.`,
-						paths: [`$.vaults[${idx}]`],
-						entityId: getAddress(vault),
-						source: "eulerEarnLens",
-						originalValue:
-							error instanceof Error ? error.message : String(error),
-					});
-					return undefined;
-				}
-			}),
-		);
+				}),
+			);
+			parsedVaults.push(...batchResults);
+		}
 
 		return { result: parsedVaults, errors };
 	}
