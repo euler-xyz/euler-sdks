@@ -9,6 +9,7 @@ import {
 import { useSDK } from "../context/SdkContext.tsx";
 import { useAllVaults } from "../queries/sdkQueries.ts";
 import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
+import { getEffectiveBorrowApy, getEffectiveSupplyApy } from "../utils/apy.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 
 type BorrowSortKey =
@@ -49,18 +50,11 @@ function multiple(value: number | undefined): string {
 }
 
 function calcVaultSupplyApy(vault: EVault): number {
-  return (
-    Number(vault.interestRates.supplyAPY) +
-    (vault.rewards?.totalRewardsApr ?? 0) +
-    (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0)
-  );
+  return getEffectiveSupplyApy(vault);
 }
 
 function calcVaultBorrowApy(vault: EVault): number {
-  return (
-    Number(vault.interestRates.borrowAPY) +
-    (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0)
-  );
+  return getEffectiveBorrowApy(vault);
 }
 
 function normalizeLltv(value: number | bigint): number {

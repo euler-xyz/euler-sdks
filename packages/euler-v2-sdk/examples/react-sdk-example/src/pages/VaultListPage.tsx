@@ -26,6 +26,7 @@ import {
   createEntityDiagnosticIndex,
   formatDiagnosticIssues,
 } from "../utils/diagnosticIndex.ts";
+import { getEffectiveBorrowApy, getEffectiveSupplyApy } from "../utils/apy.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
@@ -68,9 +69,9 @@ function getEVaultSortValue(vault: ChainScopedVault<EVault>, key: EVaultSortKey)
       return amt * price;
     }
     case "supplyAPY":
-      return Number(vault.interestRates.supplyAPY) + (vault.rewards?.totalRewardsApr ?? 0) + (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0);
+      return getEffectiveSupplyApy(vault);
     case "borrowAPY":
-      return Number(vault.interestRates.borrowAPY);
+      return getEffectiveBorrowApy(vault);
     case "usdPrice":
       return vault.marketPriceUsd !== undefined ? Number(vault.marketPriceUsd) : -1;
     case "collaterals":
@@ -884,6 +885,9 @@ export function VaultListPage() {
                             {renderFieldIcon(vault.chainId, vault.address, ["$.interestRates.borrowAPY"])}
                             <ApyCell
                               baseApy={Number(vault.interestRates.borrowAPY)}
+                              rewards={vault.rewards}
+                              intrinsicApy={vault.intrinsicApy}
+                              action="BORROW"
                             />
                           </td>
                           <td>

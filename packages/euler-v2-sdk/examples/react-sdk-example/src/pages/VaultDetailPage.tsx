@@ -11,7 +11,6 @@ import {
 } from "../queries/sdkQueries.ts";
 import {
   formatBigInt,
-  formatAPY,
   formatPercent,
   formatPriceUsd,
   formatPriceInUnit,
@@ -309,7 +308,12 @@ export function VaultDetailPage() {
         <div className="detail-item">
           <div className="label">Borrow APY</div>
           <div className="value">
-            {formatAPY(vault.interestRates.borrowAPY)}
+            <ApyCell
+              action="BORROW"
+              baseApy={Number(vault.interestRates.borrowAPY)}
+              rewards={vault.rewards}
+              intrinsicApy={vault.intrinsicApy}
+            />
           </div>
           {renderDiagnostics(["$.interestRates.borrowAPY"])}
         </div>

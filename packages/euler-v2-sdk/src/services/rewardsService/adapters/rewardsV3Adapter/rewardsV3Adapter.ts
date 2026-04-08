@@ -209,21 +209,74 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 		row: V3RewardsApyRow,
 	): void {
 		const vaultAddress = normalizeAddress(row.vault ?? row.vaultAddress);
+		if (!vaultAddress) return;
+
+		const key = vaultAddress.toLowerCase();
+		let info = map.get(key);
+		if (!info) {
+			info = { totalRewardsApr: 0, campaigns: [] };
+			map.set(key, info);
+		}
+
+		const addCampaign = (campaign: RewardCampaign): void => {
+			const dedupeKey = `${campaign.source}:${campaign.campaignId}`;
+			const exists = info!.campaigns.some(
+				(existing) =>
+					`${existing.source}:${existing.campaignId}` === dedupeKey,
+			);
+			if (exists) return;
+
+			info!.campaigns.push(campaign);
+			info!.totalRewardsApr += campaign.apr;
+		};
+
+		if (Array.isArray(row.campaigns) && row.campaigns.length > 0) {
+			for (const campaignRow of row.campaigns) {
+				const provider = normalizeProvider(
+					campaignRow.provider ?? campaignRow.source,
+				);
+				const action = normalizeAction(campaignRow.campaignType);
+				const apr =
+					typeof campaignRow.apr === "number"
+						? campaignRow.apr / 100
+						: undefined;
+				const rewardTokenAddress = normalizeAddress(
+					campaignRow.rewardToken?.address,
+				);
+				const rewardTokenSymbol = campaignRow.rewardToken?.symbol;
+
+				if (!provider || !action || !apr || !rewardTokenSymbol) continue;
+
+				addCampaign({
+					campaignId:
+						campaignRow.id ??
+						`${provider}:${action}:${vaultAddress}:${rewardTokenAddress ?? rewardTokenSymbol}`,
+					source: provider,
+					action,
+					apr,
+					rewardTokenAddress,
+					rewardTokenSymbol,
+					endTimestamp: campaignRow.endTimestamp
+						? Date.parse(campaignRow.endTimestamp)
+						: undefined,
+				});
+			}
+
+			return;
+		}
+
 		const provider = normalizeProvider(row.provider ?? row.source);
-		const action = normalizeAction(row.action);
+		const action = normalizeAction(row.action ?? row.campaignType);
 		const apr = typeof row.apr === "number" ? row.apr / 100 : undefined;
-
-		if (!vaultAddress || !provider || !action || !apr) return;
-
 		const rewardTokenAddress = normalizeAddress(
 			row.rewardToken?.address ?? row.rewardTokenAddress ?? row.token?.address,
 		);
 		const rewardTokenSymbol =
 			row.rewardToken?.symbol ?? row.rewardTokenSymbol ?? row.token?.symbol;
 
-		if (!rewardTokenSymbol) return;
+		if (!provider || !action || !apr || !rewardTokenSymbol) return;
 
-		const campaign: RewardCampaign = {
+		addCampaign({
 			campaignId:
 				row.campaignId ??
 				row.id ??
@@ -235,23 +288,7 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			rewardTokenSymbol,
 			dailyRewards: row.dailyRewards,
 			endTimestamp: row.endTimestamp ?? row.endTime,
-		};
-
-		const key = vaultAddress.toLowerCase();
-		let info = map.get(key);
-		if (!info) {
-			info = { totalRewardsApr: 0, campaigns: [] };
-			map.set(key, info);
-		}
-
-		const dedupeKey = `${campaign.source}:${campaign.campaignId}`;
-		const exists = info.campaigns.some(
-			(existing) => `${existing.source}:${existing.campaignId}` === dedupeKey,
-		);
-		if (exists) return;
-
-		info.campaigns.push(campaign);
-		info.totalRewardsApr += campaign.apr;
+		});
 	}
 
 	private convertRow(

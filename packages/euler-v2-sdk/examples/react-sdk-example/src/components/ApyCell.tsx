@@ -1,18 +1,32 @@
 import type { VaultRewardInfo, IntrinsicApyInfo } from "euler-v2-sdk";
 import { formatPercent } from "../utils/format.ts";
+import { getIntrinsicApyDecimal, getRewardsAprByAction } from "../utils/apy.ts";
 
 interface ApyCellProps {
   /** Base vault APY as a decimal fraction (e.g. 0.05 = 5%). */
   baseApy: number;
   rewards?: VaultRewardInfo;
   intrinsicApy?: IntrinsicApyInfo;
+  action?: "LEND" | "BORROW";
 }
 
-export function ApyCell({ baseApy, rewards, intrinsicApy }: ApyCellProps) {
-  const rewardsApr = rewards?.totalRewardsApr ?? 0;
-  const intrinsicApyDecimal = intrinsicApy ? intrinsicApy.apy / 100 : 0;
-  const totalApy = baseApy + rewardsApr + intrinsicApyDecimal;
+export function ApyCell({
+  baseApy,
+  rewards,
+  intrinsicApy,
+  action = "LEND",
+}: ApyCellProps) {
+  const rewardsApr =
+    action === "BORROW"
+      ? getRewardsAprByAction(rewards, "BORROW")
+      : getRewardsAprByAction(rewards, "LEND");
+  const intrinsicApyDecimal = getIntrinsicApyDecimal(intrinsicApy);
+  const totalApy =
+    action === "BORROW"
+      ? baseApy + intrinsicApyDecimal - rewardsApr
+      : baseApy + rewardsApr + intrinsicApyDecimal;
   const hasExtras = rewardsApr > 0 || intrinsicApyDecimal > 0;
+  const rewardsLabel = action === "BORROW" ? "Borrow Rewards APR" : "Rewards APR";
 
   if (!hasExtras) {
     return <>{formatPercent(totalApy)}</>;
@@ -34,8 +48,8 @@ export function ApyCell({ baseApy, rewards, intrinsicApy }: ApyCellProps) {
         )}
         {rewardsApr > 0 && (
           <span className="apy-tooltip-row">
-            <span>Rewards APR</span>
-            <span>{formatPercent(rewardsApr)}</span>
+            <span>{rewardsLabel}</span>
+            <span>{action === "BORROW" ? `-${formatPercent(rewardsApr)}` : formatPercent(rewardsApr)}</span>
           </span>
         )}
         <span className="apy-tooltip-divider" />
@@ -43,10 +57,12 @@ export function ApyCell({ baseApy, rewards, intrinsicApy }: ApyCellProps) {
           <span>Total</span>
           <span>{formatPercent(totalApy)}</span>
         </span>
-        {rewards?.campaigns.map((c) => (
+        {rewards?.campaigns
+          .filter((c) => c.action === action)
+          .map((c) => (
           <span className="apy-tooltip-row apy-tooltip-campaign" key={`${c.source}:${c.campaignId}`}>
             <span>{c.rewardTokenSymbol} ({c.source})</span>
-            <span>{formatPercent(c.apr)}</span>
+            <span>{action === "BORROW" ? `-${formatPercent(c.apr)}` : formatPercent(c.apr)}</span>
           </span>
         ))}
       </span>

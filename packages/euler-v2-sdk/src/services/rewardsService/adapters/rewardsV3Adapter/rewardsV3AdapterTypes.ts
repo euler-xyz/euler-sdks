@@ -23,9 +23,11 @@ export type V3RewardsApyRow = {
 	campaignId?: string;
 	id?: string;
 	apr?: number;
+	totalApr?: number;
 	dailyRewards?: number;
 	endTimestamp?: number;
 	endTime?: number;
+	campaignType?: string;
 	rewardToken?:
 		| {
 				address?: string;
@@ -46,6 +48,25 @@ export type V3RewardsApyRow = {
 	rewardTokenSymbol?: string;
 	rewardTokenName?: string;
 	rewardTokenDecimals?: number;
+	campaigns?: Array<{
+		id?: string;
+		provider?: string;
+		source?: string;
+		apr?: number;
+		campaignType?: string;
+		startTimestamp?: string;
+		endTimestamp?: string;
+		status?: string;
+		collateralAsset?: string;
+		rewardToken?:
+			| {
+					address?: string;
+					symbol?: string;
+					name?: string;
+					decimals?: number;
+			  }
+			| null;
+	}>;
 };
 
 export type V3RewardsBreakdownEnvelope = {
