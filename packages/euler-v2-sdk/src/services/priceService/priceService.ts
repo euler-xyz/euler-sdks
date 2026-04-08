@@ -355,7 +355,7 @@ export class PriceService implements IPriceService {
 		if (this.backendClient?.isConfigured) {
 			backendAttempted = true;
 			try {
-				const backendPrice = await this.backendClient.queryBackendPrice({
+				const backendPrice = await this.backendClient.queryV3Price({
 					address: assetAddress,
 					chainId,
 				});
