@@ -29,6 +29,7 @@ import {
 	type ServiceResult,
 	prefixDataIssues,
 } from "../../../../utils/entityDiagnostics.js";
+import { normalizeAccountOutput } from "../accountOutputNormalization.js";
 
 export const getEVCAccountInfoLensBatchItem = (
 	accountLensAddress: Address,
@@ -217,14 +218,16 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		);
 
 		const mainSubAccount = validSubs.find((sa) => sa.account === sa.owner);
+		const result = normalizeAccountOutput({
+			chainId,
+			owner: getAddress(address),
+			isLockdownMode: mainSubAccount?.isLockdownMode ?? false,
+			isPermitDisabledMode: mainSubAccount?.isPermitDisabledMode ?? false,
+			subAccounts,
+		});
+
 		return {
-			result: {
-				chainId,
-				owner: getAddress(address),
-				isLockdownMode: mainSubAccount?.isLockdownMode ?? false,
-				isPermitDisabledMode: mainSubAccount?.isPermitDisabledMode ?? false,
-				subAccounts,
-			},
+			result,
 			errors,
 		};
 	}

@@ -26,6 +26,7 @@ import {
 } from "../../../../utils/parsing.js";
 import type { AccountV3AdapterConfig } from "../../accountServiceConfig.js";
 import type { IAccountAdapter } from "../../accountService.js";
+import { normalizeAccountOutput } from "../accountOutputNormalization.js";
 
 type V3PositionsResponse = {
 	data?: V3AccountPositionRow[];
@@ -429,15 +430,16 @@ export class AccountV3Adapter implements IAccountAdapter {
 			subAccountsArray.find(
 				(subAccount) => subAccount.account === subAccount.owner,
 			) ?? subAccountsArray[0];
+		const result = normalizeAccountOutput({
+			chainId,
+			owner: getAddress(address),
+			isLockdownMode: primarySubAccount?.isLockdownMode ?? false,
+			isPermitDisabledMode: primarySubAccount?.isPermitDisabledMode ?? false,
+			subAccounts,
+		});
 
 		return {
-			result: {
-				chainId,
-				owner: getAddress(address),
-				isLockdownMode: primarySubAccount?.isLockdownMode ?? false,
-				isPermitDisabledMode: primarySubAccount?.isPermitDisabledMode ?? false,
-				subAccounts,
-			},
+			result,
 			errors: compressDataIssues(errors),
 		};
 	}
