@@ -220,7 +220,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		return {
 			result: {
 				chainId,
-				owner: address,
+				owner: getAddress(address),
 				isLockdownMode: mainSubAccount?.isLockdownMode ?? false,
 				isPermitDisabledMode: mainSubAccount?.isPermitDisabledMode ?? false,
 				subAccounts,

@@ -1,4 +1,4 @@
-import { maxInt256 } from "viem";
+import { getAddress, maxInt256 } from "viem";
 import type {
 	ISubAccount,
 	IAccountLiquidity,
@@ -36,6 +36,7 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 	};
 
 	const collaterals = liquidityInfo.collaterals.map((collateral, idx) => {
+		const collateralAddress = getAddress(collateral);
 		const borrowing = liquidityInfo.collateralValuesBorrowing[idx];
 		const liquidation = liquidityInfo.collateralValuesLiquidation[idx];
 		const oracleMid = liquidityInfo.collateralValuesRaw[idx];
@@ -47,7 +48,7 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 				message: "Missing collateral borrowing value; defaulted to 0.",
 				paths: [`$.collaterals[${idx}].value.borrowing`],
 				source: "accountLens",
-				entityId: collateral,
+				entityId: collateralAddress,
 				normalizedValue: "0",
 			});
 		}
@@ -58,7 +59,7 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 				message: "Missing collateral liquidation value; defaulted to 0.",
 				paths: [`$.collaterals[${idx}].value.liquidation`],
 				source: "accountLens",
-				entityId: collateral,
+				entityId: collateralAddress,
 				normalizedValue: "0",
 			});
 		}
@@ -69,13 +70,13 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 				message: "Missing collateral oracleMid value; defaulted to 0.",
 				paths: [`$.collaterals[${idx}].value.oracleMid`],
 				source: "accountLens",
-				entityId: collateral,
+				entityId: collateralAddress,
 				normalizedValue: "0",
 			});
 		}
 
 		return {
-			address: collateral,
+			address: collateralAddress,
 			value: {
 				borrowing: borrowing ?? 0n,
 				liquidation: liquidation ?? 0n,
@@ -99,8 +100,8 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 	}
 
 	return {
-		vaultAddress: liquidityInfo.vault,
-		unitOfAccount: liquidityInfo.unitOfAccount,
+		vaultAddress: getAddress(liquidityInfo.vault),
+		unitOfAccount: getAddress(liquidityInfo.unitOfAccount),
 		daysToLiquidation,
 		liabilityValue,
 		totalCollateralValue,
@@ -139,9 +140,9 @@ export function convertVaultAccountInfoToAccountPosition(
 	}
 
 	const positionData = {
-		account: vaultAccountInfo.account,
-		vaultAddress: vaultAccountInfo.vault,
-		asset: vaultAccountInfo.asset,
+		account: getAddress(vaultAccountInfo.account),
+		vaultAddress: getAddress(vaultAccountInfo.vault),
+		asset: getAddress(vaultAccountInfo.asset),
 		shares: vaultAccountInfo.shares,
 		assets: vaultAccountInfo.assets,
 		borrowed: vaultAccountInfo.borrowed,
@@ -172,21 +173,21 @@ export function convertToSubAccount(
 			path: "$.timestamp",
 			errors,
 			source: "accountLens",
-			entityId: evcAccountInfo.account,
+			entityId: getAddress(evcAccountInfo.account),
 		}),
-		account: evcAccountInfo.account,
-		owner: evcAccountInfo.owner,
+		account: getAddress(evcAccountInfo.account),
+		owner: getAddress(evcAccountInfo.owner),
 		lastAccountStatusCheckTimestamp: bigintToSafeNumber(
 			evcAccountInfo.lastAccountStatusCheckTimestamp,
 			{
 				path: "$.lastAccountStatusCheckTimestamp",
 				errors,
 				source: "accountLens",
-				entityId: evcAccountInfo.account,
+				entityId: getAddress(evcAccountInfo.account),
 			},
 		),
-		enabledControllers: evcAccountInfo.enabledControllers,
-		enabledCollaterals: evcAccountInfo.enabledCollaterals,
+		enabledControllers: evcAccountInfo.enabledControllers.map(getAddress),
+		enabledCollaterals: evcAccountInfo.enabledCollaterals.map(getAddress),
 		positions,
 	};
 	return subAccountData;

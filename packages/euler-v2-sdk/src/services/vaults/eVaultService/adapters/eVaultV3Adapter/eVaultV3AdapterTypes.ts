@@ -46,7 +46,7 @@ export type V3OraclePrice = {
 	amountOutMid: string;
 	amountOutBid: string;
 	amountOutAsk: string;
-	timestamp: number;
+	timestamp: string;
 };
 
 export type V3CollateralRow = {
@@ -126,7 +126,7 @@ export type V3VaultDetail = {
 	};
 	evcCompatibleAsset: boolean;
 	oraclePriceRaw?: V3OraclePrice;
-	timestamp: number;
+	timestamp: string;
 };
 
 export type V3VaultDetailWithIncludes = V3VaultDetail & {

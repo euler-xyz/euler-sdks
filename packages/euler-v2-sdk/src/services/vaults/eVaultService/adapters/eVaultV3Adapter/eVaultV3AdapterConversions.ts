@@ -12,6 +12,7 @@ import {
 	parseNumberField,
 	parseRatio1e4,
 	parseStringField,
+	parseTimestampField,
 	ZERO_ADDRESS,
 } from "../../../../../utils/parsing.js";
 import {
@@ -109,7 +110,7 @@ const DEFAULT_ORACLE_PRICE_BLOCK: V3OraclePrice = {
 	amountOutMid: "0",
 	amountOutBid: "0",
 	amountOutAsk: "0",
-	timestamp: 0,
+	timestamp: "",
 };
 
 function normalizeUnitOfAccountToken(token: Token): Token | undefined {
@@ -219,7 +220,7 @@ function convertOraclePrice(
 			errors,
 			source: "eVaultV3",
 		}),
-		timestamp: parseNumberField(price.timestamp, {
+		timestamp: parseTimestampField(price.timestamp, {
 			path: `${path}.timestamp`,
 			entityId,
 			errors,
@@ -797,7 +798,7 @@ export function convertVault(
 		});
 	}
 	const oraclePriceData = detail.oraclePriceRaw ?? DEFAULT_ORACLE_PRICE_BLOCK;
-	const timestamp = parseNumberField(detail.timestamp, {
+	const timestamp = parseTimestampField(detail.timestamp, {
 		path: "$.timestamp",
 		entityId,
 		errors,
