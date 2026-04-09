@@ -117,6 +117,21 @@ const isChainlinkOracleName = (name: string) =>
 	name.toLowerCase().includes("chainlink");
 const isCrossAdapterName = (name: string) =>
 	name.toLowerCase() === "crossadapter";
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+const isValidOracleDetailedInfo = (
+	info: OracleDetailedInfo | null | undefined,
+): info is OracleDetailedInfo => {
+	if (!info) return false;
+	if (typeof info.name !== "string" || info.name.trim().length === 0) return false;
+	if (
+		typeof info.oracle !== "string" ||
+		info.oracle.toLowerCase() === ZERO_ADDRESS
+	)
+		return false;
+	if (typeof info.oracleInfo !== "string") return false;
+	return true;
+};
 
 type OracleAdapterOptions = {
 	base?: Address;
@@ -329,7 +344,7 @@ export const decodeOracleInfo = (
 		depth: number,
 		context: OracleAdapterContext,
 	) => {
-		if (!info || depth > maxDepth) return;
+		if (!isValidOracleDetailedInfo(info) || depth > maxDepth) return;
 		const key = `${info.oracle}-${info.name}-${info.oracleInfo}-${context.base || ""}-${context.quote || ""}`;
 		if (visited.has(key)) return;
 		visited.add(key);

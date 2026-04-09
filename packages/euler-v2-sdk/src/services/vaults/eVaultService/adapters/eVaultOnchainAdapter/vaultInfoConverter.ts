@@ -122,9 +122,8 @@ export function convertVaultInfoFullToIEVault(
 	errors: DataIssue[],
 ): IEVault {
 	const vaultEntityId = vaultInfo.vault;
-	const rootOracleInfoEmpty = vaultInfo.oracleInfo.oracleInfo === "0x";
 	const shouldSuppressRootOracleAdapter =
-		rootOracleInfoEmpty && vaultInfo.oracleInfo.name.trim().length === 0;
+		vaultInfo.oracleInfo.name.trim().length === 0;
 	const oracle: OracleInfo = {
 		oracle: vaultInfo.oracleInfo.oracle,
 		name: vaultInfo.oracleInfo.name,
