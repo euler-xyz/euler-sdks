@@ -50,6 +50,46 @@ const normalizeAction = (value?: string): RewardAction | undefined => {
 	return undefined;
 };
 
+const isActiveCampaign = (args: {
+	status?: string;
+	startTimestamp?: string | number;
+	endTimestamp?: string | number;
+	nowMs?: number;
+}): boolean => {
+	const nowMs = args.nowMs ?? Date.now();
+	const normalizedStatus = args.status?.trim().toLowerCase();
+
+	if (normalizedStatus) {
+		if (["ended", "expired", "inactive", "failed", "past"].includes(normalizedStatus)) {
+			return false;
+		}
+		if (["active", "live", "running", "success"].includes(normalizedStatus)) {
+			return true;
+		}
+	}
+
+	const parseTimestampMs = (value?: string | number): number | undefined => {
+		if (typeof value === "number" && Number.isFinite(value)) {
+			return value > 1e12 ? value : value * 1000;
+		}
+		if (typeof value === "string" && value.length > 0) {
+			const parsed = Date.parse(value);
+			if (Number.isFinite(parsed)) return parsed;
+			const numeric = Number(value);
+			if (Number.isFinite(numeric)) return numeric > 1e12 ? numeric : numeric * 1000;
+		}
+		return undefined;
+	};
+
+	const startMs = parseTimestampMs(args.startTimestamp);
+	const endMs = parseTimestampMs(args.endTimestamp);
+
+	if (startMs !== undefined && nowMs < startMs) return false;
+	if (endMs !== undefined && nowMs >= endMs) return false;
+
+	return true;
+};
+
 const normalizeBigintString = (value: unknown): string | undefined => {
 	if (typeof value === "string" && value.length > 0) return value;
 	if (typeof value === "number" && Number.isFinite(value)) {
@@ -232,6 +272,16 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 
 		if (Array.isArray(row.campaigns) && row.campaigns.length > 0) {
 			for (const campaignRow of row.campaigns) {
+				if (
+					!isActiveCampaign({
+						status: campaignRow.status,
+						startTimestamp: campaignRow.startTimestamp,
+						endTimestamp: campaignRow.endTimestamp,
+					})
+				) {
+					continue;
+				}
+
 				const provider = normalizeProvider(
 					campaignRow.provider ?? campaignRow.source,
 				);
