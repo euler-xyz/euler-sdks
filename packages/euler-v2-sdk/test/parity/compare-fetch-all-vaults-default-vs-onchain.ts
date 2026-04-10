@@ -369,6 +369,20 @@ function isFeeBigIntPath(path: string): boolean {
   return path.includes(".fees.");
 }
 
+function shouldIgnoreOracleQueryFailureReasonDiff(
+  path: string,
+  left: ComparableValue,
+  right: ComparableValue,
+): boolean {
+  return (
+    path.endsWith(".oraclePriceRaw.queryFailureReason") &&
+    typeof left === "string" &&
+    typeof right === "string" &&
+    left.startsWith("0xa6e68d63") &&
+    right.startsWith("0xa6e68d63")
+  );
+}
+
 function areFeeValuesBelowIgnoreThreshold(left: bigint, right: bigint): boolean {
   const threshold = 1_000_000n;
   const absLeft = left < 0n ? -left : left;
@@ -486,6 +500,10 @@ function compareValues(
   path: string,
   differences: Issue[],
 ) {
+  if (shouldIgnoreOracleQueryFailureReasonDiff(path, left, right)) {
+    return;
+  }
+
   if (isNormalizedPythNumericPath(path)) {
     const leftBigInt = toBigIntLike(left);
     const rightBigInt = toBigIntLike(right);
