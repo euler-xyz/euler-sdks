@@ -1,35 +1,39 @@
-import { Address } from "viem";
+import type { Address } from "viem";
 import {
-  ERC4626Vault,
-  IERC4626Vault,
-  IERC4626VaultConversion,
+	ERC4626Vault,
+	type IERC4626Vault,
+	type IERC4626VaultConversion,
 } from "./ERC4626Vault.js";
 
 export interface ISecuritizeCollateralVault extends IERC4626Vault {
-  governor: Address;
-  supplyCap: bigint;
+	governor: Address;
+	supplyCap: bigint;
 }
 
 export class SecuritizeCollateralVault
-  extends ERC4626Vault
-  implements ISecuritizeCollateralVault, IERC4626VaultConversion
+	extends ERC4626Vault
+	implements ISecuritizeCollateralVault, IERC4626VaultConversion
 {
-  governor: Address;
-  supplyCap: bigint;
+	governor: Address;
+	supplyCap: bigint;
 
-  constructor(args: ISecuritizeCollateralVault) {
-    super(args);
-    this.governor = args.governor;
-    this.supplyCap = args.supplyCap;
-  }
+	constructor(args: ISecuritizeCollateralVault) {
+		super(args);
+		this.governor = args.governor;
+		this.supplyCap = args.supplyCap;
+	}
 
-  /** 1:1 conversion (standard ERC4626 when totalShares === totalAssets). */
-  override convertToAssets(shares: bigint): bigint {
-    return shares;
-  }
+	override get isBorrowable(): boolean {
+		return false;
+	}
 
-  /** 1:1 conversion (standard ERC4626 when totalShares === totalAssets). */
-  override convertToShares(assets: bigint): bigint {
-    return assets;
-  }
+	/** 1:1 conversion (standard ERC4626 when totalShares === totalAssets). */
+	override convertToAssets(shares: bigint): bigint {
+		return shares;
+	}
+
+	/** 1:1 conversion (standard ERC4626 when totalShares === totalAssets). */
+	override convertToShares(assets: bigint): bigint {
+		return assets;
+	}
 }

@@ -99,6 +99,7 @@ Use per-query stale times:
 
 - hours (e.g. 12-24h): deployments, ABIs, token lists, static labels
 - minutes: perspectives/providers/reward catalogs
+- minutes: bundled intrinsic APY lookups such as `queryV3IntrinsicApy`
 - 10-30s: account/vault/wallet state
 - ~10s: swap quotes and Pyth update payloads
 

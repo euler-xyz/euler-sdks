@@ -77,6 +77,7 @@ export function PortfolioPage() {
       queryClient.invalidateQueries({ queryKey: ["sdk", "queryBrevisUserProofs"] }),
       queryClient.invalidateQueries({ queryKey: ["sdk", "queryFuulTotals"] }),
       queryClient.invalidateQueries({ queryKey: ["sdk", "queryFuulClaimChecks"] }),
+      queryClient.invalidateQueries({ queryKey: ["sdk", "queryV3RewardsBreakdown"] }),
     ]);
   };
 

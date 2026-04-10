@@ -4,6 +4,15 @@ import path from "node:path";
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    proxy: {
+      "/api/swap": {
+        target: "http://localhost:3002",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/swap/, ""),
+      },
+    },
+  },
   resolve: {
     alias: {
       "euler-v2-sdk": path.resolve(

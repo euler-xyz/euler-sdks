@@ -6,6 +6,7 @@ export * from "./entities/EulerEarn.js";
 export * from "./entities/EulerLabels.js";
 export * from "./sdk/sdk.js";
 export * from "./sdk/buildSDK.js";
+export { defaultVaultTypeSubgraphAdapterConfig } from "./sdk/defaultConfig.js";
 /** @deprecated Use `buildEulerSDK` instead. */
 export { buildEulerSDK as buildSDK } from "./sdk/buildSDK.js";
 
@@ -35,12 +36,19 @@ export * from "./plugins/index.js";
 
 // Utils
 export * from "./utils/subAccounts.js";
-export { type BuildQueryFn, applyBuildQuery } from "./utils/buildQuery.js";
+export {
+	type BuildQueryFn,
+	type QueryCacheConfig,
+	applyBuildQuery,
+	createQueryCacheBuildQuery,
+} from "./utils/buildQuery.js";
+export type { EulerSDKQueryName, QueryMethodName } from "./utils/queryNames.js";
 export * from "./utils/stateOverrides/index.js";
 export * from "./utils/oracle.js";
 export * from "./utils/accountComputations.js";
 export * from "./utils/callBundler.js";
 export * from "./utils/entityDiagnostics.js";
 export * from "./utils/normalization.js";
+export * from "./utils/parsing.js";
 export * from "./utils/decodeSmartContractErrors.js";
 export * from "./utils/eulerErrorSelectors.js";

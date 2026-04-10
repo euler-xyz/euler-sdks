@@ -29,6 +29,11 @@
     "build": "tsc --project tsconfig.json",
     "build:watch": "tsc --project tsconfig.json --watch",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "format": "biome format --write src",
+    "lint": "biome lint src",
+    "lint:fix": "biome lint --write src",
+    "prepare": "cd ../.. && husky packages/euler-v2-sdk/.husky",
     "clean": "rm -rf dist",
     "release:check": "pnpm run clean && pnpm run build && pnpm run typecheck && pnpm pack --dry-run",
     "prepublishOnly": "pnpm run release:check",
@@ -53,7 +58,7 @@
     "provenance": true
   },
   "dependencies": {
-    "viem": "^2.43.3"
+    "viem": "2.43.3"
   },
   "devDependencies": {
     "@types/node": "^22.7.8",

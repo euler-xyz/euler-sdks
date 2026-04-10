@@ -32,6 +32,7 @@ import {
   formatPriceUsd,
   formatWad,
 } from "../utils/format.ts";
+import { getEffectiveBorrowApy, getEffectiveSupplyApy } from "../utils/apy.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { RoeCell } from "../components/RoeCell.tsx";
@@ -84,18 +85,11 @@ function pct(value: number | undefined): string {
 }
 
 function calcVaultSupplyApy(vault: EVault): number {
-  return (
-    Number(vault.interestRates.supplyAPY) +
-    (vault.rewards?.totalRewardsApr ?? 0) +
-    (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0)
-  );
+  return getEffectiveSupplyApy(vault);
 }
 
 function calcVaultBorrowApy(vault: EVault): number {
-  return (
-    Number(vault.interestRates.borrowAPY) +
-    (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0)
-  );
+  return getEffectiveBorrowApy(vault);
 }
 
 function getMarketName(vault: EVault | undefined): string | undefined {
@@ -1345,7 +1339,14 @@ export function BorrowPairPage() {
               </div>
               <div className="pair-overview-item">
                 <div className="label">Borrow APY</div>
-                <div className="value">{formatAPY(debtVault.interestRates.borrowAPY)}</div>
+                <div className="value">
+                  <ApyCell
+                    action="BORROW"
+                    baseApy={Number(debtVault.interestRates.borrowAPY)}
+                    rewards={debtVault.rewards}
+                    intrinsicApy={debtVault.intrinsicApy}
+                  />
+                </div>
               </div>
               <div className="pair-overview-item">
                 <div className="label">Max ROE</div>

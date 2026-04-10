@@ -3,109 +3,177 @@ import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 import { createCallBundler } from "../../utils/callBundler.js";
 
 /**
- * Response shape from the price backend (indexer /v1/prices endpoint).
+ * Normalized response shape from the price backend.
  */
 export type BackendPriceData = {
-  address: string;
-  price: number;
-  source: string;
-  symbol: string;
-  timestamp: number;
+	address: string;
+	price: number;
+	source: string;
+	symbol?: string;
+	timestamp?: number;
 };
 
 /**
- * Response from /v1/prices endpoint.
+ * Legacy response from /v1/prices endpoint.
  * Flat object keyed by lowercase address.
  */
 export type BackendPriceResponse = Record<string, BackendPriceData>;
+
+export type V3PriceRow = {
+	address?: string;
+	price?: number;
+	priceUsd?: number;
+	source?: string;
+	symbol?: string;
+	timestamp?: string;
+};
+
+export type V3PriceResponse = {
+	data?: V3PriceRow[];
+	meta?: {
+		total?: number;
+		offset?: number;
+		limit?: number;
+		timestamp?: string;
+		chainId?: string;
+	};
+};
 
 /**
  * Backend configuration for the price service.
  */
 export type BackendConfig = {
-  /** Backend API endpoint URL. */
-  endpoint: string;
-  /** Default chain ID for requests. */
-  chainId?: number;
+	/** Backend API endpoint URL. */
+	endpoint: string;
+	/** Optional API key sent as `X-API-Key` for V3-style backend requests. */
+	apiKey?: string;
+	/** Default chain ID for requests. */
+	chainId?: number;
 };
 
 /**
  * Convert backend price (number) to bigint with 18 decimals.
  */
 export const backendPriceToBigInt = (price: string | number): bigint => {
-  try {
-    const priceNum = typeof price === "number" ? price : parseFloat(price);
-    if (isNaN(priceNum) || priceNum < 0) {
-      return 0n;
-    }
-    const priceString = priceNum.toFixed(18);
-    const [intPart, decPart = ""] = priceString.split(".");
-    const paddedDec = decPart.slice(0, 18);
-    return BigInt(intPart + paddedDec);
-  } catch {
-    return 0n;
-  }
+	try {
+		const priceNum = typeof price === "number" ? price : parseFloat(price);
+		if (Number.isNaN(priceNum) || priceNum < 0) {
+			return 0n;
+		}
+		const priceString = priceNum.toFixed(18);
+		const [intPart, decPart = ""] = priceString.split(".");
+		const paddedDec = decPart.slice(0, 18);
+		return BigInt(intPart + paddedDec);
+	} catch {
+		return 0n;
+	}
 };
 
 /**
  * Instance-based backend price client with batching.
  */
 export class PricingBackendClient {
-  private readonly endpoint: string;
+	private readonly endpoint: string;
+	private readonly apiKey?: string;
 
-  constructor(config: BackendConfig, buildQuery?: BuildQueryFn) {
-    this.endpoint = config.endpoint;
-    if (buildQuery) applyBuildQuery(this, buildQuery);
-  }
+	constructor(config: BackendConfig, buildQuery?: BuildQueryFn) {
+		this.endpoint = config.endpoint;
+		this.apiKey = config.apiKey;
+		if (buildQuery) applyBuildQuery(this, buildQuery);
+	}
 
-  get isConfigured(): boolean {
-    return !!this.endpoint;
-  }
+	get isConfigured(): boolean {
+		return !!this.endpoint;
+	}
 
-  /**
-   * Fetch a single asset price. Concurrent calls within the same microtask
-   * are bundled into a single request per chainId.
-   */
-  queryBackendPrice = createCallBundler(
-    async (keys: { address: Address; chainId: number }[]) => {
-      // Group by chainId
-      const byChain = new Map<number, Address[]>();
-      for (const key of keys) {
-        const arr = byChain.get(key.chainId) ?? [];
-        arr.push(key.address);
-        byChain.set(key.chainId, arr);
-      }
+	private getHeaders(): Record<string, string> {
+		return {
+			Accept: "application/json",
+			...(this.apiKey ? { "X-API-Key": this.apiKey } : {}),
+		};
+	}
 
-      // One request per chainId
-      const chainResults = new Map<number, Map<string, BackendPriceData>>();
-      for (const [chainId, addresses] of byChain) {
-        const unique = [...new Set(addresses.map((a) => a.toLowerCase()))] as Address[];
-        const url = new URL("/v1/prices", this.endpoint);
-        url.searchParams.set("chainId", String(chainId));
-        url.searchParams.set("assets", unique.join(","));
+	private parseResponse(
+		data: BackendPriceResponse | V3PriceResponse,
+	): Map<string, BackendPriceData> {
+		const map = new Map<string, BackendPriceData>();
 
-        const response = await fetch(url.toString(), {
-          method: "GET",
-          headers: { Accept: "application/json" },
-        });
+		if (
+			data &&
+			typeof data === "object" &&
+			"data" in data &&
+			Array.isArray((data as V3PriceResponse).data)
+		) {
+			for (const row of (data as V3PriceResponse).data ?? []) {
+				if (!row.address) continue;
+				const price = row.priceUsd ?? row.price;
+				if (typeof price !== "number") continue;
+				const timestamp = row.timestamp
+					? Math.floor(new Date(row.timestamp).getTime() / 1000)
+					: undefined;
+				map.set(row.address.toLowerCase(), {
+					address: row.address,
+					price,
+					source: row.source ?? "v3",
+					symbol: row.symbol,
+					timestamp,
+				});
+			}
+			return map;
+		}
 
-        if (response.ok) {
-          const data = (await response.json()) as BackendPriceResponse;
-          const map = new Map<string, BackendPriceData>();
-          for (const [addr, priceData] of Object.entries(data)) {
-            map.set(addr.toLowerCase(), priceData);
-          }
-          chainResults.set(chainId, map);
-        }
-      }
+		for (const [addr, priceData] of Object.entries(
+			data as BackendPriceResponse,
+		)) {
+			map.set(addr.toLowerCase(), priceData);
+		}
+		return map;
+	}
 
-      return keys.map((key) =>
-        chainResults.get(key.chainId)?.get(key.address.toLowerCase()),
-      );
-    },
-  );
+	/**
+	 * Fetch a single asset price. Concurrent calls within the same microtask
+	 * are bundled into a single request per chainId.
+	 */
+	queryV3Price = createCallBundler(
+		async (keys: { address: Address; chainId: number }[]) => {
+			// Group by chainId
+			const byChain = new Map<number, Address[]>();
+			for (const key of keys) {
+				const arr = byChain.get(key.chainId) ?? [];
+				arr.push(key.address);
+				byChain.set(key.chainId, arr);
+			}
 
-  setQueryPrice(fn: typeof this.queryBackendPrice): void {
-    this.queryBackendPrice = fn;
-  }
+			// One request per chainId
+			const chainResults = new Map<number, Map<string, BackendPriceData>>();
+			for (const [chainId, addresses] of byChain) {
+				const unique = [
+					...new Set(addresses.map((a) => a.toLowerCase())),
+				] as Address[];
+				const url = new URL("/v3/prices", this.endpoint);
+				url.searchParams.set("chainId", String(chainId));
+				url.searchParams.set("assets", unique.join(","));
+
+				const response = await fetch(url.toString(), {
+					method: "GET",
+					headers: this.getHeaders(),
+				});
+
+				if (response.ok) {
+					const data = (await response.json()) as
+						| BackendPriceResponse
+						| V3PriceResponse;
+					chainResults.set(chainId, this.parseResponse(data));
+				}
+			}
+
+			return keys.map((key) =>
+				chainResults.get(key.chainId)?.get(key.address.toLowerCase()),
+			);
+		},
+	);
+
+	setQueryV3Price(fn: typeof this.queryV3Price): void {
+		this.queryV3Price = fn;
+	}
 }

@@ -264,7 +264,7 @@ export function EulerEarnDetailPage() {
                       {strategy.vault.shares.name || strategy.vault.asset.symbol}
                     </Link>
                   ) : (
-                    strategy.shares.name || strategy.asset.symbol || <CopyAddress address={strategy.address} />
+                    <CopyAddress address={strategy.address} />
                   )}
                 </td>
                 <td><CopyAddress address={strategy.address} /></td>
@@ -284,8 +284,9 @@ export function EulerEarnDetailPage() {
                     : "-"}
                 </td>
                 <td>
-                  {formatBigInt(strategy.totalAssets, vault.asset.decimals)}{" "}
-                  {vault.asset.symbol}
+                  {strategy.vault
+                    ? `${formatBigInt(strategy.vault.totalAssets, strategy.vault.asset.decimals)} ${strategy.vault.asset.symbol}`
+                    : "-"}
                 </td>
                 <td>{formatPriceUsd(strategy.vault?.marketPriceUsd)}</td>
               </tr>

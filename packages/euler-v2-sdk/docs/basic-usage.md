@@ -7,8 +7,9 @@ import { buildEulerSDK } from 'euler-v2-sdk'
 
 const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },           // chainId -> RPC URL
+  queryCacheConfig: { ttlMs: 5000 },       // Optional: default cache is 5s
   backendConfig: {                           // Optional: enables backend pricing
-    endpoint: 'https://pricing.euler.finance',
+    endpoint: 'https://v3staging.eul.dev',
     chainId: 1,
   },
 })
@@ -145,7 +146,8 @@ if (isEVault(vault)) {
   console.log(vault.interestRates.supplyAPY)
   console.log(vault.collaterals.length)
 } else if (isEulerEarn(vault)) {
-  console.log(vault.supplyApy)
+  console.log(vault.supplyApy)   // alias of vault.supplyApy1h
+  console.log(vault.supplyApy1h)
   console.log(vault.strategies.length)
 }
 ```
@@ -249,6 +251,16 @@ const { result: allVaults } = await sdk.vaultMetaService.fetchVerifiedVaults(1, 
 // Returns (EVault | EulerEarn | SecuritizeCollateralVault | undefined)[]
 ```
 
+## Fetching All Discoverable Vaults
+
+Use `fetchAllVaults()` when you want each service's full discoverable set without manually wiring factory perspectives.
+
+```typescript
+const { result: eVaultsOnly } = await sdk.vaultMetaService.fetchAllVaults(1, {
+  options: { populateAll: true }
+})
+```
+
 ## Oracle Adapter Metadata
 
 Use `oracleAdapterService` to get adapter provider/methodology/check metadata for oracle adapter addresses:
@@ -268,10 +280,10 @@ The SDK handles three vault types: `EVault`, `EulerEarn`, and `SecuritizeCollate
 Every vault is deployed from a factory contract. The `vaultMetaService` looks up each vault's factory address and maps it to the correct service:
 
 ```
-vault address -> factory address (via subgraph) -> registered service -> correct entity type
+vault address -> vault type resolver -> registered service -> correct entity type
 ```
 
-This happens transparently in `vaultMetaService.fetchVault(s)` and in `accountService.fetchAccount` (when resolving vaults for positions).
+By default the resolver uses `POST /v3/evk/vaults/resolve`, with the legacy subgraph factory lookup still available when explicitly configured. This happens transparently in `vaultMetaService.fetchVault(s)` and in `accountService.fetchAccount` (when resolving vaults for positions).
 
 ### Entity hierarchy
 

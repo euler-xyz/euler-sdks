@@ -1,23 +1,16 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  StandardEVaultPerspectives,
-  StandardEulerEarnPerspectives,
   isEVault,
   getMaxMultiplier,
   getMaxRoe,
   type EVault,
 } from "euler-v2-sdk";
 import { useSDK } from "../context/SdkContext.tsx";
-import { useVerifiedVaults } from "../queries/sdkQueries.ts";
+import { useAllVaults } from "../queries/sdkQueries.ts";
 import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
+import { getEffectiveBorrowApy, getEffectiveSupplyApy } from "../utils/apy.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
-
-const ALL_PERSPECTIVES = [
-  StandardEVaultPerspectives.GOVERNED,
-  StandardEVaultPerspectives.ESCROW,
-  StandardEulerEarnPerspectives.GOVERNED,
-];
 
 type BorrowSortKey =
   | "collateral"
@@ -57,18 +50,11 @@ function multiple(value: number | undefined): string {
 }
 
 function calcVaultSupplyApy(vault: EVault): number {
-  return (
-    Number(vault.interestRates.supplyAPY) +
-    (vault.rewards?.totalRewardsApr ?? 0) +
-    (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0)
-  );
+  return getEffectiveSupplyApy(vault);
 }
 
 function calcVaultBorrowApy(vault: EVault): number {
-  return (
-    Number(vault.interestRates.borrowAPY) +
-    (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0)
-  );
+  return getEffectiveBorrowApy(vault);
 }
 
 function normalizeLltv(value: number | bigint): number {
@@ -130,11 +116,12 @@ export function BorrowPage() {
   const [collateralAssetSearch, setCollateralAssetSearch] = useState<string>("");
   const [debtAssetSearch, setDebtAssetSearch] = useState<string>("");
 
-  const { data: allVaults, isLoading, error } = useVerifiedVaults(ALL_PERSPECTIVES);
+  const { data: allVaults, isLoading, error } = useAllVaults();
 
   const eVaults = useMemo(() => (allVaults?.filter(isEVault) ?? []), [allVaults]);
 
   const rows = useMemo(() => {
+    console.time("borrowRows:derive");
     const byAddress = new Map<string, EVault>(
       eVaults.map((v) => [v.address.toLowerCase(), v])
     );
@@ -160,7 +147,10 @@ export function BorrowPage() {
       for (const collateral of debtVault.collaterals) {
         const lltv = normalizeLltv(collateral.liquidationLTV as number | bigint);
         const collateralVault = byAddress.get(collateral.address.toLowerCase());
-        if (!collateralVault) continue;
+        if (!collateralVault) {
+          console.log('missing collateral', debtVault.address, collateral.address);
+          continue;
+        }
         const relationExists = debtVault.collaterals.some(
           (c) => c.address.toLowerCase() === collateralVault.address.toLowerCase()
         );
@@ -190,6 +180,8 @@ export function BorrowPage() {
       }
     }
 
+    console.timeEnd("borrowRows:derive");
+    console.log('borrowRows.length: ', nextRows.length);
     return nextRows;
   }, [eVaults]);
 
@@ -402,6 +394,7 @@ export function BorrowPage() {
             <table>
               <thead>
                 <tr>
+                  <th>#</th>
                   <th className="sortable" onClick={() => toggleSort("collateral")}>
                     Collateral Asset{indicator("collateral")}
                   </th>
@@ -429,7 +422,7 @@ export function BorrowPage() {
                 </tr>
               </thead>
               <tbody>
-                {sortedRows.map((row) => (
+                {sortedRows.map((row, index) => (
                   <tr
                     key={row.id}
                     className="clickable"
@@ -437,6 +430,7 @@ export function BorrowPage() {
                       navigate(`/borrow/${chainId}/${row.collateralAddress}/${row.debtAddress}`)
                     }
                   >
+                    <td>{index + 1}</td>
                     <td>
                       <div>{row.collateralVault.asset.symbol}</div>
                       <div className="table-subline">{getMarketName(row.collateralVault) ?? "-"}</div>

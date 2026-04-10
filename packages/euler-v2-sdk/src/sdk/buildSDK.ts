@@ -1,358 +1,718 @@
 import { EulerSDK } from "./sdk.js";
-import { ABIService, IABIService } from "../services/abiService/index.js";
-import { DeploymentService, IDeploymentService } from "../services/deploymentService/index.js";
-import { ProviderService, IProviderService } from "../services/providerService/index.js";
-import { AccountService, IAccountService } from "../services/accountService/index.js";
-import { AccountOnchainAdapter } from "../services/accountService/adapters/accountOnchainAdapter.js";
-import { AccountVaultsSubgraphAdapter, AccountVaultsSubgraphAdapterConfig } from "../services/accountService/adapters/accountVaultsSubgraphAdapter.js";
-import { WalletService, IWalletService } from "../services/walletService/index.js";
+import { ABIService, type IABIService } from "../services/abiService/index.js";
+import {
+	DeploymentService,
+	type IDeploymentService,
+} from "../services/deploymentService/index.js";
+import {
+	ProviderService,
+	type IProviderService,
+} from "../services/providerService/index.js";
+import {
+	AccountService,
+	type IAccountService,
+} from "../services/accountService/index.js";
+import { AccountOnchainAdapter } from "../services/accountService/adapters/accountOnchainAdapter/accountOnchainAdapter.js";
+import { AccountV3Adapter } from "../services/accountService/adapters/accountV3Adapter/accountV3Adapter.js";
+import {
+	AccountVaultsSubgraphAdapter,
+	type AccountVaultsSubgraphAdapterConfig,
+} from "../services/accountService/adapters/accountOnchainAdapter/accountVaultsSubgraphAdapter.js";
+import type { AccountServiceConfig } from "../services/accountService/accountServiceConfig.js";
+import {
+	WalletService,
+	type IWalletService,
+} from "../services/walletService/index.js";
 import { WalletOnchainAdapter } from "../services/walletService/adapters/walletOnchainAdapter.js";
-import { EVaultService, IEVaultService } from "../services/vaults/eVaultService/index.js";
-import { EulerEarnService, IEulerEarnService } from "../services/vaults/eulerEarnService/index.js";
+import {
+	EVaultService,
+	type IEVaultService,
+} from "../services/vaults/eVaultService/index.js";
+import type { EVaultServiceConfig } from "../services/vaults/eVaultService/eVaultServiceConfig.js";
+import {
+	EulerEarnService,
+	EulerEarnV3Adapter,
+	type EulerEarnServiceConfig,
+	type IEulerEarnService,
+} from "../services/vaults/eulerEarnService/index.js";
 import { EulerEarnOnchainAdapter } from "../services/vaults/eulerEarnService/adapters/eulerEarnOnchainAdapter.js";
-import { SecuritizeVaultService, ISecuritizeVaultService } from "../services/vaults/securitizeVaultService/index.js";
+import {
+	SecuritizeVaultService,
+	type ISecuritizeVaultService,
+} from "../services/vaults/securitizeVaultService/index.js";
 import { SecuritizeVaultOnchainAdapter } from "../services/vaults/securitizeVaultService/adapters/securitizeVaultOnchainAdapter.js";
-import { EulerLabelsService, EulerLabelsURLAdapter, EulerLabelsURLAdapterConfig, IEulerLabelsService } from "../services/eulerLabelsService/index.js";
-import { TokenlistService, ITokenlistService } from "../services/tokenlistService/index.js";
-import { SwapService, ISwapService, SwapServiceConfig } from "../services/swapService/index.js";
-import { ExecutionService, IExecutionService } from "../services/executionService/index.js";
-import { PriceService, IPriceService, type BackendConfig, PricingBackendClient } from "../services/priceService/index.js";
-import { RewardsService, IRewardsService, type RewardsServiceConfig } from "../services/rewardsService/index.js";
-import { IntrinsicApyService, IIntrinsicApyService, type IntrinsicApyServiceConfig } from "../services/intrinsicApyService/index.js";
 import {
-  OracleAdapterService,
-  type IOracleAdapterService,
-  type OracleAdapterServiceConfig,
+	EulerLabelsService,
+	EulerLabelsURLAdapter,
+	type EulerLabelsURLAdapterConfig,
+	type IEulerLabelsService,
+} from "../services/eulerLabelsService/index.js";
+import {
+	TokenlistService,
+	type ITokenlistService,
+} from "../services/tokenlistService/index.js";
+import {
+	SwapService,
+	type ISwapService,
+	type SwapServiceConfig,
+} from "../services/swapService/index.js";
+import {
+	ExecutionService,
+	type IExecutionService,
+} from "../services/executionService/index.js";
+import {
+	PriceService,
+	type IPriceService,
+	type BackendConfig,
+	PricingBackendClient,
+} from "../services/priceService/index.js";
+import {
+	RewardsDirectAdapter,
+	RewardsService,
+	RewardsV3Adapter,
+	type IRewardsService,
+	type RewardsServiceConfig,
+} from "../services/rewardsService/index.js";
+import {
+	IntrinsicApyDirectAdapter,
+	IntrinsicApyService,
+	IntrinsicApyV3Adapter,
+	type IIntrinsicApyService,
+	type IntrinsicApyServiceConfig,
+} from "../services/intrinsicApyService/index.js";
+import {
+	OracleAdapterService,
+	type IOracleAdapterService,
+	type OracleAdapterServiceConfig,
 } from "../services/oracleAdapterService/index.js";
-import { SimulationService, ISimulationService } from "../services/simulationService/index.js";
-import { defaultAccountVaultsAdapterConfig, defaultBackendConfig, defaultDeploymentServiceConfig, defaultEulerLabelsURLAdapterConfig, defaultSwapServiceConfig, defaultTokenlistServiceConfig, defaultVaultTypeAdapterConfig } from "./defaultConfig.js";
-import { FeeFlowService, IFeeFlowService, type FeeFlowServiceConfig } from "../services/feeFlowService/index.js";
-import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
-import { EVaultOnchainAdapter } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter.js";
 import {
-  VaultMetaService,
-  IVaultMetaService,
-  VaultTypeSubgraphAdapter,
-  type RegisteredVaultService,
-  type VaultEntity,
-  type VaultServiceEntry,
+	SimulationService,
+	type ISimulationService,
+} from "../services/simulationService/index.js";
+import {
+	defaultAccountV3AdapterConfig,
+	defaultAccountVaultsAdapterConfig,
+	defaultBackendConfig,
+	defaultDeploymentServiceConfig,
+	defaultEulerEarnV3AdapterConfig,
+	defaultEulerLabelsURLAdapterConfig,
+	defaultIntrinsicApyV3AdapterConfig,
+	defaultRewardsV3AdapterConfig,
+	defaultSwapServiceConfig,
+	defaultTokenlistServiceConfig,
+	defaultVaultTypeAdapterConfig,
+} from "./defaultConfig.js";
+import { defaultEVaultV3AdapterConfig } from "./defaultConfig.js";
+import {
+	FeeFlowService,
+	type IFeeFlowService,
+	type FeeFlowServiceConfig,
+} from "../services/feeFlowService/index.js";
+import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
+import { EVaultOnchainAdapter } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultOnchainAdapter.js";
+import { EVaultV3Adapter } from "../services/vaults/eVaultService/adapters/eVaultV3Adapter/eVaultV3Adapter.js";
+import {
+	VaultMetaService,
+	type IVaultMetaService,
+	VaultTypeSubgraphAdapter,
+	VaultTypeV3Adapter,
+	type RegisteredVaultService,
+	type VaultEntity,
+	type VaultServiceEntry,
 } from "../services/vaults/vaultMetaService/index.js";
 import { VaultType } from "../utils/types.js";
-import type { VaultTypeSubgraphAdapterConfig } from "../services/vaults/vaultMetaService/index.js";
+import type {
+	VaultTypeSubgraphAdapterConfig,
+	VaultTypeV3AdapterConfig,
+} from "../services/vaults/vaultMetaService/index.js";
 import type { IVaultEntity } from "../entities/Account.js";
-import type { BuildQueryFn } from "../utils/buildQuery.js";
+import {
+	createQueryCacheBuildQuery,
+	type BuildQueryFn,
+	type QueryCacheConfig,
+} from "../utils/buildQuery.js";
 import type { EulerPlugin } from "../plugins/types.js";
 import { BatchSimulationAdapter } from "../plugins/batchSimulation.js";
 
-export interface BuildSDKOverrides<TVaultEntity extends IVaultEntity = VaultEntity> {
-  abiService?: IABIService;
-  deploymentService?: IDeploymentService;
-  providerService?: IProviderService;
-  accountService?: IAccountService<TVaultEntity>;
-  walletService?: IWalletService;
-  eVaultService?: IEVaultService;
-  eulerEarnService?: IEulerEarnService;
-  securitizeVaultService?: ISecuritizeVaultService;
-  vaultMetaService?: IVaultMetaService<TVaultEntity>;
-  eulerLabelsService?: IEulerLabelsService;
-  tokenlistService?: ITokenlistService;
-  swapService?: ISwapService;
-  executionService?: IExecutionService;
-  simulationService?: ISimulationService<TVaultEntity>;
-  priceService?: IPriceService;
-  rewardsService?: IRewardsService;
-  intrinsicApyService?: IIntrinsicApyService;
-  oracleAdapterService?: IOracleAdapterService;
-  feeFlowService?: IFeeFlowService;
+export interface BuildSDKOverrides<
+	TVaultEntity extends IVaultEntity = VaultEntity,
+> {
+	abiService?: IABIService;
+	deploymentService?: IDeploymentService;
+	providerService?: IProviderService;
+	accountService?: IAccountService<TVaultEntity>;
+	walletService?: IWalletService;
+	eVaultService?: IEVaultService;
+	eulerEarnService?: IEulerEarnService;
+	securitizeVaultService?: ISecuritizeVaultService;
+	vaultMetaService?: IVaultMetaService<TVaultEntity>;
+	eulerLabelsService?: IEulerLabelsService;
+	tokenlistService?: ITokenlistService;
+	swapService?: ISwapService;
+	executionService?: IExecutionService;
+	simulationService?: ISimulationService<TVaultEntity>;
+	priceService?: IPriceService;
+	rewardsService?: IRewardsService;
+	intrinsicApyService?: IIntrinsicApyService;
+	oracleAdapterService?: IOracleAdapterService;
+	feeFlowService?: IFeeFlowService;
 }
 
-export interface BuildSDKOptions<TVaultEntity extends IVaultEntity = VaultEntity> {
-  rpcUrls: Record<number, string>;
-  accountVaultsAdapterConfig?: AccountVaultsSubgraphAdapterConfig;
-  vaultTypeAdapterConfig?: VaultTypeSubgraphAdapterConfig;
-  /** Additional vault services to register; use { type, service } to register a custom vault type for getFactoryByType(chainId, type). Pass the extended entity type as the generic (e.g. buildEulerSDK<VaultEntity | CustomVault>({ ..., additionalVaultServices: [{ type: 'CustomVault', service: customService }] })). */
-  additionalVaultServices?: VaultServiceEntry<TVaultEntity>[];
-  eulerLabelsAdapterConfig?: EulerLabelsURLAdapterConfig;
-  tokenlistServiceConfig?: TokenlistServiceConfig;
-  swapServiceConfig?: SwapServiceConfig;
-  backendConfig?: BackendConfig;
-  rewardsServiceConfig?: RewardsServiceConfig;
-  intrinsicApyServiceConfig?: IntrinsicApyServiceConfig;
-  oracleAdapterServiceConfig?: OracleAdapterServiceConfig;
-  feeFlowServiceConfig?: FeeFlowServiceConfig;
-  /** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
-  buildQuery?: BuildQueryFn;
-  /** Plugins that enrich on-chain reads (via batchSimulation) and transaction plans (via processPlan). */
-  plugins?: EulerPlugin[];
-  servicesOverrides?: BuildSDKOverrides<TVaultEntity>;
+export interface BuildSDKOptions<
+	TVaultEntity extends IVaultEntity = VaultEntity,
+> {
+	rpcUrls: Record<number, string>;
+	/** Optional API key propagated to built-in V3 HTTP adapters as `X-API-Key`. */
+	v3ApiKey?: string;
+	accountServiceConfig?: AccountServiceConfig;
+	eVaultServiceConfig?: EVaultServiceConfig;
+	eulerEarnServiceConfig?: EulerEarnServiceConfig;
+	accountVaultsAdapterConfig?: AccountVaultsSubgraphAdapterConfig;
+	vaultTypeAdapterConfig?:
+		| VaultTypeSubgraphAdapterConfig
+		| VaultTypeV3AdapterConfig;
+	/** Additional vault services to register; use { type, service } to register a custom vault type for getFactoryByType(chainId, type). Pass the extended entity type as the generic (e.g. buildEulerSDK<VaultEntity | CustomVault>({ ..., additionalVaultServices: [{ type: 'CustomVault', service: customService }] })). */
+	additionalVaultServices?: VaultServiceEntry<TVaultEntity>[];
+	eulerLabelsAdapterConfig?: EulerLabelsURLAdapterConfig;
+	tokenlistServiceConfig?: TokenlistServiceConfig;
+	swapServiceConfig?: SwapServiceConfig;
+	backendConfig?: BackendConfig;
+	rewardsServiceConfig?: RewardsServiceConfig;
+	intrinsicApyServiceConfig?: IntrinsicApyServiceConfig;
+	oracleAdapterServiceConfig?: OracleAdapterServiceConfig;
+	feeFlowServiceConfig?: FeeFlowServiceConfig;
+	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with a 5s TTL. */
+	queryCacheConfig?: QueryCacheConfig;
+	/** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
+	buildQuery?: BuildQueryFn;
+	/** Plugins that enrich on-chain reads (via batchSimulation) and transaction plans (via processPlan). */
+	plugins?: EulerPlugin[];
+	servicesOverrides?: BuildSDKOverrides<TVaultEntity>;
 }
 
-export async function buildEulerSDK<TVaultEntity extends IVaultEntity = VaultEntity>(
-  options: BuildSDKOptions<TVaultEntity>
-): Promise<EulerSDK<TVaultEntity>> {
-  const { rpcUrls, accountVaultsAdapterConfig, vaultTypeAdapterConfig, additionalVaultServices, eulerLabelsAdapterConfig, tokenlistServiceConfig, swapServiceConfig, backendConfig, rewardsServiceConfig, intrinsicApyServiceConfig, oracleAdapterServiceConfig, feeFlowServiceConfig, buildQuery, plugins, servicesOverrides } = options;
+export async function buildEulerSDK<
+	TVaultEntity extends IVaultEntity = VaultEntity,
+>(options: BuildSDKOptions<TVaultEntity>): Promise<EulerSDK<TVaultEntity>> {
+	const {
+		rpcUrls,
+		v3ApiKey,
+		accountServiceConfig,
+		eVaultServiceConfig,
+		eulerEarnServiceConfig,
+		accountVaultsAdapterConfig,
+		vaultTypeAdapterConfig,
+		additionalVaultServices,
+		eulerLabelsAdapterConfig,
+		tokenlistServiceConfig,
+		swapServiceConfig,
+		backendConfig,
+		rewardsServiceConfig,
+		intrinsicApyServiceConfig,
+		oracleAdapterServiceConfig,
+		queryCacheConfig,
+		buildQuery,
+		plugins,
+		servicesOverrides,
+		feeFlowServiceConfig,
+	} = options;
 
-  // Build core services (these may be needed for adapters even if overridden)
-  const abiService = servicesOverrides?.abiService ?? new ABIService(buildQuery);
-  const deploymentService = servicesOverrides?.deploymentService ?? await DeploymentService.build(defaultDeploymentServiceConfig, buildQuery);
-  const providerService = servicesOverrides?.providerService ?? new ProviderService(rpcUrls);
+	const resolvedBuildQuery =
+		buildQuery ?? createQueryCacheBuildQuery(queryCacheConfig);
 
-  // Account adapter is built early so it can be used when building account service (after vault meta service)
-  const accountVaultsAdapter = new AccountVaultsSubgraphAdapter(accountVaultsAdapterConfig || defaultAccountVaultsAdapterConfig, buildQuery);
-  const accountAdapter = new AccountOnchainAdapter(
-    providerService as ProviderService,
-    deploymentService as DeploymentService,
-    accountVaultsAdapter,
-    buildQuery,
-  );
+	// Build core services (these may be needed for adapters even if overridden)
+	const abiService =
+		servicesOverrides?.abiService ?? new ABIService(resolvedBuildQuery);
+	const deploymentService =
+		servicesOverrides?.deploymentService ??
+		(await DeploymentService.build(
+			defaultDeploymentServiceConfig,
+			resolvedBuildQuery,
+		));
+	const providerService =
+		servicesOverrides?.providerService ?? new ProviderService(rpcUrls);
 
-  // Build wallet service if not overridden
-  let walletService: IWalletService;
-  if (servicesOverrides?.walletService) {
-    walletService = servicesOverrides.walletService;
-  } else {
-    const walletAdapter = new WalletOnchainAdapter(
-      providerService as ProviderService,
-      deploymentService as DeploymentService,
-      buildQuery,
-    );
-    walletService = new WalletService(walletAdapter);
-  }
+	// Account adapter is built early so it can be used when building account service (after vault meta service)
+	const resolvedAccountServiceConfig = accountServiceConfig ?? {};
+	let accountOnchainAdapter: AccountOnchainAdapter | undefined;
+	const accountAdapter =
+		resolvedAccountServiceConfig.adapter === "onchain"
+			? (() => {
+					const accountVaultsAdapter = new AccountVaultsSubgraphAdapter(
+						accountVaultsAdapterConfig || defaultAccountVaultsAdapterConfig,
+						resolvedBuildQuery,
+					);
+					accountOnchainAdapter = new AccountOnchainAdapter(
+						providerService as ProviderService,
+						deploymentService as DeploymentService,
+						accountVaultsAdapter,
+						resolvedBuildQuery,
+					);
+					return accountOnchainAdapter;
+				})()
+			: new AccountV3Adapter(
+					{
+						...(resolvedAccountServiceConfig.v3AdapterConfig ??
+							defaultAccountV3AdapterConfig),
+						...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+						...(resolvedAccountServiceConfig.v3AdapterConfig?.apiKey !==
+						undefined
+							? { apiKey: resolvedAccountServiceConfig.v3AdapterConfig.apiKey }
+							: {}),
+					},
+					resolvedBuildQuery,
+				);
 
-  // Build eVault service if not overridden
-  let eVaultService: IEVaultService;
-  let eVaultAdapter: EVaultOnchainAdapter | undefined;
-  if (servicesOverrides?.eVaultService) {
-    eVaultService = servicesOverrides.eVaultService;
-  } else {
-    eVaultAdapter = new EVaultOnchainAdapter(
-      providerService as ProviderService,
-      deploymentService as DeploymentService,
-      buildQuery,
-    );
-    eVaultService = new EVaultService(
-      eVaultAdapter,
-      deploymentService as DeploymentService
-    );
-  }
+	// Build wallet service if not overridden
+	let walletService: IWalletService;
+	if (servicesOverrides?.walletService) {
+		walletService = servicesOverrides.walletService;
+	} else {
+		const walletAdapter = new WalletOnchainAdapter(
+			providerService as ProviderService,
+			deploymentService as DeploymentService,
+			resolvedBuildQuery,
+		);
+		walletService = new WalletService(walletAdapter);
+	}
 
-  // Build eulerEarn service if not overridden
-  let eulerEarnService: IEulerEarnService;
-  if (servicesOverrides?.eulerEarnService) {
-    eulerEarnService = servicesOverrides.eulerEarnService;
-  } else {
-    const eulerEarnAdapter = new EulerEarnOnchainAdapter(
-      providerService as ProviderService,
-      deploymentService as DeploymentService,
-      buildQuery,
-    );
-    eulerEarnService = new EulerEarnService(
-      eulerEarnAdapter,
-      deploymentService as DeploymentService,
-      eVaultService
-    );
-  }
+	// Build eVault service if not overridden
+	let eVaultService: IEVaultService;
+	let eVaultAdapter: EVaultOnchainAdapter | undefined;
+	if (servicesOverrides?.eVaultService) {
+		eVaultService = servicesOverrides.eVaultService;
+	} else {
+		const resolvedEVaultServiceConfig = eVaultServiceConfig ?? {};
+		const selectedEVaultAdapter =
+			resolvedEVaultServiceConfig.adapter === "onchain"
+				? (() => {
+						eVaultAdapter = new EVaultOnchainAdapter(
+							providerService as ProviderService,
+							deploymentService as DeploymentService,
+							resolvedBuildQuery,
+						);
+						return eVaultAdapter;
+					})()
+				: new EVaultV3Adapter(
+						{
+							...(resolvedEVaultServiceConfig.v3AdapterConfig ??
+								defaultEVaultV3AdapterConfig),
+							...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+							...(resolvedEVaultServiceConfig.v3AdapterConfig?.apiKey !==
+							undefined
+								? { apiKey: resolvedEVaultServiceConfig.v3AdapterConfig.apiKey }
+								: {}),
+						},
+						resolvedBuildQuery,
+					);
+		eVaultService = new EVaultService(
+			selectedEVaultAdapter,
+			deploymentService as DeploymentService,
+		);
+	}
 
-  // Build securitizeVault service if not overridden
-  let securitizeVaultService: ISecuritizeVaultService;
-  if (servicesOverrides?.securitizeVaultService) {
-    securitizeVaultService = servicesOverrides.securitizeVaultService;
-  } else {
-    const securitizeVaultAdapter = new SecuritizeVaultOnchainAdapter(
-      providerService as ProviderService,
-      deploymentService as DeploymentService,
-      buildQuery,
-    );
-    securitizeVaultService = new SecuritizeVaultService(
-      securitizeVaultAdapter,
-      deploymentService as DeploymentService
-    );
-  }
+	// Build eulerEarn service if not overridden
+	let eulerEarnService: IEulerEarnService;
+	if (servicesOverrides?.eulerEarnService) {
+		eulerEarnService = servicesOverrides.eulerEarnService;
+	} else {
+		const resolvedEulerEarnServiceConfig = eulerEarnServiceConfig ?? {};
+		const eulerEarnAdapter =
+			resolvedEulerEarnServiceConfig.adapter === "onchain"
+				? new EulerEarnOnchainAdapter(
+						providerService as ProviderService,
+						deploymentService as DeploymentService,
+						resolvedBuildQuery,
+					)
+				: new EulerEarnV3Adapter(
+						{
+							...(resolvedEulerEarnServiceConfig.v3AdapterConfig ??
+								defaultEulerEarnV3AdapterConfig),
+							...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+							...(resolvedEulerEarnServiceConfig.v3AdapterConfig?.apiKey !==
+							undefined
+								? {
+										apiKey:
+											resolvedEulerEarnServiceConfig.v3AdapterConfig.apiKey,
+									}
+								: {}),
+						},
+						resolvedBuildQuery,
+					);
+		eulerEarnService = new EulerEarnService(
+			eulerEarnAdapter,
+			deploymentService as DeploymentService,
+			eVaultService,
+		);
+	}
 
-  // Build vault meta service (vault type subgraph + eVault + eulerEarn + additionalVaultServices); type reflects extended entity when additionalVaultServices is used with buildEulerSDK<TExtendedEntity>
-  let vaultMetaService: IVaultMetaService<TVaultEntity>;
-  if (servicesOverrides?.vaultMetaService) {
-    vaultMetaService = servicesOverrides.vaultMetaService;
-  } else {
-    const vaultTypeAdapter = new VaultTypeSubgraphAdapter(
-      vaultTypeAdapterConfig ?? defaultVaultTypeAdapterConfig,
-      buildQuery,
-    );
-    const allVaultServices: VaultServiceEntry<TVaultEntity>[] = [
-      { type: VaultType.EVault, service: eVaultService as unknown as RegisteredVaultService<TVaultEntity> },
-      { type: VaultType.EulerEarn, service: eulerEarnService as unknown as RegisteredVaultService<TVaultEntity> },
-      {
-        type: VaultType.SecuritizeCollateral,
-        service: securitizeVaultService as unknown as RegisteredVaultService<TVaultEntity>,
-      },
-      ...(additionalVaultServices ?? []),
-    ];
-    vaultMetaService = new VaultMetaService<TVaultEntity>({
-      vaultTypeAdapter,
-      vaultServices: allVaultServices,
-    });
-  }
+	// Build securitizeVault service if not overridden
+	let securitizeVaultService: ISecuritizeVaultService;
+	if (servicesOverrides?.securitizeVaultService) {
+		securitizeVaultService = servicesOverrides.securitizeVaultService;
+	} else {
+		const securitizeVaultAdapter = new SecuritizeVaultOnchainAdapter(
+			providerService as ProviderService,
+			deploymentService as DeploymentService,
+			resolvedBuildQuery,
+		);
+		securitizeVaultService = new SecuritizeVaultService(securitizeVaultAdapter);
+	}
 
-  // Wire vaultMetaService into eVaultService for collateral resolution
-  if (eVaultService instanceof EVaultService) {
-    eVaultService.setVaultMetaService(vaultMetaService as IVaultMetaService);
-  }
+	// Build vault meta service (vault type subgraph + eVault + eulerEarn + additionalVaultServices); type reflects extended entity when additionalVaultServices is used with buildEulerSDK<TExtendedEntity>
+	let vaultMetaService: IVaultMetaService<TVaultEntity>;
+	if (servicesOverrides?.vaultMetaService) {
+		vaultMetaService = servicesOverrides.vaultMetaService;
+	} else {
+		const resolvedVaultTypeAdapterConfig =
+			vaultTypeAdapterConfig ?? defaultVaultTypeAdapterConfig;
+		const vaultTypeAdapter =
+			"subgraphURLs" in resolvedVaultTypeAdapterConfig
+				? new VaultTypeSubgraphAdapter(
+						resolvedVaultTypeAdapterConfig,
+						resolvedBuildQuery,
+					)
+				: new VaultTypeV3Adapter(
+						{
+							...resolvedVaultTypeAdapterConfig,
+							...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+							...("apiKey" in resolvedVaultTypeAdapterConfig &&
+							resolvedVaultTypeAdapterConfig.apiKey !== undefined
+								? { apiKey: resolvedVaultTypeAdapterConfig.apiKey }
+								: {}),
+						},
+						resolvedBuildQuery,
+					);
+		const allVaultServices: VaultServiceEntry<TVaultEntity>[] = [
+			{
+				type: VaultType.EVault,
+				service:
+					eVaultService as unknown as RegisteredVaultService<TVaultEntity>,
+			},
+			{
+				type: VaultType.EulerEarn,
+				service:
+					eulerEarnService as unknown as RegisteredVaultService<TVaultEntity>,
+			},
+			{
+				type: VaultType.SecuritizeCollateral,
+				service:
+					securitizeVaultService as unknown as RegisteredVaultService<TVaultEntity>,
+			},
+			...(additionalVaultServices ?? []),
+		];
+		vaultMetaService = new VaultMetaService<TVaultEntity>({
+			vaultTypeAdapter,
+			vaultServices: allVaultServices,
+		});
+	}
 
-  // Wire plugins into onchain adapters for read-path enrichment
-  if (plugins?.length) {
-    const pluginBatchSimDs = new BatchSimulationAdapter(buildQuery);
-    if (eVaultAdapter) {
-      eVaultAdapter.setPlugins(plugins);
-      eVaultAdapter.setBatchSimulationAdapter(pluginBatchSimDs);
-    }
-    accountAdapter.setPlugins(plugins);
-    accountAdapter.setBatchSimulationAdapter(pluginBatchSimDs);
-  }
+	// Wire vaultMetaService into eVaultService for collateral resolution
+	if (eVaultService instanceof EVaultService) {
+		eVaultService.setVaultMetaService(vaultMetaService as IVaultMetaService);
+	}
+	if (eulerEarnService instanceof EulerEarnService) {
+		eulerEarnService.setVaultMetaService(
+			vaultMetaService as unknown as IVaultMetaService<VaultEntity>,
+		);
+	}
 
-  // Build account service if not overridden (requires vaultMetaService for fetchAccountWithVaults / fetchVaults)
-  let accountService: IAccountService<TVaultEntity>;
-  if (servicesOverrides?.accountService) {
-    accountService = servicesOverrides.accountService;
-  } else {
-    accountService = new AccountService<TVaultEntity>(accountAdapter, vaultMetaService);
-  }
+	// Wire plugins into onchain adapters for read-path enrichment
+	if (plugins?.length) {
+		const pluginBatchSimDs = new BatchSimulationAdapter(resolvedBuildQuery);
+		if (eVaultAdapter) {
+			eVaultAdapter.setPlugins(plugins);
+			eVaultAdapter.setBatchSimulationAdapter(pluginBatchSimDs);
+		}
+		if (accountOnchainAdapter) {
+			accountOnchainAdapter.setPlugins(plugins);
+			accountOnchainAdapter.setBatchSimulationAdapter(pluginBatchSimDs);
+		}
+	}
 
-  // Build eulerLabels service if not overridden
-  const eulerLabelsConfig = eulerLabelsAdapterConfig || defaultEulerLabelsURLAdapterConfig;
-  const eulerLabelsService = servicesOverrides?.eulerLabelsService ?? (() => {
-    const eulerLabelsAdapter = new EulerLabelsURLAdapter(eulerLabelsConfig, buildQuery);
-    return new EulerLabelsService(eulerLabelsAdapter, eulerLabelsConfig.getEulerLabelsLogoUrl);
-  })();
+	// Build account service if not overridden (requires vaultMetaService for fetchAccountWithVaults / fetchVaults)
+	let accountService: IAccountService<TVaultEntity>;
+	if (servicesOverrides?.accountService) {
+		accountService = servicesOverrides.accountService;
+	} else {
+		accountService = new AccountService<TVaultEntity>(
+			accountAdapter,
+			vaultMetaService,
+		);
+	}
 
-  // Build tokenlist service if not overridden
-  const tokenlistService = servicesOverrides?.tokenlistService ?? new TokenlistService(tokenlistServiceConfig || defaultTokenlistServiceConfig, buildQuery);
+	// Build eulerLabels service if not overridden
+	const eulerLabelsConfig =
+		eulerLabelsAdapterConfig || defaultEulerLabelsURLAdapterConfig;
+	const eulerLabelsService =
+		servicesOverrides?.eulerLabelsService ??
+		(() => {
+			const eulerLabelsAdapter = new EulerLabelsURLAdapter(
+				eulerLabelsConfig,
+				resolvedBuildQuery,
+			);
+			return new EulerLabelsService(
+				eulerLabelsAdapter,
+				eulerLabelsConfig.getEulerLabelsLogoUrl,
+			);
+		})();
 
-  // Build swap service if not overridden
-  const swapService = servicesOverrides?.swapService ?? new SwapService(swapServiceConfig || defaultSwapServiceConfig, buildQuery);
+	// Build tokenlist service if not overridden
+	const tokenlistService =
+		servicesOverrides?.tokenlistService ??
+		new TokenlistService(
+			tokenlistServiceConfig || defaultTokenlistServiceConfig,
+			resolvedBuildQuery,
+		);
 
-  // Build execution service if not overridden
-  const executionService = servicesOverrides?.executionService ?? (() => {
-    const svc = new ExecutionService(
-      deploymentService as DeploymentService,
-      walletService as WalletService,
-    );
-    if (plugins?.length) svc.setPlugins(plugins);
-    return svc;
-  })();
+	// Build swap service if not overridden
+	const swapService =
+		servicesOverrides?.swapService ??
+		new SwapService(
+			swapServiceConfig || defaultSwapServiceConfig,
+			resolvedBuildQuery,
+		);
 
-  // Build price service if not overridden
-  const priceService = servicesOverrides?.priceService ?? (() => {
-    const resolvedBackendConfig = backendConfig ?? defaultBackendConfig;
-    const backendClient = new PricingBackendClient(resolvedBackendConfig, buildQuery);
-    return new PriceService(
-      providerService as ProviderService,
-      deploymentService as DeploymentService,
-      backendClient,
-      buildQuery,
-    );
-  })();
+	// Build execution service if not overridden
+	const executionService =
+		servicesOverrides?.executionService ??
+		(() => {
+			const svc = new ExecutionService(
+				deploymentService as DeploymentService,
+				walletService as WalletService,
+			);
+			if (plugins?.length) svc.setPlugins(plugins);
+			return svc;
+		})();
 
-  // Build rewards service if not overridden
-  const rewardsService = servicesOverrides?.rewardsService ?? new RewardsService(rewardsServiceConfig, buildQuery);
+	// Build price service if not overridden
+	const priceService =
+		servicesOverrides?.priceService ??
+		(() => {
+			const resolvedBackendConfig = backendConfig ?? defaultBackendConfig;
+			const backendClient = new PricingBackendClient(
+				{
+					...resolvedBackendConfig,
+					...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+					...(resolvedBackendConfig.apiKey !== undefined
+						? { apiKey: resolvedBackendConfig.apiKey }
+						: {}),
+				},
+				resolvedBuildQuery,
+			);
+			return new PriceService(
+				providerService as ProviderService,
+				deploymentService as DeploymentService,
+				backendClient,
+				resolvedBuildQuery,
+			);
+		})();
 
-  // Build intrinsic APY service if not overridden
-  const intrinsicApyService = servicesOverrides?.intrinsicApyService ?? new IntrinsicApyService(intrinsicApyServiceConfig, buildQuery);
-  const oracleAdapterService =
-    servicesOverrides?.oracleAdapterService ??
-    new OracleAdapterService(oracleAdapterServiceConfig, buildQuery);
-  const feeFlowService = servicesOverrides?.feeFlowService ?? new FeeFlowService(feeFlowServiceConfig, buildQuery);
+	// Build rewards service if not overridden
+	const rewardsService =
+		servicesOverrides?.rewardsService ??
+		(() => {
+			const resolvedRewardsServiceConfig = rewardsServiceConfig ?? {};
+			const legacyDirectAdapterConfig = {
+				merklApiUrl: resolvedRewardsServiceConfig.merklApiUrl,
+				brevisApiUrl: resolvedRewardsServiceConfig.brevisApiUrl,
+				brevisProofsApiUrl: resolvedRewardsServiceConfig.brevisProofsApiUrl,
+				fuulApiUrl: resolvedRewardsServiceConfig.fuulApiUrl,
+				fuulTotalsUrl: resolvedRewardsServiceConfig.fuulTotalsUrl,
+				fuulClaimChecksUrl: resolvedRewardsServiceConfig.fuulClaimChecksUrl,
+				brevisChainIds: resolvedRewardsServiceConfig.brevisChainIds,
+				merklDistributorAddress:
+					resolvedRewardsServiceConfig.merklDistributorAddress,
+				fuulManagerAddress: resolvedRewardsServiceConfig.fuulManagerAddress,
+				fuulFactoryAddress: resolvedRewardsServiceConfig.fuulFactoryAddress,
+				enableMerkl: resolvedRewardsServiceConfig.enableMerkl,
+				enableBrevis: resolvedRewardsServiceConfig.enableBrevis,
+				enableFuul: resolvedRewardsServiceConfig.enableFuul,
+			};
+			const directAdapterConfig = {
+				...legacyDirectAdapterConfig,
+				...(resolvedRewardsServiceConfig.directAdapterConfig ?? {}),
+			};
+			const directAdapter = new RewardsDirectAdapter(
+				directAdapterConfig,
+				resolvedBuildQuery,
+			);
+			const rewardsAdapter =
+				resolvedRewardsServiceConfig.adapter === "direct"
+					? directAdapter
+					: new RewardsV3Adapter(
+							{
+								...(resolvedRewardsServiceConfig.v3AdapterConfig ??
+									defaultRewardsV3AdapterConfig),
+								...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+								...(resolvedRewardsServiceConfig.v3AdapterConfig?.apiKey !==
+								undefined
+									? {
+											apiKey:
+												resolvedRewardsServiceConfig.v3AdapterConfig.apiKey,
+										}
+									: {}),
+							},
+							resolvedBuildQuery,
+						);
 
-  // Build simulation service if not overridden
-  const simulationService = servicesOverrides?.simulationService ?? new SimulationService<TVaultEntity>(
-    providerService as ProviderService,
-    deploymentService as DeploymentService,
-    vaultMetaService as IVaultMetaService<TVaultEntity>,
-    executionService,
-    priceService,
-    rewardsService,
-    intrinsicApyService,
-    eulerLabelsService,
-    walletService,
-  );
+			return new RewardsService(
+				rewardsAdapter,
+				resolvedRewardsServiceConfig.adapter === "direct"
+					? undefined
+					: directAdapter,
+				{
+				merklDistributorAddress:
+					directAdapter.getMerklDistributorAddress(),
+				fuulManagerAddress: directAdapter.getFuulManagerAddress(),
+				fuulFactoryAddress: directAdapter.getFuulFactoryAddress(),
+				},
+			);
+		})();
 
-  // Wire priceService and rewardsService into account service
-  if (accountService instanceof AccountService) {
-    accountService.setPriceService(priceService);
-    accountService.setRewardsService(rewardsService);
-  }
+	// Build intrinsic APY service if not overridden
+	const intrinsicApyService =
+		servicesOverrides?.intrinsicApyService ??
+		(() => {
+			const resolvedIntrinsicApyServiceConfig = intrinsicApyServiceConfig ?? {};
+			const legacyDirectAdapterConfig = {
+				defillamaYieldsUrl:
+					resolvedIntrinsicApyServiceConfig.defillamaYieldsUrl,
+				pendleApiUrl: resolvedIntrinsicApyServiceConfig.pendleApiUrl,
+				stablewatchPoolsUrl:
+					resolvedIntrinsicApyServiceConfig.stablewatchPoolsUrl,
+				stablewatchSourceUrl:
+					resolvedIntrinsicApyServiceConfig.stablewatchSourceUrl,
+			};
+			const intrinsicApyAdapter =
+				resolvedIntrinsicApyServiceConfig.adapter === "direct"
+					? new IntrinsicApyDirectAdapter(
+							{
+								...legacyDirectAdapterConfig,
+								...(resolvedIntrinsicApyServiceConfig.directAdapterConfig ?? {}),
+							},
+							resolvedBuildQuery,
+						)
+					: new IntrinsicApyV3Adapter(
+							{
+								...(resolvedIntrinsicApyServiceConfig.v3AdapterConfig ??
+									defaultIntrinsicApyV3AdapterConfig),
+								...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+								...(resolvedIntrinsicApyServiceConfig.v3AdapterConfig?.apiKey !==
+								undefined
+									? {
+											apiKey:
+												resolvedIntrinsicApyServiceConfig.v3AdapterConfig.apiKey,
+										}
+									: {}),
+							},
+							resolvedBuildQuery,
+						);
 
-  // Wire priceService into vault services for market price resolution
-  if (eVaultService instanceof EVaultService) {
-    eVaultService.setPriceService(priceService);
-  }
-  if (eulerEarnService instanceof EulerEarnService) {
-    eulerEarnService.setPriceService(priceService);
-  }
-  if (securitizeVaultService instanceof SecuritizeVaultService) {
-    securitizeVaultService.setPriceService(priceService);
-  }
+			return new IntrinsicApyService(intrinsicApyAdapter);
+		})();
+	const oracleAdapterService =
+		servicesOverrides?.oracleAdapterService ??
+		new OracleAdapterService(
+			oracleAdapterServiceConfig,
+			resolvedBuildQuery,
+		);
+	const feeFlowService =
+		servicesOverrides?.feeFlowService ??
+		new FeeFlowService(feeFlowServiceConfig, resolvedBuildQuery);
 
-  // Wire rewardsService into vault services for reward population
-  if (eVaultService instanceof EVaultService) {
-    eVaultService.setRewardsService(rewardsService);
-  }
-  if (eulerEarnService instanceof EulerEarnService) {
-    eulerEarnService.setRewardsService(rewardsService);
-  }
-  if (securitizeVaultService instanceof SecuritizeVaultService) {
-    securitizeVaultService.setRewardsService(rewardsService);
-  }
+	// Build simulation service if not overridden
+	const simulationService =
+		servicesOverrides?.simulationService ??
+		new SimulationService<TVaultEntity>(
+			providerService as ProviderService,
+			deploymentService as DeploymentService,
+			vaultMetaService as IVaultMetaService<TVaultEntity>,
+			executionService,
+			priceService,
+			rewardsService,
+			intrinsicApyService,
+			eulerLabelsService,
+			walletService,
+		);
 
-  if (rewardsService instanceof RewardsService) {
-    rewardsService.setProviderService(providerService as ProviderService);
-  }
-  if (feeFlowService instanceof FeeFlowService) {
-    feeFlowService.setProviderService(providerService as ProviderService);
-    feeFlowService.setDeploymentService(deploymentService);
-  }
+	// Wire priceService and rewardsService into account service
+	if (accountService instanceof AccountService) {
+		accountService.setPriceService(priceService);
+		accountService.setRewardsService(rewardsService);
+	}
 
-  // Wire intrinsicApyService into vault services for intrinsic APY population
-  if (eVaultService instanceof EVaultService) {
-    eVaultService.setIntrinsicApyService(intrinsicApyService);
-  }
-  if (eulerEarnService instanceof EulerEarnService) {
-    eulerEarnService.setIntrinsicApyService(intrinsicApyService);
-  }
-  if (securitizeVaultService instanceof SecuritizeVaultService) {
-    securitizeVaultService.setIntrinsicApyService(intrinsicApyService);
-  }
+	// Wire priceService into vault services for market price resolution
+	if (eVaultService instanceof EVaultService) {
+		eVaultService.setPriceService(priceService);
+	}
+	if (eulerEarnService instanceof EulerEarnService) {
+		eulerEarnService.setPriceService(priceService);
+	}
+	if (securitizeVaultService instanceof SecuritizeVaultService) {
+		securitizeVaultService.setPriceService(priceService);
+	}
 
-  // Wire eulerLabelsService into vault services for label population
-  if (eVaultService instanceof EVaultService) {
-    eVaultService.setEulerLabelsService(eulerLabelsService);
-  }
-  if (eulerEarnService instanceof EulerEarnService) {
-    eulerEarnService.setEulerLabelsService(eulerLabelsService);
-  }
-  if (securitizeVaultService instanceof SecuritizeVaultService) {
-    securitizeVaultService.setEulerLabelsService(eulerLabelsService);
-  }
+	// Wire rewardsService into vault services for reward population
+	if (eVaultService instanceof EVaultService) {
+		eVaultService.setRewardsService(rewardsService);
+	}
+	if (eulerEarnService instanceof EulerEarnService) {
+		eulerEarnService.setRewardsService(rewardsService);
+	}
+	if (securitizeVaultService instanceof SecuritizeVaultService) {
+		securitizeVaultService.setRewardsService(rewardsService);
+	}
 
-  return new EulerSDK<TVaultEntity>({
-    accountService,
-    walletService,
-    eVaultService,
-    eulerEarnService,
-    securitizeVaultService,
-    vaultMetaService,
-    deploymentService,
-    providerService,
-    abiService,
-    eulerLabelsService,
-    tokenlistService,
-    swapService,
-    executionService,
-    simulationService,
-    priceService,
-    rewardsService,
-    intrinsicApyService,
-    oracleAdapterService,
-    feeFlowService,
-    plugins,
-  });
+	if (rewardsService instanceof RewardsService) {
+		rewardsService.setProviderService(providerService as ProviderService);
+	}
+	if (feeFlowService instanceof FeeFlowService) {
+		feeFlowService.setProviderService(providerService as ProviderService);
+		feeFlowService.setDeploymentService(deploymentService);
+	}
+
+	// Wire intrinsicApyService into vault services for intrinsic APY population
+	if (eVaultService instanceof EVaultService) {
+		eVaultService.setIntrinsicApyService(intrinsicApyService);
+	}
+	if (eulerEarnService instanceof EulerEarnService) {
+		eulerEarnService.setIntrinsicApyService(intrinsicApyService);
+	}
+	if (securitizeVaultService instanceof SecuritizeVaultService) {
+		securitizeVaultService.setIntrinsicApyService(intrinsicApyService);
+	}
+
+	// Wire eulerLabelsService into vault services for label population
+	if (eVaultService instanceof EVaultService) {
+		eVaultService.setEulerLabelsService(eulerLabelsService);
+	}
+	if (eulerEarnService instanceof EulerEarnService) {
+		eulerEarnService.setEulerLabelsService(eulerLabelsService);
+	}
+	if (securitizeVaultService instanceof SecuritizeVaultService) {
+		securitizeVaultService.setEulerLabelsService(eulerLabelsService);
+	}
+
+	return new EulerSDK<TVaultEntity>({
+		accountService,
+		walletService,
+		eVaultService,
+		eulerEarnService,
+		securitizeVaultService,
+		vaultMetaService,
+		deploymentService,
+		providerService,
+		abiService,
+		eulerLabelsService,
+		tokenlistService,
+		swapService,
+		executionService,
+		simulationService,
+		priceService,
+		rewardsService,
+		intrinsicApyService,
+		oracleAdapterService,
+		feeFlowService,
+		plugins,
+	});
 }

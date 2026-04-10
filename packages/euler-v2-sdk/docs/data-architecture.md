@@ -28,7 +28,7 @@ Entities are the SDK's domain objects. Each entity has two parts:
 ```
 ERC4626Vault (base — address, shares, asset, totals)
   ├── EVault              (+ oracle, collaterals, interest rates, caps, hooks)
-  ├── EulerEarn           (+ strategies, performance fee, supply APY)
+  ├── EulerEarn           (+ strategies, performance fee, adapter-provided 1h supply APY)
   └── SecuritizeCollateralVault  (+ governor, supply cap)
 
 Account<TVaultEntity>    (owner, sub-accounts, positions, liquidity)
@@ -85,7 +85,7 @@ Adapters are the SDK's I/O boundary. They implement focused interfaces (e.g. `IE
 |------|----------|------------|
 | **Onchain** | `EVaultOnchainAdapter`, `AccountOnchainAdapter`, `WalletOnchainAdapter` | Lens contracts via RPC (`VaultLens`, `AccountLens`, `UtilsLens`) |
 | **Subgraph** | `VaultTypeSubgraphAdapter`, `AccountVaultsSubgraphAdapter` | The Graph (indexed chain data — vault factories, account vault history) |
-| **Backend / API** | `PricingBackendClient`, `EulerLabelsURLAdapter` | REST APIs (pricing, labels, rewards) |
+| **Backend / API** | `VaultTypeV3Adapter`, `PricingBackendClient`, `EulerLabelsURLAdapter` | REST APIs (vault type resolution, pricing, labels, rewards) |
 
 ### Adapter → entity interface
 
@@ -101,6 +101,8 @@ This keeps adapters thin and conversion logic pure and testable.
 ### Query methods
 
 All external calls within adapters are defined as `query*` arrow-function properties. The [`BuildQueryFn`](./caching-external-data-queries.md) decorator wraps every `query*` method at construction time, enabling global caching, logging, or profiling without modifying SDK internals.
+
+In the default SDK build, `buildEulerSDK()` installs a short-lived in-memory cache around all decorated `query*` methods. The default cache TTL is `5000ms`, which keeps bursty fetch paths from repeating identical RPC or HTTP requests while preserving near-real-time behavior. If a consumer provides `buildQuery`, that custom decorator replaces the built-in cache layer for SDK queries.
 
 ```typescript
 class EVaultOnchainAdapter {
@@ -161,19 +163,26 @@ See [Cross-Service Data Population](./cross-service-data-population.md) for the 
 
 ### VaultMetaService — polymorphic routing
 
-`VaultMetaService` is the orchestration layer that handles multiple vault types transparently. It maps vault addresses to the correct typed service by looking up each vault's factory address (via subgraph) and matching it to a registered service. This powers `accountService.fetchAccount()` (resolving mixed vault types on positions) and `vaultMetaService.fetchVault()` (type-agnostic fetch).
+`VaultMetaService` is the orchestration layer that handles multiple vault types transparently. It maps vault addresses to the correct typed service by resolving each vault's type and matching it to a registered service. By default this happens through the V3 resolver endpoint, while the legacy subgraph factory lookup remains available as an alternate adapter. This powers `accountService.fetchAccount()` (resolving mixed vault types on positions) and `vaultMetaService.fetchVault()` (type-agnostic fetch).
 
 ## Wiring — `buildEulerSDK()`
 
 `buildEulerSDK()` is the composition root that constructs the full dependency graph:
 
 1. **Core infrastructure** — `ProviderService` (RPC clients), `DeploymentService` (chain addresses), `ABIService`
-2. **Adapters** — each constructed with `ProviderService`, `DeploymentService`, and optional `buildQuery`
+2. **Adapters** — each constructed with `ProviderService`, `DeploymentService`, and a resolved query decorator
 3. **Typed vault services** — `EVaultService`, `EulerEarnService`, `SecuritizeVaultService`, each with their adapter
-4. **VaultMetaService** — wraps all vault services + `VaultTypeSubgraphAdapter`
+4. **VaultMetaService** — wraps all vault services
 5. **AccountService** — depends on `AccountOnchainAdapter` + `VaultMetaService`
 6. **Support services** — `PriceService`, `OracleAdapterService`, `RewardsService`, `EulerLabelsService`, `WalletService`, etc.
 7. **Post-construction wiring** — setter-based cross-service injection (`setPriceService`, `setRewardsService`, etc.)
+
+The resolved query decorator is selected as:
+
+1. Consumer-provided `buildQuery`, if present
+2. Otherwise the built-in in-memory cache from `queryCacheConfig` (enabled by default with `ttlMs: 5000`)
+
+This means custom query decorators replace the SDK's default cache rather than layering on top of it automatically.
 
 ## Flexibility and Customization
 
@@ -296,11 +305,13 @@ accountService.fetchAccount(chainId, owner, { populateVaults: true, populateMark
   │    │    → route addresses to correct services
   │    ├─ EVaultOnchainAdapter.queryEVaultInfoFull()          ← RPC (VaultLens)
   │    ├─ EulerEarnOnchainAdapter.queryEulerEarnVaultInfoFull() ← RPC
+  │    ├─ EulerEarnOnchainAdapter.queryEulerEarnConvertToAssets() ← RPC
+  │    ├─ EulerEarnOnchainAdapter.queryBlockNumber() / queryBlock() ← RPC
   │    │    → convert, construct typed entities
   │    └─ assign vault entities to position.vault fields
   │
   └─ account.populateMarketPrices(priceService)
-       ├─ PricingBackendClient.queryBackendPrice()            ← HTTP (backend, bundled)
+       ├─ PricingBackendClient.queryV3Price()                 ← HTTP (backend, bundled)
        │   or PriceService.queryAssetPriceInfo()              ← RPC (fallback)
        └─ set marketPriceUsd on each vault
             → computed getters (healthFactor, netValueUsd, ...) now resolve

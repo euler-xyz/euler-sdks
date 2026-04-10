@@ -1,1 +1,6 @@
-export { createKeyringPlugin, KeyringPluginAdapter, type KeyringPluginConfig, type KeyringCredentialData } from "./keyringPlugin.js";
+export {
+	createKeyringPlugin,
+	KeyringPluginAdapter,
+	type KeyringPluginConfig,
+	type KeyringCredentialData,
+} from "./keyringPlugin.js";

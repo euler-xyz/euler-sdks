@@ -4,6 +4,7 @@ export const CHAIN_NAMES: Record<number, string> = {
   1: "Ethereum",
   56: "BSC",
   130: "Unichain",
+  143: "Monad",
   146: "Sonic",
   239: "TAC",
   1923: "Swell",
@@ -15,6 +16,13 @@ export const CHAIN_NAMES: Record<number, string> = {
   80094: "Berachain",
 };
 
+export const ALL_CHAIN_IDS = Object.keys(CHAIN_NAMES)
+  .map(Number)
+  .sort((a, b) => a - b);
+
+// Verified against the configured V3 endpoint on 2026-04-02.
+export const DEFAULT_ENABLED_V3_CHAIN_IDS = [1, 143, 146, 8453, 42161];
+
 export const DEFAULT_CHAIN = 1;
 
 // Public RPC fallbacks — override per chain with VITE_RPC_URL_<chainId> in .env
@@ -22,6 +30,7 @@ const PUBLIC_RPC_URLS: Record<number, string> = {
   1: "https://eth.drpc.org",
   56: "https://bsc.drpc.org",
   130: "https://unichain.drpc.org",
+  143: "https://rpc.monad.xyz",
   146: "https://sonic.drpc.org",
   239: "https://turin.rpc.tac.build",
   1923: "https://swell-mainnet.g.alchemy.com/public",
@@ -34,10 +43,10 @@ const PUBLIC_RPC_URLS: Record<number, string> = {
 };
 
 export const RPC_URLS: Record<number, string> = Object.fromEntries(
-  Object.entries(PUBLIC_RPC_URLS).map(([chainId, fallback]) => {
-    const envUrl = import.meta.env[`VITE_RPC_URL_${chainId}`];
-    return [Number(chainId), envUrl || fallback];
-  })
+  Object.entries(PUBLIC_RPC_URLS).map(([chainId, fallback]) => [
+    chainId,
+    import.meta.env[`VITE_RPC_URL_${chainId}`] || fallback,
+  ])
 );
 
 const DEFAULT_NATIVE = { name: "Ether", symbol: "ETH", decimals: 18 };

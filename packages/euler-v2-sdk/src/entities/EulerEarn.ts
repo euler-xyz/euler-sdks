@@ -1,173 +1,196 @@
-import { Address } from "viem";
-import { ERC4626Data, Token, VaultType } from "../utils/types.js";
+import type { Address } from "viem";
+import type { VaultType } from "../utils/types.js";
 import {
-  ERC4626Vault,
-  type ERC4626VaultPopulated,
-  IERC4626Vault,
-  IERC4626VaultConversion,
-  VIRTUAL_DEPOSIT_AMOUNT,
+	ERC4626Vault,
+	type ERC4626VaultPopulated,
+	type IERC4626Vault,
+	type IERC4626VaultConversion,
+	VIRTUAL_DEPOSIT_AMOUNT,
 } from "./ERC4626Vault.js";
-import type { EVault } from "./EVault.js";
-import type { IEVaultService } from "../services/vaults/eVaultService/eVaultService.js";
+import type { IVaultEntity } from "./Account.js";
+import type { IVaultMetaService } from "../services/vaults/vaultMetaService/index.js";
 import type { DataIssue } from "../utils/entityDiagnostics.js";
-import { mapDataIssuePaths, withPathPrefix } from "../utils/entityDiagnostics.js";
-
+import {
+	mapDataIssuePaths,
+	withPathPrefix,
+} from "../utils/entityDiagnostics.js";
+import { VaultType as VaultTypeEnum } from "../utils/types.js";
 
 export interface EulerEarnAllocationCap {
-  current: bigint;
-  pending: bigint;
-  pendingValidAt: number;
+	current: bigint;
+	pending: bigint;
+	pendingValidAt: number;
 }
 
-export interface EulerEarnStrategyInfo extends ERC4626Data {
-  address: Address;
-  vaultType: VaultType;
-  allocatedAssets: bigint;
-  availableAssets: bigint;
-  allocationCap: EulerEarnAllocationCap;
-  removableAt: number;
-  vault?: EVault;
+export interface EulerEarnStrategyInfo {
+	address: Address;
+	vaultType: VaultType;
+	allocatedAssets: bigint;
+	availableAssets: bigint;
+	allocationCap: EulerEarnAllocationCap;
+	removableAt: number;
+	vault?: IVaultEntity;
 }
+
+export type EulerEarnStrategyStatus =
+	| "active"
+	| "inactive"
+	| "pendingRemoval";
 
 export interface EulerEarnGovernance {
-  owner: Address;
-  creator: Address;
-  curator: Address;
-  guardian: Address;
-  feeReceiver: Address;
+	owner: Address;
+	creator: Address;
+	curator: Address;
+	guardian: Address;
+	feeReceiver: Address;
 
-  timelock: number;
+	timelock: number;
 
-  pendingTimelock: number;
-  pendingTimelockValidAt: number;
-  pendingGuardian: Address;
-  pendingGuardianValidAt: number;
+	pendingTimelock: number;
+	pendingTimelockValidAt: number;
+	pendingGuardian: Address;
+	pendingGuardianValidAt: number;
 }
 
 export interface IEulerEarn extends IERC4626Vault {
-  lostAssets: bigint;
-  availableAssets: bigint;
-  performanceFee: number;
+	lostAssets: bigint;
+	availableAssets: bigint;
+	performanceFee: number;
+	supplyApy1h: number | undefined;
 
-  governance: EulerEarnGovernance;
+	governance: EulerEarnGovernance;
 
-  supplyQueue: Address[];
-  strategies: EulerEarnStrategyInfo[];
+	supplyQueue: Address[];
+	withdrawQueue: Address[];
+	strategies: EulerEarnStrategyInfo[];
 
-  timestamp: number;
-  populated?: Partial<EulerEarnPopulated>;
+	timestamp: number;
+	populated?: Partial<EulerEarnPopulated>;
 }
 
 export interface EulerEarnPopulated extends ERC4626VaultPopulated {
-  strategyVaults: boolean;
+	strategyVaults: boolean;
 }
 
-export class EulerEarn extends ERC4626Vault implements IEulerEarn, IERC4626VaultConversion {
-  lostAssets: bigint;
-  availableAssets: bigint;
-  performanceFee: number;
+export class EulerEarn
+	extends ERC4626Vault
+	implements IEulerEarn, IERC4626VaultConversion
+{
+	lostAssets: bigint;
+	availableAssets: bigint;
+	performanceFee: number;
+	supplyApy1h: number | undefined;
 
-  governance: EulerEarnGovernance;
+	governance: EulerEarnGovernance;
 
-  supplyQueue: Address[];
-  strategies: EulerEarnStrategyInfo[];
+	supplyQueue: Address[];
+	withdrawQueue: Address[];
+	strategies: EulerEarnStrategyInfo[];
 
-  timestamp: number;
-  declare populated: EulerEarnPopulated;
+	timestamp: number;
+	declare populated: EulerEarnPopulated;
 
-  constructor(args: IEulerEarn) {
-    super(args);
-    this.lostAssets = args.lostAssets;
-    this.availableAssets = args.availableAssets;
-    this.performanceFee = args.performanceFee;
+	constructor(args: IEulerEarn) {
+		super(args);
+		this.lostAssets = args.lostAssets;
+		this.availableAssets = args.availableAssets;
+		this.performanceFee = args.performanceFee;
+		this.supplyApy1h = args.supplyApy1h;
 
-    this.governance = args.governance;
+		this.governance = args.governance;
 
-    this.supplyQueue = args.supplyQueue;
-    this.strategies = args.strategies;
+		this.supplyQueue = args.supplyQueue;
+		this.withdrawQueue = args.withdrawQueue;
+		this.strategies = args.strategies;
 
-    this.timestamp = args.timestamp;
-    const hasResolvedStrategyVaults = this.strategies.length > 0
-      && this.strategies.every((strategy) => strategy.vault !== undefined);
-    this.populated = {
-      ...this.populated,
-      strategyVaults: args.populated?.strategyVaults ?? hasResolvedStrategyVaults,
-    };
-  }
+		this.timestamp = args.timestamp;
+		const hasResolvedStrategyVaults =
+			this.strategies.length > 0 &&
+			this.strategies.every((strategy) => strategy.vault !== undefined);
+		this.populated = {
+			...this.populated,
+			strategyVaults:
+				args.populated?.strategyVaults ?? hasResolvedStrategyVaults,
+		};
+	}
 
-  isPendingRemoval(strategy: EulerEarnStrategyInfo): boolean {
-    return this.strategies.some((s) => s.address === strategy.address && s.removableAt > this.timestamp);
-  }
+	override get isBorrowable(): boolean {
+		return false;
+	}
 
-  /** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
-  override convertToAssets(shares: bigint): bigint {
-    const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
-    const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
-    return (shares * totalAssetsAdjusted) / totalSharesAdjusted;
-  }
+	isPendingRemoval(strategy: EulerEarnStrategyInfo): boolean {
+		return this.getStrategyStatus(strategy) === "pendingRemoval";
+	}
 
-  /** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
-  override convertToShares(assets: bigint): bigint {
-    const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
-    const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
-    return (assets * totalSharesAdjusted) / totalAssetsAdjusted;
-  }
+	getStrategyStatus(
+		strategy: EulerEarnStrategyInfo,
+	): EulerEarnStrategyStatus {
+		if (strategy.removableAt > 0) {
+			return "pendingRemoval";
+		}
 
-  /** Weighted supply APY derived from underlying strategy EVault APYs, net of performance fee. */
-  get supplyApy(): number | undefined {
-    if (this.totalAssets === 0n) return undefined;
+		if (strategy.allocationCap.current > 0n) {
+			return "active";
+		}
 
-    const strategiesWithVault = this.strategies.filter((s) => s.vault);
-    if (strategiesWithVault.length === 0) return undefined;
+		return "inactive";
+	}
 
-    let weightedSum = 0;
-    let totalAllocated = 0;
-    for (const strategy of strategiesWithVault) {
-      const apy = parseFloat(strategy.vault!.interestRates.supplyAPY);
-      const allocated = strategy.allocatedAssets <= BigInt(Number.MAX_SAFE_INTEGER)
-        ? Number(strategy.allocatedAssets)
-        : Number.MAX_SAFE_INTEGER;
-      weightedSum += allocated * apy;
-      totalAllocated += allocated;
-    }
+	/** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
+	override convertToAssets(shares: bigint): bigint {
+		const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
+		const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
+		return (shares * totalAssetsAdjusted) / totalSharesAdjusted;
+	}
 
-    if (totalAllocated === 0) return undefined;
+	/** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
+	override convertToShares(assets: bigint): bigint {
+		const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
+		const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
+		return (assets * totalSharesAdjusted) / totalAssetsAdjusted;
+	}
 
-    const grossApy = weightedSum / totalAllocated;
-    return grossApy * (1 - this.performanceFee);
-  }
+	async populateStrategyVaults(
+		vaultMetaService: IVaultMetaService,
+	): Promise<DataIssue[]> {
+		const allStrategyAddresses = [
+			...new Set(
+				this.strategies
+					.filter((s) => s.vaultType !== VaultTypeEnum.Unknown)
+					.map((s) => s.address),
+			),
+		];
+		if (allStrategyAddresses.length === 0) {
+			this.populated.strategyVaults = true;
+			return [];
+		}
+		const errors: DataIssue[] = [];
 
-  async populateStrategyVaults(eVaultService: IEVaultService): Promise<DataIssue[]> {
-    const allStrategyAddresses = [...new Set(this.strategies.map((s) => s.address))];
-    if (allStrategyAddresses.length === 0) {
-      this.populated.strategyVaults = true;
-      return [];
-    }
-    const errors: DataIssue[] = [];
+		const vaults = await Promise.all(
+			allStrategyAddresses.map(async (addr, index) => {
+				const fetched = await vaultMetaService.fetchVault(this.chainId, addr);
+				errors.push(
+					...fetched.errors.map((issue) => ({
+						...mapDataIssuePaths(issue, (path) =>
+							withPathPrefix(path, `$.strategies[${index}].vault`),
+						),
+					})),
+				);
+				return fetched.result;
+			}),
+		);
 
-    const eVaults = await Promise.all(
-      allStrategyAddresses.map(async (addr, index) => {
-        const fetched = await eVaultService.fetchVault(this.chainId, addr);
-        errors.push(...fetched.errors.map((issue) => ({
-          ...mapDataIssuePaths(
-            issue,
-            (path) => withPathPrefix(path, `$.strategies[${index}].vault`)
-          ),
-        })));
-        return fetched.result;
-      })
-    );
+		const vaultByAddress = new Map(
+			vaults
+				.filter((v) => v !== undefined)
+				.map((v) => [v.address.toLowerCase(), v]),
+		);
 
-    const eVaultByAddress = new Map(
-      eVaults
-        .filter((v) => v !== undefined)
-        .map((v) => [v.address.toLowerCase(), v])
-    );
-
-    for (const strategy of this.strategies) {
-      strategy.vault = eVaultByAddress.get(strategy.address.toLowerCase());
-    }
-    this.populated.strategyVaults = true;
-    return errors;
-  }
+		for (const strategy of this.strategies) {
+			if (strategy.vaultType === VaultTypeEnum.Unknown) continue;
+			strategy.vault = vaultByAddress.get(strategy.address.toLowerCase());
+		}
+		this.populated.strategyVaults = true;
+		return errors;
+	}
 }

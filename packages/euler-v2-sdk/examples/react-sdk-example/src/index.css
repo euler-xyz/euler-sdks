@@ -63,6 +63,44 @@ a:hover {
   padding: 24px;
 }
 
+.sdk-tools-launcher {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: auto;
+  height: auto;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  font-family: inherit;
+  font-size: 56px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  -webkit-text-stroke: 2px #000;
+}
+
+.sdk-tools-launcher.active {
+  color: transparent;
+}
+
+.sdk-tools-launcher-icon {
+  line-height: 1;
+}
+
+@media (max-width: 1200px) {
+  .sdk-tools-launcher {
+    bottom: 16px;
+  }
+}
+
 /* Query Profiler */
 .profiler-panel {
   width: 280px;
@@ -76,20 +114,6 @@ a:hover {
   max-height: 100vh;
   overflow-y: auto;
   background: #fff;
-  transition: width 160ms ease, padding 160ms ease;
-}
-
-.profiler-panel.collapsed {
-  width: 30px;
-  padding: 8px 4px;
-  overflow: hidden;
-}
-
-.profiler-panel.collapsed .profiler-header {
-  margin: 0;
-  padding: 0;
-  border-bottom: 0;
-  justify-content: center;
 }
 
 @media (max-width: 1200px) {
@@ -122,6 +146,12 @@ a:hover {
   border-bottom: 1px solid #000;
 }
 
+.profiler-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .profiler-toggle {
   font-family: inherit;
   font-size: 10px;
@@ -133,6 +163,22 @@ a:hover {
   white-space: nowrap;
 }
 
+.profiler-config-button {
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid #000;
+  background: #fff;
+  padding: 2px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.profiler-config-button.active {
+  background: #000;
+  color: #fff;
+}
+
 .profiler-empty {
   color: #999;
   font-style: italic;
@@ -141,7 +187,22 @@ a:hover {
 .profiler-table {
   display: flex;
   flex-direction: column;
+  gap: 8px;
+}
+
+.profiler-group {
+  display: flex;
+  flex-direction: column;
   gap: 2px;
+}
+
+.profiler-group-title {
+  padding-top: 4px;
+  border-top: 1px solid #ddd;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
 }
 
 .profiler-head-row {
@@ -165,10 +226,20 @@ a:hover {
 
 .profiler-row {
   display: grid;
-  grid-template-columns: 20px 1fr 44px;
+  grid-template-columns: 20px 1fr 48px;
   gap: 8px;
   padding: 3px 0;
   align-items: center;
+}
+
+.profiler-counts {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 48px;
+  min-height: 100%;
 }
 
 .profiler-count {
@@ -176,11 +247,15 @@ a:hover {
   font-weight: 700;
   min-width: 44px;
   opacity: 1;
-  transition: opacity 3s linear;
+  transition: opacity 6s linear;
 }
 
 .profiler-count.fading {
   opacity: 0;
+}
+
+.profiler-count-error {
+  color: #d83b3b;
 }
 
 .profiler-name {
@@ -367,13 +442,35 @@ tr.clickable {
   margin-bottom: 16px;
 }
 
+.failed-vaults-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
 .failed-vaults-title {
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  margin-bottom: 8px;
   color: #c00;
+}
+
+.failed-vaults-toggle {
+  border: 1px solid #d8d8d8;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.failed-vaults-toggle:hover {
+  border-color: #bdbdbd;
 }
 
 .error-icon {
@@ -1362,6 +1459,157 @@ tr.clickable {
 .interceptor-error {
   color: #b00020;
   font-size: 12px;
+}
+
+.query-options-modal {
+  width: min(760px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #fff;
+  border: 2px solid #000;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.query-options-modal h2 {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.query-options-summary {
+  font-size: 12px;
+  color: #444;
+}
+
+.query-options-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 8px;
+}
+
+.query-options-tab {
+  border: 1px solid #000;
+  background: #fff;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.query-options-tab.active {
+  background: #000;
+  color: #fff;
+}
+
+.query-options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.query-options-grid-single {
+  grid-template-columns: 1fr;
+}
+
+.query-options-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.query-options-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.query-options-toggle-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid #000;
+  padding: 12px;
+}
+
+.query-options-toggle-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.query-options-toggle-title {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.query-options-toggle-description {
+  font-size: 12px;
+  color: #444;
+  line-height: 1.4;
+}
+
+.query-options-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.query-options-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.query-options-switch-track {
+  width: 48px;
+  height: 28px;
+  border: 1px solid #000;
+  background: #d9d9d9;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  transition: background 0.15s ease;
+}
+
+.query-options-switch-thumb {
+  width: 20px;
+  height: 20px;
+  background: #000;
+  transition: transform 0.15s ease;
+}
+
+.query-options-switch input:checked + .query-options-switch-track {
+  background: #9fe870;
+}
+
+.query-options-switch input:checked + .query-options-switch-track .query-options-switch-thumb {
+  transform: translateX(20px);
+}
+
+.query-options-textarea {
+  min-height: 220px;
+}
+
+.query-options-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .query-options-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .fee-flow-header {

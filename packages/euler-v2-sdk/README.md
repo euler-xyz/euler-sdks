@@ -103,6 +103,8 @@ All docs are in [`./docs`](./docs).
 
 Runnable examples are in [`./examples`](./examples), including end-to-end execution flows and simulations against a fork.
 
+Comparison, parity-check, and other test-oriented scripts and reports live under [`./test/parity`](./test/parity).
+
 ## Release Process
 
 This package is published via GitHub Actions, not by running `npm publish` locally.
