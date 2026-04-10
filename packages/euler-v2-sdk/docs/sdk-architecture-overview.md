@@ -71,6 +71,6 @@ Related docs:
 
 ## Where to Continue
 
-- Runnable examples: `packages/euler-v2-sdk/examples`
+- Runnable examples: `examples/`
 - Documentation: `packages/euler-v2-sdk/docs`
 - Utilities: `packages/euler-v2-sdk/src/utils`

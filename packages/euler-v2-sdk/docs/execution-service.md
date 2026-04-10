@@ -83,7 +83,7 @@ Reward claim planning is intentionally kept out of `executionService`. Provider-
 
 Execution examples are in:
 
-- `packages/euler-v2-sdk/examples/execution`
+- `examples/execution`
 
 They are designed to run against a fork (Anvil + `examples/.env` with `FORK_RPC_URL`) and demonstrate plan creation + execution end-to-end.
 

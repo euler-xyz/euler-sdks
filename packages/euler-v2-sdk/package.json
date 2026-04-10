@@ -20,14 +20,10 @@
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
     },
-    "./package.json": "./package.json",
-    "./AGENTS.md": "./AGENTS.md",
-    "./skills/*": "./skills/*"
+    "./package.json": "./package.json"
   },
   "files": [
-    "dist",
-    "AGENTS.md",
-    "skills"
+    "dist"
   ],
   "scripts": {
     "build": "tsc --project tsconfig.json",
@@ -36,8 +32,7 @@
     "clean": "rm -rf dist",
     "release:check": "pnpm run clean && pnpm run build && pnpm run typecheck && pnpm pack --dry-run",
     "prepublishOnly": "pnpm run release:check",
-    "publish:public": "npm publish --access public --provenance",
-    "anvil": "source examples/.env && anvil --fork-url $FORK_RPC_URL --auto-impersonate"
+    "publish:public": "npm publish --access public --provenance"
   },
   "keywords": [
     "euler",
@@ -61,10 +56,7 @@
     "viem": "^2.43.3"
   },
   "devDependencies": {
-    "dotenv": "^16.4.7",
     "@types/node": "^22.7.8",
-    "ts-node-dev": "^2.0.0",
-    "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }
 }
