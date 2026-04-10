@@ -7,7 +7,7 @@
  *
  * USAGE:
  *   Set RPC_URL_1 in examples/.env for mainnet access, then run:
- *   npx tsx examples/accounts/fetch-account-example.ts [ownerAddress]
+ *   npx tsx accounts/fetch-account-example.ts [ownerAddress]
  */
 
 import "dotenv/config";

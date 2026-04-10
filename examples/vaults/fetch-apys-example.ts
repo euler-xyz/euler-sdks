@@ -7,7 +7,7 @@
  *
  * USAGE:
  *   Set RPC_URL_1 in examples/.env for mainnet access, then run:
- *   npx tsx examples/vaults/fetch-apys-example.ts
+ *   npx tsx vaults/fetch-apys-example.ts
  */
 
 import "dotenv/config";

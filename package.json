@@ -1,0 +1,12 @@
+{
+  "name": "euler-sdks",
+  "private": true,
+  "scripts": {
+    "build": "pnpm --filter './packages/**' run build",
+    "typecheck": "pnpm --filter './packages/**' run typecheck",
+    "clean": "pnpm --filter './packages/**' run clean"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

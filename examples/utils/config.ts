@@ -2,7 +2,7 @@ import { createPublicClient, createTestClient, createWalletClient, erc20Abi, get
 import { privateKeyToAccount } from "viem/accounts";
 import { mainnet } from "viem/chains";
 import dotenv from 'dotenv'
-dotenv.config({ path: './examples/.env' })
+dotenv.config()
 
 const PRIVATE_KEY = (process.env.PRIVATE_KEY ?? "0x1234567890123456789012345678901234567890123456789012345678901235") as Hex;
 const PRIVATE_KEY2 = (process.env.PRIVATE_KEY2 ?? "0x1234567890123456789012345678901234567890123456789012345678901246") as Hex;

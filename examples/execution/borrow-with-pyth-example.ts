@@ -27,7 +27,7 @@
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
  *   2. Start Anvil: npm run anvil
- *   3. Run: npx tsx examples/execution/borrow-with-pyth-example.ts
+ *   3. Run: npx tsx execution/borrow-with-pyth-example.ts
  *
  * ═══════════════════════════════════════════════════════════════════════════
  */

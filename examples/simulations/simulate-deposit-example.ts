@@ -19,7 +19,7 @@
  *   - Set RPC_URL_1 env var, or default to local Anvil (http://127.0.0.1:8545)
  *
  * RUN:
- *   npx tsx examples/simulations/simulate-deposit-example.ts
+ *   npx tsx simulations/simulate-deposit-example.ts
  *
  * ═══════════════════════════════════════════════════════════════════════════
  */

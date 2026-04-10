@@ -7,7 +7,7 @@ tags: scripts, examples, automation, anvil, fork-testing
 
 ## Script and Tooling Workflows from SDK Examples
 
-Use `packages/euler-v2-sdk/examples` as canonical templates for script structure, then parameterize config/env.
+Use `examples/` as canonical templates for script structure, then parameterize config/env.
 
 Suggested workflow:
 
@@ -26,4 +26,4 @@ Suggested workflow:
 
 When building CLI tools, prefer idempotent commands and explicit chain/account flags.
 
-Reference: `packages/euler-v2-sdk/examples`, `packages/euler-v2-sdk/run-examples.sh`
+Reference: `examples/`, `examples/run-examples.sh`
