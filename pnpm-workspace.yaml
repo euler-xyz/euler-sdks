@@ -1,0 +1,4 @@
+packages:
+  - 'packages/*'
+  - 'packages/euler-v2-sdk/examples'
+  - 'packages/euler-v2-sdk/examples/react-sdk-example'

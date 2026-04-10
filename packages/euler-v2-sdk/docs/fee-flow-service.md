@@ -10,4 +10,4 @@ It is responsible for:
 
 Example:
 
-- [`examples/execution/fee-flow-example.ts`](/Users/dariusz/Euler/euler-sdks/packages/euler-v2-sdk/examples/execution/fee-flow-example.ts)
+- [`examples/execution/fee-flow-example.ts`](../examples/execution/fee-flow-example.ts)

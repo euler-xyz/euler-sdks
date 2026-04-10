@@ -1,5 +1,13 @@
 # Node dependencies
 node_modules
-.env
+.pnpm-store
+
+# Build output
 dist
+
+# Environment
+.env
+.env.local
+
+# IDE / tools
 .claude

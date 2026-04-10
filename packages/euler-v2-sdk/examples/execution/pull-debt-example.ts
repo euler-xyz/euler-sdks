@@ -24,7 +24,7 @@
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
  *   2. Start Anvil: npm run anvil
- *   3. Run: npx tsx examples/execution/pull-debt-example.ts
+ *   3. Run: npx tsx execution/pull-debt-example.ts
  *   Optionally set PRIVATE_KEY in examples/.env to use an existing account.
  *
  * ═══════════════════════════════════════════════════════════════════════════
