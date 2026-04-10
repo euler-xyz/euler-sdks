@@ -3,7 +3,7 @@
 ## Skills
 
 ### Available skills
-- `euler-sdk` (v1.1.0): Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. Use for tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `executionService`, `simulationService`, `swapService`), React Query integration, or SDK examples in `examples/`. (file: `./skills/euler-sdk/SKILL.md`)
+- `euler-sdk` (v1.1.0): Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. Use for tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `executionService`, `simulationService`, `swapService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`. (file: `./skills/euler-sdk/SKILL.md`)
 
 ### How to use skills
 - Trigger rule: If user asks for SDK integration help or names `euler-sdk`, load and follow `./skills/euler-sdk/SKILL.md`.

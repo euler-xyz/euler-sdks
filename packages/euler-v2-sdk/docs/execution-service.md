@@ -92,4 +92,4 @@ Useful entry points:
 - [`examples/execution/deposit-example.ts`](../examples/execution/deposit-example.ts)
 - [`examples/execution/repay-with-swap-example.ts`](../examples/execution/repay-with-swap-example.ts)
 - [`examples/execution/merge-plans-example.ts`](../examples/execution/merge-plans-example.ts)
-- [`run-examples.sh`](../run-examples.sh)
+- [`run-examples.sh`](../examples/run-examples.sh)

@@ -8,8 +8,8 @@ A monorepo for Euler SDKs and tools.
 
 ### Examples
 
-- [examples/](./examples/) - TypeScript script examples (deposits, borrows, swaps, liquidations, etc.)
-- [examples/react-sdk-example/](./examples/react-sdk-example/) - Full React app example with React Query and Wagmi.
+- [examples/](./packages/euler-v2-sdk/examples/) - TypeScript script examples (deposits, borrows, swaps, liquidations, etc.)
+- [examples/react-sdk-example/](./packages/euler-v2-sdk/examples/react-sdk-example/) - Full React app example with React Query and Wagmi.
 
 ### Agent Skills
 
