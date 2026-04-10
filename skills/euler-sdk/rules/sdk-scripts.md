@@ -7,7 +7,7 @@ tags: scripts, examples, automation, anvil, fork-testing
 
 ## Script and Tooling Workflows from SDK Examples
 
-Use `packages/euler-v2-sdk/examples` as canonical templates for script structure, then parameterize config/env.
+Use `packages/euler-v2-sdk/examples/` as canonical templates for script structure, then parameterize config/env.
 
 Suggested workflow:
 
@@ -19,11 +19,11 @@ Suggested workflow:
 
 **Correct starting points:**
 
-- `examples/execution/*.ts` for transaction flows
-- `examples/simulations/*.ts` for safety checks
-- `examples/utils/executor.ts` for execution plumbing
-- `run-examples.sh` for local fork regression pass
+- `packages/euler-v2-sdk/examples/execution/*.ts` for transaction flows
+- `packages/euler-v2-sdk/examples/simulations/*.ts` for safety checks
+- `packages/euler-v2-sdk/examples/utils/executor.ts` for execution plumbing
+- `packages/euler-v2-sdk/examples/run-examples.sh` for local fork regression pass
 
 When building CLI tools, prefer idempotent commands and explicit chain/account flags.
 
-Reference: `packages/euler-v2-sdk/examples`, `packages/euler-v2-sdk/run-examples.sh`
+Reference: `packages/euler-v2-sdk/examples/`, `packages/euler-v2-sdk/examples/run-examples.sh`

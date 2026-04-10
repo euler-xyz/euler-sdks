@@ -134,10 +134,10 @@ Re-quote near submission time and compare providers for advanced routing UIs.
 
 Use SDK examples as templates:
 
-- `examples/execution/*` for transaction flows
-- `examples/simulations/*` for pre-checks
-- `examples/utils/executor.ts` for approval + Permit2 + EVC logic
-- `run-examples.sh` for fork-based regression runs
+- `packages/euler-v2-sdk/examples/execution/*` for transaction flows
+- `packages/euler-v2-sdk/examples/simulations/*` for pre-checks
+- `packages/euler-v2-sdk/examples/utils/executor.ts` for approval + Permit2 + EVC logic
+- `packages/euler-v2-sdk/examples/run-examples.sh` for fork-based regression runs
 
 Promote constants to config/env and add explicit chain/account flags in CLI tools.
 
@@ -153,6 +153,6 @@ Promote constants to config/env and add explicit chain/account flags in CLI tool
 - `packages/euler-v2-sdk/docs/caching-external-data-queries.md`
 - `packages/euler-v2-sdk/docs/plugins.md`
 - `packages/euler-v2-sdk/docs/swaps.md`
-- `examples/react-sdk-example/src/context/SdkContext.tsx`
-- `examples/react-sdk-example/src/queries/sdkQueries.ts`
-- `examples/react-sdk-example/src/utils/txExecutor.ts`
+- `packages/euler-v2-sdk/examples/react-sdk-example/src/context/SdkContext.tsx`
+- `packages/euler-v2-sdk/examples/react-sdk-example/src/queries/sdkQueries.ts`
+- `packages/euler-v2-sdk/examples/react-sdk-example/src/utils/txExecutor.ts`

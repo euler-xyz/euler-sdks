@@ -27,7 +27,7 @@
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
  *   2. Restart Anvil immediately before running: npm run anvil
- *   3. Run: npx tsx examples/execution/multiply-example.ts
+ *   3. Run: npx tsx execution/multiply-example.ts
  *   Optionally set PRIVATE_KEY in examples/.env to use an existing account.
  *
  * ═══════════════════════════════════════════════════════════════════════════

@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "package-lock.json"
+      - "pnpm-workspace.yaml"
       - "packages/euler-v2-sdk/**"
 
 permissions:
@@ -39,12 +39,10 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           cache: pnpm
-          cache-dependency-path: |
-            package-lock.json
-            packages/euler-v2-sdk/pnpm-lock.yaml
+          cache-dependency-path: packages/euler-v2-sdk/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm -C "$PACKAGE_DIR" install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Resolve release tag
         run: |
@@ -52,16 +50,34 @@ jobs:
           TAG_NAME="euler-v2-sdk-v$VERSION"
           echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
 
+      - name: Check if already published
+        id: check_published
+        run: |
+          VERSION="$(node -p "require('./$PACKAGE_DIR/package.json').version")"
+          if npm view "euler-v2-sdk@$VERSION" version >/dev/null 2>&1; then
+            echo "Version $VERSION is already published, skipping publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish package
+        if: steps.check_published.outputs.skip != 'true'
         working-directory: packages/euler-v2-sdk
-        run: npm publish --access public --tag latest
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create and push release tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "$TAG_NAME"
-          git push origin "$TAG_NAME"
+          if git ls-remote --tags origin "refs/tags/$TAG_NAME" | grep -q .; then
+            echo "Tag $TAG_NAME already exists on remote, skipping."
+          else
+            git tag "$TAG_NAME"
+            git push origin "$TAG_NAME"
+          fi
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

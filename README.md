@@ -1,14 +1,18 @@
 ## Euler SDKs
+
 A monorepo for Euler SDKs and tools.
 
-- [euler-v2-sdk](./packages/euler-v2-sdk/README.md) Main SDK for interacting with Euler V2 lending platform.
+### Packages
 
-## Agent Skills
+- [euler-v2-sdk](./packages/euler-v2-sdk/README.md) - Main SDK for interacting with Euler V2 lending platform.
 
-This repository vendors the `euler-sdk` agent skill at [`packages/euler-v2-sdk/skills/euler-sdk`](./packages/euler-v2-sdk/skills/euler-sdk).
-Current skill version: `1.1.0` (see [`packages/euler-v2-sdk/skills/euler-sdk/CHANGELOG.md`](./packages/euler-v2-sdk/skills/euler-sdk/CHANGELOG.md)).
+### Examples
 
-For agent discovery without user installation:
-- Keep skills in package under `packages/euler-v2-sdk/skills/<name>` with `SKILL.md`, optional `AGENTS.md`, and any referenced `rules/` files.
-- Keep a repo-level [`AGENTS.md`](./AGENTS.md) that lists local skills and exact file paths.
-- Keep skill discovery mentions at the repository top level (`README.md` and `AGENTS.md`).
+- [examples/](./packages/euler-v2-sdk/examples/) - TypeScript script examples (deposits, borrows, swaps, liquidations, etc.)
+- [examples/react-sdk-example/](./packages/euler-v2-sdk/examples/react-sdk-example/) - Full React app example with React Query and Wagmi.
+
+### Agent Skills
+
+Skills are at [`skills/`](./skills/) and discoverable via the root [`AGENTS.md`](./AGENTS.md).
+
+- `euler-sdk` (v1.1.0) - SDK integration guide. Install via `npx skills add euler-sdk` or see [`skills/euler-sdk/SKILL.md`](./skills/euler-sdk/SKILL.md).

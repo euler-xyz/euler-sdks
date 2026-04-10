@@ -5,8 +5,6 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "moduleDetection": "force",
-    "outDir": "dist",
-    "rootDir": "packages/euler-v2-sdk/src",
     "declaration": true,
     "sourceMap": true,
     "allowSyntheticDefaultImports": true,

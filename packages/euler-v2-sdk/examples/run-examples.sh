@@ -3,7 +3,7 @@
 # - Execution/simulation examples run against a fresh Anvil fork (per example).
 # - Account/vault read examples run directly against RPC_URL_1.
 # Requires: anvil (foundry), pnpm, and examples/.env with FORK_RPC_URL set.
-# Usage: from packages/euler-v2-sdk: ./run-examples.sh
+# Usage: from examples/: ./run-examples.sh
 
 set -uo pipefail
 
@@ -13,13 +13,13 @@ cd "$SCRIPT_DIR"
 ANVIL_PORT="${ANVIL_PORT:-8545}"
 ANVIL_HOST="${ANVIL_HOST:-127.0.0.1}"
 
-if [[ ! -f examples/.env ]]; then
-  echo "Missing examples/.env. Create it and set FORK_RPC_URL (e.g. FORK_RPC_URL=https://eth.llamarpc.com)."
+if [[ ! -f .env ]]; then
+  echo "Missing .env. Create it in examples/ and set FORK_RPC_URL (e.g. FORK_RPC_URL=https://eth.llamarpc.com)."
   exit 1
 fi
 
 # shellcheck disable=SC1091
-source examples/.env
+source .env
 if [[ -z "${FORK_RPC_URL:-}" ]]; then
   echo "FORK_RPC_URL is not set in examples/.env."
   exit 1
@@ -59,30 +59,30 @@ wait_for_anvil() {
 }
 
 ANVIL_EXAMPLES=(
-  "examples/execution/deposit-example.ts"
-  "examples/execution/mint-example.ts"
-  "examples/execution/withdraw-example.ts"
-  "examples/execution/redeem-example.ts"
-  "examples/execution/borrow-example.ts"
-  "examples/execution/repay-from-wallet-example.ts"
-  "examples/execution/repay-from-deposit-example.ts"
-  "examples/execution/repay-with-swap-example.ts"
-  "examples/execution/multiply-example.ts"
-  "examples/execution/swap-collateral-example.ts"
-  "examples/execution/swap-debt-example.ts"
-  "examples/execution/transfer-example.ts"
-  "examples/execution/pull-debt-example.ts"
-  "examples/execution/liquidation-example.ts"
-  "examples/execution/merge-plans-example.ts"
-  "examples/execution/borrow-with-pyth-example.ts"
-  "examples/execution/deposit-with-swap-from-wallet-example.ts"
-  "examples/simulations/simulate-deposit-example.ts"
+  "execution/deposit-example.ts"
+  "execution/mint-example.ts"
+  "execution/withdraw-example.ts"
+  "execution/redeem-example.ts"
+  "execution/borrow-example.ts"
+  "execution/repay-from-wallet-example.ts"
+  "execution/repay-from-deposit-example.ts"
+  "execution/repay-with-swap-example.ts"
+  "execution/multiply-example.ts"
+  "execution/swap-collateral-example.ts"
+  "execution/swap-debt-example.ts"
+  "execution/transfer-example.ts"
+  "execution/pull-debt-example.ts"
+  "execution/liquidation-example.ts"
+  "execution/merge-plans-example.ts"
+  "execution/borrow-with-pyth-example.ts"
+  "execution/deposit-with-swap-from-wallet-example.ts"
+  "simulations/simulate-deposit-example.ts"
 )
 
 READONLY_EXAMPLES=(
-  "examples/accounts/fetch-account-example.ts"
-  "examples/vaults/fetch-apys-example.ts"
-  "examples/vaults/fetch-vault-details-example.ts"
+  "accounts/fetch-account-example.ts"
+  "vaults/fetch-apys-example.ts"
+  "vaults/fetch-vault-details-example.ts"
 )
 
 FAILED=()
