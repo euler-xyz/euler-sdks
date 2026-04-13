@@ -9,6 +9,8 @@
  * Environment variables:
  *   CHAIN_IDS     - Comma-separated chain IDs to compare. Defaults to `1`.
  *   REPORT_PREFIX - Output file prefix. Defaults to `fetch-all-vaults-default-vs-onchain`.
+ *   FILTER_VAULTS_IN_LABELS - Set to `true` to compare only root vaults present in Euler labels.
+ *   PRICE_DIFF_TOLERANCE - Relative tolerance for price fields. Defaults to `0.01` (1%).
  *   INPUT_REPORT_JSON - Optional path to an existing JSON report whose snapshots
  *                       should be reused to rebuild the summaries and markdown.
  *
@@ -24,11 +26,11 @@ import { getAddress, type Address } from "viem";
 
 import {
   buildEulerSDK,
-  type BuildQueryFn,
-  createPythPlugin,
   type BuildSDKOptions,
-  type VaultEntity,
-} from "euler-v2-sdk";
+} from "../../src/sdk/buildSDK.js";
+import { createPythPlugin } from "../../src/plugins/pyth/index.js";
+import type { BuildQueryFn } from "../../src/utils/buildQuery.js";
+import type { VaultEntity } from "../../src/services/vaults/vaultMetaService/index.js";
 
 import { getRpcUrls } from "../../examples/utils/config.js";
 
@@ -38,6 +40,10 @@ const REPORT_PREFIX =
 const NUMERIC_TOLERANCE = 0.01;
 const BIGINT_TOLERANCE_BPS = 100n;
 const FEE_BIGINT_TOLERANCE_BPS = 200n;
+const PRICE_DIFF_TOLERANCE = Number(process.env.PRICE_DIFF_TOLERANCE ?? NUMERIC_TOLERANCE);
+const PRICE_DIFF_TOLERANCE_BPS = BigInt(Math.round(PRICE_DIFF_TOLERANCE * 10_000));
+const FILTER_VAULTS_IN_LABELS =
+  process.env.FILTER_VAULTS_IN_LABELS?.toLowerCase() === "true";
 const DIFF_PREVIEW_LIMIT = 20;
 const MAX_RETRIES = 5;
 const PARITY_QUERY_CACHE_TTL_MS = 60_000;
@@ -85,6 +91,10 @@ type ScenarioSnapshot = {
   vaultCount: number;
   vaults: VaultSnapshot[];
   errors: DataIssueSnapshot[];
+  filters?: {
+    vaultsInLabels?: boolean;
+    labelVaultCount?: number;
+  };
 };
 
 type VaultReportRow = {
@@ -111,6 +121,10 @@ type Report = {
   generatedAt: string;
   chainIds: number[];
   reportPrefix: string;
+  filters: {
+    vaultsInLabels: boolean;
+    priceDiffTolerance: number;
+  };
   summary: {
     totals: ChainSummary;
     byChain: Record<string, ChainSummary>;
@@ -369,6 +383,16 @@ function isFeeBigIntPath(path: string): boolean {
   return path.includes(".fees.");
 }
 
+function isPricePath(path: string): boolean {
+  const normalized = path.toLowerCase();
+  return (
+    normalized.includes("price") ||
+    normalized.endsWith(".amountoutask") ||
+    normalized.endsWith(".amountoutbid") ||
+    normalized.endsWith(".amountoutmid")
+  );
+}
+
 function shouldIgnoreOracleQueryFailureReasonDiff(
   path: string,
   left: ComparableValue,
@@ -422,7 +446,11 @@ function toBigIntLike(value: ComparableValue): bigint | null {
 }
 
 function valuesDifferWithinTolerance(left: number, right: number): boolean {
-  return valuesDifferWithinToleranceWithThreshold(left, right, NUMERIC_TOLERANCE);
+  return valuesDifferWithinToleranceWithThreshold(
+    left,
+    right,
+    NUMERIC_TOLERANCE,
+  );
 }
 
 function valuesDifferWithinToleranceWithThreshold(
@@ -549,7 +577,11 @@ function compareValues(
       return;
     }
 
-    const tolerance = isEulerEarnSupplyApyPath(path) ? 0.05 : NUMERIC_TOLERANCE;
+    const tolerance = isEulerEarnSupplyApyPath(path)
+      ? 0.05
+      : isPricePath(path)
+        ? PRICE_DIFF_TOLERANCE
+        : NUMERIC_TOLERANCE;
     if (valuesDifferWithinToleranceWithThreshold(left, right, tolerance)) {
       differences.push({
         path,
@@ -569,7 +601,9 @@ function compareValues(
     }
     const toleranceBps = isFeeBigIntPath(path)
       ? FEE_BIGINT_TOLERANCE_BPS
-      : BIGINT_TOLERANCE_BPS;
+      : isPricePath(path)
+        ? PRICE_DIFF_TOLERANCE_BPS
+        : BIGINT_TOLERANCE_BPS;
     if (
       bigIntsDifferWithinToleranceBps(
         leftBigInt,
@@ -753,6 +787,62 @@ function toVaultMap(vaults: (VaultEntity | undefined)[]): Map<string, VaultSnaps
   return map;
 }
 
+function addMaybeAddress(target: Set<string>, value: unknown): void {
+  if (typeof value !== "string") return;
+  try {
+    target.add(getAddress(value).toLowerCase());
+  } catch {
+    // Ignore non-address label fields.
+  }
+}
+
+async function fetchLabelVaultAddressSet(
+  sdk: Awaited<ReturnType<typeof buildEulerSDK>>,
+  chainId: number,
+): Promise<Set<string>> {
+  const [vaultLabels, products, points] = await Promise.all([
+    sdk.eulerLabelsService.fetchEulerLabelsVaults(chainId).catch(() => ({})),
+    sdk.eulerLabelsService.fetchEulerLabelsProducts(chainId).catch(() => ({})),
+    sdk.eulerLabelsService.fetchEulerLabelsPoints(chainId).catch(() => []),
+  ]);
+
+  const addresses = new Set<string>();
+  for (const address of Object.keys(vaultLabels)) {
+    addMaybeAddress(addresses, address);
+  }
+
+  for (const product of Object.values(products)) {
+    const value = product as { vaults?: unknown; deprecatedVaults?: unknown };
+    if (Array.isArray(value.vaults)) {
+      for (const address of value.vaults) addMaybeAddress(addresses, address);
+    }
+    if (Array.isArray(value.deprecatedVaults)) {
+      for (const address of value.deprecatedVaults) {
+        addMaybeAddress(addresses, address);
+      }
+    }
+  }
+
+  for (const point of points) {
+    const value = point as {
+      collateralVaults?: unknown;
+      liabilityVaults?: unknown;
+    };
+    if (Array.isArray(value.collateralVaults)) {
+      for (const address of value.collateralVaults) {
+        addMaybeAddress(addresses, address);
+      }
+    }
+    if (Array.isArray(value.liabilityVaults)) {
+      for (const address of value.liabilityVaults) {
+        addMaybeAddress(addresses, address);
+      }
+    }
+  }
+
+  return addresses;
+}
+
 async function fetchScenarioSnapshot(
   scenario: ScenarioName,
   sdkOptions: BuildSDKOptions,
@@ -820,7 +910,17 @@ async function fetchScenarioSnapshot(
       };
     });
 
-  const vaultMap = toVaultMap(response.result);
+  const responseVaults = response.result as (VaultEntity | undefined)[];
+  const labelVaultAddresses = FILTER_VAULTS_IN_LABELS
+    ? await fetchLabelVaultAddressSet(sdk, chainId)
+    : undefined;
+  const vaultMap = toVaultMap(
+    labelVaultAddresses
+      ? responseVaults.filter((vault) =>
+          vault ? labelVaultAddresses.has(getAddress(vault.address).toLowerCase()) : false,
+        )
+      : responseVaults,
+  );
 
   return {
     scenario,
@@ -830,6 +930,12 @@ async function fetchScenarioSnapshot(
       left.address.localeCompare(right.address),
     ),
     errors: response.errors.map((issue) => toDataIssueSnapshot(issue)),
+    filters: labelVaultAddresses
+      ? {
+          vaultsInLabels: true,
+          labelVaultCount: labelVaultAddresses.size,
+        }
+      : undefined,
   };
 }
 
@@ -1184,6 +1290,8 @@ Generated on ${report.generatedAt}.
 ## Totals
 
 - Chains compared: \`${report.chainIds.join(", ")}\`
+- Filtered to labeled root vaults: \`${report.filters.vaultsInLabels}\`
+- Price diff tolerance: \`${report.filters.priceDiffTolerance * 100}%\`
 - Default (V3) vaults: \`${totals.defaultVaults}\`
 - Onchain vaults: \`${totals.onchainVaults}\`
 - Matched vaults: \`${totals.matchedVaults}\`
@@ -1238,6 +1346,10 @@ function buildReportFromSnapshots(
     generatedAt: new Date().toISOString(),
     chainIds,
     reportPrefix: REPORT_PREFIX,
+    filters: {
+      vaultsInLabels: FILTER_VAULTS_IN_LABELS,
+      priceDiffTolerance: PRICE_DIFF_TOLERANCE,
+    },
     summary: {
       totals,
       byChain,
