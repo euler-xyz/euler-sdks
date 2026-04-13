@@ -46,6 +46,7 @@ export function PortfolioPage() {
   const failedVaultDetailsByAddress = useMemo(() => {
     const map = new Map<string, string>();
     for (const failed of failedVaults) {
+      if (!failed.address) continue;
       map.set(failed.address.toLowerCase(), failed.details);
     }
     return map;

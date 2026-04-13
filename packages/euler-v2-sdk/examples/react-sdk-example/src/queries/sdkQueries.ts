@@ -65,7 +65,7 @@ const MINUTE = 60_000;
 const EULER_LABELS_BASE =
   "https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master";
 
-const STALE_TIMES = {
+const STALE_TIMES: Record<string, number> = {
   // Static metadata — essentially never changes
   queryDeployments: Infinity,
   queryABI: Infinity,
@@ -157,7 +157,7 @@ const STALE_TIMES = {
   oracleAdapterMetadataMap: 10 * MINUTE,
   tokenSymbolMap: Infinity,
   feeFlowPageData: 15_000,
-} satisfies Partial<Record<EulerSDKQueryName, number>>;
+};
 
 const DEFAULT_STALE_TIME = MINUTE;
 function withDataInterceptor(
@@ -356,7 +356,7 @@ function buildFailedVaultFetches(diagnostics: DiagnosticIssue[]): FailedVaultFet
   return Array.from(byKey.values());
 }
 
-function resolveDiagnosticsWithFailedVaults<TVault extends { address: string }>(
+function resolveDiagnosticsWithFailedVaults<TVault extends VaultEntity>(
   rawVaults: Array<TVault | undefined>,
   fetchedDiagnostics: DiagnosticIssue[]
 ): VaultListDiagnosticsResult<TVault> {
@@ -519,8 +519,8 @@ function logVaultFetchResults(
       .filter((vault): vault is VaultEntity => vault !== undefined)
       .map((vault) => ({
         address: vault.address,
-        name: vault.name,
-        symbol: vault.symbol,
+        name: vault.shares.name,
+        symbol: vault.shares.symbol,
       })),
     missingAddresses: result
       .map((vault, index) => (vault === undefined ? addresses[index] : undefined))

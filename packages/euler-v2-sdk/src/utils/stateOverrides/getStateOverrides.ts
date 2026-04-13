@@ -2,15 +2,10 @@ import {
 	type Address,
 	type PublicClient,
 	type StateOverride,
-	decodeFunctionData,
 	getAddress,
 	parseEther,
 } from "viem";
-import type {
-	EVCBatchItem,
-	TransactionPlan,
-} from "../../services/executionService/executionServiceTypes.js";
-import { swapVerifierAbi } from "../../services/executionService/abis/swapVerifierAbi.js";
+import type { TransactionPlan } from "../../services/executionService/executionServiceTypes.js";
 import { getBalanceOverrides } from "./balanceOverrides.js";
 import { getApprovalOverrides } from "./approvalOverrides.js";
 import { mergeStateOverrides } from "./mergeStateOverrides.js";
@@ -25,9 +20,7 @@ export type DeriveStateOverridesOptions = {
 /**
  * Extract token balance requirements from a TransactionPlan.
  * Each RequiredApproval represents a deposit-like operation where the
- * user needs tokens in their wallet. transferFromSender batch items are also
- * included so swap-from-wallet flows still simulate when approval items are
- * not explicitly present. We take the max amount per token.
+ * user needs tokens in their wallet. We take the max amount per token.
  */
 export function extractBalanceRequirements(
 	plan: TransactionPlan,
@@ -35,6 +28,7 @@ export function extractBalanceRequirements(
 ): [Address, bigint][] {
 	const maxPerToken = new Map<Address, bigint>();
 	const normalizedAccount = getAddress(account);
+	console.log("HERE");
 
 	for (const item of plan) {
 		if (item.type === "requiredApproval") {
@@ -46,20 +40,6 @@ export function extractBalanceRequirements(
 				maxPerToken.set(token, item.amount);
 			}
 		}
-
-		if (item.type !== "evcBatch") {
-			continue;
-		}
-
-		for (const requirement of extractTransferFromSenderRequirements(
-			item.items,
-			normalizedAccount,
-		)) {
-			const current = maxPerToken.get(requirement.token) ?? 0n;
-			if (requirement.amount > current) {
-				maxPerToken.set(requirement.token, requirement.amount);
-			}
-		}
 	}
 
 	return Array.from(maxPerToken.entries());
@@ -67,8 +47,7 @@ export function extractBalanceRequirements(
 
 /**
  * Extract approval pairs from a TransactionPlan.
- * Returns unique [asset, spender] pairs. transferFromSender batch items are
- * treated as Permit2 spender requirements when approval items are absent.
+ * Returns unique [asset, spender] pairs from explicit approval requirements.
  */
 export function extractApprovalRequirements(
 	plan: TransactionPlan,
@@ -90,69 +69,9 @@ export function extractApprovalRequirements(
 				approvals.push([asset, spender]);
 			}
 		}
-
-		if (item.type !== "evcBatch") {
-			continue;
-		}
-
-		for (const requirement of extractTransferFromSenderRequirements(
-			item.items,
-			normalizedAccount,
-		)) {
-			const key = `${requirement.token}:${requirement.spender}`;
-			if (!seen.has(key)) {
-				seen.add(key);
-				approvals.push([requirement.token, requirement.spender]);
-			}
-		}
 	}
 
 	return approvals;
-}
-
-function extractTransferFromSenderRequirements(
-	batchItems: EVCBatchItem[],
-	account: Address,
-) {
-	const requirements: Array<{
-		token: Address;
-		spender: Address;
-		amount: bigint;
-	}> = [];
-
-	for (const item of batchItems) {
-		if (getAddress(item.onBehalfOfAccount) !== account) {
-			continue;
-		}
-
-		try {
-			const decoded = decodeFunctionData({
-				abi: swapVerifierAbi,
-				data: item.data,
-			});
-
-			if (
-				decoded.functionName !== "transferFromSender" ||
-				!decoded.args ||
-				decoded.args.length < 2
-			) {
-				continue;
-			}
-
-			const [token, amount] = decoded.args;
-			if (typeof token !== "string" || typeof amount !== "bigint") {
-				continue;
-			}
-
-			requirements.push({
-				token: getAddress(token),
-				spender: getAddress(item.targetContract),
-				amount,
-			});
-		} catch {}
-	}
-
-	return requirements;
 }
 
 /**

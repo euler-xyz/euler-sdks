@@ -10,6 +10,7 @@ import {
 } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
+import { isEVault } from "euler-v2-sdk";
 
 export function EulerEarnDetailPage() {
   const { chainId: chainIdParam, address } = useParams<{
@@ -36,7 +37,7 @@ export function EulerEarnDetailPage() {
     return <div className="error-message">Error: {String(error)}</div>;
   if (!vault) return <div className="status-message">Vault not found</div>;
 
-  const supplyApy = vault.supplyApy;
+  const supplyApy = vault.supplyApy1h;
 
   return (
     <>
@@ -279,7 +280,7 @@ export function EulerEarnDetailPage() {
                     : formatBigInt(strategy.allocationCap.current, vault.asset.decimals)}
                 </td>
                 <td>
-                  {strategy.vault
+                  {strategy.vault && isEVault(strategy.vault)
                     ? formatAPY(strategy.vault.interestRates.supplyAPY)
                     : "-"}
                 </td>

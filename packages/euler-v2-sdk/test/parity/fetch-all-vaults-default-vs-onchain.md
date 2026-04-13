@@ -1,82 +1,103 @@
 # fetchAllVaults default (V3) vs explicit onchain
 
-Generated on 2026-04-03T12:03:39.826Z.
+Generated on 2026-04-13T09:35:07.330Z.
 
 ## Totals
 
 - Chains compared: `1`
-- Default (V3) vaults: `818`
-- Onchain vaults: `816`
-- Matched vaults: `686`
-- Missing in default: `0`
+- Filtered to labeled root vaults: `false`
+- Price diff tolerance: `1%`
+- Default (V3) vaults: `816`
+- Onchain vaults: `835`
+- Matched vaults: `793`
+- Missing in default: `21`
 - Missing in onchain: `2`
-- Vaults with diffs: `130`
-- Default errors: `1109`
-- Onchain errors: `927`
+- Vaults with diffs: `21`
+- Default errors: `1939`
+- Onchain errors: `822`
 
 ## Top diff paths
 
-- `$.collaterals[@0x797dd80692c3b2dadabce8e30c07fde5307d48a9].vault.fees.accumulatedFeesAssets`: `65`
-- `$.collaterals[@0x797dd80692c3b2dadabce8e30c07fde5307d48a9].vault.fees.accumulatedFeesShares`: `65`
-- `$.collaterals[@0x313603fa690301b0caeef8069c065862f9162162].vault.fees.accumulatedFeesAssets`: `58`
-- `$.fees.accumulatedFeesAssets`: `25`
-- `$.fees.accumulatedFeesShares`: `24`
-- `$.collaterals[@0xbc4b4ac47582c3e38ce5940b80da65401f4628f1].vault.fees.accumulatedFeesAssets`: `12`
-- `$.collaterals[@0xbc4b4ac47582c3e38ce5940b80da65401f4628f1].vault.fees.accumulatedFeesShares`: `12`
-- `$.collaterals[@0xe846ca062ab869b66ae8dcd811973f628ba82eaf].vault.fees.accumulatedFeesAssets`: `12`
-- `$.collaterals[@0xe846ca062ab869b66ae8dcd811973f628ba82eaf].vault.fees.accumulatedFeesShares`: `12`
-- `$.totalShares`: `12`
+- `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutAsk`: `5`
+- `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutBid`: `5`
+- `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutMid`: `5`
+- `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.queryFailure`: `5`
+- `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.queryFailureReason`: `5`
+- `$.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutAsk`: `5`
+- `$.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutBid`: `5`
+- `$.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutMid`: `5`
+- `$.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.queryFailure`: `5`
+- `$.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.queryFailureReason`: `5`
 
 ## Chain 1
 
-- Default (V3) vaults: `818`
-- Onchain vaults: `816`
-- Matched vaults: `686`
-- Missing in default: `0`
+- Default (V3) vaults: `816`
+- Onchain vaults: `835`
+- Matched vaults: `793`
+- Missing in default: `21`
 - Missing in onchain: `2`
-- Vaults with diffs: `130`
-- Default errors: `1109`
-- Onchain errors: `927`
+- Vaults with diffs: `21`
+- Default errors: `1939`
+- Onchain errors: `822`
 
 Top diff paths:
 
-- `$.collaterals[@0x797dd80692c3b2dadabce8e30c07fde5307d48a9].vault.fees.accumulatedFeesAssets`: `65`
-- `$.collaterals[@0x797dd80692c3b2dadabce8e30c07fde5307d48a9].vault.fees.accumulatedFeesShares`: `65`
-- `$.collaterals[@0x313603fa690301b0caeef8069c065862f9162162].vault.fees.accumulatedFeesAssets`: `58`
-- `$.fees.accumulatedFeesAssets`: `25`
-- `$.fees.accumulatedFeesShares`: `24`
-- `$.collaterals[@0xbc4b4ac47582c3e38ce5940b80da65401f4628f1].vault.fees.accumulatedFeesAssets`: `12`
-- `$.collaterals[@0xbc4b4ac47582c3e38ce5940b80da65401f4628f1].vault.fees.accumulatedFeesShares`: `12`
-- `$.collaterals[@0xe846ca062ab869b66ae8dcd811973f628ba82eaf].vault.fees.accumulatedFeesAssets`: `12`
-- `$.collaterals[@0xe846ca062ab869b66ae8dcd811973f628ba82eaf].vault.fees.accumulatedFeesShares`: `12`
-- `$.totalShares`: `12`
+- `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutAsk`: `5`
+- `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutBid`: `5`
+- `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutMid`: `5`
+- `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.queryFailure`: `5`
+- `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.queryFailureReason`: `5`
+- `$.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutAsk`: `5`
+- `$.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutBid`: `5`
+- `$.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutMid`: `5`
+- `$.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.queryFailure`: `5`
+- `$.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.queryFailureReason`: `5`
 
 Representative diff vaults:
 
-- root `0x056f3a2E41d2778D3a0c0714439c53af2987718E` (EVault); issue vault `0x313603FA690301b0CaeEf8069c065862f9162162`: `$.collaterals[@0x313603fa690301b0caeef8069c065862f9162162].vault.fees.accumulatedFeesAssets` bigint values differ by more than 2%; default `{"__type":"bigint","value":"657640"}` vs onchain `{"__type":"bigint","value":"1080788"}`
-- root `0x0685191dFd11E09fD23C01C54d32b84c4D18ed77` (EVault): `$.oraclePriceRaw.queryFailureReason` value mismatch; default `"0xa6e68d63000000000000000000000000000000000000000000000000000000000000d6080000000000000000000000000000000000000000000000000000000000001c20"` vs onchain `"0xa6e68d63000000000000000000000000000000000000000000000000000000000000e4c00000000000000000000000000000000000000000000000000000000000001c20"`
-- root `0x09136DAC538B54994170a6905507a74562A80ed3` (EVault); issue vault `0x313603FA690301b0CaeEf8069c065862f9162162`: `$.collaterals[@0x313603fa690301b0caeef8069c065862f9162162].vault.fees.accumulatedFeesAssets` bigint values differ by more than 2%; default `{"__type":"bigint","value":"657640"}` vs onchain `{"__type":"bigint","value":"1080788"}`
-- root `0x09C47745Db8c6e84e2B2be476219D5D9eFfAE3cA` (EVault): `$.oraclePriceRaw.queryFailureReason` value mismatch; default `"0xa6e68d630000000000000000000000000000000000000000000000000000000069cf9d5b0000000000000000000000000000000000000000000000000000000000000078"` vs onchain `"0xa6e68d630000000000000000000000000000000000000000000000000000000069cfac8b0000000000000000000000000000000000000000000000000000000000000078"`
-- root `0x09FcE883cC16894274802c01e3b9cD90EAE4e43d` (EVault); issue vault `0x313603FA690301b0CaeEf8069c065862f9162162`: `$.collaterals[@0x313603fa690301b0caeef8069c065862f9162162].vault.fees.accumulatedFeesAssets` bigint values differ by more than 2%; default `{"__type":"bigint","value":"657640"}` vs onchain `{"__type":"bigint","value":"1080788"}`
-- root `0x10e0B2B42874ADF8c29D5F900c0D18b61f048ffb` (EVault); issue vault `0x33e97864E44631e6d31b81051DAABcD4C31bF792`: `$.collaterals[@0x879aec0aae98ac89598ae8f765eb9a9ee307d16f].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutAsk` bigint values differ by more than 1%; default `{"__type":"bigint","value":"2059082943010000000000"}` vs onchain `{"__type":"bigint","value":"0"}`
-- root `0x122e9eA082D8c060Bb1a3476aa18B9E739fBbAAf` (EVault); issue vault `0x313603FA690301b0CaeEf8069c065862f9162162`: `$.collaterals[@0x313603fa690301b0caeef8069c065862f9162162].vault.fees.accumulatedFeesAssets` bigint values differ by more than 2%; default `{"__type":"bigint","value":"657640"}` vs onchain `{"__type":"bigint","value":"1080788"}`
-- root `0x14e314d5d53fd7Ad21d7d40046DfD98f183d22F1` (EVault): `$.collaterals` array length mismatch; default `0` vs onchain `1`
-- root `0x15A60a5300c1D9179d4c0e2B49bac6146794Ae1F` (EVault); issue vault `0x313603FA690301b0CaeEf8069c065862f9162162`: `$.collaterals[@0x313603fa690301b0caeef8069c065862f9162162].vault.fees.accumulatedFeesAssets` bigint values differ by more than 2%; default `{"__type":"bigint","value":"657640"}` vs onchain `{"__type":"bigint","value":"1080788"}`
-- root `0x1924D7fab80d0623f0836Cbf5258a7fa734EE9D9` (EVault); issue vault `0x313603FA690301b0CaeEf8069c065862f9162162`: `$.collaterals[@0x313603fa690301b0caeef8069c065862f9162162].vault.fees.accumulatedFeesAssets` bigint values differ by more than 2%; default `{"__type":"bigint","value":"657640"}` vs onchain `{"__type":"bigint","value":"1080788"}`
-- root `0x1ab9e92CFdE84f38868753d30fFc43F812B803C5` (EVault); issue vault `0xc364FD9637fe562A2d5a1cbc7d1Ab7F32bE900ef`: `$.collaterals[@0xc364fd9637fe562a2d5a1cbc7d1ab7f32be900ef].oraclePriceRaw.queryFailureReason` value mismatch; default `"0xa6e68d630000000000000000000000000000000000000000000000000000000000c74f000000000000000000000000000000000000000000000000000000000000015180"` vs onchain `"0xa6e68d630000000000000000000000000000000000000000000000000000000000c75c980000000000000000000000000000000000000000000000000000000000015180"`
-- root `0x20622fcD4476fbc9d5Ef36EBd371307a56d9028c` (EVault); issue vault `0x2daCa71Cb58285212Dc05D65Cfd4f59A82BC4cF6`: `$.collaterals[@0x2daca71cb58285212dc05d65cfd4f59a82bc4cf6].vault.fees.accumulatedFeesAssets` bigint values differ by more than 2%; default `{"__type":"bigint","value":"45213711008241111"}` vs onchain `{"__type":"bigint","value":"72010426282546394"}`
-- root `0x22cC732cbca457F6811295bCE75B01822544bA52` (EVault); issue vault `0x313603FA690301b0CaeEf8069c065862f9162162`: `$.collaterals[@0x313603fa690301b0caeef8069c065862f9162162].vault.fees.accumulatedFeesAssets` bigint values differ by more than 2%; default `{"__type":"bigint","value":"657640"}` vs onchain `{"__type":"bigint","value":"1080788"}`
-- root `0x23273F305eFeecb679c64B18EceCBE9553cf657f` (EulerEarn); issue vault `0xba98fC35C9dfd69178AD5dcE9FA29c64554783b5`: `$.strategies[@0xab2726daf820aa9270d14db9b18c8d187cbf2f30].vault.collaterals[@0xba98fc35c9dfd69178ad5dce9fa29c64554783b5].vault.fees.accumulatedFeesAssets` bigint values differ by more than 2%; default `{"__type":"bigint","value":"102999242"}` vs onchain `{"__type":"bigint","value":"162786440"}`
-- root `0x283aC2b5f5c830E8a7Aac4ED160c47fA29F5CcC1` (EulerEarn): `$.totalShares` bigint values differ by more than 1%; default `{"__type":"bigint","value":"0"}` vs onchain `{"__type":"bigint","value":"1811133098632478921765"}`
-- root `0x29412Fe8d85DF60cb95Cb6d509742EcBFE4605A3` (EulerEarn); issue vault `0xAB2726DAf820Aa9270D14Db9B18c8d187cbF2f30`: `$.strategies[@0xba98fc35c9dfd69178ad5dce9fa29c64554783b5].vault.collaterals[@0xab2726daf820aa9270d14db9b18c8d187cbf2f30].vault.fees.accumulatedFeesAssets` bigint values differ by more than 2%; default `{"__type":"bigint","value":"127766058"}` vs onchain `{"__type":"bigint","value":"199635122"}`
-- root `0x29B688A9E9dCe9abb28d46ab2e3Fb3c3F4EeFa90` (EVault): `$.oraclePriceRaw.queryFailureReason` value mismatch; default `"0xa6e68d630000000000000000000000000000000000000000000000000000000000419880000000000000000000000000000000000000000000000000000000000000afc8"` vs onchain `"0xa6e68d63000000000000000000000000000000000000000000000000000000000041a66c000000000000000000000000000000000000000000000000000000000000afc8"`
-- root `0x2a356443FeE07703266066c6Bb1B11b82d8246AD` (EVault); issue vault `0x313603FA690301b0CaeEf8069c065862f9162162`: `$.collaterals[@0x313603fa690301b0caeef8069c065862f9162162].vault.fees.accumulatedFeesAssets` bigint values differ by more than 2%; default `{"__type":"bigint","value":"657640"}` vs onchain `{"__type":"bigint","value":"1080788"}`
-- root `0x2B47c128b35DDDcB66Ce2FA5B33c95314a7de245` (EulerEarn); issue vault `0xaF5372792a29dC6b296d6FFD4AA3386aff8f9BB2`: `$.strategies[@0x9bd52f2805c6af014132874124686e7b248c2cbb].vault.collaterals[@0xaf5372792a29dc6b296d6ffd4aa3386aff8f9bb2].vault.fees.accumulatedFeesAssets` bigint values differ by more than 2%; default `{"__type":"bigint","value":"74191633551305035820"}` vs onchain `{"__type":"bigint","value":"118162459599214821659"}`
-- root `0x2daCa71Cb58285212Dc05D65Cfd4f59A82BC4cF6` (EVault); issue vault `0x313603FA690301b0CaeEf8069c065862f9162162`: `$.collaterals[@0x313603fa690301b0caeef8069c065862f9162162].vault.fees.accumulatedFeesAssets` bigint values differ by more than 2%; default `{"__type":"bigint","value":"657640"}` vs onchain `{"__type":"bigint","value":"1080788"}`
+- root `0x10e0B2B42874ADF8c29D5F900c0D18b61f048ffb` (EVault); issue vault `0x33e97864E44631e6d31b81051DAABcD4C31bF792`: `$.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutAsk` bigint values differ by more than 1%; default `{"__type":"bigint","value":"0"}` vs onchain `{"__type":"bigint","value":"2189264999990000000000"}`
+- root `0x30DC3665d89175fc1C9E930915bec3f2Bb035D5d` (EVault); issue vault `0x4B155381472202FA2159F6221D0546128FBB8aC5`: `$.collaterals[@0x4b155381472202fa2159f6221d0546128fbb8ac5].oraclePriceRaw.amountOutAsk` bigint values differ by more than 1%; default `{"__type":"bigint","value":"0"}` vs onchain `{"__type":"bigint","value":"2189264999990000000000"}`
+- root `0x32Cf8bd02A916c3cf1E4Ccb9c7A00D4a3f96BfDF` (EulerEarn); issue vault `0x5BcA378719Ad01BB8e490d09e2326EDfEe66b954`: `$.strategies[@0xc6137bc1378c2396051e06417704d31615f77cb9].vault.collaterals[@0x5bca378719ad01bb8e490d09e2326edfee66b954].marketPriceUsd.__type` value mismatch; default `"undefined"` vs onchain `"bigint"`
+- root `0x33e97864E44631e6d31b81051DAABcD4C31bF792` (EVault): `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutAsk` bigint values differ by more than 1%; default `{"__type":"bigint","value":"0"}` vs onchain `{"__type":"bigint","value":"2189264999990000000000"}`
+- root `0x3CB462bbd9a683d05BE3302372Dd3cB81830FC29` (EulerEarn): `$.strategies` array length mismatch; default `0` vs onchain `2`
+- root `0x3cd3718f8f047aA32F775E2cb4245A164E1C99fB` (EulerEarn): `$.supplyApy1h` numeric values differ by more than 5%; default `0.30016945119197636` vs onchain `0.23630487073953718`
+- root `0x49C5733d71511A78a3E12925ea832f49031c97e9` (EulerEarn): `$.governance.pendingTimelockValidAt` numeric values differ by more than 1%; default `0` vs onchain `1762596899`
+- root `0x4B155381472202FA2159F6221D0546128FBB8aC5` (EVault): `$.oraclePriceRaw.amountOutAsk` bigint values differ by more than 1%; default `{"__type":"bigint","value":"0"}` vs onchain `{"__type":"bigint","value":"2189264999990000000000"}`
+- root `0x53E657182B3357d14bdB6e495cC1731085d65D82` (EVault); issue vault `0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2`: `$.collaterals[@0xd8b27cf359b7d15710a5be299af6e7bf904984c2].oraclePriceRaw.amountOutAsk` bigint values differ by more than 1%; default `{"__type":"bigint","value":"0"}` vs onchain `{"__type":"bigint","value":"2265401152689654473538"}`
+- root `0x59E03c1Db4F35BFfbA06B0451e199b17eFBC4A86` (EulerEarn): `$.supplyApy1h` numeric values differ by more than 5%; default `0.03533608303092284` vs onchain `0.026900477769377498`
+- root `0x5d0C14A46eBb659dDccd5b8F5e9707a5714857a0` (EVault); issue vault `0x33e97864E44631e6d31b81051DAABcD4C31bF792`: `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutAsk` bigint values differ by more than 1%; default `{"__type":"bigint","value":"0"}` vs onchain `{"__type":"bigint","value":"2189264999990000000000"}`
+- root `0x77E8EcEBa525dbB05C6f1103c095D88882CE5187` (EVault); issue vault `0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2`: `$.collaterals[@0x53e657182b3357d14bdb6e495cc1731085d65d82].vault.collaterals[@0xd8b27cf359b7d15710a5be299af6e7bf904984c2].oraclePriceRaw.amountOutAsk` bigint values differ by more than 1%; default `{"__type":"bigint","value":"0"}` vs onchain `{"__type":"bigint","value":"2265401152689654473538"}`
+- root `0x879aEC0aAE98AC89598ae8F765EB9A9ee307d16f` (EVault); issue vault `0x33e97864E44631e6d31b81051DAABcD4C31bF792`: `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutAsk` bigint values differ by more than 1%; default `{"__type":"bigint","value":"0"}` vs onchain `{"__type":"bigint","value":"2189264999990000000000"}`
+- root `0x8B5b205aE1E241974d06695a1f09612069B46d6B` (EVault); issue vault `0x33e97864E44631e6d31b81051DAABcD4C31bF792`: `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutAsk` bigint values differ by more than 1%; default `{"__type":"bigint","value":"0"}` vs onchain `{"__type":"bigint","value":"2189264999990000000000"}`
+- root `0x8F3BF4D836887076692e9745a7A55A28Cae98107` (EulerEarn); issue vault `0x14e314d5d53fd7Ad21d7d40046DfD98f183d22F1`: `$.strategies[@0x14e314d5d53fd7ad21d7d40046dfd98f183d22f1].vaultType` value mismatch; default `"Unknown"` vs onchain `"EVault"`
+- root `0x93fEDd4b8D0e177EC884B88a432Aa2F8670E3118` (EVault): `$.oraclePriceRaw.amountOutAsk` bigint values differ by more than 1%; default `{"__type":"bigint","value":"0"}` vs onchain `{"__type":"bigint","value":"2189264999990000000000"}`
+- root `0x9B5aac9c6C70d5a583f44DDd13DF25AcC431fca4` (EulerEarn); issue vault `0x01864aE3c7d5f507cC4c24cA67B4CABbDdA37EcD`: `$.strategies[@0x01864ae3c7d5f507cc4c24ca67b4cabbdda37ecd].removableAt` numeric values differ by more than 1%; default `0` vs onchain `1762316867`
+- root `0xB4a2fC3adAF3BfA8FCBA2A6FDAA200De106B8825` (EulerEarn): `$.strategies` array length mismatch; default `0` vs onchain `4`
+- root `0xbB118Aa3Ee6eE1941fC33eeb3889d41c639736C6` (EVault); issue vault `0x33e97864E44631e6d31b81051DAABcD4C31bF792`: `$.collaterals[@0x10e0b2b42874adf8c29d5f900c0d18b61f048ffb].vault.collaterals[@0x33e97864e44631e6d31b81051daabcd4c31bf792].oraclePriceRaw.amountOutAsk` bigint values differ by more than 1%; default `{"__type":"bigint","value":"0"}` vs onchain `{"__type":"bigint","value":"2189264999990000000000"}`
+- root `0xd217A07493b6BA272Ff806EE5eaBdFF86C292cc6` (EulerEarn): `$.governance.pendingTimelockValidAt` numeric values differ by more than 1%; default `0` vs onchain `1762597127`
 
 Representative vaults missing in default:
 
-- none
+- `0x12D25dDDD45B3bcDD6080EC8FDf19Fa84d1391d3` (EVault)
+- `0x14e314d5d53fd7Ad21d7d40046DfD98f183d22F1` (EVault)
+- `0x17c581c90E2305A55C1e61e8676D6Dc8092DDA47` (EVault)
+- `0x18f1D2d918053eCF3Df0f6A581817A091d1E771E` (EVault)
+- `0x1990aC8244F7249eA2AF06D86c4a3317C299B62D` (EVault)
+- `0x2C8eeF55f98C1f5094874FbD2A9854Df672cf43c` (EVault)
+- `0x5108b9a91132a3052963271CBc5c7c1484DA428e` (EVault)
+- `0x5c4943d170eBf608fC637BF32b9572CAB9656cEF` (EVault)
+- `0x6764015f3E54be1a2535558499b377aBC720D08A` (EVault)
+- `0x6A0485b788bF6547248e04D3fe63352A73e59570` (EVault)
+- `0x7764B49c156123E87e4953707e77697aF22A1008` (EVault)
+- `0x82bc9b419cec3aEfDBFBfefef1DA625Bd8086927` (EVault)
+- `0x85FBF7FfeC13DEA58dE0e611CbE2460f8C677C8C` (EVault)
+- `0x9083E7AEd4192C8dC8ad799aCb6E1fAE23b46f6c` (EVault)
+- `0x91A42EEDBE8ed78c4aE123584ce759CA930193A1` (EVault)
+- `0x99504F8B31e393666a0EabaeBAa8200956442b01` (EVault)
+- `0x99b42158986476Dc72D7688861bB9bE21993EBBb` (EVault)
+- `0xCDeedea579f96147B93b9c792C337d37ce53C4C6` (EVault)
+- `0xf1f174f34defC276FF5a05d077e4eA2BB09246FF` (EVault)
+- `0xf216Adb3AEc8899b8514066DCC903dCd1DdF7777` (EVault)
 
 Representative vaults missing in onchain:
 

@@ -465,23 +465,21 @@ export function VaultDetailPage() {
                 col.oracleAdapters,
                 col.vault?.asset.address
               );
-              const adapterPairMismatchDetails = getAdapterMismatchDetails(
-                vault.unitOfAccount
-                  ? {
-                      chainId,
-                      collateral: {
-                        ...col,
-                        oracleAdapters: displayAdapters,
-                      },
-                      unitOfAccountAddress: vault.unitOfAccount.address,
-                      metadataMap:
-                        oracleAdapterMetadataMap as
-                          | Record<string, Record<string, unknown>>
-                          | undefined,
-                      tokenSymbolMap,
-                    }
-                  : undefined
-              );
+              const adapterPairMismatchDetails = vault.unitOfAccount
+                ? getAdapterMismatchDetails({
+                    chainId,
+                    collateral: {
+                      ...col,
+                      oracleAdapters: displayAdapters,
+                    },
+                    unitOfAccountAddress: vault.unitOfAccount.address,
+                    metadataMap:
+                      oracleAdapterMetadataMap as
+                        | Record<string, Record<string, unknown>>
+                        | undefined,
+                    tokenSymbolMap,
+                  })
+                : undefined;
 
               return (
               <tr key={col.address}>

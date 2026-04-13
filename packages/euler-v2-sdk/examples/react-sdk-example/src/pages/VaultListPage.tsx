@@ -107,7 +107,7 @@ function getEarnSortValue(vault: ChainScopedVault<EulerEarn>, key: EarnSortKey):
       return amt * price;
     }
     case "supplyAPY":
-      return (vault.supplyApy ?? 0) + (vault.rewards?.totalRewardsApr ?? 0) + (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0);
+      return (vault.supplyApy1h ?? 0) + (vault.rewards?.totalRewardsApr ?? 0) + (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0);
     case "usdPrice":
       return vault.marketPriceUsd !== undefined ? Number(vault.marketPriceUsd) : -1;
     case "strategies":
@@ -1030,9 +1030,9 @@ export function VaultListPage() {
                               {formatBigInt(vault.totalAssets, vault.asset.decimals)}
                             </td>
                             <td>
-                              {renderFieldIcon(vault.chainId, vault.address, ["$.supplyApy", "$.rewards", "$.intrinsicApy"])}
-                              {vault.supplyApy !== undefined
-                                ? <ApyCell baseApy={vault.supplyApy} rewards={vault.rewards} intrinsicApy={vault.intrinsicApy} />
+                              {renderFieldIcon(vault.chainId, vault.address, ["$.supplyApy1h", "$.rewards", "$.intrinsicApy"])}
+                              {vault.supplyApy1h !== undefined
+                                ? <ApyCell baseApy={vault.supplyApy1h} rewards={vault.rewards} intrinsicApy={vault.intrinsicApy} />
                                 : "-"}
                             </td>
                             <td>

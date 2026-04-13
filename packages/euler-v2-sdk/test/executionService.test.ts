@@ -159,7 +159,7 @@ test("describeBatch decodes app-provided extra ABIs item-by-item", () => {
 	});
 });
 
-test("deposit-with-swap-from-wallet requirements are preserved even without explicit approval items", () => {
+test("deposit-with-swap-from-wallet emits explicit state override requirements", () => {
 	const service = createExecutionService();
 	const account = {
 		owner: ACCOUNT,
@@ -176,12 +176,4 @@ test("deposit-with-swap-from-wallet requirements are preserved even without expl
 
 	assert.deepEqual(extractBalanceRequirements(plan, ACCOUNT), [[TOKEN_IN, AMOUNT]]);
 	assert.deepEqual(extractApprovalRequirements(plan, ACCOUNT), [[TOKEN_IN, VERIFIER]]);
-
-	const batchOnlyPlan = plan.filter((item) => item.type !== "requiredApproval");
-	assert.deepEqual(extractBalanceRequirements(batchOnlyPlan, ACCOUNT), [
-		[TOKEN_IN, AMOUNT],
-	]);
-	assert.deepEqual(extractApprovalRequirements(batchOnlyPlan, ACCOUNT), [
-		[TOKEN_IN, VERIFIER],
-	]);
 });

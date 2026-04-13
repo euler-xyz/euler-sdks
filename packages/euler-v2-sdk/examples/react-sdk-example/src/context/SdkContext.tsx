@@ -10,6 +10,7 @@ import {
   buildEulerSDK,
   createPythPlugin,
   defaultVaultTypeSubgraphAdapterConfig,
+  type BuildSDKOptions,
   type EulerSDK,
 } from "euler-v2-sdk";
 import { sdkBuildQuery } from "../queries/sdkQueries.ts";
@@ -51,7 +52,7 @@ export function SdkProvider({ children }: { children: ReactNode }) {
     setSdk(null);
     resetQueryProfile();
 
-    const sdkConfig = {
+    const sdkConfig: BuildSDKOptions = {
       rpcUrls: RPC_URLS,
       v3ApiKey: import.meta.env.VITE_EULER_V3_API_KEY,
       buildQuery: sdkBuildQuery,
