@@ -22,23 +22,20 @@ export type DeriveStateOverridesOptions = {
  * Each RequiredApproval represents a deposit-like operation where the
  * user needs tokens in their wallet. We take the max amount per token.
  */
-export function extractBalanceRequirements(
+function extractBalanceRequirements(
 	plan: TransactionPlan,
 	account: Address,
 ): [Address, bigint][] {
 	const maxPerToken = new Map<Address, bigint>();
-	const normalizedAccount = getAddress(account);
-	console.log("HERE");
 
 	for (const item of plan) {
-		if (item.type === "requiredApproval") {
-			if (getAddress(item.owner) !== normalizedAccount) continue;
+		if (item.type !== "requiredApproval") continue;
+		if (getAddress(item.owner) !== getAddress(account)) continue;
 
-			const token = getAddress(item.token);
-			const current = maxPerToken.get(token) ?? 0n;
-			if (item.amount > current) {
-				maxPerToken.set(token, item.amount);
-			}
+		const token = getAddress(item.token);
+		const current = maxPerToken.get(token) || 0n;
+		if (item.amount > current) {
+			maxPerToken.set(token, item.amount);
 		}
 	}
 
@@ -47,27 +44,25 @@ export function extractBalanceRequirements(
 
 /**
  * Extract approval pairs from a TransactionPlan.
- * Returns unique [asset, spender] pairs from explicit approval requirements.
+ * Returns unique [asset, spender] pairs.
  */
-export function extractApprovalRequirements(
+function extractApprovalRequirements(
 	plan: TransactionPlan,
 	account: Address,
 ): [Address, Address][] {
 	const seen = new Set<string>();
 	const approvals: [Address, Address][] = [];
-	const normalizedAccount = getAddress(account);
 
 	for (const item of plan) {
-		if (item.type === "requiredApproval") {
-			if (getAddress(item.owner) !== normalizedAccount) continue;
+		if (item.type !== "requiredApproval") continue;
+		if (getAddress(item.owner) !== getAddress(account)) continue;
 
-			const asset = getAddress(item.token);
-			const spender = getAddress(item.spender);
-			const key = `${asset}:${spender}`;
-			if (!seen.has(key)) {
-				seen.add(key);
-				approvals.push([asset, spender]);
-			}
+		const asset = getAddress(item.token);
+		const spender = getAddress(item.spender);
+		const key = `${asset}:${spender}`;
+		if (!seen.has(key)) {
+			seen.add(key);
+			approvals.push([asset, spender]);
 		}
 	}
 

@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-	type Address,
 	type Hex,
-	encodePacked,
-	hexToBigInt,
-	keccak256,
 	maxUint256,
 	toHex,
 } from "viem";
@@ -19,44 +15,30 @@ const TOKEN = "0x00000000000000000000000000000000000000bb" as const;
 const SPENDER = "0x00000000000000000000000000000000000000cc" as const;
 const PERMIT2 = "0x00000000000000000000000000000000000000dd" as const;
 
-function computeAllowanceSlot(
-	owner: Address,
-	spender: Address,
-	slotIndex: bigint,
-): Hex {
-	const baseSlot = keccak256(
-		encodePacked(["uint256", "uint256"], [hexToBigInt(owner), slotIndex]),
-	);
-
-	return keccak256(
-		encodePacked(
-			["uint256", "uint256"],
-			[hexToBigInt(spender), hexToBigInt(baseSlot)],
-		),
-	);
-}
-
-test("getApprovalOverrides passes from to access-list discovery and falls back to slot scanning with cache reuse", async () => {
-	const expectedSlotIndex = 2n;
-	const expectedSlot = computeAllowanceSlot(
-		ACCOUNT,
-		PERMIT2,
-		expectedSlotIndex,
-	);
+test("getApprovalOverrides discovers allowance slots from access-list candidates", async () => {
+	const expectedSlot =
+		"0x0000000000000000000000000000000000000000000000000000000000001234" as Hex;
+	const decoySlot =
+		"0x0000000000000000000000000000000000000000000000000000000000005678" as Hex;
 	const permit2StateDiff = computePermit2StateDiff(ACCOUNT, [[TOKEN, SPENDER]]);
 	const expectedValue = toHex(maxUint256, { size: 32 });
 	const requestPayloads: Array<Record<string, unknown>> = [];
-	const attemptedSlots: Hex[] = [];
 
 	const client = {
-		chain: { id: 1 },
 		request: async ({
 			params,
 		}: {
 			params: [Record<string, unknown>, string];
 		}) => {
 			requestPayloads.push(params[0]);
-			throw new Error("eth_createAccessList unsupported");
+			return {
+				accessList: [
+					{
+						address: TOKEN,
+						storageKeys: [decoySlot, expectedSlot],
+					},
+				],
+			};
 		},
 		readContract: async ({
 			stateOverride,
@@ -70,51 +52,26 @@ test("getApprovalOverrides passes from to access-list discovery and falls back t
 				return 0n;
 			}
 
-			attemptedSlots.push(slot);
 			return slot === expectedSlot ? maxUint256 : 0n;
 		},
 	};
 
-	const originalWarn = console.warn;
-	console.warn = () => {};
+	const overrides = await getApprovalOverrides(
+		client as never,
+		ACCOUNT,
+		[[TOKEN, SPENDER]],
+		PERMIT2,
+	);
 
-	try {
-		const firstOverrides = await getApprovalOverrides(
-			client as never,
-			ACCOUNT,
-			[[TOKEN, SPENDER]],
-			PERMIT2,
-		);
-
-		assert.equal(requestPayloads[0]?.from, ACCOUNT);
-		assert.deepEqual(firstOverrides, [
-			{
-				address: PERMIT2,
-				stateDiff: permit2StateDiff,
-			},
-			{
-				address: TOKEN,
-				stateDiff: [{ slot: expectedSlot, value: expectedValue }],
-			},
-		]);
-		assert.deepEqual(attemptedSlots, [
-			computeAllowanceSlot(ACCOUNT, PERMIT2, 0n),
-			computeAllowanceSlot(ACCOUNT, PERMIT2, 1n),
-			expectedSlot,
-		]);
-
-		attemptedSlots.length = 0;
-
-		const secondOverrides = await getApprovalOverrides(
-			client as never,
-			ACCOUNT,
-			[[TOKEN, SPENDER]],
-			PERMIT2,
-		);
-
-		assert.deepEqual(secondOverrides, firstOverrides);
-		assert.deepEqual(attemptedSlots, [expectedSlot]);
-	} finally {
-		console.warn = originalWarn;
-	}
+	assert.equal("from" in requestPayloads[0]!, false);
+	assert.deepEqual(overrides, [
+		{
+			address: PERMIT2,
+			stateDiff: permit2StateDiff,
+		},
+		{
+			address: TOKEN,
+			stateDiff: [{ slot: expectedSlot, value: expectedValue }],
+		},
+	]);
 });

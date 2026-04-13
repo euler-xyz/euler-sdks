@@ -4,10 +4,6 @@ import { type Abi, encodeFunctionData } from "viem";
 import { ExecutionService } from "../src/services/executionService/executionService.js";
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
-import {
-	extractApprovalRequirements,
-	extractBalanceRequirements,
-} from "../src/utils/stateOverrides/getStateOverrides.js";
 
 const ACCOUNT = "0x00000000000000000000000000000000000000aa" as const;
 const TOKEN_IN = "0x00000000000000000000000000000000000000bb" as const;
@@ -159,7 +155,7 @@ test("describeBatch decodes app-provided extra ABIs item-by-item", () => {
 	});
 });
 
-test("deposit-with-swap-from-wallet emits explicit state override requirements", () => {
+test("deposit-with-swap-from-wallet emits explicit required approval", () => {
 	const service = createExecutionService();
 	const account = {
 		owner: ACCOUNT,
@@ -174,6 +170,11 @@ test("deposit-with-swap-from-wallet emits explicit state override requirements",
 		enableCollateral: true,
 	});
 
-	assert.deepEqual(extractBalanceRequirements(plan, ACCOUNT), [[TOKEN_IN, AMOUNT]]);
-	assert.deepEqual(extractApprovalRequirements(plan, ACCOUNT), [[TOKEN_IN, VERIFIER]]);
+	assert.deepEqual(plan[0], {
+		type: "requiredApproval",
+		token: TOKEN_IN,
+		owner: ACCOUNT,
+		spender: VERIFIER,
+		amount: AMOUNT,
+	});
 });

@@ -15,122 +15,6 @@ import {
 import { encodeFunctionData } from "viem/utils";
 import { getAccessedSlots } from "./accessList.js";
 
-const ALLOWANCE_MAX_SEQUENTIAL_SLOT = 500;
-const ALLOWANCE_EXTRA_SLOT_CANDIDATES: bigint[] = [];
-
-type AllowanceSlotCacheKey = `${number}:${Address}`;
-
-const allowanceSlotIndexCache = new Map<AllowanceSlotCacheKey, bigint>();
-
-function computeAllowanceSlot(
-	owner: Address,
-	spender: Address,
-	slotIndex: bigint,
-): Hex {
-	const baseSlot = keccak256(
-		encodePacked(["uint256", "uint256"], [hexToBigInt(owner), slotIndex]),
-	);
-
-	return keccak256(
-		encodePacked(
-			["uint256", "uint256"],
-			[hexToBigInt(spender), hexToBigInt(baseSlot)],
-		),
-	);
-}
-
-async function verifyAllowanceSlot(params: {
-	client: PublicClient;
-	asset: Address;
-	account: Address;
-	permit2: Address;
-	slot: Hex;
-	valueHex: Hex;
-}) {
-	try {
-		const allowance = await params.client.readContract({
-			abi: erc20Abi,
-			address: params.asset,
-			functionName: "allowance",
-			args: [params.account, params.permit2],
-			stateOverride: [
-				{
-					address: params.asset,
-					stateDiff: [{ slot: params.slot, value: params.valueHex }],
-				},
-			],
-		});
-
-		return allowance === maxUint256;
-	} catch {
-		return false;
-	}
-}
-
-async function resolveAllowanceSlotIndexFallback(params: {
-	client: PublicClient;
-	asset: Address;
-	account: Address;
-	permit2: Address;
-}): Promise<bigint | undefined> {
-	const chainId = params.client.chain?.id;
-	const normalizedAsset = getAddress(params.asset);
-	const cacheKey =
-		chainId !== undefined
-			? (`${chainId}:${normalizedAsset}` as AllowanceSlotCacheKey)
-			: undefined;
-	const cachedSlotIndex =
-		cacheKey !== undefined ? allowanceSlotIndexCache.get(cacheKey) : undefined;
-
-	const trySlotIndex = async (slotIndex: bigint) => {
-		const slot = computeAllowanceSlot(
-			params.account,
-			params.permit2,
-			slotIndex,
-		);
-
-		return verifyAllowanceSlot({
-			client: params.client,
-			asset: normalizedAsset,
-			account: params.account,
-			permit2: params.permit2,
-			slot,
-			valueHex: toHex(maxUint256, { size: 32 }),
-		});
-	};
-
-	if (cachedSlotIndex !== undefined) {
-		const cachedMatches = await trySlotIndex(cachedSlotIndex);
-		if (cachedMatches) {
-			return cachedSlotIndex;
-		}
-	}
-
-	for (let slotIndex = 0; slotIndex <= ALLOWANCE_MAX_SEQUENTIAL_SLOT; slotIndex++) {
-		if (!(await trySlotIndex(BigInt(slotIndex)))) {
-			continue;
-		}
-
-		if (cacheKey !== undefined) {
-			allowanceSlotIndexCache.set(cacheKey, BigInt(slotIndex));
-		}
-		return BigInt(slotIndex);
-	}
-
-	for (const slotIndex of ALLOWANCE_EXTRA_SLOT_CANDIDATES) {
-		if (!(await trySlotIndex(slotIndex))) {
-			continue;
-		}
-
-		if (cacheKey !== undefined) {
-			allowanceSlotIndexCache.set(cacheKey, slotIndex);
-		}
-		return slotIndex;
-	}
-
-	return undefined;
-}
-
 /**
  * Compute Permit2 allowance storage slots for the given approvals.
  *
@@ -189,12 +73,6 @@ async function discoverAllowanceSlots(
 	const valueHex = toHex(maxUint256, { size: 32 });
 
 	for (const asset of assets) {
-		const normalizedAsset = getAddress(asset);
-		const stateDiff: { slot: Hex; value: Hex }[] = [];
-
-		/* ------------------------- */
-		/*   Access-list discovery   */
-		/* ------------------------- */
 		try {
 			const accessedSlots = await getAccessedSlots(client, {
 				data: encodeFunctionData({
@@ -202,66 +80,47 @@ async function discoverAllowanceSlots(
 					functionName: "allowance",
 					args: [account, permit2],
 				}),
-				to: normalizedAsset,
-				from: account,
+				to: asset,
 			});
 
-			const tokenSlots = accessedSlots.get(normalizedAsset) ?? [];
-			if (tokenSlots.length > 0) {
-				const matches = await Promise.all(
-					tokenSlots.map((slot) =>
-						verifyAllowanceSlot({
-							client,
-							asset: normalizedAsset,
-							account,
-							permit2,
-							slot,
-							valueHex,
-						}),
-					),
-				);
+			const tokenSlots = accessedSlots.get(getAddress(asset));
+			if (!tokenSlots || tokenSlots.length === 0) continue;
 
-				for (let i = 0; i < tokenSlots.length; i++) {
-					if (matches[i]) {
-						stateDiff.push({ slot: tokenSlots[i]!, value: valueHex });
-					}
+			// Test each candidate: override slot with maxUint256, read allowance, verify
+			const testResults = await Promise.all(
+				tokenSlots.map((slot) =>
+					client
+						.readContract({
+							abi: erc20Abi,
+							address: asset,
+							functionName: "allowance",
+							args: [account, permit2],
+							stateOverride: [
+								{
+									address: asset,
+									stateDiff: [{ slot, value: valueHex }],
+								},
+							],
+						})
+						.catch(() => 0n),
+				),
+			);
+
+			const stateDiff: { slot: Hex; value: Hex }[] = [];
+			for (let i = 0; i < tokenSlots.length; i++) {
+				if (testResults[i] === maxUint256) {
+					stateDiff.push({ slot: tokenSlots[i]!, value: valueHex });
 				}
+			}
+
+			if (stateDiff.length > 0) {
+				stateOverride.push({ address: asset, stateDiff });
 			}
 		} catch (e) {
 			console.warn(
-				`[approvalOverrides] access-list discovery failed for ${normalizedAsset}:`,
+				`[approvalOverrides] slot discovery failed for ${asset}:`,
 				e,
 			);
-		}
-
-		/* ------------------------- */
-		/*   Slot-index fallback     */
-		/* ------------------------- */
-		if (stateDiff.length === 0) {
-			try {
-				const slotIndex = await resolveAllowanceSlotIndexFallback({
-					client,
-					asset: normalizedAsset,
-					account,
-					permit2,
-				});
-
-				if (slotIndex !== undefined) {
-					stateDiff.push({
-						slot: computeAllowanceSlot(account, permit2, slotIndex),
-						value: valueHex,
-					});
-				}
-			} catch (e) {
-				console.warn(
-					`[approvalOverrides] slot-index fallback failed for ${normalizedAsset}:`,
-					e,
-				);
-			}
-		}
-
-		if (stateDiff.length > 0) {
-			stateOverride.push({ address: normalizedAsset, stateDiff });
 		}
 	}
 

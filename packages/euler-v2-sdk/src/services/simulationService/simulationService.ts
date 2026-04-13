@@ -28,7 +28,9 @@ import type {
 } from "../executionService/executionServiceTypes.js";
 import type { IExecutionService } from "../executionService/index.js";
 import type { IWalletService } from "../walletService/index.js";
-import { deriveStateOverrides } from "../../utils/stateOverrides/getStateOverrides.js";
+import { getApprovalOverrides } from "../../utils/stateOverrides/approvalOverrides.js";
+import { getBalanceOverrides } from "../../utils/stateOverrides/balanceOverrides.js";
+import { mergeStateOverrides } from "../../utils/stateOverrides/mergeStateOverrides.js";
 import { ethereumVaultConnectorAbi } from "../executionService/abis/ethereumVaultConnectorAbi.js";
 import {
 	Account,
@@ -171,18 +173,39 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
 		transactionPlan: TransactionPlan,
 		options?: SimulationStateOverrideOptions,
 	): Promise<StateOverride> {
+		const owner = getAddress(account);
+		const nativeBalance = options?.nativeBalance ?? parseEther("1000");
 		const permit2Address =
 			this.deploymentService.getDeployment(chainId).addresses.coreAddrs.permit2;
 		const provider = this.providerService.getProvider(chainId);
-		return deriveStateOverrides(
-			provider,
+
+		const balanceRequirements = this.extractBalanceRequirements(
 			transactionPlan,
-			getAddress(account),
-			{
-				nativeBalance: options?.nativeBalance ?? parseEther("1000"),
-				permit2Address,
-			},
+			owner,
 		);
+		const approvalRequirements = this.extractApprovalRequirements(
+			transactionPlan,
+			owner,
+		);
+
+		const [balanceOverrides, approvalOverrides] = await Promise.all([
+			getBalanceOverrides(provider, owner, balanceRequirements),
+			getApprovalOverrides(
+				provider,
+				owner,
+				approvalRequirements,
+				permit2Address,
+			),
+		]);
+
+		const allOverrides: StateOverride = [];
+		if (nativeBalance > 0n) {
+			allOverrides.push({ address: owner, balance: nativeBalance });
+		}
+		allOverrides.push(...balanceOverrides);
+		allOverrides.push(...approvalOverrides);
+
+		return mergeStateOverrides(allOverrides);
 	}
 
 	async simulateTransactionPlan(
@@ -812,4 +835,39 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
 		};
 	}
 
+	private extractBalanceRequirements(
+		transactionPlan: TransactionPlan,
+		account: Address,
+	): [Address, bigint][] {
+		const maxPerToken = new Map<Address, bigint>();
+		for (const item of transactionPlan) {
+			if (item.type !== "requiredApproval") continue;
+			if (getAddress(item.owner) !== getAddress(account)) continue;
+			const token = getAddress(item.token);
+			const current = maxPerToken.get(token) ?? 0n;
+			if (item.amount > current) {
+				maxPerToken.set(token, item.amount);
+			}
+		}
+		return Array.from(maxPerToken.entries());
+	}
+
+	private extractApprovalRequirements(
+		transactionPlan: TransactionPlan,
+		account: Address,
+	): [Address, Address][] {
+		const seen = new Set<string>();
+		const approvals: [Address, Address][] = [];
+		for (const item of transactionPlan) {
+			if (item.type !== "requiredApproval") continue;
+			if (getAddress(item.owner) !== getAddress(account)) continue;
+			const asset = getAddress(item.token);
+			const spender = getAddress(item.spender);
+			const key = `${asset}:${spender}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			approvals.push([asset, spender]);
+		}
+		return approvals;
+	}
 }
