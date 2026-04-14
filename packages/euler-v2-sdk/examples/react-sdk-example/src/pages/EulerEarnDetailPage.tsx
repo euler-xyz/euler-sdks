@@ -41,8 +41,8 @@ export function EulerEarnDetailPage() {
 
   return (
     <>
-      <Link to="/" className="back-link">
-        &larr; Back to vaults
+      <Link to="/earn" className="back-link">
+        &larr; Back to Earn
       </Link>
 
       <div className="detail-header">

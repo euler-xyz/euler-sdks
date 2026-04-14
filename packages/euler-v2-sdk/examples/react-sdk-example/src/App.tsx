@@ -42,7 +42,9 @@ function AppShell() {
           <div className="container">
             <Routes>
               <Route path="/" element={<Navigate to="/vaults" replace />} />
-              <Route path="/vaults" element={<VaultListPage />} />
+              <Route path="/vaults" element={<VaultListPage tab="evaults" />} />
+              <Route path="/earn" element={<VaultListPage tab="eulerEarn" />} />
+              <Route path="/securitize" element={<VaultListPage tab="securitize" />} />
               <Route path="/borrow" element={<BorrowPage />} />
               <Route
                 path="/borrow/:chainId/:collateral/:debt"

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
 import {
   type ChainScopedVault,
@@ -32,7 +32,7 @@ import { ApyCell } from "../components/ApyCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
 import { executePlanWithProgress } from "../utils/txExecutor.ts";
 
-type Tab = "evaults" | "eulerEarn" | "securitize";
+export type VaultListTab = "evaults" | "eulerEarn" | "securitize";
 type SortDir = "asc" | "desc";
 
 // ---------------------------------------------------------------------------
@@ -457,10 +457,9 @@ function DepositFormRow({
 // Component
 // ---------------------------------------------------------------------------
 
-export function VaultListPage() {
+export function VaultListPage({ tab }: { tab: VaultListTab }) {
   const { chainNames, loading: sdkLoading, error: sdkError } = useSDK();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("evaults");
   const [chainFilter, setChainFilter] = useState<string>("all");
   const [marketFilter, setMarketFilter] = useState<string>("all");
   const [assetFilter, setAssetFilter] = useState<string>("all");
@@ -701,24 +700,24 @@ export function VaultListPage() {
   return (
     <>
       <div className="tabs">
-        <button
+        <Link
+          to="/vaults"
           className={`tab ${tab === "evaults" ? "active" : ""}`}
-          onClick={() => setTab("evaults")}
         >
           EVaults{tab === "evaults" ? ` (${isLoading ? "..." : eVaults.length})` : ""}
-        </button>
-        <button
+        </Link>
+        <Link
+          to="/earn"
           className={`tab ${tab === "eulerEarn" ? "active" : ""}`}
-          onClick={() => setTab("eulerEarn")}
         >
           Euler Earn{tab === "eulerEarn" ? ` (${isLoading ? "..." : earnVaults.length})` : ""}
-        </button>
-        <button
+        </Link>
+        <Link
+          to="/securitize"
           className={`tab ${tab === "securitize" ? "active" : ""}`}
-          onClick={() => setTab("securitize")}
         >
           Securitize
-        </button>
+        </Link>
       </div>
 
       {tab === "evaults" && (

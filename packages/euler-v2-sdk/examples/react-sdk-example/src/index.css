@@ -653,6 +653,8 @@ tr.clickable {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  color: #000;
+  text-decoration: none;
   background: none;
   border: 2px solid #000;
   border-bottom: none;

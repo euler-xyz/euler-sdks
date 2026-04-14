@@ -11,6 +11,9 @@ export function TopBar() {
     location.pathname === "/" ||
     location.pathname.startsWith("/vaults") ||
     location.pathname.startsWith("/vault/");
+  const isEarn =
+    location.pathname === "/earn" || location.pathname.startsWith("/earn/");
+  const isSecuritize = location.pathname.startsWith("/securitize");
   const isBorrow = location.pathname.startsWith("/borrow");
   const isPortfolio = location.pathname.startsWith("/portfolio");
   const isRewards = location.pathname.startsWith("/rewards");
@@ -28,6 +31,18 @@ export function TopBar() {
             onClick={() => navigate("/vaults")}
           >
             Vaults
+          </button>
+          <button
+            className={`nav-link ${isEarn ? "active" : ""}`}
+            onClick={() => navigate("/earn")}
+          >
+            Earn
+          </button>
+          <button
+            className={`nav-link ${isSecuritize ? "active" : ""}`}
+            onClick={() => navigate("/securitize")}
+          >
+            Securitize
           </button>
           <button
             className={`nav-link ${isBorrow ? "active" : ""}`}
