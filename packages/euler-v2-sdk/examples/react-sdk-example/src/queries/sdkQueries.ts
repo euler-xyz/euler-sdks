@@ -22,7 +22,7 @@ import { recordExecution, recordFailure, registerKnownQueries } from "./queryPro
 import { interceptSdkDataIfEnabled, isQueryIntercepted } from "./dataInterceptorStore.ts";
 import { getQueryBuildOverrides, useEnabledChainIds } from "./queryOptionsStore.ts";
 import { isEVault } from "euler-v2-sdk";
-import { CHAIN_NAMES } from "../config/chains.ts";
+import { CHAIN_NAMES, EARN_CHAIN_IDS } from "../config/chains.ts";
 
 // ---------------------------------------------------------------------------
 // Query client
@@ -437,7 +437,7 @@ export function unwrapServiceResult<T>(
   return unwrapServiceResultWithDiagnostics(operation, response).result;
 }
 
-async function fetchVaultAddressesFromLabelProducts(
+export async function fetchVaultAddressesFromLabelProducts(
   sdk: EulerSDK,
   chainId: number
 ): Promise<Address[]> {
@@ -462,10 +462,11 @@ async function fetchVaultAddressesFromLabelProducts(
   return addresses;
 }
 
-async function fetchEarnVaultAddressesFromLabels(
+export async function fetchEarnVaultAddressesFromLabels(
   chainId: number
 ): Promise<Address[]> {
   const response = await fetch(`${EULER_LABELS_BASE}/${chainId}/earn-vaults.json`);
+  if (response.status === 404) return [];
   if (!response.ok) {
     throw new Error(`Failed to fetch Euler labels earn vaults: ${response.statusText}`);
   }
@@ -706,10 +707,13 @@ export function useLabeledEVaultsWithDiagnostics(enabledOverride = true) {
 export function useAllEulerEarnVaultsWithDiagnostics(enabledOverride = true) {
   const { sdk, enabled } = useSdkReady();
   const enabledChainIds = useEnabledChainIds();
+  const earnChainIds = enabledChainIds.filter((chainId) =>
+    EARN_CHAIN_IDS.includes(chainId)
+  );
   return useQuery<ChainFetchResult<EulerEarn>>({
-    queryKey: ["vaultsWithDiagnostics", "allChains", "eulerEarns", enabledChainIds],
+    queryKey: ["vaultsWithDiagnostics", "allChains", "eulerEarns", earnChainIds],
     queryFn: async () =>
-      fetchAllChainsVaultDiagnostics<EulerEarn>(enabledChainIds, (chainId) =>
+      fetchAllChainsVaultDiagnostics<EulerEarn>(earnChainIds, (chainId) =>
         fetchEulerEarnVaultsWithDiagnostics(sdk!, chainId) as Promise<{
           result: Array<EulerEarn | undefined>;
           diagnostics: DiagnosticIssue[];

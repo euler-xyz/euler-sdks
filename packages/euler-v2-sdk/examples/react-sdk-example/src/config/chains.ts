@@ -12,6 +12,7 @@ export const CHAIN_NAMES: Record<number, string> = {
   9745: "Plasma",
   42161: "Arbitrum",
   43114: "Avalanche",
+  59144: "Linea",
   60808: "Bob",
   80094: "Berachain",
 };
@@ -20,8 +21,12 @@ export const ALL_CHAIN_IDS = Object.keys(CHAIN_NAMES)
   .map(Number)
   .sort((a, b) => a - b);
 
-// Verified against the configured V3 endpoint on 2026-04-02.
-export const DEFAULT_ENABLED_V3_CHAIN_IDS = [1, 143, 146, 8453, 42161];
+// Match the production app's active label-backed networks.
+export const DEFAULT_ENABLED_CHAIN_IDS = ALL_CHAIN_IDS;
+
+export const EARN_CHAIN_IDS = ALL_CHAIN_IDS;
+
+export const APP_CHAIN_IDS_MINUS_BOB = ALL_CHAIN_IDS.filter((chainId) => chainId !== 60808);
 
 export const DEFAULT_CHAIN = 1;
 
@@ -32,14 +37,15 @@ const PUBLIC_RPC_URLS: Record<number, string> = {
   130: "https://unichain.drpc.org",
   143: "https://rpc.monad.xyz",
   146: "https://sonic.drpc.org",
-  239: "https://turin.rpc.tac.build",
+  239: "https://rpc.tac.build",
   1923: "https://swell-mainnet.g.alchemy.com/public",
   8453: "https://base.drpc.org",
   9745: "https://rpc.plasma.cloud",
   42161: "https://arbitrum.drpc.org",
   43114: "https://avalanche.drpc.org",
+  59144: "https://rpc.linea.build",
   60808: "https://bob.drpc.org",
-  80094: "https://berachain.drpc.org",
+  80094: "https://rpc.berachain.com",
 };
 
 export const RPC_URLS: Record<number, string> = Object.fromEntries(
@@ -53,6 +59,7 @@ const DEFAULT_NATIVE = { name: "Ether", symbol: "ETH", decimals: 18 };
 
 const NATIVE_CURRENCY: Record<number, { name: string; symbol: string; decimals: number }> = {
   56: { name: "BNB", symbol: "BNB", decimals: 18 },
+  239: { name: "TAC", symbol: "TAC", decimals: 18 },
   43114: { name: "Avalanche", symbol: "AVAX", decimals: 18 },
   80094: { name: "Berachain", symbol: "BERA", decimals: 18 },
 };

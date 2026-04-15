@@ -31,6 +31,7 @@ import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
 import { executePlanWithProgress } from "../utils/txExecutor.ts";
+import { ALL_CHAIN_IDS, EARN_CHAIN_IDS } from "../config/chains.ts";
 
 export type VaultListTab = "evaults" | "eulerEarn" | "securitize";
 type SortDir = "asc" | "desc";
@@ -575,11 +576,8 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
   }, [eVaultAssets, assetSearch, assetFilter]);
 
   const availableChains = useMemo(() => {
-    const ids = new Set<number>();
-    for (const vault of eVaults) ids.add(vault.chainId);
-    for (const vault of earnVaults) ids.add(vault.chainId);
-    return Array.from(ids).sort((a, b) => a - b);
-  }, [eVaults, earnVaults]);
+    return tab === "eulerEarn" ? EARN_CHAIN_IDS : ALL_CHAIN_IDS;
+  }, [tab]);
 
   const filteredEVaults = useMemo(() => {
     return eVaults.filter((vault) => {
@@ -811,6 +809,7 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
                 <table>
                   <thead>
                     <tr>
+                      <th>#</th>
                       <th className="sortable" onClick={() => eVaultSort.toggleSort("chain")}>
                         Chain{eVaultSort.indicator("chain")}
                       </th>
@@ -843,7 +842,7 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {eVaultSort.sorted.map((vault) => (
+                    {eVaultSort.sorted.map((vault, index) => (
                       <Fragment key={`${vault.chainId}:${vault.address}`}>
                         <tr
                           className="clickable"
@@ -851,6 +850,7 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
                             navigate(`/vault/${vault.chainId}/${vault.address}`)
                           }
                         >
+                          <td>{index + 1}</td>
                           <td>{vault.chainName}</td>
                           <td>
                             {renderFieldIcon(vault.chainId, vault.address, ["$.shares.name", "$.eulerLabel.vault.name", "$.eulerLabel.products"])}
@@ -975,6 +975,7 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
                     <table>
                       <thead>
                         <tr>
+                          <th>#</th>
                           <th className="sortable" onClick={() => earnSort.toggleSort("chain")}>
                             Chain{earnSort.indicator("chain")}
                           </th>
@@ -1003,7 +1004,7 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {earnSort.sorted.map((vault) => (
+                        {earnSort.sorted.map((vault, index) => (
                           <tr
                             key={`${vault.chainId}:${vault.address}`}
                             className="clickable"
@@ -1011,6 +1012,7 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
                               navigate(`/earn/${vault.chainId}/${vault.address}`)
                             }
                           >
+                            <td>{index + 1}</td>
                             <td>{vault.chainName}</td>
                             <td>
                               {renderFieldIcon(vault.chainId, vault.address, ["$.shares.name", "$.eulerLabel.vault.name"], "leading")}

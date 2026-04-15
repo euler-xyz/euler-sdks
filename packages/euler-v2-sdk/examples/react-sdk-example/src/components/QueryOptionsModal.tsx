@@ -3,6 +3,7 @@ import { ALL_CHAIN_IDS, CHAIN_NAMES } from "../config/chains.ts";
 import {
   getQueryOptionsSettings,
   hasActiveQueryOptionsOverrides,
+  QUERY_OPTIONS_CHAIN_SET_VERSION,
   resetQueryOptionsSettings,
   setQueryOptionsSettings,
   type SdkAdapterMode,
@@ -67,6 +68,7 @@ function toSettings(form: FormState): QueryOptionsSettings {
   }
 
   return {
+    chainSetVersion: QUERY_OPTIONS_CHAIN_SET_VERSION,
     adapterMode: form.adapterMode,
     enabledChainIds: [...form.enabledChainIds].sort((a, b) => a - b),
     showQueryProfiler: form.showQueryProfiler,

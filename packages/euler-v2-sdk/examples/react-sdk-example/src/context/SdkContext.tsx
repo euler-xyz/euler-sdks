@@ -23,7 +23,7 @@ import {
 } from "../config/chains.ts";
 
 const V3_API_ENDPOINT =
-  import.meta.env.VITE_EULER_V3_ENDPOINT ?? "https://v3staging.eul.dev";
+  import.meta.env.VITE_EULER_V3_ENDPOINT ?? "/api/v3";
 const SWAP_PROXY_ENDPOINT = "/api/swap";
 
 interface SdkContextValue {

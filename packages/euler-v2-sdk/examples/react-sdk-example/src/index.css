@@ -273,6 +273,33 @@ a:hover {
   border-bottom: 1px solid #000;
 }
 
+.page-title {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.page-subtitle {
+  font-size: 13px;
+  color: #555;
+}
+
+.totals-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.totals-section {
+  margin-bottom: 28px;
+}
+
+.diff-large {
+  color: #c00;
+  font-weight: 700;
+}
+
 /* Table */
 table {
   width: 100%;
@@ -674,6 +701,7 @@ tr.clickable {
 /* Top bar nav */
 .topbar-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 

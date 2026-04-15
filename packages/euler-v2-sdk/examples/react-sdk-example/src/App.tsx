@@ -16,6 +16,7 @@ import { BorrowPairPage } from "./pages/BorrowPairPage.tsx";
 import { PortfolioPage } from "./pages/PortfolioPage.tsx";
 import { RewardsPage } from "./pages/RewardsPage.tsx";
 import { FeeFlowPage } from "./pages/FeeFlowPage.tsx";
+import { TotalsPage } from "./pages/TotalsPage.tsx";
 
 function AppShell() {
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -61,6 +62,7 @@ function AppShell() {
               <Route path="/portfolio" element={<PortfolioPage />} />
               <Route path="/rewards" element={<RewardsPage />} />
               <Route path="/fee-flow" element={<FeeFlowPage />} />
+              <Route path="/totals" element={<TotalsPage />} />
             </Routes>
           </div>
         </div>

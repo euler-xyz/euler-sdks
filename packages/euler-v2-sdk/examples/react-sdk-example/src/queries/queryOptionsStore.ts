@@ -2,10 +2,13 @@ import type { NetworkMode } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import {
   ALL_CHAIN_IDS,
-  DEFAULT_ENABLED_V3_CHAIN_IDS,
+  DEFAULT_ENABLED_CHAIN_IDS,
 } from "../config/chains.ts";
 
 const STORAGE_KEY = "sdk-query-profiler-react-query-options";
+export const QUERY_OPTIONS_CHAIN_SET_VERSION = 3;
+const CHAIN_SET_VERSION = QUERY_OPTIONS_CHAIN_SET_VERSION;
+const LEGACY_DEFAULT_ENABLED_CHAIN_IDS = [1, 143, 146, 8453, 42161];
 
 export type RetryStrategy =
   | "inherit"
@@ -17,6 +20,7 @@ export type RetryStrategy =
 export type SdkAdapterMode = "v3" | "onchain";
 
 export interface QueryOptionsSettings {
+  chainSetVersion: number;
   adapterMode: SdkAdapterMode;
   enabledChainIds: number[];
   showQueryProfiler: boolean;
@@ -36,8 +40,9 @@ export interface QueryBuildOverrides {
 }
 
 const DEFAULT_SETTINGS: QueryOptionsSettings = {
+  chainSetVersion: CHAIN_SET_VERSION,
   adapterMode: "v3",
-  enabledChainIds: DEFAULT_ENABLED_V3_CHAIN_IDS,
+  enabledChainIds: DEFAULT_ENABLED_CHAIN_IDS,
   showQueryProfiler: true,
   disableCache: false,
   staleTimeMs: null,
@@ -104,6 +109,13 @@ function sanitizeEnabledChainIds(value: unknown): number[] {
   return selected.length > 0 ? selected : DEFAULT_SETTINGS.enabledChainIds;
 }
 
+function matchesChainIds(value: number[], expected: number[]) {
+  return (
+    value.length === expected.length &&
+    value.every((chainId, index) => chainId === expected[index])
+  );
+}
+
 function sanitizeSettings(value: unknown): QueryOptionsSettings {
   if (!value || typeof value !== "object") return DEFAULT_SETTINGS;
 
@@ -125,7 +137,8 @@ function sanitizeSettings(value: unknown): QueryOptionsSettings {
       ? candidate.networkMode
       : DEFAULT_SETTINGS.networkMode;
 
-  return {
+  const sanitized = {
+    chainSetVersion: CHAIN_SET_VERSION,
     adapterMode:
       candidate.adapterMode === "onchain" || candidate.adapterMode === "v3"
         ? candidate.adapterMode
@@ -152,6 +165,15 @@ function sanitizeSettings(value: unknown): QueryOptionsSettings {
         ? candidate.advancedOptionsText
         : DEFAULT_SETTINGS.advancedOptionsText,
   };
+
+  if (
+    candidate.chainSetVersion !== CHAIN_SET_VERSION ||
+    matchesChainIds(sanitized.enabledChainIds, LEGACY_DEFAULT_ENABLED_CHAIN_IDS)
+  ) {
+    sanitized.enabledChainIds = DEFAULT_SETTINGS.enabledChainIds;
+  }
+
+  return sanitized;
 }
 
 function parseAdvancedOptions(text: string): Record<string, unknown> {
