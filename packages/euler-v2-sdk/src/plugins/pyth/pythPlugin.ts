@@ -53,15 +53,28 @@ const normalizeHex = (value: string): Hex =>
 const normalizeFeedId = (value: string): Hex =>
 	normalizeHex(value).toLowerCase() as Hex;
 
+const PYTH_PRICE_ID_PATTERN = /0x[0-9a-fA-F]{64}/g;
+
+const parseMissingPriceIds = (body: string): Set<Hex> => {
+	const matches = body.match(PYTH_PRICE_ID_PATTERN) ?? [];
+	return new Set(matches.map((id) => normalizeFeedId(id)));
+};
+
 /**
  * Adapter for the Pyth plugin. Follows the SDK's injectable query pattern:
  * all external calls are `query*` arrow-function properties, wrapped by `applyBuildQuery`.
  */
 export class PythPluginAdapter {
 	private hermesUrl: string;
+	private fetchFn: typeof fetch;
 
-	constructor(hermesUrl: string, buildQuery?: BuildQueryFn) {
+	constructor(
+		hermesUrl: string,
+		buildQuery?: BuildQueryFn,
+		fetchFn: typeof fetch = globalThis.fetch,
+	) {
 		this.hermesUrl = hermesUrl;
+		this.fetchFn = fetchFn;
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
 
@@ -74,22 +87,40 @@ export class PythPluginAdapter {
 			const normalizedIds = [...new Set(feedIds.map(normalizeFeedId))];
 			if (!normalizedIds.length) return [];
 
-			const url = new URL("/v2/updates/price/latest", this.hermesUrl);
-			normalizedIds.forEach((id) => url.searchParams.append("ids[]", id));
-			url.searchParams.set("encoding", "hex");
-
-			const response = await fetch(url.toString());
-			if (!response.ok) {
-				throw new Error(`Failed to fetch Pyth update data: ${response.status}`);
-			}
-
-			const body = (await response.json()) as { binary?: { data?: unknown[] } };
-			const binaryData = body?.binary?.data;
-			if (!Array.isArray(binaryData)) return [];
-
-			return binaryData.map((item) => normalizeHex(String(item)));
+			return this.fetchPythUpdateData(normalizedIds);
 		},
 	);
+
+	private fetchPythUpdateData = async (feedIds: Hex[]): Promise<Hex[]> => {
+		if (!feedIds.length) return [];
+
+		const url = new URL("/v2/updates/price/latest", this.hermesUrl);
+		feedIds.forEach((id) => url.searchParams.append("ids[]", id));
+		url.searchParams.set("encoding", "hex");
+
+		const response = await this.fetchFn(url.toString());
+		if (!response.ok) {
+			const body = await response.text().catch(() => "");
+			if (response.status === 404) {
+				const missingIds = parseMissingPriceIds(body);
+				if (missingIds.size > 0) {
+					const retryIds = feedIds.filter((id) => !missingIds.has(id));
+					return this.fetchPythUpdateData(retryIds);
+				}
+			}
+			throw new Error(
+				`Failed to fetch Pyth update data: ${response.status}${
+					body ? ` ${body}` : ""
+				}`,
+			);
+		}
+
+		const body = (await response.json()) as { binary?: { data?: unknown[] } };
+		const binaryData = body?.binary?.data;
+		if (!Array.isArray(binaryData)) return [];
+
+		return binaryData.map((item) => normalizeHex(String(item)));
+	};
 
 	/**
 	 * Query the on-chain Pyth contract for the fee required to update given price data.
