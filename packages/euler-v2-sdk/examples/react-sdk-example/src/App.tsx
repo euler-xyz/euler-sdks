@@ -11,6 +11,7 @@ import { QueryProfiler } from "./components/QueryProfiler.tsx";
 import { VaultListPage } from "./pages/VaultListPage.tsx";
 import { VaultDetailPage } from "./pages/VaultDetailPage.tsx";
 import { EulerEarnDetailPage } from "./pages/EulerEarnDetailPage.tsx";
+import { SecuritizeDetailPage } from "./pages/SecuritizeDetailPage.tsx";
 import { BorrowPage } from "./pages/BorrowPage.tsx";
 import { BorrowPairPage } from "./pages/BorrowPairPage.tsx";
 import { PortfolioPage } from "./pages/PortfolioPage.tsx";
@@ -58,6 +59,10 @@ function AppShell() {
               <Route
                 path="/earn/:chainId/:address"
                 element={<EulerEarnDetailPage />}
+              />
+              <Route
+                path="/securitize/:chainId/:address"
+                element={<SecuritizeDetailPage />}
               />
               <Route path="/portfolio" element={<PortfolioPage />} />
               <Route path="/rewards" element={<RewardsPage />} />

@@ -22,7 +22,11 @@ import { recordExecution, recordFailure, registerKnownQueries } from "./queryPro
 import { interceptSdkDataIfEnabled, isQueryIntercepted } from "./dataInterceptorStore.ts";
 import { getQueryBuildOverrides, useEnabledChainIds } from "./queryOptionsStore.ts";
 import { isEVault } from "euler-v2-sdk";
-import { CHAIN_NAMES, EARN_CHAIN_IDS } from "../config/chains.ts";
+import { CHAIN_NAMES, EARN_CHAIN_IDS, SECURITIZE_VAULT_ADDRESSES } from "../config/chains.ts";
+
+type SecuritizeVault = NonNullable<
+  Awaited<ReturnType<EulerSDK["securitizeVaultService"]["fetchVaults"]>>["result"][number]
+>;
 
 // ---------------------------------------------------------------------------
 // Query client
@@ -505,7 +509,7 @@ export async function fetchEarnVaultAddressesFromLabels(
 }
 
 function logVaultFetchResults(
-  kind: "eVault" | "eulerEarn",
+  kind: "eVault" | "eulerEarn" | "securitize",
   chainId: number,
   addresses: Address[],
   result: Array<VaultEntity | undefined>,
@@ -566,6 +570,25 @@ async function fetchEulerEarnVaultsWithDiagnostics(
     })
   );
   logVaultFetchResults("eulerEarn", chainId, addresses, res.result as Array<VaultEntity | undefined>, res.diagnostics);
+  return res;
+}
+
+async function fetchSecuritizeVaultsWithDiagnostics(
+  sdk: EulerSDK,
+  chainId: number
+) {
+  const addresses = SECURITIZE_VAULT_ADDRESSES[chainId] ?? [];
+
+  const res = unwrapServiceResultWithDiagnostics(
+    "securitizeVaultService.fetchVaults",
+    await sdk.securitizeVaultService.fetchVaults(chainId, addresses, {
+      populateMarketPrices: true,
+      populateRewards: true,
+      populateIntrinsicApy: true,
+      populateLabels: true,
+    })
+  );
+  logVaultFetchResults("securitize", chainId, addresses, res.result as Array<VaultEntity | undefined>, res.diagnostics);
   return res;
 }
 
@@ -724,6 +747,26 @@ export function useAllEulerEarnVaultsWithDiagnostics(enabledOverride = true) {
   });
 }
 
+export function useSecuritizeVaultsWithDiagnostics(enabledOverride = true) {
+  const { sdk, enabled } = useSdkReady();
+  const enabledChainIds = useEnabledChainIds();
+  const securitizeChainIds = enabledChainIds.filter(
+    (chainId) => (SECURITIZE_VAULT_ADDRESSES[chainId]?.length ?? 0) > 0
+  );
+  return useQuery<ChainFetchResult<SecuritizeVault>>({
+    queryKey: ["vaultsWithDiagnostics", "allChains", "securitize", securitizeChainIds],
+    queryFn: async () =>
+      fetchAllChainsVaultDiagnostics<SecuritizeVault>(securitizeChainIds, (chainId) =>
+        fetchSecuritizeVaultsWithDiagnostics(sdk!, chainId) as Promise<{
+          result: Array<SecuritizeVault | undefined>;
+          diagnostics: DiagnosticIssue[];
+        }>
+      ),
+    enabled: enabled && enabledOverride,
+    staleTime: STALE_TIMES.vaultsWithDiagnostics,
+  });
+}
+
 export function useVaultDetail(chainId: number, address: string | undefined) {
   const { sdk, enabled } = useSdkReady();
   return useQuery<EVault | undefined>({
@@ -782,6 +825,25 @@ export function useEulerEarnDetail(chainId: number, address: string | undefined)
       ),
     enabled: enabled && !!address,
     staleTime: STALE_TIMES.eulerEarn,
+  });
+}
+
+export function useSecuritizeVaultDetail(chainId: number, address: string | undefined) {
+  const { sdk, enabled } = useSdkReady();
+  return useQuery<SecuritizeVault | undefined>({
+    queryKey: ["securitize", chainId, address],
+    queryFn: async () =>
+      unwrapServiceResult(
+        "securitizeVaultService.fetchVault",
+        await sdk!.securitizeVaultService.fetchVault(chainId, address as Address, {
+          populateMarketPrices: true,
+          populateRewards: true,
+          populateIntrinsicApy: true,
+          populateLabels: true,
+        })
+      ),
+    enabled: enabled && !!address,
+    staleTime: STALE_TIMES.vault,
   });
 }
 

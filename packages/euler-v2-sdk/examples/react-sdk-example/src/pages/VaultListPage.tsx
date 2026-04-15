@@ -7,9 +7,11 @@ import {
   unwrapServiceResult,
   useAllEulerEarnVaultsWithDiagnostics,
   useLabeledEVaultsWithDiagnostics,
+  useSecuritizeVaultsWithDiagnostics,
   useWalletBalance,
 } from "../queries/sdkQueries.ts";
 import {
+  type ERC4626Vault,
   type EVault,
   type EulerEarn,
 } from "euler-v2-sdk";
@@ -211,10 +213,12 @@ function DepositFormRow({
   vault,
   chainId,
   onClose,
+  colSpan = 12,
 }: {
-  vault: EVault;
+  vault: ERC4626Vault;
   chainId: number;
   onClose: () => void;
+  colSpan?: number;
 }) {
   const { sdk } = useSDK();
   const { address: walletAddress, isConnected } = useAccount();
@@ -352,7 +356,7 @@ function DepositFormRow({
 
   return (
     <tr className="deposit-row">
-      <td colSpan={10}>
+      <td colSpan={colSpan}>
         <div className="deposit-panel">
           <div className="deposit-header">
             <div>
@@ -483,9 +487,15 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
     error: earnError,
     dataUpdatedAt: earnDiagnosticsUpdatedAt,
   } = useAllEulerEarnVaultsWithDiagnostics(tab === "eulerEarn");
+  const {
+    data: securitizeData,
+    isLoading: isSecuritizeLoading,
+    error: securitizeError,
+  } = useSecuritizeVaultsWithDiagnostics(tab === "securitize");
 
   const eVaults = eVaultData?.vaults ?? [];
   const earnVaults = earnData?.vaults ?? [];
+  const securitizeVaults = securitizeData?.vaults ?? [];
   const failedVaults = tab === "eulerEarn"
     ? (earnData?.failedVaults ?? [])
     : (eVaultData?.failedVaults ?? []);
@@ -1061,10 +1071,78 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
       )}
 
       {tab === "securitize" && (
-        <div className="status-message">
-          Securitize vaults have no predefined perspectives. They are resolved
-          per-address when used as collateral in EVaults.
-        </div>
+        <>
+          {isSecuritizeLoading ? (
+            <div className="status-message">Loading Securitize vaults...</div>
+          ) : securitizeError ? (
+            <div className="error-message">Error: {String(securitizeError)}</div>
+          ) : securitizeVaults.length === 0 ? (
+            <div className="status-message">No Securitize vaults found</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Chain</th>
+                  <th>Name</th>
+                  <th>Asset</th>
+                  <th>Address</th>
+                  <th>Total Assets</th>
+                  <th>USD Price</th>
+                  <th>Deposit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {securitizeVaults.map((vault, index) => (
+                  <Fragment key={`${vault.chainId}:${vault.address}`}>
+                    <tr
+                      className="clickable"
+                      onClick={() =>
+                        navigate(`/securitize/${vault.chainId}/${vault.address}`)
+                      }
+                    >
+                      <td>{index + 1}</td>
+                      <td>{vault.chainName}</td>
+                      <td>{vault.shares.name || "-"}</td>
+                      <td>{vault.asset.symbol}</td>
+                      <td>
+                        <CopyAddress address={vault.address} />
+                      </td>
+                      <td>{formatBigInt(vault.totalAssets, vault.asset.decimals)}</td>
+                      <td>{formatPriceUsd(vault.marketPriceUsd)}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="wallet-button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isConnected) return;
+                            setOpenDeposit((prev) =>
+                              prev === `${vault.chainId}:${vault.address}`
+                                ? null
+                                : `${vault.chainId}:${vault.address}`
+                            );
+                          }}
+                          disabled={!isConnected}
+                        >
+                          Deposit
+                        </button>
+                      </td>
+                    </tr>
+                    {openDeposit === `${vault.chainId}:${vault.address}` && (
+                      <DepositFormRow
+                        vault={vault}
+                        chainId={vault.chainId}
+                        onClose={() => setOpenDeposit(null)}
+                        colSpan={8}
+                      />
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
       )}
     </>
   );

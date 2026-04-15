@@ -1,4 +1,4 @@
-import type { Chain } from "viem";
+import type { Address, Chain } from "viem";
 
 export const CHAIN_NAMES: Record<number, string> = {
   1: "Ethereum",
@@ -29,6 +29,14 @@ export const EARN_CHAIN_IDS = ALL_CHAIN_IDS;
 export const APP_CHAIN_IDS_MINUS_BOB = ALL_CHAIN_IDS.filter((chainId) => chainId !== 60808);
 
 export const DEFAULT_CHAIN = 1;
+
+export const SECURITIZE_VAULT_ADDRESSES: Record<number, Address[]> = {
+  1: [
+    "0xCf4846E0d8A8667c516B844EB72A4d6e7430101D",
+    "0x1cFC56665c2718454e8dDf975dC37aF0bc68B5aA",
+    "0x33c57482EeDb4f81F86A693e8F0CE5D369819edC",
+  ],
+};
 
 // Public RPC fallbacks — override per chain with VITE_RPC_URL_<chainId> in .env
 const PUBLIC_RPC_URLS: Record<number, string> = {
