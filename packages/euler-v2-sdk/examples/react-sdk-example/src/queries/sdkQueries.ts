@@ -129,9 +129,7 @@ const STALE_TIMES: Record<string, number> = {
   queryV3RewardsBreakdown: MINUTE,
 
   // Intrinsic APY — external API data
-  queryDefiLlamaPools: 5 * MINUTE,
-  queryPendleMarketData: 5 * MINUTE,
-  queryStablewatchPools: 5 * MINUTE,
+  queryV3IntrinsicApy: 5 * MINUTE,
 
   // Account / subgraph lookups — moderate
   queryV3AccountPositions: 30_000,

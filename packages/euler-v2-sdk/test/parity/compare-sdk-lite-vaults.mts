@@ -580,7 +580,6 @@ function buildSdkOptions() {
     rpcUrls: ADAPTER_MODE === "onchain" ? onchainSupportedRpcUrls : comparisonRpcUrls,
     backendConfig: { endpoint: INDEXER_HOST },
     intrinsicApyServiceConfig: {
-      adapter: "v3",
       v3AdapterConfig: {
         endpoint: V3_HOST,
       },

@@ -150,8 +150,6 @@ const STALE_TIMES: Record<string, number> = {
   queryPythUpdateFee: 30_000,
 
   // Intrinsic APY — external API data
-  queryDefiLlamaPools: 5 * MINUTE,
-  queryPendleMarketData: 5 * MINUTE,
   queryV3IntrinsicApy: 5 * MINUTE,
 
   // Account / subgraph lookups
@@ -274,8 +272,6 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 
 | Query | Type | Class | Args | Description |
 |-------|------|-------|------|-------------|
-| `queryDefiLlamaPools` | url | `IntrinsicApyService` | `(url)` | Fetch yield pool data from DefiLlama |
-| `queryPendleMarketData` | url | `IntrinsicApyService` | `(url)` | Fetch market data from Pendle API |
 | `queryV3IntrinsicApy` | url | `IntrinsicApyV3Adapter` | `({ chainId, assetAddress })` | Fetch a single asset intrinsic APY; concurrent calls are backend-bundled via `assets=` |
 
 ### Plugins

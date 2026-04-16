@@ -74,7 +74,6 @@ import {
 	type RewardsServiceConfig,
 } from "../services/rewardsService/index.js";
 import {
-	IntrinsicApyDirectAdapter,
 	IntrinsicApyService,
 	IntrinsicApyV3Adapter,
 	type IIntrinsicApyService,
@@ -574,39 +573,21 @@ export async function buildEulerSDK<
 		servicesOverrides?.intrinsicApyService ??
 		(() => {
 			const resolvedIntrinsicApyServiceConfig = intrinsicApyServiceConfig ?? {};
-			const legacyDirectAdapterConfig = {
-				defillamaYieldsUrl:
-					resolvedIntrinsicApyServiceConfig.defillamaYieldsUrl,
-				pendleApiUrl: resolvedIntrinsicApyServiceConfig.pendleApiUrl,
-				stablewatchPoolsUrl:
-					resolvedIntrinsicApyServiceConfig.stablewatchPoolsUrl,
-				stablewatchSourceUrl:
-					resolvedIntrinsicApyServiceConfig.stablewatchSourceUrl,
-			};
-			const intrinsicApyAdapter =
-				resolvedIntrinsicApyServiceConfig.adapter === "direct"
-					? new IntrinsicApyDirectAdapter(
-							{
-								...legacyDirectAdapterConfig,
-								...(resolvedIntrinsicApyServiceConfig.directAdapterConfig ?? {}),
-							},
-							resolvedBuildQuery,
-						)
-					: new IntrinsicApyV3Adapter(
-							{
-								...(resolvedIntrinsicApyServiceConfig.v3AdapterConfig ??
-									defaultIntrinsicApyV3AdapterConfig),
-								...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
-								...(resolvedIntrinsicApyServiceConfig.v3AdapterConfig?.apiKey !==
-								undefined
-									? {
-											apiKey:
-												resolvedIntrinsicApyServiceConfig.v3AdapterConfig.apiKey,
-										}
-									: {}),
-							},
-							resolvedBuildQuery,
-						);
+			const intrinsicApyAdapter = new IntrinsicApyV3Adapter(
+				{
+					...(resolvedIntrinsicApyServiceConfig.v3AdapterConfig ??
+						defaultIntrinsicApyV3AdapterConfig),
+					...(v3ApiKey !== undefined ? { apiKey: v3ApiKey } : {}),
+					...(resolvedIntrinsicApyServiceConfig.v3AdapterConfig?.apiKey !==
+					undefined
+						? {
+								apiKey:
+									resolvedIntrinsicApyServiceConfig.v3AdapterConfig.apiKey,
+							}
+						: {}),
+				},
+				resolvedBuildQuery,
+			);
 
 			return new IntrinsicApyService(intrinsicApyAdapter);
 		})();

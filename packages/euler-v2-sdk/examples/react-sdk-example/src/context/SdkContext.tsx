@@ -75,7 +75,6 @@ export function SdkProvider({ children }: { children: ReactNode }) {
         },
       },
       intrinsicApyServiceConfig: {
-        adapter: useV3Adapters ? "v3" : "direct",
         v3AdapterConfig: {
           endpoint: V3_API_ENDPOINT,
         },

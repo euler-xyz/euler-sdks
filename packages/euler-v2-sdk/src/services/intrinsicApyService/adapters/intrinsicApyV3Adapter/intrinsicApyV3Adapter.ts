@@ -156,10 +156,6 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 			}
 
 			const chainResults = new Map<number, Map<string, IntrinsicApyInfo>>();
-			const maxAssetsPerRequest = Math.max(
-				1,
-				this.config.maxAssetsPerRequest ?? DEFAULT_MAX_ASSETS_PER_REQUEST,
-			);
 
 			for (const [chainId, assetAddresses] of byChain) {
 				const apyMap = await this.fetchChunkedIntrinsicApys(

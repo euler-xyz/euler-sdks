@@ -1,8 +1,5 @@
 import type { Address } from "viem";
 import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
-import type {
-	IntrinsicApyDirectAdapterConfig,
-} from "./adapters/intrinsicApyDirectAdapter/index.js";
 import type { IntrinsicApyV3AdapterConfig } from "./adapters/intrinsicApyV3Adapter/index.js";
 
 export interface IntrinsicApyInfo {
@@ -12,12 +9,6 @@ export interface IntrinsicApyInfo {
 }
 
 export interface IntrinsicApyServiceConfig {
-	adapter?: "v3" | "direct";
-	defillamaYieldsUrl?: string;
-	pendleApiUrl?: string;
-	stablewatchPoolsUrl?: string;
-	stablewatchSourceUrl?: string;
-	directAdapterConfig?: IntrinsicApyDirectAdapterConfig;
 	v3AdapterConfig?: IntrinsicApyV3AdapterConfig;
 }
 

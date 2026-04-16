@@ -44,9 +44,8 @@ const sdk = await buildEulerSDK({
     },
   },
 
-  // Optional: intrinsic APY data sources
+  // Optional: intrinsic APY V3 adapter
   intrinsicApyServiceConfig: {
-    adapter: "v3",
     v3AdapterConfig: {
       endpoint: "https://your-v3-api",
       maxAssetsPerRequest: 50,
@@ -123,16 +122,16 @@ const sdk = await buildEulerSDK({
 | `backendConfig` | `v3staging.eul.dev` | Off-chain USD pricing backend (backend-first, on-chain oracle fallback). Built-in client uses `GET /v3/prices`. |
 | `swapServiceConfig` | Euler swap API | Swap quote fetching |
 | `rewardsServiceConfig` | `v3` adapter with direct fallback reads | Reward campaign data, per-user rewards, and reward claim planning |
-| `intrinsicApyServiceConfig` | DefiLlama + Pendle | Underlying yield data for vault assets |
+| `intrinsicApyServiceConfig` | V3 intrinsic APY API | Underlying yield data for vault assets |
 | `buildQuery` | identity | Wrap all external queries (useful for caching, see [Caching docs](./caching-external-data-queries.md)) |
 | `plugins` | `[]` | Extend on-chain reads and transaction plans (see [Plugins docs](./plugins.md)) |
 | `servicesOverrides` | `{}` | Replace any built-in service with a custom implementation |
 
 ## V3 adapter config
 
-When `accountServiceConfig.adapter`, `eVaultServiceConfig.adapter`, `eulerEarnServiceConfig.adapter`, `vaultTypeAdapterConfig`, `rewardsServiceConfig.adapter`, or the built-in pricing backend use V3, the SDK forwards `v3ApiKey` as an `X-API-Key` request header for all built-in V3 adapters. There is no default API key in SDK config; provide it explicitly when your V3 deployment requires authentication.
+When `accountServiceConfig.adapter`, `eVaultServiceConfig.adapter`, `eulerEarnServiceConfig.adapter`, `vaultTypeAdapterConfig`, `rewardsServiceConfig.adapter`, `intrinsicApyServiceConfig`, or the built-in pricing backend use V3, the SDK forwards `v3ApiKey` as an `X-API-Key` request header for all built-in V3 adapters. There is no default API key in SDK config; provide it explicitly when your V3 deployment requires authentication.
 
-If you need different keys per adapter, `accountServiceConfig.v3AdapterConfig.apiKey`, `eVaultServiceConfig.v3AdapterConfig.apiKey`, `eulerEarnServiceConfig.v3AdapterConfig.apiKey`, `vaultTypeAdapterConfig.apiKey`, `rewardsServiceConfig.v3AdapterConfig.apiKey`, and `backendConfig.apiKey` still override the top-level value.
+If you need different keys per adapter, `accountServiceConfig.v3AdapterConfig.apiKey`, `eVaultServiceConfig.v3AdapterConfig.apiKey`, `eulerEarnServiceConfig.v3AdapterConfig.apiKey`, `vaultTypeAdapterConfig.apiKey`, `rewardsServiceConfig.v3AdapterConfig.apiKey`, `intrinsicApyServiceConfig.v3AdapterConfig.apiKey`, and `backendConfig.apiKey` still override the top-level value.
 
 `vaultTypeAdapterConfig` now defaults to the V3 `POST /v3/evk/vaults/resolve` endpoint. If you need the legacy behavior, you can still pass subgraph config instead:
 
