@@ -4,7 +4,7 @@ description: Euler V2 SDK integration guide for building production UIs, bots, s
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.1.0"
+  version: "1.1.1"
 ---
 
 # Euler SDK Agent Skill
@@ -44,6 +44,9 @@ Reference these guidelines when:
 - `executionService` for `planX`/`encodeX` and approvals
 - `simulationService` for pre-execution validation
 - `swapService` for provider quotes and route payloads
+- `rewardsService` for reward reads and provider-specific claim plans
+
+Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and use `errors`/`entityId` for UI diagnostics.
 
 ### Preferred UI Pattern
 

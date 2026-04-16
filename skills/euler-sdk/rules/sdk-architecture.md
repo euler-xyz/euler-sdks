@@ -19,12 +19,14 @@ const vault = await sdk.eVaultService.fetchVault(chainId, maybeAnyVault);
 **Correct (route by type with vaultMetaService):**
 
 ```typescript
-const vault = await sdk.vaultMetaService.fetchVault(chainId, maybeAnyVault, {
+const { result: vault, errors } = await sdk.vaultMetaService.fetchVault(chainId, maybeAnyVault, {
   populateMarketPrices: true,
   populateRewards: true,
   populateIntrinsicApy: true,
   populateLabels: true,
 });
+
+if (!vault) throw new Error(errors[0]?.message ?? "Vault could not be resolved");
 ```
 
 **Correct build pattern (single composition root):**
@@ -47,6 +49,9 @@ Use these default boundaries:
 - `executionService`: `planX`/`encodeX`, approvals, batch encoding
 - `simulationService`: plan validation and post-state preview
 - `swapService`: quotes and providers
+- `rewardsService`: reward reads and provider-specific claim planning
 - `oracleAdapterService`: oracle adapter metadata (provider/methodology/checks)
 
-Reference: `packages/euler-v2-sdk/docs/services.md`, `docs/data-architecture.md`, `src/sdk/buildSDK.ts`
+All service `fetch*` methods return `{ result, errors }`; keep diagnostics with the fetched entity when rendering warnings or enforcing data-quality policy.
+
+Reference: `packages/euler-v2-sdk/docs/services.md`, `packages/euler-v2-sdk/docs/entity-diagnostics.md`, `docs/data-architecture.md`, `src/sdk/buildSDK.ts`

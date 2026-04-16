@@ -18,7 +18,7 @@ import type { BuildQueryFn } from "euler-v2-sdk";
 
 const queryClient = new QueryClient();
 
-const buildQuery: BuildQueryFn = (queryName, fn) => {
+const buildQuery: BuildQueryFn = (queryName, fn, _target) => {
   const staleTime = queryName.startsWith("querySwap") ? 10_000 : 60_000;
   return ((...args: unknown[]) =>
     queryClient.fetchQuery({
@@ -38,5 +38,6 @@ Recommended stale-time strategy:
 - ~10s: swap quotes and Pyth update payloads
 
 This keeps service-level `fetch*` orchestration cheap because underlying `query*` calls are cached.
+By default, `buildEulerSDK` applies a 5s in-memory cache to decorated `query*` methods. Supplying a custom `buildQuery` replaces that default cache layer, so include caching/deduping there if the app needs it.
 
 Reference: `packages/euler-v2-sdk/docs/caching-external-data-queries.md`, `examples/react-sdk-example/src/queries/sdkQueries.ts`

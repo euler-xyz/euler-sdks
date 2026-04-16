@@ -1,7 +1,7 @@
 # Euler SDK Agent Skill
 
-**Version 1.1.0**  
-Euler Labs  
+**Version 1.1.1**
+Euler Labs
 March 2026
 
 ---
@@ -37,6 +37,7 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 - `rewardsService` for reward reads and provider-specific reward claim planning
 
 Do not assume all vaults are `EVault`. Use `vaultMetaService` for polymorphic routing.
+Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and use `errors`/`entityId` for UI diagnostics.
 
 ### 1.2 UI Data Population Contract
 
@@ -69,7 +70,7 @@ Prefer `planX` APIs over `encodeX` for user-facing transaction flows. Resolve re
 Execution order:
 
 1. Build plan (`planDeposit`, `planBorrow`, `planRepayWithSwap`, etc.) or reward claim plan in `rewardsService`
-2. Resolve approvals (`approve` or Permit2 signature path)
+2. Resolve approvals with `resolveRequiredApprovals({ chainId, account, plan })`, or use `resolveRequiredApprovalsWithWallet({ chainId, wallet, plan })` when wallet data was already fetched
 3. Execute `contractCall` items directly when present
 4. Send `evcBatch` transaction(s)
 5. Wait for receipts and refresh UI state
@@ -104,6 +105,7 @@ Use per-query stale times:
 - ~10s: swap quotes and Pyth update payloads
 
 This keeps repeated service-level `fetch*` calls inexpensive.
+By default, `buildEulerSDK` applies a 5s in-memory cache to decorated `query*` methods. Supplying a custom `buildQuery` replaces that default cache layer.
 
 ### 3.2 Plugins for Preconditions
 
@@ -148,6 +150,7 @@ Promote constants to config/env and add explicit chain/account flags in CLI tool
 - `packages/euler-v2-sdk/README.md`
 - `packages/euler-v2-sdk/docs/basic-usage.md`
 - `packages/euler-v2-sdk/docs/services.md`
+- `packages/euler-v2-sdk/docs/entity-diagnostics.md`
 - `packages/euler-v2-sdk/docs/execution-service.md`
 - `packages/euler-v2-sdk/docs/simulations-and-state-overrides.md`
 - `packages/euler-v2-sdk/docs/caching-external-data-queries.md`

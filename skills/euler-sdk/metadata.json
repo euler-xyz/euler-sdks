@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.1.1",
   "organization": "Euler Labs",
   "date": "March 2026",
   "abstract": "Euler V2 SDK integration guide for building production UIs, automation scripts, and developer tooling on top of euler-v2-sdk.",

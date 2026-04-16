@@ -29,11 +29,10 @@ const plan = sdk.executionService.planDeposit({
   enableCollateral: true,
 });
 
-const resolved = await sdk.executionService.resolveRequiredApprovalsWithWallet({
+const resolved = await sdk.executionService.resolveRequiredApprovals({
   chainId,
-  owner,
-  transactionPlan: plan,
-  walletClient,
+  account: owner,
+  plan,
 });
 
 // Execute required approvals first, then handle each executable item:
@@ -44,7 +43,7 @@ const resolved = await sdk.executionService.resolveRequiredApprovalsWithWallet({
 Execution checklist:
 
 1. Build plan with `planX`.
-2. Resolve approvals (`approve` and/or Permit2 signing path).
+2. Resolve approvals with `resolveRequiredApprovals({ chainId, account, plan })`, or use `resolveRequiredApprovalsWithWallet({ chainId, wallet, plan })` when wallet data was already fetched.
 3. Execute `contractCall` items directly when present.
 4. Encode/send EVC batch (`executionService.encodeBatch`) for `evcBatch` items.
 5. Wait for receipt and refetch dependent queries.
@@ -52,4 +51,4 @@ Execution checklist:
 
 Use `mergePlans` to atomically combine multiple intents and `describeBatch` for previews/logging.
 
-Reference: `packages/euler-v2-sdk/docs/execution-service.md`, `examples/utils/executor.ts`, `examples/react-sdk-example/src/utils/txExecutor.ts`
+Reference: `packages/euler-v2-sdk/docs/execution-service.md`, `packages/euler-v2-sdk/src/services/executionService/executionService.ts`, `examples/utils/executor.ts`, `examples/react-sdk-example/src/utils/txExecutor.ts`
