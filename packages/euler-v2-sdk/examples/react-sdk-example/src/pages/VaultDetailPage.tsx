@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { maxUint256 } from "viem";
-import type { OracleAdapterEntry } from "euler-v2-sdk";
+import type { OracleAdapterEntry, OracleResolvedVault } from "euler-v2-sdk";
 import { useSDK } from "../context/SdkContext.tsx";
 import {
   type DiagnosticIssue,
@@ -67,6 +67,76 @@ function normalizeCollateralDisplayAdapters(
   }
 
   return [...deduped.values()];
+}
+
+function getCollateralResolvedVaults(
+  allResolvedVaults: OracleResolvedVault[],
+  collateralAddress: string,
+  collateralAssetAddress: string | undefined
+): OracleResolvedVault[] {
+  const reachable = new Set<string>([collateralAddress.toLowerCase()]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const resolvedVault of allResolvedVaults) {
+      if (!reachable.has(resolvedVault.vault.toLowerCase())) continue;
+      for (const addr of resolvedVault.resolvedAssets) {
+        const key = addr.toLowerCase();
+        if (!reachable.has(key)) {
+          reachable.add(key);
+          changed = true;
+        }
+      }
+    }
+  }
+  const collateralKey = collateralAddress.toLowerCase();
+  const assetKey = collateralAssetAddress?.toLowerCase();
+  return allResolvedVaults.filter((resolvedVault) => {
+    if (!reachable.has(resolvedVault.vault.toLowerCase())) return false;
+    const isImplicitCollateralJump =
+      resolvedVault.vault.toLowerCase() === collateralKey &&
+      resolvedVault.resolvedAssets.length === 1 &&
+      !!assetKey &&
+      resolvedVault.resolvedAssets[0]!.toLowerCase() === assetKey;
+    return !isImplicitCollateralJump;
+  });
+}
+
+function getMissingResolvedVaultDetails(args: {
+  collateralAddress: string;
+  collateralAssetAddress: string | undefined;
+  unitOfAccountAddress: string | undefined;
+  oracleName: string;
+  adapters: OracleAdapterEntry[];
+  hasResolvedVault: boolean;
+}): string | undefined {
+  const {
+    collateralAddress,
+    collateralAssetAddress,
+    unitOfAccountAddress,
+    oracleName,
+    adapters,
+    hasResolvedVault,
+  } = args;
+  if (oracleName !== "EulerRouter") return undefined;
+  if (!collateralAssetAddress || !unitOfAccountAddress) return undefined;
+  if (hasResolvedVault) return undefined;
+
+  const collateralKey = collateralAddress.toLowerCase();
+  const quoteKey = unitOfAccountAddress.toLowerCase();
+  const hasDirectCollateralAdapter = adapters.some(
+    (adapter) =>
+      adapter.base.toLowerCase() === collateralKey &&
+      adapter.quote.toLowerCase() === quoteKey
+  );
+  if (hasDirectCollateralAdapter) return undefined;
+
+  return [
+    "Missing EulerRouter resolved-vault route for this collateral.",
+    `Collateral: ${collateralAddress}`,
+    `Collateral asset: ${collateralAssetAddress}`,
+    `Unit of account: ${unitOfAccountAddress}`,
+  ].join("\n");
 }
 
 export function VaultDetailPage() {
@@ -347,8 +417,9 @@ export function VaultDetailPage() {
         </div>
         <div className="detail-item">
           <div className="label">Oracle</div>
-          <div className="value">
-            {vault.oracle.name || <CopyAddress address={vault.oracle.oracle} />}
+          <div className="value" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {vault.oracle.name && <span>{vault.oracle.name}</span>}
+            <CopyAddress address={vault.oracle.oracle} />
           </div>
           {renderDiagnostics(["$.oracle"])}
         </div>
@@ -469,10 +540,23 @@ export function VaultDetailPage() {
                 col.oracleAdapters,
                 col.vault?.asset.address
               );
-              const resolvedVaults = (vault.oracle.resolvedVaults ?? []).filter(
+              const resolvedVaults = getCollateralResolvedVaults(
+                vault.oracle.resolvedVaults ?? [],
+                col.address,
+                col.vault?.asset.address
+              );
+              const hasResolvedVault = (vault.oracle.resolvedVaults ?? []).some(
                 (resolvedVault) =>
                   resolvedVault.vault.toLowerCase() === col.address.toLowerCase()
               );
+              const missingResolvedVaultDetails = getMissingResolvedVaultDetails({
+                collateralAddress: col.address,
+                collateralAssetAddress: col.vault?.asset.address,
+                unitOfAccountAddress: vault.unitOfAccount?.address,
+                oracleName: vault.oracle.name,
+                adapters: displayAdapters,
+                hasResolvedVault,
+              });
               const addressLabels: Record<string, string | undefined> = {
                 [col.address.toLowerCase()]:
                   col.vault?.shares.symbol || col.vault?.shares.name,
@@ -539,6 +623,7 @@ export function VaultDetailPage() {
                     tokenSymbolMap={tokenSymbolMap}
                     addressLabels={addressLabels}
                   />
+                  {missingResolvedVaultDetails && <ErrorIcon details={missingResolvedVaultDetails} />}
                   {adapterPairMismatchDetails && <ErrorIcon details={adapterPairMismatchDetails} />}
                   {vault.unitOfAccount
                     ? formatPriceInUnit(
