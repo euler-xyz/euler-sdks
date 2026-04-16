@@ -23,6 +23,7 @@ import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
 import { OracleAdaptersInfo } from "../components/OracleAdaptersInfo.tsx";
+import { RawEntityDialog } from "../components/RawEntityDialog.tsx";
 import { getAdapterMismatchDetails } from "../utils/oracleDiagnostics.ts";
 
 function normalizeVaultDetailPath(path: string | undefined): string | undefined {
@@ -218,6 +219,9 @@ export function VaultDetailPage() {
       </Link>
 
       <div className="detail-header">
+        <div style={{ float: "right" }}>
+          <RawEntityDialog title="Raw EVault Entity" entity={vault} />
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           {vault.eulerLabel?.entities[0]?.logo && (
             <img
@@ -465,6 +469,26 @@ export function VaultDetailPage() {
                 col.oracleAdapters,
                 col.vault?.asset.address
               );
+              const resolvedVaults = (vault.oracle.resolvedVaults ?? []).filter(
+                (resolvedVault) =>
+                  resolvedVault.vault.toLowerCase() === col.address.toLowerCase()
+              );
+              const addressLabels: Record<string, string | undefined> = {
+                [col.address.toLowerCase()]:
+                  col.vault?.shares.symbol || col.vault?.shares.name,
+                ...(col.vault
+                  ? {
+                      [col.vault.asset.address.toLowerCase()]:
+                        col.vault.asset.symbol || col.vault.asset.name,
+                    }
+                  : {}),
+                ...(vault.unitOfAccount
+                  ? {
+                      [vault.unitOfAccount.address.toLowerCase()]:
+                        vault.unitOfAccount.symbol || vault.unitOfAccount.name,
+                    }
+                  : {}),
+              };
               const adapterPairMismatchDetails = vault.unitOfAccount
                 ? getAdapterMismatchDetails({
                     chainId,
@@ -510,7 +534,10 @@ export function VaultDetailPage() {
                   <OracleAdaptersInfo
                     chainId={chainId}
                     adapters={displayAdapters}
+                    resolvedVaults={resolvedVaults}
                     metadataMap={oracleAdapterMetadataMap}
+                    tokenSymbolMap={tokenSymbolMap}
+                    addressLabels={addressLabels}
                   />
                   {adapterPairMismatchDetails && <ErrorIcon details={adapterPairMismatchDetails} />}
                   {vault.unitOfAccount

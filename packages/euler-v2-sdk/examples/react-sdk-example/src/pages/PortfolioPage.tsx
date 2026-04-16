@@ -15,6 +15,7 @@ import { formatBigInt, formatPriceUsd, formatWad, formatWadPercent } from "../ut
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { RoeCell } from "../components/RoeCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
+import { RawEntityDialog } from "../components/RawEntityDialog.tsx";
 import type { VaultEntity, AccountPosition, UserReward } from "euler-v2-sdk";
 import { executePlanWithProgress, type PlanProgress } from "../utils/txExecutor.ts";
 
@@ -289,6 +290,9 @@ export function PortfolioPage() {
 
       {account && (
         <>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <RawEntityDialog title="Raw Account Entity" entity={account} />
+          </div>
           <div className="detail-grid" style={{ marginBottom: 24 }}>
             <div className="detail-item">
               <div className="label">Owner</div>

@@ -1,11 +1,14 @@
 import { useMemo, useState, type MouseEvent } from "react";
-import type { OracleAdapterEntry } from "euler-v2-sdk";
+import type { OracleAdapterEntry, OracleResolvedVault } from "euler-v2-sdk";
 import type { OracleAdapterMetadataMap } from "../queries/sdkQueries.ts";
 
 type OracleAdaptersInfoProps = {
   chainId: number;
   adapters?: OracleAdapterEntry[];
+  resolvedVaults?: OracleResolvedVault[];
   metadataMap?: OracleAdapterMetadataMap;
+  tokenSymbolMap?: Record<string, string>;
+  addressLabels?: Record<string, string | undefined>;
 };
 
 const GENERIC_PROVIDER_ICONS: Record<string, string> = {
@@ -49,12 +52,25 @@ function shortAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+function symbolForAddress(
+  address: string,
+  tokenSymbolMap?: Record<string, string>,
+  addressLabels?: Record<string, string | undefined>
+): string {
+  const key = address.toLowerCase();
+  return addressLabels?.[key] ?? tokenSymbolMap?.[key] ?? shortAddress(address);
+}
+
 function checksSummary(metadata?: OracleAdapterMetadataMap[string]): string {
   const checks = metadata?.checks;
   if (!checks || checks.length === 0) return "N/A";
   const failed = checks.filter((check) => check.pass === false);
   if (failed.length === 0) return `${checks.length} passed`;
   return `${failed.length} failed`;
+}
+
+function resolvedVaultLabel(resolvedVault: OracleResolvedVault): string {
+  return `Resolved vault ${shortAddress(resolvedVault.vault)}`;
 }
 
 function ProviderIcon({ provider }: { provider: string }) {
@@ -91,10 +107,14 @@ function ProviderIcon({ provider }: { provider: string }) {
 export function OracleAdaptersInfo({
   chainId,
   adapters,
+  resolvedVaults,
   metadataMap,
+  tokenSymbolMap,
+  addressLabels,
 }: OracleAdaptersInfoProps) {
   const [open, setOpen] = useState(false);
   const list = adapters ?? [];
+  const resolvedList = resolvedVaults ?? [];
   const merged = useMemo(
     () =>
       list.map((adapter) => ({
@@ -103,7 +123,7 @@ export function OracleAdaptersInfo({
       })),
     [list, metadataMap]
   );
-  if (list.length === 0) return null;
+  if (list.length === 0 && resolvedList.length === 0) return null;
 
   const openModal = (event: MouseEvent) => {
     event.preventDefault();
@@ -123,9 +143,24 @@ export function OracleAdaptersInfo({
         type="button"
         className="oracle-adapters-trigger"
         onClick={openModal}
-        title="Show oracle adapter details"
-        aria-label="Show oracle adapter details"
+        title="Show oracle sequence details"
+        aria-label="Show oracle sequence details"
       >
+        {resolvedList.map((resolvedVault, index) => {
+          const label = resolvedVaultLabel(resolvedVault);
+          return (
+            <span
+              key={`${resolvedVault.vault}-${index}`}
+              className="oracle-provider-pill oracle-provider-pill-resolved"
+              title={label}
+              aria-label={label}
+            >
+              <span className="oracle-provider-generic" aria-hidden="true">
+                RV
+              </span>
+            </span>
+          );
+        })}
         {merged.map(({ adapter, metadata }, index) => {
           const label = providerLabel(adapter, metadata);
           return (
@@ -150,7 +185,7 @@ export function OracleAdaptersInfo({
             }}
           >
             <div className="error-tooltip-header">
-              <strong>Oracle Adapters</strong>
+              <strong>Oracle Sequence</strong>
               <button
                 type="button"
                 className="error-tooltip-close"
@@ -160,6 +195,63 @@ export function OracleAdaptersInfo({
               </button>
             </div>
             <div className="oracle-tooltip-list">
+              {resolvedList.map((resolvedVault, index) => (
+                <div
+                  key={`${resolvedVault.vault}-${index}`}
+                  className="oracle-tooltip-item"
+                >
+                  <div className="oracle-tooltip-row">
+                    <span className="oracle-tooltip-label">Step</span>
+                    <span className="oracle-tooltip-value">Resolved vault</span>
+                  </div>
+                  <div className="oracle-tooltip-row">
+                    <span className="oracle-tooltip-label">Vault</span>
+                    <span className="oracle-tooltip-value">
+                      {symbolForAddress(
+                        resolvedVault.vault,
+                        tokenSymbolMap,
+                        addressLabels
+                      )}
+                    </span>
+                  </div>
+                  <div className="oracle-tooltip-row">
+                    <span className="oracle-tooltip-label">Asset</span>
+                    <span className="oracle-tooltip-value">
+                      {symbolForAddress(
+                        resolvedVault.asset,
+                        tokenSymbolMap,
+                        addressLabels
+                      )}
+                    </span>
+                  </div>
+                  <div className="oracle-tooltip-row">
+                    <span className="oracle-tooltip-label">Quote</span>
+                    <span className="oracle-tooltip-value">
+                      {symbolForAddress(
+                        resolvedVault.quote,
+                        tokenSymbolMap,
+                        addressLabels
+                      )}
+                    </span>
+                  </div>
+                  <div className="oracle-tooltip-row">
+                    <span className="oracle-tooltip-label">Resolved Assets</span>
+                    <span className="oracle-tooltip-value">
+                      {resolvedVault.resolvedAssets.length > 0
+                        ? resolvedVault.resolvedAssets
+                            .map((asset) =>
+                              symbolForAddress(
+                                asset,
+                                tokenSymbolMap,
+                                addressLabels
+                              )
+                            )
+                            .join(" -> ")
+                        : "N/A"}
+                    </span>
+                  </div>
+                </div>
+              ))}
               {merged.map(({ adapter, metadata }, index) => {
                 const label = providerLabel(adapter, metadata);
                 const failedChecks = (metadata?.checks ?? []).filter(
@@ -174,7 +266,8 @@ export function OracleAdaptersInfo({
                     <div className="oracle-tooltip-row">
                       <span className="oracle-tooltip-label">Base / Quote</span>
                       <span className="oracle-tooltip-value">
-                        {shortAddress(adapter.base)} / {shortAddress(adapter.quote)}
+                        {symbolForAddress(adapter.base, tokenSymbolMap, addressLabels)} /{" "}
+                        {symbolForAddress(adapter.quote, tokenSymbolMap, addressLabels)}
                       </span>
                     </div>
                     <div className="oracle-tooltip-row">

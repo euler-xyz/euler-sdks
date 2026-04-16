@@ -3,7 +3,9 @@ import type {
 	OracleAdapterEntry,
 	OracleInfo,
 	OraclePrice,
+	OracleResolvedVault,
 } from "../../../../../utils/oracle.js";
+import { sortOracleResolvedVaults } from "../../../../../utils/oracle.js";
 import type { DataIssue } from "../../../../../utils/entityDiagnostics.js";
 import {
 	parseAddressField,
@@ -88,12 +90,13 @@ const DEFAULT_LIQUIDATION_BLOCK: NonNullable<V3VaultDetail["liquidation"]> = {
 	socializeDebt: false,
 };
 
-const DEFAULT_INTEREST_RATES_BLOCK: NonNullable<V3VaultDetail["interestRates"]> =
-	{
-		borrowSPY: "0",
-		borrowAPY: "0",
-		supplyAPY: "0",
-	};
+const DEFAULT_INTEREST_RATES_BLOCK: NonNullable<
+	V3VaultDetail["interestRates"]
+> = {
+	borrowSPY: "0",
+	borrowAPY: "0",
+	supplyAPY: "0",
+};
 
 const DEFAULT_INTEREST_RATE_MODEL_BLOCK: NonNullable<
 	V3VaultDetail["interestRateModel"]
@@ -437,6 +440,74 @@ function convertCollaterals(
 	return collaterals;
 }
 
+function convertResolvedVaults(
+	rows: V3CollateralRow[],
+	vaultTimestamp: number,
+	quoteAddress: Address | undefined,
+	vaultEntityId: Address,
+	errors: DataIssue[],
+): OracleResolvedVault[] {
+	if (!quoteAddress) return [];
+
+	const resolvedVaults: OracleResolvedVault[] = [];
+	for (const [index, row] of rows.entries()) {
+		if (!row.asset) continue;
+
+		const collateralAddress = parseAddressField(row.collateral, {
+			path: `$.collaterals[${index}].collateral`,
+			entityId: vaultEntityId,
+			errors,
+			source: "eVaultV3",
+		});
+		const assetAddress = parseAddressField(row.asset, {
+			path: `$.collaterals[${index}].asset`,
+			entityId: collateralAddress,
+			errors,
+			source: "eVaultV3",
+		});
+		const borrowLTV = parseRatio1e4(row.borrowLTV, {
+			path: `$.collaterals[${index}].borrowLTV`,
+			entityId: collateralAddress,
+			errors,
+			source: "eVaultV3",
+		});
+		const liquidationLTV = parseRatio1e4(row.liquidationLTV, {
+			path: `$.collaterals[${index}].liquidationLTV`,
+			entityId: collateralAddress,
+			errors,
+			source: "eVaultV3",
+		});
+		const targetTimestamp = parseNumberField(
+			typeof row.targetTimestamp === "number"
+				? row.targetTimestamp
+				: Number(row.targetTimestamp),
+			{
+				path: `$.collaterals[${index}].targetTimestamp`,
+				entityId: collateralAddress,
+				errors,
+				source: "eVaultV3",
+			},
+		);
+		const isRemovedCollateral =
+			borrowLTV === 0 &&
+			liquidationLTV === 0 &&
+			targetTimestamp < vaultTimestamp;
+
+		if (isRemovedCollateral) continue;
+		if (assetAddress.toLowerCase() === collateralAddress.toLowerCase())
+			continue;
+
+		resolvedVaults.push({
+			vault: collateralAddress,
+			asset: assetAddress,
+			quote: quoteAddress,
+			resolvedAssets: [assetAddress],
+		});
+	}
+
+	return sortOracleResolvedVaults(resolvedVaults);
+}
+
 export function convertVault(
 	detail: V3VaultDetail,
 	collateralRows: V3CollateralRow[],
@@ -489,6 +560,7 @@ export function convertVault(
 		adapters: oracleData.adapters.map((adapter) =>
 			convertOracleAdapter(adapter, entityId, errors),
 		),
+		resolvedVaults: [],
 	};
 	const suppressUnitOfAccountDiagnostics = hasZeroOracleAddress;
 
@@ -496,7 +568,8 @@ export function convertVault(
 		errors.push({
 			code: "DEFAULT_APPLIED",
 			severity: "warning",
-			message: "Missing shares block; defaulted all share token fields to 0/empty.",
+			message:
+				"Missing shares block; defaulted all share token fields to 0/empty.",
 			paths: ["$.shares"],
 			entityId,
 			source: "eVaultV3",
@@ -509,7 +582,8 @@ export function convertVault(
 		errors.push({
 			code: "DEFAULT_APPLIED",
 			severity: "warning",
-			message: "Missing asset block; defaulted all asset token fields to 0/empty.",
+			message:
+				"Missing asset block; defaulted all asset token fields to 0/empty.",
 			paths: ["$.asset"],
 			entityId,
 			source: "eVaultV3",
@@ -563,18 +637,24 @@ export function convertVault(
 
 	const fees: EVaultFees = {
 		interestFee: feeData.interestFee ?? 0,
-		accumulatedFeesShares: parseBigIntField(feeData.accumulatedFeesShares ?? "0", {
-			path: "$.fees.accumulatedFeesShares",
-			entityId,
-			errors,
-			source: "eVaultV3",
-		}),
-		accumulatedFeesAssets: parseBigIntField(feeData.accumulatedFeesAssets ?? "0", {
-			path: "$.fees.accumulatedFeesAssets",
-			entityId,
-			errors,
-			source: "eVaultV3",
-		}),
+		accumulatedFeesShares: parseBigIntField(
+			feeData.accumulatedFeesShares ?? "0",
+			{
+				path: "$.fees.accumulatedFeesShares",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			},
+		),
+		accumulatedFeesAssets: parseBigIntField(
+			feeData.accumulatedFeesAssets ?? "0",
+			{
+				path: "$.fees.accumulatedFeesAssets",
+				entityId,
+				errors,
+				source: "eVaultV3",
+			},
+		),
 		governorFeeReceiver: parseAddressField(feeData.governorFeeReceiver, {
 			path: "$.fees.governorFeeReceiver",
 			entityId,
@@ -645,7 +725,8 @@ export function convertVault(
 		errors.push({
 			code: "DEFAULT_APPLIED",
 			severity: "warning",
-			message: "Missing liquidation block; defaulted all liquidation fields to 0/false.",
+			message:
+				"Missing liquidation block; defaulted all liquidation fields to 0/false.",
 			paths: ["$.liquidation"],
 			entityId,
 			source: "eVaultV3",
@@ -674,7 +755,8 @@ export function convertVault(
 			normalizedValue: DEFAULT_INTEREST_RATES_BLOCK,
 		});
 	}
-	const interestRatesData = detail.interestRates ?? DEFAULT_INTEREST_RATES_BLOCK;
+	const interestRatesData =
+		detail.interestRates ?? DEFAULT_INTEREST_RATES_BLOCK;
 	const interestRates: InterestRates = {
 		borrowSPY: parseStringField(interestRatesData.borrowSPY, {
 			path: "$.interestRates.borrowSPY",
@@ -726,12 +808,15 @@ export function convertVault(
 		interestRateModelType,
 		interestRateModelData.data,
 	);
-	const interestRateModelAddress = parseAddressField(interestRateModelData.address, {
-		path: "$.interestRateModel.address",
-		entityId,
-		errors,
-		source: "eVaultV3",
-	});
+	const interestRateModelAddress = parseAddressField(
+		interestRateModelData.address,
+		{
+			path: "$.interestRateModel.address",
+			entityId,
+			errors,
+			source: "eVaultV3",
+		},
+	);
 	const interestRateModel: InterestRateModel =
 		interestRateModelType === InterestRateModelType.KINK
 			? {
@@ -767,7 +852,7 @@ export function convertVault(
 							),
 						}
 					: interestRateModelType ===
-							  InterestRateModelType.FIXED_CYCLICAL_BINARY
+							InterestRateModelType.FIXED_CYCLICAL_BINARY
 						? {
 								address: interestRateModelAddress,
 								type: InterestRateModelType.FIXED_CYCLICAL_BINARY,
@@ -810,6 +895,21 @@ export function convertVault(
 		entityId,
 		errors,
 	);
+	const unitOfAccount = normalizeUnitOfAccountToken(
+		convertToken(
+			unitOfAccountData,
+			"$.unitOfAccount",
+			entityId,
+			unitOfAccountErrors,
+		),
+	);
+	oracle.resolvedVaults = convertResolvedVaults(
+		oracle.name === "EulerRouter" ? collateralRows : [],
+		timestamp,
+		unitOfAccount?.address,
+		entityId,
+		errors,
+	);
 
 	return {
 		type: VaultType.EVault,
@@ -817,14 +917,7 @@ export function convertVault(
 		address: entityId,
 		shares: convertToken(sharesData, "$.shares", entityId, errors),
 		asset: convertToken(assetData, "$.asset", entityId, errors),
-		unitOfAccount: normalizeUnitOfAccountToken(
-			convertToken(
-				unitOfAccountData,
-				"$.unitOfAccount",
-				entityId,
-				unitOfAccountErrors,
-			),
-		),
+		unitOfAccount,
 		totalShares: parseBigIntField(detail.totalShares, {
 			path: "$.totalShares",
 			entityId,

@@ -1,5 +1,6 @@
 import {
 	decodeOracleInfo,
+	decodeOracleResolvedVaults,
 	type OracleInfo,
 	type OraclePrice,
 } from "../../../../../utils/oracle.js";
@@ -136,43 +137,63 @@ export function convertVaultInfoFullToIEVault(
 							? undefined
 							: vaultInfo.unitOfAccount,
 				}),
+		resolvedVaults: shouldSuppressRootOracleAdapter
+			? []
+			: decodeOracleResolvedVaults(vaultInfo.oracleInfo),
 	};
 
-	const shares = normalizeTokenMetadata({
-		address: vaultInfo.vault,
-		name: vaultInfo.vaultName,
-		symbol: vaultInfo.vaultSymbol,
-		decimals: bigintToSafeNumber(vaultInfo.vaultDecimals, {
-			path: "$.shares.decimals",
-			errors,
-			source: "vaultLens",
-			entityId: vaultEntityId,
-		}),
-	}, "$.shares", vaultEntityId, errors);
+	const shares = normalizeTokenMetadata(
+		{
+			address: vaultInfo.vault,
+			name: vaultInfo.vaultName,
+			symbol: vaultInfo.vaultSymbol,
+			decimals: bigintToSafeNumber(vaultInfo.vaultDecimals, {
+				path: "$.shares.decimals",
+				errors,
+				source: "vaultLens",
+				entityId: vaultEntityId,
+			}),
+		},
+		"$.shares",
+		vaultEntityId,
+		errors,
+	);
 
-	const asset = normalizeTokenMetadata({
-		address: vaultInfo.asset,
-		name: vaultInfo.assetName,
-		symbol: vaultInfo.assetSymbol,
-		decimals: bigintToSafeNumber(vaultInfo.assetDecimals, {
-			path: "$.asset.decimals",
-			errors,
-			source: "vaultLens",
-			entityId: vaultEntityId,
-		}),
-	}, "$.asset", vaultEntityId, errors);
+	const asset = normalizeTokenMetadata(
+		{
+			address: vaultInfo.asset,
+			name: vaultInfo.assetName,
+			symbol: vaultInfo.assetSymbol,
+			decimals: bigintToSafeNumber(vaultInfo.assetDecimals, {
+				path: "$.asset.decimals",
+				errors,
+				source: "vaultLens",
+				entityId: vaultEntityId,
+			}),
+		},
+		"$.asset",
+		vaultEntityId,
+		errors,
+	);
 
-	const unitOfAccount = normalizeUnitOfAccountToken(normalizeTokenMetadata({
-		address: vaultInfo.unitOfAccount,
-		name: vaultInfo.unitOfAccountName,
-		symbol: vaultInfo.unitOfAccountSymbol,
-		decimals: bigintToSafeNumber(vaultInfo.unitOfAccountDecimals, {
-			path: "$.unitOfAccount.decimals",
+	const unitOfAccount = normalizeUnitOfAccountToken(
+		normalizeTokenMetadata(
+			{
+				address: vaultInfo.unitOfAccount,
+				name: vaultInfo.unitOfAccountName,
+				symbol: vaultInfo.unitOfAccountSymbol,
+				decimals: bigintToSafeNumber(vaultInfo.unitOfAccountDecimals, {
+					path: "$.unitOfAccount.decimals",
+					errors,
+					source: "vaultLens",
+					entityId: vaultEntityId,
+				}),
+			},
+			"$.unitOfAccount",
+			vaultEntityId,
 			errors,
-			source: "vaultLens",
-			entityId: vaultEntityId,
-		}),
-	}, "$.unitOfAccount", vaultEntityId, errors));
+		),
+	);
 
 	const fees: EVaultFees = {
 		interestFee: convertFrom1e4(
@@ -461,7 +482,12 @@ function convertInterestRateModel(
 				),
 			};
 		default:
-			return { address, type: InterestRateModelType.UNKNOWN, data: null, params: null };
+			return {
+				address,
+				type: InterestRateModelType.UNKNOWN,
+				data: null,
+				params: null,
+			};
 	}
 }
 

@@ -5,6 +5,7 @@ import { useSecuritizeVaultDetail } from "../queries/sdkQueries.ts";
 import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
+import { RawEntityDialog } from "../components/RawEntityDialog.tsx";
 import { CHAIN_NAMES } from "../config/chains.ts";
 
 const MAX_UINT256 = (1n << 256n) - 1n;
@@ -60,6 +61,9 @@ export function SecuritizeDetailPage() {
       </Link>
 
       <div className="detail-header">
+        <div style={{ float: "right" }}>
+          <RawEntityDialog title="Raw Securitize Vault Entity" entity={vault} />
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           {entity?.logo && (
             <img

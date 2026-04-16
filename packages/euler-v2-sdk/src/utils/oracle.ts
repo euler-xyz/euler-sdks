@@ -10,6 +10,7 @@ export type OracleInfo = {
 	oracle: Address;
 	name: string;
 	adapters: OracleAdapterEntry[];
+	resolvedVaults: OracleResolvedVault[];
 };
 
 export type OracleDetailedInfo = {
@@ -72,18 +73,51 @@ export type OracleAdapterEntry = {
 	chainlinkDetail?: { oracle: Address };
 };
 
+/**
+ * A vault-address price route configured on EulerRouter.
+ *
+ * Some routers price an ERC4626/EVault share token by resolving it to the
+ * vault's underlying asset path instead of using a leaf oracle adapter for the
+ * vault address itself. `resolvedAssets` is that unwrap chain, not necessarily
+ * the full price path to `quote`.
+ *
+ * vault: the base being priced, usually a collateral vault/share token address.
+ * quote: the target denomination, i.e. the EVault unitOfAccount.
+ * asset: the first underlying asset the router resolves the vault into.
+ * resolvedAssets: the recursive ERC4626 unwrap chain from vault toward something the router can price against quote.
+ */
+export type OracleResolvedVault = {
+	vault: Address;
+	quote: Address;
+	asset: Address;
+	resolvedAssets: Address[];
+};
+
 function oracleAdapterStableRepr(
-	value: OracleAdapterEntry | PythOracleInfo | { oracle: Address } | Address | Hex | bigint | string | null | undefined,
+	value:
+		| OracleAdapterEntry
+		| OracleResolvedVault
+		| PythOracleInfo
+		| { oracle: Address }
+		| Address
+		| Hex
+		| bigint
+		| string
+		| null
+		| undefined,
 ): unknown {
 	if (value === null || value === undefined) return undefined;
-	if (typeof value === "bigint") return { __type: "bigint", value: value.toString() };
-	if (Array.isArray(value)) return value.map((entry) => oracleAdapterStableRepr(entry));
+	if (typeof value === "bigint")
+		return { __type: "bigint", value: value.toString() };
+	if (Array.isArray(value))
+		return value.map((entry) => oracleAdapterStableRepr(entry));
 	if (typeof value === "object") {
 		const out: Record<string, unknown> = {};
 		for (const key of Object.keys(value).sort()) {
 			const nested = oracleAdapterStableRepr(
 				(value as Record<string, unknown>)[key] as
 					| OracleAdapterEntry
+					| OracleResolvedVault
 					| PythOracleInfo
 					| { oracle: Address }
 					| Address
@@ -113,6 +147,16 @@ export function sortOracleAdapters(
 	);
 }
 
+export function sortOracleResolvedVaults(
+	resolvedVaults: OracleResolvedVault[],
+): OracleResolvedVault[] {
+	const makeKey = (resolvedVault: OracleResolvedVault) =>
+		JSON.stringify(oracleAdapterStableRepr(resolvedVault));
+	return [...resolvedVaults].sort((left, right) =>
+		makeKey(left).localeCompare(makeKey(right)),
+	);
+}
+
 const isChainlinkOracleName = (name: string) =>
 	name.toLowerCase().includes("chainlink");
 const isCrossAdapterName = (name: string) =>
@@ -123,7 +167,8 @@ const isValidOracleDetailedInfo = (
 	info: OracleDetailedInfo | null | undefined,
 ): info is OracleDetailedInfo => {
 	if (!info) return false;
-	if (typeof info.name !== "string" || info.name.trim().length === 0) return false;
+	if (typeof info.name !== "string" || info.name.trim().length === 0)
+		return false;
 	if (
 		typeof info.oracle !== "string" ||
 		info.oracle.toLowerCase() === ZERO_ADDRESS
@@ -319,10 +364,11 @@ export const decodeOracleInfo = (
 	const adapters: OracleAdapterEntry[] = [];
 	const visited = new Set<string>();
 	const leafOnly = options.leafOnly ?? false;
-	const rootFallbackPair = resolveAdapterPair({
-		base: options.base,
-		quote: options.quote,
-	}) ?? undefined;
+	const rootFallbackPair =
+		resolveAdapterPair({
+			base: options.base,
+			quote: options.quote,
+		}) ?? undefined;
 
 	const addAdapter = (
 		info: OracleDetailedInfo,
@@ -446,6 +492,70 @@ export const decodeOracleInfo = (
 	});
 
 	return [...deduped.values()];
+};
+
+export const decodeOracleResolvedVaults = (
+	oracleInfo: OracleDetailedInfo | null | undefined,
+	maxDepth = 3,
+): OracleResolvedVault[] => {
+	const resolvedVaults: OracleResolvedVault[] = [];
+	const visited = new Set<string>();
+
+	const visit = (
+		info: OracleDetailedInfo | null | undefined,
+		depth: number,
+	) => {
+		if (!isValidOracleDetailedInfo(info) || depth > maxDepth) return;
+		const key = `${info.oracle}-${info.name}-${info.oracleInfo}`;
+		if (visited.has(key)) return;
+		visited.add(key);
+
+		if (info.name === "EulerRouter") {
+			const decoded = decodeEulerRouterInfo(info.oracleInfo);
+			if (!decoded) return;
+			const total = Math.max(
+				decoded.bases?.length ?? 0,
+				decoded.quotes?.length ?? 0,
+				decoded.resolvedAssets?.length ?? 0,
+				decoded.resolvedOraclesInfo?.length ?? 0,
+			);
+			for (let i = 0; i < total; i += 1) {
+				const vault = decoded.bases?.[i];
+				const quote = decoded.quotes?.[i];
+				const resolvedAssets = decoded.resolvedAssets?.[i] ?? [];
+				if (vault && quote && resolvedAssets.length > 0) {
+					resolvedVaults.push({
+						vault,
+						quote,
+						asset: resolvedAssets[0]!,
+						resolvedAssets: [...resolvedAssets],
+					});
+				}
+				visit(decoded.resolvedOraclesInfo?.[i], depth + 1);
+			}
+			visit(decoded.fallbackOracleInfo, depth + 1);
+			return;
+		}
+
+		if (info.name === "CrossAdapter") {
+			const decoded = decodeCrossAdapterInfo(info.oracleInfo);
+			if (!decoded) return;
+			visit(decoded.oracleBaseCrossInfo, depth + 1);
+			visit(decoded.oracleCrossQuoteInfo, depth + 1);
+		}
+	};
+
+	visit(oracleInfo, 0);
+
+	const deduped = new Map<string, OracleResolvedVault>();
+	resolvedVaults.forEach((resolvedVault) => {
+		const key = `${resolvedVault.vault.toLowerCase()}:${resolvedVault.quote.toLowerCase()}:${resolvedVault.resolvedAssets
+			.map((asset) => asset.toLowerCase())
+			.join(":")}`;
+		if (!deduped.has(key)) deduped.set(key, resolvedVault);
+	});
+
+	return sortOracleResolvedVaults([...deduped.values()]);
 };
 
 export const collectChainlinkOracles = (

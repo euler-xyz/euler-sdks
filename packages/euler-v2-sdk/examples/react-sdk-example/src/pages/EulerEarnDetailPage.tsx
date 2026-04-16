@@ -10,6 +10,7 @@ import {
 } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
+import { RawEntityDialog } from "../components/RawEntityDialog.tsx";
 import { isEVault } from "euler-v2-sdk";
 
 export function EulerEarnDetailPage() {
@@ -46,6 +47,9 @@ export function EulerEarnDetailPage() {
       </Link>
 
       <div className="detail-header">
+        <div style={{ float: "right" }}>
+          <RawEntityDialog title="Raw EulerEarn Entity" entity={vault} />
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           {vault.eulerLabel?.entities[0]?.logo && (
             <img

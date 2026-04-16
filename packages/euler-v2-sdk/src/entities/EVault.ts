@@ -7,6 +7,7 @@ import {
 	type OracleInfo,
 	type OraclePrice,
 	sortOracleAdapters,
+	sortOracleResolvedVaults,
 	selectLeafAdaptersForPair,
 } from "../utils/oracle.js";
 import type { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
@@ -250,18 +251,20 @@ export class EVault
 		this.oracle = {
 			...args.oracle,
 			adapters: sortOracleAdapters(args.oracle.adapters),
+			resolvedVaults: sortOracleResolvedVaults(args.oracle.resolvedVaults),
 		};
 		this.interestRates = args.interestRates;
 		this.interestRateModel = args.interestRateModel;
 		this.collaterals = args.collaterals;
 		this.timestamp = args.timestamp;
-		this.debtPricingOracleAdapters = this.isBorrowable && this.unitOfAccount
-			? buildOracleAdaptersForPair(
-					this.oracle.adapters,
-					this.asset.address,
-					this.unitOfAccount.address,
-				)
-			: [];
+		this.debtPricingOracleAdapters =
+			this.isBorrowable && this.unitOfAccount
+				? buildOracleAdaptersForPair(
+						this.oracle.adapters,
+						this.asset.address,
+						this.unitOfAccount.address,
+					)
+				: [];
 		this.evcCompatibleAsset = args.evcCompatibleAsset;
 		this.oraclePriceRaw = args.oraclePriceRaw;
 		this.populated = {

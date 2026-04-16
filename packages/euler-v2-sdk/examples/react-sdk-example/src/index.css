@@ -593,6 +593,10 @@ tr.clickable {
   overflow: hidden;
 }
 
+.oracle-provider-pill-resolved {
+  border-style: dashed;
+}
+
 .oracle-provider-image,
 .oracle-provider-generic,
 .oracle-provider-fallback {
@@ -663,6 +667,38 @@ tr.clickable {
 
 .oracle-tooltip-link {
   font-size: 12px;
+}
+
+.raw-json-trigger {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border: 2px solid #000;
+  border-radius: 4px;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+}
+
+.raw-json-dialog {
+  max-width: min(960px, calc(100vw - 32px));
+  width: 960px;
+}
+
+.raw-json-body {
+  margin: 0;
+  max-height: 70vh;
+  overflow: auto;
+  border: 1px solid #000;
+  background: #f8f8f8;
+  color: #000;
+  padding: 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
 }
 
 /* Tabs */
