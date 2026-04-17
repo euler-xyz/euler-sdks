@@ -79,8 +79,10 @@ jobs:
           fi
 
           TAG_NAME="euler-v2-sdk-v$VERSION"
+          NPM_TAG="$(node -e "const version = process.argv[1]; const prerelease = version.split('-')[1]; console.log(prerelease ? prerelease.split('.')[0] : 'latest')" "$VERSION")"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
+          echo "NPM_TAG=$NPM_TAG" >> "$GITHUB_ENV"
 
       - name: Release checks
         working-directory: packages/euler-v2-sdk
@@ -99,7 +101,7 @@ jobs:
       - name: Publish package
         if: steps.check_published.outputs.skip != 'true'
         working-directory: packages/euler-v2-sdk
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance --tag "$NPM_TAG"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
