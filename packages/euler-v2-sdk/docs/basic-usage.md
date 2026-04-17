@@ -3,7 +3,7 @@
 ## Setup
 
 ```typescript
-import { buildEulerSDK } from 'euler-v2-sdk'
+import { buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 
 const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },           // chainId -> RPC URL
@@ -18,7 +18,7 @@ const sdk = await buildEulerSDK({
 ## Quick Deposit Example
 
 ```typescript
-import { buildEulerSDK } from 'euler-v2-sdk'
+import { buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 import { parseUnits } from 'viem'
 
 const sdk = await buildEulerSDK({ rpcUrls: { 1: 'https://...' } })
@@ -140,7 +140,7 @@ const { result: vault } = await sdk.vaultMetaService.fetchVault(1, '0xAny...')
 Use type guards to narrow:
 
 ```typescript
-import { isEVault, isEulerEarn, isSecuritizeCollateralVault } from 'euler-v2-sdk'
+import { isEVault, isEulerEarn, isSecuritizeCollateralVault } from '@eulerxyz/euler-v2-sdk'
 
 if (isEVault(vault)) {
   console.log(vault.interestRates.supplyAPY)
@@ -172,7 +172,7 @@ Perspectives are on-chain contracts that verify vaults meet certain criteria. Ea
 ### EVault perspectives
 
 ```typescript
-import { StandardEVaultPerspectives } from 'euler-v2-sdk'
+import { StandardEVaultPerspectives } from '@eulerxyz/euler-v2-sdk'
 
 // GOVERNED — vaults with active governance
 const { result: governed } = await sdk.eVaultService.fetchVerifiedVaults(1, [
@@ -203,7 +203,7 @@ Available EVault perspectives:
 ### EulerEarn perspectives
 
 ```typescript
-import { StandardEulerEarnPerspectives } from 'euler-v2-sdk'
+import { StandardEulerEarnPerspectives } from '@eulerxyz/euler-v2-sdk'
 
 const { result: governed } = await sdk.eulerEarnService.fetchVerifiedVaults(1, [
   StandardEulerEarnPerspectives.GOVERNED,
@@ -242,7 +242,7 @@ const addresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(1, [
 `vaultMetaService` queries all registered services and merges results:
 
 ```typescript
-import { StandardEVaultPerspectives, StandardEulerEarnPerspectives } from 'euler-v2-sdk'
+import { StandardEVaultPerspectives, StandardEulerEarnPerspectives } from '@eulerxyz/euler-v2-sdk'
 
 const { result: allVaults } = await sdk.vaultMetaService.fetchVerifiedVaults(1, [
   StandardEVaultPerspectives.GOVERNED,

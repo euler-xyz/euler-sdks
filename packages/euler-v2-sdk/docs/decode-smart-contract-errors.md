@@ -5,7 +5,7 @@ Use `decodeSmartContractErrors` to extract and decode revert errors from unknown
 ## Import
 
 ```ts
-import { decodeSmartContractErrors } from "euler-v2-sdk";
+import { decodeSmartContractErrors } from "@eulerxyz/euler-v2-sdk";
 ```
 
 ## Signature

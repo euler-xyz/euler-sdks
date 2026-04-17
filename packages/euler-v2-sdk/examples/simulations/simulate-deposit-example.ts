@@ -35,7 +35,7 @@ import { mainnet } from "viem/chains"
 import {
   buildEulerSDK,
   getSubAccountAddress,
-} from "euler-v2-sdk"
+} from "@eulerxyz/euler-v2-sdk"
 
 import { getRpcUrls } from "../utils/config.js"
 

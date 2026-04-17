@@ -15,7 +15,7 @@ import { formatUnits } from "viem";
 import { mainnet } from "viem/chains";
 
 import { getRpcUrls } from "../utils/config.js";
-import { buildEulerSDK, createPythPlugin, type EVault } from "euler-v2-sdk";
+import { buildEulerSDK, createPythPlugin, type EVault } from "@eulerxyz/euler-v2-sdk";
 
 const VAULT_ADDRESS = "0x777a7a579d7cCa0c909D1F55bE93dCBf872ACED6";
 

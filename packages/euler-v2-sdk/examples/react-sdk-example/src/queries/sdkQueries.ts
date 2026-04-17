@@ -15,13 +15,13 @@ import type {
   Wallet,
   VaultEntity,
   VaultRewardInfo,
-} from "euler-v2-sdk";
+} from "@eulerxyz/euler-v2-sdk";
 import { getAddress, isAddress, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import { recordExecution, recordFailure, registerKnownQueries } from "./queryProfileStore.ts";
 import { interceptSdkDataIfEnabled, isQueryIntercepted } from "./dataInterceptorStore.ts";
 import { getQueryBuildOverrides, useEnabledChainIds } from "./queryOptionsStore.ts";
-import { isEVault } from "euler-v2-sdk";
+import { isEVault } from "@eulerxyz/euler-v2-sdk";
 import { CHAIN_NAMES, EARN_CHAIN_IDS, SECURITIZE_VAULT_ADDRESSES } from "../config/chains.ts";
 
 type SecuritizeVault = NonNullable<

@@ -14,7 +14,7 @@ import {
   type ERC4626Vault,
   type EVault,
   type EulerEarn,
-} from "euler-v2-sdk";
+} from "@eulerxyz/euler-v2-sdk";
 import { formatUnits, parseUnits, type Address } from "viem";
 import {
   useAccount,

@@ -1,5 +1,5 @@
 import { useMemo, useState, type MouseEvent } from "react";
-import type { OracleAdapterEntry, OracleResolvedVault } from "euler-v2-sdk";
+import type { OracleAdapterEntry, OracleResolvedVault } from "@eulerxyz/euler-v2-sdk";
 import type { OracleAdapterMetadataMap } from "../queries/sdkQueries.ts";
 
 type OracleAdaptersInfoProps = {

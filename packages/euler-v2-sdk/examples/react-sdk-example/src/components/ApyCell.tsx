@@ -1,4 +1,4 @@
-import type { VaultRewardInfo, IntrinsicApyInfo } from "euler-v2-sdk";
+import type { VaultRewardInfo, IntrinsicApyInfo } from "@eulerxyz/euler-v2-sdk";
 import { formatPercent } from "../utils/format.ts";
 import { getIntrinsicApyDecimal, getRewardsAprByAction } from "../utils/apy.ts";
 

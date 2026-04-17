@@ -21,14 +21,14 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "euler-v2-sdk": path.resolve(
+      "@eulerxyz/euler-v2-sdk": path.resolve(
         __dirname,
         "../../dist/src/index.js",
       ),
     },
   },
   optimizeDeps: {
-    exclude: ["euler-v2-sdk"],
+    exclude: ["@eulerxyz/euler-v2-sdk"],
   },
   define: {
     "process.env": {},

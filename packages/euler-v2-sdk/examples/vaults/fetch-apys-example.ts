@@ -18,7 +18,7 @@ import {
   buildEulerSDK,
   StandardEVaultPerspectives,
   StandardEulerEarnPerspectives,
-} from "euler-v2-sdk";
+} from "@eulerxyz/euler-v2-sdk";
 
 async function fetchApysExample() {
   const rpcUrls = getRpcUrls();

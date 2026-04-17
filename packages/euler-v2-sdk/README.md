@@ -5,13 +5,13 @@
 ## Installation
 
 ```bash
-npm install euler-v2-sdk
+npm install @eulerxyz/euler-v2-sdk
 ```
 
 ## Example Usage (Multiply + Simulation)
 
 ```typescript
-import { buildEulerSDK, getSubAccountAddress } from "euler-v2-sdk";
+import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 import { mainnet } from "viem/chains";
 import { parseUnits } from "viem";
 
@@ -63,7 +63,7 @@ const simulation = await sdk.simulationService.simulateTransactionPlan(
 
 ## What This SDK Is For
 
-`euler-v2-sdk` provides everything needed to interact with Euler V2 lending contracts:
+`@eulerxyz/euler-v2-sdk` provides everything needed to interact with Euler V2 lending contracts:
 
 - fetching account, vault, wallet, and market data
 - planning and composing EVC transaction batches

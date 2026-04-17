@@ -44,7 +44,7 @@ import {
   EULER_PRIME_USDT_VAULT,
   USDT_ADDRESS,
 } from "../utils/config.js";
-import { buildEulerSDK, getSubAccountAddress } from "euler-v2-sdk";
+import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
 // Inputs
 const COLLATERAL_AMOUNT = parseUnits("1000", 6); // 1000 USDC

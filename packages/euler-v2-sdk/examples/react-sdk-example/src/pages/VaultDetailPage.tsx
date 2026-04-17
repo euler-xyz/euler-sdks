@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { maxUint256 } from "viem";
-import type { OracleAdapterEntry, OracleResolvedVault } from "euler-v2-sdk";
+import type { OracleAdapterEntry, OracleResolvedVault } from "@eulerxyz/euler-v2-sdk";
 import { useSDK } from "../context/SdkContext.tsx";
 import {
   type DiagnosticIssue,

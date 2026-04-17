@@ -1,4 +1,4 @@
-import type { EVault, IntrinsicApyInfo, VaultRewardInfo } from "euler-v2-sdk";
+import type { EVault, IntrinsicApyInfo, VaultRewardInfo } from "@eulerxyz/euler-v2-sdk";
 
 type RewardAction = "LEND" | "BORROW";
 

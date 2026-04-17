@@ -11,7 +11,7 @@ import {
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { RawEntityDialog } from "../components/RawEntityDialog.tsx";
-import { isEVault } from "euler-v2-sdk";
+import { isEVault } from "@eulerxyz/euler-v2-sdk";
 
 export function EulerEarnDetailPage() {
   const { chainId: chainIdParam, address } = useParams<{

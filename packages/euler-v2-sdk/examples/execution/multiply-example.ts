@@ -38,7 +38,7 @@ import {
   parseUnits,
 } from "viem";
 import { mainnet } from "viem/chains";
-import { buildEulerSDK, getSubAccountAddress } from "euler-v2-sdk";
+import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
 import { executePlan } from "../utils/executor.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
