@@ -36,6 +36,7 @@ import type {
 	V3CollateralRow,
 	V3OraclePrice,
 	V3OracleAdapter,
+	V3OracleResolvedVault,
 	V3Token,
 	V3VaultDetail,
 } from "./eVaultV3AdapterTypes.js";
@@ -508,6 +509,53 @@ function convertResolvedVaults(
 	return sortOracleResolvedVaults(resolvedVaults);
 }
 
+function convertResolvedVaultsFromV3(
+	rows: V3OracleResolvedVault[] | undefined,
+	vaultEntityId: Address,
+	errors: DataIssue[],
+): OracleResolvedVault[] | undefined {
+	if (!rows) return undefined;
+
+	const resolvedVaults: OracleResolvedVault[] = [];
+	for (const [index, row] of rows.entries()) {
+		const vault = parseAddressField(row.vault, {
+			path: `$.oracle.resolvedVaults[${index}].vault`,
+			entityId: vaultEntityId,
+			errors,
+			source: "eVaultV3",
+		});
+		const quote = parseAddressField(row.quote, {
+			path: `$.oracle.resolvedVaults[${index}].quote`,
+			entityId: vaultEntityId,
+			errors,
+			source: "eVaultV3",
+		});
+		const asset = parseAddressField(row.asset, {
+			path: `$.oracle.resolvedVaults[${index}].asset`,
+			entityId: vault,
+			errors,
+			source: "eVaultV3",
+		});
+		const resolvedAssets = row.resolvedAssets.map((resolvedAsset, assetIndex) =>
+			parseAddressField(resolvedAsset, {
+				path: `$.oracle.resolvedVaults[${index}].resolvedAssets[${assetIndex}]`,
+				entityId: vault,
+				errors,
+				source: "eVaultV3",
+			}),
+		);
+
+		resolvedVaults.push({
+			vault,
+			quote,
+			asset,
+			resolvedAssets,
+		});
+	}
+
+	return sortOracleResolvedVaults(resolvedVaults);
+}
+
 export function convertVault(
 	detail: V3VaultDetail,
 	collateralRows: V3CollateralRow[],
@@ -903,13 +951,15 @@ export function convertVault(
 			unitOfAccountErrors,
 		),
 	);
-	oracle.resolvedVaults = convertResolvedVaults(
-		oracle.name === "EulerRouter" ? collateralRows : [],
-		timestamp,
-		unitOfAccount?.address,
-		entityId,
-		errors,
-	);
+	oracle.resolvedVaults =
+		convertResolvedVaultsFromV3(detail.oracle?.resolvedVaults, entityId, errors) ??
+		convertResolvedVaults(
+			oracle.name === "EulerRouter" ? collateralRows : [],
+			timestamp,
+			unitOfAccount?.address,
+			entityId,
+			errors,
+		);
 
 	return {
 		type: VaultType.EVault,

@@ -342,3 +342,140 @@ test("convertVault maps V3 collateral asset rows to oracle resolved vaults", () 
 		},
 	]);
 });
+
+test("convertVault prefers V3 oracle resolvedVaults when provided", () => {
+	const collateralVault = "0x0000000000000000000000000000000000000a11";
+	const collateralAsset = getAddress(
+		"0x0000000000000000000000000000000000000a12",
+	);
+	const routedVault = getAddress(
+		"0x0000000000000000000000000000000000000b11",
+	);
+	const routedAsset = getAddress(
+		"0x0000000000000000000000000000000000000b12",
+	);
+	const routedHop = getAddress(
+		"0x0000000000000000000000000000000000000b13",
+	);
+	const errors: unknown[] = [];
+
+	const vault = convertVault(
+		{
+			chainId: 1,
+			address: "0x0000000000000000000000000000000000000abc",
+			name: "Vault",
+			symbol: "vBASE",
+			decimals: 18,
+			shares: {
+				address: "0x0000000000000000000000000000000000000abc",
+				name: "Vault",
+				symbol: "vBASE",
+				decimals: 18,
+			},
+			asset: {
+				address: BASE,
+				name: "Base Asset",
+				symbol: "BASE",
+				decimals: 18,
+			},
+			dToken: "0x0000000000000000000000000000000000000003",
+			oracle: {
+				oracle: "0x00000000000000000000000000000000000000d3",
+				name: "EulerRouter",
+				adapters: [],
+				resolvedVaults: [
+					{
+						vault: routedVault,
+						asset: routedAsset,
+						quote: QUOTE,
+						resolvedAssets: [routedAsset, routedHop],
+					},
+				],
+			},
+			unitOfAccount: {
+				address: QUOTE,
+				name: "USD",
+				symbol: "USD",
+				decimals: 18,
+			},
+			creator: "0x0000000000000000000000000000000000000001",
+			governorAdmin: "0x0000000000000000000000000000000000000002",
+			totalShares: "0",
+			totalAssets: "0",
+			totalBorrows: "0",
+			totalBorrowed: "0",
+			totalCash: "0",
+			balanceTracker: "0x0000000000000000000000000000000000000004",
+			fees: {
+				interestFee: 0,
+				accumulatedFeesShares: "0",
+				accumulatedFeesAssets: "0",
+				governorFeeReceiver: "0x0000000000000000000000000000000000000005",
+				protocolFeeReceiver: "0x0000000000000000000000000000000000000006",
+				protocolFeeShare: 0,
+			},
+			hooks: {
+				hookedOperations: {},
+				hookTarget: "0x0000000000000000000000000000000000000007",
+			},
+			caps: { supplyCap: "0", borrowCap: "0" },
+			liquidation: {
+				maxLiquidationDiscount: 0,
+				liquidationCoolOffTime: 0,
+				socializeDebt: false,
+			},
+			interestRates: {
+				borrowSPY: "0",
+				borrowAPY: "0",
+				supplyAPY: "0",
+			},
+			interestRateModel: {
+				address: "0x0000000000000000000000000000000000000009",
+				type: "unknown",
+				data: null,
+			},
+			evcCompatibleAsset: true,
+			oraclePriceRaw: {
+				queryFailure: false,
+				queryFailureReason: "0x",
+				amountIn: "1",
+				amountOutMid: "1",
+				amountOutBid: "1",
+				amountOutAsk: "1",
+				timestamp: "1970-01-01T00:00:01.000Z",
+			},
+			timestamp: "1970-01-01T00:00:01.000Z",
+		},
+		[
+			{
+				collateral: collateralVault,
+				asset: collateralAsset,
+				borrowLTV: "9000",
+				liquidationLTV: "9300",
+				initialLiquidationLTV: "0",
+				targetTimestamp: 1,
+				rampDuration: 0,
+				oraclePriceRaw: {
+					queryFailure: false,
+					queryFailureReason: "0x",
+					amountIn: "1",
+					amountOutMid: "1",
+					amountOutBid: "1",
+					amountOutAsk: "1",
+					timestamp: "1970-01-01T00:00:01.000Z",
+				},
+			},
+		],
+		errors as never[],
+		"0x0000000000000000000000000000000000000abc",
+	);
+
+	assert.deepEqual(vault.oracle.resolvedVaults, [
+		{
+			vault: routedVault,
+			asset: routedAsset,
+			quote: QUOTE,
+			resolvedAssets: [routedAsset, routedHop],
+		},
+	]);
+});
