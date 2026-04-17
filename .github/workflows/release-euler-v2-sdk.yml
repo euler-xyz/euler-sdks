@@ -1,6 +1,12 @@
 name: Release euler-v2-sdk
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Optional version guard. If set, it must match packages/euler-v2-sdk/package.json.
+        required: false
+        type: string
   push:
     branches:
       - main
@@ -21,8 +27,33 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PACKAGE_DIR: packages/euler-v2-sdk
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
+      - name: Require admin for manual publish
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Manual publishing is only allowed from main."
+            exit 1
+          fi
+
+          PERMISSION="$(
+            curl -fsSL \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" \
+              | node -e "const fs = require('fs'); console.log(JSON.parse(fs.readFileSync(0, 'utf8')).permission)"
+          )"
+
+          if [ "$PERMISSION" != "admin" ]; then
+            echo "Manual publishing is restricted to repository admins. $GITHUB_ACTOR has '$PERMISSION' permission."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -44,8 +75,16 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Resolve release tag
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
         run: |
           VERSION="$(node -p "require('./$PACKAGE_DIR/package.json').version")"
+
+          if [ -n "$EXPECTED_VERSION" ] && [ "$EXPECTED_VERSION" != "$VERSION" ]; then
+            echo "Requested version '$EXPECTED_VERSION' does not match package.json version '$VERSION'."
+            exit 1
+          fi
+
           TAG_NAME="euler-v2-sdk-v$VERSION"
           NPM_TAG="$(node -e "const version = process.argv[1]; const prerelease = version.split('-')[1]; console.log(prerelease ? prerelease.split('.')[0] : 'latest')" "$VERSION")"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
