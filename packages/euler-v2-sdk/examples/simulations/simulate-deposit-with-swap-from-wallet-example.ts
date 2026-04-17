@@ -27,7 +27,7 @@
 import "dotenv/config";
 import { formatUnits, getAddress, parseUnits, stringify, zeroAddress } from "viem";
 import { mainnet } from "viem/chains";
-import { buildEulerSDK, getSubAccountAddress } from "euler-v2-sdk";
+import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 import { account, rpcUrls, USDC_ADDRESS } from "../utils/config.js";
 
 const WSTETH_ADDRESS = getAddress("0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0");

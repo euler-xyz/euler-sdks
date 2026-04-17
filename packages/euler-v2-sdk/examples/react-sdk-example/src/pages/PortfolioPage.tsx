@@ -9,14 +9,14 @@ import {
   useWalletClient,
 } from "wagmi";
 import { queryClient, useAccountWithDiagnostics } from "../queries/sdkQueries.ts";
-import { getSubAccountId } from "euler-v2-sdk";
+import { getSubAccountId } from "@eulerxyz/euler-v2-sdk";
 import { getAddress, type Address } from "viem";
 import { formatBigInt, formatPriceUsd, formatWad, formatWadPercent } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { RoeCell } from "../components/RoeCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
 import { RawEntityDialog } from "../components/RawEntityDialog.tsx";
-import type { VaultEntity, AccountPosition, UserReward } from "euler-v2-sdk";
+import type { VaultEntity, AccountPosition, UserReward } from "@eulerxyz/euler-v2-sdk";
 import { executePlanWithProgress, type PlanProgress } from "../utils/txExecutor.ts";
 
 // Persist across navigations but not across full page reloads

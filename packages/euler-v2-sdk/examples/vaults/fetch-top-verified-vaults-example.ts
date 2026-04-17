@@ -24,7 +24,7 @@ import {
   isEulerEarn,
   type EVault,
   type EulerEarn,
-} from "euler-v2-sdk";
+} from "@eulerxyz/euler-v2-sdk";
 
 async function fetchTopVerifiedVaultsExample() {
   const rpcUrls = getRpcUrls();

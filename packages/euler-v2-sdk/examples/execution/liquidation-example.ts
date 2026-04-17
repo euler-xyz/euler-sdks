@@ -43,7 +43,7 @@ import {
   publicClient,
   walletClient,
 } from "../utils/config.js";
-import { Account, buildEulerSDK, eVaultAbi, getSubAccountAddress } from "euler-v2-sdk";
+import { Account, buildEulerSDK, eVaultAbi, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
 
 const VIOLATOR_SUB_ACCOUNT_ID = 1;

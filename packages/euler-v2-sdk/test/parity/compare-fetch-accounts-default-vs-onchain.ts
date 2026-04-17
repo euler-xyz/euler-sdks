@@ -33,7 +33,7 @@ import {
   buildEulerSDK,
   type BuildQueryFn,
   type BuildSDKOptions,
-} from "euler-v2-sdk";
+} from "@eulerxyz/euler-v2-sdk";
 
 import { getRpcUrls } from "../../examples/utils/config.js";
 

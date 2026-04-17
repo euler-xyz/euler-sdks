@@ -1,4 +1,4 @@
-import type { SubAccountRoe } from "euler-v2-sdk";
+import type { SubAccountRoe } from "@eulerxyz/euler-v2-sdk";
 import { formatPercent } from "../utils/format.ts";
 
 interface RoeCellProps {

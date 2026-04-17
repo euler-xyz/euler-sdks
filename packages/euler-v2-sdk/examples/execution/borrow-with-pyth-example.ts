@@ -50,7 +50,7 @@ import {
   account,
   testClient,
 } from "../utils/config.js";
-import { buildEulerSDK, createPythPlugin, getSubAccountAddress } from "euler-v2-sdk";
+import { buildEulerSDK, createPythPlugin, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
 // ── Vault addresses ──
 const WBTC_BORROW_VAULT = getAddress("0x82D2CE1f71cbe391c05E21132811e5172d51A6EE");

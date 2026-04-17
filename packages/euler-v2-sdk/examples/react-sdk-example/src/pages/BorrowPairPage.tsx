@@ -8,7 +8,7 @@ import {
   type SimulationInsufficientRequirement,
   type EVault,
   type SwapQuote,
-} from "euler-v2-sdk";
+} from "@eulerxyz/euler-v2-sdk";
 import { formatUnits, getAddress, parseUnits, type Address } from "viem";
 import {
   useAccount as useWagmiAccount,

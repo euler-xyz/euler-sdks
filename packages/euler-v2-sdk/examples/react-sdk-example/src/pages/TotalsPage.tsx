@@ -6,7 +6,7 @@ import {
   type EulerEarn,
   type EulerSDK,
   type EVault,
-} from "euler-v2-sdk";
+} from "@eulerxyz/euler-v2-sdk";
 import { formatUnits, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import { APP_CHAIN_IDS_MINUS_BOB, CHAIN_NAMES, RPC_URLS } from "../config/chains.ts";

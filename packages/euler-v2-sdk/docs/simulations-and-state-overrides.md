@@ -78,7 +78,7 @@ const result = await sdk.simulationService.simulateTransactionPlan(
 
 ## State override utilities
 
-All exports are available from the top-level `euler-v2-sdk` package.
+All exports are available from the top-level `@eulerxyz/euler-v2-sdk` package.
 
 ### `deriveStateOverrides(client, plan, account, options)`
 

@@ -43,7 +43,7 @@ import {
   zeroAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
-import { buildEulerSDK, getSubAccountAddress, SwapperMode } from "euler-v2-sdk";
+import { buildEulerSDK, getSubAccountAddress, SwapperMode } from "@eulerxyz/euler-v2-sdk";
 
 import { executePlan } from "../utils/executor.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";

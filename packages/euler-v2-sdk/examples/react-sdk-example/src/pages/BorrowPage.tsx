@@ -5,7 +5,7 @@ import {
   getMaxMultiplier,
   getMaxRoe,
   type EVault,
-} from "euler-v2-sdk";
+} from "@eulerxyz/euler-v2-sdk";
 import { useSDK } from "../context/SdkContext.tsx";
 import { useAllVaults } from "../queries/sdkQueries.ts";
 import { formatBigInt, formatPriceUsd } from "../utils/format.ts";

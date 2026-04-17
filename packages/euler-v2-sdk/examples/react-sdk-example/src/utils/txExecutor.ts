@@ -4,7 +4,7 @@ import {
   type EVCBatchItem,
   type EulerSDK,
   type TransactionPlanItem,
-} from "euler-v2-sdk";
+} from "@eulerxyz/euler-v2-sdk";
 import type { Address, PublicClient, WalletClient } from "viem";
 import { encodeFunctionData, maxUint256 } from "viem";
 

@@ -47,7 +47,7 @@ Details and options: [Simulations and State Overrides](./simulations-and-state-o
 `buildEulerSDK()` is the default composition root. It creates the standard services and wires dependencies.
 
 ```typescript
-import { buildEulerSDK } from "euler-v2-sdk";
+import { buildEulerSDK } from "@eulerxyz/euler-v2-sdk";
 
 const sdk = await buildEulerSDK({
   rpcUrls: { 1: "https://your-rpc-url" },

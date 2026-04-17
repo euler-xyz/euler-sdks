@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run euler-v2-sdk examples.
+# Run @eulerxyz/euler-v2-sdk examples.
 # - Execution/simulation examples run against a fresh Anvil fork (per example).
 # - Account/vault read examples run directly against RPC_URL_1.
 # Requires: anvil (foundry), pnpm, and examples/.env with FORK_RPC_URL set.

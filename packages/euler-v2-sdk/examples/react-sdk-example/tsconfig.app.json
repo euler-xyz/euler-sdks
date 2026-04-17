@@ -9,7 +9,7 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "euler-v2-sdk": ["../../dist/src/index.d.ts"]
+      "@eulerxyz/euler-v2-sdk": ["../../dist/src/index.d.ts"]
     },
 
     /* Bundler mode */

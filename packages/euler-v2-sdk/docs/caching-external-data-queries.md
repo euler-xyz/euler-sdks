@@ -83,7 +83,7 @@ The `examples/react-sdk-example` app shows how to use `buildQuery` to give every
 
 ```typescript
 import { QueryClient } from "@tanstack/react-query";
-import type { BuildQueryFn } from "euler-v2-sdk";
+import type { BuildQueryFn } from "@eulerxyz/euler-v2-sdk";
 
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1 } },
@@ -169,7 +169,7 @@ const DEFAULT_STALE_TIME = MINUTE;
 ### SDK initialization
 
 ```typescript
-import { buildEulerSDK, createPythPlugin } from "euler-v2-sdk";
+import { buildEulerSDK, createPythPlugin } from "@eulerxyz/euler-v2-sdk";
 import { sdkBuildQuery, queryClient } from "./sdkQueries";
 
 // In a React component/provider:

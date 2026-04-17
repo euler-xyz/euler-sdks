@@ -31,7 +31,7 @@ import { mainnet } from "viem/chains";
 import { executePlan } from "../utils/executor.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
 import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "../utils/config.js";
-import { Account, buildEulerSDK, getSubAccountAddress } from "euler-v2-sdk";
+import { Account, buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
 // Inputs
 const DEPOSIT_AMOUNT = parseUnits("10", 6);

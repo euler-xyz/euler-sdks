@@ -24,7 +24,7 @@ import {
   getBalanceOverrides,
   StandardEVaultPerspectives,
   type EVault,
-} from "euler-v2-sdk";
+} from "@eulerxyz/euler-v2-sdk";
 import {
   erc20Abi,
   formatUnits,

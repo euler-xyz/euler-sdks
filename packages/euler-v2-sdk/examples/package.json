@@ -7,7 +7,7 @@
     "anvil": "source .env 2>/dev/null && anvil --fork-url $FORK_RPC_URL --auto-impersonate"
   },
   "dependencies": {
-    "euler-v2-sdk": "workspace:*",
+    "@eulerxyz/euler-v2-sdk": "workspace:*",
     "viem": "^2.43.3"
   },
   "devDependencies": {

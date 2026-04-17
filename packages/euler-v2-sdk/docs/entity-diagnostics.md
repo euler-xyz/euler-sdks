@@ -70,7 +70,7 @@ These methods emit `FALLBACK_USED` when backend pricing is unavailable and on-ch
 ## API
 
 ```ts
-import type { DataIssue, ServiceResult } from "euler-v2-sdk";
+import type { DataIssue, ServiceResult } from "@eulerxyz/euler-v2-sdk";
 ```
 
 - `DataIssue`: one normalization/fallback/source issue with JSONPath-like `path`.
@@ -123,7 +123,7 @@ vaults.forEach((vault, i) => {
 Use normalization helpers and append issues to a local `errors` array.
 
 ```ts
-import { bigintToSafeNumber, type DataIssue } from "euler-v2-sdk";
+import { bigintToSafeNumber, type DataIssue } from "@eulerxyz/euler-v2-sdk";
 
 function convertCustom(raw: { decimals: bigint }, errors: DataIssue[]) {
   const decimals = bigintToSafeNumber(raw.decimals, {
@@ -140,7 +140,7 @@ function convertCustom(raw: { decimals: bigint }, errors: DataIssue[]) {
 Build diagnostics in parallel with result data and return together:
 
 ```ts
-import type { DataIssue, ServiceResult } from "euler-v2-sdk";
+import type { DataIssue, ServiceResult } from "@eulerxyz/euler-v2-sdk";
 
 async function fetchCustom(): Promise<ServiceResult<{ price?: number }>> {
   const errors: DataIssue[] = [];

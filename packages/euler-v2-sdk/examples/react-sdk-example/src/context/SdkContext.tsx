@@ -12,7 +12,7 @@ import {
   defaultVaultTypeSubgraphAdapterConfig,
   type BuildSDKOptions,
   type EulerSDK,
-} from "euler-v2-sdk";
+} from "@eulerxyz/euler-v2-sdk";
 import { sdkBuildQuery } from "../queries/sdkQueries.ts";
 import { useSdkAdapterMode } from "../queries/queryOptionsStore.ts";
 import { resetQueryProfile } from "../queries/queryProfileStore.ts";

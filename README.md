@@ -4,7 +4,7 @@ A monorepo for Euler SDKs and tools.
 
 ### Packages
 
-- [euler-v2-sdk](./packages/euler-v2-sdk/README.md) - Main SDK for interacting with Euler V2 lending platform.
+- [@eulerxyz/euler-v2-sdk](./packages/euler-v2-sdk/README.md) - Main SDK for interacting with Euler V2 lending platform.
 
 ### Examples
 

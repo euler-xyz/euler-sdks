@@ -1,4 +1,4 @@
-import { EVCBatchItem, TransactionPlanItem, EulerSDK, decodeSmartContractErrors } from "euler-v2-sdk";
+import { EVCBatchItem, TransactionPlanItem, EulerSDK, decodeSmartContractErrors } from "@eulerxyz/euler-v2-sdk";
 import { encodeFunctionData, maxUint256, WalletClient } from "viem";
 import { mainnet } from "viem/chains";
 import { publicClient, walletClient } from "./config.js";
