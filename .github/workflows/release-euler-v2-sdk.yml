@@ -48,12 +48,14 @@ jobs:
         run: |
           VERSION="$(node -p "require('./$PACKAGE_DIR/package.json').version")"
           TAG_NAME="euler-v2-sdk-v$VERSION"
+          NPM_TAG="$(node -e "const version = process.argv[1]; const prerelease = version.split('-')[1]; console.log(prerelease ? prerelease.split('.')[0] : 'latest')" "$VERSION")"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
+          echo "NPM_TAG=$NPM_TAG" >> "$GITHUB_ENV"
 
       - name: Check if already published
         id: check_published
         run: |
-          VERSION="$(node -p "require('./$PACKAGE_DIR/package.json').version")"
           if npm view "euler-v2-sdk@$VERSION" version >/dev/null 2>&1; then
             echo "Version $VERSION is already published, skipping publish."
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -64,7 +66,7 @@ jobs:
       - name: Publish package
         if: steps.check_published.outputs.skip != 'true'
         working-directory: packages/euler-v2-sdk
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance --tag "$NPM_TAG"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
