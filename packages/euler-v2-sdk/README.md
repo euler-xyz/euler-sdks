@@ -25,7 +25,7 @@ const owner = "0xYourEOA";
 const subAccount = getSubAccountAddress(owner, 1);
 
 const account = await sdk.accountService.fetchAccount(mainnet.id, owner, {
-  populateVaults: false,
+  populateVaults: true,
 });
 
 const quotes = await sdk.swapService.getDepositQuote({
@@ -59,6 +59,7 @@ const simulation = await sdk.simulationService.simulateTransactionPlan(
 
 // Use simulated account and vaults state in the UI.
 // Use simulation.canExecute or errors to decide whether and how to execute this plan in your app.
+// See /examples/utils/executor.ts
 ```
 
 ## What This SDK Is For
