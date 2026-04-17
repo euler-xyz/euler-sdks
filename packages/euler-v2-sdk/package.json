@@ -33,7 +33,7 @@
     "format": "biome format --write src",
     "lint": "biome lint src",
     "lint:fix": "biome lint --write src",
-    "prepare": "cd ../.. && husky packages/euler-v2-sdk/.husky",
+    "prepare": "cd ../.. && if command -v husky >/dev/null 2>&1; then husky packages/euler-v2-sdk/.husky; fi",
     "clean": "rm -rf dist",
     "release:check": "pnpm run clean && pnpm run build && pnpm run typecheck && pnpm pack --dry-run",
     "prepublishOnly": "pnpm run release:check",
