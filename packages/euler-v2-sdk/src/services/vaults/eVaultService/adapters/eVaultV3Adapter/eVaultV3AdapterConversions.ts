@@ -3,9 +3,7 @@ import type {
 	OracleAdapterEntry,
 	OracleInfo,
 	OraclePrice,
-	OracleResolvedVault,
 } from "../../../../../utils/oracle.js";
-import { sortOracleResolvedVaults } from "../../../../../utils/oracle.js";
 import type { DataIssue } from "../../../../../utils/entityDiagnostics.js";
 import {
 	parseAddressField,
@@ -77,6 +75,7 @@ const DEFAULT_ORACLE_BLOCK: NonNullable<V3VaultDetail["oracle"]> = {
 	oracle: ZERO_ADDRESS,
 	name: "",
 	adapters: [],
+	resolvedVaults: [],
 };
 
 const DEFAULT_CAPS_BLOCK: NonNullable<V3VaultDetail["caps"]> = {
@@ -335,6 +334,41 @@ function convertOracleAdapter(
 	return converted;
 }
 
+function convertOracleResolvedVaults(
+	resolvedVaults: NonNullable<V3VaultDetail["oracle"]>["resolvedVaults"],
+	entityId: Address,
+	errors: DataIssue[],
+): OracleInfo["resolvedVaults"] {
+	return resolvedVaults.map((resolvedVault, index) => ({
+		vault: parseAddressField(resolvedVault.vault, {
+			path: `$.oracle.resolvedVaults[${index}].vault`,
+			entityId,
+			errors,
+			source: "eVaultV3",
+		}),
+		quote: parseAddressField(resolvedVault.quote, {
+			path: `$.oracle.resolvedVaults[${index}].quote`,
+			entityId,
+			errors,
+			source: "eVaultV3",
+		}),
+		asset: parseAddressField(resolvedVault.asset, {
+			path: `$.oracle.resolvedVaults[${index}].asset`,
+			entityId,
+			errors,
+			source: "eVaultV3",
+		}),
+		resolvedAssets: resolvedVault.resolvedAssets.map((asset, assetIndex) =>
+			parseAddressField(asset, {
+				path: `$.oracle.resolvedVaults[${index}].resolvedAssets[${assetIndex}]`,
+				entityId,
+				errors,
+				source: "eVaultV3",
+			}),
+		),
+	}));
+}
+
 function convertCollaterals(
 	rows: V3CollateralRow[],
 	vaultTimestamp: number,
@@ -440,74 +474,6 @@ function convertCollaterals(
 	return collaterals;
 }
 
-function convertResolvedVaults(
-	rows: V3CollateralRow[],
-	vaultTimestamp: number,
-	quoteAddress: Address | undefined,
-	vaultEntityId: Address,
-	errors: DataIssue[],
-): OracleResolvedVault[] {
-	if (!quoteAddress) return [];
-
-	const resolvedVaults: OracleResolvedVault[] = [];
-	for (const [index, row] of rows.entries()) {
-		if (!row.asset) continue;
-
-		const collateralAddress = parseAddressField(row.collateral, {
-			path: `$.collaterals[${index}].collateral`,
-			entityId: vaultEntityId,
-			errors,
-			source: "eVaultV3",
-		});
-		const assetAddress = parseAddressField(row.asset, {
-			path: `$.collaterals[${index}].asset`,
-			entityId: collateralAddress,
-			errors,
-			source: "eVaultV3",
-		});
-		const borrowLTV = parseRatio1e4(row.borrowLTV, {
-			path: `$.collaterals[${index}].borrowLTV`,
-			entityId: collateralAddress,
-			errors,
-			source: "eVaultV3",
-		});
-		const liquidationLTV = parseRatio1e4(row.liquidationLTV, {
-			path: `$.collaterals[${index}].liquidationLTV`,
-			entityId: collateralAddress,
-			errors,
-			source: "eVaultV3",
-		});
-		const targetTimestamp = parseNumberField(
-			typeof row.targetTimestamp === "number"
-				? row.targetTimestamp
-				: Number(row.targetTimestamp),
-			{
-				path: `$.collaterals[${index}].targetTimestamp`,
-				entityId: collateralAddress,
-				errors,
-				source: "eVaultV3",
-			},
-		);
-		const isRemovedCollateral =
-			borrowLTV === 0 &&
-			liquidationLTV === 0 &&
-			targetTimestamp < vaultTimestamp;
-
-		if (isRemovedCollateral) continue;
-		if (assetAddress.toLowerCase() === collateralAddress.toLowerCase())
-			continue;
-
-		resolvedVaults.push({
-			vault: collateralAddress,
-			asset: assetAddress,
-			quote: quoteAddress,
-			resolvedAssets: [assetAddress],
-		});
-	}
-
-	return sortOracleResolvedVaults(resolvedVaults);
-}
-
 export function convertVault(
 	detail: V3VaultDetail,
 	collateralRows: V3CollateralRow[],
@@ -560,7 +526,11 @@ export function convertVault(
 		adapters: oracleData.adapters.map((adapter) =>
 			convertOracleAdapter(adapter, entityId, errors),
 		),
-		resolvedVaults: [],
+		resolvedVaults: convertOracleResolvedVaults(
+			oracleData.resolvedVaults,
+			entityId,
+			errors,
+		),
 	};
 	const suppressUnitOfAccountDiagnostics = hasZeroOracleAddress;
 
@@ -902,13 +872,6 @@ export function convertVault(
 			entityId,
 			unitOfAccountErrors,
 		),
-	);
-	oracle.resolvedVaults = convertResolvedVaults(
-		oracle.name === "EulerRouter" ? collateralRows : [],
-		timestamp,
-		unitOfAccount?.address,
-		entityId,
-		errors,
 	);
 
 	return {
