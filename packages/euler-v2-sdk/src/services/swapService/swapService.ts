@@ -10,6 +10,7 @@ import type {
 import { SwapperMode } from "./swapServiceTypes.js";
 import { swapVerifierAbi } from "./swapVerifierAbi.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
+import type { IDeploymentService } from "../deploymentService/index.js";
 
 export interface SwapServiceConfig {
 	swapApiUrl: string;
@@ -33,6 +34,7 @@ const MAX_SLIPPAGE = 50;
 export class SwapService implements ISwapService {
 	constructor(
 		private readonly config: SwapServiceConfig,
+		private readonly deploymentService: IDeploymentService,
 		buildQuery?: BuildQueryFn,
 	) {
 		if (!config.swapApiUrl) {
@@ -213,6 +215,21 @@ export class SwapService implements ISwapService {
 	): void {
 		if (!request.receiver || !request.accountOut) {
 			throw new Error("Missing swap params for verification");
+		}
+
+		const expectedVerifierAddress = this.deploymentService.getDeployment(
+			request.chainId,
+		).addresses.peripheryAddrs?.swapVerifier;
+		if (!expectedVerifierAddress) {
+			throw new Error(
+				`SwapVerifier address missing for chainId ${request.chainId}`,
+			);
+		}
+		if (
+			getAddress(quote.verify.verifierAddress) !==
+				getAddress(expectedVerifierAddress)
+		) {
+			throw new Error("SwapVerifier address mismatch");
 		}
 
 		let functionName:
