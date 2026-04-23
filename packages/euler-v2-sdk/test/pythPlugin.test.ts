@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { PythPluginAdapter } from "../src/plugins/pyth/pythPlugin.js";
 
 const GOOD_FEED =

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { encodeFunctionData } from "viem";
 import type { IDeploymentService } from "../src/services/deploymentService/index.js";
 import {

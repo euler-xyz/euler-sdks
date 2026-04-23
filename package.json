@@ -2,9 +2,13 @@
   "name": "euler-sdks",
   "private": true,
   "scripts": {
+    "prepare": "husky packages/euler-v2-sdk/.husky",
     "build": "pnpm --filter './packages/**' run build",
     "typecheck": "pnpm --filter './packages/**' run typecheck",
     "clean": "pnpm --filter './packages/**' run clean"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
   },
   "engines": {
     "node": ">=18"

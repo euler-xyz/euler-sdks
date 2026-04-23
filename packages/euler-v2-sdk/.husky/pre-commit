@@ -1,1 +1,3 @@
+#!/usr/bin/env sh
 pnpm -C packages/euler-v2-sdk lint:fix
+pnpm -C packages/euler-v2-sdk test
