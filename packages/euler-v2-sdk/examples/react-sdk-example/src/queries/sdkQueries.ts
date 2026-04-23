@@ -897,6 +897,73 @@ export function useAccountWithDiagnostics(
   });
 }
 
+export type AccountByChainResult = {
+  chainId: number;
+  chainName: string;
+  account?: Account<VaultEntity>;
+  diagnostics: DiagnosticIssue[];
+  failedVaults: FailedVaultFetch[];
+  error?: string;
+};
+
+export function useAccountAllChainsWithDiagnostics(
+  address: string | undefined
+) {
+  const { sdk, enabled } = useSdkReady();
+  const enabledChainIds = useEnabledChainIds();
+  return useQuery<AccountByChainResult[]>({
+    queryKey: [
+      "accountWithDiagnostics",
+      "allChains",
+      address,
+      enabledChainIds,
+    ],
+    queryFn: async () =>
+      Promise.all(
+        enabledChainIds.map(async (chainId) => {
+          const chainName = CHAIN_NAMES[chainId] ?? String(chainId);
+          try {
+            const fetched = unwrapServiceResultWithDiagnostics(
+              "accountService.fetchAccount",
+              await sdk!.accountService.fetchAccount(
+                chainId,
+                address as Address,
+                {
+                  populateAll: true,
+                  vaultFetchOptions: { populateAll: true },
+                }
+              )
+            );
+            const diagnostics = addChainMetadataToDiagnostics(
+              fetched.diagnostics,
+              chainId
+            );
+            return {
+              chainId,
+              chainName,
+              account: fetched.result,
+              diagnostics,
+              failedVaults: addChainMetadataToFailedVaults(
+                buildFailedVaultFetches(diagnostics),
+                chainId
+              ),
+            } satisfies AccountByChainResult;
+          } catch (error) {
+            return {
+              chainId,
+              chainName,
+              diagnostics: [],
+              failedVaults: [],
+              error: error instanceof Error ? error.message : String(error),
+            } satisfies AccountByChainResult;
+          }
+        })
+      ),
+    enabled: enabled && !!address && address.length === 42,
+    staleTime: STALE_TIMES.accountWithDiagnostics,
+  });
+}
+
 export function useWalletBalance(
   chainId: number,
   account: string | undefined,
