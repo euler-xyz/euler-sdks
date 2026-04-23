@@ -37,6 +37,7 @@ import {
 	type EncodeSwapDebtArgs,
 	type EncodeTransferArgs,
 	type EncodeDepositWithSwapFromWalletArgs,
+	type EncodeSwapFromWalletArgs,
 	type EncodeSwapCollateralArgs,
 	type EncodePermit2CallArgs,
 	PERMIT2_TYPES,
@@ -56,6 +57,7 @@ import {
 	type PlanRepayFromDepositArgs,
 	type PlanRepayWithSwapArgs,
 	type PlanDepositWithSwapFromWalletArgs,
+	type PlanSwapFromWalletArgs,
 	type PlanSwapCollateralArgs,
 	type PlanSwapDebtArgs,
 	type PlanTransferArgs,
@@ -87,6 +89,7 @@ export interface IExecutionService {
 	encodeDepositWithSwapFromWallet(
 		args: EncodeDepositWithSwapFromWalletArgs,
 	): EVCBatchItem[];
+	encodeSwapFromWallet(args: EncodeSwapFromWalletArgs): EVCBatchItem[];
 	encodeSwapCollateral(args: EncodeSwapCollateralArgs): EVCBatchItem[];
 	encodeSwapDebt(args: EncodeSwapDebtArgs): EVCBatchItem[];
 	encodeTransfer(args: EncodeTransferArgs): EVCBatchItem[];
@@ -106,6 +109,7 @@ export interface IExecutionService {
 	planDepositWithSwapFromWallet(
 		args: PlanDepositWithSwapFromWalletArgs,
 	): TransactionPlan;
+	planSwapFromWallet(args: PlanSwapFromWalletArgs): TransactionPlan;
 	planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlan;
 	planSwapDebt(args: PlanSwapDebtArgs): TransactionPlan;
 	planTransfer(args: PlanTransferArgs): TransactionPlan;
@@ -1045,6 +1049,61 @@ export class ExecutionService implements IExecutionService {
 				),
 			);
 		}
+
+		return items;
+	}
+
+	/**
+	 * Encodes EVC batch items for swapping a token from the sender's wallet into another token
+	 * and transferring the output to `swapQuote.receiver`.
+	 * The approval is given to SwapVerifier, then transferFromSender pulls tokens to Swapper,
+	 * swap executes, and verifyAmountMinAndTransfer sends the output to the receiver wallet.
+	 *
+	 * @param args - Wallet-swap encoding arguments
+	 * @param args.chainId - Chain ID (unused, kept for encode API symmetry)
+	 * @param args.swapQuote - Quote with swap and verify steps (verify type transferMin)
+	 * @param args.amount - Amount of input token to transfer from wallet to swapper
+	 * @param args.sender - Wallet address providing the tokens (onBehalfOfAccount for transferFromSender)
+	 * @returns Array of EVC batch items (transferFromSender, swap, verify)
+	 */
+	encodeSwapFromWallet(args: EncodeSwapFromWalletArgs): EVCBatchItem[] {
+		const { swapQuote, amount, sender } = args;
+		const items: EVCBatchItem[] = [];
+
+		if (swapQuote.verify.type !== "transferMin") {
+			throw new Error(
+				"Invalid swap quote type for wallet swap - must be transferMin",
+			);
+		}
+
+		items.push({
+			targetContract: swapQuote.verify.verifierAddress,
+			onBehalfOfAccount: sender,
+			value: 0n,
+			data: encodeFunctionData({
+				abi: swapVerifierAbi,
+				functionName: "transferFromSender",
+				args: [
+					swapQuote.tokenIn.address,
+					amount,
+					swapQuote.swap.swapperAddress,
+				],
+			}),
+		});
+
+		items.push({
+			targetContract: swapQuote.swap.swapperAddress,
+			onBehalfOfAccount: sender,
+			value: 0n,
+			data: swapQuote.swap.swapperData,
+		});
+
+		items.push({
+			targetContract: swapQuote.verify.verifierAddress,
+			onBehalfOfAccount: sender,
+			value: 0n,
+			data: swapQuote.verify.verifierData,
+		});
 
 		return items;
 	}
@@ -2484,6 +2543,44 @@ export class ExecutionService implements IExecutionService {
 			amount,
 			sender: account.owner,
 			enableCollateral: shouldEnableCollateral,
+		});
+
+		plan.push({
+			type: "evcBatch",
+			items: batchItems,
+		});
+
+		return plan;
+	}
+
+	/**
+	 * Builds a transaction plan for swapping a token from the sender's wallet into another
+	 * token and transferring the output to the quote receiver.
+	 *
+	 * @param args - Wallet-swap plan arguments
+	 * @param args.swapQuote - Quote from swap service; must use transferOutputToReceiver / transferMin verification
+	 * @param args.amount - Amount of input token to transfer from wallet
+	 * @param args.tokenIn - Input token address (for approval to SwapVerifier)
+	 * @param args.account - Account entity; used for chainId and owner
+	 * @returns Array of transaction plan items (approval to SwapVerifier + EVC batch)
+	 */
+	planSwapFromWallet(args: PlanSwapFromWalletArgs): TransactionPlan {
+		const { swapQuote, amount, tokenIn, account } = args;
+		const plan: TransactionPlanItem[] = [];
+
+		plan.push({
+			type: "requiredApproval",
+			token: tokenIn,
+			owner: account.owner,
+			spender: swapQuote.verify.verifierAddress,
+			amount,
+		});
+
+		const batchItems = this.encodeSwapFromWallet({
+			chainId: account.chainId,
+			swapQuote,
+			amount,
+			sender: account.owner,
 		});
 
 		plan.push({

@@ -165,6 +165,13 @@ export type EncodeDepositWithSwapFromWalletArgs = {
 	enableCollateral?: boolean;
 };
 
+export type EncodeSwapFromWalletArgs = {
+	chainId: number;
+	swapQuote: SwapQuote;
+	amount: bigint; // amount of input token to transfer from wallet
+	sender: Address; // wallet address providing the tokens
+};
+
 export type EncodeSwapCollateralArgs = {
 	chainId: number;
 	swapQuote: SwapQuote;
@@ -417,6 +424,13 @@ export type PlanDepositWithSwapFromWalletArgs = {
 	amount: bigint; // amount of input token to transfer from wallet
 	tokenIn: Address; // input token address (for approval)
 	enableCollateral?: boolean;
+};
+
+export type PlanSwapFromWalletArgs = {
+	account: Account<IHasVaultAddress>;
+	swapQuote: SwapQuote;
+	amount: bigint; // amount of input token to transfer from wallet
+	tokenIn: Address; // input token address (for approval)
 };
 
 export type PlanSwapCollateralArgs = {

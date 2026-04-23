@@ -74,6 +74,22 @@ function createSwapQuote() {
 	};
 }
 
+function createTransferSwapQuote() {
+	return {
+		...createSwapQuote(),
+		verify: {
+			type: "transferMin",
+			verifierAddress: VERIFIER,
+			verifierData: "0x9abc",
+			vault: RECEIVER,
+			account: ACCOUNT,
+			amount: "9900",
+			deadline: 123,
+		},
+		transferOutputToReceiver: true,
+	};
+}
+
 test("describeBatch preserves decoded items even when one batch item is unknown", () => {
 	const service = createExecutionService();
 	const batch = [
@@ -177,4 +193,35 @@ test("deposit-with-swap-from-wallet emits explicit required approval", () => {
 		spender: VERIFIER,
 		amount: AMOUNT,
 	});
+});
+
+test("swap-from-wallet emits explicit required approval and wallet-swap batch", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+	} as never;
+	const plan = service.planSwapFromWallet({
+		account,
+		swapQuote: createTransferSwapQuote(),
+		amount: AMOUNT,
+		tokenIn: TOKEN_IN,
+	});
+
+	assert.deepEqual(plan[0], {
+		type: "requiredApproval",
+		token: TOKEN_IN,
+		owner: ACCOUNT,
+		spender: VERIFIER,
+		amount: AMOUNT,
+	});
+
+	assert.equal(plan[1]?.type, "evcBatch");
+	if (plan[1]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	assert.equal(plan[1].items[0]?.targetContract, VERIFIER);
+	assert.equal(plan[1].items[1]?.targetContract, SWAPPER);
+	assert.equal(plan[1].items[2]?.targetContract, VERIFIER);
 });

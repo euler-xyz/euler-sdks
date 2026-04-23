@@ -7,6 +7,7 @@ export { SwapperMode, SwapVerificationType } from "./swapServiceTypes.js";
 export type {
 	GetRepayQuoteArgs,
 	GetDepositQuoteArgs,
+	GetWalletSwapQuoteArgs,
 	SwapQuote,
 	SwapQuoteRequest,
 	SwapsApiResponse,

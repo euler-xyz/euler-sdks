@@ -111,6 +111,26 @@ function createQuote(verifierAddress = VERIFIER): SwapQuote {
 	};
 }
 
+function createTransferQuote(verifierAddress = VERIFIER): SwapQuote {
+	return {
+		...createQuote(verifierAddress),
+		verify: {
+			verifierAddress,
+			verifierData: encodeFunctionData({
+				abi: swapVerifierAbi,
+				functionName: "verifyAmountMinAndTransfer",
+				args: [TOKEN_OUT, RECEIVER, AMOUNT_OUT_MIN, BigInt(DEADLINE)],
+			}),
+			type: SwapVerificationType.TransferMin,
+			vault: TOKEN_OUT,
+			account: RECEIVER,
+			amount: AMOUNT_OUT_MIN.toString(),
+			deadline: DEADLINE,
+		},
+		transferOutputToReceiver: true,
+	};
+}
+
 function createSwapService(
 	quote: SwapQuote,
 	deploymentService = createDeploymentService(VERIFIER),
@@ -150,5 +170,51 @@ test("fetchSwapQuotes rejects when deployment has no swap verifier address", asy
 	await assert.rejects(
 		() => service.fetchSwapQuotes(createRequest()),
 		/SwapVerifier address missing for chainId 1/,
+	);
+});
+
+test("fetchWalletSwapQuote builds transfer-output request and validates transfer verifier data", async () => {
+	let requestedUrl = "";
+	const quote = createTransferQuote();
+	const service = new SwapService(
+		{ swapApiUrl: "https://swap.example" },
+		createDeploymentService(VERIFIER),
+	);
+	service.setQuerySwapQuotes(async (url) => {
+		requestedUrl = url;
+		return { success: true, data: [quote] };
+	});
+
+	const quotes = await service.fetchWalletSwapQuote({
+		chainId: CHAIN_ID,
+		fromAsset: TOKEN_IN,
+		toAsset: TOKEN_OUT,
+		amount: AMOUNT_IN,
+		receiver: RECEIVER,
+		origin: ORIGIN,
+		slippage: 0.5,
+		deadline: DEADLINE,
+	});
+
+	assert.equal(quotes[0], quote);
+
+	const params = new URL(requestedUrl).searchParams;
+	assert.equal(
+		params.get("transferOutputToReceiver"),
+		"true",
+	);
+	assert.equal(params.get("skipSweepDepositOut"), "true");
+	assert.equal(params.get("unusedInputReceiver"), ORIGIN);
+	assert.equal(
+		params.get("vaultIn"),
+		"0x0000000000000000000000000000000000000000",
+	);
+	assert.equal(
+		params.get("accountIn"),
+		"0x0000000000000000000000000000000000000000",
+	);
+	assert.equal(
+		params.get("accountOut"),
+		"0x0000000000000000000000000000000000000000",
 	);
 });

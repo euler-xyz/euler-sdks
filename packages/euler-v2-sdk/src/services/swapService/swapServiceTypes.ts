@@ -108,6 +108,18 @@ export interface GetDepositQuoteArgs {
 	provider?: string; // preselected provider, see fetchProviders
 }
 
+export interface GetWalletSwapQuoteArgs {
+	chainId: number;
+	fromAsset: Address;
+	toAsset: Address;
+	amount: bigint;
+	receiver: Address; // wallet/address receiving the output token
+	origin: Address; // EOA sending the tx and later providing tokenIn via transferFromSender
+	slippage: number;
+	deadline?: number;
+	provider?: string; // preselected provider, see fetchProviders
+}
+
 export interface SwapperData {
 	swapperAddress: Address;
 	swapperData: Hex; // multicall calldata

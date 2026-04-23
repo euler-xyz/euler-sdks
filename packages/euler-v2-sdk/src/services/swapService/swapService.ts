@@ -1,4 +1,4 @@
-import { type Address, encodeFunctionData, getAddress } from "viem";
+import { type Address, encodeFunctionData, getAddress, zeroAddress } from "viem";
 import type {
 	SwapQuote,
 	SwapQuoteRequest,
@@ -6,6 +6,7 @@ import type {
 	SwapProvidersApiResponse,
 	GetRepayQuoteArgs,
 	GetDepositQuoteArgs,
+	GetWalletSwapQuoteArgs,
 } from "./swapServiceTypes.js";
 import { SwapperMode } from "./swapServiceTypes.js";
 import { swapVerifierAbi } from "./swapVerifierAbi.js";
@@ -24,6 +25,8 @@ export interface ISwapService {
 	fetchRepayQuotes(args: GetRepayQuoteArgs): Promise<SwapQuote[]>;
 	/** Fetches swap quotes for swapping collateral between vaults (withdraw → swap → deposit). */
 	fetchDepositQuote(args: GetDepositQuoteArgs): Promise<SwapQuote[]>;
+	/** Fetches swap quotes for swapping wallet input to wallet output (transferFromSender → swap → transferOutputToReceiver). */
+	fetchWalletSwapQuote(args: GetWalletSwapQuoteArgs): Promise<SwapQuote[]>;
 	/** Fetches available swap providers for a given chain. */
 	fetchProviders(chainId: number): Promise<string[]>;
 }
@@ -449,6 +452,69 @@ export class SwapService implements ISwapService {
 			deadline: deadline ?? 0,
 			unusedInputReceiver: args.unusedInputReceiver,
 			skipSweepDepositOut: args.skipSweepDepositOut,
+			provider: args.provider,
+		});
+
+		if (quotes.length === 0) {
+			throw new Error("No swap quotes available");
+		}
+
+		return quotes;
+	}
+
+	/**
+	 * Fetches swap quotes for swapping a wallet token into another wallet token.
+	 * Delegates to fetchSwapQuotes with zero-address vault/account placeholders,
+	 * `unusedInputReceiver` set to origin, `skipSweepDepositOut` enabled, and
+	 * `transferOutputToReceiver` enabled so the output is transferred to `receiver`.
+	 *
+	 * This helper is designed to pair with executionService.planSwapFromWallet(),
+	 * which pulls the input token from the sender wallet via SwapVerifier.transferFromSender.
+	 *
+	 * @param args - Wallet-to-wallet swap quote arguments
+	 * @param args.chainId - Chain ID
+	 * @param args.fromAsset - Wallet token to sell (tokenIn)
+	 * @param args.toAsset - Wallet token to buy (tokenOut)
+	 * @param args.amount - Amount of fromAsset to swap (exact-in)
+	 * @param args.receiver - Address that receives the output token
+	 * @param args.origin - EOA sending the transaction and later authorizing transferFromSender
+	 * @param args.slippage - Slippage in percent (0–50)
+	 * @param args.deadline - Quote deadline timestamp in seconds (optional)
+	 * @returns Promise of array of swap quotes (verify type transferMin). Throws if slippage invalid or no quotes.
+	 */
+	async fetchWalletSwapQuote(args: GetWalletSwapQuoteArgs): Promise<SwapQuote[]> {
+		const {
+			chainId,
+			fromAsset,
+			toAsset,
+			amount,
+			receiver,
+			origin,
+			slippage,
+			deadline,
+		} = args;
+
+		this.validateSlippage(slippage);
+
+		const quotes = await this.fetchSwapQuotes({
+			chainId,
+			tokenIn: fromAsset,
+			tokenOut: toAsset,
+			accountIn: zeroAddress,
+			accountOut: zeroAddress,
+			amount,
+			vaultIn: zeroAddress,
+			receiver,
+			origin,
+			slippage,
+			swapperMode: SwapperMode.EXACT_IN,
+			isRepay: false,
+			targetDebt: 0n,
+			currentDebt: 0n,
+			deadline: deadline ?? 0,
+			unusedInputReceiver: origin,
+			transferOutputToReceiver: true,
+			skipSweepDepositOut: true,
 			provider: args.provider,
 		});
 
