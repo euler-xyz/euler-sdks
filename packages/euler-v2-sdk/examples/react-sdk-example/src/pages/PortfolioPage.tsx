@@ -707,10 +707,37 @@ function ChainPortfolioSection({
                             : <CopyAddress address={pos.asset} />}
                         </td>
                         <td>
-                          {formatBigInt(
-                            pos.assets,
-                            pos.vault?.asset.decimals ?? 18
-                          )}
+                          <span className="portfolio-amount-tooltip-trigger">
+                            {formatBigInt(
+                              pos.assets,
+                              pos.vault?.asset.decimals ?? 18
+                            )}
+                            <span className="portfolio-amount-tooltip">
+                              <span className="portfolio-amount-tooltip-row portfolio-amount-tooltip-heading">
+                                <span>Assets</span>
+                                <span>
+                                  {formatBigInt(
+                                    pos.assets,
+                                    pos.vault?.asset.decimals ?? 18,
+                                    6
+                                  )}{" "}
+                                  {pos.vault?.asset.symbol ?? ""}
+                                </span>
+                              </span>
+                              <span className="portfolio-amount-tooltip-divider" />
+                              <span className="portfolio-amount-tooltip-row">
+                                <span>Shares</span>
+                                <span>
+                                  {formatBigInt(
+                                    pos.shares,
+                                    pos.vault?.shares.decimals ?? 18,
+                                    6
+                                  )}{" "}
+                                  {pos.vault?.shares.symbol ?? ""}
+                                </span>
+                              </span>
+                            </span>
+                          </span>
                         </td>
                         <td>
                           {pos.borrowed > 0n
