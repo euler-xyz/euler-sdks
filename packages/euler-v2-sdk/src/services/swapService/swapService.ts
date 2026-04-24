@@ -127,9 +127,10 @@ export class SwapService implements ISwapService {
 			throw new Error("Swap API returned unsuccessful response");
 		}
 
-		// Validate verifier data for each quote
+		// Validate verifier and slippage data for each quote
 		for (const quote of jsonData.data) {
 			this.validateVerifierData(request, quote);
+			this.validateSlippageData(request, quote);
 		}
 
 		return jsonData.data;
@@ -526,10 +527,73 @@ export class SwapService implements ISwapService {
 	}
 
 	private validateSlippage(slippage: number): void {
-		if (slippage === undefined || slippage > MAX_SLIPPAGE || slippage < 0) {
+		if (
+			slippage === undefined ||
+			!Number.isFinite(slippage) ||
+			slippage > MAX_SLIPPAGE ||
+			slippage < 0
+		) {
 			throw new Error(
 				"Valid slippage between 0 and 50% must be provided for swap",
 			);
 		}
+	}
+
+	private validateSlippageData(
+		request: SwapQuoteRequest,
+		quote: SwapQuote,
+	): void {
+		if (request.swapperMode === SwapperMode.TARGET_DEBT) {
+			const amountIn = BigInt(quote.amountIn);
+			const amountInMax = BigInt(quote.amountInMax);
+			const expectedAmountInMax = this.applySlippageToInput(
+				amountIn,
+				request.slippage,
+			);
+
+			if (amountInMax > expectedAmountInMax) {
+				throw new Error("Swap quote amountInMax exceeds requested slippage");
+			}
+		} else {
+			const amountOut = BigInt(quote.amountOut);
+			const amountOutMin = BigInt(quote.amountOutMin);
+			const expectedAmountOutMin = this.applySlippageToOutput(
+				amountOut,
+				request.slippage,
+			);
+
+			if (amountOutMin < expectedAmountOutMin) {
+				throw new Error("Swap quote amountOutMin exceeds requested slippage");
+			}
+		}
+	}
+
+	private applySlippageToOutput(amount: bigint, slippage: number): bigint {
+		const { slippageUnits, denominator } = this.parseSlippagePercent(slippage);
+		return (amount * (denominator - slippageUnits)) / denominator;
+	}
+
+	private applySlippageToInput(amount: bigint, slippage: number): bigint {
+		const { slippageUnits, denominator } = this.parseSlippagePercent(slippage);
+		return (amount * (denominator + slippageUnits) + denominator - 1n) /
+			denominator;
+	}
+
+	private parseSlippagePercent(slippage: number): {
+		slippageUnits: bigint;
+		denominator: bigint;
+	} {
+		const slippageString = slippage.toLocaleString("en-US", {
+			useGrouping: false,
+			maximumFractionDigits: 20,
+		});
+		const [whole = "0", fraction = ""] = slippageString.split(".");
+		const scale = 10n ** BigInt(fraction.length);
+		const slippageUnits = BigInt(whole) * scale + BigInt(fraction || "0");
+
+		return {
+			slippageUnits,
+			denominator: 100n * scale,
+		};
 	}
 }

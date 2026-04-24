@@ -24,7 +24,9 @@ const VERIFIER = "0x0000000000000000000000000000000000000033";
 const OTHER_VERIFIER = "0x0000000000000000000000000000000000000044";
 const DEADLINE = 123456;
 const AMOUNT_IN = 1000n;
-const AMOUNT_OUT_MIN = 900n;
+const AMOUNT_IN_MAX = 1005n;
+const AMOUNT_OUT = 950n;
+const AMOUNT_OUT_MIN = 945n;
 
 function createDeploymentService(swapVerifier?: string): IDeploymentService {
 	return {
@@ -62,12 +64,40 @@ function createRequest(): SwapQuoteRequest {
 	};
 }
 
-function createQuote(verifierAddress = VERIFIER): SwapQuote {
+function encodeSkimVerifierData(amountOutMin: bigint) {
+	return encodeFunctionData({
+		abi: swapVerifierAbi,
+		functionName: "verifyAmountMinAndSkim",
+		args: [RECEIVER, ACCOUNT_OUT, amountOutMin, BigInt(DEADLINE)],
+	});
+}
+
+function encodeDebtVerifierData(amountMax: bigint) {
+	return encodeFunctionData({
+		abi: swapVerifierAbi,
+		functionName: "verifyDebtMax",
+		args: [RECEIVER, ACCOUNT_OUT, amountMax, BigInt(DEADLINE)],
+	});
+}
+
+function createQuote({
+	verifierAddress = VERIFIER,
+	amountIn = AMOUNT_IN,
+	amountInMax = AMOUNT_IN_MAX,
+	amountOut = AMOUNT_OUT,
+	amountOutMin = AMOUNT_OUT_MIN,
+}: {
+	verifierAddress?: string;
+	amountIn?: bigint;
+	amountInMax?: bigint;
+	amountOut?: bigint;
+	amountOutMin?: bigint;
+} = {}): SwapQuote {
 	return {
-		amountIn: AMOUNT_IN.toString(),
-		amountInMax: AMOUNT_IN.toString(),
-		amountOut: "950",
-		amountOutMin: AMOUNT_OUT_MIN.toString(),
+		amountIn: amountIn.toString(),
+		amountInMax: amountInMax.toString(),
+		amountOut: amountOut.toString(),
+		amountOutMin: amountOutMin.toString(),
 		accountIn: ACCOUNT_IN,
 		accountOut: ACCOUNT_OUT,
 		vaultIn: VAULT_IN,
@@ -96,24 +126,43 @@ function createQuote(verifierAddress = VERIFIER): SwapQuote {
 		},
 		verify: {
 			verifierAddress,
-			verifierData: encodeFunctionData({
-				abi: swapVerifierAbi,
-				functionName: "verifyAmountMinAndSkim",
-				args: [RECEIVER, ACCOUNT_OUT, AMOUNT_OUT_MIN, BigInt(DEADLINE)],
-			}),
+			verifierData: encodeSkimVerifierData(amountOutMin),
 			type: SwapVerificationType.SkimMin,
 			vault: RECEIVER,
 			account: ACCOUNT_OUT,
-			amount: AMOUNT_OUT_MIN.toString(),
+			amount: amountOutMin.toString(),
 			deadline: DEADLINE,
 		},
 		route: [{ providerName: "test" }],
 	};
 }
 
+function createTargetDebtQuote({
+	amountIn = AMOUNT_IN,
+	amountInMax = AMOUNT_IN_MAX,
+	targetDebt = 0n,
+}: {
+	amountIn?: bigint;
+	amountInMax?: bigint;
+	targetDebt?: bigint;
+} = {}): SwapQuote {
+	return {
+		...createQuote({ amountIn, amountInMax }),
+		verify: {
+			verifierAddress: VERIFIER,
+			verifierData: encodeDebtVerifierData(targetDebt),
+			type: SwapVerificationType.DebtMax,
+			vault: RECEIVER,
+			account: ACCOUNT_OUT,
+			amount: targetDebt.toString(),
+			deadline: DEADLINE,
+		},
+	};
+}
+
 function createTransferQuote(verifierAddress = VERIFIER): SwapQuote {
 	return {
-		...createQuote(verifierAddress),
+		...createQuote({ verifierAddress }),
 		verify: {
 			verifierAddress,
 			verifierData: encodeFunctionData({
@@ -153,7 +202,9 @@ test("fetchSwapQuotes accepts verifier address from deployment service", async (
 });
 
 test("fetchSwapQuotes rejects verifier address that differs from deployment service", async () => {
-	const service = createSwapService(createQuote(OTHER_VERIFIER));
+	const service = createSwapService(
+		createQuote({ verifierAddress: OTHER_VERIFIER }),
+	);
 
 	await assert.rejects(
 		() => service.fetchSwapQuotes(createRequest()),
@@ -170,6 +221,45 @@ test("fetchSwapQuotes rejects when deployment has no swap verifier address", asy
 	await assert.rejects(
 		() => service.fetchSwapQuotes(createRequest()),
 		/SwapVerifier address missing for chainId 1/,
+	);
+});
+
+test("fetchSwapQuotes rejects verifier calldata that does not match quote fields", async () => {
+	const quote = createQuote();
+	quote.verify.verifierData = encodeSkimVerifierData(AMOUNT_OUT_MIN - 1n);
+	const service = createSwapService(quote);
+
+	await assert.rejects(
+		() => service.fetchSwapQuotes(createRequest()),
+		/SwapVerifier data mismatch/,
+	);
+});
+
+test("fetchSwapQuotes rejects amountOutMin below requested slippage", async () => {
+	const looseAmountOutMin = AMOUNT_OUT_MIN - 1n;
+	const service = createSwapService(
+		createQuote({ amountOutMin: looseAmountOutMin }),
+	);
+
+	await assert.rejects(
+		() => service.fetchSwapQuotes(createRequest()),
+		/amountOutMin exceeds requested slippage/,
+	);
+});
+
+test("fetchSwapQuotes rejects amountInMax above requested slippage for target-debt quotes", async () => {
+	const quote = createTargetDebtQuote({ amountInMax: AMOUNT_IN_MAX + 1n });
+	const service = createSwapService(quote);
+	const request = {
+		...createRequest(),
+		swapperMode: SwapperMode.TARGET_DEBT,
+		isRepay: true,
+		targetDebt: 0n,
+	};
+
+	await assert.rejects(
+		() => service.fetchSwapQuotes(request),
+		/amountInMax exceeds requested slippage/,
 	);
 });
 
