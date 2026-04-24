@@ -33,6 +33,8 @@ export interface ISwapService {
 
 const DEFAULT_DEADLINE = 1800; // 30 minutes
 const MAX_SLIPPAGE = 50;
+const SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR = 10_000n;
+const SLIPPAGE_VALIDATION_TOLERANCE_UNITS = 1n; // 0.01%
 
 export class SwapService implements ISwapService {
 	constructor(
@@ -550,8 +552,11 @@ export class SwapService implements ISwapService {
 				amountIn,
 				request.slippage,
 			);
+			const allowedAmountInMax = this.applyInputValidationTolerance(
+				expectedAmountInMax,
+			);
 
-			if (amountInMax > expectedAmountInMax) {
+			if (amountInMax > allowedAmountInMax) {
 				throw new Error("Swap quote amountInMax exceeds requested slippage");
 			}
 		} else {
@@ -561,11 +566,32 @@ export class SwapService implements ISwapService {
 				amountOut,
 				request.slippage,
 			);
+			const allowedAmountOutMin = this.applyOutputValidationTolerance(
+				expectedAmountOutMin,
+			);
 
-			if (amountOutMin < expectedAmountOutMin) {
+			if (amountOutMin < allowedAmountOutMin) {
 				throw new Error("Swap quote amountOutMin exceeds requested slippage");
 			}
 		}
+	}
+
+	private applyOutputValidationTolerance(amount: bigint): bigint {
+		return (
+			amount *
+			(SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR -
+				SLIPPAGE_VALIDATION_TOLERANCE_UNITS)
+		) / SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR;
+	}
+
+	private applyInputValidationTolerance(amount: bigint): bigint {
+		return (
+			amount *
+				(SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR +
+					SLIPPAGE_VALIDATION_TOLERANCE_UNITS) +
+			SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR -
+			1n
+		) / SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR;
 	}
 
 	private applySlippageToOutput(amount: bigint, slippage: number): bigint {

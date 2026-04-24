@@ -236,7 +236,7 @@ test("fetchSwapQuotes rejects verifier calldata that does not match quote fields
 });
 
 test("fetchSwapQuotes rejects amountOutMin below requested slippage", async () => {
-	const looseAmountOutMin = AMOUNT_OUT_MIN - 1n;
+	const looseAmountOutMin = AMOUNT_OUT_MIN - 2n;
 	const service = createSwapService(
 		createQuote({ amountOutMin: looseAmountOutMin }),
 	);
@@ -247,8 +247,18 @@ test("fetchSwapQuotes rejects amountOutMin below requested slippage", async () =
 	);
 });
 
+test("fetchSwapQuotes allows 0.01% multiplicative divergence for amountOutMin", async () => {
+	const toleratedAmountOutMin = AMOUNT_OUT_MIN - 1n;
+	const quote = createQuote({ amountOutMin: toleratedAmountOutMin });
+	const service = createSwapService(quote);
+
+	const quotes = await service.fetchSwapQuotes(createRequest());
+
+	assert.equal(quotes[0], quote);
+});
+
 test("fetchSwapQuotes rejects amountInMax above requested slippage for target-debt quotes", async () => {
-	const quote = createTargetDebtQuote({ amountInMax: AMOUNT_IN_MAX + 1n });
+	const quote = createTargetDebtQuote({ amountInMax: AMOUNT_IN_MAX + 2n });
 	const service = createSwapService(quote);
 	const request = {
 		...createRequest(),
@@ -261,6 +271,21 @@ test("fetchSwapQuotes rejects amountInMax above requested slippage for target-de
 		() => service.fetchSwapQuotes(request),
 		/amountInMax exceeds requested slippage/,
 	);
+});
+
+test("fetchSwapQuotes allows 0.01% multiplicative divergence for amountInMax", async () => {
+	const quote = createTargetDebtQuote({ amountInMax: AMOUNT_IN_MAX + 1n });
+	const service = createSwapService(quote);
+	const request = {
+		...createRequest(),
+		swapperMode: SwapperMode.TARGET_DEBT,
+		isRepay: true,
+		targetDebt: 0n,
+	};
+
+	const quotes = await service.fetchSwapQuotes(request);
+
+	assert.equal(quotes[0], quote);
 });
 
 test("fetchWalletSwapQuote builds transfer-output request and validates transfer verifier data", async () => {
