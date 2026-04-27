@@ -104,40 +104,39 @@ function convertLiquidity(
 	entityId: Address,
 	errors: DataIssue[],
 ): IAccountLiquidity {
-	const collaterals = liquidity.collaterals.flatMap(
+	const convertedCollaterals = liquidity.collaterals.map(
 		(collateral, collateralIndex) => {
-			const collateralAddress = parseAddressField(
-				collateral.address,
-				{
-					path: `${path}.collaterals[${collateralIndex}].address`,
-					entityId,
-					errors,
-					source: "accountV3",
-				},
-			);
-			const value = convertAssetValue(
-				collateral.value,
-				`${path}.collaterals[${collateralIndex}].value`,
-				collateralAddress,
+			const collateralAddress = parseAddressField(collateral.address, {
+				path: `${path}.collaterals[${collateralIndex}].address`,
+				entityId,
 				errors,
-			);
-
-			if (
-				value.borrowing === 0n &&
-				value.liquidation === 0n &&
-				value.oracleMid === 0n
-			) {
-				return [];
-			}
-
-			return [
-				{
-					address: collateralAddress,
-					value,
-				},
-			];
+				source: "accountV3",
+			});
+			return {
+				address: collateralAddress,
+				value: convertAssetValue(
+					collateral.value,
+					`${path}.collaterals[${collateralIndex}].value`,
+					collateralAddress,
+					errors,
+				),
+			};
 		},
 	);
+	const hasCollateralValue = convertedCollaterals.some(
+		({ value }) =>
+			value.borrowing !== 0n ||
+			value.liquidation !== 0n ||
+			value.oracleMid !== 0n,
+	);
+	const collaterals = hasCollateralValue
+		? convertedCollaterals.filter(
+				({ value }) =>
+					value.borrowing !== 0n ||
+					value.liquidation !== 0n ||
+					value.oracleMid !== 0n,
+			)
+		: convertedCollaterals;
 
 	return {
 		vaultAddress: parseAddressField(

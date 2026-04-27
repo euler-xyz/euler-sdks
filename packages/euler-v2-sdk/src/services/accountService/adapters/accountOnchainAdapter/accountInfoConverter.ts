@@ -35,6 +35,13 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 		oracleMid: liquidityInfo.collateralValueRaw,
 	};
 
+	const hasCollateralValue = liquidityInfo.collaterals.some((_, idx) => {
+		const borrowing = liquidityInfo.collateralValuesBorrowing[idx] ?? 0n;
+		const liquidation = liquidityInfo.collateralValuesLiquidation[idx] ?? 0n;
+		const oracleMid = liquidityInfo.collateralValuesRaw[idx] ?? 0n;
+		return borrowing !== 0n || liquidation !== 0n || oracleMid !== 0n;
+	});
+
 	const collaterals = liquidityInfo.collaterals.flatMap((collateral, idx) => {
 		const collateralAddress = getAddress(collateral);
 		const borrowing = liquidityInfo.collateralValuesBorrowing[idx];
@@ -82,6 +89,7 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 		};
 
 		if (
+			hasCollateralValue &&
 			value.borrowing === 0n &&
 			value.liquidation === 0n &&
 			value.oracleMid === 0n
