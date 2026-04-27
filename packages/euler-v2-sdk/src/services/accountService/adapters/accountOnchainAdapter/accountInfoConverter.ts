@@ -35,7 +35,7 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 		oracleMid: liquidityInfo.collateralValueRaw,
 	};
 
-	const collaterals = liquidityInfo.collaterals.map((collateral, idx) => {
+	const collaterals = liquidityInfo.collaterals.flatMap((collateral, idx) => {
 		const collateralAddress = getAddress(collateral);
 		const borrowing = liquidityInfo.collateralValuesBorrowing[idx];
 		const liquidation = liquidityInfo.collateralValuesLiquidation[idx];
@@ -75,14 +75,26 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 			});
 		}
 
-		return {
-			address: collateralAddress,
-			value: {
-				borrowing: borrowing ?? 0n,
-				liquidation: liquidation ?? 0n,
-				oracleMid: oracleMid ?? 0n,
-			},
+		const value = {
+			borrowing: borrowing ?? 0n,
+			liquidation: liquidation ?? 0n,
+			oracleMid: oracleMid ?? 0n,
 		};
+
+		if (
+			value.borrowing === 0n &&
+			value.liquidation === 0n &&
+			value.oracleMid === 0n
+		) {
+			return [];
+		}
+
+		return [
+			{
+				address: collateralAddress,
+				value,
+			},
+		];
 	});
 
 	let daysToLiquidation: DaysToLiquidation = "Infinity";
