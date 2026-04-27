@@ -251,6 +251,20 @@ export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
 	}
 }
 
+export interface AccountPortfolioBorrow<
+	TVaultEntity extends IHasVaultAddress = never,
+> {
+	borrow: AccountPosition<TVaultEntity>;
+	collaterals: AccountPosition<TVaultEntity>[];
+}
+
+export interface AccountPortfolio<
+	TVaultEntity extends IHasVaultAddress = never,
+> {
+	savings: AccountPosition<TVaultEntity>[];
+	borrows: AccountPortfolioBorrow<TVaultEntity>[];
+}
+
 // ---------------------------------------------------------------------------
 // SubAccount
 // ---------------------------------------------------------------------------
@@ -733,6 +747,69 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 		const borrowed = this.totalBorrowedValueUsd;
 		if (supplied == null) return undefined;
 		return supplied - (borrowed ?? 0n);
+	}
+
+	/**
+	 * Top-level portfolio view across all sub-accounts.
+	 *
+	 * A position with debt is listed as a borrow. Its deposit side is still listed
+	 * as savings unless that vault is actively used as collateral for a borrow in
+	 * the same sub-account.
+	 */
+	get portfolio(): AccountPortfolio<TVaultEntity> {
+		const savings: AccountPosition<TVaultEntity>[] = [];
+		const borrows: AccountPortfolioBorrow<TVaultEntity>[] = [];
+		const collateralUsageSet = new Set<string>();
+		const collateralKey = (subAccount: Address, vault: Address) =>
+			`${getAddress(subAccount)}:${getAddress(vault)}`;
+
+		for (const sa of Object.values(this.subAccounts ?? {})) {
+			if (!sa) continue;
+			for (const borrow of sa.positions) {
+				if (borrow.borrowed === 0n) continue;
+
+				const liquidityCollaterals =
+					borrow.liquidity?.collaterals.map((collateral) =>
+						getAddress(collateral.address),
+					) ?? [];
+				const collateralAddresses =
+					liquidityCollaterals.length > 0
+						? liquidityCollaterals
+						: sa.enabledCollaterals.map((collateral) => getAddress(collateral));
+
+				for (const collateralAddress of collateralAddresses) {
+					collateralUsageSet.add(
+						collateralKey(borrow.account, collateralAddress),
+					);
+				}
+
+				const collaterals = collateralAddresses.flatMap((collateralAddress) => {
+					const collateral = sa.positions.find((position) =>
+						isAddressEqual(position.vaultAddress, collateralAddress),
+					);
+					return collateral ? [collateral] : [];
+				});
+
+				borrows.push({ borrow, collaterals });
+			}
+		}
+
+		for (const sa of Object.values(this.subAccounts ?? {})) {
+			if (!sa) continue;
+			for (const position of sa.positions) {
+				if (position.assets === 0n && position.shares === 0n) continue;
+				if (
+					collateralUsageSet.has(
+						collateralKey(position.account, position.vaultAddress),
+					)
+				) {
+					continue;
+				}
+				savings.push(position);
+			}
+		}
+
+		return { savings, borrows };
 	}
 
 	/** Total unclaimed rewards value in USD (18 dec). `undefined` if no user rewards populated. */

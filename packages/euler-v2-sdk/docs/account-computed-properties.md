@@ -99,10 +99,32 @@ Returns `undefined` when vault entities are not populated, no APY data is availa
 
 | Property | Type | Prerequisites | Description |
 |---|---|---|---|
+| `portfolio` | `{ savings: AccountPosition[]; borrows: { borrow: AccountPosition; collaterals: AccountPosition[] }[] }` | Position data (included by default) | Top-level categorized view across all sub-accounts. |
 | `totalSuppliedValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Sum of `suppliedValueUsd` across all positions in all sub-accounts (18 dec). |
 | `totalBorrowedValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Sum of `borrowedValueUsd` across all positions in all sub-accounts (18 dec). |
 | `netAssetValueUsd` | `bigint \| undefined` | `populateMarketPrices` | `totalSuppliedValueUsd - totalBorrowedValueUsd` (18 dec). |
 | `totalRewardsValueUsd` | `bigint \| undefined` | `populateUserRewards` | Total value of unclaimed reward tokens in USD (18 dec). |
+
+### Portfolio Categorization
+
+`account.portfolio` groups an account's raw sub-account positions into the same top-level concepts used by the app:
+
+```typescript
+const { savings, borrows } = account.portfolio
+
+for (const saving of savings) {
+  console.log(saving.account, saving.vaultAddress, saving.assets)
+}
+
+for (const { borrow, collaterals } of borrows) {
+  console.log(borrow.account, borrow.vaultAddress, borrow.borrowed)
+  console.log(collaterals.map((collateral) => collateral.vaultAddress))
+}
+```
+
+`savings` contains supplied positions that are not actively supporting debt in the same sub-account. `borrows` contains every position with debt, plus the supplied positions from that same sub-account that are active collateral for the borrow. If one `AccountPosition` has both debt and a supplied balance, the debt is represented in `borrows`; the supplied side is also included in `savings` unless that same vault is active collateral for a borrow in the same sub-account.
+
+Collateral membership is taken from borrow liquidity data when available, with enabled collaterals used as a defensive fallback.
 
 ## Standalone Yield Utilities
 
