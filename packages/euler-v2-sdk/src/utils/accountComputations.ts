@@ -265,7 +265,6 @@ export function computeSubAccountRoe(
 /**
  * Net APY across the full account, relative to total supplied value.
  *
- * Mirrors the euler-lite portfolio metric:
  * `totalNetYield / totalSupplyUsd`, where net yield includes supply APY,
  * borrow costs, supply/borrow reward APRs, and intrinsic APY.
  */
@@ -279,15 +278,40 @@ export function computeAccountNetApy(
 }
 
 /**
+ * Net APY across a pre-filtered set of positions, relative to supplied value.
+ * Use this when a higher-level view intentionally excludes some account positions.
+ */
+export function computePositionsNetApy(
+	positions: Iterable<AccountYieldPosition>,
+): number | undefined {
+	const totals = computePositionYieldTotals(positions);
+	if (!totals) return undefined;
+	if (totals.totalSupplyUsd === 0) return 0;
+	return totals.totalNetYield / totals.totalSupplyUsd;
+}
+
+/**
  * Return on equity across the full account, relative to net asset value.
  *
- * Mirrors the euler-lite portfolio metric:
  * `totalNetYield / (totalSupplyUsd - totalBorrowUsd)`.
  */
 export function computeAccountRoe(
 	account: IAccount<IHasVaultAddress>,
 ): number | undefined {
 	const totals = computeAccountYieldTotals(account);
+	if (!totals) return undefined;
+	if (totals.totalEquityUsd <= 0) return 0;
+	return totals.totalNetYield / totals.totalEquityUsd;
+}
+
+/**
+ * Return on equity across a pre-filtered set of positions, relative to net asset value.
+ * Use this when a higher-level view intentionally excludes some account positions.
+ */
+export function computePositionsRoe(
+	positions: Iterable<AccountYieldPosition>,
+): number | undefined {
+	const totals = computePositionYieldTotals(positions);
 	if (!totals) return undefined;
 	if (totals.totalEquityUsd <= 0) return 0;
 	return totals.totalNetYield / totals.totalEquityUsd;
@@ -397,46 +421,61 @@ interface AccountYieldTotals {
 	totalSupplyUsd: number;
 }
 
+export interface AccountYieldPosition {
+	vault?: IHasVaultAddress;
+	suppliedValueUsd?: bigint;
+	borrowedValueUsd?: bigint;
+}
+
 function computeAccountYieldTotals(
 	account: IAccount<IHasVaultAddress>,
+): AccountYieldTotals | undefined {
+	function* positions(): Iterable<AccountYieldPosition> {
+		for (const subAccount of Object.values(account.subAccounts ?? {})) {
+			if (!subAccount) continue;
+			yield* subAccount.positions;
+		}
+	}
+
+	return computePositionYieldTotals(positions());
+}
+
+function computePositionYieldTotals(
+	positions: Iterable<AccountYieldPosition>,
 ): AccountYieldTotals | undefined {
 	let totalNetYield = 0;
 	let totalSupplyUsd = 0;
 	let totalBorrowUsd = 0;
 	let hasUsdData = false;
 
-	for (const subAccount of Object.values(account.subAccounts ?? {})) {
-		if (!subAccount) continue;
+	for (const position of positions) {
+		const vault = position.vault as any;
+		if (!vault) continue;
 
-		for (const position of subAccount.positions) {
-			const vault = position.vault as any;
-			if (!vault) continue;
+		if (position.suppliedValueUsd != null && position.suppliedValueUsd > 0n) {
+			const supplyUsd = Number(position.suppliedValueUsd) / 1e18;
+			const supplyApy = applyIntrinsicApy(
+				getVaultSupplyApy(vault) ?? 0,
+				getVaultIntrinsicApy(vault),
+			);
+			const supplyRewardApy = getVaultRewardApr(vault, "LEND");
 
-			if (position.suppliedValueUsd != null && position.suppliedValueUsd > 0n) {
-				const supplyUsd = Number(position.suppliedValueUsd) / 1e18;
-				const supplyApy = applyIntrinsicApy(
-					getVaultSupplyApy(vault) ?? 0,
-					getVaultIntrinsicApy(vault),
-				);
-				const supplyRewardApy = getVaultRewardApr(vault, "LEND");
+			totalNetYield += supplyUsd * (supplyApy + supplyRewardApy);
+			totalSupplyUsd += supplyUsd;
+			hasUsdData = true;
+		}
 
-				totalNetYield += supplyUsd * (supplyApy + supplyRewardApy);
-				totalSupplyUsd += supplyUsd;
-				hasUsdData = true;
-			}
+		if (position.borrowedValueUsd != null && position.borrowedValueUsd > 0n) {
+			const borrowUsd = Number(position.borrowedValueUsd) / 1e18;
+			const borrowApy = applyIntrinsicApy(
+				getVaultBorrowApy(vault) ?? 0,
+				getVaultIntrinsicApy(vault),
+			);
+			const borrowRewardApy = getVaultRewardApr(vault, "BORROW");
 
-			if (position.borrowedValueUsd != null && position.borrowedValueUsd > 0n) {
-				const borrowUsd = Number(position.borrowedValueUsd) / 1e18;
-				const borrowApy = applyIntrinsicApy(
-					getVaultBorrowApy(vault) ?? 0,
-					getVaultIntrinsicApy(vault),
-				);
-				const borrowRewardApy = getVaultRewardApr(vault, "BORROW");
-
-				totalNetYield -= borrowUsd * (borrowApy - borrowRewardApy);
-				totalBorrowUsd += borrowUsd;
-				hasUsdData = true;
-			}
+			totalNetYield -= borrowUsd * (borrowApy - borrowRewardApy);
+			totalBorrowUsd += borrowUsd;
+			hasUsdData = true;
 		}
 	}
 

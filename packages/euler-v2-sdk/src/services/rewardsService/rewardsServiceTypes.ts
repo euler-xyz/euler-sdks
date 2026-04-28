@@ -66,9 +66,9 @@ export interface RewardsDirectAdapterConfig {
 	brevisProofsApiUrl?: string;
 	/** Public Fuul incentives API base URL. */
 	fuulApiUrl?: string;
-	/** Optional app-hosted endpoint for Fuul totals. */
+	/** Optional caller-hosted endpoint for Fuul totals. */
 	fuulTotalsUrl?: string;
-	/** Optional app-hosted endpoint for Fuul claim checks. */
+	/** Optional caller-hosted endpoint for Fuul claim checks. */
 	fuulClaimChecksUrl?: string;
 	/** Chain IDs for which Brevis campaigns should be fetched (default: [1]). */
 	brevisChainIds?: number[];
@@ -99,9 +99,9 @@ export interface RewardsServiceConfig {
 	brevisProofsApiUrl?: string;
 	/** Public Fuul incentives API base URL. */
 	fuulApiUrl?: string;
-	/** Optional app-hosted endpoint for Fuul totals. */
+	/** Optional caller-hosted endpoint for Fuul totals. */
 	fuulTotalsUrl?: string;
-	/** Optional app-hosted endpoint for Fuul claim checks. */
+	/** Optional caller-hosted endpoint for Fuul claim checks. */
 	fuulClaimChecksUrl?: string;
 	/** Chain IDs for which Brevis campaigns should be fetched (default: [1]). */
 	brevisChainIds?: number[];

@@ -1,5 +1,10 @@
 import { type Address, getAddress, isAddressEqual } from "viem";
-import { getSubAccountAddress } from "../utils/subAccounts.js";
+import {
+	type GetFreeSubAccountsOptions,
+	getFreeSubAccounts as getFreeSubAccountAddresses,
+	getSubAccountAddress,
+	selectBorrowCompatibleSubAccount,
+} from "../utils/subAccounts.js";
 import type { VaultEntity } from "../services/vaults/vaultMetaService/index.js";
 import type { IVaultMetaService } from "../services/vaults/vaultMetaService/index.js";
 import type { VaultFetchOptions } from "../services/vaults/index.js";
@@ -23,8 +28,6 @@ import {
 	computeSubAccountLiabilityValueUsd,
 	computeSubAccountNetValueUsd,
 	computeSubAccountRoe,
-	computeAccountNetApy,
-	computeAccountRoe,
 	computeCollateralLiquidationPrices,
 	computeBorrowLiquidationPrice,
 } from "../utils/accountComputations.js";
@@ -245,21 +248,6 @@ export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
 
 		return Object.keys(result).length > 0 ? result : undefined;
 	}
-
-}
-
-export interface AccountPortfolioBorrow<
-	TVaultEntity extends IHasVaultAddress = never,
-> {
-	borrow: AccountPosition<TVaultEntity>;
-	collaterals: AccountPosition<TVaultEntity>[];
-}
-
-export interface AccountPortfolio<
-	TVaultEntity extends IHasVaultAddress = never,
-> {
-	savings: AccountPosition<TVaultEntity>[];
-	borrows: AccountPortfolioBorrow<TVaultEntity>[];
 }
 
 // ---------------------------------------------------------------------------
@@ -384,10 +372,14 @@ export interface IAccount<TVaultEntity extends IHasVaultAddress = never> {
 	isLockdownMode?: boolean;
 	isPermitDisabledMode?: boolean;
 	populated?: Partial<AccountPopulated>;
-	/** Net APY across all positions (decimal fraction, 0.05 = 5%). Requires populated vaults + market prices. */
-	readonly netApy?: number;
-	/** Return on equity across all positions (decimal fraction, 0.05 = 5%). Requires populated vaults + market prices. */
-	readonly roe?: number;
+}
+
+export interface GetNextSubAccountOptions extends GetFreeSubAccountsOptions {
+	/**
+	 * Borrow vault being opened. When provided, existing deposits and borrows are
+	 * treated as occupied and enabled controllers must be compatible.
+	 */
+	borrowVault?: Address;
 }
 
 export class Account<TVaultEntity extends IHasVaultAddress = never>
@@ -430,6 +422,53 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 
 	getSubAccountById(id: number): SubAccount<TVaultEntity> | undefined {
 		return this.subAccounts[getSubAccountAddress(this.owner, id)];
+	}
+
+	/**
+	 * Returns sub-account addresses with no active supplied or borrowed position.
+	 */
+	getFreeSubAccounts(options: GetFreeSubAccountsOptions = {}): Address[] {
+		return getFreeSubAccountAddresses(
+			this.owner,
+			this.occupiedPositionSubAccounts(),
+			options,
+		);
+	}
+
+	/**
+	 * Returns the first sub-account address suitable for opening a new position.
+	 *
+	 * Without `borrowVault`, only active borrow sub-accounts are treated as
+	 * occupied. With `borrowVault`, active supplied and borrowed sub-accounts are
+	 * treated as occupied and any known enabled controllers must match that vault.
+	 */
+	getNextSubAccount(
+		options: GetNextSubAccountOptions = {},
+	): Address | undefined {
+		const occupied = options.borrowVault
+			? this.occupiedPositionSubAccounts()
+			: this.borrowPositionSubAccounts();
+		const freeSubAccounts = getFreeSubAccountAddresses(
+			this.owner,
+			occupied,
+			options,
+		);
+
+		if (!options.borrowVault) return freeSubAccounts[0];
+
+		return selectBorrowCompatibleSubAccount(
+			freeSubAccounts.map((subAccount) => ({
+				subAccount,
+				enabledControllers:
+					this.getSubAccount(subAccount)?.enabledControllers ?? [],
+			})),
+			options.borrowVault,
+		);
+	}
+
+	/** Alias for callers using new-position terminology. */
+	getNewSubAccount(options: GetNextSubAccountOptions = {}): Address | undefined {
+		return this.getNextSubAccount(options);
 	}
 
 	getPosition(
@@ -475,6 +514,29 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 		if (!subAccount || subAccount.enabledControllers.length === 0)
 			return undefined;
 		return subAccount.enabledControllers[0];
+	}
+
+	private occupiedPositionSubAccounts(): Address[] {
+		return this.subAccountsWithPosition((position) =>
+			hasActiveSuppliedPosition(position) || position.borrowed > 0n,
+		);
+	}
+
+	private borrowPositionSubAccounts(): Address[] {
+		return this.subAccountsWithPosition((position) => position.borrowed > 0n);
+	}
+
+	private subAccountsWithPosition(
+		predicate: (position: AccountPosition<TVaultEntity>) => boolean,
+	): Address[] {
+		const subAccounts = new Set<Address>();
+		for (const subAccount of Object.values(this.subAccounts ?? {})) {
+			if (!subAccount) continue;
+			if (subAccount.positions.some(predicate)) {
+				subAccounts.add(getAddress(subAccount.account));
+			}
+		}
+		return Array.from(subAccounts);
 	}
 
 	/**
@@ -714,115 +776,6 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 		return errors;
 	}
 
-	/** Sum of `suppliedValueUsd` across all positions. `undefined` if no USD data populated. */
-	get totalSuppliedValueUsd(): bigint | undefined {
-		let total: bigint | undefined;
-		for (const sa of Object.values(this.subAccounts ?? {})) {
-			if (!sa) continue;
-			for (const p of sa.positions) {
-				if (p.suppliedValueUsd != null) {
-					total = (total ?? 0n) + p.suppliedValueUsd;
-				}
-			}
-		}
-		return total;
-	}
-
-	/** Sum of `borrowedValueUsd` across all positions. `undefined` if no USD data populated. */
-	get totalBorrowedValueUsd(): bigint | undefined {
-		let total: bigint | undefined;
-		for (const sa of Object.values(this.subAccounts ?? {})) {
-			if (!sa) continue;
-			for (const p of sa.positions) {
-				if (p.borrowedValueUsd != null) {
-					total = (total ?? 0n) + p.borrowedValueUsd;
-				}
-			}
-		}
-		return total;
-	}
-
-	/** Net asset value in USD: totalSupplied - totalBorrowed. `undefined` if no USD data populated. */
-	get netAssetValueUsd(): bigint | undefined {
-		const supplied = this.totalSuppliedValueUsd;
-		const borrowed = this.totalBorrowedValueUsd;
-		if (supplied == null) return undefined;
-		return supplied - (borrowed ?? 0n);
-	}
-
-	/** Net APY across all positions (decimal fraction, 0.05 = 5%). */
-	get netApy(): number | undefined {
-		return computeAccountNetApy(this as unknown as IAccount<IHasVaultAddress>);
-	}
-
-	/** Return on equity across all positions (decimal fraction, 0.05 = 5%). */
-	get roe(): number | undefined {
-		return computeAccountRoe(this as unknown as IAccount<IHasVaultAddress>);
-	}
-
-	/**
-	 * Top-level portfolio view across all sub-accounts.
-	 *
-	 * A position with debt is listed as a borrow. Its deposit side is still listed
-	 * as savings unless that vault is actively used as collateral for a borrow in
-	 * the same sub-account.
-	 */
-	get portfolio(): AccountPortfolio<TVaultEntity> {
-		const savings: AccountPosition<TVaultEntity>[] = [];
-		const borrows: AccountPortfolioBorrow<TVaultEntity>[] = [];
-		const collateralUsageSet = new Set<string>();
-		const collateralKey = (subAccount: Address, vault: Address) =>
-			`${getAddress(subAccount)}:${getAddress(vault)}`;
-
-		for (const sa of Object.values(this.subAccounts ?? {})) {
-			if (!sa) continue;
-			for (const borrow of sa.positions) {
-				if (borrow.borrowed === 0n) continue;
-
-				const liquidityCollaterals =
-					borrow.liquidity?.collaterals.map((collateral) =>
-						getAddress(collateral.address),
-					) ?? [];
-				const collateralAddresses =
-					liquidityCollaterals.length > 0
-						? liquidityCollaterals
-						: sa.enabledCollaterals.map((collateral) => getAddress(collateral));
-
-				for (const collateralAddress of collateralAddresses) {
-					collateralUsageSet.add(
-						collateralKey(borrow.account, collateralAddress),
-					);
-				}
-
-				const collaterals = collateralAddresses.flatMap((collateralAddress) => {
-					const collateral = sa.positions.find((position) =>
-						isAddressEqual(position.vaultAddress, collateralAddress),
-					);
-					return collateral ? [collateral] : [];
-				});
-
-				borrows.push({ borrow, collaterals });
-			}
-		}
-
-		for (const sa of Object.values(this.subAccounts ?? {})) {
-			if (!sa) continue;
-			for (const position of sa.positions) {
-				if (position.assets === 0n && position.shares === 0n) continue;
-				if (
-					collateralUsageSet.has(
-						collateralKey(position.account, position.vaultAddress),
-					)
-				) {
-					continue;
-				}
-				savings.push(position);
-			}
-		}
-
-		return { savings, borrows };
-	}
-
 	/** Total unclaimed rewards value in USD (18 dec). `undefined` if no user rewards populated. */
 	get totalRewardsValueUsd(): bigint | undefined {
 		if (!this.userRewards || this.userRewards.length === 0) return undefined;
@@ -882,4 +835,10 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 		}
 		this.subAccounts = next;
 	}
+}
+
+function hasActiveSuppliedPosition<TVaultEntity extends IHasVaultAddress>(
+	position: IAccountPosition<TVaultEntity>,
+): boolean {
+	return position.assets > 0n || position.shares > 0n;
 }

@@ -14,16 +14,18 @@ import {
   type EulerSDK,
 } from "@eulerxyz/euler-v2-sdk";
 import { sdkBuildQuery } from "../queries/sdkQueries.ts";
-import { useSdkAdapterMode } from "../queries/queryOptionsStore.ts";
+import {
+  useProxyV3Calls,
+  useSdkAdapterMode,
+} from "../queries/queryOptionsStore.ts";
 import { resetQueryProfile } from "../queries/queryProfileStore.ts";
 import {
   CHAIN_NAMES,
   DEFAULT_CHAIN,
   RPC_URLS,
 } from "../config/chains.ts";
+import { getV3ApiEndpoint } from "../config/endpoints.ts";
 
-const V3_API_ENDPOINT =
-  import.meta.env.VITE_EULER_V3_ENDPOINT ?? "/api/v3";
 const SWAP_PROXY_ENDPOINT = "/api/swap";
 
 interface SdkContextValue {
@@ -39,6 +41,7 @@ const SdkContext = createContext<SdkContextValue | null>(null);
 
 export function SdkProvider({ children }: { children: ReactNode }) {
   const adapterMode = useSdkAdapterMode();
+  const proxyV3Calls = useProxyV3Calls();
   const [sdk, setSdk] = useState<EulerSDK | null>(null);
   const [chainId, setChainId] = useState(DEFAULT_CHAIN);
   const [loading, setLoading] = useState(true);
@@ -47,9 +50,15 @@ export function SdkProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     const useV3Adapters = adapterMode === "v3";
-    setLoading(true);
-    setError(null);
-    setSdk(null);
+    const v3ApiEndpoint = getV3ApiEndpoint(proxyV3Calls);
+
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setError(null);
+      setSdk(null);
+    });
+
     resetQueryProfile();
 
     const sdkConfig: BuildSDKOptions = {
@@ -59,35 +68,35 @@ export function SdkProvider({ children }: { children: ReactNode }) {
       accountServiceConfig: {
         adapter: useV3Adapters ? "v3" : "onchain",
         v3AdapterConfig: {
-          endpoint: V3_API_ENDPOINT,
+          endpoint: v3ApiEndpoint,
         },
       },
       eVaultServiceConfig: {
         adapter: useV3Adapters ? "v3" : "onchain",
         v3AdapterConfig: {
-          endpoint: V3_API_ENDPOINT,
+          endpoint: v3ApiEndpoint,
         },
       },
       eulerEarnServiceConfig: {
         adapter: useV3Adapters ? "v3" : "onchain",
         v3AdapterConfig: {
-          endpoint: V3_API_ENDPOINT,
+          endpoint: v3ApiEndpoint,
         },
       },
       intrinsicApyServiceConfig: {
         v3AdapterConfig: {
-          endpoint: V3_API_ENDPOINT,
+          endpoint: v3ApiEndpoint,
         },
       },
       rewardsServiceConfig: {
         adapter: useV3Adapters ? "v3" : "direct",
         v3AdapterConfig: {
-          endpoint: V3_API_ENDPOINT,
+          endpoint: v3ApiEndpoint,
         },
       },
       vaultTypeAdapterConfig: useV3Adapters
         ? {
-            endpoint: V3_API_ENDPOINT,
+            endpoint: v3ApiEndpoint,
           }
         : defaultVaultTypeSubgraphAdapterConfig,
       swapServiceConfig: {
@@ -97,7 +106,7 @@ export function SdkProvider({ children }: { children: ReactNode }) {
       ...(useV3Adapters
         ? {
             backendConfig: {
-              endpoint: V3_API_ENDPOINT,
+              endpoint: v3ApiEndpoint,
             },
           }
         : {}),
@@ -120,7 +129,7 @@ export function SdkProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [adapterMode]);
+  }, [adapterMode, proxyV3Calls]);
 
   const handleSetChainId = useCallback((id: number) => {
     setChainId(id);
@@ -142,6 +151,7 @@ export function SdkProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useSDK() {
   const ctx = useContext(SdkContext);
   if (!ctx) throw new Error("useSDK must be used within SdkProvider");

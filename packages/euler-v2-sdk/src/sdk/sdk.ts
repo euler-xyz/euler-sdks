@@ -1,5 +1,6 @@
 import type { IVaultEntity } from "../entities/Account.js";
 import type { IAccountService } from "../services/accountService/index.js";
+import type { IPortfolioService } from "../services/portfolioService/index.js";
 import type { IDeploymentService } from "../services/deploymentService/index.js";
 import type { IEVaultService } from "../services/vaults/eVaultService/index.js";
 import type { IEulerEarnService } from "../services/vaults/eulerEarnService/index.js";
@@ -32,6 +33,7 @@ export interface EulerSDKOptions<
 	TVaultEntity extends IVaultEntity = VaultEntity,
 > {
 	accountService: IAccountService<TVaultEntity>;
+	portfolioService: IPortfolioService<TVaultEntity>;
 	walletService: IWalletService;
 	eVaultService: IEVaultService;
 	eulerEarnService: IEulerEarnService;
@@ -55,6 +57,7 @@ export interface EulerSDKOptions<
 
 export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 	public readonly accountService: IAccountService<TVaultEntity>;
+	public readonly portfolioService: IPortfolioService<TVaultEntity>;
 	public readonly walletService: IWalletService;
 	public readonly eVaultService: IEVaultService;
 	public readonly eulerEarnService: IEulerEarnService;
@@ -77,6 +80,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 
 	constructor(options: EulerSDKOptions<TVaultEntity>) {
 		this.accountService = options.accountService;
+		this.portfolioService = options.portfolioService;
 		this.walletService = options.walletService;
 		this.eVaultService = options.eVaultService;
 		this.eulerEarnService = options.eulerEarnService;
