@@ -18,6 +18,7 @@ type Props = {
 
 type FormState = {
   adapterMode: SdkAdapterMode;
+  proxyV3Calls: boolean;
   enabledChainIds: number[];
   showQueryProfiler: boolean;
   disableCache: boolean;
@@ -33,6 +34,7 @@ type FormState = {
 function toFormState(settings: QueryOptionsSettings): FormState {
   return {
     adapterMode: settings.adapterMode,
+    proxyV3Calls: settings.proxyV3Calls,
     enabledChainIds: settings.enabledChainIds,
     showQueryProfiler: settings.showQueryProfiler,
     disableCache: settings.disableCache,
@@ -70,6 +72,7 @@ function toSettings(form: FormState): QueryOptionsSettings {
   return {
     chainSetVersion: QUERY_OPTIONS_CHAIN_SET_VERSION,
     adapterMode: form.adapterMode,
+    proxyV3Calls: form.proxyV3Calls,
     enabledChainIds: [...form.enabledChainIds].sort((a, b) => a - b),
     showQueryProfiler: form.showQueryProfiler,
     disableCache: form.disableCache,
@@ -190,6 +193,33 @@ export function QueryOptionsModal({ open, onClose }: Props) {
                       setForm((prev) => ({
                         ...prev,
                         adapterMode: event.target.checked ? "v3" : "onchain",
+                      }))
+                    }
+                  />
+                  <span className="query-options-switch-track">
+                    <span className="query-options-switch-thumb" />
+                  </span>
+                </span>
+              </label>
+
+              <label className="query-options-toggle-card">
+                <span className="query-options-toggle-copy">
+                  <span className="query-options-toggle-title">
+                    Proxy V3 calls
+                  </span>
+                  <span className="query-options-toggle-description">
+                    On routes V3 HTTP requests through the local Vite proxy.
+                    Off calls the configured V3 endpoint directly.
+                  </span>
+                </span>
+                <span className="query-options-switch">
+                  <input
+                    type="checkbox"
+                    checked={form.proxyV3Calls}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        proxyV3Calls: event.target.checked,
                       }))
                     }
                   />

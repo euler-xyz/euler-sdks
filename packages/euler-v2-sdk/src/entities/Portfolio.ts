@@ -332,7 +332,6 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 			if (!subAccount) continue;
 			for (const borrow of subAccount.positions) {
 				if (borrow.borrowed === 0n) continue;
-				if (!this.includePosition(borrow)) continue;
 
 				for (const collateralAddress of this.borrowCollateralVaults(
 					subAccount,

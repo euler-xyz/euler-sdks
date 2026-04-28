@@ -457,6 +457,71 @@ test("portfolio permanently filters positions from lists and metrics", () => {
 	assert.equal(portfolio.roe, (100 * 0.1 - 50 * 0.05) / 50);
 });
 
+test("portfolio does not expose filtered borrow collateral as savings", () => {
+	const labelled = { vault: {}, entities: [], products: [], points: [] };
+	const account = populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(subAccount, [
+				position(collateralVault, {
+					vault: vault(collateralVault, { eulerLabel: labelled }),
+					shares: 100n,
+					assets: 100n,
+					suppliedValueUsd: usd(100),
+				}),
+				position(borrowVault, {
+					vault: vault(borrowVault),
+					borrowed: 50n,
+					borrowedValueUsd: usd(50),
+					liquidity: {
+						vaultAddress: borrowVault,
+						unitOfAccount: zeroAddress,
+						daysToLiquidation: 0,
+						liabilityValue: {
+							borrowing: 50n,
+							liquidation: 50n,
+							oracleMid: 50n,
+						},
+						totalCollateralValue: {
+							borrowing: 100n,
+							liquidation: 100n,
+							oracleMid: 100n,
+						},
+						collaterals: [
+							{
+								address: collateralVault,
+								value: {
+									borrowing: 100n,
+									liquidation: 100n,
+									oracleMid: 100n,
+								},
+							},
+						],
+					},
+				}),
+				position(savingsVault, {
+					vault: vault(savingsVault, { eulerLabel: labelled }),
+					shares: 10n,
+					assets: 10n,
+					suppliedValueUsd: usd(10),
+				}),
+			]),
+		},
+	});
+
+	const portfolio = new Portfolio(account, {
+		positionFilter: (pos) => Boolean((pos.vault as any)?.eulerLabel),
+	});
+
+	assert.deepEqual(
+		portfolio.savings.map((saving) => saving.position.vaultAddress),
+		[savingsVault],
+	);
+	assert.deepEqual(portfolio.borrows, []);
+	assert.equal(portfolio.totalSuppliedValueUsd, usd(10));
+});
+
 test("portfolio getters reflect account position mutations", () => {
 	const account = populatedAccount({
 		chainId: 1,

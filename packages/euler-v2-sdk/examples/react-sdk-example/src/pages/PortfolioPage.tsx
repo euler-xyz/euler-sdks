@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
 import {
@@ -13,7 +13,11 @@ import {
   useAccountAllChainsWithDiagnostics,
   type AccountByChainResult,
 } from "../queries/sdkQueries.ts";
-import { getSubAccountId } from "@eulerxyz/euler-v2-sdk";
+import {
+  computePositionsNetApy,
+  computePositionsRoe,
+  getSubAccountId,
+} from "@eulerxyz/euler-v2-sdk";
 import { getAddress, type Address } from "viem";
 import {
   formatBigInt,
@@ -26,7 +30,13 @@ import { CopyAddress } from "../components/CopyAddress.tsx";
 import { RoeCell } from "../components/RoeCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
 import { RawEntityDialog } from "../components/RawEntityDialog.tsx";
-import type { VaultEntity, AccountPosition, UserReward } from "@eulerxyz/euler-v2-sdk";
+import type {
+  AccountPosition,
+  PortfolioBorrowPosition,
+  PortfolioSavingsPosition,
+  UserReward,
+  VaultEntity,
+} from "@eulerxyz/euler-v2-sdk";
 import { executePlanWithProgress, type PlanProgress } from "../utils/txExecutor.ts";
 
 // Persist across navigations but not across full page reloads
@@ -50,15 +60,22 @@ function sumBigints(values: Array<bigint | undefined>): bigint | undefined {
   return total;
 }
 
-function hasActivity(result: AccountByChainResult): boolean {
+function hasPortfolioActivity(result: AccountByChainResult): boolean {
+  if ((result.account?.userRewards?.length ?? 0) > 0) return true;
+  return (result.portfolio?.positions.length ?? 0) > 0;
+}
+
+function hasAccountActivity(result: AccountByChainResult): boolean {
   const account = result.account;
   if (!account) return false;
   if ((account.userRewards?.length ?? 0) > 0) return true;
-  for (const sa of Object.values(account.subAccounts)) {
-    if (sa && sa.positions.length > 0) return true;
+  for (const subAccount of Object.values(account.subAccounts)) {
+    if (subAccount && subAccount.positions.length > 0) return true;
   }
   return false;
 }
+
+type PortfolioViewMode = "portfolio" | "account";
 
 export function PortfolioPage() {
   const { loading: sdkLoading, error: sdkError, chainNames } = useSDK();
@@ -71,10 +88,24 @@ export function PortfolioPage() {
   const [claimSuccess, setClaimSuccess] = useState<string | null>(null);
   const [claimProgress, setClaimProgress] = useState<PlanProgress | null>(null);
   const [activeClaimKey, setActiveClaimKey] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<PortfolioViewMode>("portfolio");
+  const [showAllPositions, setShowAllPositions] = useState(false);
 
-  const { data, isLoading, error } = useAccountAllChainsWithDiagnostics(address);
+  const { data, isLoading, error } = useAccountAllChainsWithDiagnostics(
+    address,
+    !showAllPositions
+  );
   const results = useMemo<AccountByChainResult[]>(() => data ?? [], [data]);
-  const activeResults = useMemo(() => results.filter(hasActivity), [results]);
+  const portfolioActiveResults = useMemo(
+    () => results.filter(hasPortfolioActivity),
+    [results]
+  );
+  const accountActiveResults = useMemo(
+    () => results.filter(hasAccountActivity),
+    [results]
+  );
+  const activeResults =
+    activeView === "account" ? accountActiveResults : portfolioActiveResults;
 
   useEffect(() => {
     if (!lastAddress && isConnected && walletAddress) {
@@ -85,18 +116,48 @@ export function PortfolioPage() {
   }, [isConnected, walletAddress]);
 
   // Owner is the same across chains; pick the first resolved account to derive it.
-  const owner = activeResults[0]?.account?.owner ?? results.find((r) => r.account)?.account?.owner;
+  const owner = accountActiveResults[0]?.account?.owner ?? results.find((r) => r.account)?.account?.owner;
   const connectedWalletMatchesViewedAccount =
     !!walletAddress && !!owner && getAddress(walletAddress) === getAddress(owner);
 
   const totals = useMemo(() => {
     return {
-      supplied: sumBigints(results.map((r) => r.account?.totalSuppliedValueUsd)),
-      borrowed: sumBigints(results.map((r) => r.account?.totalBorrowedValueUsd)),
-      nav: sumBigints(results.map((r) => r.account?.netAssetValueUsd)),
+      supplied: sumBigints(results.map((r) => r.portfolio?.totalSuppliedValueUsd)),
+      borrowed: sumBigints(results.map((r) => r.portfolio?.totalBorrowedValueUsd)),
+      nav: sumBigints(results.map((r) => r.portfolio?.netAssetValueUsd)),
       rewards: sumBigints(results.map((r) => r.account?.totalRewardsValueUsd)),
     };
   }, [results]);
+
+  const aggregatePerformance = useMemo(() => {
+    const supplied = Number(totals.supplied ?? 0n);
+    const borrowed = Number(totals.borrowed ?? 0n);
+    const equity = supplied - borrowed;
+    let netYield: number | undefined;
+
+    for (const result of results) {
+      const portfolio = result.portfolio;
+      if (!portfolio) continue;
+      const suppliedValue = Number(portfolio.totalSuppliedValueUsd ?? 0n);
+      const borrowedValue = Number(portfolio.totalBorrowedValueUsd ?? 0n);
+      const positionEquity = suppliedValue - borrowedValue;
+      const netApyYield =
+        portfolio.netApy === undefined ? undefined : suppliedValue * portfolio.netApy;
+
+      if (netApyYield !== undefined) {
+        netYield = (netYield ?? 0) + netApyYield;
+        continue;
+      }
+      if (portfolio.roe !== undefined && positionEquity > 0) {
+        netYield = (netYield ?? 0) + positionEquity * portfolio.roe;
+      }
+    }
+
+    return {
+      netApy: netYield === undefined || supplied <= 0 ? undefined : netYield / supplied,
+      roe: netYield === undefined || equity <= 0 ? undefined : netYield / equity,
+    };
+  }, [results, totals.borrowed, totals.supplied]);
 
   const resetClaimMessages = () => {
     setClaimError(null);
@@ -207,7 +268,7 @@ export function PortfolioPage() {
 
       {address && !isLoading && !error && results.length > 0 && (
         <>
-          <div className="detail-grid" style={{ marginBottom: 24 }}>
+          <div className="detail-grid" style={{ marginBottom: 16 }}>
             <div className="detail-item">
               <div className="label">Owner</div>
               <div className="value">{owner ?? address}</div>
@@ -218,23 +279,67 @@ export function PortfolioPage() {
                 {activeResults.length} / {results.length}
               </div>
             </div>
-            <div className="detail-item">
-              <div className="label">Total Supplied (USD)</div>
-              <div className="value">{formatUsdValue(totals.supplied)}</div>
-            </div>
-            <div className="detail-item">
-              <div className="label">Total Borrowed (USD)</div>
-              <div className="value">{formatUsdValue(totals.borrowed)}</div>
-            </div>
-            <div className="detail-item">
-              <div className="label">Net Asset Value (USD)</div>
-              <div className="value">{formatUsdValue(totals.nav)}</div>
-            </div>
-            <div className="detail-item">
-              <div className="label">Your Rewards (USD)</div>
-              <div className="value">{formatUsdValue(totals.rewards)}</div>
-            </div>
           </div>
+
+          <PortfolioOverviewCards
+            netApy={aggregatePerformance.netApy}
+            roe={aggregatePerformance.roe}
+            supplied={totals.supplied}
+            borrowed={totals.borrowed}
+            nav={totals.nav}
+            rewards={totals.rewards}
+          />
+
+          <div className="portfolio-view-toolbar">
+            <div className="tabs">
+              <button
+                type="button"
+                className={`tab ${activeView === "portfolio" ? "active" : ""}`}
+                onClick={() => setActiveView("portfolio")}
+              >
+                Portfolio
+              </button>
+              <button
+                type="button"
+                className={`tab ${activeView === "account" ? "active" : ""}`}
+                onClick={() => setActiveView("account")}
+              >
+                Account
+              </button>
+            </div>
+            <label className="portfolio-filter-switch">
+              <span>Show all</span>
+              <span className="portfolio-switch-control">
+                <input
+                  type="checkbox"
+                  checked={showAllPositions}
+                  onChange={(event) => setShowAllPositions(event.target.checked)}
+                />
+                <span className="portfolio-switch-track" />
+              </span>
+            </label>
+          </div>
+
+          {activeView === "account" && (
+            <div className="detail-grid" style={{ marginBottom: 24 }}>
+              <div className="detail-item">
+                <div className="label">Total Supplied (USD)</div>
+                <div className="value">{formatUsdValue(totals.supplied)}</div>
+              </div>
+              <div className="detail-item">
+                <div className="label">Total Borrowed (USD)</div>
+                <div className="value">{formatUsdValue(totals.borrowed)}</div>
+              </div>
+              <div className="detail-item">
+                <div className="label">Net Asset Value (USD)</div>
+                <div className="value">{formatUsdValue(totals.nav)}</div>
+              </div>
+              <div className="detail-item">
+                <div className="label">Your Rewards (USD)</div>
+                <div className="value">{formatUsdValue(totals.rewards)}</div>
+              </div>
+            </div>
+          )}
 
           {isConnected && !connectedWalletMatchesViewedAccount && (
             <div className="status-message" style={{ marginBottom: 12 }}>
@@ -259,24 +364,32 @@ export function PortfolioPage() {
             </div>
           )}
 
-          {activeResults.map((result) => (
-            <ChainPortfolioSection
-              key={result.chainId}
-              result={result}
-              chainName={result.chainName ?? chainNames[result.chainId] ?? String(result.chainId)}
-              connectedWalletMatchesViewedAccount={connectedWalletMatchesViewedAccount}
-              walletChainId={walletChainId}
-              isSwitching={isSwitching}
-              activeClaimKey={activeClaimKey}
-              setActiveClaimKey={setActiveClaimKey}
-              claimProgress={claimProgress}
-              setClaimProgress={setClaimProgress}
-              setClaimError={setClaimError}
-              setClaimSuccess={setClaimSuccess}
-              resetClaimMessages={resetClaimMessages}
-              invalidateRewardQueries={invalidateRewardQueries}
-            />
-          ))}
+          {activeView === "portfolio"
+            ? activeResults.map((result) => (
+                <ChainPortfolioView
+                  key={result.chainId}
+                  result={result}
+                  chainName={result.chainName ?? chainNames[result.chainId] ?? String(result.chainId)}
+                />
+              ))
+            : activeResults.map((result) => (
+                <ChainAccountSection
+                  key={result.chainId}
+                  result={result}
+                  chainName={result.chainName ?? chainNames[result.chainId] ?? String(result.chainId)}
+                  connectedWalletMatchesViewedAccount={connectedWalletMatchesViewedAccount}
+                  walletChainId={walletChainId}
+                  isSwitching={isSwitching}
+                  activeClaimKey={activeClaimKey}
+                  setActiveClaimKey={setActiveClaimKey}
+                  claimProgress={claimProgress}
+                  setClaimProgress={setClaimProgress}
+                  setClaimError={setClaimError}
+                  setClaimSuccess={setClaimSuccess}
+                  resetClaimMessages={resetClaimMessages}
+                  invalidateRewardQueries={invalidateRewardQueries}
+                />
+              ))}
 
           {results
             .filter((r) => r.error)
@@ -295,7 +408,392 @@ export function PortfolioPage() {
   );
 }
 
-type ChainPortfolioSectionProps = {
+function PortfolioOverviewCards({
+  netApy,
+  roe,
+  supplied,
+  borrowed,
+  nav,
+  rewards,
+}: {
+  netApy?: number;
+  roe?: number;
+  supplied?: bigint;
+  borrowed?: bigint;
+  nav?: bigint;
+  rewards?: bigint;
+}) {
+  return (
+    <div className="portfolio-overview-grid">
+      <div className="portfolio-panel">
+        <h4>Portfolio performance</h4>
+        <div className="portfolio-metric-row">
+          <span>Net APY</span>
+          <strong className={netApy != null && netApy < 0 ? "negative" : "positive"}>
+            {formatOptionalPercent(netApy)}
+          </strong>
+        </div>
+        <div className="portfolio-metric-row">
+          <span>ROE</span>
+          <strong className={roe != null && roe < 0 ? "negative" : "positive"}>
+            {formatOptionalPercent(roe)}
+          </strong>
+        </div>
+      </div>
+
+      <div className="portfolio-panel">
+        <h4>Portfolio value</h4>
+        <div className="portfolio-metric-row">
+          <span>Total supplied</span>
+          <strong>{formatUsdValue(supplied)}</strong>
+        </div>
+        <div className="portfolio-metric-row">
+          <span>Total borrowed</span>
+          <strong>{formatUsdValue(borrowed)}</strong>
+        </div>
+        <div className="portfolio-metric-row">
+          <span>Net asset value</span>
+          <strong>{formatUsdValue(nav)}</strong>
+        </div>
+        <div className="portfolio-metric-row">
+          <span>Rewards</span>
+          <strong>{formatUsdValue(rewards)}</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChainPortfolioView({
+  result,
+  chainName,
+}: {
+  result: AccountByChainResult;
+  chainName: string;
+}) {
+  const portfolio = result.portfolio;
+  if (!portfolio) return null;
+
+  const borrowPositions = [...portfolio.borrows].sort(sortBorrowPositions);
+  const managedSavings = portfolio.savings
+    .filter((saving) => isManagedSavings(saving))
+    .sort(sortSavingsPositions);
+  const directSavings = portfolio.savings
+    .filter((saving) => !isManagedSavings(saving))
+    .sort(sortSavingsPositions);
+
+  return (
+    <section className="portfolio-chain-section">
+      <div className="portfolio-chain-header">
+        <div>
+          <h3 className="section-title" style={{ marginBottom: 4 }}>
+            {chainName}
+          </h3>
+          <div className="portfolio-chain-subtitle">
+            {borrowPositions.length} borrow position{borrowPositions.length === 1 ? "" : "s"} /{" "}
+            {portfolio.savings.length} saving{portfolio.savings.length === 1 ? "" : "s"}
+          </div>
+        </div>
+        <RawEntityDialog title={`Raw Portfolio Entity (${chainName})`} entity={portfolio} />
+      </div>
+
+      <PortfolioOverviewCards
+        netApy={portfolio.netApy}
+        roe={portfolio.roe}
+        supplied={portfolio.totalSuppliedValueUsd}
+        borrowed={portfolio.totalBorrowedValueUsd}
+        nav={portfolio.netAssetValueUsd}
+        rewards={portfolio.totalRewardsValueUsd}
+      />
+
+      <PortfolioSection
+        title="Borrow positions"
+        description="Active loans backed by supplied collateral."
+        emptyText="No borrow positions on this chain."
+      >
+        {borrowPositions.map((position) => (
+          <BorrowPositionCard
+            key={`${position.subAccount}-${position.borrow.vaultAddress}`}
+            chainId={result.chainId}
+            owner={portfolio.account.owner}
+            position={position}
+          />
+        ))}
+      </PortfolioSection>
+
+      <PortfolioSection
+        title="Managed lending"
+        description="Passive yield across managed strategy vaults."
+        emptyText="No managed lending on this chain."
+      >
+        {managedSavings.map((position) => (
+          <SavingsPositionCard
+            key={`${position.subAccount}-${position.position.vaultAddress}`}
+            chainId={result.chainId}
+            owner={portfolio.account.owner}
+            position={position}
+          />
+        ))}
+      </PortfolioSection>
+
+      <PortfolioSection
+        title="Direct lending"
+        description="Yield earned by lending assets directly."
+        emptyText="No direct lending on this chain."
+      >
+        {directSavings.map((position) => (
+          <SavingsPositionCard
+            key={`${position.subAccount}-${position.position.vaultAddress}`}
+            chainId={result.chainId}
+            owner={portfolio.account.owner}
+            position={position}
+          />
+        ))}
+      </PortfolioSection>
+    </section>
+  );
+}
+
+function PortfolioSection({
+  title,
+  description,
+  emptyText,
+  children,
+}: {
+  title: string;
+  description: string;
+  emptyText: string;
+  children: ReactNode;
+}) {
+  const items = Array.isArray(children) ? children.filter(Boolean) : children;
+  const isEmpty = Array.isArray(items) ? items.length === 0 : !items;
+
+  return (
+    <section className="portfolio-position-section">
+      <div className="portfolio-position-heading">
+        <h4>{title}</h4>
+        <p>{description}</p>
+      </div>
+      <div className="portfolio-list-card">
+        {isEmpty ? (
+          <div className="portfolio-empty-state">{emptyText}</div>
+        ) : (
+          <div className="portfolio-card-list">{items}</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function BorrowPositionCard({
+  chainId,
+  owner,
+  position,
+}: {
+  chainId: number;
+  owner: Address;
+  position: PortfolioBorrowPosition<VaultEntity>;
+}) {
+  const borrow = position.borrow;
+  const collateral = position.collateral;
+  const borrowVault = position.borrowVault ?? borrow.vault;
+  const collateralVault = position.collateralVault ?? collateral?.vault;
+  const collateralLabel =
+    position.collaterals.length > 1
+      ? `${vaultAssetSymbol(collateralVault)} & others`
+      : vaultAssetSymbol(collateralVault);
+  const performance = computeBorrowPositionPerformance(position);
+
+  return (
+    <article className="portfolio-position-card">
+      <div className="portfolio-position-main">
+        <div>
+          <div className="portfolio-position-title">
+            {collateralLabel}/{vaultAssetSymbol(borrowVault)}
+          </div>
+          <div className="portfolio-position-subtitle">
+            Sub-account #{safeSubAccountId(owner, position.subAccount)}
+          </div>
+        </div>
+        <div className="portfolio-position-actions">
+          <Link to={`/vault/${chainId}/${borrow.vaultAddress}`}>Borrow vault</Link>
+          {collateral && (
+            <Link to={`/vault/${chainId}/${collateral.vaultAddress}`}>Collateral vault</Link>
+          )}
+        </div>
+      </div>
+
+      <div className="portfolio-position-grid">
+        <PortfolioStat
+          label="Borrowed"
+          value={`${formatBigInt(borrow.borrowed, vaultAssetDecimals(borrowVault))} ${vaultAssetSymbol(borrowVault)}`}
+          subValue={formatUsdValue(borrow.borrowedValueUsd)}
+        />
+        <PortfolioStat
+          label="Collateral"
+          value={`${formatBigInt(position.supplied, vaultAssetDecimals(collateralVault))} ${collateralLabel}`}
+          subValue={formatUsdValue(position.totalCollateralValueUsd)}
+        />
+        <PortfolioStat
+          label="Net APY"
+          value={formatOptionalPercent(performance.netApy)}
+        />
+        <PortfolioStat
+          label="ROE"
+          value={formatOptionalPercent(performance.roe)}
+        />
+        <PortfolioStat
+          label="Health score"
+          value={formatWad(position.healthFactor, 2)}
+        />
+        <PortfolioStat
+          label="LTV"
+          value={`${formatWadPercent(position.userLTV)} / ${formatWadPercent(position.accountLiquidationLTV)}`}
+          subValue={`Borrow price ${formatPriceUsd(position.borrowLiquidationPriceUsd)}`}
+        />
+      </div>
+    </article>
+  );
+}
+
+function SavingsPositionCard({
+  chainId,
+  owner,
+  position,
+}: {
+  chainId: number;
+  owner: Address;
+  position: PortfolioSavingsPosition<VaultEntity>;
+}) {
+  const vault = position.vault ?? position.position.vault;
+  const performance = computeSavingsPositionPerformance(position);
+
+  return (
+    <article className="portfolio-position-card">
+      <div className="portfolio-position-main">
+        <div>
+          <div className="portfolio-position-title">{vaultName(vault)}</div>
+          <div className="portfolio-position-subtitle">
+            Sub-account #{safeSubAccountId(owner, position.subAccount)}
+          </div>
+        </div>
+        <Link to={`/vault/${chainId}/${position.position.vaultAddress}`}>Vault</Link>
+      </div>
+
+      <div className="portfolio-position-grid">
+        <PortfolioStat
+          label="Deposited"
+          value={`${formatBigInt(position.assets, vaultAssetDecimals(vault))} ${vaultAssetSymbol(vault)}`}
+          subValue={formatUsdValue(position.suppliedValueUsd)}
+        />
+        <PortfolioStat
+          label="Net APY"
+          value={formatOptionalPercent(performance.netApy)}
+        />
+        <PortfolioStat
+          label="ROE"
+          value={formatOptionalPercent(performance.roe)}
+        />
+        <PortfolioStat
+          label="Shares"
+          value={`${formatBigInt(position.shares, vaultSharesDecimals(vault))} ${vaultSharesSymbol(vault)}`}
+        />
+        <PortfolioStat
+          label="Vault"
+          value={vaultName(vault)}
+          subValue={<CopyAddress address={position.position.vaultAddress} />}
+        />
+      </div>
+    </article>
+  );
+}
+
+function computeBorrowPositionPerformance(
+  position: PortfolioBorrowPosition<VaultEntity>
+): { netApy?: number; roe?: number } {
+  const positions = [...position.collaterals, position.borrow];
+  return {
+    netApy: computePositionsNetApy(positions),
+    roe: computePositionsRoe(positions),
+  };
+}
+
+function computeSavingsPositionPerformance(
+  position: PortfolioSavingsPosition<VaultEntity>
+): { netApy?: number; roe?: number } {
+  const positions = [position.position];
+  return {
+    netApy: computePositionsNetApy(positions),
+    roe: computePositionsRoe(positions),
+  };
+}
+
+function PortfolioStat({
+  label,
+  value,
+  subValue,
+}: {
+  label: string;
+  value: ReactNode;
+  subValue?: ReactNode;
+}) {
+  return (
+    <div className="portfolio-stat">
+      <div className="label">{label}</div>
+      <div className="value">{value}</div>
+      {subValue && <div className="portfolio-stat-subvalue">{subValue}</div>}
+    </div>
+  );
+}
+
+function sortBorrowPositions(
+  a: PortfolioBorrowPosition<VaultEntity>,
+  b: PortfolioBorrowPosition<VaultEntity>
+) {
+  return Number((b.liabilityValueUsd ?? b.borrow.borrowedValueUsd ?? 0n) - (a.liabilityValueUsd ?? a.borrow.borrowedValueUsd ?? 0n));
+}
+
+function sortSavingsPositions(
+  a: PortfolioSavingsPosition<VaultEntity>,
+  b: PortfolioSavingsPosition<VaultEntity>
+) {
+  return Number((b.suppliedValueUsd ?? 0n) - (a.suppliedValueUsd ?? 0n));
+}
+
+function isManagedSavings(position: PortfolioSavingsPosition<VaultEntity>): boolean {
+  const vault = position.vault ?? position.position.vault;
+  return Boolean(vault && ("strategies" in vault || "supplyApy1h" in vault));
+}
+
+function vaultName(vault: VaultEntity | undefined): string {
+  return vault?.shares.name || vault?.asset.symbol || "-";
+}
+
+function vaultAssetSymbol(vault: VaultEntity | undefined): string {
+  return vault?.asset.symbol ?? "-";
+}
+
+function vaultAssetDecimals(vault: VaultEntity | undefined): number {
+  return vault?.asset.decimals ?? 18;
+}
+
+function vaultSharesSymbol(vault: VaultEntity | undefined): string {
+  return vault?.shares.symbol ?? "";
+}
+
+function vaultSharesDecimals(vault: VaultEntity | undefined): number {
+  return vault?.shares.decimals ?? 18;
+}
+
+function safeSubAccountId(owner: Address, subAccount: Address): string {
+  try {
+    return String(getSubAccountId(owner, subAccount));
+  } catch {
+    return "-";
+  }
+}
+
+type ChainAccountSectionProps = {
   result: AccountByChainResult;
   chainName: string;
   connectedWalletMatchesViewedAccount: boolean;
@@ -311,7 +809,7 @@ type ChainPortfolioSectionProps = {
   invalidateRewardQueries: () => Promise<void>;
 };
 
-function ChainPortfolioSection({
+function ChainAccountSection({
   result,
   chainName,
   connectedWalletMatchesViewedAccount,
@@ -325,7 +823,7 @@ function ChainPortfolioSection({
   setClaimSuccess,
   resetClaimMessages,
   invalidateRewardQueries,
-}: ChainPortfolioSectionProps) {
+}: ChainAccountSectionProps) {
   const { sdk } = useSDK();
   const { address: walletAddress } = useWagmiAccount();
   const { switchChain } = useSwitchChain();
@@ -333,6 +831,7 @@ function ChainPortfolioSection({
   const { data: walletClient } = useWalletClient({ chainId });
   const publicClient = usePublicClient({ chainId });
   const account = result.account;
+  const portfolio = result.portfolio;
 
   const failedVaultDetailsByAddress = useMemo(() => {
     const map = new Map<string, string>();
@@ -482,23 +981,23 @@ function ChainPortfolioSection({
         </div>
         <div className="detail-item">
           <div className="label">Supplied (USD)</div>
-          <div className="value">{formatUsdValue(account.totalSuppliedValueUsd)}</div>
+          <div className="value">{formatUsdValue(portfolio?.totalSuppliedValueUsd)}</div>
         </div>
         <div className="detail-item">
           <div className="label">Borrowed (USD)</div>
-          <div className="value">{formatUsdValue(account.totalBorrowedValueUsd)}</div>
+          <div className="value">{formatUsdValue(portfolio?.totalBorrowedValueUsd)}</div>
         </div>
         <div className="detail-item">
           <div className="label">Net Value (USD)</div>
-          <div className="value">{formatUsdValue(account.netAssetValueUsd)}</div>
+          <div className="value">{formatUsdValue(portfolio?.netAssetValueUsd)}</div>
         </div>
         <div className="detail-item">
           <div className="label">Net APY</div>
-          <div className="value">{formatOptionalPercent(account.netApy)}</div>
+          <div className="value">{formatOptionalPercent(portfolio?.netApy)}</div>
         </div>
         <div className="detail-item">
           <div className="label">ROE</div>
-          <div className="value">{formatOptionalPercent(account.roe)}</div>
+          <div className="value">{formatOptionalPercent(portfolio?.roe)}</div>
         </div>
         <div className="detail-item">
           <div className="label">Rewards (USD)</div>
