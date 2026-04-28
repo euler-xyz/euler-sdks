@@ -31,7 +31,7 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 ## Supporting and Infrastructure Services
 
 - `walletService`: Fetches wallet balances and allowances.
-- `simulationService`: Simulates account state/results for planned operations (including state-override flows).
+- `simulationService`: Simulates account state/results and estimates gas for planned operations (including state-override flows).
 - `priceService`: Resolves market prices used for valuation and computed account metrics.
 - `oracleAdapterService`: Fetches oracle adapter metadata/checks (provider, methodology, checks) from the oracle checks dataset and builds address-keyed maps for UI/tooling.
 - `rewardsService`: Fetches reward campaign data used to populate vault/account rewards and builds provider-specific reward claim plans.
@@ -57,7 +57,7 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 | `portfolioService` | Account-derived portfolio data | Yes (`populateAll`) | Yes (`populateAll`) | Yes (`populateAll`) | Yes (`populateAll`) | Fetches the backing account with `populateAll: true`; see [`portfolio.md`](./portfolio.md) |
 | `executionService` | No (planning/encoding only) | No | No | No | No | Produces generic transaction plans and EVC batch payloads |
 | `swapService` | No (quotes only) | No | No | No | No | Returns swap quotes/providers for execution plans |
-| `simulationService` | Simulates plans | Can populate in results | Can populate in results | Can populate in results | Can populate in results | Uses `accountFetchOptions` / `vaultFetchOptions` |
+| `simulationService` | Simulates plans | Can populate in results | Can populate in results | Can populate in results | Can populate in results | Uses `accountFetchOptions` / `vaultFetchOptions`; can estimate gas for transaction plans |
 | `oracleAdapterService` | No | No | No | No | No | Oracle adapter metadata API (`fetchOracleAdapters`, `fetchOracleAdapterMap`, `enrichAdapters`) |
 
 See also: [`execution-service.md`](./execution-service.md).
