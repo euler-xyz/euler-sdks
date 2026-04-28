@@ -860,7 +860,6 @@ export class ExecutionService implements IExecutionService {
 	 * @param args.fromAsset - Underlying asset of fromVault (must equal liabilityAsset)
 	 * @param args.disableControllerOnMax - When isMax, whether to disable controller for receiver (default true)
 	 * @param args.isMax - If true, repays full debt (amount used for withdraw sizing where applicable)
-	 * @param args.liabilityPermit2 - Optional Permit2 for liability asset when path uses transfer/repay
 	 * @returns Array of EVC batch items. Throws if fromAsset !== liabilityAsset.
 	 */
 	encodeRepayFromDeposit(args: EncodeRepayFromDepositArgs): EVCBatchItem[] {
@@ -875,7 +874,6 @@ export class ExecutionService implements IExecutionService {
 			fromAsset,
 			disableControllerOnMax = true,
 			isMax = false,
-			liabilityPermit2,
 		} = args;
 
 		// PATH 1: Same asset, same vault - use repayWithShares
@@ -893,7 +891,6 @@ export class ExecutionService implements IExecutionService {
 		// PATH 2: Same asset, different vault
 		if (fromAsset === liabilityAsset) {
 			return this.encodeRepayWithSharesSameAssetDifferentVault({
-				chainId,
 				fromVault,
 				toVault: liabilityVault,
 				amount: liabilityAmount,
@@ -901,7 +898,6 @@ export class ExecutionService implements IExecutionService {
 				from,
 				isMax,
 				disableControllerOnMax,
-				permit2: liabilityPermit2,
 			});
 		}
 
@@ -1655,7 +1651,6 @@ export class ExecutionService implements IExecutionService {
 	 * Encodes batch items for repaying with shares from same asset but different vault
 	 */
 	private encodeRepayWithSharesSameAssetDifferentVault({
-		chainId,
 		fromVault,
 		toVault,
 		amount, // if isMax, this should be the total current debt
@@ -1663,9 +1658,7 @@ export class ExecutionService implements IExecutionService {
 		from,
 		isMax,
 		disableControllerOnMax,
-		permit2,
 	}: {
-		chainId: number;
 		fromVault: Address;
 		toVault: Address;
 		amount: bigint;
@@ -1673,7 +1666,6 @@ export class ExecutionService implements IExecutionService {
 		from: Address;
 		isMax: boolean;
 		disableControllerOnMax: boolean;
-		permit2?: Permit2Data;
 	}): EVCBatchItem[] {
 		const items: EVCBatchItem[] = [];
 
@@ -1705,7 +1697,7 @@ export class ExecutionService implements IExecutionService {
 			// 2. Skim exact withdrawal amount to liability vault
 			items.push({
 				targetContract: toVault,
-				onBehalfOfAccount: from,
+				onBehalfOfAccount: receiver,
 				value: 0n,
 				data: encodeFunctionData({
 					abi: eVaultAbi,
@@ -1734,7 +1726,7 @@ export class ExecutionService implements IExecutionService {
 			}
 		} else {
 			// For partial repay: withdraw, then repay exact amount
-			// 1. Withdraw from collateral vault
+			// 1. Withdraw from source vault directly to the liability vault.
 			items.push({
 				targetContract: fromVault,
 				onBehalfOfAccount: from,
@@ -1742,23 +1734,33 @@ export class ExecutionService implements IExecutionService {
 				data: encodeFunctionData({
 					abi: eVaultAbi,
 					functionName: "withdraw",
-					args: [amount, from, from],
+					args: [amount, toVault, from],
 				}),
 			});
 
-			// 2. Repay exact amount
-			const repayItems = this.encodeRepayFromWallet({
-				chainId,
-				sender: from,
-				liabilityVault: toVault,
-				liabilityAmount: amount,
-				receiver,
-				disableControllerOnMax,
-				isMax,
-				permit2,
+			// 2. Skim the received assets into the borrow sub-account.
+			items.push({
+				targetContract: toVault,
+				onBehalfOfAccount: receiver,
+				value: 0n,
+				data: encodeFunctionData({
+					abi: eVaultAbi,
+					functionName: "skim",
+					args: [amount, receiver],
+				}),
 			});
 
-			items.push(...repayItems);
+			// 3. Burn the skimmed shares to repay debt.
+			items.push({
+				targetContract: toVault,
+				onBehalfOfAccount: receiver,
+				value: 0n,
+				data: encodeFunctionData({
+					abi: eVaultAbi,
+					functionName: "repayWithShares",
+					args: [amount > 0n ? amount - 1n : 0n, receiver],
+				}),
+			});
 		}
 
 		return items;
@@ -2413,30 +2415,24 @@ export class ExecutionService implements IExecutionService {
 			);
 		}
 
-		// If same asset, different vault, we might need approval for the withdraw/repay path
-		if (fromVault !== liabilityVault) {
-			// Add approval requirement (will be resolved later with Wallet data)
-			plan.push({
-				type: "requiredApproval",
-				token: liabilityAsset,
-				owner: account.owner,
-				spender: liabilityVault,
-				amount: liabilityAmount,
-			});
-		}
+		const isMax = liabilityAmount === maxUint256;
+		const amount =
+			isMax && fromVault !== liabilityVault
+				? liabilityPosition.borrowed
+				: liabilityAmount;
 
 		// Build EVC batch items
 		const batchItems = this.encodeRepayFromDeposit({
 			chainId: account.chainId,
 			liabilityVault,
 			liabilityAsset,
-			liabilityAmount,
-			from: receiver,
+			liabilityAmount: amount,
+			from: fromAccount,
 			receiver,
 			fromVault,
 			fromAsset,
 			disableControllerOnMax: true,
-			isMax: liabilityAmount === maxUint256,
+			isMax,
 			// Permit2 is handled separately in the plan
 		});
 
