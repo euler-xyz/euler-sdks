@@ -14,33 +14,31 @@ import type { BackendConfig } from "../services/priceService/index.js";
 import type { IntrinsicApyV3AdapterConfig } from "../services/intrinsicApyService/index.js";
 import type { RewardsV3AdapterConfig } from "../services/rewardsService/index.js";
 
+const SUBGRAPH_BASE_URL =
+  "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs";
+
 export const defaultAccountVaultsAdapterConfig: AccountVaultsSubgraphAdapterConfig =
   {
     subgraphURLs: {
-      1: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-mainnet/latest/gn",
-      10: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-optimism/latest/gn",
-      56: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-bsc/latest/gn",
-      100: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-gnosis/latest/gn",
-      130: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-unichain/latest/gn",
-      143: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-monad/latest/gn",
-      146: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-sonic/latest/gn",
-      239: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-tac/latest/gn",
-      480: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-worldchain/latest/gn",
-      999: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-hyperevm/latest/gn",
-      1923: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-swell/latest/gn",
-      5000: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-mantle/latest/gn",
-      8453: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-base/latest/gn",
-      9745: "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-plasma/latest/gn",
-      42161:
-        "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-arbitrum/latest/gn",
-      43114:
-        "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-avalanche/latest/gn",
-      57073:
-        "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-ink/latest/gn",
-      60808:
-        "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-bob/latest/gn",
-      80094:
-        "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-berachain/latest/gn",
+      1: `${SUBGRAPH_BASE_URL}/euler-simple-mainnet/latest/gn`,
+      10: `${SUBGRAPH_BASE_URL}/euler-simple-optimism/latest/gn`,
+      56: `${SUBGRAPH_BASE_URL}/euler-simple-bsc/latest/gn`,
+      100: `${SUBGRAPH_BASE_URL}/euler-simple-gnosis/latest/gn`,
+      130: `${SUBGRAPH_BASE_URL}/euler-simple-unichain/latest/gn`,
+      143: `${SUBGRAPH_BASE_URL}/euler-simple-monad/latest/gn`,
+      146: `${SUBGRAPH_BASE_URL}/euler-simple-sonic/latest/gn`,
+      239: `${SUBGRAPH_BASE_URL}/euler-simple-tac/latest/gn`,
+      480: `${SUBGRAPH_BASE_URL}/euler-simple-worldchain/latest/gn`,
+      999: `${SUBGRAPH_BASE_URL}/euler-simple-hyperevm/latest/gn`,
+      1923: `${SUBGRAPH_BASE_URL}/euler-simple-swell/latest/gn`,
+      5000: `${SUBGRAPH_BASE_URL}/euler-simple-mantle/latest/gn`,
+      8453: `${SUBGRAPH_BASE_URL}/euler-simple-base/latest/gn`,
+      9745: `${SUBGRAPH_BASE_URL}/euler-simple-plasma/latest/gn`,
+      42161: `${SUBGRAPH_BASE_URL}/euler-simple-arbitrum/latest/gn`,
+      43114: `${SUBGRAPH_BASE_URL}/euler-simple-avalanche/latest/gn`,
+      57073: `${SUBGRAPH_BASE_URL}/euler-simple-ink/latest/gn`,
+      60808: `${SUBGRAPH_BASE_URL}/euler-simple-bob/latest/gn`,
+      80094: `${SUBGRAPH_BASE_URL}/euler-simple-berachain/latest/gn`,
     },
   };
 
