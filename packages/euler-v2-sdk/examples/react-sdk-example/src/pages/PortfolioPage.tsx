@@ -789,7 +789,7 @@ function ChainPortfolioSection({
                       )
                       .map((p: AccountPosition<VaultEntity>) => {
                         const liq = p.liquidity!;
-                        const collLiqPricesUsd = p.collateralLiqiidationPricesUsd;
+                        const collLiqPricesUsd = p.collateralLiquidationPricesUsd;
                         return (
                           <tr key={`liq-${p.vaultAddress}`}>
                             <td>

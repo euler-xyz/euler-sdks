@@ -166,8 +166,6 @@ export interface IAccountPosition<
 	readonly borrowLiquidationPriceUsd?: bigint;
 	/** Per-collateral liquidation price in USD (18 dec WAD). Computed getter on positions. */
 	readonly collateralLiquidationPricesUsd?: Record<Address, bigint>;
-	/** Per-collateral liquidation price in USD (18 dec WAD). Computed getter on positions. (Legacy typo alias) */
-	readonly collateralLiqiidationPricesUsd?: Record<Address, bigint>;
 }
 
 const WAD = 10n ** 18n;
@@ -246,9 +244,6 @@ export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
 		return Object.keys(result).length > 0 ? result : undefined;
 	}
 
-	get collateralLiqiidationPricesUsd(): Record<Address, bigint> | undefined {
-		return this.collateralLiquidationPricesUsd;
-	}
 }
 
 export interface AccountPortfolioBorrow<
