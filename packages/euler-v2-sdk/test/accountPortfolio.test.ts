@@ -20,8 +20,8 @@ const asset = getAddress("0x7000000000000000000000000000000000000000");
 
 function position(
 	vaultAddress: string,
-	overrides: Partial<IAccountPosition> = {},
-): IAccountPosition {
+	overrides: Partial<IAccountPosition<any>> = {},
+): IAccountPosition<any> {
 	return {
 		account: subAccount,
 		vaultAddress: getAddress(vaultAddress),
@@ -38,9 +38,9 @@ function position(
 
 function subAccountData(
 	account: string,
-	positions: IAccountPosition[],
+	positions: IAccountPosition<any>[],
 	enabledCollaterals: string[] = [],
-): ISubAccount {
+): ISubAccount<any> {
 	return {
 		timestamp: 0,
 		account: getAddress(account),
@@ -49,6 +49,17 @@ function subAccountData(
 		enabledControllers: [],
 		enabledCollaterals: enabledCollaterals.map((address) => getAddress(address)),
 		positions,
+	};
+}
+
+function usd(value: number): bigint {
+	return BigInt(Math.round(value * 1e6)) * 10n ** 12n;
+}
+
+function vault(address: string, overrides: Record<string, unknown> = {}) {
+	return {
+		address: getAddress(address),
+		...overrides,
 	};
 }
 
@@ -228,4 +239,110 @@ test("portfolio treats all-zero liquidity collaterals as collateral usage", () =
 		[collateralVault],
 	);
 	assert.deepEqual(account.portfolio.savings, []);
+});
+
+test("account computes portfolio net APY and ROE from supplied and borrowed value", () => {
+	const collateral = vault(collateralVault, {
+		interestRates: { supplyAPY: "0.05", borrowAPY: "0" },
+		rewards: {
+			totalRewardsApr: 0.02,
+			campaigns: [
+				{
+					campaignId: "supply",
+					source: "merkl",
+					action: "LEND",
+					apr: 0.02,
+					rewardTokenSymbol: "EUL",
+				},
+			],
+		},
+	});
+	const borrow = vault(borrowVault, {
+		interestRates: { supplyAPY: "0", borrowAPY: "0.08" },
+		rewards: {
+			totalRewardsApr: 0.01,
+			campaigns: [
+				{
+					campaignId: "borrow",
+					source: "merkl",
+					action: "BORROW",
+					apr: 0.01,
+					rewardTokenSymbol: "EUL",
+				},
+			],
+		},
+	});
+	const savings = vault(savingsVault, {
+		interestRates: { supplyAPY: "0.04", borrowAPY: "0" },
+		rewards: {
+			totalRewardsApr: 0.01,
+			campaigns: [
+				{
+					campaignId: "savings",
+					source: "merkl",
+					action: "LEND",
+					apr: 0.01,
+					rewardTokenSymbol: "EUL",
+				},
+			],
+		},
+	});
+
+	const account = new Account({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(subAccount, [
+				position(collateralVault, {
+					vault: collateral,
+					shares: 200n,
+					assets: 200n,
+					suppliedValueUsd: usd(200),
+				}),
+				position(borrowVault, {
+					vault: borrow,
+					borrowed: 100n,
+					borrowedValueUsd: usd(100),
+				}),
+				position(savingsVault, {
+					vault: savings,
+					shares: 100n,
+					assets: 100n,
+					suppliedValueUsd: usd(100),
+				}),
+			]),
+		},
+	});
+
+	// Net yield = 200*(5%+2%) - 100*(8%-1%) + 100*(4%+1%) = 12.
+	assert.equal(account.netApy, 12 / 300);
+	assert.equal(account.roe, 12 / 200);
+});
+
+test("account applies intrinsic APY with the euler-lite formula", () => {
+	const intrinsicVault = vault(savingsVault, {
+		interestRates: { supplyAPY: "0.10", borrowAPY: "0" },
+		intrinsicApy: {
+			apy: 5,
+			provider: "test",
+		},
+	});
+
+	const account = new Account({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(subAccount, [
+				position(savingsVault, {
+					vault: intrinsicVault,
+					shares: 100n,
+					assets: 100n,
+					suppliedValueUsd: usd(100),
+				}),
+			]),
+		},
+	});
+
+	assert.equal(account.netApy, 0.1 + 1.1 * 0.05);
+	assert.equal(account.roe, 0.1 + 1.1 * 0.05);
 });

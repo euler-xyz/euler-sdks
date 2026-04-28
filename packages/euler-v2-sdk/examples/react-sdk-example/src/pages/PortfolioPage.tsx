@@ -15,7 +15,13 @@ import {
 } from "../queries/sdkQueries.ts";
 import { getSubAccountId } from "@eulerxyz/euler-v2-sdk";
 import { getAddress, type Address } from "viem";
-import { formatBigInt, formatPriceUsd, formatWad, formatWadPercent } from "../utils/format.ts";
+import {
+  formatBigInt,
+  formatPercent,
+  formatPriceUsd,
+  formatWad,
+  formatWadPercent,
+} from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { RoeCell } from "../components/RoeCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
@@ -29,6 +35,10 @@ let lastAddress: string | undefined;
 function formatUsdValue(value: bigint | undefined): string {
   if (value === undefined) return "-";
   return formatPriceUsd(value);
+}
+
+function formatOptionalPercent(value: number | undefined): string {
+  return value === undefined ? "-" : formatPercent(value);
 }
 
 function sumBigints(values: Array<bigint | undefined>): bigint | undefined {
@@ -481,6 +491,14 @@ function ChainPortfolioSection({
         <div className="detail-item">
           <div className="label">Net Value (USD)</div>
           <div className="value">{formatUsdValue(account.netAssetValueUsd)}</div>
+        </div>
+        <div className="detail-item">
+          <div className="label">Net APY</div>
+          <div className="value">{formatOptionalPercent(account.netApy)}</div>
+        </div>
+        <div className="detail-item">
+          <div className="label">ROE</div>
+          <div className="value">{formatOptionalPercent(account.roe)}</div>
         </div>
         <div className="detail-item">
           <div className="label">Rewards (USD)</div>

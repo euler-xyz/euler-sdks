@@ -23,6 +23,8 @@ import {
 	computeSubAccountLiabilityValueUsd,
 	computeSubAccountNetValueUsd,
 	computeSubAccountRoe,
+	computeAccountNetApy,
+	computeAccountRoe,
 	computeCollateralLiquidationPrices,
 	computeBorrowLiquidationPrice,
 } from "../utils/accountComputations.js";
@@ -382,6 +384,10 @@ export interface IAccount<TVaultEntity extends IHasVaultAddress = never> {
 	isLockdownMode?: boolean;
 	isPermitDisabledMode?: boolean;
 	populated?: Partial<AccountPopulated>;
+	/** Net APY across all positions (decimal fraction, 0.05 = 5%). Requires populated vaults + market prices. */
+	readonly netApy?: number;
+	/** Return on equity across all positions (decimal fraction, 0.05 = 5%). Requires populated vaults + market prices. */
+	readonly roe?: number;
 }
 
 export class Account<TVaultEntity extends IHasVaultAddress = never>
@@ -742,6 +748,16 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 		const borrowed = this.totalBorrowedValueUsd;
 		if (supplied == null) return undefined;
 		return supplied - (borrowed ?? 0n);
+	}
+
+	/** Net APY across all positions (decimal fraction, 0.05 = 5%). */
+	get netApy(): number | undefined {
+		return computeAccountNetApy(this as unknown as IAccount<IHasVaultAddress>);
+	}
+
+	/** Return on equity across all positions (decimal fraction, 0.05 = 5%). */
+	get roe(): number | undefined {
+		return computeAccountRoe(this as unknown as IAccount<IHasVaultAddress>);
 	}
 
 	/**
