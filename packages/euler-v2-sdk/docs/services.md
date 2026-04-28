@@ -1,8 +1,9 @@
 # Services
 
-This SDK exposes multiple services. In most applications, the top-level entry points should be:
+This SDK exposes multiple services. The main entry points are:
 
 - `accountService`
+- `portfolioService`
 - `vaultMetaService`
 - `executionService`
 - `swapService`
@@ -11,7 +12,8 @@ Some services below are lower-level building blocks and usually do not need to b
 
 ## Top-Level Entry Points
 
-- `accountService`: Fetches account and sub-account state (positions, collateral/debt, liquidity), with optional vault/entity population.
+- `accountService`: Fetches the lower-level, contract-shaped account view: sub-accounts, raw positions, collateral/debt, liquidity, and optional vault/entity population.
+- `portfolioService`: Fetches the same underlying data as an opinionated, position-first savings/borrows view. It always enables vault and market-price population.
 - `vaultMetaService`: Type-agnostic vault access. Routes vault addresses to the right vault service (`EVault`, `EulerEarn`, `Securitize`) and returns the correct entity type.
 - `executionService`: Builds transaction plans for core actions (deposit, withdraw, borrow, repay, swap-based operations, liquidation, debt operations).
 - `swapService`: Fetches swap quotes and routes for asset exchange flows.
@@ -52,6 +54,7 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 | `eulerEarnService` | Yes (`EulerEarn`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | Also supports `populateStrategyVaults` and `fetchAllVaults()`; batch methods may return `undefined` entries |
 | `securitizeVaultService` | Yes (`SecuritizeCollateralVault`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | No standard perspectives for verified-vault discovery; `fetchAllVaults()` currently depends on adapter discovery support |
 | `accountService` | Account/sub-account data | Yes (`populateMarketPrices`) | Yes (`populateUserRewards`) | Via `vaultFetchOptions` | Via `vaultFetchOptions` | Vault enrichment goes through `vaultMetaService` |
+| `portfolioService` | Account-derived portfolio data | Yes (`populateAll`) | Yes (`populateAll`) | Yes (`populateAll`) | Yes (`populateAll`) | Fetches the backing account with `populateAll: true`; see [`portfolio.md`](./portfolio.md) |
 | `executionService` | No (planning/encoding only) | No | No | No | No | Produces generic transaction plans and EVC batch payloads |
 | `swapService` | No (quotes only) | No | No | No | No | Returns swap quotes/providers for execution plans |
 | `simulationService` | Simulates plans | Can populate in results | Can populate in results | Can populate in results | Can populate in results | Uses `accountFetchOptions` / `vaultFetchOptions` |

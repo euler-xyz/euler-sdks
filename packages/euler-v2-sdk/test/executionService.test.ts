@@ -131,7 +131,7 @@ test("describeBatch preserves decoded items even when one batch item is unknown"
 	]);
 });
 
-test("describeBatch decodes app-provided extra ABIs item-by-item", () => {
+test("describeBatch decodes caller-provided extra ABIs item-by-item", () => {
   const service = createExecutionService();
   const tosAbi = [
     {

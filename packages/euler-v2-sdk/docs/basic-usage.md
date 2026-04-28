@@ -44,7 +44,7 @@ For execution planning and transaction-plan structure, see [Execution Service](.
 
 ## Fetching Accounts
 
-An account represents an Ethereum address and its Euler sub-accounts (up to 256 per owner). Each sub-account has positions, enabled controllers/collaterals, and liquidity info.
+An account represents an Ethereum address and its Euler sub-accounts (up to 256 per owner). Each sub-account has positions, enabled controllers/collaterals, and liquidity info. This is the lower-level, contract-shaped view of the data.
 
 ### Basic fetch
 
@@ -63,22 +63,37 @@ for (const [address, subAccount] of Object.entries(account.subAccounts)) {
 
 ### Portfolio view
 
-Use `account.portfolio` when you want a top-level savings and borrow view across all sub-accounts:
+Use `portfolioService` when you want the same account data as an opinionated, position-first view across all sub-accounts:
 
 ```typescript
-const { savings, borrows } = account.portfolio
+const { result: portfolio } = await sdk.portfolioService.fetchPortfolio(1, '0xOwner...')
+
+const { savings, borrows } = portfolio
 
 for (const saving of savings) {
-  console.log('saving', saving.account, saving.vaultAddress, saving.assets)
+  console.log('saving', saving.subAccount, saving.position.vaultAddress, saving.assets)
 }
 
-for (const { borrow, collaterals } of borrows) {
+for (const { borrow, collaterals, healthFactor, userLTV } of borrows) {
   console.log('borrow', borrow.account, borrow.vaultAddress, borrow.borrowed)
   console.log('collaterals', collaterals.map((collateral) => collateral.vaultAddress))
+  console.log('risk', healthFactor, userLTV)
 }
 ```
 
-Borrow entries use `{ borrow, collaterals }`. A position with debt is always included as a borrow; any supplied balance on that same position is also treated as savings unless the vault is active collateral for a borrow in the same sub-account.
+`Portfolio` is built from a fully populated `Account`, but abstracts sub-accounts away into `savings` and `borrows`. `portfolioService.fetchPortfolio` fetches the backing account with `populateAll: true`. Borrow entries preserve the raw `{ borrow, collaterals }` position references and add higher-level fields such as primary collateral, health, LTV, liquidation price, and USD totals. A position with debt is always included as a borrow; any supplied balance on that same position is also treated as savings unless the vault is active collateral for a borrow in the same sub-account.
+
+Filter positions from every Portfolio computed property with:
+
+```typescript
+const { result: portfolio } = await sdk.portfolioService.fetchPortfolio(1, '0xOwner...', {
+  positionFilter: (position, { account }) => {
+    return position.assets > 0n || position.borrowed > 0n
+  },
+})
+```
+
+See [Portfolio](./portfolio.md) for the full shape and filtering rules.
 
 ### Without vault resolution
 

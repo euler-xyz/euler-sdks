@@ -93,12 +93,13 @@ All docs are in [`./docs`](./docs).
 8. [Pricing System](./docs/pricing-system.md) - Price data pipeline, fallback behavior, and pricing integration points.
 9. [Data Architecture](./docs/data-architecture.md) - Entities/adapters/services layering, population model, and data flow.
 10. [Cross-Service Data Population](./docs/cross-service-data-population.md) - How services enrich entities with prices, rewards, labels, and nested vaults.
-11. [Account Computed Properties](./docs/account-computed-properties.md) - Health factor/LTV/net-value computed fields and data prerequisites.
-12. [Caching External Data Queries](./docs/caching-external-data-queries.md) - `query*` decoration pattern for caching/logging/profiling.
-13. [Plugins](./docs/plugins.md) - Plugin system for read-path and plan-path extensions.
-14. [Labels](./docs/labels.md) - Label metadata model and usage.
-15. [Decoding Smart Contract Errors](./docs/decode-smart-contract-errors.md) - Revert decoding utilities for better error handling.
-16. [Entity Diagnostics](./docs/entity-diagnostics.md) - Sidecar metadata for data normalization, fallbacks, and per-field warnings.
+11. [Portfolio](./docs/portfolio.md) - High-level savings/borrows abstraction built from populated accounts.
+12. [Account Computed Properties](./docs/account-computed-properties.md) - Health factor/LTV/net-value computed fields and data prerequisites.
+13. [Caching External Data Queries](./docs/caching-external-data-queries.md) - `query*` decoration pattern for caching/logging/profiling.
+14. [Plugins](./docs/plugins.md) - Plugin system for read-path and plan-path extensions.
+15. [Labels](./docs/labels.md) - Label metadata model and usage.
+16. [Decoding Smart Contract Errors](./docs/decode-smart-contract-errors.md) - Revert decoding utilities for better error handling.
+17. [Entity Diagnostics](./docs/entity-diagnostics.md) - Sidecar metadata for data normalization, fallbacks, and per-field warnings.
 
 ## Examples
 
