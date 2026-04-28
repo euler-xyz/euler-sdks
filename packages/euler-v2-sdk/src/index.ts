@@ -1,4 +1,5 @@
 export * from "./entities/ERC4626Vault.js";
+export * from "./utils/irm.js";
 export * from "./entities/EVault.js";
 export * from "./entities/Account.js";
 export * from "./entities/Wallet.js";
@@ -37,10 +38,10 @@ export * from "./plugins/index.js";
 // Utils
 export * from "./utils/subAccounts.js";
 export {
-	type BuildQueryFn,
-	type QueryCacheConfig,
-	applyBuildQuery,
-	createQueryCacheBuildQuery,
+  type BuildQueryFn,
+  type QueryCacheConfig,
+  applyBuildQuery,
+  createQueryCacheBuildQuery,
 } from "./utils/buildQuery.js";
 export type { EulerSDKQueryName, QueryMethodName } from "./utils/queryNames.js";
 export * from "./utils/stateOverrides/index.js";
