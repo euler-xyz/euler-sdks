@@ -24,10 +24,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { getAddress, type Address } from "viem";
 
-import {
-  buildEulerSDK,
-  type BuildSDKOptions,
-} from "../../src/sdk/buildSDK.js";
+import { buildEulerSDK, type BuildSDKOptions } from "../../src/sdk/buildSDK.js";
 import { createPythPlugin } from "../../src/plugins/pyth/index.js";
 import type { BuildQueryFn } from "../../src/utils/buildQuery.js";
 import type { VaultEntity } from "../../src/services/vaults/vaultMetaService/index.js";
@@ -40,8 +37,12 @@ const REPORT_PREFIX =
 const NUMERIC_TOLERANCE = 0.01;
 const BIGINT_TOLERANCE_BPS = 100n;
 const FEE_BIGINT_TOLERANCE_BPS = 200n;
-const PRICE_DIFF_TOLERANCE = Number(process.env.PRICE_DIFF_TOLERANCE ?? NUMERIC_TOLERANCE);
-const PRICE_DIFF_TOLERANCE_BPS = BigInt(Math.round(PRICE_DIFF_TOLERANCE * 10_000));
+const PRICE_DIFF_TOLERANCE = Number(
+  process.env.PRICE_DIFF_TOLERANCE ?? NUMERIC_TOLERANCE,
+);
+const PRICE_DIFF_TOLERANCE_BPS = BigInt(
+  Math.round(PRICE_DIFF_TOLERANCE * 10_000),
+);
 const FILTER_VAULTS_IN_LABELS =
   process.env.FILTER_VAULTS_IN_LABELS?.toLowerCase() === "true";
 const DIFF_PREVIEW_LIMIT = 20;
@@ -271,9 +272,12 @@ function toDataIssueSnapshot(issue: unknown): DataIssueSnapshot {
   return {
     code: typeof value.code === "string" ? value.code : "UNKNOWN",
     severity: typeof value.severity === "string" ? value.severity : "unknown",
-    message: typeof value.message === "string" ? value.message : JSON.stringify(value),
+    message:
+      typeof value.message === "string" ? value.message : JSON.stringify(value),
     paths: Array.isArray(value.paths)
-      ? value.paths.filter((entry): entry is string => typeof entry === "string")
+      ? value.paths.filter(
+          (entry): entry is string => typeof entry === "string",
+        )
       : undefined,
     entityId: typeof value.entityId === "string" ? value.entityId : undefined,
     source: typeof value.source === "string" ? value.source : undefined,
@@ -317,8 +321,8 @@ function toComparableValue(
     ancestors.add(input as object);
 
     const output: Record<string, ComparableValue> = {};
-    const entries = Object.entries(input as Record<string, unknown>).sort(([a], [b]) =>
-      a.localeCompare(b),
+    const entries = Object.entries(input as Record<string, unknown>).sort(
+      ([a], [b]) => a.localeCompare(b),
     );
 
     for (const [key, value] of entries) {
@@ -344,7 +348,9 @@ function isBigIntSnapshot(value: ComparableValue): value is BigIntSnapshot {
   );
 }
 
-function isUndefinedSnapshot(value: ComparableValue): value is UndefinedSnapshot {
+function isUndefinedSnapshot(
+  value: ComparableValue,
+): value is UndefinedSnapshot {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -407,7 +413,10 @@ function shouldIgnoreOracleQueryFailureReasonDiff(
   );
 }
 
-function areFeeValuesBelowIgnoreThreshold(left: bigint, right: bigint): boolean {
+function areFeeValuesBelowIgnoreThreshold(
+  left: bigint,
+  right: bigint,
+): boolean {
   const threshold = 1_000_000n;
   const absLeft = left < 0n ? -left : left;
   const absRight = right < 0n ? -right : right;
@@ -596,7 +605,10 @@ function compareValues(
   if (isBigIntSnapshot(left) && isBigIntSnapshot(right)) {
     const leftBigInt = BigInt(left.value);
     const rightBigInt = BigInt(right.value);
-    if (isFeeBigIntPath(path) && areFeeValuesBelowIgnoreThreshold(leftBigInt, rightBigInt)) {
+    if (
+      isFeeBigIntPath(path) &&
+      areFeeValuesBelowIgnoreThreshold(leftBigInt, rightBigInt)
+    ) {
       return;
     }
     const toleranceBps = isFeeBigIntPath(path)
@@ -605,11 +617,7 @@ function compareValues(
         ? PRICE_DIFF_TOLERANCE_BPS
         : BIGINT_TOLERANCE_BPS;
     if (
-      bigIntsDifferWithinToleranceBps(
-        leftBigInt,
-        rightBigInt,
-        toleranceBps,
-      )
+      bigIntsDifferWithinToleranceBps(leftBigInt, rightBigInt, toleranceBps)
     ) {
       differences.push({
         path,
@@ -626,8 +634,12 @@ function compareValues(
   }
 
   if (Array.isArray(left) && Array.isArray(right)) {
-    const leftKeys = left.map((value) => getAddressKeyedEntryToken(path, value));
-    const rightKeys = right.map((value) => getAddressKeyedEntryToken(path, value));
+    const leftKeys = left.map((value) =>
+      getAddressKeyedEntryToken(path, value),
+    );
+    const rightKeys = right.map((value) =>
+      getAddressKeyedEntryToken(path, value),
+    );
     const canCompareByAddressKey =
       left.length > 0 &&
       right.length > 0 &&
@@ -646,8 +658,12 @@ function compareValues(
         });
       }
 
-      const leftMap = new Map(leftKeys.map((key, index) => [key, left[index]!]));
-      const rightMap = new Map(rightKeys.map((key, index) => [key, right[index]!]));
+      const leftMap = new Map(
+        leftKeys.map((key, index) => [key, left[index]!]),
+      );
+      const rightMap = new Map(
+        rightKeys.map((key, index) => [key, right[index]!]),
+      );
       const allKeys = [...new Set([...leftKeys, ...rightKeys])].sort();
 
       for (const key of allKeys) {
@@ -770,7 +786,9 @@ function getVaultType(vault: VaultEntity | undefined): string {
   return typeof value.type === "string" ? value.type : vault.constructor.name;
 }
 
-function toVaultMap(vaults: (VaultEntity | undefined)[]): Map<string, VaultSnapshot> {
+function toVaultMap(
+  vaults: (VaultEntity | undefined)[],
+): Map<string, VaultSnapshot> {
   const map = new Map<string, VaultSnapshot>();
 
   for (const vault of vaults) {
@@ -800,16 +818,12 @@ async function fetchLabelVaultAddressSet(
   sdk: Awaited<ReturnType<typeof buildEulerSDK>>,
   chainId: number,
 ): Promise<Set<string>> {
-  const [vaultLabels, products, points] = await Promise.all([
-    sdk.eulerLabelsService.fetchEulerLabelsVaults(chainId).catch(() => ({})),
+  const [products, points] = await Promise.all([
     sdk.eulerLabelsService.fetchEulerLabelsProducts(chainId).catch(() => ({})),
     sdk.eulerLabelsService.fetchEulerLabelsPoints(chainId).catch(() => []),
   ]);
 
   const addresses = new Set<string>();
-  for (const address of Object.keys(vaultLabels)) {
-    addMaybeAddress(addresses, address);
-  }
 
   for (const product of Object.values(products)) {
     const value = product as { vaults?: unknown; deprecatedVaults?: unknown };
@@ -896,7 +910,9 @@ async function fetchScenarioSnapshot(
           code: "SOURCE_UNAVAILABLE",
           severity: "warning",
           message:
-            entry.reason instanceof Error ? entry.reason.message : String(entry.reason),
+            entry.reason instanceof Error
+              ? entry.reason.message
+              : String(entry.reason),
           source,
           paths: ["$"],
           entityId: undefined,
@@ -917,7 +933,9 @@ async function fetchScenarioSnapshot(
   const vaultMap = toVaultMap(
     labelVaultAddresses
       ? responseVaults.filter((vault) =>
-          vault ? labelVaultAddresses.has(getAddress(vault.address).toLowerCase()) : false,
+          vault
+            ? labelVaultAddresses.has(getAddress(vault.address).toLowerCase())
+            : false,
         )
       : responseVaults,
   );
@@ -959,7 +977,9 @@ function summarizeChain(
     onchainSnapshot.vaults.map((vault) => [vault.address.toLowerCase(), vault]),
   );
 
-  const allAddresses = [...new Set([...defaultMap.keys(), ...onchainMap.keys()])].sort();
+  const allAddresses = [
+    ...new Set([...defaultMap.keys(), ...onchainMap.keys()]),
+  ].sort();
 
   for (const addressKey of allAddresses) {
     const defaultVault = defaultMap.get(addressKey);
@@ -1006,7 +1026,8 @@ function summarizeChain(
 
     summary.vaultsWithDiffs += 1;
     for (const issue of issues) {
-      summary.fieldDiffs[issue.path] = (summary.fieldDiffs[issue.path] ?? 0) + 1;
+      summary.fieldDiffs[issue.path] =
+        (summary.fieldDiffs[issue.path] ?? 0) + 1;
     }
     rows.push({
       chainId,
@@ -1099,7 +1120,10 @@ function findDeepestAddressForPath(
   let bestAddress: string | undefined;
   let bestDepth = -1;
 
-  const updateBestAddress = (value: ComparableValue | undefined, depth: number) => {
+  const updateBestAddress = (
+    value: ComparableValue | undefined,
+    depth: number,
+  ) => {
     if (!isPlainObject(value)) return;
     const address = value.address;
     if (typeof address === "string") {
@@ -1126,7 +1150,8 @@ function findDeepestAddressForPath(
         current = current[token];
       }
     } else {
-      if (!Array.isArray(current) || token < 0 || token >= current.length) break;
+      if (!Array.isArray(current) || token < 0 || token >= current.length)
+        break;
       current = current[token];
     }
 
@@ -1142,9 +1167,10 @@ function getSnapshotValue(
   scenario: ScenarioName,
   address: Address,
 ): ComparableValue | undefined {
-  const snapshots = scenario === "default-v3-adapters"
-    ? report.snapshots.default
-    : report.snapshots.onchain;
+  const snapshots =
+    scenario === "default-v3-adapters"
+      ? report.snapshots.default
+      : report.snapshots.onchain;
   const snapshot = snapshots.find((entry) => entry.chainId === chainId);
   const vault = snapshot?.vaults.find(
     (entry) => entry.address.toLowerCase() === address.toLowerCase(),
@@ -1183,8 +1209,14 @@ function getIssueVaultAddress(
 
 function isRateLimitError(error: unknown): boolean {
   const message =
-    error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  return message.includes("429") || message.toLowerCase().includes("rate limit");
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+  return (
+    message.includes("429") || message.toLowerCase().includes("rate limit")
+  );
 }
 
 function sleep(ms: number): Promise<void> {
@@ -1219,7 +1251,9 @@ async function withRetries<T>(label: string, fn: () => Promise<T>): Promise<T> {
 function renderChainSection(chainId: number, report: Report): string {
   const summary = report.summary.byChain[String(chainId)];
   const rows = report.vaults.filter((row) => row.chainId === chainId);
-  const diffs = rows.filter((row) => row.status === "diff").slice(0, DIFF_PREVIEW_LIMIT);
+  const diffs = rows
+    .filter((row) => row.status === "diff")
+    .slice(0, DIFF_PREVIEW_LIMIT);
   const missingInDefault = rows
     .filter((row) => row.status === "missing_in_default")
     .slice(0, DIFF_PREVIEW_LIMIT);
@@ -1236,7 +1270,8 @@ function renderChainSection(chainId: number, report: Report): string {
       const issue = row.issues[0]!;
       const issueVaultAddress = getIssueVaultAddress(report, row, issue);
       const issueVaultSuffix =
-        issueVaultAddress && issueVaultAddress.toLowerCase() !== row.address.toLowerCase()
+        issueVaultAddress &&
+        issueVaultAddress.toLowerCase() !== row.address.toLowerCase()
           ? `; issue vault \`${issueVaultAddress}\``
           : "";
       return `- root \`${row.address}\` (${row.type})${issueVaultSuffix}: \`${issue.path}\` ${issue.reason}; default ${formatIssueValue(issue.default)} vs onchain ${formatIssueValue(issue.onchain)}`;
@@ -1303,9 +1338,11 @@ Generated on ${report.generatedAt}.
 
 ## Top diff paths
 
-${topFieldDiffs(totals.fieldDiffs)
-  .map(([field, count]) => `- \`${field}\`: \`${count}\``)
-  .join("\n") || "- none"}
+${
+  topFieldDiffs(totals.fieldDiffs)
+    .map(([field, count]) => `- \`${field}\`: \`${count}\``)
+    .join("\n") || "- none"
+}
 
 ${report.chainIds.map((chainId) => renderChainSection(chainId, report)).join("\n\n")}
 `;
@@ -1380,8 +1417,12 @@ async function main() {
     await writeFile(jsonPath, JSON.stringify(report, null, 2));
     await writeFile(markdownPath, renderMarkdownReport(report));
 
-    console.log(`[compare-fetch-all-vaults] rebuilt JSON report from snapshots: ${jsonPath}`);
-    console.log(`[compare-fetch-all-vaults] rebuilt Markdown report from snapshots: ${markdownPath}`);
+    console.log(
+      `[compare-fetch-all-vaults] rebuilt JSON report from snapshots: ${jsonPath}`,
+    );
+    console.log(
+      `[compare-fetch-all-vaults] rebuilt Markdown report from snapshots: ${markdownPath}`,
+    );
     return;
   }
 
@@ -1390,7 +1431,9 @@ async function main() {
   const sharedBuildQuery = createSharedParityBuildQuery();
   const baseSdkOptions: BuildSDKOptions = {
     rpcUrls,
-    ...(process.env.EULER_V3_API_KEY ? { v3ApiKey: process.env.EULER_V3_API_KEY } : {}),
+    ...(process.env.EULER_V3_API_KEY
+      ? { v3ApiKey: process.env.EULER_V3_API_KEY }
+      : {}),
     plugins: buildParityPlugins(),
     buildQuery: sharedBuildQuery,
   };
@@ -1411,19 +1454,19 @@ async function main() {
   const onchainSnapshots: ScenarioSnapshot[] = [];
 
   for (const chainId of chainIds) {
-    console.log(`[compare-fetch-all-vaults] chain ${chainId}: fetching default (V3) snapshot...`);
+    console.log(
+      `[compare-fetch-all-vaults] chain ${chainId}: fetching default (V3) snapshot...`,
+    );
     const defaultSnapshot = await withRetries(
       `chain ${chainId} default-v3 snapshot`,
       () =>
-        fetchScenarioSnapshot(
-          "default-v3-adapters",
-          baseSdkOptions,
-          chainId,
-        ),
+        fetchScenarioSnapshot("default-v3-adapters", baseSdkOptions, chainId),
     );
     defaultSnapshots.push(defaultSnapshot);
 
-    console.log(`[compare-fetch-all-vaults] chain ${chainId}: fetching explicit onchain snapshot...`);
+    console.log(
+      `[compare-fetch-all-vaults] chain ${chainId}: fetching explicit onchain snapshot...`,
+    );
     const onchainSnapshot = await withRetries(
       `chain ${chainId} explicit-onchain snapshot`,
       () =>
@@ -1438,7 +1481,11 @@ async function main() {
     );
     onchainSnapshots.push(onchainSnapshot);
 
-    const { summary } = summarizeChain(chainId, defaultSnapshot, onchainSnapshot);
+    const { summary } = summarizeChain(
+      chainId,
+      defaultSnapshot,
+      onchainSnapshot,
+    );
 
     console.log(
       `[compare-fetch-all-vaults] chain ${chainId}: default=${summary.defaultVaults}, onchain=${summary.onchainVaults}, diffs=${summary.vaultsWithDiffs}, missing_in_default=${summary.missingInDefault}, missing_in_onchain=${summary.missingInOnchain}`,
@@ -1458,7 +1505,9 @@ async function main() {
   await writeFile(markdownPath, renderMarkdownReport(report));
 
   console.log(`[compare-fetch-all-vaults] wrote JSON report: ${jsonPath}`);
-  console.log(`[compare-fetch-all-vaults] wrote Markdown report: ${markdownPath}`);
+  console.log(
+    `[compare-fetch-all-vaults] wrote Markdown report: ${markdownPath}`,
+  );
 }
 
 main().catch((error) => {
