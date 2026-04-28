@@ -686,6 +686,21 @@ tr.clickable {
   width: 960px;
 }
 
+.raw-json-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.raw-json-copy {
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
 .raw-json-body {
   margin: 0;
   max-height: 70vh;
