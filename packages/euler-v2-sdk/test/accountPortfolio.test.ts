@@ -1,6 +1,6 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import { getAddress, zeroAddress } from "viem";
+import { test } from "vitest";
 import {
 	Account,
 	type IAccountPosition,
@@ -345,4 +345,109 @@ test("account applies intrinsic APY with the euler-lite formula", () => {
 
 	assert.equal(account.netApy, 0.1 + 1.1 * 0.05);
 	assert.equal(account.roe, 0.1 + 1.1 * 0.05);
+});
+
+test("account uses EulerEarn supplyApy1h for account yield metrics", () => {
+	const eulerEarn = vault(savingsVault, {
+		supplyApy1h: 0.075,
+		rewards: {
+			campaigns: [
+				{
+					campaignId: "earn-supply",
+					source: "merkl",
+					action: "LEND",
+					apr: 0.005,
+					rewardTokenSymbol: "EUL",
+				},
+			],
+		},
+	});
+
+	const account = new Account({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(subAccount, [
+				position(savingsVault, {
+					vault: eulerEarn,
+					shares: 100n,
+					assets: 100n,
+					suppliedValueUsd: usd(100),
+				}),
+			]),
+		},
+	});
+
+	assert.equal(account.netApy, 0.08);
+	assert.equal(account.roe, 0.08);
+});
+
+test("account yield metrics return undefined without populated USD positions", () => {
+	const account = new Account({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(subAccount, [
+				position(savingsVault, {
+					vault: vault(savingsVault, {
+						interestRates: { supplyAPY: "0.10", borrowAPY: "0" },
+					}),
+					shares: 100n,
+					assets: 100n,
+				}),
+			]),
+		},
+	});
+
+	assert.equal(account.netApy, undefined);
+	assert.equal(account.roe, undefined);
+});
+
+test("account treats populated positions without APY data as zero yield", () => {
+	const account = new Account({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(subAccount, [
+				position(collateralVault, {
+					vault: vault(collateralVault),
+					shares: 100n,
+					assets: 100n,
+					suppliedValueUsd: usd(100),
+				}),
+				position(borrowVault, {
+					vault: vault(borrowVault),
+					borrowed: 50n,
+					borrowedValueUsd: usd(50),
+				}),
+			]),
+		},
+	});
+
+	assert.equal(account.totalSuppliedValueUsd, usd(100));
+	assert.equal(account.totalBorrowedValueUsd, usd(50));
+	assert.equal(account.netAssetValueUsd, usd(50));
+	assert.equal(account.netApy, 0);
+	assert.equal(account.roe, 0);
+});
+
+test("account yield metrics return zero when equity is not positive", () => {
+	const account = new Account({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(subAccount, [
+				position(borrowVault, {
+					vault: vault(borrowVault, {
+						interestRates: { supplyAPY: "0", borrowAPY: "0.08" },
+					}),
+					borrowed: 100n,
+					borrowedValueUsd: usd(100),
+				}),
+			]),
+		},
+	});
+
+	assert.equal(account.netApy, 0);
+	assert.equal(account.roe, 0);
 });

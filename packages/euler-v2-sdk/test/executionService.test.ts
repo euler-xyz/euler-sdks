@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { type Abi, encodeFunctionData } from "viem";
+import { type Abi, decodeFunctionData, encodeFunctionData } from "viem";
 import { ExecutionService } from "../src/services/executionService/executionService.js";
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
@@ -224,4 +224,26 @@ test("swap-from-wallet emits explicit required approval and wallet-swap batch", 
 	assert.equal(plan[1].items[0]?.targetContract, VERIFIER);
 	assert.equal(plan[1].items[1]?.targetContract, SWAPPER);
 	assert.equal(plan[1].items[2]?.targetContract, VERIFIER);
+
+	const transfer = decodeFunctionData({
+		abi: swapVerifierAbi,
+		data: plan[1].items[0]?.data ?? "0x",
+	});
+	assert.equal(transfer.functionName, "transferFromSender");
+	assert.deepEqual(transfer.args, [TOKEN_IN, AMOUNT, SWAPPER]);
+});
+
+test("swap-from-wallet rejects non-transfer verifier quotes", () => {
+	const service = createExecutionService();
+
+	assert.throws(
+		() =>
+			service.encodeSwapFromWallet({
+				chainId: 1,
+				swapQuote: createSwapQuote() as never,
+				amount: AMOUNT,
+				sender: ACCOUNT,
+			}),
+		/Invalid swap quote type for wallet swap/,
+	);
 });

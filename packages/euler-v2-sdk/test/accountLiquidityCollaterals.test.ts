@@ -1,6 +1,6 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import { getAddress, maxInt256, zeroAddress } from "viem";
+import { test } from "vitest";
 import { convertVaultAccountInfoToAccountPosition } from "../src/services/accountService/adapters/accountOnchainAdapter/accountInfoConverter.js";
 import { AccountV3Adapter } from "../src/services/accountService/adapters/accountV3Adapter/accountV3Adapter.js";
 import type { VaultAccountInfo } from "../src/services/accountService/adapters/accountOnchainAdapter/accountLensTypes.js";

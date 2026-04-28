@@ -333,3 +333,52 @@ test("fetchWalletSwapQuote builds transfer-output request and validates transfer
 		"0x0000000000000000000000000000000000000000",
 	);
 });
+
+test("fetchWalletSwapQuote rejects non-finite slippage before querying", async () => {
+	let queried = false;
+	const service = new SwapService(
+		{ swapApiUrl: "https://swap.example" },
+		createDeploymentService(VERIFIER),
+	);
+	service.setQuerySwapQuotes(async () => {
+		queried = true;
+		return { success: true, data: [createTransferQuote()] };
+	});
+
+	await assert.rejects(
+		() =>
+			service.fetchWalletSwapQuote({
+				chainId: CHAIN_ID,
+				fromAsset: TOKEN_IN,
+				toAsset: TOKEN_OUT,
+				amount: AMOUNT_IN,
+				receiver: RECEIVER,
+				origin: ORIGIN,
+				slippage: Number.NaN,
+			}),
+		/Valid slippage between 0 and 50%/,
+	);
+	assert.equal(queried, false);
+});
+
+test("fetchWalletSwapQuote rejects empty quote responses", async () => {
+	const service = new SwapService(
+		{ swapApiUrl: "https://swap.example" },
+		createDeploymentService(VERIFIER),
+	);
+	service.setQuerySwapQuotes(async () => ({ success: true, data: [] }));
+
+	await assert.rejects(
+		() =>
+			service.fetchWalletSwapQuote({
+				chainId: CHAIN_ID,
+				fromAsset: TOKEN_IN,
+				toAsset: TOKEN_OUT,
+				amount: AMOUNT_IN,
+				receiver: RECEIVER,
+				origin: ORIGIN,
+				slippage: 0.5,
+			}),
+		/No swap quotes available/,
+	);
+});
