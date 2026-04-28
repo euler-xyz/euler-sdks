@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { type Abi, encodeFunctionData } from "viem";
 import { ExecutionService } from "../src/services/executionService/executionService.js";
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
