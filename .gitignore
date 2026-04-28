@@ -11,3 +11,7 @@ dist
 
 # IDE / tools
 .claude
+
+# tests
+coverage
+.playwright-mcp

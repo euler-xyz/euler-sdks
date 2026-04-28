@@ -39,6 +39,13 @@ export type V3OracleAdapter = {
 	chainlinkDetail?: { oracle: string };
 };
 
+export type V3OracleResolvedVault = {
+	vault: string;
+	quote: string;
+	asset: string;
+	resolvedAssets: string[];
+};
+
 export type V3OraclePrice = {
 	queryFailure: boolean;
 	queryFailureReason: string;
@@ -78,6 +85,7 @@ export type V3VaultDetail = {
 		oracle: string;
 		name: string;
 		adapters: V3OracleAdapter[];
+		resolvedVaults: V3OracleResolvedVault[];
 	};
 	unitOfAccount?: V3Token;
 	creator: string;

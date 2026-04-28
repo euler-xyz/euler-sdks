@@ -1,6 +1,6 @@
 # Swaps
 
-The SDK provides a swap service that fetches quotes from multiple DEX aggregators and builds transaction calldata for Euler's Swapper contract. Swaps are used for repaying debt with collateral, swapping collateral between vaults, swapping debt between vaults, and opening leveraged (multiply) positions.
+The SDK provides a swap service that fetches quotes from multiple DEX aggregators and builds transaction calldata for Euler's Swapper contract. Swaps are used for repaying debt with collateral, swapping collateral between vaults, swapping debt between vaults, swapping wallet assets into another wallet, and opening leveraged (multiply) positions.
 
 ## Overview
 
@@ -91,6 +91,32 @@ const plan = sdk.executionService.planSwapDebt({
 })
 ```
 
+### Wallet To Wallet Swap
+
+Pull an input token from the sender wallet, execute the swap, and transfer the output token to a wallet receiver. Used when you want a direct wallet-level swap without involving Euler vault deposits.
+
+Under the hood, this helper sets the quote flags needed for a true wallet path:
+`unusedInputReceiver = origin`, `skipSweepDepositOut = true`, and `transferOutputToReceiver = true`.
+
+```typescript
+const quotes = await sdk.swapService.fetchWalletSwapQuote({
+  chainId: 1,
+  fromAsset: USDC,
+  toAsset: WETH,
+  amount: swapAmount,
+  receiver: receiverWallet,
+  origin: senderWallet,
+  slippage: 0.5,
+})
+
+const plan = sdk.executionService.planSwapFromWallet({
+  account: accountData,
+  swapQuote: quotes[0],
+  amount: swapAmount,
+  tokenIn: USDC,
+})
+```
+
 ### Multiply (Leverage)
 
 Open a leveraged position by depositing collateral, borrowing against it, swapping the borrowed asset to a long asset, and depositing the result as additional collateral. There are two variants:
@@ -165,3 +191,9 @@ With the `fetchProviders` endpoint and `provider` filter, it is possible to buil
 ## Swap Verification
 
 Every quote returned by the API includes verifier calldata (`quote.verify`) that is checked on-chain by the `SwapVerifier` contract. The SDK validates this data client-side before returning quotes. This ensures the swap payload has not been tampered with and that the minimum output amount or maximum debt is enforced.
+
+Verification modes used by the SDK:
+
+- `skimMin` for swap output that should be deposited/skimmed into a vault position
+- `transferMin` for swap output that should be transferred to a wallet/address receiver
+- `debtMax` for swap output that repays debt up to a bounded maximum

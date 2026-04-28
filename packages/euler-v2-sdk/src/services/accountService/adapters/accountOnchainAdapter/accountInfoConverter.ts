@@ -35,7 +35,14 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 		oracleMid: liquidityInfo.collateralValueRaw,
 	};
 
-	const collaterals = liquidityInfo.collaterals.map((collateral, idx) => {
+	const hasCollateralValue = liquidityInfo.collaterals.some((_, idx) => {
+		const borrowing = liquidityInfo.collateralValuesBorrowing[idx] ?? 0n;
+		const liquidation = liquidityInfo.collateralValuesLiquidation[idx] ?? 0n;
+		const oracleMid = liquidityInfo.collateralValuesRaw[idx] ?? 0n;
+		return borrowing !== 0n || liquidation !== 0n || oracleMid !== 0n;
+	});
+
+	const collaterals = liquidityInfo.collaterals.flatMap((collateral, idx) => {
 		const collateralAddress = getAddress(collateral);
 		const borrowing = liquidityInfo.collateralValuesBorrowing[idx];
 		const liquidation = liquidityInfo.collateralValuesLiquidation[idx];
@@ -75,14 +82,27 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 			});
 		}
 
-		return {
-			address: collateralAddress,
-			value: {
-				borrowing: borrowing ?? 0n,
-				liquidation: liquidation ?? 0n,
-				oracleMid: oracleMid ?? 0n,
-			},
+		const value = {
+			borrowing: borrowing ?? 0n,
+			liquidation: liquidation ?? 0n,
+			oracleMid: oracleMid ?? 0n,
 		};
+
+		if (
+			hasCollateralValue &&
+			value.borrowing === 0n &&
+			value.liquidation === 0n &&
+			value.oracleMid === 0n
+		) {
+			return [];
+		}
+
+		return [
+			{
+				address: collateralAddress,
+				value,
+			},
+		];
 	});
 
 	let daysToLiquidation: DaysToLiquidation = "Infinity";

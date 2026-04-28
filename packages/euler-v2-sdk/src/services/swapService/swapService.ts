@@ -1,4 +1,4 @@
-import { type Address, encodeFunctionData, getAddress } from "viem";
+import { type Address, encodeFunctionData, getAddress, zeroAddress } from "viem";
 import type {
 	SwapQuote,
 	SwapQuoteRequest,
@@ -6,10 +6,12 @@ import type {
 	SwapProvidersApiResponse,
 	GetRepayQuoteArgs,
 	GetDepositQuoteArgs,
+	GetWalletSwapQuoteArgs,
 } from "./swapServiceTypes.js";
 import { SwapperMode } from "./swapServiceTypes.js";
 import { swapVerifierAbi } from "./swapVerifierAbi.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
+import type { IDeploymentService } from "../deploymentService/index.js";
 
 export interface SwapServiceConfig {
 	swapApiUrl: string;
@@ -23,16 +25,21 @@ export interface ISwapService {
 	fetchRepayQuotes(args: GetRepayQuoteArgs): Promise<SwapQuote[]>;
 	/** Fetches swap quotes for swapping collateral between vaults (withdraw → swap → deposit). */
 	fetchDepositQuote(args: GetDepositQuoteArgs): Promise<SwapQuote[]>;
+	/** Fetches swap quotes for swapping wallet input to wallet output (transferFromSender → swap → transferOutputToReceiver). */
+	fetchWalletSwapQuote(args: GetWalletSwapQuoteArgs): Promise<SwapQuote[]>;
 	/** Fetches available swap providers for a given chain. */
 	fetchProviders(chainId: number): Promise<string[]>;
 }
 
 const DEFAULT_DEADLINE = 1800; // 30 minutes
 const MAX_SLIPPAGE = 50;
+const SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR = 10_000n;
+const SLIPPAGE_VALIDATION_TOLERANCE_UNITS = 1n; // 0.01%
 
 export class SwapService implements ISwapService {
 	constructor(
 		private readonly config: SwapServiceConfig,
+		private readonly deploymentService: IDeploymentService,
 		buildQuery?: BuildQueryFn,
 	) {
 		if (!config.swapApiUrl) {
@@ -122,9 +129,10 @@ export class SwapService implements ISwapService {
 			throw new Error("Swap API returned unsuccessful response");
 		}
 
-		// Validate verifier data for each quote
+		// Validate verifier and slippage data for each quote
 		for (const quote of jsonData.data) {
 			this.validateVerifierData(request, quote);
+			this.validateSlippageData(request, quote);
 		}
 
 		return jsonData.data;
@@ -213,6 +221,21 @@ export class SwapService implements ISwapService {
 	): void {
 		if (!request.receiver || !request.accountOut) {
 			throw new Error("Missing swap params for verification");
+		}
+
+		const expectedVerifierAddress = this.deploymentService.getDeployment(
+			request.chainId,
+		).addresses.peripheryAddrs?.swapVerifier;
+		if (!expectedVerifierAddress) {
+			throw new Error(
+				`SwapVerifier address missing for chainId ${request.chainId}`,
+			);
+		}
+		if (
+			getAddress(quote.verify.verifierAddress) !==
+				getAddress(expectedVerifierAddress)
+		) {
+			throw new Error("SwapVerifier address mismatch");
 		}
 
 		let functionName:
@@ -442,11 +465,161 @@ export class SwapService implements ISwapService {
 		return quotes;
 	}
 
+	/**
+	 * Fetches swap quotes for swapping a wallet token into another wallet token.
+	 * Delegates to fetchSwapQuotes with zero-address vault/account placeholders,
+	 * `unusedInputReceiver` set to origin, `skipSweepDepositOut` enabled, and
+	 * `transferOutputToReceiver` enabled so the output is transferred to `receiver`.
+	 *
+	 * This helper is designed to pair with executionService.planSwapFromWallet(),
+	 * which pulls the input token from the sender wallet via SwapVerifier.transferFromSender.
+	 *
+	 * @param args - Wallet-to-wallet swap quote arguments
+	 * @param args.chainId - Chain ID
+	 * @param args.fromAsset - Wallet token to sell (tokenIn)
+	 * @param args.toAsset - Wallet token to buy (tokenOut)
+	 * @param args.amount - Amount of fromAsset to swap (exact-in)
+	 * @param args.receiver - Address that receives the output token
+	 * @param args.origin - EOA sending the transaction and later authorizing transferFromSender
+	 * @param args.slippage - Slippage in percent (0–50)
+	 * @param args.deadline - Quote deadline timestamp in seconds (optional)
+	 * @returns Promise of array of swap quotes (verify type transferMin). Throws if slippage invalid or no quotes.
+	 */
+	async fetchWalletSwapQuote(args: GetWalletSwapQuoteArgs): Promise<SwapQuote[]> {
+		const {
+			chainId,
+			fromAsset,
+			toAsset,
+			amount,
+			receiver,
+			origin,
+			slippage,
+			deadline,
+		} = args;
+
+		this.validateSlippage(slippage);
+
+		const quotes = await this.fetchSwapQuotes({
+			chainId,
+			tokenIn: fromAsset,
+			tokenOut: toAsset,
+			accountIn: zeroAddress,
+			accountOut: zeroAddress,
+			amount,
+			vaultIn: zeroAddress,
+			receiver,
+			origin,
+			slippage,
+			swapperMode: SwapperMode.EXACT_IN,
+			isRepay: false,
+			targetDebt: 0n,
+			currentDebt: 0n,
+			deadline: deadline ?? 0,
+			unusedInputReceiver: origin,
+			transferOutputToReceiver: true,
+			skipSweepDepositOut: true,
+			provider: args.provider,
+		});
+
+		if (quotes.length === 0) {
+			throw new Error("No swap quotes available");
+		}
+
+		return quotes;
+	}
+
 	private validateSlippage(slippage: number): void {
-		if (slippage === undefined || slippage > MAX_SLIPPAGE || slippage < 0) {
+		if (
+			slippage === undefined ||
+			!Number.isFinite(slippage) ||
+			slippage > MAX_SLIPPAGE ||
+			slippage < 0
+		) {
 			throw new Error(
 				"Valid slippage between 0 and 50% must be provided for swap",
 			);
 		}
+	}
+
+	private validateSlippageData(
+		request: SwapQuoteRequest,
+		quote: SwapQuote,
+	): void {
+		if (request.swapperMode === SwapperMode.TARGET_DEBT) {
+			const amountIn = BigInt(quote.amountIn);
+			const amountInMax = BigInt(quote.amountInMax);
+			const expectedAmountInMax = this.applySlippageToInput(
+				amountIn,
+				request.slippage,
+			);
+			const allowedAmountInMax = this.applyInputValidationTolerance(
+				expectedAmountInMax,
+			);
+
+			if (amountInMax > allowedAmountInMax) {
+				throw new Error("Swap quote amountInMax exceeds requested slippage");
+			}
+		} else {
+			const amountOut = BigInt(quote.amountOut);
+			const amountOutMin = BigInt(quote.amountOutMin);
+			const expectedAmountOutMin = this.applySlippageToOutput(
+				amountOut,
+				request.slippage,
+			);
+			const allowedAmountOutMin = this.applyOutputValidationTolerance(
+				expectedAmountOutMin,
+			);
+
+			if (amountOutMin < allowedAmountOutMin) {
+				throw new Error("Swap quote amountOutMin exceeds requested slippage");
+			}
+		}
+	}
+
+	private applyOutputValidationTolerance(amount: bigint): bigint {
+		return (
+			amount *
+			(SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR -
+				SLIPPAGE_VALIDATION_TOLERANCE_UNITS)
+		) / SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR;
+	}
+
+	private applyInputValidationTolerance(amount: bigint): bigint {
+		return (
+			amount *
+				(SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR +
+					SLIPPAGE_VALIDATION_TOLERANCE_UNITS) +
+			SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR -
+			1n
+		) / SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR;
+	}
+
+	private applySlippageToOutput(amount: bigint, slippage: number): bigint {
+		const { slippageUnits, denominator } = this.parseSlippagePercent(slippage);
+		return (amount * (denominator - slippageUnits)) / denominator;
+	}
+
+	private applySlippageToInput(amount: bigint, slippage: number): bigint {
+		const { slippageUnits, denominator } = this.parseSlippagePercent(slippage);
+		return (amount * (denominator + slippageUnits) + denominator - 1n) /
+			denominator;
+	}
+
+	private parseSlippagePercent(slippage: number): {
+		slippageUnits: bigint;
+		denominator: bigint;
+	} {
+		const slippageString = slippage.toLocaleString("en-US", {
+			useGrouping: false,
+			maximumFractionDigits: 20,
+		});
+		const [whole = "0", fraction = ""] = slippageString.split(".");
+		const scale = 10n ** BigInt(fraction.length);
+		const slippageUnits = BigInt(whole) * scale + BigInt(fraction || "0");
+
+		return {
+			slippageUnits,
+			denominator: 100n * scale,
+		};
 	}
 }

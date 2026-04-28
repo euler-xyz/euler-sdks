@@ -38,7 +38,7 @@ Common plan functions include:
 - `planDeposit`, `planMint`, `planWithdraw`, `planRedeem`
 - `planBorrow`, `planPullDebt`, `planLiquidation`
 - `planRepayFromWallet`, `planRepayFromDeposit`, `planRepayWithSwap`
-- `planDepositWithSwapFromWallet`, `planSwapCollateral`, `planSwapDebt`
+- `planDepositWithSwapFromWallet`, `planSwapFromWallet`, `planSwapCollateral`, `planSwapDebt`
 - `planTransfer`, `planMultiplyWithSwap`, `planMultiplySameAsset`
 
 After planning, use:
@@ -91,5 +91,6 @@ Useful entry points:
 
 - [`examples/execution/deposit-example.ts`](../examples/execution/deposit-example.ts)
 - [`examples/execution/repay-with-swap-example.ts`](../examples/execution/repay-with-swap-example.ts)
+- [`examples/execution/swap-from-wallet-example.ts`](../examples/execution/swap-from-wallet-example.ts)
 - [`examples/execution/merge-plans-example.ts`](../examples/execution/merge-plans-example.ts)
 - [`run-examples.sh`](../examples/run-examples.sh)

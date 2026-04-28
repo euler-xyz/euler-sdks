@@ -468,6 +468,7 @@ export async function buildEulerSDK<
 		servicesOverrides?.swapService ??
 		new SwapService(
 			swapServiceConfig || defaultSwapServiceConfig,
+			deploymentService,
 			resolvedBuildQuery,
 		);
 

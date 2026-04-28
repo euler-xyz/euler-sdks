@@ -76,6 +76,7 @@ ANVIL_EXAMPLES=(
   "execution/merge-plans-example.ts"
   "execution/borrow-with-pyth-example.ts"
   "execution/deposit-with-swap-from-wallet-example.ts"
+  "execution/swap-from-wallet-example.ts"
   "simulations/simulate-deposit-example.ts"
 )
 

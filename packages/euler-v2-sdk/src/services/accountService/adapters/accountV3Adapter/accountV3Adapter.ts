@@ -4,7 +4,6 @@ import type {
 	IAccountLiquidity,
 	IAccountPosition,
 	ISubAccount,
-	DaysToLiquidation,
 } from "../../../../entities/Account.js";
 import {
 	type BuildQueryFn,
@@ -105,27 +104,39 @@ function convertLiquidity(
 	entityId: Address,
 	errors: DataIssue[],
 ): IAccountLiquidity {
-	const collaterals = liquidity.collaterals.map((collateral, collateralIndex) => {
-		const collateralAddress = parseAddressField(
-			collateral.address,
-			{
+	const convertedCollaterals = liquidity.collaterals.map(
+		(collateral, collateralIndex) => {
+			const collateralAddress = parseAddressField(collateral.address, {
 				path: `${path}.collaterals[${collateralIndex}].address`,
 				entityId,
 				errors,
 				source: "accountV3",
-			},
-		);
-
-		return {
-			address: collateralAddress,
-			value: convertAssetValue(
-				collateral.value,
-				`${path}.collaterals[${collateralIndex}].value`,
-				collateralAddress,
-				errors,
-			),
-		};
-	});
+			});
+			return {
+				address: collateralAddress,
+				value: convertAssetValue(
+					collateral.value,
+					`${path}.collaterals[${collateralIndex}].value`,
+					collateralAddress,
+					errors,
+				),
+			};
+		},
+	);
+	const hasCollateralValue = convertedCollaterals.some(
+		({ value }) =>
+			value.borrowing !== 0n ||
+			value.liquidation !== 0n ||
+			value.oracleMid !== 0n,
+	);
+	const collaterals = hasCollateralValue
+		? convertedCollaterals.filter(
+				({ value }) =>
+					value.borrowing !== 0n ||
+					value.liquidation !== 0n ||
+					value.oracleMid !== 0n,
+			)
+		: convertedCollaterals;
 
 	return {
 		vaultAddress: parseAddressField(

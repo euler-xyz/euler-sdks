@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { encodeAbiParameters, getAddress, zeroAddress } from "viem";
 import {
 	decodeOracleInfo,
@@ -224,11 +224,13 @@ test("convertVaultInfoFullToIEVault suppresses blank root oracle tuples like V3"
 	assert.deepEqual(vault.oracle.resolvedVaults, []);
 });
 
-test("convertVault maps V3 collateral asset rows to oracle resolved vaults", () => {
+test("convertVault maps V3 oracle resolved vault rows", () => {
 	const collateralVault = "0x0000000000000000000000000000000000000a11";
 	const collateralAsset = getAddress(
 		"0x0000000000000000000000000000000000000a12",
 	);
+	const resolvedVault = getAddress("0x0000000000000000000000000000000000000b11");
+	const resolvedAsset = getAddress("0x0000000000000000000000000000000000000b12");
 	const errors: unknown[] = [];
 	const vault = convertVault(
 		{
@@ -254,6 +256,14 @@ test("convertVault maps V3 collateral asset rows to oracle resolved vaults", () 
 				oracle: "0x00000000000000000000000000000000000000d3",
 				name: "EulerRouter",
 				adapters: [],
+				resolvedVaults: [
+					{
+						vault: resolvedVault,
+						asset: resolvedAsset,
+						quote: QUOTE,
+						resolvedAssets: [resolvedAsset],
+					},
+				],
 			},
 			unitOfAccount: {
 				address: QUOTE,
@@ -335,10 +345,10 @@ test("convertVault maps V3 collateral asset rows to oracle resolved vaults", () 
 
 	assert.deepEqual(vault.oracle.resolvedVaults, [
 		{
-			vault: collateralVault,
-			asset: collateralAsset,
+			vault: resolvedVault,
+			asset: resolvedAsset,
 			quote: QUOTE,
-			resolvedAssets: [collateralAsset],
+			resolvedAssets: [resolvedAsset],
 		},
 	]);
 });

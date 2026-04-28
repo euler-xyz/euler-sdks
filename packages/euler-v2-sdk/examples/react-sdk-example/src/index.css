@@ -686,6 +686,21 @@ tr.clickable {
   width: 960px;
 }
 
+.raw-json-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.raw-json-copy {
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
 .raw-json-body {
   margin: 0;
   max-height: 70vh;
@@ -841,6 +856,50 @@ tr.clickable {
 .apy-tooltip-heading {
   font-weight: 700;
   font-size: 11px;
+}
+
+.portfolio-amount-tooltip-trigger {
+  position: relative;
+  display: inline-flex;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.portfolio-amount-tooltip {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
+  min-width: 190px;
+  padding: 8px 10px;
+  background: #000;
+  color: #fff;
+  font-size: 11px;
+  white-space: nowrap;
+  z-index: 100;
+}
+
+.portfolio-amount-tooltip-trigger:hover .portfolio-amount-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.portfolio-amount-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.portfolio-amount-tooltip-divider {
+  border-top: 1px solid #555;
+  margin: 2px 0;
+}
+
+.portfolio-amount-tooltip-heading {
+  font-weight: 700;
 }
 
 /* Rewards page */

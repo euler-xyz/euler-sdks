@@ -418,7 +418,7 @@ export function BorrowPairPage() {
   const previewCollateralLiquidationPriceUsd = useMemo(() => {
     if (!previewPositionWithLiquidity || !collateralVault) return undefined;
     const key = getAddress(collateralVault.address);
-    return previewPositionWithLiquidity.collateralLiqiidationPricesUsd?.[key];
+    return previewPositionWithLiquidity.collateralLiquidationPricesUsd?.[key];
   }, [previewPositionWithLiquidity, collateralVault]);
 
   const previewDebtLiquidationPriceUsd = useMemo(

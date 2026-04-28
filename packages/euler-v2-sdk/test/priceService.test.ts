@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { PriceService } from "../src/services/priceService/priceService.js";
 import { backendPriceToBigInt } from "../src/services/priceService/backendClient.js";
 
@@ -25,28 +25,28 @@ function createPriceService() {
 }
 
 test("fetchAssetUsdPriceByAddress returns backend price when available", async () => {
-  const service = createPriceService();
-  service.setBackendClient({
-    isConfigured: true,
-    queryBackendPrice: async () => ({ price: "12.34" }),
-  } as never);
-  const expectedPrice = backendPriceToBigInt("12.34");
+	const service = createPriceService();
+	service.setBackendClient({
+		isConfigured: true,
+		queryV3Price: async () => ({ price: "12.34" }),
+	} as never);
+	const expectedPrice = backendPriceToBigInt("12.34");
 
-  const price = await service.fetchAssetUsdPriceByAddress(CHAIN_ID, ASSET);
+	const price = await service.fetchAssetUsdPriceByAddress(CHAIN_ID, ASSET);
 
-  assert.deepEqual(price, {
-    amountOutMid: expectedPrice,
-    amountOutAsk: expectedPrice,
-    amountOutBid: expectedPrice,
-    decimals: 18,
-  });
+	assert.deepEqual(price, {
+		amountOutMid: expectedPrice,
+		amountOutAsk: expectedPrice,
+		amountOutBid: expectedPrice,
+		decimals: 18,
+	});
 });
 
 test("fetchAssetUsdPriceByAddress falls back to on-chain asset pricing", async () => {
 	const service = createPriceService();
 	service.setBackendClient({
 		isConfigured: true,
-		queryBackendPrice: async () => {
+		queryV3Price: async () => {
 			throw new Error("backend unavailable");
 		},
 	} as never);

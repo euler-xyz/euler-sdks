@@ -61,6 +61,25 @@ for (const [address, subAccount] of Object.entries(account.subAccounts)) {
 
 `fetchAccount` resolves vault entities only when `populateVaults: true` is set. Otherwise each `position.vault` remains `undefined` and you only get raw position data.
 
+### Portfolio view
+
+Use `account.portfolio` when you want a top-level savings and borrow view across all sub-accounts:
+
+```typescript
+const { savings, borrows } = account.portfolio
+
+for (const saving of savings) {
+  console.log('saving', saving.account, saving.vaultAddress, saving.assets)
+}
+
+for (const { borrow, collaterals } of borrows) {
+  console.log('borrow', borrow.account, borrow.vaultAddress, borrow.borrowed)
+  console.log('collaterals', collaterals.map((collateral) => collateral.vaultAddress))
+}
+```
+
+Borrow entries use `{ borrow, collaterals }`. A position with debt is always included as a borrow; any supplied balance on that same position is also treated as savings unless the vault is active collateral for a borrow in the same sub-account.
+
 ### Without vault resolution
 
 When you only need raw position data (addresses, balances), skip vault resolution:

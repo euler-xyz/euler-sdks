@@ -37,6 +37,7 @@ import {
 	type EncodeSwapDebtArgs,
 	type EncodeTransferArgs,
 	type EncodeDepositWithSwapFromWalletArgs,
+	type EncodeSwapFromWalletArgs,
 	type EncodeSwapCollateralArgs,
 	type EncodePermit2CallArgs,
 	PERMIT2_TYPES,
@@ -56,6 +57,7 @@ import {
 	type PlanRepayFromDepositArgs,
 	type PlanRepayWithSwapArgs,
 	type PlanDepositWithSwapFromWalletArgs,
+	type PlanSwapFromWalletArgs,
 	type PlanSwapCollateralArgs,
 	type PlanSwapDebtArgs,
 	type PlanTransferArgs,
@@ -87,6 +89,7 @@ export interface IExecutionService {
 	encodeDepositWithSwapFromWallet(
 		args: EncodeDepositWithSwapFromWalletArgs,
 	): EVCBatchItem[];
+	encodeSwapFromWallet(args: EncodeSwapFromWalletArgs): EVCBatchItem[];
 	encodeSwapCollateral(args: EncodeSwapCollateralArgs): EVCBatchItem[];
 	encodeSwapDebt(args: EncodeSwapDebtArgs): EVCBatchItem[];
 	encodeTransfer(args: EncodeTransferArgs): EVCBatchItem[];
@@ -106,6 +109,7 @@ export interface IExecutionService {
 	planDepositWithSwapFromWallet(
 		args: PlanDepositWithSwapFromWalletArgs,
 	): TransactionPlan;
+	planSwapFromWallet(args: PlanSwapFromWalletArgs): TransactionPlan;
 	planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlan;
 	planSwapDebt(args: PlanSwapDebtArgs): TransactionPlan;
 	planTransfer(args: PlanTransferArgs): TransactionPlan;
@@ -856,7 +860,6 @@ export class ExecutionService implements IExecutionService {
 	 * @param args.fromAsset - Underlying asset of fromVault (must equal liabilityAsset)
 	 * @param args.disableControllerOnMax - When isMax, whether to disable controller for receiver (default true)
 	 * @param args.isMax - If true, repays full debt (amount used for withdraw sizing where applicable)
-	 * @param args.liabilityPermit2 - Optional Permit2 for liability asset when path uses transfer/repay
 	 * @returns Array of EVC batch items. Throws if fromAsset !== liabilityAsset.
 	 */
 	encodeRepayFromDeposit(args: EncodeRepayFromDepositArgs): EVCBatchItem[] {
@@ -871,7 +874,6 @@ export class ExecutionService implements IExecutionService {
 			fromAsset,
 			disableControllerOnMax = true,
 			isMax = false,
-			liabilityPermit2,
 		} = args;
 
 		// PATH 1: Same asset, same vault - use repayWithShares
@@ -889,7 +891,6 @@ export class ExecutionService implements IExecutionService {
 		// PATH 2: Same asset, different vault
 		if (fromAsset === liabilityAsset) {
 			return this.encodeRepayWithSharesSameAssetDifferentVault({
-				chainId,
 				fromVault,
 				toVault: liabilityVault,
 				amount: liabilityAmount,
@@ -897,7 +898,6 @@ export class ExecutionService implements IExecutionService {
 				from,
 				isMax,
 				disableControllerOnMax,
-				permit2: liabilityPermit2,
 			});
 		}
 
@@ -1045,6 +1045,61 @@ export class ExecutionService implements IExecutionService {
 				),
 			);
 		}
+
+		return items;
+	}
+
+	/**
+	 * Encodes EVC batch items for swapping a token from the sender's wallet into another token
+	 * and transferring the output to `swapQuote.receiver`.
+	 * The approval is given to SwapVerifier, then transferFromSender pulls tokens to Swapper,
+	 * swap executes, and verifyAmountMinAndTransfer sends the output to the receiver wallet.
+	 *
+	 * @param args - Wallet-swap encoding arguments
+	 * @param args.chainId - Chain ID (unused, kept for encode API symmetry)
+	 * @param args.swapQuote - Quote with swap and verify steps (verify type transferMin)
+	 * @param args.amount - Amount of input token to transfer from wallet to swapper
+	 * @param args.sender - Wallet address providing the tokens (onBehalfOfAccount for transferFromSender)
+	 * @returns Array of EVC batch items (transferFromSender, swap, verify)
+	 */
+	encodeSwapFromWallet(args: EncodeSwapFromWalletArgs): EVCBatchItem[] {
+		const { swapQuote, amount, sender } = args;
+		const items: EVCBatchItem[] = [];
+
+		if (swapQuote.verify.type !== "transferMin") {
+			throw new Error(
+				"Invalid swap quote type for wallet swap - must be transferMin",
+			);
+		}
+
+		items.push({
+			targetContract: swapQuote.verify.verifierAddress,
+			onBehalfOfAccount: sender,
+			value: 0n,
+			data: encodeFunctionData({
+				abi: swapVerifierAbi,
+				functionName: "transferFromSender",
+				args: [
+					swapQuote.tokenIn.address,
+					amount,
+					swapQuote.swap.swapperAddress,
+				],
+			}),
+		});
+
+		items.push({
+			targetContract: swapQuote.swap.swapperAddress,
+			onBehalfOfAccount: sender,
+			value: 0n,
+			data: swapQuote.swap.swapperData,
+		});
+
+		items.push({
+			targetContract: swapQuote.verify.verifierAddress,
+			onBehalfOfAccount: sender,
+			value: 0n,
+			data: swapQuote.verify.verifierData,
+		});
 
 		return items;
 	}
@@ -1596,7 +1651,6 @@ export class ExecutionService implements IExecutionService {
 	 * Encodes batch items for repaying with shares from same asset but different vault
 	 */
 	private encodeRepayWithSharesSameAssetDifferentVault({
-		chainId,
 		fromVault,
 		toVault,
 		amount, // if isMax, this should be the total current debt
@@ -1604,9 +1658,7 @@ export class ExecutionService implements IExecutionService {
 		from,
 		isMax,
 		disableControllerOnMax,
-		permit2,
 	}: {
-		chainId: number;
 		fromVault: Address;
 		toVault: Address;
 		amount: bigint;
@@ -1614,7 +1666,6 @@ export class ExecutionService implements IExecutionService {
 		from: Address;
 		isMax: boolean;
 		disableControllerOnMax: boolean;
-		permit2?: Permit2Data;
 	}): EVCBatchItem[] {
 		const items: EVCBatchItem[] = [];
 
@@ -1646,7 +1697,7 @@ export class ExecutionService implements IExecutionService {
 			// 2. Skim exact withdrawal amount to liability vault
 			items.push({
 				targetContract: toVault,
-				onBehalfOfAccount: from,
+				onBehalfOfAccount: receiver,
 				value: 0n,
 				data: encodeFunctionData({
 					abi: eVaultAbi,
@@ -1675,7 +1726,7 @@ export class ExecutionService implements IExecutionService {
 			}
 		} else {
 			// For partial repay: withdraw, then repay exact amount
-			// 1. Withdraw from collateral vault
+			// 1. Withdraw from source vault directly to the liability vault.
 			items.push({
 				targetContract: fromVault,
 				onBehalfOfAccount: from,
@@ -1683,23 +1734,33 @@ export class ExecutionService implements IExecutionService {
 				data: encodeFunctionData({
 					abi: eVaultAbi,
 					functionName: "withdraw",
-					args: [amount, from, from],
+					args: [amount, toVault, from],
 				}),
 			});
 
-			// 2. Repay exact amount
-			const repayItems = this.encodeRepayFromWallet({
-				chainId,
-				sender: from,
-				liabilityVault: toVault,
-				liabilityAmount: amount,
-				receiver,
-				disableControllerOnMax,
-				isMax,
-				permit2,
+			// 2. Skim the received assets into the borrow sub-account.
+			items.push({
+				targetContract: toVault,
+				onBehalfOfAccount: receiver,
+				value: 0n,
+				data: encodeFunctionData({
+					abi: eVaultAbi,
+					functionName: "skim",
+					args: [amount, receiver],
+				}),
 			});
 
-			items.push(...repayItems);
+			// 3. Burn the skimmed shares to repay debt.
+			items.push({
+				targetContract: toVault,
+				onBehalfOfAccount: receiver,
+				value: 0n,
+				data: encodeFunctionData({
+					abi: eVaultAbi,
+					functionName: "repayWithShares",
+					args: [amount > 0n ? amount - 1n : 0n, receiver],
+				}),
+			});
 		}
 
 		return items;
@@ -2354,30 +2415,24 @@ export class ExecutionService implements IExecutionService {
 			);
 		}
 
-		// If same asset, different vault, we might need approval for the withdraw/repay path
-		if (fromVault !== liabilityVault) {
-			// Add approval requirement (will be resolved later with Wallet data)
-			plan.push({
-				type: "requiredApproval",
-				token: liabilityAsset,
-				owner: account.owner,
-				spender: liabilityVault,
-				amount: liabilityAmount,
-			});
-		}
+		const isMax = liabilityAmount === maxUint256;
+		const amount =
+			isMax && fromVault !== liabilityVault
+				? liabilityPosition.borrowed
+				: liabilityAmount;
 
 		// Build EVC batch items
 		const batchItems = this.encodeRepayFromDeposit({
 			chainId: account.chainId,
 			liabilityVault,
 			liabilityAsset,
-			liabilityAmount,
-			from: receiver,
+			liabilityAmount: amount,
+			from: fromAccount,
 			receiver,
 			fromVault,
 			fromAsset,
 			disableControllerOnMax: true,
-			isMax: liabilityAmount === maxUint256,
+			isMax,
 			// Permit2 is handled separately in the plan
 		});
 
@@ -2484,6 +2539,44 @@ export class ExecutionService implements IExecutionService {
 			amount,
 			sender: account.owner,
 			enableCollateral: shouldEnableCollateral,
+		});
+
+		plan.push({
+			type: "evcBatch",
+			items: batchItems,
+		});
+
+		return plan;
+	}
+
+	/**
+	 * Builds a transaction plan for swapping a token from the sender's wallet into another
+	 * token and transferring the output to the quote receiver.
+	 *
+	 * @param args - Wallet-swap plan arguments
+	 * @param args.swapQuote - Quote from swap service; must use transferOutputToReceiver / transferMin verification
+	 * @param args.amount - Amount of input token to transfer from wallet
+	 * @param args.tokenIn - Input token address (for approval to SwapVerifier)
+	 * @param args.account - Account entity; used for chainId and owner
+	 * @returns Array of transaction plan items (approval to SwapVerifier + EVC batch)
+	 */
+	planSwapFromWallet(args: PlanSwapFromWalletArgs): TransactionPlan {
+		const { swapQuote, amount, tokenIn, account } = args;
+		const plan: TransactionPlanItem[] = [];
+
+		plan.push({
+			type: "requiredApproval",
+			token: tokenIn,
+			owner: account.owner,
+			spender: swapQuote.verify.verifierAddress,
+			amount,
+		});
+
+		const batchItems = this.encodeSwapFromWallet({
+			chainId: account.chainId,
+			swapQuote,
+			amount,
+			sender: account.owner,
 		});
 
 		plan.push({
