@@ -18,18 +18,28 @@ execution plans, but not CoW order lifecycle logic.
 
 Euler Lite supports detailed repay and same-asset flows:
 
-- same-asset vault swap
+- same-asset vault migration
 - same-asset repay
 - same-asset full repay
-- same-asset debt swap
+- same-asset debt migration
 - savings-source repay
 - savings-source full repay
 - controller/collateral cleanup
 - leftover redemption and residual share transfer
 
-The SDK has related primitives, but the high-level planners do not yet cover the
-full Lite semantics. `planRepayFromDeposit` also needs review because the
-accepted `fromAccount` parameter may not be propagated into the encoded batch.
+The SDK now has partial same-asset repay-from-deposit coverage plus same-asset
+collateral and debt migration planners:
+
+- `planRepayFromDeposit` handles same-vault `repayWithShares` and different-vault
+  `withdraw -> skim -> repayWithShares` paths while preserving `fromAccount`.
+- `planMigrateSameAssetCollateral` handles no-swap supplied/collateral movement
+  with `withdraw` or `redeem`, `skim`, and optional collateral flag rotation.
+- `planMigrateSameAssetDebt` handles full debt migration with a 0.01% interest
+  cushion, new-controller enablement, old-vault `repayWithShares(max)`, old
+  controller disablement, and optional excess sweep.
+
+Remaining gaps are full-repay cleanup parity, savings-source variants, native
+wrapping, operation guards, and lifecycle orchestration.
 
 ### Swap quote orchestration
 
@@ -88,10 +98,11 @@ collateral attribution.
 
 ### Phase 2: transaction planner parity
 
-Add or extend SDK planners for same-asset swap, same-asset repay/full repay,
-same-asset debt swap, savings-source repay/full repay, borrow-by-saving, native
-wrapping, and full-repay cleanup. Review and fix source-account propagation in
-`planRepayFromDeposit` if confirmed.
+Add or extend SDK planners for same-asset full repay, savings-source
+repay/full repay, borrow-by-saving, native wrapping, and full-repay cleanup.
+Same-asset collateral migration, same-asset debt migration, and
+`planRepayFromDeposit` source-account propagation are covered by the execution
+service.
 
 #### Repay-from-deposit focus
 
@@ -104,18 +115,10 @@ Euler Lite distinguishes these same-underlying repay cases:
 - full repay: withdraw with interest cushion, repay max, disable controller and
   collateral, redeem leftovers, skim them back, and transfer residual shares
 
-The SDK example currently exercises only the narrow case where
-`fromAccount === receiver` and `fromVault === liabilityVault`. That path can
-work while still leaving cross-sub-account savings repay uncovered.
-
-The suspicious SDK path is `planRepayFromDeposit`: it looks up
-`fromPosition` using `fromAccount`, but passes `from: receiver` into
-`encodeRepayFromDeposit`. If the caller passes a different savings/source
-sub-account, the resulting batch is built from the borrow sub-account instead of
-the source sub-account. The different-vault partial path also routes through
-`withdraw(..., from, from)` plus wallet-style `repay`, whereas Lite uses
-`withdraw(..., borrowVault, sourceAccount)`, `skim`, and `repayWithShares` to
-avoid ERC20 balance/approval issues on sub-account addresses.
+The SDK has examples for both same-vault and different-vault
+`planRepayFromDeposit` paths. The different-vault partial path follows Lite's
+approval-free sequence: `withdraw(..., borrowVault, sourceAccount)`, `skim`, and
+`repayWithShares(amount - 1)`.
 
 ### Phase 3: quote orchestration service
 

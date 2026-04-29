@@ -39,6 +39,7 @@ Common plan functions include:
 - `planBorrow`, `planPullDebt`, `planLiquidation`
 - `planRepayFromWallet`, `planRepayFromDeposit`, `planRepayWithSwap`
 - `planDepositWithSwapFromWallet`, `planSwapFromWallet`, `planSwapCollateral`, `planSwapDebt`
+- `planMigrateSameAssetCollateral`, `planMigrateSameAssetDebt`
 - `planTransfer`, `planMultiplyWithSwap`, `planMultiplySameAsset`
 
 Repay planners accept `cleanupOnMax`. When set on a full repay, the planner appends cleanup calls that disable active collaterals on the repaid sub-account and transfer those collateral shares back to the owner. Source-deposit repay and swap repay also transfer any remaining source-vault shares to the owner. For same-asset different-vault repay, pre-existing liability-vault deposits are preserved.
@@ -94,5 +95,6 @@ Useful entry points:
 - [`examples/execution/deposit-example.ts`](../examples/execution/deposit-example.ts)
 - [`examples/execution/repay-with-swap-example.ts`](../examples/execution/repay-with-swap-example.ts)
 - [`examples/execution/swap-from-wallet-example.ts`](../examples/execution/swap-from-wallet-example.ts)
+- [`examples/execution/same-asset-position-migration-example.ts`](../examples/execution/same-asset-position-migration-example.ts)
 - [`examples/execution/merge-plans-example.ts`](../examples/execution/merge-plans-example.ts)
 - [`run-examples.sh`](../examples/run-examples.sh)

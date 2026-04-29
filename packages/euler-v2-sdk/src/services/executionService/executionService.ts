@@ -1,87 +1,92 @@
 import {
+	type Abi,
+	type Address,
+	decodeFunctionData,
 	encodeFunctionData,
+	erc20Abi,
 	getAddress,
 	type Hex,
-	maxUint256,
-	type Address,
-	zeroAddress,
-	maxUint160,
 	maxUint48,
-	erc20Abi,
-	decodeFunctionData,
-	type Abi,
+	maxUint160,
+	maxUint256,
+	zeroAddress,
 } from "viem";
 import type {
 	Account,
 	AccountPosition,
 	IHasVaultAddress,
 } from "../../entities/Account.js";
+import type { EulerPlugin } from "../../plugins/types.js";
+import { resolveBorrowCollateralPositions } from "../../utils/accountPositionClassification.js";
 import type { DeploymentService } from "../deploymentService/index.js";
+import type {
+	AssetWithSpenders,
+	IWalletService,
+} from "../walletService/index.js";
 import { ethereumVaultConnectorAbi } from "./abis/ethereumVaultConnectorAbi.js";
 import { eVaultAbi } from "./abis/eVaultAbi.js";
 import { permit2PermitAbi } from "./abis/permit2PermitAbi.js";
 import { swapperAbi } from "./abis/swapperAbi.js";
 import { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
-import type {
-	AssetWithSpenders,
-	IWalletService,
-} from "../walletService/index.js";
-import type { EulerPlugin } from "../../plugins/types.js";
-import { resolveBorrowCollateralPositions } from "../../utils/accountPositionClassification.js";
 import {
-	type EVCBatchItem,
-	type EncodeDepositArgs,
-	type EncodeMintArgs,
-	type EncodeWithdrawArgs,
-	type EncodeRedeemArgs,
-	type EncodeBorrowArgs,
-	type EncodeLiquidationArgs,
-	type EncodePullDebtArgs,
-	type EncodeRepayWithSwapArgs,
-	type EncodeRepayFromWalletArgs,
-	type EncodeRepayFromDepositArgs,
-	type EncodeSwapDebtArgs,
-	type EncodeTransferArgs,
-	type EncodeDepositWithSwapFromWalletArgs,
-	type EncodeSwapFromWalletArgs,
-	type EncodeSwapCollateralArgs,
-	type EncodePermit2CallArgs,
-	PERMIT2_TYPES,
-	type GetPermit2TypedDataArgs,
-	type TransactionPlanItem,
-	type TransactionPlan,
 	type ApproveCall,
+	type BatchItemDescription,
+	type EncodeBorrowArgs,
+	type EncodeDepositArgs,
+	type EncodeDepositWithSwapFromWalletArgs,
+	type EncodeLiquidationArgs,
+	type EncodeMigrateSameAssetCollateralArgs,
+	type EncodeMigrateSameAssetDebtArgs,
+	type EncodeMintArgs,
+	type EncodeMultiplySameAssetArgs,
+	type EncodeMultiplyWithSwapArgs,
+	type EncodePermit2CallArgs,
+	type EncodePullDebtArgs,
+	type EncodeRedeemArgs,
+	type EncodeRepayFromDepositArgs,
+	type EncodeRepayFromWalletArgs,
+	type EncodeRepayWithSwapArgs,
+	type EncodeSwapCollateralArgs,
+	type EncodeSwapDebtArgs,
+	type EncodeSwapFromWalletArgs,
+	type EncodeTransferArgs,
+	type EncodeWithdrawArgs,
+	type EVCBatchItem,
+	type GetPermit2TypedDataArgs,
+	PERMIT2_TYPES,
 	type Permit2DataToSign,
-	type PlanDepositArgs,
-	type PlanMintArgs,
-	type PlanWithdrawArgs,
-	type PlanRedeemArgs,
+	type PermitSingleMessage,
+	type PermitSingleTypedData,
 	type PlanBorrowArgs,
-	type PlanLiquidationArgs,
-	type PlanRepayFromWalletArgs,
-	type PlanRepayFromDepositArgs,
-	type PlanRepayWithSwapArgs,
+	type PlanDepositArgs,
 	type PlanDepositWithSwapFromWalletArgs,
-	type PlanSwapFromWalletArgs,
+	type PlanLiquidationArgs,
+	type PlanMigrateSameAssetCollateralArgs,
+	type PlanMigrateSameAssetDebtArgs,
+	type PlanMintArgs,
+	type PlanMultiplySameAssetArgs,
+	type PlanMultiplyWithSwapArgs,
+	type PlanPullDebtArgs,
+	type PlanRedeemArgs,
+	type PlanRepayFromDepositArgs,
+	type PlanRepayFromWalletArgs,
+	type PlanRepayWithSwapArgs,
 	type PlanSwapCollateralArgs,
 	type PlanSwapDebtArgs,
+	type PlanSwapFromWalletArgs,
 	type PlanTransferArgs,
-	type PlanPullDebtArgs,
-	type BatchItemDescription,
-	type EncodeMultiplyWithSwapArgs,
-	type EncodeMultiplySameAssetArgs,
-	type PlanMultiplyWithSwapArgs,
-	type PlanMultiplySameAssetArgs,
-	type PermitSingleTypedData,
-	type PermitSingleMessage,
+	type PlanWithdrawArgs,
 	type RequiredApproval,
 	type ResolveRequiredApprovalsArgs,
 	type ResolveRequiredApprovalsWithWalletArgs,
+	type TransactionPlan,
+	type TransactionPlanItem,
 } from "./executionServiceTypes.js";
 
-const TOKENS_REQUIRING_ZERO_APPROVAL_RESET: Record<number, readonly Address[]> = {
-	1: [getAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7")],
-};
+const TOKENS_REQUIRING_ZERO_APPROVAL_RESET: Record<number, readonly Address[]> =
+	{
+		1: [getAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7")],
+	};
 
 function requiresZeroApprovalReset(chainId: number, token: Address): boolean {
 	return (
@@ -109,6 +114,12 @@ export interface IExecutionService {
 	encodeSwapFromWallet(args: EncodeSwapFromWalletArgs): EVCBatchItem[];
 	encodeSwapCollateral(args: EncodeSwapCollateralArgs): EVCBatchItem[];
 	encodeSwapDebt(args: EncodeSwapDebtArgs): EVCBatchItem[];
+	encodeMigrateSameAssetCollateral(
+		args: EncodeMigrateSameAssetCollateralArgs,
+	): EVCBatchItem[];
+	encodeMigrateSameAssetDebt(
+		args: EncodeMigrateSameAssetDebtArgs,
+	): EVCBatchItem[];
 	encodeTransfer(args: EncodeTransferArgs): EVCBatchItem[];
 	encodeMultiplyWithSwap(args: EncodeMultiplyWithSwapArgs): EVCBatchItem[];
 	encodeMultiplySameAsset(args: EncodeMultiplySameAssetArgs): EVCBatchItem[];
@@ -129,6 +140,10 @@ export interface IExecutionService {
 	planSwapFromWallet(args: PlanSwapFromWalletArgs): TransactionPlan;
 	planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlan;
 	planSwapDebt(args: PlanSwapDebtArgs): TransactionPlan;
+	planMigrateSameAssetCollateral(
+		args: PlanMigrateSameAssetCollateralArgs,
+	): TransactionPlan;
+	planMigrateSameAssetDebt(args: PlanMigrateSameAssetDebtArgs): TransactionPlan;
 	planTransfer(args: PlanTransferArgs): TransactionPlan;
 	planPullDebt(args: PlanPullDebtArgs): TransactionPlan;
 	planMultiplyWithSwap(args: PlanMultiplyWithSwapArgs): TransactionPlan;
@@ -153,6 +168,8 @@ export interface IExecutionService {
 
 const PERMIT2_SIG_WINDOW = 60n * 60n;
 const WAD = 10n ** 18n;
+const INTEREST_CUSHION_NUMERATOR = 10_001n;
+const INTEREST_CUSHION_DENOMINATOR = 10_000n;
 
 // TODO explain how this service is coupled to the concrete abis of ERC4626, permit2 and EVK.
 // this is a helper service, not a generic one.
@@ -1283,6 +1300,206 @@ export class ExecutionService implements IExecutionService {
 	}
 
 	/**
+	 * Encodes EVC batch items for migrating a supplied/collateral position between two same-asset vaults.
+	 * Partial migration uses withdraw(amount, toVault, account) then skim(amount, account).
+	 * Max migration uses redeem(maxShares || maxUint256, toVault, account) then skim(amount, account).
+	 *
+	 * @param args - Same-asset collateral migration encoding arguments
+	 * @param args.chainId - Chain ID (used for EVC enable/disable collateral)
+	 * @param args.fromVault - Source vault holding the supplied shares
+	 * @param args.toVault - Destination vault with the same underlying asset
+	 * @param args.amount - Asset amount expected to arrive at the destination vault and be skimmed
+	 * @param args.account - Sub-account that owns the source shares and receives destination shares
+	 * @param args.isMax - If true, redeems shares instead of withdrawing assets
+	 * @param args.maxShares - Optional exact share amount for max migration; defaults to maxUint256
+	 * @param args.enableCollateralTo - If true, enables the destination vault as collateral after skim
+	 * @param args.disableCollateralFrom - If true, disables the source vault as collateral after enabling the destination
+	 * @returns Array of EVC batch items
+	 */
+	encodeMigrateSameAssetCollateral(
+		args: EncodeMigrateSameAssetCollateralArgs,
+	): EVCBatchItem[] {
+		const {
+			chainId,
+			fromVault,
+			toVault,
+			amount,
+			account,
+			isMax = false,
+			maxShares,
+			enableCollateralTo = false,
+			disableCollateralFrom = false,
+		} = args;
+
+		const items: EVCBatchItem[] = [];
+
+		items.push({
+			targetContract: fromVault,
+			onBehalfOfAccount: account,
+			value: 0n,
+			data: encodeFunctionData({
+				abi: eVaultAbi,
+				functionName: isMax ? "redeem" : "withdraw",
+				args: isMax
+					? [maxShares ?? maxUint256, toVault, account]
+					: [amount, toVault, account],
+			}),
+		});
+
+		items.push({
+			targetContract: toVault,
+			onBehalfOfAccount: account,
+			value: 0n,
+			data: encodeFunctionData({
+				abi: eVaultAbi,
+				functionName: "skim",
+				args: [amount, account],
+			}),
+		});
+
+		if (enableCollateralTo) {
+			items.push(this.encodeEnableCollateral(chainId, account, toVault));
+		}
+
+		if (disableCollateralFrom) {
+			items.push(this.encodeDisableCollateral(chainId, account, fromVault));
+		}
+
+		return items;
+	}
+
+	/**
+	 * Encodes EVC batch items for migrating a full debt position between two same-asset liability vaults.
+	 * Flow: enable new controller → borrow with interest cushion to old vault → skim → repay old debt with shares
+	 * → disable old controller → optionally sweep cushion to the new vault → optionally transfer remaining new-vault shares.
+	 *
+	 * @param args - Same-asset debt migration encoding arguments
+	 * @param args.chainId - Chain ID (used for EVC enable controller)
+	 * @param args.oldLiabilityVault - Existing debt vault to fully repay and disable
+	 * @param args.newLiabilityVault - New same-asset debt vault to borrow from
+	 * @param args.amount - Current debt amount before applying the 0.01% interest cushion
+	 * @param args.account - Sub-account that owns the debt position
+	 * @param args.enableController - If true, enables the new liability vault as controller first
+	 * @param args.disableController - If true, disables the old liability vault after repayment
+	 * @param args.sweepExcess - If true, redeems any old-vault cushion shares back to the new vault and skims them
+	 * @param args.transferRemainingSharesTo - If set, transfers all new-vault shares from the sub-account to this address
+	 * @returns Array of EVC batch items
+	 */
+	encodeMigrateSameAssetDebt(
+		args: EncodeMigrateSameAssetDebtArgs,
+	): EVCBatchItem[] {
+		const {
+			chainId,
+			oldLiabilityVault,
+			newLiabilityVault,
+			amount,
+			account,
+			enableController = true,
+			disableController = true,
+			sweepExcess = true,
+			transferRemainingSharesTo,
+		} = args;
+
+		if (amount === maxUint256) {
+			throw new Error("Amount is maxUint256, cannot size debt migration");
+		}
+
+		const amountWithExtra =
+			(amount * INTEREST_CUSHION_NUMERATOR) / INTEREST_CUSHION_DENOMINATOR;
+
+		if (amountWithExtra >= maxUint256) {
+			throw new Error("Amount with extra exceeds maxUint256");
+		}
+
+		const items: EVCBatchItem[] = [];
+
+		if (enableController) {
+			items.push(
+				this.encodeEnableController(chainId, account, newLiabilityVault),
+			);
+		}
+
+		items.push({
+			targetContract: newLiabilityVault,
+			onBehalfOfAccount: account,
+			value: 0n,
+			data: encodeFunctionData({
+				abi: eVaultAbi,
+				functionName: "borrow",
+				args: [amountWithExtra, oldLiabilityVault],
+			}),
+		});
+
+		items.push({
+			targetContract: oldLiabilityVault,
+			onBehalfOfAccount: account,
+			value: 0n,
+			data: encodeFunctionData({
+				abi: eVaultAbi,
+				functionName: "skim",
+				args: [amountWithExtra, account],
+			}),
+		});
+
+		items.push({
+			targetContract: oldLiabilityVault,
+			onBehalfOfAccount: account,
+			value: 0n,
+			data: encodeFunctionData({
+				abi: eVaultAbi,
+				functionName: "repayWithShares",
+				args: [maxUint256, account],
+			}),
+		});
+
+		if (disableController) {
+			items.push(this.encodeDisableController(oldLiabilityVault, account));
+		}
+
+		if (sweepExcess) {
+			items.push({
+				targetContract: oldLiabilityVault,
+				onBehalfOfAccount: account,
+				value: 0n,
+				data: encodeFunctionData({
+					abi: eVaultAbi,
+					functionName: "redeem",
+					args: [maxUint256, newLiabilityVault, account],
+				}),
+			});
+
+			items.push({
+				targetContract: newLiabilityVault,
+				onBehalfOfAccount: account,
+				value: 0n,
+				data: encodeFunctionData({
+					abi: eVaultAbi,
+					functionName: "skim",
+					args: [maxUint256, account],
+				}),
+			});
+		}
+
+		if (
+			transferRemainingSharesTo &&
+			getAddress(transferRemainingSharesTo) !== getAddress(account)
+		) {
+			items.push({
+				targetContract: newLiabilityVault,
+				onBehalfOfAccount: account,
+				value: 0n,
+				data: encodeFunctionData({
+					abi: eVaultAbi,
+					functionName: "transferFromMax",
+					args: [account, transferRemainingSharesTo],
+				}),
+			});
+		}
+
+		return items;
+	}
+
+	/**
 	 * Encodes EVC batch items for transferring vault shares between sub-accounts.
 	 *
 	 * @param args - Transfer encoding arguments
@@ -1695,8 +1912,9 @@ export class ExecutionService implements IExecutionService {
 			if (amount == maxUint256) {
 				throw new Error("Amount is maxUint256, cannot be used for max repay");
 			}
-			// For max repay: withdraw full debt amount +1 bps to cover interest, then skim and repayWithShares(max).
-			const amountWithExtra = (amount * 10_001n) / 10_000n;
+			// For max repay: withdraw full debt amount +1 BPS to cover interest, then skim, then repayWithShares max
+			const amountWithExtra =
+				(amount * INTEREST_CUSHION_NUMERATOR) / INTEREST_CUSHION_DENOMINATOR;
 
 			if (amountWithExtra >= maxUint256) {
 				throw new Error("Amount with extra exceeds maxUint256");
@@ -2863,6 +3081,170 @@ export class ExecutionService implements IExecutionService {
 			enableController,
 			disableControllerOnMax: true,
 			isMax,
+		});
+
+		plan.push({
+			type: "evcBatch",
+			items: batchItems,
+		});
+
+		return plan;
+	}
+
+	/**
+	 * Builds a transaction plan for migrating a supplied/collateral position between two same-asset vaults.
+	 * This is the no-swap path for moving shares from one vault to another vault with the same underlying asset.
+	 *
+	 * @param args - Same-asset collateral migration plan arguments
+	 * @param args.fromVault - Source vault holding the supplied shares
+	 * @param args.toVault - Destination vault with the same underlying asset
+	 * @param args.amount - Asset amount to withdraw/redeem and skim into the destination vault
+	 * @param args.positionAccount - Sub-account that owns the source shares and receives destination shares
+	 * @param args.fromAsset - Optional source underlying asset; defaults to the account position asset
+	 * @param args.toAsset - Destination underlying asset, used to verify this is a same-asset migration
+	 * @param args.isMax - If true, redeems shares instead of withdrawing assets
+	 * @param args.maxShares - Optional exact share amount for max migration
+	 * @param args.enableCollateralTo - Optional override for enabling destination collateral
+	 * @param args.disableCollateralFrom - Optional override for disabling source collateral
+	 * @returns Array of transaction plan items (EVC batch; no token approvals)
+	 */
+	planMigrateSameAssetCollateral(
+		args: PlanMigrateSameAssetCollateralArgs,
+	): TransactionPlan {
+		const {
+			account,
+			fromVault,
+			toVault,
+			amount,
+			positionAccount,
+			fromAsset,
+			toAsset,
+			isMax = false,
+			maxShares,
+			enableCollateralTo,
+			disableCollateralFrom,
+		} = args;
+		const plan: TransactionPlanItem[] = [];
+
+		const sourcePosition = account?.getPosition(positionAccount, fromVault);
+		const resolvedFromAsset = fromAsset ?? sourcePosition?.asset;
+
+		if (!resolvedFromAsset) {
+			throw new Error(
+				`Position not found. From vault: ${fromVault}, Account: ${positionAccount}. Source asset is required when position is not available.`,
+			);
+		}
+
+		if (getAddress(resolvedFromAsset) !== getAddress(toAsset)) {
+			throw new Error(
+				"planMigrateSameAssetCollateral only supports same-asset vault migrations. Use planSwapCollateral for cross-asset migrations.",
+			);
+		}
+
+		const shouldEnableCollateralTo =
+			enableCollateralTo ??
+			!account.isCollateralEnabled(positionAccount, toVault);
+		const shouldDisableCollateralFrom =
+			disableCollateralFrom ??
+			(isMax && account.isCollateralEnabled(positionAccount, fromVault));
+
+		const batchItems = this.encodeMigrateSameAssetCollateral({
+			chainId: account.chainId,
+			fromVault,
+			toVault,
+			amount,
+			account: positionAccount,
+			isMax,
+			maxShares: maxShares ?? (isMax ? sourcePosition?.shares : undefined),
+			enableCollateralTo: shouldEnableCollateralTo,
+			disableCollateralFrom: shouldDisableCollateralFrom,
+		});
+
+		plan.push({
+			type: "evcBatch",
+			items: batchItems,
+		});
+
+		return plan;
+	}
+
+	/**
+	 * Builds a transaction plan for migrating a full same-asset debt position from one liability vault to another.
+	 * This is the no-swap path for debt vault migration and repays the old vault with shares after borrowing
+	 * slightly more from the new vault to cover interest accrual.
+	 *
+	 * @param args - Same-asset debt migration plan arguments
+	 * @param args.oldLiabilityVault - Existing debt vault to fully repay and disable
+	 * @param args.newLiabilityVault - New same-asset debt vault to borrow from
+	 * @param args.liabilityAccount - Sub-account that owns the debt position
+	 * @param args.liabilityAmount - Current debt amount; defaults to the old-vault borrowed amount in account data
+	 * @param args.oldLiabilityAsset - Optional old liability asset; defaults to the old-vault account position asset
+	 * @param args.newLiabilityAsset - New liability underlying asset, used to verify this is a same-asset migration
+	 * @param args.sweepExcess - Whether to redeem and skim the migration cushion back into the new vault (default true)
+	 * @param args.transferRemainingSharesToOwner - Whether to transfer new-vault shares to the owner when liabilityAccount differs from owner (default true)
+	 * @returns Array of transaction plan items (EVC batch; no token approvals)
+	 */
+	planMigrateSameAssetDebt(
+		args: PlanMigrateSameAssetDebtArgs,
+	): TransactionPlan {
+		const {
+			account,
+			oldLiabilityVault,
+			newLiabilityVault,
+			liabilityAccount,
+			liabilityAmount,
+			oldLiabilityAsset,
+			newLiabilityAsset,
+			sweepExcess = true,
+			transferRemainingSharesToOwner = true,
+		} = args;
+		const plan: TransactionPlanItem[] = [];
+
+		const oldPosition = account?.getPosition(
+			liabilityAccount,
+			oldLiabilityVault,
+		);
+		const resolvedOldAsset = oldLiabilityAsset ?? oldPosition?.asset;
+
+		if (!resolvedOldAsset) {
+			throw new Error(
+				`Position not found. Old liability vault: ${oldLiabilityVault}, Account: ${liabilityAccount}. Old liability asset is required when position is not available.`,
+			);
+		}
+
+		if (getAddress(resolvedOldAsset) !== getAddress(newLiabilityAsset)) {
+			throw new Error(
+				"planMigrateSameAssetDebt only supports same-asset debt migrations. Use planSwapDebt for cross-asset migrations.",
+			);
+		}
+
+		const amount = liabilityAmount ?? oldPosition?.borrowed;
+		if (!amount || amount <= 0n) {
+			throw new Error(
+				`Debt position not found or liability is 0. Old liability vault: ${oldLiabilityVault}, Account: ${liabilityAccount}`,
+			);
+		}
+
+		const enableController = !account.isControllerEnabled(
+			liabilityAccount,
+			newLiabilityVault,
+		);
+		const transferRemainingSharesTo =
+			transferRemainingSharesToOwner &&
+			getAddress(liabilityAccount) !== getAddress(account.owner)
+				? account.owner
+				: undefined;
+
+		const batchItems = this.encodeMigrateSameAssetDebt({
+			chainId: account.chainId,
+			oldLiabilityVault,
+			newLiabilityVault,
+			amount,
+			account: liabilityAccount,
+			enableController,
+			disableController: true,
+			sweepExcess,
+			transferRemainingSharesTo,
 		});
 
 		plan.push({

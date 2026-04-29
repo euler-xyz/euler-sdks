@@ -16,14 +16,26 @@ export function printHeader(msg: string) {
 export async function executeExampleTransactionPlan(
   plan: TransactionPlan,
   sdk: EulerSDK,
+  options: { gas?: bigint } = {},
 ) {
+  const executionWalletClient = options.gas
+    ? {
+        ...walletClient,
+        sendTransaction: (parameters: Parameters<typeof walletClient.sendTransaction>[0]) =>
+          walletClient.sendTransaction({
+            ...parameters,
+            gas: parameters.gas ?? options.gas,
+          }),
+      }
+    : walletClient;
+
   return executeTransactionPlan({
     plan,
     executionService: sdk.executionService,
     deploymentService: sdk.deploymentService,
     chainId: mainnet.id,
     account: walletAccountAddress(walletClient),
-    walletClient,
+    walletClient: executionWalletClient,
     publicClient,
     chain: mainnet,
     onProgress: createTransactionPlanLogger(sdk),

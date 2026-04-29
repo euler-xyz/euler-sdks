@@ -1,8 +1,8 @@
 import type { Abi, Address, Hex, TypedDataDomain } from "viem";
 import type {
 	Account,
-	ISubAccount,
 	IHasVaultAddress,
+	ISubAccount,
 } from "../../entities/Account.js";
 import type { Wallet } from "../../entities/Wallet.js";
 import type {
@@ -186,6 +186,30 @@ export type EncodeSwapDebtArgs = {
 	enableController?: boolean;
 	disableControllerOnMax?: boolean;
 	isMax?: boolean;
+};
+
+export type EncodeMigrateSameAssetCollateralArgs = {
+	chainId: number;
+	fromVault: Address;
+	toVault: Address;
+	amount: bigint;
+	account: Address;
+	isMax?: boolean;
+	maxShares?: bigint;
+	enableCollateralTo?: boolean;
+	disableCollateralFrom?: boolean;
+};
+
+export type EncodeMigrateSameAssetDebtArgs = {
+	chainId: number;
+	oldLiabilityVault: Address;
+	newLiabilityVault: Address;
+	amount: bigint;
+	account: Address;
+	enableController?: boolean;
+	disableController?: boolean;
+	sweepExcess?: boolean;
+	transferRemainingSharesTo?: Address;
 };
 
 export type EncodeTransferArgs = {
@@ -444,6 +468,32 @@ export type PlanSwapCollateralArgs = {
 export type PlanSwapDebtArgs = {
 	account: Account<IHasVaultAddress>;
 	swapQuote: SwapQuote;
+};
+
+export type PlanMigrateSameAssetCollateralArgs = {
+	account: Account<IHasVaultAddress>;
+	fromVault: Address;
+	toVault: Address;
+	amount: bigint;
+	positionAccount: Address;
+	fromAsset?: Address;
+	toAsset: Address;
+	isMax?: boolean;
+	maxShares?: bigint;
+	enableCollateralTo?: boolean;
+	disableCollateralFrom?: boolean;
+};
+
+export type PlanMigrateSameAssetDebtArgs = {
+	account: Account<IHasVaultAddress>;
+	oldLiabilityVault: Address;
+	newLiabilityVault: Address;
+	liabilityAccount: Address;
+	liabilityAmount?: bigint;
+	oldLiabilityAsset?: Address;
+	newLiabilityAsset: Address;
+	sweepExcess?: boolean;
+	transferRemainingSharesToOwner?: boolean;
 };
 
 export type PlanTransferArgs = {

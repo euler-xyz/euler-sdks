@@ -94,6 +94,31 @@ const plan = sdk.executionService.planSwapDebt({
 })
 ```
 
+### Same-Asset Position Migrations
+
+When both vaults use the same underlying asset, use the no-swap migration
+planners instead of requesting a DEX quote.
+
+```typescript
+const collateralPlan = sdk.executionService.planMigrateSameAssetCollateral({
+  account: accountData,
+  fromVault: OLD_COLLATERAL_VAULT,
+  toVault: NEW_COLLATERAL_VAULT,
+  amount,
+  positionAccount: subAccountAddress,
+  toAsset: USDC,
+  isMax: true,
+})
+
+const debtPlan = sdk.executionService.planMigrateSameAssetDebt({
+  account: accountData,
+  oldLiabilityVault: OLD_DEBT_VAULT,
+  newLiabilityVault: NEW_DEBT_VAULT,
+  liabilityAccount: subAccountAddress,
+  newLiabilityAsset: USDT,
+})
+```
+
 ### Wallet To Wallet Swap
 
 Pull an input token from the sender wallet, execute the swap, and transfer the output token to a wallet receiver. Used when you want a direct wallet-level swap without involving Euler vault deposits.
