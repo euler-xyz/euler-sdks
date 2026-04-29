@@ -11,6 +11,11 @@ import {
 	decodeFunctionData,
 	type Abi,
 } from "viem";
+import type {
+	Account,
+	AccountPosition,
+	IHasVaultAddress,
+} from "../../entities/Account.js";
 import type { DeploymentService } from "../deploymentService/index.js";
 import { ethereumVaultConnectorAbi } from "./abis/ethereumVaultConnectorAbi.js";
 import { eVaultAbi } from "./abis/eVaultAbi.js";
@@ -22,6 +27,7 @@ import type {
 	IWalletService,
 } from "../walletService/index.js";
 import type { EulerPlugin } from "../../plugins/types.js";
+import { resolveBorrowCollateralPositions } from "../../utils/accountPositionClassification.js";
 import {
 	type EVCBatchItem,
 	type EncodeDepositArgs,
@@ -42,7 +48,6 @@ import {
 	type EncodePermit2CallArgs,
 	PERMIT2_TYPES,
 	type GetPermit2TypedDataArgs,
-	type Permit2Data,
 	type TransactionPlanItem,
 	type TransactionPlan,
 	type ApproveCall,
@@ -859,10 +864,11 @@ export class ExecutionService implements IExecutionService {
 
 	/**
 	 * Encodes EVC batch items for repaying debt from a deposit (same-asset only).
-	 * Path 1: same asset and same vault → repayWithShares. Path 2: same asset, different vault → withdraw then repay/skim/repayWithShares as needed.
+	 * Path 1: same asset and same vault → repayWithShares.
+	 * Path 2: same asset, different vault → withdraw to liability vault, skim, then repayWithShares.
 	 *
 	 * @param args - Repay-from-deposit encoding arguments
-	 * @param args.chainId - Chain ID (used for EVC and optional permit2)
+	 * @param args.chainId - Chain ID used for EVC controller calls
 	 * @param args.liabilityVault - Vault (liability) to repay debt to
 	 * @param args.liabilityAsset - Underlying asset address of the liability vault
 	 * @param args.liabilityAmount - Amount of liability to repay (maxUint256 with isMax for full repay)
@@ -1620,7 +1626,7 @@ export class ExecutionService implements IExecutionService {
 	}
 
 	/**
-	 * Encodes batch items for repaying with shares from the same asset and vault
+	 * Encodes batch items for repaying with shares from the same asset and vault.
 	 */
 	private encodeRepayWithSharesSameAssetAndVault({
 		chainId: _chainId,
@@ -1660,7 +1666,9 @@ export class ExecutionService implements IExecutionService {
 	}
 
 	/**
-	 * Encodes batch items for repaying with shares from same asset but different vault
+	 * Encodes batch items for repaying with shares from the same asset in a different vault.
+	 * Partial repay withdraws source assets directly into the liability vault, skims them, then burns the skimmed shares.
+	 * Full repay withdraws with a 1 bps interest cushion, skims into the liability vault, repays max, and optionally disables the controller.
 	 */
 	private encodeRepayWithSharesSameAssetDifferentVault({
 		fromVault,
@@ -1687,14 +1695,14 @@ export class ExecutionService implements IExecutionService {
 			if (amount == maxUint256) {
 				throw new Error("Amount is maxUint256, cannot be used for max repay");
 			}
-			// For max repay: withdraw full debt amount +1 BPS to cover interest, then skim, then repayWithShares max
+			// For max repay: withdraw full debt amount +1 bps to cover interest, then skim and repayWithShares(max).
 			const amountWithExtra = (amount * 10_001n) / 10_000n;
 
 			if (amountWithExtra >= maxUint256) {
 				throw new Error("Amount with extra exceeds maxUint256");
 			}
 
-			// 1. Withdraw from collateral vault
+			// 1. Withdraw from the source vault directly to the liability vault.
 			items.push({
 				targetContract: fromVault,
 				onBehalfOfAccount: from,
@@ -1706,7 +1714,7 @@ export class ExecutionService implements IExecutionService {
 				}),
 			});
 
-			// 2. Skim exact withdrawal amount to liability vault
+			// 2. Skim the cushioned withdrawal into the borrow sub-account.
 			items.push({
 				targetContract: toVault,
 				onBehalfOfAccount: receiver,
@@ -1718,7 +1726,7 @@ export class ExecutionService implements IExecutionService {
 				}),
 			});
 
-			// 3. Repay with shares (max)
+			// 3. Burn shares to repay all debt.
 			items.push({
 				targetContract: toVault,
 				onBehalfOfAccount: receiver,
@@ -1726,13 +1734,12 @@ export class ExecutionService implements IExecutionService {
 				data: encodeFunctionData({
 					abi: eVaultAbi,
 					functionName: "repayWithShares",
-					// max is ok now, because skim deposited exact amount and it is the full debt,
-					// so pre-existing balance will not be consumed
+					// max is ok here because the skimmed shares cover the full debt.
 					args: [maxUint256, receiver],
 				}),
 			});
 
-			// 4. Disable controller if needed
+			// 4. Disable controller if needed.
 			if (disableControllerOnMax) {
 				items.push(this.encodeDisableController(toVault, receiver));
 			}
@@ -1776,6 +1783,90 @@ export class ExecutionService implements IExecutionService {
 		}
 
 		return items;
+	}
+
+	private encodeTransferFromMax(
+		vault: Address,
+		from: Address,
+		to: Address,
+	): EVCBatchItem {
+		return {
+			targetContract: vault,
+			onBehalfOfAccount: from,
+			value: 0n,
+			data: encodeFunctionData({
+				abi: eVaultAbi,
+				functionName: "transferFromMax",
+				args: [from, to],
+			}),
+		};
+	}
+
+	/**
+	 * Appends post-full-repay cleanup calls owned by plan builders:
+	 * disable each active collateral used by the repaid borrow, transfer those collateral shares to the owner,
+	 * and, when a source deposit funded the repay, transfer any remaining source-vault shares to the owner.
+	 */
+	private appendMaxRepayCleanup(args: {
+		account: Account<IHasVaultAddress>;
+		liabilityPosition: AccountPosition<IHasVaultAddress>;
+		receiver: Address;
+		batchItems: EVCBatchItem[];
+		sourceAccount?: Address;
+		sourceVault?: Address;
+	}) {
+		const {
+			account,
+			liabilityPosition,
+			receiver,
+			batchItems,
+			sourceAccount,
+			sourceVault,
+		} = args;
+		const receiverSubAccount =
+			typeof account.getSubAccount === "function"
+				? account.getSubAccount(receiver)
+				: undefined;
+		const activeCollaterals = receiverSubAccount
+			? resolveBorrowCollateralPositions(receiverSubAccount, liabilityPosition)
+			: [];
+		const transferredPositions = new Set<string>();
+
+		for (const collateral of activeCollaterals) {
+			batchItems.push(
+				this.encodeDisableCollateral(
+					account.chainId,
+					receiver,
+					collateral.vaultAddress,
+				),
+			);
+
+			if (getAddress(receiver) !== getAddress(account.owner)) {
+				batchItems.push(
+					this.encodeTransferFromMax(
+						collateral.vaultAddress,
+						receiver,
+						account.owner,
+					),
+				);
+			}
+
+			transferredPositions.add(
+				`${getAddress(receiver)}:${getAddress(collateral.vaultAddress)}`,
+			);
+		}
+
+		if (sourceAccount && sourceVault) {
+			const sourcePositionKey = `${getAddress(sourceAccount)}:${getAddress(sourceVault)}`;
+			if (
+				getAddress(sourceAccount) !== getAddress(account.owner) &&
+				!transferredPositions.has(sourcePositionKey)
+			) {
+				batchItems.push(
+					this.encodeTransferFromMax(sourceVault, sourceAccount, account.owner),
+				);
+			}
+		}
 	}
 
 	/**
@@ -2354,10 +2445,17 @@ export class ExecutionService implements IExecutionService {
 	 * @param args.liabilityAmount - Amount of liability asset to repay (use maxUint256 for "repay all")
 	 * @param args.receiver - Sub-account address whose debt is being repaid
 	 * @param args.account - Account entity; used for chainId, owner, and position (to resolve liability asset)
+	 * @param args.cleanupOnMax - When true and liabilityAmount is maxUint256, the batch disables active collaterals on the repaid sub-account and transfers their shares to the owner account (default false)
 	 * @returns Array of transaction plan items (approval + EVC batch)
 	 */
 	planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlan {
-		const { liabilityVault, liabilityAmount, receiver, account } = args;
+		const {
+			liabilityVault,
+			liabilityAmount,
+			receiver,
+			account,
+			cleanupOnMax = false,
+		} = args;
 		const plan: TransactionPlanItem[] = [];
 
 		// Get position to determine asset
@@ -2377,6 +2475,8 @@ export class ExecutionService implements IExecutionService {
 			amount: liabilityAmount,
 		});
 
+		const isMax = liabilityAmount === maxUint256;
+
 		// Build EVC batch items
 		const batchItems = this.encodeRepayFromWallet({
 			chainId: account.chainId,
@@ -2385,9 +2485,18 @@ export class ExecutionService implements IExecutionService {
 			liabilityAmount,
 			receiver,
 			disableControllerOnMax: true,
-			isMax: liabilityAmount === maxUint256,
+			isMax,
 			// Permit2 is handled separately in the plan
 		});
+
+		if (cleanupOnMax && isMax) {
+			this.appendMaxRepayCleanup({
+				account,
+				liabilityPosition: position,
+				receiver,
+				batchItems,
+			});
+		}
 
 		plan.push({
 			type: "evcBatch",
@@ -2399,7 +2508,12 @@ export class ExecutionService implements IExecutionService {
 
 	/**
 	 * Builds a transaction plan for repaying debt using assets from another vault deposit (same asset only).
-	 * Use `maxUint256` for `liabilityAmount` to repay all available debt or up to the available deposit.
+	 * Use `maxUint256` for `liabilityAmount` to perform a full repay.
+	 * Full repay can opt into cleanup. For different-vault full repays, cleanup only redeems
+	 * liability-vault shares left from the repay cushion when the account snapshot shows no pre-existing liability-vault deposit;
+	 * otherwise those shares are preserved in the liability vault instead of being migrated to the source vault.
+	 * Cleanup also disables active collaterals on the repaid sub-account, transfers those collateral shares to the owner
+	 * account, and transfers any remaining source-vault shares from the source sub-account to the owner account.
 	 *
 	 * @param args - Repay-from-deposit plan arguments
 	 * @param args.liabilityVault - Address of the liability vault (debt is repaid to this vault)
@@ -2408,7 +2522,8 @@ export class ExecutionService implements IExecutionService {
 	 * @param args.fromVault - Vault to withdraw assets from (must be same underlying asset as liability for this plan)
 	 * @param args.fromAccount - Sub-account that holds the deposit in `fromVault`
 	 * @param args.account - Account entity; used for chainId, owner, and positions (to resolve assets and eligibility)
-	 * @returns Array of transaction plan items (optional approval + EVC batch). Throws if asset differs between fromVault and liabilityVault; use planRepayWithSwap for cross-asset.
+	 * @param args.cleanupOnMax - Whether max repay should append repay-cushion, collateral, and source-share cleanup (default false)
+	 * @returns Array of transaction plan items (EVC batch only). Throws if asset differs between fromVault and liabilityVault; use planRepayWithSwap for cross-asset.
 	 */
 	planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlan {
 		const {
@@ -2418,6 +2533,7 @@ export class ExecutionService implements IExecutionService {
 			fromVault,
 			fromAccount,
 			account,
+			cleanupOnMax = false,
 		} = args;
 		const plan: TransactionPlanItem[] = [];
 
@@ -2436,7 +2552,7 @@ export class ExecutionService implements IExecutionService {
 		const liabilityAsset = liabilityPosition.asset;
 		const fromAsset = fromPosition.asset;
 
-		// Check if approval is needed (only if different assets and we need to swap/withdraw)
+		// Cross-asset repay requires a swap path; this planner only builds same-asset batches.
 		if (fromAsset !== liabilityAsset) {
 			// This path requires a swap, which is handled by planRepayWithSwap
 			throw new Error(
@@ -2449,6 +2565,8 @@ export class ExecutionService implements IExecutionService {
 			isMax && fromVault !== liabilityVault
 				? liabilityPosition.borrowed
 				: liabilityAmount;
+		const hasPreExistingLiabilityDeposit =
+			(liabilityPosition.assets ?? 0n) > 0n;
 
 		// Build EVC batch items
 		const batchItems = this.encodeRepayFromDeposit({
@@ -2465,6 +2583,43 @@ export class ExecutionService implements IExecutionService {
 			// Permit2 is handled separately in the plan
 		});
 
+		if (cleanupOnMax && isMax) {
+			if (fromVault !== liabilityVault && !hasPreExistingLiabilityDeposit) {
+				// Sweep only the repay cushion. If liability shares existed before this batch,
+				// redeem(max) would also migrate that unrelated deposit into the source vault.
+				batchItems.push({
+					targetContract: liabilityVault,
+					onBehalfOfAccount: receiver,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: eVaultAbi,
+						functionName: "redeem",
+						args: [maxUint256, fromVault, receiver],
+					}),
+				});
+
+				batchItems.push({
+					targetContract: fromVault,
+					onBehalfOfAccount: fromAccount,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: eVaultAbi,
+						functionName: "skim",
+						args: [maxUint256, fromAccount],
+					}),
+				});
+			}
+
+			this.appendMaxRepayCleanup({
+				account,
+				liabilityPosition,
+				receiver,
+				batchItems,
+				sourceAccount: fromAccount,
+				sourceVault: fromVault,
+			});
+		}
+
 		plan.push({
 			type: "evcBatch",
 			items: batchItems,
@@ -2480,10 +2635,11 @@ export class ExecutionService implements IExecutionService {
 	 * @param args - Repay-with-swap plan arguments
 	 * @param args.swapQuote - Quote from swap service (e.g. fetchRepayQuotes); defines vaultIn, accountIn, accountOut, receiver, swap and verify steps
 	 * @param args.account - Account entity; used for chainId and positions (to compute isMax and maxWithdraw)
+	 * @param args.cleanupOnMax - When true and the quote repays the full debt, the batch disables active collaterals on the repaid sub-account, transfers their shares to the owner account, and transfers remaining source-vault shares to the owner account (default false)
 	 * @returns Array of transaction plan items (EVC batch: withdraw, swap, verify/repay). Throws if positions not found or liability is zero.
 	 */
 	planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlan {
-		const { swapQuote, account } = args;
+		const { swapQuote, account, cleanupOnMax = false } = args;
 		const plan: TransactionPlanItem[] = [];
 
 		const liabilityPosition = account?.getPosition(
@@ -2514,6 +2670,17 @@ export class ExecutionService implements IExecutionService {
 			isMax,
 			disableControllerOnMax: true,
 		});
+
+		if (cleanupOnMax && isMax) {
+			this.appendMaxRepayCleanup({
+				account,
+				liabilityPosition,
+				receiver: swapQuote.accountOut,
+				batchItems,
+				sourceAccount: swapQuote.accountIn,
+				sourceVault: swapQuote.vaultIn,
+			});
+		}
 
 		plan.push({
 			type: "evcBatch",

@@ -30,12 +30,11 @@ import "dotenv/config";
 import {
   parseUnits,
   getAddress,
+  maxUint256,
 } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
-import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
+import { executeExampleTransactionPlan, fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
 import { 
   rpcUrls,
   account,
@@ -44,15 +43,13 @@ import {
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
   USDT_ADDRESS,
-  publicClient,
-  walletClient
 } from "../utils/config.js";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
 // Inputs
 const COLLATERAL_AMOUNT = parseUnits("1000", 6); // 1000 USDC
 const BORROW_AMOUNT = parseUnits("500", 6);      // 500 USDT
-const DEPOSIT_USDT_AMOUNT = parseUnits("3000", 6); // 300 USDT deposit
+const DEPOSIT_USDT_AMOUNT = parseUnits("3000", 6); // 3000 USDT deposit
 const REPAY_AMOUNT = parseUnits("250", 6);       // 250 USDT (partial repayment)
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
@@ -61,11 +58,19 @@ const UNLIMITED_APPROVAL = false;
 
 async function repayFromDepositExample() {
   // Build the SDK
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
+  });
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
+  const subAccountRequest = {
+    account: SUB_ACCOUNT_ADDRESS,
+    vaults: [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+  } as const;
 
   // Step 1: Plan and execute borrow operation (deposit USDC collateral and borrow USDT)
   console.log('\n=== Step 1: Deposit USDC and Borrow USDT ===');
@@ -94,28 +99,9 @@ async function repayFromDepositExample() {
   });
 
   console.log(`✓ Approvals resolved, executing...`);
-  await executeTransactionPlan({
-    plan: borrowPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
+  await executeExampleTransactionPlan(borrowPlan, sdk);
 
-  // Fetch updated sub-account after borrow
-  let subAccount = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { populateVaults: false }
-  )).result;
-
-  // Log the diff between before and after borrow
-  await logOperationResult(mainnet.id, accountData, [subAccount], sdk);
+  let [subAccount] = await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [subAccountRequest]);
 
   // Step 2: Deposit USDT to create a deposit position
   console.log('\n=== Step 2: Deposit USDT ===');
@@ -144,31 +130,12 @@ async function repayFromDepositExample() {
   });
 
   console.log(`✓ Approvals resolved, executing...`);
-  await executeTransactionPlan({
-    plan: depositPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
+  await executeExampleTransactionPlan(depositPlan, sdk);
 
-  // Fetch updated sub-account after deposit
-  subAccount = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { populateVaults: false }
-  )).result;
-  
-  // Log the diff
-  await logOperationResult(mainnet.id, accountData, [subAccount], sdk);
+  [subAccount] = await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [subAccountRequest]);
 
-  // Step 3: Repay debt from deposit
-  console.log('\n=== Step 3: Repay USDT Debt from USDT Deposit ===');
+  // Step 3: Partial repay debt from deposit
+  console.log('\n=== Step 3: Partially Repay USDT Debt from USDT Deposit ===');
   
   // Update account data
   accountData.updateSubAccounts(subAccount!);
@@ -180,34 +147,38 @@ async function repayFromDepositExample() {
     receiver: SUB_ACCOUNT_ADDRESS,
     fromVault: EULER_PRIME_USDT_VAULT,
     fromAccount: SUB_ACCOUNT_ADDRESS,
+    cleanupOnMax: true,
   });
 
   console.log(`✓ Repay from deposit plan created with ${repayPlan.length} step(s)`);
   console.log(`✓ Executing...`);
 
   // No approvals needed for repay from deposit
-  await executeTransactionPlan({
-    plan: repayPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
+  await executeExampleTransactionPlan(repayPlan, sdk);
+
+  [subAccount] = await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [subAccountRequest]);
+
+  // Step 4: Full repay remaining debt from deposit with cleanup enabled
+  console.log('\n=== Step 4: Fully Repay Remaining USDT Debt from USDT Deposit ===');
+
+  accountData.updateSubAccounts(subAccount!);
+
+  const fullRepayPlan = sdk.executionService.planRepayFromDeposit({
+    account: accountData,
+    liabilityVault: EULER_PRIME_USDT_VAULT,
+    liabilityAmount: maxUint256,
+    receiver: SUB_ACCOUNT_ADDRESS,
+    fromVault: EULER_PRIME_USDT_VAULT,
+    fromAccount: SUB_ACCOUNT_ADDRESS,
+    cleanupOnMax: true,
   });
 
-  // Fetch the updated sub-account and log the result
-  subAccount = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { populateVaults: false }
-  )).result;
+  console.log(`✓ Full repay from deposit plan created with ${fullRepayPlan.length} step(s)`);
+  console.log(`✓ Executing...`);
 
-  // Log the diff between before and after repay
-  await logOperationResult(mainnet.id, accountData, [subAccount], sdk);
+  await executeExampleTransactionPlan(fullRepayPlan, sdk);
+
+  [subAccount] = await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [subAccountRequest]);
 }
 
 // ============================================================================

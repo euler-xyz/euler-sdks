@@ -6,10 +6,12 @@ import {
 	encodeFunctionData,
 	erc20Abi,
 	getAddress,
+	maxUint256,
 } from "viem";
 import { ExecutionService } from "../src/services/executionService/executionService.js";
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
+import { ethereumVaultConnectorAbi } from "../src/services/executionService/abis/ethereumVaultConnectorAbi.js";
 
 const ACCOUNT = "0x00000000000000000000000000000000000000aa" as const;
 const TOKEN_IN = "0x00000000000000000000000000000000000000bb" as const;
@@ -22,6 +24,7 @@ const SOURCE_VAULT = "0x0000000000000000000000000000000000000a02" as const;
 const LIABILITY_VAULT = "0x0000000000000000000000000000000000000a03" as const;
 const SAME_ASSET = "0x0000000000000000000000000000000000000a04" as const;
 const MAINNET_USDT = getAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7");
+const COLLATERAL_VAULT = "0x0000000000000000000000000000000000000a05" as const;
 const AMOUNT = 12345n;
 
 function createExecutionService() {
@@ -101,7 +104,29 @@ function createTransferSwapQuote() {
 	};
 }
 
-function createRepayFromDepositAccount() {
+function createRepaySwapQuote() {
+	return {
+		...createSwapQuote(),
+		amountOutMin: AMOUNT.toString(),
+		accountIn: SOURCE_ACCOUNT,
+		accountOut: RECEIVER,
+		vaultIn: SOURCE_VAULT,
+		receiver: LIABILITY_VAULT,
+		verify: {
+			type: "debtMax",
+			verifierAddress: VERIFIER,
+			verifierData: "0x5678",
+			vault: LIABILITY_VAULT,
+			account: RECEIVER,
+			amount: AMOUNT.toString(),
+			deadline: 123,
+		},
+	};
+}
+
+function createRepayFromDepositAccount({
+	liabilityAssets = 77n,
+}: { liabilityAssets?: bigint } = {}) {
 	return {
 		owner: ACCOUNT,
 		chainId: 1,
@@ -109,6 +134,7 @@ function createRepayFromDepositAccount() {
 			if (account === RECEIVER && vault === LIABILITY_VAULT) {
 				return {
 					asset: SAME_ASSET,
+					assets: liabilityAssets,
 					borrowed: AMOUNT,
 				};
 			}
@@ -122,6 +148,23 @@ function createRepayFromDepositAccount() {
 				return {
 					asset: SAME_ASSET,
 					assets: AMOUNT * 2n,
+				};
+			}
+			return undefined;
+		},
+		getSubAccount: (account: string) => {
+			if (account === RECEIVER) {
+				return {
+					enabledCollaterals: [COLLATERAL_VAULT],
+					positions: [
+						{
+							account: RECEIVER,
+							vaultAddress: COLLATERAL_VAULT,
+							asset: SAME_ASSET,
+							assets: AMOUNT,
+							shares: AMOUNT,
+						},
+					],
 				};
 			}
 			return undefined;
@@ -423,4 +466,355 @@ test("resolveRequiredApprovals resets mainnet USDT allowance before direct appro
 			[VAULT_IN, AMOUNT],
 		],
 	);
+});
+
+test("repay-from-deposit different-vault full repay preserves pre-existing liability deposit", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayFromDeposit({
+		account: createRepayFromDepositAccount(),
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: RECEIVER,
+		fromVault: SOURCE_VAULT,
+		fromAccount: SOURCE_ACCOUNT,
+		cleanupOnMax: true,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = plan[0].items;
+	const amountWithInterest = (AMOUNT * 10_001n) / 10_000n;
+	assert.equal(items.length, 7);
+
+	const withdraw = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(withdraw.functionName, "withdraw");
+	assert.deepEqual(withdraw.args, [
+		amountWithInterest,
+		getAddress(LIABILITY_VAULT),
+		getAddress(SOURCE_ACCOUNT),
+	]);
+
+	const skimToLiability = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(skimToLiability.functionName, "skim");
+	assert.deepEqual(skimToLiability.args, [
+		amountWithInterest,
+		getAddress(RECEIVER),
+	]);
+
+	const repay = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[2]?.data ?? "0x",
+	});
+	assert.equal(repay.functionName, "repayWithShares");
+	assert.deepEqual(repay.args, [maxUint256, getAddress(RECEIVER)]);
+
+	const disableController = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(disableController.functionName, "disableController");
+
+	const disableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[4]?.data ?? "0x",
+	});
+	assert.equal(disableCollateral.functionName, "disableCollateral");
+	assert.deepEqual(disableCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const transferCollateral = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[5]?.data ?? "0x",
+	});
+	assert.equal(transferCollateral.functionName, "transferFromMax");
+	assert.deepEqual(transferCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(ACCOUNT),
+	]);
+
+	const transferSource = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[6]?.data ?? "0x",
+	});
+	assert.equal(transferSource.functionName, "transferFromMax");
+	assert.deepEqual(transferSource.args, [
+		getAddress(SOURCE_ACCOUNT),
+		getAddress(ACCOUNT),
+	]);
+});
+
+test("repay-from-deposit different-vault full repay sweeps cushion without pre-existing liability deposit", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayFromDeposit({
+		account: createRepayFromDepositAccount({ liabilityAssets: 0n }),
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: RECEIVER,
+		fromVault: SOURCE_VAULT,
+		fromAccount: SOURCE_ACCOUNT,
+		cleanupOnMax: true,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = plan[0].items;
+	assert.equal(items.length, 9);
+
+	const redeemLeftovers = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[4]?.data ?? "0x",
+	});
+	assert.equal(redeemLeftovers.functionName, "redeem");
+	assert.deepEqual(redeemLeftovers.args, [
+		maxUint256,
+		getAddress(SOURCE_VAULT),
+		getAddress(RECEIVER),
+	]);
+
+	const skimBack = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[5]?.data ?? "0x",
+	});
+	assert.equal(skimBack.functionName, "skim");
+	assert.deepEqual(skimBack.args, [maxUint256, getAddress(SOURCE_ACCOUNT)]);
+});
+
+test("repay-from-deposit same-vault full repay cleans up collateral and source shares", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayFromDeposit({
+		account: createRepayFromDepositAccount(),
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: RECEIVER,
+		fromVault: LIABILITY_VAULT,
+		fromAccount: SOURCE_ACCOUNT,
+		cleanupOnMax: true,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = plan[0].items;
+	assert.equal(items.length, 5);
+
+	const repay = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(repay.functionName, "repayWithShares");
+	assert.deepEqual(repay.args, [maxUint256, getAddress(RECEIVER)]);
+
+	const disableController = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(disableController.functionName, "disableController");
+
+	const disableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[2]?.data ?? "0x",
+	});
+	assert.equal(disableCollateral.functionName, "disableCollateral");
+	assert.deepEqual(disableCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const transferCollateral = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(transferCollateral.functionName, "transferFromMax");
+	assert.deepEqual(transferCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(ACCOUNT),
+	]);
+
+	const transferSource = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[4]?.data ?? "0x",
+	});
+	assert.equal(transferSource.functionName, "transferFromMax");
+	assert.deepEqual(transferSource.args, [
+		getAddress(SOURCE_ACCOUNT),
+		getAddress(ACCOUNT),
+	]);
+});
+
+test("repay-from-deposit full repay skips planner cleanup by default", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayFromDeposit({
+		account: createRepayFromDepositAccount(),
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: RECEIVER,
+		fromVault: SOURCE_VAULT,
+		fromAccount: SOURCE_ACCOUNT,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	assert.equal(plan[0].items.length, 4);
+});
+
+test("repay-from-wallet full repay cleans up active collaterals when requested", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayFromWallet({
+		account: createRepayFromDepositAccount(),
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: RECEIVER,
+		cleanupOnMax: true,
+	});
+
+	assert.equal(plan.length, 2);
+	assert.equal(plan[1]?.type, "evcBatch");
+	if (plan[1]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = plan[1].items;
+	assert.equal(items.length, 4);
+
+	const repay = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(repay.functionName, "repay");
+	assert.deepEqual(repay.args, [maxUint256, getAddress(RECEIVER)]);
+
+	const disableController = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(disableController.functionName, "disableController");
+
+	const disableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[2]?.data ?? "0x",
+	});
+	assert.equal(disableCollateral.functionName, "disableCollateral");
+	assert.deepEqual(disableCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const transferCollateral = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(transferCollateral.functionName, "transferFromMax");
+	assert.deepEqual(transferCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(ACCOUNT),
+	]);
+});
+
+test("repay-from-wallet full repay skips cleanup by default", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayFromWallet({
+		account: createRepayFromDepositAccount(),
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: RECEIVER,
+	});
+
+	assert.equal(plan[1]?.type, "evcBatch");
+	if (plan[1]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	assert.equal(plan[1].items.length, 2);
+});
+
+test("repay-with-swap full repay cleans up active collaterals and source shares when requested", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayWithSwap({
+		account: createRepayFromDepositAccount(),
+		swapQuote: createRepaySwapQuote() as never,
+		cleanupOnMax: true,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = plan[0].items;
+	assert.equal(items.length, 7);
+
+	const disableController = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(disableController.functionName, "disableController");
+
+	const disableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[4]?.data ?? "0x",
+	});
+	assert.equal(disableCollateral.functionName, "disableCollateral");
+	assert.deepEqual(disableCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const transferCollateral = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[5]?.data ?? "0x",
+	});
+	assert.equal(transferCollateral.functionName, "transferFromMax");
+	assert.deepEqual(transferCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(ACCOUNT),
+	]);
+
+	const transferSource = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[6]?.data ?? "0x",
+	});
+	assert.equal(transferSource.functionName, "transferFromMax");
+	assert.deepEqual(transferSource.args, [
+		getAddress(SOURCE_ACCOUNT),
+		getAddress(ACCOUNT),
+	]);
+});
+
+test("repay-with-swap full repay skips cleanup by default", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayWithSwap({
+		account: createRepayFromDepositAccount(),
+		swapQuote: createRepaySwapQuote() as never,
+	});
+
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	assert.equal(plan[0].items.length, 4);
 });

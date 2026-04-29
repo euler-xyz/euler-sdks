@@ -402,6 +402,7 @@ export type PlanRepayFromWalletArgs = {
 	liabilityVault: Address;
 	liabilityAmount: bigint;
 	receiver: Address;
+	cleanupOnMax?: boolean;
 };
 
 export type PlanRepayFromDepositArgs = {
@@ -411,11 +412,13 @@ export type PlanRepayFromDepositArgs = {
 	receiver: Address;
 	fromVault: Address;
 	fromAccount: Address;
+	cleanupOnMax?: boolean;
 };
 
 export type PlanRepayWithSwapArgs = {
 	account: Account<IHasVaultAddress>;
 	swapQuote: SwapQuote;
+	cleanupOnMax?: boolean;
 };
 
 export type PlanDepositWithSwapFromWalletArgs = {

@@ -34,18 +34,8 @@ import {
 } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
-import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
-import { 
-  rpcUrls,
-  account,
-  initBalances,
-  USDC_ADDRESS,
-  EULER_PRIME_USDC_VAULT,
-  publicClient,
-  walletClient
-} from "../utils/config.js";
+import { executeExampleTransactionPlan, fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "../utils/config.js";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
 // Inputs
@@ -59,7 +49,11 @@ const UNLIMITED_APPROVAL = false;
 
 async function withdrawExample() {
   // Build the SDK
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
+  });
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
@@ -88,28 +82,14 @@ async function withdrawExample() {
   });
   
   console.log(`✓ Approvals resolved, executing...`);
-  await executeTransactionPlan({
-    plan: depositPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
+  await executeExampleTransactionPlan(depositPlan, sdk);
 
-  // Fetch updated sub-account after deposit
-  const subAccountAfterDeposit = (await sdk.accountService.fetchSubAccount(
+  const [subAccountAfterDeposit] = await fetchAndLogSubAccounts(
     mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT],
-    { populateVaults: false }
-  )).result;
-  
-  // Log the diff between before and after deposit
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterDeposit], sdk);
+    accountData,
+    sdk,
+    [{ account: SUB_ACCOUNT_ADDRESS, vaults: [EULER_PRIME_USDC_VAULT] }],
+  );
 
   // Step 2: Withdraw USDC
   console.log('\n=== Step 2: Withdraw USDC ===');
@@ -130,28 +110,11 @@ async function withdrawExample() {
   console.log(`✓ Executing...`);
 
   // No approvals needed for withdraw
-  await executeTransactionPlan({
-    plan: withdrawPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
+  await executeExampleTransactionPlan(withdrawPlan, sdk);
 
-  // Fetch the updated sub-account and log the result
-  const subAccountAfterWithdraw = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT],
-    { populateVaults: false }
-  )).result;
-
-  // Log the diff between before and after withdraw
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterWithdraw], sdk);
+  await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
+    { account: SUB_ACCOUNT_ADDRESS, vaults: [EULER_PRIME_USDC_VAULT] },
+  ]);
 }
 
 // ============================================================================

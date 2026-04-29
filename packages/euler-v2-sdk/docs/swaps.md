@@ -38,8 +38,11 @@ const quotes = await sdk.swapService.fetchRepayQuotes({
 const plan = sdk.executionService.planRepayWithSwap({
   account: accountData,
   swapQuote: quotes[0],
+  cleanupOnMax: repayAmount === currentDebt,
 })
 ```
+
+`cleanupOnMax` is optional. Use it for full repay flows when the post-repay batch should disable active collaterals on the repaid sub-account, move those collateral shares to the owner, and move remaining source-vault shares to the owner.
 
 ### Swap Collateral
 

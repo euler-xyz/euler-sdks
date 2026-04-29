@@ -6,7 +6,6 @@ import type {
 	DaysToLiquidation,
 	GetNextSubAccountOptions,
 	IHasVaultAddress,
-	SubAccount,
 } from "./Account.js";
 import {
 	type GetFreeSubAccountsOptions,
@@ -18,6 +17,10 @@ import {
 	computePositionsNetApy,
 	computePositionsRoe,
 } from "../utils/accountComputations.js";
+import {
+	resolveBorrowCollateralPositions,
+	resolveBorrowCollateralVaults,
+} from "../utils/accountPositionClassification.js";
 
 export interface PortfolioPositionFilterContext<
 	TVaultEntity extends IHasVaultAddress = IHasVaultAddress,
@@ -239,18 +242,11 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 				if (borrow.borrowed === 0n) continue;
 				if (!this.includePosition(borrow)) continue;
 
-				const collateralVaults = this.borrowCollateralVaults(
+				const collaterals = resolveBorrowCollateralPositions(
 					subAccount,
 					borrow,
+					(position) => this.includePosition(position),
 				);
-				const collaterals = collateralVaults.flatMap((collateralAddress) => {
-					const collateral = subAccount.positions.find((position) =>
-						isAddressEqual(position.vaultAddress, collateralAddress),
-					);
-					if (!collateral) return [];
-					if (!this.includePosition(collateral)) return [];
-					return [collateral];
-				});
 				const collateral = collaterals[0];
 				const ltv = collateral
 					? findCollateralLtv(borrow.vault, collateral.vaultAddress)
@@ -333,7 +329,7 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 			for (const borrow of subAccount.positions) {
 				if (borrow.borrowed === 0n) continue;
 
-				for (const collateralAddress of this.borrowCollateralVaults(
+				for (const collateralAddress of resolveBorrowCollateralVaults(
 					subAccount,
 					borrow,
 				)) {
@@ -376,21 +372,6 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 		}
 
 		return positions;
-	}
-
-	private borrowCollateralVaults(
-		subAccount: SubAccount<TVaultEntity>,
-		borrow: AccountPosition<TVaultEntity>,
-	): Address[] {
-		const liquidityCollaterals =
-			borrow.liquidity?.collaterals.map((collateral) =>
-				getAddress(collateral.address),
-			) ?? [];
-		return liquidityCollaterals.length > 0
-			? liquidityCollaterals
-			: subAccount.enabledCollaterals.map((collateral) =>
-					getAddress(collateral),
-				);
 	}
 
 	private includePosition(position: AccountPosition<TVaultEntity>): boolean {

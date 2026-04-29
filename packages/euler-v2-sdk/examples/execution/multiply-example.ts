@@ -70,7 +70,11 @@ const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minu
 
 async function multiplyExample() {
   // Build the SDK
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
+  });
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
@@ -117,7 +121,7 @@ async function multiplyExample() {
   console.log(`\n✓ Multiply plan created with ${multiplyPlan.length} step(s)`);
 
   // Resolve approvals (fetches wallet data internally).
-  // This would normally be done in the executor logic, e.g. in executePlan, but for illustration we'll do it here.
+  // This would normally be done in the executor logic, e.g. in executeTransactionPlan, but for illustration we'll do it here.
   multiplyPlan = await sdk.executionService.resolveRequiredApprovals({
     plan: multiplyPlan,
     chainId: mainnet.id,

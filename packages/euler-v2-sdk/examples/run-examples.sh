@@ -67,6 +67,7 @@ ANVIL_EXAMPLES=(
   "execution/borrow-example.ts"
   "execution/repay-from-wallet-example.ts"
   "execution/repay-from-deposit-example.ts"
+  "execution/repay-from-deposit-different-vault-example.ts"
   "execution/repay-with-swap-example.ts"
   "execution/multiply-example.ts"
   "execution/swap-collateral-example.ts"
@@ -78,13 +79,16 @@ ANVIL_EXAMPLES=(
   "execution/borrow-with-pyth-example.ts"
   "execution/deposit-with-swap-from-wallet-example.ts"
   "execution/swap-from-wallet-example.ts"
+  "execution/fee-flow-example.ts"
   "simulations/simulate-deposit-example.ts"
+  "simulations/simulate-deposit-with-swap-from-wallet-example.ts"
 )
 
 READONLY_EXAMPLES=(
   "accounts/fetch-account-example.ts"
   "vaults/fetch-apys-example.ts"
   "vaults/fetch-vault-details-example.ts"
+  "vaults/fetch-top-verified-vaults-example.ts"
 )
 
 FAILED=()

@@ -28,7 +28,11 @@ import {
 
 async function fetchTopVerifiedVaultsExample() {
   const rpcUrls = getRpcUrls();
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    eVaultServiceConfig: { adapter: "onchain" },
+    eulerEarnServiceConfig: { adapter: "onchain" },
+  });
 
   console.log("Fetching verified vault addresses from mainnet via vaultMetaService...");
   const verifiedAddresses = await sdk.vaultMetaService.fetchVerifiedVaultAddresses(mainnet.id, [

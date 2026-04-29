@@ -1,6 +1,8 @@
 import { Address, erc20Abi, formatUnits, isAddressEqual, parseAbi, PublicClient, TestClient, WalletClient } from "viem";
-import { publicClient } from "./config.js";
-import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK, eVaultAbi, type IHasVaultAddress } from "@eulerxyz/euler-v2-sdk";
+import { mainnet } from "viem/chains";
+import { publicClient, walletClient } from "./config.js";
+import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK, eVaultAbi, executeTransactionPlan, type IHasVaultAddress, type TransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "./transactionPlanLogging.js";
 
 
 // Helper function for header
@@ -9,6 +11,23 @@ export function printHeader(msg: string) {
   console.log(msg);
   console.log("=".repeat(80));
   console.log();
+}
+
+export async function executeExampleTransactionPlan(
+  plan: TransactionPlan,
+  sdk: EulerSDK,
+) {
+  return executeTransactionPlan({
+    plan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 }
 
 export async function fetchBalance(tokenAddress: Address, accountAddress: Address) {
@@ -74,6 +93,11 @@ interface VaultMetadata {
   vaultDecimals: number;
 }
 
+interface SubAccountFetchRequest {
+  account: Address;
+  vaults: readonly Address[];
+}
+
 const metadataCache: {
   tokens: Map<string, TokenMetadata>;
   vaults: Map<string, VaultMetadata>;
@@ -117,14 +141,16 @@ async function fetchVaultMetadata(chainId: number, vaultAddress: Address, assetA
   const cached = metadataCache.vaults.get(cacheKey);
   if (cached) return cached;
 
-  const [assetMetadata, vaultMetadata, labels] = await Promise.all([
+  const [assetMetadata, vaultMetadata, products] = await Promise.all([
     fetchTokenMetadata(chainId, assetAddress, sdk),
     fetchTokenMetadata(chainId, vaultAddress, sdk), // Vault token decimals (for shares)
-    sdk.eulerLabelsService.fetchEulerLabelsVaults(chainId).catch(() => ({} as Record<Address, any>)),
+    sdk.eulerLabelsService.fetchEulerLabelsProducts(chainId).catch(() => ({})),
   ]);
 
-  const labelInfo = labels[vaultAddress.toLowerCase() as Address];
-  const vaultName = labelInfo?.name || `Vault ${truncateAddress(vaultAddress)}`;
+  const vaultName =
+    Object.values(products).find((product) =>
+      product.vaults.some((vault) => isAddressEqual(vault as Address, vaultAddress)),
+    )?.name || `Vault ${truncateAddress(vaultAddress)}`;
 
   const metadata = {
     name: vaultName,
@@ -276,9 +302,12 @@ function findPosition(subAccount: SubAccount<IHasVaultAddress>, vaultAddress: Ad
  */
 async function fetchVaultName(chainId: number, vaultAddress: Address, sdk: EulerSDK): Promise<string> {
   try {
-    const labels = await sdk.eulerLabelsService.fetchEulerLabelsVaults(chainId);
-    const labelInfo = labels[vaultAddress.toLowerCase() as Address] as any;
-    return labelInfo?.name || truncateAddress(vaultAddress);
+    const products = await sdk.eulerLabelsService.fetchEulerLabelsProducts(chainId);
+    return (
+      Object.values(products).find((product) =>
+        product.vaults.some((vault) => isAddressEqual(vault as Address, vaultAddress)),
+      )?.name || truncateAddress(vaultAddress)
+    );
   } catch {
     return truncateAddress(vaultAddress);
   }
@@ -502,6 +531,25 @@ export async function logOperationResult(chainId: number, before: Account<IHasVa
   }
 
   console.log("\n" + "═".repeat(80) + "\n");
+}
+
+export async function fetchAndLogSubAccounts(
+  chainId: number,
+  before: Account<IHasVaultAddress>,
+  sdk: EulerSDK,
+  requests: readonly SubAccountFetchRequest[],
+): Promise<(SubAccount<IHasVaultAddress> | undefined)[]> {
+  const subAccounts = await Promise.all(
+    requests.map(async ({ account, vaults }) => (
+      await sdk.accountService.fetchSubAccount(chainId, account, [...vaults], {
+        populateVaults: false,
+      })
+    ).result),
+  );
+
+  await logOperationResult(chainId, before, subAccounts, sdk);
+
+  return subAccounts;
 }
 
 export function stringify(obj: any) {

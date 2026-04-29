@@ -34,21 +34,17 @@
  */
 
 import "dotenv/config";
-import { parseUnits, getAddress } from "viem";
+import { parseUnits } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
-import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
-import { 
+import { executeExampleTransactionPlan, fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+import {
   rpcUrls,
   account,
   initBalances,
   USDC_ADDRESS,
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
-  publicClient,
-  walletClient
 } from "../utils/config.js";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 import type { TransactionPlan } from "@eulerxyz/euler-v2-sdk";
@@ -71,7 +67,11 @@ const UNLIMITED_APPROVAL = false;
 // TODO use simulations to build account state
 
 async function mergePlansExample() {
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
+  });
 
   // Fetch account (may have no positions yet)
   let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
@@ -97,26 +97,15 @@ async function mergePlansExample() {
     usePermit2: USE_PERMIT2,
     unlimitedApproval: UNLIMITED_APPROVAL,
   });
-  await executeTransactionPlan({
-    plan: setupPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
+  await executeExampleTransactionPlan(setupPlan, sdk);
   console.log("✓ Setup complete: position created\n");
 
-  // Fetch sub-account and update account data so we have positions for repay/withdraw plans
-  const subAccount = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { populateVaults: false },
-  )).result;
+  const [subAccount] = await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
+    {
+      account: SUB_ACCOUNT_ADDRESS,
+      vaults: [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    },
+  ]);
   if (!subAccount) throw new Error("Sub-account not found after setup");
   accountData.updateSubAccounts(subAccount);
 
@@ -179,25 +168,14 @@ async function mergePlansExample() {
   });
 
   console.log("✓ Executing merged plan...\n");
-  await executeTransactionPlan({
-    plan: resolvedPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
+  await executeExampleTransactionPlan(resolvedPlan, sdk);
 
-  const subAccountAfter = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { populateVaults: false },
-  )).result;
-  await logOperationResult(mainnet.id, accountData, [subAccountAfter], sdk);
+  await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
+    {
+      account: SUB_ACCOUNT_ADDRESS,
+      vaults: [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    },
+  ]);
 }
 
 printHeader("MERGE PLANS EXAMPLE");

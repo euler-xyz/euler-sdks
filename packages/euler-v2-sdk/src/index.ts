@@ -39,6 +39,7 @@ export * from "./plugins/index.js";
 
 // Utils
 export * from "./utils/subAccounts.js";
+export * from "./utils/accountPositionClassification.js";
 export {
   type BuildQueryFn,
   type QueryCacheConfig,

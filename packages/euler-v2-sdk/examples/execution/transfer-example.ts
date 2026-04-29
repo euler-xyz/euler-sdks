@@ -31,22 +31,11 @@
 import "dotenv/config";
 import {
   parseUnits,
-  getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
-import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
-import { 
-  rpcUrls,
-  account,
-  initBalances,
-  USDC_ADDRESS,
-  EULER_PRIME_USDC_VAULT,
-  publicClient,
-  walletClient
-} from "../utils/config.js";
+import { executeExampleTransactionPlan, fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "../utils/config.js";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
 // Inputs
@@ -61,7 +50,11 @@ const UNLIMITED_APPROVAL = false;
 
 async function transferExample() {
   // Build the SDK
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
+  });
 
   // Fetch the account. NOTE: fetchAccount depends on indexing for sub-account discovery,
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
@@ -77,7 +70,6 @@ async function transferExample() {
     asset: USDC_ADDRESS,
     enableCollateral: true,
   });
-console.log(getAddress("0x5D2528A9AE093A20e379f27927Ff421CAA47A32"));
   console.log(`✓ Deposit plan created with ${depositPlan.length} step(s)`);
 
   // Resolve approvals (fetches wallet data internally)
@@ -90,40 +82,23 @@ console.log(getAddress("0x5D2528A9AE093A20e379f27927Ff421CAA47A32"));
   });
   
   console.log(`✓ Approvals resolved, executing...`);
-  await executeTransactionPlan({
-    plan: depositPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
+  await executeExampleTransactionPlan(depositPlan, sdk);
 
-  // Fetch updated sub-accounts after deposit
-  const subAccountFromAfterDeposit = (await sdk.accountService.fetchSubAccount(
+  const [subAccountFromAfterDeposit] = await fetchAndLogSubAccounts(
     mainnet.id,
-    SUB_ACCOUNT_FROM_ADDRESS,
-    [EULER_PRIME_USDC_VAULT],
-    { populateVaults: false }
-  )).result;
-  const subAccountToAfterDeposit = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_TO_ADDRESS,
-    [EULER_PRIME_USDC_VAULT],
-    { populateVaults: false }
-  )).result;
-  
-  // Log the diff between before and after deposit
-  await logOperationResult(mainnet.id, accountData, [subAccountFromAfterDeposit, subAccountToAfterDeposit], sdk);
+    accountData,
+    sdk,
+    [
+      { account: SUB_ACCOUNT_FROM_ADDRESS, vaults: [EULER_PRIME_USDC_VAULT] },
+      { account: SUB_ACCOUNT_TO_ADDRESS, vaults: [EULER_PRIME_USDC_VAULT] },
+    ],
+  );
 
   // Step 2: Transfer shares from sub-account 1 to sub-account 2
   console.log('\n=== Step 2: Transfer Shares from Sub-Account 1 to Sub-Account 2 ===');
   
   // Update account data with the fetched sub-accounts
-  accountData.updateSubAccounts(subAccountFromAfterDeposit!, subAccountToAfterDeposit!);
+  accountData.updateSubAccounts(subAccountFromAfterDeposit!);
 
   let transferPlan = sdk.executionService.planTransfer({
     account: accountData,
@@ -141,34 +116,12 @@ console.log(getAddress("0x5D2528A9AE093A20e379f27927Ff421CAA47A32"));
   console.log(`✓ Executing...`);
 
   // No approvals needed for transfer
-  await executeTransactionPlan({
-    plan: transferPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
+  await executeExampleTransactionPlan(transferPlan, sdk);
 
-  // Fetch the updated sub-accounts and log the result
-  const subAccount1AfterTransfer = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_FROM_ADDRESS,
-    [EULER_PRIME_USDC_VAULT],
-    { populateVaults: false }
-  )).result;
-  const subAccount2AfterTransfer = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_TO_ADDRESS,
-    [EULER_PRIME_USDC_VAULT],
-    { populateVaults: false }
-  )).result;
-
-  // Log the diff between before and after transfer
-  await logOperationResult(mainnet.id, accountData, [subAccount1AfterTransfer, subAccount2AfterTransfer], sdk);
+  await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
+    { account: SUB_ACCOUNT_FROM_ADDRESS, vaults: [EULER_PRIME_USDC_VAULT] },
+    { account: SUB_ACCOUNT_TO_ADDRESS, vaults: [EULER_PRIME_USDC_VAULT] },
+  ]);
 }
 
 // ============================================================================

@@ -8,8 +8,8 @@
  * 
  * OPERATION:
  *   1. Deposit USDC as collateral and borrow USDT
- *   2. Repay USDT debt using assets from wallet
- *   3. Disable controller if debt is fully repaid
+ *   2. Partially repay USDT debt using assets from wallet
+ *   3. Fully repay remaining USDT debt from wallet and clean up the repaid sub-account
  * 
  * ASSETS & VAULTS:
  *   • USDC → Euler Prime USDC Vault (collateral)
@@ -31,15 +31,12 @@
 
 import "dotenv/config";
 import {
+  maxUint256,
   parseUnits,
-  isAddressEqual,
-  getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
-import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
+import { executeExampleTransactionPlan, fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
 import { 
   rpcUrls,
   account,
@@ -47,8 +44,6 @@ import {
   USDC_ADDRESS,
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
-  publicClient,
-  walletClient
 } from "../utils/config.js";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
@@ -56,14 +51,18 @@ import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 const COLLATERAL_AMOUNT = parseUnits("1000", 6); // 1000 USDC
 const BORROW_AMOUNT = parseUnits("500", 6);      // 500 USDT
 const REPAY_AMOUNT = parseUnits("250", 6);       // 250 USDT (partial repayment)
-const SUB_ACCOUNT_ID = 10;
+const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
 const USE_PERMIT2 = true;
 const UNLIMITED_APPROVAL = false;
 
 async function repayFromWalletExample() {
   // Build the SDK
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
+  });
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
@@ -96,31 +95,22 @@ async function repayFromWalletExample() {
   });
 
   console.log(`✓ Approvals resolved, executing...`);
-  await executeTransactionPlan({
-    plan: borrowPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
+  await executeExampleTransactionPlan(borrowPlan, sdk);
 
-  // Fetch updated sub-account after borrow
-  const subAccountAfterBorrow = (await sdk.accountService.fetchSubAccount(
+  const [subAccountAfterBorrow] = await fetchAndLogSubAccounts(
     mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { populateVaults: false }
-  )).result;
-  
-  // Log the diff between before and after borrow
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterBorrow], sdk);
+    accountData,
+    sdk,
+    [
+      {
+        account: SUB_ACCOUNT_ADDRESS,
+        vaults: [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+      },
+    ],
+  );
 
   // Step 2: Repay debt from wallet
-  console.log('\n=== Step 2: Repay USDT Debt from Wallet ===');
+  console.log('\n=== Step 2: Partially Repay USDT Debt from Wallet ===');
   
   // Update account data with the fetched sub-account
   accountData.updateSubAccounts(subAccountAfterBorrow!);
@@ -144,28 +134,52 @@ async function repayFromWalletExample() {
   });
 
   console.log(`✓ Approvals resolved, executing...`);
-  await executeTransactionPlan({
-    plan: repayPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
+  await executeExampleTransactionPlan(repayPlan, sdk);
+
+  const [subAccountAfterRepay] = await fetchAndLogSubAccounts(
+    mainnet.id,
+    accountData,
+    sdk,
+    [
+      {
+        account: SUB_ACCOUNT_ADDRESS,
+        vaults: [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+      },
+    ],
+  );
+
+  // Step 3: Fully repay remaining debt and clean up the sub-account
+  console.log('\n=== Step 3: Fully Repay USDT Debt from Wallet ===');
+
+  accountData.updateSubAccounts(subAccountAfterRepay!);
+
+  let fullRepayPlan = sdk.executionService.planRepayFromWallet({
+    account: accountData,
+    liabilityVault: EULER_PRIME_USDT_VAULT,
+    liabilityAmount: maxUint256,
+    receiver: SUB_ACCOUNT_ADDRESS,
+    cleanupOnMax: true,
   });
 
-  // Fetch the updated sub-account and log the result
-  const subAccountAfterRepay = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { populateVaults: false }
-  )).result;
+  console.log(`✓ Full repay plan created with ${fullRepayPlan.length} step(s)`);
 
-  // Log the diff between before and after repay
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterRepay], sdk);
+  fullRepayPlan = await sdk.executionService.resolveRequiredApprovals({
+    plan: fullRepayPlan,
+    chainId: mainnet.id,
+    account: account.address,
+    usePermit2: USE_PERMIT2,
+    unlimitedApproval: UNLIMITED_APPROVAL,
+  });
+
+  console.log(`✓ Approvals resolved, executing...`);
+  await executeExampleTransactionPlan(fullRepayPlan, sdk);
+
+  await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
+    {
+      account: SUB_ACCOUNT_ADDRESS,
+      vaults: [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    },
+  ]);
 }
 
 // ============================================================================

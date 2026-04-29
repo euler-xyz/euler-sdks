@@ -48,7 +48,11 @@ type FeeFlowCandidate = {
 
 async function feeFlowExample() {
   const chainId = mainnet.id;
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    eVaultServiceConfig: { adapter: "onchain" },
+    eulerEarnServiceConfig: { adapter: "onchain" },
+  });
 
   const feeFlowState = await sdk.feeFlowService.fetchState(chainId);
   const tokenList = await sdk.tokenlistService.loadTokenlist(chainId);
@@ -104,7 +108,9 @@ async function feeFlowExample() {
   const selected = candidates.slice(0, 3);
 
   if (selected.length === 0) {
-    throw new Error("No FeeFlow candidates with claimable value were found.");
+    console.log("No FeeFlow candidates with claimable value were found.");
+    console.log("FeeFlow example completed without executing a buy.");
+    return;
   }
 
   console.log(`Verified EVaults:       ${allEVaults.length}`);

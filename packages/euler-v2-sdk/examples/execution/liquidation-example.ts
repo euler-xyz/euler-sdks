@@ -61,7 +61,11 @@ const UNLIMITED_APPROVAL = true;
 
 async function liquidationExample() {
   // Build the SDK
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
+  });
 
   // ============================================================================
   // STEP 1: Violator deposits collateral and borrows at high LTV

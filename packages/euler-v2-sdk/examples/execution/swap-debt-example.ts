@@ -31,15 +31,11 @@
 import "dotenv/config";
 import {
   parseUnits,
-  isAddressEqual,
-  getAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
 import { buildEulerSDK, getSubAccountAddress, SwapperMode } from "@eulerxyz/euler-v2-sdk";
 
-import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
-import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
+import { executeExampleTransactionPlan, fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
 import { 
   rpcUrls,
   account,
@@ -50,9 +46,6 @@ import {
   EULER_PRIME_USDT_VAULT,
   USDT_ADDRESS,
   WETH_ADDRESS,
-  testClient,
-  publicClient,
-  walletClient
 } from "../utils/config.js";
 
 // Inputs
@@ -70,7 +63,11 @@ const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minu
 
 async function swapDebtExample() {
   // Build the SDK
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
+  });
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
@@ -103,35 +100,21 @@ async function swapDebtExample() {
   });
 
   console.log(`✓ Approvals resolved, executing...`);
-  await executeTransactionPlan({
-    plan: borrowPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
+  await executeExampleTransactionPlan(borrowPlan, sdk);
 
-  // Fetch updated sub-account after borrow
-  let subAccount = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_WETH_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_USDC_VAULT],
-    { populateVaults: false }
-  )).result;
-  
-  // Log the diff between before and after borrow
-  await logOperationResult(mainnet.id, accountData, [subAccount], sdk);
+  let [subAccount] = await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
+    {
+      account: SUB_ACCOUNT_ADDRESS,
+      vaults: [EULER_PRIME_WETH_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_USDC_VAULT],
+    },
+  ]);
 
   // Step 2: Get swap quote for debt swap
   console.log('\n=== Step 2: Get Swap Quote ===');
   console.log('✓ Fetching swap quote from USDC to USDT for debt swap...');
   
   // Update account data with the fetched sub-account
-  accountData.subAccounts = { [getAddress(subAccount!.account)]: subAccount! };
+  accountData.updateSubAccounts(subAccount!);
 
 
   const swapQuotes = await sdk.swapService.fetchRepayQuotes({
@@ -175,33 +158,19 @@ async function swapDebtExample() {
 
   // No approvals needed for swap debt
   try {
-    await executeTransactionPlan({
-    plan: swapDebtPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
+    await executeExampleTransactionPlan(swapDebtPlan, sdk);
   } catch (error) {
     console.error("Error executing swap debt:", error);
     console.log("\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.");
     process.exit(1);
   }
 
-  // Fetch the updated sub-account and log the result
-  subAccount = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_WETH_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_USDC_VAULT],
-    { populateVaults: false }
-  )).result;
-
-  // Log the diff between before and after swap
-  await logOperationResult(mainnet.id, accountData, [subAccount], sdk);
+  [subAccount] = await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
+    {
+      account: SUB_ACCOUNT_ADDRESS,
+      vaults: [EULER_PRIME_WETH_VAULT, EULER_PRIME_USDT_VAULT, EULER_PRIME_USDC_VAULT],
+    },
+  ]);
 }
 
 // ============================================================================

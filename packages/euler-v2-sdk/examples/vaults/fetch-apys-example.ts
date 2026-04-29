@@ -23,15 +23,20 @@ import {
 async function fetchApysExample() {
   const rpcUrls = getRpcUrls();
 
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    eVaultServiceConfig: { adapter: "onchain" },
+    eulerEarnServiceConfig: { adapter: "onchain" },
+  });
 
   // Fetch all governed EVaults with rewards and intrinsic APY
   console.log("Fetching governed EVaults...");
-  const { result: eVaults } = await sdk.eVaultService.fetchVerifiedVaults(mainnet.id, [
+  const { result: eVaultResults } = await sdk.eVaultService.fetchVerifiedVaults(mainnet.id, [
     StandardEVaultPerspectives.GOVERNED,
   ], {
     populateAll: true,
   });
+  const eVaults = eVaultResults.filter((vault) => vault !== undefined);
 
   eVaults.sort((a, b) => Number(b.interestRates.supplyAPY) - Number(a.interestRates.supplyAPY));
 
@@ -61,12 +66,15 @@ async function fetchApysExample() {
 
   // Fetch all governed EulerEarn vaults with rewards and intrinsic APY
   console.log("\nFetching governed EulerEarn vaults...");
-  const { result: eulerEarnVaults } =
+  const { result: eulerEarnVaultResults } =
     await sdk.eulerEarnService.fetchVerifiedVaults(mainnet.id, [
       StandardEulerEarnPerspectives.GOVERNED,
     ], {
       populateAll: true,
     });
+  const eulerEarnVaults = eulerEarnVaultResults.filter(
+    (vault) => vault !== undefined,
+  );
 
   eulerEarnVaults.sort((a, b) => (b.supplyApy ?? 0) - (a.supplyApy ?? 0));
 

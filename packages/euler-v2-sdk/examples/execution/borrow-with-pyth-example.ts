@@ -66,8 +66,8 @@ const LBTC_ADDRESS = getAddress("0x8236a87084f8B84306f72007F36F2618A5634494");
 const LBTC_WHALE = "0x79851BB0db6b03F348fA9c98ef5D23AD3B03b014";
 
 // ── Inputs ──
-const COLLATERAL_AMOUNT = parseUnits("1", 8);  // 1 LBTC (8 decimals)
-const BORROW_AMOUNT = parseUnits("0.1", 8);    // 0.1 WBTC (8 decimals)
+const COLLATERAL_AMOUNT = parseUnits("0.00005", 8); // 0.00005 LBTC (8 decimals)
+const BORROW_AMOUNT = parseUnits("0.000001", 8);    // 0.000001 WBTC (8 decimals)
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
 const USE_PERMIT2 = true;
@@ -93,7 +93,7 @@ async function initBalances() {
     address: LBTC_ADDRESS,
     abi: erc20Abi,
     functionName: "transfer",
-    args: [account.address, parseUnits("10", 8)],
+    args: [account.address, parseUnits("0.00009", 8)],
   });
 
   await testClient.setBalance({
@@ -107,6 +107,8 @@ async function borrowWithPythExample() {
   const sdk = await buildEulerSDK({
     rpcUrls,
     plugins: [createPythPlugin()],
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
   });
 
   // Fetch vault entities — the Pyth plugin needs oracle adapter info from these

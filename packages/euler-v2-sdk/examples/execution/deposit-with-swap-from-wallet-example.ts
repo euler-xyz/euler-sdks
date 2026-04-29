@@ -45,16 +45,13 @@ import {
 import { mainnet } from "viem/chains";
 import { buildEulerSDK, getSubAccountAddress, SwapperMode } from "@eulerxyz/euler-v2-sdk";
 
-import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
-import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
-import { 
+import { executeExampleTransactionPlan, fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+import {
   rpcUrls,
   account,
   initBalances,
   publicClient,
   USDC_ADDRESS,
-  walletClient
 } from "../utils/config.js";
 
 // Addresses
@@ -66,7 +63,7 @@ const DEPOSIT_AMOUNT = parseUnits("100", 6); // 100 USDC
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
 const SWAP_QUOTE_INDEX_1 = 0; // Change this if swap quote is bad
-const SWAP_QUOTE_INDEX_2 = 0; // Change this if swap quote is bad
+const SWAP_QUOTE_INDEX_2 = 1; // Change this if swap quote is bad
 const USE_PERMIT2 = true;
 const UNLIMITED_APPROVAL = false;
 
@@ -74,7 +71,11 @@ const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800;
 
 async function depositWithSwapFromWalletExample() {
   // Build the SDK
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
+  });
 
   // Fetch the account
   let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
@@ -130,32 +131,19 @@ async function depositWithSwapFromWalletExample() {
 
   console.log('Approvals resolved, executing...');
   try {
-    await executeTransactionPlan({
-    plan: depositPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
+    await executeExampleTransactionPlan(depositPlan, sdk);
   } catch (error) {
     console.error("Error executing deposit with swap:", error);
     console.log("\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.");
     process.exit(1);
   }
 
-  // Fetch updated sub-account
-  const subAccountAfterDeposit = (await sdk.accountService.fetchSubAccount(
+  const [subAccountAfterDeposit] = await fetchAndLogSubAccounts(
     mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [WSTETH_VAULT],
-    { populateVaults: false }
-  )).result;
-
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterDeposit], sdk);
+    accountData,
+    sdk,
+    [{ account: SUB_ACCOUNT_ADDRESS, vaults: [WSTETH_VAULT] }],
+  );
 
   // Update account data
   accountData.updateSubAccounts(subAccountAfterDeposit!);
@@ -234,32 +222,16 @@ async function depositWithSwapFromWalletExample() {
   console.log(`Combined plan created with ${combinedPlan.length} step(s)`);
 
   try {
-    await executeTransactionPlan({
-    plan: combinedPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
+    await executeExampleTransactionPlan(combinedPlan, sdk);
   } catch (error) {
     console.error("Error executing redeem with swap:", error);
     console.log("\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.");
     process.exit(1);
   }
 
-  // Fetch the updated sub-account and log the result
-  const subAccountAfterWithdraw = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [WSTETH_VAULT],
-    { populateVaults: false }
-  )).result;
-
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterWithdraw], sdk);
+  await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
+    { account: SUB_ACCOUNT_ADDRESS, vaults: [WSTETH_VAULT] },
+  ]);
 
   // Check final USDC balance
   const usdcBalance = await publicClient.readContract({
