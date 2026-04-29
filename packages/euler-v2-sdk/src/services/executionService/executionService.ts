@@ -74,6 +74,18 @@ import {
 	type ResolveRequiredApprovalsWithWalletArgs,
 } from "./executionServiceTypes.js";
 
+const TOKENS_REQUIRING_ZERO_APPROVAL_RESET: Record<number, readonly Address[]> = {
+	1: [getAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7")],
+};
+
+function requiresZeroApprovalReset(chainId: number, token: Address): boolean {
+	return (
+		TOKENS_REQUIRING_ZERO_APPROVAL_RESET[chainId]?.some(
+			(resetToken) => resetToken === getAddress(token),
+		) ?? false
+	);
+}
+
 export interface IExecutionService {
 	encodeBatch(items: EVCBatchItem[]): Hex;
 	encodeDeposit(args: EncodeDepositArgs): EVCBatchItem[];
@@ -1819,6 +1831,19 @@ export class ExecutionService implements IExecutionService {
 						args: [approvalSpender, approvalAmount],
 					}),
 				});
+				const addApproveWithOptionalReset = (
+					approvalSpender: Address,
+					approvalAmount: bigint,
+					currentAllowance: bigint,
+				) => {
+					if (
+						currentAllowance > 0n &&
+						requiresZeroApprovalReset(chainId, token)
+					) {
+						resolvedItems.push(makeApprove(approvalSpender, 0n));
+					}
+					resolvedItems.push(makeApprove(approvalSpender, approvalAmount));
+				};
 
 				const makePermit2 = (
 					permit2Spender: Address,
@@ -1874,8 +1899,10 @@ export class ExecutionService implements IExecutionService {
 
 					// If assetForPermit2 is insufficient, we need both approval and permit2 signature
 					if (!hasSufficientPermit2Allowance) {
-						resolvedItems.push(
-							makeApprove(permit2, unlimitedApproval ? maxUint256 : amount),
+						addApproveWithOptionalReset(
+							permit2,
+							unlimitedApproval ? maxUint256 : amount,
+							assetForPermit2,
 						);
 						resolvedItems.push(
 							makePermit2(spender, unlimitedApproval ? maxUint160 : amount),
@@ -1899,8 +1926,10 @@ export class ExecutionService implements IExecutionService {
 						continue;
 					}
 
-					resolvedItems.push(
-						makeApprove(spender, unlimitedApproval ? maxUint256 : amount),
+					addApproveWithOptionalReset(
+						spender,
+						unlimitedApproval ? maxUint256 : amount,
+						assetForVault,
 					);
 					approval.resolved = resolvedItems;
 				}

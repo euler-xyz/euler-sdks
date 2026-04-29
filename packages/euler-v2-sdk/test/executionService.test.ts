@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { type Abi, decodeFunctionData, encodeFunctionData, getAddress } from "viem";
+import {
+	type Abi,
+	decodeFunctionData,
+	encodeFunctionData,
+	erc20Abi,
+	getAddress,
+} from "viem";
 import { ExecutionService } from "../src/services/executionService/executionService.js";
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
@@ -15,6 +21,7 @@ const SOURCE_ACCOUNT = "0x0000000000000000000000000000000000000a01" as const;
 const SOURCE_VAULT = "0x0000000000000000000000000000000000000a02" as const;
 const LIABILITY_VAULT = "0x0000000000000000000000000000000000000a03" as const;
 const SAME_ASSET = "0x0000000000000000000000000000000000000a04" as const;
+const MAINNET_USDT = getAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7");
 const AMOUNT = 12345n;
 
 function createExecutionService() {
@@ -359,4 +366,61 @@ test("repay-from-deposit same-asset different-vault path uses skim and repayWith
 	assert.equal(items[2]?.onBehalfOfAccount, RECEIVER);
 	assert.equal(repay.functionName, "repayWithShares");
 	assert.deepEqual(repay.args, [AMOUNT - 1n, getAddress(RECEIVER)]);
+});
+
+test("resolveRequiredApprovals resets mainnet USDT allowance before direct approval", () => {
+	const service = createExecutionService();
+	const staleAllowance = 1n;
+	const plan = [
+		{
+			type: "requiredApproval",
+			token: MAINNET_USDT,
+			owner: ACCOUNT,
+			spender: VAULT_IN,
+			amount: AMOUNT,
+		},
+	] as const;
+	const wallet = {
+		chainId: 1,
+		account: ACCOUNT,
+		getAsset: () => ({
+			account: ACCOUNT,
+			asset: MAINNET_USDT,
+			balance: AMOUNT,
+			allowances: {
+				[VAULT_IN]: {
+					assetForVault: staleAllowance,
+					assetForPermit2: 0n,
+					assetForVaultInPermit2: 0n,
+					permit2ExpirationTime: 0,
+				},
+			},
+		}),
+	} as never;
+
+	const resolved = service.resolveRequiredApprovalsWithWallet({
+		plan: [...plan],
+		chainId: 1,
+		wallet,
+		usePermit2: false,
+		unlimitedApproval: false,
+	});
+	const approval = resolved[0];
+	assert.equal(approval?.type, "requiredApproval");
+	if (approval?.type !== "requiredApproval") {
+		throw new Error("expected requiredApproval");
+	}
+
+	assert.equal(approval.resolved?.length, 2);
+	assert.deepEqual(
+		approval.resolved?.map((item) =>
+			item.type === "approve"
+				? decodeFunctionData({ abi: erc20Abi, data: item.data }).args
+				: [],
+		),
+		[
+			[VAULT_IN, 0n],
+			[VAULT_IN, AMOUNT],
+		],
+	);
 });

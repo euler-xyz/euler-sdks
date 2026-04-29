@@ -60,6 +60,7 @@ wait_for_anvil() {
 
 ANVIL_EXAMPLES=(
   "execution/deposit-example.ts"
+  "execution/deposit-usdt-reset-approval-example.ts"
   "execution/mint-example.ts"
   "execution/withdraw-example.ts"
   "execution/redeem-example.ts"
