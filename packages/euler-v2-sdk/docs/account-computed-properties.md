@@ -1,6 +1,10 @@
-# Account Computed Properties
+# Account And Portfolio Computed Properties
 
-`Account`, `SubAccount`, and `AccountLiquidity` expose computed getter properties that derive risk metrics, USD valuations, and yield data from underlying position data. All getters return `undefined` when their prerequisite data has not been populated.
+`Account` and `Portfolio` are two ways to look at the same underlying account data.
+
+`Account` is the lower-level, contract-shaped view: owners, sub-accounts, raw positions, enabled controllers/collaterals, and liquidity structs. `Portfolio` wraps a populated `Account` and provides an opinionated, position-first view: savings, borrows, collateral, portfolio totals, net APY, and ROE.
+
+Computed getters return `undefined` when their prerequisite data has not been populated.
 
 ## Population Prerequisites
 
@@ -13,19 +17,17 @@ Computed properties depend on data populated by calling `populateVaults`, `popul
 | Rewards (on vaults) | via `vaultFetchOptions.populateRewards` | RewardsService | `vault.rewards.campaigns` with per-campaign APR |
 | User Rewards | `account.populateUserRewards(rewardsService)` | RewardsService | `account.userRewards` (unclaimed reward tokens) |
 
-Typical setup to enable all computed properties:
+Typical setup to enable Account-level computed properties and then build a Portfolio:
 
 ```typescript
-const account = await accountService.fetchAccount(chainId, owner, {
-  populateVaults: true,
-  populateMarketPrices: true,
-  populateUserRewards: true,
-  vaultFetchOptions: {
-    populateMarketPrices: true,
-    populateRewards: true,
-  },
+const { result: account } = await accountService.fetchAccount(chainId, owner, {
+  populateAll: true,
 });
+
+const portfolio = portfolioService.buildPortfolio(account)
 ```
+
+For a direct high-level read, use `portfolioService.fetchPortfolio(...)`, which always fetches the backing Account with `populateAll: true`.
 
 ## SubAccount Properties
 
@@ -99,21 +101,45 @@ Returns `undefined` when vault entities are not populated, no APY data is availa
 
 | Property | Type | Prerequisites | Description |
 |---|---|---|---|
-| `portfolio` | `{ savings: AccountPosition[]; borrows: { borrow: AccountPosition; collaterals: AccountPosition[] }[] }` | Position data (included by default) | Top-level categorized view across all sub-accounts. |
-| `totalSuppliedValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Sum of `suppliedValueUsd` across all positions in all sub-accounts (18 dec). |
-| `totalBorrowedValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Sum of `borrowedValueUsd` across all positions in all sub-accounts (18 dec). |
-| `netAssetValueUsd` | `bigint \| undefined` | `populateMarketPrices` | `totalSuppliedValueUsd - totalBorrowedValueUsd` (18 dec). |
 | `totalRewardsValueUsd` | `bigint \| undefined` | `populateUserRewards` | Total value of unclaimed reward tokens in USD (18 dec). |
+
+`totalSuppliedValueUsd`, `totalBorrowedValueUsd`, `netAssetValueUsd`, `netApy`, and `roe` are Portfolio-level metrics so filtering rules are applied consistently.
+
+### Sub-account Selection
+
+`Account` exposes helpers for selecting sub-accounts when preparing new positions:
+
+```typescript
+const freeSubAccounts = account.getFreeSubAccounts()
+const nextSubAccount = account.getNextSubAccount()
+const nextBorrowSubAccount = account.getNextSubAccount({ borrowVault })
+```
+
+`getFreeSubAccounts()` returns addresses with no active supplied or borrowed position. `getNextSubAccount()` returns the first address suitable for a new position. When `borrowVault` is provided, existing supplied and borrowed positions are treated as occupied, and any known enabled controllers on a candidate sub-account must match that borrow vault.
+
+## Portfolio Properties
+
+| Property | Type | Prerequisites | Description |
+|---|---|---|---|
+| `savings` | `PortfolioSavingsPosition[]` | `populateVaults` + `populateMarketPrices` | Supplied positions that are not actively backing debt in the same sub-account. |
+| `borrows` | `PortfolioBorrowPosition[]` | `populateVaults` + `populateMarketPrices` | Debt positions plus their collateral positions and risk fields. |
+| `totalSuppliedValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Sum of supplied USD value across positions included in this portfolio. |
+| `totalBorrowedValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Sum of borrowed USD value across positions included in this portfolio. |
+| `netAssetValueUsd` | `bigint \| undefined` | `populateMarketPrices` | `totalSuppliedValueUsd - totalBorrowedValueUsd` (18 dec). |
+| `netApy` | `number \| undefined` | `populateVaults` + `populateMarketPrices` | Net APY across positions included in this portfolio. |
+| `roe` | `number \| undefined` | `populateVaults` + `populateMarketPrices` | Return on equity across positions included in this portfolio. |
+| `totalRewardsValueUsd` | `bigint \| undefined` | `populateUserRewards` | Delegates to `account.totalRewardsValueUsd`. |
 
 ### Portfolio Categorization
 
-`account.portfolio` groups an account's raw sub-account positions into the same top-level concepts used by the app:
+`Portfolio` groups an account's raw sub-account positions into savings and borrows:
 
 ```typescript
-const { savings, borrows } = account.portfolio
+const { result: portfolio } = await sdk.portfolioService.fetchPortfolio(chainId, owner)
+const { savings, borrows } = portfolio
 
 for (const saving of savings) {
-  console.log(saving.account, saving.vaultAddress, saving.assets)
+  console.log(saving.subAccount, saving.position.vaultAddress, saving.assets)
 }
 
 for (const { borrow, collaterals } of borrows) {
@@ -125,6 +151,10 @@ for (const { borrow, collaterals } of borrows) {
 `savings` contains supplied positions that are not actively supporting debt in the same sub-account. `borrows` contains every position with debt, plus the supplied positions from that same sub-account that are active collateral for the borrow. If one `AccountPosition` has both debt and a supplied balance, the debt is represented in `borrows`; the supplied side is also included in `savings` unless that same vault is active collateral for a borrow in the same sub-account.
 
 Collateral membership is taken from borrow liquidity data when available, with enabled collaterals used as a defensive fallback.
+
+Portfolio can permanently filter positions with `positionFilter(position, { account })`. The same filter is applied to savings, borrows, totals, net APY, and ROE.
+
+`Portfolio` also exposes `getFreeSubAccounts()` and `getNextSubAccount(...)`. These use the portfolio's filtered position view, while `Account` uses the full lower-level account tree.
 
 ## Standalone Yield Utilities
 

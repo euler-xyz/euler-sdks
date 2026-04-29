@@ -5,6 +5,7 @@ export {
 export type {
 	SimulateBatchResult,
 	SimulateBatchOptions,
+	EstimateGasForTransactionPlanOptions,
 	SimulationStateOverrideOptions,
 	SimulationInsufficientRequirement,
 } from "./simulationService.js";

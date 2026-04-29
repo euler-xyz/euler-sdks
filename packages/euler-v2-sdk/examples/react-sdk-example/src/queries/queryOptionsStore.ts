@@ -22,6 +22,7 @@ export type SdkAdapterMode = "v3" | "onchain";
 export interface QueryOptionsSettings {
   chainSetVersion: number;
   adapterMode: SdkAdapterMode;
+  proxyV3Calls: boolean;
   enabledChainIds: number[];
   showQueryProfiler: boolean;
   disableCache: boolean;
@@ -42,6 +43,7 @@ export interface QueryBuildOverrides {
 const DEFAULT_SETTINGS: QueryOptionsSettings = {
   chainSetVersion: CHAIN_SET_VERSION,
   adapterMode: "v3",
+  proxyV3Calls: true,
   enabledChainIds: DEFAULT_ENABLED_CHAIN_IDS,
   showQueryProfiler: true,
   disableCache: false,
@@ -143,6 +145,10 @@ function sanitizeSettings(value: unknown): QueryOptionsSettings {
       candidate.adapterMode === "onchain" || candidate.adapterMode === "v3"
         ? candidate.adapterMode
         : DEFAULT_SETTINGS.adapterMode,
+    proxyV3Calls:
+      typeof candidate.proxyV3Calls === "boolean"
+        ? candidate.proxyV3Calls
+        : DEFAULT_SETTINGS.proxyV3Calls,
     enabledChainIds: sanitizeEnabledChainIds(candidate.enabledChainIds),
     showQueryProfiler:
       typeof candidate.showQueryProfiler === "boolean"
@@ -219,6 +225,18 @@ export function useSdkAdapterMode() {
   );
 }
 
+function currentProxyV3CallsSnapshot() {
+  return currentSettings.proxyV3Calls;
+}
+
+export function useProxyV3Calls() {
+  return useSyncExternalStore(
+    subscribe,
+    currentProxyV3CallsSnapshot,
+    currentProxyV3CallsSnapshot
+  );
+}
+
 function currentEnabledChainIdsSnapshot() {
   return currentSettings.enabledChainIds;
 }
@@ -265,6 +283,7 @@ export function hasActiveQueryOptionsOverrides(
 ): boolean {
   return (
     settings.adapterMode !== DEFAULT_SETTINGS.adapterMode ||
+    settings.proxyV3Calls !== DEFAULT_SETTINGS.proxyV3Calls ||
     settings.enabledChainIds.length !== DEFAULT_SETTINGS.enabledChainIds.length ||
     settings.enabledChainIds.some(
       (chainId, index) => chainId !== DEFAULT_SETTINGS.enabledChainIds[index]

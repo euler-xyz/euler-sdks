@@ -6,12 +6,15 @@ import {
 } from "@tanstack/react-query";
 import type {
   Account,
+  AccountPosition,
   BuildQueryFn,
   EulerSDKQueryName,
   EVault,
   EulerSDK,
   EulerEarn,
   FeeFlowState,
+  Portfolio,
+  PortfolioPositionFilter,
   Wallet,
   VaultEntity,
   VaultRewardInfo,
@@ -21,7 +24,7 @@ import { useSDK } from "../context/SdkContext.tsx";
 import { recordExecution, recordFailure, registerKnownQueries } from "./queryProfileStore.ts";
 import { interceptSdkDataIfEnabled, isQueryIntercepted } from "./dataInterceptorStore.ts";
 import { getQueryBuildOverrides, useEnabledChainIds } from "./queryOptionsStore.ts";
-import { isEVault } from "@eulerxyz/euler-v2-sdk";
+import { isEVault, StandardEVaultPerspectives } from "@eulerxyz/euler-v2-sdk";
 import { CHAIN_NAMES, EARN_CHAIN_IDS, SECURITIZE_VAULT_ADDRESSES } from "../config/chains.ts";
 
 type SecuritizeVault = NonNullable<
@@ -448,7 +451,10 @@ export async function fetchVaultAddressesFromLabelProducts(
   const addresses: Address[] = [];
 
   for (const product of Object.values(products)) {
-    for (const vault of product.vaults ?? []) {
+    for (const vault of [
+      ...(product.vaults ?? []),
+      ...(product.deprecatedVaults ?? []),
+    ]) {
       try {
         const normalized = getAddress(vault);
         const key = normalized.toLowerCase();
@@ -901,13 +907,15 @@ export type AccountByChainResult = {
   chainId: number;
   chainName: string;
   account?: Account<VaultEntity>;
+  portfolio?: Portfolio<VaultEntity>;
   diagnostics: DiagnosticIssue[];
   failedVaults: FailedVaultFetch[];
   error?: string;
 };
 
 export function useAccountAllChainsWithDiagnostics(
-  address: string | undefined
+  address: string | undefined,
+  labeledVaultsOnly = false
 ) {
   const { sdk, enabled } = useSdkReady();
   const enabledChainIds = useEnabledChainIds();
@@ -917,21 +925,22 @@ export function useAccountAllChainsWithDiagnostics(
       "allChains",
       address,
       enabledChainIds,
+      labeledVaultsOnly,
     ],
     queryFn: async () =>
       Promise.all(
         enabledChainIds.map(async (chainId) => {
           const chainName = CHAIN_NAMES[chainId] ?? String(chainId);
           try {
+            const positionFilter = labeledVaultsOnly
+              ? await buildLabeledPortfolioPositionFilter(sdk!, chainId)
+              : undefined;
             const fetched = unwrapServiceResultWithDiagnostics(
-              "accountService.fetchAccount",
-              await sdk!.accountService.fetchAccount(
+              "portfolioService.fetchPortfolio",
+              await sdk!.portfolioService.fetchPortfolio(
                 chainId,
                 address as Address,
-                {
-                  populateAll: true,
-                  vaultFetchOptions: { populateAll: true },
-                }
+                positionFilter ? { positionFilter } : undefined
               )
             );
             const diagnostics = addChainMetadataToDiagnostics(
@@ -941,7 +950,8 @@ export function useAccountAllChainsWithDiagnostics(
             return {
               chainId,
               chainName,
-              account: fetched.result,
+              account: fetched.result.account,
+              portfolio: fetched.result,
               diagnostics,
               failedVaults: addChainMetadataToFailedVaults(
                 buildFailedVaultFetches(diagnostics),
@@ -962,6 +972,45 @@ export function useAccountAllChainsWithDiagnostics(
     enabled: enabled && !!address && address.length === 42,
     staleTime: STALE_TIMES.accountWithDiagnostics,
   });
+}
+
+async function buildLabeledPortfolioPositionFilter(
+  sdk: EulerSDK,
+  chainId: number
+): Promise<PortfolioPositionFilter<VaultEntity>> {
+  const [productVaults, earnVaults, escrowVaults] = await Promise.all([
+    fetchVaultAddressesFromLabelProducts(sdk, chainId).catch(() => [] as Address[]),
+    fetchEarnVaultAddressesFromLabels(chainId).catch(() => [] as Address[]),
+    sdk.eVaultService
+      .fetchVerifiedVaultAddresses(chainId, [StandardEVaultPerspectives.ESCROW])
+      .catch(() => [] as Address[]),
+  ]);
+  const labeledVaults = new Set(
+    [...productVaults, ...earnVaults, ...escrowVaults].map((vault) =>
+      getAddress(vault).toLowerCase()
+    )
+  );
+
+  return (position, { account }) => {
+    if (!labeledVaults.has(getAddress(position.vaultAddress).toLowerCase())) {
+      return false;
+    }
+
+    if (position.borrowed === 0n) return true;
+
+    return getBorrowCollateralAddresses(position, account)
+      .every((collateral) => labeledVaults.has(getAddress(collateral).toLowerCase()));
+  };
+}
+
+function getBorrowCollateralAddresses(
+  position: AccountPosition<VaultEntity>,
+  account: Account<VaultEntity>
+): Address[] {
+  const liquidityCollaterals =
+    position.liquidity?.collaterals.map((collateral) => collateral.address) ?? [];
+  if (liquidityCollaterals.length > 0) return liquidityCollaterals;
+  return account.getSubAccount(position.account)?.enabledCollaterals ?? [];
 }
 
 export function useWalletBalance(

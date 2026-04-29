@@ -51,6 +51,18 @@ Why use it:
 - Catch vault caps or other protocol limits that would cause a revert.
 - Evaluate position profitability without holding tokens, since the simulation can inject balances/approvals.
 
+### `estimateGasForTransactionPlan(chainId, account, transactionPlan, options?)`
+
+Estimates gas for the executable items in a `TransactionPlan`. Like simulation, `stateOverrides` defaults to `true`, so required wallet balances and allowances are injected while `requiredApproval` items are skipped. EVC batches are estimated through `EVC.batch`, direct `contractCall` items are estimated against their target contracts, and viem gas-estimation errors are thrown to the caller.
+
+```typescript
+const gas = await sdk.simulationService.estimateGasForTransactionPlan(
+  chainId,
+  accountAddress,
+  plan,
+)
+```
+
 ### Population of simulated accounts
 
 `simulateTransactionPlan` can populate the returned account/vault entities using the same fetch options as `accountService.fetchAccount`. This is useful when you want computed properties (e.g., ROE, APY breakdowns, USD values) on the simulated account:

@@ -12,6 +12,10 @@ import {
 	AccountService,
 	type IAccountService,
 } from "../services/accountService/index.js";
+import {
+	PortfolioService,
+	type IPortfolioService,
+} from "../services/portfolioService/index.js";
 import { AccountOnchainAdapter } from "../services/accountService/adapters/accountOnchainAdapter/accountOnchainAdapter.js";
 import { AccountV3Adapter } from "../services/accountService/adapters/accountV3Adapter/accountV3Adapter.js";
 import {
@@ -140,6 +144,7 @@ export interface BuildSDKOverrides<
 	deploymentService?: IDeploymentService;
 	providerService?: IProviderService;
 	accountService?: IAccountService<TVaultEntity>;
+	portfolioService?: IPortfolioService<TVaultEntity>;
 	walletService?: IWalletService;
 	eVaultService?: IEVaultService;
 	eulerEarnService?: IEulerEarnService;
@@ -439,6 +444,10 @@ export async function buildEulerSDK<
 		);
 	}
 
+	const portfolioService =
+		servicesOverrides?.portfolioService ??
+		new PortfolioService<TVaultEntity>(accountService);
+
 	// Build eulerLabels service if not overridden
 	const eulerLabelsConfig =
 		eulerLabelsAdapterConfig || defaultEulerLabelsURLAdapterConfig;
@@ -561,10 +570,9 @@ export async function buildEulerSDK<
 					? undefined
 					: directAdapter,
 				{
-				merklDistributorAddress:
-					directAdapter.getMerklDistributorAddress(),
-				fuulManagerAddress: directAdapter.getFuulManagerAddress(),
-				fuulFactoryAddress: directAdapter.getFuulFactoryAddress(),
+					merklDistributorAddress: directAdapter.getMerklDistributorAddress(),
+					fuulManagerAddress: directAdapter.getFuulManagerAddress(),
+					fuulFactoryAddress: directAdapter.getFuulFactoryAddress(),
 				},
 			);
 		})();
@@ -594,10 +602,7 @@ export async function buildEulerSDK<
 		})();
 	const oracleAdapterService =
 		servicesOverrides?.oracleAdapterService ??
-		new OracleAdapterService(
-			oracleAdapterServiceConfig,
-			resolvedBuildQuery,
-		);
+		new OracleAdapterService(oracleAdapterServiceConfig, resolvedBuildQuery);
 	const feeFlowService =
 		servicesOverrides?.feeFlowService ??
 		new FeeFlowService(feeFlowServiceConfig, resolvedBuildQuery);
@@ -677,6 +682,7 @@ export async function buildEulerSDK<
 
 	return new EulerSDK<TVaultEntity>({
 		accountService,
+		portfolioService,
 		walletService,
 		eVaultService,
 		eulerEarnService,

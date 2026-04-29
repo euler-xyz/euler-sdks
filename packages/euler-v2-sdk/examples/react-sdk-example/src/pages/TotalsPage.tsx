@@ -10,14 +10,14 @@ import {
 import { formatUnits, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import { APP_CHAIN_IDS_MINUS_BOB, CHAIN_NAMES, RPC_URLS } from "../config/chains.ts";
+import { getV3ApiEndpoint } from "../config/endpoints.ts";
+import { useProxyV3Calls } from "../queries/queryOptionsStore.ts";
 import {
   fetchEarnVaultAddressesFromLabels,
   fetchVaultAddressesFromLabelProducts,
   sdkBuildQuery,
 } from "../queries/sdkQueries.ts";
 
-const V3_API_ENDPOINT =
-  import.meta.env.VITE_EULER_V3_ENDPOINT ?? "/api/v3";
 const DIFF_THRESHOLD = 0.03;
 
 type TotalsSource = "onchain" | "v3";
@@ -52,7 +52,10 @@ type TotalsReport = {
   };
 };
 
-function buildTotalsSdk(source: TotalsSource): Promise<EulerSDK> {
+function buildTotalsSdk(
+  source: TotalsSource,
+  v3ApiEndpoint: string
+): Promise<EulerSDK> {
   const useV3Adapters = source === "v3";
   const sdkConfig: BuildSDKOptions = {
     rpcUrls: RPC_URLS,
@@ -61,22 +64,22 @@ function buildTotalsSdk(source: TotalsSource): Promise<EulerSDK> {
     eVaultServiceConfig: {
       adapter: useV3Adapters ? "v3" : "onchain",
       v3AdapterConfig: {
-        endpoint: V3_API_ENDPOINT,
+        endpoint: v3ApiEndpoint,
       },
     },
     eulerEarnServiceConfig: {
       adapter: useV3Adapters ? "v3" : "onchain",
       v3AdapterConfig: {
-        endpoint: V3_API_ENDPOINT,
+        endpoint: v3ApiEndpoint,
       },
     },
     vaultTypeAdapterConfig: useV3Adapters
       ? {
-          endpoint: V3_API_ENDPOINT,
+          endpoint: v3ApiEndpoint,
         }
       : defaultVaultTypeSubgraphAdapterConfig,
     backendConfig: {
-      endpoint: V3_API_ENDPOINT,
+      endpoint: v3ApiEndpoint,
     },
   };
 
@@ -213,10 +216,10 @@ function aggregateTotals(source: TotalsSource, rows: ChainSourceTotals[]): Chain
   };
 }
 
-async function fetchTotalsReport(): Promise<TotalsReport> {
+async function fetchTotalsReport(v3ApiEndpoint: string): Promise<TotalsReport> {
   const [onchainSdk, v3Sdk] = await Promise.all([
-    buildTotalsSdk("onchain"),
-    buildTotalsSdk("v3"),
+    buildTotalsSdk("onchain", v3ApiEndpoint),
+    buildTotalsSdk("v3", v3ApiEndpoint),
   ]);
 
   const chains = await Promise.all(
@@ -442,9 +445,11 @@ function AggregateTable({ report }: { report: TotalsReport }) {
 
 export function TotalsPage() {
   const { loading: sdkLoading, error: sdkError } = useSDK();
+  const proxyV3Calls = useProxyV3Calls();
+  const v3ApiEndpoint = getV3ApiEndpoint(proxyV3Calls);
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["totals-page", APP_CHAIN_IDS_MINUS_BOB],
-    queryFn: fetchTotalsReport,
+    queryKey: ["totals-page", APP_CHAIN_IDS_MINUS_BOB, v3ApiEndpoint],
+    queryFn: () => fetchTotalsReport(v3ApiEndpoint),
     staleTime: 60_000,
     enabled: !sdkLoading && !sdkError,
   });

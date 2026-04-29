@@ -749,6 +749,267 @@ tr.clickable {
   background: #f0f0f0;
 }
 
+.portfolio-view-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
+  margin-bottom: 24px;
+  border-bottom: 2px solid #000;
+}
+
+.portfolio-view-toolbar .tabs {
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
+.portfolio-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.portfolio-panel {
+  border: 1px solid #000;
+  padding: 16px;
+  background: #fff;
+}
+
+.portfolio-panel h4 {
+  font-size: 14px;
+  margin-bottom: 14px;
+}
+
+.portfolio-metric-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  border-top: 1px solid #ddd;
+  font-size: 13px;
+}
+
+.portfolio-metric-row:first-of-type {
+  border-top: 0;
+}
+
+.portfolio-metric-row span {
+  color: #666;
+}
+
+.portfolio-metric-row strong {
+  text-align: right;
+}
+
+.portfolio-metric-row strong.positive {
+  color: #0b6b2b;
+}
+
+.portfolio-metric-row strong.negative {
+  color: #b00020;
+}
+
+.portfolio-chain-section {
+  margin-bottom: 48px;
+}
+
+.portfolio-filter-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.portfolio-switch-control {
+  position: relative;
+  display: inline-flex;
+  width: 40px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+
+.portfolio-switch-control input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  margin: 0;
+}
+
+.portfolio-switch-track {
+  width: 100%;
+  height: 100%;
+  border: 2px solid #000;
+  background: #fff;
+  transition: background 120ms ease;
+}
+
+.portfolio-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 14px;
+  height: 14px;
+  background: #000;
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.portfolio-switch-control input:checked + .portfolio-switch-track {
+  background: #000;
+}
+
+.portfolio-switch-control input:checked + .portfolio-switch-track::after {
+  transform: translateX(18px);
+  background: #fff;
+}
+
+.portfolio-switch-control input:focus-visible + .portfolio-switch-track {
+  outline: 2px solid #000;
+  outline-offset: 2px;
+}
+
+.portfolio-chain-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.portfolio-chain-subtitle {
+  font-size: 12px;
+  color: #666;
+}
+
+.portfolio-position-section {
+  margin-bottom: 24px;
+}
+
+.portfolio-position-heading {
+  margin-bottom: 8px;
+}
+
+.portfolio-position-heading h4 {
+  font-size: 16px;
+  font-weight: 400;
+  margin-bottom: 4px;
+}
+
+.portfolio-position-heading p {
+  font-size: 13px;
+  color: #666;
+}
+
+.portfolio-list-card {
+  border: 1px solid #000;
+  padding: 8px;
+  background: #fff;
+}
+
+.portfolio-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.portfolio-empty-state {
+  padding: 32px 16px;
+  text-align: center;
+  color: #666;
+  font-size: 13px;
+}
+
+.portfolio-position-card {
+  border: 1px solid #ccc;
+  padding: 12px;
+  background: #fff;
+}
+
+.portfolio-position-main {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.portfolio-position-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.portfolio-position-subtitle {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #666;
+}
+
+.portfolio-position-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.portfolio-position-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.portfolio-stat {
+  border-top: 1px solid #ddd;
+  padding-top: 8px;
+  min-width: 0;
+}
+
+.portfolio-stat .label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #666;
+}
+
+.portfolio-stat .value {
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.portfolio-stat-subvalue {
+  font-size: 11px;
+  color: #666;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .portfolio-overview-grid,
+  .portfolio-position-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-view-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .portfolio-chain-header,
+  .portfolio-position-main {
+    flex-direction: column;
+  }
+
+  .portfolio-position-actions {
+    justify-content: flex-start;
+  }
+}
+
 /* Top bar nav */
 .topbar-nav {
   display: flex;

@@ -122,7 +122,7 @@ export class AccountService<
 				});
 
 		if (resolvedOptions.populateVaults === false) {
-			return { result: account as Account<TVaultEntity>, errors };
+			return { result: account as unknown as Account<TVaultEntity>, errors };
 		}
 
 		const populated = await this.populateVaults([account], resolvedOptions);

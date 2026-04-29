@@ -3,10 +3,10 @@ import {
 	type Hex,
 	type StateOverride,
 	decodeFunctionResult,
-	encodeFunctionData,
 	getAddress,
 	parseEther,
 } from "viem";
+import { estimateContractGas } from "viem/actions";
 import type { ProviderService } from "../providerService/index.js";
 import type { DeploymentService } from "../deploymentService/index.js";
 import type {
@@ -115,6 +115,12 @@ export type SimulateBatchOptions = {
 	accountFetchOptions?: AccountFetchOptions;
 };
 
+export type EstimateGasForTransactionPlanOptions = {
+	/** When true, fetches state overrides internally from the transaction plan before gas estimation. */
+	stateOverrides?: boolean;
+	stateOverrideOptions?: SimulationStateOverrideOptions;
+};
+
 export type SimulationStateOverrideOptions = {
 	/** Override the native (ETH) balance. Defaults to 1000 ETH. Set to 0n to skip. */
 	nativeBalance?: bigint;
@@ -135,6 +141,12 @@ export interface ISimulationService<
 		transactionPlan: TransactionPlan,
 		options?: SimulateBatchOptions,
 	): Promise<SimulateBatchResult<TVaultEntity>>;
+	estimateGasForTransactionPlan(
+		chainId: number,
+		account: Address,
+		transactionPlan: TransactionPlan,
+		options?: EstimateGasForTransactionPlanOptions,
+	): Promise<bigint>;
 }
 
 type LensMeta =
@@ -469,6 +481,67 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
 		return result;
 	}
 
+	async estimateGasForTransactionPlan(
+		chainId: number,
+		account: Address,
+		transactionPlan: TransactionPlan,
+		options?: EstimateGasForTransactionPlanOptions,
+	): Promise<bigint> {
+		const owner = getAddress(account);
+		const useStateOverrides = options?.stateOverrides ?? true;
+		const stateOverride = useStateOverrides
+			? await this.deriveStateOverrides(
+					chainId,
+					owner,
+					transactionPlan,
+					options?.stateOverrideOptions,
+				)
+			: undefined;
+		const provider = this.providerService.getProvider(chainId);
+		const evcAddress =
+			this.deploymentService.getDeployment(chainId).addresses.coreAddrs.evc;
+
+		let totalGas = 0n;
+		for (const item of transactionPlan) {
+			if (item.type === "requiredApproval") continue;
+
+			if (item.type === "evcBatch") {
+				const value = item.items.reduce(
+					(sum, batchItem) => sum + batchItem.value,
+					0n,
+				);
+				totalGas += await estimateContractGas(provider, {
+					account: owner,
+					address: evcAddress,
+					abi: ethereumVaultConnectorAbi,
+					functionName: "batch",
+					args: [item.items],
+					value,
+					stateOverride,
+				});
+				continue;
+			}
+
+			if (item.chainId !== chainId) {
+				throw new Error(
+					`Cannot estimate transaction plan item for chain ${item.chainId} with provider for chain ${chainId}`,
+				);
+			}
+
+			totalGas += await estimateContractGas(provider, {
+				account: owner,
+				address: item.to,
+				abi: item.abi,
+				functionName: item.functionName as never,
+				args: item.args as never,
+				value: item.value,
+				stateOverride,
+			});
+		}
+
+		return totalGas;
+	}
+
 	private async buildSimulationBatch(
 		chainId: number,
 		owner: Address,
@@ -478,7 +551,6 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
 		lensMeta: LensMeta[];
 		evcAddress: Address;
 		totalValue: bigint;
-		calldata: Hex;
 	}> {
 		const { candidateVaults, subAccountVaults } = this.collectCandidateVaults(
 			owner,
@@ -578,13 +650,8 @@ export class SimulationService<TVaultEntity extends VaultEntity = VaultEntity>
 
 		const fullBatch = [...batch, ...lensItems];
 		const totalValue = fullBatch.reduce((sum, item) => sum + item.value, 0n);
-		const calldata = encodeFunctionData({
-			abi: ethereumVaultConnectorAbi,
-			functionName: "batchSimulation",
-			args: [fullBatch],
-		});
 
-		return { fullBatch, lensMeta, evcAddress, totalValue, calldata };
+		return { fullBatch, lensMeta, evcAddress, totalValue };
 	}
 
 	private collectCandidateVaults(
