@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { beforeEach, test, vi } from "vitest";
-import { getAddress, type Abi, type StateOverride } from "viem";
+import { getAddress, type Abi } from "viem";
 import { estimateContractGas } from "viem/actions";
-import { SimulationService } from "../src/services/simulationService/simulationService.js";
+import { ExecutionService } from "../src/services/executionService/executionService.js";
 import type { TransactionPlan } from "../src/services/executionService/executionServiceTypes.js";
 
 vi.mock("viem/actions", () => ({
@@ -26,12 +26,9 @@ const testAbi = [
 	},
 ] as const satisfies Abi;
 
-function createSimulationService() {
+function createExecutionService() {
 	const provider = { id: "provider" };
-	return new SimulationService(
-		{
-			getProvider: () => provider,
-		} as never,
+	return new ExecutionService(
 		{
 			getDeployment: () => ({
 				addresses: {
@@ -42,7 +39,10 @@ function createSimulationService() {
 				},
 			}),
 		} as never,
-		{} as never,
+		undefined,
+		{
+			getProvider: () => provider,
+		} as never,
 		{} as never,
 	);
 }
@@ -51,12 +51,8 @@ beforeEach(() => {
 	vi.mocked(estimateContractGas).mockReset();
 });
 
-test("estimateGasForTransactionPlan estimates executable plan items with shared state override", async () => {
-	const service = createSimulationService();
-	const stateOverride = [
-		{ address: ACCOUNT, balance: 1_000_000n },
-	] satisfies StateOverride;
-	service.deriveStateOverrides = vi.fn(async () => stateOverride);
+test("estimateGasForTransactionPlan estimates executable plan items", async () => {
+	const service = createExecutionService();
 	vi.mocked(estimateContractGas)
 		.mockResolvedValueOnce(11n)
 		.mockResolvedValueOnce(13n);
@@ -94,10 +90,10 @@ test("estimateGasForTransactionPlan estimates executable plan items with shared 
 		1,
 		ACCOUNT,
 		plan,
+		{ stateOverrides: false },
 	);
 
 	assert.equal(estimatedGas, 24n);
-	assert.equal(vi.mocked(service.deriveStateOverrides).mock.calls.length, 1);
 	assert.equal(vi.mocked(estimateContractGas).mock.calls.length, 2);
 
 	const [, evcEstimate] = vi.mocked(estimateContractGas).mock.calls[0]!;
@@ -106,7 +102,7 @@ test("estimateGasForTransactionPlan estimates executable plan items with shared 
 	assert.equal(evcEstimate.functionName, "batch");
 	assert.deepEqual(evcEstimate.args, [[batchItem]]);
 	assert.equal(evcEstimate.value, 2n);
-	assert.equal(evcEstimate.stateOverride, stateOverride);
+	assert.equal(evcEstimate.stateOverride, undefined);
 
 	const [, contractEstimate] = vi.mocked(estimateContractGas).mock.calls[1]!;
 	assert.equal(contractEstimate.account, CHECKSUM_ACCOUNT);
@@ -114,12 +110,11 @@ test("estimateGasForTransactionPlan estimates executable plan items with shared 
 	assert.equal(contractEstimate.functionName, "doThing");
 	assert.deepEqual(contractEstimate.args, [7n]);
 	assert.equal(contractEstimate.value, 3n);
-	assert.equal(contractEstimate.stateOverride, stateOverride);
+	assert.equal(contractEstimate.stateOverride, undefined);
 });
 
 test("estimateGasForTransactionPlan propagates viem estimation errors", async () => {
-	const service = createSimulationService();
-	service.deriveStateOverrides = vi.fn(async () => []);
+	const service = createExecutionService();
 	const expected = new Error("execution reverted");
 	vi.mocked(estimateContractGas).mockRejectedValueOnce(expected);
 
@@ -136,7 +131,28 @@ test("estimateGasForTransactionPlan propagates viem estimation errors", async ()
 	];
 
 	await assert.rejects(
-		() => service.estimateGasForTransactionPlan(1, ACCOUNT, plan),
+		() =>
+			service.estimateGasForTransactionPlan(1, ACCOUNT, plan, {
+				stateOverrides: false,
+			}),
 		expected,
+	);
+});
+
+test("simulation helpers fail clearly when provider service is not configured", async () => {
+	const service = new ExecutionService({
+		getDeployment: () => ({
+			addresses: {
+				coreAddrs: {
+					evc: EVC,
+					permit2: "0x0000000000000000000000000000000000000012",
+				},
+			},
+		}),
+	} as never);
+
+	await assert.rejects(
+		() => service.estimateGasForTransactionPlan(1, ACCOUNT, []),
+		/providerService/,
 	);
 });

@@ -15,7 +15,6 @@ import type { IEulerLabelsService } from "../services/eulerLabelsService/index.j
 import type { ITokenlistService } from "../services/tokenlistService/index.js";
 import type { ISwapService } from "../services/swapService/index.js";
 import type { IExecutionService } from "../services/executionService/index.js";
-import type { ISimulationService } from "../services/simulationService/index.js";
 import type { IWalletService } from "../services/walletService/index.js";
 import type { IPriceService } from "../services/priceService/index.js";
 import type { IRewardsService } from "../services/rewardsService/index.js";
@@ -45,8 +44,7 @@ export interface EulerSDKOptions<
 	eulerLabelsService: IEulerLabelsService;
 	tokenlistService: ITokenlistService;
 	swapService: ISwapService;
-	executionService: IExecutionService;
-	simulationService: ISimulationService<TVaultEntity>;
+	executionService: IExecutionService<TVaultEntity>;
 	priceService: IPriceService;
 	rewardsService: IRewardsService;
 	intrinsicApyService: IIntrinsicApyService;
@@ -69,8 +67,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 	public readonly eulerLabelsService: IEulerLabelsService;
 	public readonly tokenlistService: ITokenlistService;
 	public readonly swapService: ISwapService;
-	public readonly executionService: IExecutionService;
-	public readonly simulationService: ISimulationService<TVaultEntity>;
+	public readonly executionService: IExecutionService<TVaultEntity>;
 	public readonly priceService: IPriceService;
 	public readonly rewardsService: IRewardsService;
 	public readonly intrinsicApyService: IIntrinsicApyService;
@@ -93,7 +90,6 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 		this.tokenlistService = options.tokenlistService;
 		this.swapService = options.swapService;
 		this.executionService = options.executionService;
-		this.simulationService = options.simulationService;
 		this.priceService = options.priceService;
 		this.rewardsService = options.rewardsService;
 		this.intrinsicApyService = options.intrinsicApyService;

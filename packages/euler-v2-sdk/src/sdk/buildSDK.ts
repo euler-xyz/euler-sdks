@@ -89,10 +89,6 @@ import {
 	type OracleAdapterServiceConfig,
 } from "../services/oracleAdapterService/index.js";
 import {
-	SimulationService,
-	type ISimulationService,
-} from "../services/simulationService/index.js";
-import {
 	defaultAccountV3AdapterConfig,
 	defaultAccountVaultsAdapterConfig,
 	defaultBackendConfig,
@@ -153,8 +149,7 @@ export interface BuildSDKOverrides<
 	eulerLabelsService?: IEulerLabelsService;
 	tokenlistService?: ITokenlistService;
 	swapService?: ISwapService;
-	executionService?: IExecutionService;
-	simulationService?: ISimulationService<TVaultEntity>;
+	executionService?: IExecutionService<TVaultEntity>;
 	priceService?: IPriceService;
 	rewardsService?: IRewardsService;
 	intrinsicApyService?: IIntrinsicApyService;
@@ -485,9 +480,11 @@ export async function buildEulerSDK<
 	const executionService =
 		servicesOverrides?.executionService ??
 		(() => {
-			const svc = new ExecutionService(
-				deploymentService as DeploymentService,
+			const svc = new ExecutionService<TVaultEntity>(
+				deploymentService,
 				walletService as WalletService,
+				providerService as ProviderService,
+				vaultMetaService as IVaultMetaService<TVaultEntity>,
 			);
 			if (plugins?.length) svc.setPlugins(plugins);
 			return svc;
@@ -607,20 +604,17 @@ export async function buildEulerSDK<
 		servicesOverrides?.feeFlowService ??
 		new FeeFlowService(feeFlowServiceConfig, resolvedBuildQuery);
 
-	// Build simulation service if not overridden
-	const simulationService =
-		servicesOverrides?.simulationService ??
-		new SimulationService<TVaultEntity>(
-			providerService as ProviderService,
-			deploymentService as DeploymentService,
+	if (executionService instanceof ExecutionService) {
+		executionService.setProviderService(providerService as ProviderService);
+		executionService.setVaultMetaService(
 			vaultMetaService as IVaultMetaService<TVaultEntity>,
-			executionService,
-			priceService,
-			rewardsService,
-			intrinsicApyService,
-			eulerLabelsService,
-			walletService,
 		);
+		executionService.setWalletService(walletService as WalletService);
+		executionService.setPriceService(priceService);
+		executionService.setRewardsService(rewardsService);
+		executionService.setIntrinsicApyService(intrinsicApyService);
+		executionService.setEulerLabelsService(eulerLabelsService);
+	}
 
 	// Wire priceService and rewardsService into account service
 	if (accountService instanceof AccountService) {
@@ -695,7 +689,6 @@ export async function buildEulerSDK<
 		tokenlistService,
 		swapService,
 		executionService,
-		simulationService,
 		priceService,
 		rewardsService,
 		intrinsicApyService,

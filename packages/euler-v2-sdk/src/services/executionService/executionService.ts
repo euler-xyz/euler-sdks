@@ -9,6 +9,7 @@ import {
 	maxUint48,
 	maxUint160,
 	maxUint256,
+	type StateOverride,
 	zeroAddress,
 } from "viem";
 import type {
@@ -18,7 +19,16 @@ import type {
 } from "../../entities/Account.js";
 import type { EulerPlugin } from "../../plugins/types.js";
 import { resolveBorrowCollateralPositions } from "../../utils/accountPositionClassification.js";
-import type { DeploymentService } from "../deploymentService/index.js";
+import type { IDeploymentService } from "../deploymentService/index.js";
+import type { IEulerLabelsService } from "../eulerLabelsService/index.js";
+import type { IIntrinsicApyService } from "../intrinsicApyService/index.js";
+import type { IPriceService } from "../priceService/index.js";
+import type { ProviderService } from "../providerService/index.js";
+import type { IRewardsService } from "../rewardsService/index.js";
+import type {
+	IVaultMetaService,
+	VaultEntity,
+} from "../vaults/vaultMetaService/index.js";
 import type {
 	AssetWithSpenders,
 	IWalletService,
@@ -82,6 +92,21 @@ import {
 	type TransactionPlan,
 	type TransactionPlanItem,
 } from "./executionServiceTypes.js";
+import {
+	type ExecuteTransactionPlanArgs,
+	executeTransactionPlan,
+	type TransactionPlanExecutionResult,
+} from "./execute.js";
+import {
+	deriveStateOverrides,
+	type EstimateGasForTransactionPlanOptions,
+	estimateGasForTransactionPlan,
+	type ExecutionSimulationContext,
+	type SimulateBatchOptions,
+	type SimulateBatchResult,
+	simulateTransactionPlan,
+	type SimulationStateOverrideOptions,
+} from "./simulate.js";
 
 const TOKENS_REQUIRING_ZERO_APPROVAL_RESET: Record<number, readonly Address[]> =
 	{
@@ -96,7 +121,32 @@ function requiresZeroApprovalReset(chainId: number, token: Address): boolean {
 	);
 }
 
-export interface IExecutionService {
+export type ExecuteTransactionPlanWithServiceArgs = Omit<
+	ExecuteTransactionPlanArgs,
+	"executionService" | "deploymentService"
+>;
+
+export interface IExecutionService<
+	TVaultEntity extends VaultEntity = VaultEntity,
+> {
+	deriveStateOverrides(
+		chainId: number,
+		account: Address,
+		transactionPlan: TransactionPlan,
+		options?: SimulationStateOverrideOptions,
+	): Promise<StateOverride>;
+	simulateTransactionPlan(
+		chainId: number,
+		account: Address,
+		transactionPlan: TransactionPlan,
+		options?: SimulateBatchOptions,
+	): Promise<SimulateBatchResult<TVaultEntity>>;
+	estimateGasForTransactionPlan(
+		chainId: number,
+		account: Address,
+		transactionPlan: TransactionPlan,
+		options?: EstimateGasForTransactionPlanOptions,
+	): Promise<bigint>;
 	encodeBatch(items: EVCBatchItem[]): Hex;
 	encodeDeposit(args: EncodeDepositArgs): EVCBatchItem[];
 	encodeMint(args: EncodeMintArgs): EVCBatchItem[];
@@ -164,6 +214,9 @@ export interface IExecutionService {
 	mergePlans(plans: TransactionPlan[]): TransactionPlan;
 	/** Converts EVC batch items into a transaction plan (single evcBatch, no required approvals). */
 	convertBatchItemsToPlan(items: EVCBatchItem[]): TransactionPlan;
+	executeTransactionPlan(
+		args: ExecuteTransactionPlanWithServiceArgs,
+	): Promise<TransactionPlanExecutionResult>;
 }
 
 const PERMIT2_SIG_WINDOW = 60n * 60n;
@@ -173,20 +226,136 @@ const INTEREST_CUSHION_DENOMINATOR = 10_000n;
 
 // TODO explain how this service is coupled to the concrete abis of ERC4626, permit2 and EVK.
 // this is a helper service, not a generic one.
-export class ExecutionService implements IExecutionService {
+export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
+	implements IExecutionService<TVaultEntity>
+{
 	private plugins: EulerPlugin[] = [];
+	private walletService?: IWalletService;
+	private providerService?: ProviderService;
+	private vaultMetaService?: IVaultMetaService<TVaultEntity>;
+	private priceService?: IPriceService;
+	private rewardsService?: IRewardsService;
+	private intrinsicApyService?: IIntrinsicApyService;
+	private eulerLabelsService?: IEulerLabelsService;
 
 	constructor(
-		private deploymentService: DeploymentService,
-		private walletService: IWalletService,
-	) {}
+		private deploymentService: IDeploymentService,
+		walletService?: IWalletService,
+		providerService?: ProviderService,
+		vaultMetaService?: IVaultMetaService<TVaultEntity>,
+		priceService?: IPriceService,
+		rewardsService?: IRewardsService,
+		intrinsicApyService?: IIntrinsicApyService,
+		eulerLabelsService?: IEulerLabelsService,
+	) {
+		this.walletService = walletService;
+		this.providerService = providerService;
+		this.vaultMetaService = vaultMetaService;
+		this.priceService = priceService;
+		this.rewardsService = rewardsService;
+		this.intrinsicApyService = intrinsicApyService;
+		this.eulerLabelsService = eulerLabelsService;
+	}
 
 	setWalletService(walletService: IWalletService): void {
 		this.walletService = walletService;
 	}
 
+	setProviderService(providerService: ProviderService): void {
+		this.providerService = providerService;
+	}
+
+	setVaultMetaService(vaultMetaService: IVaultMetaService<TVaultEntity>): void {
+		this.vaultMetaService = vaultMetaService;
+	}
+
+	setPriceService(priceService: IPriceService): void {
+		this.priceService = priceService;
+	}
+
+	setRewardsService(rewardsService: IRewardsService): void {
+		this.rewardsService = rewardsService;
+	}
+
+	setIntrinsicApyService(intrinsicApyService: IIntrinsicApyService): void {
+		this.intrinsicApyService = intrinsicApyService;
+	}
+
+	setEulerLabelsService(eulerLabelsService: IEulerLabelsService): void {
+		this.eulerLabelsService = eulerLabelsService;
+	}
+
 	setPlugins(plugins: EulerPlugin[]): void {
 		this.plugins = plugins;
+	}
+
+	async deriveStateOverrides(
+		chainId: number,
+		account: Address,
+		transactionPlan: TransactionPlan,
+		options?: SimulationStateOverrideOptions,
+	): Promise<StateOverride> {
+		return deriveStateOverrides(
+			this.getSimulationContext(),
+			chainId,
+			account,
+			transactionPlan,
+			options,
+		);
+	}
+
+	async simulateTransactionPlan(
+		chainId: number,
+		account: Address,
+		transactionPlan: TransactionPlan,
+		options?: SimulateBatchOptions,
+	): Promise<SimulateBatchResult<TVaultEntity>> {
+		return simulateTransactionPlan(
+			this.getSimulationContext(),
+			chainId,
+			account,
+			transactionPlan,
+			options,
+		);
+	}
+
+	async estimateGasForTransactionPlan(
+		chainId: number,
+		account: Address,
+		transactionPlan: TransactionPlan,
+		options?: EstimateGasForTransactionPlanOptions,
+	): Promise<bigint> {
+		return estimateGasForTransactionPlan(
+			this.getSimulationContext(),
+			chainId,
+			account,
+			transactionPlan,
+			options,
+		);
+	}
+
+	async executeTransactionPlan(
+		args: ExecuteTransactionPlanWithServiceArgs,
+	): Promise<TransactionPlanExecutionResult> {
+		return executeTransactionPlan({
+			...args,
+			executionService: this,
+			deploymentService: this.deploymentService,
+		});
+	}
+
+	private getSimulationContext(): ExecutionSimulationContext<TVaultEntity> {
+		return {
+			deploymentService: this.deploymentService,
+			walletService: this.walletService,
+			providerService: this.providerService,
+			vaultMetaService: this.vaultMetaService,
+			priceService: this.priceService,
+			rewardsService: this.rewardsService,
+			intrinsicApyService: this.intrinsicApyService,
+			eulerLabelsService: this.eulerLabelsService,
+			describeBatch: (batch) => this.describeBatch(batch),
+		};
 	}
 
 	/**
@@ -2270,6 +2439,12 @@ export class ExecutionService implements IExecutionService {
 			usePermit2 = true,
 			unlimitedApproval = false,
 		} = args;
+
+		if (!this.walletService) {
+			throw new Error(
+				"ExecutionService.resolveRequiredApprovals requires a walletService. Pass it to the ExecutionService constructor or call setWalletService().",
+			);
+		}
 
 		// Filter transaction plan for only RequiredApproval items
 		const requiredApprovals = plan.filter(

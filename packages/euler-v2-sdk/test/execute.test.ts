@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import { encodeFunctionData, erc20Abi, getAddress, type Hex } from "viem";
 import {
+	ExecutionService,
 	executeTransactionPlan,
 	type EVCBatchItem,
 	type TransactionPlan,
@@ -208,4 +209,29 @@ test("executeTransactionPlan prepends signed Permit2 calls to the next EVC batch
 	assert.ok(!("gas" in (sent[0] as Record<string, unknown>)));
 	assert.equal(encodedBatchInputs.length, 1);
 	assert.deepEqual(encodedBatchInputs[0], [permitBatchItem, batchItem]);
+});
+
+test("ExecutionService.executeTransactionPlan executes through the service instance", async () => {
+	const { deploymentService, publicClient, walletClient, sent, waits } =
+		createExecutorMocks();
+	const executionService = new ExecutionService(deploymentService);
+	const batchItem: EVCBatchItem = {
+		targetContract: TARGET,
+		onBehalfOfAccount: ACCOUNT,
+		value: 0n,
+		data: "0x1234",
+	};
+
+	const result = await executionService.executeTransactionPlan({
+		plan: [{ type: "evcBatch", items: [batchItem] }],
+		chainId: 1,
+		account: ACCOUNT,
+		walletClient,
+		publicClient,
+	});
+
+	assert.equal(sent.length, 1);
+	assert.equal(waits.length, 1);
+	assert.deepEqual(result.hashes, waits);
+	assert.equal((sent[0] as { to: Hex }).to, EVC);
 });

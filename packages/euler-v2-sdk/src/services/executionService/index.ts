@@ -5,8 +5,16 @@ export { swapperAbi } from "./abis/swapperAbi.js";
 export { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
 export {
 	ExecutionService,
+	type ExecuteTransactionPlanWithServiceArgs,
 	type IExecutionService,
 } from "./executionService.js";
+export type {
+	EstimateGasForTransactionPlanOptions,
+	SimulateBatchOptions,
+	SimulateBatchResult,
+	SimulationInsufficientRequirement,
+	SimulationStateOverrideOptions,
+} from "./simulate.js";
 export type {
 	ApproveCall,
 	BatchItemDescription,
@@ -65,4 +73,4 @@ export {
 	type TransactionPlanExecutionStatus,
 	type TransactionPlanPublicClient,
 	type TransactionPlanWalletClient,
-} from "./transactionPlanExecutor.js";
+} from "./execute.js";
