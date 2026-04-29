@@ -28,9 +28,18 @@ import {
 } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executePlan } from "../utils/executor.js";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
-import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "../utils/config.js";
+import { 
+  rpcUrls,
+  account,
+  initBalances,
+  USDC_ADDRESS,
+  EULER_PRIME_USDC_VAULT,
+  publicClient,
+  walletClient
+} from "../utils/config.js";
 import { Account, buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
 // Inputs
@@ -62,7 +71,7 @@ async function depositExample() {
   console.log(`\n✓ Deposit plan created with ${depositPlan.length} step(s)`);
 
   // Resolve approvals (fetches wallet data internally).
-  // This would normally be done in the executor logic, e.g. in executePlan, but for illustration we'll do it here.
+  // This would normally be done in the executor logic, e.g. in executeTransactionPlan, but for illustration we'll do it here.
   depositPlan = await sdk.executionService.resolveRequiredApprovals({
     plan: depositPlan,
     chainId: mainnet.id,
@@ -74,7 +83,17 @@ async function depositExample() {
   console.log(`✓ Approvals resolved, executing...`);
 
   // Execute the plan
-  await executePlan(depositPlan, sdk);
+  await executeTransactionPlan({
+    plan: depositPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   // Fetch the updated sub-account and log the result
   // In tests the new sub-account will not be indexed by subgraph, so we need to fetch it manually

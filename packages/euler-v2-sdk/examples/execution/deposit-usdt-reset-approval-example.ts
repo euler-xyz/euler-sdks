@@ -28,16 +28,17 @@ import "dotenv/config";
 import { erc20Abi, parseUnits } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executePlan } from "../utils/executor.js";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
-import {
-	account,
-	EULER_PRIME_USDT_VAULT,
-	initBalances,
-	publicClient,
-	rpcUrls,
-	USDT_ADDRESS,
-	walletClient,
+import { 
+  account,
+  EULER_PRIME_USDT_VAULT,
+  initBalances,
+  publicClient,
+  rpcUrls,
+  USDT_ADDRESS,
+  walletClient
 } from "../utils/config.js";
 import {
 	buildEulerSDK,
@@ -100,7 +101,17 @@ async function depositUsdtResetApprovalExample() {
 		`✓ Approvals resolved: ${approvalSteps.map((step) => step.amount.toString()).join(", ")}`,
 	);
 
-	await executePlan(depositPlan, sdk);
+	await executeTransactionPlan({
+    plan: depositPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
 	const subAccount = (
 		await sdk.accountService.fetchSubAccount(

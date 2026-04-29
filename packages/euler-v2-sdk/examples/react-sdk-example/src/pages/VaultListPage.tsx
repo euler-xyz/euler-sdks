@@ -11,6 +11,7 @@ import {
   useWalletBalance,
 } from "../queries/sdkQueries.ts";
 import {
+  executeTransactionPlan,
   type ERC4626Vault,
   type EVault,
   type EulerEarn,
@@ -32,7 +33,7 @@ import { getEffectiveBorrowApy, getEffectiveSupplyApy } from "../utils/apy.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
-import { executePlanWithProgress } from "../utils/txExecutor.ts";
+import { formatTransactionPlanError, toPlanProgress, type PlanProgress } from "../utils/txProgress.ts";
 import { ALL_CHAIN_IDS, EARN_CHAIN_IDS } from "../config/chains.ts";
 
 export type VaultListTab = "evaults" | "eulerEarn" | "securitize";
@@ -228,7 +229,7 @@ function DepositFormRow({
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   const [amount, setAmount] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [progress, setProgress] = useState<{ completed: number; total: number; status?: string } | null>(null);
+  const [progress, setProgress] = useState<PlanProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const debouncedAmount = useDebouncedValue(amount, 400);
@@ -328,15 +329,19 @@ function DepositFormRow({
 
       setProgress({ completed: 0, total: plan.length });
 
-      await executePlanWithProgress({
+      await executeTransactionPlan({
         plan,
-        sdk,
+        executionService: sdk.executionService,
+        deploymentService: sdk.deploymentService,
         chainId,
         walletClient,
         publicClient,
+        chain: publicClient.chain,
         account: walletAddress as Address,
-        onProgress: (p) => {
-          setProgress({ completed: p.completed, total: p.total, status: p.status });
+        usePermit2: true,
+        unlimitedApproval: false,
+        onProgress: (progress) => {
+          setProgress(toPlanProgress(progress));
         },
       });
 
@@ -348,7 +353,7 @@ function DepositFormRow({
       setSuccess("Supply completed.");
       setProgress(null);
     } catch (err) {
-      setError(String(err));
+      setError(String(await formatTransactionPlanError(err)));
     } finally {
       setIsSubmitting(false);
     }

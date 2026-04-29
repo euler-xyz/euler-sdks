@@ -16,6 +16,7 @@ import {
 import {
   computePositionsNetApy,
   computePositionsRoe,
+  executeTransactionPlan,
   getSubAccountId,
 } from "@eulerxyz/euler-v2-sdk";
 import { getAddress, type Address } from "viem";
@@ -37,7 +38,7 @@ import type {
   UserReward,
   VaultEntity,
 } from "@eulerxyz/euler-v2-sdk";
-import { executePlanWithProgress, type PlanProgress } from "../utils/txExecutor.ts";
+import { formatTransactionPlanError, toPlanProgress, type PlanProgress } from "../utils/txProgress.ts";
 
 // Persist across navigations but not across full page reloads
 let lastAddress: string | undefined;
@@ -915,20 +916,18 @@ function ChainAccountSection({
 
       setClaimProgress({ completed: 0, total: plan.length });
 
-      await executePlanWithProgress({
+      await executeTransactionPlan({
         plan,
-        sdk: sdk!,
+        executionService: sdk!.executionService,
+        deploymentService: sdk!.deploymentService,
         chainId,
         walletClient,
         publicClient,
+        chain: publicClient.chain,
         account: walletAddress as Address,
-        onProgress: (progress) => {
-          setClaimProgress({
-            completed: progress.completed,
-            total: progress.total,
-            status: progress.status,
-          });
-        },
+        usePermit2: true,
+        unlimitedApproval: false,
+        onProgress: (progress) => setClaimProgress(toPlanProgress(progress)),
       });
 
       await invalidateRewardQueries();
@@ -940,7 +939,7 @@ function ChainAccountSection({
           : `Claimed all rewards on ${chainName}.`
       );
     } catch (err) {
-      setClaimError(String(err));
+      setClaimError(String(await formatTransactionPlanError(err)));
     } finally {
       setClaimProgress(null);
       setActiveClaimKey(null);

@@ -37,7 +37,8 @@ import {
 import { mainnet } from "viem/chains";
 import { buildEulerSDK, getSubAccountAddress, SwapperMode } from "@eulerxyz/euler-v2-sdk";
 
-import { executePlan } from "../utils/executor.js";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
 import { 
   rpcUrls,
@@ -50,6 +51,8 @@ import {
   USDT_ADDRESS,
   WETH_ADDRESS,
   testClient,
+  publicClient,
+  walletClient
 } from "../utils/config.js";
 
 // Inputs
@@ -100,7 +103,17 @@ async function swapDebtExample() {
   });
 
   console.log(`✓ Approvals resolved, executing...`);
-  await executePlan(borrowPlan, sdk);
+  await executeTransactionPlan({
+    plan: borrowPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   // Fetch updated sub-account after borrow
   let subAccount = (await sdk.accountService.fetchSubAccount(
@@ -162,7 +175,17 @@ async function swapDebtExample() {
 
   // No approvals needed for swap debt
   try {
-    await executePlan(swapDebtPlan, sdk);
+    await executeTransactionPlan({
+    plan: swapDebtPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
   } catch (error) {
     console.error("Error executing swap debt:", error);
     console.log("\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.");

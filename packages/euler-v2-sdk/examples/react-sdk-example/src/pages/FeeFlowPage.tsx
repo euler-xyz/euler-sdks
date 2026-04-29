@@ -7,9 +7,10 @@ import {
   useWalletClient,
 } from "wagmi";
 import { getAddress, type Address } from "viem";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
 import { useSDK } from "../context/SdkContext.tsx";
 import { queryClient, useFeeFlowPageData } from "../queries/sdkQueries.ts";
-import { executePlanWithProgress, type PlanProgress } from "../utils/txExecutor.ts";
+import { formatTransactionPlanError, toPlanProgress, type PlanProgress } from "../utils/txProgress.ts";
 import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 
@@ -109,14 +110,18 @@ export function FeeFlowPage() {
 
       setProgress({ completed: 0, total: plan.length });
 
-      await executePlanWithProgress({
+      await executeTransactionPlan({
         plan,
-        sdk,
+        executionService: sdk.executionService,
+        deploymentService: sdk.deploymentService,
         chainId,
         walletClient,
         publicClient,
+        chain: publicClient.chain,
         account: walletAddress as Address,
-        onProgress: setProgress,
+        usePermit2: true,
+        unlimitedApproval: false,
+        onProgress: (progress) => setProgress(toPlanProgress(progress)),
       });
 
       await Promise.all([
@@ -127,7 +132,7 @@ export function FeeFlowPage() {
 
       setBuySuccess(`Bought ${selectedVaults.length} FeeFlow vault tokens.`);
     } catch (err) {
-      setBuyError(String(err));
+      setBuyError(String(await formatTransactionPlanError(err)));
     } finally {
       setProgress(null);
     }

@@ -34,7 +34,8 @@ import {
 } from "viem";
 import { mainnet } from "viem/chains";
 import { account, initBalances, publicClient, rpcUrls, testClient, walletClient } from "../utils/config.js";
-import { executePlan } from "../utils/executor.js";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import { printHeader } from "../utils/helpers.js";
 
 type FeeFlowCandidate = {
@@ -145,7 +146,17 @@ async function feeFlowExample() {
   });
 
   console.log(`Plan items:             ${plan.length}`);
-  await executePlan(plan, sdk, walletClient);
+  await executeTransactionPlan({
+    plan: plan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   printHeader("Verifying received vault tokens");
 

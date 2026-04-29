@@ -27,16 +27,18 @@ import { erc20Abi, formatUnits, getAddress, parseUnits } from "viem";
 import { mainnet } from "viem/chains";
 import { buildEulerSDK } from "@eulerxyz/euler-v2-sdk";
 
-import { executePlan } from "../utils/executor.js";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import { printHeader } from "../utils/helpers.js";
-import {
-	account,
-	account2,
-	initBalances,
-	publicClient,
-	rpcUrls,
-	USDC_ADDRESS,
-	WETH_ADDRESS,
+import { 
+  account,
+  account2,
+  initBalances,
+  publicClient,
+  rpcUrls,
+  USDC_ADDRESS,
+  WETH_ADDRESS,
+  walletClient
 } from "../utils/config.js";
 
 const SWAP_AMOUNT = parseUnits("100", 6); // 100 USDC
@@ -120,7 +122,17 @@ async function swapFromWalletExample() {
 	);
 
 	try {
-		await executePlan(plan, sdk);
+		await executeTransactionPlan({
+    plan: plan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 	} catch (error) {
 		console.error("Error executing wallet swap:", error);
 		console.log(

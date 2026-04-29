@@ -27,7 +27,8 @@ import {
 } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executePlan } from "../utils/executor.js";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import { printHeader, logOperationResult, stringify } from "../utils/helpers.js";
 import { 
   rpcUrls,
@@ -41,7 +42,7 @@ import {
   testClient,
   walletClient2,
   publicClient,
-  walletClient,
+  walletClient
 } from "../utils/config.js";
 import { Account, buildEulerSDK, eVaultAbi, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
@@ -98,7 +99,17 @@ async function liquidationExample() {
     unlimitedApproval: UNLIMITED_APPROVAL,
   });
 
-  await executePlan(resolvedViolatorPlan, sdk, walletClient2);
+  await executeTransactionPlan({
+    plan: resolvedViolatorPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient2),
+    walletClient: walletClient2,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   // Fetch updated violator account
   const violatorSubAccountAfterBorrow = (await sdk.accountService.fetchSubAccount(
@@ -177,7 +188,17 @@ async function liquidationExample() {
   });
 
   // Execute liquidation
-  await executePlan(resolvedLiquidationPlan, sdk);
+  await executeTransactionPlan({
+    plan: resolvedLiquidationPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
 
   const finalViolatorSubAccount = (await sdk.accountService.fetchSubAccount(

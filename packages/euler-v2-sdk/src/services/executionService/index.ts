@@ -2,6 +2,17 @@ export {
 	ExecutionService,
 	type IExecutionService,
 } from "./executionService.js";
+export {
+	approvalAmountLabel,
+	executeTransactionPlan,
+	TransactionPlanExecutionError,
+	type ExecuteTransactionPlanArgs,
+	type TransactionPlanPublicClient,
+	type TransactionPlanExecutionProgress,
+	type TransactionPlanExecutionResult,
+	type TransactionPlanExecutionStatus,
+	type TransactionPlanWalletClient,
+} from "./transactionPlanExecutor.js";
 export { ethereumVaultConnectorAbi } from "./abis/ethereumVaultConnectorAbi.js";
 export { eVaultAbi } from "./abis/eVaultAbi.js";
 export { permit2PermitAbi } from "./abis/permit2PermitAbi.js";

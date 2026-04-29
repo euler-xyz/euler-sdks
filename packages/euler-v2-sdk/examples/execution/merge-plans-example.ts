@@ -37,15 +37,18 @@ import "dotenv/config";
 import { parseUnits, getAddress } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executePlan } from "../utils/executor.js";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
-import {
+import { 
   rpcUrls,
   account,
   initBalances,
   USDC_ADDRESS,
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
+  publicClient,
+  walletClient
 } from "../utils/config.js";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 import type { TransactionPlan } from "@eulerxyz/euler-v2-sdk";
@@ -94,7 +97,17 @@ async function mergePlansExample() {
     usePermit2: USE_PERMIT2,
     unlimitedApproval: UNLIMITED_APPROVAL,
   });
-  await executePlan(setupPlan, sdk);
+  await executeTransactionPlan({
+    plan: setupPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
   console.log("✓ Setup complete: position created\n");
 
   // Fetch sub-account and update account data so we have positions for repay/withdraw plans
@@ -166,7 +179,17 @@ async function mergePlansExample() {
   });
 
   console.log("✓ Executing merged plan...\n");
-  await executePlan(resolvedPlan, sdk);
+  await executeTransactionPlan({
+    plan: resolvedPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   const subAccountAfter = (await sdk.accountService.fetchSubAccount(
     mainnet.id,

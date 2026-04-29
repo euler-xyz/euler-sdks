@@ -40,7 +40,8 @@ import {
 import { mainnet } from "viem/chains";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
-import { executePlan } from "../utils/executor.js";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
 import { 
   rpcUrls,
@@ -52,6 +53,8 @@ import {
   EULER_PRIME_USDT_VAULT,
   USDT_ADDRESS,
   WETH_ADDRESS,
+  publicClient,
+  walletClient
 } from "../utils/config.js";
 
 // Inputs
@@ -127,7 +130,17 @@ async function multiplyExample() {
 
   // Execute the plan
   try {
-    await executePlan(multiplyPlan, sdk);
+    await executeTransactionPlan({
+    plan: multiplyPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
   } catch (error) {
     console.error("Error executing multiply:", error);
     console.log("\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.");

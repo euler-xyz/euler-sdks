@@ -45,14 +45,16 @@ import {
 import { mainnet } from "viem/chains";
 import { buildEulerSDK, getSubAccountAddress, SwapperMode } from "@eulerxyz/euler-v2-sdk";
 
-import { executePlan } from "../utils/executor.js";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
-import {
+import { 
   rpcUrls,
   account,
   initBalances,
   publicClient,
   USDC_ADDRESS,
+  walletClient
 } from "../utils/config.js";
 
 // Addresses
@@ -128,7 +130,17 @@ async function depositWithSwapFromWalletExample() {
 
   console.log('Approvals resolved, executing...');
   try {
-    await executePlan(depositPlan, sdk);
+    await executeTransactionPlan({
+    plan: depositPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
   } catch (error) {
     console.error("Error executing deposit with swap:", error);
     console.log("\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.");
@@ -222,7 +234,17 @@ async function depositWithSwapFromWalletExample() {
   console.log(`Combined plan created with ${combinedPlan.length} step(s)`);
 
   try {
-    await executePlan(combinedPlan, sdk);
+    await executeTransactionPlan({
+    plan: combinedPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
   } catch (error) {
     console.error("Error executing redeem with swap:", error);
     console.log("\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.");

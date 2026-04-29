@@ -33,9 +33,18 @@ import {
 } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executePlan } from "../utils/executor.js";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
-import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "../utils/config.js";
+import { 
+  rpcUrls,
+  account,
+  initBalances,
+  USDC_ADDRESS,
+  EULER_PRIME_USDC_VAULT,
+  publicClient,
+  walletClient
+} from "../utils/config.js";
 import { Account, buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
 // Inputs
@@ -80,7 +89,17 @@ async function mintExample() {
   console.log(`✓ Approvals resolved, executing...`);
 
   // Execute the plan
-  await executePlan(mintPlan, sdk);
+  await executeTransactionPlan({
+    plan: mintPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   // Fetch the updated sub-account and log the result
   const subAccount = (await sdk.accountService.fetchSubAccount(mainnet.id, SUB_ACCOUNT_ADDRESS, [EULER_PRIME_USDC_VAULT], { populateVaults: false })).result;

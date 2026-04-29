@@ -23,9 +23,18 @@ import {
 } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executePlan } from "../utils/executor.js";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
-import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "../utils/config.js";
+import { 
+  rpcUrls,
+  account,
+  initBalances,
+  USDC_ADDRESS,
+  EULER_PRIME_USDC_VAULT,
+  publicClient,
+  walletClient
+} from "../utils/config.js";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
 // Inputs
@@ -68,7 +77,17 @@ async function redeemExample() {
   });
   
   console.log(`✓ Approvals resolved, executing...`);
-  await executePlan(depositPlan, sdk);
+  await executeTransactionPlan({
+    plan: depositPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   // Fetch updated sub-account after deposit
   const subAccountAfterDeposit = (await sdk.accountService.fetchSubAccount(
@@ -100,7 +119,17 @@ async function redeemExample() {
   console.log(`✓ Executing...`);
 
   // No approvals needed for redeem
-  await executePlan(redeemPlan, sdk);
+  await executeTransactionPlan({
+    plan: redeemPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   // Fetch the updated sub-account and log the result
   const subAccountAfterRedeem = (await sdk.accountService.fetchSubAccount(

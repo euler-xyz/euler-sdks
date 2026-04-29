@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
+  executeTransactionPlan,
   StandardEVaultPerspectives,
   getSubAccountAddress,
   getMaxMultiplier,
@@ -36,7 +37,7 @@ import { getEffectiveBorrowApy, getEffectiveSupplyApy } from "../utils/apy.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { RoeCell } from "../components/RoeCell.tsx";
-import { executePlanWithProgress, type PlanProgress } from "../utils/txExecutor.ts";
+import { formatTransactionPlanError, toPlanProgress, type PlanProgress } from "../utils/txProgress.ts";
 
 type FormTab = "borrow" | "multiply";
 type QuoteCard = { provider: string; quote: SwapQuote };
@@ -845,15 +846,19 @@ export function BorrowPairPage() {
 
       setProgress({ completed: 0, total: plan.length });
 
-      await executePlanWithProgress({
+      await executeTransactionPlan({
         plan,
-        sdk: sdk!,
+        executionService: sdk!.executionService,
+        deploymentService: sdk!.deploymentService,
         chainId,
         walletClient: walletClient!,
         publicClient: publicClient!,
+        chain: publicClient!.chain,
         account: walletAddress as Address,
-        onProgress: (p) => {
-          setProgress({ completed: p.completed, total: p.total, status: p.status });
+        usePermit2: true,
+        unlimitedApproval: false,
+        onProgress: (progress) => {
+          setProgress(toPlanProgress(progress));
         },
       });
 
@@ -866,7 +871,7 @@ export function BorrowPairPage() {
       setProgress(null);
     } catch (err) {
       console.error("Borrow execution error:", err);
-      setError(String(err));
+      setError(String(await formatTransactionPlanError(err)));
     } finally {
       setIsSubmitting(false);
     }
@@ -944,15 +949,19 @@ export function BorrowPairPage() {
 
       setProgress({ completed: 0, total: plan.length });
 
-      await executePlanWithProgress({
+      await executeTransactionPlan({
         plan,
-        sdk: sdk!,
+        executionService: sdk!.executionService,
+        deploymentService: sdk!.deploymentService,
         chainId,
         walletClient: walletClient!,
         publicClient: publicClient!,
+        chain: publicClient!.chain,
         account: walletAddress as Address,
-        onProgress: (p) => {
-          setProgress({ completed: p.completed, total: p.total, status: p.status });
+        usePermit2: true,
+        unlimitedApproval: false,
+        onProgress: (progress) => {
+          setProgress(toPlanProgress(progress));
         },
       });
 
@@ -965,7 +974,7 @@ export function BorrowPairPage() {
       setProgress(null);
     } catch (err) {
       console.error("Multiply execution error:", err);
-      setError(String(err));
+      setError(String(await formatTransactionPlanError(err)));
     } finally {
       setIsSubmitting(false);
     }

@@ -43,12 +43,15 @@ import {
 } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executePlan } from "../utils/executor.js";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
-import {
+import { 
   rpcUrls,
   account,
   testClient,
+  publicClient,
+  walletClient
 } from "../utils/config.js";
 import { buildEulerSDK, createPythPlugin, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
@@ -163,7 +166,17 @@ async function borrowWithPythExample() {
   console.log(`✓ Approvals resolved, executing...`);
 
   // Execute the plan (the executor sums batch item values for the Pyth fee)
-  await executePlan(borrowPlan, sdk);
+  await executeTransactionPlan({
+    plan: borrowPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   // Fetch the updated sub-account and log the result
   const subAccount = (await sdk.accountService.fetchSubAccount(

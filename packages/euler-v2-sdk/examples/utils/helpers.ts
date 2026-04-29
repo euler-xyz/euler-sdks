@@ -305,14 +305,14 @@ async function formatVaultList(chainId: number, vaultAddresses: Address[], sdk: 
  * 
  * @example
  * const accountBefore = await sdk.accountService.fetchAccount(chainId, address, { populateVaults: false });
- * await executePlan(plan, sdk);
+ * await executeTransactionPlan({ ... });
  * const accountAfter = await sdk.accountService.fetchAccount(chainId, address, { populateVaults: false });
  * await logOperationResult(chainId, accountBefore, accountAfter, sdk);
  *
  * @example
  * // Or with sub-accounts only
  * const accountBefore = await sdk.accountService.fetchAccount(chainId, address, { populateVaults: false });
- * await executePlan(plan, sdk);
+ * await executeTransactionPlan({ ... });
  * const subAccounts = await Promise.all([
  *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr1, vaults, { populateVaults: false }),
   *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr2, vaults, { populateVaults: false }),

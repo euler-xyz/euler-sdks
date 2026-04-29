@@ -37,7 +37,8 @@ import {
 } from "viem";
 import { mainnet } from "viem/chains";
 
-import { executePlan } from "../utils/executor.js";
+import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
 import { 
   rpcUrls,
@@ -46,6 +47,8 @@ import {
   USDC_ADDRESS,
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
+  publicClient,
+  walletClient
 } from "../utils/config.js";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
@@ -96,7 +99,17 @@ async function pullDebtExample() {
   });
 
   console.log(`✓ Approvals resolved, executing...`);
-  await executePlan(borrowPlan, sdk);
+  await executeTransactionPlan({
+    plan: borrowPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   // Fetch updated sub-accounts after borrow
   let subAccount1 = (await sdk.accountService.fetchSubAccount(
@@ -142,7 +155,17 @@ async function pullDebtExample() {
   });
 
   console.log(`✓ Approvals resolved, executing...`);
-  await executePlan(depositPlan, sdk);
+  await executeTransactionPlan({
+    plan: depositPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   // Fetch updated sub-accounts after deposit
   subAccount1 = (await sdk.accountService.fetchSubAccount(
@@ -179,7 +202,17 @@ async function pullDebtExample() {
   console.log(`✓ Executing...`);
 
   // No approvals needed for pull debt
-  await executePlan(pullDebtPlan, sdk);
+  await executeTransactionPlan({
+    plan: pullDebtPlan,
+    executionService: sdk.executionService,
+    deploymentService: sdk.deploymentService,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    walletClient: walletClient,
+    publicClient,
+    chain: mainnet,
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   // Fetch the updated sub-accounts and log the result
   subAccount1 = (await sdk.accountService.fetchSubAccount(
