@@ -1,6 +1,6 @@
 {
   "name": "@eulerxyz/euler-v2-sdk",
-  "version": "0.1.2-beta",
+  "version": "0.1.3-beta",
   "description": "SDK for interacting with Euler V2 Lending Platform",
   "repository": {
     "type": "git",

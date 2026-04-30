@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3-beta] - 2026-04-30
+
+### Fixed
+
+- Paginated V3 account position reads so heavy accounts are no longer capped by the endpoint default page size.
+- Hardened user reward valuation against malformed V3 reward price and decimal fields.
+
 ## [0.1.2-beta] - 2026-04-29
 
 ### Added
