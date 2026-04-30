@@ -46,7 +46,8 @@ const normalizeAction = (value?: string): RewardAction | undefined => {
 	const normalized = value?.trim().toLowerCase();
 	if (!normalized) return undefined;
 	if (normalized.includes("borrow")) return "BORROW";
-	if (normalized.includes("lend") || normalized.includes("supply")) return "LEND";
+	if (normalized.includes("lend") || normalized.includes("supply"))
+		return "LEND";
 	return undefined;
 };
 
@@ -60,7 +61,11 @@ const isActiveCampaign = (args: {
 	const normalizedStatus = args.status?.trim().toLowerCase();
 
 	if (normalizedStatus) {
-		if (["ended", "expired", "inactive", "failed", "past"].includes(normalizedStatus)) {
+		if (
+			["ended", "expired", "inactive", "failed", "past"].includes(
+				normalizedStatus,
+			)
+		) {
 			return false;
 		}
 		if (["active", "live", "running", "success"].includes(normalizedStatus)) {
@@ -76,7 +81,8 @@ const isActiveCampaign = (args: {
 			const parsed = Date.parse(value);
 			if (Number.isFinite(parsed)) return parsed;
 			const numeric = Number(value);
-			if (Number.isFinite(numeric)) return numeric > 1e12 ? numeric : numeric * 1000;
+			if (Number.isFinite(numeric))
+				return numeric > 1e12 ? numeric : numeric * 1000;
 		}
 		return undefined;
 	};
@@ -96,6 +102,22 @@ const normalizeBigintString = (value: unknown): string | undefined => {
 		return Math.trunc(value).toString();
 	}
 	return undefined;
+};
+
+const normalizeFiniteNumber = (value: unknown): number | undefined => {
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	if (typeof value === "string" && value.trim().length > 0) {
+		const parsed = Number(value);
+		if (Number.isFinite(parsed)) return parsed;
+	}
+	return undefined;
+};
+
+const normalizeNonNegativeInteger = (value: unknown): number | undefined => {
+	const parsed = normalizeFiniteNumber(value);
+	if (parsed === undefined) return undefined;
+	const integer = Math.trunc(parsed);
+	return integer >= 0 ? integer : undefined;
 };
 
 export class RewardsV3Adapter implements IRewardsAdapter {
@@ -195,11 +217,16 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 		return rewardsMap.get(vaultAddress.toLowerCase());
 	}
 
-	async fetchChainRewards(chainId: number): Promise<Map<string, VaultRewardInfo>> {
+	async fetchChainRewards(
+		chainId: number,
+	): Promise<Map<string, VaultRewardInfo>> {
 		return this.fetchRewardsApyMap(chainId);
 	}
 
-	async fetchUserRewards(chainId: number, address: Address): Promise<UserReward[]> {
+	async fetchUserRewards(
+		chainId: number,
+		address: Address,
+	): Promise<UserReward[]> {
 		const response = await this.queryV3RewardsBreakdown(chainId, address);
 		const rows = Array.isArray(response.data) ? response.data : [];
 		return rows
@@ -238,7 +265,8 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 
 			if (rows.length < pageSize) break;
 			offset += rows.length;
-			if (typeof page.meta?.total === "number" && offset >= page.meta.total) break;
+			if (typeof page.meta?.total === "number" && offset >= page.meta.total)
+				break;
 		}
 
 		return map;
@@ -261,8 +289,7 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 		const addCampaign = (campaign: RewardCampaign): void => {
 			const dedupeKey = `${campaign.source}:${campaign.campaignId}`;
 			const exists = info!.campaigns.some(
-				(existing) =>
-					`${existing.source}:${existing.campaignId}` === dedupeKey,
+				(existing) => `${existing.source}:${existing.campaignId}` === dedupeKey,
 			);
 			if (exists) return;
 
@@ -365,15 +392,12 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 				row.token?.name ??
 				row.rewardTokenName ??
 				row.tokenName ??
-				(row.token?.symbol ??
-					row.rewardTokenSymbol ??
-					row.tokenSymbol ??
-					tokenAddress),
+				row.token?.symbol ?? row.rewardTokenSymbol ?? row.tokenSymbol ??
+				tokenAddress,
 			decimals:
-				row.token?.decimals ??
-				row.rewardTokenDecimals ??
-				row.tokenDecimals ??
-				18,
+				normalizeNonNegativeInteger(
+					row.token?.decimals ?? row.rewardTokenDecimals ?? row.tokenDecimals,
+				) ?? 18,
 		};
 
 		const accumulated =
@@ -382,7 +406,10 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			) ?? "0";
 		const unclaimed =
 			normalizeBigintString(
-				row.unclaimed ?? row.unclaimedAmount ?? row.claimable ?? row.claimableAmount,
+				row.unclaimed ??
+					row.unclaimedAmount ??
+					row.claimable ??
+					row.claimableAmount,
 			) ?? accumulated;
 
 		if (BigInt(unclaimed) <= 0n) return undefined;
@@ -391,7 +418,9 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			chainId: row.chainId ?? defaultChainId,
 			token,
 			tokenPrice:
-				row.rewardTokenPriceUsd ?? row.tokenPriceUsd ?? row.tokenPrice ?? 0,
+				normalizeFiniteNumber(
+					row.rewardTokenPriceUsd ?? row.tokenPriceUsd ?? row.tokenPrice,
+				) ?? 0,
 			provider,
 			accumulated,
 			unclaimed,
@@ -400,10 +429,7 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 				row.claimAddress ?? row.claimContract ?? row.claimContractAddr,
 			),
 			cumulativeAmounts: row.cumulativeAmounts ?? row.cumulativeRewards,
-			epoch:
-				typeof row.epoch === "number"
-					? String(row.epoch)
-					: row.epoch,
+			epoch: typeof row.epoch === "number" ? String(row.epoch) : row.epoch,
 		};
 	}
 }
