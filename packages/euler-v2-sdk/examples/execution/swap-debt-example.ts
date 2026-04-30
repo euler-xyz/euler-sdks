@@ -2,23 +2,23 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * SWAP DEBT EXAMPLE
  * ═══════════════════════════════════════════════════════════════════════════
- * 
+ *
  * This example demonstrates how to swap one debt asset for another while
  * maintaining your collateral positions. This is useful for refinancing to
  * a lower rate, switching to a more stable debt asset, or rebalancing exposure.
- * 
+ *
  * OPERATION:
  *   1. Deposit WETH as collateral
  *   2. Borrow USDT (initial debt)
  *   3. Borrow USDC (new debt)
  *   4. Swap USDC → USDT (using live DEX aggregator quotes)
  *   5. Repay USDT debt with swapped assets
- * 
+ *
  * ⚠️  IMPORTANT - LIVE SWAP QUOTES:
  *   • This example fetches real-time swap quotes from DEX aggregators
  *   • Restart Anvil immediately before running to avoid stale blockchain state
  *   • If the swap fails, try changing SWAP_QUOTE_INDEX to use a different provider
- * 
+ *
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
  *   2. Restart Anvil immediately before running: npm run anvil
@@ -31,21 +31,22 @@
 import "dotenv/config";
 import {
   parseUnits,
-} from "viem";
-import { mainnet } from "viem/chains";
-import { buildEulerSDK, getSubAccountAddress, SwapperMode } from "@eulerxyz/euler-v2-sdk";
-
-import { executeExampleTransactionPlan, fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
-import { 
+  } from "viem";
+  import { mainnet } from "viem/chains";
+  import { buildEulerSDK, getSubAccountAddress, SwapperMode } from "@eulerxyz/euler-v2-sdk";
+  import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
   rpcUrls,
   account,
-  initBalances,
+  initExample,
   USDC_ADDRESS,
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_WETH_VAULT,
   EULER_PRIME_USDT_VAULT,
   USDT_ADDRESS,
   WETH_ADDRESS,
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 
 // Inputs
@@ -54,14 +55,12 @@ const BORROW_USDT_AMOUNT = parseUnits("1000", 6); // 1000 USDT (initial debt)
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
 const SWAP_QUOTE_INDEX = 1; // Change this if swap quote is bad
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = false;
 
 // TODO add example of cross-account swap, including partial swap OR disallow cross-account swap
 
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
 
-async function swapDebtExample() {
+async function swapDebtExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
   // Build the SDK
   const sdk = await buildEulerSDK({
     rpcUrls,
@@ -69,7 +68,7 @@ async function swapDebtExample() {
     queryCacheConfig: { enabled: false },
   });
 
-  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery,
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
 
@@ -90,18 +89,15 @@ async function swapDebtExample() {
 
   console.log(`✓ Borrow plan created with ${borrowPlan.length} step(s)`);
 
-  // Resolve approvals (fetches wallet data internally)
-  borrowPlan = await sdk.executionService.resolveRequiredApprovals({
+
+  console.log(`✓ Executing...`);
+  await sdk.executionService.executeTransactionPlan({
     plan: borrowPlan,
     chainId: mainnet.id,
-    account: account.address,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
+    account: walletAccountAddress(walletClient),
+    ...exampleExecutionCallbacks(walletClient),
+    onProgress: createTransactionPlanLogger(sdk),
   });
-
-  console.log(`✓ Approvals resolved, executing...`);
-  await executeExampleTransactionPlan(borrowPlan, sdk);
-
   let [subAccount] = await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
     {
       account: SUB_ACCOUNT_ADDRESS,
@@ -112,7 +108,7 @@ async function swapDebtExample() {
   // Step 2: Get swap quote for debt swap
   console.log('\n=== Step 2: Get Swap Quote ===');
   console.log('✓ Fetching swap quote from USDC to USDT for debt swap...');
-  
+
   // Update account data with the fetched sub-account
   accountData.updateSubAccounts(subAccount!);
 
@@ -143,25 +139,46 @@ async function swapDebtExample() {
     throw new Error(`No quote found at index: ${SWAP_QUOTE_INDEX}`);
   }
 
-  const swapQuote = filteredSwapQuotes[SWAP_QUOTE_INDEX]!;
-  console.log(`✓ Swap quote received: ${swapQuote.amountIn} USDC → ${swapQuote.amountOut} USDT ${swapQuote.route.map(r => r.providerName).join(' → ')}`);
+  const orderedSwapQuotes = [
+    ...filteredSwapQuotes.slice(SWAP_QUOTE_INDEX),
+    ...filteredSwapQuotes.slice(0, SWAP_QUOTE_INDEX),
+  ];
 
   // Step 3: Plan and execute swap debt
   console.log('\n=== Step 3: Execute Swap Debt ===');
-  let swapDebtPlan = sdk.executionService.planSwapDebt({
-    account: accountData,
-    swapQuote,
-  });
 
-  console.log(`✓ Swap debt plan created with ${swapDebtPlan.length} step(s)`);
-  console.log(`✓ Executing...`);
+  let lastError: unknown;
+  for (const [quoteIndex, swapQuote] of orderedSwapQuotes.entries()) {
+    console.log(
+      `✓ Trying quote ${quoteIndex + 1}/${orderedSwapQuotes.length}: ${swapQuote.amountIn} USDC → ${swapQuote.amountOut} USDT ${swapQuote.route.map(r => r.providerName).join(' → ')}`
+    );
 
-  // No approvals needed for swap debt
-  try {
-    await executeExampleTransactionPlan(swapDebtPlan, sdk);
-  } catch (error) {
-    console.error("Error executing swap debt:", error);
-    console.log("\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.");
+    const swapDebtPlan = sdk.executionService.planSwapDebt({
+      account: accountData,
+      swapQuote,
+    });
+
+    console.log(`✓ Swap debt plan created with ${swapDebtPlan.length} step(s)`);
+    console.log(`✓ Executing...`);
+
+    try {
+      await sdk.executionService.executeTransactionPlan({
+        plan: swapDebtPlan,
+        chainId: mainnet.id,
+        account: walletAccountAddress(walletClient),
+        ...exampleExecutionCallbacks(walletClient),
+        onProgress: createTransactionPlanLogger(sdk),
+      });
+      lastError = undefined;
+      break;
+    } catch (error) {
+      lastError = error;
+      console.error("Error executing swap debt:", error);
+    }
+  }
+
+  if (lastError) {
+    console.log("\n\nAll swap quotes failed.");
     process.exit(1);
   }
 
@@ -177,7 +194,7 @@ async function swapDebtExample() {
 // Run the example
 // ============================================================================
 printHeader("SWAP DEBT EXAMPLE");
-initBalances().then(() => swapDebtExample()).catch((error) => {
+initExample().then(swapDebtExample).catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });

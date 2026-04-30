@@ -76,7 +76,7 @@ async function fetchApysExample() {
     (vault) => vault !== undefined,
   );
 
-  eulerEarnVaults.sort((a, b) => (b.supplyApy ?? 0) - (a.supplyApy ?? 0));
+  eulerEarnVaults.sort((a, b) => (b.supplyApy1h ?? 0) - (a.supplyApy1h ?? 0));
 
   console.log(`\nFound ${eulerEarnVaults.length} governed EulerEarn vaults:\n`);
   console.log(
@@ -90,8 +90,8 @@ async function fetchApysExample() {
   console.log("-".repeat(160));
 
   for (const vault of eulerEarnVaults) {
-    const supplyApy = vault.supplyApy !== undefined
-      ? `${(vault.supplyApy * 100).toFixed(2)}%`
+    const supplyApy = vault.supplyApy1h !== undefined
+      ? `${(vault.supplyApy1h * 100).toFixed(2)}%`
       : "N/A";
     const rewardsApr = vault.rewards?.totalRewardsApr ?? 0;
     const intrinsicApy = vault.intrinsicApy?.apy ?? 0;

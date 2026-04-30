@@ -2,17 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import {
   useAccount as useWagmiAccount,
   useChainId,
-  usePublicClient,
   useSwitchChain,
   useWalletClient,
 } from "wagmi";
 import { getAddress, type Address } from "viem";
-import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
 import { useSDK } from "../context/SdkContext.tsx";
 import { queryClient, useFeeFlowPageData } from "../queries/sdkQueries.ts";
-import { formatTransactionPlanError, toPlanProgress, type PlanProgress } from "../utils/txProgress.ts";
+import {
+  formatTransactionPlanError,
+  toPlanProgress,
+  type PlanProgress,
+  walletExecutionCallbacks,
+} from "../utils/txProgress.ts";
 import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
+import { ExecutionProgress } from "../components/ExecutionProgress.tsx";
 
 function formatDuration(seconds: number): string {
   const days = Math.floor(seconds / 86_400);
@@ -28,7 +32,6 @@ export function FeeFlowPage() {
   const { address: walletAddress, isConnected } = useWagmiAccount();
   const walletChainId = useChainId();
   const { data: walletClient } = useWalletClient({ chainId });
-  const publicClient = usePublicClient({ chainId });
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [buyError, setBuyError] = useState<string | null>(null);
@@ -71,7 +74,7 @@ export function FeeFlowPage() {
     if (!walletAddress) {
       throw new Error("Connect a wallet to buy from FeeFlow.");
     }
-    if (!walletClient || !publicClient) {
+    if (!walletClient) {
       throw new Error("Wallet client not ready.");
     }
     if (walletChainId !== chainId) {
@@ -90,35 +93,25 @@ export function FeeFlowPage() {
 
     try {
       const ready = await ensureWalletReady();
-      if (!ready || !sdk || !walletClient || !publicClient || !walletAddress || !data) return;
+      if (!ready || !sdk || !walletClient || !walletAddress || !data) return;
       if (selectedVaults.length === 0) {
         throw new Error("Select at least one vault.");
       }
 
-      let plan = await sdk.feeFlowService.buildBuyPlan({
+      const plan = await sdk.feeFlowService.buildBuyPlan({
         chainId,
         account: walletAddress as Address,
         recipient: walletAddress as Address,
         vaults: selectedVaults,
       });
-      plan = await sdk.executionService.resolveRequiredApprovals({
-        plan,
-        chainId,
-        account: walletAddress as Address,
-        unlimitedApproval: false,
-      });
 
       setProgress({ completed: 0, total: plan.length });
 
-      await executeTransactionPlan({
+      await sdk.executionService.executeTransactionPlan({
         plan,
-        executionService: sdk.executionService,
-        deploymentService: sdk.deploymentService,
         chainId,
-        walletClient,
-        publicClient,
-        chain: publicClient.chain,
         account: walletAddress as Address,
+        ...walletExecutionCallbacks(walletClient),
         usePermit2: true,
         unlimitedApproval: false,
         onProgress: (progress) => setProgress(toPlanProgress(progress)),
@@ -228,11 +221,7 @@ export function FeeFlowPage() {
 
       {buyError && <div className="error-message">{buyError}</div>}
       {buySuccess && <div className="status-message">{buySuccess}</div>}
-      {progress?.status && (
-        <div className="status-message">
-          {progress.status}
-        </div>
-      )}
+      {progress && <ExecutionProgress progress={progress} label="Buying fees" />}
 
       {candidates.length === 0 ? (
         <div className="status-message">No claimable FeeFlow vaults found.</div>

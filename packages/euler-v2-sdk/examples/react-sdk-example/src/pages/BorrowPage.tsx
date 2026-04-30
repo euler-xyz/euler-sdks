@@ -79,8 +79,8 @@ function calcVaultSupplyUsd(vault: EVault): bigint | undefined {
 }
 
 function getMarketName(vault: EVault | undefined): string | undefined {
-  if (!vault?.eulerLabel) return undefined;
-  return vault.eulerLabel.products[0]?.name ?? vault.eulerLabel.vault.name;
+  if (!vault) return undefined;
+  return vault.eulerLabel?.products[0]?.name ?? vault.shares.name;
 }
 
 function getSortValue(row: BorrowRow, key: BorrowSortKey): number | string {

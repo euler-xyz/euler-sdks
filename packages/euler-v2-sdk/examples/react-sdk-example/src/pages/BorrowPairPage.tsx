@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  executeTransactionPlan,
   StandardEVaultPerspectives,
   getSubAccountAddress,
   getMaxMultiplier,
@@ -14,7 +13,6 @@ import { formatUnits, getAddress, parseUnits, type Address } from "viem";
 import {
   useAccount as useWagmiAccount,
   useChainId,
-  usePublicClient,
   useSwitchChain,
   useWalletClient,
 } from "wagmi";
@@ -37,7 +35,13 @@ import { getEffectiveBorrowApy, getEffectiveSupplyApy } from "../utils/apy.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { RoeCell } from "../components/RoeCell.tsx";
-import { formatTransactionPlanError, toPlanProgress, type PlanProgress } from "../utils/txProgress.ts";
+import { ExecutionProgress } from "../components/ExecutionProgress.tsx";
+import {
+  formatTransactionPlanError,
+  toPlanProgress,
+  type PlanProgress,
+  walletExecutionCallbacks,
+} from "../utils/txProgress.ts";
 
 type FormTab = "borrow" | "multiply";
 type QuoteCard = { provider: string; quote: SwapQuote };
@@ -94,8 +98,8 @@ function calcVaultBorrowApy(vault: EVault): number {
 }
 
 function getMarketName(vault: EVault | undefined): string | undefined {
-  if (!vault?.eulerLabel) return undefined;
-  return vault.eulerLabel.products[0]?.name ?? vault.eulerLabel.vault.name;
+  if (!vault) return undefined;
+  return vault.eulerLabel?.products[0]?.name ?? vault.shares.name;
 }
 
 function formatPairPrice(
@@ -246,7 +250,6 @@ export function BorrowPairPage() {
   const { address: walletAddress, isConnected } = useWagmiAccount();
   const walletChainId = useChainId();
   const { data: walletClient } = useWalletClient({ chainId });
-  const publicClient = usePublicClient({ chainId });
   const { switchChain, isPending: isSwitching } = useSwitchChain();
 
   const isChainMismatch = isConnected && walletChainId !== chainId;
@@ -597,7 +600,6 @@ export function BorrowPairPage() {
     if (!sdk || !collateralVault || !debtVault) return;
     if (tab !== "multiply") return;
     if (!isConnected || !walletAddress) return;
-    if (!publicClient) return;
     if (isChainMismatch) return;
     if (isSubmitting) return;
     if (!multiplyAmount.trim()) return;
@@ -666,7 +668,7 @@ export function BorrowPairPage() {
         insufficientWalletAssets,
         rawBatchResults,
         failedBatchItems,
-      } = await sdk.simulationService.simulateTransactionPlan(
+      } = await sdk.executionService.simulateTransactionPlan(
         chainId,
         walletAddress as Address,
         plan,
@@ -752,7 +754,6 @@ export function BorrowPairPage() {
     debtVault,
     isConnected,
     walletAddress,
-    publicClient,
     isChainMismatch,
     isSubmitting,
     multiplyAmount,
@@ -781,7 +782,7 @@ export function BorrowPairPage() {
       await switchChain({ chainId });
       return false;
     }
-    if (!walletClient || !publicClient) {
+    if (!walletClient) {
       throw new Error("Wallet client not ready yet. Retry in a second.");
     }
     return true;
@@ -820,7 +821,7 @@ export function BorrowPairPage() {
       setIsSubmitting(true);
       const account = await fetchAccountData();
 
-      let plan = sdk!.executionService.planBorrow({
+      const plan = sdk!.executionService.planBorrow({
         vault: debtVault.address,
         amount: borrowRaw,
         borrowAccount: (targetSubAccount ?? walletAddress) as Address,
@@ -836,25 +837,13 @@ export function BorrowPairPage() {
             : undefined,
       });
 
-      plan = await sdk!.executionService.resolveRequiredApprovals({
-        plan,
-        chainId,
-        account: walletAddress as Address,
-        usePermit2: true,
-        unlimitedApproval: false,
-      });
-
       setProgress({ completed: 0, total: plan.length });
 
-      await executeTransactionPlan({
+      await sdk!.executionService.executeTransactionPlan({
         plan,
-        executionService: sdk!.executionService,
-        deploymentService: sdk!.deploymentService,
         chainId,
-        walletClient: walletClient!,
-        publicClient: publicClient!,
-        chain: publicClient!.chain,
         account: walletAddress as Address,
+        ...walletExecutionCallbacks(walletClient!),
         usePermit2: true,
         unlimitedApproval: false,
         onProgress: (progress) => {
@@ -939,25 +928,13 @@ export function BorrowPairPage() {
         });
       }
 
-      plan = await sdk!.executionService.resolveRequiredApprovals({
-        plan,
-        chainId,
-        account: walletAddress as Address,
-        usePermit2: true,
-        unlimitedApproval: false,
-      });
-
       setProgress({ completed: 0, total: plan.length });
 
-      await executeTransactionPlan({
+      await sdk!.executionService.executeTransactionPlan({
         plan,
-        executionService: sdk!.executionService,
-        deploymentService: sdk!.deploymentService,
         chainId,
-        walletClient: walletClient!,
-        publicClient: publicClient!,
-        chain: publicClient!.chain,
         account: walletAddress as Address,
+        ...walletExecutionCallbacks(walletClient!),
         usePermit2: true,
         unlimitedApproval: false,
         onProgress: (progress) => {
@@ -1296,26 +1273,7 @@ export function BorrowPairPage() {
                   </button>
                 </div>
 
-                {progress && (
-                  <div className="plan-progress">
-                    <div className="plan-progress-label">
-                      Progress: {progress.completed}/{progress.total}
-                    </div>
-                    {progress.status && (
-                      <div className="plan-progress-status">{progress.status}</div>
-                    )}
-                    <div className="plan-progress-bar">
-                      <div
-                        className="plan-progress-fill"
-                        style={{
-                          width: `${Math.round(
-                            (progress.completed / Math.max(progress.total, 1)) * 100
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
+                {progress && <ExecutionProgress progress={progress} label="Transaction execution" />}
                 {success && <div className="success-message">{success}</div>}
                 {error && <div className="error-message">{error}</div>}
                 {previewInsufficientWalletAssets && (

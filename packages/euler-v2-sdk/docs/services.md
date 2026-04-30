@@ -15,7 +15,7 @@ Some services below are lower-level building blocks and usually do not need to b
 - `accountService`: Fetches the lower-level, contract-shaped account view: sub-accounts, raw positions, collateral/debt, liquidity, and optional vault/entity population.
 - `portfolioService`: Fetches the same underlying data as an opinionated, position-first savings/borrows view. It always enables vault and market-price population.
 - `vaultMetaService`: Type-agnostic vault access. Routes vault addresses to the right vault service (`EVault`, `EulerEarn`, `Securitize`) and returns the correct entity type.
-- `executionService`: Builds transaction plans for core actions (deposit, withdraw, borrow, repay, swap-based operations, liquidation, debt operations).
+- `executionService`: Builds, simulates, estimates gas for, and executes transaction plans for core actions (deposit, withdraw, borrow, repay, swap-based operations, liquidation, debt operations).
 - `swapService`: Fetches swap quotes and routes for asset exchange flows.
 
 ## Vault-Specific Services
@@ -31,7 +31,6 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 ## Supporting and Infrastructure Services
 
 - `walletService`: Fetches wallet balances and allowances.
-- `simulationService`: Simulates account state/results and estimates gas for planned operations (including state-override flows).
 - `priceService`: Resolves market prices used for valuation and computed account metrics.
 - `oracleAdapterService`: Fetches oracle adapter metadata/checks (provider, methodology, checks) from the oracle checks dataset and builds address-keyed maps for UI/tooling.
 - `rewardsService`: Fetches reward campaign data used to populate vault/account rewards and builds provider-specific reward claim plans.
@@ -55,9 +54,8 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 | `securitizeVaultService` | Yes (`SecuritizeCollateralVault`) | Yes (`populateMarketPrices`) | Yes (`populateRewards`) | Yes (`populateIntrinsicApy`) | Yes (`populateLabels`) | No standard perspectives for verified-vault discovery; `fetchAllVaults()` currently depends on adapter discovery support |
 | `accountService` | Account/sub-account data | Yes (`populateMarketPrices`) | Yes (`populateUserRewards`) | Via `vaultFetchOptions` | Via `vaultFetchOptions` | Vault enrichment goes through `vaultMetaService` |
 | `portfolioService` | Account-derived portfolio data | Yes (`populateAll`) | Yes (`populateAll`) | Yes (`populateAll`) | Yes (`populateAll`) | Fetches the backing account with `populateAll: true`; see [`portfolio.md`](./portfolio.md) |
-| `executionService` | No (planning/encoding only) | No | No | No | No | Produces generic transaction plans and EVC batch payloads |
+| `executionService` | Simulates plans | Can populate simulated results | Can populate simulated results | Can populate simulated results | Can populate simulated results | Produces transaction plans/EVC batch payloads, resolves approvals, executes plans, and estimates gas |
 | `swapService` | No (quotes only) | No | No | No | No | Returns swap quotes/providers for execution plans |
-| `simulationService` | Simulates plans | Can populate in results | Can populate in results | Can populate in results | Can populate in results | Uses `accountFetchOptions` / `vaultFetchOptions`; can estimate gas for transaction plans |
 | `oracleAdapterService` | No | No | No | No | No | Oracle adapter metadata API (`fetchOracleAdapters`, `fetchOracleAdapterMap`, `enrichAdapters`) |
 
 See also: [`execution-service.md`](./execution-service.md).

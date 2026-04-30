@@ -1,6 +1,6 @@
 ---
 name: euler-sdk
-description: Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. This skill should be used when implementing apps on top of the `euler-v2-sdk` package, including account/vault reads, transaction planning, approval handling, simulation, swaps, plugins, and query caching. Triggers on tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `executionService`, `simulationService`, `swapService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`.
+description: Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. This skill should be used when implementing apps on top of the `euler-v2-sdk` package, including account/vault reads, transaction planning, approval handling, simulation, swaps, plugins, and query caching. Triggers on tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `executionService`, `swapService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`.
 license: MIT
 metadata:
   author: Euler Labs
@@ -42,7 +42,7 @@ Reference these guidelines when:
 - `accountService` for account/sub-account positions
 - `vaultMetaService` when vault type is unknown or mixed
 - `executionService` for `planX`/`encodeX` and approvals
-- `simulationService` for pre-execution validation
+- `executionService` for plan simulation and pre-execution validation
 - `swapService` for provider quotes and route payloads
 - `rewardsService` for reward reads and provider-specific claim plans
 

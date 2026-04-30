@@ -4,7 +4,6 @@ import { useSDK } from "../context/SdkContext.tsx";
 import {
   useAccount as useWagmiAccount,
   useChainId,
-  usePublicClient,
   useSwitchChain,
   useWalletClient,
 } from "wagmi";
@@ -16,7 +15,6 @@ import {
 import {
   computePositionsNetApy,
   computePositionsRoe,
-  executeTransactionPlan,
   getSubAccountId,
 } from "@eulerxyz/euler-v2-sdk";
 import { getAddress, type Address } from "viem";
@@ -31,6 +29,7 @@ import { CopyAddress } from "../components/CopyAddress.tsx";
 import { RoeCell } from "../components/RoeCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
 import { RawEntityDialog } from "../components/RawEntityDialog.tsx";
+import { ExecutionProgress } from "../components/ExecutionProgress.tsx";
 import type {
   AccountPosition,
   PortfolioBorrowPosition,
@@ -38,7 +37,12 @@ import type {
   UserReward,
   VaultEntity,
 } from "@eulerxyz/euler-v2-sdk";
-import { formatTransactionPlanError, toPlanProgress, type PlanProgress } from "../utils/txProgress.ts";
+import {
+  formatTransactionPlanError,
+  toPlanProgress,
+  type PlanProgress,
+  walletExecutionCallbacks,
+} from "../utils/txProgress.ts";
 
 // Persist across navigations but not across full page reloads
 let lastAddress: string | undefined;
@@ -356,6 +360,11 @@ export function PortfolioPage() {
           {claimSuccess && (
             <div className="status-message" style={{ marginBottom: 12 }}>
               {claimSuccess}
+            </div>
+          )}
+          {claimProgress && (
+            <div style={{ marginBottom: 12 }}>
+              <ExecutionProgress progress={claimProgress} label="Reward claim" />
             </div>
           )}
 
@@ -830,7 +839,6 @@ function ChainAccountSection({
   const { switchChain } = useSwitchChain();
   const chainId = result.chainId;
   const { data: walletClient } = useWalletClient({ chainId });
-  const publicClient = usePublicClient({ chainId });
   const account = result.account;
   const portfolio = result.portfolio;
 
@@ -877,7 +885,7 @@ function ChainAccountSection({
         await switchChain({ chainId });
         return;
       }
-      if (!walletClient || !publicClient) {
+      if (!walletClient) {
         throw new Error("Wallet client not ready.");
       }
 
@@ -916,15 +924,11 @@ function ChainAccountSection({
 
       setClaimProgress({ completed: 0, total: plan.length });
 
-      await executeTransactionPlan({
+      await sdk!.executionService.executeTransactionPlan({
         plan,
-        executionService: sdk!.executionService,
-        deploymentService: sdk!.deploymentService,
         chainId,
-        walletClient,
-        publicClient,
-        chain: publicClient.chain,
         account: walletAddress as Address,
+        ...walletExecutionCallbacks(walletClient),
         usePermit2: true,
         unlimitedApproval: false,
         onProgress: (progress) => setClaimProgress(toPlanProgress(progress)),

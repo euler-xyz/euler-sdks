@@ -40,18 +40,15 @@ import {
   erc20Abi,
   createWalletClient,
   http,
-} from "viem";
-import { mainnet } from "viem/chains";
-
-import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
-import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
-import { 
+  } from "viem";
+  import { mainnet } from "viem/chains";
+  import { printHeader, logOperationResult } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
   rpcUrls,
   account,
-  testClient,
-  publicClient,
-  walletClient
+  initExample,
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 import { buildEulerSDK, createPythPlugin, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
@@ -70,14 +67,14 @@ const COLLATERAL_AMOUNT = parseUnits("0.00005", 8); // 0.00005 LBTC (8 decimals)
 const BORROW_AMOUNT = parseUnits("0.000001", 8);    // 0.000001 WBTC (8 decimals)
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = false;
 const ANVIL_RPC_URL = "http://127.0.0.1:8545";
 
 /**
  * Fund the test account with LBTC from a whale address on the Anvil fork.
  */
-async function initBalances() {
+async function fundLbtcForExample(
+  testClient: Awaited<ReturnType<typeof initExample>>["testClient"],
+) {
   await testClient.setBalance({
     address: LBTC_WHALE,
     value: parseEther("10"),
@@ -102,7 +99,12 @@ async function initBalances() {
   });
 }
 
-async function borrowWithPythExample() {
+async function borrowWithPythExample({
+  walletClient,
+  testClient,
+}: Awaited<ReturnType<typeof initExample>>) {
+  await fundLbtcForExample(testClient);
+
   // Build the SDK with the Pyth plugin enabled
   const sdk = await buildEulerSDK({
     rpcUrls,
@@ -156,27 +158,14 @@ async function borrowWithPythExample() {
 
   console.log(`✓ Plugins processed (Pyth price updates prepended)`);
 
-  // Resolve approvals (fetches wallet data internally)
-  borrowPlan = await sdk.executionService.resolveRequiredApprovals({
-    plan: borrowPlan,
-    chainId: mainnet.id,
-    account: account.address,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
-  });
-
-  console.log(`✓ Approvals resolved, executing...`);
+  console.log(`✓ Executing...`);
 
   // Execute the plan (the executor sums batch item values for the Pyth fee)
-  await executeTransactionPlan({
+  await sdk.executionService.executeTransactionPlan({
     plan: borrowPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
     chainId: mainnet.id,
     account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
+    ...exampleExecutionCallbacks(walletClient),
     onProgress: createTransactionPlanLogger(sdk),
   });
 
@@ -196,7 +185,7 @@ async function borrowWithPythExample() {
 // Run the example
 // ============================================================================
 printHeader("BORROW WITH PYTH EXAMPLE");
-initBalances().then(() => borrowWithPythExample()).catch((error) => {
+initExample().then(borrowWithPythExample).catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });

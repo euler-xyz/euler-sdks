@@ -2,17 +2,17 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * DEPOSIT EXAMPLE
  * ═══════════════════════════════════════════════════════════════════════════
- * 
+ *
  * This example demonstrates how to deposit assets into an Euler vault and
  * enable them as collateral in a single transaction.
- * 
+ *
  * OPERATION:
  *   • Deposit USDC into Euler Prime USDC Vault
  *   • Enable USDC as collateral for the sub-account
- * 
+ *
  * ASSETS & VAULTS:
  *   • USDC → Euler Prime USDC Vault (collateral enabled)
- * 
+ *
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
  *   2. Start Anvil: npm run anvil
@@ -25,20 +25,17 @@
 import "dotenv/config";
 import {
   parseUnits,
-} from "viem";
-import { mainnet } from "viem/chains";
-
-import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
-import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
-import { 
+  } from "viem";
+  import { mainnet } from "viem/chains";
+  import { printHeader, logOperationResult } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
   rpcUrls,
   account,
-  initBalances,
+  initExample,
   USDC_ADDRESS,
   EULER_PRIME_USDC_VAULT,
-  publicClient,
-  walletClient
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 import { Account, buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
@@ -47,14 +44,12 @@ const DEPOSIT_AMOUNT = parseUnits("10", 6);
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
 const ENABLE_COLLATERAL = true;
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = true;
 
-async function depositExample() {
+async function depositExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
   // Build the SDK
   const sdk = await buildEulerSDK({ rpcUrls });
 
-  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery,
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
 
@@ -70,35 +65,21 @@ async function depositExample() {
 
   console.log(`\n✓ Deposit plan created with ${depositPlan.length} step(s)`);
 
-  // Resolve approvals (fetches wallet data internally).
-  // This would normally be done in the executor logic, e.g. in executeTransactionPlan, but for illustration we'll do it here.
-  depositPlan = await sdk.executionService.resolveRequiredApprovals({
-    plan: depositPlan,
-    chainId: mainnet.id,
-    account: account.address,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
-  });
-  
-  console.log(`✓ Approvals resolved, executing...`);
+
+  console.log(`✓ Executing...`);
 
   // Execute the plan
-  await executeTransactionPlan({
+  await sdk.executionService.executeTransactionPlan({
     plan: depositPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
     chainId: mainnet.id,
     account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
+    ...exampleExecutionCallbacks(walletClient),
     onProgress: createTransactionPlanLogger(sdk),
   });
-
   // Fetch the updated sub-account and log the result
   // In tests the new sub-account will not be indexed by subgraph, so we need to fetch it manually
   const subAccount = (await sdk.accountService.fetchSubAccount(mainnet.id, SUB_ACCOUNT_ADDRESS, [EULER_PRIME_USDC_VAULT], { populateVaults: false })).result;
-  
+
   // Log the diff between before and after
   await logOperationResult(mainnet.id, accountData, [subAccount], sdk);
 }
@@ -107,7 +88,7 @@ async function depositExample() {
 // Run the example
 // ============================================================================
 printHeader("DEPOSIT EXAMPLE");
-initBalances().then(() => depositExample()).catch((error) => {
+initExample().then(depositExample).catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });

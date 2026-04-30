@@ -15,8 +15,7 @@ At runtime, the SDK is built from service instances that collaborate:
 
 - `accountService` fetches account/sub-account state and can populate vault entities
 - `vaultMetaService` routes vault addresses to the correct vault-type service
-- `executionService` builds transaction plans for deposits/borrows/repays/swaps/liquidations
-- `simulationService` simulates plans and returns post-simulation account/vault state and status checks
+- `executionService` builds transaction plans for deposits/borrows/repays/swaps/liquidations, simulates plans, estimates gas, and executes plans
 - `deploymentService` provides chain-specific deployed contract addresses
 - `providerService` provides chain RPC clients
 - `abiService` provides contract ABIs for encoding/decoding
@@ -33,8 +32,7 @@ The SDK returns rich entities (not only raw RPC/subgraph payloads). Data flows t
 
 ## Execution and Simulation
 
-- `executionService` builds EVC batch-based plans for protocol actions
-- `simulationService` runs those plans in simulation mode and reports:
+- `executionService` builds EVC batch-based plans for protocol actions, executes them through wallet clients, and can run those plans in simulation mode to report:
   - simulated account/vault state
   - failed batch items
   - account/vault status-check failures

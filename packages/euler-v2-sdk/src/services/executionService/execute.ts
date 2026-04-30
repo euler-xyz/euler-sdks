@@ -4,12 +4,15 @@ import {
 	type Abi,
 	type Address,
 	type Hash,
+	type Hex,
 	type TransactionReceipt,
 } from "viem";
 import type { IDeploymentService } from "../deploymentService/index.js";
+import type { ProviderService } from "../providerService/index.js";
 import type { IExecutionService } from "./executionService.js";
 import type {
 	EVCBatchItem,
+	PermitSingleTypedData,
 	TransactionPlan,
 	TransactionPlanItem,
 } from "./executionServiceTypes.js";
@@ -58,7 +61,6 @@ export type TransactionPlanExecutionResult = {
 };
 
 export type TransactionPlanPublicClient = {
-	chain?: unknown;
 	waitForTransactionReceipt: (parameters: {
 		hash: Hash;
 	}) => Promise<TransactionReceipt>;
@@ -67,24 +69,36 @@ export type TransactionPlanPublicClient = {
 	) => Promise<unknown>;
 };
 
-export type TransactionPlanWalletClient = {
-	sendTransaction: (parameters: any) => Promise<Hash>;
-	signTypedData: (parameters: any) => Promise<Hash>;
+export type TransactionPlanTransactionRequest = {
+	to: Address;
+	data: Hex;
+	value?: bigint;
 };
+
+export type TransactionPlanSignTypedDataRequest = PermitSingleTypedData;
 
 export type ExecuteTransactionPlanArgs = {
 	plan: TransactionPlan;
-	executionService: IExecutionService;
-	deploymentService: IDeploymentService;
 	chainId: number;
 	account: Address;
-	walletClient: TransactionPlanWalletClient;
-	publicClient: TransactionPlanPublicClient;
-	chain?: unknown;
+	sendTransaction: (
+		parameters: TransactionPlanTransactionRequest,
+	) => Promise<Hash>;
+	signTypedData?: (
+		parameters: TransactionPlanSignTypedDataRequest,
+	) => Promise<Hex>;
+	/** Defaults to true. When enabled, unresolved approvals prefer the Permit2 path. */
 	usePermit2?: boolean;
+	/** Defaults to false. When enabled, newly created approvals use max allowance values. */
 	unlimitedApproval?: boolean;
-	resolveApprovals?: boolean;
 	onProgress?: (progress: TransactionPlanExecutionProgress) => void;
+};
+
+export type ExecuteTransactionPlanInternalArgs = ExecuteTransactionPlanArgs & {
+	plan: TransactionPlan;
+	executionService: IExecutionService;
+	deploymentService: IDeploymentService;
+	providerService: ProviderService;
 };
 
 export class TransactionPlanExecutionError extends Error {
@@ -118,34 +132,9 @@ async function waitForSuccessfulReceipt(
 	return receipt;
 }
 
-function getChain(args: ExecuteTransactionPlanArgs): unknown {
-	const chain = args.chain ?? args.publicClient.chain;
-	if (!chain) {
-		throw new Error(
-			"A chain must be provided when the public client has no chain configured",
-		);
-	}
-	return chain;
-}
-
-function shouldResolveApprovals(
-	plan: TransactionPlan,
-	resolveApprovals: boolean,
-): boolean {
-	return (
-		resolveApprovals &&
-		plan.some(
-			(item) => item.type === "requiredApproval" && item.resolved === undefined,
-		)
-	);
-}
-
 async function maybeResolveApprovals(
-	args: ExecuteTransactionPlanArgs,
+	args: ExecuteTransactionPlanInternalArgs,
 ): Promise<TransactionPlan> {
-	const resolveApprovals = args.resolveApprovals ?? true;
-	if (!shouldResolveApprovals(args.plan, resolveApprovals)) return args.plan;
-
 	return args.executionService.resolveRequiredApprovals({
 		plan: args.plan,
 		chainId: args.chainId,
@@ -172,17 +161,15 @@ async function executeWithDecodedErrors<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Execute a transaction plan without applying SDK plugins or app-level plan transformers.
- *
- * The lifecycle mirrors the reusable part of Euler Lite's executeTxPlan flow:
- * resolve approvals when needed, collect Permit2 signatures, send approvals and
- * executable plan items sequentially, wait for each receipt before continuing,
- * and return all hashes/receipts.
+ * Execute a transaction plan: resolves approvals, collects Permit2 signatures,
+ * sends approval/EVC-batch/contract-call items sequentially, waits for each
+ * receipt, and returns all hashes and receipts. Permit2 signatures collected
+ * during a `requiredApproval` are prepended to the next `evcBatch` item.
  */
 export async function executeTransactionPlan(
-	args: ExecuteTransactionPlanArgs,
+	args: ExecuteTransactionPlanInternalArgs,
 ): Promise<TransactionPlanExecutionResult> {
-	const chain = getChain(args);
+	const publicClient = args.providerService.getProvider(args.chainId);
 	const plan = await maybeResolveApprovals(args);
 
 	const hashes: Hash[] = [];
@@ -210,24 +197,27 @@ export async function executeTransactionPlan(
 				for (const resolvedItem of item.resolved) {
 					if (resolvedItem.type === "approve") {
 						emitProgress(item, "approval");
-						const hash = await args.walletClient.sendTransaction({
+						const hash = await args.sendTransaction({
 							to: resolvedItem.token,
 							data: resolvedItem.data,
-							account: args.account,
-							chain,
 						});
 						hashes.push(hash);
-						const receipt = await waitForSuccessfulReceipt(args.publicClient, hash);
+						const receipt = await waitForSuccessfulReceipt(publicClient, hash);
 						receipts.push(receipt);
 						emitProgress(item, "approval", hash);
 						continue;
 					}
 
 					emitProgress(item, "permit2Signature");
+					if (!args.signTypedData) {
+						throw new Error(
+							"ExecutionService.executeTransactionPlan requires signTypedData when Permit2 approval is needed",
+						);
+					}
 					const permit2Address =
 						args.deploymentService.getDeployment(args.chainId).addresses.coreAddrs
 							.permit2;
-					const allowance = (await args.publicClient.readContract({
+					const allowance = (await publicClient.readContract({
 						address: permit2Address,
 						abi: PERMIT2_ALLOWANCE_ABI,
 						functionName: "allowance",
@@ -241,9 +231,8 @@ export async function executeTransactionPlan(
 						spender: resolvedItem.spender,
 						nonce,
 					});
-					const signature = await args.walletClient.signTypedData({
+					const signature = await args.signTypedData({
 						...typedData,
-						account: args.account,
 					});
 					permit2BatchItems.push(
 						args.executionService.encodePermit2Call({
@@ -268,15 +257,13 @@ export async function executeTransactionPlan(
 						.evc;
 				const data = args.executionService.encodeBatch(batchItems);
 				const value = batchItems.reduce((sum, batchItem) => sum + batchItem.value, 0n);
-				const hash = await args.walletClient.sendTransaction({
+				const hash = await args.sendTransaction({
 					to: evcAddress,
 					data,
 					value,
-					account: args.account,
-					chain,
 				});
 				hashes.push(hash);
-				const receipt = await waitForSuccessfulReceipt(args.publicClient, hash);
+				const receipt = await waitForSuccessfulReceipt(publicClient, hash);
 				receipts.push(receipt);
 				permit2BatchItems.length = 0;
 				completed += 1;
@@ -296,15 +283,13 @@ export async function executeTransactionPlan(
 				functionName: item.functionName,
 				args: item.args,
 			});
-			const hash = await args.walletClient.sendTransaction({
+			const hash = await args.sendTransaction({
 				to: item.to,
 				data,
 				value: item.value,
-				account: args.account,
-				chain,
 			});
 			hashes.push(hash);
-			const receipt = await waitForSuccessfulReceipt(args.publicClient, hash);
+			const receipt = await waitForSuccessfulReceipt(publicClient, hash);
 			receipts.push(receipt);
 			permit2BatchItems.length = 0;
 			completed += 1;

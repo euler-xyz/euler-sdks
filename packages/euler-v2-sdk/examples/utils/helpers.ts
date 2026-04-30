@@ -1,9 +1,6 @@
-import { Address, erc20Abi, formatUnits, isAddressEqual, parseAbi, PublicClient, TestClient, WalletClient } from "viem";
-import { mainnet } from "viem/chains";
-import { publicClient, walletClient } from "./config.js";
-import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK, eVaultAbi, executeTransactionPlan, type IHasVaultAddress, type TransactionPlan } from "@eulerxyz/euler-v2-sdk";
-import { createTransactionPlanLogger, walletAccountAddress } from "./transactionPlanLogging.js";
-
+import { Address, erc20Abi, formatUnits, isAddressEqual, parseAbi, PublicClient, TestClient } from "viem";
+import { publicClient } from "./config.js";
+import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK, eVaultAbi, type IHasVaultAddress } from "@eulerxyz/euler-v2-sdk";
 
 // Helper function for header
 export function printHeader(msg: string) {
@@ -11,35 +8,6 @@ export function printHeader(msg: string) {
   console.log(msg);
   console.log("=".repeat(80));
   console.log();
-}
-
-export async function executeExampleTransactionPlan(
-  plan: TransactionPlan,
-  sdk: EulerSDK,
-  options: { gas?: bigint } = {},
-) {
-  const executionWalletClient = options.gas
-    ? {
-        ...walletClient,
-        sendTransaction: (parameters: Parameters<typeof walletClient.sendTransaction>[0]) =>
-          walletClient.sendTransaction({
-            ...parameters,
-            gas: parameters.gas ?? options.gas,
-          }),
-      }
-    : walletClient;
-
-  return executeTransactionPlan({
-    plan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
-    walletClient: executionWalletClient,
-    publicClient,
-    chain: mainnet,
-    onProgress: createTransactionPlanLogger(sdk),
-  });
 }
 
 export async function fetchBalance(tokenAddress: Address, accountAddress: Address) {
@@ -346,21 +314,21 @@ async function formatVaultList(chainId: number, vaultAddresses: Address[], sdk: 
  * 
  * @example
  * const accountBefore = await sdk.accountService.fetchAccount(chainId, address, { populateVaults: false });
- * await executeTransactionPlan({ ... });
+ * await sdk.executionService.executeTransactionPlan({ ... });
  * const accountAfter = await sdk.accountService.fetchAccount(chainId, address, { populateVaults: false });
  * await logOperationResult(chainId, accountBefore, accountAfter, sdk);
  *
  * @example
  * // Or with sub-accounts only
  * const accountBefore = await sdk.accountService.fetchAccount(chainId, address, { populateVaults: false });
- * await executeTransactionPlan({ ... });
+ * await sdk.executionService.executeTransactionPlan({ ... });
  * const subAccounts = await Promise.all([
  *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr1, vaults, { populateVaults: false }),
   *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr2, vaults, { populateVaults: false }),
  * ]);
  * await logOperationResult(chainId, accountBefore, subAccounts, sdk);
  */
-export async function logOperationResult(chainId: number, before: Account<IHasVaultAddress>, after: Account<IHasVaultAddress> | (SubAccount<IHasVaultAddress> | undefined)[], sdk: EulerSDK) {
+export async function logOperationResult(chainId: number, before: Account<IHasVaultAddress>, after: Account<IHasVaultAddress> | (SubAccount<any> | undefined)[], sdk: EulerSDK) {
   console.log("\n" + "═".repeat(80));
   console.log("OPERATION RESULT");
   console.log("═".repeat(80));
@@ -375,9 +343,9 @@ export async function logOperationResult(chainId: number, before: Account<IHasVa
   }
 
   // Normalize after to array of sub-accounts, filtering out undefined values
-  const afterSubAccounts: SubAccount<IHasVaultAddress>[] = Array.isArray(after)
-    ? after.filter((sa): sa is SubAccount<IHasVaultAddress> => sa !== undefined)
-    : Object.values(after.subAccounts).filter((sa): sa is SubAccount<IHasVaultAddress> => sa != null);
+  const afterSubAccounts: SubAccount<any>[] = Array.isArray(after)
+    ? after.filter((sa): sa is SubAccount<any> => sa !== undefined)
+    : Object.values(after.subAccounts).filter((sa): sa is SubAccount<any> => sa != null);
 
   const beforeSubAccountsList = Object.values(before.subAccounts).filter((sa): sa is SubAccount<IHasVaultAddress> => sa != null);
 
@@ -550,7 +518,7 @@ export async function fetchAndLogSubAccounts(
   before: Account<IHasVaultAddress>,
   sdk: EulerSDK,
   requests: readonly SubAccountFetchRequest[],
-): Promise<(SubAccount<IHasVaultAddress> | undefined)[]> {
+): Promise<(SubAccount<any> | undefined)[]> {
   const subAccounts = await Promise.all(
     requests.map(async ({ account, vaults }) => (
       await sdk.accountService.fetchSubAccount(chainId, account, [...vaults], {

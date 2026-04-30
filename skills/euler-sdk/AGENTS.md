@@ -31,7 +31,7 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 - `vaultMetaService` for mixed or unknown vault types
 - `executionService` for planning/encoding tx batches
   - executes generic `TransactionPlan` items, including direct `contractCall` items
-- `simulationService` for pre-trade validation
+- `executionService` for plan simulation and pre-trade validation
 - `swapService` for quotes and providers
 - `oracleAdapterService` for oracle adapter metadata (provider/methodology/checks)
 - `rewardsService` for reward reads and provider-specific reward claim planning
@@ -138,7 +138,7 @@ Use SDK examples as templates:
 
 - `packages/euler-v2-sdk/examples/execution/*` for transaction flows
 - `packages/euler-v2-sdk/examples/simulations/*` for pre-checks
-- `packages/euler-v2-sdk/examples/utils/executor.ts` for approval + Permit2 + EVC logic
+- `sdk.executionService.executeTransactionPlan(...)` for approval + Permit2 + EVC execution logic
 - `packages/euler-v2-sdk/examples/run-examples.sh` for fork-based regression runs
 
 Promote constants to config/env and add explicit chain/account flags in CLI tools.
@@ -158,4 +158,4 @@ Promote constants to config/env and add explicit chain/account flags in CLI tool
 - `packages/euler-v2-sdk/docs/swaps.md`
 - `packages/euler-v2-sdk/examples/react-sdk-example/src/context/SdkContext.tsx`
 - `packages/euler-v2-sdk/examples/react-sdk-example/src/queries/sdkQueries.ts`
-- `packages/euler-v2-sdk/examples/react-sdk-example/src/utils/txExecutor.ts`
+- `packages/euler-v2-sdk/examples/react-sdk-example/src/utils/txProgress.ts`

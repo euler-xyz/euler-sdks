@@ -5,7 +5,7 @@
  *
  * This example demonstrates how to merge multiple transaction plans into one
  * and execute them in a single flow. It creates four plans, merges them with
- * mergePlans(), then resolves approvals and executes once.
+ * mergePlans(), then executes once.
  *
  * OPERATION:
  *   1. (Setup) Initial borrow: deposit USDC collateral and borrow USDT so we have a position
@@ -15,7 +15,7 @@
  *      - Partial repay: repay some USDT from wallet
  *      - Withdraw: withdraw a small amount of USDC collateral to wallet
  *   3. Merge the 4 plans into one (approvals summed per token, EVC batch concatenated)
- *   4. Resolve approvals and execute the merged plan in one go
+ *   4. Execute the merged plan in one go
  *
  * ASSETS & VAULTS:
  *   • USDC → Euler Prime USDC Vault (collateral)
@@ -34,17 +34,19 @@
  */
 
 import "dotenv/config";
-import { parseUnits } from "viem";
-import { mainnet } from "viem/chains";
-
-import { executeExampleTransactionPlan, fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
 import {
+  parseUnits } from "viem";
+  import { mainnet } from "viem/chains";
+  import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
   rpcUrls,
   account,
-  initBalances,
+  initExample,
   USDC_ADDRESS,
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 import type { TransactionPlan } from "@eulerxyz/euler-v2-sdk";
@@ -61,12 +63,10 @@ const WITHDRAW_AMOUNT = parseUnits("50", 6);      // Plan 4: withdraw 50 USDC
 
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = false;
 
 // TODO use simulations to build account state
 
-async function mergePlansExample() {
+async function mergePlansExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
   const sdk = await buildEulerSDK({
     rpcUrls,
     accountServiceConfig: { adapter: "onchain" },
@@ -90,14 +90,13 @@ async function mergePlansExample() {
       asset: USDC_ADDRESS,
     },
   });
-  setupPlan = await sdk.executionService.resolveRequiredApprovals({
+  await sdk.executionService.executeTransactionPlan({
     plan: setupPlan,
     chainId: mainnet.id,
-    account: account.address,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
+    account: walletAccountAddress(walletClient),
+    ...exampleExecutionCallbacks(walletClient),
+    onProgress: createTransactionPlanLogger(sdk),
   });
-  await executeExampleTransactionPlan(setupPlan, sdk);
   console.log("✓ Setup complete: position created\n");
 
   const [subAccount] = await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
@@ -155,21 +154,18 @@ async function mergePlansExample() {
   console.log(`  4. Withdraw: ${WITHDRAW_AMOUNT} USDC to wallet`);
 
   // ─── Merge and execute ───
-  console.log("\n=== Merging plans and resolving approvals ===");
+  console.log("\n=== Merging plans and executing ===");
   const merged = sdk.executionService.mergePlans([plan1, plan2, plan3, plan4]);
   console.log(`✓ Merged plan has ${merged.length} item(s)`);
 
-  let resolvedPlan = await sdk.executionService.resolveRequiredApprovals({
+  console.log("✓ Executing merged plan...\n");
+  await sdk.executionService.executeTransactionPlan({
     plan: merged,
     chainId: mainnet.id,
-    account: account.address,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
+    account: walletAccountAddress(walletClient),
+    ...exampleExecutionCallbacks(walletClient),
+    onProgress: createTransactionPlanLogger(sdk),
   });
-
-  console.log("✓ Executing merged plan...\n");
-  await executeExampleTransactionPlan(resolvedPlan, sdk);
-
   await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
     {
       account: SUB_ACCOUNT_ADDRESS,
@@ -179,8 +175,7 @@ async function mergePlansExample() {
 }
 
 printHeader("MERGE PLANS EXAMPLE");
-initBalances()
-  .then(() => mergePlansExample())
+initExample().then(mergePlansExample)
   .catch((error) => {
     console.error("Error:", error);
     process.exit(1);

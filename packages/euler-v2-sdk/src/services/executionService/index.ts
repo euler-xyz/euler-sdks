@@ -5,7 +5,6 @@ export { swapperAbi } from "./abis/swapperAbi.js";
 export { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
 export {
 	ExecutionService,
-	type ExecuteTransactionPlanWithServiceArgs,
 	type IExecutionService,
 } from "./executionService.js";
 export type {
@@ -72,5 +71,6 @@ export {
 	type TransactionPlanExecutionResult,
 	type TransactionPlanExecutionStatus,
 	type TransactionPlanPublicClient,
-	type TransactionPlanWalletClient,
+	type TransactionPlanSignTypedDataRequest,
+	type TransactionPlanTransactionRequest,
 } from "./execute.js";

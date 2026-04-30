@@ -2,23 +2,23 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * TRANSFER EXAMPLE
  * ═══════════════════════════════════════════════════════════════════════════
- * 
+ *
  * This example demonstrates how to transfer vault shares between two sub-accounts
  * owned by the same wallet. This is useful for reorganizing positions across
  * different sub-accounts.
- * 
+ *
  * OPERATION:
  *   1. Deposit USDC into sub-account 1
  *   2. Transfer vault shares from sub-account 1 to sub-account 2
- * 
+ *
  * ASSETS & VAULTS:
  *   • USDC → Euler Prime USDC Vault
- * 
+ *
  * 💡 TIP - SUB-ACCOUNTS:
  *   • Sub-accounts are isolated positions under your main account
  *   • Each sub-account has its own collateral and debt positions
  *   • Transferring shares between sub-accounts can help with position management
- * 
+ *
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
  *   2. Start Anvil: npm run anvil
@@ -31,11 +31,13 @@
 import "dotenv/config";
 import {
   parseUnits,
-} from "viem";
-import { mainnet } from "viem/chains";
-
-import { executeExampleTransactionPlan, fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
-import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "../utils/config.js";
+  } from "viem";
+  import { mainnet } from "viem/chains";
+  import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import { rpcUrls, account, initExample, USDC_ADDRESS, EULER_PRIME_USDC_VAULT,
+  exampleExecutionCallbacks,
+} from "../utils/config.js";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
 // Inputs
@@ -45,10 +47,8 @@ const SUB_ACCOUNT_FROM_ID = 1;
 const SUB_ACCOUNT_TO_ID = 2;
 const SUB_ACCOUNT_FROM_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_FROM_ID);
 const SUB_ACCOUNT_TO_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_TO_ID);
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = false;
 
-async function transferExample() {
+async function transferExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
   // Build the SDK
   const sdk = await buildEulerSDK({
     rpcUrls,
@@ -72,18 +72,15 @@ async function transferExample() {
   });
   console.log(`✓ Deposit plan created with ${depositPlan.length} step(s)`);
 
-  // Resolve approvals (fetches wallet data internally)
-  depositPlan = await sdk.executionService.resolveRequiredApprovals({
+
+  console.log(`✓ Executing...`);
+  await sdk.executionService.executeTransactionPlan({
     plan: depositPlan,
     chainId: mainnet.id,
-    account: account.address,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
+    account: walletAccountAddress(walletClient),
+    ...exampleExecutionCallbacks(walletClient),
+    onProgress: createTransactionPlanLogger(sdk),
   });
-  
-  console.log(`✓ Approvals resolved, executing...`);
-  await executeExampleTransactionPlan(depositPlan, sdk);
-
   const [subAccountFromAfterDeposit] = await fetchAndLogSubAccounts(
     mainnet.id,
     accountData,
@@ -96,7 +93,7 @@ async function transferExample() {
 
   // Step 2: Transfer shares from sub-account 1 to sub-account 2
   console.log('\n=== Step 2: Transfer Shares from Sub-Account 1 to Sub-Account 2 ===');
-  
+
   // Update account data with the fetched sub-accounts
   accountData.updateSubAccounts(subAccountFromAfterDeposit!);
 
@@ -116,8 +113,13 @@ async function transferExample() {
   console.log(`✓ Executing...`);
 
   // No approvals needed for transfer
-  await executeExampleTransactionPlan(transferPlan, sdk);
-
+  await sdk.executionService.executeTransactionPlan({
+    plan: transferPlan,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    ...exampleExecutionCallbacks(walletClient),
+    onProgress: createTransactionPlanLogger(sdk),
+  });
   await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
     { account: SUB_ACCOUNT_FROM_ADDRESS, vaults: [EULER_PRIME_USDC_VAULT] },
     { account: SUB_ACCOUNT_TO_ADDRESS, vaults: [EULER_PRIME_USDC_VAULT] },
@@ -128,7 +130,7 @@ async function transferExample() {
 // Run the example
 // ============================================================================
 printHeader("TRANSFER EXAMPLE");
-initBalances().then(() => transferExample()).catch((error) => {
+initExample().then(transferExample).catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });

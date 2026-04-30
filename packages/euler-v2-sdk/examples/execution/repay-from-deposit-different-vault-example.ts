@@ -29,19 +29,21 @@
  */
 
 import "dotenv/config";
-import { getAddress, maxUint256, parseUnits } from "viem";
-import { mainnet } from "viem/chains";
-import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
-
-import { executeExampleTransactionPlan, fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
 import {
-	account,
-	EULER_PRIME_USDC_VAULT,
-	EULER_PRIME_USDT_VAULT,
-	initBalances,
-	rpcUrls,
-	USDC_ADDRESS,
-	USDT_ADDRESS,
+  getAddress, maxUint256, parseUnits } from "viem";
+  import { mainnet } from "viem/chains";
+  import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
+  import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
+  account,
+  EULER_PRIME_USDC_VAULT,
+  EULER_PRIME_USDT_VAULT,
+  initExample,
+  rpcUrls,
+  USDC_ADDRESS,
+  USDT_ADDRESS,
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 
 // Inputs
@@ -62,10 +64,8 @@ const SOURCE_SUB_ACCOUNT_ADDRESS = getSubAccountAddress(
 const ALTERNATE_USDT_VAULT = getAddress(
 	"0x2343b4bCB96EC35D8653Fb154461fc673CB20a7e",
 );
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = false;
 
-async function repayFromDifferentVaultDepositExample() {
+async function repayFromDifferentVaultDepositExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
 	// Build the SDK
 	const sdk = await buildEulerSDK({
 		rpcUrls,
@@ -106,17 +106,14 @@ async function repayFromDifferentVaultDepositExample() {
 
 	console.log(`✓ Borrow plan created with ${borrowPlan.length} step(s)`);
 
-	borrowPlan = await sdk.executionService.resolveRequiredApprovals({
-		plan: borrowPlan,
-		chainId: mainnet.id,
-		account: account.address,
-		usePermit2: USE_PERMIT2,
-		unlimitedApproval: UNLIMITED_APPROVAL,
+	console.log("✓ Executing...");
+	await sdk.executionService.executeTransactionPlan({
+	  plan: borrowPlan,
+	  chainId: mainnet.id,
+	  account: walletAccountAddress(walletClient),
+	  ...exampleExecutionCallbacks(walletClient),
+	  onProgress: createTransactionPlanLogger(sdk),
 	});
-
-	console.log("✓ Approvals resolved, executing...");
-	await executeExampleTransactionPlan(borrowPlan, sdk);
-
 	let [borrowSubAccount] = await fetchAndLogSubAccounts(
 		mainnet.id,
 		accountData,
@@ -142,17 +139,14 @@ async function repayFromDifferentVaultDepositExample() {
 		`✓ Source deposit plan created with ${sourceDepositPlan.length} step(s)`,
 	);
 
-	sourceDepositPlan = await sdk.executionService.resolveRequiredApprovals({
-		plan: sourceDepositPlan,
-		chainId: mainnet.id,
-		account: account.address,
-		usePermit2: USE_PERMIT2,
-		unlimitedApproval: UNLIMITED_APPROVAL,
+	console.log("✓ Executing...");
+	await sdk.executionService.executeTransactionPlan({
+	  plan: sourceDepositPlan,
+	  chainId: mainnet.id,
+	  account: walletAccountAddress(walletClient),
+	  ...exampleExecutionCallbacks(walletClient),
+	  onProgress: createTransactionPlanLogger(sdk),
 	});
-
-	console.log("✓ Approvals resolved, executing...");
-	await executeExampleTransactionPlan(sourceDepositPlan, sdk);
-
 	let [, sourceSubAccount] = await fetchAndLogSubAccounts(
 		mainnet.id,
 		accountData,
@@ -181,17 +175,14 @@ async function repayFromDifferentVaultDepositExample() {
 		`✓ Liability vault deposit plan created with ${liabilityDepositPlan.length} step(s)`,
 	);
 
-	liabilityDepositPlan = await sdk.executionService.resolveRequiredApprovals({
-		plan: liabilityDepositPlan,
-		chainId: mainnet.id,
-		account: account.address,
-		usePermit2: USE_PERMIT2,
-		unlimitedApproval: UNLIMITED_APPROVAL,
+	console.log("✓ Executing...");
+	await sdk.executionService.executeTransactionPlan({
+	  plan: liabilityDepositPlan,
+	  chainId: mainnet.id,
+	  account: walletAccountAddress(walletClient),
+	  ...exampleExecutionCallbacks(walletClient),
+	  onProgress: createTransactionPlanLogger(sdk),
 	});
-
-	console.log("✓ Approvals resolved, executing...");
-	await executeExampleTransactionPlan(liabilityDepositPlan, sdk);
-
 	[borrowSubAccount, sourceSubAccount] = await fetchAndLogSubAccounts(
 		mainnet.id,
 		accountData,
@@ -220,8 +211,19 @@ async function repayFromDifferentVaultDepositExample() {
 	);
 	console.log("✓ Executing...");
 
-	await executeExampleTransactionPlan(fullRepayPlan, sdk);
+	await sdk.executionService.executeTransactionPlan({
 
+	  plan: fullRepayPlan,
+
+	  chainId: mainnet.id,
+
+	  account: walletAccountAddress(walletClient),
+
+	  ...exampleExecutionCallbacks(walletClient),
+
+	  onProgress: createTransactionPlanLogger(sdk),
+
+	});
 	[borrowSubAccount, sourceSubAccount] = await fetchAndLogSubAccounts(
 		mainnet.id,
 		accountData,
@@ -234,8 +236,7 @@ async function repayFromDifferentVaultDepositExample() {
 // Run the example
 // ============================================================================
 printHeader("REPAY FROM DIFFERENT VAULT DEPOSIT EXAMPLE");
-initBalances()
-	.then(() => repayFromDifferentVaultDepositExample())
+initExample().then(repayFromDifferentVaultDepositExample)
 	.catch((error) => {
 		console.error("Error:", error);
 		process.exit(1);

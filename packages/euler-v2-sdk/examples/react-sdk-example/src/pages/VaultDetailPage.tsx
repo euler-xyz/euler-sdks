@@ -300,12 +300,12 @@ export function VaultDetailPage() {
               style={{ width: 32, height: 32, borderRadius: 4 }}
             />
           )}
-          <h2>{vault.eulerLabel?.vault.name || vault.shares.name || "Unnamed Vault"}</h2>
+          <h2>{vault.eulerLabel?.products[0]?.name || vault.shares.name || "Unnamed Vault"}</h2>
         </div>
         <div className="address">{vault.address}</div>
-        {vault.eulerLabel?.vault.description && (
+        {vault.eulerLabel?.products[0]?.description && (
           <div style={{ marginTop: 8, opacity: 0.7, fontSize: "0.9em" }}>
-            {vault.eulerLabel.vault.description}
+            {vault.eulerLabel.products[0]?.description}
           </div>
         )}
       </div>

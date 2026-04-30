@@ -131,10 +131,10 @@ function getEVaultBorrowApyTotal(vault: EVault): number {
 }
 
 function getEulerEarnSupplyApyTotal(vault: EulerEarn): number | undefined {
-  if (vault.supplyApy === undefined) return undefined;
+  if (vault.supplyApy1h === undefined) return undefined;
   const rewards = getRewardsAprByAction(vault, "LEND");
   const intrinsic = getIntrinsicApyDecimal(vault);
-  return vault.supplyApy + rewards + intrinsic;
+  return vault.supplyApy1h + rewards + intrinsic;
 }
 
 function toTopByUsd<T extends EVault | EulerEarn>(vaults: T[]): WithUsd<T>[] {

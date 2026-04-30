@@ -41,17 +41,17 @@ import {
   getAddress,
   erc20Abi,
   zeroAddress,
-} from "viem";
-import { mainnet } from "viem/chains";
-import { buildEulerSDK, getSubAccountAddress, SwapperMode } from "@eulerxyz/euler-v2-sdk";
-
-import { executeExampleTransactionPlan, fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
-import {
+  } from "viem";
+  import { mainnet } from "viem/chains";
+  import { buildEulerSDK, getSubAccountAddress, SwapperMode } from "@eulerxyz/euler-v2-sdk";
+  import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
   rpcUrls,
   account,
-  initBalances,
-  publicClient,
+  initExample,
   USDC_ADDRESS,
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 
 // Addresses
@@ -64,12 +64,13 @@ const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
 const SWAP_QUOTE_INDEX_1 = 0; // Change this if swap quote is bad
 const SWAP_QUOTE_INDEX_2 = 1; // Change this if swap quote is bad
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = false;
 
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800;
 
-async function depositWithSwapFromWalletExample() {
+async function depositWithSwapFromWalletExample({
+  walletClient,
+  publicClient,
+}: Awaited<ReturnType<typeof initExample>>) {
   // Build the SDK
   const sdk = await buildEulerSDK({
     rpcUrls,
@@ -120,18 +121,15 @@ async function depositWithSwapFromWalletExample() {
 
   console.log(`Deposit plan created with ${depositPlan.length} step(s)`);
 
-  // Resolve approvals (approval goes to SwapVerifier)
-  depositPlan = await sdk.executionService.resolveRequiredApprovals({
-    plan: depositPlan,
-    chainId: mainnet.id,
-    account: account.address,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
-  });
-
-  console.log('Approvals resolved, executing...');
+  console.log('✓ Executing...');
   try {
-    await executeExampleTransactionPlan(depositPlan, sdk);
+    await sdk.executionService.executeTransactionPlan({
+      plan: depositPlan,
+      chainId: mainnet.id,
+      account: walletAccountAddress(walletClient),
+      ...exampleExecutionCallbacks(walletClient),
+      onProgress: createTransactionPlanLogger(sdk),
+    });
   } catch (error) {
     console.error("Error executing deposit with swap:", error);
     console.log("\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.");
@@ -222,7 +220,13 @@ async function depositWithSwapFromWalletExample() {
   console.log(`Combined plan created with ${combinedPlan.length} step(s)`);
 
   try {
-    await executeExampleTransactionPlan(combinedPlan, sdk);
+    await sdk.executionService.executeTransactionPlan({
+      plan: combinedPlan,
+      chainId: mainnet.id,
+      account: walletAccountAddress(walletClient),
+      ...exampleExecutionCallbacks(walletClient),
+      onProgress: createTransactionPlanLogger(sdk),
+    });
   } catch (error) {
     console.error("Error executing redeem with swap:", error);
     console.log("\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.");
@@ -248,7 +252,7 @@ async function depositWithSwapFromWalletExample() {
 // Run the example
 // ============================================================================
 printHeader("DEPOSIT WITH SWAP FROM WALLET EXAMPLE");
-initBalances().then(() => depositWithSwapFromWalletExample()).catch((error) => {
+initExample().then(depositWithSwapFromWalletExample).catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });

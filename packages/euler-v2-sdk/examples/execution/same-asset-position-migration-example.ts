@@ -18,23 +18,24 @@
  */
 
 import "dotenv/config";
-import { getAddress, parseUnits } from "viem";
-import { mainnet } from "viem/chains";
-import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
-
 import {
-	executeExampleTransactionPlan,
-	logOperationResult,
-	printHeader,
-} from "../utils/helpers.js";
-import {
-	account,
-	EULER_PRIME_USDC_VAULT,
-	EULER_PRIME_USDT_VAULT,
-	initBalances,
-	rpcUrls,
-	USDC_ADDRESS,
-	USDT_ADDRESS,
+  getAddress, parseUnits } from "viem";
+  import { mainnet } from "viem/chains";
+  import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
+  import {
+  logOperationResult,
+  printHeader,
+  } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
+  account,
+  EULER_PRIME_USDC_VAULT,
+  EULER_PRIME_USDT_VAULT,
+  initExample,
+  rpcUrls,
+  USDC_ADDRESS,
+  USDT_ADDRESS,
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 
 const SUPPLY_AMOUNT = parseUnits("500", 6);
@@ -53,11 +54,10 @@ const BORROW_SUB_ACCOUNT_ADDRESS = getSubAccountAddress(
 const ALTERNATE_USDT_VAULT = getAddress(
 	"0x7c280DBDEf569e96c7919251bD2B0edF0734C5A8",
 );
-const USE_PERMIT2 = false;
-const UNLIMITED_APPROVAL = false;
-const EXAMPLE_GAS_LIMIT = 2_000_000n;
 
-async function sameAssetPositionMigrationExample() {
+async function sameAssetPositionMigrationExample({
+	walletClient,
+}: Awaited<ReturnType<typeof initExample>>) {
 	const sdk = await buildEulerSDK({
 		rpcUrls,
 		accountServiceConfig: { adapter: "onchain" },
@@ -80,16 +80,12 @@ async function sameAssetPositionMigrationExample() {
 		enableCollateral: true,
 	});
 
-	sourceDepositPlan = await sdk.executionService.resolveRequiredApprovals({
+	await sdk.executionService.executeTransactionPlan({
 		plan: sourceDepositPlan,
 		chainId: mainnet.id,
-		account: account.address,
-		usePermit2: USE_PERMIT2,
-		unlimitedApproval: UNLIMITED_APPROVAL,
-	});
-
-	await executeExampleTransactionPlan(sourceDepositPlan, sdk, {
-		gas: EXAMPLE_GAS_LIMIT,
+		account: walletAccountAddress(walletClient),
+		...exampleExecutionCallbacks(walletClient),
+		onProgress: createTransactionPlanLogger(sdk),
 	});
 
 	let supplySubAccount = (
@@ -122,8 +118,12 @@ async function sameAssetPositionMigrationExample() {
 			isMax: true,
 		});
 
-	await executeExampleTransactionPlan(supplyMigrationPlan, sdk, {
-		gas: EXAMPLE_GAS_LIMIT,
+	await sdk.executionService.executeTransactionPlan({
+		plan: supplyMigrationPlan,
+		chainId: mainnet.id,
+		account: walletAccountAddress(walletClient),
+		...exampleExecutionCallbacks(walletClient),
+		onProgress: createTransactionPlanLogger(sdk),
 	});
 
 	supplySubAccount = (
@@ -149,16 +149,12 @@ async function sameAssetPositionMigrationExample() {
 		enableCollateral: true,
 	});
 
-	collateralDepositPlan = await sdk.executionService.resolveRequiredApprovals({
+	await sdk.executionService.executeTransactionPlan({
 		plan: collateralDepositPlan,
 		chainId: mainnet.id,
-		account: account.address,
-		usePermit2: USE_PERMIT2,
-		unlimitedApproval: UNLIMITED_APPROVAL,
-	});
-
-	await executeExampleTransactionPlan(collateralDepositPlan, sdk, {
-		gas: EXAMPLE_GAS_LIMIT,
+		account: walletAccountAddress(walletClient),
+		...exampleExecutionCallbacks(walletClient),
+		onProgress: createTransactionPlanLogger(sdk),
 	});
 
 	let borrowSubAccount = (
@@ -180,8 +176,12 @@ async function sameAssetPositionMigrationExample() {
 		borrowAccount: BORROW_SUB_ACCOUNT_ADDRESS,
 	});
 
-	await executeExampleTransactionPlan(borrowPlan, sdk, {
-		gas: EXAMPLE_GAS_LIMIT,
+	await sdk.executionService.executeTransactionPlan({
+		plan: borrowPlan,
+		chainId: mainnet.id,
+		account: walletAccountAddress(walletClient),
+		...exampleExecutionCallbacks(walletClient),
+		onProgress: createTransactionPlanLogger(sdk),
 	});
 
 	borrowSubAccount = (
@@ -211,8 +211,12 @@ async function sameAssetPositionMigrationExample() {
 		newLiabilityAsset: USDT_ADDRESS,
 	});
 
-	await executeExampleTransactionPlan(debtMigrationPlan, sdk, {
-		gas: EXAMPLE_GAS_LIMIT,
+	await sdk.executionService.executeTransactionPlan({
+		plan: debtMigrationPlan,
+		chainId: mainnet.id,
+		account: walletAccountAddress(walletClient),
+		...exampleExecutionCallbacks(walletClient),
+		onProgress: createTransactionPlanLogger(sdk),
 	});
 
 	borrowSubAccount = (
@@ -233,8 +237,8 @@ async function sameAssetPositionMigrationExample() {
 }
 
 printHeader("SAME-ASSET POSITION MIGRATION EXAMPLE");
-initBalances()
-	.then(() => sameAssetPositionMigrationExample())
+initExample()
+	.then(sameAssetPositionMigrationExample)
 	.catch((error) => {
 		console.error("Error:", error);
 		process.exit(1);

@@ -10,7 +10,7 @@ const plan = sdk.executionService.planDeposit({ vault, amount, receiver, account
 
 // 2. Simulate the full transaction plan.
 // `stateOverrides` defaults to true (auto-inject balances/approvals).
-const result = await sdk.simulationService.simulateTransactionPlan(
+const result = await sdk.executionService.simulateTransactionPlan(
   mainnet.id,
   accountAddress,
   plan,
@@ -28,9 +28,9 @@ if (result.simulationError) {
 
 See [examples/simulations/simulate-deposit-example.ts](../examples/simulations/simulate-deposit-example.ts) for a full runnable example:
 
-## Simulation service API
+## Execution service simulation API
 
-`SimulationService` is the recommended entry point for plan simulation.
+`executionService` is the recommended entry point for plan simulation.
 
 ### `simulateTransactionPlan(chainId, account, transactionPlan, options?)`
 
@@ -56,7 +56,7 @@ Why use it:
 Estimates gas for the executable items in a `TransactionPlan`. Like simulation, `stateOverrides` defaults to `true`, so required wallet balances and allowances are injected while `requiredApproval` items are skipped. EVC batches are estimated through `EVC.batch`, direct `contractCall` items are estimated against their target contracts, and viem gas-estimation errors are thrown to the caller.
 
 ```typescript
-const gas = await sdk.simulationService.estimateGasForTransactionPlan(
+const gas = await sdk.executionService.estimateGasForTransactionPlan(
   chainId,
   accountAddress,
   plan,
@@ -68,7 +68,7 @@ const gas = await sdk.simulationService.estimateGasForTransactionPlan(
 `simulateTransactionPlan` can populate the returned account/vault entities using the same fetch options as `accountService.fetchAccount`. This is useful when you want computed properties (e.g., ROE, APY breakdowns, USD values) on the simulated account:
 
 ```typescript
-const result = await sdk.simulationService.simulateTransactionPlan(
+const result = await sdk.executionService.simulateTransactionPlan(
   chainId,
   accountAddress,
   plan,
@@ -92,15 +92,14 @@ const result = await sdk.simulationService.simulateTransactionPlan(
 
 All exports are available from the top-level `@eulerxyz/euler-v2-sdk` package.
 
-### `deriveStateOverrides(client, plan, account, options)`
+### `deriveStateOverrides(chainId, account, transactionPlan, options?)`
 
-Utility helper that generates the override set for a plan. Internally it uses `eth_createAccessList` (EIP-2930) to discover storage slots for balances and approvals.
+Generates the override set for a plan. Internally it uses `eth_createAccessList` (EIP-2930) to discover storage slots for balances and approvals.
 
-Low-level utility. Takes a `TransactionPlan` and generates all overrides needed for `eth_simulateContract` simulation from `account`.
+This is exposed on `executionService` and uses its configured provider and deployment service.
 
 ```typescript
-const stateOverride = await deriveStateOverrides(client, plan, account, {
-  permit2Address: deployment.addresses.coreAddrs.permit2,
+const stateOverride = await sdk.executionService.deriveStateOverrides(chainId, accountAddress, plan, {
   nativeBalance: parseEther("1000"), // optional, defaults to 1000 ETH
 })
 ```

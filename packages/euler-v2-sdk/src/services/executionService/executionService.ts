@@ -6,11 +6,9 @@ import {
 	erc20Abi,
 	getAddress,
 	type Hex,
-	maxUint48,
-	maxUint160,
 	maxUint256,
+	maxUint160,
 	type StateOverride,
-	zeroAddress,
 } from "viem";
 import type {
 	Account,
@@ -38,6 +36,7 @@ import { eVaultAbi } from "./abis/eVaultAbi.js";
 import { permit2PermitAbi } from "./abis/permit2PermitAbi.js";
 import { swapperAbi } from "./abis/swapperAbi.js";
 import { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
+import * as encodeHelpers from "./encode.js";
 import {
 	type ApproveCall,
 	type BatchItemDescription,
@@ -63,9 +62,7 @@ import {
 	type EncodeWithdrawArgs,
 	type EVCBatchItem,
 	type GetPermit2TypedDataArgs,
-	PERMIT2_TYPES,
 	type Permit2DataToSign,
-	type PermitSingleMessage,
 	type PermitSingleTypedData,
 	type PlanBorrowArgs,
 	type PlanDepositArgs,
@@ -94,6 +91,7 @@ import {
 } from "./executionServiceTypes.js";
 import {
 	type ExecuteTransactionPlanArgs,
+	type ExecuteTransactionPlanInternalArgs,
 	executeTransactionPlan,
 	type TransactionPlanExecutionResult,
 } from "./execute.js";
@@ -121,11 +119,6 @@ function requiresZeroApprovalReset(chainId: number, token: Address): boolean {
 	);
 }
 
-export type ExecuteTransactionPlanWithServiceArgs = Omit<
-	ExecuteTransactionPlanArgs,
-	"executionService" | "deploymentService"
->;
-
 export interface IExecutionService<
 	TVaultEntity extends VaultEntity = VaultEntity,
 > {
@@ -147,6 +140,17 @@ export interface IExecutionService<
 		transactionPlan: TransactionPlan,
 		options?: EstimateGasForTransactionPlanOptions,
 	): Promise<bigint>;
+
+	resolveRequiredApprovalsWithWallet(
+		args: ResolveRequiredApprovalsWithWalletArgs,
+	): TransactionPlan;
+	resolveRequiredApprovals(
+		args: ResolveRequiredApprovalsArgs,
+	): Promise<TransactionPlan>;
+	executeTransactionPlan(
+		args: ExecuteTransactionPlanArgs,
+	): Promise<TransactionPlanExecutionResult>;
+
 	encodeBatch(items: EVCBatchItem[]): Hex;
 	encodeDeposit(args: EncodeDepositArgs): EVCBatchItem[];
 	encodeMint(args: EncodeMintArgs): EVCBatchItem[];
@@ -199,12 +203,6 @@ export interface IExecutionService<
 	planMultiplyWithSwap(args: PlanMultiplyWithSwapArgs): TransactionPlan;
 	planMultiplySameAsset(args: PlanMultiplySameAssetArgs): TransactionPlan;
 
-	resolveRequiredApprovalsWithWallet(
-		args: ResolveRequiredApprovalsWithWalletArgs,
-	): TransactionPlan;
-	resolveRequiredApprovals(
-		args: ResolveRequiredApprovalsArgs,
-	): Promise<TransactionPlan>;
 	getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData;
 	describeBatch(
 		batch: EVCBatchItem[],
@@ -214,16 +212,9 @@ export interface IExecutionService<
 	mergePlans(plans: TransactionPlan[]): TransactionPlan;
 	/** Converts EVC batch items into a transaction plan (single evcBatch, no required approvals). */
 	convertBatchItemsToPlan(items: EVCBatchItem[]): TransactionPlan;
-	executeTransactionPlan(
-		args: ExecuteTransactionPlanWithServiceArgs,
-	): Promise<TransactionPlanExecutionResult>;
 }
 
-const PERMIT2_SIG_WINDOW = 60n * 60n;
 const WAD = 10n ** 18n;
-const INTEREST_CUSHION_NUMERATOR = 10_001n;
-const INTEREST_CUSHION_DENOMINATOR = 10_000n;
-
 // TODO explain how this service is coupled to the concrete abis of ERC4626, permit2 and EVK.
 // this is a helper service, not a generic one.
 export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
@@ -289,6 +280,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		this.plugins = plugins;
 	}
 
+	/** Derive storage overrides needed to simulate the plan against the current account state. */
 	async deriveStateOverrides(
 		chainId: number,
 		account: Address,
@@ -304,6 +296,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		);
 	}
 
+	/** Simulate the full transaction plan, including approval resolution and plugin-aware batch execution. */
 	async simulateTransactionPlan(
 		chainId: number,
 		account: Address,
@@ -319,6 +312,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		);
 	}
 
+	/** Estimate gas for the full transaction plan after applying the same simulation pipeline used for execution. */
 	async estimateGasForTransactionPlan(
 		chainId: number,
 		account: Address,
@@ -334,14 +328,25 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		);
 	}
 
+	/** Execute a transaction plan using caller-provided signing and send callbacks. */
 	async executeTransactionPlan(
-		args: ExecuteTransactionPlanWithServiceArgs,
+		args: ExecuteTransactionPlanArgs,
 	): Promise<TransactionPlanExecutionResult> {
-		return executeTransactionPlan({
+		const { providerService } = this;
+		if (!providerService) {
+			throw new Error(
+				"ExecutionService.executeTransactionPlan requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
+			);
+		}
+
+		const helperArgs: ExecuteTransactionPlanInternalArgs = {
 			...args,
 			executionService: this,
 			deploymentService: this.deploymentService,
-		});
+			providerService,
+		};
+
+		return executeTransactionPlan(helperArgs);
 	}
 
 	private getSimulationContext(): ExecutionSimulationContext<TVaultEntity> {
@@ -358,6 +363,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		};
 	}
 
+	private getCoreAddresses(chainId: number) {
+		return this.deploymentService.getDeployment(chainId).addresses.coreAddrs;
+	}
+
 	/**
 	 * Encodes an array of EVC batch items into a single calldata hex for `EVC.batch()`.
 	 *
@@ -365,11 +374,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Encoded calldata hex for the EVC batch call
 	 */
 	encodeBatch(items: EVCBatchItem[]): Hex {
-		return encodeFunctionData({
-			abi: ethereumVaultConnectorAbi,
-			functionName: "batch",
-			args: [items],
-		});
+		return encodeHelpers.encodeBatch(items);
 	}
 
 	/**
@@ -385,45 +390,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.permit2 - Optional Permit2 message + signature; if set, prepends a permit2 permit call so transferFrom can be used
 	 * @returns Array of EVC batch items (optional permit2, optional enableCollateral, deposit)
 	 */
-	encodeDeposit({
-		chainId,
-		vault,
-		amount,
-		receiver,
-		owner,
-		enableCollateral,
-		permit2,
-	}: EncodeDepositArgs): EVCBatchItem[] {
-		const items: EVCBatchItem[] = [];
-
-		if (permit2) {
-			const permit2Call = this.encodePermit2Call({
-				chainId,
-				owner,
-				message: permit2.message,
-				signature: permit2.signature,
-			});
-			items.push(permit2Call);
-		}
-
-		// Add enable collateral if flag is set
-		if (enableCollateral) {
-			items.push(this.encodeEnableCollateral(chainId, receiver, vault));
-		}
-
-		// Add deposit operation
-		items.push({
-			targetContract: vault,
-			onBehalfOfAccount: owner,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "deposit",
-				args: [amount, receiver],
-			}),
-		});
-
-		return items;
+	encodeDeposit({ chainId, ...args }: EncodeDepositArgs): EVCBatchItem[] {
+		const { evc, permit2 } = this.getCoreAddresses(chainId);
+		return encodeHelpers.encodeDeposit(evc, permit2, { chainId, ...args });
 	}
 
 	/**
@@ -439,45 +408,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.permit2 - Optional Permit2 message + signature for transferFrom
 	 * @returns Array of EVC batch items (optional permit2, optional enableCollateral, mint)
 	 */
-	encodeMint({
-		chainId,
-		vault,
-		shares,
-		receiver,
-		owner,
-		enableCollateral,
-		permit2,
-	}: EncodeMintArgs): EVCBatchItem[] {
-		const items: EVCBatchItem[] = [];
-
-		if (permit2) {
-			const permit2Call = this.encodePermit2Call({
-				chainId,
-				owner,
-				message: permit2.message,
-				signature: permit2.signature,
-			});
-			items.push(permit2Call);
-		}
-
-		// Add enable collateral if flag is set
-		if (enableCollateral) {
-			items.push(this.encodeEnableCollateral(chainId, receiver, vault));
-		}
-
-		// Add mint operation
-		items.push({
-			targetContract: vault,
-			onBehalfOfAccount: owner,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "mint",
-				args: [shares, receiver],
-			}),
-		});
-
-		return items;
+	encodeMint({ chainId, ...args }: EncodeMintArgs): EVCBatchItem[] {
+		const { evc, permit2 } = this.getCoreAddresses(chainId);
+		return encodeHelpers.encodeMint(evc, permit2, { chainId, ...args });
 	}
 
 	/**
@@ -492,34 +425,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.disableCollateral - If true, appends disableCollateral( owner, vault ) via EVC before withdraw
 	 * @returns Array of EVC batch items (optional disableCollateral, withdraw)
 	 */
-	encodeWithdraw({
-		chainId,
-		vault,
-		assets,
-		receiver,
-		owner,
-		disableCollateral,
-	}: EncodeWithdrawArgs): EVCBatchItem[] {
-		const items: EVCBatchItem[] = [];
-
-		// Add disable collateral if flag is set
-		if (disableCollateral) {
-			items.push(this.encodeDisableCollateral(chainId, owner, vault));
-		}
-
-		// Add withdraw operation
-		items.push({
-			targetContract: vault,
-			onBehalfOfAccount: owner,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "withdraw",
-				args: [assets, receiver, owner],
-			}),
-		});
-
-		return items;
+	encodeWithdraw({ chainId, ...args }: EncodeWithdrawArgs): EVCBatchItem[] {
+		const { evc } = this.getCoreAddresses(chainId);
+		return encodeHelpers.encodeWithdraw(evc, { chainId, ...args });
 	}
 
 	/**
@@ -534,34 +442,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.disableCollateral - If true, prepends disableCollateral( owner, vault ) via EVC
 	 * @returns Array of EVC batch items (optional disableCollateral, redeem)
 	 */
-	encodeRedeem({
-		chainId,
-		vault,
-		shares,
-		receiver,
-		owner,
-		disableCollateral,
-	}: EncodeRedeemArgs): EVCBatchItem[] {
-		const items: EVCBatchItem[] = [];
-
-		// Add disable collateral if flag is set
-		if (disableCollateral) {
-			items.push(this.encodeDisableCollateral(chainId, owner, vault));
-		}
-
-		// Add redeem operation
-		items.push({
-			targetContract: vault,
-			onBehalfOfAccount: owner,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "redeem",
-				args: [shares, receiver, owner],
-			}),
-		});
-
-		return items;
+	encodeRedeem({ chainId, ...args }: EncodeRedeemArgs): EVCBatchItem[] {
+		const { evc } = this.getCoreAddresses(chainId);
+		return encodeHelpers.encodeRedeem(evc, { chainId, ...args });
 	}
 
 	/**
@@ -583,64 +466,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of EVC batch items (optional deposit, optional disableController, optional enableController, borrow)
 	 */
 	encodeBorrow(args: EncodeBorrowArgs): EVCBatchItem[] {
-		const {
-			chainId,
-			vault,
-			amount,
-			owner,
-			borrowAccount,
-			receiver,
-			enableController = true,
-			currentController,
-			collateralVault,
-			collateralAmount,
-			enableCollateral = true,
-			collateralPermit2,
-		} = args;
-		const items: EVCBatchItem[] = [];
-
-		// Add collateral if provided
-		if (
-			collateralVault &&
-			collateralAmount !== undefined &&
-			collateralAmount > 0n
-		) {
-			const depositItems = this.encodeDeposit({
-				chainId,
-				vault: collateralVault,
-				amount: collateralAmount,
-				receiver: borrowAccount,
-				enableCollateral,
-				permit2: collateralPermit2,
-				owner: owner,
-			});
-			items.push(...depositItems);
-		}
-
-		// Add disable controller if there's a different controller enabled
-		if (currentController && currentController !== vault) {
-			items.push(
-				this.encodeDisableController(currentController, borrowAccount),
-			);
-		}
-
-		if (enableController) {
-			items.push(this.encodeEnableController(chainId, borrowAccount, vault));
-		}
-
-		// Add borrow operation
-		items.push({
-			targetContract: vault,
-			onBehalfOfAccount: borrowAccount,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "borrow",
-				args: [amount, receiver],
-			}),
-		});
-
-		return items;
+		const { evc, permit2 } = this.getCoreAddresses(args.chainId);
+		return encodeHelpers.encodeBorrow(evc, permit2, args);
 	}
 
 	/**
@@ -660,52 +487,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 */
 	encodeLiquidation({
 		chainId,
-		vault,
-		violator,
-		collateral,
-		repayAssets,
-		minYieldBalance,
-		liquidatorSubAccountAddress,
-		enableCollateral = true,
-		enableController = true,
+		...args
 	}: EncodeLiquidationArgs): EVCBatchItem[] {
-		const items: EVCBatchItem[] = [];
-
-		// Optionally enable controller for the liquidator account on the liability vault
-		if (enableController) {
-			items.push(
-				this.encodeEnableController(
-					chainId,
-					liquidatorSubAccountAddress,
-					vault,
-				),
-			);
-		}
-
-		// Perform the liquidation
-		items.push({
-			targetContract: vault,
-			onBehalfOfAccount: liquidatorSubAccountAddress,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "liquidate",
-				args: [violator, collateral, repayAssets, minYieldBalance],
-			}),
-		});
-
-		// Optionally enable collateral for the seized collateral vault on the liquidator account
-		if (enableCollateral) {
-			items.push(
-				this.encodeEnableCollateral(
-					chainId,
-					liquidatorSubAccountAddress,
-					collateral,
-				),
-			);
-		}
-
-		return items;
+		const { evc } = this.getCoreAddresses(chainId);
+		return encodeHelpers.encodeLiquidation(evc, { chainId, ...args });
 	}
 
 	/**
@@ -720,34 +505,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.enableController - If true, enables vault as controller for `to` via EVC before pullDebt (default true)
 	 * @returns Array of EVC batch items (optional enableController, pullDebt)
 	 */
-	encodePullDebt({
-		chainId,
-		vault,
-		amount,
-		from,
-		to,
-		enableController = true,
-	}: EncodePullDebtArgs): EVCBatchItem[] {
-		const items: EVCBatchItem[] = [];
-
-		// Add enable controller if flag is set
-		if (enableController) {
-			items.push(this.encodeEnableController(chainId, to, vault));
-		}
-
-		// Add pullDebt operation
-		items.push({
-			targetContract: vault,
-			onBehalfOfAccount: to,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "pullDebt",
-				args: [amount, from],
-			}),
-		});
-
-		return items;
+	encodePullDebt({ chainId, ...args }: EncodePullDebtArgs): EVCBatchItem[] {
+		const { evc } = this.getCoreAddresses(chainId);
+		return encodeHelpers.encodePullDebt(evc, { chainId, ...args });
 	}
 
 	/**
@@ -772,106 +532,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of EVC batch items
 	 */
 	encodeMultiplyWithSwap(args: EncodeMultiplyWithSwapArgs): EVCBatchItem[] {
-		const {
-			chainId,
-			collateralVault,
-			collateralAmount,
-			liabilityVault,
-			liabilityAmount,
-			longVault,
-			owner,
-			receiver,
-			enableCollateral = true,
-			enableCollateralLong = true,
-			currentController,
-			enableController = true,
-			collateralPermit2,
-			swapQuote,
-		} = args;
-		const items: EVCBatchItem[] = [];
-
-		// 1. Add permit2 for collateral if provided
-		if (collateralPermit2) {
-			const permit2Call = this.encodePermit2Call({
-				chainId,
-				owner,
-				message: collateralPermit2.message,
-				signature: collateralPermit2.signature,
-			});
-			items.push(permit2Call);
-		}
-
-		// 2. Deposit initial collateral if amount > 0
-		if (collateralAmount > 0n) {
-			// Enable collateral for collateral vault
-			if (enableCollateral) {
-				items.push(
-					this.encodeEnableCollateral(chainId, receiver, collateralVault),
-				);
-			}
-
-			// Deposit collateral
-			items.push({
-				targetContract: collateralVault,
-				onBehalfOfAccount: owner,
-				value: 0n,
-				data: encodeFunctionData({
-					abi: eVaultAbi,
-					functionName: "deposit",
-					args: [collateralAmount, receiver],
-				}),
-			});
-		}
-
-		// 3. Disable current controller if there's a different one enabled
-		if (currentController && currentController !== liabilityVault) {
-			items.push(this.encodeDisableController(currentController, receiver));
-		}
-
-		// 4. Enable controller for liability vault
-		if (enableController) {
-			items.push(
-				this.encodeEnableController(chainId, receiver, liabilityVault),
-			);
-		}
-
-		// 5. Borrow from liability vault to swapper
-		items.push({
-			targetContract: liabilityVault,
-			onBehalfOfAccount: receiver,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "borrow",
-				args: [liabilityAmount, swapQuote.swap.swapperAddress],
-			}),
-		});
-
-		// 6. Execute swap multicall
-		items.push({
-			targetContract: swapQuote.swap.swapperAddress,
-			onBehalfOfAccount: receiver,
-			value: 0n,
-			data: swapQuote.swap.swapperData,
-		});
-
-		// 7. Verify swap and skim to long vault
-		if (swapQuote.verify.type !== "skimMin") {
-			throw new Error("Invalid swap quote type for multiply - must be skimMin");
-		}
-		items.push({
-			targetContract: swapQuote.verify.verifierAddress,
-			onBehalfOfAccount: receiver,
-			value: 0n,
-			data: swapQuote.verify.verifierData,
-		});
-
-		// 8. Enable collateral on long vault
-		if (enableCollateralLong && collateralVault !== longVault) {
-			items.push(this.encodeEnableCollateral(chainId, receiver, longVault));
-		}
-
-		return items;
+		const { evc, permit2 } = this.getCoreAddresses(args.chainId);
+		return encodeHelpers.encodeMultiplyWithSwap(evc, permit2, args);
 	}
 
 	/**
@@ -895,98 +557,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of EVC batch items
 	 */
 	encodeMultiplySameAsset(args: EncodeMultiplySameAssetArgs): EVCBatchItem[] {
-		const {
-			chainId,
-			collateralVault,
-			collateralAmount,
-			liabilityVault,
-			liabilityAmount,
-			longVault,
-			owner,
-			receiver,
-			enableCollateral = true,
-			enableCollateralLong = true,
-			enableController = true,
-			currentController,
-			collateralPermit2,
-		} = args;
-		const items: EVCBatchItem[] = [];
-
-		// 1. Add permit2 for collateral if provided
-		if (collateralPermit2) {
-			const permit2Call = this.encodePermit2Call({
-				chainId,
-				owner,
-				message: collateralPermit2.message,
-				signature: collateralPermit2.signature,
-			});
-			items.push(permit2Call);
-		}
-
-		// 2. Deposit initial collateral if amount > 0
-		if (collateralAmount > 0n) {
-			// Enable collateral for collateral vault
-			if (enableCollateral) {
-				items.push(
-					this.encodeEnableCollateral(chainId, receiver, collateralVault),
-				);
-			}
-
-			// Deposit collateral
-			items.push({
-				targetContract: collateralVault,
-				onBehalfOfAccount: owner,
-				value: 0n,
-				data: encodeFunctionData({
-					abi: eVaultAbi,
-					functionName: "deposit",
-					args: [collateralAmount, receiver],
-				}),
-			});
-		}
-
-		// 3. Disable current controller if there's a different one enabled
-		if (currentController && currentController !== liabilityVault) {
-			items.push(this.encodeDisableController(currentController, receiver));
-		}
-
-		// 4. Enable controller for liability vault
-		if (enableController) {
-			items.push(
-				this.encodeEnableController(chainId, receiver, liabilityVault),
-			);
-		}
-
-		// 5. Borrow from liability vault directly to long vault
-		items.push({
-			targetContract: liabilityVault,
-			onBehalfOfAccount: receiver,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "borrow",
-				args: [liabilityAmount, longVault],
-			}),
-		});
-
-		// 6. Skim borrowed assets to position
-		items.push({
-			targetContract: longVault,
-			onBehalfOfAccount: receiver,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "skim",
-				args: [liabilityAmount, receiver],
-			}),
-		});
-
-		// 7. Enable collateral on long vault
-		if (enableCollateralLong) {
-			items.push(this.encodeEnableCollateral(chainId, receiver, longVault));
-		}
-
-		return items;
+		const { evc, permit2 } = this.getCoreAddresses(args.chainId);
+		return encodeHelpers.encodeMultiplySameAsset(evc, permit2, args);
 	}
 
 	/**
@@ -1004,48 +576,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of EVC batch items (optional permit2, repay, optional disableController)
 	 */
 	encodeRepayFromWallet(args: EncodeRepayFromWalletArgs): EVCBatchItem[] {
-		const {
-			chainId,
-			sender,
-			liabilityVault,
-			liabilityAmount,
-			receiver,
-			disableControllerOnMax = true,
-			isMax = false,
-			permit2,
-		} = args;
-
-		const items: EVCBatchItem[] = [];
-
-		if (permit2) {
-			const permit2Call = this.encodePermit2Call({
-				chainId,
-				owner: sender,
-				message: permit2.message,
-				signature: permit2.signature,
-			});
-			items.push(permit2Call);
-		}
-
-		// Repay operation
-		items.push({
-			targetContract: liabilityVault,
-			onBehalfOfAccount: sender,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "repay",
-				args: [isMax ? maxUint256 : liabilityAmount, receiver],
-			}),
-		});
-
-		// Disable controller if needed (for max repay)
-		// Sender must be allowed to act on behalf of receiver (sender is subaccount of receiver or is an operator)
-		if (disableControllerOnMax && isMax) {
-			items.push(this.encodeDisableController(liabilityVault, receiver));
-		}
-
-		return items;
+		const { permit2 } = this.getCoreAddresses(args.chainId);
+		return encodeHelpers.encodeRepayFromWallet(permit2, args);
 	}
 
 	/**
@@ -1067,45 +599,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of EVC batch items. Throws if fromAsset !== liabilityAsset.
 	 */
 	encodeRepayFromDeposit(args: EncodeRepayFromDepositArgs): EVCBatchItem[] {
-		const {
-			chainId,
-			liabilityVault,
-			liabilityAsset,
-			liabilityAmount,
-			from,
-			receiver,
-			fromVault,
-			fromAsset,
-			disableControllerOnMax = true,
-			isMax = false,
-		} = args;
-
-		// PATH 1: Same asset, same vault - use repayWithShares
-		if (fromAsset === liabilityAsset && fromVault === liabilityVault) {
-			return this.encodeRepayWithSharesSameAssetAndVault({
-				chainId,
-				vault: liabilityVault,
-				amount: liabilityAmount,
-				receiver,
-				from,
-				disableController: isMax && disableControllerOnMax,
-			});
-		}
-
-		// PATH 2: Same asset, different vault
-		if (fromAsset === liabilityAsset) {
-			return this.encodeRepayWithSharesSameAssetDifferentVault({
-				fromVault,
-				toVault: liabilityVault,
-				amount: liabilityAmount,
-				receiver,
-				from,
-				isMax,
-				disableControllerOnMax,
-			});
-		}
-
-		throw new Error("encodeRepayFromDeposit only supports same-asset paths");
+		return encodeHelpers.encodeRepayFromDeposit(args);
 	}
 
 	/**
@@ -1121,65 +615,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of EVC batch items (withdraw, swap, verify/repay, optional disableController)
 	 */
 	encodeRepayWithSwap(args: EncodeRepayWithSwapArgs): EVCBatchItem[] {
-		const {
-			swapQuote,
-			maxWithdraw,
-			isMax = false,
-			disableControllerOnMax = true,
-		} = args;
-		const items: EVCBatchItem[] = [];
-
-		// Determine withdraw amount (cap to available amount if provided)
-		const withdrawAmount =
-			maxWithdraw &&
-			maxWithdraw < BigInt(swapQuote.amountInMax || swapQuote.amountIn)
-				? maxWithdraw
-				: BigInt(swapQuote.amountInMax || swapQuote.amountIn);
-
-		// 1. Withdraw collateral from vault to swapper
-		items.push({
-			targetContract: swapQuote.vaultIn,
-			onBehalfOfAccount: swapQuote.accountIn,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "withdraw",
-				args: [
-					withdrawAmount,
-					swapQuote.swap.swapperAddress,
-					swapQuote.accountIn,
-				],
-			}),
-		});
-
-		// 2. Execute swap multicall
-		items.push({
-			targetContract: swapQuote.swap.swapperAddress,
-			onBehalfOfAccount: swapQuote.accountIn,
-			value: 0n,
-			data: swapQuote.swap.swapperData,
-		});
-
-		// 3. Verify swap and repay (verifyDebtMax handles the repay)
-		if (swapQuote.verify.type !== "debtMax") {
-			throw new Error("Invalid swap quote type for repay - must be debtMax");
-		}
-
-		items.push({
-			targetContract: swapQuote.verify.verifierAddress,
-			onBehalfOfAccount: swapQuote.verify.account,
-			value: 0n,
-			data: swapQuote.verify.verifierData,
-		});
-
-		// 4. Disable controller if needed (for max repay)
-		if (isMax && disableControllerOnMax) {
-			items.push(
-				this.encodeDisableController(swapQuote.receiver, swapQuote.accountOut),
-			);
-		}
-
-		return items;
+		return encodeHelpers.encodeRepayWithSwap(args);
 	}
 
 	/**
@@ -1197,60 +633,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	encodeDepositWithSwapFromWallet(
 		args: EncodeDepositWithSwapFromWalletArgs,
 	): EVCBatchItem[] {
-		const {
-			chainId,
-			swapQuote,
-			amount,
-			sender,
-			enableCollateral = true,
-		} = args;
-
-		const items: EVCBatchItem[] = [];
-
-		// 1. Transfer tokens from sender's wallet to swapper via SwapVerifier.transferFromSender
-		items.push({
-			targetContract: swapQuote.verify.verifierAddress,
-			onBehalfOfAccount: sender,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: swapVerifierAbi,
-				functionName: "transferFromSender",
-				args: [
-					swapQuote.tokenIn.address,
-					amount,
-					swapQuote.swap.swapperAddress,
-				],
-			}),
-		});
-
-		// 2. Execute swap multicall
-		items.push({
-			targetContract: swapQuote.swap.swapperAddress,
-			onBehalfOfAccount: sender,
-			value: 0n,
-			data: swapQuote.swap.swapperData,
-		});
-
-		// 3. Verify swap
-		items.push({
-			targetContract: swapQuote.verify.verifierAddress,
-			onBehalfOfAccount: swapQuote.accountOut || sender,
-			value: 0n,
-			data: swapQuote.verify.verifierData,
-		});
-
-		// 4. Enable collateral if needed
-		if (enableCollateral && swapQuote.receiver) {
-			items.push(
-				this.encodeEnableCollateral(
-					chainId,
-					swapQuote.accountOut || sender,
-					swapQuote.receiver,
-				),
-			);
-		}
-
-		return items;
+		const { evc } = this.getCoreAddresses(args.chainId);
+		return encodeHelpers.encodeDepositWithSwapFromWallet(evc, args);
 	}
 
 	/**
@@ -1267,45 +651,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of EVC batch items (transferFromSender, swap, verify)
 	 */
 	encodeSwapFromWallet(args: EncodeSwapFromWalletArgs): EVCBatchItem[] {
-		const { swapQuote, amount, sender } = args;
-		const items: EVCBatchItem[] = [];
-
-		if (swapQuote.verify.type !== "transferMin") {
-			throw new Error(
-				"Invalid swap quote type for wallet swap - must be transferMin",
-			);
-		}
-
-		items.push({
-			targetContract: swapQuote.verify.verifierAddress,
-			onBehalfOfAccount: sender,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: swapVerifierAbi,
-				functionName: "transferFromSender",
-				args: [
-					swapQuote.tokenIn.address,
-					amount,
-					swapQuote.swap.swapperAddress,
-				],
-			}),
-		});
-
-		items.push({
-			targetContract: swapQuote.swap.swapperAddress,
-			onBehalfOfAccount: sender,
-			value: 0n,
-			data: swapQuote.swap.swapperData,
-		});
-
-		items.push({
-			targetContract: swapQuote.verify.verifierAddress,
-			onBehalfOfAccount: sender,
-			value: 0n,
-			data: swapQuote.verify.verifierData,
-		});
-
-		return items;
+		return encodeHelpers.encodeSwapFromWallet(args);
 	}
 
 	/**
@@ -1321,77 +667,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of EVC batch items (withdraw, swap, verify/skim, optional disableCollateral, optional enableCollateral)
 	 */
 	encodeSwapCollateral(args: EncodeSwapCollateralArgs): EVCBatchItem[] {
-		const {
-			chainId,
-			swapQuote,
-			enableCollateral = true,
-			disableCollateralOnMax = true,
-			isMax = false,
-		} = args;
-
-		const items: EVCBatchItem[] = [];
-
-		// 1. Withdraw from source vault to swapper
-		const withdrawAmount = BigInt(swapQuote.amountInMax || swapQuote.amountIn);
-		items.push({
-			targetContract: swapQuote.vaultIn,
-			onBehalfOfAccount: swapQuote.accountIn,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "withdraw",
-				args: [
-					withdrawAmount,
-					swapQuote.swap.swapperAddress,
-					swapQuote.accountIn,
-				],
-			}),
-		});
-
-		// 2. Execute swap multicall
-		items.push({
-			targetContract: swapQuote.swap.swapperAddress,
-			onBehalfOfAccount: swapQuote.accountIn,
-			value: 0n,
-			data: swapQuote.swap.swapperData,
-		});
-
-		// 3. Verify swap and skim
-		if (swapQuote.verify.type !== "skimMin") {
-			throw new Error(
-				"Invalid swap quote type for swap collateral - must be skimMin",
-			);
-		}
-		items.push({
-			targetContract: swapQuote.verify.verifierAddress,
-			onBehalfOfAccount: swapQuote.accountOut,
-			value: 0n,
-			data: swapQuote.verify.verifierData,
-		});
-
-		// 4. Disable collateral if needed (for max swap)
-		if (isMax && disableCollateralOnMax) {
-			items.push(
-				this.encodeDisableCollateral(
-					chainId,
-					swapQuote.accountIn,
-					swapQuote.vaultIn,
-				),
-			);
-		}
-
-		// 5. Enable collateral if needed
-		if (enableCollateral) {
-			items.push(
-				this.encodeEnableCollateral(
-					chainId,
-					swapQuote.accountOut,
-					swapQuote.receiver,
-				),
-			);
-		}
-
-		return items;
+		const { evc } = this.getCoreAddresses(args.chainId);
+		return encodeHelpers.encodeSwapCollateral(evc, args);
 	}
 
 	/**
@@ -1406,66 +683,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.isMax - If true, treats as full debt swap (can trigger disableControllerOnMax)
 	 * @returns Array of EVC batch items (optional enableController, borrow, swap, verify/repay, optional disableController)
 	 */
-	encodeSwapDebt({
-		chainId,
-		swapQuote,
-		enableController = true,
-		disableControllerOnMax = true,
-		isMax = false,
-	}: EncodeSwapDebtArgs): EVCBatchItem[] {
-		const items: EVCBatchItem[] = [];
-
-		// Enable controller if needed
-		if (enableController) {
-			items.push(
-				this.encodeEnableController(
-					chainId,
-					swapQuote.accountOut,
-					swapQuote.vaultIn,
-				),
-			);
-		}
-
-		// Borrow from source vault
-		const borrowAmount = BigInt(swapQuote.amountInMax);
-		items.push({
-			targetContract: swapQuote.vaultIn,
-			onBehalfOfAccount: swapQuote.accountIn,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "borrow",
-				args: [borrowAmount, swapQuote.swap.swapperAddress],
-			}),
-		});
-
-		// Execute swap multicall
-		items.push({
-			targetContract: swapQuote.swap.swapperAddress,
-			onBehalfOfAccount: swapQuote.accountIn,
-			value: 0n,
-			data: swapQuote.swap.swapperData,
-		});
-
-		// Verify swap and skim
-		if (swapQuote.verify.type !== "debtMax") {
-			throw new Error("Invalid swap quote type for repay - must be debtMax");
-		}
-		items.push({
-			targetContract: swapQuote.verify.verifierAddress,
-			onBehalfOfAccount: swapQuote.accountOut,
-			value: 0n,
-			data: swapQuote.verify.verifierData,
-		});
-
-		// Disable controller if needed (for max swap)
-		if (isMax && disableControllerOnMax) {
-			items.push(
-				this.encodeDisableController(swapQuote.receiver, swapQuote.accountIn),
-			);
-		}
-
-		return items;
+	encodeSwapDebt(args: EncodeSwapDebtArgs): EVCBatchItem[] {
+		const { evc } = this.getCoreAddresses(args.chainId);
+		return encodeHelpers.encodeSwapDebt(evc, args);
 	}
 
 	/**
@@ -1488,53 +708,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	encodeMigrateSameAssetCollateral(
 		args: EncodeMigrateSameAssetCollateralArgs,
 	): EVCBatchItem[] {
-		const {
-			chainId,
-			fromVault,
-			toVault,
-			amount,
-			account,
-			isMax = false,
-			maxShares,
-			enableCollateralTo = false,
-			disableCollateralFrom = false,
-		} = args;
-
-		const items: EVCBatchItem[] = [];
-
-		items.push({
-			targetContract: fromVault,
-			onBehalfOfAccount: account,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: isMax ? "redeem" : "withdraw",
-				args: isMax
-					? [maxShares ?? maxUint256, toVault, account]
-					: [amount, toVault, account],
-			}),
-		});
-
-		items.push({
-			targetContract: toVault,
-			onBehalfOfAccount: account,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "skim",
-				args: [amount, account],
-			}),
-		});
-
-		if (enableCollateralTo) {
-			items.push(this.encodeEnableCollateral(chainId, account, toVault));
-		}
-
-		if (disableCollateralFrom) {
-			items.push(this.encodeDisableCollateral(chainId, account, fromVault));
-		}
-
-		return items;
+		const { evc } = this.getCoreAddresses(args.chainId);
+		return encodeHelpers.encodeMigrateSameAssetCollateral(evc, args);
 	}
 
 	/**
@@ -1557,115 +732,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	encodeMigrateSameAssetDebt(
 		args: EncodeMigrateSameAssetDebtArgs,
 	): EVCBatchItem[] {
-		const {
-			chainId,
-			oldLiabilityVault,
-			newLiabilityVault,
-			amount,
-			account,
-			enableController = true,
-			disableController = true,
-			sweepExcess = true,
-			transferRemainingSharesTo,
-		} = args;
-
-		if (amount === maxUint256) {
-			throw new Error("Amount is maxUint256, cannot size debt migration");
-		}
-
-		const amountWithExtra =
-			(amount * INTEREST_CUSHION_NUMERATOR) / INTEREST_CUSHION_DENOMINATOR;
-
-		if (amountWithExtra >= maxUint256) {
-			throw new Error("Amount with extra exceeds maxUint256");
-		}
-
-		const items: EVCBatchItem[] = [];
-
-		if (enableController) {
-			items.push(
-				this.encodeEnableController(chainId, account, newLiabilityVault),
-			);
-		}
-
-		items.push({
-			targetContract: newLiabilityVault,
-			onBehalfOfAccount: account,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "borrow",
-				args: [amountWithExtra, oldLiabilityVault],
-			}),
-		});
-
-		items.push({
-			targetContract: oldLiabilityVault,
-			onBehalfOfAccount: account,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "skim",
-				args: [amountWithExtra, account],
-			}),
-		});
-
-		items.push({
-			targetContract: oldLiabilityVault,
-			onBehalfOfAccount: account,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "repayWithShares",
-				args: [maxUint256, account],
-			}),
-		});
-
-		if (disableController) {
-			items.push(this.encodeDisableController(oldLiabilityVault, account));
-		}
-
-		if (sweepExcess) {
-			items.push({
-				targetContract: oldLiabilityVault,
-				onBehalfOfAccount: account,
-				value: 0n,
-				data: encodeFunctionData({
-					abi: eVaultAbi,
-					functionName: "redeem",
-					args: [maxUint256, newLiabilityVault, account],
-				}),
-			});
-
-			items.push({
-				targetContract: newLiabilityVault,
-				onBehalfOfAccount: account,
-				value: 0n,
-				data: encodeFunctionData({
-					abi: eVaultAbi,
-					functionName: "skim",
-					args: [maxUint256, account],
-				}),
-			});
-		}
-
-		if (
-			transferRemainingSharesTo &&
-			getAddress(transferRemainingSharesTo) !== getAddress(account)
-		) {
-			items.push({
-				targetContract: newLiabilityVault,
-				onBehalfOfAccount: account,
-				value: 0n,
-				data: encodeFunctionData({
-					abi: eVaultAbi,
-					functionName: "transferFromMax",
-					args: [account, transferRemainingSharesTo],
-				}),
-			});
-		}
-
-		return items;
+		const { evc } = this.getCoreAddresses(args.chainId);
+		return encodeHelpers.encodeMigrateSameAssetDebt(evc, args);
 	}
 
 	/**
@@ -1681,40 +749,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.disableCollateralFrom - If true, prepends disableCollateral( from, vault ) via EVC before transfer
 	 * @returns Array of EVC batch items (optional disableCollateralFrom, transfer, optional enableCollateralTo)
 	 */
-	encodeTransfer({
-		chainId,
-		vault,
-		to,
-		amount,
-		from,
-		enableCollateralTo,
-		disableCollateralFrom,
-	}: EncodeTransferArgs): EVCBatchItem[] {
-		const items: EVCBatchItem[] = [];
-
-		// Add disable collateral from sender if flag is set
-		if (disableCollateralFrom) {
-			items.push(this.encodeDisableCollateral(chainId, from, vault));
-		}
-
-		// Add transfer operation
-		items.push({
-			targetContract: vault,
-			onBehalfOfAccount: from,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "transfer",
-				args: [to, amount],
-			}),
-		});
-
-		// Add enable collateral to receiver if flag is set
-		if (enableCollateralTo) {
-			items.push(this.encodeEnableCollateral(chainId, to, vault));
-		}
-
-		return items;
+	encodeTransfer({ chainId, ...args }: EncodeTransferArgs): EVCBatchItem[] {
+		const { evc } = this.getCoreAddresses(chainId);
+		return encodeHelpers.encodeTransfer(evc, { chainId, ...args });
 	}
 
 	/**
@@ -1729,20 +766,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Single EVC batch item (targetContract = Permit2, permit call)
 	 */
 	encodePermit2Call(args: EncodePermit2CallArgs): EVCBatchItem {
-		const { chainId, owner, message, signature } = args;
-		const deployment = this.deploymentService.getDeployment(chainId);
-		const permit2 = deployment.addresses.coreAddrs.permit2;
-
-		return {
-			targetContract: permit2,
-			onBehalfOfAccount: owner,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: permit2PermitAbi,
-				functionName: "permit",
-				args: [owner, message, signature],
-			}),
-		};
+		const { permit2 } = this.getCoreAddresses(args.chainId);
+		return encodeHelpers.encodePermit2Call(permit2, args);
 	}
 
 	encodeEnableCollateral(
@@ -1750,18 +775,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		account: Address,
 		vault: Address,
 	): EVCBatchItem {
-		const deployment = this.deploymentService.getDeployment(chainId);
-		const evc = deployment.addresses.coreAddrs.evc;
-		return {
-			targetContract: evc,
-			onBehalfOfAccount: zeroAddress,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: ethereumVaultConnectorAbi,
-				functionName: "enableCollateral",
-				args: [account, vault],
-			}),
-		};
+		const { evc } = this.getCoreAddresses(chainId);
+		return encodeHelpers.encodeEnableCollateral(evc, account, vault);
 	}
 
 	encodeDisableCollateral(
@@ -1769,18 +784,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		account: Address,
 		vault: Address,
 	): EVCBatchItem {
-		const deployment = this.deploymentService.getDeployment(chainId);
-		const evc = deployment.addresses.coreAddrs.evc;
-		return {
-			targetContract: evc,
-			onBehalfOfAccount: zeroAddress,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: ethereumVaultConnectorAbi,
-				functionName: "disableCollateral",
-				args: [account, vault],
-			}),
-		};
+		const { evc } = this.getCoreAddresses(chainId);
+		return encodeHelpers.encodeDisableCollateral(evc, account, vault);
 	}
 
 	encodeEnableController(
@@ -1788,31 +793,12 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		account: Address,
 		vault: Address,
 	): EVCBatchItem {
-		const deployment = this.deploymentService.getDeployment(chainId);
-		const evc = deployment.addresses.coreAddrs.evc;
-		return {
-			targetContract: evc,
-			onBehalfOfAccount: zeroAddress,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: ethereumVaultConnectorAbi,
-				functionName: "enableController",
-				args: [account, vault],
-			}),
-		};
+		const { evc } = this.getCoreAddresses(chainId);
+		return encodeHelpers.encodeEnableController(evc, account, vault);
 	}
 
 	encodeDisableController(vault: Address, account: Address): EVCBatchItem {
-		return {
-			targetContract: vault,
-			onBehalfOfAccount: account,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "disableController",
-				args: [],
-			}),
-		};
+		return encodeHelpers.encodeDisableController(vault, account);
 	}
 
 	/**
@@ -1830,34 +816,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns EIP-712 typed data (domain, types, primaryType, message) for signing
 	 */
 	getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData {
-		const nowInSeconds = () => BigInt(Math.floor(Date.now() / 1000));
-
-		const { chainId, token, amount, spender, nonce, sigDeadline, expiration } =
-			args;
-		const deployment = this.deploymentService.getDeployment(chainId);
-		const permit2 = deployment.addresses.coreAddrs.permit2;
-
-		const permitSingle = {
-			details: {
-				token,
-				amount: amount > maxUint160 ? maxUint160 : amount,
-				expiration: expiration ?? Number(maxUint48),
-				nonce,
-			},
-			spender,
-			sigDeadline: sigDeadline ?? nowInSeconds() + PERMIT2_SIG_WINDOW,
-		};
-
-		return {
-			domain: {
-				name: "Permit2",
-				chainId,
-				verifyingContract: permit2,
-			},
-			types: PERMIT2_TYPES,
-			primaryType: "PermitSingle",
-			message: permitSingle as PermitSingleMessage,
-		};
+		const { permit2 } = this.getCoreAddresses(args.chainId);
+		return encodeHelpers.getPermit2TypedData(permit2, args);
 	}
 
 	/**
@@ -2011,182 +971,12 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		return [{ type: "evcBatch", items }];
 	}
 
-	/**
-	 * Encodes batch items for repaying with shares from the same asset and vault.
-	 */
-	private encodeRepayWithSharesSameAssetAndVault({
-		chainId: _chainId,
-		vault,
-		amount,
-		from,
-		receiver,
-		disableController,
-	}: {
-		chainId: number;
-		vault: Address;
-		amount: bigint;
-		from: Address;
-		receiver: Address;
-		disableController: boolean;
-	}): EVCBatchItem[] {
-		const items: EVCBatchItem[] = [];
-
-		// Repay with shares
-		items.push({
-			targetContract: vault,
-			onBehalfOfAccount: from,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "repayWithShares",
-				args: [amount, receiver],
-			}),
-		});
-
-		// Disable controller if needed (for max repay)
-		if (disableController) {
-			items.push(this.encodeDisableController(vault, receiver));
-		}
-
-		return items;
-	}
-
-	/**
-	 * Encodes batch items for repaying with shares from the same asset in a different vault.
-	 * Partial repay withdraws source assets directly into the liability vault, skims them, then burns the skimmed shares.
-	 * Full repay withdraws with a 1 bps interest cushion, skims into the liability vault, repays max, and optionally disables the controller.
-	 */
-	private encodeRepayWithSharesSameAssetDifferentVault({
-		fromVault,
-		toVault,
-		amount, // if isMax, this should be the total current debt
-		receiver,
-		from,
-		isMax,
-		disableControllerOnMax,
-	}: {
-		fromVault: Address;
-		toVault: Address;
-		amount: bigint;
-		receiver: Address;
-		from: Address;
-		isMax: boolean;
-		disableControllerOnMax: boolean;
-	}): EVCBatchItem[] {
-		const items: EVCBatchItem[] = [];
-
-		if (isMax) {
-			// if amount was max uint, skim and repay with shares would not revert if after withdraw funds were skimmed
-			// by other party
-			if (amount == maxUint256) {
-				throw new Error("Amount is maxUint256, cannot be used for max repay");
-			}
-			// For max repay: withdraw full debt amount +1 BPS to cover interest, then skim, then repayWithShares max
-			const amountWithExtra =
-				(amount * INTEREST_CUSHION_NUMERATOR) / INTEREST_CUSHION_DENOMINATOR;
-
-			if (amountWithExtra >= maxUint256) {
-				throw new Error("Amount with extra exceeds maxUint256");
-			}
-
-			// 1. Withdraw from the source vault directly to the liability vault.
-			items.push({
-				targetContract: fromVault,
-				onBehalfOfAccount: from,
-				value: 0n,
-				data: encodeFunctionData({
-					abi: eVaultAbi,
-					functionName: "withdraw",
-					args: [amountWithExtra, toVault, from],
-				}),
-			});
-
-			// 2. Skim the cushioned withdrawal into the borrow sub-account.
-			items.push({
-				targetContract: toVault,
-				onBehalfOfAccount: receiver,
-				value: 0n,
-				data: encodeFunctionData({
-					abi: eVaultAbi,
-					functionName: "skim",
-					args: [amountWithExtra, receiver],
-				}),
-			});
-
-			// 3. Burn shares to repay all debt.
-			items.push({
-				targetContract: toVault,
-				onBehalfOfAccount: receiver,
-				value: 0n,
-				data: encodeFunctionData({
-					abi: eVaultAbi,
-					functionName: "repayWithShares",
-					// max is ok here because the skimmed shares cover the full debt.
-					args: [maxUint256, receiver],
-				}),
-			});
-
-			// 4. Disable controller if needed.
-			if (disableControllerOnMax) {
-				items.push(this.encodeDisableController(toVault, receiver));
-			}
-		} else {
-			// For partial repay: withdraw, then repay exact amount
-			// 1. Withdraw from source vault directly to the liability vault.
-			items.push({
-				targetContract: fromVault,
-				onBehalfOfAccount: from,
-				value: 0n,
-				data: encodeFunctionData({
-					abi: eVaultAbi,
-					functionName: "withdraw",
-					args: [amount, toVault, from],
-				}),
-			});
-
-			// 2. Skim the received assets into the borrow sub-account.
-			items.push({
-				targetContract: toVault,
-				onBehalfOfAccount: receiver,
-				value: 0n,
-				data: encodeFunctionData({
-					abi: eVaultAbi,
-					functionName: "skim",
-					args: [amount, receiver],
-				}),
-			});
-
-			// 3. Burn the skimmed shares to repay debt.
-			items.push({
-				targetContract: toVault,
-				onBehalfOfAccount: receiver,
-				value: 0n,
-				data: encodeFunctionData({
-					abi: eVaultAbi,
-					functionName: "repayWithShares",
-					args: [amount > 0n ? amount - 1n : 0n, receiver],
-				}),
-			});
-		}
-
-		return items;
-	}
-
 	private encodeTransferFromMax(
 		vault: Address,
 		from: Address,
 		to: Address,
 	): EVCBatchItem {
-		return {
-			targetContract: vault,
-			onBehalfOfAccount: from,
-			value: 0n,
-			data: encodeFunctionData({
-				abi: eVaultAbi,
-				functionName: "transferFromMax",
-				args: [from, to],
-			}),
-		};
+		return encodeHelpers.encodeTransferFromMax(vault, from, to);
 	}
 
 	/**

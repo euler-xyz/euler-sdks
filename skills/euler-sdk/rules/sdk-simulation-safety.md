@@ -12,7 +12,7 @@ Simulate any non-trivial plan before execution, especially swaps, leverage, debt
 **Correct simulation flow:**
 
 ```typescript
-const result = await sdk.simulationService.simulateTransactionPlan(
+const result = await sdk.executionService.simulateTransactionPlan(
   chainId,
   owner,
   plan,

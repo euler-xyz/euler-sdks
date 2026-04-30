@@ -11,7 +11,6 @@ import {
   useWalletBalance,
 } from "../queries/sdkQueries.ts";
 import {
-  executeTransactionPlan,
   type ERC4626Vault,
   type EVault,
   type EulerEarn,
@@ -20,7 +19,6 @@ import { formatUnits, parseUnits, type Address } from "viem";
 import {
   useAccount,
   useChainId,
-  usePublicClient,
   useSwitchChain,
   useWalletClient,
 } from "wagmi";
@@ -33,7 +31,13 @@ import { getEffectiveBorrowApy, getEffectiveSupplyApy } from "../utils/apy.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
-import { formatTransactionPlanError, toPlanProgress, type PlanProgress } from "../utils/txProgress.ts";
+import { ExecutionProgress } from "../components/ExecutionProgress.tsx";
+import {
+  formatTransactionPlanError,
+  toPlanProgress,
+  type PlanProgress,
+  walletExecutionCallbacks,
+} from "../utils/txProgress.ts";
 import { ALL_CHAIN_IDS, EARN_CHAIN_IDS } from "../config/chains.ts";
 
 export type VaultListTab = "evaults" | "eulerEarn" | "securitize";
@@ -210,6 +214,10 @@ function balanceToUsdWad(
   return (balance * priceWad) / (10n ** BigInt(decimals));
 }
 
+function getMarketName(vault: EVault): string | undefined {
+  return vault.eulerLabel?.products[0]?.name ?? vault.shares.name;
+}
+
 function DepositFormRow({
   vault,
   chainId,
@@ -225,7 +233,6 @@ function DepositFormRow({
   const { address: walletAddress, isConnected } = useAccount();
   const walletChainId = useChainId();
   const { data: walletClient } = useWalletClient({ chainId });
-  const publicClient = usePublicClient({ chainId });
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   const [amount, setAmount] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -277,7 +284,7 @@ function DepositFormRow({
       return;
     }
 
-    if (!walletClient || !publicClient) {
+    if (!walletClient) {
       setError("Wallet client not ready yet. Retry in a second.");
       return;
     }
@@ -310,7 +317,7 @@ function DepositFormRow({
         })
       );
 
-      let plan = sdk.executionService.planDeposit({
+      const plan = sdk.executionService.planDeposit({
         vault: vault.address,
         amount: amountRaw,
         receiver: walletAddress as Address,
@@ -319,25 +326,13 @@ function DepositFormRow({
         enableCollateral: false,
       });
 
-      plan = await sdk.executionService.resolveRequiredApprovals({
-        plan,
-        chainId,
-        account: walletAddress as Address,
-        usePermit2: true,
-        unlimitedApproval: false,
-      });
-
       setProgress({ completed: 0, total: plan.length });
 
-      await executeTransactionPlan({
+      await sdk.executionService.executeTransactionPlan({
         plan,
-        executionService: sdk.executionService,
-        deploymentService: sdk.deploymentService,
         chainId,
-        walletClient,
-        publicClient,
-        chain: publicClient.chain,
         account: walletAddress as Address,
+        ...walletExecutionCallbacks(walletClient),
         usePermit2: true,
         unlimitedApproval: false,
         onProgress: (progress) => {
@@ -433,26 +428,7 @@ function DepositFormRow({
                   </button>
                 </div>
               </div>
-              {progress && (
-                <div className="plan-progress">
-                  <div className="plan-progress-label">
-                    Progress: {progress.completed}/{progress.total}
-                  </div>
-                  {progress.status && (
-                    <div className="plan-progress-status">{progress.status}</div>
-                  )}
-                  <div className="plan-progress-bar">
-                    <div
-                      className="plan-progress-fill"
-                      style={{
-                        width: `${Math.round(
-                          (progress.completed / Math.max(progress.total, 1)) * 100
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
+              {progress && <ExecutionProgress progress={progress} label="Supply execution" />}
               {success && <div className="success-message">{success}</div>}
               {error && <div className="error-message">{error}</div>}
             </>
@@ -549,7 +525,7 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
   const eVaultMarkets = useMemo(() => {
     const byName = new Map<string, bigint>();
     for (const vault of eVaults) {
-      const market = vault.eulerLabel?.products[0]?.name ?? vault.eulerLabel?.vault.name;
+      const market = getMarketName(vault);
       if (!market) continue;
       const suppliedUsd = calcVaultSupplyUsd(vault) ?? 0n;
       byName.set(market, (byName.get(market) ?? 0n) + suppliedUsd);
@@ -600,7 +576,7 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
         return false;
       }
       if (marketFilter !== "all") {
-        const market = vault.eulerLabel?.products[0]?.name ?? vault.eulerLabel?.vault.name;
+        const market = getMarketName(vault);
         if (market !== marketFilter) return false;
       }
       if (assetFilter !== "all") {
@@ -868,7 +844,7 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
                           <td>{index + 1}</td>
                           <td>{vault.chainName}</td>
                           <td>
-                            {renderFieldIcon(vault.chainId, vault.address, ["$.shares.name", "$.eulerLabel.vault.name", "$.eulerLabel.products"])}
+                            {renderFieldIcon(vault.chainId, vault.address, ["$.shares.name", "$.eulerLabel.products"])}
                             {vault.shares.name || "-"}
                           </td>
                           <td>
@@ -1030,7 +1006,7 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
                             <td>{index + 1}</td>
                             <td>{vault.chainName}</td>
                             <td>
-                              {renderFieldIcon(vault.chainId, vault.address, ["$.shares.name", "$.eulerLabel.vault.name"], "leading")}
+                              {renderFieldIcon(vault.chainId, vault.address, ["$.shares.name", "$.eulerLabel.products"], "leading")}
                               {vault.shares.name || "-"}
                             </td>
                             <td>

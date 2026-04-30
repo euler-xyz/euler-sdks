@@ -55,6 +55,12 @@ function createExecutorMocks() {
 			addresses: { coreAddrs: { evc: EVC, permit2: PERMIT2 } },
 		}),
 	} as never;
+	const providerService = {
+		getProvider: () => publicClient,
+	} as never;
+	const walletService = {
+		fetchWallet: async () => ({ result: {} }),
+	} as never;
 	const executionService = {
 		resolveRequiredApprovals: async ({ plan }: { plan: TransactionPlan }) => plan,
 		encodeBatch: (items: EVCBatchItem[]) => {
@@ -90,6 +96,8 @@ function createExecutorMocks() {
 	return {
 		executionService,
 		deploymentService,
+		providerService,
+		walletService,
 		publicClient,
 		walletClient,
 		sent,
@@ -103,7 +111,7 @@ test("executeTransactionPlan sends approvals before the EVC batch and waits for 
 	const {
 		executionService,
 		deploymentService,
-		publicClient,
+		providerService,
 		walletClient,
 		sent,
 		waits,
@@ -144,10 +152,10 @@ test("executeTransactionPlan sends approvals before the EVC batch and waits for 
 		plan,
 		executionService,
 		deploymentService,
+		providerService,
 		chainId: 1,
 		account: ACCOUNT,
-		walletClient,
-		publicClient,
+		sendTransaction: walletClient.sendTransaction,
 	});
 
 	assert.equal(sent.length, 2);
@@ -163,7 +171,7 @@ test("executeTransactionPlan prepends signed Permit2 calls to the next EVC batch
 	const {
 		executionService,
 		deploymentService,
-		publicClient,
+		providerService,
 		walletClient,
 		sent,
 		encodedBatchInputs,
@@ -199,10 +207,11 @@ test("executeTransactionPlan prepends signed Permit2 calls to the next EVC batch
 		plan,
 		executionService,
 		deploymentService,
+		providerService,
 		chainId: 1,
 		account: ACCOUNT,
-		walletClient,
-		publicClient,
+		sendTransaction: walletClient.sendTransaction,
+		signTypedData: walletClient.signTypedData,
 	});
 
 	assert.equal(sent.length, 1);
@@ -212,9 +221,13 @@ test("executeTransactionPlan prepends signed Permit2 calls to the next EVC batch
 });
 
 test("ExecutionService.executeTransactionPlan executes through the service instance", async () => {
-	const { deploymentService, publicClient, walletClient, sent, waits } =
+	const { deploymentService, providerService, walletService, walletClient, sent, waits } =
 		createExecutorMocks();
-	const executionService = new ExecutionService(deploymentService);
+	const executionService = new ExecutionService(
+		deploymentService,
+		walletService,
+		providerService,
+	);
 	const batchItem: EVCBatchItem = {
 		targetContract: TARGET,
 		onBehalfOfAccount: ACCOUNT,
@@ -226,8 +239,7 @@ test("ExecutionService.executeTransactionPlan executes through the service insta
 		plan: [{ type: "evcBatch", items: [batchItem] }],
 		chainId: 1,
 		account: ACCOUNT,
-		walletClient,
-		publicClient,
+		sendTransaction: walletClient.sendTransaction,
 	});
 
 	assert.equal(sent.length, 1);

@@ -1,8 +1,10 @@
 import {
   QueryClient,
   useQuery,
+  useQueries,
   type FetchQueryOptions,
   type QueryKey,
+  type UseQueryResult,
 } from "@tanstack/react-query";
 import type {
   Account,
@@ -451,10 +453,7 @@ export async function fetchVaultAddressesFromLabelProducts(
   const addresses: Address[] = [];
 
   for (const product of Object.values(products)) {
-    for (const vault of [
-      ...(product.vaults ?? []),
-      ...(product.deprecatedVaults ?? []),
-    ]) {
+    for (const vault of product.vaults ?? []) {
       try {
         const normalized = getAddress(vault);
         const key = normalized.toLowerCase();
@@ -522,19 +521,23 @@ function logVaultFetchResults(
   console.log(`[react-sdk-example] ${kind} fetch`, {
     chainId,
     requestedCount: addresses.length,
-    requestedAddresses: addresses,
+    requestedAddressSample: addresses.slice(0, 5),
     resolvedCount: result.filter((vault): vault is VaultEntity => vault !== undefined).length,
-    resolvedVaults: result
+    resolvedVaultSample: result
       .filter((vault): vault is VaultEntity => vault !== undefined)
+      .slice(0, 5)
       .map((vault) => ({
         address: vault.address,
         name: vault.shares.name,
         symbol: vault.shares.symbol,
       })),
-    missingAddresses: result
+    missingAddressSample: result
       .map((vault, index) => (vault === undefined ? addresses[index] : undefined))
-      .filter((address): address is Address => address !== undefined),
-    diagnostics,
+      .filter((address): address is Address => address !== undefined)
+      .slice(0, 5),
+    missingCount: result.filter((vault) => vault === undefined).length,
+    diagnosticCount: diagnostics.length,
+    diagnosticSample: diagnostics.slice(0, 5),
   });
 }
 
@@ -606,6 +609,14 @@ type ChainFetchResult<TVault extends VaultEntity> = {
   vaults: ChainScopedVault<TVault>[];
   diagnostics: DiagnosticIssue[];
   failedVaults: FailedVaultFetch[];
+};
+
+type ChainFetchQueryResult<TVault extends VaultEntity> = {
+  data: ChainFetchResult<TVault> | undefined;
+  isLoading: boolean;
+  isFetching: boolean;
+  error: Error | null;
+  dataUpdatedAt: number;
 };
 
 function addChainMetadataToDiagnostics(
@@ -680,6 +691,53 @@ async function fetchAllChainsVaultDiagnostics<TVault extends VaultEntity>(
   };
 }
 
+function useChainVaultDiagnostics<TVault extends VaultEntity>(
+  queryScope: string,
+  chainIds: number[],
+  enabled: boolean,
+  fetcher: (chainId: number) => Promise<{
+    result: Array<TVault | undefined>;
+    diagnostics: DiagnosticIssue[];
+  }>
+): ChainFetchQueryResult<TVault> {
+  const results = useQueries({
+    queries: chainIds.map((chainId) => ({
+      queryKey: ["vaultsWithDiagnostics", "chain", queryScope, chainId],
+      queryFn: () => fetchAllChainsVaultDiagnostics<TVault>([chainId], fetcher),
+      enabled,
+      staleTime: STALE_TIMES.vaultsWithDiagnostics,
+    })),
+  }) as UseQueryResult<ChainFetchResult<TVault>, Error>[];
+
+  const loaded = results
+    .map((result) => result.data)
+    .filter((result): result is ChainFetchResult<TVault> => result !== undefined);
+  const data = loaded.length > 0
+    ? {
+        vaults: loaded.flatMap((item) => item.vaults),
+        diagnostics: loaded.flatMap((item) => item.diagnostics),
+        failedVaults: loaded.flatMap((item) => item.failedVaults),
+      }
+    : undefined;
+
+  const hasRenderableRows = loaded.some((item) => item.vaults.length > 0);
+  const allQueriesFinished = results.every(
+    (result) => !result.isLoading && !result.isFetching
+  );
+
+  return {
+    data,
+    isLoading:
+      enabled &&
+      chainIds.length > 0 &&
+      !hasRenderableRows &&
+      !allQueriesFinished,
+    isFetching: results.some((result) => result.isFetching),
+    error: results.find((result) => result.error)?.error ?? null,
+    dataUpdatedAt: Math.max(0, ...results.map((result) => result.dataUpdatedAt)),
+  };
+}
+
 export function useAllVaults() {
   const { sdk, chainId, enabled } = useSdkReady();
   return useQuery<VaultEntity[]>({
@@ -717,18 +775,16 @@ export function useAllVaultsWithDiagnostics() {
 export function useLabeledEVaultsWithDiagnostics(enabledOverride = true) {
   const { sdk, enabled } = useSdkReady();
   const enabledChainIds = useEnabledChainIds();
-  return useQuery<ChainFetchResult<EVault>>({
-    queryKey: ["vaultsWithDiagnostics", "allChains", "evaults", enabledChainIds],
-    queryFn: async () =>
-      fetchAllChainsVaultDiagnostics<EVault>(enabledChainIds, (chainId) =>
-        fetchLabeledVaultsWithDiagnostics(sdk!, chainId) as Promise<{
-          result: Array<EVault | undefined>;
-          diagnostics: DiagnosticIssue[];
-        }>
-      ),
-    enabled: enabled && enabledOverride,
-    staleTime: STALE_TIMES.vaultsWithDiagnostics,
-  });
+  return useChainVaultDiagnostics<EVault>(
+    "evaults",
+    enabledChainIds,
+    enabled && enabledOverride,
+    (chainId) =>
+      fetchLabeledVaultsWithDiagnostics(sdk!, chainId) as Promise<{
+        result: Array<EVault | undefined>;
+        diagnostics: DiagnosticIssue[];
+      }>
+  );
 }
 
 export function useAllEulerEarnVaultsWithDiagnostics(enabledOverride = true) {
@@ -737,18 +793,16 @@ export function useAllEulerEarnVaultsWithDiagnostics(enabledOverride = true) {
   const earnChainIds = enabledChainIds.filter((chainId) =>
     EARN_CHAIN_IDS.includes(chainId)
   );
-  return useQuery<ChainFetchResult<EulerEarn>>({
-    queryKey: ["vaultsWithDiagnostics", "allChains", "eulerEarns", earnChainIds],
-    queryFn: async () =>
-      fetchAllChainsVaultDiagnostics<EulerEarn>(earnChainIds, (chainId) =>
-        fetchEulerEarnVaultsWithDiagnostics(sdk!, chainId) as Promise<{
-          result: Array<EulerEarn | undefined>;
-          diagnostics: DiagnosticIssue[];
-        }>
-      ),
-    enabled: enabled && enabledOverride,
-    staleTime: STALE_TIMES.vaultsWithDiagnostics,
-  });
+  return useChainVaultDiagnostics<EulerEarn>(
+    "eulerEarns",
+    earnChainIds,
+    enabled && enabledOverride,
+    (chainId) =>
+      fetchEulerEarnVaultsWithDiagnostics(sdk!, chainId) as Promise<{
+        result: Array<EulerEarn | undefined>;
+        diagnostics: DiagnosticIssue[];
+      }>
+  );
 }
 
 export function useSecuritizeVaultsWithDiagnostics(enabledOverride = true) {
@@ -757,18 +811,16 @@ export function useSecuritizeVaultsWithDiagnostics(enabledOverride = true) {
   const securitizeChainIds = enabledChainIds.filter(
     (chainId) => (SECURITIZE_VAULT_ADDRESSES[chainId]?.length ?? 0) > 0
   );
-  return useQuery<ChainFetchResult<SecuritizeVault>>({
-    queryKey: ["vaultsWithDiagnostics", "allChains", "securitize", securitizeChainIds],
-    queryFn: async () =>
-      fetchAllChainsVaultDiagnostics<SecuritizeVault>(securitizeChainIds, (chainId) =>
-        fetchSecuritizeVaultsWithDiagnostics(sdk!, chainId) as Promise<{
-          result: Array<SecuritizeVault | undefined>;
-          diagnostics: DiagnosticIssue[];
-        }>
-      ),
-    enabled: enabled && enabledOverride,
-    staleTime: STALE_TIMES.vaultsWithDiagnostics,
-  });
+  return useChainVaultDiagnostics<SecuritizeVault>(
+    "securitize",
+    securitizeChainIds,
+    enabled && enabledOverride,
+    (chainId) =>
+      fetchSecuritizeVaultsWithDiagnostics(sdk!, chainId) as Promise<{
+        result: Array<SecuritizeVault | undefined>;
+        diagnostics: DiagnosticIssue[];
+      }>
+  );
 }
 
 export function useVaultDetail(chainId: number, address: string | undefined) {

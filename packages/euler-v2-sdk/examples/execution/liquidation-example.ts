@@ -2,13 +2,13 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * LIQUIDATION EXAMPLE
  * ═══════════════════════════════════════════════════════════════════════════
- * 
+ *
  * This example demonstrates how to liquidate an unhealthy account by:
  * 1. Creating a violator account with a leveraged position
  * 2. Borrowing with max LTV to make the position risky
  * 3. Advancing time to accrue interest and make the account liquidatable
  * 4. Performing a liquidation as a liquidator
- * 
+ *
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
  *   2. Start Anvil: npm run anvil
@@ -24,25 +24,20 @@ import {
   parseEther,
   getAddress,
   parseAbi,
-} from "viem";
-import { mainnet } from "viem/chains";
-
-import { executeTransactionPlan } from "@eulerxyz/euler-v2-sdk";
-import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-import { printHeader, logOperationResult, stringify } from "../utils/helpers.js";
-import { 
+  } from "viem";
+  import { mainnet } from "viem/chains";
+  import { printHeader, logOperationResult, stringify } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
   rpcUrls,
   account,
   account2 as violatorAccount,
-  initBalances,
+  initExample,
   USDC_ADDRESS,
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
   USDT_ADDRESS,
-  testClient,
-  walletClient2,
-  publicClient,
-  walletClient
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 import { Account, buildEulerSDK, eVaultAbi, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
@@ -56,10 +51,13 @@ const LIQUIDATOR_SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, LIQ
 // Amounts
 const COLLATERAL_AMOUNT = parseUnits("10000", 6); // 10,000 USDC
 const YEARS_TO_ADVANCE = 3; // Advance 3 years to accrue significant interest
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = true;
 
-async function liquidationExample() {
+async function liquidationExample({
+  walletClient,
+  walletClient2,
+  publicClient,
+  testClient,
+}: Awaited<ReturnType<typeof initExample>>) {
   // Build the SDK
   const sdk = await buildEulerSDK({
     rpcUrls,
@@ -94,24 +92,11 @@ async function liquidationExample() {
     },
   });
 
-  // Resolve approvals for violator
-  const resolvedViolatorPlan = await sdk.executionService.resolveRequiredApprovals({
-    account: violatorAccount.address,
+  await sdk.executionService.executeTransactionPlan({
     plan: violatorBorrowPlan,
     chainId: mainnet.id,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
-  });
-
-  await executeTransactionPlan({
-    plan: resolvedViolatorPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
-    chainId: mainnet.id,
     account: walletAccountAddress(walletClient2),
-    walletClient: walletClient2,
-    publicClient,
-    chain: mainnet,
+    ...exampleExecutionCallbacks(walletClient2),
     onProgress: createTransactionPlanLogger(sdk),
   });
 
@@ -134,7 +119,7 @@ async function liquidationExample() {
   // ============================================================================
   console.log(`\n📋 Step 2: Setting the USDC price to 0.5 USD..`);
 
-  await setLiquidationOracle();
+  await setLiquidationOracle({ walletClient, publicClient, testClient });
 
   // ============================================================================
   // STEP 3: Check if violator is liquidatable
@@ -182,25 +167,12 @@ async function liquidationExample() {
 
   console.log(`✓ Liquidation plan created with ${liquidationPlan.length} step(s)`);
 
-  // Resolve approvals for liquidator
-  const resolvedLiquidationPlan = await sdk.executionService.resolveRequiredApprovals({
-    plan: liquidationPlan,
-    account: account.address,
-    chainId: mainnet.id,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
-  });
-
   // Execute liquidation
-  await executeTransactionPlan({
-    plan: resolvedLiquidationPlan,
-    executionService: sdk.executionService,
-    deploymentService: sdk.deploymentService,
+  await sdk.executionService.executeTransactionPlan({
+    plan: liquidationPlan,
     chainId: mainnet.id,
     account: walletAccountAddress(walletClient),
-    walletClient: walletClient,
-    publicClient,
-    chain: mainnet,
+    ...exampleExecutionCallbacks(walletClient),
     onProgress: createTransactionPlanLogger(sdk),
   });
 
@@ -246,15 +218,19 @@ async function liquidationExample() {
 // Run the example
 // ============================================================================
 printHeader("LIQUIDATION EXAMPLE");
-initBalances()
-  .then(() => liquidationExample())
+initExample()
+  .then(liquidationExample)
   .catch((error) => {
     console.error("Error:", error);
     process.exit(1);
   });
 
 
-  export async function setLiquidationOracle() {
+  export async function setLiquidationOracle({
+    walletClient,
+    publicClient,
+    testClient,
+  }: Pick<Awaited<ReturnType<typeof initExample>>, "walletClient" | "publicClient" | "testClient">) {
     await testClient.mine({ blocks: 1 })
     await testClient.increaseTime({ seconds: 1 })
 

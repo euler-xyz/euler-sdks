@@ -4,8 +4,9 @@
 
 - `encodeX(...)` functions: low-level calldata/batch encoders
 - `planX(...)` functions: higher-level planners that use account context and include approval requirements
+- `executeTransactionPlan(...)`: service-owned execution for approval resolution, Permit2 signing, direct calls, and EVC batches
 
-This separation lets you either work with raw payloads directly or use opinionated planning helpers.
+This separation lets you either work with raw payloads directly or use opinionated planning helpers and the bundled executor.
 
 ## `encodeX` Functions (Raw Encoders)
 
@@ -47,16 +48,26 @@ Repay planners accept `cleanupOnMax`. When set on a full repay, the planner appe
 After planning, use:
 
 - `resolveRequiredApprovals(...)` or `resolveRequiredApprovalsWithWallet(...)` to resolve approval requirements into concrete `approve` calls or Permit2 signatures metadata.
+- `executeTransactionPlan(...)` to resolve any unresolved approvals, request Permit2 signatures, send direct contract calls and EVC batches, and report `onProgress` updates.
 
 ## Consuming a Plan
 
-Plans are intentionally execution-framework agnostic. How you execute/consume them depends on your app (wallet UX, relayers, transaction queueing, batching policy, etc.).
+Plans are standard data, so apps can still implement their own wallet UX, relayers, transaction queueing, or batching policy. For the default wallet-client flow, use the service executor:
 
-Reference executor:
+```typescript
+const result = await sdk.executionService.executeTransactionPlan({
+  plan,
+  chainId,
+  account,
+  sendTransaction: walletClient.sendTransaction,
+  signTypedData: walletClient.signTypedData,
+  onProgress: (progress) => {
+    console.log(progress.status, progress.completed, progress.total)
+  },
+})
+```
 
-- [`examples/utils/executor.ts`](../examples/utils/executor.ts)
-
-This example shows a practical flow:
+The bundled executor:
 
 1. Process `requiredApproval` items (approve or Permit2 path)
 2. Collect/append Permit2 calls when needed

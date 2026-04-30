@@ -123,11 +123,6 @@ async function fetchVaultDetailsExample() {
 
   if (vault.eulerLabel) {
     const label = vault.eulerLabel;
-    if (label.vault) {
-      console.log(`  Vault label:     `);
-      console.log(`  Description:     `);
-    }
-
     for (const entity of label.entities) {
       console.log(`  Entity:          ${entity.name}`);
       if (entity.url) console.log(`    URL:           ${entity.url}`);

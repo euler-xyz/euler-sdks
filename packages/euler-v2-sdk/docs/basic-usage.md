@@ -36,8 +36,14 @@ const plan = sdk.executionService.planDeposit({
   enableCollateral: true,
 })
 
-// Resolve approvals/signatures for your wallet flow, then execute the plan items.
-// See examples/utils/executor.ts for a full reference executor.
+// Resolve approvals/signatures automatically and execute the plan items.
+await sdk.executionService.executeTransactionPlan({
+  plan,
+  chainId: 1,
+  account: '0xYourAddress...',
+  sendTransaction: walletClient.sendTransaction,
+  signTypedData: walletClient.signTypedData,
+})
 ```
 
 For execution planning and transaction-plan structure, see [Execution Service](./execution-service.md).

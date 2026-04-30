@@ -2,6 +2,7 @@ import {
   approvalAmountLabel,
   decodeSmartContractErrors,
   TransactionPlanExecutionError,
+  type ExecuteTransactionPlanArgs,
   type TransactionPlanExecutionProgress,
   type TransactionPlanItem,
 } from "@eulerxyz/euler-v2-sdk";
@@ -70,6 +71,26 @@ export function toPlanProgress(progress: TransactionPlanExecutionProgress): Plan
     total: progress.total,
     current: progress.item,
     status: progressStatusLabel(progress),
+  };
+}
+
+export function walletExecutionCallbacks(
+  walletClient: {
+    sendTransaction: (...args: any[]) => Promise<any>;
+    signTypedData?: (...args: any[]) => Promise<any>;
+  }
+): Pick<ExecuteTransactionPlanArgs, "sendTransaction" | "signTypedData"> {
+  return {
+    sendTransaction: (parameters) =>
+      walletClient.sendTransaction(
+        parameters as Parameters<typeof walletClient.sendTransaction>[0]
+      ),
+    signTypedData: walletClient.signTypedData
+      ? (parameters) =>
+          walletClient.signTypedData!(
+            parameters as Parameters<NonNullable<typeof walletClient.signTypedData>>[0]
+          )
+      : undefined,
   };
 }
 

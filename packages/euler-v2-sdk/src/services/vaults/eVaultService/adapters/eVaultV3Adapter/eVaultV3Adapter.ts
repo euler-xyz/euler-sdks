@@ -24,6 +24,7 @@ import type {
 
 const unsupportedError = new Error("unsupported");
 const DEFAULT_BATCH_LIMIT = 100;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 export class EVaultV3Adapter implements IEVaultAdapter {
 	constructor(
@@ -76,6 +77,26 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		return DEFAULT_BATCH_LIMIT;
 	}
 
+	private async fetchWithTimeout(
+		url: string,
+		init: RequestInit,
+	): Promise<Response> {
+		const controller = new AbortController();
+		const timeout = setTimeout(
+			() => controller.abort(),
+			DEFAULT_REQUEST_TIMEOUT_MS,
+		);
+
+		try {
+			return await fetch(url, {
+				...init,
+				signal: controller.signal,
+			});
+		} finally {
+			clearTimeout(timeout);
+		}
+	}
+
 	queryV3EVaultDetail = createCallBundler(
 		async (
 			keys: { address: Address; chainId: number }[],
@@ -88,7 +109,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 			}
 
 			const chainResults = new Map<number, Map<string, V3VaultDetailWithIncludes>>();
-			const chainEntries = await Promise.all(
+			const settledChainEntries = await Promise.allSettled(
 				Array.from(byChain.entries()).map(async ([chainId, addresses]) => {
 					const resolved = new Map<string, V3VaultDetailWithIncludes>();
 					const dedupedAddresses = [
@@ -114,7 +135,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 								this.config.endpoint,
 								"/v3/evk/vaults/batch",
 							);
-							const response = await fetch(url, {
+							const response = await this.fetchWithTimeout(url, {
 								method: "POST",
 								headers: this.getHeaders("application/json"),
 								body: JSON.stringify(requestBody),
@@ -138,7 +159,9 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 				}),
 			);
 
-			for (const [chainId, resolved] of chainEntries) {
+			for (const settled of settledChainEntries) {
+				if (settled.status === "rejected") continue;
+				const [chainId, resolved] = settled.value;
 				chainResults.set(chainId, resolved);
 			}
 
