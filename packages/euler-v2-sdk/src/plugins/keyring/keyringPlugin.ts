@@ -1,21 +1,21 @@
 import {
+	type Abi,
 	type Address,
+	decodeFunctionData,
+	encodeFunctionData,
 	type Hex,
 	type PublicClient,
-	type Abi,
-	encodeFunctionData,
-	decodeFunctionData,
 	zeroAddress,
 } from "viem";
-import type { EulerPlugin, WritePluginContext } from "../types.js";
-import { prependToBatch } from "../types.js";
+import type { EVault } from "../../entities/EVault.js";
 import type {
 	BatchItemDescription,
 	EVCBatchItem,
 	TransactionPlan,
+	TransactionPlanItem,
 } from "../../services/executionService/executionServiceTypes.js";
-import type { EVault } from "../../entities/EVault.js";
-import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
+import { applyBuildQuery, type BuildQueryFn } from "../../utils/buildQuery.js";
+import type { EulerPlugin, WritePluginContext } from "../types.js";
 
 // ── Keyring ABIs (minimal: only the functions we need) ──
 
@@ -151,6 +151,20 @@ function isKeyringHook(vault: EVault, hookTargets: Address[]): boolean {
 	return hookTargets.some((ht) => ht.toLowerCase() === target.toLowerCase());
 }
 
+function prependToEveryBatch(
+	plan: TransactionPlan,
+	items: EVCBatchItem[],
+): TransactionPlan {
+	if (items.length === 0) return plan;
+
+	return plan.map((entry: TransactionPlanItem) => {
+		if (entry.type === "evcBatch") {
+			return { ...entry, items: [...items, ...entry.items] };
+		}
+		return entry;
+	});
+}
+
 export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 	const adapter = new KeyringPluginAdapter(config.buildQuery);
 
@@ -224,7 +238,7 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 			}
 
 			if (!items.length) return plan;
-			return prependToBatch(plan, items);
+			return prependToEveryBatch(plan, items);
 		},
 
 		decodeBatchItem(item: EVCBatchItem): BatchItemDescription | null {
