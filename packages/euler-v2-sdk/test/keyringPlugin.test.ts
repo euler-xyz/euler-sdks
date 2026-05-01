@@ -1,0 +1,105 @@
+import assert from "node:assert/strict";
+import { test } from "vitest";
+import { getAddress, type Address, type PublicClient } from "viem";
+import type { EVault } from "../src/entities/EVault.js";
+import { createKeyringPlugin } from "../src/plugins/keyring/keyringPlugin.js";
+import type {
+	EVCBatchItem,
+	TransactionPlan,
+} from "../src/services/executionService/index.js";
+
+const ACCOUNT = getAddress("0x00000000000000000000000000000000000000aA");
+const HOOK_TARGET = getAddress("0x00000000000000000000000000000000000000bB");
+const KEYRING = getAddress("0x00000000000000000000000000000000000000cC");
+const TARGET_A = getAddress("0x00000000000000000000000000000000000000dD");
+const TARGET_B = getAddress("0x00000000000000000000000000000000000000Ee");
+const CONTRACT_CALL_TARGET = getAddress(
+	"0x00000000000000000000000000000000000000Ff",
+);
+
+function createVault(hookTarget: Address): EVault {
+	return {
+		hooks: {
+			hookTarget,
+		},
+	} as EVault;
+}
+
+test("Keyring plugin prepends credential calls to every EVC batch", async () => {
+	const plugin = createKeyringPlugin({
+		hookTargets: { 1: [HOOK_TARGET] },
+		getCredentialData: async () => ({
+			trader: ACCOUNT,
+			policyId: 7,
+			chainId: 1,
+			validUntil: 123,
+			cost: 456,
+			key: "0x01",
+			signature: "0x02",
+			backdoor: "0x03",
+		}),
+	});
+
+	const provider = {
+		readContract: async ({ functionName }: { functionName: string }) => {
+			if (functionName === "checkKeyringCredentialOrWildCard") return false;
+			if (functionName === "policyId") return 7;
+			if (functionName === "keyring") return KEYRING;
+			throw new Error(`unexpected readContract: ${functionName}`);
+		},
+	} as unknown as PublicClient;
+
+	const firstBatchItem: EVCBatchItem = {
+		targetContract: TARGET_A,
+		onBehalfOfAccount: ACCOUNT,
+		value: 0n,
+		data: "0xaaaa",
+	};
+	const secondBatchItem: EVCBatchItem = {
+		targetContract: TARGET_B,
+		onBehalfOfAccount: ACCOUNT,
+		value: 0n,
+		data: "0xbbbb",
+	};
+	const plan: TransactionPlan = [
+		{ type: "evcBatch", items: [firstBatchItem] },
+		{
+			type: "contractCall",
+			chainId: 1,
+			to: CONTRACT_CALL_TARGET,
+			abi: [],
+			functionName: "noop",
+			args: [],
+			value: 0n,
+		},
+		{ type: "evcBatch", items: [secondBatchItem] },
+	];
+
+	const processed = await plugin.processPlan?.(plan, {
+		chainId: 1,
+		vaults: [createVault(HOOK_TARGET)],
+		provider,
+		sender: ACCOUNT,
+	});
+
+	assert.ok(processed);
+	const [first, middle, second] = processed;
+	assert.equal(first.type, "evcBatch");
+	assert.equal(middle.type, "contractCall");
+	assert.equal(second.type, "evcBatch");
+
+	if (first.type !== "evcBatch" || second.type !== "evcBatch") {
+		throw new Error("expected evcBatch entries");
+	}
+
+	assert.equal(first.items.length, 2);
+	assert.equal(second.items.length, 2);
+	assert.equal(first.items[0].targetContract, KEYRING);
+	assert.equal(second.items[0].targetContract, KEYRING);
+	assert.equal(first.items[0].onBehalfOfAccount, ACCOUNT);
+	assert.equal(second.items[0].onBehalfOfAccount, ACCOUNT);
+	assert.equal(first.items[0].value, 456n);
+	assert.equal(second.items[0].value, 456n);
+	assert.deepEqual(first.items[1], firstBatchItem);
+	assert.deepEqual(second.items[1], secondBatchItem);
+});
