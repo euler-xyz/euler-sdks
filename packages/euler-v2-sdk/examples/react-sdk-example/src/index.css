@@ -811,6 +811,11 @@ tr.clickable {
   color: #b00020;
 }
 
+.portfolio-metric-row .apy-tooltip,
+.portfolio-metric-row .apy-tooltip span {
+  color: #fff;
+}
+
 .portfolio-chain-section {
   margin-bottom: 48px;
 }
