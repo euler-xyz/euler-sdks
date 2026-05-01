@@ -67,6 +67,7 @@ export type EncodeBorrowArgs = {
 	enableCollateral?: boolean;
 	collateralVault?: Address;
 	collateralAmount?: bigint;
+	collateralShareSource?: CollateralShareSource;
 	collateralPermit2?: Permit2Data;
 };
 
@@ -235,6 +236,7 @@ export type EncodeMultiplyWithSwapArgs = {
 	enableCollateralLong?: boolean;
 	currentController?: Address;
 	enableController?: boolean;
+	collateralShareSource?: CollateralShareSource;
 	collateralPermit2?: Permit2Data;
 	swapQuote: SwapQuote;
 };
@@ -252,7 +254,17 @@ export type EncodeMultiplySameAssetArgs = {
 	enableCollateralLong?: boolean;
 	currentController?: Address;
 	enableController?: boolean;
+	collateralShareSource?: CollateralShareSource;
 	collateralPermit2?: Permit2Data;
+};
+
+export type CollateralShareSource = {
+	/** Sub-account or main account that already owns collateral vault shares. */
+	from: Address;
+	/** Vault-share amount to transfer into the borrow/multiply sub-account. */
+	shares: bigint;
+	/** Disable the source collateral flag before transferring shares when needed. */
+	disableCollateralFrom?: boolean;
 };
 
 export type EncodePermit2CallArgs = {
@@ -397,17 +409,28 @@ export type PlanRedeemArgs = {
 	disableCollateral?: boolean;
 };
 
+export type PlanBorrowCollateral =
+	| {
+			vault: Address;
+			amount: bigint;
+			asset: Address;
+			source?: "wallet";
+	  }
+	| {
+			vault: Address;
+			amount: bigint;
+			source: "savings";
+			from: Address;
+			disableCollateralFrom?: boolean;
+	  };
+
 export type PlanBorrowArgs = {
 	account: Account<IHasVaultAddress>;
 	vault: Address;
 	amount: bigint;
 	borrowAccount: Address;
 	receiver: Address;
-	collateral?: {
-		vault: Address;
-		amount: bigint;
-		asset: Address;
-	};
+	collateral?: PlanBorrowCollateral;
 };
 
 export type PlanLiquidationArgs = {
@@ -519,6 +542,7 @@ export type PlanMultiplyWithSwapArgs = {
 	collateralVault: Address;
 	collateralAmount: bigint;
 	collateralAsset: Address;
+	collateralShareSource?: CollateralShareSource;
 	swapQuote: SwapQuote;
 };
 
@@ -527,6 +551,7 @@ export type PlanMultiplySameAssetArgs = {
 	collateralVault: Address;
 	collateralAmount: bigint;
 	collateralAsset: Address;
+	collateralShareSource?: CollateralShareSource;
 	liabilityVault: Address;
 	liabilityAmount: bigint;
 	longVault: Address;

@@ -869,7 +869,7 @@ async function fetchSimulationDiagnostics(
 			if (deficit > prev) walletByToken.set(token, deficit);
 		}
 
-		const directAllowance = allowances?.assetForPermit2 ?? 0n;
+		const directAllowance = allowances?.assetForVault ?? 0n;
 		if (directAllowance < amount) {
 			const deficit = amount - directAllowance;
 			const prev = directByToken.get(token) ?? 0n;

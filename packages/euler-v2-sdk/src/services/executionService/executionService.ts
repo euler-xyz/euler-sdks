@@ -119,6 +119,24 @@ function requiresZeroApprovalReset(chainId: number, token: Address): boolean {
 	);
 }
 
+function isSavingsCollateral(
+	collateral: PlanBorrowArgs["collateral"],
+): collateral is Extract<
+	NonNullable<PlanBorrowArgs["collateral"]>,
+	{ source: "savings" }
+> {
+	return collateral?.source === "savings";
+}
+
+function isWalletCollateral(
+	collateral: PlanBorrowArgs["collateral"],
+): collateral is Extract<
+	NonNullable<PlanBorrowArgs["collateral"]>,
+	{ source?: "wallet" }
+> {
+	return !!collateral && !isSavingsCollateral(collateral);
+}
+
 export interface IExecutionService<
 	TVaultEntity extends VaultEntity = VaultEntity,
 > {
@@ -1501,6 +1519,12 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const { vault, amount, receiver, borrowAccount, account, collateral } =
 			args;
 		const plan: TransactionPlanItem[] = [];
+		const savingsCollateral = isSavingsCollateral(collateral)
+			? collateral
+			: undefined;
+		const walletCollateral = isWalletCollateral(collateral)
+			? collateral
+			: undefined;
 
 		const enableCollateral =
 			collateral && collateral.amount > 0n
@@ -1517,15 +1541,15 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			account?.isControllerEnabled(borrowAccount, vault) ?? false
 		);
 
-		if (collateral && collateral.amount > 0n) {
+		if (walletCollateral && walletCollateral.amount > 0n) {
 			// Approval is needed from the account owner (who owns the wallet tokens)
 			// Add approval requirement (will be resolved later with Wallet data)
 			plan.push({
 				type: "requiredApproval",
-				token: collateral.asset,
+				token: walletCollateral.asset,
 				owner: account.owner,
-				spender: collateral.vault,
-				amount: collateral.amount,
+				spender: walletCollateral.vault,
+				amount: walletCollateral.amount,
 			});
 		}
 
@@ -1540,7 +1564,20 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			currentController: currentController || undefined,
 			enableCollateral,
 			collateralVault: collateral?.vault,
-			collateralAmount: collateral?.amount,
+			collateralAmount: walletCollateral?.amount,
+			collateralShareSource: savingsCollateral
+				? {
+						from: savingsCollateral.from,
+						shares: savingsCollateral.amount,
+						disableCollateralFrom:
+							savingsCollateral.disableCollateralFrom &&
+							(account?.isCollateralEnabled(
+								savingsCollateral.from,
+								savingsCollateral.vault,
+							) ??
+								false),
+					}
+				: undefined,
 		});
 
 		plan.push({
@@ -2322,13 +2359,14 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			collateralVault,
 			collateralAmount,
 			collateralAsset,
+			collateralShareSource,
 			account,
 			swapQuote,
 		} = args;
 		const plan: TransactionPlanItem[] = [];
 
 		// 1. Check if collateral approval is needed (only if depositing collateral)
-		if (collateralAmount > 0n) {
+		if (!collateralShareSource && collateralAmount > 0n) {
 			// Add approval requirement (will be resolved later with Wallet data)
 			plan.push({
 				type: "requiredApproval",
@@ -2347,9 +2385,24 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const liabilityAmount = BigInt(swapQuote.amountIn);
 
 		// 2. Determine if collateral needs to be enabled
+		const hasCollateralInput = collateralShareSource
+			? collateralShareSource.shares > 0n
+			: collateralAmount > 0n;
 		const enableCollateral =
-			collateralAmount > 0n &&
+			hasCollateralInput &&
 			!(account?.isCollateralEnabled(receiver, collateralVault) ?? false);
+		const resolvedCollateralShareSource = collateralShareSource
+			? {
+					...collateralShareSource,
+					disableCollateralFrom:
+						collateralShareSource.disableCollateralFrom &&
+						(account?.isCollateralEnabled(
+							collateralShareSource.from,
+							collateralVault,
+						) ??
+							false),
+				}
+			: undefined;
 
 		// 3. Determine if controller needs to be enabled
 		const enableController = !(
@@ -2372,6 +2425,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			enableCollateral,
 			currentController: currentController || undefined,
 			enableController,
+			collateralShareSource: resolvedCollateralShareSource,
 			swapQuote,
 			// Permit2 is handled separately in the plan
 		});
@@ -2404,6 +2458,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			collateralVault,
 			collateralAmount,
 			collateralAsset,
+			collateralShareSource,
 			liabilityVault,
 			liabilityAmount,
 			longVault,
@@ -2413,7 +2468,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const plan: TransactionPlanItem[] = [];
 
 		// 1. Check if collateral approval is needed (only if depositing collateral)
-		if (collateralAmount > 0n) {
+		if (!collateralShareSource && collateralAmount > 0n) {
 			// Add approval requirement (will be resolved later with Wallet data)
 			plan.push({
 				type: "requiredApproval",
@@ -2425,9 +2480,24 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		}
 
 		// 2. Determine if collateral needs to be enabled
+		const hasCollateralInput = collateralShareSource
+			? collateralShareSource.shares > 0n
+			: collateralAmount > 0n;
 		const enableCollateral =
-			collateralAmount > 0n &&
+			hasCollateralInput &&
 			!(account?.isCollateralEnabled(receiver, collateralVault) ?? false);
+		const resolvedCollateralShareSource = collateralShareSource
+			? {
+					...collateralShareSource,
+					disableCollateralFrom:
+						collateralShareSource.disableCollateralFrom &&
+						(account?.isCollateralEnabled(
+							collateralShareSource.from,
+							collateralVault,
+						) ??
+							false),
+				}
+			: undefined;
 
 		// 3. Determine if controller needs to be enabled
 		const enableController = !(
@@ -2450,6 +2520,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			enableCollateral,
 			currentController: currentController || undefined,
 			enableController,
+			collateralShareSource: resolvedCollateralShareSource,
 			// Permit2 is handled separately in the plan
 		});
 

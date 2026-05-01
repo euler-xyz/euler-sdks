@@ -780,6 +780,230 @@ test("repay-from-wallet full repay skips cleanup by default", () => {
 	assert.equal(plan[1].items.length, 2);
 });
 
+test("borrow can source collateral from existing savings shares", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		isCollateralEnabled: (accountAddress: string, vault: string) =>
+			accountAddress === SOURCE_ACCOUNT && vault === COLLATERAL_VAULT,
+		isControllerEnabled: () => false,
+		getCurrentController: () => undefined,
+	} as never;
+	const plan = service.planBorrow({
+		account,
+		vault: LIABILITY_VAULT,
+		amount: AMOUNT,
+		borrowAccount: RECEIVER,
+		receiver: ACCOUNT,
+		collateral: {
+			vault: COLLATERAL_VAULT,
+			amount: AMOUNT + 1n,
+			source: "savings",
+			from: SOURCE_ACCOUNT,
+			disableCollateralFrom: true,
+		},
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = plan[0].items;
+	assert.equal(items.length, 5);
+
+	const disableSourceCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(disableSourceCollateral.functionName, "disableCollateral");
+	assert.deepEqual(disableSourceCollateral.args, [
+		getAddress(SOURCE_ACCOUNT),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const transferShares = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(items[1]?.targetContract, COLLATERAL_VAULT);
+	assert.equal(items[1]?.onBehalfOfAccount, SOURCE_ACCOUNT);
+	assert.equal(transferShares.functionName, "transfer");
+	assert.deepEqual(transferShares.args, [getAddress(RECEIVER), AMOUNT + 1n]);
+
+	const enableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[2]?.data ?? "0x",
+	});
+	assert.equal(enableCollateral.functionName, "enableCollateral");
+	assert.deepEqual(enableCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const enableController = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(enableController.functionName, "enableController");
+	assert.deepEqual(enableController.args, [
+		getAddress(RECEIVER),
+		getAddress(LIABILITY_VAULT),
+	]);
+
+	const borrow = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[4]?.data ?? "0x",
+	});
+	assert.equal(borrow.functionName, "borrow");
+	assert.deepEqual(borrow.args, [AMOUNT, getAddress(ACCOUNT)]);
+});
+
+test("same-asset multiply can source supply from savings shares", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		isCollateralEnabled: () => false,
+		isControllerEnabled: () => false,
+		getCurrentController: () => undefined,
+	} as never;
+	const plan = service.planMultiplySameAsset({
+		account,
+		collateralVault: COLLATERAL_VAULT,
+		collateralAmount: AMOUNT,
+		collateralAsset: SAME_ASSET,
+		collateralShareSource: {
+			from: SOURCE_ACCOUNT,
+			shares: AMOUNT + 2n,
+		},
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: AMOUNT,
+		longVault: DESTINATION_VAULT,
+		receiver: RECEIVER,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = plan[0].items;
+	assert.equal(items.length, 6);
+
+	const transferShares = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(items[0]?.targetContract, COLLATERAL_VAULT);
+	assert.equal(items[0]?.onBehalfOfAccount, SOURCE_ACCOUNT);
+	assert.equal(transferShares.functionName, "transfer");
+	assert.deepEqual(transferShares.args, [getAddress(RECEIVER), AMOUNT + 2n]);
+
+	const enableSupplyCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(enableSupplyCollateral.functionName, "enableCollateral");
+	assert.deepEqual(enableSupplyCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const enableController = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[2]?.data ?? "0x",
+	});
+	assert.equal(enableController.functionName, "enableController");
+
+	const borrow = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(borrow.functionName, "borrow");
+	assert.deepEqual(borrow.args, [AMOUNT, getAddress(DESTINATION_VAULT)]);
+
+	const skim = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[4]?.data ?? "0x",
+	});
+	assert.equal(skim.functionName, "skim");
+	assert.deepEqual(skim.args, [AMOUNT, getAddress(RECEIVER)]);
+
+	const enableLongCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[5]?.data ?? "0x",
+	});
+	assert.equal(enableLongCollateral.functionName, "enableCollateral");
+	assert.deepEqual(enableLongCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(DESTINATION_VAULT),
+	]);
+});
+
+test("swap multiply can source supply from savings shares", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		isCollateralEnabled: () => false,
+		isControllerEnabled: () => false,
+		getCurrentController: () => undefined,
+	} as never;
+	const plan = service.planMultiplyWithSwap({
+		account,
+		collateralVault: COLLATERAL_VAULT,
+		collateralAmount: AMOUNT,
+		collateralAsset: SAME_ASSET,
+		collateralShareSource: {
+			from: SOURCE_ACCOUNT,
+			shares: AMOUNT + 3n,
+		},
+		swapQuote: createSwapQuote() as never,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = plan[0].items;
+	assert.equal(items.length, 7);
+
+	const transferShares = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(items[0]?.targetContract, COLLATERAL_VAULT);
+	assert.equal(items[0]?.onBehalfOfAccount, SOURCE_ACCOUNT);
+	assert.equal(transferShares.functionName, "transfer");
+	assert.deepEqual(transferShares.args, [getAddress(ACCOUNT), AMOUNT + 3n]);
+
+	const borrow = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(borrow.functionName, "borrow");
+	assert.deepEqual(borrow.args, [AMOUNT, getAddress(SWAPPER)]);
+
+	assert.equal(items[4]?.targetContract, SWAPPER);
+	assert.equal(items[5]?.targetContract, VERIFIER);
+
+	const enableLongCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[6]?.data ?? "0x",
+	});
+	assert.equal(enableLongCollateral.functionName, "enableCollateral");
+	assert.deepEqual(enableLongCollateral.args, [
+		getAddress(ACCOUNT),
+		getAddress(RECEIVER),
+	]);
+});
+
 test("repay-with-swap full repay cleans up active collaterals and source shares when requested", () => {
 	const service = createExecutionService();
 	const plan = service.planRepayWithSwap({
