@@ -29,7 +29,14 @@ export function createTransactionPlanLogger(sdk: EulerSDK) {
 		if (item.type === "evcBatch") {
 			console.log("  ✓ EVC batch");
 			for (const desc of sdk.executionService.describeBatch(item.items)) {
-				console.log(`    - ${desc.functionName}`);
+				if ("items" in desc) {
+					console.log(`    - ${desc.name}`);
+					for (const operationItem of desc.items) {
+						console.log(`      - ${operationItem.functionName}`);
+					}
+				} else {
+					console.log(`    - ${desc.functionName}`);
+				}
 			}
 			return;
 		}

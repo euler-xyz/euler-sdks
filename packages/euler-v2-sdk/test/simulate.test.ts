@@ -79,7 +79,7 @@ test("estimateGasForTransactionPlan estimates executable plan items", async () =
 		},
 		{
 			type: "evcBatch",
-			items: [batchItem],
+			items: [{ type: "operation", name: "test", items: [batchItem] }],
 		},
 		{
 			type: "contractCall",

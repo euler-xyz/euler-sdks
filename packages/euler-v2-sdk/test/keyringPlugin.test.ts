@@ -7,6 +7,7 @@ import type {
 	EVCBatchItem,
 	TransactionPlan,
 } from "../src/services/executionService/index.js";
+import { flattenBatchEntries } from "../src/services/executionService/index.js";
 
 const ACCOUNT = getAddress("0x00000000000000000000000000000000000000aA");
 const HOOK_TARGET = getAddress("0x00000000000000000000000000000000000000bB");
@@ -92,14 +93,16 @@ test("Keyring plugin prepends credential calls to every EVC batch", async () => 
 		throw new Error("expected evcBatch entries");
 	}
 
-	assert.equal(first.items.length, 2);
-	assert.equal(second.items.length, 2);
-	assert.equal(first.items[0].targetContract, KEYRING);
-	assert.equal(second.items[0].targetContract, KEYRING);
-	assert.equal(first.items[0].onBehalfOfAccount, ACCOUNT);
-	assert.equal(second.items[0].onBehalfOfAccount, ACCOUNT);
-	assert.equal(first.items[0].value, 456n);
-	assert.equal(second.items[0].value, 456n);
-	assert.deepEqual(first.items[1], firstBatchItem);
-	assert.deepEqual(second.items[1], secondBatchItem);
+	const firstItems = flattenBatchEntries(first.items);
+	const secondItems = flattenBatchEntries(second.items);
+	assert.equal(firstItems.length, 2);
+	assert.equal(secondItems.length, 2);
+	assert.equal(firstItems[0]?.targetContract, KEYRING);
+	assert.equal(secondItems[0]?.targetContract, KEYRING);
+	assert.equal(firstItems[0]?.onBehalfOfAccount, ACCOUNT);
+	assert.equal(secondItems[0]?.onBehalfOfAccount, ACCOUNT);
+	assert.equal(firstItems[0]?.value, 456n);
+	assert.equal(secondItems[0]?.value, 456n);
+	assert.deepEqual(firstItems[1], firstBatchItem);
+	assert.deepEqual(secondItems[1], secondBatchItem);
 });

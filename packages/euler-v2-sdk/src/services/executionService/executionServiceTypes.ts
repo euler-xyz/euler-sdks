@@ -17,6 +17,28 @@ export type EVCBatchItem = {
 	data: Hex;
 };
 
+export type EVCBatchOperation = {
+	type: "operation";
+	name: string;
+	items: EVCBatchItem[];
+};
+
+export type EVCBatchEntry = EVCBatchItem | EVCBatchOperation;
+
+export function isEVCBatchOperation(
+	entry: EVCBatchEntry,
+): entry is EVCBatchOperation {
+	return "type" in entry && entry.type === "operation";
+}
+
+export function flattenBatchEntries(
+	entries: readonly EVCBatchEntry[],
+): EVCBatchItem[] {
+	return entries.flatMap((entry) =>
+		isEVCBatchOperation(entry) ? entry.items : [entry],
+	);
+}
+
 export type EncodeDepositArgs = {
 	chainId: number;
 	vault: Address;
@@ -349,9 +371,9 @@ export type Permit2DataToSign = {
 	spender: Address;
 };
 
-export type EVCBatchItems = {
+export type EVCBatch = {
 	type: "evcBatch";
-	items: EVCBatchItem[];
+	items: EVCBatchEntry[];
 };
 
 export type ContractCall = {
@@ -366,7 +388,7 @@ export type ContractCall = {
 
 export type TransactionPlanItem =
 	| RequiredApproval
-	| EVCBatchItems
+	| EVCBatch
 	| ContractCall;
 
 export type TransactionPlan = TransactionPlanItem[];
@@ -565,3 +587,13 @@ export type BatchItemDescription = {
 	functionName: string;
 	args: Record<string, unknown>;
 };
+
+export type BatchOperationDescription = {
+	type: "operation";
+	name: string;
+	items: BatchItemDescription[];
+};
+
+export type BatchEntryDescription =
+	| BatchItemDescription
+	| BatchOperationDescription;

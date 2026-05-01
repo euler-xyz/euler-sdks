@@ -14,7 +14,7 @@
  *      - Additional deposit of collateral: deposit more USDC to the same sub-account
  *      - Partial repay: repay some USDT from wallet
  *      - Withdraw: withdraw a small amount of USDC collateral to wallet
- *   3. Merge the 4 plans into one (approvals summed per token, EVC batch concatenated)
+ *   3. Merge the 4 plans into one (approvals summed per token, operation groupings preserved)
  *   4. Execute the merged plan in one go
  *
  * ASSETS & VAULTS:
@@ -22,7 +22,7 @@
  *   • USDT → Euler Prime USDT Vault (liability)
  *
  * 💡 mergePlans() sums required approvals for the same (token, owner, spender)
- *    and concatenates all EVC batch items in order.
+ *    and keeps each operation grouping inside the merged EVC batch.
  *
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
@@ -34,12 +34,11 @@
  */
 
 import "dotenv/config";
+import { parseUnits } from "viem";
+import { mainnet } from "viem/chains";
+import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import {
-  parseUnits } from "viem";
-  import { mainnet } from "viem/chains";
-  import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
-  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-  import {
   rpcUrls,
   account,
   initExample,
@@ -48,7 +47,10 @@ import {
   EULER_PRIME_USDT_VAULT,
   exampleExecutionCallbacks,
 } from "../utils/config.js";
-import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
+import {
+  buildEulerSDK,
+  getSubAccountAddress,
+} from "@eulerxyz/euler-v2-sdk";
 import type { TransactionPlan } from "@eulerxyz/euler-v2-sdk";
 
 // Inputs
@@ -58,6 +60,7 @@ const INITIAL_BORROW = parseUnits("500", 6);       // 500 USDT (setup)
 const EXTRA_COLLATERAL = parseUnits("200", 6);     // Plan 1: deposit 200 more USDC
 const EXTRA_BORROW = parseUnits("100", 6);         // Plan 1: borrow 100 more USDT
 const ADDITIONAL_DEPOSIT = parseUnits("75", 6);   // Plan 2: additional collateral deposit
+const SHARE_TRANSFER = parseUnits("1", 6);        // Plan 2 add-on: transfer 1 USDC-vault share to wallet
 const REPAY_AMOUNT = parseUnits("150", 6);        // Plan 3: partial repay 150 USDT
 const WITHDRAW_AMOUNT = parseUnits("50", 6);      // Plan 4: withdraw 50 USDC
 
@@ -133,7 +136,17 @@ async function mergePlansExample({ walletClient }: Awaited<ReturnType<typeof ini
     asset: USDC_ADDRESS,
     enableCollateral: true,
   });
+  const [shareTransfer] = sdk.executionService.encodeTransfer({
+    chainId: mainnet.id,
+    vault: EULER_PRIME_USDC_VAULT,
+    from: SUB_ACCOUNT_ADDRESS,
+    to: account.address,
+    amount: SHARE_TRANSFER,
+  });
+  if (!shareTransfer) throw new Error("Expected share transfer batch item");
+  sdk.executionService.addBatchItemToPlan(plan2, shareTransfer);
   console.log(`  2. Additional deposit of collateral: +${ADDITIONAL_DEPOSIT} USDC`);
+  console.log(`     Added standalone transfer: ${SHARE_TRANSFER} USDC-vault share to wallet`);
 
   const plan3: TransactionPlan = sdk.executionService.planRepayFromWallet({
     account: accountData,
@@ -170,6 +183,10 @@ async function mergePlansExample({ walletClient }: Awaited<ReturnType<typeof ini
     {
       account: SUB_ACCOUNT_ADDRESS,
       vaults: [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    },
+    {
+      account: account.address,
+      vaults: [EULER_PRIME_USDC_VAULT],
     },
   ]);
 }

@@ -52,6 +52,7 @@ import type {
 	RequiredApproval,
 	TransactionPlan,
 } from "./executionServiceTypes.js";
+import { flattenBatchEntries } from "./executionServiceTypes.js";
 import {
 	type Address,
 	decodeFunctionResult,
@@ -142,7 +143,7 @@ export type ExecutionSimulationContext<
 	rewardsService?: IRewardsService;
 	intrinsicApyService?: IIntrinsicApyService;
 	eulerLabelsService?: IEulerLabelsService;
-	describeBatch: (batch: EVCBatchItem[]) => BatchItemDescription[];
+	describeBatch: (batch: readonly EVCBatchItem[]) => BatchItemDescription[];
 };
 
 export async function deriveStateOverrides(
@@ -209,7 +210,7 @@ export async function simulateTransactionPlan<
 	}
 
 	const batch = transactionPlan.flatMap((item) =>
-		item.type === "evcBatch" ? item.items : [],
+		item.type === "evcBatch" ? flattenBatchEntries(item.items) : [],
 	);
 	if (batch.length === 0) {
 		return {
@@ -481,7 +482,8 @@ export async function estimateGasForTransactionPlan(
 		if (item.type === "requiredApproval") continue;
 
 		if (item.type === "evcBatch") {
-			const value = item.items.reduce(
+			const batchItems = flattenBatchEntries(item.items);
+			const value = batchItems.reduce(
 				(sum, batchItem) => sum + batchItem.value,
 				0n,
 			);
@@ -490,7 +492,7 @@ export async function estimateGasForTransactionPlan(
 				address: evcAddress,
 				abi: ethereumVaultConnectorAbi,
 				functionName: "batch",
-				args: [item.items],
+				args: [batchItems],
 				value,
 				stateOverride,
 			});
