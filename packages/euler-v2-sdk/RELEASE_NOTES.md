@@ -2,14 +2,16 @@
 
 ## Summary
 
-This beta release fixes two V3 read-path edge cases that affected account and portfolio screens.
+This beta release promotes the new transaction plan execution flow, adds migration/cleanup planning helpers, and tightens V3 read-path defaults used by portfolio and account screens.
 
-## Fixes
+## Highlights
 
-- V3 account positions now paginate through `/v3/accounts/:address/positions` instead of relying on the endpoint default page size.
-- User reward USD totals now skip malformed reward price/decimal values instead of throwing during aggregate portfolio rendering.
+- Split transaction planning into encode, execute, and simulate helpers with operation-group metadata.
+- Added same-asset position migrations, max-repay cleanup, and savings-sourced borrow/multiply examples.
+- Expanded portfolio yield breakdown fields and refreshed the React example around computed portfolio data.
+- Paginated V3 account positions and hardened reward valuation against malformed reward fields.
+- Fixed keyring plugin batch prepending during transaction plan preparation.
 
 ## Validation
 
-- `pnpm -C packages/euler-v2-sdk test -- readPathServices.test.ts accountLiquidityCollaterals.test.ts`
-- `pnpm -C packages/euler-v2-sdk run typecheck`
+- `pnpm -C packages/euler-v2-sdk run release:check`
