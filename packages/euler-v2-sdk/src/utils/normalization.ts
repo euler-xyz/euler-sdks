@@ -132,3 +132,18 @@ export function bigintToScaledNumber(
 
 	return Number(value) / scale;
 }
+
+export function bigintPercentage(
+	numerator: bigint,
+	denominator: bigint,
+	precision = 4,
+): number {
+	if (denominator <= 0n) return numerator > 0n ? 100 : 0;
+	const scale = 10n ** BigInt(precision);
+	const scaled = (numerator * scale * 100n) / denominator;
+	const whole = scaled / scale;
+	const fraction = scaled % scale;
+	return Number.parseFloat(
+		`${whole}.${fraction.toString().padStart(precision, "0")}`,
+	);
+}

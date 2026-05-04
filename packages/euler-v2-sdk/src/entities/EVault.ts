@@ -39,6 +39,7 @@ import {
 	mapDataIssuePaths,
 	withPathPrefix,
 } from "../utils/entityDiagnostics.js";
+import { bigintPercentage } from "../utils/normalization.js";
 
 export type EVaultHookedOperations = {
 	deposit: boolean;
@@ -175,10 +176,6 @@ export interface IEVault extends IERC4626Vault {
 	populated?: Partial<EVaultPopulated>;
 }
 
-export interface EVaultComputed {
-	readonly utilization: number;
-}
-
 export interface EVaultPopulated extends ERC4626VaultPopulated {
 	collaterals: boolean;
 }
@@ -219,20 +216,9 @@ export function hasActiveBorrowableLtv(
 	);
 }
 
-function percentage(numerator: bigint, denominator: bigint): number {
-	if (denominator <= 0n) return numerator > 0n ? 100 : 0;
-	const scale = 10n ** 4n;
-	const scaled = (numerator * scale * 100n) / denominator;
-	const whole = scaled / scale;
-	const fraction = scaled % scale;
-	return Number.parseFloat(
-		`${whole}.${fraction.toString().padStart(4, "0")}`,
-	);
-}
-
 export class EVault
 	extends ERC4626Vault
-	implements IEVault, IERC4626VaultConversion, EVaultComputed
+	implements IEVault, IERC4626VaultConversion
 {
 	unitOfAccount?: Token;
 	totalCash: bigint;
@@ -302,7 +288,7 @@ export class EVault
 	}
 
 	get utilization(): number {
-		return percentage(this.totalBorrowed, this.totalAssets);
+		return bigintPercentage(this.totalBorrowed, this.totalAssets);
 	}
 
 	private buildCaps(caps: EVaultCaps): EVaultCapsComputed {
@@ -311,11 +297,11 @@ export class EVault
 			...caps,
 			get supplyCapUtilization(): number {
 				if (this.supplyCap >= maxUint256) return 0;
-				return percentage(vault.totalAssets, this.supplyCap);
+				return bigintPercentage(vault.totalAssets, this.supplyCap);
 			},
 			get borrowCapUtilization(): number {
 				if (this.borrowCap >= maxUint256) return 0;
-				return percentage(vault.totalBorrowed, this.borrowCap);
+				return bigintPercentage(vault.totalBorrowed, this.borrowCap);
 			},
 		};
 	}
