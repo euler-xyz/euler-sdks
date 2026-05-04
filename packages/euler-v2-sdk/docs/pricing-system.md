@@ -101,8 +101,7 @@ import { buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },
   backendConfig: {
-    endpoint: 'https://v3staging.eul.dev',
-    chainId: 1,
+    endpoint: 'https://v3.eul.dev',
   },
 })
 

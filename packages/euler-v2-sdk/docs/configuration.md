@@ -119,7 +119,7 @@ const sdk = await buildEulerSDK({
 |---|---|---|
 | `rpcUrls` | _(required)_ | On-chain data reads for all services |
 | `v3ApiKey` | none | Shared `X-API-Key` header for built-in V3 account/vault adapters |
-| `backendConfig` | `v3staging.eul.dev` | Off-chain USD pricing backend (backend-first, on-chain oracle fallback). Built-in client uses `GET /v3/prices`. |
+| `backendConfig` | `v3.eul.dev` | Off-chain USD pricing backend (backend-first, on-chain oracle fallback). Built-in client uses `GET /v3/prices`. |
 | `swapServiceConfig` | Euler swap API | Swap quote fetching |
 | `rewardsServiceConfig` | `v3` adapter with direct fallback reads | Reward campaign data, per-user rewards, and reward claim planning |
 | `intrinsicApyServiceConfig` | V3 intrinsic APY API | Underlying yield data for vault assets |
@@ -147,7 +147,7 @@ Several defaults can be overridden via environment variables without changing co
 
 | Variable | What it overrides | Default |
 |---|---|---|
-| `PRICING_API_URL` | `backendConfig.endpoint` | `https://v3staging.eul.dev` |
+| `PRICING_API_URL` | `backendConfig.endpoint` | `https://v3.eul.dev` |
 | `SWAP_API_URL` | `swapServiceConfig.swapApiUrl` | `https://swap.euler.finance` |
 | `DEPLOYMENTS_URL` | Deployments JSON URL | `https://raw.githubusercontent.com/euler-xyz/euler-interfaces/.../EulerChains.json` |
 | `TOKENLIST_API_BASE` | Token list API base URL | `https://indexer.euler.finance` |

@@ -10,7 +10,7 @@ export const V3_DIRECT_ENDPOINT =
   (import.meta.env.VITE_EULER_V3_DIRECT_ENDPOINT as string | undefined) ??
   (configuredV3Endpoint && !configuredV3Endpoint.startsWith("/")
     ? configuredV3Endpoint
-    : "https://v3staging.eul.dev");
+    : "https://v3.eul.dev");
 
 export function getV3ApiEndpoint(proxyV3Calls: boolean): string {
   return proxyV3Calls ? V3_PROXY_ENDPOINT : V3_DIRECT_ENDPOINT;

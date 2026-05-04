@@ -42,7 +42,7 @@ const REPORT_PREFIX =
   process.env.REPORT_PREFIX ?? "fetch-accounts-default-vs-onchain";
 const CHAIN_ID = Number(process.env.CHAIN_ID ?? 1);
 const INDEXER_HOST = process.env.INDEXER_HOST ?? "https://indexer.euler.finance";
-const V3_HOST = process.env.V3_HOST ?? "https://v3staging.eul.dev";
+const V3_HOST = process.env.V3_HOST ?? "https://v3.eul.dev";
 const TARGET_ACCOUNT = getAddress("0x75cFE4ef963232ae8313aC33e21fC39241338618");
 const EXTRA_ACCOUNTS_TARGET = Number(process.env.EXTRA_ACCOUNTS_TARGET ?? 10);
 const ACCOUNT_LIST_FILE = process.env.ACCOUNT_LIST_FILE;

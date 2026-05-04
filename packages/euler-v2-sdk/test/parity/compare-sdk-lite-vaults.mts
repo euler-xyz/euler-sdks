@@ -23,7 +23,7 @@
  * Environment variables:
  *   CHAIN_IDS      - Comma-separated chain IDs (default: 1)
  *   INDEXER_HOST   - Indexer URL (default: https://indexer.euler.finance)
- *   V3_HOST        - V3 API URL (default: https://v3staging.eul.dev)
+ *   V3_HOST        - V3 API URL (default: https://v3.eul.dev)
  *   ADAPTER_MODE   - SDK adapter mode: v3 or onchain (default: v3)
  */
 
@@ -41,7 +41,7 @@ dotenv.config({ path: path.resolve(SCRIPT_DIR, "../../examples/.env") });
 // ---------------------------------------------------------------------------
 
 const INDEXER_HOST = process.env.INDEXER_HOST ?? "https://indexer.euler.finance";
-const V3_HOST = process.env.V3_HOST ?? "https://v3staging.eul.dev";
+const V3_HOST = process.env.V3_HOST ?? "https://v3.eul.dev";
 const ADAPTER_MODE = (process.env.ADAPTER_MODE ?? "onchain").toLowerCase();
 
 // Euler Lite supports these 14 chains (from __CHAIN_CONFIG__)
