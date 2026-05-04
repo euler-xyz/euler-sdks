@@ -5,10 +5,10 @@ import {
 	getAddress,
 	zeroAddress,
 } from "viem";
-import {
+import type {
 	Account,
-	type IHasVaultAddress,
-	type SubAccount,
+	IHasVaultAddress,
+	SubAccount,
 } from "../entities/Account.js";
 import type {
 	EVCBatchItem,
