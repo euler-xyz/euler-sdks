@@ -5,6 +5,7 @@ export * from "./entities/Account.js";
 export * from "./entities/Portfolio.js";
 export * from "./entities/Wallet.js";
 export * from "./entities/EulerEarn.js";
+export * from "./entities/SecuritizeCollateralVault.js";
 export * from "./entities/EulerLabels.js";
 export * from "./sdk/sdk.js";
 export * from "./sdk/buildSDK.js";
