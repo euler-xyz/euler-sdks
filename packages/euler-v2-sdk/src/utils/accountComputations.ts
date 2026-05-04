@@ -604,11 +604,13 @@ function zeroYieldApyBreakdown(): YieldApyBreakdown {
 	};
 }
 
-/** Duck-type supply APY from a vault entity (EVault string or EulerEarn number getter). */
+/** Duck-type supply APY from a vault entity (EVault or EulerEarn decimal fraction). */
 function getVaultSupplyApy(vault: any): number | undefined {
-	// EVault: interestRates.supplyAPY (string, decimal fraction via formatUnits(_, 27))
 	if (vault.interestRates?.supplyAPY != null) {
-		const val = parseFloat(vault.interestRates.supplyAPY);
+		const val =
+			typeof vault.interestRates.supplyAPY === "number"
+				? vault.interestRates.supplyAPY
+				: parseFloat(vault.interestRates.supplyAPY);
 		return Number.isFinite(val) ? val : undefined;
 	}
 	// EulerEarn: supplyApy1h (decimal fraction)
@@ -621,7 +623,10 @@ function getVaultSupplyApy(vault: any): number | undefined {
 /** Duck-type borrow APY from a vault entity (EVault only). */
 function getVaultBorrowApy(vault: any): number | undefined {
 	if (vault.interestRates?.borrowAPY != null) {
-		const val = parseFloat(vault.interestRates.borrowAPY);
+		const val =
+			typeof vault.interestRates.borrowAPY === "number"
+				? vault.interestRates.borrowAPY
+				: parseFloat(vault.interestRates.borrowAPY);
 		return Number.isFinite(val) ? val : undefined;
 	}
 	return undefined;

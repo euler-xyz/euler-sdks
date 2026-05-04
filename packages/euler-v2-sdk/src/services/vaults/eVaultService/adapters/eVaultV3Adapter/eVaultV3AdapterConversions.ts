@@ -97,6 +97,11 @@ const DEFAULT_INTEREST_RATES_BLOCK: NonNullable<
 	supplyAPY: "0",
 };
 
+function parseRate(value: string): number {
+	const parsed = Number.parseFloat(value);
+	return Number.isFinite(parsed) ? parsed : 0;
+}
+
 const DEFAULT_INTEREST_RATE_MODEL_BLOCK: NonNullable<
 	V3VaultDetail["interestRateModel"]
 > = {
@@ -728,27 +733,27 @@ export function convertVault(
 	const interestRatesData =
 		detail.interestRates ?? DEFAULT_INTEREST_RATES_BLOCK;
 	const interestRates: InterestRates = {
-		borrowSPY: parseStringField(interestRatesData.borrowSPY, {
+		borrowSPY: parseRate(parseStringField(interestRatesData.borrowSPY, {
 			path: "$.interestRates.borrowSPY",
 			entityId,
 			errors,
 			source: "eVaultV3",
 			fallback: "0",
-		}),
-		borrowAPY: parseStringField(interestRatesData.borrowAPY, {
+		})),
+		borrowAPY: parseRate(parseStringField(interestRatesData.borrowAPY, {
 			path: "$.interestRates.borrowAPY",
 			entityId,
 			errors,
 			source: "eVaultV3",
 			fallback: "0",
-		}),
-		supplyAPY: parseStringField(interestRatesData.supplyAPY, {
+		})),
+		supplyAPY: parseRate(parseStringField(interestRatesData.supplyAPY, {
 			path: "$.interestRates.supplyAPY",
 			entityId,
 			errors,
 			source: "eVaultV3",
 			fallback: "0",
-		}),
+		})),
 	};
 
 	if (!detail.interestRateModel) {

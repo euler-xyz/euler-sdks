@@ -298,9 +298,9 @@ test("convertVault maps V3 oracle resolved vault rows", () => {
 				socializeDebt: false,
 			},
 			interestRates: {
-				borrowSPY: "0",
-				borrowAPY: "0",
-				supplyAPY: "0",
+				borrowSPY: 0,
+				borrowAPY: 0,
+				supplyAPY: 0,
 			},
 			interestRateModel: {
 				address: "0x0000000000000000000000000000000000000009",

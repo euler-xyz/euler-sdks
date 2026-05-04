@@ -74,6 +74,10 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
 		return false;
 	}
 
+	get availableLiquidity(): bigint {
+		return this.totalAssets;
+	}
+
 	/** 1:1 conversion (standard ERC4626 when totalShares === totalAssets). */
 	convertToAssets(shares: bigint): bigint {
 		return shares;

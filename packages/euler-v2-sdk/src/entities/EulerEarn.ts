@@ -118,6 +118,10 @@ export class EulerEarn
 		return false;
 	}
 
+	override get availableLiquidity(): bigint {
+		return this.availableAssets;
+	}
+
 	isPendingRemoval(strategy: EulerEarnStrategyInfo): boolean {
 		return this.getStrategyStatus(strategy) === "pendingRemoval";
 	}

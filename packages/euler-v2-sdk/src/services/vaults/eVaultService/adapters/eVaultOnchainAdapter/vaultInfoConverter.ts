@@ -43,6 +43,11 @@ import { ZERO_ADDRESS } from "../../../../../utils/parsing.js";
 const BTC_PLACEHOLDER_ADDRESS =
 	"0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB".toLowerCase();
 
+function parseRate(value: string): number {
+	const parsed = Number.parseFloat(value);
+	return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function normalizeTokenMetadata(
 	token: Token,
 	path: "$.shares" | "$.asset" | "$.unitOfAccount",
@@ -249,14 +254,14 @@ export function convertVaultInfoFullToIEVault(
 	const interestRateInfo = vaultInfo.irmInfo.interestRateInfo[0];
 	const interestRates: InterestRates = interestRateInfo
 		? {
-				borrowSPY: formatUnits(interestRateInfo.borrowSPY, 27),
-				borrowAPY: formatUnits(interestRateInfo.borrowAPY, 27),
-				supplyAPY: formatUnits(interestRateInfo.supplyAPY, 27),
+				borrowSPY: parseRate(formatUnits(interestRateInfo.borrowSPY, 27)),
+				borrowAPY: parseRate(formatUnits(interestRateInfo.borrowAPY, 27)),
+				supplyAPY: parseRate(formatUnits(interestRateInfo.supplyAPY, 27)),
 			}
 		: {
-				borrowSPY: "0",
-				borrowAPY: "0",
-				supplyAPY: "0",
+				borrowSPY: 0,
+				borrowAPY: 0,
+				supplyAPY: 0,
 			};
 
 	const interestRateModel = convertInterestRateModel(
