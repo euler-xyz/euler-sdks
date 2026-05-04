@@ -191,6 +191,23 @@ export interface SubAccountRoe {
 }
 
 /**
+ * APY/ROE contribution breakdown.
+ * All values are decimal fractions (0.05 = 5%).
+ */
+export interface YieldApyBreakdown {
+	/** Contribution from base supply APYs. */
+	lending: number;
+	/** Contribution from base borrow APYs (typically negative). */
+	borrowing: number;
+	/** Contribution from supply and borrow reward APRs. */
+	rewards: number;
+	/** Contribution from intrinsic asset yield. */
+	intrinsicApy: number;
+	/** Total contribution. */
+	total: number;
+}
+
+/**
  * Computes the ROE breakdown for a sub-account.
  * Requires populated vaults (for APY data) and market prices (for USD values).
  * Returns `undefined` when prerequisites are missing or equity <= 0.
@@ -317,6 +334,55 @@ export function computePositionsRoe(
 	return totals.totalNetYield / totals.totalEquityUsd;
 }
 
+/**
+ * APY contribution breakdown across a pre-filtered set of positions, relative to supplied value.
+ */
+export function computePositionsNetApyBreakdown(
+	positions: Iterable<AccountYieldPosition>,
+): YieldApyBreakdown | undefined {
+	const totals = computePositionYieldTotals(positions);
+	if (!totals) return undefined;
+	if (totals.totalSupplyUsd === 0) return zeroYieldApyBreakdown();
+	return divideYieldTotals(totals, totals.totalSupplyUsd);
+}
+
+/**
+ * ROE contribution breakdown across a pre-filtered set of positions, relative to net asset value.
+ */
+export function computePositionsRoeBreakdown(
+	positions: Iterable<AccountYieldPosition>,
+): YieldApyBreakdown | undefined {
+	const totals = computePositionYieldTotals(positions);
+	if (!totals) return undefined;
+	if (totals.totalEquityUsd <= 0) return zeroYieldApyBreakdown();
+	return divideYieldTotals(totals, totals.totalEquityUsd);
+}
+
+/**
+ * APY breakdown for a single supplied vault position.
+ * Does not require USD values because a single supply-side APY is value-independent.
+ */
+export function computeSupplyApyBreakdown(
+	vault: IHasVaultAddress | undefined,
+): YieldApyBreakdown | undefined {
+	if (!vault) return undefined;
+
+	const lending = getVaultSupplyApy(vault) ?? 0;
+	const intrinsicApy = getIntrinsicApyContribution(
+		lending,
+		getVaultIntrinsicApy(vault),
+	);
+	const rewards = getVaultRewardApr(vault, "LEND");
+
+	return {
+		lending,
+		borrowing: 0,
+		rewards,
+		intrinsicApy,
+		total: lending + rewards + intrinsicApy,
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Yield computations (use `number` since APYs are percentages)
 // ---------------------------------------------------------------------------
@@ -417,6 +483,10 @@ function findBorrowedValueUsd<T extends IHasVaultAddress>(
 
 interface AccountYieldTotals {
 	totalNetYield: number;
+	totalLendingYield: number;
+	totalBorrowingYield: number;
+	totalRewardYield: number;
+	totalIntrinsicYield: number;
 	totalEquityUsd: number;
 	totalSupplyUsd: number;
 }
@@ -444,6 +514,10 @@ function computePositionYieldTotals(
 	positions: Iterable<AccountYieldPosition>,
 ): AccountYieldTotals | undefined {
 	let totalNetYield = 0;
+	let totalLendingYield = 0;
+	let totalBorrowingYield = 0;
+	let totalRewardYield = 0;
+	let totalIntrinsicYield = 0;
 	let totalSupplyUsd = 0;
 	let totalBorrowUsd = 0;
 	let hasUsdData = false;
@@ -454,26 +528,36 @@ function computePositionYieldTotals(
 
 		if (position.suppliedValueUsd != null && position.suppliedValueUsd > 0n) {
 			const supplyUsd = Number(position.suppliedValueUsd) / 1e18;
-			const supplyApy = applyIntrinsicApy(
-				getVaultSupplyApy(vault) ?? 0,
+			const baseSupplyApy = getVaultSupplyApy(vault) ?? 0;
+			const intrinsicSupplyApy = getIntrinsicApyContribution(
+				baseSupplyApy,
 				getVaultIntrinsicApy(vault),
 			);
+			const supplyApy = baseSupplyApy + intrinsicSupplyApy;
 			const supplyRewardApy = getVaultRewardApr(vault, "LEND");
 
 			totalNetYield += supplyUsd * (supplyApy + supplyRewardApy);
+			totalLendingYield += supplyUsd * baseSupplyApy;
+			totalRewardYield += supplyUsd * supplyRewardApy;
+			totalIntrinsicYield += supplyUsd * intrinsicSupplyApy;
 			totalSupplyUsd += supplyUsd;
 			hasUsdData = true;
 		}
 
 		if (position.borrowedValueUsd != null && position.borrowedValueUsd > 0n) {
 			const borrowUsd = Number(position.borrowedValueUsd) / 1e18;
-			const borrowApy = applyIntrinsicApy(
-				getVaultBorrowApy(vault) ?? 0,
+			const baseBorrowApy = getVaultBorrowApy(vault) ?? 0;
+			const intrinsicBorrowApy = getIntrinsicApyContribution(
+				baseBorrowApy,
 				getVaultIntrinsicApy(vault),
 			);
+			const borrowApy = baseBorrowApy + intrinsicBorrowApy;
 			const borrowRewardApy = getVaultRewardApr(vault, "BORROW");
 
 			totalNetYield -= borrowUsd * (borrowApy - borrowRewardApy);
+			totalBorrowingYield += borrowUsd * baseBorrowApy;
+			totalRewardYield += borrowUsd * borrowRewardApy;
+			totalIntrinsicYield -= borrowUsd * intrinsicBorrowApy;
 			totalBorrowUsd += borrowUsd;
 			hasUsdData = true;
 		}
@@ -483,8 +567,40 @@ function computePositionYieldTotals(
 
 	return {
 		totalNetYield,
+		totalLendingYield,
+		totalBorrowingYield,
+		totalRewardYield,
+		totalIntrinsicYield,
 		totalEquityUsd: totalSupplyUsd - totalBorrowUsd,
 		totalSupplyUsd,
+	};
+}
+
+function divideYieldTotals(
+	totals: AccountYieldTotals,
+	denominator: number,
+): YieldApyBreakdown {
+	const lending = totals.totalLendingYield / denominator;
+	const borrowing = -totals.totalBorrowingYield / denominator;
+	const rewards = totals.totalRewardYield / denominator;
+	const intrinsicApy = totals.totalIntrinsicYield / denominator;
+
+	return {
+		lending,
+		borrowing,
+		rewards,
+		intrinsicApy,
+		total: totals.totalNetYield / denominator,
+	};
+}
+
+function zeroYieldApyBreakdown(): YieldApyBreakdown {
+	return {
+		lending: 0,
+		borrowing: 0,
+		rewards: 0,
+		intrinsicApy: 0,
+		total: 0,
 	};
 }
 
@@ -522,8 +638,11 @@ function getVaultIntrinsicApy(vault: any): number {
 	return 0;
 }
 
-function applyIntrinsicApy(baseApy: number, intrinsicApy: number): number {
-	return baseApy + (1 + baseApy) * intrinsicApy;
+function getIntrinsicApyContribution(
+	baseApy: number,
+	intrinsicApy: number,
+): number {
+	return (1 + baseApy) * intrinsicApy;
 }
 
 /** Sum reward APRs for a given action (LEND or BORROW) from vault campaigns. */

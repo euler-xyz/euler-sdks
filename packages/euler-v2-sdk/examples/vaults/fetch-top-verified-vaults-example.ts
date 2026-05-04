@@ -28,7 +28,11 @@ import {
 
 async function fetchTopVerifiedVaultsExample() {
   const rpcUrls = getRpcUrls();
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    eVaultServiceConfig: { adapter: "onchain" },
+    eulerEarnServiceConfig: { adapter: "onchain" },
+  });
 
   console.log("Fetching verified vault addresses from mainnet via vaultMetaService...");
   const verifiedAddresses = await sdk.vaultMetaService.fetchVerifiedVaultAddresses(mainnet.id, [
@@ -127,10 +131,10 @@ function getEVaultBorrowApyTotal(vault: EVault): number {
 }
 
 function getEulerEarnSupplyApyTotal(vault: EulerEarn): number | undefined {
-  if (vault.supplyApy === undefined) return undefined;
+  if (vault.supplyApy1h === undefined) return undefined;
   const rewards = getRewardsAprByAction(vault, "LEND");
   const intrinsic = getIntrinsicApyDecimal(vault);
-  return vault.supplyApy + rewards + intrinsic;
+  return vault.supplyApy1h + rewards + intrinsic;
 }
 
 function toTopByUsd<T extends EVault | EulerEarn>(vaults: T[]): WithUsd<T>[] {

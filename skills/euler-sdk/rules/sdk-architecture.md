@@ -47,7 +47,7 @@ Use these default boundaries:
 - `accountService`: account/sub-account portfolio state
 - `vaultMetaService`: mixed/unknown vault types
 - `executionService`: `planX`/`encodeX`, approvals, batch encoding
-- `simulationService`: plan validation and post-state preview
+- `executionService`: transaction planning, execution, plan validation, and post-state preview
 - `swapService`: quotes and providers
 - `rewardsService`: reward reads and provider-specific claim planning
 - `oracleAdapterService`: oracle adapter metadata (provider/methodology/checks)

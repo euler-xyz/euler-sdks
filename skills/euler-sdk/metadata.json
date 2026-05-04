@@ -9,7 +9,6 @@
     "euler-v2-sdk",
     "buildEulerSDK",
     "executionService",
-    "simulationService",
     "vaultMetaService",
     "accountService",
     "Euler SDK UI",

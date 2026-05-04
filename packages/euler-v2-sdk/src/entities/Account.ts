@@ -467,7 +467,9 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 	}
 
 	/** Alias for callers using new-position terminology. */
-	getNewSubAccount(options: GetNextSubAccountOptions = {}): Address | undefined {
+	getNewSubAccount(
+		options: GetNextSubAccountOptions = {},
+	): Address | undefined {
 		return this.getNextSubAccount(options);
 	}
 
@@ -517,8 +519,9 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 	}
 
 	private occupiedPositionSubAccounts(): Address[] {
-		return this.subAccountsWithPosition((position) =>
-			hasActiveSuppliedPosition(position) || position.borrowed > 0n,
+		return this.subAccountsWithPosition(
+			(position) =>
+				hasActiveSuppliedPosition(position) || position.borrowed > 0n,
 		);
 	}
 
@@ -784,11 +787,21 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 		const WAD_SCALER = 10n ** BigInt(18 - PRICE_PRECISION); // 10^10
 		let total = 0n;
 		for (const reward of this.userRewards) {
-			if (reward.tokenPrice <= 0 || reward.unclaimed === "0") continue;
+			const tokenPrice = Number(reward.tokenPrice);
+			const tokenDecimals = Number(reward.token.decimals);
+			if (
+				!Number.isFinite(tokenPrice) ||
+				tokenPrice <= 0 ||
+				!Number.isInteger(tokenDecimals) ||
+				tokenDecimals < 0 ||
+				reward.unclaimed === "0"
+			)
+				continue;
 			const unclaimed = BigInt(reward.unclaimed);
-			const priceScaled = BigInt(Math.round(reward.tokenPrice * PRICE_SCALE));
-			const tokenDecimals = BigInt(reward.token.decimals);
-			total += (unclaimed * priceScaled * WAD_SCALER) / 10n ** tokenDecimals;
+			const priceScaled = BigInt(Math.round(tokenPrice * PRICE_SCALE));
+			const tokenDecimalsBigInt = BigInt(tokenDecimals);
+			total +=
+				(unclaimed * priceScaled * WAD_SCALER) / 10n ** tokenDecimalsBigInt;
 		}
 		return total;
 	}

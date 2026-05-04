@@ -4,7 +4,6 @@ import { useSDK } from "../context/SdkContext.tsx";
 import {
   useAccount as useWagmiAccount,
   useChainId,
-  usePublicClient,
   useSwitchChain,
   useWalletClient,
 } from "wagmi";
@@ -13,11 +12,7 @@ import {
   useAccountAllChainsWithDiagnostics,
   type AccountByChainResult,
 } from "../queries/sdkQueries.ts";
-import {
-  computePositionsNetApy,
-  computePositionsRoe,
-  getSubAccountId,
-} from "@eulerxyz/euler-v2-sdk";
+import { getSubAccountId } from "@eulerxyz/euler-v2-sdk";
 import { getAddress, type Address } from "viem";
 import {
   formatBigInt,
@@ -30,14 +25,21 @@ import { CopyAddress } from "../components/CopyAddress.tsx";
 import { RoeCell } from "../components/RoeCell.tsx";
 import { ErrorIcon } from "../components/ErrorIcon.tsx";
 import { RawEntityDialog } from "../components/RawEntityDialog.tsx";
+import { ExecutionProgress } from "../components/ExecutionProgress.tsx";
 import type {
   AccountPosition,
   PortfolioBorrowPosition,
   PortfolioSavingsPosition,
   UserReward,
   VaultEntity,
+  YieldApyBreakdown,
 } from "@eulerxyz/euler-v2-sdk";
-import { executePlanWithProgress, type PlanProgress } from "../utils/txExecutor.ts";
+import {
+  formatTransactionPlanError,
+  toPlanProgress,
+  type PlanProgress,
+  walletExecutionCallbacks,
+} from "../utils/txProgress.ts";
 
 // Persist across navigations but not across full page reloads
 let lastAddress: string | undefined;
@@ -49,6 +51,31 @@ function formatUsdValue(value: bigint | undefined): string {
 
 function formatOptionalPercent(value: number | undefined): string {
   return value === undefined ? "-" : formatPercent(value);
+}
+
+function formatSignedPercent(value: number): string {
+  const formatted = formatPercent(Math.abs(value));
+  if (value > 0) return `+${formatted}`;
+  if (value < 0) return `-${formatted}`;
+  return formatted;
+}
+
+function formatMultiplier(value: number | undefined): string {
+  if (value === undefined) return "-";
+  return `${value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}x`;
+}
+
+function formatDaysToLiquidation(value: PortfolioBorrowPosition<VaultEntity>["timeToLiquidation"]): string {
+  if (value === undefined) return "-";
+  if (value === "Infinity") return "Infinity";
+  if (value === "MoreThanAYear") return "> 1 year";
+  return `${value.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  })} days`;
 }
 
 function sumBigints(values: Array<bigint | undefined>): bigint | undefined {
@@ -357,6 +384,11 @@ export function PortfolioPage() {
               {claimSuccess}
             </div>
           )}
+          {claimProgress && (
+            <div style={{ marginBottom: 12 }}>
+              <ExecutionProgress progress={claimProgress} label="Reward claim" />
+            </div>
+          )}
 
           {activeResults.length === 0 && (
             <div className="status-message">
@@ -415,6 +447,8 @@ function PortfolioOverviewCards({
   borrowed,
   nav,
   rewards,
+  apyBreakdown,
+  roeBreakdown,
 }: {
   netApy?: number;
   roe?: number;
@@ -422,6 +456,8 @@ function PortfolioOverviewCards({
   borrowed?: bigint;
   nav?: bigint;
   rewards?: bigint;
+  apyBreakdown?: YieldApyBreakdown;
+  roeBreakdown?: YieldApyBreakdown;
 }) {
   return (
     <div className="portfolio-overview-grid">
@@ -430,13 +466,13 @@ function PortfolioOverviewCards({
         <div className="portfolio-metric-row">
           <span>Net APY</span>
           <strong className={netApy != null && netApy < 0 ? "negative" : "positive"}>
-            {formatOptionalPercent(netApy)}
+            <YieldBreakdownValue value={netApy} breakdown={apyBreakdown} title="Net APY Breakdown" />
           </strong>
         </div>
         <div className="portfolio-metric-row">
           <span>ROE</span>
           <strong className={roe != null && roe < 0 ? "negative" : "positive"}>
-            {formatOptionalPercent(roe)}
+            <YieldBreakdownValue value={roe} breakdown={roeBreakdown} title="ROE Breakdown" />
           </strong>
         </div>
       </div>
@@ -504,6 +540,8 @@ function ChainPortfolioView({
         borrowed={portfolio.totalBorrowedValueUsd}
         nav={portfolio.netAssetValueUsd}
         rewards={portfolio.totalRewardsValueUsd}
+        apyBreakdown={portfolio.apyBreakdown}
+        roeBreakdown={portfolio.roeBreakdown}
       />
 
       <PortfolioSection
@@ -602,7 +640,6 @@ function BorrowPositionCard({
     position.collaterals.length > 1
       ? `${vaultAssetSymbol(collateralVault)} & others`
       : vaultAssetSymbol(collateralVault);
-  const performance = computeBorrowPositionPerformance(position);
 
   return (
     <article className="portfolio-position-card">
@@ -635,12 +672,28 @@ function BorrowPositionCard({
           subValue={formatUsdValue(position.totalCollateralValueUsd)}
         />
         <PortfolioStat
+          label="Multiplier"
+          value={formatMultiplier(position.multiplier)}
+        />
+        <PortfolioStat
           label="Net APY"
-          value={formatOptionalPercent(performance.netApy)}
+          value={
+            <YieldBreakdownValue
+              value={position.netApy}
+              breakdown={position.apyBreakdown}
+              title="Net APY Breakdown"
+            />
+          }
         />
         <PortfolioStat
           label="ROE"
-          value={formatOptionalPercent(performance.roe)}
+          value={
+            <YieldBreakdownValue
+              value={position.roe}
+              breakdown={position.roeBreakdown}
+              title="ROE Breakdown"
+            />
+          }
         />
         <PortfolioStat
           label="Health score"
@@ -650,6 +703,10 @@ function BorrowPositionCard({
           label="LTV"
           value={`${formatWadPercent(position.userLTV)} / ${formatWadPercent(position.accountLiquidationLTV)}`}
           subValue={`Borrow price ${formatPriceUsd(position.borrowLiquidationPriceUsd)}`}
+        />
+        <PortfolioStat
+          label="Time to liq."
+          value={formatDaysToLiquidation(position.timeToLiquidation)}
         />
       </div>
     </article>
@@ -666,7 +723,6 @@ function SavingsPositionCard({
   position: PortfolioSavingsPosition<VaultEntity>;
 }) {
   const vault = position.vault ?? position.position.vault;
-  const performance = computeSavingsPositionPerformance(position);
 
   return (
     <article className="portfolio-position-card">
@@ -687,12 +743,14 @@ function SavingsPositionCard({
           subValue={formatUsdValue(position.suppliedValueUsd)}
         />
         <PortfolioStat
-          label="Net APY"
-          value={formatOptionalPercent(performance.netApy)}
-        />
-        <PortfolioStat
-          label="ROE"
-          value={formatOptionalPercent(performance.roe)}
+          label="APY"
+          value={
+            <YieldBreakdownValue
+              value={position.apy}
+              breakdown={position.apyBreakdown}
+              title="APY Breakdown"
+            />
+          }
         />
         <PortfolioStat
           label="Shares"
@@ -706,26 +764,6 @@ function SavingsPositionCard({
       </div>
     </article>
   );
-}
-
-function computeBorrowPositionPerformance(
-  position: PortfolioBorrowPosition<VaultEntity>
-): { netApy?: number; roe?: number } {
-  const positions = [...position.collaterals, position.borrow];
-  return {
-    netApy: computePositionsNetApy(positions),
-    roe: computePositionsRoe(positions),
-  };
-}
-
-function computeSavingsPositionPerformance(
-  position: PortfolioSavingsPosition<VaultEntity>
-): { netApy?: number; roe?: number } {
-  const positions = [position.position];
-  return {
-    netApy: computePositionsNetApy(positions),
-    roe: computePositionsRoe(positions),
-  };
 }
 
 function PortfolioStat({
@@ -743,6 +781,54 @@ function PortfolioStat({
       <div className="value">{value}</div>
       {subValue && <div className="portfolio-stat-subvalue">{subValue}</div>}
     </div>
+  );
+}
+
+function YieldBreakdownValue({
+  value,
+  breakdown,
+  title,
+}: {
+  value?: number;
+  breakdown?: YieldApyBreakdown;
+  title: string;
+}) {
+  if (!breakdown) return <>{formatOptionalPercent(value)}</>;
+
+  return (
+    <span className="apy-with-rewards portfolio-yield-breakdown">
+      {formatOptionalPercent(value ?? breakdown.total)} ✦
+      <span className="apy-tooltip">
+        <span className="apy-tooltip-row apy-tooltip-heading">
+          <span>{title}</span>
+        </span>
+        <span className="apy-tooltip-divider" />
+        <YieldBreakdownRow label="Lending" value={breakdown.lending} />
+        <YieldBreakdownRow label="Borrowing" value={breakdown.borrowing} />
+        <YieldBreakdownRow label="Rewards" value={breakdown.rewards} />
+        <YieldBreakdownRow label="Intrinsic APY" value={breakdown.intrinsicApy} />
+        <span className="apy-tooltip-divider" />
+        <span className="apy-tooltip-row apy-tooltip-total">
+          <span>Total</span>
+          <span>{formatOptionalPercent(breakdown.total)}</span>
+        </span>
+      </span>
+    </span>
+  );
+}
+
+function YieldBreakdownRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <span className="apy-tooltip-row">
+      <span>{label}</span>
+      <span>{formatSignedPercent(value)}</span>
+    </span>
   );
 }
 
@@ -829,7 +915,6 @@ function ChainAccountSection({
   const { switchChain } = useSwitchChain();
   const chainId = result.chainId;
   const { data: walletClient } = useWalletClient({ chainId });
-  const publicClient = usePublicClient({ chainId });
   const account = result.account;
   const portfolio = result.portfolio;
 
@@ -876,7 +961,7 @@ function ChainAccountSection({
         await switchChain({ chainId });
         return;
       }
-      if (!walletClient || !publicClient) {
+      if (!walletClient) {
         throw new Error("Wallet client not ready.");
       }
 
@@ -915,20 +1000,14 @@ function ChainAccountSection({
 
       setClaimProgress({ completed: 0, total: plan.length });
 
-      await executePlanWithProgress({
+      await sdk!.executionService.executeTransactionPlan({
         plan,
-        sdk: sdk!,
         chainId,
-        walletClient,
-        publicClient,
         account: walletAddress as Address,
-        onProgress: (progress) => {
-          setClaimProgress({
-            completed: progress.completed,
-            total: progress.total,
-            status: progress.status,
-          });
-        },
+        ...walletExecutionCallbacks(walletClient),
+        usePermit2: true,
+        unlimitedApproval: false,
+        onProgress: (progress) => setClaimProgress(toPlanProgress(progress)),
       });
 
       await invalidateRewardQueries();
@@ -940,7 +1019,7 @@ function ChainAccountSection({
           : `Claimed all rewards on ${chainName}.`
       );
     } catch (err) {
-      setClaimError(String(err));
+      setClaimError(String(await formatTransactionPlanError(err)));
     } finally {
       setClaimProgress(null);
       setActiveClaimKey(null);

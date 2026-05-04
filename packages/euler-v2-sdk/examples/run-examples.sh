@@ -58,6 +58,28 @@ wait_for_anvil() {
   return 1
 }
 
+start_anvil() {
+  local max_attempts="${ANVIL_START_ATTEMPTS:-3}"
+  local attempt=1
+  while [[ $attempt -le $max_attempts ]]; do
+    kill_anvil
+    sleep 1
+
+    env -u ALL_PROXY -u HTTPS_PROXY -u HTTP_PROXY NO_PROXY="*" \
+      anvil --fork-url "$FORK_RPC_URL" --auto-impersonate --port "$ANVIL_PORT" &
+    ANVIL_PID=$!
+
+    if wait_for_anvil; then
+      return 0
+    fi
+
+    kill "$ANVIL_PID" 2>/dev/null || true
+    echo "Anvil failed to start (attempt ${attempt}/${max_attempts})."
+    attempt=$((attempt + 1))
+  done
+  return 1
+}
+
 ANVIL_EXAMPLES=(
   "execution/deposit-example.ts"
   "execution/deposit-usdt-reset-approval-example.ts"
@@ -65,10 +87,14 @@ ANVIL_EXAMPLES=(
   "execution/withdraw-example.ts"
   "execution/redeem-example.ts"
   "execution/borrow-example.ts"
+  "execution/borrow-from-savings-example.ts"
   "execution/repay-from-wallet-example.ts"
   "execution/repay-from-deposit-example.ts"
+  "execution/repay-from-deposit-different-vault-example.ts"
   "execution/repay-with-swap-example.ts"
   "execution/multiply-example.ts"
+  "execution/multiply-from-savings-example.ts"
+  "execution/same-asset-position-migration-example.ts"
   "execution/swap-collateral-example.ts"
   "execution/swap-debt-example.ts"
   "execution/transfer-example.ts"
@@ -78,13 +104,16 @@ ANVIL_EXAMPLES=(
   "execution/borrow-with-pyth-example.ts"
   "execution/deposit-with-swap-from-wallet-example.ts"
   "execution/swap-from-wallet-example.ts"
+  "execution/fee-flow-example.ts"
   "simulations/simulate-deposit-example.ts"
+  "simulations/simulate-deposit-with-swap-from-wallet-example.ts"
 )
 
 READONLY_EXAMPLES=(
   "accounts/fetch-account-example.ts"
   "vaults/fetch-apys-example.ts"
   "vaults/fetch-vault-details-example.ts"
+  "vaults/fetch-top-verified-vaults-example.ts"
 )
 
 FAILED=()
@@ -101,15 +130,7 @@ for path in "${ANVIL_EXAMPLES[@]}"; do
   echo "Example: $name (fresh Anvil fork)"
   echo "=============================================="
 
-  kill_anvil
-  sleep 1
-
-  env -u ALL_PROXY -u HTTPS_PROXY -u HTTP_PROXY NO_PROXY="*" \
-    anvil --fork-url "$FORK_RPC_URL" --auto-impersonate --port "$ANVIL_PORT" &
-  ANVIL_PID=$!
-
-  if ! wait_for_anvil; then
-    kill "$ANVIL_PID" 2>/dev/null || true
+  if ! start_anvil; then
     FAILED+=("$name (anvil failed to start)")
     continue
   fi

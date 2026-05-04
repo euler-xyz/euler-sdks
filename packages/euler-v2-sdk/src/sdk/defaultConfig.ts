@@ -43,30 +43,30 @@ export const defaultAccountVaultsAdapterConfig: AccountVaultsSubgraphAdapterConf
   };
 
 export const defaultAccountV3AdapterConfig: AccountV3AdapterConfig = {
-  endpoint: process.env.EULER_ACCOUNT_V3_API_URL || "https://v3staging.eul.dev",
+  endpoint: process.env.EULER_ACCOUNT_V3_API_URL || "https://v3.eul.dev",
 };
 
 export const defaultEVaultV3AdapterConfig: EVaultV3AdapterConfig = {
-  endpoint: process.env.EULER_EVAULT_V3_API_URL || "https://v3staging.eul.dev",
+  endpoint: process.env.EULER_EVAULT_V3_API_URL || "https://v3.eul.dev",
 };
 
 export const defaultEulerEarnV3AdapterConfig: EulerEarnV3AdapterConfig = {
   endpoint:
-    process.env.EULER_EULER_EARN_V3_API_URL || "https://v3staging.eul.dev",
+    process.env.EULER_EULER_EARN_V3_API_URL || "https://v3.eul.dev",
 };
 
 export const defaultVaultTypeAdapterConfig: VaultTypeV3AdapterConfig = {
   endpoint:
-    process.env.EULER_VAULT_TYPE_V3_API_URL || "https://v3staging.eul.dev",
+    process.env.EULER_VAULT_TYPE_V3_API_URL || "https://v3.eul.dev",
 };
 
 export const defaultIntrinsicApyV3AdapterConfig: IntrinsicApyV3AdapterConfig = {
   endpoint:
-    process.env.EULER_INTRINSIC_APY_V3_API_URL || "https://v3staging.eul.dev",
+    process.env.EULER_INTRINSIC_APY_V3_API_URL || "https://v3.eul.dev",
 };
 
 export const defaultRewardsV3AdapterConfig: RewardsV3AdapterConfig = {
-  endpoint: process.env.EULER_REWARDS_V3_API_URL || "https://v3staging.eul.dev",
+  endpoint: process.env.EULER_REWARDS_V3_API_URL || "https://v3.eul.dev",
 };
 
 /** Same subgraph endpoints as account vaults; kept for explicit subgraph-based vault type resolution. */
@@ -88,7 +88,7 @@ export const defaultEulerLabelsURLAdapterConfig: EulerLabelsURLAdapterConfig = {
 };
 
 export const defaultBackendConfig: BackendConfig = {
-  endpoint: process.env.PRICING_API_URL || "https://v3staging.eul.dev",
+  endpoint: process.env.PRICING_API_URL || "https://v3.eul.dev",
 };
 
 export const defaultSwapServiceConfig: SwapServiceConfig = {

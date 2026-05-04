@@ -14,10 +14,10 @@ import "dotenv/config";
 import { formatUnits } from "viem";
 import { mainnet } from "viem/chains";
 
-import { getRpcUrls } from "../utils/config.js";
+import { EULER_PRIME_USDC_VAULT, getRpcUrls } from "../utils/config.js";
 import { buildEulerSDK, createPythPlugin, type EVault } from "@eulerxyz/euler-v2-sdk";
 
-const VAULT_ADDRESS = "0x777a7a579d7cCa0c909D1F55bE93dCBf872ACED6";
+const VAULT_ADDRESS = EULER_PRIME_USDC_VAULT;
 
 function formatUsd(priceWad: bigint | undefined): string {
   if (priceWad === undefined) return "N/A";
@@ -123,9 +123,6 @@ async function fetchVaultDetailsExample() {
 
   if (vault.eulerLabel) {
     const label = vault.eulerLabel;
-    console.log(`  Vault label:     ${label.vault.name}`);
-    console.log(`  Description:     ${label.vault.description}`);
-
     for (const entity of label.entities) {
       console.log(`  Entity:          ${entity.name}`);
       if (entity.url) console.log(`    URL:           ${entity.url}`);

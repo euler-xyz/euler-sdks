@@ -25,24 +25,22 @@
  */
 
 import "dotenv/config";
-import { erc20Abi, parseUnits } from "viem";
-import { mainnet } from "viem/chains";
-
-import { executePlan } from "../utils/executor.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
 import {
-	account,
-	EULER_PRIME_USDT_VAULT,
-	initBalances,
-	publicClient,
-	rpcUrls,
-	USDT_ADDRESS,
-	walletClient,
+  erc20Abi, parseUnits } from "viem";
+  import { mainnet } from "viem/chains";
+  import { printHeader, logOperationResult } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
+  account,
+  EULER_PRIME_USDT_VAULT,
+  initExample,
+  rpcUrls,
+  USDT_ADDRESS,
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 import {
 	buildEulerSDK,
 	getSubAccountAddress,
-	type ApproveCall,
 } from "@eulerxyz/euler-v2-sdk";
 
 const DEPOSIT_AMOUNT = parseUnits("10", 6);
@@ -51,9 +49,14 @@ const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
 const ENABLE_COLLATERAL = true;
 
-async function createStaleUsdtApproval() {
+async function createStaleUsdtApproval({
+  walletClient,
+  publicClient,
+}: Awaited<ReturnType<typeof initExample>>) {
 	const hash = await walletClient.writeContract({
+		account: walletAccountAddress(walletClient),
 		address: USDT_ADDRESS,
+		chain: mainnet,
 		abi: erc20Abi,
 		functionName: "approve",
 		args: [EULER_PRIME_USDT_VAULT, STALE_APPROVAL_AMOUNT],
@@ -62,10 +65,13 @@ async function createStaleUsdtApproval() {
 	console.log("✓ Created stale USDT approval");
 }
 
-async function depositUsdtResetApprovalExample() {
+async function depositUsdtResetApprovalExample(
+  context: Awaited<ReturnType<typeof initExample>>,
+) {
+  const { walletClient } = context;
 	const sdk = await buildEulerSDK({ rpcUrls });
 
-	await createStaleUsdtApproval();
+	await createStaleUsdtApproval(context);
 
 	const accountData = (
 		await sdk.accountService.fetchAccount(mainnet.id, account.address, {
@@ -81,26 +87,15 @@ async function depositUsdtResetApprovalExample() {
 		asset: USDT_ADDRESS,
 		enableCollateral: ENABLE_COLLATERAL,
 	});
+	console.log("✓ Executing deposit plan with stale approval...");
 
-	depositPlan = await sdk.executionService.resolveRequiredApprovals({
+	await sdk.executionService.executeTransactionPlan({
 		plan: depositPlan,
 		chainId: mainnet.id,
-		account: account.address,
-		usePermit2: false,
-		unlimitedApproval: false,
+		account: walletAccountAddress(walletClient),
+		...exampleExecutionCallbacks(walletClient),
+		onProgress: createTransactionPlanLogger(sdk),
 	});
-
-	const approvalSteps =
-		depositPlan[0]?.type === "requiredApproval"
-			? (depositPlan[0].resolved?.filter(
-					(item): item is ApproveCall => item.type === "approve",
-				) ?? [])
-			: [];
-	console.log(
-		`✓ Approvals resolved: ${approvalSteps.map((step) => step.amount.toString()).join(", ")}`,
-	);
-
-	await executePlan(depositPlan, sdk);
 
 	const subAccount = (
 		await sdk.accountService.fetchSubAccount(
@@ -115,8 +110,8 @@ async function depositUsdtResetApprovalExample() {
 }
 
 printHeader("DEPOSIT USDT RESET APPROVAL EXAMPLE");
-initBalances()
-	.then(() => depositUsdtResetApprovalExample())
+initExample()
+	.then(depositUsdtResetApprovalExample)
 	.catch((error) => {
 		console.error("Error:", error);
 		process.exit(1);

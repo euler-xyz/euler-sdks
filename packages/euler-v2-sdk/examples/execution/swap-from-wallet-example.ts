@@ -23,29 +23,27 @@
  */
 
 import "dotenv/config";
-import { erc20Abi, formatUnits, getAddress, parseUnits } from "viem";
-import { mainnet } from "viem/chains";
-import { buildEulerSDK } from "@eulerxyz/euler-v2-sdk";
-
-import { executePlan } from "../utils/executor.js";
-import { printHeader } from "../utils/helpers.js";
 import {
-	account,
-	account2,
-	initBalances,
-	publicClient,
-	rpcUrls,
-	USDC_ADDRESS,
-	WETH_ADDRESS,
+  erc20Abi, formatUnits, getAddress, parseUnits } from "viem";
+  import { mainnet } from "viem/chains";
+  import { buildEulerSDK } from "@eulerxyz/euler-v2-sdk";
+  import { printHeader } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
+  account,
+  account2,
+  initExample,
+  rpcUrls,
+  USDC_ADDRESS,
+  WETH_ADDRESS,
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 
 const SWAP_AMOUNT = parseUnits("100", 6); // 100 USDC
 const SWAP_QUOTE_INDEX = 0;
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = false;
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800;
 
-async function readBalances() {
+async function readBalances(publicClient: Awaited<ReturnType<typeof initExample>>["publicClient"]) {
 	const [senderUsdc, receiverWeth] = await Promise.all([
 		publicClient.readContract({
 			address: USDC_ADDRESS,
@@ -64,7 +62,10 @@ async function readBalances() {
 	return { senderUsdc, receiverWeth };
 }
 
-async function swapFromWalletExample() {
+async function swapFromWalletExample({
+  walletClient,
+  publicClient,
+}: Awaited<ReturnType<typeof initExample>>) {
 	const sdk = await buildEulerSDK({ rpcUrls });
 	const accountData = (
 		await sdk.accountService.fetchAccount(mainnet.id, account.address, {
@@ -106,21 +107,19 @@ async function swapFromWalletExample() {
 		tokenIn: USDC_ADDRESS,
 	});
 
-	plan = await sdk.executionService.resolveRequiredApprovals({
-		plan,
-		chainId: mainnet.id,
-		account: account.address,
-		usePermit2: USE_PERMIT2,
-		unlimitedApproval: UNLIMITED_APPROVAL,
-	});
-
-	const before = await readBalances();
+	const before = await readBalances(publicClient);
 	console.log(
 		`Sender USDC before: ${formatUnits(before.senderUsdc, 6)}, receiver WETH before: ${formatUnits(before.receiverWeth, 18)}`,
 	);
 
 	try {
-		await executePlan(plan, sdk);
+		await sdk.executionService.executeTransactionPlan({
+			plan,
+			chainId: mainnet.id,
+			account: walletAccountAddress(walletClient),
+			...exampleExecutionCallbacks(walletClient),
+			onProgress: createTransactionPlanLogger(sdk),
+		});
 	} catch (error) {
 		console.error("Error executing wallet swap:", error);
 		console.log(
@@ -129,7 +128,7 @@ async function swapFromWalletExample() {
 		process.exit(1);
 	}
 
-	const after = await readBalances();
+	const after = await readBalances(publicClient);
 	console.log(
 		`Sender USDC after: ${formatUnits(after.senderUsdc, 6)}, receiver WETH after: ${formatUnits(after.receiverWeth, 18)}`,
 	);
@@ -139,8 +138,8 @@ async function swapFromWalletExample() {
 }
 
 printHeader("WALLET TO WALLET SWAP EXAMPLE");
-initBalances()
-	.then(() => swapFromWalletExample())
+initExample()
+	.then(swapFromWalletExample)
 	.catch((error) => {
 		console.error("Error:", error);
 		process.exit(1);

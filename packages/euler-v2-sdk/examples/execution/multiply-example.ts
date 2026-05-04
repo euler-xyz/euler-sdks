@@ -2,28 +2,28 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * MULTIPLY (LEVERAGE) EXAMPLE
  * ═══════════════════════════════════════════════════════════════════════════
- * 
+ *
  * This example demonstrates how to open a leveraged long position by depositing
  * collateral, borrowing an asset, swapping it to another asset, and depositing
  * the result as additional collateral.
- * 
+ *
  * OPERATION:
  *   1. Deposit USDC as collateral
  *   2. Enable USDT vault as controller
  *   3. Borrow USDT
  *   4. Swap USDT → WETH (using live DEX aggregator quotes)
  *   5. Deposit WETH as additional collateral
- * 
+ *
  * ASSETS & VAULTS:
  *   • USDC → Euler Prime USDC Vault (initial collateral)
  *   • USDT → Euler Prime USDT Vault (liability)
  *   • WETH → Euler Prime WETH Vault (long position collateral)
- * 
+ *
  * ⚠️  IMPORTANT - LIVE SWAP QUOTES:
  *   • This example fetches real-time swap quotes from DEX aggregators
  *   • Restart Anvil immediately before running to avoid stale blockchain state
  *   • If the swap fails, try changing REPAY_QUOTE_INDEX to use a different provider
- * 
+ *
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
  *   2. Restart Anvil immediately before running: npm run anvil
@@ -36,22 +36,22 @@
 import "dotenv/config";
 import {
   parseUnits,
-} from "viem";
-import { mainnet } from "viem/chains";
-import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
-
-import { executePlan } from "../utils/executor.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
-import { 
+  } from "viem";
+  import { mainnet } from "viem/chains";
+  import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
+  import { printHeader, logOperationResult } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
   rpcUrls,
   account,
-  initBalances,
+  initExample,
   USDC_ADDRESS,
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_WETH_VAULT,
   EULER_PRIME_USDT_VAULT,
   USDT_ADDRESS,
   WETH_ADDRESS,
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 
 // Inputs
@@ -60,16 +60,18 @@ const LIABILITY_AMOUNT = parseUnits("50", 6);   // 50 USDT
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
 const SWAP_QUOTE_INDEX = 0; // Change this if swap quote is bad
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = false;
 
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
 
-async function multiplyExample() {
+async function multiplyExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
   // Build the SDK
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
+  });
 
-  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery,
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
 
@@ -113,21 +115,17 @@ async function multiplyExample() {
 
   console.log(`\n✓ Multiply plan created with ${multiplyPlan.length} step(s)`);
 
-  // Resolve approvals (fetches wallet data internally).
-  // This would normally be done in the executor logic, e.g. in executePlan, but for illustration we'll do it here.
-  multiplyPlan = await sdk.executionService.resolveRequiredApprovals({
-    plan: multiplyPlan,
-    chainId: mainnet.id,
-    account: account.address,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
-  });
-
-  console.log(`✓ Approvals resolved, executing...`);
+  console.log(`✓ Executing...`);
 
   // Execute the plan
   try {
-    await executePlan(multiplyPlan, sdk);
+    await sdk.executionService.executeTransactionPlan({
+      plan: multiplyPlan,
+      chainId: mainnet.id,
+      account: walletAccountAddress(walletClient),
+      ...exampleExecutionCallbacks(walletClient),
+      onProgress: createTransactionPlanLogger(sdk),
+    });
   } catch (error) {
     console.error("Error executing multiply:", error);
     console.log("\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.");
@@ -150,7 +148,7 @@ async function multiplyExample() {
 // Run the example
 // ============================================================================
 printHeader("MULTIPLY EXAMPLE");
-initBalances().then(() => multiplyExample()).catch((error) => {
+initExample().then(multiplyExample).catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });

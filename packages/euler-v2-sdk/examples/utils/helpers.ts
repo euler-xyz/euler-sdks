@@ -1,7 +1,6 @@
-import { Address, erc20Abi, formatUnits, isAddressEqual, parseAbi, PublicClient, TestClient, WalletClient } from "viem";
+import { Address, erc20Abi, formatUnits, isAddressEqual, parseAbi, PublicClient, TestClient } from "viem";
 import { publicClient } from "./config.js";
 import { Account, SubAccount, AccountPosition, getSubAccountAddress, EulerSDK, eVaultAbi, type IHasVaultAddress } from "@eulerxyz/euler-v2-sdk";
-
 
 // Helper function for header
 export function printHeader(msg: string) {
@@ -74,6 +73,11 @@ interface VaultMetadata {
   vaultDecimals: number;
 }
 
+interface SubAccountFetchRequest {
+  account: Address;
+  vaults: readonly Address[];
+}
+
 const metadataCache: {
   tokens: Map<string, TokenMetadata>;
   vaults: Map<string, VaultMetadata>;
@@ -117,14 +121,16 @@ async function fetchVaultMetadata(chainId: number, vaultAddress: Address, assetA
   const cached = metadataCache.vaults.get(cacheKey);
   if (cached) return cached;
 
-  const [assetMetadata, vaultMetadata, labels] = await Promise.all([
+  const [assetMetadata, vaultMetadata, products] = await Promise.all([
     fetchTokenMetadata(chainId, assetAddress, sdk),
     fetchTokenMetadata(chainId, vaultAddress, sdk), // Vault token decimals (for shares)
-    sdk.eulerLabelsService.fetchEulerLabelsVaults(chainId).catch(() => ({} as Record<Address, any>)),
+    sdk.eulerLabelsService.fetchEulerLabelsProducts(chainId).catch(() => ({})),
   ]);
 
-  const labelInfo = labels[vaultAddress.toLowerCase() as Address];
-  const vaultName = labelInfo?.name || `Vault ${truncateAddress(vaultAddress)}`;
+  const vaultName =
+    Object.values(products).find((product) =>
+      product.vaults.some((vault) => isAddressEqual(vault as Address, vaultAddress)),
+    )?.name || `Vault ${truncateAddress(vaultAddress)}`;
 
   const metadata = {
     name: vaultName,
@@ -276,9 +282,12 @@ function findPosition(subAccount: SubAccount<IHasVaultAddress>, vaultAddress: Ad
  */
 async function fetchVaultName(chainId: number, vaultAddress: Address, sdk: EulerSDK): Promise<string> {
   try {
-    const labels = await sdk.eulerLabelsService.fetchEulerLabelsVaults(chainId);
-    const labelInfo = labels[vaultAddress.toLowerCase() as Address] as any;
-    return labelInfo?.name || truncateAddress(vaultAddress);
+    const products = await sdk.eulerLabelsService.fetchEulerLabelsProducts(chainId);
+    return (
+      Object.values(products).find((product) =>
+        product.vaults.some((vault) => isAddressEqual(vault as Address, vaultAddress)),
+      )?.name || truncateAddress(vaultAddress)
+    );
   } catch {
     return truncateAddress(vaultAddress);
   }
@@ -305,21 +314,21 @@ async function formatVaultList(chainId: number, vaultAddresses: Address[], sdk: 
  * 
  * @example
  * const accountBefore = await sdk.accountService.fetchAccount(chainId, address, { populateVaults: false });
- * await executePlan(plan, sdk);
+ * await sdk.executionService.executeTransactionPlan({ ... });
  * const accountAfter = await sdk.accountService.fetchAccount(chainId, address, { populateVaults: false });
  * await logOperationResult(chainId, accountBefore, accountAfter, sdk);
  *
  * @example
  * // Or with sub-accounts only
  * const accountBefore = await sdk.accountService.fetchAccount(chainId, address, { populateVaults: false });
- * await executePlan(plan, sdk);
+ * await sdk.executionService.executeTransactionPlan({ ... });
  * const subAccounts = await Promise.all([
  *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr1, vaults, { populateVaults: false }),
   *   sdk.accountService.fetchSubAccount(chainId, subAccountAddr2, vaults, { populateVaults: false }),
  * ]);
  * await logOperationResult(chainId, accountBefore, subAccounts, sdk);
  */
-export async function logOperationResult(chainId: number, before: Account<IHasVaultAddress>, after: Account<IHasVaultAddress> | (SubAccount<IHasVaultAddress> | undefined)[], sdk: EulerSDK) {
+export async function logOperationResult(chainId: number, before: Account<IHasVaultAddress>, after: Account<IHasVaultAddress> | (SubAccount<any> | undefined)[], sdk: EulerSDK) {
   console.log("\n" + "═".repeat(80));
   console.log("OPERATION RESULT");
   console.log("═".repeat(80));
@@ -334,9 +343,9 @@ export async function logOperationResult(chainId: number, before: Account<IHasVa
   }
 
   // Normalize after to array of sub-accounts, filtering out undefined values
-  const afterSubAccounts: SubAccount<IHasVaultAddress>[] = Array.isArray(after)
-    ? after.filter((sa): sa is SubAccount<IHasVaultAddress> => sa !== undefined)
-    : Object.values(after.subAccounts).filter((sa): sa is SubAccount<IHasVaultAddress> => sa != null);
+  const afterSubAccounts: SubAccount<any>[] = Array.isArray(after)
+    ? after.filter((sa): sa is SubAccount<any> => sa !== undefined)
+    : Object.values(after.subAccounts).filter((sa): sa is SubAccount<any> => sa != null);
 
   const beforeSubAccountsList = Object.values(before.subAccounts).filter((sa): sa is SubAccount<IHasVaultAddress> => sa != null);
 
@@ -502,6 +511,25 @@ export async function logOperationResult(chainId: number, before: Account<IHasVa
   }
 
   console.log("\n" + "═".repeat(80) + "\n");
+}
+
+export async function fetchAndLogSubAccounts(
+  chainId: number,
+  before: Account<IHasVaultAddress>,
+  sdk: EulerSDK,
+  requests: readonly SubAccountFetchRequest[],
+): Promise<(SubAccount<any> | undefined)[]> {
+  const subAccounts = await Promise.all(
+    requests.map(async ({ account, vaults }) => (
+      await sdk.accountService.fetchSubAccount(chainId, account, [...vaults], {
+        populateVaults: false,
+      })
+    ).result),
+  );
+
+  await logOperationResult(chainId, before, subAccounts, sdk);
+
+  return subAccounts;
 }
 
 export function stringify(obj: any) {

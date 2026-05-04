@@ -7,11 +7,7 @@ import { buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 
 const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },           // chainId -> RPC URL
-  queryCacheConfig: { ttlMs: 5000 },       // Optional: default cache is 5s
-  backendConfig: {                           // Optional: enables backend pricing
-    endpoint: 'https://v3staging.eul.dev',
-    chainId: 1,
-  },
+  queryCacheConfig: { ttlMs: 10_000 },       // Optional: default cache is 5s
 })
 ```
 
@@ -36,8 +32,14 @@ const plan = sdk.executionService.planDeposit({
   enableCollateral: true,
 })
 
-// Resolve approvals/signatures for your wallet flow, then execute the plan items.
-// See examples/utils/executor.ts for a full reference executor.
+// Resolve approvals/signatures automatically and execute the plan items.
+await sdk.executionService.executeTransactionPlan({
+  plan,
+  chainId: 1,
+  account: '0xYourAddress...',
+  sendTransaction: walletClient.sendTransaction,
+  signTypedData: walletClient.signTypedData,
+})
 ```
 
 For execution planning and transaction-plan structure, see [Execution Service](./execution-service.md).

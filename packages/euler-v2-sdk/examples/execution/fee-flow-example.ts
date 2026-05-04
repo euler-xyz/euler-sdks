@@ -24,18 +24,20 @@ import {
   getBalanceOverrides,
   StandardEVaultPerspectives,
   type EVault,
-} from "@eulerxyz/euler-v2-sdk";
-import {
+  } from "@eulerxyz/euler-v2-sdk";
+  import {
   erc20Abi,
   formatUnits,
   getAddress,
   parseUnits,
   type Address,
-} from "viem";
-import { mainnet } from "viem/chains";
-import { account, initBalances, publicClient, rpcUrls, testClient, walletClient } from "../utils/config.js";
-import { executePlan } from "../utils/executor.js";
+  } from "viem";
+  import { mainnet } from "viem/chains";
+  import { account, initExample, rpcUrls,
+  exampleExecutionCallbacks,
+} from "../utils/config.js";
 import { printHeader } from "../utils/helpers.js";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 
 type FeeFlowCandidate = {
   vault: EVault;
@@ -45,9 +47,18 @@ type FeeFlowCandidate = {
   claimableValueUsd: bigint;
 };
 
-async function feeFlowExample() {
+
+async function feeFlowExample({
+  walletClient,
+  publicClient,
+  testClient,
+}: Awaited<ReturnType<typeof initExample>>) {
   const chainId = mainnet.id;
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    eVaultServiceConfig: { adapter: "onchain" },
+    eulerEarnServiceConfig: { adapter: "onchain" },
+  });
 
   const feeFlowState = await sdk.feeFlowService.fetchState(chainId);
   const tokenList = await sdk.tokenlistService.loadTokenlist(chainId);
@@ -72,6 +83,8 @@ async function feeFlowExample() {
       ? feeFlowState.currentPrice
       : minimumFundingAmount;
   await fundBuyerWithPaymentToken({
+    publicClient,
+    testClient,
     token: feeFlowState.paymentToken,
     symbol: paymentTokenSymbol,
     decimals: paymentTokenDecimals,
@@ -103,7 +116,9 @@ async function feeFlowExample() {
   const selected = candidates.slice(0, 3);
 
   if (selected.length === 0) {
-    throw new Error("No FeeFlow candidates with claimable value were found.");
+    console.log("No FeeFlow candidates with claimable value were found.");
+    console.log("FeeFlow example completed without executing a buy.");
+    return;
   }
 
   console.log(`Verified EVaults:       ${allEVaults.length}`);
@@ -128,7 +143,11 @@ async function feeFlowExample() {
     functionName: "balanceOf",
     args: [account.address],
   });
-  const beforeBalances = await fetchVaultTokenBalances(selectedVaultAddresses, account.address);
+  const beforeBalances = await fetchVaultTokenBalances(
+    publicClient,
+    selectedVaultAddresses,
+    account.address,
+  );
 
   let plan = await sdk.feeFlowService.buildBuyPlan({
     chainId,
@@ -136,16 +155,15 @@ async function feeFlowExample() {
     recipient: account.address,
     vaults: selectedVaultAddresses,
   });
-  plan = await sdk.executionService.resolveRequiredApprovals({
-    plan,
-    chainId,
-    account: account.address,
-    usePermit2: false,
-    unlimitedApproval: false,
-  });
 
   console.log(`Plan items:             ${plan.length}`);
-  await executePlan(plan, sdk, walletClient);
+  await sdk.executionService.executeTransactionPlan({
+    plan,
+    chainId,
+    account: walletAccountAddress(walletClient),
+    ...exampleExecutionCallbacks(walletClient),
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   printHeader("Verifying received vault tokens");
 
@@ -156,7 +174,11 @@ async function feeFlowExample() {
     functionName: "balanceOf",
     args: [account.address],
   });
-  const afterBalances = await fetchVaultTokenBalances(selectedVaultAddresses, account.address);
+  const afterBalances = await fetchVaultTokenBalances(
+    publicClient,
+    selectedVaultAddresses,
+    account.address,
+  );
   let positiveReceipts = 0;
 
   selected.forEach((candidate) => {
@@ -247,7 +269,11 @@ async function buildFeeFlowCandidates(
   return candidates;
 }
 
-async function fetchVaultTokenBalances(vaults: Address[], owner: Address): Promise<Map<Address, bigint>> {
+async function fetchVaultTokenBalances(
+  publicClient: Awaited<ReturnType<typeof initExample>>["publicClient"],
+  vaults: Address[],
+  owner: Address,
+): Promise<Map<Address, bigint>> {
   const balances = await Promise.all(
     vaults.map((vault) =>
       publicClient.readContract({
@@ -263,13 +289,15 @@ async function fetchVaultTokenBalances(vaults: Address[], owner: Address): Promi
 }
 
 async function fundBuyerWithPaymentToken(args: {
+  publicClient: Awaited<ReturnType<typeof initExample>>["publicClient"];
+  testClient: Awaited<ReturnType<typeof initExample>>["testClient"];
   token: Address;
   symbol: string;
   decimals: number;
   amount: bigint;
   recipient: Address;
 }) {
-  const { token, symbol, decimals, amount, recipient } = args;
+  const { publicClient, testClient, token, symbol, decimals, amount, recipient } = args;
   const currentBalance = await publicClient.readContract({
     address: token,
     abi: erc20Abi,
@@ -285,7 +313,11 @@ async function fundBuyerWithPaymentToken(args: {
     return;
   }
 
-  const balanceOverrides = await getBalanceOverrides(publicClient, recipient, [[token, amount]]);
+  const balanceOverrides = await getBalanceOverrides(
+    publicClient as Parameters<typeof getBalanceOverrides>[0],
+    recipient,
+    [[token, amount]],
+  );
   const tokenOverride = balanceOverrides.find(
     (override) => override.address.toLowerCase() === token.toLowerCase()
   );
@@ -301,7 +333,7 @@ async function fundBuyerWithPaymentToken(args: {
     });
   }
 
-  await testClient.request({ method: "evm_mine", params: [] });
+  await testClient.mine({ blocks: 1 });
 
   const recipientBalance = await publicClient.readContract({
     address: token,
@@ -326,8 +358,8 @@ function formatDuration(seconds: number): string {
 }
 
 printHeader("FEE FLOW EXAMPLE");
-initBalances()
-  .then(() => feeFlowExample())
+initExample()
+  .then(feeFlowExample)
   .catch((error) => {
     console.error("Error:", error);
     process.exit(1);

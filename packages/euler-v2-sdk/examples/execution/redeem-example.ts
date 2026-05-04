@@ -2,11 +2,11 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * REDEEM EXAMPLE
  * ═══════════════════════════════════════════════════════════════════════════
- * 
+ *
  * This example demonstrates how to redeem vault shares to receive the underlying
  * assets. It first deposits assets to receive shares, then redeems a specific
  * number of shares.
- * 
+ *
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
  *   2. Start Anvil: npm run anvil
@@ -20,12 +20,13 @@ import "dotenv/config";
 import {
   parseUnits,
   getAddress,
-} from "viem";
-import { mainnet } from "viem/chains";
-
-import { executePlan } from "../utils/executor.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
-import { rpcUrls, account, initBalances, USDC_ADDRESS, EULER_PRIME_USDC_VAULT } from "../utils/config.js";
+  } from "viem";
+  import { mainnet } from "viem/chains";
+  import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import { rpcUrls, account, initExample, USDC_ADDRESS, EULER_PRIME_USDC_VAULT,
+  exampleExecutionCallbacks,
+} from "../utils/config.js";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
 // Inputs
@@ -33,15 +34,17 @@ const DEPOSIT_AMOUNT = parseUnits("100", 6);  // 100 USDC
 const SHARES_TO_REDEEM = parseUnits("50", 6); // Redeem 50 shares (shares typically have same decimals as underlying)
 const SUB_ACCOUNT_ID = 2;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = false;
 const DISABLE_COLLATERAL = true;
 
-async function redeemExample() {
+async function redeemExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
   // Build the SDK
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
+  });
 
-  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery,
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
 
@@ -58,32 +61,25 @@ async function redeemExample() {
 
   console.log(`✓ Deposit plan created with ${depositPlan.length} step(s)`);
 
-  // Resolve approvals (fetches wallet data internally)
-  depositPlan = await sdk.executionService.resolveRequiredApprovals({
+
+  console.log(`✓ Executing...`);
+  await sdk.executionService.executeTransactionPlan({
     plan: depositPlan,
     chainId: mainnet.id,
-    account: account.address,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
+    account: walletAccountAddress(walletClient),
+    ...exampleExecutionCallbacks(walletClient),
+    onProgress: createTransactionPlanLogger(sdk),
   });
-  
-  console.log(`✓ Approvals resolved, executing...`);
-  await executePlan(depositPlan, sdk);
-
-  // Fetch updated sub-account after deposit
-  const subAccountAfterDeposit = (await sdk.accountService.fetchSubAccount(
+  const [subAccountAfterDeposit] = await fetchAndLogSubAccounts(
     mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT],
-    { populateVaults: false }
-  )).result;
-  
-  // Log the diff between before and after deposit
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterDeposit], sdk);
+    accountData,
+    sdk,
+    [{ account: SUB_ACCOUNT_ADDRESS, vaults: [EULER_PRIME_USDC_VAULT] }],
+  );
 
   // Step 2: Redeem shares
   console.log('\n=== Step 2: Redeem Shares ===');
-  
+
   // Update account data with the fetched sub-account
   accountData.updateSubAccounts(subAccountAfterDeposit!);
 
@@ -100,25 +96,23 @@ async function redeemExample() {
   console.log(`✓ Executing...`);
 
   // No approvals needed for redeem
-  await executePlan(redeemPlan, sdk);
-
-  // Fetch the updated sub-account and log the result
-  const subAccountAfterRedeem = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT],
-    { populateVaults: false }
-  )).result;
-
-  // Log the diff between before and after redeem
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterRedeem], sdk);
+  await sdk.executionService.executeTransactionPlan({
+    plan: redeemPlan,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    ...exampleExecutionCallbacks(walletClient),
+    onProgress: createTransactionPlanLogger(sdk),
+  });
+  await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
+    { account: SUB_ACCOUNT_ADDRESS, vaults: [EULER_PRIME_USDC_VAULT] },
+  ]);
 }
 
 // ============================================================================
 // Run the example
 // ============================================================================
 printHeader("REDEEM EXAMPLE");
-initBalances().then(() => redeemExample()).catch((error) => {
+initExample().then(redeemExample).catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });

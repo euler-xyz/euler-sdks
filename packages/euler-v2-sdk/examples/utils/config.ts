@@ -1,8 +1,11 @@
 import { createPublicClient, createTestClient, createWalletClient, erc20Abi, getAddress, Hex, http, parseEther, parseUnits, PublicClient, TestClient, WalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { mainnet } from "viem/chains";
+import type { ExecuteTransactionPlanArgs } from "@eulerxyz/euler-v2-sdk";
 import dotenv from 'dotenv'
 dotenv.config()
+
+const DEFAULT_EXAMPLE_GAS_LIMIT = 2_000_000n;
 
 const PRIVATE_KEY = (process.env.PRIVATE_KEY ?? "0x1234567890123456789012345678901234567890123456789012345678901235") as Hex;
 const PRIVATE_KEY2 = (process.env.PRIVATE_KEY2 ?? "0x1234567890123456789012345678901234567890123456789012345678901246") as Hex;
@@ -48,7 +51,70 @@ export const testClient: TestClient = createTestClient({
   transport: http(ANVIL_RPC_URL),
 });
 
-export async function initBalances() {
+function withExampleGas<TWalletClient extends WalletClient>(client: TWalletClient): TWalletClient {
+  return new Proxy(client, {
+    get(target, prop, receiver) {
+      if (prop === "sendTransaction") {
+        return (parameters: Parameters<WalletClient["sendTransaction"]>[0]) =>
+          (target as WalletClient).sendTransaction({
+            ...parameters,
+            gas: parameters.gas ?? DEFAULT_EXAMPLE_GAS_LIMIT,
+          });
+      }
+
+      if (prop === "signTypedData") {
+        const account = target.account;
+        if (
+          account &&
+          typeof account !== "string" &&
+          "signTypedData" in account &&
+          typeof account.signTypedData === "function"
+        ) {
+          return account.signTypedData.bind(account);
+        }
+      }
+
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as TWalletClient;
+}
+
+function requireWalletClientAccount(walletClient: WalletClient) {
+  if (!walletClient.account) {
+    throw new Error("Wallet client account is required");
+  }
+
+  return walletClient.account;
+}
+
+export function exampleExecutionCallbacks(
+  walletClient: WalletClient,
+): Pick<ExecuteTransactionPlanArgs, "sendTransaction" | "signTypedData"> {
+  return {
+    sendTransaction: (parameters) =>
+      walletClient.sendTransaction({
+        ...parameters,
+        account: requireWalletClientAccount(walletClient),
+      } as Parameters<typeof walletClient.sendTransaction>[0]),
+    signTypedData: walletClient.signTypedData
+      ? (parameters) =>
+          walletClient.signTypedData!({
+            ...parameters,
+            account: requireWalletClientAccount(walletClient),
+          } as Parameters<NonNullable<typeof walletClient.signTypedData>>[0])
+      : undefined,
+  };
+}
+
+export type ExampleContext = {
+  walletClient: WalletClient;
+  walletClient2: WalletClient;
+  publicClient: PublicClient;
+  testClient: TestClient;
+};
+
+export async function initExample(): Promise<ExampleContext> {
   const USDC_WHALE = "0xb7cD010b53D23a794d754886C3b928BE6a3315dC"
   const USDT_WHALE = "0x83A32a54D31Ee4f1f9dFFAd2A63A6d214e469eC3"
   const WETH_WHALE = "0x4a18a50a8328b42773268B4b436254056b7d70CE"
@@ -111,6 +177,13 @@ export async function initBalances() {
     address: account2.address,
     value: parseEther('1000'),
   });
+
+  return {
+    walletClient: withExampleGas(walletClient),
+    walletClient2: withExampleGas(walletClient2),
+    publicClient,
+    testClient,
+  };
 }
 
 /**

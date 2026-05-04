@@ -3,6 +3,7 @@ import { test } from "vitest";
 import { getAddress, zeroAddress } from "viem";
 
 import { AccountService } from "../src/services/accountService/accountService.js";
+import { RewardsV3Adapter } from "../src/services/rewardsService/adapters/rewardsV3Adapter/index.js";
 import { EVaultService } from "../src/services/vaults/eVaultService/eVaultService.js";
 import {
 	VaultMetaService,
@@ -179,6 +180,70 @@ test("account service fetches and populates real account fixtures through vault,
 		{} as any,
 	).fetchAccount(1, accountFixture.owner, { populateVaults: false });
 	assert.equal(empty.result.owner, accountFixture.owner);
+});
+
+test("account total rewards skips malformed reward pricing", () => {
+	const accountFixture = getAccountFixture(0);
+	const account = new Account(accountFixture);
+	account.userRewards = [
+		{
+			provider: "merkl",
+			chainId: 1,
+			accumulated: "1000000",
+			unclaimed: "1000000",
+			tokenPrice: Number.NaN,
+			token: {
+				address: zeroAddress,
+				chainId: 1,
+				symbol: "BAD",
+				name: "BAD",
+				decimals: 18,
+			},
+		},
+		{
+			provider: "merkl",
+			chainId: 1,
+			accumulated: "1000000",
+			unclaimed: "1000000",
+			tokenPrice: 2,
+			token: {
+				address: zeroAddress,
+				chainId: 1,
+				symbol: "EUL",
+				name: "EUL",
+				decimals: 6,
+			},
+		},
+	];
+
+	assert.equal(account.totalRewardsValueUsd, 2n * 10n ** 18n);
+});
+
+test("V3 rewards adapter normalizes malformed user reward price to zero", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsBreakdown(async () => ({
+		data: [
+			{
+				provider: "merkl",
+				chainId: 1,
+				token: {
+					address: zeroAddress,
+					chainId: 1,
+					symbol: "BAD",
+					name: "BAD",
+					decimals: "18",
+				},
+				tokenPriceUsd: "NaN",
+				unclaimed: "1000000",
+				accumulated: "1000000",
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchUserRewards(1, zeroAddress);
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.tokenPrice, 0);
+	assert.equal(rewards[0]?.token.decimals, 18);
 });
 
 test("account service covers fetchSubAccount and populate error paths", async () => {

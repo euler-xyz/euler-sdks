@@ -95,7 +95,7 @@ async function simulateDepositWithSwapFromWalletExample() {
   console.log(`Plan created:    ${plan.length} item(s)`);
   console.log("Simulating plan with stateOverrides: true...\n");
 
-  const simulation = await sdk.simulationService.simulateTransactionPlan(
+  const simulation = await sdk.executionService.simulateTransactionPlan(
     mainnet.id,
     account.address,
     plan,

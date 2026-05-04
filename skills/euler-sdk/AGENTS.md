@@ -31,7 +31,7 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 - `vaultMetaService` for mixed or unknown vault types
 - `executionService` for planning/encoding tx batches
   - executes generic `TransactionPlan` items, including direct `contractCall` items
-- `simulationService` for pre-trade validation
+- `executionService` for plan simulation and pre-trade validation
 - `swapService` for quotes and providers
 - `oracleAdapterService` for oracle adapter metadata (provider/methodology/checks)
 - `rewardsService` for reward reads and provider-specific reward claim planning
@@ -76,6 +76,7 @@ Execution order:
 5. Wait for receipts and refresh UI state
 
 Use `mergePlans` to atomically combine user intents and `describeBatch` for previews.
+`planX` methods group their encoded batch items into named operations inside `evcBatch` entries. Raw batch items remain valid batch entries for plugin prepends/appends. `mergePlans` preserves operation groupings and refuses to automatically merge `contractCall` items. `describeBatch` mirrors the input batch-entry shape: operation entries keep their name and contain decoded child items.
 
 ### 2.2 Simulation Gate
 
@@ -138,7 +139,7 @@ Use SDK examples as templates:
 
 - `packages/euler-v2-sdk/examples/execution/*` for transaction flows
 - `packages/euler-v2-sdk/examples/simulations/*` for pre-checks
-- `packages/euler-v2-sdk/examples/utils/executor.ts` for approval + Permit2 + EVC logic
+- `sdk.executionService.executeTransactionPlan(...)` for approval + Permit2 + EVC execution logic
 - `packages/euler-v2-sdk/examples/run-examples.sh` for fork-based regression runs
 
 Promote constants to config/env and add explicit chain/account flags in CLI tools.
@@ -158,4 +159,4 @@ Promote constants to config/env and add explicit chain/account flags in CLI tool
 - `packages/euler-v2-sdk/docs/swaps.md`
 - `packages/euler-v2-sdk/examples/react-sdk-example/src/context/SdkContext.tsx`
 - `packages/euler-v2-sdk/examples/react-sdk-example/src/queries/sdkQueries.ts`
-- `packages/euler-v2-sdk/examples/react-sdk-example/src/utils/txExecutor.ts`
+- `packages/euler-v2-sdk/examples/react-sdk-example/src/utils/txProgress.ts`

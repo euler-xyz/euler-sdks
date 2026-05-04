@@ -200,3 +200,45 @@ test("V3 account liquidity preserves all-zero collaterals", async () => {
 		[collateralWithValue, collateralWithoutValue],
 	);
 });
+
+test("V3 account adapter fetches all paginated position pages", async () => {
+	const rows = Array.from({ length: 121 }, (_, index) => ({
+		...createV3AccountPosition({
+			totalCollateralValue: "0",
+			collateralValues: ["0", "0"],
+		}),
+		vault: getAddress(`0x${(index + 1).toString(16).padStart(40, "0")}`),
+	}));
+	const calls: Array<{ offset: number; limit: number; forceFresh?: boolean }> = [];
+	const adapter = new AccountV3Adapter({
+		endpoint: "https://example.invalid",
+		forceFresh: true,
+	});
+	adapter.setQueryV3AccountPositions(
+		async (
+			_endpoint,
+			_chainId,
+			_address,
+			offset = 0,
+			limit = 100,
+			forceFresh,
+		) => {
+			calls.push({ offset, limit, forceFresh });
+			return {
+				data: rows.slice(offset, offset + limit),
+				meta: {
+					offset,
+					limit,
+					hasMore: offset + limit < rows.length,
+				},
+			};
+		},
+	);
+
+	const fetched = await adapter.fetchAccount(1, account);
+	assert.equal(fetched.result?.subAccounts[account]?.positions.length, 121);
+	assert.deepEqual(calls, [
+		{ offset: 0, limit: 100, forceFresh: true },
+		{ offset: 100, limit: 100, forceFresh: true },
+	]);
+});

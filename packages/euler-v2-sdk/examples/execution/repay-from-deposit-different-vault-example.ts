@@ -11,7 +11,8 @@
  * OPERATION:
  *   1. Deposit USDC as collateral and borrow USDT
  *   2. Deposit USDT into a different USDT vault on another sub-account
- *   3. Repay USDT debt by withdrawing from that different USDT vault
+ *   3. Deposit USDT into the liability vault to create a pre-existing position
+ *   4. Fully repay USDT debt from the different vault while preserving the pre-existing liability-vault deposit
  *
  * ASSETS & VAULTS:
  *   • USDC → Euler Prime USDC Vault (collateral)
@@ -28,27 +29,28 @@
  */
 
 import "dotenv/config";
-import { getAddress, parseUnits } from "viem";
-import { mainnet } from "viem/chains";
-import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
-
-import { executePlan } from "../utils/executor.js";
-import { logOperationResult, printHeader } from "../utils/helpers.js";
 import {
-	account,
-	EULER_PRIME_USDC_VAULT,
-	EULER_PRIME_USDT_VAULT,
-	initBalances,
-	rpcUrls,
-	USDC_ADDRESS,
-	USDT_ADDRESS,
+  getAddress, maxUint256, parseUnits } from "viem";
+  import { mainnet } from "viem/chains";
+  import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
+  import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
+  account,
+  EULER_PRIME_USDC_VAULT,
+  EULER_PRIME_USDT_VAULT,
+  initExample,
+  rpcUrls,
+  USDC_ADDRESS,
+  USDT_ADDRESS,
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 
 // Inputs
 const COLLATERAL_AMOUNT = parseUnits("1000", 6); // 1000 USDC
 const BORROW_AMOUNT = parseUnits("500", 6); // 500 USDT
 const SOURCE_DEPOSIT_AMOUNT = parseUnits("1000", 6); // 1000 USDT
-const REPAY_AMOUNT = parseUnits("250", 6); // 250 USDT
+const PRE_EXISTING_LIABILITY_DEPOSIT_AMOUNT = parseUnits("100", 6); // 100 USDT
 const BORROW_SUB_ACCOUNT_ID = 1;
 const SOURCE_SUB_ACCOUNT_ID = 2;
 const BORROW_SUB_ACCOUNT_ADDRESS = getSubAccountAddress(
@@ -62,10 +64,8 @@ const SOURCE_SUB_ACCOUNT_ADDRESS = getSubAccountAddress(
 const ALTERNATE_USDT_VAULT = getAddress(
 	"0x2343b4bCB96EC35D8653Fb154461fc673CB20a7e",
 );
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = false;
 
-async function repayFromDifferentVaultDepositExample() {
+async function repayFromDifferentVaultDepositExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
 	// Build the SDK
 	const sdk = await buildEulerSDK({
 		rpcUrls,
@@ -80,6 +80,14 @@ async function repayFromDifferentVaultDepositExample() {
 			populateVaults: false,
 		})
 	).result;
+	const borrowSubAccountRequest = {
+		account: BORROW_SUB_ACCOUNT_ADDRESS,
+		vaults: [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+	} as const;
+	const sourceSubAccountRequest = {
+		account: SOURCE_SUB_ACCOUNT_ADDRESS,
+		vaults: [ALTERNATE_USDT_VAULT],
+	} as const;
 
 	// Step 1: Plan and execute borrow operation (deposit USDC collateral and borrow USDT)
 	console.log("\n=== Step 1: Deposit USDC and Borrow USDT ===");
@@ -98,27 +106,20 @@ async function repayFromDifferentVaultDepositExample() {
 
 	console.log(`✓ Borrow plan created with ${borrowPlan.length} step(s)`);
 
-	borrowPlan = await sdk.executionService.resolveRequiredApprovals({
-		plan: borrowPlan,
-		chainId: mainnet.id,
-		account: account.address,
-		usePermit2: USE_PERMIT2,
-		unlimitedApproval: UNLIMITED_APPROVAL,
+	console.log("✓ Executing...");
+	await sdk.executionService.executeTransactionPlan({
+	  plan: borrowPlan,
+	  chainId: mainnet.id,
+	  account: walletAccountAddress(walletClient),
+	  ...exampleExecutionCallbacks(walletClient),
+	  onProgress: createTransactionPlanLogger(sdk),
 	});
-
-	console.log("✓ Approvals resolved, executing...");
-	await executePlan(borrowPlan, sdk);
-
-	let borrowSubAccount = (
-		await sdk.accountService.fetchSubAccount(
-			mainnet.id,
-			BORROW_SUB_ACCOUNT_ADDRESS,
-			[EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-			{ populateVaults: false },
-		)
-	).result;
-
-	await logOperationResult(mainnet.id, accountData, [borrowSubAccount], sdk);
+	let [borrowSubAccount] = await fetchAndLogSubAccounts(
+		mainnet.id,
+		accountData,
+		sdk,
+		[borrowSubAccountRequest],
+	);
 
 	// Step 2: Deposit USDT to a different USDT vault on another sub-account
 	console.log("\n=== Step 2: Deposit USDT to Alternate USDT Vault ===");
@@ -138,77 +139,96 @@ async function repayFromDifferentVaultDepositExample() {
 		`✓ Source deposit plan created with ${sourceDepositPlan.length} step(s)`,
 	);
 
-	sourceDepositPlan = await sdk.executionService.resolveRequiredApprovals({
-		plan: sourceDepositPlan,
-		chainId: mainnet.id,
-		account: account.address,
-		usePermit2: USE_PERMIT2,
-		unlimitedApproval: UNLIMITED_APPROVAL,
+	console.log("✓ Executing...");
+	await sdk.executionService.executeTransactionPlan({
+	  plan: sourceDepositPlan,
+	  chainId: mainnet.id,
+	  account: walletAccountAddress(walletClient),
+	  ...exampleExecutionCallbacks(walletClient),
+	  onProgress: createTransactionPlanLogger(sdk),
 	});
-
-	console.log("✓ Approvals resolved, executing...");
-	await executePlan(sourceDepositPlan, sdk);
-
-	let sourceSubAccount = (
-		await sdk.accountService.fetchSubAccount(
-			mainnet.id,
-			SOURCE_SUB_ACCOUNT_ADDRESS,
-			[ALTERNATE_USDT_VAULT],
-			{ populateVaults: false },
-		)
-	).result;
-
-	await logOperationResult(
+	let [, sourceSubAccount] = await fetchAndLogSubAccounts(
 		mainnet.id,
 		accountData,
-		[borrowSubAccount, sourceSubAccount],
 		sdk,
+		[borrowSubAccountRequest, sourceSubAccountRequest],
 	);
 
-	// Step 3: Repay debt from the different same-asset vault deposit
-	console.log("\n=== Step 3: Repay USDT Debt from Alternate USDT Vault ===");
+	// Step 3: Create a pre-existing liability-vault deposit on the borrow sub-account.
+	// The full repay cleanup should preserve this deposit by skipping the leftover sweep.
+	console.log(
+		"\n=== Step 3: Deposit USDT into Liability Vault Before Full Repay ===",
+	);
 
 	accountData.updateSubAccounts(borrowSubAccount!, sourceSubAccount!);
 
-	const repayPlan = sdk.executionService.planRepayFromDeposit({
-		account: accountData,
-		liabilityVault: EULER_PRIME_USDT_VAULT,
-		liabilityAmount: REPAY_AMOUNT,
+	let liabilityDepositPlan = sdk.executionService.planDeposit({
+		vault: EULER_PRIME_USDT_VAULT,
+		amount: PRE_EXISTING_LIABILITY_DEPOSIT_AMOUNT,
 		receiver: BORROW_SUB_ACCOUNT_ADDRESS,
-		fromVault: ALTERNATE_USDT_VAULT,
-		fromAccount: SOURCE_SUB_ACCOUNT_ADDRESS,
+		account: accountData,
+		asset: USDT_ADDRESS,
+		enableCollateral: false,
 	});
 
 	console.log(
-		`✓ Repay from different vault deposit plan created with ${repayPlan.length} step(s)`,
+		`✓ Liability vault deposit plan created with ${liabilityDepositPlan.length} step(s)`,
+	);
+
+	console.log("✓ Executing...");
+	await sdk.executionService.executeTransactionPlan({
+	  plan: liabilityDepositPlan,
+	  chainId: mainnet.id,
+	  account: walletAccountAddress(walletClient),
+	  ...exampleExecutionCallbacks(walletClient),
+	  onProgress: createTransactionPlanLogger(sdk),
+	});
+	[borrowSubAccount, sourceSubAccount] = await fetchAndLogSubAccounts(
+		mainnet.id,
+		accountData,
+		sdk,
+		[borrowSubAccountRequest, sourceSubAccountRequest],
+	);
+
+	// Step 4: Fully repay from the alternate vault. This exercises the cleanup guard:
+	// pre-existing liability-vault deposit shares are preserved instead of being migrated to the source vault.
+	console.log("\n=== Step 4: Fully Repay USDT Debt from Alternate USDT Vault ===");
+
+	accountData.updateSubAccounts(borrowSubAccount!, sourceSubAccount!);
+
+	const fullRepayPlan = sdk.executionService.planRepayFromDeposit({
+		account: accountData,
+		liabilityVault: EULER_PRIME_USDT_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: BORROW_SUB_ACCOUNT_ADDRESS,
+		fromVault: ALTERNATE_USDT_VAULT,
+		fromAccount: SOURCE_SUB_ACCOUNT_ADDRESS,
+		cleanupOnMax: true,
+	});
+
+	console.log(
+		`✓ Full repay from different vault deposit plan created with ${fullRepayPlan.length} step(s)`,
 	);
 	console.log("✓ Executing...");
 
-	await executePlan(repayPlan, sdk);
+	await sdk.executionService.executeTransactionPlan({
 
-	borrowSubAccount = (
-		await sdk.accountService.fetchSubAccount(
-			mainnet.id,
-			BORROW_SUB_ACCOUNT_ADDRESS,
-			[EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-			{ populateVaults: false },
-		)
-	).result;
+	  plan: fullRepayPlan,
 
-	sourceSubAccount = (
-		await sdk.accountService.fetchSubAccount(
-			mainnet.id,
-			SOURCE_SUB_ACCOUNT_ADDRESS,
-			[ALTERNATE_USDT_VAULT],
-			{ populateVaults: false },
-		)
-	).result;
+	  chainId: mainnet.id,
 
-	await logOperationResult(
+	  account: walletAccountAddress(walletClient),
+
+	  ...exampleExecutionCallbacks(walletClient),
+
+	  onProgress: createTransactionPlanLogger(sdk),
+
+	});
+	[borrowSubAccount, sourceSubAccount] = await fetchAndLogSubAccounts(
 		mainnet.id,
 		accountData,
-		[borrowSubAccount, sourceSubAccount],
 		sdk,
+		[borrowSubAccountRequest, sourceSubAccountRequest],
 	);
 }
 
@@ -216,8 +236,7 @@ async function repayFromDifferentVaultDepositExample() {
 // Run the example
 // ============================================================================
 printHeader("REPAY FROM DIFFERENT VAULT DEPOSIT EXAMPLE");
-initBalances()
-	.then(() => repayFromDifferentVaultDepositExample())
+initExample().then(repayFromDifferentVaultDepositExample)
 	.catch((error) => {
 		console.error("Error:", error);
 		process.exit(1);

@@ -6,10 +6,17 @@ import {
 	encodeFunctionData,
 	erc20Abi,
 	getAddress,
+	maxUint256,
 } from "viem";
 import { ExecutionService } from "../src/services/executionService/executionService.js";
+import {
+	flattenBatchEntries,
+	type EVCBatchItem,
+	type TransactionPlan,
+} from "../src/services/executionService/executionServiceTypes.js";
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
+import { ethereumVaultConnectorAbi } from "../src/services/executionService/abis/ethereumVaultConnectorAbi.js";
 
 const ACCOUNT = "0x00000000000000000000000000000000000000aa" as const;
 const TOKEN_IN = "0x00000000000000000000000000000000000000bb" as const;
@@ -22,6 +29,9 @@ const SOURCE_VAULT = "0x0000000000000000000000000000000000000a02" as const;
 const LIABILITY_VAULT = "0x0000000000000000000000000000000000000a03" as const;
 const SAME_ASSET = "0x0000000000000000000000000000000000000a04" as const;
 const MAINNET_USDT = getAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7");
+const COLLATERAL_VAULT = "0x0000000000000000000000000000000000000a05" as const;
+const DESTINATION_VAULT = "0x0000000000000000000000000000000000000a06" as const;
+const NEW_LIABILITY_VAULT = "0x0000000000000000000000000000000000000a07" as const;
 const AMOUNT = 12345n;
 
 function createExecutionService() {
@@ -38,6 +48,22 @@ function createExecutionService() {
 		} as never,
 		{} as never,
 	);
+}
+
+function createBatchItem(
+	targetContract = VAULT_IN,
+	onBehalfOfAccount = ACCOUNT,
+): EVCBatchItem {
+	return {
+		targetContract,
+		onBehalfOfAccount,
+		value: 0n,
+		data: encodeFunctionData({
+			abi: eVaultAbi,
+			functionName: "touch",
+			args: [],
+		}),
+	};
 }
 
 function createSwapQuote() {
@@ -101,7 +127,29 @@ function createTransferSwapQuote() {
 	};
 }
 
-function createRepayFromDepositAccount() {
+function createRepaySwapQuote() {
+	return {
+		...createSwapQuote(),
+		amountOutMin: AMOUNT.toString(),
+		accountIn: SOURCE_ACCOUNT,
+		accountOut: RECEIVER,
+		vaultIn: SOURCE_VAULT,
+		receiver: LIABILITY_VAULT,
+		verify: {
+			type: "debtMax",
+			verifierAddress: VERIFIER,
+			verifierData: "0x5678",
+			vault: LIABILITY_VAULT,
+			account: RECEIVER,
+			amount: AMOUNT.toString(),
+			deadline: 123,
+		},
+	};
+}
+
+function createRepayFromDepositAccount({
+	liabilityAssets = 77n,
+}: { liabilityAssets?: bigint } = {}) {
 	return {
 		owner: ACCOUNT,
 		chainId: 1,
@@ -109,6 +157,7 @@ function createRepayFromDepositAccount() {
 			if (account === RECEIVER && vault === LIABILITY_VAULT) {
 				return {
 					asset: SAME_ASSET,
+					assets: liabilityAssets,
 					borrowed: AMOUNT,
 				};
 			}
@@ -126,6 +175,51 @@ function createRepayFromDepositAccount() {
 			}
 			return undefined;
 		},
+		getSubAccount: (account: string) => {
+			if (account === RECEIVER) {
+				return {
+					enabledCollaterals: [COLLATERAL_VAULT],
+					positions: [
+						{
+							account: RECEIVER,
+							vaultAddress: COLLATERAL_VAULT,
+							asset: SAME_ASSET,
+							assets: AMOUNT,
+							shares: AMOUNT,
+						},
+					],
+				};
+			}
+			return undefined;
+		},
+	} as never;
+}
+
+function createSameAssetMigrationAccount() {
+	return {
+		owner: ACCOUNT,
+		chainId: 1,
+		getPosition: (account: string, vault: string) => {
+			if (account !== RECEIVER) return undefined;
+			if (vault === SOURCE_VAULT) {
+				return {
+					asset: SAME_ASSET,
+					assets: AMOUNT,
+					shares: AMOUNT + 10n,
+				};
+			}
+			if (vault === LIABILITY_VAULT) {
+				return {
+					asset: SAME_ASSET,
+					borrowed: AMOUNT,
+				};
+			}
+			return undefined;
+		},
+		isCollateralEnabled: (account: string, vault: string) =>
+			account === RECEIVER && vault === SOURCE_VAULT,
+		isControllerEnabled: (account: string, vault: string) =>
+			account === RECEIVER && vault === LIABILITY_VAULT,
 	} as never;
 }
 
@@ -210,6 +304,173 @@ test("describeBatch decodes caller-provided extra ABIs item-by-item", () => {
 	});
 });
 
+test("describeBatch preserves operation groupings while decoding child items", () => {
+	const service = createExecutionService();
+	const batchItem = createBatchItem(VAULT_IN);
+
+	assert.deepEqual(
+		service.describeBatch([{ type: "operation", name: "test", items: [batchItem] }]),
+		[
+			{
+				type: "operation",
+				name: "test",
+				items: [
+					{
+						targetContract: VAULT_IN,
+						onBehalfOfAccount: ACCOUNT,
+						functionName: "touch",
+						args: {},
+					},
+				],
+			},
+		],
+	);
+});
+
+test("convertBatchItemsToPlan groups encoded batch items into an operation when named", () => {
+	const service = createExecutionService();
+	const first = createBatchItem(VAULT_IN);
+	const second = createBatchItem(SOURCE_VAULT);
+
+	const plan = service.convertBatchItemsToPlan([first, second], "operation");
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+	const planItem = plan[0];
+	const operation = planItem.items[0];
+
+	assert.equal(planItem.items.length, 1);
+	assert.equal(
+		operation && "type" in operation ? operation.type : undefined,
+		"operation",
+	);
+	assert.equal(
+		operation && "type" in operation ? operation.name : undefined,
+		"operation",
+	);
+	assert.deepEqual(flattenBatchEntries(planItem.items), [first, second]);
+});
+
+test("convertBatchItemsToPlan wraps raw batch items without creating an operation", () => {
+	const service = createExecutionService();
+	const first = createBatchItem(VAULT_IN);
+	const second = createBatchItem(SOURCE_VAULT);
+
+	const plan = service.convertBatchItemsToPlan([first, second]);
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+	assert.deepEqual(plan[0].items, [first, second]);
+});
+
+test("convertBatchItemsToPlan wraps batch items in an operation when a name is provided", () => {
+	const service = createExecutionService();
+	const first = createBatchItem(VAULT_IN);
+	const second = createBatchItem(SOURCE_VAULT);
+
+	const plan = service.convertBatchItemsToPlan([first, second], "custom");
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+	assert.equal(plan[0].items.length, 1);
+	const operation = plan[0].items[0];
+	assert.equal(
+		operation && "type" in operation ? operation.type : undefined,
+		"operation",
+	);
+	assert.equal(
+		operation && "type" in operation ? operation.name : undefined,
+		"custom",
+	);
+	assert.deepEqual(flattenBatchEntries(plan[0].items), [first, second]);
+});
+
+test("addBatchItemToPlan appends a raw batch item to the last batch", () => {
+	const service = createExecutionService();
+	const first = createBatchItem(VAULT_IN);
+	const second = createBatchItem(SOURCE_VAULT);
+	const plan = service.convertBatchItemsToPlan([first]);
+
+	const updated = service.addBatchItemToPlan(plan, second);
+
+	assert.equal(updated, plan);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+	assert.equal(plan[0].items.length, 2);
+	assert.equal(plan[0].items[1], second);
+	assert.deepEqual(flattenBatchEntries(plan[0].items), [first, second]);
+});
+
+test("mergePlans preserves operation groupings while concatenating adjacent batches", () => {
+	const service = createExecutionService();
+	const first = createBatchItem(VAULT_IN);
+	const extra = createBatchItem(SOURCE_VAULT);
+	const second = createBatchItem(LIABILITY_VAULT);
+	const firstPlan: TransactionPlan = service.convertBatchItemsToPlan([first], "first");
+	const secondPlan: TransactionPlan = service.convertBatchItemsToPlan([second], "second");
+	service.addBatchItemToPlan(firstPlan, extra);
+
+	const merged = service.mergePlans([firstPlan, secondPlan]);
+
+	assert.equal(merged.length, 1);
+	assert.equal(merged[0]?.type, "evcBatch");
+	if (merged[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+	assert.equal(merged[0].items.length, 3);
+	const firstEntry = merged[0].items[0];
+	const lastEntry = merged[0].items[2];
+	assert.equal(
+		firstEntry && "type" in firstEntry ? firstEntry.type : undefined,
+		"operation",
+	);
+	assert.equal(
+		firstEntry && "type" in firstEntry ? firstEntry.name : undefined,
+		"first",
+	);
+	assert.equal(merged[0].items[1], extra);
+	assert.equal(
+		lastEntry && "type" in lastEntry ? lastEntry.type : undefined,
+		"operation",
+	);
+	assert.equal(
+		lastEntry && "type" in lastEntry ? lastEntry.name : undefined,
+		"second",
+	);
+	assert.deepEqual(flattenBatchEntries(merged[0].items), [first, extra, second]);
+});
+
+test("mergePlans rejects contract calls because call boundaries need manual merging", () => {
+	const service = createExecutionService();
+	const plan: TransactionPlan = [
+		{
+			type: "contractCall",
+			chainId: 1,
+			to: TOKEN_IN,
+			abi: erc20Abi,
+			functionName: "balanceOf",
+			args: [ACCOUNT],
+			value: 0n,
+		},
+	];
+
+	assert.throws(
+		() => service.mergePlans([plan]),
+		/cannot merge contractCall plan items/,
+	);
+});
+
 test("deposit-with-swap-from-wallet emits explicit required approval", () => {
 	const service = createExecutionService();
 	const account = {
@@ -260,13 +521,14 @@ test("swap-from-wallet emits explicit required approval and wallet-swap batch", 
 		throw new Error("expected evcBatch");
 	}
 
-	assert.equal(plan[1].items[0]?.targetContract, VERIFIER);
-	assert.equal(plan[1].items[1]?.targetContract, SWAPPER);
-	assert.equal(plan[1].items[2]?.targetContract, VERIFIER);
+	const batchItems = flattenBatchEntries(plan[1].items);
+	assert.equal(batchItems[0]?.targetContract, VERIFIER);
+	assert.equal(batchItems[1]?.targetContract, SWAPPER);
+	assert.equal(batchItems[2]?.targetContract, VERIFIER);
 
 	const transfer = decodeFunctionData({
 		abi: swapVerifierAbi,
-		data: plan[1].items[0]?.data ?? "0x",
+		data: batchItems[0]?.data ?? "0x",
 	});
 	assert.equal(transfer.functionName, "transferFromSender");
 	assert.deepEqual(transfer.args, [TOKEN_IN, AMOUNT, SWAPPER]);
@@ -304,7 +566,7 @@ test("repay-from-deposit same-vault path preserves source account", () => {
 		throw new Error("expected evcBatch");
 	}
 
-	const repay = plan[0].items[0];
+	const repay = flattenBatchEntries(plan[0].items)[0];
 	assert.equal(repay?.targetContract, LIABILITY_VAULT);
 	assert.equal(repay?.onBehalfOfAccount, SOURCE_ACCOUNT);
 
@@ -333,7 +595,7 @@ test("repay-from-deposit same-asset different-vault path uses skim and repayWith
 		throw new Error("expected evcBatch");
 	}
 
-	const items = plan[0].items;
+	const items = flattenBatchEntries(plan[0].items);
 	assert.equal(items.length, 3);
 
 	const withdraw = decodeFunctionData({
@@ -423,4 +685,734 @@ test("resolveRequiredApprovals resets mainnet USDT allowance before direct appro
 			[VAULT_IN, AMOUNT],
 		],
 	);
+});
+
+test("repay-from-deposit different-vault full repay preserves pre-existing liability deposit", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayFromDeposit({
+		account: createRepayFromDepositAccount(),
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: RECEIVER,
+		fromVault: SOURCE_VAULT,
+		fromAccount: SOURCE_ACCOUNT,
+		cleanupOnMax: true,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = flattenBatchEntries(plan[0].items);
+	const amountWithInterest = (AMOUNT * 10_001n) / 10_000n;
+	assert.equal(items.length, 7);
+
+	const withdraw = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(withdraw.functionName, "withdraw");
+	assert.deepEqual(withdraw.args, [
+		amountWithInterest,
+		getAddress(LIABILITY_VAULT),
+		getAddress(SOURCE_ACCOUNT),
+	]);
+
+	const skimToLiability = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(skimToLiability.functionName, "skim");
+	assert.deepEqual(skimToLiability.args, [
+		amountWithInterest,
+		getAddress(RECEIVER),
+	]);
+
+	const repay = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[2]?.data ?? "0x",
+	});
+	assert.equal(repay.functionName, "repayWithShares");
+	assert.deepEqual(repay.args, [maxUint256, getAddress(RECEIVER)]);
+
+	const disableController = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(disableController.functionName, "disableController");
+
+	const disableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[4]?.data ?? "0x",
+	});
+	assert.equal(disableCollateral.functionName, "disableCollateral");
+	assert.deepEqual(disableCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const transferCollateral = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[5]?.data ?? "0x",
+	});
+	assert.equal(transferCollateral.functionName, "transferFromMax");
+	assert.deepEqual(transferCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(ACCOUNT),
+	]);
+
+	const transferSource = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[6]?.data ?? "0x",
+	});
+	assert.equal(transferSource.functionName, "transferFromMax");
+	assert.deepEqual(transferSource.args, [
+		getAddress(SOURCE_ACCOUNT),
+		getAddress(ACCOUNT),
+	]);
+});
+
+test("repay-from-deposit different-vault full repay sweeps cushion without pre-existing liability deposit", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayFromDeposit({
+		account: createRepayFromDepositAccount({ liabilityAssets: 0n }),
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: RECEIVER,
+		fromVault: SOURCE_VAULT,
+		fromAccount: SOURCE_ACCOUNT,
+		cleanupOnMax: true,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = flattenBatchEntries(plan[0].items);
+	assert.equal(items.length, 9);
+
+	const redeemLeftovers = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[4]?.data ?? "0x",
+	});
+	assert.equal(redeemLeftovers.functionName, "redeem");
+	assert.deepEqual(redeemLeftovers.args, [
+		maxUint256,
+		getAddress(SOURCE_VAULT),
+		getAddress(RECEIVER),
+	]);
+
+	const skimBack = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[5]?.data ?? "0x",
+	});
+	assert.equal(skimBack.functionName, "skim");
+	assert.deepEqual(skimBack.args, [maxUint256, getAddress(SOURCE_ACCOUNT)]);
+});
+
+test("repay-from-deposit same-vault full repay cleans up collateral and source shares", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayFromDeposit({
+		account: createRepayFromDepositAccount(),
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: RECEIVER,
+		fromVault: LIABILITY_VAULT,
+		fromAccount: SOURCE_ACCOUNT,
+		cleanupOnMax: true,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = flattenBatchEntries(plan[0].items);
+	assert.equal(items.length, 5);
+
+	const repay = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(repay.functionName, "repayWithShares");
+	assert.deepEqual(repay.args, [maxUint256, getAddress(RECEIVER)]);
+
+	const disableController = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(disableController.functionName, "disableController");
+
+	const disableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[2]?.data ?? "0x",
+	});
+	assert.equal(disableCollateral.functionName, "disableCollateral");
+	assert.deepEqual(disableCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const transferCollateral = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(transferCollateral.functionName, "transferFromMax");
+	assert.deepEqual(transferCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(ACCOUNT),
+	]);
+
+	const transferSource = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[4]?.data ?? "0x",
+	});
+	assert.equal(transferSource.functionName, "transferFromMax");
+	assert.deepEqual(transferSource.args, [
+		getAddress(SOURCE_ACCOUNT),
+		getAddress(ACCOUNT),
+	]);
+});
+
+test("repay-from-deposit full repay skips planner cleanup by default", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayFromDeposit({
+		account: createRepayFromDepositAccount(),
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: RECEIVER,
+		fromVault: SOURCE_VAULT,
+		fromAccount: SOURCE_ACCOUNT,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	assert.equal(flattenBatchEntries(plan[0].items).length, 4);
+});
+
+test("repay-from-wallet full repay cleans up active collaterals when requested", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayFromWallet({
+		account: createRepayFromDepositAccount(),
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: RECEIVER,
+		cleanupOnMax: true,
+	});
+
+	assert.equal(plan.length, 2);
+	assert.equal(plan[1]?.type, "evcBatch");
+	if (plan[1]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = flattenBatchEntries(plan[1].items);
+	assert.equal(items.length, 4);
+
+	const repay = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(repay.functionName, "repay");
+	assert.deepEqual(repay.args, [maxUint256, getAddress(RECEIVER)]);
+
+	const disableController = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(disableController.functionName, "disableController");
+
+	const disableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[2]?.data ?? "0x",
+	});
+	assert.equal(disableCollateral.functionName, "disableCollateral");
+	assert.deepEqual(disableCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const transferCollateral = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(transferCollateral.functionName, "transferFromMax");
+	assert.deepEqual(transferCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(ACCOUNT),
+	]);
+});
+
+test("repay-from-wallet full repay skips cleanup by default", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayFromWallet({
+		account: createRepayFromDepositAccount(),
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: RECEIVER,
+	});
+
+	assert.equal(plan[1]?.type, "evcBatch");
+	if (plan[1]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	assert.equal(flattenBatchEntries(plan[1].items).length, 2);
+});
+
+test("borrow can source collateral from existing savings shares", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		isCollateralEnabled: (accountAddress: string, vault: string) =>
+			accountAddress === SOURCE_ACCOUNT && vault === COLLATERAL_VAULT,
+		isControllerEnabled: () => false,
+		getCurrentController: () => undefined,
+	} as never;
+	const plan = service.planBorrow({
+		account,
+		vault: LIABILITY_VAULT,
+		amount: AMOUNT,
+		borrowAccount: RECEIVER,
+		receiver: ACCOUNT,
+		collateral: {
+			vault: COLLATERAL_VAULT,
+			amount: AMOUNT + 1n,
+			source: "savings",
+			from: SOURCE_ACCOUNT,
+			disableCollateralFrom: true,
+		},
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = flattenBatchEntries(plan[0].items);
+	assert.equal(items.length, 5);
+
+	const disableSourceCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(disableSourceCollateral.functionName, "disableCollateral");
+	assert.deepEqual(disableSourceCollateral.args, [
+		getAddress(SOURCE_ACCOUNT),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const transferShares = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(items[1]?.targetContract, COLLATERAL_VAULT);
+	assert.equal(items[1]?.onBehalfOfAccount, SOURCE_ACCOUNT);
+	assert.equal(transferShares.functionName, "transfer");
+	assert.deepEqual(transferShares.args, [getAddress(RECEIVER), AMOUNT + 1n]);
+
+	const enableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[2]?.data ?? "0x",
+	});
+	assert.equal(enableCollateral.functionName, "enableCollateral");
+	assert.deepEqual(enableCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const enableController = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(enableController.functionName, "enableController");
+	assert.deepEqual(enableController.args, [
+		getAddress(RECEIVER),
+		getAddress(LIABILITY_VAULT),
+	]);
+
+	const borrow = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[4]?.data ?? "0x",
+	});
+	assert.equal(borrow.functionName, "borrow");
+	assert.deepEqual(borrow.args, [AMOUNT, getAddress(ACCOUNT)]);
+});
+
+test("same-asset multiply can source supply from savings shares", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		isCollateralEnabled: () => false,
+		isControllerEnabled: () => false,
+		getCurrentController: () => undefined,
+	} as never;
+	const plan = service.planMultiplySameAsset({
+		account,
+		collateralVault: COLLATERAL_VAULT,
+		collateralAmount: AMOUNT,
+		collateralAsset: SAME_ASSET,
+		collateralShareSource: {
+			from: SOURCE_ACCOUNT,
+			shares: AMOUNT + 2n,
+		},
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: AMOUNT,
+		longVault: DESTINATION_VAULT,
+		receiver: RECEIVER,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = flattenBatchEntries(plan[0].items);
+	assert.equal(items.length, 6);
+
+	const transferShares = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(items[0]?.targetContract, COLLATERAL_VAULT);
+	assert.equal(items[0]?.onBehalfOfAccount, SOURCE_ACCOUNT);
+	assert.equal(transferShares.functionName, "transfer");
+	assert.deepEqual(transferShares.args, [getAddress(RECEIVER), AMOUNT + 2n]);
+
+	const enableSupplyCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(enableSupplyCollateral.functionName, "enableCollateral");
+	assert.deepEqual(enableSupplyCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const enableController = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[2]?.data ?? "0x",
+	});
+	assert.equal(enableController.functionName, "enableController");
+
+	const borrow = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(borrow.functionName, "borrow");
+	assert.deepEqual(borrow.args, [AMOUNT, getAddress(DESTINATION_VAULT)]);
+
+	const skim = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[4]?.data ?? "0x",
+	});
+	assert.equal(skim.functionName, "skim");
+	assert.deepEqual(skim.args, [AMOUNT, getAddress(RECEIVER)]);
+
+	const enableLongCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[5]?.data ?? "0x",
+	});
+	assert.equal(enableLongCollateral.functionName, "enableCollateral");
+	assert.deepEqual(enableLongCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(DESTINATION_VAULT),
+	]);
+});
+
+test("swap multiply can source supply from savings shares", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		isCollateralEnabled: () => false,
+		isControllerEnabled: () => false,
+		getCurrentController: () => undefined,
+	} as never;
+	const plan = service.planMultiplyWithSwap({
+		account,
+		collateralVault: COLLATERAL_VAULT,
+		collateralAmount: AMOUNT,
+		collateralAsset: SAME_ASSET,
+		collateralShareSource: {
+			from: SOURCE_ACCOUNT,
+			shares: AMOUNT + 3n,
+		},
+		swapQuote: createSwapQuote() as never,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = flattenBatchEntries(plan[0].items);
+	assert.equal(items.length, 7);
+
+	const transferShares = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(items[0]?.targetContract, COLLATERAL_VAULT);
+	assert.equal(items[0]?.onBehalfOfAccount, SOURCE_ACCOUNT);
+	assert.equal(transferShares.functionName, "transfer");
+	assert.deepEqual(transferShares.args, [getAddress(ACCOUNT), AMOUNT + 3n]);
+
+	const borrow = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(borrow.functionName, "borrow");
+	assert.deepEqual(borrow.args, [AMOUNT, getAddress(SWAPPER)]);
+
+	assert.equal(items[4]?.targetContract, SWAPPER);
+	assert.equal(items[5]?.targetContract, VERIFIER);
+
+	const enableLongCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[6]?.data ?? "0x",
+	});
+	assert.equal(enableLongCollateral.functionName, "enableCollateral");
+	assert.deepEqual(enableLongCollateral.args, [
+		getAddress(ACCOUNT),
+		getAddress(RECEIVER),
+	]);
+});
+
+test("repay-with-swap full repay cleans up active collaterals and source shares when requested", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayWithSwap({
+		account: createRepayFromDepositAccount(),
+		swapQuote: createRepaySwapQuote() as never,
+		cleanupOnMax: true,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = flattenBatchEntries(plan[0].items);
+	assert.equal(items.length, 7);
+
+	const disableController = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(disableController.functionName, "disableController");
+
+	const disableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[4]?.data ?? "0x",
+	});
+	assert.equal(disableCollateral.functionName, "disableCollateral");
+	assert.deepEqual(disableCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(COLLATERAL_VAULT),
+	]);
+
+	const transferCollateral = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[5]?.data ?? "0x",
+	});
+	assert.equal(transferCollateral.functionName, "transferFromMax");
+	assert.deepEqual(transferCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(ACCOUNT),
+	]);
+
+	const transferSource = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[6]?.data ?? "0x",
+	});
+	assert.equal(transferSource.functionName, "transferFromMax");
+	assert.deepEqual(transferSource.args, [
+		getAddress(SOURCE_ACCOUNT),
+		getAddress(ACCOUNT),
+	]);
+});
+
+test("repay-with-swap full repay skips cleanup by default", () => {
+	const service = createExecutionService();
+	const plan = service.planRepayWithSwap({
+		account: createRepayFromDepositAccount(),
+		swapQuote: createRepaySwapQuote() as never,
+	});
+
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	assert.equal(flattenBatchEntries(plan[0].items).length, 4);
+});
+
+test("same-asset collateral migration withdraws, skims, and rotates collateral flags", () => {
+	const service = createExecutionService();
+	const plan = service.planMigrateSameAssetCollateral({
+		account: createSameAssetMigrationAccount(),
+		fromVault: SOURCE_VAULT,
+		toVault: DESTINATION_VAULT,
+		amount: AMOUNT,
+		positionAccount: RECEIVER,
+		toAsset: SAME_ASSET,
+		isMax: true,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = flattenBatchEntries(plan[0].items);
+	assert.equal(items.length, 4);
+
+	const redeem = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(items[0]?.targetContract, SOURCE_VAULT);
+	assert.equal(items[0]?.onBehalfOfAccount, RECEIVER);
+	assert.equal(redeem.functionName, "redeem");
+	assert.deepEqual(redeem.args, [
+		AMOUNT + 10n,
+		getAddress(DESTINATION_VAULT),
+		getAddress(RECEIVER),
+	]);
+
+	const skim = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(items[1]?.targetContract, DESTINATION_VAULT);
+	assert.equal(items[1]?.onBehalfOfAccount, RECEIVER);
+	assert.equal(skim.functionName, "skim");
+	assert.deepEqual(skim.args, [AMOUNT, getAddress(RECEIVER)]);
+
+	const enableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[2]?.data ?? "0x",
+	});
+	assert.equal(enableCollateral.functionName, "enableCollateral");
+	assert.deepEqual(enableCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(DESTINATION_VAULT),
+	]);
+
+	const disableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(disableCollateral.functionName, "disableCollateral");
+	assert.deepEqual(disableCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(SOURCE_VAULT),
+	]);
+});
+
+test("same-asset debt migration borrows with cushion, repays old debt, and sweeps excess", () => {
+	const service = createExecutionService();
+	const plan = service.planMigrateSameAssetDebt({
+		account: createSameAssetMigrationAccount(),
+		oldLiabilityVault: LIABILITY_VAULT,
+		newLiabilityVault: NEW_LIABILITY_VAULT,
+		liabilityAccount: RECEIVER,
+		newLiabilityAsset: SAME_ASSET,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = flattenBatchEntries(plan[0].items);
+	const amountWithExtra = (AMOUNT * 10_001n) / 10_000n;
+	assert.equal(items.length, 8);
+
+	const enableController = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(enableController.functionName, "enableController");
+	assert.deepEqual(enableController.args, [
+		getAddress(RECEIVER),
+		getAddress(NEW_LIABILITY_VAULT),
+	]);
+
+	const borrow = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(items[1]?.targetContract, NEW_LIABILITY_VAULT);
+	assert.equal(items[1]?.onBehalfOfAccount, RECEIVER);
+	assert.equal(borrow.functionName, "borrow");
+	assert.deepEqual(borrow.args, [
+		amountWithExtra,
+		getAddress(LIABILITY_VAULT),
+	]);
+
+	const skimOld = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[2]?.data ?? "0x",
+	});
+	assert.equal(skimOld.functionName, "skim");
+	assert.deepEqual(skimOld.args, [amountWithExtra, getAddress(RECEIVER)]);
+
+	const repayOld = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[3]?.data ?? "0x",
+	});
+	assert.equal(repayOld.functionName, "repayWithShares");
+	assert.deepEqual(repayOld.args, [maxUint256, getAddress(RECEIVER)]);
+
+	const disableController = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[4]?.data ?? "0x",
+	});
+	assert.equal(disableController.functionName, "disableController");
+
+	const redeemExcess = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[5]?.data ?? "0x",
+	});
+	assert.equal(redeemExcess.functionName, "redeem");
+	assert.deepEqual(redeemExcess.args, [
+		maxUint256,
+		getAddress(NEW_LIABILITY_VAULT),
+		getAddress(RECEIVER),
+	]);
+
+	const skimNew = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[6]?.data ?? "0x",
+	});
+	assert.equal(skimNew.functionName, "skim");
+	assert.deepEqual(skimNew.args, [maxUint256, getAddress(RECEIVER)]);
+
+	const transferRemainingShares = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[7]?.data ?? "0x",
+	});
+	assert.equal(transferRemainingShares.functionName, "transferFromMax");
+	assert.deepEqual(transferRemainingShares.args, [
+		getAddress(RECEIVER),
+		getAddress(ACCOUNT),
+	]);
 });

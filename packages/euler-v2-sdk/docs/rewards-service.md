@@ -70,17 +70,17 @@ These methods return a standard `TransactionPlan`, but they emit `contractCall` 
 
 ## Execution Model
 
-Reward plans run through the same app executor as core Euler plans:
+Reward plans run through the same execution service as core Euler plans:
 
 1. build the reward plan in `rewardsService`
-2. pass the returned `TransactionPlan` to your executor
-3. execute `contractCall` items directly and `evcBatch` items through EVC
+2. pass the returned `TransactionPlan` to `sdk.executionService.executeTransactionPlan(...)`
+3. let the service execute `contractCall` items directly and `evcBatch` items through EVC
 4. refetch account/vault reward queries after confirmation
 
-Reference executors:
+References:
 
-- [`examples/utils/executor.ts`](../examples/utils/executor.ts)
-- [`examples/react-sdk-example/src/utils/txExecutor.ts`](../examples/react-sdk-example/src/utils/txExecutor.ts)
+- [`execution-service.md`](./execution-service.md)
+- [`examples/react-sdk-example/src/utils/txProgress.ts`](../examples/react-sdk-example/src/utils/txProgress.ts)
 
 ## Configuration
 

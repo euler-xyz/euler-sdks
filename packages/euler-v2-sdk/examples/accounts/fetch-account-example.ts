@@ -100,7 +100,9 @@ async function fetchAccountExample() {
       if (vault?.eulerLabel) {
         const label = vault.eulerLabel;
         console.log(`    Label:`);
-        console.log(`      Vault:      ${label.vault.name} — ${label.vault.description}`);
+        if (label.vault) {
+          console.log(`      Vault:      ${label.vault.name} — ${label.vault.description}`);
+        }
         if (label.entities?.length > 0) {
           console.log(`      Entities:   ${label.entities.map((e: any) => e.name).join(", ")}`);
         }

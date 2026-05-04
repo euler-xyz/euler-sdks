@@ -28,26 +28,22 @@ export type V3RewardsApyRow = {
 	endTimestamp?: number;
 	endTime?: number;
 	campaignType?: string;
-	rewardToken?:
-		| {
-				address?: string;
-				symbol?: string;
-				name?: string;
-				decimals?: number;
-		  }
-		| null;
-	token?:
-		| {
-				address?: string;
-				symbol?: string;
-				name?: string;
-				decimals?: number;
-		  }
-		| null;
+	rewardToken?: {
+		address?: string;
+		symbol?: string;
+		name?: string;
+		decimals?: number | string;
+	} | null;
+	token?: {
+		address?: string;
+		symbol?: string;
+		name?: string;
+		decimals?: number | string;
+	} | null;
 	rewardTokenAddress?: string;
 	rewardTokenSymbol?: string;
 	rewardTokenName?: string;
-	rewardTokenDecimals?: number;
+	rewardTokenDecimals?: number | string;
 	campaigns?: Array<{
 		id?: string;
 		provider?: string;
@@ -58,14 +54,12 @@ export type V3RewardsApyRow = {
 		endTimestamp?: string;
 		status?: string;
 		collateralAsset?: string;
-		rewardToken?:
-			| {
-					address?: string;
-					symbol?: string;
-					name?: string;
-					decimals?: number;
-			  }
-			| null;
+		rewardToken?: {
+			address?: string;
+			symbol?: string;
+			name?: string;
+			decimals?: number | string;
+		} | null;
 	}>;
 };
 
@@ -84,26 +78,24 @@ export type V3RewardsBreakdownRow = {
 	chainId?: number;
 	source?: string;
 	provider?: string;
-	token?:
-		| {
-				address?: string;
-				chainId?: number;
-				symbol?: string;
-				name?: string;
-				decimals?: number;
-		  }
-		| null;
+	token?: {
+		address?: string;
+		chainId?: number;
+		symbol?: string;
+		name?: string;
+		decimals?: number | string;
+	} | null;
 	tokenAddress?: string;
 	tokenSymbol?: string;
 	tokenName?: string;
-	tokenDecimals?: number;
-	tokenPrice?: number;
-	tokenPriceUsd?: number;
+	tokenDecimals?: number | string;
+	tokenPrice?: number | string;
+	tokenPriceUsd?: number | string;
 	rewardTokenAddress?: string;
 	rewardTokenSymbol?: string;
 	rewardTokenName?: string;
-	rewardTokenDecimals?: number;
-	rewardTokenPriceUsd?: number;
+	rewardTokenDecimals?: number | string;
+	rewardTokenPriceUsd?: number | string;
 	accumulated?: string | number;
 	accumulatedAmount?: string | number;
 	totalAccumulated?: string | number;

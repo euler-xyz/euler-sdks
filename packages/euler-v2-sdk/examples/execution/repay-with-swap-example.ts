@@ -2,27 +2,25 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * REPAY WITH SWAP EXAMPLE
  * ═══════════════════════════════════════════════════════════════════════════
- * 
+ *
  * This example demonstrates how to repay debt by swapping collateral assets.
  * It first sets up a leveraged position, then repays the debt by withdrawing
  * collateral and swapping it to the liability asset.
- * 
+ *
  * OPERATION:
  *   1. Deposit USDC as collateral and borrow USDT
- *   2. Withdraw USDC from collateral
- *   3. Swap USDC → USDT (using live DEX aggregator quotes)
- *   4. Repay USDT debt
- *   5. Disable controller if debt is fully repaid
- * 
+ *   2. Partially repay USDT debt by swapping USDC collateral
+ *   3. Fully repay remaining USDT debt by swapping USDC collateral and clean up the repaid sub-account
+ *
  * ASSETS & VAULTS:
  *   • USDC → Euler Prime USDC Vault (collateral)
  *   • USDT → Euler Prime USDT Vault (liability being repaid)
- * 
+ *
  * ⚠️  IMPORTANT - LIVE SWAP QUOTES:
  *   • This example fetches real-time swap quotes from DEX aggregators
  *   • Restart Anvil immediately before running to avoid stale blockchain state
  *   • If the swap fails, try changing REPAY_QUOTE_INDEX to use a different provider
- * 
+ *
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
  *   2. Restart Anvil immediately before running: npm run anvil
@@ -36,21 +34,20 @@ import "dotenv/config";
 import {
   parseUnits,
   isAddressEqual,
-  getAddress,
-} from "viem";
-import { mainnet } from "viem/chains";
-import { buildEulerSDK, getSubAccountAddress, SwapperMode } from "@eulerxyz/euler-v2-sdk";
-
-import { executePlan } from "../utils/executor.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
-import { 
+  } from "viem";
+  import { mainnet } from "viem/chains";
+  import { buildEulerSDK, getSubAccountAddress, SwapperMode } from "@eulerxyz/euler-v2-sdk";
+  import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
   rpcUrls,
   account,
-  initBalances,
+  initExample,
   USDC_ADDRESS,
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
   USDT_ADDRESS,
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 
 // Inputs
@@ -59,19 +56,21 @@ const BORROW_AMOUNT = parseUnits("500", 6);      // 500 USDT
 const REPAY_AMOUNT = parseUnits("250", 6);       // Set to -1n to repay all debt
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
-const REPAY_QUOTE_INDEX = 1; // Change this if swap quote is bad
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = false;
+const REPAY_QUOTE_INDEX = Number(process.env.REPAY_QUOTE_INDEX ?? 0); // Change this if swap quote is bad
 
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
 
 // TODO add exact input repay example
 
-async function repayWithSwapExample() {
+async function repayWithSwapExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
   // Build the SDK
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
+  });
 
-  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery, 
+  // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery,
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.
   let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
 
@@ -92,33 +91,32 @@ async function repayWithSwapExample() {
 
   console.log(`✓ Borrow plan created with ${borrowPlan.length} step(s)`);
 
-  // Resolve approvals (fetches wallet data internally)
-  borrowPlan = await sdk.executionService.resolveRequiredApprovals({
+
+  console.log(`✓ Executing...`);
+  await sdk.executionService.executeTransactionPlan({
     plan: borrowPlan,
     chainId: mainnet.id,
-    account: account.address,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
+    account: walletAccountAddress(walletClient),
+    ...exampleExecutionCallbacks(walletClient),
+    onProgress: createTransactionPlanLogger(sdk),
   });
-
-  console.log(`✓ Approvals resolved, executing...`);
-  await executePlan(borrowPlan, sdk);
-
   // Fetch updated sub-account after borrow (subgraph not available on local fork)
-  const subAccountAfterBorrow = (await sdk.accountService.fetchSubAccount(
+  const [subAccountAfterBorrow] = await fetchAndLogSubAccounts(
     mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { populateVaults: false }
-  )).result;
-  
-  // Log the diff between before and after borrow
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterBorrow], sdk);
+    accountData,
+    sdk,
+    [
+      {
+        account: SUB_ACCOUNT_ADDRESS,
+        vaults: [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+      },
+    ],
+  );
 
   // Step 2: Get repay quote - swap USDC collateral to USDT to repay debt
-  console.log('\n=== Step 2: Get Repay Quote ===');
+  console.log('\n=== Step 2: Get Partial Repay Quote ===');
   console.log('✓ Fetching swap quote from USDC to USDT for repayment...');
-  
+
   // Get current debt from position
   const usdtPosition = subAccountAfterBorrow!.positions.find(p => isAddressEqual(p.vaultAddress, EULER_PRIME_USDT_VAULT));
   const currentDebt = usdtPosition?.borrowed ?? 0n;
@@ -126,74 +124,160 @@ async function repayWithSwapExample() {
     throw new Error("No debt found to repay");
   }
 
-  // Update account data with the fetched sub-account
-  accountData.subAccounts = { [getAddress(subAccountAfterBorrow!.account)]: subAccountAfterBorrow! };
+  accountData.updateSubAccounts(subAccountAfterBorrow!);
 
-  const repayQuotes = await sdk.swapService.fetchRepayQuotes({
-    chainId: mainnet.id,
-    fromVault: EULER_PRIME_USDC_VAULT,
-    fromAsset: USDC_ADDRESS,
-    fromAccount: SUB_ACCOUNT_ADDRESS,
-    liabilityVault: EULER_PRIME_USDT_VAULT,
-    liabilityAsset: USDT_ADDRESS,
-    liabilityAmount: REPAY_AMOUNT === -1n ? currentDebt : REPAY_AMOUNT,
+  const fetchRepayQuotes = async (
+    liabilityAmount: bigint,
+    debt: bigint,
+    preferredIndex: number,
+  ) => {
+    const repayQuotes = await sdk.swapService.fetchRepayQuotes({
+      chainId: mainnet.id,
+      fromVault: EULER_PRIME_USDC_VAULT,
+      fromAsset: USDC_ADDRESS,
+      fromAccount: SUB_ACCOUNT_ADDRESS,
+      liabilityVault: EULER_PRIME_USDT_VAULT,
+      liabilityAsset: USDT_ADDRESS,
+      liabilityAmount,
+      currentDebt: debt,
+      toAccount: SUB_ACCOUNT_ADDRESS,
+      origin: account.address,
+      swapperMode: SwapperMode.TARGET_DEBT,
+      slippage: 0.5, // 0.5% slippage
+      deadline: THIRTY_MINUTES_FROM_NOW,
+    });
+    const filteredRepayQuotes = repayQuotes.filter(
+      (quote) => !quote.route.some((route) => route.providerName.includes("CoW")),
+    );
+    if (filteredRepayQuotes.length === 0) {
+      throw new Error("No swap quotes available");
+    }
+    if (preferredIndex >= filteredRepayQuotes.length) {
+      throw new Error("No quote found at index: " + preferredIndex);
+    }
+    return [
+      ...filteredRepayQuotes.slice(preferredIndex),
+      ...filteredRepayQuotes.slice(0, preferredIndex),
+    ];
+  };
+
+  const repayQuotes = await fetchRepayQuotes(
+    REPAY_AMOUNT === -1n ? currentDebt : REPAY_AMOUNT,
     currentDebt,
-    toAccount: SUB_ACCOUNT_ADDRESS,
-    origin: account.address,
-    swapperMode: SwapperMode.TARGET_DEBT,
-    slippage: 0.5, // 0.5% slippage
-    deadline: THIRTY_MINUTES_FROM_NOW,
-  });
-
-  const filteredRepayQuotes = repayQuotes.filter(q => !q.route.some(r => r.providerName.includes("CoW")));
-
-  if (filteredRepayQuotes.length === 0) {
-    throw new Error("No swap quotes available");
-  }
-
-  if (REPAY_QUOTE_INDEX >= filteredRepayQuotes.length) {
-    throw new Error("No quote found at index: " + REPAY_QUOTE_INDEX);
-  }
-
-  const repayQuote = filteredRepayQuotes[REPAY_QUOTE_INDEX]!;
-  console.log(`✓ Trying repay quote received: ${repayQuote.amountIn} USDC → ${repayQuote.amountOut} USDT ${repayQuote.route.map(r => r.providerName).join(' → ')}`);
+    REPAY_QUOTE_INDEX,
+  );
 
   // Step 3: Plan and execute repay with swap
-  console.log('\n=== Step 3: Execute Repay with Swap ===');
-  let repaySwapPlan = sdk.executionService.planRepayWithSwap({
-    account: accountData,
-    swapQuote: repayQuote,
-  });
+  console.log('\n=== Step 3: Execute Partial Repay with Swap ===');
 
-  console.log(`✓ Repay with swap plan created with ${repaySwapPlan.length} step(s)`);
+  let lastError: unknown;
+  for (const [quoteIndex, repayQuote] of repayQuotes.entries()) {
+    console.log(
+      `✓ Trying repay quote ${quoteIndex + 1}/${repayQuotes.length}: ${repayQuote.amountIn} USDC → ${repayQuote.amountOut} USDT ${repayQuote.route.map(r => r.providerName).join(' → ')}`,
+    );
 
-  // no approvals are needed for repay with swap
-  try {
-    await executePlan(repaySwapPlan, sdk);
-  } catch (error) {
-    console.error("Error executing repay with swap:", error);
-    console.log("\n\nThe swap quote might be bad. Try setting REPAY_QUOTE_INDEX to a different value.");
+    const repaySwapPlan = sdk.executionService.planRepayWithSwap({
+      account: accountData,
+      swapQuote: repayQuote,
+    });
+
+    console.log(`✓ Repay with swap plan created with ${repaySwapPlan.length} step(s)`);
+
+    // no approvals are needed for repay with swap
+    try {
+      await sdk.executionService.executeTransactionPlan({
+        plan: repaySwapPlan,
+        chainId: mainnet.id,
+        account: walletAccountAddress(walletClient),
+        ...exampleExecutionCallbacks(walletClient),
+        onProgress: createTransactionPlanLogger(sdk),
+      });
+      lastError = undefined;
+      break;
+    } catch (error) {
+      lastError = error;
+      console.error("Error executing repay with swap:", error);
+    }
+  }
+
+  if (lastError) {
+    console.log("\n\nAll repay swap quotes failed.");
     process.exit(1);
   }
 
-  // Fetch the updated sub-account and log the result
-  const subAccountAfterRepay = (await sdk.accountService.fetchSubAccount(
+  const [subAccountAfterRepay] = await fetchAndLogSubAccounts(
     mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { populateVaults: false }
-  )).result;
+    accountData,
+    sdk,
+    [
+      {
+        account: SUB_ACCOUNT_ADDRESS,
+        vaults: [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+      },
+    ],
+  );
 
-  // Log the diff between before and after repay
-  // Note: accountData already has subAccountAfterBorrow in its subAccounts object
-  await logOperationResult(mainnet.id, accountData, [subAccountAfterRepay], sdk);
+  // Step 4: Fully repay remaining debt and clean up the sub-account
+  console.log('\n=== Step 4: Execute Full Repay with Swap ===');
+
+  const remainingDebt = subAccountAfterRepay!.positions.find((position) =>
+    isAddressEqual(position.vaultAddress, EULER_PRIME_USDT_VAULT),
+  )?.borrowed ?? 0n;
+  if (remainingDebt === 0n) {
+    throw new Error("No remaining debt found for full repay");
+  }
+
+  accountData.updateSubAccounts(subAccountAfterRepay!);
+
+  const fullRepayQuotes = await fetchRepayQuotes(remainingDebt, remainingDebt, REPAY_QUOTE_INDEX);
+
+  for (const [quoteIndex, fullRepayQuote] of fullRepayQuotes.entries()) {
+    console.log(
+      `✓ Trying full repay quote ${quoteIndex + 1}/${fullRepayQuotes.length}: ${fullRepayQuote.amountIn} USDC → ${fullRepayQuote.amountOut} USDT ${fullRepayQuote.route.map(r => r.providerName).join(' → ')}`,
+    );
+
+    const fullRepaySwapPlan = sdk.executionService.planRepayWithSwap({
+      account: accountData,
+      swapQuote: fullRepayQuote,
+      cleanupOnMax: true,
+    });
+
+    console.log(`✓ Full repay with swap plan created with ${fullRepaySwapPlan.length} step(s)`);
+
+    try {
+      await sdk.executionService.executeTransactionPlan({
+        plan: fullRepaySwapPlan,
+        chainId: mainnet.id,
+        account: walletAccountAddress(walletClient),
+        ...exampleExecutionCallbacks(walletClient),
+        onProgress: createTransactionPlanLogger(sdk),
+      });
+      lastError = undefined;
+      break;
+    } catch (error) {
+      lastError = error;
+      console.error("Error executing full repay with swap:", error);
+    }
+  }
+
+  if (lastError) {
+    console.log("\n\nAll full repay swap quotes failed.");
+    process.exit(1);
+  }
+
+  await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
+    {
+      account: SUB_ACCOUNT_ADDRESS,
+      vaults: [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    },
+  ]);
 }
 
 // ============================================================================
 // Run the example
 // ============================================================================
 printHeader("REPAY WITH SWAP EXAMPLE");
-initBalances().then(() => repayWithSwapExample()).catch((error) => {
+initExample().then(repayWithSwapExample).catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });

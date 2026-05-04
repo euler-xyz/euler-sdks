@@ -40,15 +40,15 @@ import {
   erc20Abi,
   createWalletClient,
   http,
-} from "viem";
-import { mainnet } from "viem/chains";
-
-import { executePlan } from "../utils/executor.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
-import {
+  } from "viem";
+  import { mainnet } from "viem/chains";
+  import { printHeader, logOperationResult } from "../utils/helpers.js";
+  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
+  import {
   rpcUrls,
   account,
-  testClient,
+  initExample,
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
 import { buildEulerSDK, createPythPlugin, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
 
@@ -63,18 +63,18 @@ const LBTC_ADDRESS = getAddress("0x8236a87084f8B84306f72007F36F2618A5634494");
 const LBTC_WHALE = "0x79851BB0db6b03F348fA9c98ef5D23AD3B03b014";
 
 // ── Inputs ──
-const COLLATERAL_AMOUNT = parseUnits("1", 8);  // 1 LBTC (8 decimals)
-const BORROW_AMOUNT = parseUnits("0.1", 8);    // 0.1 WBTC (8 decimals)
+const COLLATERAL_AMOUNT = parseUnits("0.00005", 8); // 0.00005 LBTC (8 decimals)
+const BORROW_AMOUNT = parseUnits("0.000001", 8);    // 0.000001 WBTC (8 decimals)
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = false;
 const ANVIL_RPC_URL = "http://127.0.0.1:8545";
 
 /**
  * Fund the test account with LBTC from a whale address on the Anvil fork.
  */
-async function initBalances() {
+async function fundLbtcForExample(
+  testClient: Awaited<ReturnType<typeof initExample>>["testClient"],
+) {
   await testClient.setBalance({
     address: LBTC_WHALE,
     value: parseEther("10"),
@@ -90,7 +90,7 @@ async function initBalances() {
     address: LBTC_ADDRESS,
     abi: erc20Abi,
     functionName: "transfer",
-    args: [account.address, parseUnits("10", 8)],
+    args: [account.address, parseUnits("0.00009", 8)],
   });
 
   await testClient.setBalance({
@@ -99,11 +99,18 @@ async function initBalances() {
   });
 }
 
-async function borrowWithPythExample() {
+async function borrowWithPythExample({
+  walletClient,
+  testClient,
+}: Awaited<ReturnType<typeof initExample>>) {
+  await fundLbtcForExample(testClient);
+
   // Build the SDK with the Pyth plugin enabled
   const sdk = await buildEulerSDK({
     rpcUrls,
     plugins: [createPythPlugin()],
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
   });
 
   // Fetch vault entities — the Pyth plugin needs oracle adapter info from these
@@ -151,19 +158,16 @@ async function borrowWithPythExample() {
 
   console.log(`✓ Plugins processed (Pyth price updates prepended)`);
 
-  // Resolve approvals (fetches wallet data internally)
-  borrowPlan = await sdk.executionService.resolveRequiredApprovals({
-    plan: borrowPlan,
-    chainId: mainnet.id,
-    account: account.address,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
-  });
-
-  console.log(`✓ Approvals resolved, executing...`);
+  console.log(`✓ Executing...`);
 
   // Execute the plan (the executor sums batch item values for the Pyth fee)
-  await executePlan(borrowPlan, sdk);
+  await sdk.executionService.executeTransactionPlan({
+    plan: borrowPlan,
+    chainId: mainnet.id,
+    account: walletAccountAddress(walletClient),
+    ...exampleExecutionCallbacks(walletClient),
+    onProgress: createTransactionPlanLogger(sdk),
+  });
 
   // Fetch the updated sub-account and log the result
   const subAccount = (await sdk.accountService.fetchSubAccount(
@@ -181,7 +185,7 @@ async function borrowWithPythExample() {
 // Run the example
 // ============================================================================
 printHeader("BORROW WITH PYTH EXAMPLE");
-initBalances().then(() => borrowWithPythExample()).catch((error) => {
+initExample().then(borrowWithPythExample).catch((error) => {
   console.error("Error:", error);
   process.exit(1);
 });

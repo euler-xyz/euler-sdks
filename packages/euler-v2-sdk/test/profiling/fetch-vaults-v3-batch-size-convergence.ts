@@ -13,7 +13,7 @@ dotenv.config({ path: resolve(import.meta.dirname, "../../examples/.env") });
 const CHAIN_ID = 1;
 const BATCH_SIZES = [10, 50, 100, 200, 500] as const;
 const V3_API_ENDPOINT =
-  process.env.VITE_EULER_V3_ENDPOINT ?? "https://v3staging.eul.dev";
+  process.env.VITE_EULER_V3_ENDPOINT ?? "https://v3.eul.dev";
 const OUTPUT_DIR = resolve(import.meta.dirname, "results");
 const OUTPUT_PREFIX = resolve(
   OUTPUT_DIR,

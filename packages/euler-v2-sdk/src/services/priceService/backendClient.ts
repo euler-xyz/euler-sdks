@@ -47,8 +47,6 @@ export type BackendConfig = {
 	endpoint: string;
 	/** Optional API key sent as `X-API-Key` for V3-style backend requests. */
 	apiKey?: string;
-	/** Default chain ID for requests. */
-	chainId?: number;
 };
 
 /**

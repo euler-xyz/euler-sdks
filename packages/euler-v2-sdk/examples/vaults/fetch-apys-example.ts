@@ -23,15 +23,20 @@ import {
 async function fetchApysExample() {
   const rpcUrls = getRpcUrls();
 
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    eVaultServiceConfig: { adapter: "onchain" },
+    eulerEarnServiceConfig: { adapter: "onchain" },
+  });
 
   // Fetch all governed EVaults with rewards and intrinsic APY
   console.log("Fetching governed EVaults...");
-  const { result: eVaults } = await sdk.eVaultService.fetchVerifiedVaults(mainnet.id, [
+  const { result: eVaultResults } = await sdk.eVaultService.fetchVerifiedVaults(mainnet.id, [
     StandardEVaultPerspectives.GOVERNED,
   ], {
     populateAll: true,
   });
+  const eVaults = eVaultResults.filter((vault) => vault !== undefined);
 
   eVaults.sort((a, b) => Number(b.interestRates.supplyAPY) - Number(a.interestRates.supplyAPY));
 
@@ -61,14 +66,17 @@ async function fetchApysExample() {
 
   // Fetch all governed EulerEarn vaults with rewards and intrinsic APY
   console.log("\nFetching governed EulerEarn vaults...");
-  const { result: eulerEarnVaults } =
+  const { result: eulerEarnVaultResults } =
     await sdk.eulerEarnService.fetchVerifiedVaults(mainnet.id, [
       StandardEulerEarnPerspectives.GOVERNED,
     ], {
       populateAll: true,
     });
+  const eulerEarnVaults = eulerEarnVaultResults.filter(
+    (vault) => vault !== undefined,
+  );
 
-  eulerEarnVaults.sort((a, b) => (b.supplyApy ?? 0) - (a.supplyApy ?? 0));
+  eulerEarnVaults.sort((a, b) => (b.supplyApy1h ?? 0) - (a.supplyApy1h ?? 0));
 
   console.log(`\nFound ${eulerEarnVaults.length} governed EulerEarn vaults:\n`);
   console.log(
@@ -82,8 +90,8 @@ async function fetchApysExample() {
   console.log("-".repeat(160));
 
   for (const vault of eulerEarnVaults) {
-    const supplyApy = vault.supplyApy !== undefined
-      ? `${(vault.supplyApy * 100).toFixed(2)}%`
+    const supplyApy = vault.supplyApy1h !== undefined
+      ? `${(vault.supplyApy1h * 100).toFixed(2)}%`
       : "N/A";
     const rewardsApr = vault.rewards?.totalRewardsApr ?? 0;
     const intrinsicApy = vault.intrinsicApy?.apy ?? 0;

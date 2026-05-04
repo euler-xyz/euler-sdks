@@ -74,16 +74,16 @@ export function SecuritizeDetailPage() {
           )}
           <div>
             <h2 style={{ margin: 0 }}>
-              {vault.eulerLabel?.vault.name || vault.shares.name || "Unnamed Vault"}
+              {vault.eulerLabel?.products[0]?.name || vault.shares.name || "Unnamed Vault"}
             </h2>
             <div style={{ opacity: 0.7, fontSize: "0.9em" }}>
               {vault.shares.symbol}
             </div>
           </div>
         </div>
-        {vault.eulerLabel?.vault.description && (
+        {vault.eulerLabel?.products[0]?.description && (
           <div style={{ marginTop: 12, opacity: 0.8 }}>
-            {vault.eulerLabel.vault.description}
+            {vault.eulerLabel.products[0]?.description}
           </div>
         )}
       </div>

@@ -8,7 +8,7 @@
  *   - Token balances in the account
  *   - Prior token approvals
  *
- * Uses SimulationService + automatic state overrides to simulate a deposit.
+ * Uses ExecutionService + automatic state overrides to simulate a deposit.
  *
  * OPERATION:
  *   - Simulate depositing 1000 USDC into Euler Prime USDC Vault
@@ -74,11 +74,11 @@ async function simulateDeposit() {
   })
   console.log(`Plan created: ${plan.length} item(s)`)
 
-  console.log(`\nSimulating transaction plan via SimulationService...\n`)
+  console.log(`\nSimulating transaction plan via ExecutionService...\n`)
 
   // 3. Simulate full transaction plan.
   // stateOverrides:true injects required balances/approvals automatically.
-  const simulation = await sdk.simulationService.simulateTransactionPlan(
+  const simulation = await sdk.executionService.simulateTransactionPlan(
     mainnet.id,
     TEST_ADDRESS,
     plan,

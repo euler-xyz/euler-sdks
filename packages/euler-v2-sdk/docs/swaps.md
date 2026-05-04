@@ -38,8 +38,11 @@ const quotes = await sdk.swapService.fetchRepayQuotes({
 const plan = sdk.executionService.planRepayWithSwap({
   account: accountData,
   swapQuote: quotes[0],
+  cleanupOnMax: repayAmount === currentDebt,
 })
 ```
+
+`cleanupOnMax` is optional. Use it for full repay flows when the post-repay batch should disable active collaterals on the repaid sub-account, move those collateral shares to the owner, and move remaining source-vault shares to the owner.
 
 ### Swap Collateral
 
@@ -88,6 +91,31 @@ const quotes = await sdk.swapService.fetchRepayQuotes({
 const plan = sdk.executionService.planSwapDebt({
   account: accountData,
   swapQuote: quotes[0],
+})
+```
+
+### Same-Asset Position Migrations
+
+When both vaults use the same underlying asset, use the no-swap migration
+planners instead of requesting a DEX quote.
+
+```typescript
+const collateralPlan = sdk.executionService.planMigrateSameAssetCollateral({
+  account: accountData,
+  fromVault: OLD_COLLATERAL_VAULT,
+  toVault: NEW_COLLATERAL_VAULT,
+  amount,
+  positionAccount: subAccountAddress,
+  toAsset: USDC,
+  isMax: true,
+})
+
+const debtPlan = sdk.executionService.planMigrateSameAssetDebt({
+  account: accountData,
+  oldLiabilityVault: OLD_DEBT_VAULT,
+  newLiabilityVault: NEW_DEBT_VAULT,
+  liabilityAccount: subAccountAddress,
+  newLiabilityAsset: USDT,
 })
 ```
 

@@ -29,7 +29,15 @@ import { normalizeAccountOutput } from "../accountOutputNormalization.js";
 
 type V3PositionsResponse = {
 	data?: V3AccountPositionRow[];
+	meta?: {
+		total?: number;
+		hasMore?: boolean;
+		offset?: number;
+		limit?: number;
+	};
 };
+
+const POSITIONS_PAGE_SIZE = 100;
 
 type V3AccountPositionRow = {
 	chainId: number;
@@ -83,18 +91,24 @@ function convertAssetValue(
 	errors: DataIssue[],
 ) {
 	return {
-		borrowing: parseBigIntField(
-			value.borrowing,
-			{ path: `${path}.borrowing`, entityId, errors, source: "accountV3" },
-		),
-		liquidation: parseBigIntField(
-			value.liquidation,
-			{ path: `${path}.liquidation`, entityId, errors, source: "accountV3" },
-		),
-		oracleMid: parseBigIntField(
-			value.oracleMid,
-			{ path: `${path}.oracleMid`, entityId, errors, source: "accountV3" },
-		),
+		borrowing: parseBigIntField(value.borrowing, {
+			path: `${path}.borrowing`,
+			entityId,
+			errors,
+			source: "accountV3",
+		}),
+		liquidation: parseBigIntField(value.liquidation, {
+			path: `${path}.liquidation`,
+			entityId,
+			errors,
+			source: "accountV3",
+		}),
+		oracleMid: parseBigIntField(value.oracleMid, {
+			path: `${path}.oracleMid`,
+			entityId,
+			errors,
+			source: "accountV3",
+		}),
 	};
 }
 
@@ -139,18 +153,24 @@ function convertLiquidity(
 		: convertedCollaterals;
 
 	return {
-		vaultAddress: parseAddressField(
-			liquidity.vaultAddress,
-			{ path: `${path}.vaultAddress`, entityId, errors, source: "accountV3" },
-		),
-		unitOfAccount: parseAddressField(
-			liquidity.unitOfAccount,
-			{ path: `${path}.unitOfAccount`, entityId, errors, source: "accountV3" },
-		),
-		daysToLiquidation: parseDaysToLiquidation(
-			liquidity.daysToLiquidation,
-			{ path: `${path}.daysToLiquidation`, entityId, errors, source: "accountV3" },
-		),
+		vaultAddress: parseAddressField(liquidity.vaultAddress, {
+			path: `${path}.vaultAddress`,
+			entityId,
+			errors,
+			source: "accountV3",
+		}),
+		unitOfAccount: parseAddressField(liquidity.unitOfAccount, {
+			path: `${path}.unitOfAccount`,
+			entityId,
+			errors,
+			source: "accountV3",
+		}),
+		daysToLiquidation: parseDaysToLiquidation(liquidity.daysToLiquidation, {
+			path: `${path}.daysToLiquidation`,
+			entityId,
+			errors,
+			source: "accountV3",
+		}),
 		liabilityValue: convertAssetValue(
 			liquidity.liabilityValue,
 			`${path}.liabilityValue`,
@@ -179,10 +199,12 @@ function convertPosition(
 		errors,
 		source: "accountV3",
 	});
-	const vaultAddress = parseAddressField(
-		row.vault,
-		{ path: `${path}.vault`, entityId: account, errors, source: "accountV3" },
-	);
+	const vaultAddress = parseAddressField(row.vault, {
+		path: `${path}.vault`,
+		entityId: account,
+		errors,
+		source: "accountV3",
+	});
 	const asset = parseAddressField(row.asset, {
 		path: `${path}.asset`,
 		entityId: vaultAddress,
@@ -194,35 +216,42 @@ function convertPosition(
 		account,
 		vaultAddress,
 		asset,
-		shares: parseBigIntField(
-			row.shares,
-			{ path: `${path}.shares`, entityId: vaultAddress, errors, source: "accountV3" },
-		),
-		assets: parseBigIntField(
-			row.assets,
-			{ path: `${path}.assets`, entityId: vaultAddress, errors, source: "accountV3" },
-		),
-		borrowed: parseBigIntField(
-			row.borrowed,
-			{ path: `${path}.borrowed`, entityId: vaultAddress, errors, source: "accountV3" },
-		),
-		isController: parseBooleanField(
-			row.isController,
-			{ path: `${path}.isController`, entityId: vaultAddress, errors, source: "accountV3" },
-		),
-		isCollateral: parseBooleanField(
-			row.isCollateral,
-			{ path: `${path}.isCollateral`, entityId: vaultAddress, errors, source: "accountV3" },
-		),
-		balanceForwarderEnabled: parseBooleanField(
-			row.balanceForwarderEnabled,
-			{
-				path: `${path}.balanceForwarderEnabled`,
-				entityId: vaultAddress,
-				errors,
-				source: "accountV3",
-			},
-		),
+		shares: parseBigIntField(row.shares, {
+			path: `${path}.shares`,
+			entityId: vaultAddress,
+			errors,
+			source: "accountV3",
+		}),
+		assets: parseBigIntField(row.assets, {
+			path: `${path}.assets`,
+			entityId: vaultAddress,
+			errors,
+			source: "accountV3",
+		}),
+		borrowed: parseBigIntField(row.borrowed, {
+			path: `${path}.borrowed`,
+			entityId: vaultAddress,
+			errors,
+			source: "accountV3",
+		}),
+		isController: parseBooleanField(row.isController, {
+			path: `${path}.isController`,
+			entityId: vaultAddress,
+			errors,
+			source: "accountV3",
+		}),
+		isCollateral: parseBooleanField(row.isCollateral, {
+			path: `${path}.isCollateral`,
+			entityId: vaultAddress,
+			errors,
+			source: "accountV3",
+		}),
+		balanceForwarderEnabled: parseBooleanField(row.balanceForwarderEnabled, {
+			path: `${path}.balanceForwarderEnabled`,
+			entityId: vaultAddress,
+			errors,
+			source: "accountV3",
+		}),
 		liquidity: row.liquidity
 			? convertLiquidity(
 					row.liquidity,
@@ -281,27 +310,21 @@ function buildSubAccount(
 	);
 
 	return {
-		timestamp: parseNumberField(
-			meta.timestamp,
-			{
-				path: "$.positions[0].subAccount.timestamp",
-				entityId: account,
-				errors,
-				source: "accountV3",
-			},
-		),
+		timestamp: parseNumberField(meta.timestamp, {
+			path: "$.positions[0].subAccount.timestamp",
+			entityId: account,
+			errors,
+			source: "accountV3",
+		}),
 		account,
-		owner: parseAddressField(
-			meta.owner,
-			{
-				path: "$.positions[0].subAccount.owner",
-				entityId: account,
-				errors,
-				source: "accountV3",
-				fallback: account,
-				fallbackLabel: "account address",
-			},
-		),
+		owner: parseAddressField(meta.owner, {
+			path: "$.positions[0].subAccount.owner",
+			entityId: account,
+			errors,
+			source: "accountV3",
+			fallback: account,
+			fallbackLabel: "account address",
+		}),
 		lastAccountStatusCheckTimestamp: parseNumberField(
 			meta.lastAccountStatusCheckTimestamp,
 			{
@@ -311,43 +334,31 @@ function buildSubAccount(
 				source: "accountV3",
 			},
 		),
-		enabledControllers: parseAddressArrayField(
-			meta.enabledControllers,
-			{
-				path: "$.positions[0].subAccount.enabledControllers",
-				entityId: account,
-				errors,
-				source: "accountV3",
-			},
-		),
-		enabledCollaterals: parseAddressArrayField(
-			meta.enabledCollaterals,
-			{
-				path: "$.positions[0].subAccount.enabledCollaterals",
-				entityId: account,
-				errors,
-				source: "accountV3",
-			},
-		),
+		enabledControllers: parseAddressArrayField(meta.enabledControllers, {
+			path: "$.positions[0].subAccount.enabledControllers",
+			entityId: account,
+			errors,
+			source: "accountV3",
+		}),
+		enabledCollaterals: parseAddressArrayField(meta.enabledCollaterals, {
+			path: "$.positions[0].subAccount.enabledCollaterals",
+			entityId: account,
+			errors,
+			source: "accountV3",
+		}),
 		positions,
-		isLockdownMode: parseBooleanField(
-			meta.isLockdownMode,
-			{
-				path: "$.positions[0].subAccount.isLockdownMode",
-				entityId: account,
-				errors,
-				source: "accountV3",
-			},
-		),
-		isPermitDisabledMode: parseBooleanField(
-			meta.isPermitDisabledMode,
-			{
-				path: "$.positions[0].subAccount.isPermitDisabledMode",
-				entityId: account,
-				errors,
-				source: "accountV3",
-			},
-		),
+		isLockdownMode: parseBooleanField(meta.isLockdownMode, {
+			path: "$.positions[0].subAccount.isLockdownMode",
+			entityId: account,
+			errors,
+			source: "accountV3",
+		}),
+		isPermitDisabledMode: parseBooleanField(meta.isPermitDisabledMode, {
+			path: "$.positions[0].subAccount.isPermitDisabledMode",
+			entityId: account,
+			errors,
+			source: "accountV3",
+		}),
 	};
 }
 
@@ -374,9 +385,18 @@ export class AccountV3Adapter implements IAccountAdapter {
 		endpoint: string,
 		chainId: number,
 		address: Address,
+		offset = 0,
+		limit = POSITIONS_PAGE_SIZE,
 		forceFresh?: boolean,
 	): Promise<V3PositionsResponse> => {
-		const url = this.buildPositionsUrl(endpoint, chainId, address, forceFresh);
+		const url = this.buildPositionsUrl(
+			endpoint,
+			chainId,
+			address,
+			offset,
+			limit,
+			forceFresh,
+		);
 
 		const response = await fetch(url.toString(), {
 			method: "GET",
@@ -403,17 +423,14 @@ export class AccountV3Adapter implements IAccountAdapter {
 
 		const rowsByAccount = new Map<Address, V3AccountPositionRow[]>();
 		for (const [index, row] of rows.entries()) {
-			const account = parseAddressField(
-				row.account,
-				{
-					path: `$.positions[${index}].account`,
-					entityId: getAddress(address),
-					errors,
-					source: "accountV3",
-					fallback: getAddress(address),
-					fallbackLabel: "requested account address",
-				},
-			);
+			const account = parseAddressField(row.account, {
+				path: `$.positions[${index}].account`,
+				entityId: getAddress(address),
+				errors,
+				source: "accountV3",
+				fallback: getAddress(address),
+				fallbackLabel: "requested account address",
+			});
 			const list = rowsByAccount.get(account) ?? [];
 			list.push(row);
 			rowsByAccount.set(account, list);
@@ -468,17 +485,14 @@ export class AccountV3Adapter implements IAccountAdapter {
 		const normalizedSubAccount = getAddress(subAccount);
 		const subAccountRows = rows.filter(
 			(row, index) =>
-				parseAddressField(
-					row.account,
-					{
-						path: `$.positions[${index}].account`,
-						entityId: normalizedSubAccount,
-						errors,
-						source: "accountV3",
-						fallback: normalizedSubAccount,
-						fallbackLabel: "requested sub-account address",
-					},
-				) === normalizedSubAccount,
+				parseAddressField(row.account, {
+					path: `$.positions[${index}].account`,
+					entityId: normalizedSubAccount,
+					errors,
+					source: "accountV3",
+					fallback: normalizedSubAccount,
+					fallbackLabel: "requested sub-account address",
+				}) === normalizedSubAccount,
 		);
 		if (subAccountRows.length === 0)
 			return { result: undefined, errors: compressDataIssues(errors) };
@@ -488,15 +502,12 @@ export class AccountV3Adapter implements IAccountAdapter {
 					vaults.some(
 						(vault) =>
 							getAddress(vault) ===
-								parseAddressField(
-									row.vault,
-									{
-										path: `$.positions[${index}].vault`,
-										entityId: normalizedSubAccount,
-										errors,
-										source: "accountV3",
-									},
-								),
+							parseAddressField(row.vault, {
+								path: `$.positions[${index}].vault`,
+								entityId: normalizedSubAccount,
+								errors,
+								source: "accountV3",
+							}),
 					),
 				)
 			: subAccountRows;
@@ -525,13 +536,37 @@ export class AccountV3Adapter implements IAccountAdapter {
 		errors: DataIssue[],
 	): Promise<V3AccountPositionRow[]> {
 		try {
-			const response = await this.queryV3AccountPositions(
-				this.config.endpoint,
-				chainId,
-				getAddress(address),
-				this.config.forceFresh,
-			);
-			return response.data ?? [];
+			const rows: V3AccountPositionRow[] = [];
+			let offset = 0;
+
+			for (;;) {
+				const response = await this.queryV3AccountPositions(
+					this.config.endpoint,
+					chainId,
+					getAddress(address),
+					offset,
+					POSITIONS_PAGE_SIZE,
+					this.config.forceFresh,
+				);
+				const pageRows = response.data ?? [];
+				rows.push(...pageRows);
+
+				offset += pageRows.length;
+				if (pageRows.length === 0) break;
+				if (response.meta?.hasMore === false) break;
+				if (
+					typeof response.meta?.total === "number" &&
+					offset >= response.meta.total
+				)
+					break;
+				if (
+					response.meta?.hasMore !== true &&
+					pageRows.length < (response.meta?.limit ?? POSITIONS_PAGE_SIZE)
+				)
+					break;
+			}
+
+			return rows;
 		} catch (error) {
 			errors.push({
 				code: "SOURCE_UNAVAILABLE",
@@ -550,10 +585,16 @@ export class AccountV3Adapter implements IAccountAdapter {
 		endpoint: string,
 		chainId: number,
 		address: Address,
+		offset: number,
+		limit: number,
 		forceFresh?: boolean,
 	): string {
 		const path = `/v3/accounts/${address}/positions`;
-		const params = new URLSearchParams({ chainId: String(chainId) });
+		const params = new URLSearchParams({
+			chainId: String(chainId),
+			offset: String(offset),
+			limit: String(limit),
+		});
 		if (forceFresh !== undefined) {
 			params.set("forceFresh", String(forceFresh));
 		}

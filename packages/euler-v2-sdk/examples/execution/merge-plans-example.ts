@@ -5,7 +5,7 @@
  *
  * This example demonstrates how to merge multiple transaction plans into one
  * and execute them in a single flow. It creates four plans, merges them with
- * mergePlans(), then resolves approvals and executes once.
+ * mergePlans(), then executes once.
  *
  * OPERATION:
  *   1. (Setup) Initial borrow: deposit USDC collateral and borrow USDT so we have a position
@@ -14,15 +14,15 @@
  *      - Additional deposit of collateral: deposit more USDC to the same sub-account
  *      - Partial repay: repay some USDT from wallet
  *      - Withdraw: withdraw a small amount of USDC collateral to wallet
- *   3. Merge the 4 plans into one (approvals summed per token, EVC batch concatenated)
- *   4. Resolve approvals and execute the merged plan in one go
+ *   3. Merge the 4 plans into one (approvals summed per token, operation groupings preserved)
+ *   4. Execute the merged plan in one go
  *
  * ASSETS & VAULTS:
  *   • USDC → Euler Prime USDC Vault (collateral)
  *   • USDT → Euler Prime USDT Vault (liability)
  *
  * 💡 mergePlans() sums required approvals for the same (token, owner, spender)
- *    and concatenates all EVC batch items in order.
+ *    and keeps each operation grouping inside the merged EVC batch.
  *
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
@@ -34,20 +34,23 @@
  */
 
 import "dotenv/config";
-import { parseUnits, getAddress } from "viem";
+import { parseUnits } from "viem";
 import { mainnet } from "viem/chains";
-
-import { executePlan } from "../utils/executor.js";
-import { printHeader, logOperationResult } from "../utils/helpers.js";
+import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
+import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import {
   rpcUrls,
   account,
-  initBalances,
+  initExample,
   USDC_ADDRESS,
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
+  exampleExecutionCallbacks,
 } from "../utils/config.js";
-import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
+import {
+  buildEulerSDK,
+  getSubAccountAddress,
+} from "@eulerxyz/euler-v2-sdk";
 import type { TransactionPlan } from "@eulerxyz/euler-v2-sdk";
 
 // Inputs
@@ -57,18 +60,21 @@ const INITIAL_BORROW = parseUnits("500", 6);       // 500 USDT (setup)
 const EXTRA_COLLATERAL = parseUnits("200", 6);     // Plan 1: deposit 200 more USDC
 const EXTRA_BORROW = parseUnits("100", 6);         // Plan 1: borrow 100 more USDT
 const ADDITIONAL_DEPOSIT = parseUnits("75", 6);   // Plan 2: additional collateral deposit
+const SHARE_TRANSFER = parseUnits("1", 6);        // Plan 2 add-on: transfer 1 USDC-vault share to wallet
 const REPAY_AMOUNT = parseUnits("150", 6);        // Plan 3: partial repay 150 USDT
 const WITHDRAW_AMOUNT = parseUnits("50", 6);      // Plan 4: withdraw 50 USDC
 
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
-const USE_PERMIT2 = true;
-const UNLIMITED_APPROVAL = false;
 
 // TODO use simulations to build account state
 
-async function mergePlansExample() {
-  const sdk = await buildEulerSDK({ rpcUrls });
+async function mergePlansExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
+  const sdk = await buildEulerSDK({
+    rpcUrls,
+    accountServiceConfig: { adapter: "onchain" },
+    queryCacheConfig: { enabled: false },
+  });
 
   // Fetch account (may have no positions yet)
   let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
@@ -87,23 +93,21 @@ async function mergePlansExample() {
       asset: USDC_ADDRESS,
     },
   });
-  setupPlan = await sdk.executionService.resolveRequiredApprovals({
+  await sdk.executionService.executeTransactionPlan({
     plan: setupPlan,
     chainId: mainnet.id,
-    account: account.address,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
+    account: walletAccountAddress(walletClient),
+    ...exampleExecutionCallbacks(walletClient),
+    onProgress: createTransactionPlanLogger(sdk),
   });
-  await executePlan(setupPlan, sdk);
   console.log("✓ Setup complete: position created\n");
 
-  // Fetch sub-account and update account data so we have positions for repay/withdraw plans
-  const subAccount = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { populateVaults: false },
-  )).result;
+  const [subAccount] = await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
+    {
+      account: SUB_ACCOUNT_ADDRESS,
+      vaults: [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    },
+  ]);
   if (!subAccount) throw new Error("Sub-account not found after setup");
   accountData.updateSubAccounts(subAccount);
 
@@ -132,7 +136,17 @@ async function mergePlansExample() {
     asset: USDC_ADDRESS,
     enableCollateral: true,
   });
+  const [shareTransfer] = sdk.executionService.encodeTransfer({
+    chainId: mainnet.id,
+    vault: EULER_PRIME_USDC_VAULT,
+    from: SUB_ACCOUNT_ADDRESS,
+    to: account.address,
+    amount: SHARE_TRANSFER,
+  });
+  if (!shareTransfer) throw new Error("Expected share transfer batch item");
+  sdk.executionService.addBatchItemToPlan(plan2, shareTransfer);
   console.log(`  2. Additional deposit of collateral: +${ADDITIONAL_DEPOSIT} USDC`);
+  console.log(`     Added standalone transfer: ${SHARE_TRANSFER} USDC-vault share to wallet`);
 
   const plan3: TransactionPlan = sdk.executionService.planRepayFromWallet({
     account: accountData,
@@ -153,33 +167,32 @@ async function mergePlansExample() {
   console.log(`  4. Withdraw: ${WITHDRAW_AMOUNT} USDC to wallet`);
 
   // ─── Merge and execute ───
-  console.log("\n=== Merging plans and resolving approvals ===");
+  console.log("\n=== Merging plans and executing ===");
   const merged = sdk.executionService.mergePlans([plan1, plan2, plan3, plan4]);
   console.log(`✓ Merged plan has ${merged.length} item(s)`);
 
-  let resolvedPlan = await sdk.executionService.resolveRequiredApprovals({
+  console.log("✓ Executing merged plan...\n");
+  await sdk.executionService.executeTransactionPlan({
     plan: merged,
     chainId: mainnet.id,
-    account: account.address,
-    usePermit2: USE_PERMIT2,
-    unlimitedApproval: UNLIMITED_APPROVAL,
+    account: walletAccountAddress(walletClient),
+    ...exampleExecutionCallbacks(walletClient),
+    onProgress: createTransactionPlanLogger(sdk),
   });
-
-  console.log("✓ Executing merged plan...\n");
-  await executePlan(resolvedPlan, sdk);
-
-  const subAccountAfter = (await sdk.accountService.fetchSubAccount(
-    mainnet.id,
-    SUB_ACCOUNT_ADDRESS,
-    [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
-    { populateVaults: false },
-  )).result;
-  await logOperationResult(mainnet.id, accountData, [subAccountAfter], sdk);
+  await fetchAndLogSubAccounts(mainnet.id, accountData, sdk, [
+    {
+      account: SUB_ACCOUNT_ADDRESS,
+      vaults: [EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT],
+    },
+    {
+      account: account.address,
+      vaults: [EULER_PRIME_USDC_VAULT],
+    },
+  ]);
 }
 
 printHeader("MERGE PLANS EXAMPLE");
-initBalances()
-  .then(() => mergePlansExample())
+initExample().then(mergePlansExample)
   .catch((error) => {
     console.error("Error:", error);
     process.exit(1);
