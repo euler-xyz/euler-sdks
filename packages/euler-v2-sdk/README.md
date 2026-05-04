@@ -87,7 +87,7 @@ All docs are in [`./docs`](./docs).
 2. [Basic Usage](./docs/basic-usage.md) - Fast setup and common account/vault usage patterns.
 3. [SDK Architecture Overview](./docs/sdk-architecture-overview.md) - High-level architecture, dependency injection model, and composition options.
 4. [Services](./docs/services.md) - Service map, top-level entry points, and lower-level support services.
-5. [Execution Service](./docs/execution-service.md) - `encodeX` vs `planX`, approvals flow, `mergePlans`, and `describeBatch`.
+5. [Execution Service](./docs/execution-service.md) - `encodeX` vs `planX`, approvals flow, named operation groups, `mergePlans`, and `describeBatch`.
 6. [Simulations and State Overrides](./docs/simulations-and-state-overrides.md) - Plan simulation flow, validation output, and state override utilities.
 7. [Swaps](./docs/swaps.md) - Swap quote APIs and how swap payloads fit into plans.
 8. [Pricing System](./docs/pricing-system.md) - Price data pipeline, fallback behavior, and pricing integration points.

@@ -145,7 +145,10 @@ test("executeTransactionPlan sends approvals before the EVC batch and waits for 
 				},
 			],
 		},
-		{ type: "evcBatch", items: [batchItem] },
+		{
+			type: "evcBatch",
+			items: [{ type: "operation", name: "test", items: [batchItem] }],
+		},
 	];
 
 	const result = await executeTransactionPlan({

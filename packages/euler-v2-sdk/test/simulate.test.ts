@@ -36,6 +36,12 @@ function createExecutionService() {
 						evc: EVC,
 						permit2: "0x0000000000000000000000000000000000000012",
 					},
+					lensAddrs: {
+						accountLens: "0x0000000000000000000000000000000000000013",
+						vaultLens: "0x0000000000000000000000000000000000000014",
+						eulerEarnVaultLens:
+							"0x0000000000000000000000000000000000000015",
+					},
 				},
 			}),
 		} as never,
@@ -73,7 +79,7 @@ test("estimateGasForTransactionPlan estimates executable plan items", async () =
 		},
 		{
 			type: "evcBatch",
-			items: [batchItem],
+			items: [{ type: "operation", name: "test", items: [batchItem] }],
 		},
 		{
 			type: "contractCall",
@@ -155,4 +161,81 @@ test("simulation helpers fail clearly when provider service is not configured", 
 		() => service.estimateGasForTransactionPlan(1, ACCOUNT, []),
 		/providerService/,
 	);
+});
+
+test("simulateTransactionPlan reports direct allowance deficits from spender allowance", async () => {
+	const service = new ExecutionService(
+		{
+			getDeployment: () => ({
+				addresses: {
+					coreAddrs: {
+						evc: EVC,
+						permit2: "0x0000000000000000000000000000000000000012",
+					},
+					lensAddrs: {
+						accountLens: "0x0000000000000000000000000000000000000013",
+						vaultLens: "0x0000000000000000000000000000000000000014",
+						eulerEarnVaultLens:
+							"0x0000000000000000000000000000000000000015",
+					},
+				},
+			}),
+		} as never,
+		{
+			fetchWallet: async () => ({
+				result: {
+					getAsset: () => ({
+						balance: 1_000n,
+						allowances: {
+							[SPENDER]: {
+								assetForVault: 40n,
+								assetForPermit2: 95n,
+								assetForVaultInPermit2: 1_000n,
+								permit2ExpirationTime: Math.floor(Date.now() / 1000) + 60,
+							},
+						},
+					}),
+				},
+			}),
+		} as never,
+		{
+			getProvider: () => ({
+				simulateContract: async () => {
+					throw new Error("stop after diagnostics");
+				},
+			}),
+		} as never,
+		{
+			fetchVaultTypes: async () => ({}),
+		} as never,
+	);
+	const plan: TransactionPlan = [
+		{
+			type: "requiredApproval",
+			token: TOKEN,
+			owner: ACCOUNT,
+			spender: SPENDER,
+			amount: 100n,
+		},
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: TARGET,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: "0x1234",
+				},
+			],
+		},
+	];
+
+	const result = await service.simulateTransactionPlan(1, ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+
+	assert.deepEqual(result.insufficientDirectAllowances, [
+		{ token: TOKEN, amount: 60n },
+	]);
+	assert.equal(result.insufficientPermit2Allowances, undefined);
 });

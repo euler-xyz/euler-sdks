@@ -76,6 +76,7 @@ Execution order:
 5. Wait for receipts and refresh UI state
 
 Use `mergePlans` to atomically combine user intents and `describeBatch` for previews.
+`planX` methods group their encoded batch items into named operations inside `evcBatch` entries. Raw batch items remain valid batch entries for plugin prepends/appends. `mergePlans` preserves operation groupings and refuses to automatically merge `contractCall` items. `describeBatch` mirrors the input batch-entry shape: operation entries keep their name and contain decoded child items.
 
 ### 2.2 Simulation Gate
 

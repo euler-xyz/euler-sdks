@@ -453,7 +453,10 @@ export async function fetchVaultAddressesFromLabelProducts(
   const addresses: Address[] = [];
 
   for (const product of Object.values(products)) {
-    for (const vault of product.vaults ?? []) {
+    for (const vault of [
+      ...(product.vaults ?? []),
+      ...(product.deprecatedVaults ?? []),
+    ]) {
       try {
         const normalized = getAddress(vault);
         const key = normalized.toLowerCase();

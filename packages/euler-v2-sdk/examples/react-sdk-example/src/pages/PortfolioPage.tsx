@@ -12,11 +12,7 @@ import {
   useAccountAllChainsWithDiagnostics,
   type AccountByChainResult,
 } from "../queries/sdkQueries.ts";
-import {
-  computePositionsNetApy,
-  computePositionsRoe,
-  getSubAccountId,
-} from "@eulerxyz/euler-v2-sdk";
+import { getSubAccountId } from "@eulerxyz/euler-v2-sdk";
 import { getAddress, type Address } from "viem";
 import {
   formatBigInt,
@@ -36,6 +32,7 @@ import type {
   PortfolioSavingsPosition,
   UserReward,
   VaultEntity,
+  YieldApyBreakdown,
 } from "@eulerxyz/euler-v2-sdk";
 import {
   formatTransactionPlanError,
@@ -54,6 +51,31 @@ function formatUsdValue(value: bigint | undefined): string {
 
 function formatOptionalPercent(value: number | undefined): string {
   return value === undefined ? "-" : formatPercent(value);
+}
+
+function formatSignedPercent(value: number): string {
+  const formatted = formatPercent(Math.abs(value));
+  if (value > 0) return `+${formatted}`;
+  if (value < 0) return `-${formatted}`;
+  return formatted;
+}
+
+function formatMultiplier(value: number | undefined): string {
+  if (value === undefined) return "-";
+  return `${value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}x`;
+}
+
+function formatDaysToLiquidation(value: PortfolioBorrowPosition<VaultEntity>["timeToLiquidation"]): string {
+  if (value === undefined) return "-";
+  if (value === "Infinity") return "Infinity";
+  if (value === "MoreThanAYear") return "> 1 year";
+  return `${value.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  })} days`;
 }
 
 function sumBigints(values: Array<bigint | undefined>): bigint | undefined {
@@ -425,6 +447,8 @@ function PortfolioOverviewCards({
   borrowed,
   nav,
   rewards,
+  apyBreakdown,
+  roeBreakdown,
 }: {
   netApy?: number;
   roe?: number;
@@ -432,6 +456,8 @@ function PortfolioOverviewCards({
   borrowed?: bigint;
   nav?: bigint;
   rewards?: bigint;
+  apyBreakdown?: YieldApyBreakdown;
+  roeBreakdown?: YieldApyBreakdown;
 }) {
   return (
     <div className="portfolio-overview-grid">
@@ -440,13 +466,13 @@ function PortfolioOverviewCards({
         <div className="portfolio-metric-row">
           <span>Net APY</span>
           <strong className={netApy != null && netApy < 0 ? "negative" : "positive"}>
-            {formatOptionalPercent(netApy)}
+            <YieldBreakdownValue value={netApy} breakdown={apyBreakdown} title="Net APY Breakdown" />
           </strong>
         </div>
         <div className="portfolio-metric-row">
           <span>ROE</span>
           <strong className={roe != null && roe < 0 ? "negative" : "positive"}>
-            {formatOptionalPercent(roe)}
+            <YieldBreakdownValue value={roe} breakdown={roeBreakdown} title="ROE Breakdown" />
           </strong>
         </div>
       </div>
@@ -514,6 +540,8 @@ function ChainPortfolioView({
         borrowed={portfolio.totalBorrowedValueUsd}
         nav={portfolio.netAssetValueUsd}
         rewards={portfolio.totalRewardsValueUsd}
+        apyBreakdown={portfolio.apyBreakdown}
+        roeBreakdown={portfolio.roeBreakdown}
       />
 
       <PortfolioSection
@@ -612,7 +640,6 @@ function BorrowPositionCard({
     position.collaterals.length > 1
       ? `${vaultAssetSymbol(collateralVault)} & others`
       : vaultAssetSymbol(collateralVault);
-  const performance = computeBorrowPositionPerformance(position);
 
   return (
     <article className="portfolio-position-card">
@@ -645,12 +672,28 @@ function BorrowPositionCard({
           subValue={formatUsdValue(position.totalCollateralValueUsd)}
         />
         <PortfolioStat
+          label="Multiplier"
+          value={formatMultiplier(position.multiplier)}
+        />
+        <PortfolioStat
           label="Net APY"
-          value={formatOptionalPercent(performance.netApy)}
+          value={
+            <YieldBreakdownValue
+              value={position.netApy}
+              breakdown={position.apyBreakdown}
+              title="Net APY Breakdown"
+            />
+          }
         />
         <PortfolioStat
           label="ROE"
-          value={formatOptionalPercent(performance.roe)}
+          value={
+            <YieldBreakdownValue
+              value={position.roe}
+              breakdown={position.roeBreakdown}
+              title="ROE Breakdown"
+            />
+          }
         />
         <PortfolioStat
           label="Health score"
@@ -660,6 +703,10 @@ function BorrowPositionCard({
           label="LTV"
           value={`${formatWadPercent(position.userLTV)} / ${formatWadPercent(position.accountLiquidationLTV)}`}
           subValue={`Borrow price ${formatPriceUsd(position.borrowLiquidationPriceUsd)}`}
+        />
+        <PortfolioStat
+          label="Time to liq."
+          value={formatDaysToLiquidation(position.timeToLiquidation)}
         />
       </div>
     </article>
@@ -676,7 +723,6 @@ function SavingsPositionCard({
   position: PortfolioSavingsPosition<VaultEntity>;
 }) {
   const vault = position.vault ?? position.position.vault;
-  const performance = computeSavingsPositionPerformance(position);
 
   return (
     <article className="portfolio-position-card">
@@ -697,12 +743,14 @@ function SavingsPositionCard({
           subValue={formatUsdValue(position.suppliedValueUsd)}
         />
         <PortfolioStat
-          label="Net APY"
-          value={formatOptionalPercent(performance.netApy)}
-        />
-        <PortfolioStat
-          label="ROE"
-          value={formatOptionalPercent(performance.roe)}
+          label="APY"
+          value={
+            <YieldBreakdownValue
+              value={position.apy}
+              breakdown={position.apyBreakdown}
+              title="APY Breakdown"
+            />
+          }
         />
         <PortfolioStat
           label="Shares"
@@ -716,26 +764,6 @@ function SavingsPositionCard({
       </div>
     </article>
   );
-}
-
-function computeBorrowPositionPerformance(
-  position: PortfolioBorrowPosition<VaultEntity>
-): { netApy?: number; roe?: number } {
-  const positions = [...position.collaterals, position.borrow];
-  return {
-    netApy: computePositionsNetApy(positions),
-    roe: computePositionsRoe(positions),
-  };
-}
-
-function computeSavingsPositionPerformance(
-  position: PortfolioSavingsPosition<VaultEntity>
-): { netApy?: number; roe?: number } {
-  const positions = [position.position];
-  return {
-    netApy: computePositionsNetApy(positions),
-    roe: computePositionsRoe(positions),
-  };
 }
 
 function PortfolioStat({
@@ -753,6 +781,54 @@ function PortfolioStat({
       <div className="value">{value}</div>
       {subValue && <div className="portfolio-stat-subvalue">{subValue}</div>}
     </div>
+  );
+}
+
+function YieldBreakdownValue({
+  value,
+  breakdown,
+  title,
+}: {
+  value?: number;
+  breakdown?: YieldApyBreakdown;
+  title: string;
+}) {
+  if (!breakdown) return <>{formatOptionalPercent(value)}</>;
+
+  return (
+    <span className="apy-with-rewards portfolio-yield-breakdown">
+      {formatOptionalPercent(value ?? breakdown.total)} ✦
+      <span className="apy-tooltip">
+        <span className="apy-tooltip-row apy-tooltip-heading">
+          <span>{title}</span>
+        </span>
+        <span className="apy-tooltip-divider" />
+        <YieldBreakdownRow label="Lending" value={breakdown.lending} />
+        <YieldBreakdownRow label="Borrowing" value={breakdown.borrowing} />
+        <YieldBreakdownRow label="Rewards" value={breakdown.rewards} />
+        <YieldBreakdownRow label="Intrinsic APY" value={breakdown.intrinsicApy} />
+        <span className="apy-tooltip-divider" />
+        <span className="apy-tooltip-row apy-tooltip-total">
+          <span>Total</span>
+          <span>{formatOptionalPercent(breakdown.total)}</span>
+        </span>
+      </span>
+    </span>
+  );
+}
+
+function YieldBreakdownRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <span className="apy-tooltip-row">
+      <span>{label}</span>
+      <span>{formatSignedPercent(value)}</span>
+    </span>
   );
 }
 

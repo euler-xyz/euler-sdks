@@ -9,7 +9,7 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(SCRIPT_DIR, "../../examples/.env") });
 
 const INDEXER_HOST = process.env.INDEXER_HOST ?? "https://indexer.euler.finance";
-const V3_HOST = process.env.V3_HOST ?? "https://v3staging.eul.dev";
+const V3_HOST = process.env.V3_HOST ?? "https://v3.eul.dev";
 const MAINNET_CHAIN_ID = 1;
 const TARGET_ACCOUNT = getAddress("0x75cFE4ef963232ae8313aC33e21fC39241338618");
 const EXTRA_ACCOUNTS_TARGET = Number(process.env.EXTRA_ACCOUNTS_TARGET ?? 10);

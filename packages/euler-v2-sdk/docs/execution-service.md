@@ -32,6 +32,25 @@ A plan typically contains:
 - one or more `evcBatch` items (the encoded protocol calls)
 - optional `contractCall` items (direct non-EVC calls, used by reward claim planners and similar extensions)
 
+An `evcBatch` contains batch entries. Each entry is either a raw `EVCBatchItem` or a named operation:
+
+```typescript
+type EVCBatch = {
+  type: "evcBatch"
+  items: EVCBatchEntry[]
+}
+
+type EVCBatchEntry = EVCBatchItem | EVCBatchOperation
+
+type EVCBatchOperation = {
+  type: "operation"
+  name: string
+  items: EVCBatchItem[]
+}
+```
+
+Planner methods (`planDeposit`, `planBorrow`, `planRepayWithSwap`, etc.) group their encoded batch items into a named operation. Raw batch items are still accepted so plugins and low-level utilities can prepend or append setup calls without inventing an operation group.
+
 The planner layer uses the account/vault context you pass in to drive the right encoder path and include approval requirements.
 
 Common plan functions include:
@@ -83,13 +102,19 @@ The bundled executor:
 - append extra operations before final submission
 
 Use `convertBatchItemsToPlan(...)` when you already have raw batch items and want to integrate them into a plan-based pipeline.
+By default it creates an `evcBatch` with the raw items directly. Pass `operationName` to wrap those items in a named operation:
+
+```typescript
+const rawPlan = sdk.executionService.convertBatchItemsToPlan(batchItems)
+const groupedPlan = sdk.executionService.convertBatchItemsToPlan(batchItems, "customOperation")
+```
 
 Reward claim planning is intentionally kept out of `executionService`. Provider-specific claim payloads for Merkl, Brevis, and Fuul are built in [`rewardsService`](./rewards-service.md), which returns standard `TransactionPlan` items that your executor can run alongside core Euler plans.
 
 ## `mergePlans` and `describeBatch`
 
-- `mergePlans(plans)`: merges multiple plans into one plan. Required approvals for the same `(token, owner, spender)` are summed, executable items keep their order, and adjacent EVC batch items are concatenated.
-- `describeBatch(batch, extraAbis?)`: decodes batch item calldata into human-readable function names and arguments. Useful for logs, debugging, previews, and safety checks.
+- `mergePlans(plans)`: merges multiple plans into one plan. Required approvals for the same `(token, owner, spender)` are summed, executable items keep their order, adjacent EVC batches are concatenated, and operation groupings are preserved. `contractCall` items are not merged automatically; merge those flows manually.
+- `describeBatch(batch, extraAbis?)`: decodes batch item calldata into human-readable function names and arguments. If the input batch contains operation entries, the returned description preserves the same operation grouping and operation names while decoding child items.
 
 `describeBatch` is a decoder/inspector only; it does not execute anything.
 

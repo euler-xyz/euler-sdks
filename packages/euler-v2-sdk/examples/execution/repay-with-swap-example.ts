@@ -56,7 +56,7 @@ const BORROW_AMOUNT = parseUnits("500", 6);      // 500 USDT
 const REPAY_AMOUNT = parseUnits("250", 6);       // Set to -1n to repay all debt
 const SUB_ACCOUNT_ID = 1;
 const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID);
-const REPAY_QUOTE_INDEX = 0; // Change this if swap quote is bad
+const REPAY_QUOTE_INDEX = Number(process.env.REPAY_QUOTE_INDEX ?? 0); // Change this if swap quote is bad
 
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
 
@@ -126,7 +126,7 @@ async function repayWithSwapExample({ walletClient }: Awaited<ReturnType<typeof 
 
   accountData.updateSubAccounts(subAccountAfterBorrow!);
 
-  const fetchRepayQuote = async (
+  const fetchRepayQuotes = async (
     liabilityAmount: bigint,
     debt: bigint,
     preferredIndex: number,
@@ -155,37 +155,53 @@ async function repayWithSwapExample({ walletClient }: Awaited<ReturnType<typeof 
     if (preferredIndex >= filteredRepayQuotes.length) {
       throw new Error("No quote found at index: " + preferredIndex);
     }
-    return filteredRepayQuotes[preferredIndex]!;
+    return [
+      ...filteredRepayQuotes.slice(preferredIndex),
+      ...filteredRepayQuotes.slice(0, preferredIndex),
+    ];
   };
 
-  const repayQuote = await fetchRepayQuote(
+  const repayQuotes = await fetchRepayQuotes(
     REPAY_AMOUNT === -1n ? currentDebt : REPAY_AMOUNT,
     currentDebt,
     REPAY_QUOTE_INDEX,
   );
-  console.log(`✓ Trying repay quote received: ${repayQuote.amountIn} USDC → ${repayQuote.amountOut} USDT ${repayQuote.route.map(r => r.providerName).join(' → ')}`);
 
   // Step 3: Plan and execute repay with swap
   console.log('\n=== Step 3: Execute Partial Repay with Swap ===');
-  let repaySwapPlan = sdk.executionService.planRepayWithSwap({
-    account: accountData,
-    swapQuote: repayQuote,
-  });
 
-  console.log(`✓ Repay with swap plan created with ${repaySwapPlan.length} step(s)`);
+  let lastError: unknown;
+  for (const [quoteIndex, repayQuote] of repayQuotes.entries()) {
+    console.log(
+      `✓ Trying repay quote ${quoteIndex + 1}/${repayQuotes.length}: ${repayQuote.amountIn} USDC → ${repayQuote.amountOut} USDT ${repayQuote.route.map(r => r.providerName).join(' → ')}`,
+    );
 
-  // no approvals are needed for repay with swap
-  try {
-    await sdk.executionService.executeTransactionPlan({
-      plan: repaySwapPlan,
-      chainId: mainnet.id,
-      account: walletAccountAddress(walletClient),
-      ...exampleExecutionCallbacks(walletClient),
-      onProgress: createTransactionPlanLogger(sdk),
+    const repaySwapPlan = sdk.executionService.planRepayWithSwap({
+      account: accountData,
+      swapQuote: repayQuote,
     });
-  } catch (error) {
-    console.error("Error executing repay with swap:", error);
-    console.log("\n\nThe swap quote might be bad. Try setting REPAY_QUOTE_INDEX to a different value.");
+
+    console.log(`✓ Repay with swap plan created with ${repaySwapPlan.length} step(s)`);
+
+    // no approvals are needed for repay with swap
+    try {
+      await sdk.executionService.executeTransactionPlan({
+        plan: repaySwapPlan,
+        chainId: mainnet.id,
+        account: walletAccountAddress(walletClient),
+        ...exampleExecutionCallbacks(walletClient),
+        onProgress: createTransactionPlanLogger(sdk),
+      });
+      lastError = undefined;
+      break;
+    } catch (error) {
+      lastError = error;
+      console.error("Error executing repay with swap:", error);
+    }
+  }
+
+  if (lastError) {
+    console.log("\n\nAll repay swap quotes failed.");
     process.exit(1);
   }
 
@@ -213,28 +229,39 @@ async function repayWithSwapExample({ walletClient }: Awaited<ReturnType<typeof 
 
   accountData.updateSubAccounts(subAccountAfterRepay!);
 
-  const fullRepayQuote = await fetchRepayQuote(remainingDebt, remainingDebt, 0);
-  console.log(`✓ Trying full repay quote received: ${fullRepayQuote.amountIn} USDC → ${fullRepayQuote.amountOut} USDT ${fullRepayQuote.route.map(r => r.providerName).join(' → ')}`);
+  const fullRepayQuotes = await fetchRepayQuotes(remainingDebt, remainingDebt, REPAY_QUOTE_INDEX);
 
-  const fullRepaySwapPlan = sdk.executionService.planRepayWithSwap({
-    account: accountData,
-    swapQuote: fullRepayQuote,
-    cleanupOnMax: true,
-  });
+  for (const [quoteIndex, fullRepayQuote] of fullRepayQuotes.entries()) {
+    console.log(
+      `✓ Trying full repay quote ${quoteIndex + 1}/${fullRepayQuotes.length}: ${fullRepayQuote.amountIn} USDC → ${fullRepayQuote.amountOut} USDT ${fullRepayQuote.route.map(r => r.providerName).join(' → ')}`,
+    );
 
-  console.log(`✓ Full repay with swap plan created with ${fullRepaySwapPlan.length} step(s)`);
-
-  try {
-    await sdk.executionService.executeTransactionPlan({
-      plan: fullRepaySwapPlan,
-      chainId: mainnet.id,
-      account: walletAccountAddress(walletClient),
-      ...exampleExecutionCallbacks(walletClient),
-      onProgress: createTransactionPlanLogger(sdk),
+    const fullRepaySwapPlan = sdk.executionService.planRepayWithSwap({
+      account: accountData,
+      swapQuote: fullRepayQuote,
+      cleanupOnMax: true,
     });
-  } catch (error) {
-    console.error("Error executing full repay with swap:", error);
-    console.log("\n\nThe swap quote might be bad. Try setting REPAY_QUOTE_INDEX to a different value.");
+
+    console.log(`✓ Full repay with swap plan created with ${fullRepaySwapPlan.length} step(s)`);
+
+    try {
+      await sdk.executionService.executeTransactionPlan({
+        plan: fullRepaySwapPlan,
+        chainId: mainnet.id,
+        account: walletAccountAddress(walletClient),
+        ...exampleExecutionCallbacks(walletClient),
+        onProgress: createTransactionPlanLogger(sdk),
+      });
+      lastError = undefined;
+      break;
+    } catch (error) {
+      lastError = error;
+      console.error("Error executing full repay with swap:", error);
+    }
+  }
+
+  if (lastError) {
+    console.log("\n\nAll full repay swap quotes failed.");
     process.exit(1);
   }
 

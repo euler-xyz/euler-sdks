@@ -17,6 +17,28 @@ export type EVCBatchItem = {
 	data: Hex;
 };
 
+export type EVCBatchOperation = {
+	type: "operation";
+	name: string;
+	items: EVCBatchItem[];
+};
+
+export type EVCBatchEntry = EVCBatchItem | EVCBatchOperation;
+
+export function isEVCBatchOperation(
+	entry: EVCBatchEntry,
+): entry is EVCBatchOperation {
+	return "type" in entry && entry.type === "operation";
+}
+
+export function flattenBatchEntries(
+	entries: readonly EVCBatchEntry[],
+): EVCBatchItem[] {
+	return entries.flatMap((entry) =>
+		isEVCBatchOperation(entry) ? entry.items : [entry],
+	);
+}
+
 export type EncodeDepositArgs = {
 	chainId: number;
 	vault: Address;
@@ -67,6 +89,7 @@ export type EncodeBorrowArgs = {
 	enableCollateral?: boolean;
 	collateralVault?: Address;
 	collateralAmount?: bigint;
+	collateralShareSource?: CollateralShareSource;
 	collateralPermit2?: Permit2Data;
 };
 
@@ -235,6 +258,7 @@ export type EncodeMultiplyWithSwapArgs = {
 	enableCollateralLong?: boolean;
 	currentController?: Address;
 	enableController?: boolean;
+	collateralShareSource?: CollateralShareSource;
 	collateralPermit2?: Permit2Data;
 	swapQuote: SwapQuote;
 };
@@ -252,7 +276,17 @@ export type EncodeMultiplySameAssetArgs = {
 	enableCollateralLong?: boolean;
 	currentController?: Address;
 	enableController?: boolean;
+	collateralShareSource?: CollateralShareSource;
 	collateralPermit2?: Permit2Data;
+};
+
+export type CollateralShareSource = {
+	/** Sub-account or main account that already owns collateral vault shares. */
+	from: Address;
+	/** Vault-share amount to transfer into the borrow/multiply sub-account. */
+	shares: bigint;
+	/** Disable the source collateral flag before transferring shares when needed. */
+	disableCollateralFrom?: boolean;
 };
 
 export type EncodePermit2CallArgs = {
@@ -337,9 +371,9 @@ export type Permit2DataToSign = {
 	spender: Address;
 };
 
-export type EVCBatchItems = {
+export type EVCBatch = {
 	type: "evcBatch";
-	items: EVCBatchItem[];
+	items: EVCBatchEntry[];
 };
 
 export type ContractCall = {
@@ -354,7 +388,7 @@ export type ContractCall = {
 
 export type TransactionPlanItem =
 	| RequiredApproval
-	| EVCBatchItems
+	| EVCBatch
 	| ContractCall;
 
 export type TransactionPlan = TransactionPlanItem[];
@@ -397,17 +431,28 @@ export type PlanRedeemArgs = {
 	disableCollateral?: boolean;
 };
 
+export type PlanBorrowCollateral =
+	| {
+			vault: Address;
+			amount: bigint;
+			asset: Address;
+			source?: "wallet";
+	  }
+	| {
+			vault: Address;
+			amount: bigint;
+			source: "savings";
+			from: Address;
+			disableCollateralFrom?: boolean;
+	  };
+
 export type PlanBorrowArgs = {
 	account: Account<IHasVaultAddress>;
 	vault: Address;
 	amount: bigint;
 	borrowAccount: Address;
 	receiver: Address;
-	collateral?: {
-		vault: Address;
-		amount: bigint;
-		asset: Address;
-	};
+	collateral?: PlanBorrowCollateral;
 };
 
 export type PlanLiquidationArgs = {
@@ -519,6 +564,7 @@ export type PlanMultiplyWithSwapArgs = {
 	collateralVault: Address;
 	collateralAmount: bigint;
 	collateralAsset: Address;
+	collateralShareSource?: CollateralShareSource;
 	swapQuote: SwapQuote;
 };
 
@@ -527,6 +573,7 @@ export type PlanMultiplySameAssetArgs = {
 	collateralVault: Address;
 	collateralAmount: bigint;
 	collateralAsset: Address;
+	collateralShareSource?: CollateralShareSource;
 	liabilityVault: Address;
 	liabilityAmount: bigint;
 	longVault: Address;
@@ -540,3 +587,13 @@ export type BatchItemDescription = {
 	functionName: string;
 	args: Record<string, unknown>;
 };
+
+export type BatchOperationDescription = {
+	type: "operation";
+	name: string;
+	items: BatchItemDescription[];
+};
+
+export type BatchEntryDescription =
+	| BatchItemDescription
+	| BatchOperationDescription;

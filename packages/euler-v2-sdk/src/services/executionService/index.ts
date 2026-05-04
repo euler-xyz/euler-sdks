@@ -16,7 +16,9 @@ export type {
 } from "./simulate.js";
 export type {
 	ApproveCall,
+	BatchEntryDescription,
 	BatchItemDescription,
+	BatchOperationDescription,
 	ContractCall,
 	EncodeBorrowArgs,
 	EncodeDepositArgs,
@@ -37,8 +39,10 @@ export type {
 	EncodeSwapFromWalletArgs,
 	EncodeTransferArgs,
 	EncodeWithdrawArgs,
+	EVCBatchEntry,
 	EVCBatchItem,
-	EVCBatchItems,
+	EVCBatch,
+	EVCBatchOperation,
 	Permit2DataToSign,
 	PlanBorrowArgs,
 	PlanDepositArgs,
@@ -61,6 +65,10 @@ export type {
 	// Transaction plan types
 	TransactionPlan,
 	TransactionPlanItem,
+} from "./executionServiceTypes.js";
+export {
+	flattenBatchEntries,
+	isEVCBatchOperation,
 } from "./executionServiceTypes.js";
 export {
 	approvalAmountLabel,

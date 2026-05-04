@@ -49,5 +49,6 @@ Execution checklist:
 5. Decode contract errors for user-facing diagnostics.
 
 Use `mergePlans` to atomically combine multiple intents and `describeBatch` for previews/logging.
+Planner-created `evcBatch` entries contain named operations (`{ type: "operation", name, items }`). Keep those groups intact in previews and merge flows. Raw `EVCBatchItem` entries are still valid for low-level utilities and plugin-inserted setup calls. Use `convertBatchItemsToPlan(items, operationName)` when a raw encoded batch should be named as one operation; omit `operationName` to preserve the raw item array.
 
 Reference: `packages/euler-v2-sdk/docs/execution-service.md`, `packages/euler-v2-sdk/src/services/executionService/executionService.ts`, `examples/react-sdk-example/src/utils/txProgress.ts`

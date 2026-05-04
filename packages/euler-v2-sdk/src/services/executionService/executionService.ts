@@ -39,6 +39,7 @@ import { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
 import * as encodeHelpers from "./encode.js";
 import type {
 	ApproveCall,
+	BatchEntryDescription,
 	BatchItemDescription,
 	EncodeBorrowArgs,
 	EncodeDepositArgs,
@@ -60,6 +61,7 @@ import type {
 	EncodeSwapFromWalletArgs,
 	EncodeTransferArgs,
 	EncodeWithdrawArgs,
+	EVCBatchEntry,
 	EVCBatchItem,
 	GetPermit2TypedDataArgs,
 	Permit2DataToSign,
@@ -89,6 +91,7 @@ import type {
 	TransactionPlan,
 	TransactionPlanItem,
 } from "./executionServiceTypes.js";
+import { isEVCBatchOperation } from "./executionServiceTypes.js";
 import {
 	type ExecuteTransactionPlanArgs,
 	type ExecuteTransactionPlanInternalArgs,
@@ -116,6 +119,32 @@ function requiresZeroApprovalReset(chainId: number, token: Address): boolean {
 		TOKENS_REQUIRING_ZERO_APPROVAL_RESET[chainId]?.some(
 			(resetToken) => resetToken === getAddress(token),
 		) ?? false
+	);
+}
+
+function isSavingsCollateral(
+	collateral: PlanBorrowArgs["collateral"],
+): collateral is Extract<
+	NonNullable<PlanBorrowArgs["collateral"]>,
+	{ source: "savings" }
+> {
+	return collateral?.source === "savings";
+}
+
+function isWalletCollateral(
+	collateral: PlanBorrowArgs["collateral"],
+): collateral is Extract<
+	NonNullable<PlanBorrowArgs["collateral"]>,
+	{ source?: "wallet" }
+> {
+	return !!collateral && !isSavingsCollateral(collateral);
+}
+
+function cloneBatchEntries(entries: readonly EVCBatchEntry[]): EVCBatchEntry[] {
+	return entries.map((entry) =>
+		"type" in entry && entry.type === "operation"
+			? { type: "operation", name: entry.name, items: [...entry.items] }
+			: entry,
 	);
 }
 
@@ -205,13 +234,22 @@ export interface IExecutionService<
 
 	getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData;
 	describeBatch(
-		batch: EVCBatchItem[],
+		batch: readonly EVCBatchItem[],
 		extraAbis?: Abi[],
 	): BatchItemDescription[];
-	/** Merges multiple plans into one: required approvals for the same (token, owner, spender) are summed; executable items are preserved in order and adjacent EVC batches are concatenated. */
+	describeBatch(
+		batch: readonly EVCBatchEntry[],
+		extraAbis?: Abi[],
+	): BatchEntryDescription[];
+	/** Merges multiple plans into one: required approvals are summed, adjacent EVC batches are concatenated, and operation groupings are preserved. */
 	mergePlans(plans: TransactionPlan[]): TransactionPlan;
 	/** Converts EVC batch items into a transaction plan (single evcBatch, no required approvals). */
-	convertBatchItemsToPlan(items: EVCBatchItem[]): TransactionPlan;
+	convertBatchItemsToPlan(
+		items: EVCBatchItem[],
+		operationName?: string,
+	): TransactionPlan;
+	/** Appends a single batch item to the last EVC batch in the plan, creating one if needed. */
+	addBatchItemToPlan(plan: TransactionPlan, item: EVCBatchItem): TransactionPlan;
 }
 
 const WAD = 10n ** 18n;
@@ -821,12 +859,12 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	}
 
 	/**
-	 * Decodes EVC batch items into human-readable function names and named arguments.
+	 * Decodes EVC batch entries into human-readable function names and named arguments.
 	 * Tries known ABIs (EVC, eVault, Permit2, swapper, swapVerifier) to decode each item's data.
 	 *
-	 * @param batch - Array of EVC batch items (targetContract, onBehalfOfAccount, value, data) to decode
+	 * @param batch - Array of EVC batch entries to decode. Operation entries are preserved with decoded child items.
 	 * @param extraAbis - Optional extra ABIs to try first when decoding unknown batch items.
-	 * @returns Array of decoded items with targetContract, onBehalfOfAccount, functionName, and args (record of param name to value). Throws if any item cannot be decoded.
+	 * @returns Array matching the input batch-entry shape, with raw items decoded.
 	 * @example
 	 * const batchItems = executionService.encodeDeposit({ ... });
 	 * const described = executionService.describeBatch(batchItems);
@@ -834,10 +872,17 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * console.log(described[0].args); // { amount: 1000n, receiver: "0x..." }
 	 */
 	describeBatch(
-		batch: EVCBatchItem[],
+		batch: readonly EVCBatchItem[],
 		extraAbis?: Abi[],
-	): BatchItemDescription[] {
-		const decodedBatchItems: BatchItemDescription[] = [];
+	): BatchItemDescription[];
+	describeBatch(
+		batch: readonly EVCBatchEntry[],
+		extraAbis?: Abi[],
+	): BatchEntryDescription[];
+	describeBatch(
+		batch: readonly EVCBatchEntry[],
+		extraAbis?: Abi[],
+	): BatchEntryDescription[] {
 		const executionDecodeAbis: Abi[] = [
 			...(extraAbis ?? []),
 			ethereumVaultConnectorAbi as unknown as Abi,
@@ -846,7 +891,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			swapperAbi as unknown as Abi,
 			swapVerifierAbi as unknown as Abi,
 		];
-		for (const item of batch) {
+
+		const decodeBatchItem = (item: EVCBatchItem): BatchItemDescription => {
 			let decoded = false;
 			for (const abi of executionDecodeAbis) {
 				try {
@@ -880,14 +926,13 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 						});
 					}
 
-					decodedBatchItems.push({
+					decoded = true;
+					return {
 						targetContract: item.targetContract,
 						onBehalfOfAccount: item.onBehalfOfAccount,
 						functionName: decodedData.functionName,
 						args: namedArgs,
-					});
-					decoded = true;
-					break;
+					};
 				} catch {}
 			}
 			// Fall back to plugins
@@ -897,30 +942,39 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 					try {
 						const result = plugin.decodeBatchItem(item);
 						if (result) {
-							decodedBatchItems.push(result);
 							decoded = true;
-							break;
+							return result;
 						}
 					} catch {}
 				}
 			}
 			if (!decoded) {
-				decodedBatchItems.push({
+				return {
 					targetContract: item.targetContract,
 					onBehalfOfAccount: item.onBehalfOfAccount,
 					functionName: "Unknown",
 					args: {},
-				});
+				};
 			}
-		}
 
-		return decodedBatchItems;
+			throw new Error("unreachable batch item decode state");
+		};
+
+		return batch.map((entry) =>
+			isEVCBatchOperation(entry)
+				? {
+						type: "operation",
+						name: entry.name,
+						items: entry.items.map(decodeBatchItem),
+					}
+				: decodeBatchItem(entry),
+		);
 	}
 
 	/**
 	 * Merges multiple transaction plans into a single plan.
 	 * Required approvals for the same (token, owner, spender) are summed.
-	 * Executable items are preserved in order; adjacent EVC batch items are concatenated.
+	 * Executable items are preserved in order; adjacent EVC batches are concatenated without flattening operation groupings.
 	 * Can be used to construct a transaction queue.
 	 *
 	 * @param plans - Array of transaction plans to merge
@@ -945,17 +999,39 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				} else if (item.type === "evcBatch") {
 					const previous = executableItems[executableItems.length - 1];
 					if (previous?.type === "evcBatch") {
-						previous.items.push(...item.items);
+						previous.items.push(...cloneBatchEntries(item.items));
 					} else {
-						executableItems.push({ type: "evcBatch", items: [...item.items] });
+						executableItems.push({
+							type: "evcBatch",
+							items: cloneBatchEntries(item.items),
+						});
 					}
 				} else {
-					executableItems.push(item);
+					throw new Error(
+						"ExecutionService.mergePlans cannot merge contractCall plan items. Merge these plans manually to preserve call boundaries.",
+					);
 				}
 			}
 		}
 
 		return [...approvalByKey.values(), ...executableItems];
+	}
+
+	/**
+	 * Appends a raw batch item to the last EVC batch in the plan, or creates one.
+	 * Mutates and returns the provided plan.
+	 */
+	addBatchItemToPlan(plan: TransactionPlan, item: EVCBatchItem): TransactionPlan {
+		for (let index = plan.length - 1; index >= 0; index--) {
+			const planItem = plan[index];
+			if (planItem?.type === "evcBatch") {
+				planItem.items.push(item);
+				return plan;
+			}
+		}
+
+		plan.push({ type: "evcBatch", items: [item] });
+		return plan;
 	}
 
 	/**
@@ -966,8 +1042,19 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param items - EVC batch items to wrap in a plan
 	 * @returns Transaction plan containing one evcBatch with the items
 	 */
-	convertBatchItemsToPlan(items: EVCBatchItem[]): TransactionPlan {
+	convertBatchItemsToPlan(
+		items: EVCBatchItem[],
+		operationName?: string,
+	): TransactionPlan {
 		if (items.length === 0) return [];
+		if (operationName) {
+			return [
+				{
+					type: "evcBatch",
+					items: [{ type: "operation", name: operationName, items }],
+				},
+			];
+		}
 		return [{ type: "evcBatch", items }];
 	}
 
@@ -1321,10 +1408,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			// Permit2 is handled separately in the plan
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "deposit"));
 
 		return plan;
 	}
@@ -1382,10 +1466,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			// Permit2 is handled separately in the plan
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "mint"));
 
 		return plan;
 	}
@@ -1427,10 +1508,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				disableCollateral && (!position || position.isCollateral),
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "withdraw"));
 
 		return plan;
 	}
@@ -1473,10 +1551,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				disableCollateral && (!position || position.isCollateral),
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "redeem"));
 
 		return plan;
 	}
@@ -1501,6 +1576,12 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const { vault, amount, receiver, borrowAccount, account, collateral } =
 			args;
 		const plan: TransactionPlanItem[] = [];
+		const savingsCollateral = isSavingsCollateral(collateral)
+			? collateral
+			: undefined;
+		const walletCollateral = isWalletCollateral(collateral)
+			? collateral
+			: undefined;
 
 		const enableCollateral =
 			collateral && collateral.amount > 0n
@@ -1517,15 +1598,15 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			account?.isControllerEnabled(borrowAccount, vault) ?? false
 		);
 
-		if (collateral && collateral.amount > 0n) {
+		if (walletCollateral && walletCollateral.amount > 0n) {
 			// Approval is needed from the account owner (who owns the wallet tokens)
 			// Add approval requirement (will be resolved later with Wallet data)
 			plan.push({
 				type: "requiredApproval",
-				token: collateral.asset,
+				token: walletCollateral.asset,
 				owner: account.owner,
-				spender: collateral.vault,
-				amount: collateral.amount,
+				spender: walletCollateral.vault,
+				amount: walletCollateral.amount,
 			});
 		}
 
@@ -1540,13 +1621,23 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			currentController: currentController || undefined,
 			enableCollateral,
 			collateralVault: collateral?.vault,
-			collateralAmount: collateral?.amount,
+			collateralAmount: walletCollateral?.amount,
+			collateralShareSource: savingsCollateral
+				? {
+						from: savingsCollateral.from,
+						shares: savingsCollateral.amount,
+						disableCollateralFrom:
+							savingsCollateral.disableCollateralFrom &&
+							(account?.isCollateralEnabled(
+								savingsCollateral.from,
+								savingsCollateral.vault,
+							) ??
+								false),
+					}
+				: undefined,
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "borrow"));
 
 		return plan;
 	}
@@ -1611,10 +1702,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			enableCollateral,
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "liquidation"));
 
 		return plan;
 	}
@@ -1681,10 +1769,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			});
 		}
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "repayFromWallet"));
 
 		return plan;
 	}
@@ -1803,10 +1888,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			});
 		}
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "repayFromDeposit"));
 
 		return plan;
 	}
@@ -1865,10 +1947,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			});
 		}
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "repayWithSwap"));
 
 		return plan;
 	}
@@ -1920,10 +1999,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			enableCollateral: shouldEnableCollateral,
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "depositWithSwapFromWallet"));
 
 		return plan;
 	}
@@ -1958,10 +2034,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			sender: account.owner,
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "swapFromWallet"));
 
 		return plan;
 	}
@@ -2005,10 +2078,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			isMax,
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "swapCollateral"));
 
 		return plan;
 	}
@@ -2048,10 +2118,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			isMax,
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "swapDebt"));
 
 		return plan;
 	}
@@ -2125,10 +2192,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			disableCollateralFrom: shouldDisableCollateralFrom,
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "migrateSameAssetCollateral"));
 
 		return plan;
 	}
@@ -2212,10 +2276,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			transferRemainingSharesTo,
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "migrateSameAssetDebt"));
 
 		return plan;
 	}
@@ -2260,10 +2321,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				(account?.isCollateralEnabled(from, vault) ?? false),
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "transfer"));
 
 		return plan;
 	}
@@ -2297,10 +2355,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			enableController,
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "pullDebt"));
 
 		return plan;
 	}
@@ -2322,13 +2377,14 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			collateralVault,
 			collateralAmount,
 			collateralAsset,
+			collateralShareSource,
 			account,
 			swapQuote,
 		} = args;
 		const plan: TransactionPlanItem[] = [];
 
 		// 1. Check if collateral approval is needed (only if depositing collateral)
-		if (collateralAmount > 0n) {
+		if (!collateralShareSource && collateralAmount > 0n) {
 			// Add approval requirement (will be resolved later with Wallet data)
 			plan.push({
 				type: "requiredApproval",
@@ -2347,9 +2403,24 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const liabilityAmount = BigInt(swapQuote.amountIn);
 
 		// 2. Determine if collateral needs to be enabled
+		const hasCollateralInput = collateralShareSource
+			? collateralShareSource.shares > 0n
+			: collateralAmount > 0n;
 		const enableCollateral =
-			collateralAmount > 0n &&
+			hasCollateralInput &&
 			!(account?.isCollateralEnabled(receiver, collateralVault) ?? false);
+		const resolvedCollateralShareSource = collateralShareSource
+			? {
+					...collateralShareSource,
+					disableCollateralFrom:
+						collateralShareSource.disableCollateralFrom &&
+						(account?.isCollateralEnabled(
+							collateralShareSource.from,
+							collateralVault,
+						) ??
+							false),
+				}
+			: undefined;
 
 		// 3. Determine if controller needs to be enabled
 		const enableController = !(
@@ -2372,14 +2443,12 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			enableCollateral,
 			currentController: currentController || undefined,
 			enableController,
+			collateralShareSource: resolvedCollateralShareSource,
 			swapQuote,
 			// Permit2 is handled separately in the plan
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "multiplyWithSwap"));
 
 		return plan;
 	}
@@ -2404,6 +2473,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			collateralVault,
 			collateralAmount,
 			collateralAsset,
+			collateralShareSource,
 			liabilityVault,
 			liabilityAmount,
 			longVault,
@@ -2413,7 +2483,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const plan: TransactionPlanItem[] = [];
 
 		// 1. Check if collateral approval is needed (only if depositing collateral)
-		if (collateralAmount > 0n) {
+		if (!collateralShareSource && collateralAmount > 0n) {
 			// Add approval requirement (will be resolved later with Wallet data)
 			plan.push({
 				type: "requiredApproval",
@@ -2425,9 +2495,24 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		}
 
 		// 2. Determine if collateral needs to be enabled
+		const hasCollateralInput = collateralShareSource
+			? collateralShareSource.shares > 0n
+			: collateralAmount > 0n;
 		const enableCollateral =
-			collateralAmount > 0n &&
+			hasCollateralInput &&
 			!(account?.isCollateralEnabled(receiver, collateralVault) ?? false);
+		const resolvedCollateralShareSource = collateralShareSource
+			? {
+					...collateralShareSource,
+					disableCollateralFrom:
+						collateralShareSource.disableCollateralFrom &&
+						(account?.isCollateralEnabled(
+							collateralShareSource.from,
+							collateralVault,
+						) ??
+							false),
+				}
+			: undefined;
 
 		// 3. Determine if controller needs to be enabled
 		const enableController = !(
@@ -2450,13 +2535,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			enableCollateral,
 			currentController: currentController || undefined,
 			enableController,
+			collateralShareSource: resolvedCollateralShareSource,
 			// Permit2 is handled separately in the plan
 		});
 
-		plan.push({
-			type: "evcBatch",
-			items: batchItems,
-		});
+		plan.push(...this.convertBatchItemsToPlan(batchItems, "multiplySameAsset"));
 
 		return plan;
 	}

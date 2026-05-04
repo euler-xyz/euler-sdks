@@ -1,6 +1,7 @@
 import {
   approvalAmountLabel,
   decodeSmartContractErrors,
+  isEVCBatchOperation,
   TransactionPlanExecutionError,
   type ExecuteTransactionPlanArgs,
   type TransactionPlanExecutionProgress,
@@ -49,6 +50,18 @@ const humanizeErrorText = (raw: string): string => {
   return `${spaced.charAt(0).toUpperCase()}${spaced.slice(1).toLowerCase()}`;
 };
 
+function evcBatchProgressLabel(item?: TransactionPlanItem): string {
+  if (item?.type !== "evcBatch") return "EVC batch";
+
+  const operationNames = item.items
+    .filter(isEVCBatchOperation)
+    .map((operation) => operation.name);
+
+  return operationNames.length > 0
+    ? `EVC batch (${operationNames.join(", ")})`
+    : "EVC batch";
+}
+
 function progressStatusLabel(progress: TransactionPlanExecutionProgress): string | undefined {
   if (progress.status === "approval") {
     const approval = progress.item?.type === "requiredApproval"
@@ -57,7 +70,7 @@ function progressStatusLabel(progress: TransactionPlanExecutionProgress): string
     return approval ? `Approval tx (${approvalAmountLabel(approval.amount)})` : "Approval tx";
   }
   if (progress.status === "permit2Signature") return "Permit2 signature";
-  if (progress.status === "evcBatch") return "EVC batch";
+  if (progress.status === "evcBatch") return evcBatchProgressLabel(progress.item);
   if (progress.status === "contractCall") {
     return progress.item?.type === "contractCall" ? progress.item.functionName : "Contract call";
   }

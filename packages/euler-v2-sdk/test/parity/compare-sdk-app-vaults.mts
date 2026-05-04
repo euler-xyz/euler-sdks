@@ -9,7 +9,7 @@ dotenv.config({ path: path.resolve(SCRIPT_DIR, "../../examples/.env") });
 
 const APP_HOST = process.env.APP_HOST ?? "https://app.euler.finance";
 const INDEXER_HOST = process.env.INDEXER_HOST ?? "https://indexer.euler.finance";
-const V3_HOST = process.env.V3_HOST ?? "https://v3staging.eul.dev";
+const V3_HOST = process.env.V3_HOST ?? "https://v3.eul.dev";
 const ADAPTER_MODE = (process.env.ADAPTER_MODE ?? "v3").toLowerCase();
 
 const DEFAULT_CHAIN_IDS = [1];

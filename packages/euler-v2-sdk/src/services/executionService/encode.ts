@@ -36,6 +36,7 @@ import {
 	type EncodeWithdrawArgs,
 	type GetPermit2TypedDataArgs,
 	PERMIT2_TYPES,
+	type CollateralShareSource,
 	type PermitSingleMessage,
 	type PermitSingleTypedData,
 } from "./executionServiceTypes.js";
@@ -150,6 +151,33 @@ export function encodeTransferFromMax(
 			args: [from, to],
 		}),
 	};
+}
+
+function encodeCollateralShareTransfer(
+	evc: Address,
+	vault: Address,
+	receiver: Address,
+	source: CollateralShareSource,
+): EVCBatchItem[] {
+	if (source.shares <= 0n || getAddress(source.from) === getAddress(receiver)) {
+		return [];
+	}
+
+	const items: EVCBatchItem[] = [];
+	if (source.disableCollateralFrom) {
+		items.push(encodeDisableCollateral(evc, source.from, vault));
+	}
+	items.push({
+		targetContract: vault,
+		onBehalfOfAccount: source.from,
+		value: 0n,
+		data: encodeFunctionData({
+			abi: eVaultAbi,
+			functionName: "transfer",
+			args: [receiver, source.shares],
+		}),
+	});
+	return items;
 }
 
 export function getPermit2TypedData(
@@ -336,10 +364,23 @@ export function encodeBorrow(
 		collateralAmount,
 		enableCollateral = true,
 		collateralPermit2,
+		collateralShareSource,
 	} = args;
 	const items: EVCBatchItem[] = [];
 
-	if (
+	if (collateralVault && collateralShareSource) {
+		items.push(
+			...encodeCollateralShareTransfer(
+				evc,
+				collateralVault,
+				borrowAccount,
+				collateralShareSource,
+			),
+		);
+		if (enableCollateral) {
+			items.push(encodeEnableCollateral(evc, borrowAccount, collateralVault));
+		}
+	} else if (
 		collateralVault &&
 		collateralAmount !== undefined &&
 		collateralAmount > 0n
@@ -461,6 +502,7 @@ export function encodeMultiplyWithSwap(
 		currentController,
 		enableController = true,
 		collateralPermit2,
+		collateralShareSource,
 		swapQuote,
 	}: EncodeMultiplyWithSwapArgs,
 ): EVCBatchItem[] {
@@ -477,7 +519,19 @@ export function encodeMultiplyWithSwap(
 		);
 	}
 
-	if (collateralAmount > 0n) {
+	if (collateralShareSource) {
+		items.push(
+			...encodeCollateralShareTransfer(
+				evc,
+				collateralVault,
+				receiver,
+				collateralShareSource,
+			),
+		);
+		if (enableCollateral) {
+			items.push(encodeEnableCollateral(evc, receiver, collateralVault));
+		}
+	} else if (collateralAmount > 0n) {
 		if (enableCollateral) {
 			items.push(encodeEnableCollateral(evc, receiver, collateralVault));
 		}
@@ -554,6 +608,7 @@ export function encodeMultiplySameAsset(
 		enableController = true,
 		currentController,
 		collateralPermit2,
+		collateralShareSource,
 	}: EncodeMultiplySameAssetArgs,
 ): EVCBatchItem[] {
 	const items: EVCBatchItem[] = [];
@@ -569,7 +624,19 @@ export function encodeMultiplySameAsset(
 		);
 	}
 
-	if (collateralAmount > 0n) {
+	if (collateralShareSource) {
+		items.push(
+			...encodeCollateralShareTransfer(
+				evc,
+				collateralVault,
+				receiver,
+				collateralShareSource,
+			),
+		);
+		if (enableCollateral) {
+			items.push(encodeEnableCollateral(evc, receiver, collateralVault));
+		}
+	} else if (collateralAmount > 0n) {
 		if (enableCollateral) {
 			items.push(encodeEnableCollateral(evc, receiver, collateralVault));
 		}

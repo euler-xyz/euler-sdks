@@ -16,6 +16,7 @@ import type {
 	TransactionPlan,
 	TransactionPlanItem,
 } from "./executionServiceTypes.js";
+import { flattenBatchEntries } from "./executionServiceTypes.js";
 import {
 	decodeSmartContractErrors,
 	type DecodedSmartContractError,
@@ -251,7 +252,10 @@ export async function executeTransactionPlan(
 
 			if (item.type === "evcBatch") {
 				emitProgress(item, "evcBatch");
-				const batchItems = [...permit2BatchItems, ...item.items];
+				const batchItems = [
+					...permit2BatchItems,
+					...flattenBatchEntries(item.items),
+				];
 				const evcAddress =
 					args.deploymentService.getDeployment(args.chainId).addresses.coreAddrs
 						.evc;
