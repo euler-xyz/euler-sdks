@@ -1,4 +1,8 @@
-import type { IVaultEntity } from "../entities/Account.js";
+import type {
+	Account,
+	IHasVaultAddress,
+	IVaultEntity,
+} from "../entities/Account.js";
 import type { IAccountService } from "../services/accountService/index.js";
 import type { IPortfolioService } from "../services/portfolioService/index.js";
 import type { IDeploymentService } from "../services/deploymentService/index.js";
@@ -21,12 +25,9 @@ import type { IRewardsService } from "../services/rewardsService/index.js";
 import type { IIntrinsicApyService } from "../services/intrinsicApyService/index.js";
 import type { IOracleAdapterService } from "../services/oracleAdapterService/index.js";
 import type { IFeeFlowService } from "../services/feeFlowService/index.js";
-import type {
-	EulerPlugin,
-	ProcessPluginsArgs,
-	WritePluginContext,
-} from "../plugins/types.js";
+import type { EulerPlugin } from "../plugins/types.js";
 import type { TransactionPlan } from "../services/executionService/executionServiceTypes.js";
+import type { Address } from "viem";
 
 export interface EulerSDKOptions<
 	TVaultEntity extends IVaultEntity = VaultEntity,
@@ -105,17 +106,15 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 	 */
 	async processPlugins(
 		plan: TransactionPlan,
-		args: ProcessPluginsArgs,
+		account: Address | Account<IHasVaultAddress>,
+		chainId: number,
 	): Promise<TransactionPlan> {
 		if (this.plugins.length === 0) return plan;
-
-		const provider = this.providerService.getProvider(args.chainId);
-		const ctx: WritePluginContext = { ...args, provider };
 
 		for (const plugin of this.plugins) {
 			if (!plugin.processPlan) continue;
 			try {
-				plan = await plugin.processPlan(plan, ctx);
+				plan = await plugin.processPlan(plan, account, chainId, this);
 			} catch {
 				// Plugin failed — skip it gracefully, operation proceeds without this plugin's enrichment
 			}

@@ -115,6 +115,8 @@ Use plugins when vault interactions require side data/actions:
 - `createPythPlugin` to inject price updates before reads/writes
 - `createKeyringPlugin` to inject credential creation when required
 
+Write-path plugins run automatically inside `simulateTransactionPlan`, `estimateGasForTransactionPlan`, and `executeTransactionPlan`. The account argument is `AddressOrAccount` (`Address | Account`); pass an `Account` when available so plugins can reuse state, or pass an address to let plugins fetch minimal data.
+
 Keep plugin ordering deterministic. Use shared caching decorators for plugin query paths.
 
 ---
@@ -139,7 +141,7 @@ Use SDK examples as templates:
 
 - `packages/euler-v2-sdk/examples/execution/*` for transaction flows
 - `packages/euler-v2-sdk/examples/simulations/*` for pre-checks
-- `sdk.executionService.executeTransactionPlan(...)` for approval + Permit2 + EVC execution logic
+- `sdk.executionService.executeTransactionPlan(...)` for plugin processing + approval + Permit2 + EVC execution logic
 - `packages/euler-v2-sdk/examples/run-examples.sh` for fork-based regression runs
 
 Promote constants to config/env and add explicit chain/account flags in CLI tools.

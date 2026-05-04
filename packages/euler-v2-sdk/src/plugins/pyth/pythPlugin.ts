@@ -5,19 +5,26 @@ import {
 	type Abi,
 	encodeFunctionData,
 	decodeFunctionData,
+	getAddress,
 	zeroAddress,
 } from "viem";
+import {
+	Account,
+	type AddressOrAccount,
+	type IHasVaultAddress,
+} from "../../entities/Account.js";
+import type { EVault, EVaultCollateral } from "../../entities/EVault.js";
 import type {
 	EulerPlugin,
 	PluginBatchItems,
+	PluginSDK,
 	ReadPluginContext,
-	WritePluginContext,
 } from "../types.js";
-import { prependToBatch } from "../types.js";
 import type {
 	BatchItemDescription,
 	EVCBatchItem,
 	TransactionPlan,
+	TransactionPlanItem,
 } from "../../services/executionService/executionServiceTypes.js";
 import {
 	collectPythFeedsFromAdapters,
@@ -25,6 +32,10 @@ import {
 } from "../../utils/oracle.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 import { createBundledCall } from "../../utils/callBundler.js";
+import {
+	calculateHealthCheckSets,
+	type HealthCheckAccountSet,
+} from "../../utils/healthCheckSets.js";
 
 // ── Pyth ABI (minimal: only the two functions we need) ──
 
@@ -207,6 +218,133 @@ function deduplicateFeeds(feeds: PythFeed[]): PythFeed[] {
 	return [...seen.values()];
 }
 
+type PythControllerVault = Pick<
+	EVault,
+	"address" | "debtPricingOracleAdapters"
+> & {
+	collaterals: Pick<EVaultCollateral, "address" | "oracleAdapters">[];
+};
+
+const MINIMAL_ACCOUNT_FETCH_OPTIONS = {
+	populateVaults: true,
+	populateMarketPrices: false,
+	populateUserRewards: false,
+	vaultFetchOptions: {
+		populateAll: false,
+		populateMarketPrices: false,
+		populateCollaterals: false,
+		populateRewards: false,
+		populateIntrinsicApy: false,
+		populateLabels: false,
+	},
+} as const;
+
+const CONTROLLER_SELF = "__controller_self__";
+
+function isPythControllerVault(vault: unknown): vault is PythControllerVault {
+	return (
+		typeof vault === "object" &&
+		vault !== null &&
+		"address" in vault &&
+		"debtPricingOracleAdapters" in vault &&
+		"collaterals" in vault
+	);
+}
+
+function getAccountOwner(account: AddressOrAccount): Address {
+	return typeof account === "string"
+		? getAddress(account)
+		: getAddress(account.owner);
+}
+
+async function resolveAccount(
+	account: AddressOrAccount,
+	chainId: number,
+	sdk: PluginSDK,
+): Promise<Account<IHasVaultAddress>> {
+	if (account instanceof Account) {
+		if (account.populated.vaults) return account;
+		const populated = await sdk.accountService.populateVaults(
+			[account as Account<never>],
+			MINIMAL_ACCOUNT_FETCH_OPTIONS,
+		);
+		return populated.result[0] as Account<IHasVaultAddress>;
+	}
+
+	const fetched = await sdk.accountService.fetchAccount(
+		chainId,
+		getAddress(account),
+		MINIMAL_ACCOUNT_FETCH_OPTIONS,
+	);
+	return fetched.result;
+}
+
+async function collectHealthCheckFeeds(
+	checkedAccounts: readonly HealthCheckAccountSet[],
+	chainId: number,
+	sdk: PluginSDK,
+): Promise<PythFeed[]> {
+	const controllerAddresses = new Set<Address>();
+	for (const account of checkedAccounts) {
+		for (const controller of account.controllers) {
+			controllerAddresses.add(controller);
+		}
+	}
+	if (!controllerAddresses.size) return [];
+
+	const fetched = await sdk.vaultMetaService.fetchVaults(
+		chainId,
+		[...controllerAddresses],
+		{
+			populateCollaterals: true,
+			populateMarketPrices: false,
+			populateRewards: false,
+			populateIntrinsicApy: false,
+			populateLabels: false,
+		},
+	);
+
+	const controllers = new Map<Address, PythControllerVault>();
+	for (const vault of fetched.result) {
+		if (isPythControllerVault(vault)) {
+			controllers.set(getAddress(vault.address), vault);
+		}
+	}
+
+	const feeds: PythFeed[] = [];
+	const seenPairs = new Set<string>();
+	for (const account of checkedAccounts) {
+		for (const controllerAddress of account.controllers) {
+			const controller = controllers.get(getAddress(controllerAddress));
+			if (!controller) continue;
+
+			const selfKey = `${getAddress(controllerAddress).toLowerCase()}:${CONTROLLER_SELF}`;
+			if (!seenPairs.has(selfKey)) {
+				seenPairs.add(selfKey);
+				feeds.push(
+					...collectPythFeedsFromAdapters(controller.debtPricingOracleAdapters),
+				);
+			}
+
+			for (const collateralAddress of account.collaterals) {
+				const pairKey = `${getAddress(controllerAddress).toLowerCase()}:${getAddress(collateralAddress).toLowerCase()}`;
+				if (seenPairs.has(pairKey)) continue;
+				seenPairs.add(pairKey);
+
+				const collateral = controller.collaterals.find(
+					(c) => getAddress(c.address) === getAddress(collateralAddress),
+				);
+				if (!collateral) continue;
+				feeds.push(
+					...collectPythFeedsFromAdapters(collateral.oracleAdapters ?? []),
+				);
+			}
+		}
+	}
+
+	return deduplicateFeeds(feeds);
+}
+
 // ── Plugin factory ──
 
 export interface PythPluginConfig {
@@ -237,24 +375,57 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 
 		async processPlan(
 			plan: TransactionPlan,
-			ctx: WritePluginContext,
+			account: AddressOrAccount,
+			chainId: number,
+			sdk: PluginSDK,
 		): Promise<TransactionPlan> {
-			const feeds = deduplicateFeeds(
-				ctx.vaults.flatMap((v) =>
-					collectPythFeedsFromAdapters(v.oracle.adapters),
-				),
+			const resolvedAccount = await resolveAccount(account, chainId, sdk);
+			const healthCheckSets = new Map(
+				calculateHealthCheckSets(plan, resolvedAccount).map((set) => [
+					set.planIndex,
+					set.accounts,
+				]),
 			);
-			if (!feeds.length) return plan;
+			const provider = sdk.providerService.getProvider(chainId);
+			const sender = getAccountOwner(account);
+			const processed: TransactionPlanItem[] = [];
 
-			const result = await buildPythBatchItems(
-				feeds,
-				adapter,
-				ctx.provider,
-				ctx.sender,
-			);
-			if (!result.items.length) return plan;
+			for (const [planIndex, entry] of plan.entries()) {
+				if (entry.type !== "evcBatch") {
+					processed.push(entry);
+					continue;
+				}
 
-			return prependToBatch(plan, result.items);
+				const checkedAccounts = healthCheckSets.get(planIndex);
+				if (!checkedAccounts?.length) {
+					processed.push(entry);
+					continue;
+				}
+
+				const feeds = await collectHealthCheckFeeds(
+					checkedAccounts,
+					chainId,
+					sdk,
+				);
+				if (!feeds.length) {
+					processed.push(entry);
+					continue;
+				}
+
+				const result = await buildPythBatchItems(
+					feeds,
+					adapter,
+					provider,
+					sender,
+				);
+				processed.push(
+					result.items.length
+						? { ...entry, items: [...result.items, ...entry.items] }
+						: entry,
+				);
+			}
+
+			return processed;
 		},
 
 		decodeBatchItem(item: EVCBatchItem): BatchItemDescription | null {

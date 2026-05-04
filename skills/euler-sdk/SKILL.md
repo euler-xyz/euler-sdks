@@ -42,7 +42,7 @@ Reference these guidelines when:
 - `accountService` for account/sub-account positions
 - `vaultMetaService` when vault type is unknown or mixed
 - `executionService` for `planX`/`encodeX` and approvals
-- `executionService` for plan simulation and pre-execution validation
+- `executionService` for plugin-aware plan simulation, gas estimation, execution, and pre-execution validation
 - `swapService` for provider quotes and route payloads
 - `rewardsService` for reward reads and provider-specific claim plans
 

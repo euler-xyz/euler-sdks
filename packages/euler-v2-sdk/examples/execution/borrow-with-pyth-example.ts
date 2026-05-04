@@ -17,10 +17,10 @@
  *   • WBTC → Borrow vault 0x82D2...6AEE
  *
  * PYTH PLUGIN:
- *   The Pyth plugin detects that the vaults use Pyth oracles and automatically:
- *   1. Collects Pyth feed IDs from both vault oracle adapters
+ *   The Pyth plugin detects which vaults will be health checked and automatically:
+ *   1. Collects Pyth feed IDs from the active controller and collateral oracles
  *   2. Fetches latest price data from the Hermes API
- *   3. Prepends updatePriceFeeds calls to the EVC batch
+ *   3. Prepends updatePriceFeeds calls to the EVC batch during execution
  *   4. Includes the required ETH fee for the Pyth contract
  *   This ensures oracle prices are fresh when the borrow is executed.
  *
@@ -34,17 +34,17 @@
 
 import "dotenv/config";
 import {
-  getAddress,
-  parseUnits,
-  parseEther,
-  erc20Abi,
   createWalletClient,
+  erc20Abi,
+  getAddress,
   http,
-  } from "viem";
-  import { mainnet } from "viem/chains";
-  import { printHeader, logOperationResult } from "../utils/helpers.js";
-  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-  import {
+  parseEther,
+  parseUnits,
+} from "viem";
+import { mainnet } from "viem/chains";
+import { printHeader, logOperationResult } from "../utils/helpers.js";
+import { createTransactionPlanLogger } from "../utils/transactionPlanLogging.js";
+import {
   rpcUrls,
   account,
   initExample,
@@ -113,7 +113,6 @@ async function borrowWithPythExample({
     queryCacheConfig: { enabled: false },
   });
 
-  // Fetch vault entities — the Pyth plugin needs oracle adapter info from these
   const [borrowVaultResult, collateralVaultResult] = await Promise.all([
     sdk.eVaultService.fetchVault(mainnet.id, WBTC_BORROW_VAULT),
     sdk.eVaultService.fetchVault(mainnet.id, LBTC_COLLATERAL_VAULT),
@@ -127,11 +126,12 @@ async function borrowWithPythExample({
   console.log(`Borrow vault:     ${borrowVault.shares.name} (${borrowVault.asset.symbol})`);
   console.log(`Collateral vault: ${collateralVault.shares.name} (${collateralVault.asset.symbol})`);
 
-  // Fetch account state
-  let accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
+  // Fetch account state. Passing this Account into executeTransactionPlan lets
+  // the Pyth plugin derive the health-check set from the account and batch.
+  const accountData = (await sdk.accountService.fetchAccount(mainnet.id, account.address, { populateVaults: false })).result;
 
   // Plan the borrow operation (deposits collateral + borrows in one batch)
-  let borrowPlan = sdk.executionService.planBorrow({
+  const borrowPlan = sdk.executionService.planBorrow({
     account: accountData,
     vault: WBTC_BORROW_VAULT,
     amount: BORROW_AMOUNT,
@@ -146,25 +146,14 @@ async function borrowWithPythExample({
 
   console.log(`\n✓ Borrow plan created with ${borrowPlan.length} step(s)`);
 
-  // Process plugins — Pyth plugin will:
-  //   1. Discover Pyth feeds from both vault oracles (liability + collateral)
-  //   2. Fetch latest prices from Hermes API
-  //   3. Prepend updatePriceFeeds batch items with the required ETH fee
-  borrowPlan = await sdk.processPlugins(borrowPlan, {
-    chainId: mainnet.id,
-    sender: account.address,
-    vaults: [borrowVault, collateralVault],
-  });
-
-  console.log(`✓ Plugins processed (Pyth price updates prepended)`);
-
   console.log(`✓ Executing...`);
 
-  // Execute the plan (the executor sums batch item values for the Pyth fee)
+  // Execute the plan. The execution service applies plugins first, and the
+  // executor sums batch item values for the Pyth fee.
   await sdk.executionService.executeTransactionPlan({
     plan: borrowPlan,
     chainId: mainnet.id,
-    account: walletAccountAddress(walletClient),
+    account: accountData,
     ...exampleExecutionCallbacks(walletClient),
     onProgress: createTransactionPlanLogger(sdk),
   });

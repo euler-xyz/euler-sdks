@@ -330,7 +330,7 @@ The SDK provides utilities for working with Pyth oracles in `utils/oracle.ts`:
 - **`collectPythFeedIds(oracleInfo)`** — Recursively extracts all Pyth feed IDs from an oracle configuration (traverses EulerRouter, CrossAdapter, and PythOracle nodes)
 - **`collectChainlinkOracles(oracleInfo)`** — Collects Chainlink oracle addresses
 
-Pyth price update simulation (via EVC `batchSimulation`) is not built into the SDK's PriceService — it is the caller's responsibility to ensure Pyth prices are fresh before reading vault data.
+Pyth price update simulation is handled by `createPythPlugin()` on SDK read paths, where the plugin prepends update calls to lens `batchSimulation`. On write paths, `executionService.simulateTransactionPlan`, `executionService.estimateGasForTransactionPlan`, and `executionService.executeTransactionPlan` apply the Pyth plugin before running the plan.
 
 ## Backend Client Implementation
 

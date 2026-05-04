@@ -3,10 +3,16 @@ import {
 	type Address,
 	decodeFunctionData,
 	encodeFunctionData,
+	getAddress,
 	type Hex,
 	type PublicClient,
 	zeroAddress,
 } from "viem";
+import type {
+	Account,
+	AddressOrAccount,
+	IHasVaultAddress,
+} from "../../entities/Account.js";
 import type { EVault } from "../../entities/EVault.js";
 import type {
 	BatchItemDescription,
@@ -14,8 +20,9 @@ import type {
 	TransactionPlan,
 	TransactionPlanItem,
 } from "../../services/executionService/executionServiceTypes.js";
+import { flattenBatchEntries } from "../../services/executionService/executionServiceTypes.js";
 import { applyBuildQuery, type BuildQueryFn } from "../../utils/buildQuery.js";
-import type { EulerPlugin, WritePluginContext } from "../types.js";
+import type { EulerPlugin, PluginSDK } from "../types.js";
 
 // ── Keyring ABIs (minimal: only the functions we need) ──
 
@@ -165,6 +172,77 @@ function prependToEveryBatch(
 	});
 }
 
+function collectPlanTargetAddresses(plan: TransactionPlan): Address[] {
+	return [
+		...new Set(
+			plan.flatMap((entry) =>
+				entry.type === "evcBatch"
+					? flattenBatchEntries(entry.items).map((item) =>
+							getAddress(item.targetContract),
+						)
+					: [],
+			),
+		),
+	];
+}
+
+function collectAccountVaults(
+	account: Account<IHasVaultAddress>,
+	targetAddresses: Address[],
+): EVault[] {
+	const targets = new Set(
+		targetAddresses.map((address) => getAddress(address)),
+	);
+	const vaults = new Map<Address, EVault>();
+	const push = (vault: IHasVaultAddress | undefined) => {
+		if (!vault || !targets.has(getAddress(vault.address))) return;
+		if (!("hooks" in vault)) return;
+		vaults.set(getAddress(vault.address), vault as EVault);
+	};
+
+	for (const subAccount of Object.values(account.subAccounts)) {
+		if (!subAccount) continue;
+		for (const position of subAccount.positions) {
+			push(position.vault);
+			if (position.liquidity) {
+				push(position.liquidity.vault);
+				for (const collateral of position.liquidity.collaterals) {
+					push(collateral.vault);
+				}
+			}
+		}
+	}
+
+	return [...vaults.values()];
+}
+
+async function resolveTargetVaults(
+	plan: TransactionPlan,
+	account: AddressOrAccount,
+	chainId: number,
+	sdk: PluginSDK,
+): Promise<EVault[]> {
+	const targetAddresses = collectPlanTargetAddresses(plan);
+	if (!targetAddresses.length) return [];
+
+	if (typeof account !== "string") {
+		return collectAccountVaults(account, targetAddresses);
+	}
+
+	const fetched = await sdk.vaultMetaService.fetchVaults(
+		chainId,
+		targetAddresses,
+	);
+	return fetched.result.filter(
+		(v): v is EVault =>
+			!!v &&
+			"hooks" in v &&
+			targetAddresses.some(
+				(target) => getAddress(target) === getAddress(v.address),
+			),
+	);
+}
+
 export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 	const adapter = new KeyringPluginAdapter(config.buildQuery);
 
@@ -175,15 +253,22 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 
 		async processPlan(
 			plan: TransactionPlan,
-			ctx: WritePluginContext,
+			account: AddressOrAccount,
+			chainId: number,
+			sdk: PluginSDK,
 		): Promise<TransactionPlan> {
-			const chainHookTargets = config.hookTargets[ctx.chainId];
+			const chainHookTargets = config.hookTargets[chainId];
 			if (!chainHookTargets?.length) return plan;
+			const sender =
+				typeof account === "string"
+					? getAddress(account)
+					: getAddress(account.owner);
+			const provider = sdk.providerService.getProvider(chainId);
 
 			// Find vaults that have keyring hooks
-			const keyringVaults = ctx.vaults.filter((v) =>
-				isKeyringHook(v, chainHookTargets),
-			);
+			const keyringVaults = (
+				await resolveTargetVaults(plan, account, chainId, sdk)
+			).filter((v) => isKeyringHook(v, chainHookTargets));
 			if (!keyringVaults.length) return plan;
 
 			const items: EVCBatchItem[] = [];
@@ -194,22 +279,22 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 
 					// Check if credential is already valid
 					const hasCredential = await adapter.queryKeyringCheckCredential(
-						ctx.provider,
+						provider,
 						hookTarget,
-						ctx.sender,
+						sender,
 					);
 					if (hasCredential) continue;
 
 					// Read policyId and keyring address from hook target
 					const [policyId, keyringAddress] = await Promise.all([
-						adapter.queryKeyringPolicyId(ctx.provider, hookTarget),
-						adapter.queryKeyringAddress(ctx.provider, hookTarget),
+						adapter.queryKeyringPolicyId(provider, hookTarget),
+						adapter.queryKeyringAddress(provider, hookTarget),
 					]);
 
 					// Get credential data from consumer callback
 					const credentialData = await config.getCredentialData({
-						chainId: ctx.chainId,
-						account: ctx.sender,
+						chainId,
+						account: sender,
 						hookTarget,
 						policyId,
 					});
@@ -217,7 +302,7 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 
 					items.push({
 						targetContract: keyringAddress,
-						onBehalfOfAccount: ctx.sender,
+						onBehalfOfAccount: sender,
 						value: BigInt(credentialData.cost),
 						data: encodeFunctionData({
 							abi: KEYRING_CONTRACT_ABI,

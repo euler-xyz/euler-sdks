@@ -674,7 +674,7 @@ export async function buildEulerSDK<
 		securitizeVaultService.setEulerLabelsService(eulerLabelsService);
 	}
 
-	return new EulerSDK<TVaultEntity>({
+	const sdk = new EulerSDK<TVaultEntity>({
 		accountService,
 		portfolioService,
 		walletService,
@@ -696,4 +696,12 @@ export async function buildEulerSDK<
 		feeFlowService,
 		plugins,
 	});
+
+	if (executionService instanceof ExecutionService) {
+		executionService.setPluginProcessor((plan, account, chainId) =>
+			sdk.processPlugins(plan, account, chainId),
+		);
+	}
+
+	return sdk;
 }

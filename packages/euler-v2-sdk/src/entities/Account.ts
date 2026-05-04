@@ -850,6 +850,8 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 	}
 }
 
+export type AddressOrAccount = Address | Account<IHasVaultAddress>;
+
 function hasActiveSuppliedPosition<TVaultEntity extends IHasVaultAddress>(
 	position: IAccountPosition<TVaultEntity>,
 ): boolean {

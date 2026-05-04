@@ -7,7 +7,7 @@ import { buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 
 const sdk = await buildEulerSDK({
   rpcUrls: { 1: 'https://...' },           // chainId -> RPC URL
-  queryCacheConfig: { ttlMs: 10_000 },       // Optional: default cache is 5s
+  queryCacheConfig: { ttlMs: 10_000 },     // Optional: default cache is 5s
 })
 ```
 
@@ -19,9 +19,7 @@ import { parseUnits } from 'viem'
 
 const sdk = await buildEulerSDK({ rpcUrls: { 1: 'https://...' } })
 
-const { result: account } = await sdk.accountService.fetchAccount(1, '0xYourAddress...', {
-  populateVaults: false,
-})
+const { result: account } = await sdk.accountService.fetchAccount(1, '0xYourAddress...')
 
 const plan = sdk.executionService.planDeposit({
   vault: '0xVault...',
@@ -36,11 +34,13 @@ const plan = sdk.executionService.planDeposit({
 await sdk.executionService.executeTransactionPlan({
   plan,
   chainId: 1,
-  account: '0xYourAddress...',
+  account,
   sendTransaction: walletClient.sendTransaction,
   signTypedData: walletClient.signTypedData,
 })
 ```
+
+Execution, simulation, and gas estimation accept `AddressOrAccount` (`Address | Account`). Passing the fetched `Account` lets plugins reuse account state; passing an address lets plugins fetch the minimal data they need.
 
 For execution planning and transaction-plan structure, see [Execution Service](./execution-service.md).
 
