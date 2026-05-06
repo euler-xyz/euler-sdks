@@ -40,11 +40,13 @@ export * from "./plugins/index.js";
 // Utils
 export * from "./utils/subAccounts.js";
 export * from "./utils/accountPositionClassification.js";
+export { VaultType } from "./utils/types.js";
 export {
   type BuildQueryFn,
   type QueryCacheConfig,
   applyBuildQuery,
   createQueryCacheBuildQuery,
+  serializeQueryArgs,
 } from "./utils/buildQuery.js";
 export type { EulerSDKQueryName, QueryMethodName } from "./utils/queryNames.js";
 export * from "./utils/stateOverrides/index.js";

@@ -141,16 +141,16 @@ test("portfolio splits savings and borrows across sub-accounts", () => {
 						},
 						totalCollateralValue: {
 							borrowing: 50n,
-							liquidation: 50n,
-							oracleMid: 50n,
+							liquidation: 61735n,
+							oracleMid: 100000n,
 						},
 						collaterals: [
 							{
 								address: collateralVault,
 								value: {
 									borrowing: 50n,
-									liquidation: 50n,
-									oracleMid: 50n,
+									liquidation: 61735n,
+									oracleMid: 100000n,
 								},
 							},
 						],
@@ -210,6 +210,7 @@ test("portfolio splits savings and borrows across sub-accounts", () => {
 		),
 		[collateralVault],
 	);
+	assert.equal(portfolio.borrows[0]?.accountLiquidationLTV, 0.6174);
 	assert.deepEqual(
 		portfolio.savings.map((saving) => saving.position.vaultAddress),
 		[savingsVault, mixedVault, savingsVault],

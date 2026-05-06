@@ -40,9 +40,6 @@ await sdk.executionService.executeTransactionPlan({
 })
 ```
 
-Execution, simulation, and gas estimation accept `AddressOrAccount` (`Address | Account`). Passing the fetched `Account` lets plugins reuse account state; passing an address lets plugins fetch the minimal data they need.
-
-For execution planning and transaction-plan structure, see [Execution Service](./execution-service.md).
 
 ## Fetching Accounts
 

@@ -301,6 +301,7 @@ export async function buildEulerSDK<
 								? { apiKey: resolvedEVaultServiceConfig.v3AdapterConfig.apiKey }
 								: {}),
 						},
+						providerService as ProviderService,
 						resolvedBuildQuery,
 					);
 		eVaultService = new EVaultService(

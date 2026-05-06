@@ -117,8 +117,8 @@ type V3EulerEarnListRow = {
 
 const unsupportedError = new Error("unsupported");
 
-function normalizeEulerEarnApyFraction(value: number): number {
-	return value / 100;
+function normalizeEulerEarnApy(value: number): number {
+	return value;
 }
 
 function getWithdrawQueueStrategies(
@@ -448,7 +448,7 @@ function convertEulerEarn(
 			detail.asset.name ?? "Unknown Asset",
 			detail.asset.symbol ?? "UNKNOWN",
 		),
-		supplyApy1h: normalizeEulerEarnApyFraction(
+		supplyApy1h: normalizeEulerEarnApy(
 			parseNumberField(detail.supplyApy, {
 				path: "$.supplyApy1h",
 				entityId,

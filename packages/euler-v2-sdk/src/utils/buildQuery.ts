@@ -19,7 +19,7 @@ export interface QueryCacheConfig {
 
 const DEFAULT_QUERY_CACHE_TTL_MS = 5_000;
 
-function serializeQueryArgs(args: unknown[]): string | null {
+export function serializeQueryArgs(args: unknown[]): string | null {
 	try {
 		return JSON.stringify(args, (_key, value) => {
 			if (typeof value === "bigint") {

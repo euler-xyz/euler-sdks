@@ -12,7 +12,7 @@ import type {
 	EVaultLiquidation,
 	InterestRates,
 	InterestRateModel,
-	EVaultCollateral,
+	IEVaultCollateral,
 	EVaultHookedOperations,
 } from "../../../../../entities/EVault.js";
 import { hasActiveBorrowableLtv } from "../../../../../entities/EVault.js";
@@ -45,7 +45,7 @@ const BTC_PLACEHOLDER_ADDRESS =
 
 function parseRate(value: string): number {
 	const parsed = Number.parseFloat(value);
-	return Number.isFinite(parsed) ? parsed : 0;
+	return Number.isFinite(parsed) ? parsed * 100 : 0;
 }
 
 function normalizeTokenMetadata(
@@ -279,7 +279,7 @@ export function convertVaultInfoFullToIEVault(
 	});
 
 	// Convert collaterals
-	const collaterals: EVaultCollateral[] = [];
+	const collaterals: IEVaultCollateral[] = [];
 	for (let idx = 0; idx < vaultInfo.collateralLTVInfo.length; idx += 1) {
 		const ltvInfo = vaultInfo.collateralLTVInfo[idx]!;
 		const isRemovedCollateral =
@@ -328,7 +328,7 @@ export function convertVaultInfoFullToIEVault(
 		});
 		const isRamping = targetTimestamp > vaultTimestamp;
 
-		const collateral: EVaultCollateral = {
+		const collateral: IEVaultCollateral = {
 			address: ltvInfo.collateral,
 			borrowLTV: convertFrom1e4(
 				ltvInfo.borrowLTV,

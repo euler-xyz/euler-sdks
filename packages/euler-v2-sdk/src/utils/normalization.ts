@@ -147,3 +147,12 @@ export function bigintPercentage(
 		`${whole}.${fraction.toString().padStart(precision, "0")}`,
 	);
 }
+
+export function wadRatioToDecimal(
+	value: bigint | undefined,
+): number | undefined {
+	if (value === undefined) return undefined;
+	const precision = 4;
+	const scale = 10n ** BigInt(18 - precision);
+	return Number((value + scale / 2n) / scale) / 10 ** precision;
+}

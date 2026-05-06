@@ -56,20 +56,33 @@ export type VaultMetaPerspective =
 export type VaultEntity = EVault | EulerEarn | SecuritizeCollateralVault;
 
 /** Type guard: narrows VaultEntity to EVault. */
-export function isEVault(v: VaultEntity): v is EVault {
-	return v.type === VaultType.EVault;
+export function isEVault(v: unknown): v is EVault {
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		"type" in v &&
+		(v as { type?: unknown }).type === VaultType.EVault
+	);
 }
 
 /** Type guard: narrows VaultEntity to EulerEarn. */
-export function isEulerEarn(v: VaultEntity): v is EulerEarn {
-	return v.type === VaultType.EulerEarn;
+export function isEulerEarn(v: unknown): v is EulerEarn {
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		"type" in v &&
+		(v as { type?: unknown }).type === VaultType.EulerEarn
+	);
 }
 
 /** Type guard: narrows VaultEntity to SecuritizeCollateralVault. */
-export function isSecuritizeCollateralVault(
-	v: VaultEntity,
-): v is SecuritizeCollateralVault {
-	return v.type === VaultType.SecuritizeCollateral;
+export function isSecuritizeCollateralVault(v: unknown): v is SecuritizeCollateralVault {
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		"type" in v &&
+		(v as { type?: unknown }).type === VaultType.SecuritizeCollateral
+	);
 }
 
 /** A vault service that can be registered with VaultMetaService. Use TEntity to extend the meta service return type (e.g. EVault | EulerEarn | CustomVault). */

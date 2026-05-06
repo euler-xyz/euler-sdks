@@ -25,6 +25,7 @@ import {
 	resolveBorrowCollateralPositions,
 	resolveBorrowCollateralVaults,
 } from "../utils/accountPositionClassification.js";
+import { wadRatioToDecimal } from "../utils/normalization.js";
 
 export interface PortfolioPositionFilterContext<
 	TVaultEntity extends IHasVaultAddress = IHasVaultAddress,
@@ -74,18 +75,19 @@ export interface PortfolioBorrowPosition<
 	collateralVault?: TVaultEntity;
 	collateralVaults: Address[];
 	subAccount: Address;
-	health?: bigint;
 	healthFactor?: bigint;
 	userLTV?: bigint;
 	currentLTV?: bigint;
 	borrowed: bigint;
 	supplied: bigint;
 	price?: bigint;
+	primaryCollateralLiquidationPrice?: bigint;
 	borrowLiquidationPriceUsd?: bigint;
 	collateralLiquidationPricesUsd?: Record<Address, bigint>;
+	liquidatable: boolean;
 	borrowLTV?: number;
 	liquidationLTV?: number;
-	accountLiquidationLTV?: bigint;
+	accountLiquidationLTV?: number;
 	liabilityValueBorrowing?: bigint;
 	liabilityValueLiquidation?: bigint;
 	liabilityValueUsd?: bigint;
@@ -278,6 +280,23 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 				const apyBreakdown = computePositionsNetApyBreakdown(yieldPositions);
 				const roeBreakdown = computePositionsRoeBreakdown(yieldPositions);
 				const multiplier = computeBorrowMultiplier(borrow, collaterals);
+				const collateralValueLiquidation =
+					borrow.liquidity?.totalCollateralValue.liquidation;
+				const liabilityValueBorrowing =
+					borrow.liquidity?.liabilityValue.borrowing;
+				const liabilityValueLiquidation =
+					borrow.liquidity?.liabilityValue.liquidation;
+				const primaryCollateralLiquidationPrice =
+					computeBorrowPositionPrimaryCollateralLiquidationPrice(
+						collateral,
+						collateralValueLiquidation,
+						liabilityValueBorrowing,
+					);
+				const liquidatable = computeBorrowPositionLiquidatable(
+					borrow.liquidity !== undefined,
+					liabilityValueLiquidation,
+					collateralValueLiquidation,
+				);
 
 				borrows.push({
 					borrow,
@@ -289,25 +308,24 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 						getAddress(position.vaultAddress),
 					),
 					subAccount: borrow.account,
-					health: subAccount.healthFactor,
 					healthFactor: subAccount.healthFactor,
 					userLTV: subAccount.currentLTV,
 					currentLTV: subAccount.currentLTV,
 					borrowed: borrow.borrowed,
 					supplied: collateral?.assets ?? 0n,
 					price: borrow.borrowLiquidationPriceUsd,
+					primaryCollateralLiquidationPrice,
 					borrowLiquidationPriceUsd: borrow.borrowLiquidationPriceUsd,
 					collateralLiquidationPricesUsd: borrow.collateralLiquidationPricesUsd,
+					liquidatable,
 					borrowLTV: ltv?.borrowLTV,
 					liquidationLTV: ltv?.liquidationLTV,
-					accountLiquidationLTV: subAccount.liquidationLTV,
+					accountLiquidationLTV: wadRatioToDecimal(subAccount.liquidationLTV),
 					liabilityValueBorrowing: borrow.liquidity?.liabilityValue.borrowing,
-					liabilityValueLiquidation:
-						borrow.liquidity?.liabilityValue.liquidation,
+					liabilityValueLiquidation,
 					liabilityValueUsd: borrow.liquidity?.liabilityValueUsd,
 					totalCollateralValueUsd: borrow.liquidity?.totalCollateralValueUsd,
-					collateralValueLiquidation:
-						borrow.liquidity?.totalCollateralValue.liquidation,
+					collateralValueLiquidation,
 					timeToLiquidation: borrow.liquidity?.daysToLiquidation,
 					multiplier,
 					netApy: apyBreakdown?.total,
@@ -503,6 +521,36 @@ function computeBorrowMultiplier<TVaultEntity extends IHasVaultAddress>(
 	if (equity <= 0n) return undefined;
 
 	return Number(suppliedValueUsd) / Number(equity);
+}
+
+function computeBorrowPositionPrimaryCollateralLiquidationPrice<
+	TVaultEntity extends IHasVaultAddress,
+>(
+	collateral: AccountPosition<TVaultEntity> | undefined,
+	collateralValueLiquidation: bigint | undefined,
+	liabilityValueBorrowing: bigint | undefined,
+): bigint {
+	const collateralValue = collateralValueLiquidation ?? 0n;
+	const liabilityValue = liabilityValueBorrowing ?? 0n;
+	if (collateralValue === 0n) return 0n;
+
+	const collateralPrice =
+		(collateral?.vault as { marketPriceUsd?: bigint } | undefined)
+			?.marketPriceUsd ?? 0n;
+
+	return (collateralPrice * liabilityValue) / collateralValue;
+}
+
+function computeBorrowPositionLiquidatable(
+	hasLiquidity: boolean,
+	liabilityValueLiquidation: bigint | undefined,
+	collateralValueLiquidation: bigint | undefined,
+): boolean {
+	if (!hasLiquidity) return false;
+	const liabilityValue = liabilityValueLiquidation ?? 0n;
+	const collateralValue = collateralValueLiquidation ?? 0n;
+	if (liabilityValue === 0n) return false;
+	return liabilityValue > collateralValue;
 }
 
 function findCollateralLtv(

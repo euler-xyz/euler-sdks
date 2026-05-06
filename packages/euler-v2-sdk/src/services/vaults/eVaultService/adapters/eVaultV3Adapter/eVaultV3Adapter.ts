@@ -3,6 +3,7 @@ import {
 	type BuildQueryFn,
 	applyBuildQuery,
 } from "../../../../../utils/buildQuery.js";
+import type { ProviderService } from "../../../../providerService/index.js";
 import { createCallBundler } from "../../../../../utils/callBundler.js";
 import {
 	type DataIssue,
@@ -25,17 +26,40 @@ import type {
 const unsupportedError = new Error("unsupported");
 const DEFAULT_BATCH_LIMIT = 100;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+const verifiedArrayAbi = [
+	{
+		type: "function",
+		name: "verifiedArray",
+		inputs: [],
+		outputs: [{ name: "", type: "address[]", internalType: "address[]" }],
+		stateMutability: "view",
+	},
+] as const;
 
 export class EVaultV3Adapter implements IEVaultAdapter {
+	private providerService?: ProviderService;
+
 	constructor(
 		private config: EVaultV3AdapterConfig,
+		providerServiceOrBuildQuery?: ProviderService | BuildQueryFn,
 		buildQuery?: BuildQueryFn,
 	) {
-		if (buildQuery) applyBuildQuery(this, buildQuery);
+		const resolvedBuildQuery =
+			typeof providerServiceOrBuildQuery === "function"
+				? providerServiceOrBuildQuery
+				: buildQuery;
+		if (providerServiceOrBuildQuery && typeof providerServiceOrBuildQuery !== "function") {
+			this.providerService = providerServiceOrBuildQuery;
+		}
+		if (resolvedBuildQuery) applyBuildQuery(this, resolvedBuildQuery);
 	}
 
 	setConfig(config: EVaultV3AdapterConfig): void {
 		this.config = config;
+	}
+
+	setProviderService(providerService: ProviderService): void {
+		this.providerService = providerService;
 	}
 
 	private getHeaders(contentType?: string): Record<string, string> {
@@ -293,10 +317,27 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 	}
 
 	async fetchVerifiedVaultsAddresses(
-		_chainId: number,
-		_perspectives: Address[],
+		chainId: number,
+		perspectives: Address[],
 	): Promise<Address[]> {
-		throw unsupportedError;
+		if (!this.providerService) throw unsupportedError;
+
+		const provider = this.providerService.getProvider(chainId);
+		const results = await Promise.all(
+			perspectives.map((perspective) =>
+				provider.readContract({
+					address: perspective,
+					abi: verifiedArrayAbi,
+					functionName: "verifiedArray",
+				}),
+			),
+		);
+
+		const addresses: Address[] = results.flatMap(
+			(result) => result as Address[],
+		);
+
+		return [...new Set(addresses)];
 	}
 
 	async fetchAllVaults(

@@ -127,7 +127,7 @@ export type InterestRateModel =
 			params: null;
 	  };
 
-export interface EVaultCollateral {
+export interface IEVaultCollateral {
 	address: Address;
 	borrowLTV: number;
 	liquidationLTV: number;
@@ -136,6 +136,12 @@ export interface EVaultCollateral {
 	vault?: VaultEntity;
 	oracleAdapters?: OracleAdapterEntry[];
 	marketPriceUsd?: PriceWad;
+}
+
+export interface EVaultCollateral extends IEVaultCollateral {
+	readonly currentLiquidationLTV: number;
+	readonly isLiquidationLTVRamping: boolean;
+	readonly rampTimeRemaining: bigint;
 }
 
 export interface EVaultCollateralRamping {
@@ -167,7 +173,7 @@ export interface IEVault extends IERC4626Vault {
 	oracle: OracleInfo;
 	interestRates: InterestRates;
 	interestRateModel: InterestRateModel;
-	collaterals: EVaultCollateral[];
+	collaterals: IEVaultCollateral[];
 
 	evcCompatibleAsset: boolean;
 
@@ -191,7 +197,7 @@ function buildOracleAdaptersForPair(
 }
 
 function collateralHasActiveLtv(
-	collateral: EVaultCollateral,
+	collateral: EVaultCollateral | IEVaultCollateral,
 	vaultTimestamp: number,
 ): boolean {
 	if (collateral.borrowLTV > 0 || collateral.liquidationLTV > 0) {
@@ -208,12 +214,41 @@ function collateralHasActiveLtv(
 }
 
 export function hasActiveBorrowableLtv(
-	collaterals: EVaultCollateral[],
+	collaterals: (EVaultCollateral | IEVaultCollateral)[],
 	vaultTimestamp: number,
 ): boolean {
 	return collaterals.some((collateral) =>
 		collateralHasActiveLtv(collateral, vaultTimestamp),
 	);
+}
+
+function buildCollateral(
+	collateral: IEVaultCollateral,
+	vaultTimestamp: number,
+): EVaultCollateral {
+	const ramping = collateral.ramping;
+	const rampTimeRemaining =
+		ramping?.targetTimestamp !== undefined
+			? BigInt(Math.max(ramping.targetTimestamp - vaultTimestamp, 0))
+			: 0n;
+	const isLiquidationLTVRamping =
+		ramping !== undefined &&
+		rampTimeRemaining > 0n &&
+		ramping.rampDuration > 0n &&
+		ramping.initialLiquidationLTV !== collateral.liquidationLTV;
+	const currentLiquidationLTV = isLiquidationLTVRamping
+		? collateral.liquidationLTV +
+			((ramping.initialLiquidationLTV - collateral.liquidationLTV) *
+				Number(rampTimeRemaining)) /
+				Number(ramping.rampDuration)
+		: collateral.liquidationLTV;
+
+	return {
+		...collateral,
+		currentLiquidationLTV,
+		isLiquidationLTVRamping,
+		rampTimeRemaining,
+	};
 }
 
 export class EVault
@@ -261,8 +296,10 @@ export class EVault
 		};
 		this.interestRates = args.interestRates;
 		this.interestRateModel = args.interestRateModel;
-		this.collaterals = args.collaterals;
 		this.timestamp = args.timestamp;
+		this.collaterals = args.collaterals.map((collateral) =>
+			buildCollateral(collateral, this.timestamp),
+		);
 		this.debtPricingOracleAdapters =
 			this.isBorrowable && this.unitOfAccount
 				? buildOracleAdaptersForPair(

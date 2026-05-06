@@ -51,6 +51,40 @@ test("EVault computed properties expose liquidity, utilization, caps, and parsed
 	assert.equal(vault.interestRates.borrowSPY, 0.000000001);
 });
 
+test("EVault collateral computed properties expose current ramped liquidation LTV", () => {
+	const source = getPlainEVaultFixture();
+	const originalNow = Date.now;
+	Date.now = () => 1_500_000;
+
+	try {
+		const vault = new EVault({
+			...source,
+			timestamp: 1_500,
+			collaterals: [
+				{
+					address: source.address,
+					borrowLTV: 0,
+					liquidationLTV: 0,
+					ramping: {
+						initialLiquidationLTV: 0.9,
+						targetTimestamp: 2_000,
+						rampDuration: 1_000n,
+					},
+					oraclePriceRaw: source.oraclePriceRaw,
+				},
+			],
+		});
+
+		const collateral = vault.collaterals[0]!;
+		assert.equal(collateral.currentLiquidationLTV, 0.45);
+		assert.equal(collateral.isLiquidationLTVRamping, true);
+		assert.equal(collateral.rampTimeRemaining, 500n);
+		assert.equal(vault.isBorrowable, true);
+	} finally {
+		Date.now = originalNow;
+	}
+});
+
 test("EulerEarn computed properties expose available liquidity", () => {
 	const source = getPlainEVaultFixture();
 	const vault = new EulerEarn({

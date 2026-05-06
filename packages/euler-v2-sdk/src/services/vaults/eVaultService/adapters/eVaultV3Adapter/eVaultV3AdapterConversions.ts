@@ -16,8 +16,8 @@ import {
 	ZERO_ADDRESS,
 } from "../../../../../utils/parsing.js";
 import {
-	type EVaultCollateral,
 	type EVaultCollateralRamping,
+	type IEVaultCollateral,
 	type EVaultCaps,
 	type EVaultFees,
 	type EVaultHooks,
@@ -99,7 +99,7 @@ const DEFAULT_INTEREST_RATES_BLOCK: NonNullable<
 
 function parseRate(value: string): number {
 	const parsed = Number.parseFloat(value);
-	return Number.isFinite(parsed) ? parsed : 0;
+	return Number.isFinite(parsed) ? parsed * 100 : 0;
 }
 
 const DEFAULT_INTEREST_RATE_MODEL_BLOCK: NonNullable<
@@ -344,7 +344,7 @@ function convertOracleResolvedVaults(
 	entityId: Address,
 	errors: DataIssue[],
 ): OracleInfo["resolvedVaults"] {
-	return resolvedVaults.map((resolvedVault, index) => ({
+	return (resolvedVaults ?? []).map((resolvedVault, index) => ({
 		vault: parseAddressField(resolvedVault.vault, {
 			path: `$.oracle.resolvedVaults[${index}].vault`,
 			entityId,
@@ -363,13 +363,14 @@ function convertOracleResolvedVaults(
 			errors,
 			source: "eVaultV3",
 		}),
-		resolvedAssets: resolvedVault.resolvedAssets.map((asset, assetIndex) =>
-			parseAddressField(asset, {
-				path: `$.oracle.resolvedVaults[${index}].resolvedAssets[${assetIndex}]`,
-				entityId,
-				errors,
-				source: "eVaultV3",
-			}),
+		resolvedAssets: (resolvedVault.resolvedAssets ?? []).map(
+			(asset, assetIndex) =>
+				parseAddressField(asset, {
+					path: `$.oracle.resolvedVaults[${index}].resolvedAssets[${assetIndex}]`,
+					entityId,
+					errors,
+					source: "eVaultV3",
+				}),
 		),
 	}));
 }
@@ -379,8 +380,8 @@ function convertCollaterals(
 	vaultTimestamp: number,
 	vaultEntityId: Address,
 	errors: DataIssue[],
-): EVaultCollateral[] {
-	const collaterals: EVaultCollateral[] = [];
+): IEVaultCollateral[] {
+	const collaterals: IEVaultCollateral[] = [];
 
 	for (const [index, row] of rows.entries()) {
 		const collateralAddress = parseAddressField(row.collateral, {
@@ -419,7 +420,7 @@ function convertCollaterals(
 
 		if (isRemovedCollateral) continue;
 
-		const collateral: EVaultCollateral = {
+		const collateral: IEVaultCollateral = {
 			address: collateralAddress,
 			borrowLTV,
 			liquidationLTV,
@@ -528,7 +529,7 @@ export function convertVault(
 			errors,
 			source: "eVaultV3",
 		}),
-		adapters: oracleData.adapters.map((adapter) =>
+		adapters: (oracleData.adapters ?? []).map((adapter) =>
 			convertOracleAdapter(adapter, entityId, errors),
 		),
 		resolvedVaults: convertOracleResolvedVaults(
@@ -733,27 +734,33 @@ export function convertVault(
 	const interestRatesData =
 		detail.interestRates ?? DEFAULT_INTEREST_RATES_BLOCK;
 	const interestRates: InterestRates = {
-		borrowSPY: parseRate(parseStringField(interestRatesData.borrowSPY, {
-			path: "$.interestRates.borrowSPY",
-			entityId,
-			errors,
-			source: "eVaultV3",
-			fallback: "0",
-		})),
-		borrowAPY: parseRate(parseStringField(interestRatesData.borrowAPY, {
-			path: "$.interestRates.borrowAPY",
-			entityId,
-			errors,
-			source: "eVaultV3",
-			fallback: "0",
-		})),
-		supplyAPY: parseRate(parseStringField(interestRatesData.supplyAPY, {
-			path: "$.interestRates.supplyAPY",
-			entityId,
-			errors,
-			source: "eVaultV3",
-			fallback: "0",
-		})),
+		borrowSPY: parseRate(
+			parseStringField(interestRatesData.borrowSPY, {
+				path: "$.interestRates.borrowSPY",
+				entityId,
+				errors,
+				source: "eVaultV3",
+				fallback: "0",
+			}),
+		),
+		borrowAPY: parseRate(
+			parseStringField(interestRatesData.borrowAPY, {
+				path: "$.interestRates.borrowAPY",
+				entityId,
+				errors,
+				source: "eVaultV3",
+				fallback: "0",
+			}),
+		),
+		supplyAPY: parseRate(
+			parseStringField(interestRatesData.supplyAPY, {
+				path: "$.interestRates.supplyAPY",
+				entityId,
+				errors,
+				source: "eVaultV3",
+				fallback: "0",
+			}),
+		),
 	};
 
 	if (!detail.interestRateModel) {
