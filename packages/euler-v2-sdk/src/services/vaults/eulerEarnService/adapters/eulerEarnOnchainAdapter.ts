@@ -19,8 +19,7 @@ import { prefixDataIssues } from "../../../../utils/entityDiagnostics.js";
 
 const SECONDS_IN_YEAR = 365 * 24 * 60 * 60;
 const TARGET_TIME_AGO_SECONDS = 60 * 60;
-const SAMPLE_DISTANCE_BLOCKS = 100;
-const APY_SHARE_PROBE = 10n ** 18n;
+const SAMPLE_DISTANCE_BLOCKS = 10_000;
 const EULER_EARN_FETCH_BATCH_SIZE = 4;
 
 const verifiedArrayAbi = [
@@ -156,11 +155,14 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 		oneHourAgoBlockNumber: bigint;
 		elapsedSeconds: number;
 	}> {
-		const currentBlockNumber = await this.queryBlockNumber(provider);
-		const sampleBlockNumber =
+		const latestBlockNumber = await this.queryBlockNumber(provider);
+		const currentBlockNumber =
+			latestBlockNumber > 0n ? latestBlockNumber - 1n : 0n;
+		const sampleDistanceBlocks =
 			currentBlockNumber > BigInt(SAMPLE_DISTANCE_BLOCKS)
-				? currentBlockNumber - BigInt(SAMPLE_DISTANCE_BLOCKS)
-				: 0n;
+				? BigInt(SAMPLE_DISTANCE_BLOCKS)
+				: currentBlockNumber;
+		const sampleBlockNumber = currentBlockNumber - sampleDistanceBlocks;
 
 		const [currentBlockData, sampleBlockData] = await Promise.all([
 			this.queryBlock(provider, currentBlockNumber),
@@ -173,20 +175,16 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 			throw new Error("Failed to estimate 1h EulerEarn APY block window.");
 		}
 
-		const averageBlockTimeSeconds = elapsedForSample / SAMPLE_DISTANCE_BLOCKS;
-		const oneHourAgoBlockOffset = Math.floor(
+		const averageBlockTimeSeconds =
+			elapsedForSample / Number(sampleDistanceBlocks);
+		const oneHourAgoBlockOffset = Math.round(
 			TARGET_TIME_AGO_SECONDS / averageBlockTimeSeconds,
 		);
 		const oneHourAgoBlockNumber =
 			currentBlockNumber > BigInt(oneHourAgoBlockOffset)
 				? currentBlockNumber - BigInt(oneHourAgoBlockOffset)
 				: 0n;
-		const oneHourAgoBlockData = await this.queryBlock(
-			provider,
-			oneHourAgoBlockNumber,
-		);
-		const elapsedSeconds =
-			Number(currentBlockData.timestamp) - Number(oneHourAgoBlockData.timestamp);
+		const elapsedSeconds = oneHourAgoBlockOffset * averageBlockTimeSeconds;
 		if (elapsedSeconds <= 0) {
 			throw new Error("Failed to determine 1h EulerEarn APY time delta.");
 		}
@@ -203,7 +201,7 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 
 		const rateChange = Number(currentRate - oldRate) / Number(oldRate);
 		const apy = (rateChange * SECONDS_IN_YEAR) / elapsedSeconds;
-		return Number.isFinite(apy) ? apy : undefined;
+		return Number.isFinite(apy) ? apy * 100 : undefined;
 	}
 
 	async fetchVaults(
@@ -238,34 +236,6 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 						if (vaultInfoResult.status === "rejected") {
 							throw vaultInfoResult.reason;
 						}
-						const supplyApyRatesPromise: Promise<
-							[
-								PromiseSettledResult<bigint>,
-								PromiseSettledResult<bigint>,
-							] | undefined
-						> =
-							supplyApyWindow.status === "fulfilled" &&
-								supplyApyWindow.value instanceof Error
-								? Promise.resolve(undefined)
-								: Promise.allSettled([
-										this.queryEulerEarnConvertToAssets(
-											provider,
-											vault,
-											APY_SHARE_PROBE,
-										),
-										this.queryEulerEarnConvertToAssets(
-											provider,
-											vault,
-											APY_SHARE_PROBE,
-											(
-												supplyApyWindow as PromiseFulfilledResult<{
-													currentBlockNumber: bigint;
-													oneHourAgoBlockNumber: bigint;
-													elapsedSeconds: number;
-												}>
-											).value.oneHourAgoBlockNumber,
-										),
-									]);
 						const vaultInfo =
 							vaultInfoResult.value as unknown as EulerEarnVaultInfoFull;
 						const conversionErrors: DataIssue[] = [];
@@ -303,7 +273,19 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 							});
 						} else {
 							const [currentRateResult, oldRateResult] =
-								(await supplyApyRatesPromise)!;
+								await Promise.allSettled([
+									this.queryEulerEarnConvertToAssets(
+										provider,
+										vault,
+										10n ** vaultInfo.vaultDecimals,
+									),
+									this.queryEulerEarnConvertToAssets(
+										provider,
+										vault,
+										10n ** vaultInfo.vaultDecimals,
+										supplyApyWindow.value.oneHourAgoBlockNumber,
+									),
+								]);
 
 							if (
 								currentRateResult.status === "fulfilled" &&

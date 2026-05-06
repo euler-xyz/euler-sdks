@@ -604,7 +604,7 @@ function zeroYieldApyBreakdown(): YieldApyBreakdown {
 	};
 }
 
-/** Duck-type supply APY from a vault entity (EVault or EulerEarn decimal fraction). */
+/** Duck-type supply APY from a vault entity (percentage points). */
 function getVaultSupplyApy(vault: any): number | undefined {
 	if (vault.interestRates?.supplyAPY != null) {
 		const val =
@@ -613,7 +613,7 @@ function getVaultSupplyApy(vault: any): number | undefined {
 				: parseFloat(vault.interestRates.supplyAPY);
 		return Number.isFinite(val) ? val : undefined;
 	}
-	// EulerEarn: supplyApy1h (decimal fraction)
+	// EulerEarn: supplyApy1h (percentage points)
 	if (typeof vault.supplyApy1h === "number") {
 		return Number.isFinite(vault.supplyApy1h) ? vault.supplyApy1h : undefined;
 	}
@@ -632,13 +632,13 @@ function getVaultBorrowApy(vault: any): number | undefined {
 	return undefined;
 }
 
-/** Intrinsic APY as a decimal fraction from vault's populated intrinsicApy field. */
+/** Intrinsic APY as percentage points from vault's populated intrinsicApy field. */
 function getVaultIntrinsicApy(vault: any): number {
 	if (
 		vault.intrinsicApy?.apy != null &&
 		typeof vault.intrinsicApy.apy === "number"
 	) {
-		return vault.intrinsicApy.apy / 100;
+		return vault.intrinsicApy.apy;
 	}
 	return 0;
 }
@@ -647,16 +647,16 @@ function getIntrinsicApyContribution(
 	baseApy: number,
 	intrinsicApy: number,
 ): number {
-	return (1 + baseApy) * intrinsicApy;
+	return (1 + baseApy / 100) * intrinsicApy;
 }
 
-/** Sum reward APRs for a given action (LEND or BORROW) from vault campaigns. */
+/** Sum reward APRs for a given action as percentage points from vault campaigns. */
 function getVaultRewardApr(vault: any, action: string): number {
 	if (!vault.rewards?.campaigns) return 0;
 	let total = 0;
 	for (const c of vault.rewards.campaigns) {
 		if (c.action === action && typeof c.apr === "number") {
-			total += c.apr;
+			total += c.apr * 100;
 		}
 	}
 	return total;

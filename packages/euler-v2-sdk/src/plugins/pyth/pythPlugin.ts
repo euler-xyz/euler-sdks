@@ -201,7 +201,9 @@ async function buildPythBatchItems(
 				}),
 			});
 			totalValue += fee;
-		} catch {}
+		} catch (error) {
+			logPythPluginError(pythAddress, [...feedSet], error);
+		}
 	}
 
 	return { items, totalValue };
@@ -240,6 +242,7 @@ const MINIMAL_ACCOUNT_FETCH_OPTIONS = {
 } as const;
 
 const CONTROLLER_SELF = "__controller_self__";
+const loggedPythPluginErrors = new Set<string>();
 
 function isPythControllerVault(vault: unknown): vault is PythControllerVault {
 	return (
@@ -255,6 +258,26 @@ function getAccountOwner(account: AddressOrAccount): Address {
 	return typeof account === "string"
 		? getAddress(account)
 		: getAddress(account.owner);
+}
+
+function getErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function logPythPluginError(
+	pythAddress: Address,
+	feedIds: Hex[],
+	error: unknown,
+): void {
+	const errorMessage = getErrorMessage(error);
+	const key = `${pythAddress}:${errorMessage}`;
+	if (loggedPythPluginErrors.has(key)) return;
+	loggedPythPluginErrors.add(key);
+
+	console.warn(
+		`[euler-v2-sdk:pyth] failed to build update batch for ${pythAddress}; feeds=${feedIds.join(",")}`,
+		error,
+	);
 }
 
 async function resolveAccount(

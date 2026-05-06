@@ -1,6 +1,8 @@
 import {
 	decodeOracleInfo,
 	decodeOracleResolvedVaults,
+	sortOracleAdapters,
+	type OracleAdapterEntry,
 	type OracleInfo,
 	type OraclePrice,
 } from "../../../../../utils/oracle.js";
@@ -116,6 +118,17 @@ function normalizeUnitOfAccountToken(token: Token): Token | undefined {
 	};
 }
 
+function mergeOracleAdapters(
+	...adapterLists: OracleAdapterEntry[][]
+): OracleAdapterEntry[] {
+	const deduped = new Map<string, OracleAdapterEntry>();
+	adapterLists.flat().forEach((adapter) => {
+		const key = `${adapter.oracle.toLowerCase()}:${adapter.base.toLowerCase()}:${adapter.quote.toLowerCase()}`;
+		if (!deduped.has(key)) deduped.set(key, adapter);
+	});
+	return sortOracleAdapters([...deduped.values()]);
+}
+
 /**
  * Converts VaultLens's VaultInfoFull object to an IEVault object
  * @param vaultInfo - The VaultInfoFull object to convert
@@ -130,18 +143,23 @@ export function convertVaultInfoFullToIEVault(
 	const vaultEntityId = vaultInfo.vault;
 	const shouldSuppressRootOracleAdapter =
 		vaultInfo.oracleInfo.name.trim().length === 0;
+	const quote =
+		vaultInfo.unitOfAccount.toLowerCase() === ZERO_ADDRESS.toLowerCase()
+			? undefined
+			: vaultInfo.unitOfAccount;
+	const debtAssetOracleAdapters = shouldSuppressRootOracleAdapter
+		? []
+		: decodeOracleInfo(vaultInfo.oracleInfo, 3, {
+				base: vaultInfo.asset,
+				quote,
+			});
+	const routedOracleAdapters = shouldSuppressRootOracleAdapter
+		? []
+		: decodeOracleInfo(vaultInfo.oracleInfo, 3);
 	const oracle: OracleInfo = {
 		oracle: vaultInfo.oracleInfo.oracle,
 		name: vaultInfo.oracleInfo.name,
-		adapters: shouldSuppressRootOracleAdapter
-			? []
-			: decodeOracleInfo(vaultInfo.oracleInfo, 3, {
-					base: vaultInfo.asset,
-					quote:
-						vaultInfo.unitOfAccount.toLowerCase() === ZERO_ADDRESS.toLowerCase()
-							? undefined
-							: vaultInfo.unitOfAccount,
-				}),
+		adapters: mergeOracleAdapters(debtAssetOracleAdapters, routedOracleAdapters),
 		resolvedVaults: shouldSuppressRootOracleAdapter
 			? []
 			: decodeOracleResolvedVaults(vaultInfo.oracleInfo),
