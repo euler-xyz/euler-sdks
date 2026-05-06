@@ -115,7 +115,7 @@ function getEarnSortValue(vault: ChainScopedVault<EulerEarn>, key: EarnSortKey):
       return amt * price;
     }
     case "supplyAPY":
-      return (vault.supplyApy1h ?? 0) + (vault.rewards?.totalRewardsApr ?? 0) + (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0);
+      return (vault.supplyApy1h ?? 0) + (vault.rewards?.totalRewardsApr ?? 0) * 100 + (vault.intrinsicApy?.apy ?? 0);
     case "usdPrice":
       return vault.marketPriceUsd !== undefined ? Number(vault.marketPriceUsd) : -1;
     case "strategies":

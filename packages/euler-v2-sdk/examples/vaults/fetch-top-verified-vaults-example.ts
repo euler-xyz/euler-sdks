@@ -99,7 +99,7 @@ function formatUsdWad(usdWad: bigint): string {
 }
 
 function formatPercent(value: number): string {
-  return `${(value * 100).toFixed(2)}%`;
+  return `${value.toFixed(2)}%`;
 }
 
 function getRewardsAprByAction(vault: EVault | EulerEarn, action: RewardAction): number {
@@ -107,33 +107,34 @@ function getRewardsAprByAction(vault: EVault | EulerEarn, action: RewardAction):
   let total = 0;
   for (const campaign of vault.rewards.campaigns) {
     if (campaign.action === action) {
-      total += campaign.apr;
+      total += campaign.apr * 100;
     }
   }
   return total;
 }
 
-function getIntrinsicApyDecimal(vault: EVault | EulerEarn): number {
-  return vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0;
+function getIntrinsicApyPercentPoints(vault: EVault | EulerEarn): number {
+  return vault.intrinsicApy?.apy ?? 0;
 }
 
 function getEVaultSupplyApyTotal(vault: EVault): number {
   const base = Number(vault.interestRates.supplyAPY);
   const rewards = getRewardsAprByAction(vault, "LEND");
-  const intrinsic = getIntrinsicApyDecimal(vault);
+  const intrinsic = getIntrinsicApyPercentPoints(vault);
   return base + rewards + intrinsic;
 }
 
 function getEVaultBorrowApyTotal(vault: EVault): number {
   const base = Number(vault.interestRates.borrowAPY);
   const rewards = getRewardsAprByAction(vault, "BORROW");
-  return base + rewards;
+  const intrinsic = getIntrinsicApyPercentPoints(vault);
+  return base + intrinsic - rewards;
 }
 
 function getEulerEarnSupplyApyTotal(vault: EulerEarn): number | undefined {
   if (vault.supplyApy1h === undefined) return undefined;
   const rewards = getRewardsAprByAction(vault, "LEND");
-  const intrinsic = getIntrinsicApyDecimal(vault);
+  const intrinsic = getIntrinsicApyPercentPoints(vault);
   return vault.supplyApy1h + rewards + intrinsic;
 }
 

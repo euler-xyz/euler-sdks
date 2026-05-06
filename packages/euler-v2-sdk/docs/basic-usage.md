@@ -70,17 +70,17 @@ const { result: portfolio } = await sdk.portfolioService.fetchPortfolio(1, '0xOw
 const { savings, borrows } = portfolio
 
 for (const saving of savings) {
-  console.log('saving', saving.subAccount, saving.position.vaultAddress, saving.assets)
+  console.log('saving', saving.subAccount, saving.position.vaultAddress, saving.assets, saving.apy)
 }
 
-for (const { borrow, collaterals, healthFactor, userLTV } of borrows) {
+for (const { borrow, collaterals, healthFactor, userLTV, liquidatable, roe } of borrows) {
   console.log('borrow', borrow.account, borrow.vaultAddress, borrow.borrowed)
   console.log('collaterals', collaterals.map((collateral) => collateral.vaultAddress))
-  console.log('risk', healthFactor, userLTV)
+  console.log('risk', healthFactor, userLTV, liquidatable, roe)
 }
 ```
 
-`Portfolio` is built from a fully populated `Account`, but abstracts sub-accounts away into `savings` and `borrows`. `portfolioService.fetchPortfolio` fetches the backing account with `populateAll: true`. Borrow entries preserve the raw `{ borrow, collaterals }` position references and add higher-level fields such as primary collateral, health, LTV, liquidation price, and USD totals. A position with debt is always included as a borrow; any supplied balance on that same position is also treated as savings unless the vault is active collateral for a borrow in the same sub-account.
+`Portfolio` is built from a fully populated `Account`, but abstracts sub-accounts away into `savings` and `borrows`. `portfolioService.fetchPortfolio` fetches the backing account with `populateAll: true`. Borrow entries preserve the raw `{ borrow, collaterals }` position references and add higher-level fields such as primary collateral, health, LTV, liquidation price, `liquidatable`, multiplier, APY/ROE breakdowns, and USD totals. A position with debt is always included as a borrow; any supplied balance on that same position is also treated as savings unless the vault is active collateral for a borrow in the same sub-account.
 
 Filter positions from every Portfolio computed property with:
 
@@ -176,10 +176,10 @@ Use type guards to narrow:
 import { isEVault, isEulerEarn, isSecuritizeCollateralVault } from '@eulerxyz/euler-v2-sdk'
 
 if (isEVault(vault)) {
-  console.log(vault.interestRates.supplyAPY)
+  console.log(vault.interestRates.supplyAPY) // percentage points, e.g. 5 = 5%
   console.log(vault.collaterals.length)
 } else if (isEulerEarn(vault)) {
-  console.log(vault.supplyApy)   // alias of vault.supplyApy1h
+  console.log(vault.supplyApy)   // alias of vault.supplyApy1h, also percentage points
   console.log(vault.supplyApy1h)
   console.log(vault.strategies.length)
 }
@@ -296,12 +296,13 @@ const { result: eVaultsOnly } = await sdk.vaultMetaService.fetchAllVaults(1, {
 
 ## Oracle Adapter Metadata
 
-Use `oracleAdapterService` to get adapter provider/methodology/check metadata for oracle adapter addresses:
+Use `oracleAdapterService` to get provider/methodology/check metadata for oracle adapter entries. `fetchOracleAdapterMap()` is keyed by the normalized `adapter.oracle` address and each metadata entry also exposes normalized `oracle`, `base`, and `quote` addresses when present:
 
 ```typescript
 const adapterMap = await sdk.oracleAdapterService.fetchOracleAdapterMap(1);
-const metadata = adapterMap['0xAdapterAddress...'.toLowerCase()];
-console.log(metadata?.provider, metadata?.methodology, metadata?.checks);
+const adapter = vault.oracle.adapters[0];
+const metadata = adapterMap[adapter.oracle.toLowerCase()];
+console.log(metadata?.provider, metadata?.base, metadata?.quote, metadata?.checks);
 ```
 
 ## How Vault Types Work

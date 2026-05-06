@@ -175,7 +175,7 @@ export function computeBorrowLiquidationPrice(
 
 /**
  * ROE (Return on Equity) breakdown for a sub-account.
- * All values are decimal fractions (0.05 = 5%).
+ * All values are percentage points (5 = 5%).
  */
 export interface SubAccountRoe {
 	/** ROE contribution from base supply APYs. */
@@ -192,7 +192,7 @@ export interface SubAccountRoe {
 
 /**
  * APY/ROE contribution breakdown.
- * All values are decimal fractions (0.05 = 5%).
+ * All values are percentage points (5 = 5%).
  */
 export interface YieldApyBreakdown {
 	/** Contribution from base supply APYs. */

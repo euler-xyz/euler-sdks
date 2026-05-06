@@ -66,8 +66,8 @@ async function fetchVaultDetailsExample() {
   console.log("\n" + "-".repeat(80));
   console.log("INTEREST RATES");
   console.log("-".repeat(80));
-  console.log(`  Supply APY:      ${(Number(vault.interestRates.supplyAPY) * 100).toFixed(4)}%`);
-  console.log(`  Borrow APY:      ${(Number(vault.interestRates.borrowAPY) * 100).toFixed(4)}%`);
+  console.log(`  Supply APY:      ${Number(vault.interestRates.supplyAPY).toFixed(4)}%`);
+  console.log(`  Borrow APY:      ${Number(vault.interestRates.borrowAPY).toFixed(4)}%`);
 
   // Prices
   console.log("\n" + "-".repeat(80));
@@ -103,7 +103,7 @@ async function fetchVaultDetailsExample() {
 
       if ("interestRates" in cv) {
         const rates = (cv as EVault).interestRates;
-        console.log(`    Supply APY:      ${(Number(rates.supplyAPY) * 100).toFixed(4)}%`);
+        console.log(`    Supply APY:      ${Number(rates.supplyAPY).toFixed(4)}%`);
       }
 
       const collateralPrice = vault.getCollateralRiskPrice(cv);

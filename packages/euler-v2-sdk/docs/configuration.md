@@ -90,8 +90,13 @@ const sdk = await buildEulerSDK({
 
   // Optional: euler-labels metadata URLs
   eulerLabelsAdapterConfig: {
-    getEulerLabelsVaultsUrl: (chainId) => `https://.../${chainId}/vaults.json`,
-    // ...
+    getEulerLabelsEntitiesUrl: (chainId) => `https://.../${chainId}/entities.json`,
+    getEulerLabelsProductsUrl: (chainId) => `https://.../${chainId}/products.json`,
+    getEulerLabelsPointsUrl: (chainId) => `https://.../${chainId}/points.json`,
+    getEulerLabelsEarnVaultsUrl: (chainId) => `https://.../${chainId}/earn-vaults.json`,
+    getEulerLabelsAssetsUrl: (chainId) => `https://.../${chainId}/assets.json`,
+    getEulerLabelsGlobalAssetsUrl: () => `https://.../all/assets.json`,
+    getEulerLabelsLogoUrl: (filename) => `https://.../logo/${filename}`,
   },
 
   // Optional: token list API

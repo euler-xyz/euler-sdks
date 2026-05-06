@@ -79,10 +79,11 @@ const STALE_TIMES: Record<string, number> = {
   queryDeployments: Infinity,
   queryABI: Infinity,
   queryTokenList: Infinity,
-  queryEulerLabelsVaults: Infinity,
   queryEulerLabelsEntities: Infinity,
   queryEulerLabelsProducts: Infinity,
   queryEulerLabelsPoints: Infinity,
+  queryEulerLabelsEarnVaults: Infinity,
+  queryEulerLabelsAssets: Infinity,
 
   // Perspective / factory lists — change only when new vaults are deployed
   queryEVaultVerifiedArray: 5 * MINUTE,
@@ -257,11 +258,14 @@ export type OracleAdapterMetadataMap = Record<
   string,
   {
     address: string;
+    oracle: string;
+    base?: string;
+    quote?: string;
     provider?: string;
     methodology?: string;
     label?: string;
     name?: string;
-    checks?: Array<{ id?: string; pass?: boolean; [key: string]: unknown }>;
+    checks?: Array<{ id?: string; message?: string; pass?: boolean; severity?: string; [key: string]: unknown }>;
     [key: string]: unknown;
   }
 >;

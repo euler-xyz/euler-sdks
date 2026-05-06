@@ -46,6 +46,8 @@ if (!account.populated.vaults) return null;
 
 Keep `errors` alongside the entity snapshot. Diagnostics are not entity state; use them for field-level badges, telemetry, and policy decisions.
 
+APY/ROE values on SDK vault and portfolio entities are percentage points (`5` = `5%`). Raw reward campaign APRs are decimal fractions; convert them before adding them to vault APYs in custom UI code, or use the SDK's computed breakdown fields.
+
 For React UIs:
 
 1. Build SDK in a provider/context once.

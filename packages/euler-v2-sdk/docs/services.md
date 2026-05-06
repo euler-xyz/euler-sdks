@@ -32,14 +32,14 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 
 - `walletService`: Fetches wallet balances and allowances.
 - `priceService`: Resolves market prices used for valuation and computed account metrics.
-- `oracleAdapterService`: Fetches oracle adapter metadata/checks (provider, methodology, checks) from the oracle checks dataset and builds address-keyed maps for UI/tooling.
+- `oracleAdapterService`: Fetches oracle adapter metadata/checks (provider, methodology, checks) from the oracle checks dataset and builds maps keyed by normalized `adapter.oracle` address for UI/tooling.
 - `rewardsService`: Fetches reward campaign data used to populate vault/account rewards and builds provider-specific reward claim plans.
   See: [`rewards-service.md`](./rewards-service.md)
 - `feeFlowService`: Fetches FeeFlow state, filters eligible vaults, and builds FeeFlow buy plans.
   See: [`fee-flow-service.md`](./fee-flow-service.md)
 - `intrinsicApyService`: Fetches intrinsic APY data used by vault enrichments.
 - `tokenlistService`: Provides token metadata/list data.
-- `eulerLabelsService`: Provides human-readable labels and metadata for protocol entities.
+- `eulerLabelsService`: Provides normalized euler-labels products, entities, points, Earn entries, notices, and asset restrictions.
 - `providerService`: Manages per-chain RPC providers.
 - `deploymentService`: Provides chain-specific deployed addresses/configuration.
 - `abiService`: Provides ABI access used for contract encoding/decoding.
@@ -56,6 +56,6 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 | `portfolioService` | Account-derived portfolio data | Yes (`populateAll`) | Yes (`populateAll`) | Yes (`populateAll`) | Yes (`populateAll`) | Fetches the backing account with `populateAll: true`; see [`portfolio.md`](./portfolio.md) |
 | `executionService` | Simulates plans | Can populate simulated results | Can populate simulated results | Can populate simulated results | Can populate simulated results | Produces transaction plans/EVC batch payloads, resolves approvals, executes plans, and estimates gas |
 | `swapService` | No (quotes only) | No | No | No | No | Returns swap quotes/providers for execution plans |
-| `oracleAdapterService` | No | No | No | No | No | Oracle adapter metadata API (`fetchOracleAdapters`, `fetchOracleAdapterMap`, `enrichAdapters`) |
+| `oracleAdapterService` | No | No | No | No | No | Oracle adapter metadata API (`fetchOracleAdapters`, `fetchOracleAdapterMap`, `enrichAdapters`); maps are keyed by `adapter.oracle.toLowerCase()` |
 
 See also: [`execution-service.md`](./execution-service.md).

@@ -19,13 +19,16 @@ export function formatBigInt(
   });
 }
 
-export function formatAPY(apyString: string): string {
-  const apy = Number(apyString) * 100;
-  return `${apy.toFixed(2)}%`;
+export function formatAPY(apy: string | number): string {
+  return formatPercentPoints(Number(apy));
 }
 
 export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
+}
+
+export function formatPercentPoints(value: number): string {
+  return `${value.toFixed(2)}%`;
 }
 
 export function formatWad(value: bigint | undefined, displayDecimals = 4): string {

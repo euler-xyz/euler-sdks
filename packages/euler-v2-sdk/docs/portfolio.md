@@ -33,6 +33,8 @@ portfolio.savings
 //   shares: bigint
 //   assets: bigint
 //   suppliedValueUsd?: bigint
+//   apy?: number                 // percentage points, e.g. 5 = 5%
+//   apyBreakdown?: YieldApyBreakdown
 // }>
 
 portfolio.borrows
@@ -45,10 +47,25 @@ portfolio.borrows
 //   subAccount: Address
 //   healthFactor?: bigint
 //   userLTV?: bigint
+//   currentLTV?: bigint
 //   borrowed: bigint
 //   supplied: bigint
+//   price?: bigint
+//   primaryCollateralLiquidationPrice?: bigint
+//   borrowLiquidationPriceUsd?: bigint
+//   collateralLiquidationPricesUsd?: Record<Address, bigint>
+//   liquidatable: boolean
 //   borrowLTV?: number
 //   liquidationLTV?: number
+//   accountLiquidationLTV?: number
+//   liabilityValueUsd?: bigint
+//   totalCollateralValueUsd?: bigint
+//   timeToLiquidation?: DaysToLiquidation
+//   multiplier?: number
+//   netApy?: number              // percentage points
+//   roe?: number                 // percentage points
+//   apyBreakdown?: YieldApyBreakdown
+//   roeBreakdown?: YieldApyBreakdown
 // }>
 ```
 
@@ -63,7 +80,11 @@ Portfolio-level metrics are computed from the current account positions:
 - `netAssetValueUsd`
 - `netApy`
 - `roe`
+- `apyBreakdown`
+- `roeBreakdown`
 - `totalRewardsValueUsd`
+
+APY and ROE numeric values are percentage points (`5` means `5%`). Reward campaign APRs remain decimal fractions on the lower-level reward campaign objects, but Portfolio breakdowns convert them to the same percentage-point unit.
 
 The portfolio stores an account reference, not a copied snapshot. If the account is re-populated or its positions are updated, subsequent Portfolio computed-property reads reflect the new account state.
 

@@ -280,7 +280,7 @@ export interface ISubAccount<TVaultEntity extends IHasVaultAddress = never> {
 	readonly liabilityValueUsd?: bigint;
 	/** Net value in USD (18 dec): sum(supplied) - sum(borrowed). Computed getter on SubAccount class. */
 	readonly netValueUsd?: bigint;
-	/** ROE breakdown (decimal fractions). Requires populated vaults + market prices. Computed getter on SubAccount class. */
+	/** ROE breakdown (percentage points). Requires populated vaults + market prices. Computed getter on SubAccount class. */
 	readonly roe?: SubAccountRoe;
 }
 
@@ -354,7 +354,7 @@ export class SubAccount<TVaultEntity extends IHasVaultAddress = never>
 		);
 	}
 
-	/** ROE breakdown (decimal fractions, 0.05 = 5%). Requires populated vaults + market prices. */
+	/** ROE breakdown (percentage points, 5 = 5%). Requires populated vaults + market prices. */
 	get roe(): SubAccountRoe | undefined {
 		return computeSubAccountRoe(
 			this as unknown as ISubAccount<IHasVaultAddress>,

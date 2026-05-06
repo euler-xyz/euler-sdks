@@ -33,8 +33,9 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
   - executes generic `TransactionPlan` items, including direct `contractCall` items
 - `executionService` for plan simulation and pre-trade validation
 - `swapService` for quotes and providers
-- `oracleAdapterService` for oracle adapter metadata (provider/methodology/checks)
+- `oracleAdapterService` for oracle adapter metadata keyed by normalized `adapter.oracle` address
 - `rewardsService` for reward reads and provider-specific reward claim planning
+- `eulerLabelsService` plus exported label helpers for normalized products, Earn entries, notices, restrictions, and product/vault flags
 
 Do not assume all vaults are `EVault`. Use `vaultMetaService` for polymorphic routing.
 Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and use `errors`/`entityId` for UI diagnostics.
@@ -49,6 +50,7 @@ Computed account metrics depend on populated data. For portfolio screens, set:
 - `vaultFetchOptions` with needed enrichments (`collaterals`, `strategyVaults`, `rewards`, `intrinsicApy`, `labels`)
 
 Without these flags, metrics like `healthFactor`, `netAssetValueUsd`, and `roe` may be missing or incomplete.
+APY/ROE fields exposed by vault and portfolio entities are percentage points (`5` = `5%`); raw reward campaign APRs remain decimal fractions until converted by computed breakdowns or UI helpers.
 
 For batch vault reads (`fetchVaults`, `fetchVerifiedVaults`), results preserve input order and can include `undefined` entries for per-vault failures; use diagnostics `entityId` to map failures to addresses.
 
@@ -157,6 +159,7 @@ Promote constants to config/env and add explicit chain/account flags in CLI tool
 - `packages/euler-v2-sdk/docs/execution-service.md`
 - `packages/euler-v2-sdk/docs/simulations-and-state-overrides.md`
 - `packages/euler-v2-sdk/docs/caching-external-data-queries.md`
+- `packages/euler-v2-sdk/docs/labels.md`
 - `packages/euler-v2-sdk/docs/plugins.md`
 - `packages/euler-v2-sdk/docs/swaps.md`
 - `packages/euler-v2-sdk/examples/react-sdk-example/src/context/SdkContext.tsx`

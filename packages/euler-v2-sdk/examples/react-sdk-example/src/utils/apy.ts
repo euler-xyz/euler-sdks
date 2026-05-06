@@ -13,28 +13,28 @@ export function getRewardsAprByAction(
       return total;
     }
 
-    return total + campaign.apr;
+    return total + campaign.apr * 100;
   }, 0);
 }
 
-export function getIntrinsicApyDecimal(
+export function getIntrinsicApyPercentPoints(
   intrinsicApy: IntrinsicApyInfo | undefined,
 ): number {
-  return intrinsicApy ? intrinsicApy.apy / 100 : 0;
+  return intrinsicApy ? intrinsicApy.apy : 0;
 }
 
 export function getEffectiveSupplyApy(vault: EVault): number {
   return (
     Number(vault.interestRates.supplyAPY) +
     getRewardsAprByAction(vault.rewards, "LEND") +
-    getIntrinsicApyDecimal(vault.intrinsicApy)
+    getIntrinsicApyPercentPoints(vault.intrinsicApy)
   );
 }
 
 export function getEffectiveBorrowApy(vault: EVault): number {
   return (
     Number(vault.interestRates.borrowAPY) +
-    getIntrinsicApyDecimal(vault.intrinsicApy) -
+    getIntrinsicApyPercentPoints(vault.intrinsicApy) -
     getRewardsAprByAction(vault.rewards, "BORROW")
   );
 }

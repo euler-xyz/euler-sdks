@@ -56,7 +56,7 @@ export interface PortfolioSavingsPosition<
 	shares: bigint;
 	assets: bigint;
 	suppliedValueUsd?: bigint;
-	/** Total supply APY for this savings position, including intrinsic APY and rewards. */
+	/** Total supply APY for this savings position in percentage points, including intrinsic APY and rewards. */
 	apy?: number;
 	/** Supply APY contribution breakdown for this savings position. */
 	apyBreakdown?: YieldApyBreakdown;
@@ -96,9 +96,9 @@ export interface PortfolioBorrowPosition<
 	timeToLiquidation?: DaysToLiquidation;
 	/** Effective collateral multiplier: supplied USD / equity USD. */
 	multiplier?: number;
-	/** Net APY for this borrow position, relative to supplied collateral value. */
+	/** Net APY in percentage points for this borrow position, relative to supplied collateral value. */
 	netApy?: number;
-	/** Return on equity for this borrow position, relative to supplied minus borrowed value. */
+	/** Return on equity in percentage points for this borrow position, relative to supplied minus borrowed value. */
 	roe?: number;
 	/** Net APY contribution breakdown for this borrow position. */
 	apyBreakdown?: YieldApyBreakdown;

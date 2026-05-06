@@ -44,7 +44,7 @@ For a direct high-level read, use `portfolioService.fetchPortfolio(...)`, which 
 
 ### ROE (Return on Equity)
 
-The `roe` property returns a `SubAccountRoe` object that breaks down the return on equity into four components. All values are decimal fractions (0.05 = 5%).
+The `roe` property returns a `SubAccountRoe` object that breaks down the return on equity into four components. APY/ROE outputs are percentage points (`5` = `5%`). Reward campaign APR inputs remain decimal fractions on the raw campaign objects, but the computed breakdown converts them to percentage points.
 
 ```typescript
 interface SubAccountRoe {
@@ -128,6 +128,8 @@ const nextBorrowSubAccount = account.getNextSubAccount({ borrowVault })
 | `netAssetValueUsd` | `bigint \| undefined` | `populateMarketPrices` | `totalSuppliedValueUsd - totalBorrowedValueUsd` (18 dec). |
 | `netApy` | `number \| undefined` | `populateVaults` + `populateMarketPrices` | Net APY across positions included in this portfolio. |
 | `roe` | `number \| undefined` | `populateVaults` + `populateMarketPrices` | Return on equity across positions included in this portfolio. |
+| `apyBreakdown` | `YieldApyBreakdown \| undefined` | `populateVaults` + `populateMarketPrices` | Portfolio net APY contribution breakdown in percentage points. |
+| `roeBreakdown` | `YieldApyBreakdown \| undefined` | `populateVaults` + `populateMarketPrices` | Portfolio ROE contribution breakdown in percentage points. |
 | `totalRewardsValueUsd` | `bigint \| undefined` | `populateUserRewards` | Delegates to `account.totalRewardsValueUsd`. |
 
 ### Portfolio Categorization

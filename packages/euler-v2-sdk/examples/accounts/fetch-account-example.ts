@@ -100,9 +100,6 @@ async function fetchAccountExample() {
       if (vault?.eulerLabel) {
         const label = vault.eulerLabel;
         console.log(`    Label:`);
-        if (label.vault) {
-          console.log(`      Vault:      ${label.vault.name} — ${label.vault.description}`);
-        }
         if (label.entities?.length > 0) {
           console.log(`      Entities:   ${label.entities.map((e: any) => e.name).join(", ")}`);
         }
@@ -114,6 +111,12 @@ async function fetchAccountExample() {
         }
         if (label.deprecated) {
           console.log(`      DEPRECATED: ${label.deprecationReason}`);
+        }
+        if (label.portfolioNotice) {
+          console.log(`      Notice:     ${label.portfolioNotice}`);
+        }
+        if (label.featured) {
+          console.log(`      Featured:   true`);
         }
       }
 

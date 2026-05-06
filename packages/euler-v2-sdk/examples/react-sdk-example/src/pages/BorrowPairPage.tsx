@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  StandardEVaultPerspectives,
   getSubAccountAddress,
   getMaxMultiplier,
   getMaxRoe,
@@ -25,9 +24,9 @@ import {
   useWalletBalance,
 } from "../queries/sdkQueries.ts";
 import {
-  formatAPY,
   formatBigInt,
   formatPercent,
+  formatPercentPoints,
   formatPriceUsd,
   formatWad,
 } from "../utils/format.ts";
@@ -1317,7 +1316,7 @@ export function BorrowPairPage() {
               </div>
               <div className="pair-overview-item">
                 <div className="label">Max ROE</div>
-                <div className="value">{pct(maxRoe)}</div>
+                <div className="value">{maxRoe === undefined ? "-" : formatPercentPoints(maxRoe)}</div>
               </div>
               <div className="pair-overview-item">
                 <div className="label">Max Multiplier</div>

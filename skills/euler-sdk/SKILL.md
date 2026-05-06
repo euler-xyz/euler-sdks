@@ -45,6 +45,8 @@ Reference these guidelines when:
 - `executionService` for plugin-aware plan simulation, gas estimation, execution, and pre-execution validation
 - `swapService` for provider quotes and route payloads
 - `rewardsService` for reward reads and provider-specific claim plans
+- `eulerLabelsService` plus exported `utils/eulerLabels` helpers for normalized labels metadata, notices, restrictions, and product/vault flags
+- `oracleAdapterService.fetchOracleAdapterMap(chainId)` returns metadata keyed by normalized `adapter.oracle` address
 
 Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and use `errors`/`entityId` for UI diagnostics.
 

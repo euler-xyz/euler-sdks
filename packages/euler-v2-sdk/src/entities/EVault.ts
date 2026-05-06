@@ -90,8 +90,11 @@ export interface EVaultLiquidation {
 }
 
 export interface InterestRates {
+	/** Percentage points, e.g. 5 = 5%. */
 	borrowSPY: number;
+	/** Percentage points, e.g. 5 = 5%. */
 	borrowAPY: number;
+	/** Percentage points, e.g. 5 = 5%. */
 	supplyAPY: number;
 }
 

@@ -115,10 +115,11 @@ const STALE_TIMES: Record<string, number> = {
   queryDeployments: Infinity,
   queryABI: Infinity,
   queryTokenList: Infinity,
-  queryEulerLabelsVaults: Infinity,
   queryEulerLabelsEntities: Infinity,
   queryEulerLabelsProducts: Infinity,
   queryEulerLabelsPoints: Infinity,
+  queryEulerLabelsEarnVaults: Infinity,
+  queryEulerLabelsAssets: Infinity,
 
   // Perspective / factory lists — change only when new vaults are deployed
   queryEVaultVerifiedArray: 5 * MINUTE,
@@ -250,10 +251,11 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 
 | Query | Type | Class | Args | Description |
 |-------|------|-------|------|-------------|
-| `queryEulerLabelsVaults` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch vault labels from Euler API |
 | `queryEulerLabelsEntities` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch entity labels from Euler API |
 | `queryEulerLabelsProducts` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch product labels from Euler API |
 | `queryEulerLabelsPoints` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch points labels from Euler API |
+| `queryEulerLabelsEarnVaults` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch Euler Earn vault label metadata |
+| `queryEulerLabelsAssets` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch chain-specific and global asset rules |
 
 ### Rewards Service
 

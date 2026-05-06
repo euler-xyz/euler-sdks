@@ -17,6 +17,7 @@ import { getAddress, type Address } from "viem";
 import {
   formatBigInt,
   formatPercent,
+  formatPercentPoints,
   formatPriceUsd,
   formatWad,
   formatWadPercent,
@@ -50,11 +51,11 @@ function formatUsdValue(value: bigint | undefined): string {
 }
 
 function formatOptionalPercent(value: number | undefined): string {
-  return value === undefined ? "-" : formatPercent(value);
+  return value === undefined ? "-" : formatPercentPoints(value);
 }
 
 function formatSignedPercent(value: number): string {
-  const formatted = formatPercent(Math.abs(value));
+  const formatted = formatPercentPoints(Math.abs(value));
   if (value > 0) return `+${formatted}`;
   if (value < 0) return `-${formatted}`;
   return formatted;
@@ -85,6 +86,38 @@ function sumBigints(values: Array<bigint | undefined>): bigint | undefined {
     total = (total ?? 0n) + v;
   }
   return total;
+}
+
+function aggregateYieldBreakdown(
+  entries: Array<{ breakdown?: YieldApyBreakdown; weight: number }>
+): YieldApyBreakdown | undefined {
+  let totalWeight = 0;
+  const total: YieldApyBreakdown = {
+    lending: 0,
+    borrowing: 0,
+    rewards: 0,
+    intrinsicApy: 0,
+    total: 0,
+  };
+
+  for (const { breakdown, weight } of entries) {
+    if (!breakdown || weight <= 0) continue;
+    totalWeight += weight;
+    total.lending += breakdown.lending * weight;
+    total.borrowing += breakdown.borrowing * weight;
+    total.rewards += breakdown.rewards * weight;
+    total.intrinsicApy += breakdown.intrinsicApy * weight;
+    total.total += breakdown.total * weight;
+  }
+
+  if (totalWeight <= 0) return undefined;
+  return {
+    lending: total.lending / totalWeight,
+    borrowing: total.borrowing / totalWeight,
+    rewards: total.rewards / totalWeight,
+    intrinsicApy: total.intrinsicApy / totalWeight,
+    total: total.total / totalWeight,
+  };
 }
 
 function hasPortfolioActivity(result: AccountByChainResult): boolean {
@@ -183,6 +216,23 @@ export function PortfolioPage() {
     return {
       netApy: netYield === undefined || supplied <= 0 ? undefined : netYield / supplied,
       roe: netYield === undefined || equity <= 0 ? undefined : netYield / equity,
+      apyBreakdown: aggregateYieldBreakdown(
+        results.map((result) => ({
+          breakdown: result.portfolio?.apyBreakdown,
+          weight: Number(result.portfolio?.totalSuppliedValueUsd ?? 0n),
+        }))
+      ),
+      roeBreakdown: aggregateYieldBreakdown(
+        results.map((result) => {
+          const portfolio = result.portfolio;
+          const suppliedValue = Number(portfolio?.totalSuppliedValueUsd ?? 0n);
+          const borrowedValue = Number(portfolio?.totalBorrowedValueUsd ?? 0n);
+          return {
+            breakdown: portfolio?.roeBreakdown,
+            weight: Math.max(suppliedValue - borrowedValue, 0),
+          };
+        })
+      ),
     };
   }, [results, totals.borrowed, totals.supplied]);
 
@@ -315,6 +365,8 @@ export function PortfolioPage() {
             borrowed={totals.borrowed}
             nav={totals.nav}
             rewards={totals.rewards}
+            apyBreakdown={aggregatePerformance.apyBreakdown}
+            roeBreakdown={aggregatePerformance.roeBreakdown}
           />
 
           <div className="portfolio-view-toolbar">
@@ -701,7 +753,7 @@ function BorrowPositionCard({
         />
         <PortfolioStat
           label="LTV"
-          value={`${formatWadPercent(position.userLTV)} / ${formatWadPercent(position.accountLiquidationLTV)}`}
+          value={`${formatWadPercent(position.userLTV)} / ${position.accountLiquidationLTV === undefined ? "-" : formatPercent(position.accountLiquidationLTV)}`}
           subValue={`Borrow price ${formatPriceUsd(position.borrowLiquidationPriceUsd)}`}
         />
         <PortfolioStat
