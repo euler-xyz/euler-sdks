@@ -19,12 +19,26 @@ import {
 import { IntrinsicApyService } from "../src/services/intrinsicApyService/intrinsicApyService.js";
 import { WalletService } from "../src/services/walletService/walletService.js";
 import { WalletOnchainAdapter } from "../src/services/walletService/adapters/walletOnchainAdapter.js";
+import { OracleAdapterService } from "../src/services/oracleAdapterService/oracleAdapterService.js";
 import { Wallet } from "../src/entities/Wallet.js";
 import { EVault } from "../src/entities/EVault.js";
 import {
   getCollateralizedEVaultFixture,
   getPlainEVaultFixture,
 } from "./helpers/readCorpus.ts";
+import {
+  applyEulerLabelVaultOverrides,
+  createEmptyEulerLabelsData,
+  getEulerLabelAssetBlock,
+  getEulerLabelEntitiesByVault,
+  getEulerLabelProductByVault,
+  getEulerLabelVaultNotice,
+  isEulerLabelEarnVaultDeprecated,
+  isEulerLabelVaultDeprecated,
+  isEulerLabelVaultFeatured,
+  isEulerLabelVaultKeyring,
+  isEulerLabelVaultNotExplorable,
+} from "../src/utils/eulerLabels.js";
 
 const originalQueryDeployments = DeploymentService.queryDeployments;
 
@@ -717,6 +731,32 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
     "US",
   );
   assert.equal(labelsData.assetPatternRules.length, 3);
+  assert.deepEqual(createEmptyEulerLabelsData().verifiedVaultAddresses, []);
+  assert.equal(
+    applyEulerLabelVaultOverrides(
+      labelsData.products.parityProduct!,
+      plainVault.address,
+    ).name,
+    "Overridden Product",
+  );
+  assert.equal(
+    getEulerLabelProductByVault(labelsData, plainVault.address)?.name,
+    "Base Product",
+  );
+  assert.equal(
+    getEulerLabelEntitiesByVault(labelsData, {
+      governorAdmin: plainVault.address,
+    })[0]?.name,
+    "Euler",
+  );
+  assert.equal(getEulerLabelVaultNotice(labelsData, plainVault.address), "override notice");
+  assert.equal(getEulerLabelAssetBlock(labelsData, plainVault.asset.address)?.[0], "US");
+  assert.equal(isEulerLabelVaultFeatured(labelsData, plainVault.address), true);
+  assert.equal(isEulerLabelVaultFeatured(labelsData, collateralVault.address), true);
+  assert.equal(isEulerLabelVaultDeprecated(labelsData, stringEntityVault.address), true);
+  assert.equal(isEulerLabelEarnVaultDeprecated(labelsData, collateralVault.address), true);
+  assert.equal(isEulerLabelVaultKeyring(labelsData, plainVault.address), true);
+  assert.equal(isEulerLabelVaultNotExplorable(labelsData, plainVault.address), true);
 
   await labelsService.populateLabels([plainVault, collateralVault]);
   assert.equal(
@@ -727,6 +767,42 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   assert.equal(collateralVault.eulerLabel?.earnVault?.address, collateralVault.address);
   assert.equal(collateralVault.eulerLabel?.deprecated, true);
   assert.equal(collateralVault.eulerLabel?.portfolioNotice, "earn notice");
+
+  const oracleAdapterService = new OracleAdapterService({}, buildQuery);
+  oracleAdapterService.setQueryOracleAdapters(async (chainId) => {
+    assert.equal(chainId, 1);
+    return [
+      {
+        oracle: plainVault.oracle.oracle.toLowerCase(),
+        baseAsset: plainVault.asset.address.toLowerCase(),
+        quote_asset: zeroAddress,
+        provider: "Provider",
+        checks: [
+          { id: "Adapter whitelist", pass: false, severity: "HIGH" },
+          {
+            id: "pricing-valid",
+            message: "Pricing valid",
+            pass: true,
+            severity: "INFO",
+          },
+        ],
+      },
+      {
+        adapter: "not-an-address",
+      },
+    ];
+  });
+  const oracleAdapters = await oracleAdapterService.fetchOracleAdapters(1);
+  assert.equal(oracleAdapters.length, 1);
+  assert.equal(oracleAdapters[0]?.oracle, plainVault.oracle.oracle);
+  assert.equal(oracleAdapters[0]?.base, plainVault.asset.address);
+  assert.equal(oracleAdapters[0]?.checks?.length, 1);
+  assert.equal(
+    (await oracleAdapterService.fetchOracleAdapterMap(1))[
+      plainVault.oracle.oracle.toLowerCase()
+    ]?.provider,
+    "Provider",
+  );
 
   assert.ok(calls.some((entry) => entry.queryName === "queryDeployments"));
 });

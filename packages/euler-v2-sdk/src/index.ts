@@ -58,3 +58,4 @@ export * from "./utils/normalization.js";
 export * from "./utils/parsing.js";
 export * from "./utils/decodeSmartContractErrors.js";
 export * from "./utils/eulerErrorSelectors.js";
+export * from "./utils/eulerLabels.js";
