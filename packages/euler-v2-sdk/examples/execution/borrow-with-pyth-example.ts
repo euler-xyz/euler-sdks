@@ -45,7 +45,6 @@ import { mainnet } from "viem/chains";
 import { printHeader, logOperationResult } from "../utils/helpers.js";
 import { createTransactionPlanLogger } from "../utils/transactionPlanLogging.js";
 import {
-  rpcUrls,
   account,
   initExample,
   exampleExecutionCallbacks,
@@ -107,7 +106,6 @@ async function borrowWithPythExample({
 
   // Build the SDK with the Pyth plugin enabled
   const sdk = await buildEulerSDK({
-    rpcUrls,
     plugins: [createPythPlugin()],
     accountServiceConfig: { adapter: "onchain" },
     queryCacheConfig: { enabled: false },

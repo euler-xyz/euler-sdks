@@ -47,9 +47,8 @@ Details and options: [Simulations and State Overrides](./simulations-and-state-o
 ```typescript
 import { buildEulerSDK } from "@eulerxyz/euler-v2-sdk";
 
-const sdk = await buildEulerSDK({
-  rpcUrls: { 1: "https://your-rpc-url" },
-});
+// Set EULER_SDK_RPC_URL_1=https://your-rpc-url in the environment.
+const sdk = await buildEulerSDK();
 ```
 
 You can also:

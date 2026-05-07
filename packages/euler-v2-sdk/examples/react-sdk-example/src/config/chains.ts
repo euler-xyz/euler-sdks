@@ -38,7 +38,7 @@ export const SECURITIZE_VAULT_ADDRESSES: Record<number, Address[]> = {
   ],
 };
 
-// Public RPC fallbacks — override per chain with VITE_RPC_URL_<chainId> in .env
+// Public RPC fallbacks — override per chain with EULER_SDK_RPC_URL_<chainId> in .env
 const PUBLIC_RPC_URLS: Record<number, string> = {
   1: "https://eth.drpc.org",
   56: "https://bsc.drpc.org",
@@ -59,7 +59,7 @@ const PUBLIC_RPC_URLS: Record<number, string> = {
 export const RPC_URLS: Record<number, string> = Object.fromEntries(
   Object.entries(PUBLIC_RPC_URLS).map(([chainId, fallback]) => [
     chainId,
-    import.meta.env[`VITE_RPC_URL_${chainId}`] || fallback,
+    import.meta.env[`EULER_SDK_RPC_URL_${chainId}`] || fallback,
   ])
 );
 

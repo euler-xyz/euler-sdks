@@ -114,7 +114,7 @@ async function delay(ms: number): Promise<void> {
 
 async function buildV3Sdk(batchSize?: number) {
   return buildEulerSDK({
-    rpcUrls: getRpcUrls(),
+    config: { rpcUrls: getRpcUrls() },
     v3ApiKey: process.env.VITE_EULER_V3_API_KEY,
     buildQuery: noCacheBuildQuery,
     accountServiceConfig: {
@@ -147,7 +147,7 @@ async function buildV3Sdk(batchSize?: number) {
         endpoint: V3_API_ENDPOINT,
       },
     },
-    backendConfig: {
+    pricingServiceConfig: {
       endpoint: V3_API_ENDPOINT,
     },
     vaultTypeAdapterConfig: {

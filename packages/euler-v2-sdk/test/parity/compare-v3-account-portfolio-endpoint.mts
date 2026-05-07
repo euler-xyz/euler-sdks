@@ -684,7 +684,7 @@ async function main() {
 	const accounts = (await loadAccounts()).slice(0, ACCOUNT_LIMIT);
 	const endpoint = V3_HOST.replace(/\/+$/, "");
 	const sdk = await buildEulerSDK({
-		rpcUrls: { [CHAIN_ID]: RPC_URL },
+		config: { rpcUrls: { [CHAIN_ID]: RPC_URL } },
 		accountServiceConfig: {
 			adapter: "v3",
 			v3AdapterConfig: { endpoint },
@@ -698,7 +698,7 @@ async function main() {
 			v3AdapterConfig: { endpoint },
 		},
 		vaultTypeAdapterConfig: { endpoint },
-		backendConfig: { endpoint },
+		pricingServiceConfig: { endpoint },
 		rewardsServiceConfig: {
 			adapter: "v3",
 			v3AdapterConfig: { endpoint },

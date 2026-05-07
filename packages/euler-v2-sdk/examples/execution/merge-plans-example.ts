@@ -39,7 +39,6 @@ import { mainnet } from "viem/chains";
 import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
 import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 import {
-  rpcUrls,
   account,
   initExample,
   USDC_ADDRESS,
@@ -71,7 +70,6 @@ const SUB_ACCOUNT_ADDRESS = getSubAccountAddress(account.address, SUB_ACCOUNT_ID
 
 async function mergePlansExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
   const sdk = await buildEulerSDK({
-    rpcUrls,
     accountServiceConfig: { adapter: "onchain" },
     queryCacheConfig: { enabled: false },
   });

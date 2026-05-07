@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run @eulerxyz/euler-v2-sdk examples.
 # - Execution/simulation examples run against a fresh Anvil fork (per example).
-# - Account/vault read examples run directly against RPC_URL_1.
+# - Account/vault read examples run directly against EULER_SDK_RPC_URL_1.
 # Requires: anvil (foundry), pnpm, and examples/.env with FORK_RPC_URL set.
 # Usage: from examples/: ./run-examples.sh
 
@@ -24,9 +24,9 @@ if [[ -z "${FORK_RPC_URL:-}" ]]; then
   echo "FORK_RPC_URL is not set in examples/.env."
   exit 1
 fi
-if [[ -z "${RPC_URL_1:-}" ]]; then
-  export RPC_URL_1="$FORK_RPC_URL"
-fi
+READONLY_EULER_SDK_RPC_URL_1="${EULER_SDK_RPC_URL_1:-$FORK_RPC_URL}"
+ANVIL_EULER_SDK_RPC_URL_1="http://${ANVIL_HOST}:${ANVIL_PORT}"
+export EULER_SDK_RPC_URL_1="$READONLY_EULER_SDK_RPC_URL_1"
 
 kill_anvil() {
   local pid
@@ -135,6 +135,7 @@ for path in "${ANVIL_EXAMPLES[@]}"; do
     continue
   fi
 
+  export EULER_SDK_RPC_URL_1="$ANVIL_EULER_SDK_RPC_URL_1"
   if run_tsx_example "$path"; then
     PASSED+=("$name")
   else
@@ -145,6 +146,8 @@ for path in "${ANVIL_EXAMPLES[@]}"; do
   sleep 1
   kill_anvil
 done
+
+export EULER_SDK_RPC_URL_1="$READONLY_EULER_SDK_RPC_URL_1"
 
 for path in "${READONLY_EXAMPLES[@]}"; do
   name="$(basename "$path" .ts)"

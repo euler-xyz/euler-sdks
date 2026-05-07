@@ -15,7 +15,6 @@ Use plugins whenever vault interactions require preconditions that are not part 
 import { buildEulerSDK, createPythPlugin, createKeyringPlugin } from "euler-v2-sdk";
 
 const sdk = await buildEulerSDK({
-  rpcUrls,
   plugins: [
     createPythPlugin(),
     createKeyringPlugin({

@@ -30,7 +30,6 @@ import {
   import { printHeader, logOperationResult } from "../utils/helpers.js";
   import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
   import {
-  rpcUrls,
   account,
   initExample,
   USDC_ADDRESS,
@@ -47,7 +46,7 @@ const ENABLE_COLLATERAL = true;
 
 async function depositExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
   // Build the SDK
-  const sdk = await buildEulerSDK({ rpcUrls });
+  const sdk = await buildEulerSDK();
 
   // Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery,
   // it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.

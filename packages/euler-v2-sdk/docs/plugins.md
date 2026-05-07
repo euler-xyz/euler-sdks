@@ -14,7 +14,6 @@ Plugins are passed to `buildEulerSDK` via the `plugins` option:
 import { buildEulerSDK, createPythPlugin, createKeyringPlugin } from "@eulerxyz/euler-v2-sdk"
 
 const sdk = await buildEulerSDK({
-  rpcUrls: { 1: "https://..." },
   plugins: [
     createPythPlugin(),
     createKeyringPlugin({

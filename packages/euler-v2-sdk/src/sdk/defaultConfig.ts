@@ -10,7 +10,7 @@ import type {
 import type { EulerLabelsURLAdapterConfig } from "../services/eulerLabelsService/index.js";
 import type { SwapServiceConfig } from "../services/swapService/index.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
-import type { BackendConfig } from "../services/priceService/index.js";
+import type { PricingServiceConfig } from "../services/priceService/index.js";
 import type { IntrinsicApyV3AdapterConfig } from "../services/intrinsicApyService/index.js";
 import type { RewardsV3AdapterConfig } from "../services/rewardsService/index.js";
 
@@ -42,72 +42,74 @@ export const defaultAccountVaultsAdapterConfig: AccountVaultsSubgraphAdapterConf
 		},
 	};
 
+export const DEFAULT_V3_API_URL = "https://v3.eul.dev";
+
 export const defaultAccountV3AdapterConfig: AccountV3AdapterConfig = {
-	endpoint: process.env.EULER_ACCOUNT_V3_API_URL || "https://v3.eul.dev",
+	endpoint: DEFAULT_V3_API_URL,
 };
 
 export const defaultEVaultV3AdapterConfig: EVaultV3AdapterConfig = {
-	endpoint: process.env.EULER_EVAULT_V3_API_URL || "https://v3.eul.dev",
+	endpoint: DEFAULT_V3_API_URL,
 };
 
 export const defaultEulerEarnV3AdapterConfig: EulerEarnV3AdapterConfig = {
-	endpoint: process.env.EULER_EULER_EARN_V3_API_URL || "https://v3.eul.dev",
+	endpoint: DEFAULT_V3_API_URL,
 };
 
 export const defaultVaultTypeAdapterConfig: VaultTypeV3AdapterConfig = {
-	endpoint: process.env.EULER_VAULT_TYPE_V3_API_URL || "https://v3.eul.dev",
+	endpoint: DEFAULT_V3_API_URL,
 };
 
 export const defaultIntrinsicApyV3AdapterConfig: IntrinsicApyV3AdapterConfig = {
-	endpoint: process.env.EULER_INTRINSIC_APY_V3_API_URL || "https://v3.eul.dev",
+	endpoint: DEFAULT_V3_API_URL,
 };
 
 export const defaultRewardsV3AdapterConfig: RewardsV3AdapterConfig = {
-	endpoint: process.env.EULER_REWARDS_V3_API_URL || "https://v3.eul.dev",
+	endpoint: DEFAULT_V3_API_URL,
 };
 
 /** Same subgraph endpoints as account vaults; kept for explicit subgraph-based vault type resolution. */
 export const defaultVaultTypeSubgraphAdapterConfig: VaultTypeSubgraphAdapterConfig =
 	defaultAccountVaultsAdapterConfig;
 
-const EULER_LABELS_BASE =
+export const DEFAULT_EULER_LABELS_BASE_URL =
 	"https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master";
 
 export const defaultEulerLabelsURLAdapterConfig: EulerLabelsURLAdapterConfig = {
 	getEulerLabelsEntitiesUrl: (chainId: number) =>
-		`${EULER_LABELS_BASE}/${chainId}/entities.json`,
+		`${DEFAULT_EULER_LABELS_BASE_URL}/${chainId}/entities.json`,
 	getEulerLabelsProductsUrl: (chainId: number) =>
-		`${EULER_LABELS_BASE}/${chainId}/products.json`,
+		`${DEFAULT_EULER_LABELS_BASE_URL}/${chainId}/products.json`,
 	getEulerLabelsPointsUrl: (chainId: number) =>
-		`${EULER_LABELS_BASE}/${chainId}/points.json`,
+		`${DEFAULT_EULER_LABELS_BASE_URL}/${chainId}/points.json`,
 	getEulerLabelsEarnVaultsUrl: (chainId: number) =>
-		`${EULER_LABELS_BASE}/${chainId}/earn-vaults.json`,
+		`${DEFAULT_EULER_LABELS_BASE_URL}/${chainId}/earn-vaults.json`,
 	getEulerLabelsAssetsUrl: (chainId: number) =>
-		`${EULER_LABELS_BASE}/${chainId}/assets.json`,
-	getEulerLabelsGlobalAssetsUrl: () => `${EULER_LABELS_BASE}/all/assets.json`,
+		`${DEFAULT_EULER_LABELS_BASE_URL}/${chainId}/assets.json`,
+	getEulerLabelsGlobalAssetsUrl: () =>
+		`${DEFAULT_EULER_LABELS_BASE_URL}/all/assets.json`,
 	getEulerLabelsLogoUrl: (filename: string) =>
-		`${EULER_LABELS_BASE}/logo/${filename}`,
+		`${DEFAULT_EULER_LABELS_BASE_URL}/logo/${filename}`,
 };
 
-export const defaultBackendConfig: BackendConfig = {
-	endpoint: process.env.PRICING_API_URL || "https://v3.eul.dev",
+export const defaultPricingServiceConfig: PricingServiceConfig = {
+	endpoint: DEFAULT_V3_API_URL,
 };
 
 export const defaultSwapServiceConfig: SwapServiceConfig = {
-	swapApiUrl: process.env.SWAP_API_URL || "https://swap.euler.finance",
+	swapApiUrl: "https://swap.euler.finance",
 	defaultDeadline: 1800, // 30 minutes
 };
 
 export const defaultDeploymentServiceConfig: DeploymentServiceConfig = {
 	deploymentsUrl:
-		process.env.DEPLOYMENTS_URL ||
 		"https://raw.githubusercontent.com/euler-xyz/euler-interfaces/refs/heads/master/EulerChains.json",
 };
 
-const DEFAULT_TOKENLIST_API_BASE =
-	process.env.TOKENLIST_API_BASE || "https://indexer.euler.finance";
+export const DEFAULT_TOKENLIST_API_BASE_URL =
+	"https://indexer.euler.finance";
 
 export const defaultTokenlistServiceConfig: TokenlistServiceConfig = {
 	getTokenListUrl: (chainId: number) =>
-		`${DEFAULT_TOKENLIST_API_BASE}/v1/tokens?chainId=${chainId}`,
+		`${DEFAULT_TOKENLIST_API_BASE_URL}/v1/tokens?chainId=${chainId}`,
 };

@@ -7,7 +7,7 @@
  * - Top 3 Euler Earn vaults by liquidity (total assets in USD)
  *
  * USAGE:
- *   Set RPC_URL_1 in examples/.env for mainnet access, then run:
+ *   Set EULER_SDK_RPC_URL_1 in examples/.env for mainnet access, then run:
  *   npx tsx vaults/fetch-top-verified-vaults-example.ts
  */
 
@@ -15,7 +15,6 @@ import "dotenv/config";
 import { formatUnits } from "viem";
 import { mainnet } from "viem/chains";
 
-import { getRpcUrls } from "../utils/config.js";
 import {
   buildEulerSDK,
   StandardEVaultPerspectives,
@@ -27,9 +26,7 @@ import {
 } from "@eulerxyz/euler-v2-sdk";
 
 async function fetchTopVerifiedVaultsExample() {
-  const rpcUrls = getRpcUrls();
   const sdk = await buildEulerSDK({
-    rpcUrls,
     eVaultServiceConfig: { adapter: "onchain" },
     eulerEarnServiceConfig: { adapter: "onchain" },
   });

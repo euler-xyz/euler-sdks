@@ -22,7 +22,6 @@ import { resetQueryProfile } from "../queries/queryProfileStore.ts";
 import {
   CHAIN_NAMES,
   DEFAULT_CHAIN,
-  RPC_URLS,
 } from "../config/chains.ts";
 import { getV3ApiEndpoint } from "../config/endpoints.ts";
 
@@ -62,54 +61,26 @@ export function SdkProvider({ children }: { children: ReactNode }) {
     resetQueryProfile();
 
     const sdkConfig: BuildSDKOptions = {
-      rpcUrls: RPC_URLS,
-      v3ApiKey: import.meta.env.VITE_EULER_V3_API_KEY,
+      config: {
+        v3ApiUrl: v3ApiEndpoint,
+        v3ApiKey: import.meta.env.EULER_SDK_V3_API_KEY,
+        swapApiUrl: SWAP_PROXY_ENDPOINT,
+      },
       buildQuery: sdkBuildQuery,
       accountServiceConfig: {
         adapter: useV3Adapters ? "v3" : "onchain",
-        v3AdapterConfig: {
-          endpoint: v3ApiEndpoint,
-        },
       },
       eVaultServiceConfig: {
         adapter: useV3Adapters ? "v3" : "onchain",
-        v3AdapterConfig: {
-          endpoint: v3ApiEndpoint,
-        },
       },
       eulerEarnServiceConfig: {
         adapter: useV3Adapters ? "v3" : "onchain",
-        v3AdapterConfig: {
-          endpoint: v3ApiEndpoint,
-        },
-      },
-      intrinsicApyServiceConfig: {
-        v3AdapterConfig: {
-          endpoint: v3ApiEndpoint,
-        },
       },
       rewardsServiceConfig: {
         adapter: useV3Adapters ? "v3" : "direct",
-        v3AdapterConfig: {
-          endpoint: v3ApiEndpoint,
-        },
       },
-      vaultTypeAdapterConfig: useV3Adapters
-        ? {
-            endpoint: v3ApiEndpoint,
-          }
-        : defaultVaultTypeSubgraphAdapterConfig,
-      swapServiceConfig: {
-        swapApiUrl: SWAP_PROXY_ENDPOINT,
-      },
+      vaultTypeAdapterConfig: useV3Adapters ? undefined : defaultVaultTypeSubgraphAdapterConfig,
       plugins: [createPythPlugin({ buildQuery: sdkBuildQuery })],
-      ...(useV3Adapters
-        ? {
-            backendConfig: {
-              endpoint: v3ApiEndpoint,
-            },
-          }
-        : {}),
     };
 
     buildEulerSDK(sdkConfig)

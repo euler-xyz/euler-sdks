@@ -34,7 +34,6 @@ import {
   account,
   EULER_PRIME_USDT_VAULT,
   initExample,
-  rpcUrls,
   USDT_ADDRESS,
   exampleExecutionCallbacks,
 } from "../utils/config.js";
@@ -69,7 +68,7 @@ async function depositUsdtResetApprovalExample(
   context: Awaited<ReturnType<typeof initExample>>,
 ) {
   const { walletClient } = context;
-	const sdk = await buildEulerSDK({ rpcUrls });
+	const sdk = await buildEulerSDK();
 
 	await createStaleUsdtApproval(context);
 

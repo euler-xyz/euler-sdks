@@ -41,7 +41,6 @@ import {
 	EULER_PRIME_USDT_VAULT,
 	exampleExecutionCallbacks,
 	initExample,
-	rpcUrls,
 	USDC_ADDRESS,
 } from "../utils/config.js";
 
@@ -64,7 +63,6 @@ async function borrowFromSavingsExample({
 }: Awaited<ReturnType<typeof initExample>>) {
 	// Build the SDK
 	const sdk = await buildEulerSDK({
-		rpcUrls,
 		accountServiceConfig: { adapter: "onchain" },
 		queryCacheConfig: { enabled: false },
 	});

@@ -106,7 +106,7 @@ function getRpcUrls(): Record<number, string> {
 
 async function fetchVaultAddressesFromLabelProducts(): Promise<Address[]> {
   const sdk = await buildEulerSDK({
-    rpcUrls: getRpcUrls(),
+    config: { rpcUrls: getRpcUrls() },
     v3ApiKey: process.env.VITE_EULER_V3_API_KEY,
     eVaultServiceConfig: {
       adapter: "v3",
@@ -137,7 +137,7 @@ async function fetchVaultAddressesFromLabelProducts(): Promise<Address[]> {
         endpoint: V3_API_ENDPOINT,
       },
     },
-    backendConfig: {
+    pricingServiceConfig: {
       endpoint: V3_API_ENDPOINT,
     },
     vaultTypeAdapterConfig: {
@@ -175,7 +175,7 @@ async function runBatchSizeBenchmark(
 
   for (let iteration = 1; iteration <= ITERATIONS; iteration += 1) {
     const sdk = await buildEulerSDK({
-      rpcUrls: getRpcUrls(),
+      config: { rpcUrls: getRpcUrls() },
       v3ApiKey: process.env.VITE_EULER_V3_API_KEY,
       accountServiceConfig: {
         adapter: "v3",
@@ -207,7 +207,7 @@ async function runBatchSizeBenchmark(
           endpoint: V3_API_ENDPOINT,
         },
       },
-      backendConfig: {
+      pricingServiceConfig: {
         endpoint: V3_API_ENDPOINT,
       },
       vaultTypeAdapterConfig: {

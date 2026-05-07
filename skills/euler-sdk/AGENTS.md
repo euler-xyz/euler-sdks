@@ -1,8 +1,8 @@
 # Euler SDK Agent Skill
 
-**Version 1.1.1**
+**Version 1.1.2**
 Euler Labs
-March 2026
+May 2026
 
 ---
 
@@ -29,6 +29,7 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 
 - `accountService` for account/sub-account state
 - `vaultMetaService` for mixed or unknown vault types
+- `walletService` for native/ERC20 wallet balances and direct/Permit2 allowance state
 - `executionService` for planning/encoding tx batches
   - executes generic `TransactionPlan` items, including direct `contractCall` items
 - `executionService` for plan simulation and pre-trade validation
@@ -36,6 +37,8 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 - `oracleAdapterService` for oracle adapter metadata keyed by normalized `adapter.oracle` address
 - `rewardsService` for reward reads and provider-specific reward claim planning
 - `eulerLabelsService` plus exported label helpers for normalized products, Earn entries, notices, restrictions, and product/vault flags
+
+Built-in scalar config resolves as `config` prop, explicit SDK option, `EULER_SDK_*` env var, then default. Prefer `EULER_SDK_RPC_URL_<chainId>` for examples and `buildEulerSDK({ config: { rpcUrls, v3ApiUrl, v3ApiKey } })` for app-level runtime wiring that cannot rely on env.
 
 Do not assume all vaults are `EVault`. Use `vaultMetaService` for polymorphic routing.
 Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and map `errors[].locations[]` by owner reference for UI diagnostics.
@@ -72,7 +75,7 @@ Prefer `planX` APIs over `encodeX` for user-facing transaction flows. Resolve re
 Execution order:
 
 1. Build plan (`planDeposit`, `planBorrow`, `planRepayWithSwap`, etc.) or reward claim plan in `rewardsService`
-2. Resolve approvals with `resolveRequiredApprovals({ chainId, account, plan })`, or use `resolveRequiredApprovalsWithWallet({ chainId, wallet, plan })` when wallet data was already fetched
+2. Resolve approvals with `resolveRequiredApprovals({ chainId, account, plan })`, or fetch requested assets/spenders through `walletService.fetchWallet(...)` and use `resolveRequiredApprovalsWithWallet({ chainId, wallet, plan })`
 3. Execute `contractCall` items directly when present
 4. Send `evcBatch` transaction(s)
 5. Wait for receipts and refresh UI state
@@ -105,6 +108,7 @@ Use per-query stale times:
 - minutes: perspectives/providers/reward catalogs
 - minutes: bundled intrinsic APY lookups such as `queryV3IntrinsicApy`
 - 10-30s: account/vault/wallet state
+- ~5s: wallet balance and allowance queries (`queryNativeBalance`, `queryTokenBalances`, `queryAllowance`, `queryPermit2Allowance`)
 - ~10s: swap quotes and Pyth update payloads
 
 This keeps repeated service-level `fetch*` calls inexpensive.
@@ -142,6 +146,7 @@ Re-quote near submission time and compare providers for advanced routing UIs.
 Use SDK examples as templates:
 
 - `packages/euler-v2-sdk/examples/execution/*` for transaction flows
+- `packages/euler-v2-sdk/examples/wallets/*` for wallet balance and allowance reads
 - `packages/euler-v2-sdk/examples/simulations/*` for pre-checks
 - `sdk.executionService.executeTransactionPlan(...)` for plugin processing + approval + Permit2 + EVC execution logic
 - `packages/euler-v2-sdk/examples/run-examples.sh` for fork-based regression runs
@@ -155,6 +160,7 @@ Promote constants to config/env and add explicit chain/account flags in CLI tool
 - `packages/euler-v2-sdk/README.md`
 - `packages/euler-v2-sdk/docs/basic-usage.md`
 - `packages/euler-v2-sdk/docs/services.md`
+- `packages/euler-v2-sdk/docs/wallet-service.md`
 - `packages/euler-v2-sdk/docs/entity-diagnostics.md`
 - `packages/euler-v2-sdk/docs/execution-service.md`
 - `packages/euler-v2-sdk/docs/simulations-and-state-overrides.md`

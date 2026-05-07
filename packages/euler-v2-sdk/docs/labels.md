@@ -21,7 +21,7 @@ import {
   isEulerLabelVaultFeatured,
 } from '@eulerxyz/euler-v2-sdk'
 
-const sdk = await buildEulerSDK({ rpcUrls: { 1: 'https://...' } })
+const sdk = await buildEulerSDK()
 const labelsData = await sdk.eulerLabelsService.fetchEulerLabelsData(1)
 
 const vaultAddress = '0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2'

@@ -33,7 +33,7 @@ import {
   type Address,
   } from "viem";
   import { mainnet } from "viem/chains";
-  import { account, initExample, rpcUrls,
+  import { account, initExample,
   exampleExecutionCallbacks,
 } from "../utils/config.js";
 import { printHeader } from "../utils/helpers.js";
@@ -55,7 +55,6 @@ async function feeFlowExample({
 }: Awaited<ReturnType<typeof initExample>>) {
   const chainId = mainnet.id;
   const sdk = await buildEulerSDK({
-    rpcUrls,
     eVaultServiceConfig: { adapter: "onchain" },
     eulerEarnServiceConfig: { adapter: "onchain" },
   });

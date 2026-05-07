@@ -14,7 +14,7 @@ export {
 export {
 	PricingBackendClient,
 	backendPriceToBigInt,
-	type BackendConfig,
 	type BackendPriceData,
 	type BackendPriceResponse,
+	type PricingServiceConfig,
 } from "./backendClient.js";

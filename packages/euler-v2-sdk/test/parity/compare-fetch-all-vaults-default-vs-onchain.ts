@@ -154,7 +154,7 @@ function buildExplicitOnchainOptions(
   const v3ApiKey = process.env.EULER_V3_API_KEY;
 
   return {
-    rpcUrls,
+    config: { rpcUrls },
     ...(v3ApiKey ? { v3ApiKey } : {}),
     plugins: buildParityPlugins(),
     accountServiceConfig: {
@@ -1439,7 +1439,7 @@ async function main() {
   const chainIds = getChainIds(rpcUrls);
   const sharedBuildQuery = createSharedParityBuildQuery();
   const baseSdkOptions: BuildSDKOptions = {
-    rpcUrls,
+    config: { rpcUrls },
     ...(process.env.EULER_V3_API_KEY
       ? { v3ApiKey: process.env.EULER_V3_API_KEY }
       : {}),

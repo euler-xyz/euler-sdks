@@ -5,6 +5,7 @@ import path from "node:path";
 
 export default defineConfig({
   plugins: [react(), basicSsl()],
+  envPrefix: ["VITE_", "EULER_SDK_"],
   server: {
     proxy: {
       "/api/swap": {

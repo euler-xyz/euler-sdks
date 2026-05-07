@@ -32,7 +32,7 @@ ERC4626Vault (base — address, shares, asset, totals)
   └── SecuritizeCollateralVault  (+ governor, supply cap)
 
 Account<TVaultEntity>    (owner, sub-accounts, positions, liquidity)
-Wallet                   (balances, allowances per spender)
+Wallet                   (native/ERC20 balances, direct allowances, Permit2 allowance metadata per spender)
 ```
 
 ### Progressive enrichment
@@ -194,7 +194,6 @@ Any service can be replaced at build time:
 
 ```typescript
 const sdk = await buildEulerSDK({
-  rpcUrls: { 1: 'https://...' },
   servicesOverrides: {
     priceService: myCustomPriceService,
     accountService: myCustomAccountService,
@@ -248,8 +247,8 @@ const portfolioVaultService = new EVaultService(
 **Separate SDK instances per chain or context:**
 
 ```typescript
-const mainnetSdk = await buildEulerSDK({ rpcUrls: { 1: mainnetRpc } })
-const baseSdk = await buildEulerSDK({ rpcUrls: { 8453: baseRpc } })
+const mainnetSdk = await buildEulerSDK({ config: { rpcUrls: { 1: mainnetRpc } } })
+const baseSdk = await buildEulerSDK({ config: { rpcUrls: { 8453: baseRpc } } })
 ```
 
 **Different cache strategies via `buildQuery`:**
@@ -257,13 +256,13 @@ const baseSdk = await buildEulerSDK({ rpcUrls: { 8453: baseRpc } })
 ```typescript
 // Long cache for static / slow-changing data
 const longCacheSdk = await buildEulerSDK({
-  rpcUrls,
+  config: { rpcUrls },
   buildQuery: buildQueryWithLongStaleTime,
 })
 
 // Short cache for real-time data
 const realtimeSdk = await buildEulerSDK({
-  rpcUrls,
+  config: { rpcUrls },
   buildQuery: buildQueryWithShortStaleTime,
 })
 ```
@@ -276,7 +275,7 @@ Register additional vault services to extend the entity union:
 type ExtendedVault = VaultEntity | MyCustomVault
 
 const sdk = await buildEulerSDK<ExtendedVault>({
-  rpcUrls,
+  config: { rpcUrls },
   additionalVaultServices: [
     { type: 'MyCustomVault', service: myCustomVaultService },
   ],

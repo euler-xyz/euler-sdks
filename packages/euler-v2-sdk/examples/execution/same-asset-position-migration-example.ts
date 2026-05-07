@@ -32,7 +32,6 @@ import {
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
   initExample,
-  rpcUrls,
   USDC_ADDRESS,
   USDT_ADDRESS,
   exampleExecutionCallbacks,
@@ -59,7 +58,6 @@ async function sameAssetPositionMigrationExample({
 	walletClient,
 }: Awaited<ReturnType<typeof initExample>>) {
 	const sdk = await buildEulerSDK({
-		rpcUrls,
 		accountServiceConfig: { adapter: "onchain" },
 		queryCacheConfig: { enabled: false },
 	});

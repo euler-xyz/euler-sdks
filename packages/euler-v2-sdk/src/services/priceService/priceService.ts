@@ -93,7 +93,7 @@ export interface IPriceService {
 		path?: string,
 	): Promise<ServiceResult<bigint | undefined>>;
 
-	// Layer 2: USD Prices (async — tries backend first, falls back to on-chain)
+	// Layer 2: USD Prices (async — tries the V3 pricing API first, falls back to on-chain)
 	fetchAssetUsdPrice(vault: ERC4626Vault): Promise<PriceResult | undefined>;
 	fetchAssetUsdPriceWithDiagnostics(
 		vault: ERC4626Vault,
@@ -196,7 +196,7 @@ export class PriceService implements IPriceService {
 
 	/**
 	 * Get the USD rate for a vault's unit of account.
-	 * Always tries backend first (UoA is a common denominator —
+	 * Always tries the V3 pricing API first (UoA is a common denominator —
 	 * using off-chain rates doesn't affect health factor/LTV ratios).
 	 * Falls back to on-chain utilsLens call.
 	 */
@@ -222,7 +222,7 @@ export class PriceService implements IPriceService {
 		let backendError: unknown;
 		let backendAttempted = false;
 
-		// Try backend first
+		// Try the V3 pricing API first
 		if (this.backendClient?.isConfigured) {
 			backendAttempted = true;
 			try {
@@ -246,7 +246,7 @@ export class PriceService implements IPriceService {
 			errors.push({
 				code: "FALLBACK_USED",
 				severity: "info",
-				message: "Backend UoA/USD rate unavailable; used on-chain fallback.",
+				message: "V3 UoA/USD rate unavailable; used on-chain fallback.",
 				locations: [
 					dataIssueLocation(
 						vaultDiagnosticOwner(vault.chainId, vault.address),
@@ -268,7 +268,7 @@ export class PriceService implements IPriceService {
 
 	/**
 	 * Get asset price in USD.
-	 * Tries backend first, falls back to on-chain oracle.
+	 * Tries the V3 pricing API first, falls back to on-chain oracle.
 	 * EVault: oraclePrice × uoaRate.
 	 * EulerEarn / SecuritizeCollateral: utilsLens or backend.
 	 */
@@ -288,7 +288,7 @@ export class PriceService implements IPriceService {
 		let backendError: unknown;
 		let backendAttempted = false;
 
-		// Try backend first
+		// Try the V3 pricing API first
 		if (this.backendClient?.isConfigured) {
 			backendAttempted = true;
 			try {
@@ -310,7 +310,7 @@ export class PriceService implements IPriceService {
 			errors.push({
 				code: "FALLBACK_USED",
 				severity: "info",
-				message: "Backend asset/USD price unavailable; used on-chain fallback.",
+				message: "V3 asset/USD price unavailable; used on-chain fallback.",
 				locations: [
 					dataIssueLocation(
 						vaultDiagnosticOwner(vault.chainId, vault.address),
@@ -344,7 +344,7 @@ export class PriceService implements IPriceService {
 
 	/**
 	 * Get a standalone asset price in USD by token address.
-	 * Tries backend first, then falls back to utilsLens.getAssetPriceInfo(asset, USD).
+	 * Tries the V3 pricing API first, then falls back to utilsLens.getAssetPriceInfo(asset, USD).
 	 */
 	async fetchAssetUsdPriceByAddress(
 		chainId: number,
@@ -367,7 +367,7 @@ export class PriceService implements IPriceService {
 		let backendError: unknown;
 		let backendAttempted = false;
 
-		// Try backend first
+		// Try the V3 pricing API first
 		if (this.backendClient?.isConfigured) {
 			backendAttempted = true;
 			try {
@@ -392,7 +392,7 @@ export class PriceService implements IPriceService {
 			errors.push({
 				code: "FALLBACK_USED",
 				severity: "info",
-				message: "Backend asset/USD price unavailable; used on-chain fallback.",
+				message: "V3 asset/USD price unavailable; used on-chain fallback.",
 				locations: [
 					dataIssueLocation(assetDiagnosticOwner(chainId, assetAddress), path),
 				],
@@ -420,7 +420,7 @@ export class PriceService implements IPriceService {
 
 	/**
 	 * Get collateral price in USD in the context of a liability vault.
-	 * Tries backend first, falls back to on-chain oracle.
+	 * Tries the V3 pricing API first, falls back to on-chain oracle.
 	 * Collateral pricing ALWAYS uses the liability vault's oracle for on-chain fallback.
 	 */
 	async fetchCollateralUsdPrice(
@@ -447,7 +447,7 @@ export class PriceService implements IPriceService {
 		let backendError: unknown;
 		let backendAttempted = false;
 
-		// Try backend first
+		// Try the V3 pricing API first
 		if (this.backendClient?.isConfigured) {
 			backendAttempted = true;
 			try {
@@ -473,7 +473,7 @@ export class PriceService implements IPriceService {
 				code: "FALLBACK_USED",
 				severity: "info",
 				message:
-					"Backend collateral/USD price unavailable; used on-chain fallback.",
+					"V3 collateral/USD price unavailable; used on-chain fallback.",
 				locations: [
 					dataIssueLocation(
 						vaultCollateralDiagnosticOwner(

@@ -48,7 +48,6 @@ import {
 	EULER_PRIME_WETH_VAULT,
 	exampleExecutionCallbacks,
 	initExample,
-	rpcUrls,
 	USDC_ADDRESS,
 	USDT_ADDRESS,
 	WETH_ADDRESS,
@@ -76,7 +75,6 @@ async function multiplyFromSavingsExample({
 }: Awaited<ReturnType<typeof initExample>>) {
 	// Build the SDK
 	const sdk = await buildEulerSDK({
-		rpcUrls,
 		accountServiceConfig: { adapter: "onchain" },
 		queryCacheConfig: { enabled: false },
 	});

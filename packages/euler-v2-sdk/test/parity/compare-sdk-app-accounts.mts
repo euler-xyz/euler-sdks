@@ -760,8 +760,8 @@ function compareAccounts(appAccount, sdkAccount) {
 
 function buildSdkOptions() {
   return {
-    rpcUrls: { [MAINNET_CHAIN_ID]: RPC_URL },
-    backendConfig: { endpoint: INDEXER_HOST },
+    config: { rpcUrls: { [MAINNET_CHAIN_ID]: RPC_URL } },
+    pricingServiceConfig: { endpoint: INDEXER_HOST },
     eVaultServiceConfig: { adapter: "onchain" },
     eulerEarnServiceConfig: { adapter: "onchain" },
     accountServiceConfig: { adapter: "onchain" },

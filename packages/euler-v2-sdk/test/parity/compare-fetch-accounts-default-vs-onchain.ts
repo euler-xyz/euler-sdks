@@ -240,7 +240,7 @@ function buildExplicitOnchainOptions(
   const v3ApiKey = process.env.EULER_V3_API_KEY;
 
   return {
-    rpcUrls,
+    config: { rpcUrls },
     ...(v3ApiKey ? { v3ApiKey } : {}),
     accountServiceConfig: {
       adapter: "onchain",
@@ -1076,7 +1076,7 @@ async function main() {
 
   const sharedBuildQuery = createSharedParityBuildQuery();
   const baseSdkOptions: BuildSDKOptions = {
-    rpcUrls: { [CHAIN_ID]: rpcUrl },
+    config: { rpcUrls: { [CHAIN_ID]: rpcUrl } },
     ...(process.env.EULER_V3_API_KEY ? { v3ApiKey: process.env.EULER_V3_API_KEY } : {}),
     buildQuery: sharedBuildQuery,
   };

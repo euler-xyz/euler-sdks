@@ -28,7 +28,7 @@ import "dotenv/config";
 import { formatUnits, getAddress, parseUnits, stringify, zeroAddress } from "viem";
 import { mainnet } from "viem/chains";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
-import { account, rpcUrls, USDC_ADDRESS } from "../utils/config.js";
+import { account, useAnvilRpcForSDK, USDC_ADDRESS } from "../utils/config.js";
 
 const WSTETH_ADDRESS = getAddress("0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0");
 const WSTETH_VAULT = getAddress("0xbC4B4AC47582c3E38Ce5940B80Da65401F4628f1");
@@ -39,7 +39,8 @@ const SWAP_QUOTE_INDEX = 0;
 const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800;
 
 async function simulateDepositWithSwapFromWalletExample() {
-  const sdk = await buildEulerSDK({ rpcUrls });
+  useAnvilRpcForSDK();
+  const sdk = await buildEulerSDK();
 
   console.log(`Account:         ${account.address}`);
   console.log(`Sub-account:     ${SUB_ACCOUNT_ADDRESS}`);

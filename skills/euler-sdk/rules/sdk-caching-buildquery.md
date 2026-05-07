@@ -35,6 +35,7 @@ Recommended stale-time strategy:
 - minutes: perspectives, providers, reward campaign catalogs
 - minutes: external intrinsic APY queries such as `queryV3IntrinsicApy`
 - 10-30s: vault/account/wallet state
+- ~5s: transaction-sensitive wallet reads such as `queryNativeBalance`, `queryTokenBalances`, `queryAllowance`, and `queryPermit2Allowance`
 - ~10s: swap quotes and Pyth update payloads
 
 This keeps service-level `fetch*` orchestration cheap because underlying `query*` calls are cached.

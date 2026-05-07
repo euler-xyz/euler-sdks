@@ -36,7 +36,6 @@ import {
 	EULER_PRIME_USDC_VAULT,
 	exampleExecutionCallbacks,
 	initExample,
-	rpcUrls,
 	USDC_ADDRESS,
 } from "../utils/config.js";
 import { logOperationResult, printHeader } from "../utils/helpers.js";
@@ -62,7 +61,7 @@ async function mintExample({
 	walletClient,
 }: Awaited<ReturnType<typeof initExample>>) {
 	// Build the SDK
-	const sdk = await buildEulerSDK({ rpcUrls });
+	const sdk = await buildEulerSDK();
 
 	// Fetch the account. NOTE: fetchAccount function depends on indexing for sub-account discovery,
 	// it will not detect data created on local chain, like previous example runs. Use fetchSubAccount for that.

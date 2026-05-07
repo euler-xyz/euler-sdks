@@ -1,10 +1,10 @@
 ---
 name: euler-sdk
-description: Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. This skill should be used when implementing apps on top of the `euler-v2-sdk` package, including account/vault reads, transaction planning, approval handling, simulation, swaps, plugins, and query caching. Triggers on tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `executionService`, `swapService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`.
+description: Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. This skill should be used when implementing apps on top of the `euler-v2-sdk` package, including account/vault/wallet reads, transaction planning, approval handling, simulation, swaps, plugins, and query caching. Triggers on tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `walletService`, `executionService`, `swapService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`.
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.1.1"
+  version: "1.1.2"
 ---
 
 # Euler SDK Agent Skill
@@ -39,8 +39,10 @@ Reference these guidelines when:
 ### Core SDK Entry Points
 
 - `buildEulerSDK({...})` as composition root
+- `buildEulerSDK({ config: {...} })` for SDK-owned runtime config; `config` overrides explicit options, `EULER_SDK_*` env vars, and defaults
 - `accountService` for account/sub-account positions
 - `vaultMetaService` when vault type is unknown or mixed
+- `walletService` for native/ERC20 wallet balances and direct/Permit2 allowance state
 - `executionService` for `planX`/`encodeX` and approvals
 - `executionService` for plugin-aware plan simulation, gas estimation, execution, and pre-execution validation
 - `swapService` for provider quotes and route payloads
@@ -49,6 +51,8 @@ Reference these guidelines when:
 - `oracleAdapterService.fetchOracleAdapterMap(chainId)` returns metadata keyed by normalized `adapter.oracle` address
 
 Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and map `errors[].locations[]` by owner reference for UI diagnostics.
+
+Built-in scalar config resolves as `config` prop, explicit SDK option, `EULER_SDK_*` env var, then default. RPC URLs can come from `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`. Reference `packages/euler-v2-sdk/docs/config-through-env.md` for the env/config field list.
 
 ### Preferred UI Pattern
 

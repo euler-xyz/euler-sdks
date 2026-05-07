@@ -16,7 +16,7 @@
  *
  * REQUIREMENTS:
  *   - An RPC endpoint that supports eth_createAccessList (all major providers)
- *   - Set RPC_URL_1 env var, or default to local Anvil (http://127.0.0.1:8545)
+ *   - Set EULER_SDK_RPC_URL_1 env var for the RPC endpoint.
  *
  * RUN:
  *   npx tsx simulations/simulate-deposit-example.ts
@@ -37,8 +37,6 @@ import {
   getSubAccountAddress,
 } from "@eulerxyz/euler-v2-sdk"
 
-import { getRpcUrls } from "../utils/config.js"
-
 // Any address — doesn't need to hold any tokens
 const TEST_ADDRESS = getAddress("0x0000000000000000000000000000000000001234")
 const SUB_ACCOUNT_ID = 0
@@ -51,7 +49,7 @@ const DEPOSIT_AMOUNT = parseUnits("1000", 6) // 1000 USDC
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function simulateDeposit() {
-  const sdk = await buildEulerSDK({ rpcUrls: getRpcUrls() })
+  const sdk = await buildEulerSDK()
 
   console.log(`Account:      ${TEST_ADDRESS}`)
   console.log(`Sub-account:  ${SUB_ACCOUNT_ADDRESS}`)

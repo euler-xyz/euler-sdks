@@ -24,7 +24,7 @@ import {
   import { mainnet } from "viem/chains";
   import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
   import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-  import { rpcUrls, account, initExample, USDC_ADDRESS, EULER_PRIME_USDC_VAULT,
+  import { account, initExample, USDC_ADDRESS, EULER_PRIME_USDC_VAULT,
   exampleExecutionCallbacks,
 } from "../utils/config.js";
 import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
@@ -39,7 +39,6 @@ const DISABLE_COLLATERAL = true;
 async function redeemExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
   // Build the SDK
   const sdk = await buildEulerSDK({
-    rpcUrls,
     accountServiceConfig: { adapter: "onchain" },
     queryCacheConfig: { enabled: false },
   });

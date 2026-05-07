@@ -577,8 +577,8 @@ function buildSdkOptions() {
   );
 
   const common = {
-    rpcUrls: ADAPTER_MODE === "onchain" ? onchainSupportedRpcUrls : comparisonRpcUrls,
-    backendConfig: { endpoint: INDEXER_HOST },
+    config: { rpcUrls: ADAPTER_MODE === "onchain" ? onchainSupportedRpcUrls : comparisonRpcUrls },
+    pricingServiceConfig: { endpoint: INDEXER_HOST },
     intrinsicApyServiceConfig: {
       v3AdapterConfig: {
         endpoint: V3_HOST,

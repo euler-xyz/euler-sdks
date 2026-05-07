@@ -47,7 +47,6 @@ import {
   import { fetchAndLogSubAccounts, printHeader } from "../utils/helpers.js";
   import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
   import {
-  rpcUrls,
   account,
   initExample,
   USDC_ADDRESS,
@@ -73,7 +72,6 @@ async function depositWithSwapFromWalletExample({
 }: Awaited<ReturnType<typeof initExample>>) {
   // Build the SDK
   const sdk = await buildEulerSDK({
-    rpcUrls,
     accountServiceConfig: { adapter: "onchain" },
     queryCacheConfig: { enabled: false },
   });
