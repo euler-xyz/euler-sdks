@@ -49,6 +49,7 @@ Reference these guidelines when:
 - `rewardsService` for reward reads and provider-specific claim plans
 - `eulerLabelsService` plus exported `utils/eulerLabels` helpers for normalized labels metadata, notices, restrictions, and product/vault flags
 - `oracleAdapterService.fetchOracleAdapterMap(chainId)` returns metadata keyed by normalized `adapter.oracle` address
+- EVault entities expose decoded oracle routes: `debtPricingOracleAdapters` for the debt asset path and `collaterals[].oracleAdapters` for collateral paths; use `buildOracleAdapterQuoteRequests` to derive ordered adapter quote descriptors when the app owns execution.
 
 Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and map `errors[].locations[]` by owner reference for UI diagnostics.
 

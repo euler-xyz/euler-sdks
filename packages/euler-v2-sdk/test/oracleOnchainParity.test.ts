@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import { encodeAbiParameters, getAddress, zeroAddress } from "viem";
 import {
+	buildOracleAdapterQuoteRequest,
+	buildOracleAdapterQuoteRequests,
 	decodeOracleInfo,
 	decodeOracleResolvedVaults,
+	getOracleAdapterKey,
 } from "../src/utils/oracle.js";
 import { convertVaultInfoFullToIEVault } from "../src/services/vaults/eVaultService/adapters/eVaultOnchainAdapter/vaultInfoConverter.js";
 import { convertVault } from "../src/services/vaults/eVaultService/adapters/eVaultV3Adapter/eVaultV3AdapterConversions.js";
@@ -351,4 +354,57 @@ test("convertVault maps V3 oracle resolved vault rows", () => {
 			resolvedAssets: [resolvedAsset],
 		},
 	]);
+});
+
+test("buildOracleAdapterQuoteRequests builds quote descriptors from decoded adapters", () => {
+	const adapter = {
+		oracle: "0x0000000000000000000000000000000000000f00",
+		name: "ChainlinkOracle",
+		base: BASE,
+		quote: QUOTE,
+	} as const;
+	const missingDecimalsAdapter = {
+		...adapter,
+		oracle: "0x0000000000000000000000000000000000000f01",
+		base: "0x0000000000000000000000000000000000000bad",
+	} as const;
+
+	const { filteredAdapters, requests } = buildOracleAdapterQuoteRequests(
+		[adapter, missingDecimalsAdapter],
+		new Map([
+			[BASE.toLowerCase(), 6],
+			[QUOTE.toLowerCase(), 18],
+		]),
+	);
+
+	assert.deepEqual(filteredAdapters, [adapter]);
+	assert.equal(requests.length, 1);
+	assert.equal(requests[0]?.kind, "oracle-getQuote");
+	assert.equal(requests[0]?.target, adapter.oracle);
+	assert.equal(requests[0]?.amountIn, 1_000_000n);
+	assert.equal(requests[0]?.baseDecimals, 6);
+	assert.equal(requests[0]?.quoteDecimals, 18);
+	assert.equal(
+		getOracleAdapterKey(adapter),
+		`${adapter.oracle.toLowerCase()}:${BASE.toLowerCase()}:${QUOTE.toLowerCase()}`,
+	);
+});
+
+test("buildOracleAdapterQuoteRequest treats ERC4626 vault adapters as convertToAssets descriptors", () => {
+	const adapter = {
+		oracle: "0x0000000000000000000000000000000000000f02",
+		name: "ERC4626Vault",
+		base: BASE,
+		quote: QUOTE,
+	} as const;
+
+	const request = buildOracleAdapterQuoteRequest(adapter, {
+		[BASE]: 8,
+		[QUOTE.toLowerCase()]: 18,
+	});
+
+	assert.equal(request?.kind, "erc4626-convertToAssets");
+	assert.equal(request?.target, adapter.oracle);
+	assert.equal(request?.amountIn, 100_000_000n);
+	assert.equal(request?.quoteDecimals, 18);
 });

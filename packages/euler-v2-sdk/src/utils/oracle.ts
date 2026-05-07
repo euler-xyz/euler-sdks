@@ -139,6 +139,10 @@ export function getOracleAdapterSortKey(adapter: OracleAdapterEntry): string {
 	return JSON.stringify(oracleAdapterStableRepr(adapter));
 }
 
+export function getOracleAdapterKey(adapter: OracleAdapterEntry): string {
+	return `${adapter.oracle.toLowerCase()}:${adapter.base.toLowerCase()}:${adapter.quote.toLowerCase()}`;
+}
+
 export function sortOracleAdapters(
 	adapters: OracleAdapterEntry[],
 ): OracleAdapterEntry[] {
@@ -155,6 +159,84 @@ export function sortOracleResolvedVaults(
 	return [...resolvedVaults].sort((left, right) =>
 		makeKey(left).localeCompare(makeKey(right)),
 	);
+}
+
+export type OracleAdapterDecimals =
+	| Map<string, number>
+	| Record<string, number | undefined>;
+
+export type OracleAdapterQuoteRequestKind =
+	| "oracle-getQuote"
+	| "erc4626-convertToAssets";
+
+export type OracleAdapterQuoteRequest = {
+	adapter: OracleAdapterEntry;
+	kind: OracleAdapterQuoteRequestKind;
+	target: Address;
+	amountIn: bigint;
+	base: Address;
+	quote: Address;
+	baseDecimals: number;
+	quoteDecimals: number;
+};
+
+const isValidDecimals = (value: number | undefined): value is number =>
+	value !== undefined && Number.isInteger(value) && value >= 0;
+
+const getDecimalsForAddress = (
+	decimals: OracleAdapterDecimals,
+	address: Address,
+): number | undefined => {
+	const keys = [address, address.toLowerCase()];
+	for (const key of keys) {
+		const value =
+			decimals instanceof Map ? decimals.get(key) : decimals[key];
+		if (isValidDecimals(value)) return value;
+	}
+	return undefined;
+};
+
+export function buildOracleAdapterQuoteRequest(
+	adapter: OracleAdapterEntry,
+	decimalsByAddress: OracleAdapterDecimals,
+): OracleAdapterQuoteRequest | null {
+	const baseDecimals = getDecimalsForAddress(decimalsByAddress, adapter.base);
+	const quoteDecimals = getDecimalsForAddress(decimalsByAddress, adapter.quote);
+	if (baseDecimals === undefined || quoteDecimals === undefined) return null;
+
+	return {
+		adapter,
+		kind:
+			adapter.name === "ERC4626Vault"
+				? "erc4626-convertToAssets"
+				: "oracle-getQuote",
+		target: adapter.oracle,
+		amountIn: 10n ** BigInt(baseDecimals),
+		base: adapter.base,
+		quote: adapter.quote,
+		baseDecimals,
+		quoteDecimals,
+	};
+}
+
+export function buildOracleAdapterQuoteRequests(
+	adapters: OracleAdapterEntry[],
+	decimalsByAddress: OracleAdapterDecimals,
+): {
+	filteredAdapters: OracleAdapterEntry[];
+	requests: OracleAdapterQuoteRequest[];
+} {
+	const filteredAdapters: OracleAdapterEntry[] = [];
+	const requests: OracleAdapterQuoteRequest[] = [];
+
+	for (const adapter of adapters) {
+		const request = buildOracleAdapterQuoteRequest(adapter, decimalsByAddress);
+		if (!request) continue;
+		filteredAdapters.push(adapter);
+		requests.push(request);
+	}
+
+	return { filteredAdapters, requests };
 }
 
 const isChainlinkOracleName = (name: string) =>
