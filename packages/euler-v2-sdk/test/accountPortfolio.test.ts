@@ -69,8 +69,8 @@ function subAccountData(
 	};
 }
 
-function usd(value: number): bigint {
-	return BigInt(Math.round(value * 1e6)) * 10n ** 12n;
+function usd(value: number): number {
+	return value;
 }
 
 function vault(address: string, overrides: Record<string, unknown> = {}) {

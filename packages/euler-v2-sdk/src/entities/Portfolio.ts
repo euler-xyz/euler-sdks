@@ -20,12 +20,16 @@ import {
 	computePositionsRoe,
 	computePositionsRoeBreakdown,
 	computeSupplyApyBreakdown,
+	computeCollateralMultiplier,
 } from "../utils/accountComputations.js";
 import {
 	resolveBorrowCollateralPositions,
 	resolveBorrowCollateralVaults,
 } from "../utils/accountPositionClassification.js";
-import { wadRatioToDecimal } from "../utils/normalization.js";
+import {
+	bigintRatioToNumber,
+	wadRatioToDecimal,
+} from "../utils/normalization.js";
 
 export interface PortfolioPositionFilterContext<
 	TVaultEntity extends IHasVaultAddress = IHasVaultAddress,
@@ -55,7 +59,7 @@ export interface PortfolioSavingsPosition<
 	subAccount: Address;
 	shares: bigint;
 	assets: bigint;
-	suppliedValueUsd?: bigint;
+	suppliedValueUsd?: number;
 	/** Total supply APY for this savings position in percentage points, including intrinsic APY and rewards. */
 	apy?: number;
 	/** Supply APY contribution breakdown for this savings position. */
@@ -80,18 +84,18 @@ export interface PortfolioBorrowPosition<
 	currentLTV?: bigint;
 	borrowed: bigint;
 	supplied: bigint;
-	price?: bigint;
-	primaryCollateralLiquidationPrice?: bigint;
-	borrowLiquidationPriceUsd?: bigint;
-	collateralLiquidationPricesUsd?: Record<Address, bigint>;
+	price?: number;
+	primaryCollateralLiquidationPrice?: number;
+	borrowLiquidationPriceUsd?: number;
+	collateralLiquidationPricesUsd?: Record<Address, number>;
 	liquidatable: boolean;
 	borrowLTV?: number;
 	liquidationLTV?: number;
 	accountLiquidationLTV?: number;
 	liabilityValueBorrowing?: bigint;
 	liabilityValueLiquidation?: bigint;
-	liabilityValueUsd?: bigint;
-	totalCollateralValueUsd?: bigint;
+	liabilityValueUsd?: number;
+	totalCollateralValueUsd?: number;
 	collateralValueLiquidation?: bigint;
 	timeToLiquidation?: DaysToLiquidation;
 	/** Effective collateral multiplier: supplied USD / equity USD. */
@@ -115,14 +119,14 @@ export interface IPortfolio<TVaultEntity extends IHasVaultAddress = never> {
 	readonly positions: AccountPosition<TVaultEntity>[];
 	readonly savings: PortfolioSavingsPosition<TVaultEntity>[];
 	readonly borrows: PortfolioBorrowPosition<TVaultEntity>[];
-	readonly totalSuppliedValueUsd?: bigint;
-	readonly totalBorrowedValueUsd?: bigint;
-	readonly netAssetValueUsd?: bigint;
+	readonly totalSuppliedValueUsd?: number;
+	readonly totalBorrowedValueUsd?: number;
+	readonly netAssetValueUsd?: number;
 	readonly netApy?: number;
 	readonly roe?: number;
 	readonly apyBreakdown?: YieldApyBreakdown;
 	readonly roeBreakdown?: YieldApyBreakdown;
-	readonly totalRewardsValueUsd?: bigint;
+	readonly totalRewardsValueUsd?: number;
 }
 
 /**
@@ -195,7 +199,9 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 	}
 
 	/** Alias for callers using new-position terminology. */
-	getNewSubAccount(options: GetNextSubAccountOptions = {}): Address | undefined {
+	getNewSubAccount(
+		options: GetNextSubAccountOptions = {},
+	): Address | undefined {
 		return this.getNextSubAccount(options);
 	}
 
@@ -340,20 +346,20 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 	}
 
 	/** Sum of supplied USD value across positions that pass the portfolio filter. */
-	get totalSuppliedValueUsd(): bigint | undefined {
+	get totalSuppliedValueUsd(): number | undefined {
 		return sumYieldPositionUsd(this.yieldPositions, "suppliedValueUsd");
 	}
 
 	/** Sum of borrowed USD value across positions that pass the portfolio filter. */
-	get totalBorrowedValueUsd(): bigint | undefined {
+	get totalBorrowedValueUsd(): number | undefined {
 		return sumYieldPositionUsd(this.yieldPositions, "borrowedValueUsd");
 	}
 
 	/** Net asset value in USD: supplied minus borrowed. */
-	get netAssetValueUsd(): bigint | undefined {
+	get netAssetValueUsd(): number | undefined {
 		const supplied = this.totalSuppliedValueUsd;
 		if (supplied == null) return undefined;
-		return supplied - (this.totalBorrowedValueUsd ?? 0n);
+		return supplied - (this.totalBorrowedValueUsd ?? 0);
 	}
 
 	/** Net APY across positions that pass the portfolio filter. */
@@ -377,7 +383,7 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 	}
 
 	/** Total unclaimed rewards value in USD, delegated to the wrapped Account. */
-	get totalRewardsValueUsd(): bigint | undefined {
+	get totalRewardsValueUsd(): number | undefined {
 		return this.account.totalRewardsValueUsd;
 	}
 
@@ -443,8 +449,9 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 	}
 
 	private occupiedPositionSubAccounts(): Address[] {
-		return this.subAccountsWithPosition((position) =>
-			hasActiveSuppliedPosition(position) || position.borrowed > 0n,
+		return this.subAccountsWithPosition(
+			(position) =>
+				hasActiveSuppliedPosition(position) || position.borrowed > 0n,
 		);
 	}
 
@@ -482,11 +489,11 @@ function hasActiveSuppliedPosition<TVaultEntity extends IHasVaultAddress>(
 function sumYieldPositionUsd(
 	positions: AccountYieldPosition[],
 	field: "suppliedValueUsd" | "borrowedValueUsd",
-): bigint | undefined {
-	let total: bigint | undefined;
+): number | undefined {
+	let total: number | undefined;
 	for (const position of positions) {
 		if (position[field] != null) {
-			total = (total ?? 0n) + position[field]!;
+			total = (total ?? 0) + position[field]!;
 		}
 	}
 	return total;
@@ -512,15 +519,10 @@ function computeBorrowMultiplier<TVaultEntity extends IHasVaultAddress>(
 	borrow: AccountPosition<TVaultEntity>,
 	collaterals: AccountPosition<TVaultEntity>[],
 ): number | undefined {
-	const suppliedValueUsd = sumYieldPositionUsd(collaterals, "suppliedValueUsd");
-	if (suppliedValueUsd == null) return undefined;
-	const borrowedValueUsd = borrow.borrowedValueUsd;
-	if (borrowedValueUsd == null) return undefined;
-
-	const equity = suppliedValueUsd - borrowedValueUsd;
-	if (equity <= 0n) return undefined;
-
-	return Number(suppliedValueUsd) / Number(equity);
+	return computeCollateralMultiplier(
+		sumYieldPositionUsd(collaterals, "suppliedValueUsd"),
+		borrow.borrowedValueUsd,
+	);
 }
 
 function computeBorrowPositionPrimaryCollateralLiquidationPrice<
@@ -529,16 +531,19 @@ function computeBorrowPositionPrimaryCollateralLiquidationPrice<
 	collateral: AccountPosition<TVaultEntity> | undefined,
 	collateralValueLiquidation: bigint | undefined,
 	liabilityValueBorrowing: bigint | undefined,
-): bigint {
+): number {
 	const collateralValue = collateralValueLiquidation ?? 0n;
 	const liabilityValue = liabilityValueBorrowing ?? 0n;
-	if (collateralValue === 0n) return 0n;
+	if (collateralValue === 0n) return 0;
 
 	const collateralPrice =
-		(collateral?.vault as { marketPriceUsd?: bigint } | undefined)
-			?.marketPriceUsd ?? 0n;
+		(collateral?.vault as { marketPriceUsd?: number } | undefined)
+			?.marketPriceUsd ?? 0;
 
-	return (collateralPrice * liabilityValue) / collateralValue;
+	return (
+		collateralPrice *
+		(bigintRatioToNumber(liabilityValue, collateralValue) ?? 0)
+	);
 }
 
 function computeBorrowPositionLiquidatable(

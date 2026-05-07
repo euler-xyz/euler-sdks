@@ -29,6 +29,7 @@ import {
   formatPercentPoints,
   formatPriceUsd,
   formatWad,
+  tokenAmountToUsdValue,
 } from "../utils/format.ts";
 import { getEffectiveBorrowApy, getEffectiveSupplyApy } from "../utils/apy.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
@@ -106,12 +107,8 @@ function formatPairPrice(
   debtVault: EVault | undefined
 ): { primary: string; secondary: string } {
   if (!collateralVault || !debtVault) return { primary: "-", secondary: "-" };
-  const collateralUsd = collateralVault.marketPriceUsd
-    ? Number(collateralVault.marketPriceUsd) / 1e18
-    : 0;
-  const debtUsd = debtVault.marketPriceUsd
-    ? Number(debtVault.marketPriceUsd) / 1e18
-    : 0;
+  const collateralUsd = collateralVault.marketPriceUsd ?? 0;
+  const debtUsd = debtVault.marketPriceUsd ?? 0;
   if (!collateralUsd || !debtUsd) return { primary: "-", secondary: "-" };
   const ratio = collateralUsd / debtUsd;
   const inverse = debtUsd / collateralUsd;
@@ -393,11 +390,11 @@ export function BorrowPairPage() {
 
   const collateralUsdPrice =
     collateralVault?.marketPriceUsd !== undefined
-      ? Number(collateralVault.marketPriceUsd) / 1e18
+      ? collateralVault.marketPriceUsd
       : undefined;
   const debtUsdPrice =
     debtVault?.marketPriceUsd !== undefined
-      ? Number(debtVault.marketPriceUsd) / 1e18
+      ? debtVault.marketPriceUsd
       : undefined;
 
   const previewSubAccount = useMemo(() => {
@@ -973,8 +970,11 @@ export function BorrowPairPage() {
   const collateralBalanceUsd =
     walletBalance !== undefined && collateralVault.marketPriceUsd !== undefined
       ? formatPriceUsd(
-          (walletBalance * collateralVault.marketPriceUsd) /
-            10n ** BigInt(collateralVault.asset.decimals)
+          tokenAmountToUsdValue(
+            walletBalance,
+            collateralVault.asset.decimals,
+            collateralVault.marketPriceUsd
+          )
         )
       : "-";
 

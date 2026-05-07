@@ -32,7 +32,7 @@ portfolio.savings
 //   subAccount: Address
 //   shares: bigint
 //   assets: bigint
-//   suppliedValueUsd?: bigint
+//   suppliedValueUsd?: number
 //   apy?: number                 // percentage points, e.g. 5 = 5%
 //   apyBreakdown?: YieldApyBreakdown
 // }>
@@ -50,16 +50,16 @@ portfolio.borrows
 //   currentLTV?: bigint
 //   borrowed: bigint
 //   supplied: bigint
-//   price?: bigint
-//   primaryCollateralLiquidationPrice?: bigint
-//   borrowLiquidationPriceUsd?: bigint
-//   collateralLiquidationPricesUsd?: Record<Address, bigint>
+//   price?: number
+//   primaryCollateralLiquidationPrice?: number
+//   borrowLiquidationPriceUsd?: number
+//   collateralLiquidationPricesUsd?: Record<Address, number>
 //   liquidatable: boolean
 //   borrowLTV?: number
 //   liquidationLTV?: number
 //   accountLiquidationLTV?: number
-//   liabilityValueUsd?: bigint
-//   totalCollateralValueUsd?: bigint
+//   liabilityValueUsd?: number
+//   totalCollateralValueUsd?: number
 //   timeToLiquidation?: DaysToLiquidation
 //   multiplier?: number
 //   netApy?: number              // percentage points

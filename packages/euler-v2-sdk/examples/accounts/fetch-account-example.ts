@@ -19,6 +19,13 @@ import { buildEulerSDK, createPythPlugin } from "@eulerxyz/euler-v2-sdk";
 // Default: a known address with Euler positions on mainnet
 const DEFAULT_OWNER = "0x75cFE4ef963232ae8313aC33e21fC39241338618" as Address;
 
+function formatUsd(value: number): string {
+  return `$${value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 async function fetchAccountExample() {
   const owner = (process.argv[2] as Address) || DEFAULT_OWNER;
   const sdk = await buildEulerSDK({ plugins: [createPythPlugin()] });
@@ -84,13 +91,13 @@ async function fetchAccountExample() {
 
       // Market price (from populateMarketPrices)
       if (pos.marketPriceUsd != null) {
-        console.log(`    Market Price:  $${formatUnits(pos.marketPriceUsd, 18)}`);
+        console.log(`    Market Price:  ${formatUsd(pos.marketPriceUsd)}`);
       }
       if (pos.suppliedValueUsd != null) {
-        console.log(`    Supplied USD:  $${formatUnits(pos.suppliedValueUsd, 18)}`);
+        console.log(`    Supplied USD:  ${formatUsd(pos.suppliedValueUsd)}`);
       }
       if (pos.borrowedValueUsd != null) {
-        console.log(`    Borrowed USD:  $${formatUnits(pos.borrowedValueUsd, 18)}`);
+        console.log(`    Borrowed USD:  ${formatUsd(pos.borrowedValueUsd)}`);
       }
 
       // Labels (from populateLabels)

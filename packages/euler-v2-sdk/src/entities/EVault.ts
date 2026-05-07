@@ -25,7 +25,7 @@ import {
 	type IERC4626Vault,
 	type IERC4626VaultConversion,
 	VIRTUAL_DEPOSIT_AMOUNT,
-	type PriceWad,
+	type PriceUsd,
 } from "./ERC4626Vault.js";
 import type { IPriceService } from "../services/priceService/index.js";
 import {
@@ -44,7 +44,10 @@ import {
 	mapDataIssueLocations,
 	withPathPrefix,
 } from "../utils/entityDiagnostics.js";
-import { bigintPercentage } from "../utils/normalization.js";
+import {
+	bigintPercentage,
+	tokenAmountToUsdValue,
+} from "../utils/normalization.js";
 
 export type EVaultHookedOperations = {
 	deposit: boolean;
@@ -143,7 +146,7 @@ export interface IEVaultCollateral {
 	oraclePriceRaw: OraclePrice; // shouldn't be used directly, use EVault price getters instead
 	vault?: VaultEntity;
 	oracleAdapters?: OracleAdapterEntry[];
-	marketPriceUsd?: PriceWad;
+	marketPriceUsd?: PriceUsd;
 }
 
 export interface EVaultCollateral extends IEVaultCollateral {
@@ -159,8 +162,8 @@ export interface EVaultCollateralRamping {
 }
 
 export type RiskPrice = {
-	priceLiquidation: PriceWad;
-	priceBorrowing: PriceWad;
+	priceLiquidation: bigint;
+	priceBorrowing: bigint;
 };
 
 export interface IEVault extends IERC4626Vault {
@@ -398,36 +401,33 @@ export class EVault
 
 	async fetchUnitOfAccountMarketPriceUsd(
 		priceService: IPriceService,
-	): Promise<PriceWad | undefined> {
+	): Promise<number | undefined> {
 		return priceService.fetchUnitOfAccountUsdRate(this);
 	}
 
 	async fetchCollateralMarketPriceUsd(
 		collateralVault: ERC4626Vault,
 		priceService: IPriceService,
-	): Promise<PriceWad | undefined> {
+	): Promise<number | undefined> {
 		const price = await priceService.fetchCollateralUsdPrice(
 			this,
 			collateralVault,
 		);
 		if (!price) return undefined;
-		return price.amountOutMid;
+		return price;
 	}
 
 	async fetchCollateralMarketValueUsd(
 		amount: bigint,
 		collateralVault: ERC4626Vault,
 		priceService: IPriceService,
-	): Promise<bigint | undefined> {
+	): Promise<number | undefined> {
 		const price = await priceService.fetchCollateralUsdPrice(
 			this,
 			collateralVault,
 		);
 		if (!price) return undefined;
-		return (
-			(amount * price.amountOutMid) /
-			10n ** BigInt(collateralVault.asset.decimals)
-		);
+		return tokenAmountToUsdValue(amount, collateralVault.asset.decimals, price);
 	}
 
 	async populateCollaterals(
@@ -512,7 +512,7 @@ export class EVault
 				this,
 				"$.marketPriceUsd",
 			);
-			this.marketPriceUsd = priced.result?.amountOutMid;
+			this.marketPriceUsd = priced.result;
 			errors.push(...priced.errors);
 		} catch (error) {
 			errors.push({
@@ -541,7 +541,7 @@ export class EVault
 							collateral.vault as ERC4626Vault,
 							`$.collaterals[${index}].marketPriceUsd`,
 						);
-					collateral.marketPriceUsd = priced.result?.amountOutMid;
+					collateral.marketPriceUsd = priced.result;
 					errors.push(...priced.errors);
 				} catch (error) {
 					errors.push({

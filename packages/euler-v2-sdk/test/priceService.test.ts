@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import { PriceService } from "../src/services/priceService/priceService.js";
-import { backendPriceToBigInt } from "../src/services/priceService/backendClient.js";
+import { normalizeBackendPrice } from "../src/services/priceService/backendClient.js";
 
 const CHAIN_ID = 1;
 const ASSET = "0x00000000000000000000000000000000000000aa" as const;
@@ -30,16 +30,11 @@ test("fetchAssetUsdPriceByAddress returns backend price when available", async (
 		isConfigured: true,
 		queryV3Price: async () => ({ price: "12.34" }),
 	} as never);
-	const expectedPrice = backendPriceToBigInt("12.34");
+	const expectedPrice = normalizeBackendPrice("12.34");
 
 	const price = await service.fetchAssetUsdPriceByAddress(CHAIN_ID, ASSET);
 
-	assert.deepEqual(price, {
-		amountOutMid: expectedPrice,
-		amountOutAsk: expectedPrice,
-		amountOutBid: expectedPrice,
-		decimals: 18,
-	});
+	assert.equal(price, expectedPrice);
 });
 
 test("fetchAssetUsdPriceByAddress falls back to on-chain asset pricing", async () => {
@@ -60,11 +55,6 @@ test("fetchAssetUsdPriceByAddress falls back to on-chain asset pricing", async (
 		ASSET,
 	);
 
-	assert.deepEqual(result.result, {
-		amountOutMid: 42000000000000000000n,
-		amountOutAsk: 42000000000000000000n,
-		amountOutBid: 42000000000000000000n,
-		decimals: 18,
-	});
+	assert.equal(result.result, 42);
 	assert.equal(result.errors?.[0]?.code, "FALLBACK_USED");
 });

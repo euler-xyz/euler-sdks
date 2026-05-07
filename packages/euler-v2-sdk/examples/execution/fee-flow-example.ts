@@ -44,9 +44,24 @@ type FeeFlowCandidate = {
   protocolFeesAssets: bigint;
   feeFlowAssets: bigint;
   claimableAssets: bigint;
-  claimableValueUsd: bigint;
+  claimableValueUsd: number;
 };
 
+function tokenAmountToUsdValue(
+  amount: bigint,
+  decimals: number,
+  priceUsd: number | undefined,
+): number {
+  if (priceUsd === undefined) return 0;
+  return Number(formatUnits(amount, decimals)) * priceUsd;
+}
+
+function formatUsd(value: number): string {
+  return `$${value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
 
 async function feeFlowExample({
   walletClient,
@@ -129,7 +144,7 @@ async function feeFlowExample({
       `${String(index + 1).padStart(2, " ")}. ${candidate.vault.asset.symbol.padEnd(8)} ` +
       `${candidate.vault.address} ` +
       `claimable=${formatUnits(candidate.claimableAssets, candidate.vault.asset.decimals)} ` +
-      `value=$${formatUnits(candidate.claimableValueUsd, 18)}`
+      `value=${formatUsd(candidate.claimableValueUsd)}`
     );
   });
 
@@ -239,10 +254,11 @@ async function buildFeeFlowCandidates(
       const protocolFeesAssets = (vault.fees.accumulatedFeesAssets * protocolFeeBps) / 10_000n;
       const feeFlowAssets = feeFlowAssetsByVault.get(vault.address.toLowerCase()) ?? 0n;
       const claimableAssets = protocolFeesAssets + feeFlowAssets;
-      const claimableValueUsd =
-        vault.marketPriceUsd === undefined
-          ? 0n
-          : (claimableAssets * vault.marketPriceUsd) / 10n ** BigInt(vault.asset.decimals);
+      const claimableValueUsd = tokenAmountToUsdValue(
+        claimableAssets,
+        vault.asset.decimals,
+        vault.marketPriceUsd,
+      );
 
       return {
         vault,

@@ -19,9 +19,9 @@ import { buildEulerSDK, createPythPlugin, type EVault } from "@eulerxyz/euler-v2
 
 const VAULT_ADDRESS = EULER_PRIME_USDC_VAULT;
 
-function formatUsd(priceWad: bigint | undefined): string {
-  if (priceWad === undefined) return "N/A";
-  return `$${Number(formatUnits(priceWad, 18)).toFixed(4)}`;
+function formatUsd(priceUsd: number | undefined): string {
+  if (priceUsd === undefined) return "N/A";
+  return `$${priceUsd.toFixed(4)}`;
 }
 
 async function fetchVaultDetailsExample() {

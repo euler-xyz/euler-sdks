@@ -8,7 +8,11 @@ import {
 } from "@eulerxyz/euler-v2-sdk";
 import { useSDK } from "../context/SdkContext.tsx";
 import { useAllVaults } from "../queries/sdkQueries.ts";
-import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
+import {
+  formatBigInt,
+  formatPriceUsd,
+  tokenAmountToUsdValue,
+} from "../utils/format.ts";
 import { getEffectiveBorrowApy, getEffectiveSupplyApy } from "../utils/apy.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 
@@ -36,7 +40,7 @@ type BorrowRow = {
   maxMultiplier?: number;
   lltv: number;
   liquidityAssets: bigint;
-  liquidityUsd?: bigint;
+  liquidityUsd?: number;
 };
 
 function pct(value: number | undefined): string {
@@ -62,20 +66,12 @@ function normalizeLltv(value: number | bigint): number {
   return value > 1 ? value / 10_000 : value;
 }
 
-function normalizeBigInt(value: bigint | number | string | undefined): bigint | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value === "bigint") return value;
-  try {
-    return BigInt(value);
-  } catch {
-    return undefined;
-  }
-}
-
-function calcVaultSupplyUsd(vault: EVault): bigint | undefined {
-  if (vault.marketPriceUsd === undefined) return undefined;
-  const decimals = BigInt(vault.asset.decimals ?? 18);
-  return (vault.totalAssets * vault.marketPriceUsd) / (10n ** decimals);
+function calcVaultSupplyUsd(vault: EVault): number | undefined {
+  return tokenAmountToUsdValue(
+    vault.totalAssets,
+    vault.asset.decimals,
+    vault.marketPriceUsd
+  );
 }
 
 function getMarketName(vault: EVault | undefined): string | undefined {
@@ -130,19 +126,12 @@ export function BorrowPage() {
 
     for (const debtVault of eVaults) {
       const borrowApy = calcVaultBorrowApy(debtVault);
-      const liquidityAssets =
-        normalizeBigInt(
-          debtVault.availableToBorrow as bigint | number | string | undefined
-        ) ?? 0n;
-      const marketPriceUsd = normalizeBigInt(
-        debtVault.marketPriceUsd as bigint | number | string | undefined
+      const liquidityAssets = debtVault.availableToBorrow;
+      const liquidityUsd = tokenAmountToUsdValue(
+        liquidityAssets,
+        debtVault.asset.decimals,
+        debtVault.marketPriceUsd
       );
-      const assetDecimals = Number(debtVault.asset.decimals ?? 18);
-      const liquidityUsd =
-        marketPriceUsd !== undefined
-          ? (liquidityAssets * marketPriceUsd) /
-            (10n ** BigInt(assetDecimals))
-          : undefined;
 
       for (const collateral of debtVault.collaterals) {
         const lltv = normalizeLltv(collateral.liquidationLTV as number | bigint);
@@ -186,12 +175,12 @@ export function BorrowPage() {
   }, [eVaults]);
 
   const marketSupplyUsdByName = useMemo(() => {
-    const totals = new Map<string, bigint>();
+    const totals = new Map<string, number>();
     for (const vault of eVaults) {
       const market = getMarketName(vault);
       if (!market) continue;
-      const suppliedUsd = calcVaultSupplyUsd(vault) ?? 0n;
-      totals.set(market, (totals.get(market) ?? 0n) + suppliedUsd);
+      const suppliedUsd = calcVaultSupplyUsd(vault) ?? 0;
+      totals.set(market, (totals.get(market) ?? 0) + suppliedUsd);
     }
     return totals;
   }, [eVaults]);
@@ -205,8 +194,8 @@ export function BorrowPage() {
       if (debtMarket) names.add(debtMarket);
     }
     return Array.from(names).sort((a, b) => {
-      const aSupply = marketSupplyUsdByName.get(a) ?? 0n;
-      const bSupply = marketSupplyUsdByName.get(b) ?? 0n;
+      const aSupply = marketSupplyUsdByName.get(a) ?? 0;
+      const bSupply = marketSupplyUsdByName.get(b) ?? 0;
       if (aSupply === bSupply) return a.localeCompare(b);
       return aSupply > bSupply ? -1 : 1;
     });

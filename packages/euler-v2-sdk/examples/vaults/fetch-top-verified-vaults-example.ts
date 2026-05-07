@@ -71,12 +71,16 @@ fetchTopVerifiedVaultsExample().catch((error) => {
 
 
 
-type WithUsd<T> = { vault: T; usd: bigint };
+type WithUsd<T> = { vault: T; usd: number };
 type RewardAction = "LEND" | "BORROW";
 
-function calcVaultUsd(totalAssets: bigint, decimals: number, marketPriceUsd: bigint | undefined): bigint {
-  if (marketPriceUsd === undefined) return 0n;
-  return (totalAssets * marketPriceUsd) / (10n ** BigInt(decimals));
+function calcVaultUsd(
+  totalAssets: bigint,
+  decimals: number,
+  marketPriceUsd: number | undefined
+): number {
+  if (marketPriceUsd === undefined) return 0;
+  return Number(formatUnits(totalAssets, decimals)) * marketPriceUsd;
 }
 
 function formatAssetAmount(amount: bigint, decimals: number): string {
@@ -87,9 +91,8 @@ function formatAssetAmount(amount: bigint, decimals: number): string {
   });
 }
 
-function formatUsdWad(usdWad: bigint): string {
-  const value = Number(formatUnits(usdWad, 18));
-  return `$${value.toLocaleString("en-US", {
+function formatUsd(usd: number): string {
+  return `$${usd.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -162,7 +165,7 @@ function printEVaultTable(rows: WithUsd<EVault>[]) {
       vault.shares.name.slice(0, 47).padEnd(48),
       vault.address.padEnd(44),
       `${formatAssetAmount(vault.totalAssets, vault.asset.decimals)} ${vault.asset.symbol}`.padEnd(20),
-      formatUsdWad(usd).padEnd(20),
+      formatUsd(usd).padEnd(20),
       formatPercent(getEVaultSupplyApyTotal(vault)).padEnd(12),
       formatPercent(getEVaultBorrowApyTotal(vault)),
     );
@@ -187,7 +190,7 @@ function printEulerEarnTable(rows: WithUsd<EulerEarn>[]) {
       vault.shares.name.slice(0, 47).padEnd(48),
       vault.address.padEnd(44),
       `${formatAssetAmount(vault.totalAssets, vault.asset.decimals)} ${vault.asset.symbol}`.padEnd(20),
-      formatUsdWad(usd).padEnd(20),
+      formatUsd(usd).padEnd(20),
       (supplyApy !== undefined ? formatPercent(supplyApy) : "N/A").padEnd(12),
       "N/A",
     );

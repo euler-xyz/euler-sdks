@@ -390,7 +390,7 @@ export class EVaultService implements IEVaultService {
 							eVault,
 							"$.marketPriceUsd",
 						);
-					eVault.marketPriceUsd = priced.result?.amountOutMid;
+					eVault.marketPriceUsd = priced.result;
 					errors.push(...priced.errors);
 				} catch (error) {
 					errors.push({
@@ -421,7 +421,7 @@ export class EVaultService implements IEVaultService {
 									collateral.vault,
 									"$.marketPriceUsd",
 								);
-							collateral.marketPriceUsd = priced.result?.amountOutMid;
+							collateral.marketPriceUsd = priced.result;
 							errors.push(...priced.errors);
 						} catch (error) {
 							errors.push({

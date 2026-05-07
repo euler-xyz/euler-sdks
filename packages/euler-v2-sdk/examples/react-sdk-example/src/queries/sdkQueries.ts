@@ -31,6 +31,7 @@ import { interceptSdkDataIfEnabled, isQueryIntercepted } from "./dataInterceptor
 import { getQueryBuildOverrides, useEnabledChainIds } from "./queryOptionsStore.ts";
 import { isEVault, StandardEVaultPerspectives } from "@eulerxyz/euler-v2-sdk";
 import { CHAIN_NAMES, EARN_CHAIN_IDS, SECURITIZE_VAULT_ADDRESSES } from "../config/chains.ts";
+import { tokenAmountToUsdValue } from "../utils/format.ts";
 
 type SecuritizeVault = NonNullable<
   Awaited<ReturnType<EulerSDK["securitizeVaultService"]["fetchVaults"]>>["result"][number]
@@ -309,7 +310,7 @@ export type FeeFlowCandidate = {
   protocolFeesAssets: bigint;
   feeFlowAssets: bigint;
   claimableAssets: bigint;
-  claimableValueUsd: bigint;
+  claimableValueUsd: number;
 };
 
 function isVaultFetchFailureIssue(issue: DiagnosticIssue): boolean {
@@ -1179,9 +1180,11 @@ export function useFeeFlowPageData() {
           const feeFlowAssets = feeFlowAssetsByVault.get(vault.address.toLowerCase()) ?? 0n;
           const claimableAssets = protocolFeesAssets + feeFlowAssets;
           const claimableValueUsd =
-            vault.marketPriceUsd === undefined
-              ? 0n
-              : (claimableAssets * vault.marketPriceUsd) / 10n ** BigInt(vault.asset.decimals);
+            tokenAmountToUsdValue(
+              claimableAssets,
+              vault.asset.decimals,
+              vault.marketPriceUsd
+            ) ?? 0;
 
           return {
             vault,

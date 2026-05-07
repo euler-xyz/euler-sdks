@@ -9,9 +9,10 @@ import type { DeploymentService } from "../deploymentService/deploymentService.j
 import { utilsLensPriceAbi } from "./utilsLensPriceAbi.js";
 import {
 	type PricingBackendClient,
-	backendPriceToBigInt,
+	normalizeBackendPrice,
 } from "./backendClient.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
+import { scaledBigIntToNumber } from "../../utils/normalization.js";
 import {
 	assetDiagnosticOwner,
 	compressDataIssues,
@@ -34,23 +35,24 @@ export const USD_ADDRESS: Address =
 
 const USD_DECIMALS = 18;
 
-const getDecimalScale = (decimals: number): bigint => 10n ** BigInt(decimals);
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 /**
- * Price result with mid, ask, and bid prices.
+ * Raw oracle price result with mid, ask, and bid prices.
  * `decimals` indicates the precision of the quote (output) asset —
- * e.g. 18 for USD amounts, or the UoA decimals for Layer-1 oracle prices.
+ * e.g. the UoA decimals for Layer-1 oracle prices.
  */
-export type PriceResult = {
+export type OraclePriceResult = {
 	amountOutMid: bigint;
 	amountOutAsk: bigint;
 	amountOutBid: bigint;
 	decimals: number;
 };
+
+/** USD price per whole token as a plain decimal number. */
+export type PriceResult = number;
 
 export type FormatAssetValueOptions = {
 	maxDecimals?: number;
@@ -76,7 +78,7 @@ export type FormattedAssetValue = {
 
 export interface IPriceService {
 	// Layer 1: Raw Oracle Prices (Unit of Account) — sync, from vault data
-	getAssetOraclePrice(vault: EVault): PriceResult | undefined;
+	getAssetOraclePrice(vault: EVault): OraclePriceResult | undefined;
 	getCollateralShareOraclePrice(
 		liabilityVault: EVault,
 		collateralVault: ERC4626Vault,
@@ -84,14 +86,14 @@ export interface IPriceService {
 	getCollateralOraclePrice(
 		liabilityVault: EVault,
 		collateralVault: ERC4626Vault,
-	): PriceResult | undefined;
+	): OraclePriceResult | undefined;
 
 	// UoA → USD rate (async — may call utilsLens or backend)
-	fetchUnitOfAccountUsdRate(vault: EVault): Promise<bigint | undefined>;
+	fetchUnitOfAccountUsdRate(vault: EVault): Promise<number | undefined>;
 	fetchUnitOfAccountUsdRateWithDiagnostics(
 		vault: EVault,
 		path?: string,
-	): Promise<ServiceResult<bigint | undefined>>;
+	): Promise<ServiceResult<number | undefined>>;
 
 	// Layer 2: USD Prices (async — tries the V3 pricing API first, falls back to on-chain)
 	fetchAssetUsdPrice(vault: ERC4626Vault): Promise<PriceResult | undefined>;
@@ -172,7 +174,7 @@ export class PriceService implements IPriceService {
 	// Layer 1: Raw Oracle Prices (Unit of Account)
 	// -----------------------------------------------------------------------
 
-	getAssetOraclePrice(vault: EVault): PriceResult | undefined {
+	getAssetOraclePrice(vault: EVault): OraclePriceResult | undefined {
 		return getAssetOraclePrice(vault);
 	}
 
@@ -186,7 +188,7 @@ export class PriceService implements IPriceService {
 	getCollateralOraclePrice(
 		liabilityVault: EVault,
 		collateralVault: ERC4626Vault,
-	): PriceResult | undefined {
+	): OraclePriceResult | undefined {
 		return getCollateralOraclePrice(liabilityVault, collateralVault);
 	}
 
@@ -200,14 +202,14 @@ export class PriceService implements IPriceService {
 	 * using off-chain rates doesn't affect health factor/LTV ratios).
 	 * Falls back to on-chain utilsLens call.
 	 */
-	async fetchUnitOfAccountUsdRate(vault: EVault): Promise<bigint | undefined> {
+	async fetchUnitOfAccountUsdRate(vault: EVault): Promise<number | undefined> {
 		return (await this.fetchUnitOfAccountUsdRateWithDiagnostics(vault)).result;
 	}
 
 	async fetchUnitOfAccountUsdRateWithDiagnostics(
 		vault: EVault,
 		path = "$",
-	): Promise<ServiceResult<bigint | undefined>> {
+	): Promise<ServiceResult<number | undefined>> {
 		const errors: DataIssue[] = [];
 		const uoaAddress = vault.unitOfAccount?.address;
 		if (!uoaAddress || uoaAddress === ZERO_ADDRESS) {
@@ -216,7 +218,7 @@ export class PriceService implements IPriceService {
 
 		// USD unit of account → 1.0
 		if (getAddress(uoaAddress) === getAddress(USD_ADDRESS)) {
-			return { result: ONE_18, errors };
+			return { result: 1, errors };
 		}
 
 		let backendError: unknown;
@@ -231,8 +233,8 @@ export class PriceService implements IPriceService {
 					chainId: vault.chainId,
 				});
 				if (backendPrice) {
-					const rate = backendPriceToBigInt(backendPrice.price);
-					if (rate > 0n) return { result: rate, errors };
+					const rate = normalizeBackendPrice(backendPrice.price);
+					if (rate !== undefined) return { result: rate, errors };
 				}
 			} catch (error) {
 				backendError = error;
@@ -241,8 +243,11 @@ export class PriceService implements IPriceService {
 
 		// On-chain: call utilsLens.getAssetPriceInfo(unitOfAccount, USD)
 		const priceInfo = await this.fetchAssetPriceInfo(vault.chainId, uoaAddress);
-		const fallbackRate = priceInfo?.amountOutMid || undefined;
-		if (backendAttempted && fallbackRate) {
+		const fallbackRate =
+			priceInfo?.amountOutMid !== undefined
+				? scaledBigIntToNumber(priceInfo.amountOutMid, USD_DECIMALS)
+				: undefined;
+		if (backendAttempted && fallbackRate !== undefined) {
 			errors.push({
 				code: "FALLBACK_USED",
 				severity: "info",
@@ -256,7 +261,7 @@ export class PriceService implements IPriceService {
 				source: "priceService",
 				originalValue:
 					backendError instanceof Error ? backendError.message : undefined,
-				normalizedValue: fallbackRate.toString(),
+				normalizedValue: fallbackRate,
 			});
 		}
 		return { result: fallbackRate, errors: compressDataIssues(errors) };
@@ -297,7 +302,7 @@ export class PriceService implements IPriceService {
 					chainId: vault.chainId,
 				});
 				if (backendPrice) {
-					const result = backendPriceToPriceResult(backendPrice.price);
+					const result = normalizeBackendPrice(backendPrice.price);
 					if (result) return { result, errors };
 				}
 			} catch (error) {
@@ -320,7 +325,7 @@ export class PriceService implements IPriceService {
 				source: "priceService",
 				originalValue:
 					backendError instanceof Error ? backendError.message : undefined,
-				normalizedValue: fallbackPrice.amountOutMid.toString(),
+				normalizedValue: fallbackPrice,
 			});
 		}
 
@@ -376,7 +381,7 @@ export class PriceService implements IPriceService {
 					chainId,
 				});
 				if (backendPrice) {
-					const result = backendPriceToPriceResult(backendPrice.price);
+					const result = normalizeBackendPrice(backendPrice.price);
 					if (result) return { result, errors };
 				}
 			} catch (error) {
@@ -399,7 +404,7 @@ export class PriceService implements IPriceService {
 				source: "priceService",
 				originalValue:
 					backendError instanceof Error ? backendError.message : undefined,
-				normalizedValue: fallbackPrice.amountOutMid.toString(),
+				normalizedValue: fallbackPrice,
 			});
 		}
 
@@ -456,7 +461,7 @@ export class PriceService implements IPriceService {
 					chainId: collateralVault.chainId,
 				});
 				if (backendPrice) {
-					const result = backendPriceToPriceResult(backendPrice.price);
+					const result = normalizeBackendPrice(backendPrice.price);
 					if (result) return { result, errors };
 				}
 			} catch (error) {
@@ -472,8 +477,7 @@ export class PriceService implements IPriceService {
 			errors.push({
 				code: "FALLBACK_USED",
 				severity: "info",
-				message:
-					"V3 collateral/USD price unavailable; used on-chain fallback.",
+				message: "V3 collateral/USD price unavailable; used on-chain fallback.",
 				locations: [
 					dataIssueLocation(
 						vaultCollateralDiagnosticOwner(
@@ -487,7 +491,7 @@ export class PriceService implements IPriceService {
 				source: "priceService",
 				originalValue:
 					backendError instanceof Error ? backendError.message : undefined,
-				normalizedValue: fallbackPrice.amountOutMid.toString(),
+				normalizedValue: fallbackPrice,
 			});
 		}
 
@@ -538,8 +542,7 @@ export class PriceService implements IPriceService {
 			};
 		}
 
-		const usdValue =
-			assetAmount * +formatUnits(price.amountOutMid, price.decimals);
+		const usdValue = assetAmount * price;
 		return {
 			display: "",
 			hasPrice: true,
@@ -567,13 +570,12 @@ export class PriceService implements IPriceService {
 			if (oraclePrice) {
 				const uoaRate = await this.fetchUnitOfAccountUsdRate(vault as EVault);
 				if (uoaRate) {
-					const oracleScale = getDecimalScale(oraclePrice.decimals);
-					return {
-						amountOutMid: (oraclePrice.amountOutMid * uoaRate) / oracleScale,
-						amountOutAsk: (oraclePrice.amountOutAsk * uoaRate) / oracleScale,
-						amountOutBid: (oraclePrice.amountOutBid * uoaRate) / oracleScale,
-						decimals: USD_DECIMALS,
-					};
+					return (
+						scaledBigIntToNumber(
+							oraclePrice.amountOutMid,
+							oraclePrice.decimals,
+						) * uoaRate
+					);
 				}
 			}
 		}
@@ -592,13 +594,7 @@ export class PriceService implements IPriceService {
 
 		if (!priceInfo?.amountOutMid) return undefined;
 
-		const mid = priceInfo.amountOutMid;
-		return {
-			amountOutMid: mid,
-			amountOutAsk: mid,
-			amountOutBid: mid,
-			decimals: USD_DECIMALS,
-		};
+		return scaledBigIntToNumber(priceInfo.amountOutMid, USD_DECIMALS);
 	}
 
 	/**
@@ -616,14 +612,11 @@ export class PriceService implements IPriceService {
 
 		const uoaRate = await this.fetchUnitOfAccountUsdRate(liabilityVault);
 		if (!uoaRate) return undefined;
-		const oracleScale = getDecimalScale(oraclePrice.decimals);
 
-		return {
-			amountOutMid: (oraclePrice.amountOutMid * uoaRate) / oracleScale,
-			amountOutAsk: (oraclePrice.amountOutAsk * uoaRate) / oracleScale,
-			amountOutBid: (oraclePrice.amountOutBid * uoaRate) / oracleScale,
-			decimals: USD_DECIMALS,
-		};
+		return (
+			scaledBigIntToNumber(oraclePrice.amountOutMid, oraclePrice.decimals) *
+			uoaRate
+		);
 	}
 
 	/**
@@ -668,10 +661,11 @@ export class PriceService implements IPriceService {
  * Get raw oracle price for a vault's asset in the vault's unit of account.
  * Uses oraclePriceRaw (liabilityPriceInfo from the vault lens).
  */
-export function getAssetOraclePrice(vault: EVault): PriceResult | undefined {
+export function getAssetOraclePrice(
+	vault: EVault,
+): OraclePriceResult | undefined {
 	const { oraclePriceRaw, unitOfAccount } = vault;
-	if (!oraclePriceRaw || !oraclePriceRaw.amountOutMid || !unitOfAccount)
-		return undefined;
+	if (!oraclePriceRaw?.amountOutMid || !unitOfAccount) return undefined;
 
 	const { amountOutMid, amountOutAsk, amountOutBid } = oraclePriceRaw;
 	const ask = amountOutAsk && amountOutAsk > 0n ? amountOutAsk : amountOutMid;
@@ -721,7 +715,7 @@ export function getCollateralShareOraclePrice(
 export function getCollateralOraclePrice(
 	liabilityVault: EVault,
 	collateralVault: ERC4626Vault,
-): PriceResult | undefined {
+): OraclePriceResult | undefined {
 	const sharePrice = getCollateralShareOraclePrice(
 		liabilityVault,
 		collateralVault,
@@ -769,20 +763,5 @@ export function getCollateralOraclePrice(
 		amountOutAsk: ask,
 		amountOutBid: bid,
 		decimals: uoaDecimals,
-	};
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function backendPriceToPriceResult(price: number): PriceResult | undefined {
-	const mid = backendPriceToBigInt(price);
-	if (mid <= 0n) return undefined;
-	return {
-		amountOutMid: mid,
-		amountOutAsk: mid,
-		amountOutBid: mid,
-		decimals: USD_DECIMALS,
 	};
 }

@@ -45,7 +45,7 @@ import {
 // Persist across navigations but not across full page reloads
 let lastAddress: string | undefined;
 
-function formatUsdValue(value: bigint | undefined): string {
+function formatUsdValue(value: number | undefined): string {
   if (value === undefined) return "-";
   return formatPriceUsd(value);
 }
@@ -79,11 +79,11 @@ function formatDaysToLiquidation(value: PortfolioBorrowPosition<VaultEntity>["ti
   })} days`;
 }
 
-function sumBigints(values: Array<bigint | undefined>): bigint | undefined {
-  let total: bigint | undefined;
+function sumNumbers(values: Array<number | undefined>): number | undefined {
+  let total: number | undefined;
   for (const v of values) {
     if (v === undefined) continue;
-    total = (total ?? 0n) + v;
+    total = (total ?? 0) + v;
   }
   return total;
 }
@@ -182,24 +182,24 @@ export function PortfolioPage() {
 
   const totals = useMemo(() => {
     return {
-      supplied: sumBigints(results.map((r) => r.portfolio?.totalSuppliedValueUsd)),
-      borrowed: sumBigints(results.map((r) => r.portfolio?.totalBorrowedValueUsd)),
-      nav: sumBigints(results.map((r) => r.portfolio?.netAssetValueUsd)),
-      rewards: sumBigints(results.map((r) => r.account?.totalRewardsValueUsd)),
+      supplied: sumNumbers(results.map((r) => r.portfolio?.totalSuppliedValueUsd)),
+      borrowed: sumNumbers(results.map((r) => r.portfolio?.totalBorrowedValueUsd)),
+      nav: sumNumbers(results.map((r) => r.portfolio?.netAssetValueUsd)),
+      rewards: sumNumbers(results.map((r) => r.account?.totalRewardsValueUsd)),
     };
   }, [results]);
 
   const aggregatePerformance = useMemo(() => {
-    const supplied = Number(totals.supplied ?? 0n);
-    const borrowed = Number(totals.borrowed ?? 0n);
+    const supplied = totals.supplied ?? 0;
+    const borrowed = totals.borrowed ?? 0;
     const equity = supplied - borrowed;
     let netYield: number | undefined;
 
     for (const result of results) {
       const portfolio = result.portfolio;
       if (!portfolio) continue;
-      const suppliedValue = Number(portfolio.totalSuppliedValueUsd ?? 0n);
-      const borrowedValue = Number(portfolio.totalBorrowedValueUsd ?? 0n);
+      const suppliedValue = portfolio.totalSuppliedValueUsd ?? 0;
+      const borrowedValue = portfolio.totalBorrowedValueUsd ?? 0;
       const positionEquity = suppliedValue - borrowedValue;
       const netApyYield =
         portfolio.netApy === undefined ? undefined : suppliedValue * portfolio.netApy;
@@ -219,14 +219,14 @@ export function PortfolioPage() {
       apyBreakdown: aggregateYieldBreakdown(
         results.map((result) => ({
           breakdown: result.portfolio?.apyBreakdown,
-          weight: Number(result.portfolio?.totalSuppliedValueUsd ?? 0n),
+          weight: result.portfolio?.totalSuppliedValueUsd ?? 0,
         }))
       ),
       roeBreakdown: aggregateYieldBreakdown(
         results.map((result) => {
           const portfolio = result.portfolio;
-          const suppliedValue = Number(portfolio?.totalSuppliedValueUsd ?? 0n);
-          const borrowedValue = Number(portfolio?.totalBorrowedValueUsd ?? 0n);
+          const suppliedValue = portfolio?.totalSuppliedValueUsd ?? 0;
+          const borrowedValue = portfolio?.totalBorrowedValueUsd ?? 0;
           return {
             breakdown: portfolio?.roeBreakdown,
             weight: Math.max(suppliedValue - borrowedValue, 0),
@@ -504,10 +504,10 @@ function PortfolioOverviewCards({
 }: {
   netApy?: number;
   roe?: number;
-  supplied?: bigint;
-  borrowed?: bigint;
-  nav?: bigint;
-  rewards?: bigint;
+  supplied?: number;
+  borrowed?: number;
+  nav?: number;
+  rewards?: number;
   apyBreakdown?: YieldApyBreakdown;
   roeBreakdown?: YieldApyBreakdown;
 }) {
@@ -888,14 +888,17 @@ function sortBorrowPositions(
   a: PortfolioBorrowPosition<VaultEntity>,
   b: PortfolioBorrowPosition<VaultEntity>
 ) {
-  return Number((b.liabilityValueUsd ?? b.borrow.borrowedValueUsd ?? 0n) - (a.liabilityValueUsd ?? a.borrow.borrowedValueUsd ?? 0n));
+  return (
+    (b.liabilityValueUsd ?? b.borrow.borrowedValueUsd ?? 0) -
+    (a.liabilityValueUsd ?? a.borrow.borrowedValueUsd ?? 0)
+  );
 }
 
 function sortSavingsPositions(
   a: PortfolioSavingsPosition<VaultEntity>,
   b: PortfolioSavingsPosition<VaultEntity>
 ) {
-  return Number((b.suppliedValueUsd ?? 0n) - (a.suppliedValueUsd ?? 0n));
+  return (b.suppliedValueUsd ?? 0) - (a.suppliedValueUsd ?? 0);
 }
 
 function isManagedSavings(position: PortfolioSavingsPosition<VaultEntity>): boolean {
@@ -1301,7 +1304,7 @@ function ChainAccountSection({
               </div>
               <div className="detail-item">
                 <div className="label">Multiplier</div>
-                <div className="value">{sub.multiplier != null ? `${formatWad(sub.multiplier, 2)}x` : "-"}</div>
+                <div className="value">{formatMultiplier(sub.multiplier)}</div>
               </div>
               <div className="detail-item">
                 <div className="label">Net Value (USD)</div>

@@ -102,20 +102,18 @@ test("account service fetches and populates real account fixtures through vault,
 		{
 			async fetchAssetUsdPriceWithDiagnostics(vault) {
 				return {
-					result: {
-						amountOutMid:
-							normalizeAddress(vault.address) === normalizeAddress(collateralized.address)
-								? 2n * 10n ** 18n
-								: 10n ** 18n,
-					},
+					result:
+						normalizeAddress(vault.address) === normalizeAddress(collateralized.address)
+							? 2
+							: 1,
 					errors: [],
 				};
 			},
 			async fetchCollateralUsdPriceWithDiagnostics() {
-				return { result: { amountOutMid: 3n * 10n ** 18n }, errors: [] };
+				return { result: 3, errors: [] };
 			},
 			async fetchUnitOfAccountUsdRateWithDiagnostics() {
-				return { result: 2n * 10n ** 18n, errors: [] };
+				return { result: 2, errors: [] };
 			},
 		} as any,
 	);
@@ -241,7 +239,7 @@ test("account total rewards skips malformed reward pricing", () => {
 		},
 	];
 
-	assert.equal(account.totalRewardsValueUsd, 2n * 10n ** 18n);
+	assert.equal(account.totalRewardsValueUsd, 2);
 });
 
 test("V3 rewards adapter normalizes malformed user reward price to zero", async () => {
@@ -960,11 +958,11 @@ test("evault service hydrates, filters, populates collateral and price data, and
 			if (normalizeAddress(vault.address) === normalizeAddress(plain.address)) {
 				throw new Error("asset-price");
 			}
-			return { result: { amountOutMid: 2n * 10n ** 18n }, errors: [] };
+			return { result: 2, errors: [] };
 		},
 		async fetchCollateralUsdPriceWithDiagnostics() {
 			return {
-				result: { amountOutMid: 3n * 10n ** 18n },
+				result: 3,
 				errors: [
 					{
 						code: "P",
@@ -1203,7 +1201,7 @@ test("evault service setters and empty branches are exercised", async () => {
 	const collateralPriceFailure = new EVaultService(adapterA as any, makeDeploymentService());
 	collateralPriceFailure.setPriceService({
 		async fetchAssetUsdPriceWithDiagnostics() {
-			return { result: { amountOutMid: 1n }, errors: [] };
+			return { result: 1, errors: [] };
 		},
 		async fetchCollateralUsdPriceWithDiagnostics() {
 			throw "collateral-price-string";

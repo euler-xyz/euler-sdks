@@ -2,6 +2,7 @@ export {
 	PriceService,
 	type IPriceService,
 	type PriceResult,
+	type OraclePriceResult,
 	type FormattedAssetValue,
 	type FormatAssetValueOptions,
 	ONE_18,
@@ -13,7 +14,7 @@ export {
 
 export {
 	PricingBackendClient,
-	backendPriceToBigInt,
+	normalizeBackendPrice,
 	type BackendPriceData,
 	type BackendPriceResponse,
 	type PricingServiceConfig,

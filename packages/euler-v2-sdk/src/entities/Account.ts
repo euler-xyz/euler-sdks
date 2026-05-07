@@ -8,7 +8,7 @@ import {
 import type { VaultEntity } from "../services/vaults/vaultMetaService/index.js";
 import type { IVaultMetaService } from "../services/vaults/vaultMetaService/index.js";
 import type { VaultFetchOptions } from "../services/vaults/index.js";
-import type { PriceWad } from "./ERC4626Vault.js";
+import type { PriceUsd } from "./ERC4626Vault.js";
 import type { IPriceService } from "../services/priceService/index.js";
 import type {
 	IRewardsService,
@@ -38,6 +38,11 @@ import {
 	computeBorrowLiquidationPrice,
 } from "../utils/accountComputations.js";
 import type { SubAccountRoe } from "../utils/accountComputations.js";
+import {
+	scaledBigIntToNumber,
+	tokenAmountToUsdValue,
+	wadToNumber,
+} from "../utils/normalization.js";
 
 export type AddressPrefix = `0x${string}`; // expects a hex string representation of 19 bytes
 
@@ -71,10 +76,10 @@ export interface AccountLiquidityCollateral<
 	address: Address;
 	vault?: TVaultEntity;
 	value: AssetValue;
-	/** USD price per underlying asset (18 dec WAD). Populated by `populateMarketPrices`. */
-	marketPriceUsd?: PriceWad;
-	/** Collateral value in USD (18 dec). Computed from `value.oracleMid * uoaUsdRate / 1e18`. */
-	valueUsd?: bigint;
+	/** USD price per underlying asset. Populated by `populateMarketPrices`. */
+	marketPriceUsd?: PriceUsd;
+	/** Collateral value in USD. Computed from `value.oracleMid` and the UoA/USD rate. */
+	valueUsd?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,10 +97,10 @@ export interface IAccountLiquidity<
 	liabilityValue: AssetValue;
 	totalCollateralValue: AssetValue;
 	collaterals: AccountLiquidityCollateral<TVaultEntity>[];
-	/** Liability value in USD (18 dec). Populated by `populateMarketPrices`. */
-	liabilityValueUsd?: bigint;
-	/** Total collateral value in USD (18 dec). Populated by `populateMarketPrices`. */
-	totalCollateralValueUsd?: bigint;
+	/** Liability value in USD. Populated by `populateMarketPrices`. */
+	liabilityValueUsd?: number;
+	/** Total collateral value in USD. Populated by `populateMarketPrices`. */
+	totalCollateralValueUsd?: number;
 	/** Per-collateral liquidation price multipliers (WAD). Computed getter on AccountLiquidity class. */
 	readonly collateralLiquidationPrices?: Record<Address, bigint>;
 	/** Borrow liquidation price multiplier (WAD). `> 1` = safe margin. Computed getter on AccountLiquidity class. */
@@ -113,8 +118,8 @@ export class AccountLiquidity<TVaultEntity extends IHasVaultAddress = never>
 	liabilityValue: AssetValue;
 	totalCollateralValue: AssetValue;
 	collaterals: AccountLiquidityCollateral<TVaultEntity>[];
-	liabilityValueUsd?: bigint;
-	totalCollateralValueUsd?: bigint;
+	liabilityValueUsd?: number;
+	totalCollateralValueUsd?: number;
 
 	constructor(data: IAccountLiquidity<TVaultEntity>) {
 		this.vaultAddress = data.vaultAddress;
@@ -166,20 +171,18 @@ export interface IAccountPosition<
 	balanceForwarderEnabled: boolean;
 	liquidity?: IAccountLiquidity<TVaultEntity>;
 
-	/** USD price per underlying asset (18 dec WAD). Populated by `populateMarketPrices`. */
-	marketPriceUsd?: PriceWad;
-	/** Supplied value in USD (18 dec). `assets * marketPriceUsd / 10^decimals`. */
-	suppliedValueUsd?: bigint;
-	/** Borrowed value in USD (18 dec). `borrowed * marketPriceUsd / 10^decimals`. */
-	borrowedValueUsd?: bigint;
+	/** USD price per underlying asset. Populated by `populateMarketPrices`. */
+	marketPriceUsd?: PriceUsd;
+	/** Supplied value in USD. `assets * marketPriceUsd / 10^decimals`. */
+	suppliedValueUsd?: number;
+	/** Borrowed value in USD. `borrowed * marketPriceUsd / 10^decimals`. */
+	borrowedValueUsd?: number;
 
-	/** Borrow liquidation price in USD (18 dec WAD). Computed getter on positions. */
-	readonly borrowLiquidationPriceUsd?: bigint;
-	/** Per-collateral liquidation price in USD (18 dec WAD). Computed getter on positions. */
-	readonly collateralLiquidationPricesUsd?: Record<Address, bigint>;
+	/** Borrow liquidation price in USD. Computed getter on positions. */
+	readonly borrowLiquidationPriceUsd?: number;
+	/** Per-collateral liquidation price in USD. Computed getter on positions. */
+	readonly collateralLiquidationPricesUsd?: Record<Address, number>;
 }
-
-const WAD = 10n ** 18n;
 
 export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
 	implements IAccountPosition<TVaultEntity>
@@ -199,9 +202,9 @@ export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
 	balanceForwarderEnabled: boolean;
 	liquidity?: IAccountLiquidity<TVaultEntity>;
 
-	marketPriceUsd?: PriceWad;
-	suppliedValueUsd?: bigint;
-	borrowedValueUsd?: bigint;
+	marketPriceUsd?: PriceUsd;
+	suppliedValueUsd?: number;
+	borrowedValueUsd?: number;
 
 	constructor(data: IAccountPosition<TVaultEntity>) {
 		this.account = data.account;
@@ -228,28 +231,33 @@ export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
 		this.borrowedValueUsd = data.borrowedValueUsd;
 	}
 
-	get borrowLiquidationPriceUsd(): bigint | undefined {
+	get borrowLiquidationPriceUsd(): number | undefined {
 		const priceUsd = this.marketPriceUsd ?? (this.vault as any)?.marketPriceUsd;
 		if (priceUsd == null) return undefined;
 		const multiplier = this.liquidity?.borrowLiquidationPrice;
 		if (multiplier == null) return undefined;
-		return (priceUsd * multiplier) / WAD;
+		const multiplierDecimal = wadToNumber(multiplier);
+		return multiplierDecimal === undefined
+			? undefined
+			: priceUsd * multiplierDecimal;
 	}
 
-	get collateralLiquidationPricesUsd(): Record<Address, bigint> | undefined {
+	get collateralLiquidationPricesUsd(): Record<Address, number> | undefined {
 		const liquidity = this.liquidity;
 		if (!liquidity) return undefined;
 		const multipliers = liquidity.collateralLiquidationPrices;
 		if (!multipliers) return undefined;
 
-		const result: Record<Address, bigint> = {};
+		const result: Record<Address, number> = {};
 		for (const collateral of liquidity.collaterals) {
 			const multiplier = multipliers[collateral.address];
 			if (multiplier == null) continue;
 			const priceUsd =
 				collateral.marketPriceUsd ?? (collateral.vault as any)?.marketPriceUsd;
 			if (priceUsd == null) continue;
-			result[collateral.address] = (priceUsd * multiplier) / WAD;
+			const multiplierDecimal = wadToNumber(multiplier);
+			if (multiplierDecimal == null) continue;
+			result[collateral.address] = priceUsd * multiplierDecimal;
 		}
 
 		return Object.keys(result).length > 0 ? result : undefined;
@@ -278,14 +286,14 @@ export interface ISubAccount<TVaultEntity extends IHasVaultAddress = never> {
 	readonly currentLTV?: bigint;
 	/** Weighted-average liquidation LTV threshold (WAD). Computed getter on SubAccount class. */
 	readonly liquidationLTV?: bigint;
-	/** Leverage multiplier (WAD, 1e18 = 1x). Requires USD data. Computed getter on SubAccount class. */
-	readonly multiplier?: bigint;
-	/** Total collateral value in USD (18 dec). Requires USD data. Computed getter on SubAccount class. */
-	readonly totalCollateralValueUsd?: bigint;
-	/** Liability value in USD (18 dec). Requires USD data. Computed getter on SubAccount class. */
-	readonly liabilityValueUsd?: bigint;
-	/** Net value in USD (18 dec): sum(supplied) - sum(borrowed). Computed getter on SubAccount class. */
-	readonly netValueUsd?: bigint;
+	/** Leverage multiplier (1 = 1x). Requires USD data. Computed getter on SubAccount class. */
+	readonly multiplier?: number;
+	/** Total collateral value in USD. Requires USD data. Computed getter on SubAccount class. */
+	readonly totalCollateralValueUsd?: number;
+	/** Liability value in USD. Requires USD data. Computed getter on SubAccount class. */
+	readonly liabilityValueUsd?: number;
+	/** Net value in USD: sum(supplied) - sum(borrowed). Computed getter on SubAccount class. */
+	readonly netValueUsd?: number;
 	/** ROE breakdown (percentage points). Requires populated vaults + market prices. Computed getter on SubAccount class. */
 	readonly roe?: SubAccountRoe;
 }
@@ -334,27 +342,27 @@ export class SubAccount<TVaultEntity extends IHasVaultAddress = never>
 		);
 	}
 
-	/** Leverage multiplier (WAD, 1e18 = 1x). Requires USD data. */
-	get multiplier(): bigint | undefined {
+	/** Leverage multiplier (1 = 1x). Requires USD data. */
+	get multiplier(): number | undefined {
 		return computeMultiplier(this as unknown as ISubAccount<IHasVaultAddress>);
 	}
 
-	/** Total collateral value in USD (18 dec). Requires USD data. */
-	get totalCollateralValueUsd(): bigint | undefined {
+	/** Total collateral value in USD. Requires USD data. */
+	get totalCollateralValueUsd(): number | undefined {
 		return computeSubAccountTotalCollateralValueUsd(
 			this as unknown as ISubAccount<IHasVaultAddress>,
 		);
 	}
 
-	/** Liability value in USD (18 dec). Requires USD data. */
-	get liabilityValueUsd(): bigint | undefined {
+	/** Liability value in USD. Requires USD data. */
+	get liabilityValueUsd(): number | undefined {
 		return computeSubAccountLiabilityValueUsd(
 			this as unknown as ISubAccount<IHasVaultAddress>,
 		);
 	}
 
-	/** Net value in USD (18 dec): sum(supplied) - sum(borrowed). */
-	get netValueUsd(): bigint | undefined {
+	/** Net value in USD: sum(supplied) - sum(borrowed). */
+	get netValueUsd(): number | undefined {
 		return computeSubAccountNetValueUsd(
 			this as unknown as ISubAccount<IHasVaultAddress>,
 		);
@@ -629,7 +637,6 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 			);
 		}
 
-		const ONE_18 = 10n ** 18n;
 		const errors: DataIssue[] = [];
 
 		// Collect unique vault entities and where they are referenced in the account tree.
@@ -772,19 +779,23 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 			for (const p of sa.positions) {
 				const vault = p.vault as any;
 				if (vault?.marketPriceUsd != null && vault?.asset?.decimals != null) {
-					const price = vault.marketPriceUsd as bigint;
-					const decimals = BigInt(vault.asset.decimals as number);
+					const price = vault.marketPriceUsd as number;
+					const decimals = vault.asset.decimals as number;
 					p.marketPriceUsd = price;
-					p.suppliedValueUsd = (p.assets * price) / 10n ** decimals;
+					p.suppliedValueUsd = tokenAmountToUsdValue(p.assets, decimals, price);
 					if (p.borrowed > 0n) {
-						p.borrowedValueUsd = (p.borrowed * price) / 10n ** decimals;
+						p.borrowedValueUsd = tokenAmountToUsdValue(
+							p.borrowed,
+							decimals,
+							price,
+						);
 					}
 				}
 
 				// Populate liquidity USD values
 				if (p.liquidity?.vault) {
 					const liqVault = p.liquidity.vault as any;
-					let uoaRate: bigint | undefined;
+					let uoaRate: number | undefined;
 					try {
 						const priced =
 							await priceService.fetchUnitOfAccountUsdRateWithDiagnostics(
@@ -830,11 +841,16 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 					}
 					if (uoaRate != null) {
 						p.liquidity.liabilityValueUsd =
-							(p.liquidity.liabilityValue.oracleMid * uoaRate) / ONE_18;
+							scaledBigIntToNumber(p.liquidity.liabilityValue.oracleMid, 18) *
+							uoaRate;
 						p.liquidity.totalCollateralValueUsd =
-							(p.liquidity.totalCollateralValue.oracleMid * uoaRate) / ONE_18;
+							scaledBigIntToNumber(
+								p.liquidity.totalCollateralValue.oracleMid,
+								18,
+							) * uoaRate;
 						for (const c of p.liquidity.collaterals) {
-							c.valueUsd = (c.value.oracleMid * uoaRate) / ONE_18;
+							c.valueUsd =
+								scaledBigIntToNumber(c.value.oracleMid, 18) * uoaRate;
 							const collVault = c.vault as any;
 							if (collVault?.marketPriceUsd != null) {
 								c.marketPriceUsd = collVault.marketPriceUsd;
@@ -849,13 +865,10 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 		return errors;
 	}
 
-	/** Total unclaimed rewards value in USD (18 dec). `undefined` if no user rewards populated. */
-	get totalRewardsValueUsd(): bigint | undefined {
+	/** Total unclaimed rewards value in USD. `undefined` if no user rewards populated. */
+	get totalRewardsValueUsd(): number | undefined {
 		if (!this.userRewards || this.userRewards.length === 0) return undefined;
-		const PRICE_PRECISION = 8;
-		const PRICE_SCALE = 10 ** PRICE_PRECISION;
-		const WAD_SCALER = 10n ** BigInt(18 - PRICE_PRECISION); // 10^10
-		let total = 0n;
+		let total = 0;
 		for (const reward of this.userRewards) {
 			const tokenPrice = Number(reward.tokenPrice);
 			const tokenDecimals = Number(reward.token.decimals);
@@ -868,10 +881,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 			)
 				continue;
 			const unclaimed = BigInt(reward.unclaimed);
-			const priceScaled = BigInt(Math.round(tokenPrice * PRICE_SCALE));
-			const tokenDecimalsBigInt = BigInt(tokenDecimals);
-			total +=
-				(unclaimed * priceScaled * WAD_SCALER) / 10n ** tokenDecimalsBigInt;
+			total += scaledBigIntToNumber(unclaimed, tokenDecimals) * tokenPrice;
 		}
 		return total;
 	}

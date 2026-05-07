@@ -7,7 +7,7 @@ import {
   type EulerSDK,
   type EVault,
 } from "@eulerxyz/euler-v2-sdk";
-import { formatUnits, type Address } from "viem";
+import type { Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import { APP_CHAIN_IDS_MINUS_BOB, CHAIN_NAMES } from "../config/chains.ts";
 import { getV3ApiEndpoint } from "../config/endpoints.ts";
@@ -17,6 +17,7 @@ import {
   fetchVaultAddressesFromLabelProducts,
   sdkBuildQuery,
 } from "../queries/sdkQueries.ts";
+import { tokenAmountToUsdValue } from "../utils/format.ts";
 
 const DIFF_THRESHOLD = 0.03;
 
@@ -75,9 +76,12 @@ function buildTotalsSdk(
   return buildEulerSDK(sdkConfig);
 }
 
-function vaultUsd(totalAssets: bigint, price: bigint | undefined, decimals: number): number {
-  if (price === undefined) return 0;
-  return Number(formatUnits((totalAssets * price) / 10n ** BigInt(decimals), 18));
+function vaultUsd(
+  totalAssets: bigint,
+  price: number | undefined,
+  decimals: number
+): number {
+  return tokenAmountToUsdValue(totalAssets, decimals, price) ?? 0;
 }
 
 function summarizeVaults(

@@ -62,7 +62,7 @@ export function FeeFlowPage() {
 
   const selectedTotalValueUsd = selectedCandidates.reduce(
     (sum, candidate) => sum + candidate.claimableValueUsd,
-    0n
+    0
   );
 
   const selectedVaults = selectedCandidates.map((candidate) => candidate.vault.address);

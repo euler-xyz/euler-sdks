@@ -133,6 +133,30 @@ export function bigintToScaledNumber(
 	return Number(value) / scale;
 }
 
+export function scaledBigIntToNumber(value: bigint, decimals: number): number {
+	return Number(value) / 10 ** decimals;
+}
+
+export function tokenAmountToUsdValue(
+	amount: bigint,
+	decimals: number,
+	priceUsd: number,
+): number {
+	return scaledBigIntToNumber(amount, decimals) * priceUsd;
+}
+
+export function wadToNumber(value: bigint | undefined): number | undefined {
+	return value === undefined ? undefined : scaledBigIntToNumber(value, 18);
+}
+
+export function bigintRatioToNumber(
+	numerator: bigint,
+	denominator: bigint,
+): number | undefined {
+	if (denominator === 0n) return undefined;
+	return Number(numerator) / Number(denominator);
+}
+
 export function bigintPercentage(
 	numerator: bigint,
 	denominator: bigint,

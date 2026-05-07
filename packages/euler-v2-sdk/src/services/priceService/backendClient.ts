@@ -49,19 +49,18 @@ export type PricingServiceConfig = {
 	apiKey?: string;
 };
 
-/** Convert a pricing API price (number) to bigint with 18 decimals. */
-export const backendPriceToBigInt = (price: string | number): bigint => {
+/** Normalize a pricing API price to a positive finite USD number. */
+export const normalizeBackendPrice = (
+	price: string | number,
+): number | undefined => {
 	try {
 		const priceNum = typeof price === "number" ? price : parseFloat(price);
-		if (Number.isNaN(priceNum) || priceNum < 0) {
-			return 0n;
+		if (!Number.isFinite(priceNum) || priceNum <= 0) {
+			return undefined;
 		}
-		const priceString = priceNum.toFixed(18);
-		const [intPart, decPart = ""] = priceString.split(".");
-		const paddedDec = decPart.slice(0, 18);
-		return BigInt(intPart + paddedDec);
+		return priceNum;
 	} catch {
-		return 0n;
+		return undefined;
 	}
 };
 
