@@ -14,9 +14,15 @@ import type {
 	IRewardsService,
 	UserReward,
 } from "../services/rewardsService/index.js";
-import type { DataIssue } from "../utils/entityDiagnostics.js";
 import {
-	mapDataIssuePaths,
+	accountDiagnosticOwner,
+	accountPositionCollateralDiagnosticOwner,
+	accountPositionDiagnosticOwner,
+	dataIssueLocation,
+	type DataIssue,
+	type DataIssueLocation,
+	mapDataIssueLocations,
+	replaceDataIssueLocations,
 	withPathPrefix,
 } from "../utils/entityDiagnostics.js";
 import {
@@ -628,45 +634,66 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 
 		// Collect unique vault entities and where they are referenced in the account tree.
 		const vaultEntities = new Map<string, TVaultEntity>();
-		const vaultPaths = new Map<string, Set<string>>();
-		const addVaultPath = (vaultAddress: Address, path: string): void => {
+		const vaultLocations = new Map<string, DataIssueLocation[]>();
+		const addVaultLocation = (
+			vaultAddress: Address,
+			location: DataIssueLocation,
+		): void => {
 			const key = getAddress(vaultAddress);
-			const paths = vaultPaths.get(key) ?? new Set<string>();
-			paths.add(path);
-			vaultPaths.set(key, paths);
+			const locations = vaultLocations.get(key) ?? [];
+			locations.push(location);
+			vaultLocations.set(key, locations);
 		};
 
-		for (const [subAccountAddress, sa] of Object.entries(
-			this.subAccounts ?? {},
-		)) {
+		for (const sa of Object.values(this.subAccounts ?? {})) {
 			if (!sa) continue;
-			const subAccountPath = `$.subAccounts['${subAccountAddress}']`;
-			for (const [positionIndex, p] of sa.positions.entries()) {
-				const positionPath = `${subAccountPath}.positions[${positionIndex}]`;
+			for (const p of sa.positions) {
 				if (p.vault) {
 					vaultEntities.set(getAddress(p.vault.address), p.vault);
-					addVaultPath(p.vault.address, `${positionPath}.vault`);
+					addVaultLocation(
+						p.vault.address,
+						dataIssueLocation(
+							accountPositionDiagnosticOwner(
+								this.chainId,
+								p.account,
+								p.vaultAddress,
+							),
+							"$.vault",
+						),
+					);
 				}
 				if (p.liquidity?.vault) {
 					vaultEntities.set(
 						getAddress(p.liquidity.vault.address),
 						p.liquidity.vault,
 					);
-					addVaultPath(
+					addVaultLocation(
 						p.liquidity.vault.address,
-						`${positionPath}.liquidity.vault`,
+						dataIssueLocation(
+							accountPositionDiagnosticOwner(
+								this.chainId,
+								p.account,
+								p.vaultAddress,
+							),
+							"$.liquidity.vault",
+						),
 					);
 				}
 				if (p.liquidity) {
-					for (const [
-						collateralIndex,
-						c,
-					] of p.liquidity.collaterals.entries()) {
+					for (const c of p.liquidity.collaterals) {
 						if (c.vault) {
 							vaultEntities.set(getAddress(c.vault.address), c.vault);
-							addVaultPath(
+							addVaultLocation(
 								c.vault.address,
-								`${positionPath}.liquidity.collaterals[${collateralIndex}].vault`,
+								dataIssueLocation(
+									accountPositionCollateralDiagnosticOwner(
+										this.chainId,
+										p.account,
+										p.vaultAddress,
+										c.address,
+									),
+									"$.vault",
+								),
 							);
 						}
 					}
@@ -678,49 +705,71 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 		await Promise.all(
 			Array.from(vaultEntities.entries()).map(async ([vaultAddress, vault]) => {
 				if (typeof (vault as any).populateMarketPrices === "function") {
-					const paths = Array.from(vaultPaths.get(vaultAddress) ?? ["$"]);
+					const locations = vaultLocations.get(vaultAddress) ?? [];
 					try {
 						const vaultErrors = (await (vault as any).populateMarketPrices(
 							priceService,
 						)) as DataIssue[] | undefined;
 						if (vaultErrors?.length) {
 							for (const issue of vaultErrors) {
-								for (const pathPrefix of paths) {
-									errors.push({
-										...mapDataIssuePaths(issue, (path) =>
-											withPathPrefix(path, pathPrefix),
-										),
-									});
+								for (const locationPrefix of locations) {
+									errors.push(
+										mapDataIssueLocations(issue, (location) => ({
+											...locationPrefix,
+											path: withPathPrefix(location.path, locationPrefix.path),
+										})),
+									);
+									if (
+										(locationPrefix.owner.kind === "accountPosition" ||
+											locationPrefix.owner.kind ===
+												"accountPositionCollateral") &&
+										issue.locations.some(
+											(location) => location.path === "$.marketPriceUsd",
+										)
+									) {
+										errors.push({
+											...issue,
+											locations: [
+												dataIssueLocation(
+													locationPrefix.owner,
+													"$.marketPriceUsd",
+												),
+											],
+										});
+									}
 								}
 							}
 						}
 					} catch (error) {
-						for (const pathPrefix of paths) {
-							errors.push({
-								code: "SOURCE_UNAVAILABLE",
-								severity: "error",
-								message:
-									"Failed to populate market prices for nested vault entity.",
-								paths: [pathPrefix],
-								entityId: vaultAddress,
-								source: "priceService",
-								originalValue:
-									error instanceof Error ? error.message : String(error),
-							});
-						}
+						errors.push({
+							code: "SOURCE_UNAVAILABLE",
+							severity: "error",
+							message:
+								"Failed to populate market prices for nested vault entity.",
+							locations: locations.length
+								? locations
+								: [
+										dataIssueLocation(
+											accountPositionDiagnosticOwner(
+												this.chainId,
+												this.owner,
+												vaultAddress as Address,
+											),
+										),
+									],
+							source: "priceService",
+							originalValue:
+								error instanceof Error ? error.message : String(error),
+						});
 					}
 				}
 			}),
 		);
 
 		// Populate position USD values
-		for (const [subAccountAddress, sa] of Object.entries(
-			this.subAccounts ?? {},
-		)) {
+		for (const sa of Object.values(this.subAccounts ?? {})) {
 			if (!sa) continue;
-			const subAccountPath = `$.subAccounts['${subAccountAddress}']`;
-			for (const [positionIndex, p] of sa.positions.entries()) {
-				const positionPath = `${subAccountPath}.positions[${positionIndex}]`;
+			for (const p of sa.positions) {
 				const vault = p.vault as any;
 				if (vault?.marketPriceUsd != null && vault?.asset?.decimals != null) {
 					const price = vault.marketPriceUsd as bigint;
@@ -740,18 +789,39 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 						const priced =
 							await priceService.fetchUnitOfAccountUsdRateWithDiagnostics(
 								liqVault,
-								`${positionPath}.liquidity`,
+								"$.unitOfAccountUsdRate",
 							);
 						uoaRate = priced.result;
-						errors.push(...priced.errors);
+						errors.push(
+							...priced.errors.map((issue) =>
+								replaceDataIssueLocations(issue, [
+									dataIssueLocation(
+										accountPositionDiagnosticOwner(
+											this.chainId,
+											p.account,
+											p.vaultAddress,
+										),
+										"$.liquidity.unitOfAccountUsdRate",
+									),
+								]),
+							),
+						);
 					} catch (error) {
 						errors.push({
 							code: "SOURCE_UNAVAILABLE",
 							severity: "error",
 							message:
 								"Failed to fetch unit-of-account USD rate for liquidity.",
-							paths: [`${positionPath}.liquidity.vault`],
-							entityId: liqVault.address ?? p.vaultAddress,
+							locations: [
+								dataIssueLocation(
+									accountPositionDiagnosticOwner(
+										this.chainId,
+										p.account,
+										p.vaultAddress,
+									),
+									"$.liquidity.vault",
+								),
+							],
 							source: "priceService",
 							originalValue:
 								error instanceof Error ? error.message : String(error),
@@ -828,8 +898,12 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 					code: "SOURCE_UNAVAILABLE",
 					severity: "error",
 					message: "Failed to populate user rewards.",
-					paths: ["$.userRewards"],
-					entityId: this.owner,
+					locations: [
+						dataIssueLocation(
+							accountDiagnosticOwner(this.chainId, this.owner),
+							"$.userRewards",
+						),
+					],
 					source: "rewardsService",
 					originalValue: error instanceof Error ? error.message : String(error),
 				},

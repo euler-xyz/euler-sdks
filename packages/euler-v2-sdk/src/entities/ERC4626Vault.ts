@@ -7,7 +7,11 @@ import type {
 } from "../services/rewardsService/index.js";
 import type { IntrinsicApyInfo } from "../services/intrinsicApyService/index.js";
 import type { EulerLabel } from "./EulerLabels.js";
-import type { DataIssue } from "../utils/entityDiagnostics.js";
+import {
+	dataIssueLocation,
+	type DataIssue,
+	vaultDiagnosticOwner,
+} from "../utils/entityDiagnostics.js";
 
 /** Virtual deposit amount used in share/asset conversions (matches EVault ConversionHelpers.sol). */
 export const VIRTUAL_DEPOSIT_AMOUNT = 1_000_000n;
@@ -116,8 +120,12 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
 					code: "SOURCE_UNAVAILABLE",
 					severity: "error",
 					message: "Failed to populate asset market price.",
-					paths: ["$.marketPriceUsd"],
-					entityId: this.asset.address,
+					locations: [
+						dataIssueLocation(
+							vaultDiagnosticOwner(this.chainId, this.address),
+							"$.marketPriceUsd",
+						),
+					],
 					source: "priceService",
 					originalValue: error instanceof Error ? error.message : String(error),
 				},
@@ -141,8 +149,12 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
 					code: "SOURCE_UNAVAILABLE",
 					severity: "error",
 					message: "Failed to populate rewards.",
-					paths: ["$.rewards"],
-					entityId: this.address,
+					locations: [
+						dataIssueLocation(
+							vaultDiagnosticOwner(this.chainId, this.address),
+							"$.rewards",
+						),
+					],
 					source: "rewardsService",
 					originalValue: error instanceof Error ? error.message : String(error),
 				},

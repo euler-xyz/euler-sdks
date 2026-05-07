@@ -8,8 +8,9 @@ import { createCallBundler } from "../../../../../utils/callBundler.js";
 import {
 	type DataIssue,
 	compressDataIssues,
-	prefixDataIssues,
+	dataIssueLocation,
 	type ServiceResult,
+	vaultDiagnosticOwner,
 } from "../../../../../utils/entityDiagnostics.js";
 import type { IEVault } from "../../../../../entities/EVault.js";
 import type { EVaultV3AdapterConfig } from "../../eVaultServiceConfig.js";
@@ -48,7 +49,10 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 			typeof providerServiceOrBuildQuery === "function"
 				? providerServiceOrBuildQuery
 				: buildQuery;
-		if (providerServiceOrBuildQuery && typeof providerServiceOrBuildQuery !== "function") {
+		if (
+			providerServiceOrBuildQuery &&
+			typeof providerServiceOrBuildQuery !== "function"
+		) {
 			this.providerService = providerServiceOrBuildQuery;
 		}
 		if (resolvedBuildQuery) applyBuildQuery(this, resolvedBuildQuery);
@@ -132,7 +136,10 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 				byChain.set(key.chainId, addresses);
 			}
 
-			const chainResults = new Map<number, Map<string, V3VaultDetailWithIncludes>>();
+			const chainResults = new Map<
+				number,
+				Map<string, V3VaultDetailWithIncludes>
+			>();
 			const settledChainEntries = await Promise.allSettled(
 				Array.from(byChain.entries()).map(async ([chainId, addresses]) => {
 					const resolved = new Map<string, V3VaultDetailWithIncludes>();
@@ -218,7 +225,9 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 			headers: this.getHeaders(),
 		});
 		if (!response.ok) {
-			throw new Error(`eVaultV3 list ${response.status} ${response.statusText}`);
+			throw new Error(
+				`eVaultV3 list ${response.status} ${response.statusText}`,
+			);
 		}
 		return response.json() as Promise<
 			V3ListEnvelope<V3VaultListRow> | V3VaultListRow[]
@@ -235,12 +244,15 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 	): Promise<ServiceResult<(IEVault | undefined)[]>> {
 		const results: Array<{ result: IEVault | undefined; errors: DataIssue[] }> =
 			await Promise.all(
-				vaults.map(async (vault, index) => {
+				vaults.map(async (vault) => {
 					const errors: DataIssue[] = [];
 					let detail: V3VaultDetailWithIncludes | undefined;
 
 					try {
-						detail = await this.queryV3EVaultDetail({ address: vault, chainId });
+						detail = await this.queryV3EVaultDetail({
+							address: vault,
+							chainId,
+						});
 					} catch (error) {
 						return {
 							result: undefined,
@@ -249,8 +261,11 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 									code: "SOURCE_UNAVAILABLE",
 									severity: "warning",
 									message: `Failed to fetch eVault ${getAddress(vault)}.`,
-									paths: [`$.vaults[${index}]`],
-									entityId: getAddress(vault),
+									locations: [
+										dataIssueLocation(
+											vaultDiagnosticOwner(chainId, getAddress(vault)),
+										),
+									],
 									source: "eVaultV3",
 									originalValue:
 										error instanceof Error ? error.message : String(error),
@@ -267,8 +282,11 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 									code: "SOURCE_UNAVAILABLE",
 									severity: "warning",
 									message: `Vault detail missing for ${getAddress(vault)}.`,
-									paths: [`$.vaults[${index}]`],
-									entityId: getAddress(vault),
+									locations: [
+										dataIssueLocation(
+											vaultDiagnosticOwner(chainId, getAddress(vault)),
+										),
+									],
 									source: "eVaultV3",
 								},
 							],
@@ -283,12 +301,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 								errors,
 								vault,
 							),
-							errors: prefixDataIssues(errors, `$.vaults[${index}]`).map(
-								(issue) => ({
-									...issue,
-									entityId: issue.entityId ?? getAddress(vault),
-								}),
-							),
+							errors,
 						};
 					} catch (error) {
 						return {
@@ -298,8 +311,11 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 									code: "DECODE_FAILED",
 									severity: "warning",
 									message: `Failed to decode eVault ${getAddress(vault)}.`,
-									paths: [`$.vaults[${index}]`],
-									entityId: getAddress(vault),
+									locations: [
+										dataIssueLocation(
+											vaultDiagnosticOwner(chainId, getAddress(vault)),
+										),
+									],
 									source: "eVaultV3",
 									originalValue:
 										error instanceof Error ? error.message : String(error),
@@ -356,9 +372,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 			);
 			const rows = Array.isArray(response) ? response : (response.data ?? []);
 
-			addresses.push(
-				...rows.map((row) => getAddress(row.address)),
-			);
+			addresses.push(...rows.map((row) => getAddress(row.address)));
 
 			if (Array.isArray(response)) {
 				if (rows.length < limit) break;

@@ -26,17 +26,12 @@ import { OracleAdaptersInfo } from "../components/OracleAdaptersInfo.tsx";
 import { RawEntityDialog } from "../components/RawEntityDialog.tsx";
 import { getAdapterMismatchDetails } from "../utils/oracleDiagnostics.ts";
 
-function normalizeVaultDetailPath(path: string | undefined): string | undefined {
-  if (!path) return path;
-  if (path === "$.eVaults[0]") return "$";
-  if (path.startsWith("$.eVaults[0].")) return `$.${path.slice("$.eVaults[0].".length)}`;
-  if (path === "$.vaults[0]") return "$";
-  if (path.startsWith("$.vaults[0].")) return `$.${path.slice("$.vaults[0].".length)}`;
-  return path;
-}
-
-function getIssuePaths(issue: DiagnosticIssue): string[] {
-  return issue.paths?.length ? issue.paths : ["$"];
+function matchesPath(path: string, target: string): boolean {
+  return (
+    path === target ||
+    path.startsWith(`${target}.`) ||
+    path.startsWith(`${target}[`)
+  );
 }
 
 function formatVaultCap(cap: bigint, decimals: number): string {
@@ -181,61 +176,49 @@ export function VaultDetailPage() {
     if (!vault) {
       return createEntityDiagnosticIndex({
         diagnostics: [],
-        resolveEntityKey: () => undefined,
+        resolveLocationKey: () => undefined,
       });
     }
 
     return createEntityDiagnosticIndex({
       diagnostics,
-      resolveEntityKey: (issue) => {
-        for (const issuePath of getIssuePaths(issue)) {
-          const path = normalizeVaultDetailPath(issuePath);
-          const match = path?.match(/^\$\.collaterals\[(\d+)\](?:\.|$)/);
-          if (!match) continue;
-          const collateral = vault.collaterals[Number(match[1])];
-          if (!collateral) continue;
-          return collateral.address.toLowerCase();
+      resolveLocationKey: (location) => {
+        const owner = location.owner;
+        if (owner.kind !== "vaultCollateral") return undefined;
+        if (owner.vault.toLowerCase() !== vault.address.toLowerCase()) {
+          return undefined;
         }
-        return undefined;
-      },
-      normalizePath: (path) => {
-        const normalizedPath = normalizeVaultDetailPath(path);
-        if (!normalizedPath) return "$";
-        const match = normalizedPath.match(/^\$\.collaterals\[\d+\](?:\.(.*))?$/);
-        if (!match) return normalizedPath;
-        return match[1] ? `$.${match[1]}` : "$";
+        return owner.collateral.toLowerCase();
       },
     });
   }, [diagnostics, vault, diagnosticsDataUpdatedAt]);
 
-  const renderCollateralFieldIcon = (collateralAddress: string, paths: string[]) => {
-    const issues = collateralDiagnosticIndex.getExactFieldIssues(collateralAddress.toLowerCase(), paths);
+  const renderCollateralFieldIcon = (collateralAddress: string, targetPaths: string[]) => {
+    const issues = collateralDiagnosticIndex.getFieldIssues(collateralAddress.toLowerCase(), targetPaths);
     if (issues.length === 0) return null;
     return <ErrorIcon details={formatDiagnosticIssues(issues)} position="leading" />;
   };
 
-  const fieldDiagnostics = (paths: string[]): DiagnosticIssue[] => {
+  const fieldDiagnostics = (targetPaths: string[]): DiagnosticIssue[] => {
     return visibleDiagnostics.filter((issue) => {
-      return getIssuePaths(issue).some((issuePathRaw) => {
-        const issuePath = normalizeVaultDetailPath(issuePathRaw) ?? "";
-        return paths.some((path) => (
-          issuePath === path ||
-          issuePath.startsWith(`${path}.`) ||
-          issuePath.startsWith(`${path}[`)
-        ));
+      return (issue.locations ?? []).some((location) => {
+        const owner = location.owner;
+        if (owner.kind !== "vault") return false;
+        if (owner.address.toLowerCase() !== vault?.address.toLowerCase()) return false;
+        return targetPaths.some((path) => matchesPath(location.path, path));
       });
     });
   };
 
-  const renderDiagnostics = (paths: string[]) => {
-    const matches = fieldDiagnostics(paths);
+  const renderDiagnostics = (targetPaths: string[]) => {
+    const matches = fieldDiagnostics(targetPaths);
     if (matches.length === 0) return null;
 
     return (
       <div className="field-diagnostics">
         {matches.map((issue, index) => (
           <div
-            key={`${(issue.paths ?? ["unknown"]).join("|")}-${issue.code ?? "issue"}-${index}`}
+            key={`${(issue.locations ?? []).map((location) => location.path).join("|") || "unknown"}-${issue.code ?? "issue"}-${index}`}
             className={`field-diagnostic ${issue.severity === "error" ? "error" : "warning"}`}
           >
             {issue.message ?? issue.code ?? "Diagnostic issue"}

@@ -1,14 +1,19 @@
 import type { ISecuritizeCollateralVault } from "../../../../entities/SecuritizeCollateralVault.js";
 import { type Token, VaultType } from "../../../../utils/types.js";
 import type { VaultInfoERC4626 } from "./securitizeVaultLensTypes.js";
-import type { DataIssue } from "../../../../utils/entityDiagnostics.js";
+import {
+	dataIssueLocation,
+	type DataIssue,
+	type DataIssueOwnerRef,
+	vaultDiagnosticOwner,
+} from "../../../../utils/entityDiagnostics.js";
 import { bigintToSafeNumber } from "../../../../utils/normalization.js";
 
 function normalizeTokenString(
 	value: string,
 	fallback: string,
 	path: string,
-	entityId: `0x${string}`,
+	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
 ): string {
 	if (value.trim() !== "") return value;
@@ -16,8 +21,7 @@ function normalizeTokenString(
 		code: "DEFAULT_APPLIED",
 		severity: "warning",
 		message: `Empty string at ${path}; defaulted to ${JSON.stringify(fallback)}.`,
-		paths: [path],
-		entityId,
+		locations: [dataIssueLocation(owner, path)],
 		source: "securitizeLens",
 		originalValue: value,
 		normalizedValue: fallback,
@@ -32,26 +36,28 @@ export function convertToISecuritizeCollateralVault(
 	chainId: number,
 	errors: DataIssue[],
 ): ISecuritizeCollateralVault {
+	const owner = vaultDiagnosticOwner(chainId, vaultInfo.vault);
 	const shares: Token = {
 		address: vaultInfo.vault,
 		name: normalizeTokenString(
 			vaultInfo.vaultName,
 			"Unknown Vault",
 			"$.shares.name",
-			vaultInfo.vault,
+			owner,
 			errors,
 		),
 		symbol: normalizeTokenString(
 			vaultInfo.vaultSymbol,
 			"UNKNOWN",
 			"$.shares.symbol",
-			vaultInfo.vault,
+			owner,
 			errors,
 		),
 		decimals: bigintToSafeNumber(vaultInfo.vaultDecimals, {
 			path: "$.shares.decimals",
 			errors,
 			source: "securitizeLens",
+			owner,
 		}),
 	};
 
@@ -61,20 +67,21 @@ export function convertToISecuritizeCollateralVault(
 			vaultInfo.assetName,
 			"Unknown Asset",
 			"$.asset.name",
-			vaultInfo.vault,
+			owner,
 			errors,
 		),
 		symbol: normalizeTokenString(
 			vaultInfo.assetSymbol,
 			"UNKNOWN",
 			"$.asset.symbol",
-			vaultInfo.vault,
+			owner,
 			errors,
 		),
 		decimals: bigintToSafeNumber(vaultInfo.assetDecimals, {
 			path: "$.asset.decimals",
 			errors,
 			source: "securitizeLens",
+			owner,
 		}),
 	};
 

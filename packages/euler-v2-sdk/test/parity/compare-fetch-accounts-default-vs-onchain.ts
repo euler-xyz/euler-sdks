@@ -135,8 +135,7 @@ type DataIssueSnapshot = {
   code: string;
   severity: string;
   message: string;
-  paths?: string[];
-  entityId?: string;
+  locations?: Array<{ owner: unknown; path: string }>;
   source?: string;
 };
 
@@ -368,14 +367,19 @@ function emptySummary(requestedAccounts: number): ChainSummary {
 
 function toDataIssueSnapshot(issue: unknown): DataIssueSnapshot {
   const value = (issue ?? {}) as Record<string, unknown>;
+  const locations = Array.isArray(value.locations)
+    ? value.locations.flatMap((entry) => {
+        const location = entry as Record<string, unknown>;
+        return typeof location.path === "string"
+          ? [{ owner: location.owner, path: location.path }]
+          : [];
+      })
+    : undefined;
   return {
     code: typeof value.code === "string" ? value.code : "UNKNOWN",
     severity: typeof value.severity === "string" ? value.severity : "unknown",
     message: typeof value.message === "string" ? value.message : JSON.stringify(value),
-    paths: Array.isArray(value.paths)
-      ? value.paths.filter((entry): entry is string => typeof entry === "string")
-      : undefined,
-    entityId: typeof value.entityId === "string" ? value.entityId : undefined,
+    locations,
     source: typeof value.source === "string" ? value.source : undefined,
   };
 }
@@ -801,12 +805,7 @@ async function fetchScenarioSnapshot(
       snapshots.push(snapshot);
     }
 
-    errors.push(
-      ...response.errors.map((issue) => ({
-        ...toDataIssueSnapshot(issue),
-        entityId: toDataIssueSnapshot(issue).entityId ?? address,
-      })),
-    );
+    errors.push(...response.errors.map((issue) => toDataIssueSnapshot(issue)));
   }
 
   snapshots.sort((left, right) => left.address.localeCompare(right.address));

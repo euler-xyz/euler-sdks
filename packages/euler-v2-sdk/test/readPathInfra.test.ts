@@ -39,6 +39,10 @@ import {
   isEulerLabelVaultKeyring,
   isEulerLabelVaultNotExplorable,
 } from "../src/utils/eulerLabels.js";
+import {
+  dataIssueLocation,
+  walletDiagnosticOwner,
+} from "../src/utils/entityDiagnostics.js";
 
 const originalQueryDeployments = DeploymentService.queryDeployments;
 
@@ -440,7 +444,16 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
           ],
         },
         errors: [
-          { code: "X", severity: "warning", message: "x", paths: ["$"] },
+          {
+            code: "X",
+            severity: "warning",
+            message: "x",
+            locations: [
+              dataIssueLocation(
+                walletDiagnosticOwner(1, plainVault.address),
+              ),
+            ],
+          },
         ],
       };
     },

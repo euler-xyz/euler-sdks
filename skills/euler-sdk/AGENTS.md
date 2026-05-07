@@ -38,7 +38,7 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 - `eulerLabelsService` plus exported label helpers for normalized products, Earn entries, notices, restrictions, and product/vault flags
 
 Do not assume all vaults are `EVault`. Use `vaultMetaService` for polymorphic routing.
-Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and use `errors`/`entityId` for UI diagnostics.
+Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and map `errors[].locations[]` by owner reference for UI diagnostics.
 
 ### 1.2 UI Data Population Contract
 
@@ -52,7 +52,7 @@ Computed account metrics depend on populated data. For portfolio screens, set:
 Without these flags, metrics like `healthFactor`, `netAssetValueUsd`, and `roe` may be missing or incomplete.
 APY/ROE fields exposed by vault and portfolio entities are percentage points (`5` = `5%`); raw reward campaign APRs remain decimal fractions until converted by computed breakdowns or UI helpers.
 
-For batch vault reads (`fetchVaults`, `fetchVerifiedVaults`), results preserve input order and can include `undefined` entries for per-vault failures; use diagnostics `entityId` to map failures to addresses.
+For batch vault reads (`fetchVaults`, `fetchVerifiedVaults`), results preserve input order and can include `undefined` entries for per-vault failures; use diagnostics locations with `owner.kind === "vault"` to map failures to addresses.
 
 Use entity `populated` flags to verify enrichment state in UI logic:
 

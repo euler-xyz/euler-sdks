@@ -11,6 +11,12 @@ import type {
 	AccountLiquidityInfo,
 } from "./accountLensTypes.js";
 import type { DataIssue } from "../../../../utils/entityDiagnostics.js";
+import {
+	accountPositionCollateralDiagnosticOwner,
+	accountPositionDiagnosticOwner,
+	dataIssueLocation,
+	subAccountDiagnosticOwner,
+} from "../../../../utils/entityDiagnostics.js";
 import { bigintToSafeNumber } from "../../../../utils/normalization.js";
 
 /**
@@ -20,9 +26,16 @@ import { bigintToSafeNumber } from "../../../../utils/normalization.js";
  */
 function convertAccountLiquidityInfoToAccountLiquidity(
 	liquidityInfo: AccountLiquidityInfo,
+	chainId: number,
+	account: `0x${string}`,
+	positionVault: `0x${string}`,
 	errors: DataIssue[],
 ): IAccountLiquidity {
-	const vaultEntityId = liquidityInfo.vault;
+	const positionOwner = accountPositionDiagnosticOwner(
+		chainId,
+		account,
+		positionVault,
+	);
 	const liabilityValue = {
 		borrowing: liquidityInfo.liabilityValueBorrowing,
 		liquidation: liquidityInfo.liabilityValueLiquidation,
@@ -53,9 +66,18 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 				code: "DEFAULT_APPLIED",
 				severity: "warning",
 				message: "Missing collateral borrowing value; defaulted to 0.",
-				paths: [`$.collaterals[${idx}].value.borrowing`],
+				locations: [
+					dataIssueLocation(
+						accountPositionCollateralDiagnosticOwner(
+							chainId,
+							account,
+							positionVault,
+							collateralAddress,
+						),
+						"$.value.borrowing",
+					),
+				],
 				source: "accountLens",
-				entityId: collateralAddress,
 				normalizedValue: "0",
 			});
 		}
@@ -64,9 +86,18 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 				code: "DEFAULT_APPLIED",
 				severity: "warning",
 				message: "Missing collateral liquidation value; defaulted to 0.",
-				paths: [`$.collaterals[${idx}].value.liquidation`],
+				locations: [
+					dataIssueLocation(
+						accountPositionCollateralDiagnosticOwner(
+							chainId,
+							account,
+							positionVault,
+							collateralAddress,
+						),
+						"$.value.liquidation",
+					),
+				],
 				source: "accountLens",
-				entityId: collateralAddress,
 				normalizedValue: "0",
 			});
 		}
@@ -75,9 +106,18 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 				code: "DEFAULT_APPLIED",
 				severity: "warning",
 				message: "Missing collateral oracleMid value; defaulted to 0.",
-				paths: [`$.collaterals[${idx}].value.oracleMid`],
+				locations: [
+					dataIssueLocation(
+						accountPositionCollateralDiagnosticOwner(
+							chainId,
+							account,
+							positionVault,
+							collateralAddress,
+						),
+						"$.value.oracleMid",
+					),
+				],
 				source: "accountLens",
-				entityId: collateralAddress,
 				normalizedValue: "0",
 			});
 		}
@@ -114,7 +154,7 @@ function convertAccountLiquidityInfoToAccountLiquidity(
 				path: "$.daysToLiquidation",
 				errors,
 				source: "accountLens",
-				entityId: vaultEntityId,
+				owner: positionOwner,
 			});
 		}
 	}
@@ -136,6 +176,7 @@ function convertAccountLiquidityInfoToAccountLiquidity(
  */
 export function convertVaultAccountInfoToAccountPosition(
 	vaultAccountInfo: VaultAccountInfo,
+	chainId: number,
 	errors: DataIssue[],
 ): AccountPosition {
 	let liquidity: IAccountLiquidity | undefined;
@@ -146,14 +187,25 @@ export function convertVaultAccountInfoToAccountPosition(
 				code: "SOURCE_UNAVAILABLE",
 				severity: "warning",
 				message,
-				paths: ["$.liquidity"],
-				entityId: vaultAccountInfo.vault,
+				locations: [
+					dataIssueLocation(
+						accountPositionDiagnosticOwner(
+							chainId,
+							getAddress(vaultAccountInfo.account),
+							getAddress(vaultAccountInfo.vault),
+						),
+						"$.liquidity",
+					),
+				],
 				source: "accountLens",
 				originalValue: vaultAccountInfo.liquidityInfo.queryFailureReason,
 			});
 		} else {
 			liquidity = convertAccountLiquidityInfoToAccountLiquidity(
 				vaultAccountInfo.liquidityInfo,
+				chainId,
+				getAddress(vaultAccountInfo.account),
+				getAddress(vaultAccountInfo.vault),
 				errors,
 			);
 		}
@@ -183,17 +235,21 @@ export function convertVaultAccountInfoToAccountPosition(
 export function convertToSubAccount(
 	evcAccountInfo: EVCAccountInfo,
 	vaultAccountInfos: VaultAccountInfo[],
+	chainId: number,
 	errors: DataIssue[],
 ): ISubAccount {
 	const positions = vaultAccountInfos.map((info) =>
-		convertVaultAccountInfoToAccountPosition(info, errors),
+		convertVaultAccountInfoToAccountPosition(info, chainId, errors),
 	);
 	const subAccountData: ISubAccount = {
 		timestamp: bigintToSafeNumber(evcAccountInfo.timestamp, {
 			path: "$.timestamp",
 			errors,
 			source: "accountLens",
-			entityId: getAddress(evcAccountInfo.account),
+			owner: subAccountDiagnosticOwner(
+				chainId,
+				getAddress(evcAccountInfo.account),
+			),
 		}),
 		account: getAddress(evcAccountInfo.account),
 		owner: getAddress(evcAccountInfo.owner),
@@ -203,7 +259,10 @@ export function convertToSubAccount(
 				path: "$.lastAccountStatusCheckTimestamp",
 				errors,
 				source: "accountLens",
-				entityId: getAddress(evcAccountInfo.account),
+				owner: subAccountDiagnosticOwner(
+					chainId,
+					getAddress(evcAccountInfo.account),
+				),
 			},
 		),
 		enabledControllers: evcAccountInfo.enabledControllers.map(getAddress),

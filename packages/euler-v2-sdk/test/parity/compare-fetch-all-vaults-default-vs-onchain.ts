@@ -28,6 +28,10 @@ import { buildEulerSDK, type BuildSDKOptions } from "../../src/sdk/buildSDK.js";
 import { createPythPlugin } from "../../src/plugins/pyth/index.js";
 import type { BuildQueryFn } from "../../src/utils/buildQuery.js";
 import type { VaultEntity } from "../../src/services/vaults/vaultMetaService/index.js";
+import {
+  dataIssueLocation,
+  serviceDiagnosticOwner,
+} from "../../src/utils/entityDiagnostics.js";
 
 import { getRpcUrls } from "../../examples/utils/config.js";
 
@@ -74,8 +78,7 @@ type DataIssueSnapshot = {
   code: string;
   severity: string;
   message: string;
-  paths?: string[];
-  entityId?: string;
+  locations?: Array<{ owner: unknown; path: string }>;
   source?: string;
 };
 
@@ -269,17 +272,20 @@ function emptySummary(): ChainSummary {
 
 function toDataIssueSnapshot(issue: unknown): DataIssueSnapshot {
   const value = (issue ?? {}) as Record<string, unknown>;
+  const locations = Array.isArray(value.locations)
+    ? value.locations.flatMap((entry) => {
+        const location = entry as Record<string, unknown>;
+        return typeof location.path === "string"
+          ? [{ owner: location.owner, path: location.path }]
+          : [];
+      })
+    : undefined;
   return {
     code: typeof value.code === "string" ? value.code : "UNKNOWN",
     severity: typeof value.severity === "string" ? value.severity : "unknown",
     message:
       typeof value.message === "string" ? value.message : JSON.stringify(value),
-    paths: Array.isArray(value.paths)
-      ? value.paths.filter(
-          (entry): entry is string => typeof entry === "string",
-        )
-      : undefined,
-    entityId: typeof value.entityId === "string" ? value.entityId : undefined,
+    locations,
     source: typeof value.source === "string" ? value.source : undefined,
   };
 }
@@ -884,16 +890,18 @@ async function fetchScenarioSnapshot(
           severity: "warning",
           message: `vaultMetaService.fetchAllVaults() failed for ${scenario}; falling back to per-service fetches.`,
           source: "compare-fetch-all-vaults",
-          paths: ["$"],
-          entityId: undefined,
+          locations: [
+            dataIssueLocation(serviceDiagnosticOwner("compare-fetch-all-vaults", chainId)),
+          ],
         },
         {
           code: "SOURCE_UNAVAILABLE",
           severity: "warning",
           message: error instanceof Error ? error.message : String(error),
           source: "vaultMetaService",
-          paths: ["$"],
-          entityId: undefined,
+          locations: [
+            dataIssueLocation(serviceDiagnosticOwner("vaultMetaService", chainId)),
+          ],
         },
       ];
 
@@ -914,8 +922,9 @@ async function fetchScenarioSnapshot(
               ? entry.reason.message
               : String(entry.reason),
           source,
-          paths: ["$"],
-          entityId: undefined,
+          locations: [
+            dataIssueLocation(serviceDiagnosticOwner(source, chainId)),
+          ],
         });
         return [];
       });

@@ -644,12 +644,15 @@ function normalizeSdkAccount(account, errors = []) {
   const unavailableLiquidity = new Set();
   for (const error of errors) {
     if (error?.code !== "SOURCE_UNAVAILABLE" || error?.source !== "accountLens") continue;
-    const subAccountPath = error.paths?.find((value) => typeof value === "string" && value.startsWith("$.subAccounts['"));
-    const subAccountMatch = subAccountPath?.match(/\$\.subAccounts\['(0x[a-fA-F0-9]{40})'\]\.liquidity/);
-    const subAccount = subAccountMatch?.[1] ? getAddress(subAccountMatch[1]) : undefined;
-    const entityId = asAddress(error.entityId);
-    if (!subAccount || !entityId) continue;
-    unavailableLiquidity.add(`${subAccount.toLowerCase()}:${entityId.toLowerCase()}`);
+    const location = error.locations?.find(
+      (value) =>
+        value?.owner?.kind === "accountPosition" &&
+        value.path === "$.liquidity",
+    );
+    const subAccount = asAddress(location?.owner?.account);
+    const vault = asAddress(location?.owner?.vault);
+    if (!subAccount || !vault) continue;
+    unavailableLiquidity.add(`${subAccount.toLowerCase()}:${vault.toLowerCase()}`);
   }
 
   const subAccounts = Object.values(account?.subAccounts ?? {})

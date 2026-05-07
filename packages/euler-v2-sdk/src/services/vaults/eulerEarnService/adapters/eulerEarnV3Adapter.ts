@@ -3,13 +3,14 @@ import {
 	type BuildQueryFn,
 	applyBuildQuery,
 } from "../../../../utils/buildQuery.js";
-import type {
-	DataIssue,
-	ServiceResult,
-} from "../../../../utils/entityDiagnostics.js";
 import {
 	compressDataIssues,
-	prefixDataIssues,
+	dataIssueLocation,
+	type DataIssue,
+	type DataIssueOwnerRef,
+	type ServiceResult,
+	vaultDiagnosticOwner,
+	vaultStrategyDiagnosticOwner,
 } from "../../../../utils/entityDiagnostics.js";
 import {
 	parseAddressField,
@@ -136,7 +137,7 @@ function getWithdrawQueueStrategies(
 function convertToken(
 	token: V3Token,
 	path: string,
-	entityId: Address,
+	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
 	fallbackAddress: Address,
 	fallbackName: string,
@@ -145,7 +146,7 @@ function convertToken(
 	return {
 		address: parseAddressField(token.address, {
 			path: `${path}.address`,
-			entityId,
+			owner,
 			errors,
 			source: "eulerEarnV3",
 			fallback: fallbackAddress,
@@ -153,21 +154,21 @@ function convertToken(
 		}),
 		name: parseStringField(token.name, {
 			path: `${path}.name`,
-			entityId,
+			owner,
 			errors,
 			source: "eulerEarnV3",
 			fallback: fallbackName,
 		}),
 		symbol: parseStringField(token.symbol, {
 			path: `${path}.symbol`,
-			entityId,
+			owner,
 			errors,
 			source: "eulerEarnV3",
 			fallback: fallbackSymbol,
 		}),
 		decimals: parseNumberField(token.decimals, {
 			path: `${path}.decimals`,
-			entityId,
+			owner,
 			errors,
 			source: "eulerEarnV3",
 		}),
@@ -176,71 +177,66 @@ function convertToken(
 
 function convertGovernance(
 	detail: V3EulerEarnDetail,
-	entityId: Address,
+	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
 ): EulerEarnGovernance {
 	return {
 		owner: parseAddressField(
 			detail.governance?.owner ?? detail.management?.owner,
-			{ path: "$.governance.owner", entityId, errors, source: "eulerEarnV3" },
+			{ path: "$.governance.owner", owner, errors, source: "eulerEarnV3" },
 		),
-		creator: parseAddressField(
-			detail.governance?.creator,
-			{ path: "$.governance.creator", entityId, errors, source: "eulerEarnV3" },
-		),
-		curator: parseAddressField(
-			detail.governance?.curator,
-			{ path: "$.governance.curator", entityId, errors, source: "eulerEarnV3" },
-		),
+		creator: parseAddressField(detail.governance?.creator, {
+			path: "$.governance.creator",
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
+		curator: parseAddressField(detail.governance?.curator, {
+			path: "$.governance.curator",
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
 		guardian: parseAddressField(
 			detail.governance?.guardian ?? detail.management?.guardian,
-			{ path: "$.governance.guardian", entityId, errors, source: "eulerEarnV3" },
+			{ path: "$.governance.guardian", owner, errors, source: "eulerEarnV3" },
 		),
-		feeReceiver: parseAddressField(
-			detail.governance?.feeReceiver,
-			{
-				path: "$.governance.feeReceiver",
-				entityId,
-				errors,
-				source: "eulerEarnV3",
-			},
-		),
+		feeReceiver: parseAddressField(detail.governance?.feeReceiver, {
+			path: "$.governance.feeReceiver",
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
 		timelock: parseNumberField(
 			detail.governance?.timelock ?? detail.management?.timelockSeconds,
-			{ path: "$.governance.timelock", entityId, errors, source: "eulerEarnV3" },
+			{ path: "$.governance.timelock", owner, errors, source: "eulerEarnV3" },
 		),
-		pendingTimelock: parseNumberField(
-			detail.governance?.pendingTimelock,
-			{
-				path: "$.governance.pendingTimelock",
-				entityId,
-				errors,
-				source: "eulerEarnV3",
-			},
-		),
+		pendingTimelock: parseNumberField(detail.governance?.pendingTimelock, {
+			path: "$.governance.pendingTimelock",
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
 		pendingTimelockValidAt: parseNumberField(
 			detail.governance?.pendingTimelockValidAt,
 			{
 				path: "$.governance.pendingTimelockValidAt",
-				entityId,
+				owner,
 				errors,
 				source: "eulerEarnV3",
 			},
 		),
-		pendingGuardian: parseAddressField(
-			detail.governance?.pendingGuardian,
-			{
-				path: "$.governance.pendingGuardian",
-				entityId,
-				errors,
-				source: "eulerEarnV3",
-			},
-		),
+		pendingGuardian: parseAddressField(detail.governance?.pendingGuardian, {
+			path: "$.governance.pendingGuardian",
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
 		pendingGuardianValidAt: parseNumberField(
 			detail.governance?.pendingGuardianValidAt,
 			{
 				path: "$.governance.pendingGuardianValidAt",
-				entityId,
+				owner,
 				errors,
 				source: "eulerEarnV3",
 			},
@@ -250,7 +246,7 @@ function convertGovernance(
 
 function buildSupplyQueue(
 	strategies: V3EulerEarnStrategy[],
-	entityId: Address,
+	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
 ): Address[] {
 	return strategies
@@ -263,7 +259,7 @@ function buildSupplyQueue(
 		.map((strategy, index) =>
 			parseAddressField(strategy.address, {
 				path: `$.supplyQueue[${index}]`,
-				entityId,
+				owner,
 				errors,
 				source: "eulerEarnV3",
 			}),
@@ -272,28 +268,27 @@ function buildSupplyQueue(
 
 function buildWithdrawQueue(
 	strategies: V3EulerEarnStrategy[],
-	entityId: Address,
+	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
 ): Address[] {
-	return getWithdrawQueueStrategies(strategies)
-		.map((strategy, index) =>
-			parseAddressField(strategy.address, {
-				path: `$.withdrawQueue[${index}]`,
-				entityId,
-				errors,
-				source: "eulerEarnV3",
-			}),
-		);
+	return getWithdrawQueueStrategies(strategies).map((strategy, index) =>
+		parseAddressField(strategy.address, {
+			path: `$.withdrawQueue[${index}]`,
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
+	);
 }
 
 function convertStrategies(
 	detail: V3EulerEarnDetail,
-	entityId: Address,
+	vaultAddress: Address,
+	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
 ): EulerEarnStrategyInfo[] {
 	function normalizeStrategyVaultType(
 		value: string | undefined,
-		path: string,
 		strategyAddress: Address,
 	): VaultType {
 		switch (value?.toLowerCase()) {
@@ -314,8 +309,16 @@ function convertStrategies(
 					code: "DEFAULT_APPLIED",
 					severity: "warning",
 					message: `Unsupported strategy vaultType '${value}'; defaulted to Unknown.`,
-					paths: [path],
-					entityId: strategyAddress,
+					locations: [
+						dataIssueLocation(
+							vaultStrategyDiagnosticOwner(
+								detail.chainId,
+								vaultAddress,
+								strategyAddress,
+							),
+							"$.vaultType",
+						),
+					],
 					source: "eulerEarnV3",
 					originalValue: value,
 					normalizedValue: VaultType.Unknown,
@@ -326,78 +329,76 @@ function convertStrategies(
 
 	return getWithdrawQueueStrategies(detail.strategies ?? []).map(
 		(strategy, index) => {
-		const strategyAddress = parseAddressField(strategy.address, {
-			path: `$.strategies[${index}].address`,
-			entityId,
-			errors,
-			source: "eulerEarnV3",
-		});
-		const allocatedAssets = parseBigIntField(
-			strategy.allocatedAssets ?? "0",
-			{
-				path: `$.strategies[${index}].allocatedAssets`,
-				entityId: strategyAddress,
+			const strategyAddress = parseAddressField(strategy.address, {
+				path: `$.strategies[${index}].address`,
+				owner,
 				errors,
 				source: "eulerEarnV3",
-			},
-		);
-		const availableAssets = parseBigIntField(
-			strategy.availableAssets ?? "0",
-			{
-				path: `$.strategies[${index}].availableAssets`,
-				entityId: strategyAddress,
-				errors,
-				source: "eulerEarnV3",
-			},
-		);
-
-		const allocationCap: EulerEarnAllocationCap = {
-			current: parseBigIntField(
-				strategy.allocationCap?.current ?? "0",
-				{
-					path: `$.strategies[${index}].allocationCap.current`,
-					entityId: strategyAddress,
-					errors,
-					source: "eulerEarnV3",
-				},
-			),
-			pending: parseBigIntField(
-				strategy.allocationCap?.pending ?? "0",
-				{
-					path: `$.strategies[${index}].allocationCap.pending`,
-					entityId: strategyAddress,
-					errors,
-					source: "eulerEarnV3",
-				},
-			),
-			pendingValidAt: parseNumberField(
-				strategy.allocationCap?.pendingValidAt,
-				{
-					path: `$.strategies[${index}].allocationCap.pendingValidAt`,
-					entityId: strategyAddress,
-					errors,
-					source: "eulerEarnV3",
-				},
-			),
-		};
-
-		return {
-			address: strategyAddress,
-			vaultType: normalizeStrategyVaultType(
-				strategy.vaultType,
-				`$.strategies[${index}].vaultType`,
+			});
+			const strategyOwner = vaultStrategyDiagnosticOwner(
+				detail.chainId,
+				vaultAddress,
 				strategyAddress,
-			),
-			allocatedAssets,
-			availableAssets,
-			allocationCap,
-			removableAt: parseNumberField(strategy.removableAt, {
-				path: `$.strategies[${index}].removableAt`,
-				entityId: strategyAddress,
-				errors,
-				source: "eulerEarnV3",
-			}),
-		};
+			);
+			const allocatedAssets = parseBigIntField(
+				strategy.allocatedAssets ?? "0",
+				{
+					path: "$.allocatedAssets",
+					owner: strategyOwner,
+					errors,
+					source: "eulerEarnV3",
+				},
+			);
+			const availableAssets = parseBigIntField(
+				strategy.availableAssets ?? "0",
+				{
+					path: "$.availableAssets",
+					owner: strategyOwner,
+					errors,
+					source: "eulerEarnV3",
+				},
+			);
+
+			const allocationCap: EulerEarnAllocationCap = {
+				current: parseBigIntField(strategy.allocationCap?.current ?? "0", {
+					path: "$.allocationCap.current",
+					owner: strategyOwner,
+					errors,
+					source: "eulerEarnV3",
+				}),
+				pending: parseBigIntField(strategy.allocationCap?.pending ?? "0", {
+					path: "$.allocationCap.pending",
+					owner: strategyOwner,
+					errors,
+					source: "eulerEarnV3",
+				}),
+				pendingValidAt: parseNumberField(
+					strategy.allocationCap?.pendingValidAt,
+					{
+						path: "$.allocationCap.pendingValidAt",
+						owner: strategyOwner,
+						errors,
+						source: "eulerEarnV3",
+					},
+				),
+			};
+
+			return {
+				address: strategyAddress,
+				vaultType: normalizeStrategyVaultType(
+					strategy.vaultType,
+					strategyAddress,
+				),
+				allocatedAssets,
+				availableAssets,
+				allocationCap,
+				removableAt: parseNumberField(strategy.removableAt, {
+					path: "$.removableAt",
+					owner: strategyOwner,
+					errors,
+					source: "eulerEarnV3",
+				}),
+			};
 		},
 	);
 }
@@ -406,35 +407,36 @@ function convertEulerEarn(
 	detail: V3EulerEarnDetail,
 	errors: DataIssue[],
 ): IEulerEarn {
-	const entityId = parseAddressField(detail.address, {
+	const vaultAddress = parseAddressField(detail.address, {
 		path: "$.address",
-		entityId: ZERO_ADDRESS,
+		owner: vaultDiagnosticOwner(detail.chainId, ZERO_ADDRESS),
 		errors,
 		source: "eulerEarnV3",
 	});
+	const owner = vaultDiagnosticOwner(detail.chainId, vaultAddress);
 
 	return {
 		type: VaultType.EulerEarn,
 		chainId: detail.chainId,
-		address: entityId,
+		address: vaultAddress,
 		isBorrowable: false,
 		shares: {
-			address: entityId,
+			address: vaultAddress,
 			name: parseStringField(detail.name, {
 				path: "$.shares.name",
-				entityId,
+				owner,
 				errors,
 				source: "eulerEarnV3",
 			}),
 			symbol: parseStringField(detail.symbol, {
 				path: "$.shares.symbol",
-				entityId,
+				owner,
 				errors,
 				source: "eulerEarnV3",
 			}),
 			decimals: parseNumberField(detail.decimals, {
 				path: "$.shares.decimals",
-				entityId,
+				owner,
 				errors,
 				source: "eulerEarnV3",
 			}),
@@ -442,7 +444,7 @@ function convertEulerEarn(
 		asset: convertToken(
 			detail.asset,
 			"$.asset",
-			entityId,
+			owner,
 			errors,
 			ZERO_ADDRESS,
 			detail.asset.name ?? "Unknown Asset",
@@ -451,39 +453,51 @@ function convertEulerEarn(
 		supplyApy1h: normalizeEulerEarnApy(
 			parseNumberField(detail.supplyApy, {
 				path: "$.supplyApy1h",
-				entityId,
+				owner,
 				errors,
 				source: "eulerEarnV3",
 			}),
 		),
-		totalShares: parseBigIntField(
-			detail.totalShares ?? "0",
-			{ path: "$.totalShares", entityId, errors, source: "eulerEarnV3" },
-		),
-		totalAssets: parseBigIntField(
-			detail.totalAssets ?? "0",
-			{ path: "$.totalAssets", entityId, errors, source: "eulerEarnV3" },
-		),
-		lostAssets: parseBigIntField(
-			detail.lostAssets ?? "0",
-			{ path: "$.lostAssets", entityId, errors, source: "eulerEarnV3" },
-		),
-		availableAssets: parseBigIntField(
-			detail.availableAssets ?? "0",
-			{ path: "$.availableAssets", entityId, errors, source: "eulerEarnV3" },
-		),
-		performanceFee: parsePerformanceFee(
-			detail.management?.performanceFee,
-			{ path: "$.performanceFee", entityId, errors, source: "eulerEarnV3" },
-		),
-		governance: convertGovernance(detail, entityId, errors),
-		supplyQueue: buildSupplyQueue(detail.strategies ?? [], entityId, errors),
-		withdrawQueue: buildWithdrawQueue(detail.strategies ?? [], entityId, errors),
-		strategies: convertStrategies(detail, entityId, errors),
-		timestamp: parseTimestampField(
-			detail.snapshotTimestamp,
-			{ path: "$.timestamp", entityId, errors, source: "eulerEarnV3" },
-		),
+		totalShares: parseBigIntField(detail.totalShares ?? "0", {
+			path: "$.totalShares",
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
+		totalAssets: parseBigIntField(detail.totalAssets ?? "0", {
+			path: "$.totalAssets",
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
+		lostAssets: parseBigIntField(detail.lostAssets ?? "0", {
+			path: "$.lostAssets",
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
+		availableAssets: parseBigIntField(detail.availableAssets ?? "0", {
+			path: "$.availableAssets",
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
+		performanceFee: parsePerformanceFee(detail.management?.performanceFee, {
+			path: "$.performanceFee",
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
+		governance: convertGovernance(detail, owner, errors),
+		supplyQueue: buildSupplyQueue(detail.strategies ?? [], owner, errors),
+		withdrawQueue: buildWithdrawQueue(detail.strategies ?? [], owner, errors),
+		strategies: convertStrategies(detail, vaultAddress, owner, errors),
+		timestamp: parseTimestampField(detail.snapshotTimestamp, {
+			path: "$.timestamp",
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
 	};
 }
 
@@ -580,7 +594,7 @@ export class EulerEarnV3Adapter implements IEulerEarnAdapter {
 			result: IEulerEarn | undefined;
 			errors: DataIssue[];
 		}> = await Promise.all(
-			vaults.map(async (vault, index) => {
+			vaults.map(async (vault) => {
 				const errors: DataIssue[] = [];
 				try {
 					const response = await this.queryV3EulerEarnDetail(
@@ -594,8 +608,11 @@ export class EulerEarnV3Adapter implements IEulerEarnAdapter {
 							code: "SOURCE_UNAVAILABLE",
 							severity: "warning",
 							message: `EulerEarn detail missing for ${getAddress(vault)}.`,
-							paths: [`$.vaults[${index}]`],
-							entityId: getAddress(vault),
+							locations: [
+								dataIssueLocation(
+									vaultDiagnosticOwner(chainId, getAddress(vault)),
+								),
+							],
 							source: "eulerEarnV3",
 						});
 						return { result: undefined, errors };
@@ -604,12 +621,7 @@ export class EulerEarnV3Adapter implements IEulerEarnAdapter {
 					const converted = convertEulerEarn(detail, errors);
 					return {
 						result: converted,
-						errors: prefixDataIssues(errors, `$.vaults[${index}]`).map(
-							(issue) => ({
-								...issue,
-								entityId: issue.entityId ?? getAddress(vault),
-							}),
-						),
+						errors,
 					};
 				} catch (error) {
 					return {
@@ -619,8 +631,11 @@ export class EulerEarnV3Adapter implements IEulerEarnAdapter {
 								code: "SOURCE_UNAVAILABLE",
 								severity: "warning",
 								message: `Failed to fetch EulerEarn vault ${getAddress(vault)}.`,
-								paths: [`$.vaults[${index}]`],
-								entityId: getAddress(vault),
+								locations: [
+									dataIssueLocation(
+										vaultDiagnosticOwner(chainId, getAddress(vault)),
+									),
+								],
 								source: "eulerEarnV3",
 								originalValue:
 									error instanceof Error ? error.message : String(error),

@@ -10,7 +10,9 @@ import type { VaultFetchOptions } from "../vaults/index.js";
 import type { IPriceService } from "../priceService/index.js";
 import type { IRewardsService } from "../rewardsService/index.js";
 import {
+	accountDiagnosticOwner,
 	compressDataIssues,
+	dataIssueLocation,
 	type DataIssue,
 	type ServiceResult,
 } from "../../utils/entityDiagnostics.js";
@@ -141,8 +143,12 @@ export class AccountService<
 							code: "SOURCE_UNAVAILABLE",
 							severity: "error",
 							message: "Failed to populate market prices for account.",
-							paths: ["$"],
-							entityId: result.owner,
+							locations: [
+								dataIssueLocation(
+									accountDiagnosticOwner(chainId, result.owner),
+									"$",
+								),
+							],
 							source: "priceService",
 							originalValue:
 								error instanceof Error ? error.message : String(error),
@@ -161,8 +167,12 @@ export class AccountService<
 							code: "SOURCE_UNAVAILABLE",
 							severity: "error",
 							message: "Failed to populate user rewards for account.",
-							paths: ["$.userRewards"],
-							entityId: result.owner,
+							locations: [
+								dataIssueLocation(
+									accountDiagnosticOwner(chainId, result.owner),
+									"$.userRewards",
+								),
+							],
 							source: "rewardsService",
 							originalValue:
 								error instanceof Error ? error.message : String(error),
@@ -244,8 +254,12 @@ export class AccountService<
 							code: "SOURCE_UNAVAILABLE",
 							severity: "error",
 							message: "Failed to populate vault entities for account.",
-							paths: ["$"],
-							entityId: account.owner,
+							locations: [
+								dataIssueLocation(
+									accountDiagnosticOwner(account.chainId, account.owner),
+									"$",
+								),
+							],
 							source: "vaultMetaService",
 							originalValue:
 								error instanceof Error ? error.message : String(error),

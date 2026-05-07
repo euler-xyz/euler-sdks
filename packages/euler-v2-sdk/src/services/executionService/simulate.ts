@@ -165,17 +165,18 @@ export async function deriveStateOverrides(
 		ctx.deploymentService.getDeployment(chainId).addresses.coreAddrs.permit2;
 	const provider = ctx.providerService.getProvider(chainId);
 
-	const balanceRequirements = extractBalanceRequirements(transactionPlan, owner);
-	const approvalRequirements = extractApprovalRequirements(transactionPlan, owner);
+	const balanceRequirements = extractBalanceRequirements(
+		transactionPlan,
+		owner,
+	);
+	const approvalRequirements = extractApprovalRequirements(
+		transactionPlan,
+		owner,
+	);
 
 	const [balanceOverrides, approvalOverrides] = await Promise.all([
 		getBalanceOverrides(provider, owner, balanceRequirements),
-		getApprovalOverrides(
-			provider,
-			owner,
-			approvalRequirements,
-			permit2Address,
-		),
+		getApprovalOverrides(provider, owner, approvalRequirements, permit2Address),
 	]);
 
 	const allOverrides: StateOverride = [];
@@ -344,10 +345,13 @@ export async function simulateTransactionPlan<
 		}
 	}
 
-	const simulatedVaults = Array.from(vaultsByAddress.values()) as TVaultEntity[];
+	const simulatedVaults = Array.from(
+		vaultsByAddress.values(),
+	) as TVaultEntity[];
 
 	const vaultFetchOptions =
-		options?.vaultFetchOptions ?? options?.accountFetchOptions?.vaultFetchOptions;
+		options?.vaultFetchOptions ??
+		options?.accountFetchOptions?.vaultFetchOptions;
 	const shouldPopulateVaultMarketPrices =
 		vaultFetchOptions?.populateMarketPrices ?? true;
 
@@ -393,7 +397,12 @@ export async function simulateTransactionPlan<
 	const accountAdapter = getAccountAdapter(ctx, "simulateTransactionPlan");
 	for (const [subAccount, evcInfo] of evcInfos.entries()) {
 		const vaultInfos = vaultInfosBySub.get(subAccount) ?? [];
-		const built = accountAdapter.buildSubAccount(evcInfo, vaultInfos, []);
+		const built = accountAdapter.buildSubAccount(
+			chainId,
+			evcInfo,
+			vaultInfos,
+			[],
+		);
 		const {
 			isLockdownMode: _lm,
 			isPermitDisabledMode: _pm,
@@ -414,7 +423,8 @@ export async function simulateTransactionPlan<
 	);
 
 	const simulatedAccount = new Account<never>(accountData);
-	const populatedAccount = simulatedAccount.mapVaultsToPositions(simulatedVaults);
+	const populatedAccount =
+		simulatedAccount.mapVaultsToPositions(simulatedVaults);
 	const accountFetchOptions = options?.accountFetchOptions;
 	const shouldPopulateAccountMarketPrices =
 		accountFetchOptions?.populateMarketPrices ?? true;
@@ -438,7 +448,8 @@ export async function simulateTransactionPlan<
 			!diagnostics.insufficientPermit2Allowances?.length &&
 			!diagnostics.insufficientDirectAllowances?.length,
 		rawBatchResults,
-		failedBatchItems: failedBatchItems.length > 0 ? failedBatchItems : undefined,
+		failedBatchItems:
+			failedBatchItems.length > 0 ? failedBatchItems : undefined,
 		accountStatusErrors:
 			accountStatusErrors.length > 0 ? accountStatusErrors : undefined,
 		vaultStatusErrors:
@@ -595,10 +606,13 @@ async function buildSimulationBatch(
 	};
 
 	for (const vault of eVaults) {
-		pushLensItem(getVaultInfoFullLensBatchItem(vaultLensAddress, vault, owner), {
-			kind: "eVault",
-			vault,
-		});
+		pushLensItem(
+			getVaultInfoFullLensBatchItem(vaultLensAddress, vault, owner),
+			{
+				kind: "eVault",
+				vault,
+			},
+		);
 	}
 
 	for (const vault of eulerEarnVaults) {
@@ -880,7 +894,8 @@ async function fetchSimulationDiagnostics(
 
 		const permit2Allowance = allowances?.assetForVaultInPermit2 ?? 0n;
 		const permit2ExpirationTime = allowances?.permit2ExpirationTime ?? 0;
-		const permit2Expired = permit2ExpirationTime > 0 && now >= permit2ExpirationTime;
+		const permit2Expired =
+			permit2ExpirationTime > 0 && now >= permit2ExpirationTime;
 		if (permit2Allowance < amount || permit2Expired) {
 			const deficit = permit2Expired ? amount : amount - permit2Allowance;
 			const prev = permit2ByToken.get(token) ?? 0n;

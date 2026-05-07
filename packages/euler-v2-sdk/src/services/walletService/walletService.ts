@@ -2,7 +2,9 @@ import { Wallet, type IWallet } from "../../entities/Wallet.js";
 import type { Address } from "viem";
 import {
 	compressDataIssues,
+	dataIssueLocation,
 	type ServiceResult,
+	walletDiagnosticOwner,
 } from "../../utils/entityDiagnostics.js";
 
 export interface AssetWithSpenders {
@@ -53,8 +55,9 @@ export class WalletService implements IWalletService {
 						code: "SOURCE_UNAVAILABLE",
 						severity: "warning",
 						message: "Wallet adapter returned no data; created empty wallet.",
-						paths: ["$"],
-						entityId: account,
+						locations: [
+							dataIssueLocation(walletDiagnosticOwner(chainId, account)),
+						],
 						source: "walletAdapter",
 						normalizedValue: "empty-wallet",
 					},

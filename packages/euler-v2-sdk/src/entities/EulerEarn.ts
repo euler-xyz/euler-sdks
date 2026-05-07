@@ -11,7 +11,8 @@ import type { IVaultEntity } from "./Account.js";
 import type { IVaultMetaService } from "../services/vaults/vaultMetaService/index.js";
 import type { DataIssue } from "../utils/entityDiagnostics.js";
 import {
-	mapDataIssuePaths,
+	mapDataIssueLocations,
+	vaultStrategyDiagnosticOwner,
 	withPathPrefix,
 } from "../utils/entityDiagnostics.js";
 import { VaultType as VaultTypeEnum } from "../utils/types.js";
@@ -32,10 +33,7 @@ export interface EulerEarnStrategyInfo {
 	vault?: IVaultEntity;
 }
 
-export type EulerEarnStrategyStatus =
-	| "active"
-	| "inactive"
-	| "pendingRemoval";
+export type EulerEarnStrategyStatus = "active" | "inactive" | "pendingRemoval";
 
 export interface EulerEarnGovernance {
 	owner: Address;
@@ -128,9 +126,7 @@ export class EulerEarn
 		return this.getStrategyStatus(strategy) === "pendingRemoval";
 	}
 
-	getStrategyStatus(
-		strategy: EulerEarnStrategyInfo,
-	): EulerEarnStrategyStatus {
+	getStrategyStatus(strategy: EulerEarnStrategyInfo): EulerEarnStrategyStatus {
 		if (strategy.removableAt > 0) {
 			return "pendingRemoval";
 		}
@@ -173,12 +169,21 @@ export class EulerEarn
 		const errors: DataIssue[] = [];
 
 		const vaults = await Promise.all(
-			allStrategyAddresses.map(async (addr, index) => {
+			allStrategyAddresses.map(async (addr) => {
 				const fetched = await vaultMetaService.fetchVault(this.chainId, addr);
 				errors.push(
 					...fetched.errors.map((issue) => ({
-						...mapDataIssuePaths(issue, (path) =>
-							withPathPrefix(path, `$.strategies[${index}].vault`),
+						...mapDataIssueLocations(issue, (location) =>
+							location.owner.kind === "vault"
+								? {
+										owner: vaultStrategyDiagnosticOwner(
+											this.chainId,
+											this.address,
+											addr,
+										),
+										path: withPathPrefix(location.path, "$.vault"),
+									}
+								: location,
 						),
 					})),
 				);

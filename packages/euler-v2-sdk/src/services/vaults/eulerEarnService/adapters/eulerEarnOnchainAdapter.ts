@@ -15,7 +15,10 @@ import type {
 	DataIssue,
 	ServiceResult,
 } from "../../../../utils/entityDiagnostics.js";
-import { prefixDataIssues } from "../../../../utils/entityDiagnostics.js";
+import {
+	dataIssueLocation,
+	vaultDiagnosticOwner,
+} from "../../../../utils/entityDiagnostics.js";
 
 const SECONDS_IN_YEAR = 365 * 24 * 60 * 60;
 const TARGET_TIME_AGO_SECONDS = 60 * 60;
@@ -226,13 +229,14 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 				batchStart + EULER_EARN_FETCH_BATCH_SIZE,
 			);
 			const batchResults = await Promise.all(
-				batch.map(async (vault, batchIdx) => {
-					const idx = batchStart + batchIdx;
+				batch.map(async (vault) => {
 					try {
-						const [vaultInfoResult, supplyApyWindow] = await Promise.allSettled([
-							this.queryEulerEarnVaultInfoFull(provider, lensAddress, vault),
-							supplyApyWindowPromise,
-						]);
+						const [vaultInfoResult, supplyApyWindow] = await Promise.allSettled(
+							[
+								this.queryEulerEarnVaultInfoFull(provider, lensAddress, vault),
+								supplyApyWindowPromise,
+							],
+						);
 						if (vaultInfoResult.status === "rejected") {
 							throw vaultInfoResult.reason;
 						}
@@ -244,14 +248,7 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 							chainId,
 							conversionErrors,
 						);
-						errors.push(
-							...prefixDataIssues(conversionErrors, `$.vaults[${idx}]`).map(
-								(issue) => ({
-									...issue,
-									entityId: issue.entityId ?? getAddress(vault),
-								}),
-							),
-						);
+						errors.push(...conversionErrors);
 						if (
 							supplyApyWindow.status === "rejected" ||
 							supplyApyWindow.value instanceof Error
@@ -261,8 +258,12 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 								severity: "warning",
 								message:
 									"Failed to populate 1h EulerEarn APY from onchain exchange rates.",
-								paths: [`$.vaults[${idx}].supplyApy1h`],
-								entityId: getAddress(vault),
+								locations: [
+									dataIssueLocation(
+										vaultDiagnosticOwner(chainId, getAddress(vault)),
+										"$.supplyApy1h",
+									),
+								],
 								source: "eulerEarnOnchainAdapter",
 								originalValue:
 									supplyApyWindow.status === "rejected"
@@ -309,8 +310,12 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 									severity: "warning",
 									message:
 										"Failed to populate 1h EulerEarn APY from onchain exchange rates.",
-									paths: [`$.vaults[${idx}].supplyApy1h`],
-									entityId: getAddress(vault),
+									locations: [
+										dataIssueLocation(
+											vaultDiagnosticOwner(chainId, getAddress(vault)),
+											"$.supplyApy1h",
+										),
+									],
 									source: "eulerEarnOnchainAdapter",
 									originalValue: apyReadErrors.join(" | "),
 								});
@@ -322,8 +327,11 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 							code: "SOURCE_UNAVAILABLE",
 							severity: "warning",
 							message: `Failed to fetch EulerEarn vault ${getAddress(vault)}.`,
-							paths: [`$.vaults[${idx}]`],
-							entityId: getAddress(vault),
+							locations: [
+								dataIssueLocation(
+									vaultDiagnosticOwner(chainId, getAddress(vault)),
+								),
+							],
 							source: "eulerEarnLens",
 							originalValue:
 								error instanceof Error ? error.message : String(error),

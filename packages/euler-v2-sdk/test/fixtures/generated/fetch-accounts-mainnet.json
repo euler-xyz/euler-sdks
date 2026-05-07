@@ -129,501 +129,801 @@
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x75cFE4ef963232ae8313aC33e21fC39241338618.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x75cFE4ef963232ae8313aC33e21fC39241338618",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x75cFE4ef963232ae8313aC33e21fC39241338618"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xB81a0e6c38c3Fec8A171cFE9631F60127a0C5bfD.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xB81a0e6c38c3Fec8A171cFE9631F60127a0C5bfD",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xB81a0e6c38c3Fec8A171cFE9631F60127a0C5bfD"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x81633C1357ddb25d8625efB2Cad26a60988475BF.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x81633C1357ddb25d8625efB2Cad26a60988475BF",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x81633C1357ddb25d8625efB2Cad26a60988475BF"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x6Ed3c871aC6aAe698a9d6E547A5F54873B091E18.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x6Ed3c871aC6aAe698a9d6E547A5F54873B091E18",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x6Ed3c871aC6aAe698a9d6E547A5F54873B091E18"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x81EBde24453B8E40454616579EA79C79A197699D.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x81EBde24453B8E40454616579EA79C79A197699D",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x81EBde24453B8E40454616579EA79C79A197699D"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x815f5BB257e88b67216a344C7C83a3eA4EE74748.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x815f5BB257e88b67216a344C7C83a3eA4EE74748",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x815f5BB257e88b67216a344C7C83a3eA4EE74748"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xa427DEf3f920F718A89e5ab473c79C065ab10Ef4.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xa427DEf3f920F718A89e5ab473c79C065ab10Ef4",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xa427DEf3f920F718A89e5ab473c79C065ab10Ef4"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x6EFc48B8B6222924fa6EA95d174af5518b761177.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x6EFc48B8B6222924fa6EA95d174af5518b761177",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x6EFc48B8B6222924fa6EA95d174af5518b761177"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x9dbb4c06357c3e9d92737d78F1A5d541B63ec7ee.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x9dbb4c06357c3e9d92737d78F1A5d541B63ec7ee",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x9dbb4c06357c3e9d92737d78F1A5d541B63ec7ee"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x5BDE30D9629948274a309F8708924Fd5A64e6205.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x5BDE30D9629948274a309F8708924Fd5A64e6205",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x5BDE30D9629948274a309F8708924Fd5A64e6205"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x4199559fBffC5265e96d8Ef191a0a676d6AF0549.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x4199559fBffC5265e96d8Ef191a0a676d6AF0549",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x4199559fBffC5265e96d8Ef191a0a676d6AF0549"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xA8DBcDB0290000C810c72Fc00018F600B0272D87.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xA8DBcDB0290000C810c72Fc00018F600B0272D87",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xA8DBcDB0290000C810c72Fc00018F600B0272D87"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xF208b13968CF79DB8ed788907e70C288A3169c0B.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xF208b13968CF79DB8ed788907e70C288A3169c0B",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xF208b13968CF79DB8ed788907e70C288A3169c0B"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x4Cf86a850Ac8380C8542BD3da73bAec52A7d8FeE.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x4Cf86a850Ac8380C8542BD3da73bAec52A7d8FeE",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x4Cf86a850Ac8380C8542BD3da73bAec52A7d8FeE"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x7A9e7a2453cC940B112d668656404a8ffEA8cb98.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x7A9e7a2453cC940B112d668656404a8ffEA8cb98",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x7A9e7a2453cC940B112d668656404a8ffEA8cb98"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xcdF067F306E7a511Ef701588AFCdcff292B19282.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xcdF067F306E7a511Ef701588AFCdcff292B19282",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xcdF067F306E7a511Ef701588AFCdcff292B19282"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x55D1a9A897F7Ef7041b0f1eC9A6aae9978992708.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x55D1a9A897F7Ef7041b0f1eC9A6aae9978992708",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x55D1a9A897F7Ef7041b0f1eC9A6aae9978992708"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x14fABe94099B5dFe8130BDa0157d8c91b07c82A7.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x14fABe94099B5dFe8130BDa0157d8c91b07c82A7",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x14fABe94099B5dFe8130BDa0157d8c91b07c82A7"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xd7583E3CF08bbcaB66F1242195227bBf9F865Fda.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xd7583E3CF08bbcaB66F1242195227bBf9F865Fda",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xd7583E3CF08bbcaB66F1242195227bBf9F865Fda"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xb04F3175dA53f046c9a655eCda2c9e5be38B99ca.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xb04F3175dA53f046c9a655eCda2c9e5be38B99ca",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xb04F3175dA53f046c9a655eCda2c9e5be38B99ca"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xC7F16d35100932eBe26beeF8273f12f6a352e042.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xC7F16d35100932eBe26beeF8273f12f6a352e042",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xC7F16d35100932eBe26beeF8273f12f6a352e042"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x57c294FBF23033b7A9794841E932A3a8363aef71.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x57c294FBF23033b7A9794841E932A3a8363aef71",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x57c294FBF23033b7A9794841E932A3a8363aef71"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x260B37Be409e29c89dFB7399eF48466cB1edfcfb.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x260B37Be409e29c89dFB7399eF48466cB1edfcfb",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x260B37Be409e29c89dFB7399eF48466cB1edfcfb"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x609baF18F29027444070e71B9fD092438AFc0383.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x609baF18F29027444070e71B9fD092438AFc0383",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x609baF18F29027444070e71B9fD092438AFc0383"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x5Dac9ccC215b9Af65B486066786F79d9aa0043Da.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x5Dac9ccC215b9Af65B486066786F79d9aa0043Da",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x5Dac9ccC215b9Af65B486066786F79d9aa0043Da"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x84A7D732CaB139951ff29C1255154A15eff1b09b.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x84A7D732CaB139951ff29C1255154A15eff1b09b",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x84A7D732CaB139951ff29C1255154A15eff1b09b"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x91aEDDc4aB91A90Aa1aa1ae94a5AD9a869295AfF.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x91aEDDc4aB91A90Aa1aa1ae94a5AD9a869295AfF",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x91aEDDc4aB91A90Aa1aa1ae94a5AD9a869295AfF"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xA2636f5e3E2f63c3Ca3B50a97Ac3D9aa7Fce8FD0.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xA2636f5e3E2f63c3Ca3B50a97Ac3D9aa7Fce8FD0",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xA2636f5e3E2f63c3Ca3B50a97Ac3D9aa7Fce8FD0"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x1024f785724Fe08902438761b288Eff3aE41048A.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x1024f785724Fe08902438761b288Eff3aE41048A",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x1024f785724Fe08902438761b288Eff3aE41048A"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x3af4A49C8E2FcaF33Fd3389543B80D320FCC9091.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x3af4A49C8E2FcaF33Fd3389543B80D320FCC9091",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x3af4A49C8E2FcaF33Fd3389543B80D320FCC9091"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xc93D036c58C83811A82fb98FeEd8cac7a942A110.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xc93D036c58C83811A82fb98FeEd8cac7a942A110",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xc93D036c58C83811A82fb98FeEd8cac7a942A110"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x029cd954C38838b2731Cb5618E5C950ed4766956.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x029cd954C38838b2731Cb5618E5C950ed4766956",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x029cd954C38838b2731Cb5618E5C950ed4766956"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x2175CE7c56BAa22874Eeb021c1270E6198059Cda.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x2175CE7c56BAa22874Eeb021c1270E6198059Cda",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x2175CE7c56BAa22874Eeb021c1270E6198059Cda"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x5B9EFFDCBD65946F2B143725Dc244563248AA4Ee.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x5B9EFFDCBD65946F2B143725Dc244563248AA4Ee",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x5B9EFFDCBD65946F2B143725Dc244563248AA4Ee"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xfF52FC331812c959293891Ccdc37404d903F5479.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xfF52FC331812c959293891Ccdc37404d903F5479",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xfF52FC331812c959293891Ccdc37404d903F5479"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xA7a71E78128F6e3f6dB404ec47806E472F280ef8.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xA7a71E78128F6e3f6dB404ec47806E472F280ef8",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xA7a71E78128F6e3f6dB404ec47806E472F280ef8"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xFe259bDF4f11E09826408923BAe36c62FF101fB2.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xFe259bDF4f11E09826408923BAe36c62FF101fB2",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xFe259bDF4f11E09826408923BAe36c62FF101fB2"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x65b75050255BD57a8Bd155F85b91B403C6AA1ee0.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x65b75050255BD57a8Bd155F85b91B403C6AA1ee0",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x65b75050255BD57a8Bd155F85b91B403C6AA1ee0"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xf781C9e19A7db2A4a36538f250557BCD703eEc78.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xf781C9e19A7db2A4a36538f250557BCD703eEc78",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xf781C9e19A7db2A4a36538f250557BCD703eEc78"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xFF9D5bd7d4293442BA9673a078061596db9B340b.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xFF9D5bd7d4293442BA9673a078061596db9B340b",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xFF9D5bd7d4293442BA9673a078061596db9B340b"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xd52929B69680A6f74D2eB9c8F1ef482f37b1b32B.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xd52929B69680A6f74D2eB9c8F1ef482f37b1b32B",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xd52929B69680A6f74D2eB9c8F1ef482f37b1b32B"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x3f9B9df12C5Df2CC688b9DD4f8391A07067f3CC2.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x3f9B9df12C5Df2CC688b9DD4f8391A07067f3CC2",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x3f9B9df12C5Df2CC688b9DD4f8391A07067f3CC2"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x78C695C75cde22C1bC67E974f839a869B59B470c.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x78C695C75cde22C1bC67E974f839a869B59B470c",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x78C695C75cde22C1bC67E974f839a869B59B470c"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x810aDE1F763116D5F88b0b0197f2F9492891f506.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x810aDE1F763116D5F88b0b0197f2F9492891f506",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x810aDE1F763116D5F88b0b0197f2F9492891f506"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x10098de28BA6928186954FcC18AD919040600Af3.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x10098de28BA6928186954FcC18AD919040600Af3",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x10098de28BA6928186954FcC18AD919040600Af3"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xa765A629f11f538F6d67e3fDF799BaEd1506017d.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xa765A629f11f538F6d67e3fDF799BaEd1506017d",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xa765A629f11f538F6d67e3fDF799BaEd1506017d"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x272C39C82CA9F10e5338A6eE75927cFe00C82e2c.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x272C39C82CA9F10e5338A6eE75927cFe00C82e2c",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x272C39C82CA9F10e5338A6eE75927cFe00C82e2c"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x9aFDF37Fa2B1c486dD73b35FB154B679779C09A5.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x9aFDF37Fa2B1c486dD73b35FB154B679779C09A5",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x9aFDF37Fa2B1c486dD73b35FB154B679779C09A5"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0x3EB6F25A0a879e5A11270d3BC3C17efB6D41b518.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0x3EB6F25A0a879e5A11270d3BC3C17efB6D41b518",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0x3EB6F25A0a879e5A11270d3BC3C17efB6D41b518"
+              },
+              "path": "$"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "error",
           "message": "Failed to fetch account positions for 0xb497070466Dc15FA6420b4781bB0352257146495.",
-          "paths": [
-            "$"
-          ],
-          "entityId": "0xb497070466Dc15FA6420b4781bB0352257146495",
-          "source": "accountV3"
+          "source": "accountV3",
+          "locations": [
+            {
+              "owner": {
+                "kind": "account",
+                "chainId": 1,
+                "address": "0xb497070466Dc15FA6420b4781bB0352257146495"
+              },
+              "path": "$"
+            }
+          ]
         }
       ]
     },
@@ -19770,51 +20070,86 @@
           "code": "SOURCE_UNAVAILABLE",
           "severity": "warning",
           "message": "Failed to fetch liquidity for position 0x9851057442a55e349977b0CE644E19C05308F488 for sub-account 0x75cFe4ef963232ae8313AC33E21FC39241338611: 0xd743df6a",
-          "paths": [
-            "$.subAccounts['0x75cFe4ef963232ae8313AC33E21FC39241338611'].liquidity"
-          ],
-          "entityId": "0x9851057442a55e349977b0CE644E19C05308F488",
-          "source": "accountLens"
+          "source": "accountLens",
+          "locations": [
+            {
+              "owner": {
+                "kind": "accountPosition",
+                "chainId": 1,
+                "account": "0x75cFe4ef963232ae8313AC33E21FC39241338611",
+                "vault": "0x9851057442a55e349977b0CE644E19C05308F488"
+              },
+              "path": "$.liquidity"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "warning",
           "message": "Failed to fetch liquidity for position 0x29A9E5A004002Ff9E960bb8BB536E076F53cbDF1 for sub-account 0x75cFE4eF963232ae8313Ac33e21fC39241338616: 0xd743df6a",
-          "paths": [
-            "$.subAccounts['0x75cFE4eF963232ae8313Ac33e21fC39241338616'].liquidity"
-          ],
-          "entityId": "0x29A9E5A004002Ff9E960bb8BB536E076F53cbDF1",
-          "source": "accountLens"
+          "source": "accountLens",
+          "locations": [
+            {
+              "owner": {
+                "kind": "accountPosition",
+                "chainId": 1,
+                "account": "0x75cFE4eF963232ae8313Ac33e21fC39241338616",
+                "vault": "0x29A9E5A004002Ff9E960bb8BB536E076F53cbDF1"
+              },
+              "path": "$.liquidity"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "warning",
           "message": "Failed to fetch liquidity for position 0xC605471aE09e0b7daA9e8813707d0DDbf9429Ad2 for sub-account 0x75CFe4eF963232Ae8313Ac33E21FC39241338608: 0xd743df6a",
-          "paths": [
-            "$.subAccounts['0x75CFe4eF963232Ae8313Ac33E21FC39241338608'].liquidity"
-          ],
-          "entityId": "0xC605471aE09e0b7daA9e8813707d0DDbf9429Ad2",
-          "source": "accountLens"
+          "source": "accountLens",
+          "locations": [
+            {
+              "owner": {
+                "kind": "accountPosition",
+                "chainId": 1,
+                "account": "0x75CFe4eF963232Ae8313Ac33E21FC39241338608",
+                "vault": "0xC605471aE09e0b7daA9e8813707d0DDbf9429Ad2"
+              },
+              "path": "$.liquidity"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "warning",
           "message": "Failed to fetch liquidity for position 0xc6137BC1378c2396051e06417704d31615F77Cb9 for sub-account 0x75cFe4eF963232Ae8313ac33e21fC3924133860d: 0xd743df6a",
-          "paths": [
-            "$.subAccounts['0x75cFe4eF963232Ae8313ac33e21fC3924133860d'].liquidity"
-          ],
-          "entityId": "0xc6137BC1378c2396051e06417704d31615F77Cb9",
-          "source": "accountLens"
+          "source": "accountLens",
+          "locations": [
+            {
+              "owner": {
+                "kind": "accountPosition",
+                "chainId": 1,
+                "account": "0x75cFe4eF963232Ae8313ac33e21fC3924133860d",
+                "vault": "0xc6137BC1378c2396051e06417704d31615F77Cb9"
+              },
+              "path": "$.liquidity"
+            }
+          ]
         },
         {
           "code": "SOURCE_UNAVAILABLE",
           "severity": "warning",
           "message": "Failed to fetch liquidity for position 0xc6137BC1378c2396051e06417704d31615F77Cb9 for sub-account 0x3eB6f25A0A879E5A11270D3bC3C17EfB6d41B51B: 0xd743df6a",
-          "paths": [
-            "$.subAccounts['0x3eB6f25A0A879E5A11270D3bC3C17EfB6d41B51B'].liquidity"
-          ],
-          "entityId": "0xc6137BC1378c2396051e06417704d31615F77Cb9",
-          "source": "accountLens"
+          "source": "accountLens",
+          "locations": [
+            {
+              "owner": {
+                "kind": "accountPosition",
+                "chainId": 1,
+                "account": "0x3eB6f25A0A879E5A11270D3bC3C17EfB6d41B51B",
+                "vault": "0xc6137BC1378c2396051e06417704d31615F77Cb9"
+              },
+              "path": "$.liquidity"
+            }
+          ]
         }
       ]
     }

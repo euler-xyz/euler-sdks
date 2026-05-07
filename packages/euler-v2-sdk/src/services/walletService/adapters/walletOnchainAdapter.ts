@@ -11,9 +11,12 @@ import {
 	type BuildQueryFn,
 	applyBuildQuery,
 } from "../../../utils/buildQuery.js";
-import type {
-	DataIssue,
-	ServiceResult,
+import {
+	dataIssueLocation,
+	type DataIssue,
+	type ServiceResult,
+	walletAssetDiagnosticOwner,
+	walletDiagnosticOwner,
 } from "../../../utils/entityDiagnostics.js";
 import { numberLikeToSafeFiniteNumber } from "../../../utils/normalization.js";
 
@@ -173,10 +176,16 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 									severity: "warning",
 									message:
 										"Failed to fetch asset allowance for spender; defaulted to 0.",
-									paths: [
-										`$.assets[${assetIdx}].allowances['${spenderAddress}'].assetForVault`,
+									locations: [
+										dataIssueLocation(
+											walletAssetDiagnosticOwner(
+												chainId,
+												account,
+												assetAddress,
+											),
+											`$.allowances['${spenderAddress}'].assetForVault`,
+										),
 									],
-									entityId: assetAddress,
 									source: "erc20.allowance",
 									normalizedValue: "0",
 								});
@@ -187,10 +196,16 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 									severity: "warning",
 									message:
 										"Failed to fetch Permit2 allowance approval; defaulted to 0.",
-									paths: [
-										`$.assets[${assetIdx}].allowances['${spenderAddress}'].assetForPermit2`,
+									locations: [
+										dataIssueLocation(
+											walletAssetDiagnosticOwner(
+												chainId,
+												account,
+												assetAddress,
+											),
+											`$.allowances['${spenderAddress}'].assetForPermit2`,
+										),
 									],
-									entityId: assetAddress,
 									source: "erc20.allowance",
 									normalizedValue: "0",
 								});
@@ -201,10 +216,16 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 									severity: "warning",
 									message:
 										"Failed to fetch Permit2 spender allowance; defaulted to 0.",
-									paths: [
-										`$.assets[${assetIdx}].allowances['${spenderAddress}'].assetForVaultInPermit2`,
+									locations: [
+										dataIssueLocation(
+											walletAssetDiagnosticOwner(
+												chainId,
+												account,
+												assetAddress,
+											),
+											`$.allowances['${spenderAddress}'].assetForVaultInPermit2`,
+										),
 									],
-									entityId: assetAddress,
 									source: "permit2.allowance",
 									normalizedValue: "0",
 								});
@@ -232,7 +253,6 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 
 			for (const {
 				assetAddress,
-				assetIdx,
 				balanceResult,
 				spenders,
 				spenderResults,
@@ -244,8 +264,11 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 						severity: "warning",
 						message:
 							"Failed to fetch asset balance; asset entry omitted from wallet result.",
-						paths: ["$.assets"],
-						entityId: assetAddress,
+						locations: [
+							dataIssueLocation(
+								walletAssetDiagnosticOwner(chainId, account, assetAddress),
+							),
+						],
 						source: "erc20.balanceOf",
 						originalValue: assetAddress,
 						normalizedValue: "asset-omitted",
@@ -272,9 +295,10 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 					const permit2ExpirationTime = numberLikeToSafeFiniteNumber(
 						(permit2Result?.[1] ?? 0) as bigint | number,
 						{
-							path: `$.assets[${assetIdx}].allowances['${spenderAddress}'].permit2ExpirationTime`,
+							path: `$.allowances['${spenderAddress}'].permit2ExpirationTime`,
 							errors,
 							source: "permit2.allowance",
+							owner: walletAssetDiagnosticOwner(chainId, account, assetAddress),
 							fallback: 0,
 						},
 					);
@@ -309,8 +333,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 				code: "SOURCE_UNAVAILABLE",
 				severity: "warning",
 				message: "Failed to fetch wallet info.",
-				paths: ["$"],
-				entityId: account,
+				locations: [dataIssueLocation(walletDiagnosticOwner(chainId, account))],
 				source: "walletOnchainAdapter",
 				originalValue: error instanceof Error ? error.message : String(error),
 			});

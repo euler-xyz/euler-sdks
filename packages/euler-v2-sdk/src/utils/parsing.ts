@@ -1,16 +1,21 @@
 import { formatUnits, type Address, getAddress } from "viem";
-import type { DataIssue } from "./entityDiagnostics.js";
+import {
+	dataIssueLocation,
+	type DataIssue,
+	type DataIssueOwnerRef,
+} from "./entityDiagnostics.js";
 
 export type DiagnosticsParserParams = {
 	path: string;
-	entityId: Address;
+	owner: DataIssueOwnerRef;
 	errors: DataIssue[];
 	source: string;
 };
 
 export type DaysToLiquidationValue = "Infinity" | "MoreThanAYear" | number;
 
-export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
+export const ZERO_ADDRESS =
+	"0x0000000000000000000000000000000000000000" as Address;
 
 export function parseBigIntField(
 	value: string | undefined,
@@ -24,8 +29,7 @@ export function parseBigIntField(
 			code: "DEFAULT_APPLIED",
 			severity: "warning",
 			message: `Failed to parse bigint at ${params.path}; defaulted to 0.`,
-			paths: [params.path],
-			entityId: params.entityId,
+			locations: [dataIssueLocation(params.owner, params.path)],
 			source: params.source,
 			originalValue: value,
 			normalizedValue: "0",
@@ -45,8 +49,7 @@ export function parseRatio1e4(
 		code: "DEFAULT_APPLIED",
 		severity: "warning",
 		message: `Failed to parse ratio at ${params.path}; defaulted to 0.`,
-		paths: [params.path],
-		entityId: params.entityId,
+		locations: [dataIssueLocation(params.owner, params.path)],
 		source: params.source,
 		originalValue: value,
 		normalizedValue: 0,
@@ -74,8 +77,7 @@ export function parseAddressField(
 		code: "DEFAULT_APPLIED",
 		severity: "warning",
 		message: `Missing or invalid address at ${params.path}; defaulted to ${params.fallbackLabel ?? "zero address"}.`,
-		paths: [params.path],
-		entityId: params.entityId,
+		locations: [dataIssueLocation(params.owner, params.path)],
 		source: params.source,
 		originalValue: value,
 		normalizedValue: fallback,
@@ -92,8 +94,7 @@ export function parseAddressArrayField(
 			code: "DEFAULT_APPLIED",
 			severity: "warning",
 			message: `Missing address array at ${params.path}; defaulted to empty array.`,
-			paths: [params.path],
-			entityId: params.entityId,
+			locations: [dataIssueLocation(params.owner, params.path)],
 			source: params.source,
 			originalValue: value,
 			normalizedValue: [],
@@ -122,8 +123,7 @@ export function parseStringField(
 		code: "DEFAULT_APPLIED",
 		severity: "warning",
 		message: `Missing string at ${params.path}; defaulted to ${JSON.stringify(fallback)}.`,
-		paths: [params.path],
-		entityId: params.entityId,
+		locations: [dataIssueLocation(params.owner, params.path)],
 		source: params.source,
 		originalValue: value,
 		normalizedValue: fallback,
@@ -144,8 +144,7 @@ export function parseNumberField(
 		code: "DEFAULT_APPLIED",
 		severity: "warning",
 		message: `Missing or invalid number at ${params.path}; defaulted to ${fallback}.`,
-		paths: [params.path],
-		entityId: params.entityId,
+		locations: [dataIssueLocation(params.owner, params.path)],
 		source: params.source,
 		originalValue: value,
 		normalizedValue: fallback,
@@ -166,8 +165,7 @@ export function parseBooleanField(
 		code: "DEFAULT_APPLIED",
 		severity: "warning",
 		message: `Missing boolean at ${params.path}; defaulted to ${fallback}.`,
-		paths: [params.path],
-		entityId: params.entityId,
+		locations: [dataIssueLocation(params.owner, params.path)],
 		source: params.source,
 		originalValue: value,
 		normalizedValue: fallback,
@@ -190,8 +188,7 @@ export function parseDaysToLiquidation(
 		code: "DEFAULT_APPLIED",
 		severity: "warning",
 		message: `Failed to parse daysToLiquidation at ${params.path}; defaulted to Infinity.`,
-		paths: [params.path],
-		entityId: params.entityId,
+		locations: [dataIssueLocation(params.owner, params.path)],
 		source: params.source,
 		originalValue: String(value),
 		normalizedValue: "Infinity",
@@ -208,8 +205,7 @@ export function parseTimestampField(
 			code: "DEFAULT_APPLIED",
 			severity: "warning",
 			message: `Missing timestamp at ${params.path}; defaulted to 0.`,
-			paths: [params.path],
-			entityId: params.entityId,
+			locations: [dataIssueLocation(params.owner, params.path)],
 			source: params.source,
 			normalizedValue: 0,
 		});
@@ -223,8 +219,7 @@ export function parseTimestampField(
 		code: "DEFAULT_APPLIED",
 		severity: "warning",
 		message: `Failed to parse timestamp at ${params.path}; defaulted to 0.`,
-		paths: [params.path],
-		entityId: params.entityId,
+		locations: [dataIssueLocation(params.owner, params.path)],
 		source: params.source,
 		originalValue: value,
 		normalizedValue: 0,
@@ -247,8 +242,7 @@ export function parsePerformanceFee(
 		code: "DEFAULT_APPLIED",
 		severity: "warning",
 		message: `Failed to parse performance fee at ${params.path}; defaulted to 0.`,
-		paths: [params.path],
-		entityId: params.entityId,
+		locations: [dataIssueLocation(params.owner, params.path)],
 		source: params.source,
 		originalValue: value,
 		normalizedValue: 0,

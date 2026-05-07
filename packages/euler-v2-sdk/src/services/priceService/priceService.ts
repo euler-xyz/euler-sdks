@@ -13,9 +13,13 @@ import {
 } from "./backendClient.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 import {
+	assetDiagnosticOwner,
 	compressDataIssues,
+	dataIssueLocation,
 	type DataIssue,
 	type ServiceResult,
+	vaultCollateralDiagnosticOwner,
+	vaultDiagnosticOwner,
 } from "../../utils/entityDiagnostics.js";
 
 // ---------------------------------------------------------------------------
@@ -243,8 +247,12 @@ export class PriceService implements IPriceService {
 				code: "FALLBACK_USED",
 				severity: "info",
 				message: "Backend UoA/USD rate unavailable; used on-chain fallback.",
-				paths: [path],
-				entityId: uoaAddress,
+				locations: [
+					dataIssueLocation(
+						vaultDiagnosticOwner(vault.chainId, vault.address),
+						path,
+					),
+				],
 				source: "priceService",
 				originalValue:
 					backendError instanceof Error ? backendError.message : undefined,
@@ -303,8 +311,12 @@ export class PriceService implements IPriceService {
 				code: "FALLBACK_USED",
 				severity: "info",
 				message: "Backend asset/USD price unavailable; used on-chain fallback.",
-				paths: [path],
-				entityId: vault.address,
+				locations: [
+					dataIssueLocation(
+						vaultDiagnosticOwner(vault.chainId, vault.address),
+						path,
+					),
+				],
 				source: "priceService",
 				originalValue:
 					backendError instanceof Error ? backendError.message : undefined,
@@ -317,8 +329,12 @@ export class PriceService implements IPriceService {
 				code: "SOURCE_UNAVAILABLE",
 				severity: "error",
 				message: "Failed to get asset USD price.",
-				paths: [path],
-				entityId: vault.address,
+				locations: [
+					dataIssueLocation(
+						vaultDiagnosticOwner(vault.chainId, vault.address),
+						path,
+					),
+				],
 				source: "priceService",
 			});
 		}
@@ -377,8 +393,9 @@ export class PriceService implements IPriceService {
 				code: "FALLBACK_USED",
 				severity: "info",
 				message: "Backend asset/USD price unavailable; used on-chain fallback.",
-				paths: [path],
-				entityId: assetAddress,
+				locations: [
+					dataIssueLocation(assetDiagnosticOwner(chainId, assetAddress), path),
+				],
 				source: "priceService",
 				originalValue:
 					backendError instanceof Error ? backendError.message : undefined,
@@ -391,8 +408,9 @@ export class PriceService implements IPriceService {
 				code: "SOURCE_UNAVAILABLE",
 				severity: "error",
 				message: "Failed to get asset USD price.",
-				paths: [path],
-				entityId: assetAddress,
+				locations: [
+					dataIssueLocation(assetDiagnosticOwner(chainId, assetAddress), path),
+				],
 				source: "priceService",
 			});
 		}
@@ -456,8 +474,16 @@ export class PriceService implements IPriceService {
 				severity: "info",
 				message:
 					"Backend collateral/USD price unavailable; used on-chain fallback.",
-				paths: [path],
-				entityId: collateralVault.asset.address,
+				locations: [
+					dataIssueLocation(
+						vaultCollateralDiagnosticOwner(
+							liabilityVault.chainId,
+							liabilityVault.address,
+							collateralVault.address,
+						),
+						path,
+					),
+				],
 				source: "priceService",
 				originalValue:
 					backendError instanceof Error ? backendError.message : undefined,
@@ -552,7 +578,10 @@ export class PriceService implements IPriceService {
 			}
 		}
 
-		return this.fetchDirectAssetUsdPriceFromOracle(vault.chainId, vault.asset.address);
+		return this.fetchDirectAssetUsdPriceFromOracle(
+			vault.chainId,
+			vault.asset.address,
+		);
 	}
 
 	private async fetchDirectAssetUsdPriceFromOracle(

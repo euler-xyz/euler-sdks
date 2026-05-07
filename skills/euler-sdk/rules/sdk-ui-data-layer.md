@@ -54,6 +54,6 @@ For React UIs:
 2. Use query hooks per feature (`vault list`, `vault detail`, `account`, `rewards`).
 3. Use short UI stale times and let `buildQuery` handle deeper caching.
 4. Re-fetch account/vault data after successful execution receipts.
-5. For batch vault calls, handle sparse arrays (`undefined` entries) and map diagnostics by `entityId` to show per-address failures.
+5. For batch vault calls, handle sparse arrays (`undefined` entries) and map diagnostics by `locations[].owner` to show per-address failures.
 
 Reference: `packages/euler-v2-sdk/docs/basic-usage.md`, `docs/cross-service-data-population.md`, `docs/account-computed-properties.md`, `docs/entity-diagnostics.md`, `examples/react-sdk-example/src/queries/sdkQueries.ts`

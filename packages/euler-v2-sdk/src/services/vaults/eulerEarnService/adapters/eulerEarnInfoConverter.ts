@@ -7,14 +7,20 @@ import type {
 } from "../../../../entities/EulerEarn.js";
 import { type Token, VaultType } from "../../../../utils/types.js";
 import type { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
-import type { DataIssue } from "../../../../utils/entityDiagnostics.js";
+import {
+	dataIssueLocation,
+	type DataIssue,
+	type DataIssueOwnerRef,
+	vaultDiagnosticOwner,
+	vaultStrategyDiagnosticOwner,
+} from "../../../../utils/entityDiagnostics.js";
 import { bigintToSafeNumber } from "../../../../utils/normalization.js";
 
 function normalizeTokenString(
 	value: string,
 	fallback: string,
 	path: string,
-	entityId: `0x${string}`,
+	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
 ): string {
 	if (value.trim() !== "") return value;
@@ -22,8 +28,7 @@ function normalizeTokenString(
 		code: "DEFAULT_APPLIED",
 		severity: "warning",
 		message: `Empty string at ${path}; defaulted to ${JSON.stringify(fallback)}.`,
-		paths: [path],
-		entityId,
+		locations: [dataIssueLocation(owner, path)],
 		source: "eulerEarnLens",
 		originalValue: value,
 		normalizedValue: fallback,
@@ -43,27 +48,28 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
 	errors: DataIssue[],
 ): IEulerEarn {
 	const vaultEntityId = vaultInfo.vault;
+	const owner = vaultDiagnosticOwner(chainId, vaultEntityId);
 	const shares: Token = {
 		address: vaultInfo.vault,
 		name: normalizeTokenString(
 			vaultInfo.vaultName,
 			"Unknown Vault",
 			"$.shares.name",
-			vaultEntityId,
+			owner,
 			errors,
 		),
 		symbol: normalizeTokenString(
 			vaultInfo.vaultSymbol,
 			"UNKNOWN",
 			"$.shares.symbol",
-			vaultEntityId,
+			owner,
 			errors,
 		),
 		decimals: bigintToSafeNumber(vaultInfo.vaultDecimals, {
 			path: "$.shares.decimals",
 			errors,
 			source: "eulerEarnLens",
-			entityId: vaultEntityId,
+			owner,
 		}),
 	};
 
@@ -73,21 +79,21 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
 			vaultInfo.assetName,
 			"Unknown Asset",
 			"$.asset.name",
-			vaultEntityId,
+			owner,
 			errors,
 		),
 		symbol: normalizeTokenString(
 			vaultInfo.assetSymbol,
 			"UNKNOWN",
 			"$.asset.symbol",
-			vaultEntityId,
+			owner,
 			errors,
 		),
 		decimals: bigintToSafeNumber(vaultInfo.assetDecimals, {
 			path: "$.asset.decimals",
 			errors,
 			source: "eulerEarnLens",
-			entityId: vaultEntityId,
+			owner,
 		}),
 	};
 
@@ -101,13 +107,13 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
 			path: "$.governance.timelock",
 			errors,
 			source: "eulerEarnLens",
-			entityId: vaultEntityId,
+			owner,
 		}),
 		pendingTimelock: bigintToSafeNumber(vaultInfo.pendingTimelock, {
 			path: "$.governance.pendingTimelock",
 			errors,
 			source: "eulerEarnLens",
-			entityId: vaultEntityId,
+			owner,
 		}),
 		pendingTimelockValidAt: bigintToSafeNumber(
 			vaultInfo.pendingTimelockValidAt,
@@ -115,7 +121,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
 				path: "$.governance.pendingTimelockValidAt",
 				errors,
 				source: "eulerEarnLens",
-				entityId: vaultEntityId,
+				owner,
 			},
 		),
 		pendingGuardian: vaultInfo.pendingGuardian,
@@ -125,23 +131,28 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
 				path: "$.governance.pendingGuardianValidAt",
 				errors,
 				source: "eulerEarnLens",
-				entityId: vaultEntityId,
+				owner,
 			},
 		),
 	};
 
 	const strategies: EulerEarnStrategyInfo[] = vaultInfo.strategies.map(
-		(strategy, idx) => {
+		(strategy) => {
+			const strategyOwner = vaultStrategyDiagnosticOwner(
+				chainId,
+				vaultEntityId,
+				strategy.strategy,
+			);
 			const allocationCap: EulerEarnAllocationCap = {
 				current: strategy.currentAllocationCap,
 				pending: strategy.pendingAllocationCap,
 				pendingValidAt: bigintToSafeNumber(
 					strategy.pendingAllocationCapValidAt,
 					{
-						path: `$.strategies[${idx}].allocationCap.pendingValidAt`,
+						path: "$.allocationCap.pendingValidAt",
 						errors,
 						source: "eulerEarnLens",
-						entityId: strategy.strategy,
+						owner: strategyOwner,
 					},
 				),
 			};
@@ -155,10 +166,10 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
 				availableAssets: strategy.availableAssets,
 				allocationCap,
 				removableAt: bigintToSafeNumber(strategy.removableAt, {
-					path: `$.strategies[${idx}].removableAt`,
+					path: "$.removableAt",
 					errors,
 					source: "eulerEarnLens",
-					entityId: strategy.strategy,
+					owner: strategyOwner,
 				}),
 			};
 		},
@@ -183,9 +194,8 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
 				severity: "warning",
 				message:
 					"performanceFee could not be represented as a finite number; defaulted to 0.",
-				paths: ["$.performanceFee"],
+				locations: [dataIssueLocation(owner, "$.performanceFee")],
 				source: "eulerEarnLens",
-				entityId: vaultEntityId,
 				originalValue: formatUnits(vaultInfo.performanceFee, 18),
 				normalizedValue: 0,
 			});
@@ -202,7 +212,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
 			path: "$.timestamp",
 			errors,
 			source: "eulerEarnLens",
-			entityId: vaultEntityId,
+			owner,
 		}),
 	};
 	return result;

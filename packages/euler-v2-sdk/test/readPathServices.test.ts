@@ -16,6 +16,12 @@ import { Account, SubAccount } from "../src/entities/Account.js";
 import { EVault } from "../src/entities/EVault.js";
 import { VaultType } from "../src/utils/types.js";
 import {
+	dataIssueLocation,
+	serviceDiagnosticOwner,
+	vaultCollateralDiagnosticOwner,
+	vaultDiagnosticOwner,
+} from "../src/utils/entityDiagnostics.js";
+import {
 	getAccountFixture,
 	getCollateralizedEVaultFixture,
 	getPlainEVaultFixture,
@@ -40,6 +46,25 @@ function makeDeploymentService() {
 			};
 		},
 	} as any;
+}
+
+function vaultLocations(address: `0x${string}`, path = "$") {
+	return [dataIssueLocation(vaultDiagnosticOwner(1, getAddress(address)), path)];
+}
+
+function serviceLocations(service: string, path = "$") {
+	return [dataIssueLocation(serviceDiagnosticOwner(service, 1), path)];
+}
+
+function hasLocationPath(issue: { locations?: Array<{ path: string }> }, path: string) {
+	return issue.locations?.some((location) => location.path === path) ?? false;
+}
+
+function hasLocationPathContaining(
+	issue: { locations?: Array<{ path: string }> },
+	needle: string,
+) {
+	return issue.locations?.some((location) => location.path.includes(needle)) ?? false;
 }
 
 test("account service fetches and populates real account fixtures through vault, price, and reward services", async () => {
@@ -327,7 +352,17 @@ test("account service covers fetchSubAccount and populate error paths", async ()
 				return { result: accountFixture, errors: [] };
 			},
 			async fetchSubAccount() {
-				return { result: undefined, errors: [{ code: "MISS", severity: "warning", message: "miss", paths: ["$"] }] };
+				return {
+					result: undefined,
+					errors: [
+						{
+							code: "MISS",
+							severity: "warning",
+							message: "miss",
+							locations: serviceLocations("testAccountAdapter"),
+						},
+					],
+				};
 			},
 		},
 		{} as any,
@@ -560,7 +595,7 @@ test("vault meta service routes by type, remaps diagnostics, dedupes verified ad
 						code: "WARN",
 						severity: "warning",
 						message: "warn",
-						paths: ["$.vaults[0].detail"],
+						locations: vaultLocations(plain.address, "$.detail"),
 					},
 				],
 			};
@@ -608,9 +643,24 @@ test("vault meta service routes by type, remaps diagnostics, dedupes verified ad
 	assert.equal(fetched.result[0]?.address, plain.address);
 	assert.equal(fetched.result[1], undefined);
 	assert.equal(fetched.result[2], undefined);
-	assert.ok(fetched.errors.some((issue) => issue.paths.includes("$.vaults[0].detail")));
-	assert.ok(fetched.errors.some((issue) => issue.entityId === normalizeAddress(collateralized.address)));
-	assert.ok(fetched.errors.some((issue) => issue.entityId === zeroAddress));
+	assert.ok(fetched.errors.some((issue) => hasLocationPath(issue, "$.detail")));
+	assert.ok(
+		fetched.errors.some((issue) =>
+			issue.locations.some(
+				(location) =>
+					location.owner.kind === "vault" &&
+					location.owner.address === normalizeAddress(collateralized.address),
+			),
+		),
+	);
+	assert.ok(
+		fetched.errors.some((issue) =>
+			issue.locations.some(
+				(location) =>
+					location.owner.kind === "vault" && location.owner.address === zeroAddress,
+			),
+		),
+	);
 
 	const fetchedSingle = await meta.fetchVault(1, zeroAddress);
 	assert.equal(fetchedSingle.result, undefined);
@@ -647,7 +697,17 @@ test("vault meta helpers cover type guards, untyped services, adapter replacemen
 			return "0x00000000000000000000000000000000000000d1";
 		}
 		async fetchVaults(_chainId: number, _vaults: `0x${string}`[]) {
-			return { result: [undefined], errors: [{ code: "N", severity: "warning", message: "named", paths: ["$.vaults[0]"] }] };
+			return {
+				result: [undefined],
+				errors: [
+					{
+						code: "N",
+						severity: "warning",
+						message: "named",
+						locations: vaultLocations(zeroAddress),
+					},
+				],
+			};
 		}
 		async fetchVerifiedVaultAddresses() {
 			return [zeroAddress];
@@ -725,8 +785,18 @@ test("vault meta helpers cover type guards, untyped services, adapter replacemen
 						return {
 							result: [undefined],
 							errors: [
-								{ code: "A", severity: "warning", message: "no-match", paths: ["detail"] },
-								{ code: "B", severity: "warning", message: "bad-index", paths: ["$.vaults[9].detail"] },
+								{
+									code: "A",
+									severity: "warning",
+									message: "service-owned",
+									locations: serviceLocations("customVaultService", "detail"),
+								},
+								{
+									code: "B",
+									severity: "warning",
+									message: "vault-owned",
+									locations: vaultLocations(zeroAddress, "$.detail"),
+								},
 							],
 						};
 					},
@@ -741,8 +811,8 @@ test("vault meta helpers cover type guards, untyped services, adapter replacemen
 		],
 	});
 	const remapped = await remapMeta.fetchVaults(1, [zeroAddress]);
-	assert.ok(remapped.errors.some((issue) => issue.paths[0] === "detail"));
-	assert.ok(remapped.errors.some((issue) => issue.paths[0] === "$.vaults[9].detail"));
+	assert.ok(remapped.errors.some((issue) => hasLocationPath(issue, "detail")));
+	assert.ok(remapped.errors.some((issue) => hasLocationPath(issue, "$.detail")));
 
 	const stringThrowMeta = new VaultMetaService({
 		vaultTypeAdapter: {
@@ -833,7 +903,14 @@ test("evault service hydrates, filters, populates collateral and price data, and
 						? { ...getPlainEVaultFixture() }
 						: { ...getCollateralizedEVaultFixture() },
 				),
-				errors: [{ code: "A", severity: "warning", message: "adapter", paths: ["$.vaults[1]"] }],
+				errors: [
+					{
+						code: "A",
+						severity: "warning",
+						message: "adapter",
+						locations: vaultLocations(collateralized.address),
+					},
+				],
 			};
 		},
 		async fetchAllVaults() {
@@ -858,7 +935,23 @@ test("evault service hydrates, filters, populates collateral and price data, and
 						asset: { ...getPlainEVaultFixture().asset, address },
 					}),
 				),
-				errors: [{ code: "C", severity: "warning", message: "collateral", paths: ["$.vaults[0].market"] }],
+				errors: [
+					{
+						code: "C",
+						severity: "warning",
+						message: "collateral",
+						locations: [
+							dataIssueLocation(
+								vaultCollateralDiagnosticOwner(
+									1,
+									collateralized.address,
+									plain.address,
+								),
+								"$.vault.market",
+							),
+						],
+					},
+				],
 			};
 		},
 	} as any);
@@ -872,7 +965,22 @@ test("evault service hydrates, filters, populates collateral and price data, and
 		async fetchCollateralUsdPriceWithDiagnostics() {
 			return {
 				result: { amountOutMid: 3n * 10n ** 18n },
-				errors: [{ code: "P", severity: "info", message: "priced", paths: ["$"] }],
+				errors: [
+					{
+						code: "P",
+						severity: "info",
+						message: "priced",
+						locations: [
+							dataIssueLocation(
+								vaultCollateralDiagnosticOwner(
+									1,
+									collateralized.address,
+									plain.address,
+								),
+							),
+						],
+					},
+				],
 			};
 		},
 	} as any);
@@ -1066,16 +1174,24 @@ test("evault service setters and empty branches are exercised", async () => {
 
 	const remapService = new EVaultService(adapterA as any, makeDeploymentService());
 	remapService.setVaultMetaService({
-		async fetchVaults() {
+		async fetchVaults(_chainId: number, addresses: `0x${string}`[]) {
+			const [collateralAddress = zeroAddress] = addresses;
 			return {
 				result: [new EVault(getPlainEVaultFixture())],
-				errors: [{ code: "R", severity: "warning", message: "raw", paths: ["$.other"] }],
+				errors: [
+					{
+						code: "R",
+						severity: "warning",
+						message: "raw",
+						locations: vaultLocations(collateralAddress, "$.other"),
+					},
+				],
 			};
 		},
 	} as any);
 	const remapTarget = new EVault(getCollateralizedEVaultFixture());
 	const remapErrors = await remapService.populateCollaterals([remapTarget]);
-	assert.ok(remapErrors.some((issue) => issue.paths[0] === "$.other"));
+	assert.ok(remapErrors.some((issue) => hasLocationPath(issue, "$.vault.other")));
 
 	const noUnitOfAccount = new EVault({
 		...getCollateralizedEVaultFixture(),
@@ -1098,7 +1214,9 @@ test("evault service setters and empty branches are exercised", async () => {
 	const priceErrors = await collateralPriceFailure.populateMarketPrices([pricedVault]);
 	assert.ok(
 		priceErrors.some(
-			(issue) => issue.paths[0]?.includes("collaterals[0].marketPriceUsd") && issue.originalValue === "collateral-price-string",
+			(issue) =>
+				hasLocationPathContaining(issue, "marketPriceUsd") &&
+				issue.originalValue === "collateral-price-string",
 		),
 	);
 
@@ -1107,7 +1225,14 @@ test("evault service setters and empty branches are exercised", async () => {
 			async fetchVaults() {
 				return {
 					result: [new EVault(getPlainEVaultFixture())],
-					errors: [{ code: "V", severity: "warning", message: "verified", paths: ["$.vaults[0].detail"] }],
+					errors: [
+						{
+							code: "V",
+							severity: "warning",
+							message: "verified",
+							locations: vaultLocations(getPlainEVaultFixture().address, "$.detail"),
+						},
+					],
 				};
 			},
 			async fetchAllVaults() {
@@ -1120,7 +1245,7 @@ test("evault service setters and empty branches are exercised", async () => {
 		makeDeploymentService(),
 	);
 	const verifiedErrors = await verifiedErrorService.fetchVerifiedVaults(1, [zeroAddress]);
-	assert.ok(verifiedErrors.errors.some((issue) => issue.paths[0] === "$[0].detail"));
+	assert.ok(verifiedErrors.errors.some((issue) => hasLocationPath(issue, "$.detail")));
 
 	const filteredUndefinedService = new EVaultService(
 		{
@@ -1326,7 +1451,7 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 	const permit2Wallet = await permit2ApprovalFailure.fetchWallet(1, "0x0000000000000000000000000000000000000001", [
 		{ asset: "0x0000000000000000000000000000000000000002", spenders: ["0x0000000000000000000000000000000000000003"] },
 	]);
-	assert.ok(permit2Wallet.errors.some((issue) => issue.paths.some((path) => path.includes("assetForPermit2"))));
+	assert.ok(permit2Wallet.errors.some((issue) => hasLocationPathContaining(issue, "assetForPermit2")));
 
 	const stringTopLevelFailure = new WalletOnchainAdapter(
 		{

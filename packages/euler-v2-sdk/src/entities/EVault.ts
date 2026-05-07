@@ -34,9 +34,14 @@ import {
 } from "../services/priceService/index.js";
 import type { VaultEntity } from "../services/vaults/vaultMetaService/index.js";
 import type { IVaultMetaService } from "../services/vaults/vaultMetaService/index.js";
-import type { DataIssue } from "../utils/entityDiagnostics.js";
 import {
-	mapDataIssuePaths,
+	dataIssueLocation,
+	type DataIssue,
+	vaultCollateralDiagnosticOwner,
+	vaultDiagnosticOwner,
+} from "../utils/entityDiagnostics.js";
+import {
+	mapDataIssueLocations,
 	withPathPrefix,
 } from "../utils/entityDiagnostics.js";
 import { bigintPercentage } from "../utils/normalization.js";
@@ -436,12 +441,21 @@ export class EVault
 		const errors: DataIssue[] = [];
 
 		const collateralVaults = await Promise.all(
-			addresses.map(async (addr, index) => {
+			addresses.map(async (addr) => {
 				const fetched = await vaultMetaService.fetchVault(this.chainId, addr);
 				errors.push(
 					...fetched.errors.map((issue) => ({
-						...mapDataIssuePaths(issue, (path) =>
-							withPathPrefix(path, `$.collaterals[${index}].vault`),
+						...mapDataIssueLocations(issue, (location) =>
+							location.owner.kind === "vault"
+								? {
+										owner: vaultCollateralDiagnosticOwner(
+											this.chainId,
+											this.address,
+											addr,
+										),
+										path: withPathPrefix(location.path, "$.vault"),
+									}
+								: location,
 						),
 					})),
 				);
@@ -505,8 +519,12 @@ export class EVault
 				code: "SOURCE_UNAVAILABLE",
 				severity: "error",
 				message: "Failed to populate asset market price.",
-				paths: ["$.marketPriceUsd"],
-				entityId: this.asset.address,
+				locations: [
+					dataIssueLocation(
+						vaultDiagnosticOwner(this.chainId, this.address),
+						"$.marketPriceUsd",
+					),
+				],
 				source: "priceService",
 				originalValue: error instanceof Error ? error.message : String(error),
 			});
@@ -530,8 +548,16 @@ export class EVault
 						code: "SOURCE_UNAVAILABLE",
 						severity: "error",
 						message: "Failed to populate collateral market price.",
-						paths: [`$.collaterals[${index}].marketPriceUsd`],
-						entityId: collateral.vault?.asset.address ?? collateral.address,
+						locations: [
+							dataIssueLocation(
+								vaultCollateralDiagnosticOwner(
+									this.chainId,
+									this.address,
+									collateral.address,
+								),
+								"$.marketPriceUsd",
+							),
+						],
 						source: "priceService",
 						originalValue:
 							error instanceof Error ? error.message : String(error),

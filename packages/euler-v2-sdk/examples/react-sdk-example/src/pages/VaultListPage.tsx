@@ -598,21 +598,36 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
   const getDiagnosticEntityKey = (chainId: number, address: string) =>
     `${chainId}:${address.toLowerCase()}`;
 
+  const prefixDiagnosticPath = (prefix: string, path: string | undefined) => {
+    if (!path || path === "$") return prefix;
+    if (path.startsWith("$.")) return `${prefix}${path.slice(1)}`;
+    if (path.startsWith("$[")) return `${prefix}${path.slice(1)}`;
+    return `${prefix}.${path}`;
+  };
+
   const vaultDiagnosticIndex = useMemo(
     () =>
       createEntityDiagnosticIndex({
         diagnostics,
-        resolveEntityKey: (issue) => {
-          if (!issue.entityId || issue.entityId.length !== 42 || issue.chainId === undefined) {
-            return undefined;
+        resolveLocationKey: (location) => {
+          const owner = location.owner;
+          if (owner.kind === "vault") {
+            return getDiagnosticEntityKey(owner.chainId, owner.address);
           }
-          return getDiagnosticEntityKey(issue.chainId, issue.entityId);
+          if (owner.kind === "vaultCollateral" || owner.kind === "vaultStrategy") {
+            return getDiagnosticEntityKey(owner.chainId, owner.vault);
+          }
+          return undefined;
         },
-        normalizePath: (path) => {
-          if (!path) return "$";
-          const match = path.match(/^\$\.vaults\[\d+\](?:\.(.*))?$/);
-          if (!match) return path;
-          return match[1] ? `$.${match[1]}` : "$";
+        normalizePath: (path, location) => {
+          const owner = location.owner;
+          if (owner.kind === "vaultCollateral") {
+            return prefixDiagnosticPath("$.collaterals", path);
+          }
+          if (owner.kind === "vaultStrategy") {
+            return prefixDiagnosticPath("$.strategies", path);
+          }
+          return path ?? "$";
         },
       }),
     [diagnostics, diagnosticsDataUpdatedAt]
@@ -621,12 +636,12 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
   const renderFieldIcon = (
     chainId: number,
     address: string,
-    paths: string[],
+    targetPaths: string[],
     position: "leading" | "trailing" = "leading"
   ) => {
     const issues = vaultDiagnosticIndex.getFieldIssues(
       getDiagnosticEntityKey(chainId, address),
-      paths
+      targetPaths
     );
     if (issues.length === 0) return null;
     return <ErrorIcon details={formatDiagnosticIssues(issues)} position={position} />;

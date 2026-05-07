@@ -19,9 +19,8 @@ import type {
 } from "../../../utils/entityDiagnostics.js";
 import {
 	compressDataIssues,
-	mapDataIssuePaths,
-	normalizeTopLevelVaultArrayPath,
-	withPathPrefix,
+	dataIssueLocation,
+	vaultDiagnosticOwner,
 } from "../../../utils/entityDiagnostics.js";
 
 export interface ISecuritizeCollateralAdapter {
@@ -57,7 +56,6 @@ export interface ISecuritizeVaultService
 	): Promise<ServiceResult<(SecuritizeCollateralVault | undefined)[]>>;
 	populateMarketPrices(
 		vaults: SecuritizeCollateralVault[],
-		getVaultPathPrefix?: (vaultIndex: number) => string,
 	): Promise<DataIssue[]>;
 	populateRewards(vaults: SecuritizeCollateralVault[]): Promise<DataIssue[]>;
 	populateIntrinsicApy(
@@ -106,16 +104,15 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 	): Promise<ServiceResult<SecuritizeCollateralVault | undefined>> {
 		const fetched = await this.fetchVaults(chainId, [vault], options);
 		const result = fetched.result[0];
-		const errors = fetched.errors.map((issue) =>
-			mapDataIssuePaths(issue, normalizeTopLevelVaultArrayPath),
-		);
+		const errors = [...fetched.errors];
 		if (result === undefined) {
 			errors.push({
 				code: "SOURCE_UNAVAILABLE",
 				severity: "error",
 				message: `Securitize vault not found for ${getAddress(vault)}.`,
-				paths: ["$"],
-				entityId: getAddress(vault),
+				locations: [
+					dataIssueLocation(vaultDiagnosticOwner(chainId, getAddress(vault))),
+				],
 				source: "securitizeVaultService",
 				originalValue: getAddress(vault),
 			});
@@ -170,12 +167,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 		await Promise.all([
 			(async () => {
 				if (resolvedOptions.populateMarketPrices) {
-					errors.push(
-						...(await this.populateMarketPrices(
-							resolvedVaults,
-							(vaultIndex) => `$.vaults[${vaultIndex}]`,
-						)),
-					);
+					errors.push(...(await this.populateMarketPrices(resolvedVaults)));
 				}
 			})(),
 			(async () => {
@@ -199,23 +191,14 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 
 	async populateMarketPrices(
 		vaults: SecuritizeCollateralVault[],
-		getVaultPathPrefix: (vaultIndex: number) => string = (vaultIndex) =>
-			`$.vaults[${vaultIndex}]`,
 	): Promise<DataIssue[]> {
 		if (!this.priceService || vaults.length === 0) return [];
 		const errors: DataIssue[] = [];
 
 		await Promise.all(
-			vaults.map(async (v, index) => {
+			vaults.map(async (v) => {
 				const vaultErrors = await v.populateMarketPrices(this.priceService!);
-				errors.push(
-					...vaultErrors.map((issue) => ({
-						...mapDataIssuePaths(issue, (path) =>
-							withPathPrefix(path, getVaultPathPrefix(index)),
-						),
-						entityId: issue.entityId ?? v.address,
-					})),
-				);
+				errors.push(...vaultErrors);
 			}),
 		);
 		return errors;
@@ -234,8 +217,12 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 					code: "SOURCE_UNAVAILABLE",
 					severity: "warning",
 					message: "Failed to populate rewards.",
-					paths: ["$"],
-					entityId: vaults[0]?.address,
+					locations: vaults.map((vault) =>
+						dataIssueLocation(
+							vaultDiagnosticOwner(vault.chainId, vault.address),
+							"$.rewards",
+						),
+					),
 					source: "rewardsService",
 					originalValue: error instanceof Error ? error.message : String(error),
 				},
@@ -256,8 +243,12 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 					code: "SOURCE_UNAVAILABLE",
 					severity: "warning",
 					message: "Failed to populate intrinsic APY.",
-					paths: ["$"],
-					entityId: vaults[0]?.address,
+					locations: vaults.map((vault) =>
+						dataIssueLocation(
+							vaultDiagnosticOwner(vault.chainId, vault.address),
+							"$.intrinsicApy",
+						),
+					),
 					source: "intrinsicApyService",
 					originalValue: error instanceof Error ? error.message : String(error),
 				},
@@ -278,8 +269,12 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 					code: "SOURCE_UNAVAILABLE",
 					severity: "warning",
 					message: "Failed to populate labels.",
-					paths: ["$"],
-					entityId: vaults[0]?.address,
+					locations: vaults.map((vault) =>
+						dataIssueLocation(
+							vaultDiagnosticOwner(vault.chainId, vault.address),
+							"$.eulerLabel",
+						),
+					),
 					source: "eulerLabelsService",
 					originalValue: error instanceof Error ? error.message : String(error),
 				},
@@ -307,11 +302,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 		const fetched = await this.fetchVaults(chainId, addresses, options);
 		return {
 			...fetched,
-			errors: compressDataIssues(
-				fetched.errors.map((issue) =>
-					mapDataIssuePaths(issue, normalizeTopLevelVaultArrayPath),
-				),
-			),
+			errors: compressDataIssues(fetched.errors),
 		};
 	}
 

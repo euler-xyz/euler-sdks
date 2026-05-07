@@ -195,7 +195,8 @@ const inputAddresses = [
 ];
 const { result: vaults, errors } = await sdk.vaultMetaService.fetchVaults(1, inputAddresses);
 // `vaults[i]` matches `inputAddresses[i]`.
-// On per-vault failure, `vaults[i]` is undefined and diagnostics include `entityId = inputAddresses[i]`.
+// On per-vault failure, `vaults[i]` is undefined and diagnostics include
+// a location whose owner is `{ kind: "vault", address: inputAddresses[i], ... }`.
 ```
 
 ## Fetching Verified Vaults (Perspectives)
