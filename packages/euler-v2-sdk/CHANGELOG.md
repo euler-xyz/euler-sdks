@@ -23,6 +23,26 @@
 - Updated React and script examples, pricing docs, portfolio docs, configuration docs, wallet docs, and SDK skill guidance for the release surface.
 - Refreshed generated fixtures, parity scripts, and health-check imports for the updated read paths.
 
+## [0.1.3-beta] - 2026-05-04
+
+### Added
+
+- Added transaction plan execution helpers, operation groups, and split encode/execute/simulate internals.
+- Added same-asset position migrations plus max-repay cleanup and savings-sourced planning examples.
+- Added portfolio yield breakdown fields and expanded example app portfolio coverage.
+
+### Changed
+
+- Merged simulation capabilities into the execution service and refreshed execution examples/docs around the new flow.
+- Updated V3 defaults, pricing configuration, and vault/account parity scripts.
+
+### Fixed
+
+- Paginated V3 account position reads so heavy accounts are no longer capped by the endpoint default page size.
+- Hardened user reward valuation against malformed V3 reward price and decimal fields.
+- Fixed keyring plugin batch prepending for transaction plan preparation.
+- Fixed release dry-run packaging so PR validation works with the pnpm version used in CI.
+
 ## [0.1.2-beta] - 2026-04-29
 
 ### Added
