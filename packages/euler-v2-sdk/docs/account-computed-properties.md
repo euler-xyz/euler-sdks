@@ -36,15 +36,15 @@ For a direct high-level read, use `portfolioService.fetchPortfolio(...)`, which 
 | `healthFactor` | `bigint \| undefined` | Liquidity data (included by default) | `totalCollateralValue.liquidation / liabilityValue.liquidation` (WAD). `> 1e18` = healthy, `< 1e18` = liquidatable. |
 | `currentLTV` | `bigint \| undefined` | Liquidity data | `liabilityValue / totalCollateralValue` (WAD). Current loan-to-value ratio. |
 | `liquidationLTV` | `bigint \| undefined` | Liquidity data | `totalCollateralValue.liquidation / totalCollateralValue.oracleMid` (WAD). Weighted-average liquidation threshold. |
-| `multiplier` | `bigint \| undefined` | `populateMarketPrices` | `totalCollateralValueUsd / equity` (WAD, 1e18 = 1x). Leverage multiplier. |
-| `totalCollateralValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Total collateral value in USD from sub-account liquidity (18 dec). |
-| `liabilityValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Liability value in USD from sub-account liquidity (18 dec). |
-| `netValueUsd` | `bigint \| undefined` | `populateMarketPrices` | `sum(suppliedValueUsd) - sum(borrowedValueUsd)` (18 dec). Net asset value in USD. |
+| `multiplier` | `number \| undefined` | `populateMarketPrices` | `suppliedCollateralValueUsd / (suppliedCollateralValueUsd - borrowedValueUsd)`. Leverage multiplier (`1` = 1x). |
+| `totalCollateralValueUsd` | `number \| undefined` | `populateMarketPrices` | Total collateral value in USD from sub-account liquidity. |
+| `liabilityValueUsd` | `number \| undefined` | `populateMarketPrices` | Liability value in USD from sub-account liquidity. |
+| `netValueUsd` | `number \| undefined` | `populateMarketPrices` | `sum(suppliedValueUsd) - sum(borrowedValueUsd)`. Net asset value in USD. |
 | `roe` | `SubAccountRoe \| undefined` | `populateVaults` + `populateMarketPrices` (+ `populateRewards` and `populateIntrinsicApy` for full breakdown) | Return on equity breakdown. See below. |
 
 ### ROE (Return on Equity)
 
-The `roe` property returns a `SubAccountRoe` object that breaks down the return on equity into four components. All values are decimal fractions (0.05 = 5%).
+The `roe` property returns a `SubAccountRoe` object that breaks down the return on equity into four components. APY/ROE outputs are percentage points (`5` = `5%`). Reward campaign APR inputs remain decimal fractions on the raw campaign objects, but the computed breakdown converts them to percentage points.
 
 ```typescript
 interface SubAccountRoe {
@@ -101,7 +101,7 @@ Returns `undefined` when vault entities are not populated, no APY data is availa
 
 | Property | Type | Prerequisites | Description |
 |---|---|---|---|
-| `totalRewardsValueUsd` | `bigint \| undefined` | `populateUserRewards` | Total value of unclaimed reward tokens in USD (18 dec). |
+| `totalRewardsValueUsd` | `number \| undefined` | `populateUserRewards` | Total value of unclaimed reward tokens in USD. |
 
 `totalSuppliedValueUsd`, `totalBorrowedValueUsd`, `netAssetValueUsd`, `netApy`, and `roe` are Portfolio-level metrics so filtering rules are applied consistently.
 
@@ -123,12 +123,14 @@ const nextBorrowSubAccount = account.getNextSubAccount({ borrowVault })
 |---|---|---|---|
 | `savings` | `PortfolioSavingsPosition[]` | `populateVaults` + `populateMarketPrices` | Supplied positions that are not actively backing debt in the same sub-account. |
 | `borrows` | `PortfolioBorrowPosition[]` | `populateVaults` + `populateMarketPrices` | Debt positions plus their collateral positions and risk fields. |
-| `totalSuppliedValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Sum of supplied USD value across positions included in this portfolio. |
-| `totalBorrowedValueUsd` | `bigint \| undefined` | `populateMarketPrices` | Sum of borrowed USD value across positions included in this portfolio. |
-| `netAssetValueUsd` | `bigint \| undefined` | `populateMarketPrices` | `totalSuppliedValueUsd - totalBorrowedValueUsd` (18 dec). |
+| `totalSuppliedValueUsd` | `number \| undefined` | `populateMarketPrices` | Sum of supplied USD value across positions included in this portfolio. |
+| `totalBorrowedValueUsd` | `number \| undefined` | `populateMarketPrices` | Sum of borrowed USD value across positions included in this portfolio. |
+| `netAssetValueUsd` | `number \| undefined` | `populateMarketPrices` | `totalSuppliedValueUsd - totalBorrowedValueUsd`. |
 | `netApy` | `number \| undefined` | `populateVaults` + `populateMarketPrices` | Net APY across positions included in this portfolio. |
 | `roe` | `number \| undefined` | `populateVaults` + `populateMarketPrices` | Return on equity across positions included in this portfolio. |
-| `totalRewardsValueUsd` | `bigint \| undefined` | `populateUserRewards` | Delegates to `account.totalRewardsValueUsd`. |
+| `apyBreakdown` | `YieldApyBreakdown \| undefined` | `populateVaults` + `populateMarketPrices` | Portfolio net APY contribution breakdown in percentage points. |
+| `roeBreakdown` | `YieldApyBreakdown \| undefined` | `populateVaults` + `populateMarketPrices` | Portfolio ROE contribution breakdown in percentage points. |
+| `totalRewardsValueUsd` | `number \| undefined` | `populateUserRewards` | Delegates to `account.totalRewardsValueUsd`. |
 
 ### Portfolio Categorization
 

@@ -13,6 +13,7 @@ import {
 import type {
 	Account,
 	AccountPosition,
+	AddressOrAccount,
 	IHasVaultAddress,
 } from "../../entities/Account.js";
 import type { EulerPlugin } from "../../plugins/types.js";
@@ -159,13 +160,13 @@ export interface IExecutionService<
 	): Promise<StateOverride>;
 	simulateTransactionPlan(
 		chainId: number,
-		account: Address,
+		account: AddressOrAccount,
 		transactionPlan: TransactionPlan,
 		options?: SimulateBatchOptions,
 	): Promise<SimulateBatchResult<TVaultEntity>>;
 	estimateGasForTransactionPlan(
 		chainId: number,
-		account: Address,
+		account: AddressOrAccount,
 		transactionPlan: TransactionPlan,
 		options?: EstimateGasForTransactionPlanOptions,
 	): Promise<bigint>;
@@ -249,8 +250,17 @@ export interface IExecutionService<
 		operationName?: string,
 	): TransactionPlan;
 	/** Appends a single batch item to the last EVC batch in the plan, creating one if needed. */
-	addBatchItemToPlan(plan: TransactionPlan, item: EVCBatchItem): TransactionPlan;
+	addBatchItemToPlan(
+		plan: TransactionPlan,
+		item: EVCBatchItem,
+	): TransactionPlan;
 }
+
+export type ProcessPlanPlugins = (
+	plan: TransactionPlan,
+	account: AddressOrAccount,
+	chainId: number,
+) => Promise<TransactionPlan>;
 
 const WAD = 10n ** 18n;
 // TODO explain how this service is coupled to the concrete abis of ERC4626, permit2 and EVK.
@@ -266,6 +276,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	private rewardsService?: IRewardsService;
 	private intrinsicApyService?: IIntrinsicApyService;
 	private eulerLabelsService?: IEulerLabelsService;
+	private processPlugins?: ProcessPlanPlugins;
 
 	constructor(
 		private deploymentService: IDeploymentService,
@@ -318,6 +329,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		this.plugins = plugins;
 	}
 
+	setPluginProcessor(processPlugins: ProcessPlanPlugins): void {
+		this.processPlugins = processPlugins;
+	}
+
 	/** Derive storage overrides needed to simulate the plan against the current account state. */
 	async deriveStateOverrides(
 		chainId: number,
@@ -337,15 +352,21 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	/** Simulate the full transaction plan, including approval resolution and plugin-aware batch execution. */
 	async simulateTransactionPlan(
 		chainId: number,
-		account: Address,
+		account: AddressOrAccount,
 		transactionPlan: TransactionPlan,
 		options?: SimulateBatchOptions,
 	): Promise<SimulateBatchResult<TVaultEntity>> {
+		const processedPlan = await this.processPlanPlugins(
+			transactionPlan,
+			account,
+			chainId,
+		);
+		const owner = this.getAccountOwner(account);
 		return simulateTransactionPlan(
 			this.getSimulationContext(),
 			chainId,
-			account,
-			transactionPlan,
+			owner,
+			processedPlan,
 			options,
 		);
 	}
@@ -353,15 +374,21 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	/** Estimate gas for the full transaction plan after applying the same simulation pipeline used for execution. */
 	async estimateGasForTransactionPlan(
 		chainId: number,
-		account: Address,
+		account: AddressOrAccount,
 		transactionPlan: TransactionPlan,
 		options?: EstimateGasForTransactionPlanOptions,
 	): Promise<bigint> {
+		const processedPlan = await this.processPlanPlugins(
+			transactionPlan,
+			account,
+			chainId,
+		);
+		const owner = this.getAccountOwner(account);
 		return estimateGasForTransactionPlan(
 			this.getSimulationContext(),
 			chainId,
-			account,
-			transactionPlan,
+			owner,
+			processedPlan,
 			options,
 		);
 	}
@@ -379,6 +406,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 		const helperArgs: ExecuteTransactionPlanInternalArgs = {
 			...args,
+			plan: await this.processPlanPlugins(
+				args.plan,
+				args.account,
+				args.chainId,
+			),
 			executionService: this,
 			deploymentService: this.deploymentService,
 			providerService,
@@ -399,6 +431,20 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			eulerLabelsService: this.eulerLabelsService,
 			describeBatch: (batch) => this.describeBatch(batch),
 		};
+	}
+
+	private async processPlanPlugins(
+		plan: TransactionPlan,
+		account: AddressOrAccount,
+		chainId: number,
+	): Promise<TransactionPlan> {
+		return this.processPlugins
+			? this.processPlugins(plan, account, chainId)
+			: plan;
+	}
+
+	private getAccountOwner(account: AddressOrAccount): Address {
+		return typeof account === "string" ? account : account.owner;
 	}
 
 	private getCoreAddresses(chainId: number) {
@@ -1021,7 +1067,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * Appends a raw batch item to the last EVC batch in the plan, or creates one.
 	 * Mutates and returns the provided plan.
 	 */
-	addBatchItemToPlan(plan: TransactionPlan, item: EVCBatchItem): TransactionPlan {
+	addBatchItemToPlan(
+		plan: TransactionPlan,
+		item: EVCBatchItem,
+	): TransactionPlan {
 		for (let index = plan.length - 1; index >= 0; index--) {
 			const planItem = plan[index];
 			if (planItem?.type === "evcBatch") {
@@ -1999,7 +2048,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			enableCollateral: shouldEnableCollateral,
 		});
 
-		plan.push(...this.convertBatchItemsToPlan(batchItems, "depositWithSwapFromWallet"));
+		plan.push(
+			...this.convertBatchItemsToPlan(batchItems, "depositWithSwapFromWallet"),
+		);
 
 		return plan;
 	}
@@ -2192,7 +2243,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			disableCollateralFrom: shouldDisableCollateralFrom,
 		});
 
-		plan.push(...this.convertBatchItemsToPlan(batchItems, "migrateSameAssetCollateral"));
+		plan.push(
+			...this.convertBatchItemsToPlan(batchItems, "migrateSameAssetCollateral"),
+		);
 
 		return plan;
 	}
@@ -2276,7 +2329,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			transferRemainingSharesTo,
 		});
 
-		plan.push(...this.convertBatchItemsToPlan(batchItems, "migrateSameAssetDebt"));
+		plan.push(
+			...this.convertBatchItemsToPlan(batchItems, "migrateSameAssetDebt"),
+		);
 
 		return plan;
 	}

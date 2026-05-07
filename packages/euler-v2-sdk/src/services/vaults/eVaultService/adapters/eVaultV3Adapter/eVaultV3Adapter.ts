@@ -3,12 +3,14 @@ import {
 	type BuildQueryFn,
 	applyBuildQuery,
 } from "../../../../../utils/buildQuery.js";
+import type { ProviderService } from "../../../../providerService/index.js";
 import { createCallBundler } from "../../../../../utils/callBundler.js";
 import {
 	type DataIssue,
 	compressDataIssues,
-	prefixDataIssues,
+	dataIssueLocation,
 	type ServiceResult,
+	vaultDiagnosticOwner,
 } from "../../../../../utils/entityDiagnostics.js";
 import type { IEVault } from "../../../../../entities/EVault.js";
 import type { EVaultV3AdapterConfig } from "../../eVaultServiceConfig.js";
@@ -25,17 +27,43 @@ import type {
 const unsupportedError = new Error("unsupported");
 const DEFAULT_BATCH_LIMIT = 100;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+const verifiedArrayAbi = [
+	{
+		type: "function",
+		name: "verifiedArray",
+		inputs: [],
+		outputs: [{ name: "", type: "address[]", internalType: "address[]" }],
+		stateMutability: "view",
+	},
+] as const;
 
 export class EVaultV3Adapter implements IEVaultAdapter {
+	private providerService?: ProviderService;
+
 	constructor(
 		private config: EVaultV3AdapterConfig,
+		providerServiceOrBuildQuery?: ProviderService | BuildQueryFn,
 		buildQuery?: BuildQueryFn,
 	) {
-		if (buildQuery) applyBuildQuery(this, buildQuery);
+		const resolvedBuildQuery =
+			typeof providerServiceOrBuildQuery === "function"
+				? providerServiceOrBuildQuery
+				: buildQuery;
+		if (
+			providerServiceOrBuildQuery &&
+			typeof providerServiceOrBuildQuery !== "function"
+		) {
+			this.providerService = providerServiceOrBuildQuery;
+		}
+		if (resolvedBuildQuery) applyBuildQuery(this, resolvedBuildQuery);
 	}
 
 	setConfig(config: EVaultV3AdapterConfig): void {
 		this.config = config;
+	}
+
+	setProviderService(providerService: ProviderService): void {
+		this.providerService = providerService;
 	}
 
 	private getHeaders(contentType?: string): Record<string, string> {
@@ -108,7 +136,10 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 				byChain.set(key.chainId, addresses);
 			}
 
-			const chainResults = new Map<number, Map<string, V3VaultDetailWithIncludes>>();
+			const chainResults = new Map<
+				number,
+				Map<string, V3VaultDetailWithIncludes>
+			>();
 			const settledChainEntries = await Promise.allSettled(
 				Array.from(byChain.entries()).map(async ([chainId, addresses]) => {
 					const resolved = new Map<string, V3VaultDetailWithIncludes>();
@@ -194,7 +225,9 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 			headers: this.getHeaders(),
 		});
 		if (!response.ok) {
-			throw new Error(`eVaultV3 list ${response.status} ${response.statusText}`);
+			throw new Error(
+				`eVaultV3 list ${response.status} ${response.statusText}`,
+			);
 		}
 		return response.json() as Promise<
 			V3ListEnvelope<V3VaultListRow> | V3VaultListRow[]
@@ -211,12 +244,15 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 	): Promise<ServiceResult<(IEVault | undefined)[]>> {
 		const results: Array<{ result: IEVault | undefined; errors: DataIssue[] }> =
 			await Promise.all(
-				vaults.map(async (vault, index) => {
+				vaults.map(async (vault) => {
 					const errors: DataIssue[] = [];
 					let detail: V3VaultDetailWithIncludes | undefined;
 
 					try {
-						detail = await this.queryV3EVaultDetail({ address: vault, chainId });
+						detail = await this.queryV3EVaultDetail({
+							address: vault,
+							chainId,
+						});
 					} catch (error) {
 						return {
 							result: undefined,
@@ -225,8 +261,11 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 									code: "SOURCE_UNAVAILABLE",
 									severity: "warning",
 									message: `Failed to fetch eVault ${getAddress(vault)}.`,
-									paths: [`$.vaults[${index}]`],
-									entityId: getAddress(vault),
+									locations: [
+										dataIssueLocation(
+											vaultDiagnosticOwner(chainId, getAddress(vault)),
+										),
+									],
 									source: "eVaultV3",
 									originalValue:
 										error instanceof Error ? error.message : String(error),
@@ -243,8 +282,11 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 									code: "SOURCE_UNAVAILABLE",
 									severity: "warning",
 									message: `Vault detail missing for ${getAddress(vault)}.`,
-									paths: [`$.vaults[${index}]`],
-									entityId: getAddress(vault),
+									locations: [
+										dataIssueLocation(
+											vaultDiagnosticOwner(chainId, getAddress(vault)),
+										),
+									],
 									source: "eVaultV3",
 								},
 							],
@@ -259,12 +301,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 								errors,
 								vault,
 							),
-							errors: prefixDataIssues(errors, `$.vaults[${index}]`).map(
-								(issue) => ({
-									...issue,
-									entityId: issue.entityId ?? getAddress(vault),
-								}),
-							),
+							errors,
 						};
 					} catch (error) {
 						return {
@@ -274,8 +311,11 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 									code: "DECODE_FAILED",
 									severity: "warning",
 									message: `Failed to decode eVault ${getAddress(vault)}.`,
-									paths: [`$.vaults[${index}]`],
-									entityId: getAddress(vault),
+									locations: [
+										dataIssueLocation(
+											vaultDiagnosticOwner(chainId, getAddress(vault)),
+										),
+									],
 									source: "eVaultV3",
 									originalValue:
 										error instanceof Error ? error.message : String(error),
@@ -293,10 +333,27 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 	}
 
 	async fetchVerifiedVaultsAddresses(
-		_chainId: number,
-		_perspectives: Address[],
+		chainId: number,
+		perspectives: Address[],
 	): Promise<Address[]> {
-		throw unsupportedError;
+		if (!this.providerService) throw unsupportedError;
+
+		const provider = this.providerService.getProvider(chainId);
+		const results = await Promise.all(
+			perspectives.map((perspective) =>
+				provider.readContract({
+					address: perspective,
+					abi: verifiedArrayAbi,
+					functionName: "verifiedArray",
+				}),
+			),
+		);
+
+		const addresses: Address[] = results.flatMap(
+			(result) => result as Address[],
+		);
+
+		return [...new Set(addresses)];
 	}
 
 	async fetchAllVaults(
@@ -315,9 +372,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 			);
 			const rows = Array.isArray(response) ? response : (response.data ?? []);
 
-			addresses.push(
-				...rows.map((row) => getAddress(row.address)),
-			);
+			addresses.push(...rows.map((row) => getAddress(row.address)));
 
 			if (Array.isArray(response)) {
 				if (rows.length < limit) break;

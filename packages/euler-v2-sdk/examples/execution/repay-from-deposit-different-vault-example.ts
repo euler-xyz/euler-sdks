@@ -40,7 +40,6 @@ import {
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
   initExample,
-  rpcUrls,
   USDC_ADDRESS,
   USDT_ADDRESS,
   exampleExecutionCallbacks,
@@ -68,7 +67,6 @@ const ALTERNATE_USDT_VAULT = getAddress(
 async function repayFromDifferentVaultDepositExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
 	// Build the SDK
 	const sdk = await buildEulerSDK({
-		rpcUrls,
 		accountServiceConfig: { adapter: "onchain" },
 		queryCacheConfig: { enabled: false },
 	});

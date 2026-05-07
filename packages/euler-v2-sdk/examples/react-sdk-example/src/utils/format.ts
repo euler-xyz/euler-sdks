@@ -1,4 +1,4 @@
-import { formatUnits } from "viem";
+import { formatUnits, parseUnits } from "viem";
 
 export function shortenAddress(addr: string): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
@@ -19,13 +19,16 @@ export function formatBigInt(
   });
 }
 
-export function formatAPY(apyString: string): string {
-  const apy = Number(apyString) * 100;
-  return `${apy.toFixed(2)}%`;
+export function formatAPY(apy: string | number): string {
+  return formatPercentPoints(Number(apy));
 }
 
 export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
+}
+
+export function formatPercentPoints(value: number): string {
+  return `${value.toFixed(2)}%`;
 }
 
 export function formatWad(value: bigint | undefined, displayDecimals = 4): string {
@@ -44,15 +47,37 @@ export function formatWadPercent(value: bigint | undefined): string {
   return `${num.toFixed(2)}%`;
 }
 
-export function formatPriceUsd(priceWad: bigint | undefined): string {
-  if (priceWad === undefined) return "-";
-  const price = Number(formatUnits(priceWad, 18));
+export function formatPriceUsd(price: number | undefined): string {
+  if (price === undefined) return "-";
   if (price === 0) return "$0";
   if (price < 0.01) return "<$0.01";
   return `$${price.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+export function tokenAmountToUsdValue(
+  amount: bigint | undefined,
+  decimals: number,
+  priceUsd: number | undefined
+): number | undefined {
+  if (amount === undefined || priceUsd === undefined) return undefined;
+  return Number(formatUnits(amount, decimals)) * priceUsd;
+}
+
+export function amountInputToUsdValue(
+  amount: string,
+  decimals: number,
+  priceUsd: number | undefined
+): number | undefined {
+  if (!amount || priceUsd === undefined) return undefined;
+  try {
+    const amountRaw = parseUnits(amount as `${number}`, decimals);
+    return tokenAmountToUsdValue(amountRaw, decimals, priceUsd);
+  } catch {
+    return undefined;
+  }
 }
 
 export function formatPriceInUnit(

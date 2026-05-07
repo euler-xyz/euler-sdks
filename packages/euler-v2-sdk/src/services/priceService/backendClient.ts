@@ -40,41 +40,36 @@ export type V3PriceResponse = {
 };
 
 /**
- * Backend configuration for the price service.
+ * Pricing service configuration for the V3 pricing endpoint.
  */
-export type BackendConfig = {
-	/** Backend API endpoint URL. */
+export type PricingServiceConfig = {
+	/** Pricing API endpoint URL. */
 	endpoint: string;
 	/** Optional API key sent as `X-API-Key` for V3-style backend requests. */
 	apiKey?: string;
 };
 
-/**
- * Convert backend price (number) to bigint with 18 decimals.
- */
-export const backendPriceToBigInt = (price: string | number): bigint => {
+/** Normalize a pricing API price to a positive finite USD number. */
+export const normalizeBackendPrice = (
+	price: string | number,
+): number | undefined => {
 	try {
 		const priceNum = typeof price === "number" ? price : parseFloat(price);
-		if (Number.isNaN(priceNum) || priceNum < 0) {
-			return 0n;
+		if (!Number.isFinite(priceNum) || priceNum <= 0) {
+			return undefined;
 		}
-		const priceString = priceNum.toFixed(18);
-		const [intPart, decPart = ""] = priceString.split(".");
-		const paddedDec = decPart.slice(0, 18);
-		return BigInt(intPart + paddedDec);
+		return priceNum;
 	} catch {
-		return 0n;
+		return undefined;
 	}
 };
 
-/**
- * Instance-based backend price client with batching.
- */
+/** Instance-based V3 pricing API client with batching. */
 export class PricingBackendClient {
 	private readonly endpoint: string;
 	private readonly apiKey?: string;
 
-	constructor(config: BackendConfig, buildQuery?: BuildQueryFn) {
+	constructor(config: PricingServiceConfig, buildQuery?: BuildQueryFn) {
 		this.endpoint = config.endpoint;
 		this.apiKey = config.apiKey;
 		if (buildQuery) applyBuildQuery(this, buildQuery);

@@ -2,7 +2,11 @@ import { useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
 import { useSecuritizeVaultDetail } from "../queries/sdkQueries.ts";
-import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
+import {
+  formatBigInt,
+  formatPriceUsd,
+  tokenAmountToUsdValue,
+} from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
 import { RawEntityDialog } from "../components/RawEntityDialog.tsx";
@@ -38,11 +42,11 @@ export function SecuritizeDetailPage() {
     return <div className="error-message">Error: {String(error)}</div>;
   if (!vault) return <div className="status-message">Vault not found</div>;
 
-  const totalSupplyUsd =
-    vault.marketPriceUsd !== undefined
-      ? (vault.totalAssets * vault.marketPriceUsd) /
-        10n ** BigInt(vault.asset.decimals)
-      : undefined;
+  const totalSupplyUsd = tokenAmountToUsdValue(
+    vault.totalAssets,
+    vault.asset.decimals,
+    vault.marketPriceUsd
+  );
 
   const exchangeRate =
     vault.totalShares === 0n

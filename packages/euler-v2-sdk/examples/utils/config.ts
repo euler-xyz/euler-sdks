@@ -19,12 +19,6 @@ export const WETH_ADDRESS = getAddress("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756C
 export const EULER_PRIME_USDT_VAULT = getAddress("0x313603FA690301b0CaeEf8069c065862f9162162");
 export const EULER_PRIME_WETH_VAULT = getAddress("0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2");
 
-
-export const rpcUrls = {
-  ...getRpcUrls(),
-  [1]: ANVIL_RPC_URL, // Override with Anvil URL
-};
-
 export const account = privateKeyToAccount(PRIVATE_KEY);
 export const account2 = privateKeyToAccount(PRIVATE_KEY2);
 
@@ -114,7 +108,13 @@ export type ExampleContext = {
   testClient: TestClient;
 };
 
+export function useAnvilRpcForSDK() {
+  process.env.EULER_SDK_RPC_URL_1 = ANVIL_RPC_URL;
+}
+
 export async function initExample(): Promise<ExampleContext> {
+  useAnvilRpcForSDK();
+
   const USDC_WHALE = "0xb7cD010b53D23a794d754886C3b928BE6a3315dC"
   const USDT_WHALE = "0x83A32a54D31Ee4f1f9dFFAd2A63A6d214e469eC3"
   const WETH_WHALE = "0x4a18a50a8328b42773268B4b436254056b7d70CE"
@@ -184,25 +184,4 @@ export async function initExample(): Promise<ExampleContext> {
     publicClient,
     testClient,
   };
-}
-
-/**
- * Reads RPC_URL_* environment variables and creates a mapping of chainId to RPC URL
- * Example: RPC_URL_1=https://mainnet.infura.io/... creates { 1: "https://mainnet.infura.io/..." }
- */
-export function getRpcUrls(): Record<number, string> {
-  const rpcUrls: Record<number, string> = {};
-
-  for (const [key, value] of Object.entries(process.env)) {
-    if (key.startsWith("RPC_URL_")) {
-      const chainIdStr = key.replace("RPC_URL_", "");
-      const chainId = Number.parseInt(chainIdStr, 10);
-
-      if (!Number.isNaN(chainId) && value) {
-        rpcUrls[chainId] = value;
-      }
-    }
-  }
-
-  return rpcUrls;
 }

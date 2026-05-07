@@ -69,8 +69,8 @@ function subAccountData(
 	};
 }
 
-function usd(value: number): bigint {
-	return BigInt(Math.round(value * 1e6)) * 10n ** 12n;
+function usd(value: number): number {
+	return value;
 }
 
 function vault(address: string, overrides: Record<string, unknown> = {}) {
@@ -141,16 +141,16 @@ test("portfolio splits savings and borrows across sub-accounts", () => {
 						},
 						totalCollateralValue: {
 							borrowing: 50n,
-							liquidation: 50n,
-							oracleMid: 50n,
+							liquidation: 61735n,
+							oracleMid: 100000n,
 						},
 						collaterals: [
 							{
 								address: collateralVault,
 								value: {
 									borrowing: 50n,
-									liquidation: 50n,
-									oracleMid: 50n,
+									liquidation: 61735n,
+									oracleMid: 100000n,
 								},
 							},
 						],
@@ -210,6 +210,7 @@ test("portfolio splits savings and borrows across sub-accounts", () => {
 		),
 		[collateralVault],
 	);
+	assert.equal(portfolio.borrows[0]?.accountLiquidationLTV, 0.6174);
 	assert.deepEqual(
 		portfolio.savings.map((saving) => saving.position.vaultAddress),
 		[savingsVault, mixedVault, savingsVault],
@@ -594,7 +595,7 @@ test("portfolio service fetches populated accounts and forwards position filter"
 
 test("portfolio computes net APY and ROE from supplied and borrowed value", () => {
 	const collateral = vault(collateralVault, {
-		interestRates: { supplyAPY: "0.05", borrowAPY: "0" },
+		interestRates: { supplyAPY: "5", borrowAPY: "0" },
 		rewards: {
 			totalRewardsApr: 0.02,
 			campaigns: [
@@ -609,7 +610,7 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 		},
 	});
 	const borrow = vault(borrowVault, {
-		interestRates: { supplyAPY: "0", borrowAPY: "0.08" },
+		interestRates: { supplyAPY: "0", borrowAPY: "8" },
 		rewards: {
 			totalRewardsApr: 0.01,
 			campaigns: [
@@ -624,7 +625,7 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 		},
 	});
 	const savings = vault(savingsVault, {
-		interestRates: { supplyAPY: "0.04", borrowAPY: "0" },
+		interestRates: { supplyAPY: "4", borrowAPY: "0" },
 		rewards: {
 			totalRewardsApr: 0.01,
 			campaigns: [
@@ -670,58 +671,58 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 	}));
 
 	// Net yield = 200*(5%+2%) - 100*(8%-1%) + 100*(4%+1%) = 12.
-	assert.equal(portfolio.netApy, 12 / 300);
-	assert.equal(portfolio.roe, 12 / 200);
+	assert.equal(portfolio.netApy, 4);
+	assert.equal(portfolio.roe, 6);
 	assert.deepEqual(portfolio.apyBreakdown, {
-		lending: 14 / 300,
-		borrowing: -8 / 300,
-		rewards: 6 / 300,
+		lending: 14 / 3,
+		borrowing: -8 / 3,
+		rewards: 2,
 		intrinsicApy: 0,
-		total: 12 / 300,
+		total: 4,
 	});
 	assert.deepEqual(portfolio.roeBreakdown, {
-		lending: 14 / 200,
-		borrowing: -8 / 200,
-		rewards: 6 / 200,
+		lending: 7,
+		borrowing: -4,
+		rewards: 3,
 		intrinsicApy: 0,
-		total: 12 / 200,
+		total: 6,
 	});
 
 	const saving = portfolio.savings.find(
 		(position) => position.position.vaultAddress === savingsVault,
 	)!;
-	assert.equal(saving.apy, 0.05);
+	assert.equal(saving.apy, 5);
 	assert.deepEqual(saving.apyBreakdown, {
-		lending: 0.04,
+		lending: 4,
 		borrowing: 0,
-		rewards: 0.01,
+		rewards: 1,
 		intrinsicApy: 0,
-		total: 0.05,
+		total: 5,
 	});
 
 	const borrowPosition = portfolio.borrows[0]!;
 	assert.equal(borrowPosition.multiplier, 2);
-	assert.equal(borrowPosition.netApy, 7 / 200);
-	assert.equal(borrowPosition.roe, 7 / 100);
+	assert.equal(borrowPosition.netApy, 3.5);
+	assert.equal(borrowPosition.roe, 7);
 	assert.deepEqual(borrowPosition.apyBreakdown, {
-		lending: 10 / 200,
-		borrowing: -8 / 200,
-		rewards: 5 / 200,
+		lending: 5,
+		borrowing: -4,
+		rewards: 2.5,
 		intrinsicApy: 0,
-		total: 7 / 200,
+		total: 3.5,
 	});
 	assert.deepEqual(borrowPosition.roeBreakdown, {
-		lending: 10 / 100,
-		borrowing: -8 / 100,
-		rewards: 5 / 100,
+		lending: 10,
+		borrowing: -8,
+		rewards: 5,
 		intrinsicApy: 0,
-		total: 7 / 100,
+		total: 7,
 	});
 });
 
 test("portfolio applies intrinsic APY", () => {
 	const intrinsicVault = vault(savingsVault, {
-		interestRates: { supplyAPY: "0.10", borrowAPY: "0" },
+		interestRates: { supplyAPY: 10, borrowAPY: 0 },
 		intrinsicApy: {
 			apy: 5,
 			provider: "test",
@@ -743,20 +744,20 @@ test("portfolio applies intrinsic APY", () => {
 		},
 	}));
 
-	assert.equal(portfolio.netApy, 0.1 + 1.1 * 0.05);
-	assert.equal(portfolio.roe, 0.1 + 1.1 * 0.05);
+	assert.equal(portfolio.netApy, 10 + 1.1 * 5);
+	assert.equal(portfolio.roe, 10 + 1.1 * 5);
 	assert.deepEqual(portfolio.savings[0]?.apyBreakdown, {
-		lending: 0.1,
+		lending: 10,
 		borrowing: 0,
 		rewards: 0,
-		intrinsicApy: 1.1 * 0.05,
-		total: 0.1 + 1.1 * 0.05,
+		intrinsicApy: 1.1 * 5,
+		total: 10 + 1.1 * 5,
 	});
 });
 
 test("portfolio uses EulerEarn supplyApy1h for yield metrics", () => {
 	const eulerEarn = vault(savingsVault, {
-		supplyApy1h: 0.075,
+		supplyApy1h: 7.5,
 		rewards: {
 			campaigns: [
 				{
@@ -785,8 +786,8 @@ test("portfolio uses EulerEarn supplyApy1h for yield metrics", () => {
 		},
 	}));
 
-	assert.equal(portfolio.netApy, 0.08);
-	assert.equal(portfolio.roe, 0.08);
+	assert.equal(portfolio.netApy, 8);
+	assert.equal(portfolio.roe, 8);
 });
 
 test("portfolio yield metrics return undefined without populated USD positions", () => {

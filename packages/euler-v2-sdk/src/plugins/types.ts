@@ -1,5 +1,7 @@
 import type { Address, Hex, PublicClient } from "viem";
+import type { AddressOrAccount } from "../entities/Account.js";
 import type { EVault } from "../entities/EVault.js";
+import type { EulerSDK } from "../sdk/sdk.js";
 import type {
 	BatchItemDescription,
 	EVCBatchItem,
@@ -23,11 +25,7 @@ export interface Signer {
 	sendTransaction(tx: { to: Address; data: Hex; value?: bigint }): Promise<Hex>;
 }
 
-export interface WritePluginContext extends ReadPluginContext {
-	sender: Address;
-	collateralAddresses?: Address[];
-	signer?: Signer;
-}
+export type PluginSDK = EulerSDK<any>;
 
 export interface EulerPlugin {
 	name: string;
@@ -36,13 +34,13 @@ export interface EulerPlugin {
 	/** Transform a transaction plan (e.g. prepend oracle updates, resolve approvals). */
 	processPlan?(
 		plan: TransactionPlan,
-		ctx: WritePluginContext,
+		account: AddressOrAccount,
+		chainId: number,
+		sdk: PluginSDK,
 	): Promise<TransactionPlan>;
 	/** Decode a batch item that this plugin produced. Return null if the item is not from this plugin. */
 	decodeBatchItem?(item: EVCBatchItem): BatchItemDescription | null;
 }
-
-export type ProcessPluginsArgs = Omit<WritePluginContext, "provider">;
 
 /**
  * Prepend batch items to the first `evcBatch` entry in a transaction plan.

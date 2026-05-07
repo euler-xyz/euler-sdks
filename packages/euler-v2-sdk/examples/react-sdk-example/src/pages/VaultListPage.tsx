@@ -22,7 +22,12 @@ import {
   useSwitchChain,
   useWalletClient,
 } from "wagmi";
-import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
+import {
+  amountInputToUsdValue,
+  formatBigInt,
+  formatPriceUsd,
+  tokenAmountToUsdValue,
+} from "../utils/format.ts";
 import {
   createEntityDiagnosticIndex,
   formatDiagnosticIssues,
@@ -67,14 +72,18 @@ function getEVaultSortValue(vault: ChainScopedVault<EVault>, key: EVaultSortKey)
     case "asset":
       return vault.asset.symbol.toLowerCase();
     case "totalSupply": {
-      const amt = Number(vault.totalAssets) / 10 ** vault.asset.decimals;
-      const price = Number(vault.marketPriceUsd ?? 0n) / 1e18;
-      return amt * price;
+      return tokenAmountToUsdValue(
+        vault.totalAssets,
+        vault.asset.decimals,
+        vault.marketPriceUsd
+      ) ?? 0;
     }
     case "totalBorrows": {
-      const amt = Number(vault.totalBorrowed) / 10 ** vault.asset.decimals;
-      const price = Number(vault.marketPriceUsd ?? 0n) / 1e18;
-      return amt * price;
+      return tokenAmountToUsdValue(
+        vault.totalBorrowed,
+        vault.asset.decimals,
+        vault.marketPriceUsd
+      ) ?? 0;
     }
     case "supplyAPY":
       return getEffectiveSupplyApy(vault);
@@ -110,12 +119,14 @@ function getEarnSortValue(vault: ChainScopedVault<EulerEarn>, key: EarnSortKey):
     case "asset":
       return vault.asset.symbol.toLowerCase();
     case "totalAssets": {
-      const amt = Number(vault.totalAssets) / 10 ** vault.asset.decimals;
-      const price = Number(vault.marketPriceUsd ?? 0n) / 1e18;
-      return amt * price;
+      return tokenAmountToUsdValue(
+        vault.totalAssets,
+        vault.asset.decimals,
+        vault.marketPriceUsd
+      ) ?? 0;
     }
     case "supplyAPY":
-      return (vault.supplyApy1h ?? 0) + (vault.rewards?.totalRewardsApr ?? 0) + (vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0);
+      return (vault.supplyApy1h ?? 0) + (vault.rewards?.totalRewardsApr ?? 0) * 100 + (vault.intrinsicApy?.apy ?? 0);
     case "usdPrice":
       return vault.marketPriceUsd !== undefined ? Number(vault.marketPriceUsd) : -1;
     case "strategies":
@@ -125,16 +136,20 @@ function getEarnSortValue(vault: ChainScopedVault<EulerEarn>, key: EarnSortKey):
   }
 }
 
-function calcVaultSupplyUsd(vault: EVault): bigint | undefined {
-  if (vault.marketPriceUsd === undefined) return undefined;
-  const decimals = BigInt(vault.asset.decimals ?? 18);
-  return (vault.totalAssets * vault.marketPriceUsd) / (10n ** decimals);
+function calcVaultSupplyUsd(vault: EVault): number | undefined {
+  return tokenAmountToUsdValue(
+    vault.totalAssets,
+    vault.asset.decimals,
+    vault.marketPriceUsd
+  );
 }
 
-function calcVaultBorrowsUsd(vault: EVault): bigint | undefined {
-  if (vault.marketPriceUsd === undefined) return undefined;
-  const decimals = BigInt(vault.asset.decimals ?? 18);
-  return (vault.totalBorrowed * vault.marketPriceUsd) / (10n ** decimals);
+function calcVaultBorrowsUsd(vault: EVault): number | undefined {
+  return tokenAmountToUsdValue(
+    vault.totalBorrowed,
+    vault.asset.decimals,
+    vault.marketPriceUsd
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -191,29 +206,6 @@ function useDebouncedValue<T>(value: T, delayMs = 350) {
   return debounced;
 }
 
-function amountToUsdWad(
-  amount: string,
-  decimals: number,
-  priceWad: bigint | undefined
-): bigint | undefined {
-  if (!amount || !priceWad) return undefined;
-  try {
-    const amountRaw = parseUnits(amount as `${number}`, decimals);
-    return (amountRaw * priceWad) / (10n ** BigInt(decimals));
-  } catch {
-    return undefined;
-  }
-}
-
-function balanceToUsdWad(
-  balance: bigint | undefined,
-  decimals: number,
-  priceWad: bigint | undefined
-): bigint | undefined {
-  if (balance === undefined || !priceWad) return undefined;
-  return (balance * priceWad) / (10n ** BigInt(decimals));
-}
-
 function getMarketName(vault: EVault): string | undefined {
   return vault.eulerLabel?.products[0]?.name ?? vault.shares.name;
 }
@@ -247,20 +239,20 @@ function DepositFormRow({
     vault.asset.address
   );
 
-  const priceWad = vault.marketPriceUsd ?? undefined;
-  const amountUsdWad = useMemo(
-    () => amountToUsdWad(debouncedAmount, vault.asset.decimals, priceWad),
-    [debouncedAmount, vault.asset.decimals, priceWad]
+  const priceUsd = vault.marketPriceUsd ?? undefined;
+  const amountUsd = useMemo(
+    () => amountInputToUsdValue(debouncedAmount, vault.asset.decimals, priceUsd),
+    [debouncedAmount, vault.asset.decimals, priceUsd]
   );
-  const balanceUsdWad = useMemo(
-    () => balanceToUsdWad(walletBalance, vault.asset.decimals, priceWad),
-    [walletBalance, vault.asset.decimals, priceWad]
+  const balanceUsdValue = useMemo(
+    () => tokenAmountToUsdValue(walletBalance, vault.asset.decimals, priceUsd),
+    [walletBalance, vault.asset.decimals, priceUsd]
   );
 
   const formattedBalance = walletBalance !== undefined
     ? formatBigInt(walletBalance, vault.asset.decimals)
     : "-";
-  const balanceUsd = formatPriceUsd(balanceUsdWad);
+  const balanceUsd = formatPriceUsd(balanceUsdValue);
   const isChainMismatch = isConnected && walletChainId !== chainId;
 
   const handleSupply = async () => {
@@ -411,7 +403,7 @@ function DepositFormRow({
                   disabled={isSubmitting}
                 />
                 <div className="deposit-usd">
-                  USD value: {formatPriceUsd(amountUsdWad)}
+                  USD value: {formatPriceUsd(amountUsd)}
                 </div>
                 <div className="deposit-actions">
                   <button
@@ -523,12 +515,12 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
   }, []);
 
   const eVaultMarkets = useMemo(() => {
-    const byName = new Map<string, bigint>();
+    const byName = new Map<string, number>();
     for (const vault of eVaults) {
       const market = getMarketName(vault);
       if (!market) continue;
-      const suppliedUsd = calcVaultSupplyUsd(vault) ?? 0n;
-      byName.set(market, (byName.get(market) ?? 0n) + suppliedUsd);
+      const suppliedUsd = calcVaultSupplyUsd(vault) ?? 0;
+      byName.set(market, (byName.get(market) ?? 0) + suppliedUsd);
     }
     return Array.from(byName.entries())
       .sort((a, b) => {
@@ -598,21 +590,36 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
   const getDiagnosticEntityKey = (chainId: number, address: string) =>
     `${chainId}:${address.toLowerCase()}`;
 
+  const prefixDiagnosticPath = (prefix: string, path: string | undefined) => {
+    if (!path || path === "$") return prefix;
+    if (path.startsWith("$.")) return `${prefix}${path.slice(1)}`;
+    if (path.startsWith("$[")) return `${prefix}${path.slice(1)}`;
+    return `${prefix}.${path}`;
+  };
+
   const vaultDiagnosticIndex = useMemo(
     () =>
       createEntityDiagnosticIndex({
         diagnostics,
-        resolveEntityKey: (issue) => {
-          if (!issue.entityId || issue.entityId.length !== 42 || issue.chainId === undefined) {
-            return undefined;
+        resolveLocationKey: (location) => {
+          const owner = location.owner;
+          if (owner.kind === "vault") {
+            return getDiagnosticEntityKey(owner.chainId, owner.address);
           }
-          return getDiagnosticEntityKey(issue.chainId, issue.entityId);
+          if (owner.kind === "vaultCollateral" || owner.kind === "vaultStrategy") {
+            return getDiagnosticEntityKey(owner.chainId, owner.vault);
+          }
+          return undefined;
         },
-        normalizePath: (path) => {
-          if (!path) return "$";
-          const match = path.match(/^\$\.vaults\[\d+\](?:\.(.*))?$/);
-          if (!match) return path;
-          return match[1] ? `$.${match[1]}` : "$";
+        normalizePath: (path, location) => {
+          const owner = location.owner;
+          if (owner.kind === "vaultCollateral") {
+            return prefixDiagnosticPath("$.collaterals", path);
+          }
+          if (owner.kind === "vaultStrategy") {
+            return prefixDiagnosticPath("$.strategies", path);
+          }
+          return path ?? "$";
         },
       }),
     [diagnostics, diagnosticsDataUpdatedAt]
@@ -621,12 +628,12 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
   const renderFieldIcon = (
     chainId: number,
     address: string,
-    paths: string[],
+    targetPaths: string[],
     position: "leading" | "trailing" = "leading"
   ) => {
     const issues = vaultDiagnosticIndex.getFieldIssues(
       getDiagnosticEntityKey(chainId, address),
-      paths
+      targetPaths
     );
     if (issues.length === 0) return null;
     return <ErrorIcon details={formatDiagnosticIssues(issues)} position={position} />;

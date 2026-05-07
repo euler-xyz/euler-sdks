@@ -34,7 +34,9 @@ See [examples/simulations/simulate-deposit-example.ts](../examples/simulations/s
 
 ### `simulateTransactionPlan(chainId, account, transactionPlan, options?)`
 
-Simulates a full `TransactionPlan` and returns:
+Simulates a full `TransactionPlan` after applying configured write-path plugins. The `account` argument is `AddressOrAccount` (`Address | Account`): pass an owner address when the SDK should fetch whatever plugin data it needs, or pass an already-fetched `Account` when you want plugins to reuse account state.
+
+Returns:
 
 - `simulatedAccounts`: account entities updated to reflect the plan’s execution
 - `simulatedVaults`: vault entities updated from lens data
@@ -53,7 +55,7 @@ Why use it:
 
 ### `estimateGasForTransactionPlan(chainId, account, transactionPlan, options?)`
 
-Estimates gas for the executable items in a `TransactionPlan`. Like simulation, `stateOverrides` defaults to `true`, so required wallet balances and allowances are injected while `requiredApproval` items are skipped. EVC batches are estimated through `EVC.batch`, direct `contractCall` items are estimated against their target contracts, and viem gas-estimation errors are thrown to the caller.
+Estimates gas for the executable items in a `TransactionPlan` after applying the same plugin pipeline used by simulation and execution. Like simulation, `stateOverrides` defaults to `true`, so required wallet balances and allowances are injected while `requiredApproval` items are skipped. EVC batches are estimated through `EVC.batch`, direct `contractCall` items are estimated against their target contracts, and viem gas-estimation errors are thrown to the caller.
 
 ```typescript
 const gas = await sdk.executionService.estimateGasForTransactionPlan(

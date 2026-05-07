@@ -2,6 +2,10 @@
 
 All notable changes to the `euler-sdk` skill are documented in this file.
 
+## 1.1.2 - 2026-05-07
+- Added `walletService` guidance for native/ERC20 balances and direct/Permit2 allowance state.
+- Added wallet query caching guidance and wallet example references.
+
 ## 1.1.1 - 2026-04-16
 - Aligned examples with diagnostics-aware service returns (`{ result, errors }`).
 - Updated approval resolution guidance to the current `plan`/`account` API shape.

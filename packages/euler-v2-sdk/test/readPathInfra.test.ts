@@ -5,6 +5,7 @@ import { getAddress, zeroAddress } from "viem";
 import {
   applyBuildQuery,
   createQueryCacheBuildQuery,
+  serializeQueryArgs,
   type BuildQueryFn,
 } from "../src/utils/buildQuery.js";
 import { DeploymentService } from "../src/services/deploymentService/deploymentService.js";
@@ -18,12 +19,30 @@ import {
 import { IntrinsicApyService } from "../src/services/intrinsicApyService/intrinsicApyService.js";
 import { WalletService } from "../src/services/walletService/walletService.js";
 import { WalletOnchainAdapter } from "../src/services/walletService/adapters/walletOnchainAdapter.js";
+import { OracleAdapterService } from "../src/services/oracleAdapterService/oracleAdapterService.js";
 import { Wallet } from "../src/entities/Wallet.js";
 import { EVault } from "../src/entities/EVault.js";
 import {
   getCollateralizedEVaultFixture,
   getPlainEVaultFixture,
 } from "./helpers/readCorpus.ts";
+import {
+  applyEulerLabelVaultOverrides,
+  createEmptyEulerLabelsData,
+  getEulerLabelAssetBlock,
+  getEulerLabelEntitiesByVault,
+  getEulerLabelProductByVault,
+  getEulerLabelVaultNotice,
+  isEulerLabelEarnVaultDeprecated,
+  isEulerLabelVaultDeprecated,
+  isEulerLabelVaultFeatured,
+  isEulerLabelVaultKeyring,
+  isEulerLabelVaultNotExplorable,
+} from "../src/utils/eulerLabels.js";
+import {
+  dataIssueLocation,
+  walletDiagnosticOwner,
+} from "../src/utils/entityDiagnostics.js";
 
 const originalQueryDeployments = DeploymentService.queryDeployments;
 
@@ -186,6 +205,13 @@ test("buildQuery cache dedupes, clears rejected promises, and decorate query met
   } finally {
     Map.prototype.get = originalMapGet;
   }
+});
+
+test("serializeQueryArgs handles nested bigint values for external caches", () => {
+  assert.equal(
+    serializeQueryArgs([{ nested: { amount: 1n } }]),
+    '[{"nested":{"amount":{"__type":"bigint","value":"1"}}}]',
+  );
 });
 
 test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels services cover their read flows", async () => {
@@ -384,7 +410,13 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
     { asset: plainVault.asset.address, spenders: [plainVault.address] },
     { asset: collateralVault.asset.address, spenders: [plainVault.address] },
   ]);
-  assert.equal(fetchedWallet.result?.assets.length, 1);
+  assert.equal(fetchedWallet.result?.assets.length, 2);
+  assert.equal(
+    fetchedWallet.result?.assets.find(
+      (asset) => asset.asset === plainVault.asset.address,
+    )?.balance,
+    0n,
+  );
   assert.ok(fetchedWallet.errors.length >= 3);
 
   const walletService = new WalletService({
@@ -412,13 +444,23 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
                   assetForPermit2: 2n,
                   assetForVaultInPermit2: 3n,
                   permit2ExpirationTime: 4,
+                  permit2Nonce: 5,
                 },
               },
             },
           ],
         },
         errors: [
-          { code: "X", severity: "warning", message: "x", paths: ["$"] },
+          {
+            code: "X",
+            severity: "warning",
+            message: "x",
+            locations: [
+              dataIssueLocation(
+                walletDiagnosticOwner(1, plainVault.address),
+              ),
+            ],
+          },
         ],
       };
     },
@@ -443,6 +485,10 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
       getEulerLabelsProductsUrl: (chainId) =>
         `https://labels/${chainId}/products`,
       getEulerLabelsPointsUrl: (chainId) => `https://labels/${chainId}/points`,
+      getEulerLabelsEarnVaultsUrl: (chainId) =>
+        `https://labels/${chainId}/earn-vaults`,
+      getEulerLabelsAssetsUrl: (chainId) => `https://labels/${chainId}/assets`,
+      getEulerLabelsGlobalAssetsUrl: () => "https://labels/all/assets",
       getEulerLabelsLogoUrl: (filename) => `https://cdn/${filename}`,
     },
     buildQuery,
@@ -475,6 +521,15 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
       },
     ] as any;
   });
+  labelsAdapter.setQueryEulerLabelsEarnVaults(async (url) => {
+    assert.equal(url, "https://labels/1/earn-vaults");
+    return [];
+  });
+  const initialAssetUrls: string[] = [];
+  labelsAdapter.setQueryEulerLabelsAssets(async (url) => {
+    initialAssetUrls.push(url);
+    return [];
+  });
   assert.equal(
     Object.keys(await labelsAdapter.fetchEulerLabelsEntities(1)).length,
     1,
@@ -484,6 +539,12 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
     1,
   );
   assert.equal((await labelsAdapter.fetchEulerLabelsPoints(1)).length, 1);
+  assert.equal((await labelsAdapter.fetchEulerLabelsEarnVaults(1)).length, 0);
+  assert.equal((await labelsAdapter.fetchEulerLabelsAssets(1)).length, 0);
+  assert.deepEqual(initialAssetUrls, [
+    "https://labels/1/assets",
+    "https://labels/all/assets",
+  ]);
 
   const labelsService = new EulerLabelsService(
     labelsAdapter,
@@ -583,6 +644,185 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   // With no products/points/deprecation hits, no eulerLabel is attached
   assert.equal(bareVault.eulerLabel, undefined);
   assert.equal(bareVault.populated.labels, true);
+
+  labelsService.setAdapter(labelsAdapter);
+  labelsAdapter.setQueryEulerLabelsProducts(async () => ({
+    parityProduct: {
+      name: "Base Product",
+      description: "base",
+      entity: "euler",
+      url: "https://example.com",
+      logo: "product.svg",
+      vaults: [plainVault.address.toLowerCase()],
+      deprecatedVaults: [stringEntityVault.address.toLowerCase()],
+      deprecateReason: "legacy reason",
+      featuredVaults: [plainVault.address.toLowerCase()],
+      notExplorable: true,
+      keyring: true,
+      portfolioNotice: "product notice",
+      vaultOverrides: {
+        [plainVault.address.toLowerCase()]: {
+          name: "Overridden Product",
+          description: "override",
+          portfolioNotice: "override notice",
+        },
+      },
+    },
+  }) as any);
+  labelsAdapter.setQueryEulerLabelsEntities(async () => ({
+    euler: {
+      name: "Euler",
+      logo: "euler.svg",
+      url: "not-a-url",
+      addresses: {
+        [plainVault.address.toLowerCase()]: "Vault",
+      },
+    },
+  }) as any);
+  labelsAdapter.setQueryEulerLabelsPoints(async () => [
+    {
+      name: "Points",
+      logo: "points.svg",
+      collateralVaults: [plainVault.address.toLowerCase()],
+    },
+  ] as any);
+  labelsAdapter.setQueryEulerLabelsEarnVaults(async () => [
+    {
+      address: collateralVault.address.toLowerCase(),
+      block: ["US"],
+      restricted: ["DE"],
+      featured: true,
+      deprecated: true,
+      deprecationReason: "earn migrated",
+      description: "earn description",
+      portfolioNotice: "earn notice",
+      notExplorable: true,
+    },
+  ]);
+  labelsAdapter.setQueryEulerLabelsAssets(async (url) =>
+    url === "https://labels/all/assets"
+      ? [
+          {
+            names: ["Global Asset Rule"],
+            block: ["CA"],
+          },
+        ]
+      : [
+          {
+            address: plainVault.asset.address.toLowerCase(),
+            block: ["US"],
+            restricted: ["DE"],
+          },
+          {
+            symbols: ["USDC"],
+            symbolRegex: "usd",
+            names: ["USD Coin"],
+            nameRegex: "coin",
+            block: ["GB"],
+          },
+          {
+            symbols: ["BAD"],
+            symbolRegex: "[",
+            block: ["FR"],
+          },
+        ],
+  );
+  const labelsData = await labelsService.fetchEulerLabelsData(1);
+  assert.equal(labelsData.products.parityProduct?.vaults[0], plainVault.address);
+  assert.equal(
+    labelsData.products.parityProduct?.deprecatedVaults?.[0],
+    stringEntityVault.address,
+  );
+  assert.equal(
+    labelsData.products.parityProduct?.deprecationReason,
+    "legacy reason",
+  );
+  assert.equal(labelsData.entities.euler?.url, "");
+  assert.deepEqual(labelsData.earnVaultBlocks[collateralVault.address.toLowerCase()], [
+    "US",
+  ]);
+  assert.equal(labelsData.featuredEarnVaults.has(collateralVault.address), true);
+  assert.equal(
+    labelsData.deprecatedEarnVaults[collateralVault.address.toLowerCase()],
+    "earn migrated",
+  );
+  assert.equal(
+    labelsData.assetBlocks[plainVault.asset.address.toLowerCase()]?.[0],
+    "US",
+  );
+  assert.equal(labelsData.assetPatternRules.length, 3);
+  assert.deepEqual(createEmptyEulerLabelsData().verifiedVaultAddresses, []);
+  assert.equal(
+    applyEulerLabelVaultOverrides(
+      labelsData.products.parityProduct!,
+      plainVault.address,
+    ).name,
+    "Overridden Product",
+  );
+  assert.equal(
+    getEulerLabelProductByVault(labelsData, plainVault.address)?.name,
+    "Base Product",
+  );
+  assert.equal(
+    getEulerLabelEntitiesByVault(labelsData, {
+      governorAdmin: plainVault.address,
+    })[0]?.name,
+    "Euler",
+  );
+  assert.equal(getEulerLabelVaultNotice(labelsData, plainVault.address), "override notice");
+  assert.equal(getEulerLabelAssetBlock(labelsData, plainVault.asset.address)?.[0], "US");
+  assert.equal(isEulerLabelVaultFeatured(labelsData, plainVault.address), true);
+  assert.equal(isEulerLabelVaultFeatured(labelsData, collateralVault.address), true);
+  assert.equal(isEulerLabelVaultDeprecated(labelsData, stringEntityVault.address), true);
+  assert.equal(isEulerLabelEarnVaultDeprecated(labelsData, collateralVault.address), true);
+  assert.equal(isEulerLabelVaultKeyring(labelsData, plainVault.address), true);
+  assert.equal(isEulerLabelVaultNotExplorable(labelsData, plainVault.address), true);
+
+  await labelsService.populateLabels([plainVault, collateralVault]);
+  assert.equal(
+    plainVault.eulerLabel?.products[0]?.name,
+    "Overridden Product",
+  );
+  assert.equal(plainVault.eulerLabel?.deprecationReason, undefined);
+  assert.equal(collateralVault.eulerLabel?.earnVault?.address, collateralVault.address);
+  assert.equal(collateralVault.eulerLabel?.deprecated, true);
+  assert.equal(collateralVault.eulerLabel?.portfolioNotice, "earn notice");
+
+  const oracleAdapterService = new OracleAdapterService({}, buildQuery);
+  oracleAdapterService.setQueryOracleAdapters(async (chainId) => {
+    assert.equal(chainId, 1);
+    return [
+      {
+        oracle: plainVault.oracle.oracle.toLowerCase(),
+        baseAsset: plainVault.asset.address.toLowerCase(),
+        quote_asset: zeroAddress,
+        provider: "Provider",
+        checks: [
+          { id: "Adapter whitelist", pass: false, severity: "HIGH" },
+          {
+            id: "pricing-valid",
+            message: "Pricing valid",
+            pass: true,
+            severity: "INFO",
+          },
+        ],
+      },
+      {
+        adapter: "not-an-address",
+      },
+    ];
+  });
+  const oracleAdapters = await oracleAdapterService.fetchOracleAdapters(1);
+  assert.equal(oracleAdapters.length, 1);
+  assert.equal(oracleAdapters[0]?.oracle, plainVault.oracle.oracle);
+  assert.equal(oracleAdapters[0]?.base, plainVault.asset.address);
+  assert.equal(oracleAdapters[0]?.checks?.length, 1);
+  assert.equal(
+    (await oracleAdapterService.fetchOracleAdapterMap(1))[
+      plainVault.oracle.oracle.toLowerCase()
+    ]?.provider,
+    "Provider",
+  );
 
   assert.ok(calls.some((entry) => entry.queryName === "queryDeployments"));
 });

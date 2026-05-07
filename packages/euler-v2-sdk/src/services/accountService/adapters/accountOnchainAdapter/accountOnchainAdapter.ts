@@ -25,9 +25,10 @@ import {
 } from "../../../../plugins/batchSimulation.js";
 import type { EVCBatchItem } from "../../../executionService/executionServiceTypes.js";
 import {
+	dataIssueLocation,
+	subAccountDiagnosticOwner,
 	type DataIssue,
 	type ServiceResult,
-	prefixDataIssues,
 } from "../../../../utils/entityDiagnostics.js";
 import { normalizeAccountOutput } from "../accountOutputNormalization.js";
 
@@ -183,16 +184,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		const validSubs = subAccountsArray
 			.map((entry, idx) => {
 				const subAccountAddress = subAccountAddresses[idx];
-				errors.push(
-					...prefixDataIssues(
-						entry.errors,
-						`$.subAccounts['${entry.result?.account ?? subAccountAddress ?? "unknown"}']`,
-					).map((issue) => ({
-						...issue,
-						entityId:
-							issue.entityId ?? entry.result?.account ?? subAccountAddress,
-					})),
-				);
+				if (subAccountAddress) errors.push(...entry.errors);
 				return entry.result;
 			})
 			.filter(
@@ -265,7 +257,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 
 		if (vaults.length === 0) {
 			return {
-				result: this.buildSubAccount(evcAccountInfo, [], errors),
+				result: this.buildSubAccount(chainId, evcAccountInfo, [], errors),
 				errors,
 			};
 		}
@@ -284,6 +276,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 			);
 		} else {
 			vaultAccountInfos = await this.queryVaultAccountInfosGracefully(
+				chainId,
 				provider,
 				accountLensAddress,
 				subAccount,
@@ -293,12 +286,18 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		}
 
 		return {
-			result: this.buildSubAccount(evcAccountInfo, vaultAccountInfos, errors),
+			result: this.buildSubAccount(
+				chainId,
+				evcAccountInfo,
+				vaultAccountInfos,
+				errors,
+			),
 			errors,
 		};
 	}
 
 	buildSubAccount(
+		chainId: number,
 		evcAccountInfo: EVCAccountInfo,
 		vaultAccountInfos: VaultAccountInfo[],
 		errors: DataIssue[],
@@ -306,6 +305,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		const subAccountData = convertToSubAccount(
 			evcAccountInfo,
 			vaultAccountInfos,
+			chainId,
 			errors,
 		);
 		return {
@@ -390,6 +390,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		// If no prepend items, fall back to normal queries
 		if (!prepend || prepend.items.length === 0) {
 			return this.queryVaultAccountInfosGracefully(
+				chainId,
 				provider,
 				accountLensAddress,
 				subAccount,
@@ -431,6 +432,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		);
 
 		return this.collectSettledVaultAccountInfos(
+			chainId,
 			results,
 			subAccount,
 			vaults,
@@ -439,6 +441,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 	}
 
 	private async queryVaultAccountInfosGracefully(
+		chainId: number,
 		provider: ReturnType<ProviderService["getProvider"]>,
 		accountLensAddress: Address,
 		subAccount: Address,
@@ -457,6 +460,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		);
 
 		return this.collectSettledVaultAccountInfos(
+			chainId,
 			results,
 			subAccount,
 			vaults,
@@ -465,6 +469,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 	}
 
 	private collectSettledVaultAccountInfos(
+		chainId: number,
 		results: PromiseSettledResult<unknown>[],
 		subAccount: Address,
 		vaults: Address[],
@@ -485,8 +490,12 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 				code: "SOURCE_UNAVAILABLE",
 				severity: "warning",
 				message: `Failed to fetch vault account info for ${getAddress(vault)}.`,
-				paths: ["$.positions"],
-				entityId: subAccount,
+				locations: [
+					dataIssueLocation(
+						subAccountDiagnosticOwner(chainId, subAccount),
+						"$.positions",
+					),
+				],
 				source: "accountLens",
 				originalValue:
 					result.reason instanceof Error

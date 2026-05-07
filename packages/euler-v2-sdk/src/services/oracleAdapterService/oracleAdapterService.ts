@@ -1,3 +1,4 @@
+import { getAddress } from "viem";
 import type { Address } from "viem";
 import type { BuildQueryFn } from "../../utils/buildQuery.js";
 import { applyBuildQuery } from "../../utils/buildQuery.js";
@@ -5,12 +6,17 @@ import type { OracleAdapterEntry } from "../../utils/oracle.js";
 
 export type OracleAdapterCheck = {
 	id?: string;
+	message?: string;
 	pass?: boolean;
+	severity?: string;
 	[key: string]: unknown;
 };
 
 export type OracleAdapterMetadata = {
 	address: Address;
+	oracle: Address;
+	base?: Address;
+	quote?: Address;
 	provider?: string;
 	methodology?: string;
 	label?: string;
@@ -89,7 +95,7 @@ export class OracleAdapterService implements IOracleAdapterService {
 	): Promise<Record<string, OracleAdapterMetadata>> {
 		const adapters = await this.fetchOracleAdapters(chainId);
 		return Object.fromEntries(
-			adapters.map((adapter) => [adapter.address.toLowerCase(), adapter]),
+			adapters.map((adapter) => [adapter.oracle.toLowerCase(), adapter]),
 		);
 	}
 
@@ -110,16 +116,47 @@ export class OracleAdapterService implements IOracleAdapterService {
 		return raw
 			.filter(
 				(item): item is Record<string, unknown> =>
-					typeof item === "object" &&
-					item !== null &&
-					typeof item.address === "string",
+					typeof item === "object" && item !== null,
 			)
-			.map((item) => ({
-				...(item as Record<string, unknown>),
-				address: item.address as Address,
-				checks: Array.isArray(item.checks)
-					? (item.checks as OracleAdapterCheck[])
-					: undefined,
-			}));
+			.map((item): OracleAdapterMetadata | undefined => {
+				const rawOracle = item.oracle ?? item.adapter ?? item.address;
+				if (typeof rawOracle !== "string") return undefined;
+				let oracle: Address;
+				try {
+					oracle = getAddress(rawOracle) as Address;
+				} catch {
+					return undefined;
+				}
+
+				const normalizeOptionalAddress = (value: unknown): Address | undefined => {
+					if (typeof value !== "string") return undefined;
+					try {
+						return getAddress(value) as Address;
+					} catch {
+						return undefined;
+					}
+				};
+
+				const checks = Array.isArray(item.checks)
+					? (item.checks as OracleAdapterCheck[]).filter(
+							(check) => check.id !== "Adapter whitelist",
+						)
+					: undefined;
+
+				const metadata: OracleAdapterMetadata = {
+					...(item as Record<string, unknown>),
+					address: oracle,
+					oracle,
+					base: normalizeOptionalAddress(
+						item.base ?? item.baseAsset ?? item.base_asset,
+					),
+					quote: normalizeOptionalAddress(
+						item.quote ?? item.quoteAsset ?? item.quote_asset,
+					),
+					checks,
+				};
+				return metadata;
+			})
+			.filter((item): item is OracleAdapterMetadata => item !== undefined);
 	}
 }

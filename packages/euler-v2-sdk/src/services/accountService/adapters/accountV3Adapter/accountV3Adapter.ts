@@ -10,9 +10,16 @@ import {
 	applyBuildQuery,
 } from "../../../../utils/buildQuery.js";
 import {
+	accountDiagnosticOwner,
+	accountPositionCollateralDiagnosticOwner,
+	accountPositionDiagnosticOwner,
 	compressDataIssues,
+	dataIssueLocation,
 	type DataIssue,
+	type DataIssueOwnerRef,
 	type ServiceResult,
+	serviceDiagnosticOwner,
+	subAccountDiagnosticOwner,
 } from "../../../../utils/entityDiagnostics.js";
 import {
 	parseAddressArrayField,
@@ -21,7 +28,6 @@ import {
 	parseBooleanField,
 	parseDaysToLiquidation,
 	parseNumberField,
-	ZERO_ADDRESS,
 } from "../../../../utils/parsing.js";
 import type { AccountV3AdapterConfig } from "../../accountServiceConfig.js";
 import type { IAccountAdapter } from "../../accountService.js";
@@ -87,25 +93,25 @@ type V3SubAccount = {
 function convertAssetValue(
 	value: V3AssetValue,
 	path: string,
-	entityId: Address,
+	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
 ) {
 	return {
 		borrowing: parseBigIntField(value.borrowing, {
 			path: `${path}.borrowing`,
-			entityId,
+			owner,
 			errors,
 			source: "accountV3",
 		}),
 		liquidation: parseBigIntField(value.liquidation, {
 			path: `${path}.liquidation`,
-			entityId,
+			owner,
 			errors,
 			source: "accountV3",
 		}),
 		oracleMid: parseBigIntField(value.oracleMid, {
 			path: `${path}.oracleMid`,
-			entityId,
+			owner,
 			errors,
 			source: "accountV3",
 		}),
@@ -115,23 +121,36 @@ function convertAssetValue(
 function convertLiquidity(
 	liquidity: V3AccountLiquidity,
 	path: string,
-	entityId: Address,
+	chainId: number,
+	account: Address,
+	vaultAddress: Address,
 	errors: DataIssue[],
 ): IAccountLiquidity {
+	const positionOwner = accountPositionDiagnosticOwner(
+		chainId,
+		account,
+		vaultAddress,
+	);
 	const convertedCollaterals = liquidity.collaterals.map(
 		(collateral, collateralIndex) => {
 			const collateralAddress = parseAddressField(collateral.address, {
 				path: `${path}.collaterals[${collateralIndex}].address`,
-				entityId,
+				owner: positionOwner,
 				errors,
 				source: "accountV3",
 			});
+			const collateralOwner = accountPositionCollateralDiagnosticOwner(
+				chainId,
+				account,
+				vaultAddress,
+				collateralAddress,
+			);
 			return {
 				address: collateralAddress,
 				value: convertAssetValue(
 					collateral.value,
-					`${path}.collaterals[${collateralIndex}].value`,
-					collateralAddress,
+					"$.value",
+					collateralOwner,
 					errors,
 				),
 			};
@@ -155,32 +174,32 @@ function convertLiquidity(
 	return {
 		vaultAddress: parseAddressField(liquidity.vaultAddress, {
 			path: `${path}.vaultAddress`,
-			entityId,
+			owner: positionOwner,
 			errors,
 			source: "accountV3",
 		}),
 		unitOfAccount: parseAddressField(liquidity.unitOfAccount, {
 			path: `${path}.unitOfAccount`,
-			entityId,
+			owner: positionOwner,
 			errors,
 			source: "accountV3",
 		}),
 		daysToLiquidation: parseDaysToLiquidation(liquidity.daysToLiquidation, {
 			path: `${path}.daysToLiquidation`,
-			entityId,
+			owner: positionOwner,
 			errors,
 			source: "accountV3",
 		}),
 		liabilityValue: convertAssetValue(
 			liquidity.liabilityValue,
 			`${path}.liabilityValue`,
-			entityId,
+			positionOwner,
 			errors,
 		),
 		totalCollateralValue: convertAssetValue(
 			liquidity.totalCollateralValue,
 			`${path}.totalCollateralValue`,
-			entityId,
+			positionOwner,
 			errors,
 		),
 		collaterals,
@@ -195,19 +214,24 @@ function convertPosition(
 	const path = `$.positions[${positionIndex}]`;
 	const account = parseAddressField(row.account, {
 		path: `${path}.account`,
-		entityId: ZERO_ADDRESS,
+		owner: serviceDiagnosticOwner("accountV3", row.chainId, "positions"),
 		errors,
 		source: "accountV3",
 	});
 	const vaultAddress = parseAddressField(row.vault, {
 		path: `${path}.vault`,
-		entityId: account,
+		owner: subAccountDiagnosticOwner(row.chainId, account),
 		errors,
 		source: "accountV3",
 	});
+	const positionOwner = accountPositionDiagnosticOwner(
+		row.chainId,
+		account,
+		vaultAddress,
+	);
 	const asset = parseAddressField(row.asset, {
-		path: `${path}.asset`,
-		entityId: vaultAddress,
+		path: "$.asset",
+		owner: positionOwner,
 		errors,
 		source: "accountV3",
 	});
@@ -217,45 +241,47 @@ function convertPosition(
 		vaultAddress,
 		asset,
 		shares: parseBigIntField(row.shares, {
-			path: `${path}.shares`,
-			entityId: vaultAddress,
+			path: "$.shares",
+			owner: positionOwner,
 			errors,
 			source: "accountV3",
 		}),
 		assets: parseBigIntField(row.assets, {
-			path: `${path}.assets`,
-			entityId: vaultAddress,
+			path: "$.assets",
+			owner: positionOwner,
 			errors,
 			source: "accountV3",
 		}),
 		borrowed: parseBigIntField(row.borrowed, {
-			path: `${path}.borrowed`,
-			entityId: vaultAddress,
+			path: "$.borrowed",
+			owner: positionOwner,
 			errors,
 			source: "accountV3",
 		}),
 		isController: parseBooleanField(row.isController, {
-			path: `${path}.isController`,
-			entityId: vaultAddress,
+			path: "$.isController",
+			owner: positionOwner,
 			errors,
 			source: "accountV3",
 		}),
 		isCollateral: parseBooleanField(row.isCollateral, {
-			path: `${path}.isCollateral`,
-			entityId: vaultAddress,
+			path: "$.isCollateral",
+			owner: positionOwner,
 			errors,
 			source: "accountV3",
 		}),
 		balanceForwarderEnabled: parseBooleanField(row.balanceForwarderEnabled, {
-			path: `${path}.balanceForwarderEnabled`,
-			entityId: vaultAddress,
+			path: "$.balanceForwarderEnabled",
+			owner: positionOwner,
 			errors,
 			source: "accountV3",
 		}),
 		liquidity: row.liquidity
 			? convertLiquidity(
 					row.liquidity,
-					`${path}.liquidity`,
+					"$.liquidity",
+					row.chainId,
+					account,
 					vaultAddress,
 					errors,
 				)
@@ -264,7 +290,7 @@ function convertPosition(
 }
 
 function buildSubAccount(
-	_chainId: number,
+	chainId: number,
 	account: Address,
 	rows: V3AccountPositionRow[],
 	errors: DataIssue[],
@@ -278,8 +304,9 @@ function buildSubAccount(
 				code: "DEFAULT_APPLIED",
 				severity: "warning",
 				message: "Missing subAccount block; defaulted sub-account metadata.",
-				paths: ["$.positions[0].subAccount"],
-				entityId: account,
+				locations: [
+					dataIssueLocation(subAccountDiagnosticOwner(chainId, account), "$"),
+				],
 				source: "accountV3",
 				normalizedValue: {
 					timestamp: 0,
@@ -311,15 +338,15 @@ function buildSubAccount(
 
 	return {
 		timestamp: parseNumberField(meta.timestamp, {
-			path: "$.positions[0].subAccount.timestamp",
-			entityId: account,
+			path: "$.timestamp",
+			owner: subAccountDiagnosticOwner(chainId, account),
 			errors,
 			source: "accountV3",
 		}),
 		account,
 		owner: parseAddressField(meta.owner, {
-			path: "$.positions[0].subAccount.owner",
-			entityId: account,
+			path: "$.owner",
+			owner: subAccountDiagnosticOwner(chainId, account),
 			errors,
 			source: "accountV3",
 			fallback: account,
@@ -328,34 +355,34 @@ function buildSubAccount(
 		lastAccountStatusCheckTimestamp: parseNumberField(
 			meta.lastAccountStatusCheckTimestamp,
 			{
-				path: "$.positions[0].subAccount.lastAccountStatusCheckTimestamp",
-				entityId: account,
+				path: "$.lastAccountStatusCheckTimestamp",
+				owner: subAccountDiagnosticOwner(chainId, account),
 				errors,
 				source: "accountV3",
 			},
 		),
 		enabledControllers: parseAddressArrayField(meta.enabledControllers, {
-			path: "$.positions[0].subAccount.enabledControllers",
-			entityId: account,
+			path: "$.enabledControllers",
+			owner: subAccountDiagnosticOwner(chainId, account),
 			errors,
 			source: "accountV3",
 		}),
 		enabledCollaterals: parseAddressArrayField(meta.enabledCollaterals, {
-			path: "$.positions[0].subAccount.enabledCollaterals",
-			entityId: account,
+			path: "$.enabledCollaterals",
+			owner: subAccountDiagnosticOwner(chainId, account),
 			errors,
 			source: "accountV3",
 		}),
 		positions,
 		isLockdownMode: parseBooleanField(meta.isLockdownMode, {
-			path: "$.positions[0].subAccount.isLockdownMode",
-			entityId: account,
+			path: "$.isLockdownMode",
+			owner: subAccountDiagnosticOwner(chainId, account),
 			errors,
 			source: "accountV3",
 		}),
 		isPermitDisabledMode: parseBooleanField(meta.isPermitDisabledMode, {
-			path: "$.positions[0].subAccount.isPermitDisabledMode",
-			entityId: account,
+			path: "$.isPermitDisabledMode",
+			owner: subAccountDiagnosticOwner(chainId, account),
 			errors,
 			source: "accountV3",
 		}),
@@ -425,7 +452,7 @@ export class AccountV3Adapter implements IAccountAdapter {
 		for (const [index, row] of rows.entries()) {
 			const account = parseAddressField(row.account, {
 				path: `$.positions[${index}].account`,
-				entityId: getAddress(address),
+				owner: accountDiagnosticOwner(chainId, getAddress(address)),
 				errors,
 				source: "accountV3",
 				fallback: getAddress(address),
@@ -487,7 +514,7 @@ export class AccountV3Adapter implements IAccountAdapter {
 			(row, index) =>
 				parseAddressField(row.account, {
 					path: `$.positions[${index}].account`,
-					entityId: normalizedSubAccount,
+					owner: subAccountDiagnosticOwner(chainId, normalizedSubAccount),
 					errors,
 					source: "accountV3",
 					fallback: normalizedSubAccount,
@@ -504,7 +531,7 @@ export class AccountV3Adapter implements IAccountAdapter {
 							getAddress(vault) ===
 							parseAddressField(row.vault, {
 								path: `$.positions[${index}].vault`,
-								entityId: normalizedSubAccount,
+								owner: subAccountDiagnosticOwner(chainId, normalizedSubAccount),
 								errors,
 								source: "accountV3",
 							}),
@@ -572,8 +599,11 @@ export class AccountV3Adapter implements IAccountAdapter {
 				code: "SOURCE_UNAVAILABLE",
 				severity: "error",
 				message: `Failed to fetch account positions for ${getAddress(address)}.`,
-				paths: ["$"],
-				entityId: getAddress(address),
+				locations: [
+					dataIssueLocation(
+						accountDiagnosticOwner(chainId, getAddress(address)),
+					),
+				],
 				source: "accountV3",
 				originalValue: error instanceof Error ? error.message : String(error),
 			});

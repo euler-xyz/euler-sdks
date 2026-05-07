@@ -2,7 +2,7 @@
 
 This document describes the pricing system in the Euler V2 SDK, including how prices are fetched, converted to USD, and how different vault types are handled.
 
-> **Important:** Market prices (`marketPriceUsd`) are intended for display purposes only. When the backend price is unavailable, the SDK falls back to on-chain oracle prices, which may intentionally differ from true market prices for risk management reasons (e.g. fixed or capped prices set by governance). Do not use these values for on-chain risk calculations — use the oracle-based risk prices (`assetRiskPrice`, `getCollateralRiskPrice`) instead.
+> **Important:** Market prices (`marketPriceUsd`) are intended for display purposes only. When the V3 price is unavailable, the SDK falls back to on-chain oracle prices, which may intentionally differ from true market prices for risk management reasons (e.g. fixed or capped prices set by governance). Do not use these values for on-chain risk calculations — use the oracle-based risk prices (`assetRiskPrice`, `getCollateralRiskPrice`) instead.
 
 ## Overview
 
@@ -44,12 +44,12 @@ const { result: vault } = await sdk.eVaultService.fetchVault(1, '0x...', {
   populateMarketPrices: true,
 })
 
-vault.marketPriceUsd               // => 1000000000000000000n ($1.00)
-vault.collaterals[0].marketPriceUsd // => 2500000000000000000000n ($2500.00)
+vault.marketPriceUsd               // => 1 ($1.00)
+vault.collaterals[0].marketPriceUsd // => 2500 ($2500.00)
 
 // EulerEarn / Securitize with prices
 const { result: ee } = await sdk.eulerEarnService.fetchVault(1, '0x...', { populateMarketPrices: true })
-ee.marketPriceUsd  // => PriceWad
+ee.marketPriceUsd  // => number
 ```
 
 ## Vault Price Helpers
@@ -59,16 +59,16 @@ The vault entities provide direct access to pricing through methods and properti
 ### Types
 
 ```typescript
-/** Price scaled to 18 decimals (WAD precision). */
-type PriceWad = bigint
+/** USD price per whole token as a plain decimal number. */
+type PriceUsd = number
 
 type RiskPrice = {
-  priceLiquidation: PriceWad  // Mid oracle price, scaled to 18 decimals
-  priceBorrowing: PriceWad    // Ask (asset) or bid (collateral) oracle price, scaled to 18 decimals
+  priceLiquidation: bigint  // Mid oracle price, scaled to 18 decimals
+  priceBorrowing: bigint    // Ask (asset) or bid (collateral) oracle price, scaled to 18 decimals
 }
 ```
 
-All prices are returned as `PriceWad` — a `bigint` always scaled to 18 decimals.
+USD market prices and USD values are plain `number` values. Risk prices are read directly from oracle data and remain `bigint` values scaled to 18 decimals.
 
 ### EVault Helpers
 
@@ -77,21 +77,21 @@ All prices are returned as `PriceWad` — a `bigint` always scaled to 18 decimal
 - **`vault.assetRiskPrice`** — Asset price as `RiskPrice`. Maps oracle mid to `priceLiquidation`, oracle ask to `priceBorrowing`.
 - **`vault.getCollateralRiskPrice(collateralVault)`** — Collateral asset price as `RiskPrice`. Converts from share price using `totalShares/totalAssets`. Maps oracle mid to `priceLiquidation`, oracle bid to `priceBorrowing`.
 
-**USD market prices** — async, tries backend first, falls back to on-chain. Returns `PriceWad` (18-decimal bigint):
+**USD market prices** — async, tries the V3 pricing API first, falls back to on-chain. Returns `number`:
 
 - **`vault.fetchUnitOfAccountMarketPriceUsd(priceService)`** — UoA -> USD rate.
 - **`vault.fetchAssetMarketPriceUsd(priceService)`** — Asset USD price.
 - **`vault.fetchCollateralMarketPriceUsd(collateralVault, priceService)`** — Collateral USD price.
 
-**USD market values** — async, amount x price as 18-decimal bigint:
+**USD market values** — async, amount x price as `number`:
 
 - **`vault.fetchAssetMarketValueUsd(amount, priceService)`** — USD value of an asset amount. Inherited from `ERC4626Vault`.
 - **`vault.fetchCollateralMarketValueUsd(amount, collateralVault, priceService)`** — USD value of a collateral amount in this vault's context.
 
 ### ERC4626Vault Helpers
 
-- **`vault.fetchAssetMarketPriceUsd(priceService)`** — Asset USD price as `PriceWad`. Works for any vault type (EVault, EulerEarn, Securitize).
-- **`vault.fetchAssetMarketValueUsd(amount, priceService)`** — USD value of an asset amount as 18-decimal bigint.
+- **`vault.fetchAssetMarketPriceUsd(priceService)`** — Asset USD price as `number`. Works for any vault type (EVault, EulerEarn, Securitize).
+- **`vault.fetchAssetMarketValueUsd(amount, priceService)`** — USD value of an asset amount as `number`.
 
 ### Usage Example
 
@@ -99,8 +99,7 @@ All prices are returned as `PriceWad` — a `bigint` always scaled to 18 decimal
 import { buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 
 const sdk = await buildEulerSDK({
-  rpcUrls: { 1: 'https://...' },
-  backendConfig: {
+  pricingServiceConfig: {
     endpoint: 'https://v3.eul.dev',
   },
 })
@@ -116,18 +115,18 @@ vault.collaterals[0].marketPriceUsd  // already populated
 // Option 2: On-demand price helpers
 const { result: vault2 } = await sdk.eVaultService.fetchVault(1, '0x...')
 
-// Risk prices (sync — from oracle data, all PriceWad = 18-decimal bigint)
+// Risk prices (sync — from oracle data, 18-decimal bigint)
 const assetRisk = vault2.assetRiskPrice
 // => { priceLiquidation: 1000000000000000000n, priceBorrowing: 1000100000000000000n }
 
 const { result: collateralVault } = await sdk.eVaultService.fetchVault(1, '0x...')
 const collateralRisk = vault2.getCollateralRiskPrice(collateralVault)
 
-// USD market prices (async, PriceWad)
+// USD market prices (async, number)
 const assetUsd = await vault2.fetchAssetMarketPriceUsd(sdk.priceService)
 const collateralUsd = await vault2.fetchCollateralMarketPriceUsd(collateralVault, sdk.priceService)
 
-// USD market values (async, 18-decimal bigint)
+// USD market values (async, number)
 const assetValue = await vault2.fetchAssetMarketValueUsd(1000000n, sdk.priceService)
 ```
 
@@ -178,13 +177,13 @@ type FormattedAssetValue = {
 
 The `PriceService` (`sdk.priceService`) provides the full pricing API. The vault helpers above delegate to these methods internally.
 
-### Price Sources: Backend + On-Chain Fallback
+### Price Sources: V3 API + On-Chain Fallback
 
-All USD pricing functions automatically try the **backend (off-chain)** first, then fall back to **on-chain** oracle data. There is no `source` parameter — the behavior is always: backend first, on-chain fallback.
+All USD pricing functions automatically try the **V3 pricing API** first, then fall back to **on-chain** oracle data. There is no `source` parameter - the behavior is always: V3 API first, on-chain fallback.
 
 Layer 1 functions (oracle prices) are always **synchronous** reads from on-chain vault data.
 
-Pass `backendConfig` when building the SDK to enable backend pricing. When `backendConfig` is not provided, all pricing falls back to on-chain oracle data.
+`PriceService` is built with the default V3 pricing endpoint. Override it with `pricingServiceConfig`, `config.pricingApiUrl`, `config.pricingApiKey`, `EULER_SDK_PRICING_API_URL`, or `EULER_SDK_PRICING_API_KEY` when a different endpoint or API key is required.
 
 ### Architecture: 2-Layer System
 
@@ -193,7 +192,7 @@ Pass `backendConfig` when building the SDK to enable backend pricing. When `back
 |                   Layer 2: USD Prices                        |
 |        fetchAssetUsdPrice(), fetchCollateralUsdPrice()          |
 |                                                              |
-|   Always: try backend first, fall back to on-chain.         |
+|   Always: try V3 pricing API first, fall back to on-chain. |
 |   Routes based on vault type:                                |
 |   - EulerEarn / SecuritizeCollateral                         |
 |       -> utilsLens.getAssetPriceInfo(asset, USD)             |
@@ -213,10 +212,12 @@ Pass `backendConfig` when building the SDK to enable backend pricing. When `back
 +-------------------------------------------------------------+
 ```
 
-### PriceResult Type
+### Price Types
 
 ```typescript
-type PriceResult = {
+type PriceResult = number
+
+type OraclePriceResult = {
   amountOutMid: bigint  // Mid price
   amountOutAsk: bigint  // Ask price (or mid if unavailable)
   amountOutBid: bigint  // Bid price (or mid if unavailable)
@@ -224,9 +225,7 @@ type PriceResult = {
 }
 ```
 
-The `decimals` field indicates the precision of the amounts:
-- **Layer 1** (oracle prices): UoA decimals (from `EVault.unitOfAccount.decimals`)
-- **Layer 2** (USD prices): 18 (USD is represented with 18 decimals)
+`OraclePriceResult.decimals` indicates the precision of raw oracle amounts. `PriceResult` is the USD price per whole token as a plain number.
 
 ### Layer 1: Raw Oracle Prices
 
@@ -239,38 +238,38 @@ These are **synchronous** — they read directly from vault entity data.
 ### UoA -> USD Rate
 
 - **`fetchUnitOfAccountUsdRate(vault: EVault)`** — Returns the UoA -> USD conversion rate (async)
-  - If `unitOfAccount.address === USD_ADDRESS` (`0x...0348`), returns `1e18` (hardcoded)
-  - Always tries backend first, falls back to on-chain `utilsLens.getAssetPriceInfo(unitOfAccount, USD_ADDRESS)`
+  - If `unitOfAccount.address === USD_ADDRESS` (`0x...0348`), returns `1`
+  - Always tries the V3 pricing API first, falls back to on-chain `utilsLens.getAssetPriceInfo(unitOfAccount, USD_ADDRESS)`
 
 ### Layer 2: USD Prices
 
-These are **async** — they try backend first, then fall back to on-chain.
+These are **async** — they try the V3 pricing API first, then fall back to on-chain.
 
 - **`fetchAssetUsdPrice(vault: ERC4626Vault)`** — Routes based on vault type:
   - `EVault`: `oraclePriceRaw * uoaRate`
   - `EulerEarn` / `SecuritizeCollateralVault`: `utilsLens.getAssetPriceInfo(asset, USD_ADDRESS)`
-  - Tries backend first for direct asset USD price
+  - Tries the V3 pricing API first for direct asset USD price
 
 - **`fetchCollateralUsdPrice(liabilityVault: EVault, collateralVault: ERC4626Vault)`** — Collateral price in USD using the liability vault's oracle and UoA rate
-  - Tries backend with collateral asset address first
+  - Tries the V3 pricing API with collateral asset address first
 
 ## USD Price Calculation for EVault
 
 ```
 fetchAssetUsdPrice(vault):
-  1. If backend configured:
-     - Try backend for direct asset USD price
-     - If available, return backend price
+  1. If a V3 pricing endpoint is configured:
+     - Try the V3 pricing API for direct asset USD price
+     - If available, return the V3 price
 
   2. Oracle calculation (fallback):
      a. oraclePrice = vault.oraclePriceRaw   // Always on-chain
      b. uoaRate = await fetchUnitOfAccountUsdRate(vault)
-        - Always tries backend first, falls back to utilsLens call
-        - Returns 1e18 if vault.unitOfAccount.address === USD_ADDRESS
-     c. return (oraclePrice * uoaRate) / 1e18
+        - Always tries the V3 pricing API first, falls back to utilsLens call
+        - Returns 1 if vault.unitOfAccount.address === USD_ADDRESS
+     c. return decimal(oraclePrice) * uoaRate
 ```
 
-For escrow vaults (EVaults with `unitOfAccount === USD_ADDRESS`): the UoA rate is `1e18`, so `oraclePriceRaw` is effectively the USD price directly.
+For escrow vaults (EVaults with `unitOfAccount === USD_ADDRESS`), the UoA rate is `1`, so `oraclePriceRaw` is converted directly into a USD number.
 
 ## Collateral Price Calculation
 
@@ -280,9 +279,9 @@ When vault A (liability) accepts vault B (collateral), the price of B is determi
 
 ```
 fetchCollateralUsdPrice(liabilityVault, collateralVault):
-  1. If backend configured:
-     - Try backend for direct collateral USD price
-     - If available, return backend price
+  1. If a V3 pricing endpoint is configured:
+     - Try the V3 pricing API for direct collateral USD price
+     - If available, return the V3 price
 
   2. Oracle calculation (fallback):
      a. sharePrice = liabilityVault.collaterals.find(collateralVault.address).oraclePriceRaw
@@ -290,8 +289,8 @@ fetchCollateralUsdPrice(liabilityVault, collateralVault):
         // Special case: if totalAssets=0 AND totalShares=0 (empty vault),
         // ERC-4626 standard defines 1:1 ratio, so use sharePrice directly
      c. uoaRate = await fetchUnitOfAccountUsdRate(liabilityVault)
-        // Use LIABILITY's UoA - always tries backend first
-     d. return (assetPrice * uoaRate) / 1e18
+        // Use LIABILITY's UoA - always tries the V3 pricing API first
+     d. return decimal(assetPrice) * uoaRate
 ```
 
 ## Vault Type Routing
@@ -299,7 +298,7 @@ fetchCollateralUsdPrice(liabilityVault, collateralVault):
 | Vault Type | SDK Entity | Price Source | Notes |
 |------------|-----------|--------------|-------|
 | Regular EVK | `EVault` | `oraclePriceRaw` + UoA conversion | Standard oracle-based pricing |
-| Escrow EVK | `EVault` | `oraclePriceRaw` + UoA conversion | UoA is USD so rate=1e18 |
+| Escrow EVK | `EVault` | `oraclePriceRaw` + UoA conversion | UoA is USD so rate=1 |
 | Euler Earn | `EulerEarn` | `utilsLens.getAssetPriceInfo` | Direct USD price fetched on-demand |
 | Securitize | `SecuritizeCollateralVault` | `utilsLens.getAssetPriceInfo` | Direct USD price fetched on-demand |
 
@@ -330,9 +329,9 @@ The SDK provides utilities for working with Pyth oracles in `utils/oracle.ts`:
 - **`collectPythFeedIds(oracleInfo)`** — Recursively extracts all Pyth feed IDs from an oracle configuration (traverses EulerRouter, CrossAdapter, and PythOracle nodes)
 - **`collectChainlinkOracles(oracleInfo)`** — Collects Chainlink oracle addresses
 
-Pyth price update simulation (via EVC `batchSimulation`) is not built into the SDK's PriceService — it is the caller's responsibility to ensure Pyth prices are fresh before reading vault data.
+Pyth price update simulation is handled by `createPythPlugin()` on SDK read paths, where the plugin prepends update calls to lens `batchSimulation`. On write paths, `executionService.simulateTransactionPlan`, `executionService.estimateGasForTransactionPlan`, and `executionService.executeTransactionPlan` apply the Pyth plugin before running the plan.
 
-## Backend Client Implementation
+## Pricing API Client Implementation
 
 The `PricingBackendClient` (`services/priceService/backendClient.ts`) provides price fetching with automatic optimizations:
 
@@ -345,28 +344,28 @@ The `PricingBackendClient` (`services/priceService/backendClient.ts`) provides p
 
 **Key Functions:**
 - `queryV3Price({ address, chainId })` — Single-key query API with automatic bundling
-- `backendPriceToBigInt(price)` — Convert to 18-decimal bigint
+- `normalizeBackendPrice(price)` — Normalize backend prices to positive finite USD numbers
 
 ## Design Principles
 
 1. **Fetch options for convenience** — Pass `{ populateMarketPrices: true }` to auto-populate `marketPriceUsd` on entities during fetch
-2. **Backend first, on-chain fallback** — All USD pricing tries the backend automatically, with on-chain as fallback
+2. **V3 API first, on-chain fallback** — All USD pricing tries the V3 pricing API automatically, with on-chain as fallback
 3. **Collateral prices from liability vault's perspective** — Collateral is always priced using the liability vault's oracle router
 4. **No hardcoded fallbacks** — If a price cannot be determined, return `undefined` rather than assuming values
 5. **Vault type awareness** — Different vault types route to appropriate price sources
-6. **Zero is valid** — A price of `0n` is valid (very small value due to precision); only `undefined`/`null` or `queryFailure` indicate missing prices
+6. **Positive finite market prices** — USD market prices are returned when a positive finite price can be resolved; missing or unusable sources return `undefined`
 7. **Graceful degradation** — Price population uses `.catch(() => undefined)` per entity, so a single failure doesn't break the batch
 
 ## Files
 
-- `entities/ERC4626Vault.ts` — `PriceWad` type, `marketPriceUsd` property, `fetchAssetMarketPriceUsd()`, `fetchAssetMarketValueUsd()`
+- `entities/ERC4626Vault.ts` — `PriceUsd` type, `marketPriceUsd` property, `fetchAssetMarketPriceUsd()`, `fetchAssetMarketValueUsd()`
 - `entities/EVault.ts` — `RiskPrice` type, `EVaultCollateral.marketPriceUsd`, `assetRiskPrice`, `getCollateralRiskPrice()`, `fetchCollateralMarketPriceUsd()`, `fetchCollateralMarketValueUsd()`
 - `services/vaults/IVaultService.ts` — `VaultFetchOptions { populateMarketPrices }` base interface
 - `services/vaults/eVaultService/eVaultService.ts` — `EVaultFetchOptions`, price population
 - `services/vaults/eulerEarnService/eulerEarnService.ts` — Market price population
 - `services/vaults/securitizeVaultService/securitizeVaultService.ts` — Market price population
 - `services/priceService/priceService.ts` — Core pricing functions, `IPriceService`, `formatAssetValue()`
-- `services/priceService/backendClient.ts` — Backend API client with bundled requests
+- `services/priceService/backendClient.ts` — V3 pricing API client with bundled requests
 - `services/priceService/index.ts` — Public exports
 - `utils/oracle.ts` — Oracle decoding and Pyth/Chainlink feed collection
 - `examples/vaults/fetch-vault-details-example.ts` — Example with resolved collaterals and market prices

@@ -42,7 +42,6 @@ import {
   import { printHeader, logOperationResult } from "../utils/helpers.js";
   import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
   import {
-  rpcUrls,
   account,
   initExample,
   USDC_ADDRESS,
@@ -66,7 +65,6 @@ const THIRTY_MINUTES_FROM_NOW = Math.floor(Date.now() / 1000) + 1800; // 30 minu
 async function multiplyExample({ walletClient }: Awaited<ReturnType<typeof initExample>>) {
   // Build the SDK
   const sdk = await buildEulerSDK({
-    rpcUrls,
     accountServiceConfig: { adapter: "onchain" },
     queryCacheConfig: { enabled: false },
   });

@@ -21,6 +21,7 @@ import {
 	decodeSmartContractErrors,
 	type DecodedSmartContractError,
 } from "../../utils/decodeSmartContractErrors.js";
+import type { AddressOrAccount } from "../../entities/Account.js";
 
 const PERMIT2_ALLOWANCE_ABI = [
 	{
@@ -65,9 +66,7 @@ export type TransactionPlanPublicClient = {
 	waitForTransactionReceipt: (parameters: {
 		hash: Hash;
 	}) => Promise<TransactionReceipt>;
-	readContract: (
-		parameters: any,
-	) => Promise<unknown>;
+	readContract: (parameters: any) => Promise<unknown>;
 };
 
 export type TransactionPlanTransactionRequest = {
@@ -81,7 +80,7 @@ export type TransactionPlanSignTypedDataRequest = PermitSingleTypedData;
 export type ExecuteTransactionPlanArgs = {
 	plan: TransactionPlan;
 	chainId: number;
-	account: Address;
+	account: AddressOrAccount;
 	sendTransaction: (
 		parameters: TransactionPlanTransactionRequest,
 	) => Promise<Hash>;
@@ -136,10 +135,12 @@ async function waitForSuccessfulReceipt(
 async function maybeResolveApprovals(
 	args: ExecuteTransactionPlanInternalArgs,
 ): Promise<TransactionPlan> {
+	const owner =
+		typeof args.account === "string" ? args.account : args.account.owner;
 	return args.executionService.resolveRequiredApprovals({
 		plan: args.plan,
 		chainId: args.chainId,
-		account: args.account,
+		account: owner,
 		usePermit2: args.usePermit2,
 		unlimitedApproval: args.unlimitedApproval,
 	});
@@ -215,14 +216,18 @@ export async function executeTransactionPlan(
 							"ExecutionService.executeTransactionPlan requires signTypedData when Permit2 approval is needed",
 						);
 					}
-					const permit2Address =
-						args.deploymentService.getDeployment(args.chainId).addresses.coreAddrs
-							.permit2;
+					const permit2Address = args.deploymentService.getDeployment(
+						args.chainId,
+					).addresses.coreAddrs.permit2;
 					const allowance = (await publicClient.readContract({
 						address: permit2Address,
 						abi: PERMIT2_ALLOWANCE_ABI,
 						functionName: "allowance",
-						args: [resolvedItem.owner, resolvedItem.token, resolvedItem.spender],
+						args: [
+							resolvedItem.owner,
+							resolvedItem.token,
+							resolvedItem.spender,
+						],
 					})) as readonly [bigint, number | bigint, number | bigint];
 					const nonce = Number(allowance[2]);
 					const typedData = args.executionService.getPermit2TypedData({
@@ -256,11 +261,13 @@ export async function executeTransactionPlan(
 					...permit2BatchItems,
 					...flattenBatchEntries(item.items),
 				];
-				const evcAddress =
-					args.deploymentService.getDeployment(args.chainId).addresses.coreAddrs
-						.evc;
+				const evcAddress = args.deploymentService.getDeployment(args.chainId)
+					.addresses.coreAddrs.evc;
 				const data = args.executionService.encodeBatch(batchItems);
-				const value = batchItems.reduce((sum, batchItem) => sum + batchItem.value, 0n);
+				const value = batchItems.reduce(
+					(sum, batchItem) => sum + batchItem.value,
+					0n,
+				);
 				const hash = await args.sendTransaction({
 					to: evcAddress,
 					data,

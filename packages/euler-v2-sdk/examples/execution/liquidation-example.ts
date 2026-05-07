@@ -29,7 +29,6 @@ import {
   import { printHeader, logOperationResult, stringify } from "../utils/helpers.js";
   import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
   import {
-  rpcUrls,
   account,
   account2 as violatorAccount,
   initExample,
@@ -60,7 +59,6 @@ async function liquidationExample({
 }: Awaited<ReturnType<typeof initExample>>) {
   // Build the SDK
   const sdk = await buildEulerSDK({
-    rpcUrls,
     accountServiceConfig: { adapter: "onchain" },
     queryCacheConfig: { enabled: false },
   });

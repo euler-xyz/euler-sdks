@@ -4,7 +4,7 @@
 
 - `encodeX(...)` functions: low-level calldata/batch encoders
 - `planX(...)` functions: higher-level planners that use account context and include approval requirements
-- `executeTransactionPlan(...)`: service-owned execution for approval resolution, Permit2 signing, direct calls, and EVC batches
+- `executeTransactionPlan(...)`: service-owned execution for plugin processing, approval resolution, Permit2 signing, direct calls, and EVC batches
 
 This separation lets you either work with raw payloads directly or use opinionated planning helpers and the bundled executor.
 
@@ -67,7 +67,7 @@ Repay planners accept `cleanupOnMax`. When set on a full repay, the planner appe
 After planning, use:
 
 - `resolveRequiredApprovals(...)` or `resolveRequiredApprovalsWithWallet(...)` to resolve approval requirements into concrete `approve` calls or Permit2 signatures metadata.
-- `executeTransactionPlan(...)` to resolve any unresolved approvals, request Permit2 signatures, send direct contract calls and EVC batches, and report `onProgress` updates.
+- `executeTransactionPlan(...)` to process plugins, resolve any unresolved approvals, request Permit2 signatures, send direct contract calls and EVC batches, and report `onProgress` updates.
 
 ## Consuming a Plan
 
@@ -77,7 +77,7 @@ Plans are standard data, so apps can still implement their own wallet UX, relaye
 const result = await sdk.executionService.executeTransactionPlan({
   plan,
   chainId,
-  account,
+  account, // AddressOrAccount: owner address or fetched Account
   sendTransaction: walletClient.sendTransaction,
   signTypedData: walletClient.signTypedData,
   onProgress: (progress) => {
@@ -86,12 +86,15 @@ const result = await sdk.executionService.executeTransactionPlan({
 })
 ```
 
+The `account` argument is `AddressOrAccount` (`Address | Account`) for `executeTransactionPlan`, `simulateTransactionPlan`, and `estimateGasForTransactionPlan`. Passing an already-fetched `Account` lets plugins reuse account state; passing an address lets plugins fetch the minimal data they need.
+
 The bundled executor:
 
-1. Process `requiredApproval` items (approve or Permit2 path)
-2. Collect/append Permit2 calls when needed
-3. Execute `contractCall` items directly
-4. Send the final EVC batch transaction
+1. Processes configured plugins against the plan
+2. Processes `requiredApproval` items (approve or Permit2 path)
+3. Collects/appends Permit2 calls when needed
+4. Executes `contractCall` items directly
+5. Sends the final EVC batch transaction
 
 ## Embedding Payloads in Higher-Level Flows
 

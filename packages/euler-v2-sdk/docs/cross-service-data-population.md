@@ -164,7 +164,7 @@ const resolvedVaults = vaults.filter((v) => v !== undefined);
 const collateralIssues = await eVaultService.populateCollaterals(resolvedVaults);
 const marketIssues = await eVaultService.populateMarketPrices(resolvedVaults);
 // `vaults` preserves input order and may contain `undefined` for per-vault failures.
-// Use `fetchErrors` + `entityId` to map failures back to requested addresses.
+// Use `fetchErrors[].locations[].owner` to map failures back to requested addresses.
 ```
 
 ### Via entity populate methods (imperative, single entity)

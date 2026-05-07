@@ -84,6 +84,7 @@ export interface Deployment {
 			kinkyIRMFactory?: Address;
 			oracleAdapterRegistry?: Address;
 			oracleRouterFactory?: Address;
+			securitizeFactory?: Address;
 			swapVerifier?: Address;
 			swapper?: Address;
 			termsOfUseSigner?: Address;

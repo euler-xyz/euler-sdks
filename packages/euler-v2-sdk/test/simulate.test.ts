@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { beforeEach, test, vi } from "vitest";
 import { getAddress, type Abi } from "viem";
 import { estimateContractGas } from "viem/actions";
+import { Account } from "../src/entities/Account.js";
 import { ExecutionService } from "../src/services/executionService/executionService.js";
 import type { TransactionPlan } from "../src/services/executionService/executionServiceTypes.js";
 
@@ -119,6 +120,51 @@ test("estimateGasForTransactionPlan estimates executable plan items", async () =
 	assert.equal(contractEstimate.stateOverride, undefined);
 });
 
+test("estimateGasForTransactionPlan processes plugins and accepts Account entities", async () => {
+	const service = createExecutionService();
+	const account = new Account({
+		chainId: 1,
+		owner: CHECKSUM_ACCOUNT,
+		isLockdownMode: false,
+		isPermitDisabledMode: false,
+		subAccounts: {},
+	});
+	const pluginPlan: TransactionPlan = [
+		{
+			type: "contractCall",
+			chainId: 1,
+			to: TARGET,
+			abi: testAbi,
+			functionName: "doThing",
+			args: [9n],
+			value: 4n,
+		},
+	];
+	let processorAccount: unknown;
+	let processorChainId: number | undefined;
+	service.setPluginProcessor(async (_plan, receivedAccount, receivedChainId) => {
+		processorAccount = receivedAccount;
+		processorChainId = receivedChainId;
+		return pluginPlan;
+	});
+	vi.mocked(estimateContractGas).mockResolvedValueOnce(17n);
+
+	const estimatedGas = await service.estimateGasForTransactionPlan(
+		1,
+		account,
+		[],
+		{ stateOverrides: false },
+	);
+
+	assert.equal(estimatedGas, 17n);
+	assert.equal(processorAccount, account);
+	assert.equal(processorChainId, 1);
+	const [, estimate] = vi.mocked(estimateContractGas).mock.calls[0]!;
+	assert.equal(estimate.account, CHECKSUM_ACCOUNT);
+	assert.equal(estimate.address, TARGET);
+	assert.deepEqual(estimate.args, [9n]);
+});
+
 test("estimateGasForTransactionPlan propagates viem estimation errors", async () => {
 	const service = createExecutionService();
 	const expected = new Error("execution reverted");
@@ -192,6 +238,7 @@ test("simulateTransactionPlan reports direct allowance deficits from spender all
 								assetForPermit2: 95n,
 								assetForVaultInPermit2: 1_000n,
 								permit2ExpirationTime: Math.floor(Date.now() / 1000) + 60,
+								permit2Nonce: 0,
 							},
 						},
 					}),

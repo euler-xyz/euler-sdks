@@ -14,7 +14,7 @@ Simulate any non-trivial plan before execution, especially swaps, leverage, debt
 ```typescript
 const result = await sdk.executionService.simulateTransactionPlan(
   chainId,
-  owner,
+  ownerOrAccount,
   plan,
   {
     stateOverrides: true,
@@ -35,6 +35,8 @@ if (!result.canExecute) {
   throw new Error("Simulation failed safety checks");
 }
 ```
+
+Simulation and gas estimation use the same plugin processing path as execution. Their account argument is `AddressOrAccount` (`Address | Account`), so passing an already-fetched account can avoid duplicate plugin account fetches.
 
 Gate execution on:
 

@@ -34,7 +34,6 @@ Pass `buildQuery` once when building the SDK and it propagates to every service 
 
 ```typescript
 const sdk = await buildEulerSDK({
-  rpcUrls: { 1: 'https://...' },
   queryCacheConfig: { ttlMs: 5000 }, // Optional: default is enabled with a 5s TTL
   buildQuery: myBuildQueryFn,
   plugins: [createPythPlugin({ buildQuery: myBuildQueryFn })],
@@ -49,7 +48,6 @@ Configure the built-in cache through `queryCacheConfig`:
 
 ```typescript
 const sdk = await buildEulerSDK({
-  rpcUrls: { 1: 'https://...' },
   queryCacheConfig: {
     enabled: true, // default
     ttlMs: 5000,   // default
@@ -61,7 +59,6 @@ Disable it entirely:
 
 ```typescript
 const sdk = await buildEulerSDK({
-  rpcUrls: { 1: 'https://...' },
   queryCacheConfig: { enabled: false },
 })
 ```
@@ -70,7 +67,6 @@ Provide your own `buildQuery` if you want full control over query decoration:
 
 ```typescript
 const sdk = await buildEulerSDK({
-  rpcUrls: { 1: 'https://...' },
   buildQuery: myBuildQueryFn, // Replaces the default cache layer
 })
 ```
@@ -115,10 +111,11 @@ const STALE_TIMES: Record<string, number> = {
   queryDeployments: Infinity,
   queryABI: Infinity,
   queryTokenList: Infinity,
-  queryEulerLabelsVaults: Infinity,
   queryEulerLabelsEntities: Infinity,
   queryEulerLabelsProducts: Infinity,
   queryEulerLabelsPoints: Infinity,
+  queryEulerLabelsEarnVaults: Infinity,
+  queryEulerLabelsAssets: Infinity,
 
   // Perspective / factory lists — change only when new vaults are deployed
   queryEVaultVerifiedArray: 5 * MINUTE,
@@ -158,6 +155,8 @@ const STALE_TIMES: Record<string, number> = {
   // Per-user on-chain state — changes on every tx
   queryEVCAccountInfo: 15_000,
   queryVaultAccountInfo: 15_000,
+  queryNativeBalance: 5_000,
+  queryTokenBalances: 5_000,
   queryBalanceOf: 15_000,
   queryAllowance: 15_000,
   queryPermit2Allowance: 15_000,
@@ -174,7 +173,6 @@ import { sdkBuildQuery, queryClient } from "./sdkQueries";
 
 // In a React component/provider:
 const sdk = await buildEulerSDK({
-  rpcUrls: RPC_URLS,
   buildQuery: sdkBuildQuery,
   plugins: [createPythPlugin({ buildQuery: sdkBuildQuery })],
 });
@@ -235,6 +233,8 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 
 | Query | Type | Class | Args | Description |
 |-------|------|-------|------|-------------|
+| `queryNativeBalance` | rpc | `WalletOnchainAdapter` | `(provider, account)` | Read native token balance |
+| `queryTokenBalances` | rpc | `WalletOnchainAdapter` | `(provider, utilsLensAddress, account, assets)` | Read ERC20 balances through `utilsLens.tokenBalances` |
 | `queryBalanceOf` | rpc | `WalletOnchainAdapter` | `(provider, asset, account)` | Read ERC20 balance |
 | `queryAllowance` | rpc | `WalletOnchainAdapter` | `(provider, asset, owner, spender)` | Read ERC20 allowance |
 | `queryPermit2Allowance` | rpc | `WalletOnchainAdapter` | `(provider, permit2Address, owner, asset, spender)` | Read Permit2 allowance |
@@ -250,10 +250,11 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 
 | Query | Type | Class | Args | Description |
 |-------|------|-------|------|-------------|
-| `queryEulerLabelsVaults` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch vault labels from Euler API |
 | `queryEulerLabelsEntities` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch entity labels from Euler API |
 | `queryEulerLabelsProducts` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch product labels from Euler API |
 | `queryEulerLabelsPoints` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch points labels from Euler API |
+| `queryEulerLabelsEarnVaults` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch Euler Earn vault label metadata |
+| `queryEulerLabelsAssets` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch chain-specific and global asset rules |
 
 ### Rewards Service
 

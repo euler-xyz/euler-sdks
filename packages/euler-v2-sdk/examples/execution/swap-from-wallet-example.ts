@@ -33,7 +33,6 @@ import {
   account,
   account2,
   initExample,
-  rpcUrls,
   USDC_ADDRESS,
   WETH_ADDRESS,
   exampleExecutionCallbacks,
@@ -66,7 +65,7 @@ async function swapFromWalletExample({
   walletClient,
   publicClient,
 }: Awaited<ReturnType<typeof initExample>>) {
-	const sdk = await buildEulerSDK({ rpcUrls });
+	const sdk = await buildEulerSDK();
 	const accountData = (
 		await sdk.accountService.fetchAccount(mainnet.id, account.address, {
 			populateVaults: false,

@@ -7,9 +7,9 @@ import {
   type EulerSDK,
   type EVault,
 } from "@eulerxyz/euler-v2-sdk";
-import { formatUnits, type Address } from "viem";
+import type { Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
-import { APP_CHAIN_IDS_MINUS_BOB, CHAIN_NAMES, RPC_URLS } from "../config/chains.ts";
+import { APP_CHAIN_IDS_MINUS_BOB, CHAIN_NAMES } from "../config/chains.ts";
 import { getV3ApiEndpoint } from "../config/endpoints.ts";
 import { useProxyV3Calls } from "../queries/queryOptionsStore.ts";
 import {
@@ -17,6 +17,7 @@ import {
   fetchVaultAddressesFromLabelProducts,
   sdkBuildQuery,
 } from "../queries/sdkQueries.ts";
+import { tokenAmountToUsdValue } from "../utils/format.ts";
 
 const DIFF_THRESHOLD = 0.03;
 
@@ -58,37 +59,29 @@ function buildTotalsSdk(
 ): Promise<EulerSDK> {
   const useV3Adapters = source === "v3";
   const sdkConfig: BuildSDKOptions = {
-    rpcUrls: RPC_URLS,
-    v3ApiKey: import.meta.env.VITE_EULER_V3_API_KEY,
+    config: {
+      v3ApiUrl: v3ApiEndpoint,
+      v3ApiKey: import.meta.env.EULER_SDK_V3_API_KEY,
+    },
     buildQuery: sdkBuildQuery,
     eVaultServiceConfig: {
       adapter: useV3Adapters ? "v3" : "onchain",
-      v3AdapterConfig: {
-        endpoint: v3ApiEndpoint,
-      },
     },
     eulerEarnServiceConfig: {
       adapter: useV3Adapters ? "v3" : "onchain",
-      v3AdapterConfig: {
-        endpoint: v3ApiEndpoint,
-      },
     },
-    vaultTypeAdapterConfig: useV3Adapters
-      ? {
-          endpoint: v3ApiEndpoint,
-        }
-      : defaultVaultTypeSubgraphAdapterConfig,
-    backendConfig: {
-      endpoint: v3ApiEndpoint,
-    },
+    vaultTypeAdapterConfig: useV3Adapters ? undefined : defaultVaultTypeSubgraphAdapterConfig,
   };
 
   return buildEulerSDK(sdkConfig);
 }
 
-function vaultUsd(totalAssets: bigint, price: bigint | undefined, decimals: number): number {
-  if (price === undefined) return 0;
-  return Number(formatUnits((totalAssets * price) / 10n ** BigInt(decimals), 18));
+function vaultUsd(
+  totalAssets: bigint,
+  price: number | undefined,
+  decimals: number
+): number {
+  return tokenAmountToUsdValue(totalAssets, decimals, price) ?? 0;
 }
 
 function summarizeVaults(

@@ -6,7 +6,7 @@
  * labels (off-chain metadata), and reward campaigns.
  *
  * USAGE:
- *   Set RPC_URL_1 in examples/.env for mainnet access, then run:
+ *   Set EULER_SDK_RPC_URL_1 in examples/.env for mainnet access, then run:
  *   npx tsx vaults/fetch-vault-details-example.ts
  */
 
@@ -14,19 +14,18 @@ import "dotenv/config";
 import { formatUnits } from "viem";
 import { mainnet } from "viem/chains";
 
-import { EULER_PRIME_USDC_VAULT, getRpcUrls } from "../utils/config.js";
+import { EULER_PRIME_USDC_VAULT } from "../utils/config.js";
 import { buildEulerSDK, createPythPlugin, type EVault } from "@eulerxyz/euler-v2-sdk";
 
 const VAULT_ADDRESS = EULER_PRIME_USDC_VAULT;
 
-function formatUsd(priceWad: bigint | undefined): string {
-  if (priceWad === undefined) return "N/A";
-  return `$${Number(formatUnits(priceWad, 18)).toFixed(4)}`;
+function formatUsd(priceUsd: number | undefined): string {
+  if (priceUsd === undefined) return "N/A";
+  return `$${priceUsd.toFixed(4)}`;
 }
 
 async function fetchVaultDetailsExample() {
-  const rpcUrls = getRpcUrls();
-  const sdk = await buildEulerSDK({ rpcUrls, plugins: [createPythPlugin()] });
+  const sdk = await buildEulerSDK({ plugins: [createPythPlugin()] });
 
   console.log(`Fetching vault ${VAULT_ADDRESS} with resolved collaterals and prices...\n`);
 
@@ -66,8 +65,8 @@ async function fetchVaultDetailsExample() {
   console.log("\n" + "-".repeat(80));
   console.log("INTEREST RATES");
   console.log("-".repeat(80));
-  console.log(`  Supply APY:      ${(Number(vault.interestRates.supplyAPY) * 100).toFixed(4)}%`);
-  console.log(`  Borrow APY:      ${(Number(vault.interestRates.borrowAPY) * 100).toFixed(4)}%`);
+  console.log(`  Supply APY:      ${Number(vault.interestRates.supplyAPY).toFixed(4)}%`);
+  console.log(`  Borrow APY:      ${Number(vault.interestRates.borrowAPY).toFixed(4)}%`);
 
   // Prices
   console.log("\n" + "-".repeat(80));
@@ -103,7 +102,7 @@ async function fetchVaultDetailsExample() {
 
       if ("interestRates" in cv) {
         const rates = (cv as EVault).interestRates;
-        console.log(`    Supply APY:      ${(Number(rates.supplyAPY) * 100).toFixed(4)}%`);
+        console.log(`    Supply APY:      ${Number(rates.supplyAPY).toFixed(4)}%`);
       }
 
       const collateralPrice = vault.getCollateralRiskPrice(cv);

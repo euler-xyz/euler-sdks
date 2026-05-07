@@ -7,7 +7,7 @@
  * - Top 3 Euler Earn vaults by liquidity (total assets in USD)
  *
  * USAGE:
- *   Set RPC_URL_1 in examples/.env for mainnet access, then run:
+ *   Set EULER_SDK_RPC_URL_1 in examples/.env for mainnet access, then run:
  *   npx tsx vaults/fetch-top-verified-vaults-example.ts
  */
 
@@ -15,7 +15,6 @@ import "dotenv/config";
 import { formatUnits } from "viem";
 import { mainnet } from "viem/chains";
 
-import { getRpcUrls } from "../utils/config.js";
 import {
   buildEulerSDK,
   StandardEVaultPerspectives,
@@ -27,9 +26,7 @@ import {
 } from "@eulerxyz/euler-v2-sdk";
 
 async function fetchTopVerifiedVaultsExample() {
-  const rpcUrls = getRpcUrls();
   const sdk = await buildEulerSDK({
-    rpcUrls,
     eVaultServiceConfig: { adapter: "onchain" },
     eulerEarnServiceConfig: { adapter: "onchain" },
   });
@@ -74,12 +71,16 @@ fetchTopVerifiedVaultsExample().catch((error) => {
 
 
 
-type WithUsd<T> = { vault: T; usd: bigint };
+type WithUsd<T> = { vault: T; usd: number };
 type RewardAction = "LEND" | "BORROW";
 
-function calcVaultUsd(totalAssets: bigint, decimals: number, marketPriceUsd: bigint | undefined): bigint {
-  if (marketPriceUsd === undefined) return 0n;
-  return (totalAssets * marketPriceUsd) / (10n ** BigInt(decimals));
+function calcVaultUsd(
+  totalAssets: bigint,
+  decimals: number,
+  marketPriceUsd: number | undefined
+): number {
+  if (marketPriceUsd === undefined) return 0;
+  return Number(formatUnits(totalAssets, decimals)) * marketPriceUsd;
 }
 
 function formatAssetAmount(amount: bigint, decimals: number): string {
@@ -90,16 +91,15 @@ function formatAssetAmount(amount: bigint, decimals: number): string {
   });
 }
 
-function formatUsdWad(usdWad: bigint): string {
-  const value = Number(formatUnits(usdWad, 18));
-  return `$${value.toLocaleString("en-US", {
+function formatUsd(usd: number): string {
+  return `$${usd.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
 }
 
 function formatPercent(value: number): string {
-  return `${(value * 100).toFixed(2)}%`;
+  return `${value.toFixed(2)}%`;
 }
 
 function getRewardsAprByAction(vault: EVault | EulerEarn, action: RewardAction): number {
@@ -107,33 +107,34 @@ function getRewardsAprByAction(vault: EVault | EulerEarn, action: RewardAction):
   let total = 0;
   for (const campaign of vault.rewards.campaigns) {
     if (campaign.action === action) {
-      total += campaign.apr;
+      total += campaign.apr * 100;
     }
   }
   return total;
 }
 
-function getIntrinsicApyDecimal(vault: EVault | EulerEarn): number {
-  return vault.intrinsicApy ? vault.intrinsicApy.apy / 100 : 0;
+function getIntrinsicApyPercentPoints(vault: EVault | EulerEarn): number {
+  return vault.intrinsicApy?.apy ?? 0;
 }
 
 function getEVaultSupplyApyTotal(vault: EVault): number {
   const base = Number(vault.interestRates.supplyAPY);
   const rewards = getRewardsAprByAction(vault, "LEND");
-  const intrinsic = getIntrinsicApyDecimal(vault);
+  const intrinsic = getIntrinsicApyPercentPoints(vault);
   return base + rewards + intrinsic;
 }
 
 function getEVaultBorrowApyTotal(vault: EVault): number {
   const base = Number(vault.interestRates.borrowAPY);
   const rewards = getRewardsAprByAction(vault, "BORROW");
-  return base + rewards;
+  const intrinsic = getIntrinsicApyPercentPoints(vault);
+  return base + intrinsic - rewards;
 }
 
 function getEulerEarnSupplyApyTotal(vault: EulerEarn): number | undefined {
   if (vault.supplyApy1h === undefined) return undefined;
   const rewards = getRewardsAprByAction(vault, "LEND");
-  const intrinsic = getIntrinsicApyDecimal(vault);
+  const intrinsic = getIntrinsicApyPercentPoints(vault);
   return vault.supplyApy1h + rewards + intrinsic;
 }
 
@@ -164,7 +165,7 @@ function printEVaultTable(rows: WithUsd<EVault>[]) {
       vault.shares.name.slice(0, 47).padEnd(48),
       vault.address.padEnd(44),
       `${formatAssetAmount(vault.totalAssets, vault.asset.decimals)} ${vault.asset.symbol}`.padEnd(20),
-      formatUsdWad(usd).padEnd(20),
+      formatUsd(usd).padEnd(20),
       formatPercent(getEVaultSupplyApyTotal(vault)).padEnd(12),
       formatPercent(getEVaultBorrowApyTotal(vault)),
     );
@@ -189,7 +190,7 @@ function printEulerEarnTable(rows: WithUsd<EulerEarn>[]) {
       vault.shares.name.slice(0, 47).padEnd(48),
       vault.address.padEnd(44),
       `${formatAssetAmount(vault.totalAssets, vault.asset.decimals)} ${vault.asset.symbol}`.padEnd(20),
-      formatUsdWad(usd).padEnd(20),
+      formatUsd(usd).padEnd(20),
       (supplyApy !== undefined ? formatPercent(supplyApy) : "N/A").padEnd(12),
       "N/A",
     );

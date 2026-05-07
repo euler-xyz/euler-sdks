@@ -7,13 +7,18 @@ import type {
 } from "../services/rewardsService/index.js";
 import type { IntrinsicApyInfo } from "../services/intrinsicApyService/index.js";
 import type { EulerLabel } from "./EulerLabels.js";
-import type { DataIssue } from "../utils/entityDiagnostics.js";
+import { tokenAmountToUsdValue } from "../utils/normalization.js";
+import {
+	dataIssueLocation,
+	type DataIssue,
+	vaultDiagnosticOwner,
+} from "../utils/entityDiagnostics.js";
 
 /** Virtual deposit amount used in share/asset conversions (matches EVault ConversionHelpers.sol). */
 export const VIRTUAL_DEPOSIT_AMOUNT = 1_000_000n;
 
-/** Price scaled to 18 decimals (WAD precision). */
-export type PriceWad = bigint;
+/** USD price per whole token as a plain decimal number. */
+export type PriceUsd = number;
 
 export interface ERC4626VaultPopulated {
 	marketPrices: boolean;
@@ -48,7 +53,7 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
 	asset: Token;
 	totalShares: bigint;
 	totalAssets: bigint;
-	marketPriceUsd?: PriceWad;
+	marketPriceUsd?: PriceUsd;
 	rewards?: VaultRewardInfo;
 	intrinsicApy?: IntrinsicApyInfo;
 	eulerLabel?: EulerLabel;
@@ -74,6 +79,10 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
 		return false;
 	}
 
+	get availableLiquidity(): bigint {
+		return this.totalAssets;
+	}
+
 	/** 1:1 conversion (standard ERC4626 when totalShares === totalAssets). */
 	convertToAssets(shares: bigint): bigint {
 		return shares;
@@ -87,10 +96,10 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
 	async fetchAssetMarketValueUsd(
 		amount: bigint,
 		priceService: IPriceService,
-	): Promise<bigint | undefined> {
+	): Promise<number | undefined> {
 		const price = await priceService.fetchAssetUsdPrice(this);
 		if (!price) return undefined;
-		return (amount * price.amountOutMid) / 10n ** BigInt(this.asset.decimals);
+		return tokenAmountToUsdValue(amount, this.asset.decimals, price);
 	}
 
 	async populateMarketPrices(
@@ -101,7 +110,7 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
 				this,
 				"$.marketPriceUsd",
 			);
-			this.marketPriceUsd = priced.result?.amountOutMid;
+			this.marketPriceUsd = priced.result;
 			this.populated.marketPrices = true;
 			return priced.errors;
 		} catch (error) {
@@ -112,8 +121,12 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
 					code: "SOURCE_UNAVAILABLE",
 					severity: "error",
 					message: "Failed to populate asset market price.",
-					paths: ["$.marketPriceUsd"],
-					entityId: this.asset.address,
+					locations: [
+						dataIssueLocation(
+							vaultDiagnosticOwner(this.chainId, this.address),
+							"$.marketPriceUsd",
+						),
+					],
 					source: "priceService",
 					originalValue: error instanceof Error ? error.message : String(error),
 				},
@@ -137,8 +150,12 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
 					code: "SOURCE_UNAVAILABLE",
 					severity: "error",
 					message: "Failed to populate rewards.",
-					paths: ["$.rewards"],
-					entityId: this.address,
+					locations: [
+						dataIssueLocation(
+							vaultDiagnosticOwner(this.chainId, this.address),
+							"$.rewards",
+						),
+					],
 					source: "rewardsService",
 					originalValue: error instanceof Error ? error.message : String(error),
 				},

@@ -19,11 +19,12 @@ import {
 	type BatchSimulationAdapter,
 } from "../../../../../plugins/batchSimulation.js";
 import type { EVCBatchItem } from "../../../../executionService/executionServiceTypes.js";
-import type {
-	DataIssue,
-	ServiceResult,
+import {
+	dataIssueLocation,
+	type DataIssue,
+	type ServiceResult,
+	vaultDiagnosticOwner,
 } from "../../../../../utils/entityDiagnostics.js";
-import { prefixDataIssues } from "../../../../../utils/entityDiagnostics.js";
 
 const verifiedArrayAbi = [
 	{
@@ -132,14 +133,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 						chainId,
 						conversionErrors,
 					);
-					const issues = prefixDataIssues(
-						conversionErrors,
-						`$.vaults[${index}]`,
-					).map((issue) => ({
-						...issue,
-						entityId: issue.entityId ?? getAddress(vault),
-					}));
-					firstPassErrorsByIndex.set(index, issues);
+					firstPassErrorsByIndex.set(index, conversionErrors);
 					return new EVault(parsed);
 				} catch (error) {
 					firstPassErrorsByIndex.set(index, [
@@ -147,8 +141,11 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 							code: "SOURCE_UNAVAILABLE",
 							severity: "error",
 							message: `Failed to fetch eVault ${getAddress(vault)}.`,
-							paths: [`$.vaults[${index}]`],
-							entityId: getAddress(vault),
+							locations: [
+								dataIssueLocation(
+									vaultDiagnosticOwner(chainId, getAddress(vault)),
+								),
+							],
 							source: "vaultLens",
 							originalValue:
 								error instanceof Error ? error.message : String(error),
@@ -198,14 +195,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 						chainId,
 						conversionErrors,
 					);
-					const issues = prefixDataIssues(
-						conversionErrors,
-						`$.vaults[${vaultIndex}]`,
-					).map((issue) => ({
-						...issue,
-						entityId: issue.entityId ?? getAddress(eVault.address),
-					}));
-					finalPassErrorsByIndex.set(vaultIndex, issues);
+					finalPassErrorsByIndex.set(vaultIndex, conversionErrors);
 					return new EVault(parsed);
 				} catch {
 					return eVault;

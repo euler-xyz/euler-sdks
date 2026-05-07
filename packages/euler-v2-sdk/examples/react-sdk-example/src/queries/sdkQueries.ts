@@ -20,6 +20,9 @@ import type {
   Wallet,
   VaultEntity,
   VaultRewardInfo,
+  DataIssue,
+  DataIssueLocation,
+  DataIssueOwnerRef,
 } from "@eulerxyz/euler-v2-sdk";
 import { getAddress, isAddress, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
@@ -28,6 +31,7 @@ import { interceptSdkDataIfEnabled, isQueryIntercepted } from "./dataInterceptor
 import { getQueryBuildOverrides, useEnabledChainIds } from "./queryOptionsStore.ts";
 import { isEVault, StandardEVaultPerspectives } from "@eulerxyz/euler-v2-sdk";
 import { CHAIN_NAMES, EARN_CHAIN_IDS, SECURITIZE_VAULT_ADDRESSES } from "../config/chains.ts";
+import { tokenAmountToUsdValue } from "../utils/format.ts";
 
 type SecuritizeVault = NonNullable<
   Awaited<ReturnType<EulerSDK["securitizeVaultService"]["fetchVaults"]>>["result"][number]
@@ -72,6 +76,7 @@ function serializeArg(arg: unknown): unknown {
 
 const MINUTE = 60_000;
 const EULER_LABELS_BASE =
+  import.meta.env.EULER_SDK_EULER_LABELS_BASE_URL ??
   "https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master";
 
 const STALE_TIMES: Record<string, number> = {
@@ -79,10 +84,11 @@ const STALE_TIMES: Record<string, number> = {
   queryDeployments: Infinity,
   queryABI: Infinity,
   queryTokenList: Infinity,
-  queryEulerLabelsVaults: Infinity,
   queryEulerLabelsEntities: Infinity,
   queryEulerLabelsProducts: Infinity,
   queryEulerLabelsPoints: Infinity,
+  queryEulerLabelsEarnVaults: Infinity,
+  queryEulerLabelsAssets: Infinity,
 
   // Perspective / factory lists — change only when new vaults are deployed
   queryEVaultVerifiedArray: 5 * MINUTE,
@@ -146,6 +152,8 @@ const STALE_TIMES: Record<string, number> = {
   // Per-user on-chain state — changes on every tx
   queryEVCAccountInfo: 15_000,
   queryVaultAccountInfo: 15_000,
+  queryNativeBalance: 5_000,
+  queryTokenBalances: 5_000,
   queryBalanceOf: 15_000,
   queryAllowance: 15_000,
   queryPermit2Allowance: 15_000,
@@ -242,26 +250,23 @@ function useSdkReady() {
   return { ...ctx, enabled: !!ctx.sdk };
 }
 
-export type DiagnosticIssue = {
-  severity?: "info" | "warning" | "error";
-  code?: string;
-  paths?: string[];
-  message?: string;
-  source?: string;
-  entityId?: string;
+export type DiagnosticIssue = Omit<Partial<DataIssue>, "locations"> & {
+  locations?: DataIssueLocation[];
   chainId?: number;
-  originalValue?: unknown;
 };
 
 export type OracleAdapterMetadataMap = Record<
   string,
   {
     address: string;
+    oracle: string;
+    base?: string;
+    quote?: string;
     provider?: string;
     methodology?: string;
     label?: string;
     name?: string;
-    checks?: Array<{ id?: string; pass?: boolean; [key: string]: unknown }>;
+    checks?: Array<{ id?: string; message?: string; pass?: boolean; severity?: string; [key: string]: unknown }>;
     [key: string]: unknown;
   }
 >;
@@ -274,10 +279,6 @@ function isServiceResult<T>(value: MaybeServiceResult<T>): value is { result: T;
     value !== null &&
     "result" in value
   );
-}
-
-function getDiagnosticPaths(issue: DiagnosticIssue): string[] {
-  return issue.paths?.length ? issue.paths : ["$"];
 }
 
 export function unwrapServiceResultWithDiagnostics<T>(
@@ -309,55 +310,87 @@ export type FeeFlowCandidate = {
   protocolFeesAssets: bigint;
   feeFlowAssets: bigint;
   claimableAssets: bigint;
-  claimableValueUsd: bigint;
+  claimableValueUsd: number;
 };
 
-function extractVaultIndex(path: string | undefined): number | undefined {
-  if (!path) return undefined;
-  const match = path.match(/^\$\.(?:vaults|eVaults)\[(\d+)\]$/);
-  if (!match) return undefined;
-  return Number(match[1]);
-}
-
-function extractVaultIndexFromIssue(issue: DiagnosticIssue): number | undefined {
-  return getDiagnosticPaths(issue)
-    .map((path) => extractVaultIndex(path))
-    .find((index): index is number => index !== undefined);
-}
-
 function isVaultFetchFailureIssue(issue: DiagnosticIssue): boolean {
-  return issue.code === "SOURCE_UNAVAILABLE" && extractVaultIndexFromIssue(issue) !== undefined;
+  if (issue.code !== "SOURCE_UNAVAILABLE") return false;
+  if (
+    issue.source === "priceService" ||
+    issue.source === "rewardsService" ||
+    issue.source === "intrinsicApyService" ||
+    issue.source === "eulerLabelsService"
+  ) {
+    return false;
+  }
+  return /fetch|not found|lens|vault/i.test(`${issue.source ?? ""} ${issue.message ?? ""}`);
 }
 
 function formatIssueRaw(issue: DiagnosticIssue): string {
   return JSON.stringify(issue, null, 2);
 }
 
+function failedVaultRefFromOwner(
+  owner: DataIssueOwnerRef
+): { chainId?: number; address: string } | undefined {
+  switch (owner.kind) {
+    case "vault":
+      return { chainId: owner.chainId, address: owner.address };
+    case "vaultCollateral":
+      return { chainId: owner.chainId, address: owner.collateral };
+    case "vaultStrategy":
+      return { chainId: owner.chainId, address: owner.strategy };
+    case "accountPosition":
+      return { chainId: owner.chainId, address: owner.vault };
+    case "accountPositionCollateral":
+      return { chainId: owner.chainId, address: owner.collateral };
+    default:
+      return undefined;
+  }
+}
+
+function issueFailedVaultRefs(
+  issue: DiagnosticIssue
+): Array<{ chainId?: number; address: string }> {
+  const byKey = new Map<string, { chainId?: number; address: string }>();
+  for (const location of issue.locations ?? []) {
+    const ref = failedVaultRefFromOwner(location.owner);
+    if (!ref || !isAddress(ref.address)) continue;
+    const chainId = ref.chainId ?? issue.chainId;
+    const address = getAddress(ref.address as Address);
+    byKey.set(`${chainId ?? "unknown"}:${address.toLowerCase()}`, {
+      chainId,
+      address,
+    });
+  }
+  return Array.from(byKey.values());
+}
+
 function buildFailedVaultFetches(diagnostics: DiagnosticIssue[]): FailedVaultFetch[] {
   const byKey = new Map<string, FailedVaultFetch>();
 
   for (const issue of diagnostics) {
-    if (!issue.entityId || !isAddress(issue.entityId)) continue;
-    if (issue.code !== "SOURCE_UNAVAILABLE") continue;
+    if (!isVaultFetchFailureIssue(issue)) continue;
 
     const msg = issue.message ?? issue.code ?? "Vault fetch failed";
-    const chainId = issue.chainId;
-    const key = `${chainId ?? "unknown"}:${issue.entityId.toLowerCase()}`;
-    const existing = byKey.get(key);
+    for (const ref of issueFailedVaultRefs(issue)) {
+      const key = `${ref.chainId ?? "unknown"}:${ref.address.toLowerCase()}`;
+      const existing = byKey.get(key);
 
-    if (existing) {
-      existing.details = Array.from(
-        new Set([...existing.details.split("\n"), msg])
-      ).join("\n");
-      continue;
+      if (existing) {
+        existing.details = Array.from(
+          new Set([...existing.details.split("\n"), msg])
+        ).join("\n");
+        continue;
+      }
+
+      byKey.set(key, {
+        address: ref.address,
+        chainId: ref.chainId,
+        chainName: ref.chainId !== undefined ? CHAIN_NAMES[ref.chainId] : undefined,
+        details: msg,
+      });
     }
-
-    byKey.set(key, {
-      address: issue.entityId,
-      chainId,
-      chainName: chainId !== undefined ? CHAIN_NAMES[chainId] : undefined,
-      details: msg,
-    });
   }
 
   return Array.from(byKey.values());
@@ -372,61 +405,22 @@ function resolveDiagnosticsWithFailedVaults<TVault extends VaultEntity>(
     vaults.map((vault) => vault.address.toLowerCase())
   );
   const failedIssuesByAddress = new Map<string, DiagnosticIssue[]>();
-  const diagnostics: DiagnosticIssue[] = fetchedDiagnostics.map((issue) => {
-    if (issue.entityId && isAddress(issue.entityId)) return issue;
-
-    const vaultIndex = extractVaultIndexFromIssue(issue);
-    if (vaultIndex === undefined) return issue;
-
-    const rowVault = rawVaults[vaultIndex];
-    if (!rowVault) return issue;
-
-    return { ...issue, entityId: rowVault.address };
-  });
+  const diagnostics: DiagnosticIssue[] = fetchedDiagnostics;
 
   for (const issue of diagnostics) {
-    const vaultIndex = extractVaultIndexFromIssue(issue);
-    const issueAddress = issue.entityId && isAddress(issue.entityId)
-      ? issue.entityId.toLowerCase()
-      : undefined;
-    const addFailedIssue = () => {
-      if (!issueAddress) return;
-      const list = failedIssuesByAddress.get(issueAddress) ?? [];
+    if (!isVaultFetchFailureIssue(issue)) continue;
+    for (const ref of issueFailedVaultRefs(issue)) {
+      const issueAddress = ref.address.toLowerCase();
+      if (loadedVaultAddresses.has(issueAddress)) continue;
+      const key = `${ref.chainId ?? issue.chainId ?? "unknown"}:${issueAddress}`;
+      const list = failedIssuesByAddress.get(key) ?? [];
       list.push(issue);
-      failedIssuesByAddress.set(issueAddress, list);
-    };
-
-    if (vaultIndex !== undefined) {
-      const rowVault = rawVaults[vaultIndex];
-      if (rowVault) {
-        if (
-          issueAddress &&
-          isVaultFetchFailureIssue(issue) &&
-          rowVault.address.toLowerCase() !== issueAddress &&
-          !loadedVaultAddresses.has(issueAddress)
-        ) {
-          addFailedIssue();
-        }
-        continue;
-      }
-
-      if (issueAddress && isVaultFetchFailureIssue(issue)) {
-        addFailedIssue();
-      }
-      continue;
-    }
-
-    if (
-      issueAddress &&
-      isVaultFetchFailureIssue(issue) &&
-      !loadedVaultAddresses.has(issueAddress)
-    ) {
-      addFailedIssue();
+      failedIssuesByAddress.set(key, list);
     }
   }
 
-  const failedVaults = Array.from(failedIssuesByAddress.entries()).map(([address, issues]) => ({
-    address,
+  const failedVaults = Array.from(failedIssuesByAddress.entries()).map(([key, issues]) => ({
+    address: key.split(":").at(-1),
     details: issues.map(formatIssueRaw).join("\n\n"),
   }));
 
@@ -1080,7 +1074,7 @@ export function useWalletBalance(
       const wallet = unwrapServiceResult(
         "walletService.fetchWallet",
         await sdk!.walletService.fetchWallet(chainId, account as Address, [
-          { asset: assetAddress as Address, spenders: [] },
+          { asset: assetAddress as Address },
         ])
       ) as Wallet;
       return wallet.getBalance(assetAddress as Address);
@@ -1186,9 +1180,11 @@ export function useFeeFlowPageData() {
           const feeFlowAssets = feeFlowAssetsByVault.get(vault.address.toLowerCase()) ?? 0n;
           const claimableAssets = protocolFeesAssets + feeFlowAssets;
           const claimableValueUsd =
-            vault.marketPriceUsd === undefined
-              ? 0n
-              : (claimableAssets * vault.marketPriceUsd) / 10n ** BigInt(vault.asset.decimals);
+            tokenAmountToUsdValue(
+              claimableAssets,
+              vault.asset.decimals,
+              vault.marketPriceUsd
+            ) ?? 0;
 
           return {
             vault,

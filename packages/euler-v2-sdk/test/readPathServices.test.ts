@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { getAddress, zeroAddress } from "viem";
+import { getAddress, type Address, zeroAddress } from "viem";
 
 import { AccountService } from "../src/services/accountService/accountService.js";
 import { RewardsV3Adapter } from "../src/services/rewardsService/adapters/rewardsV3Adapter/index.js";
@@ -15,6 +15,12 @@ import { WalletOnchainAdapter } from "../src/services/walletService/adapters/wal
 import { Account, SubAccount } from "../src/entities/Account.js";
 import { EVault } from "../src/entities/EVault.js";
 import { VaultType } from "../src/utils/types.js";
+import {
+	dataIssueLocation,
+	serviceDiagnosticOwner,
+	vaultCollateralDiagnosticOwner,
+	vaultDiagnosticOwner,
+} from "../src/utils/entityDiagnostics.js";
 import {
 	getAccountFixture,
 	getCollateralizedEVaultFixture,
@@ -40,6 +46,25 @@ function makeDeploymentService() {
 			};
 		},
 	} as any;
+}
+
+function vaultLocations(address: `0x${string}`, path = "$") {
+	return [dataIssueLocation(vaultDiagnosticOwner(1, getAddress(address)), path)];
+}
+
+function serviceLocations(service: string, path = "$") {
+	return [dataIssueLocation(serviceDiagnosticOwner(service, 1), path)];
+}
+
+function hasLocationPath(issue: { locations?: Array<{ path: string }> }, path: string) {
+	return issue.locations?.some((location) => location.path === path) ?? false;
+}
+
+function hasLocationPathContaining(
+	issue: { locations?: Array<{ path: string }> },
+	needle: string,
+) {
+	return issue.locations?.some((location) => location.path.includes(needle)) ?? false;
 }
 
 test("account service fetches and populates real account fixtures through vault, price, and reward services", async () => {
@@ -77,20 +102,18 @@ test("account service fetches and populates real account fixtures through vault,
 		{
 			async fetchAssetUsdPriceWithDiagnostics(vault) {
 				return {
-					result: {
-						amountOutMid:
-							normalizeAddress(vault.address) === normalizeAddress(collateralized.address)
-								? 2n * 10n ** 18n
-								: 10n ** 18n,
-					},
+					result:
+						normalizeAddress(vault.address) === normalizeAddress(collateralized.address)
+							? 2
+							: 1,
 					errors: [],
 				};
 			},
 			async fetchCollateralUsdPriceWithDiagnostics() {
-				return { result: { amountOutMid: 3n * 10n ** 18n }, errors: [] };
+				return { result: 3, errors: [] };
 			},
 			async fetchUnitOfAccountUsdRateWithDiagnostics() {
-				return { result: 2n * 10n ** 18n, errors: [] };
+				return { result: 2, errors: [] };
 			},
 		} as any,
 	);
@@ -216,7 +239,7 @@ test("account total rewards skips malformed reward pricing", () => {
 		},
 	];
 
-	assert.equal(account.totalRewardsValueUsd, 2n * 10n ** 18n);
+	assert.equal(account.totalRewardsValueUsd, 2);
 });
 
 test("V3 rewards adapter normalizes malformed user reward price to zero", async () => {
@@ -327,7 +350,17 @@ test("account service covers fetchSubAccount and populate error paths", async ()
 				return { result: accountFixture, errors: [] };
 			},
 			async fetchSubAccount() {
-				return { result: undefined, errors: [{ code: "MISS", severity: "warning", message: "miss", paths: ["$"] }] };
+				return {
+					result: undefined,
+					errors: [
+						{
+							code: "MISS",
+							severity: "warning",
+							message: "miss",
+							locations: serviceLocations("testAccountAdapter"),
+						},
+					],
+				};
 			},
 		},
 		{} as any,
@@ -560,7 +593,7 @@ test("vault meta service routes by type, remaps diagnostics, dedupes verified ad
 						code: "WARN",
 						severity: "warning",
 						message: "warn",
-						paths: ["$.vaults[0].detail"],
+						locations: vaultLocations(plain.address, "$.detail"),
 					},
 				],
 			};
@@ -608,9 +641,24 @@ test("vault meta service routes by type, remaps diagnostics, dedupes verified ad
 	assert.equal(fetched.result[0]?.address, plain.address);
 	assert.equal(fetched.result[1], undefined);
 	assert.equal(fetched.result[2], undefined);
-	assert.ok(fetched.errors.some((issue) => issue.paths.includes("$.vaults[0].detail")));
-	assert.ok(fetched.errors.some((issue) => issue.entityId === normalizeAddress(collateralized.address)));
-	assert.ok(fetched.errors.some((issue) => issue.entityId === zeroAddress));
+	assert.ok(fetched.errors.some((issue) => hasLocationPath(issue, "$.detail")));
+	assert.ok(
+		fetched.errors.some((issue) =>
+			issue.locations.some(
+				(location) =>
+					location.owner.kind === "vault" &&
+					location.owner.address === normalizeAddress(collateralized.address),
+			),
+		),
+	);
+	assert.ok(
+		fetched.errors.some((issue) =>
+			issue.locations.some(
+				(location) =>
+					location.owner.kind === "vault" && location.owner.address === zeroAddress,
+			),
+		),
+	);
 
 	const fetchedSingle = await meta.fetchVault(1, zeroAddress);
 	assert.equal(fetchedSingle.result, undefined);
@@ -647,7 +695,17 @@ test("vault meta helpers cover type guards, untyped services, adapter replacemen
 			return "0x00000000000000000000000000000000000000d1";
 		}
 		async fetchVaults(_chainId: number, _vaults: `0x${string}`[]) {
-			return { result: [undefined], errors: [{ code: "N", severity: "warning", message: "named", paths: ["$.vaults[0]"] }] };
+			return {
+				result: [undefined],
+				errors: [
+					{
+						code: "N",
+						severity: "warning",
+						message: "named",
+						locations: vaultLocations(zeroAddress),
+					},
+				],
+			};
 		}
 		async fetchVerifiedVaultAddresses() {
 			return [zeroAddress];
@@ -725,8 +783,18 @@ test("vault meta helpers cover type guards, untyped services, adapter replacemen
 						return {
 							result: [undefined],
 							errors: [
-								{ code: "A", severity: "warning", message: "no-match", paths: ["detail"] },
-								{ code: "B", severity: "warning", message: "bad-index", paths: ["$.vaults[9].detail"] },
+								{
+									code: "A",
+									severity: "warning",
+									message: "service-owned",
+									locations: serviceLocations("customVaultService", "detail"),
+								},
+								{
+									code: "B",
+									severity: "warning",
+									message: "vault-owned",
+									locations: vaultLocations(zeroAddress, "$.detail"),
+								},
 							],
 						};
 					},
@@ -741,8 +809,8 @@ test("vault meta helpers cover type guards, untyped services, adapter replacemen
 		],
 	});
 	const remapped = await remapMeta.fetchVaults(1, [zeroAddress]);
-	assert.ok(remapped.errors.some((issue) => issue.paths[0] === "detail"));
-	assert.ok(remapped.errors.some((issue) => issue.paths[0] === "$.vaults[9].detail"));
+	assert.ok(remapped.errors.some((issue) => hasLocationPath(issue, "detail")));
+	assert.ok(remapped.errors.some((issue) => hasLocationPath(issue, "$.detail")));
 
 	const stringThrowMeta = new VaultMetaService({
 		vaultTypeAdapter: {
@@ -833,7 +901,14 @@ test("evault service hydrates, filters, populates collateral and price data, and
 						? { ...getPlainEVaultFixture() }
 						: { ...getCollateralizedEVaultFixture() },
 				),
-				errors: [{ code: "A", severity: "warning", message: "adapter", paths: ["$.vaults[1]"] }],
+				errors: [
+					{
+						code: "A",
+						severity: "warning",
+						message: "adapter",
+						locations: vaultLocations(collateralized.address),
+					},
+				],
 			};
 		},
 		async fetchAllVaults() {
@@ -858,7 +933,23 @@ test("evault service hydrates, filters, populates collateral and price data, and
 						asset: { ...getPlainEVaultFixture().asset, address },
 					}),
 				),
-				errors: [{ code: "C", severity: "warning", message: "collateral", paths: ["$.vaults[0].market"] }],
+				errors: [
+					{
+						code: "C",
+						severity: "warning",
+						message: "collateral",
+						locations: [
+							dataIssueLocation(
+								vaultCollateralDiagnosticOwner(
+									1,
+									collateralized.address,
+									plain.address,
+								),
+								"$.vault.market",
+							),
+						],
+					},
+				],
 			};
 		},
 	} as any);
@@ -867,12 +958,27 @@ test("evault service hydrates, filters, populates collateral and price data, and
 			if (normalizeAddress(vault.address) === normalizeAddress(plain.address)) {
 				throw new Error("asset-price");
 			}
-			return { result: { amountOutMid: 2n * 10n ** 18n }, errors: [] };
+			return { result: 2, errors: [] };
 		},
 		async fetchCollateralUsdPriceWithDiagnostics() {
 			return {
-				result: { amountOutMid: 3n * 10n ** 18n },
-				errors: [{ code: "P", severity: "info", message: "priced", paths: ["$"] }],
+				result: 3,
+				errors: [
+					{
+						code: "P",
+						severity: "info",
+						message: "priced",
+						locations: [
+							dataIssueLocation(
+								vaultCollateralDiagnosticOwner(
+									1,
+									collateralized.address,
+									plain.address,
+								),
+							),
+						],
+					},
+				],
 			};
 		},
 	} as any);
@@ -1066,16 +1172,24 @@ test("evault service setters and empty branches are exercised", async () => {
 
 	const remapService = new EVaultService(adapterA as any, makeDeploymentService());
 	remapService.setVaultMetaService({
-		async fetchVaults() {
+		async fetchVaults(_chainId: number, addresses: `0x${string}`[]) {
+			const [collateralAddress = zeroAddress] = addresses;
 			return {
 				result: [new EVault(getPlainEVaultFixture())],
-				errors: [{ code: "R", severity: "warning", message: "raw", paths: ["$.other"] }],
+				errors: [
+					{
+						code: "R",
+						severity: "warning",
+						message: "raw",
+						locations: vaultLocations(collateralAddress, "$.other"),
+					},
+				],
 			};
 		},
 	} as any);
 	const remapTarget = new EVault(getCollateralizedEVaultFixture());
 	const remapErrors = await remapService.populateCollaterals([remapTarget]);
-	assert.ok(remapErrors.some((issue) => issue.paths[0] === "$.other"));
+	assert.ok(remapErrors.some((issue) => hasLocationPath(issue, "$.vault.other")));
 
 	const noUnitOfAccount = new EVault({
 		...getCollateralizedEVaultFixture(),
@@ -1087,7 +1201,7 @@ test("evault service setters and empty branches are exercised", async () => {
 	const collateralPriceFailure = new EVaultService(adapterA as any, makeDeploymentService());
 	collateralPriceFailure.setPriceService({
 		async fetchAssetUsdPriceWithDiagnostics() {
-			return { result: { amountOutMid: 1n }, errors: [] };
+			return { result: 1, errors: [] };
 		},
 		async fetchCollateralUsdPriceWithDiagnostics() {
 			throw "collateral-price-string";
@@ -1098,7 +1212,9 @@ test("evault service setters and empty branches are exercised", async () => {
 	const priceErrors = await collateralPriceFailure.populateMarketPrices([pricedVault]);
 	assert.ok(
 		priceErrors.some(
-			(issue) => issue.paths[0]?.includes("collaterals[0].marketPriceUsd") && issue.originalValue === "collateral-price-string",
+			(issue) =>
+				hasLocationPathContaining(issue, "marketPriceUsd") &&
+				issue.originalValue === "collateral-price-string",
 		),
 	);
 
@@ -1107,7 +1223,14 @@ test("evault service setters and empty branches are exercised", async () => {
 			async fetchVaults() {
 				return {
 					result: [new EVault(getPlainEVaultFixture())],
-					errors: [{ code: "V", severity: "warning", message: "verified", paths: ["$.vaults[0].detail"] }],
+					errors: [
+						{
+							code: "V",
+							severity: "warning",
+							message: "verified",
+							locations: vaultLocations(getPlainEVaultFixture().address, "$.detail"),
+						},
+					],
 				};
 			},
 			async fetchAllVaults() {
@@ -1120,7 +1243,7 @@ test("evault service setters and empty branches are exercised", async () => {
 		makeDeploymentService(),
 	);
 	const verifiedErrors = await verifiedErrorService.fetchVerifiedVaults(1, [zeroAddress]);
-	assert.ok(verifiedErrors.errors.some((issue) => issue.paths[0] === "$[0].detail"));
+	assert.ok(verifiedErrors.errors.some((issue) => hasLocationPath(issue, "$.detail")));
 
 	const filteredUndefinedService = new EVaultService(
 		{
@@ -1214,13 +1337,22 @@ test("evault service setters and empty branches are exercised", async () => {
 });
 
 test("wallet onchain adapter setters, query wrappers, and top-level failure are covered", async () => {
+	const asset = "0x0000000000000000000000000000000000000002" as Address;
+	const spender = "0x0000000000000000000000000000000000000003" as Address;
+	const permit2 = "0x0000000000000000000000000000000000000004" as Address;
+	const utilsLens = "0x0000000000000000000000000000000000000005" as Address;
+	const secondSpender = "0x0000000000000000000000000000000000000006" as Address;
 	const adapter = new WalletOnchainAdapter(
 		{
 			getProvider() {
 				return {
+					getBalance() {
+						return Promise.resolve(6n);
+					},
 					readContract({ functionName }: { functionName: string }) {
 						if (functionName === "balanceOf") return Promise.resolve(1n);
 						if (functionName === "allowance") return Promise.resolve(2n);
+						if (functionName === "tokenBalances") return Promise.resolve([3n]);
 						return Promise.resolve([3n, 4, 5]);
 					},
 				};
@@ -1228,7 +1360,7 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 		} as any,
 		{
 			getDeployment() {
-				return { addresses: { coreAddrs: { permit2: zeroAddress } } };
+				return { addresses: { coreAddrs: { permit2 }, lensAddrs: { utilsLens } } };
 			},
 		} as any,
 	);
@@ -1249,8 +1381,13 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 		{
 			getProvider() {
 				return {
-					readContract({ functionName }: { functionName: string }) {
+					getBalance() {
+						return Promise.resolve(6n);
+					},
+					readContract({ functionName, address }: { functionName: string; address: string }) {
+						if (functionName === "tokenBalances") return Promise.resolve([6n]);
 						if (functionName === "balanceOf") return Promise.resolve(1n);
+						if (functionName === "allowance" && address === permit2) return Promise.resolve([3n, 4, 5]);
 						if (functionName === "allowance") return Promise.resolve(2n);
 						return Promise.resolve([3n, 2n ** 60n, 0]);
 					},
@@ -1259,13 +1396,17 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 		} as any,
 		{
 			getDeployment() {
-				return { addresses: { coreAddrs: { permit2: zeroAddress } } };
+				return { addresses: { coreAddrs: { permit2 }, lensAddrs: { utilsLens } } };
 			},
 		} as any,
 	);
+	working.setQueryNativeBalance(working.queryNativeBalance);
+	working.setQueryTokenBalances(working.queryTokenBalances);
 	working.setQueryBalanceOf(working.queryBalanceOf);
 	working.setQueryAllowance(working.queryAllowance);
 	working.setQueryPermit2Allowance(working.queryPermit2Allowance);
+	assert.equal(await working.queryNativeBalance({ getBalance: () => Promise.resolve(6n) } as any, zeroAddress), 6n);
+	assert.deepEqual(await working.queryTokenBalances({ readContract: ({}) => Promise.resolve([6n]) } as any, utilsLens, zeroAddress, [asset]), [6n]);
 	assert.equal(await working.queryBalanceOf({ readContract: ({}) => Promise.resolve(7n) } as any, zeroAddress, zeroAddress), 7n);
 	assert.equal(await working.queryAllowance({ readContract: ({}) => Promise.resolve(8n) } as any, zeroAddress, zeroAddress, zeroAddress), 8n);
 	assert.deepEqual(
@@ -1273,14 +1414,35 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 		[9n, 10, 11],
 	);
 	const invalidWallet = await working.fetchWallet(1, zeroAddress, [
-		{ asset: zeroAddress, spenders: [undefined as any, zeroAddress] },
+		{ asset, spenders: [undefined as any, zeroAddress] },
 	]);
 	assert.equal(invalidWallet.result, undefined);
 	assert.ok(invalidWallet.errors.some((issue) => issue.source === "walletOnchainAdapter"));
 	const wallet = await working.fetchWallet(1, zeroAddress, [
-		{ asset: zeroAddress, spenders: [zeroAddress] },
+		{ asset: zeroAddress },
+		{ asset, spenders: [spender] },
 	]);
-	assert.equal(wallet.result?.assets[0]?.allowances[zeroAddress]?.permit2ExpirationTime, 0);
+	assert.equal(
+		wallet.result?.assets.find((entry) => entry.asset === zeroAddress)?.balance,
+		6n,
+	);
+	const tokenWalletAsset = wallet.result?.assets.find((entry) => entry.asset === asset);
+	assert.equal(tokenWalletAsset?.balance, 6n);
+	assert.equal(tokenWalletAsset?.allowances[getAddress(spender)]?.permit2ExpirationTime, 4);
+	assert.equal(tokenWalletAsset?.allowances[getAddress(spender)]?.permit2Nonce, 5);
+	const duplicateAssetWallet = await working.fetchWallet(1, zeroAddress, [
+		{ asset, spenders: [spender] },
+		{ asset, spenders: [secondSpender] },
+	]);
+	assert.equal(duplicateAssetWallet.result?.assets.length, 1);
+	assert.equal(
+		duplicateAssetWallet.result?.assets[0]?.allowances[getAddress(spender)]?.assetForVault,
+		2n,
+	);
+	assert.equal(
+		duplicateAssetWallet.result?.assets[0]?.allowances[getAddress(secondSpender)]?.assetForVault,
+		2n,
+	);
 
 	const skipSpender = [undefined] as unknown as `0x${string}`[];
 	skipSpender.map = (() => [
@@ -1296,7 +1458,7 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 		}),
 	]) as any;
 	const skippedSpenderWallet = await working.fetchWallet(1, zeroAddress, [
-		{ asset: zeroAddress, spenders: skipSpender as any },
+		{ asset, spenders: skipSpender as any },
 	]);
 	assert.deepEqual(
 		skippedSpenderWallet.result?.assets[0]?.allowances ?? {},
@@ -1306,27 +1468,28 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 	const missingResultSpenders = [zeroAddress] as `0x${string}`[];
 	missingResultSpenders.map = (() => []) as any;
 	const missingResultWallet = await working.fetchWallet(1, zeroAddress, [
-		{ asset: zeroAddress, spenders: missingResultSpenders as any },
+		{ asset, spenders: missingResultSpenders as any },
 	]);
-	assert.deepEqual(
-		missingResultWallet.result?.assets[0]?.allowances ?? {},
-		{},
+	assert.equal(
+		missingResultWallet.result?.assets[0]?.allowances[getAddress(zeroAddress)]?.assetForVault,
+		2n,
 	);
 
 	const permit2ApprovalFailure = new WalletOnchainAdapter(
 		{ getProvider() { return {}; } } as any,
-		{ getDeployment() { return { addresses: { coreAddrs: { permit2: zeroAddress } } }; } } as any,
+		{ getDeployment() { return { addresses: { coreAddrs: { permit2 }, lensAddrs: { utilsLens } } }; } } as any,
 	);
+	permit2ApprovalFailure.setQueryTokenBalances(async () => [1n]);
 	permit2ApprovalFailure.setQueryBalanceOf(async () => 1n);
 	permit2ApprovalFailure.setQueryAllowance(async (_provider, _asset, _owner, spender) => {
-		if (spender === zeroAddress) throw new Error("permit2-approval");
+		if (spender === permit2) throw new Error("permit2-approval");
 		return 2n;
 	});
 	permit2ApprovalFailure.setQueryPermit2Allowance(async () => [3n, 4, 5]);
 	const permit2Wallet = await permit2ApprovalFailure.fetchWallet(1, "0x0000000000000000000000000000000000000001", [
 		{ asset: "0x0000000000000000000000000000000000000002", spenders: ["0x0000000000000000000000000000000000000003"] },
 	]);
-	assert.ok(permit2Wallet.errors.some((issue) => issue.paths.some((path) => path.includes("assetForPermit2"))));
+	assert.ok(permit2Wallet.errors.some((issue) => hasLocationPathContaining(issue, "assetForPermit2")));
 
 	const stringTopLevelFailure = new WalletOnchainAdapter(
 		{
@@ -1336,12 +1499,12 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 		} as any,
 		{
 			getDeployment() {
-				return { addresses: { coreAddrs: { permit2: zeroAddress } } };
+				return { addresses: { coreAddrs: { permit2 }, lensAddrs: { utilsLens } } };
 			},
 		} as any,
 	);
 	const brokenAssets = [{ asset: zeroAddress, spenders: [zeroAddress] }] as any[];
-	brokenAssets.map = () => {
+	brokenAssets.reduce = () => {
 		throw "wallet-string";
 	};
 	const topLevelFailure = await stringTopLevelFailure.fetchWallet(

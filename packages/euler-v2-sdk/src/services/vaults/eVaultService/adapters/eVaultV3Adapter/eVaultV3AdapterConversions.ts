@@ -4,7 +4,13 @@ import type {
 	OracleInfo,
 	OraclePrice,
 } from "../../../../../utils/oracle.js";
-import type { DataIssue } from "../../../../../utils/entityDiagnostics.js";
+import {
+	dataIssueLocation,
+	type DataIssue,
+	type DataIssueOwnerRef,
+	vaultCollateralDiagnosticOwner,
+	vaultDiagnosticOwner,
+} from "../../../../../utils/entityDiagnostics.js";
 import {
 	parseAddressField,
 	parseBigIntField,
@@ -16,8 +22,8 @@ import {
 	ZERO_ADDRESS,
 } from "../../../../../utils/parsing.js";
 import {
-	type EVaultCollateral,
 	type EVaultCollateralRamping,
+	type IEVaultCollateral,
 	type EVaultCaps,
 	type EVaultFees,
 	type EVaultHooks,
@@ -97,6 +103,11 @@ const DEFAULT_INTEREST_RATES_BLOCK: NonNullable<
 	supplyAPY: "0",
 };
 
+function parseRate(value: string): number {
+	const parsed = Number.parseFloat(value);
+	return Number.isFinite(parsed) ? parsed * 100 : 0;
+}
+
 const DEFAULT_INTEREST_RATE_MODEL_BLOCK: NonNullable<
 	V3VaultDetail["interestRateModel"]
 > = {
@@ -146,31 +157,31 @@ function mapInterestRateModelType(type: string): InterestRateModelType {
 function convertToken(
 	token: V3Token,
 	path: string,
-	entityId: Address,
+	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
 ): Token {
 	return {
 		address: parseAddressField(token.address, {
 			path: `${path}.address`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		name: parseStringField(token.name, {
 			path: `${path}.name`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		symbol: parseStringField(token.symbol, {
 			path: `${path}.symbol`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		decimals: parseNumberField(token.decimals, {
 			path: `${path}.decimals`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
@@ -181,50 +192,50 @@ function convertOraclePrice(
 	price: V3OraclePrice,
 	errors: DataIssue[],
 	path: string,
-	entityId: Address,
+	owner: DataIssueOwnerRef,
 ): OraclePrice {
 	const converted = {
 		queryFailure: parseBooleanField(price.queryFailure, {
 			path: `${path}.queryFailure`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 			fallback: true,
 		}),
 		queryFailureReason: parseStringField(price.queryFailureReason, {
 			path: `${path}.queryFailureReason`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 			fallback: "0x",
 		}) as Hex,
 		amountIn: parseBigIntField(price.amountIn, {
 			path: `${path}.amountIn`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		amountOutMid: parseBigIntField(price.amountOutMid, {
 			path: `${path}.amountOutMid`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		amountOutBid: parseBigIntField(price.amountOutBid, {
 			path: `${path}.amountOutBid`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		amountOutAsk: parseBigIntField(price.amountOutAsk, {
 			path: `${path}.amountOutAsk`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		timestamp: parseTimestampField(price.timestamp, {
 			path: `${path}.timestamp`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
@@ -235,8 +246,7 @@ function convertOraclePrice(
 			code: "SOURCE_UNAVAILABLE",
 			severity: "warning",
 			message: "Oracle price query reported failure.",
-			paths: [path],
-			entityId,
+			locations: [dataIssueLocation(owner, path)],
 			source: "eVaultV3",
 			originalValue: converted.queryFailureReason,
 			normalizedValue: "queryFailure:true",
@@ -248,31 +258,31 @@ function convertOraclePrice(
 
 function convertOracleAdapter(
 	adapter: V3OracleAdapter,
-	entityId: Address,
+	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
 ): OracleAdapterEntry {
 	const converted: OracleAdapterEntry = {
 		oracle: parseAddressField(adapter.oracle, {
 			path: "$.oracle.adapters[].oracle",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		name: parseStringField(adapter.name, {
 			path: "$.oracle.adapters[].name",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		base: parseAddressField(adapter.base, {
 			path: "$.oracle.adapters[].base",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		quote: parseAddressField(adapter.quote, {
 			path: "$.oracle.adapters[].quote",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
@@ -282,38 +292,38 @@ function convertOracleAdapter(
 		converted.pythDetail = {
 			pyth: parseAddressField(adapter.pythDetail.pyth, {
 				path: "$.oracle.adapters[].pythDetail.pyth",
-				entityId,
+				owner,
 				errors,
 				source: "eVaultV3",
 			}),
 			base: parseAddressField(adapter.pythDetail.base, {
 				path: "$.oracle.adapters[].pythDetail.base",
-				entityId,
+				owner,
 				errors,
 				source: "eVaultV3",
 			}),
 			quote: parseAddressField(adapter.pythDetail.quote, {
 				path: "$.oracle.adapters[].pythDetail.quote",
-				entityId,
+				owner,
 				errors,
 				source: "eVaultV3",
 			}),
 			feedId: parseStringField(adapter.pythDetail.feedId, {
 				path: "$.oracle.adapters[].pythDetail.feedId",
-				entityId,
+				owner,
 				errors,
 				source: "eVaultV3",
 				fallback: "0x",
 			}) as Hex,
 			maxStaleness: parseBigIntField(String(adapter.pythDetail.maxStaleness), {
 				path: "$.oracle.adapters[].pythDetail.maxStaleness",
-				entityId,
+				owner,
 				errors,
 				source: "eVaultV3",
 			}),
 			maxConfWidth: parseBigIntField(String(adapter.pythDetail.maxConfWidth), {
 				path: "$.oracle.adapters[].pythDetail.maxConfWidth",
-				entityId,
+				owner,
 				errors,
 				source: "eVaultV3",
 			}),
@@ -324,7 +334,7 @@ function convertOracleAdapter(
 		converted.chainlinkDetail = {
 			oracle: parseAddressField(adapter.chainlinkDetail.oracle, {
 				path: "$.oracle.adapters[].chainlinkDetail.oracle",
-				entityId,
+				owner,
 				errors,
 				source: "eVaultV3",
 			}),
@@ -336,35 +346,36 @@ function convertOracleAdapter(
 
 function convertOracleResolvedVaults(
 	resolvedVaults: NonNullable<V3VaultDetail["oracle"]>["resolvedVaults"],
-	entityId: Address,
+	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
 ): OracleInfo["resolvedVaults"] {
-	return resolvedVaults.map((resolvedVault, index) => ({
+	return (resolvedVaults ?? []).map((resolvedVault, index) => ({
 		vault: parseAddressField(resolvedVault.vault, {
 			path: `$.oracle.resolvedVaults[${index}].vault`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		quote: parseAddressField(resolvedVault.quote, {
 			path: `$.oracle.resolvedVaults[${index}].quote`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		asset: parseAddressField(resolvedVault.asset, {
 			path: `$.oracle.resolvedVaults[${index}].asset`,
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
-		resolvedAssets: resolvedVault.resolvedAssets.map((asset, assetIndex) =>
-			parseAddressField(asset, {
-				path: `$.oracle.resolvedVaults[${index}].resolvedAssets[${assetIndex}]`,
-				entityId,
-				errors,
-				source: "eVaultV3",
-			}),
+		resolvedAssets: (resolvedVault.resolvedAssets ?? []).map(
+			(asset, assetIndex) =>
+				parseAddressField(asset, {
+					path: `$.oracle.resolvedVaults[${index}].resolvedAssets[${assetIndex}]`,
+					owner,
+					errors,
+					source: "eVaultV3",
+				}),
 		),
 	}));
 }
@@ -373,26 +384,33 @@ function convertCollaterals(
 	rows: V3CollateralRow[],
 	vaultTimestamp: number,
 	vaultEntityId: Address,
+	chainId: number,
 	errors: DataIssue[],
-): EVaultCollateral[] {
-	const collaterals: EVaultCollateral[] = [];
+): IEVaultCollateral[] {
+	const collaterals: IEVaultCollateral[] = [];
+	const vaultOwner = vaultDiagnosticOwner(chainId, vaultEntityId);
 
 	for (const [index, row] of rows.entries()) {
 		const collateralAddress = parseAddressField(row.collateral, {
 			path: `$.collaterals[${index}].collateral`,
-			entityId: vaultEntityId,
+			owner: vaultOwner,
 			errors,
 			source: "eVaultV3",
 		});
+		const collateralOwner = vaultCollateralDiagnosticOwner(
+			chainId,
+			vaultEntityId,
+			collateralAddress,
+		);
 		const borrowLTV = parseRatio1e4(row.borrowLTV, {
-			path: `$.collaterals[${index}].borrowLTV`,
-			entityId: collateralAddress,
+			path: "$.borrowLTV",
+			owner: collateralOwner,
 			errors,
 			source: "eVaultV3",
 		});
 		const liquidationLTV = parseRatio1e4(row.liquidationLTV, {
-			path: `$.collaterals[${index}].liquidationLTV`,
-			entityId: collateralAddress,
+			path: "$.liquidationLTV",
+			owner: collateralOwner,
 			errors,
 			source: "eVaultV3",
 		});
@@ -401,8 +419,8 @@ function convertCollaterals(
 				? row.targetTimestamp
 				: Number(row.targetTimestamp),
 			{
-				path: `$.collaterals[${index}].targetTimestamp`,
-				entityId: collateralAddress,
+				path: "$.targetTimestamp",
+				owner: collateralOwner,
 				errors,
 				source: "eVaultV3",
 			},
@@ -414,7 +432,7 @@ function convertCollaterals(
 
 		if (isRemovedCollateral) continue;
 
-		const collateral: EVaultCollateral = {
+		const collateral: IEVaultCollateral = {
 			address: collateralAddress,
 			borrowLTV,
 			liquidationLTV,
@@ -422,8 +440,8 @@ function convertCollaterals(
 				? convertOraclePrice(
 						row.oraclePriceRaw,
 						errors,
-						`$.collaterals[${collaterals.length}].oraclePriceRaw`,
-						collateralAddress,
+						"$.oraclePriceRaw",
+						collateralOwner,
 					)
 				: {
 						queryFailure: true,
@@ -442,8 +460,7 @@ function convertCollaterals(
 				severity: "warning",
 				message:
 					"Missing collateral oraclePriceRaw; default zero-price placeholder applied.",
-				paths: [`$.collaterals[${collaterals.length}].oraclePriceRaw`],
-				entityId: collateralAddress,
+				locations: [dataIssueLocation(collateralOwner, "$.oraclePriceRaw")],
 				source: "eVaultV3",
 				normalizedValue: "queryFailure:true",
 			});
@@ -452,15 +469,15 @@ function convertCollaterals(
 		if (targetTimestamp > vaultTimestamp) {
 			const ramping: EVaultCollateralRamping = {
 				initialLiquidationLTV: parseRatio1e4(row.initialLiquidationLTV, {
-					path: `$.collaterals[${collaterals.length}].ramping.initialLiquidationLTV`,
-					entityId: collateralAddress,
+					path: "$.ramping.initialLiquidationLTV",
+					owner: collateralOwner,
 					errors,
 					source: "eVaultV3",
 				}),
 				targetTimestamp,
 				rampDuration: parseBigIntField(String(row.rampDuration ?? 0), {
-					path: `$.collaterals[${collaterals.length}].ramping.rampDuration`,
-					entityId: collateralAddress,
+					path: "$.ramping.rampDuration",
+					owner: collateralOwner,
 					errors,
 					source: "eVaultV3",
 				}),
@@ -489,22 +506,22 @@ export function convertVault(
 				return false;
 			}
 		})();
-	const entityId = parseAddressField(detail.address, {
+	const vaultAddress = parseAddressField(detail.address, {
 		path: "$.address",
-		entityId: fallbackAddress,
+		owner: vaultDiagnosticOwner(detail.chainId, fallbackAddress),
 		errors,
 		source: "eVaultV3",
 		fallback: fallbackAddress,
 		fallbackLabel: "requested vault address",
 	});
+	const owner = vaultDiagnosticOwner(detail.chainId, vaultAddress);
 
 	if (!detail.oracle) {
 		errors.push({
 			code: "DEFAULT_APPLIED",
 			severity: "warning",
 			message: "Missing oracle block; defaulted all oracle fields to 0/empty.",
-			paths: ["$.oracle"],
-			entityId,
+			locations: [dataIssueLocation(owner, "$.oracle")],
 			source: "eVaultV3",
 			normalizedValue: DEFAULT_ORACLE_BLOCK,
 		});
@@ -513,22 +530,22 @@ export function convertVault(
 	const oracle: OracleInfo = {
 		oracle: parseAddressField(oracleData.oracle, {
 			path: "$.oracle.oracle",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		name: parseStringField(oracleData.name, {
 			path: "$.oracle.name",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
-		adapters: oracleData.adapters.map((adapter) =>
-			convertOracleAdapter(adapter, entityId, errors),
+		adapters: (oracleData.adapters ?? []).map((adapter) =>
+			convertOracleAdapter(adapter, owner, errors),
 		),
 		resolvedVaults: convertOracleResolvedVaults(
 			oracleData.resolvedVaults,
-			entityId,
+			owner,
 			errors,
 		),
 	};
@@ -540,8 +557,7 @@ export function convertVault(
 			severity: "warning",
 			message:
 				"Missing shares block; defaulted all share token fields to 0/empty.",
-			paths: ["$.shares"],
-			entityId,
+			locations: [dataIssueLocation(owner, "$.shares")],
 			source: "eVaultV3",
 			normalizedValue: DEFAULT_TOKEN_BLOCK,
 		});
@@ -554,8 +570,7 @@ export function convertVault(
 			severity: "warning",
 			message:
 				"Missing asset block; defaulted all asset token fields to 0/empty.",
-			paths: ["$.asset"],
-			entityId,
+			locations: [dataIssueLocation(owner, "$.asset")],
 			source: "eVaultV3",
 			normalizedValue: DEFAULT_TOKEN_BLOCK,
 		});
@@ -568,8 +583,7 @@ export function convertVault(
 			severity: "warning",
 			message:
 				"Missing unitOfAccount block; defaulted all unit-of-account fields to 0/empty.",
-			paths: ["$.unitOfAccount"],
-			entityId,
+			locations: [dataIssueLocation(owner, "$.unitOfAccount")],
 			source: "eVaultV3",
 			normalizedValue: DEFAULT_TOKEN_BLOCK,
 		});
@@ -582,8 +596,7 @@ export function convertVault(
 			code: "DEFAULT_APPLIED",
 			severity: "warning",
 			message: "Missing fees object; defaulted all fee fields to 0.",
-			paths: ["$.fees"],
-			entityId,
+			locations: [dataIssueLocation(owner, "$.fees")],
 			source: "eVaultV3",
 			normalizedValue: {
 				interestFee: 0,
@@ -611,7 +624,7 @@ export function convertVault(
 			feeData.accumulatedFeesShares ?? "0",
 			{
 				path: "$.fees.accumulatedFeesShares",
-				entityId,
+				owner,
 				errors,
 				source: "eVaultV3",
 			},
@@ -620,20 +633,20 @@ export function convertVault(
 			feeData.accumulatedFeesAssets ?? "0",
 			{
 				path: "$.fees.accumulatedFeesAssets",
-				entityId,
+				owner,
 				errors,
 				source: "eVaultV3",
 			},
 		),
 		governorFeeReceiver: parseAddressField(feeData.governorFeeReceiver, {
 			path: "$.fees.governorFeeReceiver",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		protocolFeeReceiver: parseAddressField(feeData.protocolFeeReceiver, {
 			path: "$.fees.protocolFeeReceiver",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
@@ -647,7 +660,7 @@ export function convertVault(
 		},
 		hookTarget: parseAddressField(detail.hooks?.hookTarget, {
 			path: "$.hooks.hookTarget",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
@@ -657,8 +670,7 @@ export function convertVault(
 			code: "DEFAULT_APPLIED",
 			severity: "warning",
 			message: "Missing hookedOperations; defaulted all operations to false.",
-			paths: ["$.hooks.hookedOperations"],
-			entityId,
+			locations: [dataIssueLocation(owner, "$.hooks.hookedOperations")],
 			source: "eVaultV3",
 			normalizedValue: DEFAULT_HOOKED_OPERATIONS,
 		});
@@ -669,8 +681,7 @@ export function convertVault(
 			code: "DEFAULT_APPLIED",
 			severity: "warning",
 			message: "Missing caps block; defaulted all cap fields to 0.",
-			paths: ["$.caps"],
-			entityId,
+			locations: [dataIssueLocation(owner, "$.caps")],
 			source: "eVaultV3",
 			normalizedValue: DEFAULT_CAPS_BLOCK,
 		});
@@ -679,13 +690,13 @@ export function convertVault(
 	const caps: EVaultCaps = {
 		supplyCap: parseBigIntField(capsData.supplyCap ?? "0", {
 			path: "$.caps.supplyCap",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		borrowCap: parseBigIntField(capsData.borrowCap ?? "0", {
 			path: "$.caps.borrowCap",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
@@ -697,8 +708,7 @@ export function convertVault(
 			severity: "warning",
 			message:
 				"Missing liquidation block; defaulted all liquidation fields to 0/false.",
-			paths: ["$.liquidation"],
-			entityId,
+			locations: [dataIssueLocation(owner, "$.liquidation")],
 			source: "eVaultV3",
 			normalizedValue: {
 				maxLiquidationDiscount: 0,
@@ -719,8 +729,7 @@ export function convertVault(
 			code: "DEFAULT_APPLIED",
 			severity: "warning",
 			message: "Missing interestRates block; defaulted all rate fields to 0.",
-			paths: ["$.interestRates"],
-			entityId,
+			locations: [dataIssueLocation(owner, "$.interestRates")],
 			source: "eVaultV3",
 			normalizedValue: DEFAULT_INTEREST_RATES_BLOCK,
 		});
@@ -728,27 +737,33 @@ export function convertVault(
 	const interestRatesData =
 		detail.interestRates ?? DEFAULT_INTEREST_RATES_BLOCK;
 	const interestRates: InterestRates = {
-		borrowSPY: parseStringField(interestRatesData.borrowSPY, {
-			path: "$.interestRates.borrowSPY",
-			entityId,
-			errors,
-			source: "eVaultV3",
-			fallback: "0",
-		}),
-		borrowAPY: parseStringField(interestRatesData.borrowAPY, {
-			path: "$.interestRates.borrowAPY",
-			entityId,
-			errors,
-			source: "eVaultV3",
-			fallback: "0",
-		}),
-		supplyAPY: parseStringField(interestRatesData.supplyAPY, {
-			path: "$.interestRates.supplyAPY",
-			entityId,
-			errors,
-			source: "eVaultV3",
-			fallback: "0",
-		}),
+		borrowSPY: parseRate(
+			parseStringField(interestRatesData.borrowSPY, {
+				path: "$.interestRates.borrowSPY",
+				owner,
+				errors,
+				source: "eVaultV3",
+				fallback: "0",
+			}),
+		),
+		borrowAPY: parseRate(
+			parseStringField(interestRatesData.borrowAPY, {
+				path: "$.interestRates.borrowAPY",
+				owner,
+				errors,
+				source: "eVaultV3",
+				fallback: "0",
+			}),
+		),
+		supplyAPY: parseRate(
+			parseStringField(interestRatesData.supplyAPY, {
+				path: "$.interestRates.supplyAPY",
+				owner,
+				errors,
+				source: "eVaultV3",
+				fallback: "0",
+			}),
+		),
 	};
 
 	if (!detail.interestRateModel) {
@@ -757,8 +772,7 @@ export function convertVault(
 			severity: "warning",
 			message:
 				"Missing interestRateModel block; defaulted all model fields to 0/unknown.",
-			paths: ["$.interestRateModel"],
-			entityId,
+			locations: [dataIssueLocation(owner, "$.interestRateModel")],
 			source: "eVaultV3",
 			normalizedValue: DEFAULT_INTEREST_RATE_MODEL_BLOCK,
 		});
@@ -768,7 +782,7 @@ export function convertVault(
 	const interestRateModelType = mapInterestRateModelType(
 		parseStringField(interestRateModelData.type, {
 			path: "$.interestRateModel.type",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 			fallback: "unknown",
@@ -782,7 +796,7 @@ export function convertVault(
 		interestRateModelData.address,
 		{
 			path: "$.interestRateModel.address",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		},
@@ -846,8 +860,7 @@ export function convertVault(
 			severity: "warning",
 			message:
 				"Missing oraclePriceRaw block; defaulted all oracle price fields to 0.",
-			paths: ["$.oraclePriceRaw"],
-			entityId,
+			locations: [dataIssueLocation(owner, "$.oraclePriceRaw")],
 			source: "eVaultV3",
 			normalizedValue: DEFAULT_ORACLE_PRICE_BLOCK,
 		});
@@ -855,21 +868,22 @@ export function convertVault(
 	const oraclePriceData = detail.oraclePriceRaw ?? DEFAULT_ORACLE_PRICE_BLOCK;
 	const timestamp = parseTimestampField(detail.timestamp, {
 		path: "$.timestamp",
-		entityId,
+		owner,
 		errors,
 		source: "eVaultV3",
 	});
 	const collaterals = convertCollaterals(
 		collateralRows,
 		timestamp,
-		entityId,
+		vaultAddress,
+		detail.chainId,
 		errors,
 	);
 	const unitOfAccount = normalizeUnitOfAccountToken(
 		convertToken(
 			unitOfAccountData,
 			"$.unitOfAccount",
-			entityId,
+			owner,
 			unitOfAccountErrors,
 		),
 	);
@@ -877,55 +891,55 @@ export function convertVault(
 	return {
 		type: VaultType.EVault,
 		chainId: detail.chainId,
-		address: entityId,
-		shares: convertToken(sharesData, "$.shares", entityId, errors),
-		asset: convertToken(assetData, "$.asset", entityId, errors),
+		address: vaultAddress,
+		shares: convertToken(sharesData, "$.shares", owner, errors),
+		asset: convertToken(assetData, "$.asset", owner, errors),
 		unitOfAccount,
 		totalShares: parseBigIntField(detail.totalShares, {
 			path: "$.totalShares",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		totalAssets: parseBigIntField(detail.totalAssets, {
 			path: "$.totalAssets",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		totalCash: parseBigIntField(detail.totalCash, {
 			path: "$.totalCash",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		totalBorrowed: parseBigIntField(detail.totalBorrowed, {
 			path: "$.totalBorrowed",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		creator: parseAddressField(detail.creator, {
 			path: "$.creator",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		governorAdmin: parseAddressField(detail.governorAdmin, {
 			path: "$.governorAdmin",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		dToken: parseAddressField(detail.dToken, {
 			path: "$.dToken",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 		balanceTracker: parseAddressField(detail.balanceTracker, {
 			path: "$.balanceTracker",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
@@ -940,7 +954,7 @@ export function convertVault(
 		isBorrowable: hasActiveBorrowableLtv(collaterals, timestamp),
 		evcCompatibleAsset: parseBooleanField(detail.evcCompatibleAsset, {
 			path: "$.evcCompatibleAsset",
-			entityId,
+			owner,
 			errors,
 			source: "eVaultV3",
 		}),
@@ -948,7 +962,7 @@ export function convertVault(
 			oraclePriceData,
 			errors,
 			"$.oraclePriceRaw",
-			entityId,
+			owner,
 		),
 		timestamp,
 	};

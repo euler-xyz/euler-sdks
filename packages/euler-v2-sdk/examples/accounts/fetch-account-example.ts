@@ -6,7 +6,7 @@
  * and per-position liquidity info when available.
  *
  * USAGE:
- *   Set RPC_URL_1 in examples/.env for mainnet access, then run:
+ *   Set EULER_SDK_RPC_URL_1 in examples/.env for mainnet access, then run:
  *   npx tsx accounts/fetch-account-example.ts [ownerAddress]
  */
 
@@ -14,16 +14,21 @@ import "dotenv/config";
 import { formatUnits, type Address } from "viem";
 import { mainnet } from "viem/chains";
 
-import { getRpcUrls } from "../utils/config.js";
 import { buildEulerSDK, createPythPlugin } from "@eulerxyz/euler-v2-sdk";
 
 // Default: a known address with Euler positions on mainnet
 const DEFAULT_OWNER = "0x75cFE4ef963232ae8313aC33e21fC39241338618" as Address;
 
+function formatUsd(value: number): string {
+  return `$${value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 async function fetchAccountExample() {
   const owner = (process.argv[2] as Address) || DEFAULT_OWNER;
-  const rpcUrls = getRpcUrls();
-  const sdk = await buildEulerSDK({ rpcUrls, plugins: [createPythPlugin()] });
+  const sdk = await buildEulerSDK({ plugins: [createPythPlugin()] });
 
   console.log(`Fetching account for ${owner} on mainnet...\n`);
 
@@ -86,13 +91,13 @@ async function fetchAccountExample() {
 
       // Market price (from populateMarketPrices)
       if (pos.marketPriceUsd != null) {
-        console.log(`    Market Price:  $${formatUnits(pos.marketPriceUsd, 18)}`);
+        console.log(`    Market Price:  ${formatUsd(pos.marketPriceUsd)}`);
       }
       if (pos.suppliedValueUsd != null) {
-        console.log(`    Supplied USD:  $${formatUnits(pos.suppliedValueUsd, 18)}`);
+        console.log(`    Supplied USD:  ${formatUsd(pos.suppliedValueUsd)}`);
       }
       if (pos.borrowedValueUsd != null) {
-        console.log(`    Borrowed USD:  $${formatUnits(pos.borrowedValueUsd, 18)}`);
+        console.log(`    Borrowed USD:  ${formatUsd(pos.borrowedValueUsd)}`);
       }
 
       // Labels (from populateLabels)
@@ -100,9 +105,6 @@ async function fetchAccountExample() {
       if (vault?.eulerLabel) {
         const label = vault.eulerLabel;
         console.log(`    Label:`);
-        if (label.vault) {
-          console.log(`      Vault:      ${label.vault.name} — ${label.vault.description}`);
-        }
         if (label.entities?.length > 0) {
           console.log(`      Entities:   ${label.entities.map((e: any) => e.name).join(", ")}`);
         }
@@ -114,6 +116,12 @@ async function fetchAccountExample() {
         }
         if (label.deprecated) {
           console.log(`      DEPRECATED: ${label.deprecationReason}`);
+        }
+        if (label.portfolioNotice) {
+          console.log(`      Notice:     ${label.portfolioNotice}`);
+        }
+        if (label.featured) {
+          console.log(`      Featured:   true`);
         }
       }
 

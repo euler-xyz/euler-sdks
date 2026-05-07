@@ -17,35 +17,10 @@ import type {
 } from "../../../utils/entityDiagnostics.js";
 import {
 	compressDataIssues,
-	mapDataIssuePaths,
-	normalizeTopLevelVaultArrayPath,
+	dataIssueLocation,
+	serviceDiagnosticOwner,
+	vaultDiagnosticOwner,
 } from "../../../utils/entityDiagnostics.js";
-
-function remapServiceLocalVaultPath(
-	path: string,
-	entries: Array<{ address: Address; index: number }>,
-): string {
-	const match = path.match(
-		/^\$(?:\.(?:vaults|eVaults|eulerEarns))?\[(\d+)\](?=\.|$)/,
-	);
-	if (!match) return path;
-
-	const localIndex = Number(match[1]);
-	const entry = entries[localIndex];
-	if (!entry) return path;
-
-	return path.replace(
-		/^\$(?:\.(?:vaults|eVaults|eulerEarns))?\[\d+\]/,
-		`$.vaults[${entry.index}]`,
-	);
-}
-
-function remapServiceLocalVaultPaths(
-	paths: string[],
-	entries: Array<{ address: Address; index: number }>,
-): string[] {
-	return paths.map((path) => remapServiceLocalVaultPath(path, entries));
-}
 
 export type VaultMetaPerspective =
 	| StandardEulerEarnPerspectives
@@ -56,20 +31,35 @@ export type VaultMetaPerspective =
 export type VaultEntity = EVault | EulerEarn | SecuritizeCollateralVault;
 
 /** Type guard: narrows VaultEntity to EVault. */
-export function isEVault(v: VaultEntity): v is EVault {
-	return v.type === VaultType.EVault;
+export function isEVault(v: unknown): v is EVault {
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		"type" in v &&
+		(v as { type?: unknown }).type === VaultType.EVault
+	);
 }
 
 /** Type guard: narrows VaultEntity to EulerEarn. */
-export function isEulerEarn(v: VaultEntity): v is EulerEarn {
-	return v.type === VaultType.EulerEarn;
+export function isEulerEarn(v: unknown): v is EulerEarn {
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		"type" in v &&
+		(v as { type?: unknown }).type === VaultType.EulerEarn
+	);
 }
 
 /** Type guard: narrows VaultEntity to SecuritizeCollateralVault. */
 export function isSecuritizeCollateralVault(
-	v: VaultEntity,
+	v: unknown,
 ): v is SecuritizeCollateralVault {
-	return v.type === VaultType.SecuritizeCollateral;
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		"type" in v &&
+		(v as { type?: unknown }).type === VaultType.SecuritizeCollateral
+	);
 }
 
 /** A vault service that can be registered with VaultMetaService. Use TEntity to extend the meta service return type (e.g. EVault | EulerEarn | CustomVault). */
@@ -176,9 +166,7 @@ export class VaultMetaService<TEntity = VaultEntity>
 		if (typedService) return typedService;
 
 		try {
-			return this.getFactoryToServiceMap(chainId).get(
-				getAddress(resolvedType),
-			);
+			return this.getFactoryToServiceMap(chainId).get(getAddress(resolvedType));
 		} catch {
 			return undefined;
 		}
@@ -225,16 +213,15 @@ export class VaultMetaService<TEntity = VaultEntity>
 	): Promise<ServiceResult<TEntity | undefined>> {
 		const fetched = await this.fetchVaults(chainId, [vault], options);
 		const result = fetched.result[0];
-		const errors = fetched.errors.map((issue) =>
-			mapDataIssuePaths(issue, normalizeTopLevelVaultArrayPath),
-		);
+		const errors = [...fetched.errors];
 		if (result === undefined) {
 			errors.push({
 				code: "SOURCE_UNAVAILABLE",
 				severity: "error",
 				message: `Vault not found for ${getAddress(vault)}.`,
-				paths: ["$"],
-				entityId: getAddress(vault),
+				locations: [
+					dataIssueLocation(vaultDiagnosticOwner(chainId, getAddress(vault))),
+				],
 				source: "vaultMetaService",
 				originalValue: getAddress(vault),
 			});
@@ -301,8 +288,9 @@ export class VaultMetaService<TEntity = VaultEntity>
 					code: "SOURCE_UNAVAILABLE",
 					severity: "warning",
 					message: `No registered vault service for ${getAddress(v)}.`,
-					paths: [`$.vaults[${index}]`],
-					entityId: getAddress(v),
+					locations: [
+						dataIssueLocation(vaultDiagnosticOwner(chainId, getAddress(v))),
+					],
 					source: "vaultTypeAdapter",
 					originalValue: getAddress(v),
 				});
@@ -319,12 +307,7 @@ export class VaultMetaService<TEntity = VaultEntity>
 							addresses,
 							options,
 						);
-						errors.push(
-							...entities.errors.map((issue) => ({
-								...issue,
-								paths: remapServiceLocalVaultPaths(issue.paths, entries),
-							})),
-						);
+						errors.push(...entities.errors);
 						for (const [entryIndex, entry] of entries.entries()) {
 							const entity = entities.result[entryIndex];
 							if (entity === undefined) {
@@ -332,8 +315,11 @@ export class VaultMetaService<TEntity = VaultEntity>
 									code: "SOURCE_UNAVAILABLE",
 									severity: "warning",
 									message: `Failed to fetch vault ${getAddress(entry.address)}.`,
-									paths: [`$.vaults[${entry.index}]`],
-									entityId: getAddress(entry.address),
+									locations: [
+										dataIssueLocation(
+											vaultDiagnosticOwner(chainId, getAddress(entry.address)),
+										),
+									],
 									source: "vaultService",
 									originalValue: getAddress(entry.address),
 								});
@@ -347,8 +333,11 @@ export class VaultMetaService<TEntity = VaultEntity>
 								code: "SOURCE_UNAVAILABLE",
 								severity: "warning",
 								message: `Failed to fetch vault ${getAddress(entry.address)}.`,
-								paths: [`$.vaults[${entry.index}]`],
-								entityId: getAddress(entry.address),
+								locations: [
+									dataIssueLocation(
+										vaultDiagnosticOwner(chainId, getAddress(entry.address)),
+									),
+								],
 								source: "vaultService",
 								originalValue:
 									error instanceof Error ? error.message : String(error),
@@ -399,11 +388,7 @@ export class VaultMetaService<TEntity = VaultEntity>
 		const fetched = await this.fetchVaults(chainId, addresses, options);
 		return {
 			...fetched,
-			errors: compressDataIssues(
-				fetched.errors.map((issue) =>
-					mapDataIssuePaths(issue, normalizeTopLevelVaultArrayPath),
-				),
-			),
+			errors: compressDataIssues(fetched.errors),
 		};
 	}
 
@@ -439,7 +424,15 @@ export class VaultMetaService<TEntity = VaultEntity>
 				code: "SOURCE_UNAVAILABLE",
 				severity: "warning",
 				message: `Failed to fetch all vaults for ${service ? this.getServiceLabel(service) : "unknownVaultService"}.`,
-				paths: ["$"],
+				locations: [
+					dataIssueLocation(
+						serviceDiagnosticOwner(
+							"vaultMetaService",
+							chainId,
+							"fetchAllVaults",
+						),
+					),
+				],
 				source: "vaultMetaService",
 				originalValue:
 					entry.reason instanceof Error

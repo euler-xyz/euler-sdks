@@ -9,8 +9,7 @@ Each diagnostic is a `DataIssue`:
 - `code`: category (`COERCED_TYPE`, `OUT_OF_RANGE_CLAMPED`, `SOURCE_UNAVAILABLE`, `FALLBACK_USED`, ...)
 - `severity`: `info | warning | error`
 - `message`: short human-readable explanation
-- `path`: JSONPath-like location from the fetch result root
-- `entityId`: stable entity identifier when known (address for account/subaccount/vault/wallet/asset)
+- `locations`: one or more owner-relative locations where the issue applies
 - optional `source`, `originalValue`, `normalizedValue`
 
 Diagnostics are not entity state. They describe how the returned snapshot was built.
@@ -24,8 +23,8 @@ They let consumers handle imperfect upstream data without guessing:
 - Policy: decide in app code when to warn, ignore, retry, or throw
 - Safety: keep entity models clean while still exposing normalization/fallback behavior
 
-Because diagnostics paths target the fetched snapshot, they are most reliable right after fetch.  
-If callers mutate/reorder entities later, paths may no longer match.
+Locations are tied to stable entity owners, not to the outer result shape.
+Consumers should match diagnostics to the object they render by comparing the location owner reference, then use the location `path` relative to that owner.
 
 ## Service Return Pattern
 
@@ -39,11 +38,11 @@ Fetch/build services return diagnostics next to data:
 - `fetchVerifiedVaults(...) -> { result, errors }`
 - `fetchAllVaults(...) -> { result, errors }`
 
-For batch vault fetches (`fetchVaults`, `fetchVerifiedVaults`, `fetchAllVaults`), `result` may contain `undefined` entries for per-vault failures. Those failures are reported in `errors` with `entityId` set to the affected vault address. For `fetchVaults` and `fetchVerifiedVaults`, result order matches the input/discovery order. For `fetchAllVaults`, entries rejected by the optional pre-population filter are also returned as `undefined`.
+For batch vault fetches (`fetchVaults`, `fetchVerifiedVaults`, `fetchAllVaults`), `result` may contain `undefined` entries for per-vault failures. Those failures are reported in `errors` with a `vault` owner location for the affected address. For `fetchVaults` and `fetchVerifiedVaults`, result order matches the input/discovery order. For `fetchAllVaults`, entries rejected by the optional pre-population filter are also returned as `undefined`.
 
 Fetch option objects also support `populateAll: true` to force all enrichment steps on.
 
-Errors include issues from nested entities and populated sub-services, path-prefixed from the top-level result.
+Errors include issues from nested entities and populated sub-services. Nested diagnostics are remapped to the rendered owner, for example a collateral vault issue becomes a `vaultCollateral` location on the parent vault.
 
 ## Entity Populate Pattern
 
@@ -73,14 +72,27 @@ These methods emit `FALLBACK_USED` when backend pricing is unavailable and on-ch
 import type { DataIssue, ServiceResult } from "@eulerxyz/euler-v2-sdk";
 ```
 
-- `DataIssue`: one normalization/fallback/source issue with JSONPath-like `path`.
+- `DataIssue`: one normalization/fallback/source issue with owner-relative `locations`.
 - `ServiceResult<T>`: `{ result: T, errors: DataIssue[] }`.
 
-## Paths
+## Locations
 
-Paths are relative to top-level fetch result:
+Each location has:
 
-- `$.subAccounts[0].positions[1].liquidity.daysToLiquidation`
+- `owner`: stable reference to the entity that owns the field
+- `path`: JSONPath-like path relative to that owner
+
+Example owner kinds:
+
+- `vault`: `{ kind: "vault", chainId, address }`
+- `vaultCollateral`: `{ kind: "vaultCollateral", chainId, vault, collateral }`
+- `vaultStrategy`: `{ kind: "vaultStrategy", chainId, vault, strategy }`
+- `accountPosition`: `{ kind: "accountPosition", chainId, account, vault }`
+- `walletAsset`: `{ kind: "walletAsset", chainId, wallet, asset }`
+
+Example relative location paths:
+
+- `$.liquidity.daysToLiquidation` on an `accountPosition` owner
 - `$.marketPriceUsd`
 - `$.userRewards`
 
@@ -98,7 +110,9 @@ if (blocking) throw new Error(blocking.message);
 UI usage example:
 
 ```ts
-const priceIssues = errors.filter((e) => e.path.includes("marketPriceUsd"));
+const priceIssues = errors.filter((issue) =>
+  issue.locations.some((location) => location.path.includes("marketPriceUsd")),
+);
 const hasFallback = priceIssues.some((e) => e.code === "FALLBACK_USED");
 ```
 
@@ -113,7 +127,13 @@ vaults.forEach((vault, i) => {
     // hard failure for this address
     return;
   }
-  const rowIssues = errors.filter((e) => e.entityId?.toLowerCase() === address);
+  const rowIssues = errors.filter((issue) =>
+    issue.locations.some(
+      (location) =>
+        location.owner.kind === "vault" &&
+        location.owner.address.toLowerCase() === address,
+    ),
+  );
   // render vault row + warning/error indicators
 });
 ```
@@ -123,13 +143,25 @@ vaults.forEach((vault, i) => {
 Use normalization helpers and append issues to a local `errors` array.
 
 ```ts
-import { bigintToSafeNumber, type DataIssue } from "@eulerxyz/euler-v2-sdk";
+import {
+  bigintToSafeNumber,
+  dataIssueLocation,
+  vaultDiagnosticOwner,
+  type DataIssue,
+} from "@eulerxyz/euler-v2-sdk";
 
-function convertCustom(raw: { decimals: bigint }, errors: DataIssue[]) {
+function convertCustom(
+  chainId: number,
+  vault: `0x${string}`,
+  raw: { decimals: bigint },
+  errors: DataIssue[],
+) {
+  const owner = vaultDiagnosticOwner(chainId, vault);
   const decimals = bigintToSafeNumber(raw.decimals, {
     path: "$.decimals",
     errors,
     source: "customSource",
+    owner,
   });
   return { decimals };
 }
@@ -140,11 +172,17 @@ function convertCustom(raw: { decimals: bigint }, errors: DataIssue[]) {
 Build diagnostics in parallel with result data and return together:
 
 ```ts
-import type { DataIssue, ServiceResult } from "@eulerxyz/euler-v2-sdk";
+import {
+  dataIssueLocation,
+  serviceDiagnosticOwner,
+  type DataIssue,
+  type ServiceResult,
+} from "@eulerxyz/euler-v2-sdk";
 
 async function fetchCustom(): Promise<ServiceResult<{ price?: number }>> {
   const errors: DataIssue[] = [];
   const result: { price?: number } = {};
+  const owner = serviceDiagnosticOwner("customPriceService");
 
   try {
     result.price = await fetchPrimary();
@@ -153,7 +191,7 @@ async function fetchCustom(): Promise<ServiceResult<{ price?: number }>> {
       code: "SOURCE_UNAVAILABLE",
       severity: "warning",
       message: "Primary source failed; fallback used.",
-      path: "$.price",
+      locations: [dataIssueLocation(owner, "$.price")],
       source: "primaryApi",
       originalValue: error instanceof Error ? error.message : String(error),
     });

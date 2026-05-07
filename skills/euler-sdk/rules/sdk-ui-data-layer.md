@@ -46,12 +46,16 @@ if (!account.populated.vaults) return null;
 
 Keep `errors` alongside the entity snapshot. Diagnostics are not entity state; use them for field-level badges, telemetry, and policy decisions.
 
+APY/ROE values on SDK vault and portfolio entities are percentage points (`5` = `5%`). Raw reward campaign APRs are decimal fractions; convert them before adding them to vault APYs in custom UI code, or use the SDK's computed breakdown fields.
+
+USD market price and value fields (`marketPriceUsd`, `suppliedValueUsd`, `borrowedValueUsd`, `totalRewardsValueUsd`, portfolio USD totals) are plain `number` values. Direct oracle/risk fields such as `oraclePriceRaw`, `assetRiskPrice`, `healthFactor`, and LTV ratios remain `bigint`.
+
 For React UIs:
 
 1. Build SDK in a provider/context once.
 2. Use query hooks per feature (`vault list`, `vault detail`, `account`, `rewards`).
 3. Use short UI stale times and let `buildQuery` handle deeper caching.
 4. Re-fetch account/vault data after successful execution receipts.
-5. For batch vault calls, handle sparse arrays (`undefined` entries) and map diagnostics by `entityId` to show per-address failures.
+5. For batch vault calls, handle sparse arrays (`undefined` entries) and map diagnostics by `locations[].owner` to show per-address failures.
 
 Reference: `packages/euler-v2-sdk/docs/basic-usage.md`, `docs/cross-service-data-population.md`, `docs/account-computed-properties.md`, `docs/entity-diagnostics.md`, `examples/react-sdk-example/src/queries/sdkQueries.ts`

@@ -5,6 +5,7 @@ export * from "./entities/Account.js";
 export * from "./entities/Portfolio.js";
 export * from "./entities/Wallet.js";
 export * from "./entities/EulerEarn.js";
+export * from "./entities/SecuritizeCollateralVault.js";
 export * from "./entities/EulerLabels.js";
 export * from "./sdk/sdk.js";
 export * from "./sdk/buildSDK.js";
@@ -39,11 +40,13 @@ export * from "./plugins/index.js";
 // Utils
 export * from "./utils/subAccounts.js";
 export * from "./utils/accountPositionClassification.js";
+export { VaultType } from "./utils/types.js";
 export {
   type BuildQueryFn,
   type QueryCacheConfig,
   applyBuildQuery,
   createQueryCacheBuildQuery,
+  serializeQueryArgs,
 } from "./utils/buildQuery.js";
 export type { EulerSDKQueryName, QueryMethodName } from "./utils/queryNames.js";
 export * from "./utils/stateOverrides/index.js";
@@ -55,3 +58,4 @@ export * from "./utils/normalization.js";
 export * from "./utils/parsing.js";
 export * from "./utils/decodeSmartContractErrors.js";
 export * from "./utils/eulerErrorSelectors.js";
+export * from "./utils/eulerLabels.js";

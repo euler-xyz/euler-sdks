@@ -25,7 +25,7 @@ import {
 	type IERC4626Vault,
 	type IERC4626VaultConversion,
 	VIRTUAL_DEPOSIT_AMOUNT,
-	type PriceWad,
+	type PriceUsd,
 } from "./ERC4626Vault.js";
 import type { IPriceService } from "../services/priceService/index.js";
 import {
@@ -34,11 +34,20 @@ import {
 } from "../services/priceService/index.js";
 import type { VaultEntity } from "../services/vaults/vaultMetaService/index.js";
 import type { IVaultMetaService } from "../services/vaults/vaultMetaService/index.js";
-import type { DataIssue } from "../utils/entityDiagnostics.js";
 import {
-	mapDataIssuePaths,
+	dataIssueLocation,
+	type DataIssue,
+	vaultCollateralDiagnosticOwner,
+	vaultDiagnosticOwner,
+} from "../utils/entityDiagnostics.js";
+import {
+	mapDataIssueLocations,
 	withPathPrefix,
 } from "../utils/entityDiagnostics.js";
+import {
+	bigintPercentage,
+	tokenAmountToUsdValue,
+} from "../utils/normalization.js";
 
 export type EVaultHookedOperations = {
 	deposit: boolean;
@@ -77,6 +86,11 @@ export interface EVaultCaps {
 	borrowCap: bigint;
 }
 
+export interface EVaultCapsComputed extends EVaultCaps {
+	readonly supplyCapUtilization: number;
+	readonly borrowCapUtilization: number;
+}
+
 export interface EVaultLiquidation {
 	maxLiquidationDiscount: number;
 	liquidationCoolOffTime: number;
@@ -84,9 +98,12 @@ export interface EVaultLiquidation {
 }
 
 export interface InterestRates {
-	borrowSPY: string;
-	borrowAPY: string;
-	supplyAPY: string;
+	/** Percentage points, e.g. 5 = 5%. */
+	borrowSPY: number;
+	/** Percentage points, e.g. 5 = 5%. */
+	borrowAPY: number;
+	/** Percentage points, e.g. 5 = 5%. */
+	supplyAPY: number;
 }
 
 export type InterestRateModel =
@@ -121,7 +138,7 @@ export type InterestRateModel =
 			params: null;
 	  };
 
-export interface EVaultCollateral {
+export interface IEVaultCollateral {
 	address: Address;
 	borrowLTV: number;
 	liquidationLTV: number;
@@ -129,7 +146,13 @@ export interface EVaultCollateral {
 	oraclePriceRaw: OraclePrice; // shouldn't be used directly, use EVault price getters instead
 	vault?: VaultEntity;
 	oracleAdapters?: OracleAdapterEntry[];
-	marketPriceUsd?: PriceWad;
+	marketPriceUsd?: PriceUsd;
+}
+
+export interface EVaultCollateral extends IEVaultCollateral {
+	readonly currentLiquidationLTV: number;
+	readonly isLiquidationLTVRamping: boolean;
+	readonly rampTimeRemaining: bigint;
 }
 
 export interface EVaultCollateralRamping {
@@ -139,8 +162,8 @@ export interface EVaultCollateralRamping {
 }
 
 export type RiskPrice = {
-	priceLiquidation: PriceWad;
-	priceBorrowing: PriceWad;
+	priceLiquidation: bigint;
+	priceBorrowing: bigint;
 };
 
 export interface IEVault extends IERC4626Vault {
@@ -161,7 +184,7 @@ export interface IEVault extends IERC4626Vault {
 	oracle: OracleInfo;
 	interestRates: InterestRates;
 	interestRateModel: InterestRateModel;
-	collaterals: EVaultCollateral[];
+	collaterals: IEVaultCollateral[];
 
 	evcCompatibleAsset: boolean;
 
@@ -185,7 +208,7 @@ function buildOracleAdaptersForPair(
 }
 
 function collateralHasActiveLtv(
-	collateral: EVaultCollateral,
+	collateral: EVaultCollateral | IEVaultCollateral,
 	vaultTimestamp: number,
 ): boolean {
 	if (collateral.borrowLTV > 0 || collateral.liquidationLTV > 0) {
@@ -202,12 +225,41 @@ function collateralHasActiveLtv(
 }
 
 export function hasActiveBorrowableLtv(
-	collaterals: EVaultCollateral[],
+	collaterals: (EVaultCollateral | IEVaultCollateral)[],
 	vaultTimestamp: number,
 ): boolean {
 	return collaterals.some((collateral) =>
 		collateralHasActiveLtv(collateral, vaultTimestamp),
 	);
+}
+
+function buildCollateral(
+	collateral: IEVaultCollateral,
+	vaultTimestamp: number,
+): EVaultCollateral {
+	const ramping = collateral.ramping;
+	const rampTimeRemaining =
+		ramping?.targetTimestamp !== undefined
+			? BigInt(Math.max(ramping.targetTimestamp - vaultTimestamp, 0))
+			: 0n;
+	const isLiquidationLTVRamping =
+		ramping !== undefined &&
+		rampTimeRemaining > 0n &&
+		ramping.rampDuration > 0n &&
+		ramping.initialLiquidationLTV !== collateral.liquidationLTV;
+	const currentLiquidationLTV = isLiquidationLTVRamping
+		? collateral.liquidationLTV +
+			((ramping.initialLiquidationLTV - collateral.liquidationLTV) *
+				Number(rampTimeRemaining)) /
+				Number(ramping.rampDuration)
+		: collateral.liquidationLTV;
+
+	return {
+		...collateral,
+		currentLiquidationLTV,
+		isLiquidationLTVRamping,
+		rampTimeRemaining,
+	};
 }
 
 export class EVault
@@ -223,7 +275,7 @@ export class EVault
 	balanceTracker: Address;
 	fees: EVaultFees;
 	hooks: EVaultHooks;
-	caps: EVaultCaps;
+	caps: EVaultCapsComputed;
 	liquidation: EVaultLiquidation;
 	oracle: OracleInfo;
 	debtPricingOracleAdapters: OracleAdapterEntry[];
@@ -246,7 +298,7 @@ export class EVault
 		this.balanceTracker = args.balanceTracker;
 		this.fees = args.fees;
 		this.hooks = args.hooks;
-		this.caps = args.caps;
+		this.caps = this.buildCaps(args.caps);
 		this.liquidation = args.liquidation;
 		this.oracle = {
 			...args.oracle,
@@ -255,8 +307,10 @@ export class EVault
 		};
 		this.interestRates = args.interestRates;
 		this.interestRateModel = args.interestRateModel;
-		this.collaterals = args.collaterals;
 		this.timestamp = args.timestamp;
+		this.collaterals = args.collaterals.map((collateral) =>
+			buildCollateral(collateral, this.timestamp),
+		);
 		this.debtPricingOracleAdapters =
 			this.isBorrowable && this.unitOfAccount
 				? buildOracleAdaptersForPair(
@@ -275,6 +329,29 @@ export class EVault
 
 	override get isBorrowable(): boolean {
 		return hasActiveBorrowableLtv(this.collaterals, this.timestamp);
+	}
+
+	override get availableLiquidity(): bigint {
+		return this.totalCash;
+	}
+
+	get utilization(): number {
+		return bigintPercentage(this.totalBorrowed, this.totalAssets);
+	}
+
+	private buildCaps(caps: EVaultCaps): EVaultCapsComputed {
+		const vault = this;
+		return {
+			...caps,
+			get supplyCapUtilization(): number {
+				if (this.supplyCap >= maxUint256) return 0;
+				return bigintPercentage(vault.totalAssets, this.supplyCap);
+			},
+			get borrowCapUtilization(): number {
+				if (this.borrowCap >= maxUint256) return 0;
+				return bigintPercentage(vault.totalBorrowed, this.borrowCap);
+			},
+		};
 	}
 
 	/** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
@@ -324,36 +401,33 @@ export class EVault
 
 	async fetchUnitOfAccountMarketPriceUsd(
 		priceService: IPriceService,
-	): Promise<PriceWad | undefined> {
+	): Promise<number | undefined> {
 		return priceService.fetchUnitOfAccountUsdRate(this);
 	}
 
 	async fetchCollateralMarketPriceUsd(
 		collateralVault: ERC4626Vault,
 		priceService: IPriceService,
-	): Promise<PriceWad | undefined> {
+	): Promise<number | undefined> {
 		const price = await priceService.fetchCollateralUsdPrice(
 			this,
 			collateralVault,
 		);
 		if (!price) return undefined;
-		return price.amountOutMid;
+		return price;
 	}
 
 	async fetchCollateralMarketValueUsd(
 		amount: bigint,
 		collateralVault: ERC4626Vault,
 		priceService: IPriceService,
-	): Promise<bigint | undefined> {
+	): Promise<number | undefined> {
 		const price = await priceService.fetchCollateralUsdPrice(
 			this,
 			collateralVault,
 		);
 		if (!price) return undefined;
-		return (
-			(amount * price.amountOutMid) /
-			10n ** BigInt(collateralVault.asset.decimals)
-		);
+		return tokenAmountToUsdValue(amount, collateralVault.asset.decimals, price);
 	}
 
 	async populateCollaterals(
@@ -367,12 +441,21 @@ export class EVault
 		const errors: DataIssue[] = [];
 
 		const collateralVaults = await Promise.all(
-			addresses.map(async (addr, index) => {
+			addresses.map(async (addr) => {
 				const fetched = await vaultMetaService.fetchVault(this.chainId, addr);
 				errors.push(
 					...fetched.errors.map((issue) => ({
-						...mapDataIssuePaths(issue, (path) =>
-							withPathPrefix(path, `$.collaterals[${index}].vault`),
+						...mapDataIssueLocations(issue, (location) =>
+							location.owner.kind === "vault"
+								? {
+										owner: vaultCollateralDiagnosticOwner(
+											this.chainId,
+											this.address,
+											addr,
+										),
+										path: withPathPrefix(location.path, "$.vault"),
+									}
+								: location,
 						),
 					})),
 				);
@@ -429,15 +512,19 @@ export class EVault
 				this,
 				"$.marketPriceUsd",
 			);
-			this.marketPriceUsd = priced.result?.amountOutMid;
+			this.marketPriceUsd = priced.result;
 			errors.push(...priced.errors);
 		} catch (error) {
 			errors.push({
 				code: "SOURCE_UNAVAILABLE",
 				severity: "error",
 				message: "Failed to populate asset market price.",
-				paths: ["$.marketPriceUsd"],
-				entityId: this.asset.address,
+				locations: [
+					dataIssueLocation(
+						vaultDiagnosticOwner(this.chainId, this.address),
+						"$.marketPriceUsd",
+					),
+				],
 				source: "priceService",
 				originalValue: error instanceof Error ? error.message : String(error),
 			});
@@ -454,15 +541,23 @@ export class EVault
 							collateral.vault as ERC4626Vault,
 							`$.collaterals[${index}].marketPriceUsd`,
 						);
-					collateral.marketPriceUsd = priced.result?.amountOutMid;
+					collateral.marketPriceUsd = priced.result;
 					errors.push(...priced.errors);
 				} catch (error) {
 					errors.push({
 						code: "SOURCE_UNAVAILABLE",
 						severity: "error",
 						message: "Failed to populate collateral market price.",
-						paths: [`$.collaterals[${index}].marketPriceUsd`],
-						entityId: collateral.vault?.asset.address ?? collateral.address,
+						locations: [
+							dataIssueLocation(
+								vaultCollateralDiagnosticOwner(
+									this.chainId,
+									this.address,
+									collateral.address,
+								),
+								"$.marketPriceUsd",
+							),
+						],
 						source: "priceService",
 						originalValue:
 							error instanceof Error ? error.message : String(error),

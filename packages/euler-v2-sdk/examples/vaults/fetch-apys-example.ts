@@ -6,14 +6,13 @@
  * reward APRs, and intrinsic asset APYs.
  *
  * USAGE:
- *   Set RPC_URL_1 in examples/.env for mainnet access, then run:
+ *   Set EULER_SDK_RPC_URL_1 in examples/.env for mainnet access, then run:
  *   npx tsx vaults/fetch-apys-example.ts
  */
 
 import "dotenv/config";
 import { mainnet } from "viem/chains";
 
-import { getRpcUrls } from "../utils/config.js";
 import {
   buildEulerSDK,
   StandardEVaultPerspectives,
@@ -21,10 +20,8 @@ import {
 } from "@eulerxyz/euler-v2-sdk";
 
 async function fetchApysExample() {
-  const rpcUrls = getRpcUrls();
 
   const sdk = await buildEulerSDK({
-    rpcUrls,
     eVaultServiceConfig: { adapter: "onchain" },
     eulerEarnServiceConfig: { adapter: "onchain" },
   });
@@ -57,8 +54,8 @@ async function fetchApysExample() {
     console.log(
       vault.shares.name.padEnd(50),
       vault.address.padEnd(44),
-      `${(Number(vault.interestRates.supplyAPY) * 100).toFixed(2)}%`.padEnd(14),
-      `${(Number(vault.interestRates.borrowAPY) * 100).toFixed(2)}%`.padEnd(14),
+      `${Number(vault.interestRates.supplyAPY).toFixed(2)}%`.padEnd(14),
+      `${Number(vault.interestRates.borrowAPY).toFixed(2)}%`.padEnd(14),
       rewardsApr > 0 ? `${(rewardsApr * 100).toFixed(2)}%`.padEnd(14) : "-".padEnd(14),
       intrinsicApy > 0 ? `${intrinsicApy.toFixed(2)}% (${vault.intrinsicApy!.provider})` : "-",
     );
@@ -91,7 +88,7 @@ async function fetchApysExample() {
 
   for (const vault of eulerEarnVaults) {
     const supplyApy = vault.supplyApy1h !== undefined
-      ? `${(vault.supplyApy1h * 100).toFixed(2)}%`
+      ? `${vault.supplyApy1h.toFixed(2)}%`
       : "N/A";
     const rewardsApr = vault.rewards?.totalRewardsApr ?? 0;
     const intrinsicApy = vault.intrinsicApy?.apy ?? 0;

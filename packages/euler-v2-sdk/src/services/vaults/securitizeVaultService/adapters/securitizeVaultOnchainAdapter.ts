@@ -21,7 +21,10 @@ import type {
 	DataIssue,
 	ServiceResult,
 } from "../../../../utils/entityDiagnostics.js";
-import { prefixDataIssues } from "../../../../utils/entityDiagnostics.js";
+import {
+	dataIssueLocation,
+	vaultDiagnosticOwner,
+} from "../../../../utils/entityDiagnostics.js";
 
 export const getVaultInfoERC4626LensBatchItem = (
 	utilsLensAddress: Address,
@@ -116,7 +119,7 @@ export class SecuritizeVaultOnchainAdapter
 				.utilsLens;
 
 		const parsed = await Promise.all(
-			vaults.map(async (vault, index) => {
+			vaults.map(async (vault) => {
 				try {
 					const [vaultInfoRaw, governorRaw, supplyCapRaw] = await Promise.all([
 						this.queryVaultInfoERC4626(provider, utilsLensAddress, vault),
@@ -136,22 +139,18 @@ export class SecuritizeVaultOnchainAdapter
 						chainId,
 						conversionErrors,
 					);
-					errors.push(
-						...prefixDataIssues(conversionErrors, `$.vaults[${index}]`).map(
-							(issue) => ({
-								...issue,
-								entityId: issue.entityId ?? getAddress(vault),
-							}),
-						),
-					);
+					errors.push(...conversionErrors);
 					return parsedVault;
 				} catch (error) {
 					errors.push({
 						code: "SOURCE_UNAVAILABLE",
 						severity: "warning",
 						message: `Failed to fetch securitize vault ${getAddress(vault)}.`,
-						paths: [`$.vaults[${index}]`],
-						entityId: getAddress(vault),
+						locations: [
+							dataIssueLocation(
+								vaultDiagnosticOwner(chainId, getAddress(vault)),
+							),
+						],
 						source: "utilsLens",
 						originalValue:
 							error instanceof Error ? error.message : String(error),

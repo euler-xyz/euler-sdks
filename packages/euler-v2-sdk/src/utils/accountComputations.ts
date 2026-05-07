@@ -3,7 +3,7 @@
  * All functions return `undefined` when prerequisites are missing.
  */
 
-import type { Address } from "viem";
+import { type Address, getAddress, isAddressEqual } from "viem";
 import type {
 	IAccount,
 	IAccountLiquidity,
@@ -70,40 +70,50 @@ export function computeLiquidationLTV(
 // ---------------------------------------------------------------------------
 
 /**
- * Leverage multiplier for a sub-account (WAD, 1e18 = 1x).
- * `totalCollateralValueUsd / (totalCollateralValueUsd - borrowedValueUsd)`.
+ * Leverage multiplier for a sub-account (1 = 1x).
+ * `suppliedCollateralValueUsd / (suppliedCollateralValueUsd - borrowedValueUsd)`.
  */
 export function computeMultiplier(
 	subAccount: ISubAccount<IHasVaultAddress>,
-): bigint | undefined {
-	const liq = findLiquidity(subAccount);
-	if (!liq?.totalCollateralValueUsd) return undefined;
+): number | undefined {
+	const borrow = findBorrowPosition(subAccount);
+	if (!borrow) return undefined;
+	return computeCollateralMultiplier(
+		sumPositionUsd(
+			findCollateralPositionsForBorrow(subAccount, borrow),
+			"suppliedValueUsd",
+		),
+		borrow.borrowedValueUsd,
+	);
+}
 
-	const borrowedUsd = findBorrowedValueUsd(subAccount);
-	if (borrowedUsd == null) return undefined;
-
-	const equity = liq.totalCollateralValueUsd - borrowedUsd;
-	if (equity <= 0n) return undefined;
-	return (liq.totalCollateralValueUsd * WAD) / equity;
+export function computeCollateralMultiplier(
+	suppliedValueUsd: number | undefined,
+	borrowedValueUsd: number | undefined,
+): number | undefined {
+	if (suppliedValueUsd == null || borrowedValueUsd == null) return undefined;
+	const equity = suppliedValueUsd - borrowedValueUsd;
+	if (equity <= 0) return undefined;
+	return suppliedValueUsd / equity;
 }
 
 /**
- * Total collateral value in USD for a sub-account (18 dec).
+ * Total collateral value in USD for a sub-account.
  * Sourced from sub-account liquidity and populated by `populateMarketPrices`.
  */
 export function computeSubAccountTotalCollateralValueUsd(
 	subAccount: ISubAccount<IHasVaultAddress>,
-): bigint | undefined {
+): number | undefined {
 	return findLiquidity(subAccount)?.totalCollateralValueUsd;
 }
 
 /**
- * Liability value in USD for a sub-account (18 dec).
+ * Liability value in USD for a sub-account.
  * Sourced from sub-account liquidity and populated by `populateMarketPrices`.
  */
 export function computeSubAccountLiabilityValueUsd(
 	subAccount: ISubAccount<IHasVaultAddress>,
-): bigint | undefined {
+): number | undefined {
 	return findLiquidity(subAccount)?.liabilityValueUsd;
 }
 
@@ -112,19 +122,19 @@ export function computeSubAccountLiabilityValueUsd(
  */
 export function computeSubAccountNetValueUsd(
 	subAccount: ISubAccount<IHasVaultAddress>,
-): bigint | undefined {
-	let supplied: bigint | undefined;
-	let borrowed: bigint | undefined;
+): number | undefined {
+	let supplied: number | undefined;
+	let borrowed: number | undefined;
 
 	for (const p of subAccount.positions) {
 		if (p.suppliedValueUsd != null)
-			supplied = (supplied ?? 0n) + p.suppliedValueUsd;
+			supplied = (supplied ?? 0) + p.suppliedValueUsd;
 		if (p.borrowedValueUsd != null)
-			borrowed = (borrowed ?? 0n) + p.borrowedValueUsd;
+			borrowed = (borrowed ?? 0) + p.borrowedValueUsd;
 	}
 
 	if (supplied == null) return undefined;
-	return supplied - (borrowed ?? 0n);
+	return supplied - (borrowed ?? 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +185,7 @@ export function computeBorrowLiquidationPrice(
 
 /**
  * ROE (Return on Equity) breakdown for a sub-account.
- * All values are decimal fractions (0.05 = 5%).
+ * All values are percentage points (5 = 5%).
  */
 export interface SubAccountRoe {
 	/** ROE contribution from base supply APYs. */
@@ -192,7 +202,7 @@ export interface SubAccountRoe {
 
 /**
  * APY/ROE contribution breakdown.
- * All values are decimal fractions (0.05 = 5%).
+ * All values are percentage points (5 = 5%).
  */
 export interface YieldApyBreakdown {
 	/** Contribution from base supply APYs. */
@@ -229,8 +239,8 @@ export function computeSubAccountRoe(
 		const intrinsicApyDecimal = getVaultIntrinsicApy(vault);
 
 		// Supply side
-		if (p.suppliedValueUsd != null && p.suppliedValueUsd > 0n) {
-			const supplyUsd = Number(p.suppliedValueUsd) / 1e18;
+		if (p.suppliedValueUsd != null && p.suppliedValueUsd > 0) {
+			const supplyUsd = p.suppliedValueUsd;
 
 			const supplyApy = getVaultSupplyApy(vault);
 			if (supplyApy != null) {
@@ -243,8 +253,8 @@ export function computeSubAccountRoe(
 		}
 
 		// Borrow side
-		if (p.borrowedValueUsd != null && p.borrowedValueUsd > 0n) {
-			const borrowUsd = Number(p.borrowedValueUsd) / 1e18;
+		if (p.borrowedValueUsd != null && p.borrowedValueUsd > 0) {
+			const borrowUsd = p.borrowedValueUsd;
 			const borrowApy = getVaultBorrowApy(vault);
 			if (borrowApy != null) {
 				hasData = true;
@@ -472,13 +482,47 @@ function findLiquidity<T extends IHasVaultAddress>(
 	return undefined;
 }
 
-function findBorrowedValueUsd<T extends IHasVaultAddress>(
+function findBorrowPosition<T extends IHasVaultAddress>(
 	subAccount: ISubAccount<T>,
-): bigint | undefined {
-	for (const p of subAccount.positions) {
-		if (p.borrowedValueUsd != null) return p.borrowedValueUsd;
+): ISubAccount<T>["positions"][number] | undefined {
+	return subAccount.positions.find((position) => position.borrowed > 0n);
+}
+
+function findCollateralPositionsForBorrow<T extends IHasVaultAddress>(
+	subAccount: ISubAccount<T>,
+	borrow: ISubAccount<T>["positions"][number],
+): ISubAccount<T>["positions"][number][] {
+	const collateralAddresses =
+		borrow.liquidity?.collaterals.map((collateral) =>
+			getAddress(collateral.address),
+		) ??
+		subAccount.enabledCollaterals.map((collateral) => getAddress(collateral));
+
+	const collateralPositions = collateralAddresses.flatMap(
+		(collateralAddress) => {
+			const position = subAccount.positions.find((candidate) =>
+				isAddressEqual(candidate.vaultAddress, collateralAddress),
+			);
+			return position ? [position] : [];
+		},
+	);
+
+	return collateralPositions.length > 0
+		? collateralPositions
+		: subAccount.positions.filter((position) => position.isCollateral);
+}
+
+function sumPositionUsd(
+	positions: Iterable<AccountYieldPosition>,
+	field: "suppliedValueUsd" | "borrowedValueUsd",
+): number | undefined {
+	let total: number | undefined;
+	for (const position of positions) {
+		if (position[field] != null) {
+			total = (total ?? 0) + position[field]!;
+		}
 	}
-	return undefined;
+	return total;
 }
 
 interface AccountYieldTotals {
@@ -493,8 +537,8 @@ interface AccountYieldTotals {
 
 export interface AccountYieldPosition {
 	vault?: IHasVaultAddress;
-	suppliedValueUsd?: bigint;
-	borrowedValueUsd?: bigint;
+	suppliedValueUsd?: number;
+	borrowedValueUsd?: number;
 }
 
 function computeAccountYieldTotals(
@@ -526,8 +570,8 @@ function computePositionYieldTotals(
 		const vault = position.vault as any;
 		if (!vault) continue;
 
-		if (position.suppliedValueUsd != null && position.suppliedValueUsd > 0n) {
-			const supplyUsd = Number(position.suppliedValueUsd) / 1e18;
+		if (position.suppliedValueUsd != null && position.suppliedValueUsd > 0) {
+			const supplyUsd = position.suppliedValueUsd;
 			const baseSupplyApy = getVaultSupplyApy(vault) ?? 0;
 			const intrinsicSupplyApy = getIntrinsicApyContribution(
 				baseSupplyApy,
@@ -544,8 +588,8 @@ function computePositionYieldTotals(
 			hasUsdData = true;
 		}
 
-		if (position.borrowedValueUsd != null && position.borrowedValueUsd > 0n) {
-			const borrowUsd = Number(position.borrowedValueUsd) / 1e18;
+		if (position.borrowedValueUsd != null && position.borrowedValueUsd > 0) {
+			const borrowUsd = position.borrowedValueUsd;
 			const baseBorrowApy = getVaultBorrowApy(vault) ?? 0;
 			const intrinsicBorrowApy = getIntrinsicApyContribution(
 				baseBorrowApy,
@@ -604,14 +648,16 @@ function zeroYieldApyBreakdown(): YieldApyBreakdown {
 	};
 }
 
-/** Duck-type supply APY from a vault entity (EVault string or EulerEarn number getter). */
+/** Duck-type supply APY from a vault entity (percentage points). */
 function getVaultSupplyApy(vault: any): number | undefined {
-	// EVault: interestRates.supplyAPY (string, decimal fraction via formatUnits(_, 27))
 	if (vault.interestRates?.supplyAPY != null) {
-		const val = parseFloat(vault.interestRates.supplyAPY);
+		const val =
+			typeof vault.interestRates.supplyAPY === "number"
+				? vault.interestRates.supplyAPY
+				: parseFloat(vault.interestRates.supplyAPY);
 		return Number.isFinite(val) ? val : undefined;
 	}
-	// EulerEarn: supplyApy1h (decimal fraction)
+	// EulerEarn: supplyApy1h (percentage points)
 	if (typeof vault.supplyApy1h === "number") {
 		return Number.isFinite(vault.supplyApy1h) ? vault.supplyApy1h : undefined;
 	}
@@ -621,19 +667,22 @@ function getVaultSupplyApy(vault: any): number | undefined {
 /** Duck-type borrow APY from a vault entity (EVault only). */
 function getVaultBorrowApy(vault: any): number | undefined {
 	if (vault.interestRates?.borrowAPY != null) {
-		const val = parseFloat(vault.interestRates.borrowAPY);
+		const val =
+			typeof vault.interestRates.borrowAPY === "number"
+				? vault.interestRates.borrowAPY
+				: parseFloat(vault.interestRates.borrowAPY);
 		return Number.isFinite(val) ? val : undefined;
 	}
 	return undefined;
 }
 
-/** Intrinsic APY as a decimal fraction from vault's populated intrinsicApy field. */
+/** Intrinsic APY as percentage points from vault's populated intrinsicApy field. */
 function getVaultIntrinsicApy(vault: any): number {
 	if (
 		vault.intrinsicApy?.apy != null &&
 		typeof vault.intrinsicApy.apy === "number"
 	) {
-		return vault.intrinsicApy.apy / 100;
+		return vault.intrinsicApy.apy;
 	}
 	return 0;
 }
@@ -642,16 +691,16 @@ function getIntrinsicApyContribution(
 	baseApy: number,
 	intrinsicApy: number,
 ): number {
-	return (1 + baseApy) * intrinsicApy;
+	return (1 + baseApy / 100) * intrinsicApy;
 }
 
-/** Sum reward APRs for a given action (LEND or BORROW) from vault campaigns. */
+/** Sum reward APRs for a given action as percentage points from vault campaigns. */
 function getVaultRewardApr(vault: any, action: string): number {
 	if (!vault.rewards?.campaigns) return 0;
 	let total = 0;
 	for (const c of vault.rewards.campaigns) {
 		if (c.action === action && typeof c.apr === "number") {
-			total += c.apr;
+			total += c.apr * 100;
 		}
 	}
 	return total;

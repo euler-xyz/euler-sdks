@@ -5,9 +5,9 @@
 ```typescript
 import { buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 
+// Set EULER_SDK_RPC_URL_1=https://... in the environment for on-chain reads.
 const sdk = await buildEulerSDK({
-  rpcUrls: { 1: 'https://...' },           // chainId -> RPC URL
-  queryCacheConfig: { ttlMs: 10_000 },       // Optional: default cache is 5s
+  queryCacheConfig: { ttlMs: 10_000 },     // Optional: default cache is 5s
 })
 ```
 
@@ -17,11 +17,9 @@ const sdk = await buildEulerSDK({
 import { buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 import { parseUnits } from 'viem'
 
-const sdk = await buildEulerSDK({ rpcUrls: { 1: 'https://...' } })
+const sdk = await buildEulerSDK()
 
-const { result: account } = await sdk.accountService.fetchAccount(1, '0xYourAddress...', {
-  populateVaults: false,
-})
+const { result: account } = await sdk.accountService.fetchAccount(1, '0xYourAddress...')
 
 const plan = sdk.executionService.planDeposit({
   vault: '0xVault...',
@@ -36,13 +34,33 @@ const plan = sdk.executionService.planDeposit({
 await sdk.executionService.executeTransactionPlan({
   plan,
   chainId: 1,
-  account: '0xYourAddress...',
+  account,
   sendTransaction: walletClient.sendTransaction,
   signTypedData: walletClient.signTypedData,
 })
 ```
 
-For execution planning and transaction-plan structure, see [Execution Service](./execution-service.md).
+## Fetching Wallet Balances and Allowances
+
+Use `walletService` for wallet-owned token balances and spender allowance state:
+
+```typescript
+import { zeroAddress } from 'viem'
+
+const { result: wallet } = await sdk.walletService.fetchWallet(1, '0xOwner...', [
+  { asset: zeroAddress },
+  { asset: '0xAsset...', spenders: ['0xVaultOrSpender...'] },
+  { asset: '0xOtherAsset...' },
+])
+
+const nativeBalance = wallet.getBalance(zeroAddress)
+const tokenBalance = wallet.getBalance('0xAsset...')
+const allowances = wallet.getAllowances('0xAsset...', '0xVaultOrSpender...')
+
+console.log(nativeBalance, tokenBalance, allowances?.permit2Nonce)
+```
+
+Use `zeroAddress` for the native token balance. Omit `spenders` when only balances are needed. Allowance results include direct ERC20 allowance, ERC20 allowance to Permit2, Permit2 spender allowance, Permit2 expiration, and Permit2 nonce. See [Wallet Service](./wallet-service.md) for the full shape.
 
 ## Fetching Accounts
 
@@ -73,17 +91,17 @@ const { result: portfolio } = await sdk.portfolioService.fetchPortfolio(1, '0xOw
 const { savings, borrows } = portfolio
 
 for (const saving of savings) {
-  console.log('saving', saving.subAccount, saving.position.vaultAddress, saving.assets)
+  console.log('saving', saving.subAccount, saving.position.vaultAddress, saving.assets, saving.apy)
 }
 
-for (const { borrow, collaterals, healthFactor, userLTV } of borrows) {
+for (const { borrow, collaterals, healthFactor, userLTV, liquidatable, roe } of borrows) {
   console.log('borrow', borrow.account, borrow.vaultAddress, borrow.borrowed)
   console.log('collaterals', collaterals.map((collateral) => collateral.vaultAddress))
-  console.log('risk', healthFactor, userLTV)
+  console.log('risk', healthFactor, userLTV, liquidatable, roe)
 }
 ```
 
-`Portfolio` is built from a fully populated `Account`, but abstracts sub-accounts away into `savings` and `borrows`. `portfolioService.fetchPortfolio` fetches the backing account with `populateAll: true`. Borrow entries preserve the raw `{ borrow, collaterals }` position references and add higher-level fields such as primary collateral, health, LTV, liquidation price, and USD totals. A position with debt is always included as a borrow; any supplied balance on that same position is also treated as savings unless the vault is active collateral for a borrow in the same sub-account.
+`Portfolio` is built from a fully populated `Account`, but abstracts sub-accounts away into `savings` and `borrows`. `portfolioService.fetchPortfolio` fetches the backing account with `populateAll: true`. Borrow entries preserve the raw `{ borrow, collaterals }` position references and add higher-level fields such as primary collateral, health, LTV, liquidation price, `liquidatable`, multiplier, APY/ROE breakdowns, and USD totals. A position with debt is always included as a borrow; any supplied balance on that same position is also treated as savings unless the vault is active collateral for a borrow in the same sub-account.
 
 Filter positions from every Portfolio computed property with:
 
@@ -179,10 +197,10 @@ Use type guards to narrow:
 import { isEVault, isEulerEarn, isSecuritizeCollateralVault } from '@eulerxyz/euler-v2-sdk'
 
 if (isEVault(vault)) {
-  console.log(vault.interestRates.supplyAPY)
+  console.log(vault.interestRates.supplyAPY) // percentage points, e.g. 5 = 5%
   console.log(vault.collaterals.length)
 } else if (isEulerEarn(vault)) {
-  console.log(vault.supplyApy)   // alias of vault.supplyApy1h
+  console.log(vault.supplyApy)   // alias of vault.supplyApy1h, also percentage points
   console.log(vault.supplyApy1h)
   console.log(vault.strategies.length)
 }
@@ -198,7 +216,8 @@ const inputAddresses = [
 ];
 const { result: vaults, errors } = await sdk.vaultMetaService.fetchVaults(1, inputAddresses);
 // `vaults[i]` matches `inputAddresses[i]`.
-// On per-vault failure, `vaults[i]` is undefined and diagnostics include `entityId = inputAddresses[i]`.
+// On per-vault failure, `vaults[i]` is undefined and diagnostics include
+// a location whose owner is `{ kind: "vault", address: inputAddresses[i], ... }`.
 ```
 
 ## Fetching Verified Vaults (Perspectives)
@@ -299,12 +318,13 @@ const { result: eVaultsOnly } = await sdk.vaultMetaService.fetchAllVaults(1, {
 
 ## Oracle Adapter Metadata
 
-Use `oracleAdapterService` to get adapter provider/methodology/check metadata for oracle adapter addresses:
+Use `oracleAdapterService` to get provider/methodology/check metadata for oracle adapter entries. `fetchOracleAdapterMap()` is keyed by the normalized `adapter.oracle` address and each metadata entry also exposes normalized `oracle`, `base`, and `quote` addresses when present:
 
 ```typescript
 const adapterMap = await sdk.oracleAdapterService.fetchOracleAdapterMap(1);
-const metadata = adapterMap['0xAdapterAddress...'.toLowerCase()];
-console.log(metadata?.provider, metadata?.methodology, metadata?.checks);
+const adapter = vault.oracle.adapters[0];
+const metadata = adapterMap[adapter.oracle.toLowerCase()];
+console.log(metadata?.provider, metadata?.base, metadata?.quote, metadata?.checks);
 ```
 
 ## How Vault Types Work

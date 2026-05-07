@@ -1,10 +1,14 @@
-import type { DataIssue } from "./entityDiagnostics.js";
+import {
+	dataIssueLocation,
+	type DataIssue,
+	type DataIssueOwnerRef,
+} from "./entityDiagnostics.js";
 
 type BigintToSafeNumberParams = {
 	path: string;
 	errors: DataIssue[];
 	source: string;
-	entityId?: string;
+	owner: DataIssueOwnerRef;
 	message?: string;
 };
 
@@ -12,7 +16,7 @@ export function bigintToSafeNumber(
 	value: bigint,
 	params: BigintToSafeNumberParams,
 ): number {
-	const { path, errors, source, entityId } = params;
+	const { path, errors, source, owner } = params;
 
 	if (
 		value <= BigInt(Number.MAX_SAFE_INTEGER) &&
@@ -29,9 +33,8 @@ export function bigintToSafeNumber(
 		message:
 			params.message ??
 			"BigInt value exceeded JavaScript safe number range and was clamped.",
-		paths: [path],
+		locations: [dataIssueLocation(owner, path)],
 		source,
-		entityId,
 		originalValue: value.toString(),
 		normalizedValue: clamped,
 	});
@@ -42,7 +45,7 @@ type NumberLikeToSafeFiniteNumberParams = {
 	path: string;
 	errors: DataIssue[];
 	source: string;
-	entityId?: string;
+	owner: DataIssueOwnerRef;
 	fallback?: number;
 	message?: string;
 };
@@ -58,7 +61,7 @@ export function numberLikeToSafeFiniteNumber(
 			path: params.path,
 			errors: params.errors,
 			source: params.source,
-			entityId: params.entityId,
+			owner: params.owner,
 			message: params.message,
 		});
 	}
@@ -71,9 +74,8 @@ export function numberLikeToSafeFiniteNumber(
 		message:
 			params.message ??
 			"Non-finite number encountered and fallback value applied.",
-		paths: [params.path],
+		locations: [dataIssueLocation(params.owner, params.path)],
 		source: params.source,
-		entityId: params.entityId,
 		originalValue: String(value),
 		normalizedValue: fallback,
 	});
@@ -84,7 +86,7 @@ type BigintToScaledNumberParams = {
 	path: string;
 	errors: DataIssue[];
 	source: string;
-	entityId?: string;
+	owner: DataIssueOwnerRef;
 	scale: number;
 	maxUnscaled?: bigint;
 	minUnscaled?: bigint;
@@ -95,7 +97,7 @@ export function bigintToScaledNumber(
 	value: bigint,
 	params: BigintToScaledNumberParams,
 ): number {
-	const { path, errors, source, entityId, maxUnscaled, minUnscaled, scale } =
+	const { path, errors, source, owner, maxUnscaled, minUnscaled, scale } =
 		params;
 
 	if (maxUnscaled !== undefined && value > maxUnscaled) {
@@ -105,9 +107,8 @@ export function bigintToScaledNumber(
 			message:
 				params.overflowMessage ??
 				"Value exceeded maximum allowed range and was clamped.",
-			paths: [path],
+			locations: [dataIssueLocation(owner, path)],
 			source,
-			entityId,
 			originalValue: value.toString(),
 			normalizedValue: maxUnscaled.toString(),
 		});
@@ -121,9 +122,8 @@ export function bigintToScaledNumber(
 			message:
 				params.overflowMessage ??
 				"Value exceeded minimum allowed range and was clamped.",
-			paths: [path],
+			locations: [dataIssueLocation(owner, path)],
 			source,
-			entityId,
 			originalValue: value.toString(),
 			normalizedValue: minUnscaled.toString(),
 		});
@@ -131,4 +131,52 @@ export function bigintToScaledNumber(
 	}
 
 	return Number(value) / scale;
+}
+
+export function scaledBigIntToNumber(value: bigint, decimals: number): number {
+	return Number(value) / 10 ** decimals;
+}
+
+export function tokenAmountToUsdValue(
+	amount: bigint,
+	decimals: number,
+	priceUsd: number,
+): number {
+	return scaledBigIntToNumber(amount, decimals) * priceUsd;
+}
+
+export function wadToNumber(value: bigint | undefined): number | undefined {
+	return value === undefined ? undefined : scaledBigIntToNumber(value, 18);
+}
+
+export function bigintRatioToNumber(
+	numerator: bigint,
+	denominator: bigint,
+): number | undefined {
+	if (denominator === 0n) return undefined;
+	return Number(numerator) / Number(denominator);
+}
+
+export function bigintPercentage(
+	numerator: bigint,
+	denominator: bigint,
+	precision = 4,
+): number {
+	if (denominator <= 0n) return numerator > 0n ? 100 : 0;
+	const scale = 10n ** BigInt(precision);
+	const scaled = (numerator * scale * 100n) / denominator;
+	const whole = scaled / scale;
+	const fraction = scaled % scale;
+	return Number.parseFloat(
+		`${whole}.${fraction.toString().padStart(precision, "0")}`,
+	);
+}
+
+export function wadRatioToDecimal(
+	value: bigint | undefined,
+): number | undefined {
+	if (value === undefined) return undefined;
+	const precision = 4;
+	const scale = 10n ** BigInt(18 - precision);
+	return Number((value + scale / 2n) / scale) / 10 ** precision;
 }

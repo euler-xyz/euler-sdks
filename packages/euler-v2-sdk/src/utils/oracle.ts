@@ -410,6 +410,7 @@ export const decodeOracleInfo = (
 				const child = decoded.resolvedOraclesInfo?.[i];
 				const base = decoded.bases?.[i];
 				const quote = decoded.quotes?.[i];
+				const resolvedAssets = decoded.resolvedAssets?.[i] ?? [];
 				if (!child) continue;
 				if (targetBase && targetQuote) {
 					if (!base || !quote) continue;
@@ -420,7 +421,21 @@ export const decodeOracleInfo = (
 						continue;
 					matched = true;
 				}
-				visit(child, depth + 1, { base, quote });
+				for (let j = 0; j < resolvedAssets.length - 1; j += 1) {
+					addAdapter(
+						{
+							oracle: resolvedAssets[j]!,
+							name: "ERC4626Vault",
+							oracleInfo: "0x",
+						},
+						resolvedAssets[j]!,
+						resolvedAssets[j + 1]!,
+					);
+				}
+				visit(child, depth + 1, {
+					base: resolvedAssets.at(-1) ?? base,
+					quote,
+				});
 			}
 			if (
 				decoded.fallbackOracleInfo &&

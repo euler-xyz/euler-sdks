@@ -655,6 +655,7 @@ test("resolveRequiredApprovals resets mainnet USDT allowance before direct appro
 					assetForPermit2: 0n,
 					assetForVaultInPermit2: 0n,
 					permit2ExpirationTime: 0,
+					permit2Nonce: 0,
 				},
 			},
 		}),
