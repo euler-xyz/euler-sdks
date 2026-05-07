@@ -75,6 +75,7 @@ function serializeArg(arg: unknown): unknown {
 
 const MINUTE = 60_000;
 const EULER_LABELS_BASE =
+  import.meta.env.EULER_SDK_EULER_LABELS_BASE_URL ??
   "https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master";
 
 const STALE_TIMES: Record<string, number> = {
@@ -150,6 +151,8 @@ const STALE_TIMES: Record<string, number> = {
   // Per-user on-chain state — changes on every tx
   queryEVCAccountInfo: 15_000,
   queryVaultAccountInfo: 15_000,
+  queryNativeBalance: 5_000,
+  queryTokenBalances: 5_000,
   queryBalanceOf: 15_000,
   queryAllowance: 15_000,
   queryPermit2Allowance: 15_000,
@@ -1070,7 +1073,7 @@ export function useWalletBalance(
       const wallet = unwrapServiceResult(
         "walletService.fetchWallet",
         await sdk!.walletService.fetchWallet(chainId, account as Address, [
-          { asset: assetAddress as Address, spenders: [] },
+          { asset: assetAddress as Address },
         ])
       ) as Wallet;
       return wallet.getBalance(assetAddress as Address);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { getAddress, zeroAddress } from "viem";
+import { getAddress, type Address, zeroAddress } from "viem";
 
 import { AccountService } from "../src/services/accountService/accountService.js";
 import { RewardsV3Adapter } from "../src/services/rewardsService/adapters/rewardsV3Adapter/index.js";
@@ -1339,13 +1339,22 @@ test("evault service setters and empty branches are exercised", async () => {
 });
 
 test("wallet onchain adapter setters, query wrappers, and top-level failure are covered", async () => {
+	const asset = "0x0000000000000000000000000000000000000002" as Address;
+	const spender = "0x0000000000000000000000000000000000000003" as Address;
+	const permit2 = "0x0000000000000000000000000000000000000004" as Address;
+	const utilsLens = "0x0000000000000000000000000000000000000005" as Address;
+	const secondSpender = "0x0000000000000000000000000000000000000006" as Address;
 	const adapter = new WalletOnchainAdapter(
 		{
 			getProvider() {
 				return {
+					getBalance() {
+						return Promise.resolve(6n);
+					},
 					readContract({ functionName }: { functionName: string }) {
 						if (functionName === "balanceOf") return Promise.resolve(1n);
 						if (functionName === "allowance") return Promise.resolve(2n);
+						if (functionName === "tokenBalances") return Promise.resolve([3n]);
 						return Promise.resolve([3n, 4, 5]);
 					},
 				};
@@ -1353,7 +1362,7 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 		} as any,
 		{
 			getDeployment() {
-				return { addresses: { coreAddrs: { permit2: zeroAddress } } };
+				return { addresses: { coreAddrs: { permit2 }, lensAddrs: { utilsLens } } };
 			},
 		} as any,
 	);
@@ -1374,8 +1383,13 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 		{
 			getProvider() {
 				return {
-					readContract({ functionName }: { functionName: string }) {
+					getBalance() {
+						return Promise.resolve(6n);
+					},
+					readContract({ functionName, address }: { functionName: string; address: string }) {
+						if (functionName === "tokenBalances") return Promise.resolve([6n]);
 						if (functionName === "balanceOf") return Promise.resolve(1n);
+						if (functionName === "allowance" && address === permit2) return Promise.resolve([3n, 4, 5]);
 						if (functionName === "allowance") return Promise.resolve(2n);
 						return Promise.resolve([3n, 2n ** 60n, 0]);
 					},
@@ -1384,13 +1398,17 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 		} as any,
 		{
 			getDeployment() {
-				return { addresses: { coreAddrs: { permit2: zeroAddress } } };
+				return { addresses: { coreAddrs: { permit2 }, lensAddrs: { utilsLens } } };
 			},
 		} as any,
 	);
+	working.setQueryNativeBalance(working.queryNativeBalance);
+	working.setQueryTokenBalances(working.queryTokenBalances);
 	working.setQueryBalanceOf(working.queryBalanceOf);
 	working.setQueryAllowance(working.queryAllowance);
 	working.setQueryPermit2Allowance(working.queryPermit2Allowance);
+	assert.equal(await working.queryNativeBalance({ getBalance: () => Promise.resolve(6n) } as any, zeroAddress), 6n);
+	assert.deepEqual(await working.queryTokenBalances({ readContract: ({}) => Promise.resolve([6n]) } as any, utilsLens, zeroAddress, [asset]), [6n]);
 	assert.equal(await working.queryBalanceOf({ readContract: ({}) => Promise.resolve(7n) } as any, zeroAddress, zeroAddress), 7n);
 	assert.equal(await working.queryAllowance({ readContract: ({}) => Promise.resolve(8n) } as any, zeroAddress, zeroAddress, zeroAddress), 8n);
 	assert.deepEqual(
@@ -1398,14 +1416,35 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 		[9n, 10, 11],
 	);
 	const invalidWallet = await working.fetchWallet(1, zeroAddress, [
-		{ asset: zeroAddress, spenders: [undefined as any, zeroAddress] },
+		{ asset, spenders: [undefined as any, zeroAddress] },
 	]);
 	assert.equal(invalidWallet.result, undefined);
 	assert.ok(invalidWallet.errors.some((issue) => issue.source === "walletOnchainAdapter"));
 	const wallet = await working.fetchWallet(1, zeroAddress, [
-		{ asset: zeroAddress, spenders: [zeroAddress] },
+		{ asset: zeroAddress },
+		{ asset, spenders: [spender] },
 	]);
-	assert.equal(wallet.result?.assets[0]?.allowances[zeroAddress]?.permit2ExpirationTime, 0);
+	assert.equal(
+		wallet.result?.assets.find((entry) => entry.asset === zeroAddress)?.balance,
+		6n,
+	);
+	const tokenWalletAsset = wallet.result?.assets.find((entry) => entry.asset === asset);
+	assert.equal(tokenWalletAsset?.balance, 6n);
+	assert.equal(tokenWalletAsset?.allowances[getAddress(spender)]?.permit2ExpirationTime, 4);
+	assert.equal(tokenWalletAsset?.allowances[getAddress(spender)]?.permit2Nonce, 5);
+	const duplicateAssetWallet = await working.fetchWallet(1, zeroAddress, [
+		{ asset, spenders: [spender] },
+		{ asset, spenders: [secondSpender] },
+	]);
+	assert.equal(duplicateAssetWallet.result?.assets.length, 1);
+	assert.equal(
+		duplicateAssetWallet.result?.assets[0]?.allowances[getAddress(spender)]?.assetForVault,
+		2n,
+	);
+	assert.equal(
+		duplicateAssetWallet.result?.assets[0]?.allowances[getAddress(secondSpender)]?.assetForVault,
+		2n,
+	);
 
 	const skipSpender = [undefined] as unknown as `0x${string}`[];
 	skipSpender.map = (() => [
@@ -1421,7 +1460,7 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 		}),
 	]) as any;
 	const skippedSpenderWallet = await working.fetchWallet(1, zeroAddress, [
-		{ asset: zeroAddress, spenders: skipSpender as any },
+		{ asset, spenders: skipSpender as any },
 	]);
 	assert.deepEqual(
 		skippedSpenderWallet.result?.assets[0]?.allowances ?? {},
@@ -1431,20 +1470,21 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 	const missingResultSpenders = [zeroAddress] as `0x${string}`[];
 	missingResultSpenders.map = (() => []) as any;
 	const missingResultWallet = await working.fetchWallet(1, zeroAddress, [
-		{ asset: zeroAddress, spenders: missingResultSpenders as any },
+		{ asset, spenders: missingResultSpenders as any },
 	]);
-	assert.deepEqual(
-		missingResultWallet.result?.assets[0]?.allowances ?? {},
-		{},
+	assert.equal(
+		missingResultWallet.result?.assets[0]?.allowances[getAddress(zeroAddress)]?.assetForVault,
+		2n,
 	);
 
 	const permit2ApprovalFailure = new WalletOnchainAdapter(
 		{ getProvider() { return {}; } } as any,
-		{ getDeployment() { return { addresses: { coreAddrs: { permit2: zeroAddress } } }; } } as any,
+		{ getDeployment() { return { addresses: { coreAddrs: { permit2 }, lensAddrs: { utilsLens } } }; } } as any,
 	);
+	permit2ApprovalFailure.setQueryTokenBalances(async () => [1n]);
 	permit2ApprovalFailure.setQueryBalanceOf(async () => 1n);
 	permit2ApprovalFailure.setQueryAllowance(async (_provider, _asset, _owner, spender) => {
-		if (spender === zeroAddress) throw new Error("permit2-approval");
+		if (spender === permit2) throw new Error("permit2-approval");
 		return 2n;
 	});
 	permit2ApprovalFailure.setQueryPermit2Allowance(async () => [3n, 4, 5]);
@@ -1461,12 +1501,12 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 		} as any,
 		{
 			getDeployment() {
-				return { addresses: { coreAddrs: { permit2: zeroAddress } } };
+				return { addresses: { coreAddrs: { permit2 }, lensAddrs: { utilsLens } } };
 			},
 		} as any,
 	);
 	const brokenAssets = [{ asset: zeroAddress, spenders: [zeroAddress] }] as any[];
-	brokenAssets.map = () => {
+	brokenAssets.reduce = () => {
 		throw "wallet-string";
 	};
 	const topLevelFailure = await stringTopLevelFailure.fetchWallet(

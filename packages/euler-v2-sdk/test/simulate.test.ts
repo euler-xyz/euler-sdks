@@ -238,6 +238,7 @@ test("simulateTransactionPlan reports direct allowance deficits from spender all
 								assetForPermit2: 95n,
 								assetForVaultInPermit2: 1_000n,
 								permit2ExpirationTime: Math.floor(Date.now() / 1000) + 60,
+								permit2Nonce: 0,
 							},
 						},
 					}),

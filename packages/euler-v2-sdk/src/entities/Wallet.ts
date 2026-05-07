@@ -1,4 +1,4 @@
-import { type Address, isAddressEqual } from "viem";
+import { type Address, getAddress, isAddressEqual } from "viem";
 
 export interface IWallet {
 	chainId: number;
@@ -11,6 +11,7 @@ export interface AssetAllowances {
 	assetForPermit2: bigint;
 	assetForVaultInPermit2: bigint;
 	permit2ExpirationTime: number;
+	permit2Nonce: number;
 }
 
 export interface WalletAsset {
@@ -40,6 +41,6 @@ export class Wallet implements IWallet {
 	}
 
 	getAllowances(asset: Address, spender: Address): AssetAllowances | undefined {
-		return this.getAsset(asset)?.allowances[spender];
+		return this.getAsset(asset)?.allowances[getAddress(spender)];
 	}
 }

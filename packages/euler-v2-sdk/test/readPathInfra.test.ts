@@ -410,7 +410,13 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
     { asset: plainVault.asset.address, spenders: [plainVault.address] },
     { asset: collateralVault.asset.address, spenders: [plainVault.address] },
   ]);
-  assert.equal(fetchedWallet.result?.assets.length, 1);
+  assert.equal(fetchedWallet.result?.assets.length, 2);
+  assert.equal(
+    fetchedWallet.result?.assets.find(
+      (asset) => asset.asset === plainVault.asset.address,
+    )?.balance,
+    0n,
+  );
   assert.ok(fetchedWallet.errors.length >= 3);
 
   const walletService = new WalletService({
@@ -438,6 +444,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
                   assetForPermit2: 2n,
                   assetForVaultInPermit2: 3n,
                   permit2ExpirationTime: 4,
+                  permit2Nonce: 5,
                 },
               },
             },

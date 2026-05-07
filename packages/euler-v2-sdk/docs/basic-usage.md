@@ -5,8 +5,8 @@
 ```typescript
 import { buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 
+// Set EULER_SDK_RPC_URL_1=https://... in the environment for on-chain reads.
 const sdk = await buildEulerSDK({
-  rpcUrls: { 1: 'https://...' },           // chainId -> RPC URL
   queryCacheConfig: { ttlMs: 10_000 },     // Optional: default cache is 5s
 })
 ```
@@ -17,7 +17,7 @@ const sdk = await buildEulerSDK({
 import { buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 import { parseUnits } from 'viem'
 
-const sdk = await buildEulerSDK({ rpcUrls: { 1: 'https://...' } })
+const sdk = await buildEulerSDK()
 
 const { result: account } = await sdk.accountService.fetchAccount(1, '0xYourAddress...')
 
@@ -40,6 +40,27 @@ await sdk.executionService.executeTransactionPlan({
 })
 ```
 
+## Fetching Wallet Balances and Allowances
+
+Use `walletService` for wallet-owned token balances and spender allowance state:
+
+```typescript
+import { zeroAddress } from 'viem'
+
+const { result: wallet } = await sdk.walletService.fetchWallet(1, '0xOwner...', [
+  { asset: zeroAddress },
+  { asset: '0xAsset...', spenders: ['0xVaultOrSpender...'] },
+  { asset: '0xOtherAsset...' },
+])
+
+const nativeBalance = wallet.getBalance(zeroAddress)
+const tokenBalance = wallet.getBalance('0xAsset...')
+const allowances = wallet.getAllowances('0xAsset...', '0xVaultOrSpender...')
+
+console.log(nativeBalance, tokenBalance, allowances?.permit2Nonce)
+```
+
+Use `zeroAddress` for the native token balance. Omit `spenders` when only balances are needed. Allowance results include direct ERC20 allowance, ERC20 allowance to Permit2, Permit2 spender allowance, Permit2 expiration, and Permit2 nonce. See [Wallet Service](./wallet-service.md) for the full shape.
 
 ## Fetching Accounts
 

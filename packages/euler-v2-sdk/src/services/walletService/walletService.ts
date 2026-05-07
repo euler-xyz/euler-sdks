@@ -9,7 +9,7 @@ import {
 
 export interface AssetWithSpenders {
 	asset: Address;
-	spenders: Address[];
+	spenders?: Address[];
 }
 
 export interface IWalletAdapter {

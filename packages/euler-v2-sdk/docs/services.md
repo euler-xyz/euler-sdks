@@ -30,7 +30,8 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 
 ## Supporting and Infrastructure Services
 
-- `walletService`: Fetches wallet balances and allowances.
+- `walletService`: Fetches native/ERC20 wallet balances and direct/Permit2 allowances for requested assets/spenders.
+  See: [`wallet-service.md`](./wallet-service.md)
 - `priceService`: Resolves market prices used for valuation and computed account metrics.
 - `oracleAdapterService`: Fetches oracle adapter metadata/checks (provider, methodology, checks) from the oracle checks dataset and builds maps keyed by normalized `adapter.oracle` address for UI/tooling.
 - `rewardsService`: Fetches reward campaign data used to populate vault/account rewards and builds provider-specific reward claim plans.
@@ -55,6 +56,7 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 | `accountService` | Account/sub-account data | Yes (`populateMarketPrices`) | Yes (`populateUserRewards`) | Via `vaultFetchOptions` | Via `vaultFetchOptions` | Vault enrichment goes through `vaultMetaService` |
 | `portfolioService` | Account-derived portfolio data | Yes (`populateAll`) | Yes (`populateAll`) | Yes (`populateAll`) | Yes (`populateAll`) | Fetches the backing account with `populateAll: true`; see [`portfolio.md`](./portfolio.md) |
 | `executionService` | Simulates plans | Can populate simulated results | Can populate simulated results | Can populate simulated results | Can populate simulated results | Produces transaction plans/EVC batch payloads, resolves approvals, executes plans, and estimates gas |
+| `walletService` | Wallet assets only | No | No | No | No | Fetches requested native/ERC20 balances and direct/Permit2 allowances; `spenders` are optional when only balances are needed |
 | `swapService` | No (quotes only) | No | No | No | No | Returns swap quotes/providers for execution plans |
 | `oracleAdapterService` | No | No | No | No | No | Oracle adapter metadata API (`fetchOracleAdapters`, `fetchOracleAdapterMap`, `enrichAdapters`); maps are keyed by `adapter.oracle.toLowerCase()` |
 

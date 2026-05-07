@@ -105,6 +105,7 @@ ANVIL_EXAMPLES=(
   "execution/deposit-with-swap-from-wallet-example.ts"
   "execution/swap-from-wallet-example.ts"
   "execution/fee-flow-example.ts"
+  "wallets/fetch-wallet-example.ts"
   "simulations/simulate-deposit-example.ts"
   "simulations/simulate-deposit-with-swap-from-wallet-example.ts"
 )
