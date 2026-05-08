@@ -35,7 +35,7 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 - `executionService` for plan simulation and pre-trade validation
 - `swapService` for quotes and providers
 - `oracleAdapterService` for oracle adapter metadata keyed by normalized `adapter.oracle` address
-- `rewardsService` for reward reads and provider-specific reward claim planning
+- `rewardsService` for reward reads and provider-specific reward claim planning; the default V3 path normalizes Incentra rows as Brevis and returns direct proof-backed Brevis rows when V3 lacks claim metadata
 - `eulerLabelsService` plus exported label helpers for normalized products, Earn entries, notices, restrictions, and product/vault flags
 
 Built-in scalar config resolves as `config` prop, explicit SDK option, `EULER_SDK_*` env var, then default. Prefer `EULER_SDK_RPC_URL_<chainId>` for examples and `buildEulerSDK({ config: { rpcUrls, v3ApiUrl, v3ApiKey } })` for app-level runtime wiring that cannot rely on env.

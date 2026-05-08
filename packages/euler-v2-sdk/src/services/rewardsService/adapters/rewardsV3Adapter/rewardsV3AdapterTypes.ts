@@ -96,6 +96,8 @@ export type V3RewardsBreakdownRow = {
 	rewardTokenName?: string;
 	rewardTokenDecimals?: number | string;
 	rewardTokenPriceUsd?: number | string;
+	campaignId?: string;
+	id?: string;
 	accumulated?: string | number;
 	accumulatedAmount?: string | number;
 	totalAccumulated?: string | number;

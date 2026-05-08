@@ -71,7 +71,7 @@ Use explicit nested service config when the option is a function or a custom obj
 | `v3ApiKey` | none | Shared `X-API-Key` header for built-in V3 HTTP adapters |
 | `pricingServiceConfig` | `https://v3.eul.dev` | V3 USD pricing endpoint with on-chain oracle fallback |
 | `swapServiceConfig` | Euler swap API | Swap quote fetching |
-| `rewardsServiceConfig` | `v3` adapter with direct fallback reads | Reward campaign data, per-user rewards, and reward claim planning |
+| `rewardsServiceConfig` | `v3` adapter with direct Brevis/Fuul helper reads | Reward campaign data, per-user rewards, and reward claim planning |
 | `intrinsicApyServiceConfig` | V3 intrinsic APY API | Underlying yield data for vault assets |
 | `buildQuery` | 5s in-memory cache | Wrap all external queries for caching, logging, or profiling |
 | `queryCacheConfig` | `{ enabled: true, ttlMs: 5000 }` | Built-in query cache settings when `buildQuery` is not supplied |

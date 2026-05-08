@@ -61,6 +61,10 @@ function formatSignedPercent(value: number): string {
   return formatted;
 }
 
+function formatRewardProvider(provider: UserReward["provider"]): string {
+  return provider === "brevis" ? "Incentra" : provider;
+}
+
 function formatMultiplier(value: number | undefined): string {
   if (value === undefined) return "-";
   return `${value.toLocaleString("en-US", {
@@ -1229,7 +1233,7 @@ function ChainAccountSection({
                           })}`
                         : "-"}
                     </td>
-                    <td>{reward.provider}</td>
+                    <td>{formatRewardProvider(reward.provider)}</td>
                     <td>
                       {reward.claimAddress
                         ? <CopyAddress address={reward.claimAddress} />

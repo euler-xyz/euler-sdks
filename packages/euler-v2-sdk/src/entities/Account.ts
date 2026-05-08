@@ -404,7 +404,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 	isLockdownMode: boolean;
 	isPermitDisabledMode: boolean;
 	subAccounts: SubAccountsMap<TVaultEntity>;
-	/** Per-user unclaimed rewards from Merkl/Brevis. Populated by `populateUserRewards`. */
+	/** Per-user unclaimed rewards from Merkl, Brevis/Incentra, and Fuul. Populated by `populateUserRewards`. */
 	userRewards?: UserReward[];
 	populated: AccountPopulated;
 
@@ -887,7 +887,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 	}
 
 	/**
-	 * Fetches per-user unclaimed rewards from Merkl and Brevis providers.
+	 * Fetches per-user unclaimed rewards from Merkl, Brevis/Incentra, and Fuul providers.
 	 * Populates `this.userRewards`.
 	 */
 	async populateUserRewards(

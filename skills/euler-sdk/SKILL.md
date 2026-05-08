@@ -46,7 +46,7 @@ Reference these guidelines when:
 - `executionService` for `planX`/`encodeX` and approvals
 - `executionService` for plugin-aware plan simulation, gas estimation, execution, and pre-execution validation
 - `swapService` for provider quotes and route payloads
-- `rewardsService` for reward reads and provider-specific claim plans
+- `rewardsService` for reward reads and provider-specific claim plans; the default V3 path normalizes Incentra rows as Brevis and returns direct proof-backed Brevis rows when V3 lacks claim metadata
 - `eulerLabelsService` plus exported `utils/eulerLabels` helpers for normalized labels metadata, notices, restrictions, and product/vault flags
 - `oracleAdapterService.fetchOracleAdapterMap(chainId)` returns metadata keyed by normalized `adapter.oracle` address
 
