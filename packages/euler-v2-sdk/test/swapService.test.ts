@@ -28,7 +28,10 @@ const AMOUNT_IN_MAX = 1005n;
 const AMOUNT_OUT = 950n;
 const AMOUNT_OUT_MIN = 945n;
 
-function createDeploymentService(swapVerifier?: string): IDeploymentService {
+function createDeploymentService(
+	swapVerifier?: string,
+	swapper: string | undefined = SWAPPER,
+): IDeploymentService {
 	return {
 		getDeploymentChainIds: () => [CHAIN_ID],
 		getDeployment: () =>
@@ -37,6 +40,7 @@ function createDeploymentService(swapVerifier?: string): IDeploymentService {
 				addresses: {
 					peripheryAddrs: {
 						swapVerifier,
+						swapper,
 					},
 				},
 			}) as never,
@@ -163,6 +167,10 @@ function createTargetDebtQuote({
 function createTransferQuote(verifierAddress = VERIFIER): SwapQuote {
 	return {
 		...createQuote({ verifierAddress }),
+		accountIn: "0x0000000000000000000000000000000000000000",
+		accountOut: "0x0000000000000000000000000000000000000000",
+		vaultIn: "0x0000000000000000000000000000000000000000",
+		receiver: RECEIVER,
 		verify: {
 			verifierAddress,
 			verifierData: encodeFunctionData({
@@ -171,8 +179,8 @@ function createTransferQuote(verifierAddress = VERIFIER): SwapQuote {
 				args: [TOKEN_OUT, RECEIVER, AMOUNT_OUT_MIN, BigInt(DEADLINE)],
 			}),
 			type: SwapVerificationType.TransferMin,
-			vault: TOKEN_OUT,
-			account: RECEIVER,
+			vault: RECEIVER,
+			account: "0x0000000000000000000000000000000000000000",
 			amount: AMOUNT_OUT_MIN.toString(),
 			deadline: DEADLINE,
 		},
@@ -233,6 +241,130 @@ test("fetchSwapQuotes rejects verifier calldata that does not match quote fields
 		() => service.fetchSwapQuotes(createRequest()),
 		/SwapVerifier data mismatch/,
 	);
+});
+
+test.each([
+	{
+		name: "tokenIn",
+		mutate: (quote: SwapQuote) => {
+			quote.tokenIn.address = OTHER_VERIFIER;
+		},
+		error: /Swap quote tokenIn mismatch/,
+	},
+	{
+		name: "tokenIn.chainId",
+		mutate: (quote: SwapQuote) => {
+			quote.tokenIn.chainId = CHAIN_ID + 1;
+		},
+		error: /Swap quote tokenIn\.chainId mismatch/,
+	},
+	{
+		name: "tokenOut",
+		mutate: (quote: SwapQuote) => {
+			quote.tokenOut.address = OTHER_VERIFIER;
+		},
+		error: /Swap quote tokenOut mismatch/,
+	},
+	{
+		name: "tokenOut.chainId",
+		mutate: (quote: SwapQuote) => {
+			quote.tokenOut.chainId = CHAIN_ID + 1;
+		},
+		error: /Swap quote tokenOut\.chainId mismatch/,
+	},
+	{
+		name: "accountIn",
+		mutate: (quote: SwapQuote) => {
+			quote.accountIn = OTHER_VERIFIER;
+		},
+		error: /Swap quote accountIn mismatch/,
+	},
+	{
+		name: "accountOut",
+		mutate: (quote: SwapQuote) => {
+			quote.accountOut = OTHER_VERIFIER;
+		},
+		error: /Swap quote accountOut mismatch/,
+	},
+	{
+		name: "vaultIn",
+		mutate: (quote: SwapQuote) => {
+			quote.vaultIn = OTHER_VERIFIER;
+		},
+		error: /Swap quote vaultIn mismatch/,
+	},
+	{
+		name: "receiver",
+		mutate: (quote: SwapQuote) => {
+			quote.receiver = OTHER_VERIFIER;
+		},
+		error: /Swap quote receiver mismatch/,
+	},
+	{
+		name: "amountIn",
+		mutate: (quote: SwapQuote) => {
+			quote.amountIn = (AMOUNT_IN + 1n).toString();
+		},
+		error: /Swap quote amountIn mismatch/,
+	},
+	{
+		name: "transferOutputToReceiver",
+		mutate: (quote: SwapQuote) => {
+			quote.transferOutputToReceiver = true;
+		},
+		error: /Swap quote transferOutputToReceiver mismatch/,
+	},
+	{
+		name: "swap.swapperAddress",
+		mutate: (quote: SwapQuote) => {
+			quote.swap.swapperAddress = OTHER_VERIFIER;
+		},
+		error: /Swap quote swap\.swapperAddress mismatch/,
+	},
+	{
+		name: "verify.type",
+		mutate: (quote: SwapQuote) => {
+			quote.verify.type = SwapVerificationType.DebtMax;
+		},
+		error: /Swap quote verify\.type mismatch/,
+	},
+	{
+		name: "verify.vault",
+		mutate: (quote: SwapQuote) => {
+			quote.verify.vault = OTHER_VERIFIER;
+		},
+		error: /Swap quote verify\.vault mismatch/,
+	},
+	{
+		name: "verify.account",
+		mutate: (quote: SwapQuote) => {
+			quote.verify.account = OTHER_VERIFIER;
+		},
+		error: /Swap quote verify\.account mismatch/,
+	},
+	{
+		name: "verify.amount",
+		mutate: (quote: SwapQuote) => {
+			quote.verify.amount = (AMOUNT_OUT_MIN - 1n).toString();
+		},
+		error: /Swap quote verify\.amount mismatch/,
+	},
+	{
+		name: "verify.deadline",
+		mutate: (quote: SwapQuote) => {
+			quote.verify.deadline = DEADLINE + 1;
+		},
+		error: /Swap quote verify\.deadline mismatch/,
+	},
+])("fetchSwapQuotes rejects returned $name that does not match request", async ({
+	mutate,
+	error,
+}) => {
+	const quote = createQuote();
+	mutate(quote);
+	const service = createSwapService(quote);
+
+	await assert.rejects(() => service.fetchSwapQuotes(createRequest()), error);
 });
 
 test("fetchSwapQuotes rejects amountOutMin below requested slippage", async () => {

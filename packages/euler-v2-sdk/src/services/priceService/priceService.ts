@@ -710,7 +710,8 @@ export function getCollateralShareOraclePrice(
 
 /**
  * Get collateral ASSET price from the liability vault's perspective.
- * Converts share price to asset price using totalShares/totalAssets.
+ * Converts share price to asset price using the collateral vault's conversion
+ * rules.
  */
 export function getCollateralOraclePrice(
 	liabilityVault: EVault,
@@ -722,38 +723,19 @@ export function getCollateralOraclePrice(
 	);
 	if (!sharePrice) return undefined;
 
-	const { totalAssets, totalShares } = collateralVault;
 	if (!liabilityVault.unitOfAccount) return undefined;
 	const uoaDecimals = liabilityVault.unitOfAccount.decimals;
+	if (sharePrice.amountIn <= 0n) return undefined;
 
-	// Empty vault (both 0): ERC-4626 standard defines 1:1 ratio
-	if (totalAssets === 0n && totalShares === 0n) {
-		const mid = sharePrice.amountOutMid;
-		const ask =
-			sharePrice.amountOutAsk && sharePrice.amountOutAsk > 0n
-				? sharePrice.amountOutAsk
-				: mid;
-		const bid =
-			sharePrice.amountOutBid && sharePrice.amountOutBid > 0n
-				? sharePrice.amountOutBid
-				: mid;
-		return {
-			amountOutMid: mid,
-			amountOutAsk: ask,
-			amountOutBid: bid,
-			decimals: uoaDecimals,
-		};
-	}
+	const assetUnit = 10n ** BigInt(collateralVault.asset.decimals);
+	const sharesPerAssetUnit = collateralVault.convertToShares(assetUnit);
 
-	if (totalAssets === 0n) {
-		// totalAssets 0 but totalShares > 0 — unusual state
-		return undefined;
-	}
-
-	// assetPrice = sharePrice × (totalShares / totalAssets)
-	const amountOutMid = (sharePrice.amountOutMid * totalShares) / totalAssets;
-	const amountOutAsk = (sharePrice.amountOutAsk * totalShares) / totalAssets;
-	const amountOutBid = (sharePrice.amountOutBid * totalShares) / totalAssets;
+	const amountOutMid =
+		(sharePrice.amountOutMid * sharesPerAssetUnit) / sharePrice.amountIn;
+	const amountOutAsk =
+		(sharePrice.amountOutAsk * sharesPerAssetUnit) / sharePrice.amountIn;
+	const amountOutBid =
+		(sharePrice.amountOutBid * sharesPerAssetUnit) / sharePrice.amountIn;
 
 	const ask = amountOutAsk > 0n ? amountOutAsk : amountOutMid;
 	const bid = amountOutBid > 0n ? amountOutBid : amountOutMid;

@@ -4,7 +4,6 @@ import {
 	erc20Abi,
 	getAddress,
 	type Hex,
-	maxUint48,
 	maxUint160,
 	maxUint256,
 	zeroAddress,
@@ -237,16 +236,17 @@ export function getPermit2TypedData(
 	const nowInSeconds = () => BigInt(Math.floor(Date.now() / 1000));
 	const { chainId, token, amount, spender, nonce, sigDeadline, expiration } =
 		args;
+	const defaultDeadline = nowInSeconds() + PERMIT2_SIG_WINDOW;
 
 	const permitSingle = {
 		details: {
 			token,
 			amount: amount > maxUint160 ? maxUint160 : amount,
-			expiration: expiration ?? Number(maxUint48),
+			expiration: expiration ?? Number(defaultDeadline),
 			nonce,
 		},
 		spender,
-		sigDeadline: sigDeadline ?? nowInSeconds() + PERMIT2_SIG_WINDOW,
+		sigDeadline: sigDeadline ?? defaultDeadline,
 	};
 
 	return {

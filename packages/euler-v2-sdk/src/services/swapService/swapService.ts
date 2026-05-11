@@ -11,7 +11,10 @@ import type {
 import { SwapperMode, SwapVerificationType } from "./swapServiceTypes.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
-import { validateSwapQuoteVerifierData } from "./swapVerification.js";
+import {
+	adjustForInterest,
+	validateSwapQuoteVerifierData,
+} from "./swapVerification.js";
 
 export interface SwapServiceConfig {
 	swapApiUrl: string;
@@ -116,6 +119,10 @@ export class SwapService implements ISwapService {
 			throw new Error("origin must be provided for swap repay");
 		}
 		const params = this.buildRequestParams(request);
+		const validatedRequest = {
+			...request,
+			deadline: Number(params.deadline),
+		};
 		const searchParams = new URLSearchParams(params);
 
 		const jsonData = await this.querySwapQuotes(
@@ -128,7 +135,8 @@ export class SwapService implements ISwapService {
 
 		// Validate verifier and slippage data for each quote
 		for (const quote of jsonData.data) {
-			this.validateVerifierData(request, quote);
+			this.validateQuoteMatchesRequest(validatedRequest, quote);
+			this.validateVerifierData(validatedRequest, quote);
 		}
 
 		return jsonData.data;
@@ -234,10 +242,6 @@ export class SwapService implements ISwapService {
 			throw new Error("SwapVerifier address mismatch");
 		}
 
-		const deadline =
-			request.deadline ||
-			Math.floor(Date.now() / 1000) +
-				(this.config.defaultDeadline || DEFAULT_DEADLINE);
 		validateSwapQuoteVerifierData({
 			quote,
 			swapperMode: request.swapperMode,
@@ -255,9 +259,122 @@ export class SwapService implements ISwapService {
 				vault: request.receiver,
 				account: request.accountOut,
 				transferAsset: request.tokenOut,
-				deadline,
+				deadline: request.deadline,
 			},
 		});
+	}
+
+	private validateQuoteMatchesRequest(
+		request: SwapQuoteRequest,
+		quote: SwapQuote,
+	): void {
+		this.assertAddressField("tokenIn", quote.tokenIn.address, request.tokenIn);
+		this.assertAddressField(
+			"tokenOut",
+			quote.tokenOut.address,
+			request.tokenOut,
+		);
+		this.assertAddressField("accountIn", quote.accountIn, request.accountIn);
+		this.assertAddressField("accountOut", quote.accountOut, request.accountOut);
+		this.assertAddressField("vaultIn", quote.vaultIn, request.vaultIn);
+		this.assertAddressField("receiver", quote.receiver, request.receiver);
+
+		if (quote.tokenIn.chainId !== request.chainId) {
+			throw new Error("Swap quote tokenIn.chainId mismatch");
+		}
+		if (quote.tokenOut.chainId !== request.chainId) {
+			throw new Error("Swap quote tokenOut.chainId mismatch");
+		}
+
+		if (request.swapperMode === SwapperMode.EXACT_IN) {
+			this.assertBigIntField("amountIn", quote.amountIn, request.amount);
+		} else if (request.swapperMode === SwapperMode.EXACT_OUT) {
+			this.assertBigIntField("amountOut", quote.amountOut, request.amount);
+		}
+
+		if (
+			Boolean(quote.transferOutputToReceiver) !==
+			Boolean(request.transferOutputToReceiver)
+		) {
+			throw new Error("Swap quote transferOutputToReceiver mismatch");
+		}
+
+		const expectedSwapperAddress = this.deploymentService.getDeployment(
+			request.chainId,
+		).addresses.peripheryAddrs?.swapper;
+		if (expectedSwapperAddress) {
+			this.assertAddressField(
+				"swap.swapperAddress",
+				quote.swap.swapperAddress,
+				expectedSwapperAddress,
+			);
+		}
+
+		const expectedVerificationType = request.isRepay
+			? SwapVerificationType.DebtMax
+			: request.transferOutputToReceiver
+				? SwapVerificationType.TransferMin
+				: SwapVerificationType.SkimMin;
+		if (quote.verify.type !== expectedVerificationType) {
+			throw new Error("Swap quote verify.type mismatch");
+		}
+
+		const expectedVerificationAccount =
+			expectedVerificationType === SwapVerificationType.TransferMin
+				? zeroAddress
+				: request.accountOut;
+		this.assertAddressField(
+			"verify.vault",
+			quote.verify.vault,
+			request.receiver,
+		);
+		this.assertAddressField(
+			"verify.account",
+			quote.verify.account,
+			expectedVerificationAccount,
+		);
+		this.assertBigIntField(
+			"verify.amount",
+			quote.verify.amount,
+			this.getExpectedVerifierAmount(request, quote),
+		);
+		if (quote.verify.deadline !== request.deadline) {
+			throw new Error("Swap quote verify.deadline mismatch");
+		}
+	}
+
+	private getExpectedVerifierAmount(
+		request: SwapQuoteRequest,
+		quote: SwapQuote,
+	): bigint {
+		if (!request.isRepay) {
+			return BigInt(quote.amountOutMin);
+		}
+		if (request.swapperMode === SwapperMode.TARGET_DEBT) {
+			return request.targetDebt;
+		}
+		const remainingDebt = request.currentDebt - BigInt(quote.amountOutMin);
+		return adjustForInterest(remainingDebt > 0n ? remainingDebt : 0n);
+	}
+
+	private assertAddressField(
+		field: string,
+		actual: string,
+		expected: string,
+	): void {
+		if (getAddress(actual) !== getAddress(expected)) {
+			throw new Error(`Swap quote ${field} mismatch`);
+		}
+	}
+
+	private assertBigIntField(
+		field: string,
+		actual: string,
+		expected: bigint,
+	): void {
+		if (BigInt(actual) !== expected) {
+			throw new Error(`Swap quote ${field} mismatch`);
+		}
 	}
 
 	/**
