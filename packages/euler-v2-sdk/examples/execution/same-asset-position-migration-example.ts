@@ -236,6 +236,9 @@ async function sameAssetPositionMigrationExample({
 		newLiabilityVault: ALTERNATE_USDT_VAULT,
 		liabilityAccount: BORROW_SUB_ACCOUNT_ADDRESS,
 		newLiabilityAsset: USDT_ADDRESS,
+		// Defaults to true, but the planner only sweeps when the old debt vault
+		// has no pre-existing supplied position on this sub-account.
+		sweepExcess: true,
 	});
 
 	await sdk.executionService.executeTransactionPlan({

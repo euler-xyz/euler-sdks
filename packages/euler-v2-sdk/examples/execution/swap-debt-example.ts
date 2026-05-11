@@ -154,6 +154,7 @@ async function swapDebtExample({ walletClient }: Awaited<ReturnType<typeof initE
     const swapDebtPlan = sdk.executionService.planSwapDebt({
       account: accountData,
       swapQuote,
+      swapperMode: SwapperMode.TARGET_DEBT,
     });
 
     console.log(`✓ Swap debt plan created with ${swapDebtPlan.length} step(s)`);

@@ -2602,13 +2602,13 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const { swapQuote, account, swapperMode } = args;
 		const plan: TransactionPlanItem[] = [];
 
-		const sourcePosition = account?.getPosition(
+		const liabilityPosition = account?.getPosition(
 			swapQuote.accountIn,
-			swapQuote.vaultIn,
+			swapQuote.receiver,
 		);
 
-		const isMax = sourcePosition
-			? sourcePosition.borrowed <= BigInt(swapQuote.amountOutMin)
+		const isMax = liabilityPosition
+			? liabilityPosition.borrowed <= BigInt(swapQuote.amountOutMin)
 			: false;
 
 		const enableController = !(
@@ -2718,7 +2718,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.liabilityAmount - Current debt amount; defaults to the old-vault borrowed amount in account data
 	 * @param args.oldLiabilityAsset - Optional old liability asset; defaults to the old-vault account position asset
 	 * @param args.newLiabilityAsset - New liability underlying asset, used to verify this is a same-asset migration
-	 * @param args.sweepExcess - Whether to redeem and skim the migration cushion back into the new vault (default true)
+	 * @param args.sweepExcess - Whether to redeem and skim the migration cushion back into the new vault when the old vault has no pre-existing supplied shares (default true)
 	 * @param args.transferRemainingSharesToOwner - Whether to transfer new-vault shares to the owner when liabilityAccount differs from owner (default true)
 	 * @returns Array of transaction plan items (EVC batch; no token approvals)
 	 */
@@ -2772,6 +2772,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			getAddress(liabilityAccount) !== getAddress(account.owner)
 				? account.owner
 				: undefined;
+		const shouldSweepExcess =
+			sweepExcess && !(oldPosition && hasSuppliedPosition(oldPosition));
 
 		const batchItems = this.encodeMigrateSameAssetDebt({
 			chainId: account.chainId,
@@ -2781,7 +2783,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			account: liabilityAccount,
 			enableController,
 			disableController: true,
-			sweepExcess,
+			sweepExcess: shouldSweepExcess,
 			transferRemainingSharesTo,
 		});
 

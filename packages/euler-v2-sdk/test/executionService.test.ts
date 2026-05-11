@@ -251,7 +251,13 @@ function createRepayFromDepositAccount({
 	} as never;
 }
 
-function createSameAssetMigrationAccount() {
+function createSameAssetMigrationAccount({
+	oldLiabilityAssets = 0n,
+	oldLiabilityShares = 0n,
+}: {
+	oldLiabilityAssets?: bigint;
+	oldLiabilityShares?: bigint;
+} = {}) {
 	return {
 		owner: ACCOUNT,
 		chainId: 1,
@@ -267,6 +273,8 @@ function createSameAssetMigrationAccount() {
 			if (vault === LIABILITY_VAULT) {
 				return {
 					asset: SAME_ASSET,
+					assets: oldLiabilityAssets,
+					shares: oldLiabilityShares,
 					borrowed: AMOUNT,
 				};
 			}
@@ -962,6 +970,58 @@ test("swap-and-repay-from-wallet builds wallet swap repay and full cleanup", () 
 		data: items[3]?.data ?? "0x",
 	});
 	assert.equal(disableController.functionName, "disableController");
+});
+
+test("swap-debt disables the old liability controller when the swap fully repays it", () => {
+	const service = createExecutionService();
+	const quote = {
+		...createRepaySwapQuote(),
+		accountIn: RECEIVER,
+		accountOut: RECEIVER,
+		vaultIn: NEW_LIABILITY_VAULT,
+		receiver: LIABILITY_VAULT,
+		amountOutMin: AMOUNT.toString(),
+		verify: {
+			type: "debtMax",
+			verifierAddress: VERIFIER,
+			verifierData: encodeDebtVerifierData(LIABILITY_VAULT, RECEIVER, 0n),
+			vault: LIABILITY_VAULT,
+			account: RECEIVER,
+			amount: "0",
+			deadline: 123,
+		},
+	};
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		getPosition: (accountAddress: string, vault: string) => {
+			if (accountAddress === RECEIVER && vault === LIABILITY_VAULT) {
+				return { borrowed: AMOUNT };
+			}
+			return undefined;
+		},
+		isControllerEnabled: (accountAddress: string, vault: string) =>
+			accountAddress === RECEIVER && vault === NEW_LIABILITY_VAULT,
+	} as never;
+
+	const plan = service.planSwapDebt({
+		account,
+		swapQuote: quote as never,
+	});
+
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+	const items = flattenBatchEntries(plan[0].items);
+	const disableController = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items.at(-1)?.data ?? "0x",
+	});
+
+	assert.equal(disableController.functionName, "disableController");
+	assert.equal(items.at(-1)?.targetContract, LIABILITY_VAULT);
+	assert.equal(items.at(-1)?.onBehalfOfAccount, RECEIVER);
 });
 
 test("withdraw-and-swap and redeem-and-swap withdraw to swapper and verify transfer output", () => {
@@ -1978,6 +2038,36 @@ test("same-asset debt migration borrows with cushion, repays old debt, and sweep
 	const transferRemainingShares = decodeFunctionData({
 		abi: eVaultAbi,
 		data: items[7]?.data ?? "0x",
+	});
+	assert.equal(transferRemainingShares.functionName, "transferFromMax");
+	assert.deepEqual(transferRemainingShares.args, [
+		getAddress(RECEIVER),
+		getAddress(ACCOUNT),
+	]);
+});
+
+test("same-asset debt migration preserves pre-existing old-vault deposit", () => {
+	const service = createExecutionService();
+	const plan = service.planMigrateSameAssetDebt({
+		account: createSameAssetMigrationAccount({ oldLiabilityAssets: 77n }),
+		oldLiabilityVault: LIABILITY_VAULT,
+		newLiabilityVault: NEW_LIABILITY_VAULT,
+		liabilityAccount: RECEIVER,
+		newLiabilityAsset: SAME_ASSET,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = flattenBatchEntries(plan[0].items);
+	assert.equal(items.length, 6);
+
+	const transferRemainingShares = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[5]?.data ?? "0x",
 	});
 	assert.equal(transferRemainingShares.functionName, "transferFromMax");
 	assert.deepEqual(transferRemainingShares.args, [
