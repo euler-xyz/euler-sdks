@@ -1,16 +1,16 @@
 import { getAddress, zeroAddress } from "viem";
+import { applyBuildQuery, type BuildQueryFn } from "../../utils/buildQuery.js";
+import type { IDeploymentService } from "../deploymentService/index.js";
 import type {
+	GetDepositQuoteArgs,
+	GetRepayQuoteArgs,
+	GetWalletSwapQuoteArgs,
+	SwapProvidersApiResponse,
 	SwapQuote,
 	SwapQuoteRequest,
 	SwapsApiResponse,
-	SwapProvidersApiResponse,
-	GetRepayQuoteArgs,
-	GetDepositQuoteArgs,
-	GetWalletSwapQuoteArgs,
 } from "./swapServiceTypes.js";
 import { SwapperMode, SwapVerificationType } from "./swapServiceTypes.js";
-import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
-import type { IDeploymentService } from "../deploymentService/index.js";
 import {
 	adjustForInterest,
 	validateSwapQuoteVerifierData,
@@ -117,6 +117,9 @@ export class SwapService implements ISwapService {
 			request.origin === "0x0000000000000000000000000000000000000000"
 		) {
 			throw new Error("origin must be provided for swap repay");
+		}
+		if (request.swapperMode === SwapperMode.EXACT_OUT) {
+			throw new Error("EXACT_OUT swap quotes are not supported");
 		}
 		const params = this.buildRequestParams(request);
 		const validatedRequest = {

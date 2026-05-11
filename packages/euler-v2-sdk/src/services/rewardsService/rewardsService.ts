@@ -1,5 +1,9 @@
-import { type Address, type Hex, getAddress } from "viem";
+import { type Address, getAddress, type Hex } from "viem";
 import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
+import type {
+	ContractCall,
+	TransactionPlan,
+} from "../executionService/index.js";
 import type { ProviderService } from "../providerService/index.js";
 import type {
 	BuildRewardClaimAllPlanArgs,
@@ -12,10 +16,6 @@ import type {
 	UserReward,
 	VaultRewardInfo,
 } from "./rewardsServiceTypes.js";
-import type {
-	ContractCall,
-	TransactionPlan,
-} from "../executionService/index.js";
 
 const MERKL_DISTRIBUTOR_ABI = [
 	{
@@ -176,6 +176,9 @@ const hasBrevisClaimData = (reward: UserReward): boolean =>
 	);
 
 const normalizeRewardAddress = (value?: Address) => value?.toLowerCase() ?? "";
+
+const fuulRewardKey = (currency: string, currencyType?: number): string =>
+	`${getAddress(currency).toLowerCase()}:${currencyType ?? "*"}`;
 
 const canMergeUserReward = (
 	primary: UserReward,
@@ -416,7 +419,11 @@ export class RewardsService implements IRewardsService {
 				);
 			}
 			plan.push(
-				await this.buildFuulContractCall(fuulRewards[0]!.chainId, account),
+				await this.buildFuulContractCall(
+					fuulRewards[0]!.chainId,
+					account,
+					fuulRewards,
+				),
 			);
 		}
 
@@ -488,11 +495,13 @@ export class RewardsService implements IRewardsService {
 	private async buildFuulContractCall(
 		chainId: number,
 		account: Address,
+		rewards: UserReward[],
 	): Promise<ContractCall> {
 		const claimChecks = await this.fetchFuulClaimChecks(account);
 		if (claimChecks.length === 0) {
 			throw new Error("No claimable Fuul rewards found");
 		}
+		await this.validateFuulClaimChecks(chainId, account, rewards, claimChecks);
 
 		const uniqueProjects = [
 			...new Set(claimChecks.map((check) => getAddress(check.project_address))),
@@ -535,6 +544,75 @@ export class RewardsService implements IRewardsService {
 			],
 			value: totalFee,
 		};
+	}
+
+	private async validateFuulClaimChecks(
+		chainId: number,
+		account: Address,
+		rewards: UserReward[],
+		claimChecks: FuulClaimCheck[],
+	): Promise<void> {
+		const requestedAccount = getAddress(account);
+		const totals = await this.fetchFuulTotals(account).catch(() => ({
+			claimed: [],
+			unclaimed: [],
+		}));
+
+		const unclaimedByCurrencyType = new Map<string, bigint>();
+		for (const reward of totals.unclaimed) {
+			if (reward.chain_id !== chainId) continue;
+			const key = fuulRewardKey(reward.currency, reward.currency_type);
+			unclaimedByCurrencyType.set(
+				key,
+				(unclaimedByCurrencyType.get(key) ?? 0n) + BigInt(reward.amount),
+			);
+		}
+
+		const selectedByCurrency = new Map<string, bigint>();
+		for (const reward of rewards) {
+			if (reward.provider !== "fuul" || reward.chainId !== chainId) continue;
+			const key = fuulRewardKey(reward.token.address);
+			selectedByCurrency.set(
+				key,
+				(selectedByCurrency.get(key) ?? 0n) + BigInt(reward.unclaimed),
+			);
+		}
+
+		const strictCurrencyValidation = unclaimedByCurrencyType.size > 0;
+		for (const check of claimChecks) {
+			if (getAddress(check.to) !== requestedAccount) {
+				throw new Error("Fuul claim check recipient mismatch");
+			}
+			getAddress(check.project_address);
+
+			const amount = BigInt(check.amount);
+			const strictKey = fuulRewardKey(check.currency, check.currency_type);
+			if (strictCurrencyValidation) {
+				const available = unclaimedByCurrencyType.get(strictKey) ?? 0n;
+				if (available <= 0n) {
+					throw new Error(
+						"Fuul claim check currency does not match unclaimed rewards",
+					);
+				}
+				if (amount > available) {
+					throw new Error("Fuul claim check amount exceeds unclaimed rewards");
+				}
+				unclaimedByCurrencyType.set(strictKey, available - amount);
+				continue;
+			}
+
+			const fallbackKey = fuulRewardKey(check.currency);
+			const available = selectedByCurrency.get(fallbackKey) ?? 0n;
+			if (available <= 0n) {
+				throw new Error(
+					"Fuul claim check currency does not match requested rewards",
+				);
+			}
+			if (amount > available) {
+				throw new Error("Fuul claim check amount exceeds requested rewards");
+			}
+			selectedByCurrency.set(fallbackKey, available - amount);
+		}
 	}
 
 	private async readFuulClaimFee(

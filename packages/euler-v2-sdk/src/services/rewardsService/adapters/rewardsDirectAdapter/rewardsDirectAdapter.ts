@@ -1,22 +1,22 @@
-import { type Address, type Hex, getAddress } from "viem";
+import { type Address, getAddress, type Hex } from "viem";
 import {
-	type BuildQueryFn,
 	applyBuildQuery,
+	type BuildQueryFn,
 } from "../../../../utils/buildQuery.js";
 import type {
-	RewardsDirectAdapterConfig,
-	IRewardsAdapter,
-	VaultRewardInfo,
-	RewardCampaign,
-	UserReward,
-	MerklOpportunity,
 	BrevisCampaign,
 	BrevisCampaignsResponse,
-	MerklUserChainRewards,
 	BrevisUserRewardsBatchResponse,
 	FuulClaimCheck,
 	FuulIncentive,
 	FuulTotals,
+	IRewardsAdapter,
+	MerklOpportunity,
+	MerklUserChainRewards,
+	RewardCampaign,
+	RewardsDirectAdapterConfig,
+	UserReward,
+	VaultRewardInfo,
 } from "../../rewardsServiceTypes.js";
 
 const DEFAULT_MERKL_API_URL = "https://api.merkl.xyz/v4";
@@ -35,6 +35,38 @@ const DEFAULT_FUUL_FACTORY: Address =
 
 const BREVIS_LEND = 2002;
 const BREVIS_BORROW = 2001;
+
+const normalizeAddress = (value: string): Address | undefined => {
+	try {
+		return getAddress(value) as Address;
+	} catch {
+		return undefined;
+	}
+};
+
+const sanitizeFuulClaimChecks = (
+	claimChecks: FuulClaimCheck[],
+	address: Address,
+): FuulClaimCheck[] => {
+	const requestedAddress = getAddress(address);
+
+	return claimChecks.flatMap((check) => {
+		const to = normalizeAddress(check.to);
+		const projectAddress = normalizeAddress(check.project_address);
+		const currency = normalizeAddress(check.currency);
+		if (!to || !projectAddress || !currency) return [];
+		if (to !== requestedAddress) return [];
+
+		return [
+			{
+				...check,
+				to,
+				project_address: projectAddress,
+				currency,
+			},
+		];
+	});
+};
 
 const extractMerklVaultAddress = (identifier: string): string | undefined => {
 	const match = identifier.match(/^0x[a-fA-F0-9]{40}/);
@@ -241,10 +273,14 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 
 	async fetchFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]> {
 		if (!this.fuulClaimChecksUrl) return [];
-		return this.queryFuulClaimChecks(this.fuulClaimChecksUrl, {
-			userIdentifier: address,
-			userIdentifierType: "evm_address",
-		}).catch(() => []);
+		const claimChecks = await this.queryFuulClaimChecks(
+			this.fuulClaimChecksUrl,
+			{
+				userIdentifier: address,
+				userIdentifierType: "evm_address",
+			},
+		).catch(() => []);
+		return sanitizeFuulClaimChecks(claimChecks, address);
 	}
 
 	getMerklDistributorAddress(): Address {

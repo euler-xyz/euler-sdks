@@ -1,10 +1,10 @@
 import { type Address, encodeFunctionData, getAddress, type Hex } from "viem";
-import { swapVerifierAbi } from "./swapVerifierAbi.js";
 import {
-	type SwapQuote,
 	SwapperMode,
+	type SwapQuote,
 	SwapVerificationType,
 } from "./swapServiceTypes.js";
+import { swapVerifierAbi } from "./swapVerifierAbi.js";
 
 const INTEREST_CUSHION_NUMERATOR = 10_001n;
 const INTEREST_CUSHION_DENOMINATOR = 10_000n;
@@ -151,7 +151,10 @@ export function validateSwapQuoteSlippageData(
 		);
 	}
 
-	if (request.swapperMode === SwapperMode.TARGET_DEBT) {
+	if (
+		request.swapperMode === SwapperMode.TARGET_DEBT ||
+		request.swapperMode === SwapperMode.EXACT_OUT
+	) {
 		const amountIn = BigInt(quote.amountIn);
 		const amountInMax = BigInt(quote.amountInMax);
 		const expectedAmountInMax = applySlippageToInput(amountIn, slippage);

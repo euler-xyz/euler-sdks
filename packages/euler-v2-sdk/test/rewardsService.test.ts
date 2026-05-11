@@ -4,11 +4,13 @@ import { getAddress, type Address, zeroAddress } from "viem";
 
 import { RewardsService } from "../src/services/rewardsService/rewardsService.js";
 import type {
+	FuulClaimCheck,
 	IRewardsAdapter,
 	UserReward,
 	VaultRewardInfo,
 } from "../src/services/rewardsService/index.js";
 import { RewardsV3Adapter } from "../src/services/rewardsService/adapters/rewardsV3Adapter/index.js";
+import { RewardsDirectAdapter } from "../src/services/rewardsService/adapters/rewardsDirectAdapter/index.js";
 
 const rewardToken = getAddress(
 	"0x0000000000000000000000000000000000000001",
@@ -18,6 +20,18 @@ const vaultAddress = getAddress(
 ) as Address;
 const claimAddress = getAddress(
 	"0x0000000000000000000000000000000000000003",
+) as Address;
+const accountAddress = getAddress(
+	"0x0000000000000000000000000000000000000004",
+) as Address;
+const otherAccountAddress = getAddress(
+	"0x0000000000000000000000000000000000000005",
+) as Address;
+const fuulProjectAddress = getAddress(
+	"0x0000000000000000000000000000000000000006",
+) as Address;
+const otherRewardToken = getAddress(
+	"0x0000000000000000000000000000000000000007",
 ) as Address;
 
 const emptyAdapter: IRewardsAdapter = {
@@ -51,6 +65,39 @@ const makeBrevisReward = (overrides: Partial<UserReward> = {}): UserReward => ({
 	provider: "brevis",
 	accumulated: "1000",
 	unclaimed: "1000",
+	...overrides,
+});
+
+const makeFuulClaimCheck = (
+	overrides: Partial<FuulClaimCheck> = {},
+): FuulClaimCheck => ({
+	project_address: fuulProjectAddress,
+	to: accountAddress,
+	currency: rewardToken,
+	currency_type: 0,
+	amount: "1000",
+	reason: 0,
+	token_id: "0",
+	deadline: "9999999999",
+	proof: "0xabc",
+	signatures: ["0x123"],
+	...overrides,
+});
+
+const makeFuulReward = (overrides: Partial<UserReward> = {}): UserReward => ({
+	chainId: 1,
+	token: {
+		address: rewardToken,
+		chainId: 1,
+		symbol: "EUL",
+		name: "EUL",
+		decimals: 18,
+	},
+	tokenPrice: 0,
+	provider: "fuul",
+	accumulated: "1000",
+	unclaimed: "1000",
+	claimAddress,
 	...overrides,
 });
 
@@ -192,4 +239,94 @@ test("rewards service merges Brevis APY campaigns from direct fallback", async (
 	assert.equal(info?.totalRewardsApr, 0.04);
 	assert.equal(info?.campaigns[0]?.source, "brevis");
 	assert.equal(info?.campaigns[0]?.action, "BORROW");
+});
+
+test("direct rewards adapter filters Fuul claim checks for another recipient", async () => {
+	const adapter = new RewardsDirectAdapter({
+		fuulClaimChecksUrl: "https://example.invalid/fuul-claim-checks",
+	});
+	adapter.setQueryFuulClaimChecks(async () => [
+		makeFuulClaimCheck(),
+		makeFuulClaimCheck({ to: otherAccountAddress }),
+		makeFuulClaimCheck({ currency: "not-an-address" }),
+	]);
+
+	const claimChecks = await adapter.fetchFuulClaimChecks(accountAddress);
+
+	assert.equal(claimChecks.length, 1);
+	assert.equal(claimChecks[0]?.to, accountAddress);
+	assert.equal(claimChecks[0]?.project_address, fuulProjectAddress);
+	assert.equal(claimChecks[0]?.currency, rewardToken);
+});
+
+test("rewards service rejects Fuul claim checks whose recipient differs from the account", async () => {
+	const adapter: IRewardsAdapter = {
+		...emptyAdapter,
+		async fetchFuulClaimChecks() {
+			return [makeFuulClaimCheck({ to: otherAccountAddress })];
+		},
+		async fetchFuulTotals() {
+			return {
+				claimed: [],
+				unclaimed: [
+					{
+						currency: rewardToken,
+						currency_type: 0,
+						amount: "1000",
+						chain_id: 1,
+					},
+				],
+			};
+		},
+	};
+	const service = new RewardsService(adapter, undefined, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	await assert.rejects(
+		() =>
+			service.buildClaimPlans({
+				rewards: [makeFuulReward()],
+				account: accountAddress,
+			}),
+		/Fuul claim check recipient mismatch/,
+	);
+});
+
+test("rewards service rejects Fuul claim checks outside chain unclaimed metadata", async () => {
+	const adapter: IRewardsAdapter = {
+		...emptyAdapter,
+		async fetchFuulClaimChecks() {
+			return [makeFuulClaimCheck({ currency: otherRewardToken })];
+		},
+		async fetchFuulTotals() {
+			return {
+				claimed: [],
+				unclaimed: [
+					{
+						currency: rewardToken,
+						currency_type: 0,
+						amount: "1000",
+						chain_id: 1,
+					},
+				],
+			};
+		},
+	};
+	const service = new RewardsService(adapter, undefined, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	await assert.rejects(
+		() =>
+			service.buildClaimPlans({
+				rewards: [makeFuulReward()],
+				account: accountAddress,
+			}),
+		/Fuul claim check currency does not match unclaimed rewards/,
+	);
 });

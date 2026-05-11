@@ -10,6 +10,7 @@ import {
 	type SwapQuoteRequest,
 } from "../src/services/swapService/index.js";
 import { swapVerifierAbi } from "../src/services/swapService/swapVerifierAbi.js";
+import { validateSwapQuoteSlippageData } from "../src/services/swapService/swapVerification.js";
 
 const CHAIN_ID = 1;
 const ACCOUNT_IN = "0x00000000000000000000000000000000000000aa";
@@ -418,6 +419,49 @@ test("fetchSwapQuotes allows 0.01% multiplicative divergence for amountInMax", a
 	const quotes = await service.fetchSwapQuotes(request);
 
 	assert.equal(quotes[0], quote);
+});
+
+test("fetchSwapQuotes rejects exact-out quotes explicitly before querying", async () => {
+	let queried = false;
+	const service = new SwapService(
+		{ swapApiUrl: "https://swap.example" },
+		createDeploymentService(VERIFIER),
+	);
+	service.setQuerySwapQuotes(async () => {
+		queried = true;
+		return { success: true, data: [createQuote()] };
+	});
+
+	await assert.rejects(
+		() =>
+			service.fetchSwapQuotes({
+				...createRequest(),
+				amount: AMOUNT_OUT,
+				swapperMode: SwapperMode.EXACT_OUT,
+			}),
+		/EXACT_OUT swap quotes are not supported/,
+	);
+	assert.equal(queried, false);
+});
+
+test("exact-out slippage validation rejects amountInMax above requested slippage", () => {
+	assert.throws(
+		() =>
+			validateSwapQuoteSlippageData(
+				{ slippage: 0.5, swapperMode: SwapperMode.EXACT_OUT },
+				createQuote({ amountInMax: AMOUNT_IN_MAX + 2n }),
+			),
+		/amountInMax exceeds requested slippage/,
+	);
+});
+
+test("exact-out slippage validation allows 0.01% multiplicative divergence for amountInMax", () => {
+	assert.doesNotThrow(() =>
+		validateSwapQuoteSlippageData(
+			{ slippage: 0.5, swapperMode: SwapperMode.EXACT_OUT },
+			createQuote({ amountInMax: AMOUNT_IN_MAX + 1n }),
+		),
+	);
 });
 
 test("fetchWalletSwapQuote builds transfer-output request and validates transfer verifier data", async () => {
