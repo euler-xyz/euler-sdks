@@ -72,6 +72,7 @@ import type {
 	Permit2DataToSign,
 	PermitSingleTypedData,
 	PlanBorrowArgs,
+	PlanCleanupArgs,
 	PlanDepositArgs,
 	PlanDepositWithSwapFromWalletArgs,
 	PlanLiquidationArgs,
@@ -162,6 +163,157 @@ function cloneBatchEntries(entries: readonly EVCBatchEntry[]): EVCBatchEntry[] {
 	);
 }
 
+type EVCStateTransition = {
+	kind: "collateral" | "controller";
+	action: "enable" | "disable";
+	account: Address;
+	vault: Address;
+};
+
+type BatchItemRef = {
+	item: EVCBatchItem;
+	remove: boolean;
+	transition?: EVCStateTransition;
+};
+
+function hasSuppliedPosition(
+	position: Pick<AccountPosition, "assets" | "shares">,
+): boolean {
+	return position.assets > 0n || position.shares > 0n;
+}
+
+function getStateTransition(
+	item: EVCBatchItem,
+): EVCStateTransition | undefined {
+	try {
+		const decoded = decodeFunctionData({
+			abi: ethereumVaultConnectorAbi,
+			data: item.data,
+		});
+
+		if (
+			decoded.functionName === "enableCollateral" ||
+			decoded.functionName === "disableCollateral" ||
+			decoded.functionName === "enableController"
+		) {
+			const [account, vault] = decoded.args as [Address, Address];
+			return {
+				kind:
+					decoded.functionName === "enableController"
+						? "controller"
+						: "collateral",
+				action: decoded.functionName.startsWith("enable")
+					? "enable"
+					: "disable",
+				account,
+				vault,
+			};
+		}
+	} catch {}
+
+	try {
+		const decoded = decodeFunctionData({
+			abi: eVaultAbi,
+			data: item.data,
+		});
+		if (decoded.functionName === "disableController") {
+			return {
+				kind: "controller",
+				action: "disable",
+				account: item.onBehalfOfAccount,
+				vault: item.targetContract,
+			};
+		}
+	} catch {}
+
+	return undefined;
+}
+
+function stateTransitionKey(transition: EVCStateTransition): string {
+	return `${transition.kind}:${getAddress(transition.account)}:${getAddress(transition.vault)}`;
+}
+
+function normalizeEVCStateTransitions(
+	entries: readonly EVCBatchEntry[],
+): EVCBatchEntry[] {
+	const entryRefs = entries.map((entry) =>
+		isEVCBatchOperation(entry)
+			? entry.items.map(
+					(item): BatchItemRef => ({
+						item,
+						remove: false,
+						transition: getStateTransition(item),
+					}),
+				)
+			: [
+					{
+						item: entry,
+						remove: false,
+						transition: getStateTransition(entry),
+					},
+				],
+	);
+	const refs = entryRefs.flat();
+	const collateralStacks = new Map<
+		string,
+		Array<{ action: EVCStateTransition["action"]; ref: BatchItemRef }>
+	>();
+	const controllerLast = new Map<
+		string,
+		{ action: EVCStateTransition["action"] }
+	>();
+
+	for (const ref of refs) {
+		const transition = ref.transition;
+		if (!transition) continue;
+
+		const key = stateTransitionKey(transition);
+		if (transition.kind === "collateral") {
+			const stack = collateralStacks.get(key) ?? [];
+			const previous = stack[stack.length - 1];
+			if (previous?.action === transition.action) {
+				ref.remove = true;
+			} else if (previous) {
+				previous.ref.remove = true;
+				ref.remove = true;
+				stack.pop();
+			} else {
+				stack.push({ action: transition.action, ref });
+			}
+			collateralStacks.set(key, stack);
+			continue;
+		}
+
+		const previous = controllerLast.get(key);
+		if (previous?.action === transition.action) {
+			ref.remove = true;
+		} else {
+			controllerLast.set(key, { action: transition.action });
+		}
+	}
+
+	const result: EVCBatchEntry[] = [];
+	entries.forEach((entry, index) => {
+		const refsForEntry = entryRefs[index] ?? [];
+		if (isEVCBatchOperation(entry)) {
+			const items = refsForEntry
+				.filter((ref) => !ref.remove)
+				.map((ref) => ref.item);
+			if (items.length > 0) {
+				result.push({ type: "operation", name: entry.name, items });
+			}
+			return;
+		}
+
+		const ref = refsForEntry[0];
+		if (ref && !ref.remove) {
+			result.push(ref.item);
+		}
+	});
+
+	return result;
+}
+
 export interface IExecutionService<
 	TVaultEntity extends VaultEntity = VaultEntity,
 > {
@@ -229,7 +381,24 @@ export interface IExecutionService<
 	encodeMultiplyWithSwap(args: EncodeMultiplyWithSwapArgs): EVCBatchItem[];
 	encodeMultiplySameAsset(args: EncodeMultiplySameAssetArgs): EVCBatchItem[];
 	encodePermit2Call(args: EncodePermit2CallArgs): EVCBatchItem;
+	encodeEnableCollateral(
+		chainId: number,
+		account: Address,
+		vault: Address,
+	): EVCBatchItem;
+	encodeDisableCollateral(
+		chainId: number,
+		account: Address,
+		vault: Address,
+	): EVCBatchItem;
+	encodeEnableController(
+		chainId: number,
+		account: Address,
+		vault: Address,
+	): EVCBatchItem;
+	encodeDisableController(vault: Address, account: Address): EVCBatchItem;
 	/** Transaction plan functions: build plan items (approvals + EVC batch) for each operation. See implementation JSDoc for argument details. */
+	planCleanup(args: PlanCleanupArgs): TransactionPlan;
 	planDeposit(args: PlanDepositArgs): TransactionPlan;
 	planMint(args: PlanMintArgs): TransactionPlan;
 	planWithdraw(args: PlanWithdrawArgs): TransactionPlan;
@@ -946,7 +1115,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.spender - Address that will be allowed to transfer the token (e.g. vault or Permit2)
 	 * @param args.nonce - Unique nonce for this permit (e.g. from Permit2 nonce(owner, token, spender))
 	 * @param args.sigDeadline - Signature deadline (defaults to now + 1 hour if omitted)
-	 * @param args.expiration - Permit expiration (defaults to maxUint48 if omitted)
+	 * @param args.expiration - Permit expiration (defaults to now + 1 hour if omitted)
 	 * @returns EIP-712 typed data (domain, types, primaryType, message) for signing
 	 */
 	getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData {
@@ -1078,7 +1247,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 */
 	mergePlans(plans: TransactionPlan[]): TransactionPlan {
 		const approvalByKey = new Map<string, RequiredApproval>();
-		const executableItems: TransactionPlanItem[] = [];
+		const executableItems: Extract<
+			TransactionPlanItem,
+			{ type: "evcBatch" }
+		>[] = [];
 
 		for (const plan of plans) {
 			for (const item of plan) {
@@ -1110,7 +1282,13 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			}
 		}
 
-		return [...approvalByKey.values(), ...executableItems];
+		const optimizedExecutableItems = executableItems.flatMap((item) => {
+			if (item.type !== "evcBatch") return [item];
+			const items = normalizeEVCStateTransitions(item.items);
+			return items.length > 0 ? [{ type: "evcBatch" as const, items }] : [];
+		});
+
+		return [...approvalByKey.values(), ...optimizedExecutableItems];
 	}
 
 	/**
@@ -1242,7 +1420,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.chainId - Chain ID (used to resolve Permit2 address when usePermit2 is true)
 	 * @param args.wallet - Wallet entity with token balances and allowances (assetForVault, assetForPermit2, etc.)
 	 * @param args.usePermit2 - If true, prefer Permit2 path (approve Permit2 + sign PermitSingle) when allowance is insufficient (default true)
-	 * @param args.unlimitedApproval - If true, approval/permit amounts use maxUint256/maxUint160 (default true)
+	 * @param args.unlimitedApproval - If true, direct approvals and Permit2 signed amounts use maxUint256/maxUint160 (default false). Token approvals to Permit2 use maxUint256.
 	 * @returns The same plan array with requiredApproval[].resolved populated (approve and/or permit2 data to sign)
 	 */
 	resolveRequiredApprovalsWithWallet(
@@ -1253,7 +1431,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			wallet,
 			chainId,
 			usePermit2 = true,
-			unlimitedApproval = true,
+			unlimitedApproval = false,
 		} = args;
 
 		const deployment = this.deploymentService.getDeployment(chainId);
@@ -1314,9 +1492,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				if (!walletAsset || !allowances) {
 					if (usePermit2) {
 						// Need approval to permit2 and permit2 signature
-						resolvedItems.push(
-							makeApprove(permit2, unlimitedApproval ? maxUint256 : amount),
-						);
+						resolvedItems.push(makeApprove(permit2, maxUint256));
 						resolvedItems.push(
 							makePermit2(spender, unlimitedApproval ? maxUint160 : amount),
 						);
@@ -1353,11 +1529,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 					// If assetForPermit2 is insufficient, we need both approval and permit2 signature
 					if (!hasSufficientPermit2Allowance) {
-						addApproveWithOptionalReset(
-							permit2,
-							unlimitedApproval ? maxUint256 : amount,
-							assetForPermit2,
-						);
+						addApproveWithOptionalReset(permit2, maxUint256, assetForPermit2);
 						resolvedItems.push(
 							makePermit2(spender, unlimitedApproval ? maxUint160 : amount),
 						);
@@ -1465,6 +1637,69 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	}
 
 	// ========== Transaction plan functions ==========
+
+	/**
+	 * Builds a cleanup plan matching Lite's stale collateral/controller policy.
+	 *
+	 * Cleanup is derived from the provided account snapshot:
+	 * - no enabled controllers: disable all enabled collaterals
+	 * - enabled controllers but no active borrows: disable all collaterals, then controllers
+	 * - active borrows: disable only enabled collaterals with no supplied position
+	 *
+	 * If the sub-account snapshot is unavailable, no cleanup is planned.
+	 */
+	planCleanup(args: PlanCleanupArgs): TransactionPlan {
+		const { account, subAccount } = args;
+		if (typeof account.getSubAccount !== "function") return [];
+
+		const subAccountSnapshot = account.getSubAccount(subAccount);
+		if (!subAccountSnapshot) return [];
+
+		const collaterals = subAccountSnapshot.enabledCollaterals ?? [];
+		const controllers = subAccountSnapshot.enabledControllers ?? [];
+		if (collaterals.length === 0 && controllers.length === 0) return [];
+
+		const items: EVCBatchItem[] = [];
+		const disableAllCollaterals = () => {
+			for (const collateral of collaterals) {
+				items.push(
+					this.encodeDisableCollateral(account.chainId, subAccount, collateral),
+				);
+			}
+		};
+
+		if (controllers.length === 0) {
+			disableAllCollaterals();
+			return this.convertBatchItemsToPlan(items, "cleanup");
+		}
+
+		const hasActiveBorrow = subAccountSnapshot.positions.some(
+			(position) => position.borrowed > 0n,
+		);
+
+		if (!hasActiveBorrow) {
+			disableAllCollaterals();
+			for (const controller of controllers) {
+				items.push(this.encodeDisableController(controller, subAccount));
+			}
+			return this.convertBatchItemsToPlan(items, "cleanup");
+		}
+
+		const depositedVaults = new Set(
+			subAccountSnapshot.positions
+				.filter(hasSuppliedPosition)
+				.map((position) => getAddress(position.vaultAddress)),
+		);
+
+		for (const collateral of collaterals) {
+			if (depositedVaults.has(getAddress(collateral))) continue;
+			items.push(
+				this.encodeDisableCollateral(account.chainId, subAccount, collateral),
+			);
+		}
+
+		return this.convertBatchItemsToPlan(items, "cleanup");
+	}
 
 	/**
 	 * Builds a transaction plan for depositing assets into a vault.
@@ -2690,6 +2925,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const enableCollateral =
 			hasCollateralInput &&
 			!(account?.isCollateralEnabled(receiver, collateralVault) ?? false);
+		const enableCollateralLong = !(
+			account?.isCollateralEnabled(receiver, longVault) ?? false
+		);
 		const resolvedCollateralShareSource = collateralShareSource
 			? {
 					...collateralShareSource,
@@ -2727,6 +2965,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			collateralShareSource: resolvedCollateralShareSource,
 			collateralWrappedNativeInfo,
 			swapQuote,
+			enableCollateralLong,
 			// Permit2 is handled separately in the plan
 		});
 
@@ -2784,6 +3023,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const enableCollateral =
 			hasCollateralInput &&
 			!(account?.isCollateralEnabled(receiver, collateralVault) ?? false);
+		const enableCollateralLong = !(
+			account?.isCollateralEnabled(receiver, longVault) ?? false
+		);
 		const resolvedCollateralShareSource = collateralShareSource
 			? {
 					...collateralShareSource,
@@ -2820,6 +3062,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			enableController,
 			collateralShareSource: resolvedCollateralShareSource,
 			collateralWrappedNativeInfo,
+			enableCollateralLong,
 			// Permit2 is handled separately in the plan
 		});
 

@@ -517,6 +517,11 @@ export type PlanBorrowArgs = {
 	collateral?: PlanBorrowCollateral;
 };
 
+export type PlanCleanupArgs = {
+	account: Account<IHasVaultAddress>;
+	subAccount: Address;
+};
+
 export type PlanLiquidationArgs = {
 	account: Account<IHasVaultAddress>;
 	liquidatorSubAccountAddress: Address;
