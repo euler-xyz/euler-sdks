@@ -2,3 +2,6 @@ packages:
   - 'packages/*'
   - 'packages/euler-v2-sdk/examples'
   - 'packages/euler-v2-sdk/examples/react-sdk-example'
+
+# Supply-chain hardening: require packages to be at least 7 days old before install.
+minimumReleaseAge: 10080
