@@ -946,7 +946,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.spender - Address that will be allowed to transfer the token (e.g. vault or Permit2)
 	 * @param args.nonce - Unique nonce for this permit (e.g. from Permit2 nonce(owner, token, spender))
 	 * @param args.sigDeadline - Signature deadline (defaults to now + 1 hour if omitted)
-	 * @param args.expiration - Permit expiration (defaults to maxUint48 if omitted)
+	 * @param args.expiration - Permit expiration (defaults to now + 1 hour if omitted)
 	 * @returns EIP-712 typed data (domain, types, primaryType, message) for signing
 	 */
 	getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData {
@@ -1242,7 +1242,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.chainId - Chain ID (used to resolve Permit2 address when usePermit2 is true)
 	 * @param args.wallet - Wallet entity with token balances and allowances (assetForVault, assetForPermit2, etc.)
 	 * @param args.usePermit2 - If true, prefer Permit2 path (approve Permit2 + sign PermitSingle) when allowance is insufficient (default true)
-	 * @param args.unlimitedApproval - If true, approval/permit amounts use maxUint256/maxUint160 (default true)
+	 * @param args.unlimitedApproval - If true, direct approvals and Permit2 signed amounts use maxUint256/maxUint160 (default false). Token approvals to Permit2 use maxUint256.
 	 * @returns The same plan array with requiredApproval[].resolved populated (approve and/or permit2 data to sign)
 	 */
 	resolveRequiredApprovalsWithWallet(
@@ -1253,7 +1253,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			wallet,
 			chainId,
 			usePermit2 = true,
-			unlimitedApproval = true,
+			unlimitedApproval = false,
 		} = args;
 
 		const deployment = this.deploymentService.getDeployment(chainId);
@@ -1314,9 +1314,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				if (!walletAsset || !allowances) {
 					if (usePermit2) {
 						// Need approval to permit2 and permit2 signature
-						resolvedItems.push(
-							makeApprove(permit2, unlimitedApproval ? maxUint256 : amount),
-						);
+						resolvedItems.push(makeApprove(permit2, maxUint256));
 						resolvedItems.push(
 							makePermit2(spender, unlimitedApproval ? maxUint160 : amount),
 						);
@@ -1353,11 +1351,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 					// If assetForPermit2 is insufficient, we need both approval and permit2 signature
 					if (!hasSufficientPermit2Allowance) {
-						addApproveWithOptionalReset(
-							permit2,
-							unlimitedApproval ? maxUint256 : amount,
-							assetForPermit2,
-						);
+						addApproveWithOptionalReset(permit2, maxUint256, assetForPermit2);
 						resolvedItems.push(
 							makePermit2(spender, unlimitedApproval ? maxUint160 : amount),
 						);

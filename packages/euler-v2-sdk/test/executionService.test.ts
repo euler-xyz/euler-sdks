@@ -32,6 +32,7 @@ const MAINNET_USDT = getAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7");
 const COLLATERAL_VAULT = "0x0000000000000000000000000000000000000a05" as const;
 const DESTINATION_VAULT = "0x0000000000000000000000000000000000000a06" as const;
 const NEW_LIABILITY_VAULT = "0x0000000000000000000000000000000000000a07" as const;
+const PERMIT2 = "0x0000000000000000000000000000000000000012" as const;
 const AMOUNT = 12345n;
 
 function createExecutionService() {
@@ -41,7 +42,7 @@ function createExecutionService() {
 				addresses: {
 					coreAddrs: {
 						evc: "0x0000000000000000000000000000000000000011",
-						permit2: "0x0000000000000000000000000000000000000012",
+						permit2: PERMIT2,
 					},
 				},
 			}),
@@ -982,7 +983,6 @@ test("resolveRequiredApprovals resets mainnet USDT allowance before direct appro
 		chainId: 1,
 		wallet,
 		usePermit2: false,
-		unlimitedApproval: false,
 	});
 	const approval = resolved[0];
 	assert.equal(approval?.type, "requiredApproval");
@@ -1001,6 +1001,88 @@ test("resolveRequiredApprovals resets mainnet USDT allowance before direct appro
 			[VAULT_IN, 0n],
 			[VAULT_IN, AMOUNT],
 		],
+	);
+});
+
+test("resolveRequiredApprovalsWithWallet defaults to Lite Permit2 approval sizing", () => {
+	const service = createExecutionService();
+	const plan = [
+		{
+			type: "requiredApproval",
+			token: TOKEN_IN,
+			owner: ACCOUNT,
+			spender: VAULT_IN,
+			amount: AMOUNT,
+		},
+	] as const;
+	const wallet = {
+		chainId: 1,
+		account: ACCOUNT,
+		getAsset: () => ({
+			account: ACCOUNT,
+			asset: TOKEN_IN,
+			balance: AMOUNT,
+			allowances: {
+				[VAULT_IN]: {
+					assetForVault: 0n,
+					assetForPermit2: 0n,
+					assetForVaultInPermit2: 0n,
+					permit2ExpirationTime: 0,
+					permit2Nonce: 0,
+				},
+			},
+		}),
+	} as never;
+
+	const resolved = service.resolveRequiredApprovalsWithWallet({
+		plan: [...plan],
+		chainId: 1,
+		wallet,
+	});
+	const approval = resolved[0];
+	assert.equal(approval?.type, "requiredApproval");
+	if (approval?.type !== "requiredApproval") {
+		throw new Error("expected requiredApproval");
+	}
+
+	assert.equal(approval.resolved?.length, 2);
+	const [erc20Approval, permit2Approval] = approval.resolved ?? [];
+	assert.equal(erc20Approval?.type, "approve");
+	if (erc20Approval?.type !== "approve") {
+		throw new Error("expected ERC20 approval");
+	}
+	assert.deepEqual(
+		decodeFunctionData({ abi: erc20Abi, data: erc20Approval.data }).args,
+		[PERMIT2, maxUint256],
+	);
+	assert.deepEqual(permit2Approval, {
+		type: "permit2",
+		token: TOKEN_IN,
+		owner: ACCOUNT,
+		spender: VAULT_IN,
+		amount: AMOUNT,
+	});
+});
+
+test("getPermit2TypedData defaults Permit2 expiration to the signature window", () => {
+	const service = createExecutionService();
+	const before = BigInt(Math.floor(Date.now() / 1000)) + 60n * 60n;
+	const typedData = service.getPermit2TypedData({
+		chainId: 1,
+		token: TOKEN_IN,
+		amount: AMOUNT,
+		spender: VAULT_IN,
+		nonce: 7,
+	});
+	const after = BigInt(Math.floor(Date.now() / 1000)) + 60n * 60n;
+
+	assert.ok(BigInt(typedData.message.details.expiration) >= before);
+	assert.ok(BigInt(typedData.message.details.expiration) <= after);
+	assert.ok(BigInt(typedData.message.sigDeadline) >= before);
+	assert.ok(BigInt(typedData.message.sigDeadline) <= after);
+	assert.equal(
+		BigInt(typedData.message.details.expiration),
+		BigInt(typedData.message.sigDeadline),
 	);
 });
 
