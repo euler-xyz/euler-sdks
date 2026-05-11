@@ -15,6 +15,77 @@ The [orderlow router API](https://github.com/euler-xyz/euler-orderflow-router) i
 
 ## Swap Operations
 
+### Wallet Swap and Borrow
+
+Pull an input token from the wallet, swap it into a collateral vault, then borrow
+against the received collateral in the same EVC batch.
+
+```typescript
+const quotes = await sdk.swapService.fetchDepositQuote({
+  chainId: 1,
+  fromVault: zeroAddress,
+  toVault: WETH_VAULT,
+  fromAccount: zeroAddress,
+  toAccount: subAccountAddress,
+  fromAsset: USDC,
+  toAsset: WETH,
+  amount: walletInputAmount,
+  origin: walletAddress,
+  slippage: 0.5,
+  unusedInputReceiver: walletAddress,
+})
+
+const plan = sdk.executionService.planSwapAndBorrowFromWallet({
+  account: accountData,
+  swapQuote: quotes[0],
+  amount: walletInputAmount,
+  tokenIn: USDC,
+  borrowVault: USDT_VAULT,
+  borrowAmount,
+  borrowAccount: subAccountAddress,
+  collateralVault: WETH_VAULT,
+  receiver: walletAddress,
+})
+```
+
+### Wallet Swap and Repay
+
+Pull an input token from the wallet, swap it into the liability asset, and repay a
+debt position. Use an exact-input quote when selling a fixed wallet amount. For
+target-debt quotes, use `amountInMax` as the wallet transfer amount because the
+exact input is bounded by the quote. Provide a real `fromVault` / `fromAccount`
+as the router's sweep context; the planner still pulls the input token from the
+wallet.
+
+```typescript
+const quotes = await sdk.swapService.fetchRepayQuotes({
+  chainId: 1,
+  fromVault: USDC_VAULT,
+  fromAsset: USDC,
+  fromAccount: subAccountAddress,
+  liabilityVault: USDT_VAULT,
+  liabilityAsset: USDT,
+  currentDebt,
+  toAccount: subAccountAddress,
+  origin: walletAddress,
+  swapperMode: SwapperMode.EXACT_IN,
+  collateralAmount: walletInputAmount,
+  slippage: 0.5,
+})
+
+const quote = quotes[0]
+const amountIn = BigInt(quote.amountIn)
+const plan = sdk.executionService.planSwapAndRepayFromWallet({
+  account: accountData,
+  swapQuote: quote,
+  amount: amountIn,
+  tokenIn: USDC,
+  liabilityVault: USDT_VAULT,
+  repayAccount: subAccountAddress,
+  isMax: false,
+})
+```
+
 ### Repay with Swap
 
 Withdraw collateral, swap it to the liability asset, and repay debt. Used when you want to reduce debt using existing collateral.
@@ -119,6 +190,11 @@ const debtPlan = sdk.executionService.planMigrateSameAssetDebt({
 })
 ```
 
+For same-asset debt migration, the account must have collateral that keeps the
+destination debt vault liquid after the migration. If the old and new markets do
+not share a positive-LTV collateral, enable collateral accepted by the destination
+vault before running `planMigrateSameAssetDebt`.
+
 ### Wallet To Wallet Swap
 
 Pull an input token from the sender wallet, execute the swap, and transfer the output token to a wallet receiver. Used when you want a direct wallet-level swap without involving Euler vault deposits.
@@ -142,6 +218,47 @@ const plan = sdk.executionService.planSwapFromWallet({
   swapQuote: quotes[0],
   amount: swapAmount,
   tokenIn: USDC,
+})
+```
+
+### Withdraw or Redeem and Swap to Wallet
+
+Withdraw assets or redeem shares from a vault to the Swapper, then transfer the
+swapped output token to a wallet receiver.
+
+```typescript
+const quotes = await sdk.swapService.fetchSwapQuotes({
+  chainId: 1,
+  tokenIn: USDC,
+  tokenOut: WETH,
+  accountIn: subAccountAddress,
+  accountOut: zeroAddress,
+  amount: withdrawAmount,
+  vaultIn: USDC_VAULT,
+  receiver: walletAddress,
+  origin: walletAddress,
+  slippage: 0.5,
+  swapperMode: SwapperMode.EXACT_IN,
+  isRepay: false,
+  targetDebt: 0n,
+  currentDebt: 0n,
+  transferOutputToReceiver: true,
+})
+
+const withdrawPlan = sdk.executionService.planWithdrawAndSwap({
+  account: accountData,
+  vault: USDC_VAULT,
+  assets: withdrawAmount,
+  owner: subAccountAddress,
+  swapQuote: quotes[0],
+})
+
+const redeemPlan = sdk.executionService.planRedeemAndSwap({
+  account: accountData,
+  vault: USDC_VAULT,
+  shares: sharesToRedeem,
+  owner: subAccountAddress,
+  swapQuote: quotes[0],
 })
 ```
 

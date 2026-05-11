@@ -58,7 +58,8 @@ Common plan functions include:
 - `planDeposit`, `planMint`, `planWithdraw`, `planRedeem`
 - `planBorrow`, `planPullDebt`, `planLiquidation`
 - `planRepayFromWallet`, `planRepayFromDeposit`, `planRepayWithSwap`
-- `planDepositWithSwapFromWallet`, `planSwapFromWallet`, `planSwapCollateral`, `planSwapDebt`
+- `planDepositWithSwapFromWallet`, `planSwapFromWallet`, `planSwapAndBorrowFromWallet`, `planSwapAndRepayFromWallet`
+- `planWithdrawAndSwap`, `planRedeemAndSwap`, `planSwapCollateral`, `planSwapDebt`
 - `planMigrateSameAssetCollateral`, `planMigrateSameAssetDebt`
 - `planTransfer`, `planMultiplyWithSwap`, `planMultiplySameAsset`
 
@@ -134,6 +135,10 @@ Useful entry points:
 - [`examples/execution/deposit-example.ts`](../examples/execution/deposit-example.ts)
 - [`examples/execution/repay-with-swap-example.ts`](../examples/execution/repay-with-swap-example.ts)
 - [`examples/execution/swap-from-wallet-example.ts`](../examples/execution/swap-from-wallet-example.ts)
+- [`examples/execution/swap-and-borrow-from-wallet-example.ts`](../examples/execution/swap-and-borrow-from-wallet-example.ts)
+- [`examples/execution/swap-and-repay-from-wallet-example.ts`](../examples/execution/swap-and-repay-from-wallet-example.ts)
+- [`examples/execution/withdraw-and-swap-example.ts`](../examples/execution/withdraw-and-swap-example.ts)
+- [`examples/execution/redeem-and-swap-example.ts`](../examples/execution/redeem-and-swap-example.ts)
 - [`examples/execution/same-asset-position-migration-example.ts`](../examples/execution/same-asset-position-migration-example.ts)
 - [`examples/execution/merge-plans-example.ts`](../examples/execution/merge-plans-example.ts)
 - [`run-examples.sh`](../examples/run-examples.sh)

@@ -37,7 +37,8 @@ const normalizeProvider = (value?: string): RewardSource | undefined => {
 	const normalized = value?.trim().toLowerCase();
 	if (!normalized) return undefined;
 	if (normalized.includes("merkl")) return "merkl";
-	if (normalized.includes("brevis")) return "brevis";
+	if (normalized.includes("brevis") || normalized.includes("incentra"))
+		return "brevis";
 	if (normalized.includes("fuul")) return "fuul";
 	return undefined;
 };
@@ -392,7 +393,9 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 				row.token?.name ??
 				row.rewardTokenName ??
 				row.tokenName ??
-				row.token?.symbol ?? row.rewardTokenSymbol ?? row.tokenSymbol ??
+				row.token?.symbol ??
+				row.rewardTokenSymbol ??
+				row.tokenSymbol ??
 				tokenAddress,
 			decimals:
 				normalizeNonNegativeInteger(
@@ -422,6 +425,7 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 					row.rewardTokenPriceUsd ?? row.tokenPriceUsd ?? row.tokenPrice,
 				) ?? 0,
 			provider,
+			campaignId: row.campaignId ?? row.id,
 			accumulated,
 			unclaimed,
 			proof: (row.proof ?? row.proofs ?? row.merkleProof) as Hex[] | undefined,

@@ -21,7 +21,7 @@
  * ⚠️  IMPORTANT - LIVE SWAP QUOTES:
  *   • This example fetches real-time swap quotes from DEX aggregators
  *   • Restart Anvil immediately before running to avoid stale blockchain state
- *   • If the swap fails, try changing SWAP_QUOTE_INDEX to use a different provider
+ *   • The example tries non-CoW quotes starting from SWAP_QUOTE_INDEX
  *
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
@@ -178,41 +178,52 @@ async function multiplyFromSavingsExample({
 		throw new Error(`No quote found at index: ${SWAP_QUOTE_INDEX}`);
 	}
 
-	const swapQuote = filteredSwapQuotes[SWAP_QUOTE_INDEX]!;
-	console.log(
-		`✓ Swap quote received: ${LIABILITY_AMOUNT} USDT → ${swapQuote.amountOut} WETH ${swapQuote.route.map((r) => r.providerName).join(" → ")}`,
-	);
+	const orderedSwapQuotes = [
+		...filteredSwapQuotes.slice(SWAP_QUOTE_INDEX),
+		...filteredSwapQuotes.slice(0, SWAP_QUOTE_INDEX),
+	];
 
 	// Step 3: Multiply using savings shares as initial collateral.
 	console.log("\n=== Step 3: Multiply Using Savings Shares ===");
-	const multiplyPlan = sdk.executionService.planMultiplyWithSwap({
-		account: accountData,
-		collateralVault: EULER_PRIME_USDC_VAULT,
-		collateralAmount: savingsAssetsToUse,
-		collateralAsset: USDC_ADDRESS,
-		collateralShareSource: {
-			from: SAVINGS_SUB_ACCOUNT_ADDRESS,
-			shares: savingsSharesToUse,
-		},
-		swapQuote,
-	});
-
-	console.log(`✓ Multiply plan created with ${multiplyPlan.length} step(s)`);
-	console.log("✓ Executing...");
-
-	try {
-		await sdk.executionService.executeTransactionPlan({
-			plan: multiplyPlan,
-			chainId: mainnet.id,
-			account: walletAccountAddress(walletClient),
-			...exampleExecutionCallbacks(walletClient),
-			onProgress: createTransactionPlanLogger(sdk),
-		});
-	} catch (error) {
-		console.error("Error executing multiply:", error);
+	let lastError: unknown;
+	for (const [quoteIndex, swapQuote] of orderedSwapQuotes.entries()) {
 		console.log(
-			"\n\nThe swap quote might be bad. Try setting SWAP_QUOTE_INDEX to a different value.",
+			`✓ Trying quote ${quoteIndex + 1}/${orderedSwapQuotes.length}: ${LIABILITY_AMOUNT} USDT → ${swapQuote.amountOut} WETH ${swapQuote.route.map((r) => r.providerName).join(" → ")}`,
 		);
+
+		const multiplyPlan = sdk.executionService.planMultiplyWithSwap({
+			account: accountData,
+			collateralVault: EULER_PRIME_USDC_VAULT,
+			collateralAmount: savingsAssetsToUse,
+			collateralAsset: USDC_ADDRESS,
+			collateralShareSource: {
+				from: SAVINGS_SUB_ACCOUNT_ADDRESS,
+				shares: savingsSharesToUse,
+			},
+			swapQuote,
+		});
+
+		console.log(`✓ Multiply plan created with ${multiplyPlan.length} step(s)`);
+		console.log("✓ Executing...");
+
+		try {
+			await sdk.executionService.executeTransactionPlan({
+				plan: multiplyPlan,
+				chainId: mainnet.id,
+				account: walletAccountAddress(walletClient),
+				...exampleExecutionCallbacks(walletClient),
+				onProgress: createTransactionPlanLogger(sdk),
+			});
+			lastError = undefined;
+			break;
+		} catch (error) {
+			lastError = error;
+			console.error("Error executing multiply:", error);
+		}
+	}
+
+	if (lastError) {
+		console.log("\n\nAll swap quotes failed.");
 		process.exit(1);
 	}
 

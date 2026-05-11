@@ -11,7 +11,7 @@ Use `packages/euler-v2-sdk/examples/` as canonical templates for script structur
 
 Suggested workflow:
 
-1. Start from nearest example (`deposit`, `repay-with-swap`, `liquidation`, etc.).
+1. Start from nearest example (`deposit`, `repay-with-swap`, `swap-and-borrow-from-wallet`, `withdraw-and-swap`, `multiply-same-asset`, `liquidation`, etc.).
 2. Move chain/account/vault constants into a shared `config.ts`, and put SDK runtime config behind `buildEulerSDK({ config })` or `EULER_SDK_*` env vars.
 3. Use `sdk.executionService.executeTransactionPlan(...)` for plugin processing, approval resolution, Permit2, and EVC batch execution.
 4. Add simulation gates before submission for bots.

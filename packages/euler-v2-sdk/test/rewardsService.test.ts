@@ -1,0 +1,195 @@
+import assert from "node:assert/strict";
+import { test } from "vitest";
+import { getAddress, type Address, zeroAddress } from "viem";
+
+import { RewardsService } from "../src/services/rewardsService/rewardsService.js";
+import type {
+	IRewardsAdapter,
+	UserReward,
+	VaultRewardInfo,
+} from "../src/services/rewardsService/index.js";
+import { RewardsV3Adapter } from "../src/services/rewardsService/adapters/rewardsV3Adapter/index.js";
+
+const rewardToken = getAddress(
+	"0x0000000000000000000000000000000000000001",
+) as Address;
+const vaultAddress = getAddress(
+	"0x0000000000000000000000000000000000000002",
+) as Address;
+const claimAddress = getAddress(
+	"0x0000000000000000000000000000000000000003",
+) as Address;
+
+const emptyAdapter: IRewardsAdapter = {
+	async fetchVaultRewards() {
+		return undefined;
+	},
+	async fetchChainRewards() {
+		return new Map();
+	},
+	async fetchUserRewards() {
+		return [];
+	},
+	async fetchFuulTotals() {
+		return { claimed: [], unclaimed: [] };
+	},
+	async fetchFuulClaimChecks() {
+		return [];
+	},
+};
+
+const makeBrevisReward = (overrides: Partial<UserReward> = {}): UserReward => ({
+	chainId: 1,
+	token: {
+		address: rewardToken,
+		chainId: 1,
+		symbol: "EUL",
+		name: "EUL",
+		decimals: 18,
+	},
+	tokenPrice: 2,
+	provider: "brevis",
+	accumulated: "1000",
+	unclaimed: "1000",
+	...overrides,
+});
+
+test("V3 rewards adapter normalizes Incentra APY campaigns as Brevis", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				provider: "Incentra",
+				campaignType: "EULER_LEND",
+				id: "incentra-1",
+				apr: 4.5,
+				rewardToken: {
+					address: rewardToken,
+					symbol: "EUL",
+				},
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "brevis");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.equal(info?.campaigns[0]?.apr, 0.045);
+});
+
+test("rewards service uses direct proof-backed Brevis rewards when V3 lacks claim metadata", async () => {
+	const primary: IRewardsAdapter = {
+		...emptyAdapter,
+		async fetchUserRewards() {
+			return [
+				makeBrevisReward({
+					tokenPrice: 3,
+					claimAddress: undefined,
+					proof: undefined,
+					cumulativeAmounts: undefined,
+					epoch: undefined,
+				}),
+			];
+		},
+	};
+	const fallback = {
+		...emptyAdapter,
+		async fetchBrevisUserRewardClaims() {
+			return [
+				makeBrevisReward({
+					tokenPrice: 1,
+					claimAddress,
+					proof: ["0xabc" as `0x${string}`],
+					cumulativeAmounts: ["1000"],
+					epoch: "7",
+				}),
+			];
+		},
+	};
+	const service = new RewardsService(primary, fallback, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	const rewards = await service.fetchUserRewards(1, zeroAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "brevis");
+	assert.equal(rewards[0]?.tokenPrice, 1);
+	assert.equal(rewards[0]?.claimAddress, claimAddress);
+	assert.deepEqual(rewards[0]?.proof, ["0xabc"]);
+	assert.deepEqual(rewards[0]?.cumulativeAmounts, ["1000"]);
+	assert.equal(rewards[0]?.epoch, "7");
+
+	const plan = await service.buildClaimPlan({
+		reward: rewards[0]!,
+		account: zeroAddress,
+	});
+	assert.equal(plan.length, 1);
+});
+
+test("rewards service includes Brevis rewards missing from V3 user rows", async () => {
+	const fallback = {
+		...emptyAdapter,
+		async fetchBrevisUserRewardClaims() {
+			return [
+				makeBrevisReward({
+					claimAddress,
+					proof: ["0xabc" as `0x${string}`],
+					cumulativeAmounts: ["1000"],
+					epoch: "7",
+				}),
+			];
+		},
+	};
+	const service = new RewardsService(emptyAdapter, fallback, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	const rewards = await service.fetchUserRewards(1, zeroAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "brevis");
+	assert.equal(rewards[0]?.claimAddress, claimAddress);
+});
+
+test("rewards service merges Brevis APY campaigns from direct fallback", async () => {
+	const fallbackInfo: VaultRewardInfo = {
+		totalRewardsApr: 0.04,
+		campaigns: [
+			{
+				campaignId: "brevis-1",
+				source: "brevis",
+				action: "BORROW",
+				apr: 0.04,
+				rewardTokenAddress: rewardToken,
+				rewardTokenSymbol: "EUL",
+			},
+		],
+	};
+	const fallback = {
+		...emptyAdapter,
+		async fetchBrevisChainRewards() {
+			return new Map([[vaultAddress.toLowerCase(), fallbackInfo]]);
+		},
+	};
+	const service = new RewardsService(emptyAdapter, fallback, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	const rewards = await service.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.totalRewardsApr, 0.04);
+	assert.equal(info?.campaigns[0]?.source, "brevis");
+	assert.equal(info?.campaigns[0]?.action, "BORROW");
+});

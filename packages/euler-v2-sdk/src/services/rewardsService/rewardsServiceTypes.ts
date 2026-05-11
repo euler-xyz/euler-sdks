@@ -45,6 +45,8 @@ export interface UserReward {
 	tokenPrice: number;
 	/** Reward provider. */
 	provider: RewardSource;
+	/** Optional provider campaign identifier, when the upstream exposes one. */
+	campaignId?: string;
 	/** Total accumulated reward amount (raw, unscaled bigint as string). */
 	accumulated: string;
 	/** Unclaimed reward amount (raw, unscaled bigint as string). */
@@ -70,7 +72,7 @@ export interface RewardsDirectAdapterConfig {
 	fuulTotalsUrl?: string;
 	/** Optional caller-hosted endpoint for Fuul claim checks. */
 	fuulClaimChecksUrl?: string;
-	/** Chain IDs for which Brevis campaigns should be fetched (default: [1]). */
+	/** Chain IDs for which Brevis campaigns should be fetched. When omitted, all chains are enabled. */
 	brevisChainIds?: number[];
 	/** Override the Merkl distributor contract address (default: standard Merkl Distributor). */
 	merklDistributorAddress?: Address;
@@ -103,7 +105,7 @@ export interface RewardsServiceConfig {
 	fuulTotalsUrl?: string;
 	/** Optional caller-hosted endpoint for Fuul claim checks. */
 	fuulClaimChecksUrl?: string;
-	/** Chain IDs for which Brevis campaigns should be fetched (default: [1]). */
+	/** Chain IDs for which Brevis campaigns should be fetched. When omitted, all chains are enabled. */
 	brevisChainIds?: number[];
 	/** Override the Merkl distributor contract address (default: standard Merkl Distributor). */
 	merklDistributorAddress?: Address;

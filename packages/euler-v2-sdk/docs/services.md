@@ -34,7 +34,7 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
   See: [`wallet-service.md`](./wallet-service.md)
 - `priceService`: Resolves market prices used for valuation and computed account metrics.
 - `oracleAdapterService`: Fetches oracle adapter metadata/checks (provider, methodology, checks) from the oracle checks dataset and builds maps keyed by normalized `adapter.oracle` address for UI/tooling.
-- `rewardsService`: Fetches reward campaign data used to populate vault/account rewards and builds provider-specific reward claim plans.
+- `rewardsService`: Fetches reward campaign data used to populate vault/account rewards and builds provider-specific reward claim plans. The default V3 path returns proof-backed direct Brevis/Incentra rewards when claim planning needs metadata that V3 does not include.
   See: [`rewards-service.md`](./rewards-service.md)
 - `feeFlowService`: Fetches FeeFlow state, filters eligible vaults, and builds FeeFlow buy plans.
   See: [`fee-flow-service.md`](./fee-flow-service.md)
