@@ -12,9 +12,8 @@
  *   2. User encodes a swap to wstETH with unusedInputReceiver set to user's wallet
  *   3. User executes planDepositWithSwapFromWallet, depositing to the wstETH vault
  *   4. User creates another swap, this time with transferOutputToReceiver set to true
- *   5. User creates a redeem tx plan (full balance) to Swapper
- *   6. The swap is added to batch (swaps redeemed wstETH to USDC and transfers
- *      to user's wallet through SwapVerifier)
+ *   5. User executes planRedeemAndSwap to redeem wstETH, swap to USDC, and
+ *      transfer the output to the user's wallet through SwapVerifier
  *
  * ASSETS & VAULTS:
  *   - USDC (input from wallet) -> swap to wstETH -> deposit into vault
@@ -181,39 +180,16 @@ async function depositWithSwapFromWalletExample({
   const withdrawSwapQuote = filteredWithdrawQuotes[SWAP_QUOTE_INDEX_2]!;
   console.log(`Swap quote received: ${redeemAssets} wstETH -> ${withdrawSwapQuote.amountOut} USDC ${withdrawSwapQuote.route.map(r => r.providerName).join(' -> ')}`);
 
-  // Step 4: Create redeem plan to Swapper, then add swap to batch
+  // Step 4: Create redeem-and-swap plan
   console.log('\n=== Step 4: Execute Redeem + Swap to Wallet ===');
 
-  // Build the redeem batch items - redeem all wstETH shares to Swapper
-  const redeemPlan = sdk.executionService.planRedeem({
+  const combinedPlan = sdk.executionService.planRedeemAndSwap({
     account: accountData,
     vault: WSTETH_VAULT,
     shares: maxUint256, // redeem full balance
     owner: SUB_ACCOUNT_ADDRESS,
-    receiver: withdrawSwapQuote.swap.swapperAddress, // redeem to Swapper (use address from quote)
+    swapQuote: withdrawSwapQuote,
   });
-
-  // Build the swap + verify batch items
-  const swapBatchItems = [
-    // Execute swap multicall on Swapper
-    {
-      targetContract: withdrawSwapQuote.swap.swapperAddress,
-      onBehalfOfAccount: SUB_ACCOUNT_ADDRESS,
-      value: 0n,
-      data: withdrawSwapQuote.swap.swapperData,
-    },
-    // Verify and transfer output to user's wallet
-    {
-      targetContract: withdrawSwapQuote.verify.verifierAddress,
-      onBehalfOfAccount: SUB_ACCOUNT_ADDRESS,
-      value: 0n,
-      data: withdrawSwapQuote.verify.verifierData,
-    },
-  ];
-  const swapPlan = sdk.executionService.convertBatchItemsToPlan(swapBatchItems);
-
-  // Merge redeem and swap into one plan
-  const combinedPlan = sdk.executionService.mergePlans([redeemPlan, swapPlan]);
 
   console.log(`Combined plan created with ${combinedPlan.length} step(s)`);
 

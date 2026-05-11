@@ -18,23 +18,22 @@
  */
 
 import "dotenv/config";
+import { getAddress, parseUnits } from "viem";
+import { mainnet } from "viem/chains";
+import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
+import { logOperationResult, printHeader } from "../utils/helpers.js";
 import {
-  getAddress, parseUnits } from "viem";
-  import { mainnet } from "viem/chains";
-  import { buildEulerSDK, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
-  import {
-  logOperationResult,
-  printHeader,
-  } from "../utils/helpers.js";
-  import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
-  import {
-  account,
-  EULER_PRIME_USDC_VAULT,
-  EULER_PRIME_USDT_VAULT,
-  initExample,
-  USDC_ADDRESS,
-  USDT_ADDRESS,
-  exampleExecutionCallbacks,
+	createTransactionPlanLogger,
+	walletAccountAddress,
+} from "../utils/transactionPlanLogging.js";
+import {
+	account,
+	EULER_PRIME_USDC_VAULT,
+	EULER_PRIME_USDT_VAULT,
+	exampleExecutionCallbacks,
+	initExample,
+	USDC_ADDRESS,
+	USDT_ADDRESS,
 } from "../utils/config.js";
 
 const SUPPLY_AMOUNT = parseUnits("500", 6);
@@ -52,6 +51,9 @@ const BORROW_SUB_ACCOUNT_ADDRESS = getSubAccountAddress(
 );
 const ALTERNATE_USDT_VAULT = getAddress(
 	"0x7c280DBDEf569e96c7919251bD2B0edF0734C5A8",
+);
+const ALTERNATE_USDC_COLLATERAL_VAULT = getAddress(
+	"0xe0a80d35bB6618CBA260120b279d357978c42BCE",
 );
 
 async function sameAssetPositionMigrationExample({
@@ -135,10 +137,10 @@ async function sameAssetPositionMigrationExample({
 
 	await logOperationResult(mainnet.id, accountData, [supplySubAccount], sdk);
 
-	console.log("\n=== Step 3: Deposit USDC and Borrow USDT ===");
+	console.log("\n=== Step 3: Deposit USDC Collateral and Borrow USDT ===");
 	accountData.updateSubAccounts(supplySubAccount!);
 
-	let collateralDepositPlan = sdk.executionService.planDeposit({
+	const primeCollateralDepositPlan = sdk.executionService.planDeposit({
 		vault: EULER_PRIME_USDC_VAULT,
 		amount: COLLATERAL_AMOUNT,
 		receiver: BORROW_SUB_ACCOUNT_ADDRESS,
@@ -148,7 +150,24 @@ async function sameAssetPositionMigrationExample({
 	});
 
 	await sdk.executionService.executeTransactionPlan({
-		plan: collateralDepositPlan,
+		plan: primeCollateralDepositPlan,
+		chainId: mainnet.id,
+		account: walletAccountAddress(walletClient),
+		...exampleExecutionCallbacks(walletClient),
+		onProgress: createTransactionPlanLogger(sdk),
+	});
+
+	const alternateCollateralDepositPlan = sdk.executionService.planDeposit({
+		vault: ALTERNATE_USDC_COLLATERAL_VAULT,
+		amount: COLLATERAL_AMOUNT,
+		receiver: BORROW_SUB_ACCOUNT_ADDRESS,
+		account: accountData,
+		asset: USDC_ADDRESS,
+		enableCollateral: true,
+	});
+
+	await sdk.executionService.executeTransactionPlan({
+		plan: alternateCollateralDepositPlan,
 		chainId: mainnet.id,
 		account: walletAccountAddress(walletClient),
 		...exampleExecutionCallbacks(walletClient),
@@ -159,7 +178,12 @@ async function sameAssetPositionMigrationExample({
 		await sdk.accountService.fetchSubAccount(
 			mainnet.id,
 			BORROW_SUB_ACCOUNT_ADDRESS,
-			[EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT, ALTERNATE_USDT_VAULT],
+			[
+				EULER_PRIME_USDC_VAULT,
+				ALTERNATE_USDC_COLLATERAL_VAULT,
+				EULER_PRIME_USDT_VAULT,
+				ALTERNATE_USDT_VAULT,
+			],
 			{ populateVaults: false },
 		)
 	).result;
@@ -186,7 +210,12 @@ async function sameAssetPositionMigrationExample({
 		await sdk.accountService.fetchSubAccount(
 			mainnet.id,
 			BORROW_SUB_ACCOUNT_ADDRESS,
-			[EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT, ALTERNATE_USDT_VAULT],
+			[
+				EULER_PRIME_USDC_VAULT,
+				ALTERNATE_USDC_COLLATERAL_VAULT,
+				EULER_PRIME_USDT_VAULT,
+				ALTERNATE_USDT_VAULT,
+			],
 			{ populateVaults: false },
 		)
 	).result;
@@ -221,7 +250,12 @@ async function sameAssetPositionMigrationExample({
 		await sdk.accountService.fetchSubAccount(
 			mainnet.id,
 			BORROW_SUB_ACCOUNT_ADDRESS,
-			[EULER_PRIME_USDC_VAULT, EULER_PRIME_USDT_VAULT, ALTERNATE_USDT_VAULT],
+			[
+				EULER_PRIME_USDC_VAULT,
+				ALTERNATE_USDC_COLLATERAL_VAULT,
+				EULER_PRIME_USDT_VAULT,
+				ALTERNATE_USDT_VAULT,
+			],
 			{ populateVaults: false },
 		)
 	).result;

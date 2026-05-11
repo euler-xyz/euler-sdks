@@ -1,7 +1,7 @@
 export type AccountServiceAdapter = "v3" | "onchain";
 
 export interface AccountV3AdapterConfig {
-	/** Base HTTP endpoint, for example `https://indexer.euler.finance`. */
+	/** Base HTTP endpoint, for example `https://v3.eul.dev`. */
 	endpoint: string;
 	/** Optional API key sent as `X-API-Key` on V3 HTTP requests. */
 	apiKey?: string;
