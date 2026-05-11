@@ -507,6 +507,55 @@ test("mergePlans preserves operation groupings while concatenating adjacent batc
 	assert.deepEqual(flattenBatchEntries(merged[0].items), [first, extra, second]);
 });
 
+test("mergePlans collapses collateral state transitions to the resulting action", () => {
+	const service = createExecutionService();
+	const enable = service.encodeEnableCollateral(1, ACCOUNT, COLLATERAL_VAULT);
+	const disable = service.encodeDisableCollateral(1, ACCOUNT, COLLATERAL_VAULT);
+
+	const cancelled = service.mergePlans([
+		service.convertBatchItemsToPlan([enable]),
+		service.convertBatchItemsToPlan([disable]),
+	]);
+	assert.deepEqual(cancelled, []);
+
+	const enabled = service.mergePlans([
+		service.convertBatchItemsToPlan([enable]),
+		service.convertBatchItemsToPlan([disable]),
+		service.convertBatchItemsToPlan([enable]),
+	]);
+	assert.equal(enabled.length, 1);
+	assert.equal(enabled[0]?.type, "evcBatch");
+	if (enabled[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+	assert.deepEqual(flattenBatchEntries(enabled[0].items), [enable]);
+});
+
+test("mergePlans deduplicates repeated controller transitions without cancelling opposites", () => {
+	const service = createExecutionService();
+	const enable = service.encodeEnableController(1, ACCOUNT, LIABILITY_VAULT);
+	const disable = service.encodeDisableController(LIABILITY_VAULT, ACCOUNT);
+
+	const merged = service.mergePlans([
+		service.convertBatchItemsToPlan([enable]),
+		service.convertBatchItemsToPlan([enable]),
+		service.convertBatchItemsToPlan([disable]),
+		service.convertBatchItemsToPlan([disable]),
+		service.convertBatchItemsToPlan([enable]),
+	]);
+
+	assert.equal(merged.length, 1);
+	assert.equal(merged[0]?.type, "evcBatch");
+	if (merged[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+	assert.deepEqual(flattenBatchEntries(merged[0].items), [
+		enable,
+		disable,
+		enable,
+	]);
+});
+
 test("mergePlans rejects contract calls because call boundaries need manual merging", () => {
 	const service = createExecutionService();
 	const plan: TransactionPlan = [
@@ -525,6 +574,120 @@ test("mergePlans rejects contract calls because call boundaries need manual merg
 		() => service.mergePlans([plan]),
 		/cannot merge contractCall plan items/,
 	);
+});
+
+test("planCleanup matches Lite stale collateral and controller cleanup policy", () => {
+	const service = createExecutionService();
+	const account = {
+		chainId: 1,
+		getSubAccount: () => ({
+			enabledControllers: [LIABILITY_VAULT],
+			enabledCollaterals: [COLLATERAL_VAULT, DESTINATION_VAULT],
+			positions: [
+				{
+					vaultAddress: LIABILITY_VAULT,
+					assets: 0n,
+					shares: 0n,
+					borrowed: AMOUNT,
+				},
+				{
+					vaultAddress: COLLATERAL_VAULT,
+					assets: AMOUNT,
+					shares: AMOUNT,
+					borrowed: 0n,
+				},
+			],
+		}),
+	} as never;
+
+	const plan = service.planCleanup({ account, subAccount: RECEIVER });
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+	const items = flattenBatchEntries(plan[0].items);
+	assert.equal(items.length, 1);
+	const disableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(disableCollateral.functionName, "disableCollateral");
+	assert.deepEqual(disableCollateral.args, [
+		getAddress(RECEIVER),
+		getAddress(DESTINATION_VAULT),
+	]);
+});
+
+test("planCleanup disables all collaterals and controllers when no borrows remain", () => {
+	const service = createExecutionService();
+	const account = {
+		chainId: 1,
+		getSubAccount: () => ({
+			enabledControllers: [LIABILITY_VAULT],
+			enabledCollaterals: [COLLATERAL_VAULT],
+			positions: [
+				{
+					vaultAddress: COLLATERAL_VAULT,
+					assets: AMOUNT,
+					shares: AMOUNT,
+					borrowed: 0n,
+				},
+			],
+		}),
+	} as never;
+
+	const plan = service.planCleanup({ account, subAccount: RECEIVER });
+
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+	const items = flattenBatchEntries(plan[0].items);
+	assert.equal(items.length, 2);
+
+	const disableCollateral = decodeFunctionData({
+		abi: ethereumVaultConnectorAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(disableCollateral.functionName, "disableCollateral");
+
+	const disableController = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(disableController.functionName, "disableController");
+	assert.equal(items[1]?.targetContract, LIABILITY_VAULT);
+	assert.equal(items[1]?.onBehalfOfAccount, RECEIVER);
+});
+
+test("planCleanup disables all stale collaterals when no controllers are enabled", () => {
+	const service = createExecutionService();
+	const account = {
+		chainId: 1,
+		getSubAccount: () => ({
+			enabledControllers: [],
+			enabledCollaterals: [COLLATERAL_VAULT, DESTINATION_VAULT],
+			positions: [],
+		}),
+	} as never;
+
+	const plan = service.planCleanup({ account, subAccount: RECEIVER });
+
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+	const items = flattenBatchEntries(plan[0].items);
+	assert.equal(items.length, 2);
+	for (const item of items) {
+		const decoded = decodeFunctionData({
+			abi: ethereumVaultConnectorAbi,
+			data: item.data,
+		});
+		assert.equal(decoded.functionName, "disableCollateral");
+	}
 });
 
 test("deposit supports native wrapping before the vault deposit", () => {

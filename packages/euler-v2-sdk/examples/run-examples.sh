@@ -87,6 +87,7 @@ ANVIL_EXAMPLES=(
   "execution/withdraw-example.ts"
   "execution/redeem-example.ts"
   "execution/borrow-example.ts"
+  "execution/borrow-with-cleanup-example.ts"
   "execution/borrow-from-savings-example.ts"
   "execution/repay-from-wallet-example.ts"
   "execution/repay-from-deposit-example.ts"
