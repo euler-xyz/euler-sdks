@@ -73,7 +73,7 @@ RPC URLs use `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`.
 | `rewardsFuulApiUrl` | `EULER_SDK_REWARDS_FUUL_API_URL` | Fuul incentives API |
 | `rewardsFuulTotalsUrl` | `EULER_SDK_REWARDS_FUUL_TOTALS_URL` | none |
 | `rewardsFuulClaimChecksUrl` | `EULER_SDK_REWARDS_FUUL_CLAIM_CHECKS_URL` | none |
-| `rewardsBrevisChainIds` | `EULER_SDK_REWARDS_BREVIS_CHAIN_IDS` | `1` |
+| `rewardsBrevisChainIds` | `EULER_SDK_REWARDS_BREVIS_CHAIN_IDS` | all chains |
 | `rewardsMerklDistributorAddress` | `EULER_SDK_REWARDS_MERKL_DISTRIBUTOR_ADDRESS` | Merkl distributor |
 | `rewardsFuulManagerAddress` | `EULER_SDK_REWARDS_FUUL_MANAGER_ADDRESS` | Fuul manager |
 | `rewardsFuulFactoryAddress` | `EULER_SDK_REWARDS_FUUL_FACTORY_ADDRESS` | Fuul factory |

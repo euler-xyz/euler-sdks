@@ -54,14 +54,18 @@ import type {
 	EncodePermit2CallArgs,
 	EncodePullDebtArgs,
 	EncodeRedeemArgs,
+	EncodeRedeemAndSwapArgs,
 	EncodeRepayFromDepositArgs,
 	EncodeRepayFromWalletArgs,
 	EncodeRepayWithSwapArgs,
+	EncodeSwapAndBorrowFromWalletArgs,
+	EncodeSwapAndRepayFromWalletArgs,
 	EncodeSwapCollateralArgs,
 	EncodeSwapDebtArgs,
 	EncodeSwapFromWalletArgs,
 	EncodeTransferArgs,
 	EncodeWithdrawArgs,
+	EncodeWithdrawAndSwapArgs,
 	EVCBatchEntry,
 	EVCBatchItem,
 	GetPermit2TypedDataArgs,
@@ -78,14 +82,18 @@ import type {
 	PlanMultiplyWithSwapArgs,
 	PlanPullDebtArgs,
 	PlanRedeemArgs,
+	PlanRedeemAndSwapArgs,
 	PlanRepayFromDepositArgs,
 	PlanRepayFromWalletArgs,
 	PlanRepayWithSwapArgs,
+	PlanSwapAndBorrowFromWalletArgs,
+	PlanSwapAndRepayFromWalletArgs,
 	PlanSwapCollateralArgs,
 	PlanSwapDebtArgs,
 	PlanSwapFromWalletArgs,
 	PlanTransferArgs,
 	PlanWithdrawArgs,
+	PlanWithdrawAndSwapArgs,
 	RequiredApproval,
 	ResolveRequiredApprovalsArgs,
 	ResolveRequiredApprovalsWithWalletArgs,
@@ -109,6 +117,11 @@ import {
 	simulateTransactionPlan,
 	type SimulationStateOverrideOptions,
 } from "./simulate.js";
+import {
+	adjustForInterest,
+	getSwapInputAmount,
+} from "../swapService/swapVerification.js";
+import { SwapperMode } from "../swapService/swapServiceTypes.js";
 
 const TOKENS_REQUIRING_ZERO_APPROVAL_RESET: Record<number, readonly Address[]> =
 	{
@@ -196,6 +209,14 @@ export interface IExecutionService<
 		args: EncodeDepositWithSwapFromWalletArgs,
 	): EVCBatchItem[];
 	encodeSwapFromWallet(args: EncodeSwapFromWalletArgs): EVCBatchItem[];
+	encodeSwapAndBorrowFromWallet(
+		args: EncodeSwapAndBorrowFromWalletArgs,
+	): EVCBatchItem[];
+	encodeSwapAndRepayFromWallet(
+		args: EncodeSwapAndRepayFromWalletArgs,
+	): EVCBatchItem[];
+	encodeWithdrawAndSwap(args: EncodeWithdrawAndSwapArgs): EVCBatchItem[];
+	encodeRedeemAndSwap(args: EncodeRedeemAndSwapArgs): EVCBatchItem[];
 	encodeSwapCollateral(args: EncodeSwapCollateralArgs): EVCBatchItem[];
 	encodeSwapDebt(args: EncodeSwapDebtArgs): EVCBatchItem[];
 	encodeMigrateSameAssetCollateral(
@@ -222,6 +243,14 @@ export interface IExecutionService<
 		args: PlanDepositWithSwapFromWalletArgs,
 	): TransactionPlan;
 	planSwapFromWallet(args: PlanSwapFromWalletArgs): TransactionPlan;
+	planSwapAndBorrowFromWallet(
+		args: PlanSwapAndBorrowFromWalletArgs,
+	): TransactionPlan;
+	planSwapAndRepayFromWallet(
+		args: PlanSwapAndRepayFromWalletArgs,
+	): TransactionPlan;
+	planWithdrawAndSwap(args: PlanWithdrawAndSwapArgs): TransactionPlan;
+	planRedeemAndSwap(args: PlanRedeemAndSwapArgs): TransactionPlan;
 	planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlan;
 	planSwapDebt(args: PlanSwapDebtArgs): TransactionPlan;
 	planMigrateSameAssetCollateral(
@@ -736,6 +765,27 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 */
 	encodeSwapFromWallet(args: EncodeSwapFromWalletArgs): EVCBatchItem[] {
 		return encodeHelpers.encodeSwapFromWallet(args);
+	}
+
+	encodeSwapAndBorrowFromWallet(
+		args: EncodeSwapAndBorrowFromWalletArgs,
+	): EVCBatchItem[] {
+		const { evc } = this.getCoreAddresses(args.chainId);
+		return encodeHelpers.encodeSwapAndBorrowFromWallet(evc, args);
+	}
+
+	encodeSwapAndRepayFromWallet(
+		args: EncodeSwapAndRepayFromWalletArgs,
+	): EVCBatchItem[] {
+		return encodeHelpers.encodeSwapAndRepayFromWallet(args);
+	}
+
+	encodeWithdrawAndSwap(args: EncodeWithdrawAndSwapArgs): EVCBatchItem[] {
+		return encodeHelpers.encodeWithdrawAndSwap(args);
+	}
+
+	encodeRedeemAndSwap(args: EncodeRedeemAndSwapArgs): EVCBatchItem[] {
+		return encodeHelpers.encodeRedeemAndSwap(args);
 	}
 
 	/**
@@ -1430,7 +1480,15 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of transaction plan items (required approvals + EVC batch)
 	 */
 	planDeposit(args: PlanDepositArgs): TransactionPlanItem[] {
-		const { vault, amount, receiver, account, asset, enableCollateral } = args;
+		const {
+			vault,
+			amount,
+			receiver,
+			account,
+			asset,
+			enableCollateral,
+			wrappedNativeInfo,
+		} = args;
 		const plan: TransactionPlanItem[] = [];
 
 		// Default: collateral is not enabled when account/position is not available
@@ -1454,6 +1512,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			receiver,
 			owner: account.owner,
 			enableCollateral: !isCollateralEnabled && enableCollateral,
+			wrappedNativeInfo,
 			// Permit2 is handled separately in the plan
 		});
 
@@ -1484,6 +1543,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			asset,
 			enableCollateral,
 			sharesToAssetsExchangeRateWad,
+			wrappedNativeInfo,
 		} = args;
 		const plan: TransactionPlanItem[] = [];
 
@@ -1512,6 +1572,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			receiver,
 			owner: account.owner,
 			enableCollateral: !isCollateralEnabled && enableCollateral,
+			wrappedNativeInfo,
 			// Permit2 is handled separately in the plan
 		});
 
@@ -1671,6 +1732,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			enableCollateral,
 			collateralVault: collateral?.vault,
 			collateralAmount: walletCollateral?.amount,
+			collateralWrappedNativeInfo: walletCollateral?.wrappedNativeInfo,
 			collateralShareSource: savingsCollateral
 				? {
 						from: savingsCollateral.from,
@@ -1786,16 +1848,19 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			);
 		}
 
+		const isMax = liabilityAmount === maxUint256;
+		const approvalAmount = adjustForInterest(
+			isMax ? position.borrowed : liabilityAmount,
+		);
+
 		// Add approval requirement (will be resolved later with Wallet data)
 		plan.push({
 			type: "requiredApproval",
 			token: position.asset,
 			owner: account.owner,
 			spender: liabilityVault,
-			amount: liabilityAmount,
+			amount: approvalAmount,
 		});
-
-		const isMax = liabilityAmount === maxUint256;
 
 		// Build EVC batch items
 		const batchItems = this.encodeRepayFromWallet({
@@ -1953,7 +2018,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of transaction plan items (EVC batch: withdraw, swap, verify/repay). Throws if positions not found or liability is zero.
 	 */
 	planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlan {
-		const { swapQuote, account, cleanupOnMax = false } = args;
+		const { swapQuote, account, cleanupOnMax = false, swapperMode } = args;
 		const plan: TransactionPlanItem[] = [];
 
 		const liabilityPosition = account?.getPosition(
@@ -1983,6 +2048,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			maxWithdraw,
 			isMax,
 			disableControllerOnMax: true,
+			swapperMode,
 		});
 
 		if (cleanupOnMax && isMax) {
@@ -2017,7 +2083,14 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	planDepositWithSwapFromWallet(
 		args: PlanDepositWithSwapFromWalletArgs,
 	): TransactionPlan {
-		const { swapQuote, amount, tokenIn, account, enableCollateral } = args;
+		const {
+			swapQuote,
+			amount,
+			tokenIn,
+			account,
+			enableCollateral,
+			wrappedNativeInfo,
+		} = args;
 		const plan: TransactionPlanItem[] = [];
 
 		// Approval goes to the transferFromSender contract (which uses permit2 transferFrom internally)
@@ -2046,6 +2119,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			amount,
 			sender: account.owner,
 			enableCollateral: shouldEnableCollateral,
+			wrappedNativeInfo,
 		});
 
 		plan.push(
@@ -2067,7 +2141,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of transaction plan items (approval to SwapVerifier + EVC batch)
 	 */
 	planSwapFromWallet(args: PlanSwapFromWalletArgs): TransactionPlan {
-		const { swapQuote, amount, tokenIn, account } = args;
+		const { swapQuote, amount, tokenIn, account, wrappedNativeInfo } = args;
 		const plan: TransactionPlanItem[] = [];
 
 		plan.push({
@@ -2083,11 +2157,157 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			swapQuote,
 			amount,
 			sender: account.owner,
+			wrappedNativeInfo,
 		});
 
 		plan.push(...this.convertBatchItemsToPlan(batchItems, "swapFromWallet"));
 
 		return plan;
+	}
+
+	planSwapAndBorrowFromWallet(
+		args: PlanSwapAndBorrowFromWalletArgs,
+	): TransactionPlan {
+		const {
+			swapQuote,
+			amount,
+			tokenIn,
+			account,
+			borrowVault,
+			borrowAmount,
+			borrowAccount = swapQuote.accountOut,
+			receiver = account.owner,
+			collateralVault = swapQuote.receiver,
+			wrappedNativeInfo,
+		} = args;
+		const plan: TransactionPlanItem[] = [];
+
+		plan.push({
+			type: "requiredApproval",
+			token: tokenIn,
+			owner: account.owner,
+			spender: swapQuote.verify.verifierAddress,
+			amount,
+		});
+
+		const enableController = !(
+			account?.isControllerEnabled(borrowAccount, borrowVault) ?? false
+		);
+		const enableCollateral = !(
+			account?.isCollateralEnabled(borrowAccount, collateralVault) ?? false
+		);
+		const currentController = account?.getCurrentController(borrowAccount);
+
+		const batchItems = this.encodeSwapAndBorrowFromWallet({
+			chainId: account.chainId,
+			swapQuote,
+			amount,
+			sender: account.owner,
+			borrowAccount,
+			collateralVault,
+			borrowVault,
+			borrowAmount,
+			receiver,
+			currentController: currentController || undefined,
+			enableController,
+			enableCollateral,
+			wrappedNativeInfo,
+		});
+
+		plan.push(
+			...this.convertBatchItemsToPlan(batchItems, "swapAndBorrowFromWallet"),
+		);
+
+		return plan;
+	}
+
+	planSwapAndRepayFromWallet(
+		args: PlanSwapAndRepayFromWalletArgs,
+	): TransactionPlan {
+		const {
+			swapQuote,
+			amount,
+			tokenIn,
+			account,
+			liabilityVault = swapQuote.receiver,
+			repayAccount = swapQuote.accountOut,
+			isMax,
+			cleanupOnMax = false,
+			wrappedNativeInfo,
+		} = args;
+		const plan: TransactionPlanItem[] = [];
+
+		plan.push({
+			type: "requiredApproval",
+			token: tokenIn,
+			owner: account.owner,
+			spender: swapQuote.verify.verifierAddress,
+			amount,
+		});
+
+		const liabilityPosition = account?.getPosition(
+			repayAccount,
+			liabilityVault,
+		);
+		const resolvedIsMax =
+			isMax ??
+			(liabilityPosition !== undefined &&
+				liabilityPosition.borrowed <= BigInt(swapQuote.amountOutMin || 0));
+
+		const batchItems = this.encodeSwapAndRepayFromWallet({
+			chainId: account.chainId,
+			swapQuote,
+			amount,
+			sender: account.owner,
+			liabilityVault,
+			repayAccount,
+			isMax: resolvedIsMax,
+			disableControllerOnMax: true,
+			wrappedNativeInfo,
+		});
+
+		if (cleanupOnMax && resolvedIsMax && liabilityPosition) {
+			this.appendMaxRepayCleanup({
+				account,
+				liabilityPosition,
+				receiver: repayAccount,
+				batchItems,
+			});
+		}
+
+		plan.push(
+			...this.convertBatchItemsToPlan(batchItems, "swapAndRepayFromWallet"),
+		);
+
+		return plan;
+	}
+
+	planWithdrawAndSwap(args: PlanWithdrawAndSwapArgs): TransactionPlan {
+		const { account, vault, assets, owner, swapQuote } = args;
+		const batchItems = this.encodeWithdrawAndSwap({
+			chainId: account.chainId,
+			vault,
+			assets,
+			owner,
+			sender: account.owner,
+			swapQuote,
+		});
+
+		return this.convertBatchItemsToPlan(batchItems, "withdrawAndSwap");
+	}
+
+	planRedeemAndSwap(args: PlanRedeemAndSwapArgs): TransactionPlan {
+		const { account, vault, shares, owner, swapQuote } = args;
+		const batchItems = this.encodeRedeemAndSwap({
+			chainId: account.chainId,
+			vault,
+			shares,
+			owner,
+			sender: account.owner,
+			swapQuote,
+		});
+
+		return this.convertBatchItemsToPlan(batchItems, "redeemAndSwap");
 	}
 
 	/**
@@ -2099,7 +2319,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of transaction plan items (EVC batch: withdraw, swap, verify/skim, optional enable/disable collateral)
 	 */
 	planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlan {
-		const { swapQuote, account } = args;
+		const { swapQuote, account, swapperMode } = args;
 		const plan: TransactionPlanItem[] = [];
 
 		// Check if source collateral needs to be disabled (when all is swapped)
@@ -2127,6 +2347,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			enableCollateral,
 			disableCollateralOnMax: true,
 			isMax,
+			swapperMode,
 		});
 
 		plan.push(...this.convertBatchItemsToPlan(batchItems, "swapCollateral"));
@@ -2143,7 +2364,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of transaction plan items (EVC batch: enableController, borrow, swap, verify/repay, optional disableController)
 	 */
 	planSwapDebt(args: PlanSwapDebtArgs): TransactionPlan {
-		const { swapQuote, account } = args;
+		const { swapQuote, account, swapperMode } = args;
 		const plan: TransactionPlanItem[] = [];
 
 		const sourcePosition = account?.getPosition(
@@ -2159,7 +2380,6 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			account?.isControllerEnabled(swapQuote.accountOut, swapQuote.vaultIn) ??
 			false
 		);
-
 		// Build EVC batch items
 		const batchItems = this.encodeSwapDebt({
 			chainId: account.chainId,
@@ -2167,6 +2387,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			enableController,
 			disableControllerOnMax: true,
 			isMax,
+			swapperMode,
 		});
 
 		plan.push(...this.convertBatchItemsToPlan(batchItems, "swapDebt"));
@@ -2433,8 +2654,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			collateralAmount,
 			collateralAsset,
 			collateralShareSource,
+			collateralWrappedNativeInfo,
 			account,
 			swapQuote,
+			swapperMode,
 		} = args;
 		const plan: TransactionPlanItem[] = [];
 
@@ -2455,7 +2678,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const receiver = swapQuote.accountIn;
 		const liabilityVault = swapQuote.vaultIn;
 		const longVault = swapQuote.receiver;
-		const liabilityAmount = BigInt(swapQuote.amountIn);
+		const liabilityAmount = getSwapInputAmount(
+			swapQuote,
+			swapperMode ?? SwapperMode.EXACT_IN,
+		);
 
 		// 2. Determine if collateral needs to be enabled
 		const hasCollateralInput = collateralShareSource
@@ -2499,6 +2725,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			currentController: currentController || undefined,
 			enableController,
 			collateralShareSource: resolvedCollateralShareSource,
+			collateralWrappedNativeInfo,
 			swapQuote,
 			// Permit2 is handled separately in the plan
 		});
@@ -2529,6 +2756,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			collateralAmount,
 			collateralAsset,
 			collateralShareSource,
+			collateralWrappedNativeInfo,
 			liabilityVault,
 			liabilityAmount,
 			longVault,
@@ -2591,6 +2819,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			currentController: currentController || undefined,
 			enableController,
 			collateralShareSource: resolvedCollateralShareSource,
+			collateralWrappedNativeInfo,
 			// Permit2 is handled separately in the plan
 		});
 

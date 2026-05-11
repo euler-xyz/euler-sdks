@@ -35,7 +35,7 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 - `executionService` for plan simulation and pre-trade validation
 - `swapService` for quotes and providers
 - `oracleAdapterService` for oracle adapter metadata keyed by normalized `adapter.oracle` address
-- `rewardsService` for reward reads and provider-specific reward claim planning
+- `rewardsService` for reward reads and provider-specific reward claim planning; the default V3 path normalizes Incentra rows as Brevis and returns direct proof-backed Brevis rows when V3 lacks claim metadata
 - `eulerLabelsService` plus exported label helpers for normalized products, Earn entries, notices, restrictions, and product/vault flags
 
 Built-in scalar config resolves as `config` prop, explicit SDK option, `EULER_SDK_*` env var, then default. Prefer `EULER_SDK_RPC_URL_<chainId>` for examples and `buildEulerSDK({ config: { rpcUrls, v3ApiUrl, v3ApiKey } })` for app-level runtime wiring that cannot rely on env.
@@ -74,7 +74,7 @@ Prefer `planX` APIs over `encodeX` for user-facing transaction flows. Resolve re
 
 Execution order:
 
-1. Build plan (`planDeposit`, `planBorrow`, `planRepayWithSwap`, etc.) or reward claim plan in `rewardsService`
+1. Build plan (`planDeposit`, `planBorrow`, `planRepayWithSwap`, `planSwapAndBorrowFromWallet`, etc.) or reward claim plan in `rewardsService`
 2. Resolve approvals with `resolveRequiredApprovals({ chainId, account, plan })`, or fetch requested assets/spenders through `walletService.fetchWallet(...)` and use `resolveRequiredApprovalsWithWallet({ chainId, wallet, plan })`
 3. Execute `contractCall` items directly when present
 4. Send `evcBatch` transaction(s)
@@ -135,7 +135,7 @@ Pattern:
 
 1. fetch quotes (`fetchDepositQuote`, `fetchRepayQuotes`)
 2. pick quote (best-first ordering)
-3. build plan (`planRepayWithSwap`, `planSwapCollateral`, `planSwapDebt`, `planMultiplyWithSwap`)
+3. build plan (`planRepayWithSwap`, `planSwapCollateral`, `planSwapDebt`, `planSwapAndBorrowFromWallet`, `planSwapAndRepayFromWallet`, `planWithdrawAndSwap`, `planRedeemAndSwap`, `planMultiplyWithSwap`, `planMultiplySameAsset`)
 4. simulate
 5. execute
 

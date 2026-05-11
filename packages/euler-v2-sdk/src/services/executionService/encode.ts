@@ -1,6 +1,7 @@
 import {
 	type Address,
 	encodeFunctionData,
+	erc20Abi,
 	getAddress,
 	type Hex,
 	maxUint48,
@@ -26,24 +27,43 @@ import {
 	type EncodePermit2CallArgs,
 	type EncodePullDebtArgs,
 	type EncodeRedeemArgs,
+	type EncodeRedeemAndSwapArgs,
 	type EncodeRepayFromDepositArgs,
 	type EncodeRepayFromWalletArgs,
 	type EncodeRepayWithSwapArgs,
+	type EncodeSwapAndBorrowFromWalletArgs,
+	type EncodeSwapAndRepayFromWalletArgs,
 	type EncodeSwapCollateralArgs,
 	type EncodeSwapDebtArgs,
 	type EncodeSwapFromWalletArgs,
 	type EncodeTransferArgs,
 	type EncodeWithdrawArgs,
+	type EncodeWithdrawAndSwapArgs,
 	type GetPermit2TypedDataArgs,
 	PERMIT2_TYPES,
 	type CollateralShareSource,
 	type PermitSingleMessage,
 	type PermitSingleTypedData,
+	type WrappedNativeInfo,
 } from "./executionServiceTypes.js";
+import {
+	SwapperMode,
+	SwapVerificationType,
+} from "../swapService/swapServiceTypes.js";
+import { getSwapInputAmount } from "../swapService/swapVerification.js";
 
 const PERMIT2_SIG_WINDOW = 60n * 60n;
 const INTEREST_CUSHION_NUMERATOR = 10_001n;
 const INTEREST_CUSHION_DENOMINATOR = 10_000n;
+const wrappedNativeAbi = [
+	{
+		type: "function",
+		name: "deposit",
+		inputs: [],
+		outputs: [],
+		stateMutability: "payable",
+	},
+] as const;
 
 export function encodeBatch(items: EVCBatchItem[]): Hex {
 	return encodeFunctionData({
@@ -153,6 +173,36 @@ export function encodeTransferFromMax(
 	};
 }
 
+function encodeNativeWrap(
+	wrappedNativeInfo: WrappedNativeInfo | undefined,
+	userAddr: Address,
+): EVCBatchItem[] {
+	if (!wrappedNativeInfo || wrappedNativeInfo.nativeAmount <= 0n) return [];
+
+	return [
+		{
+			targetContract: wrappedNativeInfo.wrappedTokenAddress,
+			onBehalfOfAccount: userAddr,
+			value: wrappedNativeInfo.nativeAmount,
+			data: encodeFunctionData({
+				abi: wrappedNativeAbi,
+				functionName: "deposit",
+				args: [],
+			}),
+		},
+		{
+			targetContract: wrappedNativeInfo.wrappedTokenAddress,
+			onBehalfOfAccount: userAddr,
+			value: 0n,
+			data: encodeFunctionData({
+				abi: erc20Abi,
+				functionName: "transfer",
+				args: [userAddr, wrappedNativeInfo.nativeAmount],
+			}),
+		},
+	];
+}
+
 function encodeCollateralShareTransfer(
 	evc: Address,
 	vault: Address,
@@ -221,6 +271,7 @@ export function encodeDeposit(
 		receiver,
 		owner,
 		enableCollateral,
+		wrappedNativeInfo,
 		permit2: permit2Data,
 	}: EncodeDepositArgs,
 ): EVCBatchItem[] {
@@ -236,6 +287,8 @@ export function encodeDeposit(
 			}),
 		);
 	}
+
+	items.push(...encodeNativeWrap(wrappedNativeInfo, owner));
 
 	if (enableCollateral) {
 		items.push(encodeEnableCollateral(evc, receiver, vault));
@@ -265,6 +318,7 @@ export function encodeMint(
 		receiver,
 		owner,
 		enableCollateral,
+		wrappedNativeInfo,
 		permit2: permit2Data,
 	}: EncodeMintArgs,
 ): EVCBatchItem[] {
@@ -280,6 +334,8 @@ export function encodeMint(
 			}),
 		);
 	}
+
+	items.push(...encodeNativeWrap(wrappedNativeInfo, owner));
 
 	if (enableCollateral) {
 		items.push(encodeEnableCollateral(evc, receiver, vault));
@@ -365,6 +421,7 @@ export function encodeBorrow(
 		enableCollateral = true,
 		collateralPermit2,
 		collateralShareSource,
+		collateralWrappedNativeInfo,
 	} = args;
 	const items: EVCBatchItem[] = [];
 
@@ -393,6 +450,7 @@ export function encodeBorrow(
 				receiver: borrowAccount,
 				owner,
 				enableCollateral,
+				wrappedNativeInfo: collateralWrappedNativeInfo,
 				permit2: collateralPermit2,
 			}),
 		);
@@ -436,9 +494,7 @@ export function encodeLiquidation(
 	const items: EVCBatchItem[] = [];
 
 	if (enableController) {
-		items.push(
-			encodeEnableController(evc, liquidatorSubAccountAddress, vault),
-		);
+		items.push(encodeEnableController(evc, liquidatorSubAccountAddress, vault));
 	}
 
 	items.push({
@@ -503,6 +559,7 @@ export function encodeMultiplyWithSwap(
 		enableController = true,
 		collateralPermit2,
 		collateralShareSource,
+		collateralWrappedNativeInfo,
 		swapQuote,
 	}: EncodeMultiplyWithSwapArgs,
 ): EVCBatchItem[] {
@@ -535,6 +592,7 @@ export function encodeMultiplyWithSwap(
 		if (enableCollateral) {
 			items.push(encodeEnableCollateral(evc, receiver, collateralVault));
 		}
+		items.push(...encodeNativeWrap(collateralWrappedNativeInfo, owner));
 		items.push({
 			targetContract: collateralVault,
 			onBehalfOfAccount: owner,
@@ -609,6 +667,7 @@ export function encodeMultiplySameAsset(
 		currentController,
 		collateralPermit2,
 		collateralShareSource,
+		collateralWrappedNativeInfo,
 	}: EncodeMultiplySameAssetArgs,
 ): EVCBatchItem[] {
 	const items: EVCBatchItem[] = [];
@@ -640,6 +699,7 @@ export function encodeMultiplySameAsset(
 		if (enableCollateral) {
 			items.push(encodeEnableCollateral(evc, receiver, collateralVault));
 		}
+		items.push(...encodeNativeWrap(collateralWrappedNativeInfo, owner));
 		items.push({
 			targetContract: collateralVault,
 			onBehalfOfAccount: owner,
@@ -852,19 +912,17 @@ function encodeRepayWithSharesSameAssetDifferentVault(
 	return items;
 }
 
-export function encodeRepayFromDeposit(
-	{
-		liabilityVault,
-		liabilityAsset,
-		liabilityAmount,
-		from,
-		receiver,
-		fromVault,
-		fromAsset,
-		disableControllerOnMax = true,
-		isMax = false,
-	}: EncodeRepayFromDepositArgs,
-): EVCBatchItem[] {
+export function encodeRepayFromDeposit({
+	liabilityVault,
+	liabilityAsset,
+	liabilityAmount,
+	from,
+	receiver,
+	fromVault,
+	fromAsset,
+	disableControllerOnMax = true,
+	isMax = false,
+}: EncodeRepayFromDepositArgs): EVCBatchItem[] {
 	if (fromAsset === liabilityAsset && fromVault === liabilityVault) {
 		return encodeRepayWithSharesSameAssetAndVault(
 			liabilityVault,
@@ -895,12 +953,13 @@ export function encodeRepayWithSwap({
 	maxWithdraw,
 	isMax = false,
 	disableControllerOnMax = true,
+	swapperMode,
 }: EncodeRepayWithSwapArgs): EVCBatchItem[] {
 	const items: EVCBatchItem[] = [];
 	const withdrawAmount =
-		maxWithdraw && maxWithdraw < BigInt(swapQuote.amountInMax || swapQuote.amountIn)
+		maxWithdraw && maxWithdraw < getSwapInputAmount(swapQuote, swapperMode)
 			? maxWithdraw
-			: BigInt(swapQuote.amountInMax || swapQuote.amountIn);
+			: getSwapInputAmount(swapQuote, swapperMode);
 
 	items.push({
 		targetContract: swapQuote.vaultIn,
@@ -909,7 +968,11 @@ export function encodeRepayWithSwap({
 		data: encodeFunctionData({
 			abi: eVaultAbi,
 			functionName: "withdraw",
-			args: [withdrawAmount, swapQuote.swap.swapperAddress, swapQuote.accountIn],
+			args: [
+				withdrawAmount,
+				swapQuote.swap.swapperAddress,
+				swapQuote.accountIn,
+			],
 		}),
 	});
 	items.push({
@@ -931,7 +994,9 @@ export function encodeRepayWithSwap({
 	});
 
 	if (isMax && disableControllerOnMax) {
-		items.push(encodeDisableController(swapQuote.receiver, swapQuote.accountOut));
+		items.push(
+			encodeDisableController(swapQuote.receiver, swapQuote.accountOut),
+		);
 	}
 
 	return items;
@@ -939,9 +1004,21 @@ export function encodeRepayWithSwap({
 
 export function encodeDepositWithSwapFromWallet(
 	evc: Address,
-	{ swapQuote, amount, sender, enableCollateral = true }: EncodeDepositWithSwapFromWalletArgs,
+	{
+		swapQuote,
+		amount,
+		sender,
+		enableCollateral = true,
+		wrappedNativeInfo,
+	}: EncodeDepositWithSwapFromWalletArgs,
 ): EVCBatchItem[] {
+	if (swapQuote.verify.type !== SwapVerificationType.SkimMin) {
+		throw new Error(
+			"Invalid swap quote type for deposit with swap - must be skimMin",
+		);
+	}
 	const items: EVCBatchItem[] = [
+		...encodeNativeWrap(wrappedNativeInfo, sender),
 		{
 			targetContract: swapQuote.verify.verifierAddress,
 			onBehalfOfAccount: sender,
@@ -949,7 +1026,11 @@ export function encodeDepositWithSwapFromWallet(
 			data: encodeFunctionData({
 				abi: swapVerifierAbi,
 				functionName: "transferFromSender",
-				args: [swapQuote.tokenIn.address, amount, swapQuote.swap.swapperAddress],
+				args: [
+					swapQuote.tokenIn.address,
+					amount,
+					swapQuote.swap.swapperAddress,
+				],
 			}),
 		},
 		{
@@ -968,7 +1049,11 @@ export function encodeDepositWithSwapFromWallet(
 
 	if (enableCollateral && swapQuote.receiver) {
 		items.push(
-			encodeEnableCollateral(evc, swapQuote.accountOut || sender, swapQuote.receiver),
+			encodeEnableCollateral(
+				evc,
+				swapQuote.accountOut || sender,
+				swapQuote.receiver,
+			),
 		);
 	}
 
@@ -979,6 +1064,7 @@ export function encodeSwapFromWallet({
 	swapQuote,
 	amount,
 	sender,
+	wrappedNativeInfo,
 }: EncodeSwapFromWalletArgs): EVCBatchItem[] {
 	if (swapQuote.verify.type !== "transferMin") {
 		throw new Error(
@@ -987,6 +1073,7 @@ export function encodeSwapFromWallet({
 	}
 
 	return [
+		...encodeNativeWrap(wrappedNativeInfo, sender),
 		{
 			targetContract: swapQuote.verify.verifierAddress,
 			onBehalfOfAccount: sender,
@@ -994,7 +1081,11 @@ export function encodeSwapFromWallet({
 			data: encodeFunctionData({
 				abi: swapVerifierAbi,
 				functionName: "transferFromSender",
-				args: [swapQuote.tokenIn.address, amount, swapQuote.swap.swapperAddress],
+				args: [
+					swapQuote.tokenIn.address,
+					amount,
+					swapQuote.swap.swapperAddress,
+				],
 			}),
 		},
 		{
@@ -1019,10 +1110,11 @@ export function encodeSwapCollateral(
 		enableCollateral = true,
 		disableCollateralOnMax = true,
 		isMax = false,
+		swapperMode = SwapperMode.EXACT_IN,
 	}: EncodeSwapCollateralArgs,
 ): EVCBatchItem[] {
 	const items: EVCBatchItem[] = [];
-	const withdrawAmount = BigInt(swapQuote.amountInMax || swapQuote.amountIn);
+	const withdrawAmount = getSwapInputAmount(swapQuote, swapperMode);
 
 	items.push({
 		targetContract: swapQuote.vaultIn,
@@ -1031,7 +1123,11 @@ export function encodeSwapCollateral(
 		data: encodeFunctionData({
 			abi: eVaultAbi,
 			functionName: "withdraw",
-			args: [withdrawAmount, swapQuote.swap.swapperAddress, swapQuote.accountIn],
+			args: [
+				withdrawAmount,
+				swapQuote.swap.swapperAddress,
+				swapQuote.accountIn,
+			],
 		}),
 	});
 	items.push({
@@ -1055,10 +1151,14 @@ export function encodeSwapCollateral(
 	});
 
 	if (isMax && disableCollateralOnMax) {
-		items.push(encodeDisableCollateral(evc, swapQuote.accountIn, swapQuote.vaultIn));
+		items.push(
+			encodeDisableCollateral(evc, swapQuote.accountIn, swapQuote.vaultIn),
+		);
 	}
 	if (enableCollateral) {
-		items.push(encodeEnableCollateral(evc, swapQuote.accountOut, swapQuote.receiver));
+		items.push(
+			encodeEnableCollateral(evc, swapQuote.accountOut, swapQuote.receiver),
+		);
 	}
 
 	return items;
@@ -1071,12 +1171,15 @@ export function encodeSwapDebt(
 		enableController = true,
 		disableControllerOnMax = true,
 		isMax = false,
+		swapperMode,
 	}: EncodeSwapDebtArgs,
 ): EVCBatchItem[] {
 	const items: EVCBatchItem[] = [];
 
 	if (enableController) {
-		items.push(encodeEnableController(evc, swapQuote.accountOut, swapQuote.vaultIn));
+		items.push(
+			encodeEnableController(evc, swapQuote.accountOut, swapQuote.vaultIn),
+		);
 	}
 
 	items.push({
@@ -1086,7 +1189,10 @@ export function encodeSwapDebt(
 		data: encodeFunctionData({
 			abi: eVaultAbi,
 			functionName: "borrow",
-			args: [BigInt(swapQuote.amountInMax), swapQuote.swap.swapperAddress],
+			args: [
+				getSwapInputAmount(swapQuote, swapperMode),
+				swapQuote.swap.swapperAddress,
+			],
 		}),
 	});
 	items.push({
@@ -1108,10 +1214,217 @@ export function encodeSwapDebt(
 	});
 
 	if (isMax && disableControllerOnMax) {
-		items.push(encodeDisableController(swapQuote.receiver, swapQuote.accountIn));
+		items.push(
+			encodeDisableController(swapQuote.receiver, swapQuote.accountIn),
+		);
 	}
 
 	return items;
+}
+
+export function encodeSwapAndBorrowFromWallet(
+	evc: Address,
+	{
+		swapQuote,
+		amount,
+		sender,
+		borrowAccount,
+		collateralVault,
+		borrowVault,
+		borrowAmount,
+		receiver,
+		currentController,
+		enableController = true,
+		enableCollateral = true,
+		wrappedNativeInfo,
+	}: EncodeSwapAndBorrowFromWalletArgs,
+): EVCBatchItem[] {
+	if (swapQuote.verify.type !== SwapVerificationType.SkimMin) {
+		throw new Error(
+			"Invalid swap quote type for swap and borrow - must be skimMin",
+		);
+	}
+	const items: EVCBatchItem[] = [
+		...encodeNativeWrap(wrappedNativeInfo, sender),
+		{
+			targetContract: swapQuote.verify.verifierAddress,
+			onBehalfOfAccount: sender,
+			value: 0n,
+			data: encodeFunctionData({
+				abi: swapVerifierAbi,
+				functionName: "transferFromSender",
+				args: [
+					swapQuote.tokenIn.address,
+					amount,
+					swapQuote.swap.swapperAddress,
+				],
+			}),
+		},
+		{
+			targetContract: swapQuote.swap.swapperAddress,
+			onBehalfOfAccount: sender,
+			value: 0n,
+			data: swapQuote.swap.swapperData,
+		},
+		{
+			targetContract: swapQuote.verify.verifierAddress,
+			onBehalfOfAccount: swapQuote.verify.account,
+			value: 0n,
+			data: swapQuote.verify.verifierData,
+		},
+	];
+
+	if (currentController && currentController !== borrowVault) {
+		items.push(encodeDisableController(currentController, borrowAccount));
+	}
+	if (enableController) {
+		items.push(encodeEnableController(evc, borrowAccount, borrowVault));
+	}
+	if (enableCollateral) {
+		items.push(encodeEnableCollateral(evc, borrowAccount, collateralVault));
+	}
+	items.push({
+		targetContract: borrowVault,
+		onBehalfOfAccount: borrowAccount,
+		value: 0n,
+		data: encodeFunctionData({
+			abi: eVaultAbi,
+			functionName: "borrow",
+			args: [borrowAmount, receiver],
+		}),
+	});
+
+	return items;
+}
+
+export function encodeSwapAndRepayFromWallet({
+	swapQuote,
+	amount,
+	sender,
+	liabilityVault,
+	repayAccount,
+	isMax = false,
+	disableControllerOnMax = true,
+	wrappedNativeInfo,
+}: EncodeSwapAndRepayFromWalletArgs): EVCBatchItem[] {
+	if (swapQuote.verify.type !== SwapVerificationType.DebtMax) {
+		throw new Error(
+			"Invalid swap quote type for swap and repay - must be debtMax",
+		);
+	}
+	const items: EVCBatchItem[] = [
+		...encodeNativeWrap(wrappedNativeInfo, sender),
+		{
+			targetContract: swapQuote.verify.verifierAddress,
+			onBehalfOfAccount: sender,
+			value: 0n,
+			data: encodeFunctionData({
+				abi: swapVerifierAbi,
+				functionName: "transferFromSender",
+				args: [
+					swapQuote.tokenIn.address,
+					amount,
+					swapQuote.swap.swapperAddress,
+				],
+			}),
+		},
+		{
+			targetContract: swapQuote.swap.swapperAddress,
+			onBehalfOfAccount: sender,
+			value: 0n,
+			data: swapQuote.swap.swapperData,
+		},
+		{
+			targetContract: swapQuote.verify.verifierAddress,
+			onBehalfOfAccount: swapQuote.verify.account,
+			value: 0n,
+			data: swapQuote.verify.verifierData,
+		},
+	];
+
+	if (isMax && disableControllerOnMax) {
+		items.push(encodeDisableController(liabilityVault, repayAccount));
+	}
+
+	return items;
+}
+
+export function encodeWithdrawAndSwap({
+	vault,
+	assets,
+	owner,
+	sender = owner,
+	swapQuote,
+}: EncodeWithdrawAndSwapArgs): EVCBatchItem[] {
+	if (swapQuote.verify.type !== SwapVerificationType.TransferMin) {
+		throw new Error(
+			"Invalid swap quote type for withdraw and swap - must be transferMin",
+		);
+	}
+
+	return [
+		{
+			targetContract: vault,
+			onBehalfOfAccount: owner,
+			value: 0n,
+			data: encodeFunctionData({
+				abi: eVaultAbi,
+				functionName: "withdraw",
+				args: [assets, swapQuote.swap.swapperAddress, owner],
+			}),
+		},
+		{
+			targetContract: swapQuote.swap.swapperAddress,
+			onBehalfOfAccount: swapQuote.accountIn,
+			value: 0n,
+			data: swapQuote.swap.swapperData,
+		},
+		{
+			targetContract: swapQuote.verify.verifierAddress,
+			onBehalfOfAccount: sender,
+			value: 0n,
+			data: swapQuote.verify.verifierData,
+		},
+	];
+}
+
+export function encodeRedeemAndSwap({
+	vault,
+	shares,
+	owner,
+	sender = owner,
+	swapQuote,
+}: EncodeRedeemAndSwapArgs): EVCBatchItem[] {
+	if (swapQuote.verify.type !== SwapVerificationType.TransferMin) {
+		throw new Error(
+			"Invalid swap quote type for redeem and swap - must be transferMin",
+		);
+	}
+
+	return [
+		{
+			targetContract: vault,
+			onBehalfOfAccount: owner,
+			value: 0n,
+			data: encodeFunctionData({
+				abi: eVaultAbi,
+				functionName: "redeem",
+				args: [shares, swapQuote.swap.swapperAddress, owner],
+			}),
+		},
+		{
+			targetContract: swapQuote.swap.swapperAddress,
+			onBehalfOfAccount: swapQuote.accountIn,
+			value: 0n,
+			data: swapQuote.swap.swapperData,
+		},
+		{
+			targetContract: swapQuote.verify.verifierAddress,
+			onBehalfOfAccount: sender,
+			value: 0n,
+			data: swapQuote.verify.verifierData,
+		},
+	];
 }
 
 export function encodeMigrateSameAssetCollateral(
@@ -1135,7 +1448,9 @@ export function encodeMigrateSameAssetCollateral(
 			data: encodeFunctionData({
 				abi: eVaultAbi,
 				functionName: isMax ? "redeem" : "withdraw",
-				args: isMax ? [maxShares ?? maxUint256, toVault, account] : [amount, toVault, account],
+				args: isMax
+					? [maxShares ?? maxUint256, toVault, account]
+					: [amount, toVault, account],
 			}),
 		},
 		{
@@ -1252,7 +1567,13 @@ export function encodeMigrateSameAssetDebt(
 		transferRemainingSharesTo &&
 		getAddress(transferRemainingSharesTo) !== getAddress(account)
 	) {
-		items.push(encodeTransferFromMax(newLiabilityVault, account, transferRemainingSharesTo));
+		items.push(
+			encodeTransferFromMax(
+				newLiabilityVault,
+				account,
+				transferRemainingSharesTo,
+			),
+		);
 	}
 
 	return items;
@@ -1260,7 +1581,14 @@ export function encodeMigrateSameAssetDebt(
 
 export function encodeTransfer(
 	evc: Address,
-	{ vault, to, amount, from, enableCollateralTo, disableCollateralFrom }: EncodeTransferArgs,
+	{
+		vault,
+		to,
+		amount,
+		from,
+		enableCollateralTo,
+		disableCollateralFrom,
+	}: EncodeTransferArgs,
 ): EVCBatchItem[] {
 	const items: EVCBatchItem[] = [];
 

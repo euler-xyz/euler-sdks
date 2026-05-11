@@ -27,17 +27,22 @@ Use these methods for reward discovery and display:
 - `v3` (default)
   - uses `GET /v3/apys/rewards` for vault reward APR catalogs
   - uses `GET /v3/rewards/breakdown` for per-account reward reads
+  - normalizes both Brevis and Incentra provider labels to `brevis`
+  - merges direct Brevis/Incentra campaign rows into the V3 campaign map, so V3-backed APY reads keep parity with the provider campaign surface
+  - uses direct proof-backed Brevis/Incentra user rewards when V3 does not include all claim fields
   - Fuul helper reads that are not available in V3 are handled by `rewardsService` itself via the direct adapter
 - `direct`
-  - uses the legacy Merkl, Brevis, and Fuul provider endpoints directly
+  - uses the Merkl, Brevis, and Fuul provider endpoints directly
 
 This split makes V3 the default for both vault reward APR catalogs and per-user reward breakdowns, without coupling the V3 adapter to the direct adapter implementation.
 
 `fetchUserRewards(...)` returns normalized `UserReward` objects with provider-specific claim metadata already attached:
 
 - Merkl: `proof`, `claimAddress`
-- Brevis: `proof`, `claimAddress`, `cumulativeAmounts`, `epoch`
+- Brevis/Incentra: `proof`, `claimAddress`, `cumulativeAmounts`, `epoch`
 - Fuul: `claimAddress` for display; claim checks are resolved lazily when building the plan
+
+Brevis/Incentra claim planning requires all four fields: `claimAddress`, `proof`, `cumulativeAmounts`, and `epoch`. The default V3 service path returns proof-backed direct rewards when V3 rows do not contain all claim metadata.
 
 ## Claim Planning APIs
 
@@ -57,7 +62,7 @@ These methods return a standard `TransactionPlan`, but they emit `contractCall` 
 - Multiple selected Merkl rewards on the same claim distributor are combined into one `claim(...)` call
 - The planner uses `reward.accumulated` plus the stored Merkle proof data
 
-### Brevis
+### Brevis/Incentra
 
 - Each reward becomes one direct `claim(...)` call
 - The planner uses `cumulativeAmounts`, `epoch`, and `proof` from the reward payload
@@ -95,6 +100,7 @@ Relevant `rewardsServiceConfig` fields:
 - `fuulApiUrl`
 - `fuulTotalsUrl`
 - `fuulClaimChecksUrl`
+- `brevisChainIds`
 - `merklDistributorAddress`
 - `fuulManagerAddress`
 - `fuulFactoryAddress`

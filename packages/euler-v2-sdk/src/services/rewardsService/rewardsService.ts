@@ -118,12 +118,158 @@ const FUUL_FACTORY_ABI = [
 	},
 ] as const;
 
+type BrevisFallbackAdapter = IRewardsAdapter & {
+	fetchBrevisChainRewards?: (
+		chainId: number,
+	) => Promise<Map<string, VaultRewardInfo>>;
+	fetchBrevisUserRewardClaims?: (
+		chainId: number,
+		address: Address,
+	) => Promise<UserReward[]>;
+};
+
+const rewardCampaignKey = (reward: { source: string; campaignId: string }) =>
+	`${reward.source}:${reward.campaignId}`;
+
+const mergeVaultRewardMaps = (
+	primary: Map<string, VaultRewardInfo>,
+	fallback: Map<string, VaultRewardInfo>,
+): Map<string, VaultRewardInfo> => {
+	const merged = new Map<string, VaultRewardInfo>();
+
+	for (const [vaultAddress, info] of primary) {
+		merged.set(vaultAddress.toLowerCase(), {
+			totalRewardsApr: info.totalRewardsApr,
+			campaigns: [...info.campaigns],
+		});
+	}
+
+	for (const [vaultAddress, fallbackInfo] of fallback) {
+		const key = vaultAddress.toLowerCase();
+		let info = merged.get(key);
+		if (!info) {
+			info = { totalRewardsApr: 0, campaigns: [] };
+			merged.set(key, info);
+		}
+
+		const existing = new Set(info.campaigns.map(rewardCampaignKey));
+		for (const campaign of fallbackInfo.campaigns) {
+			const campaignKey = rewardCampaignKey(campaign);
+			if (existing.has(campaignKey)) continue;
+			info.campaigns.push(campaign);
+			info.totalRewardsApr += campaign.apr;
+			existing.add(campaignKey);
+		}
+	}
+
+	return merged;
+};
+
+const hasBrevisClaimData = (reward: UserReward): boolean =>
+	reward.provider !== "brevis" ||
+	!!(
+		reward.claimAddress &&
+		reward.proof?.length &&
+		reward.cumulativeAmounts?.length &&
+		reward.epoch !== undefined &&
+		reward.epoch !== ""
+	);
+
+const normalizeRewardAddress = (value?: Address) => value?.toLowerCase() ?? "";
+
+const canMergeUserReward = (
+	primary: UserReward,
+	fallback: UserReward,
+): boolean => {
+	if (primary.provider !== fallback.provider) return false;
+	if (primary.chainId !== fallback.chainId) return false;
+	if (
+		primary.campaignId &&
+		fallback.campaignId &&
+		primary.campaignId !== fallback.campaignId
+	) {
+		return false;
+	}
+	if (
+		primary.token.address.toLowerCase() !== fallback.token.address.toLowerCase()
+	) {
+		return false;
+	}
+
+	const primaryClaimAddress = normalizeRewardAddress(primary.claimAddress);
+	const fallbackClaimAddress = normalizeRewardAddress(fallback.claimAddress);
+	if (
+		primaryClaimAddress &&
+		fallbackClaimAddress &&
+		primaryClaimAddress !== fallbackClaimAddress
+	) {
+		return false;
+	}
+
+	if (
+		primary.epoch !== undefined &&
+		fallback.epoch !== undefined &&
+		primary.epoch !== fallback.epoch
+	) {
+		return false;
+	}
+
+	return true;
+};
+
+const mergeUserReward = (
+	primary: UserReward,
+	fallback: UserReward,
+): UserReward => ({
+	...fallback,
+	...primary,
+	token: {
+		...fallback.token,
+		...primary.token,
+	},
+	tokenPrice: primary.tokenPrice || fallback.tokenPrice,
+	campaignId: primary.campaignId ?? fallback.campaignId,
+	claimAddress: primary.claimAddress ?? fallback.claimAddress,
+	proof: primary.proof?.length ? primary.proof : fallback.proof,
+	cumulativeAmounts: primary.cumulativeAmounts?.length
+		? primary.cumulativeAmounts
+		: fallback.cumulativeAmounts,
+	epoch: primary.epoch ?? fallback.epoch,
+});
+
+const mergeUserRewards = (
+	primary: UserReward[],
+	fallback: UserReward[],
+): UserReward[] => {
+	const merged = primary.filter(hasBrevisClaimData);
+
+	for (const fallbackReward of fallback) {
+		if (!hasBrevisClaimData(fallbackReward)) continue;
+
+		const existingIndex = merged.findIndex((primaryReward) =>
+			canMergeUserReward(primaryReward, fallbackReward),
+		);
+		if (existingIndex === -1) {
+			merged.push(fallbackReward);
+			continue;
+		}
+
+		const existing = merged[existingIndex]!;
+		merged[existingIndex] =
+			hasBrevisClaimData(existing) && !hasBrevisClaimData(fallbackReward)
+				? existing
+				: mergeUserReward(existing, fallbackReward);
+	}
+
+	return merged;
+};
+
 export class RewardsService implements IRewardsService {
 	private providerService?: ProviderService;
 
 	constructor(
 		private adapter: IRewardsAdapter,
-		private directAdapter: IRewardsAdapter | undefined,
+		private directAdapter: BrevisFallbackAdapter | undefined,
 		private readonly addresses: {
 			merklDistributorAddress: Address;
 			fuulManagerAddress: Address;
@@ -146,8 +292,23 @@ export class RewardsService implements IRewardsService {
 		return this.adapter.fetchVaultRewards(chainId, vaultAddress);
 	}
 
-	async fetchChainRewards(chainId: number): Promise<Map<string, VaultRewardInfo>> {
-		return this.adapter.fetchChainRewards(chainId);
+	async fetchChainRewards(
+		chainId: number,
+	): Promise<Map<string, VaultRewardInfo>> {
+		let rewardsMap: Map<string, VaultRewardInfo>;
+		try {
+			rewardsMap = await this.adapter.fetchChainRewards(chainId);
+		} catch (err) {
+			if (!this.directAdapter?.fetchBrevisChainRewards) throw err;
+			rewardsMap = new Map();
+		}
+
+		if (!this.directAdapter?.fetchBrevisChainRewards) return rewardsMap;
+
+		const brevisRewardsMap = await this.directAdapter
+			.fetchBrevisChainRewards(chainId)
+			.catch(() => new Map<string, VaultRewardInfo>());
+		return mergeVaultRewardMaps(rewardsMap, brevisRewardsMap);
 	}
 
 	async populateRewards(vaults: ERC4626Vault[]): Promise<void> {
@@ -171,8 +332,24 @@ export class RewardsService implements IRewardsService {
 		);
 	}
 
-	async fetchUserRewards(chainId: number, address: Address): Promise<UserReward[]> {
-		return this.adapter.fetchUserRewards(chainId, address);
+	async fetchUserRewards(
+		chainId: number,
+		address: Address,
+	): Promise<UserReward[]> {
+		let rewards: UserReward[];
+		try {
+			rewards = await this.adapter.fetchUserRewards(chainId, address);
+		} catch (err) {
+			if (!this.directAdapter?.fetchBrevisUserRewardClaims) throw err;
+			rewards = [];
+		}
+
+		if (!this.directAdapter?.fetchBrevisUserRewardClaims) return rewards;
+
+		const brevisRewards = await this.directAdapter
+			.fetchBrevisUserRewardClaims(chainId, address)
+			.catch(() => []);
+		return mergeUserRewards(rewards, brevisRewards);
 	}
 
 	async fetchFuulTotals(address: Address): Promise<FuulTotals> {
@@ -285,7 +462,8 @@ export class RewardsService implements IRewardsService {
 		if (
 			!reward.claimAddress ||
 			!reward.cumulativeAmounts?.length ||
-			!reward.epoch ||
+			reward.epoch === undefined ||
+			reward.epoch === "" ||
 			!reward.proof?.length
 		) {
 			throw new Error("Missing Brevis claim data");

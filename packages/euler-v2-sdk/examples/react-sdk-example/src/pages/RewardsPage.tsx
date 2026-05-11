@@ -3,6 +3,8 @@ import { useChainRewards } from "../queries/sdkQueries.ts";
 import { formatPercent } from "../utils/format.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 
+const formatRewardSource = (source: string) => source === "brevis" ? "Incentra" : source;
+
 export function RewardsPage() {
   const { chainId, loading: sdkLoading, error: sdkError } = useSDK();
   const { data: entries, isLoading, error } = useChainRewards();
@@ -68,7 +70,7 @@ export function RewardsPage() {
             <tbody>
               {info.campaigns.map((c) => (
                 <tr key={`${c.source}:${c.campaignId}`}>
-                  <td>{c.source}</td>
+                  <td>{formatRewardSource(c.source)}</td>
                   <td>{c.action}</td>
                   <td>{c.rewardTokenSymbol}</td>
                   <td>

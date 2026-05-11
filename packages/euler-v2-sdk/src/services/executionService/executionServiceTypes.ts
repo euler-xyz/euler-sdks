@@ -8,6 +8,7 @@ import type { Wallet } from "../../entities/Wallet.js";
 import type {
 	SwapQuote,
 	SwapQuoteRequest,
+	SwapperMode,
 } from "../swapService/swapServiceTypes.js";
 
 export type EVCBatchItem = {
@@ -46,6 +47,7 @@ export type EncodeDepositArgs = {
 	receiver: Address;
 	owner: Address;
 	enableCollateral?: boolean;
+	wrappedNativeInfo?: WrappedNativeInfo;
 	permit2?: Permit2Data;
 };
 
@@ -56,6 +58,7 @@ export type EncodeMintArgs = {
 	receiver: Address;
 	owner: Address;
 	enableCollateral?: boolean;
+	wrappedNativeInfo?: WrappedNativeInfo;
 	permit2?: Permit2Data;
 };
 
@@ -90,6 +93,7 @@ export type EncodeBorrowArgs = {
 	collateralVault?: Address;
 	collateralAmount?: bigint;
 	collateralShareSource?: CollateralShareSource;
+	collateralWrappedNativeInfo?: WrappedNativeInfo;
 	collateralPermit2?: Permit2Data;
 };
 
@@ -147,6 +151,7 @@ export type EncodeRepayWithSwapArgs = {
 	maxWithdraw?: bigint; // max assets available to withdraw. For buy orders, amountInMax may exceed the available assets and withdraw must be capped
 	isMax?: boolean;
 	disableControllerOnMax?: boolean;
+	swapperMode?: SwapperMode;
 };
 
 export type EncodeRepayFromWalletArgs = {
@@ -186,6 +191,7 @@ export type EncodeDepositWithSwapFromWalletArgs = {
 	amount: bigint; // amount of input token to transfer from wallet
 	sender: Address; // wallet address providing the tokens
 	enableCollateral?: boolean;
+	wrappedNativeInfo?: WrappedNativeInfo;
 };
 
 export type EncodeSwapFromWalletArgs = {
@@ -193,6 +199,7 @@ export type EncodeSwapFromWalletArgs = {
 	swapQuote: SwapQuote;
 	amount: bigint; // amount of input token to transfer from wallet
 	sender: Address; // wallet address providing the tokens
+	wrappedNativeInfo?: WrappedNativeInfo;
 };
 
 export type EncodeSwapCollateralArgs = {
@@ -201,6 +208,7 @@ export type EncodeSwapCollateralArgs = {
 	enableCollateral?: boolean;
 	disableCollateralOnMax?: boolean;
 	isMax?: boolean;
+	swapperMode?: SwapperMode;
 };
 
 export type EncodeSwapDebtArgs = {
@@ -209,6 +217,7 @@ export type EncodeSwapDebtArgs = {
 	enableController?: boolean;
 	disableControllerOnMax?: boolean;
 	isMax?: boolean;
+	swapperMode?: SwapperMode;
 };
 
 export type EncodeMigrateSameAssetCollateralArgs = {
@@ -259,6 +268,7 @@ export type EncodeMultiplyWithSwapArgs = {
 	currentController?: Address;
 	enableController?: boolean;
 	collateralShareSource?: CollateralShareSource;
+	collateralWrappedNativeInfo?: WrappedNativeInfo;
 	collateralPermit2?: Permit2Data;
 	swapQuote: SwapQuote;
 };
@@ -277,7 +287,54 @@ export type EncodeMultiplySameAssetArgs = {
 	currentController?: Address;
 	enableController?: boolean;
 	collateralShareSource?: CollateralShareSource;
+	collateralWrappedNativeInfo?: WrappedNativeInfo;
 	collateralPermit2?: Permit2Data;
+};
+
+export type EncodeSwapAndBorrowFromWalletArgs = {
+	chainId: number;
+	swapQuote: SwapQuote;
+	amount: bigint;
+	sender: Address;
+	borrowAccount: Address;
+	collateralVault: Address;
+	borrowVault: Address;
+	borrowAmount: bigint;
+	receiver: Address;
+	currentController?: Address;
+	enableController?: boolean;
+	enableCollateral?: boolean;
+	wrappedNativeInfo?: WrappedNativeInfo;
+};
+
+export type EncodeSwapAndRepayFromWalletArgs = {
+	chainId: number;
+	swapQuote: SwapQuote;
+	amount: bigint;
+	sender: Address;
+	liabilityVault: Address;
+	repayAccount: Address;
+	isMax?: boolean;
+	disableControllerOnMax?: boolean;
+	wrappedNativeInfo?: WrappedNativeInfo;
+};
+
+export type EncodeWithdrawAndSwapArgs = {
+	chainId: number;
+	vault: Address;
+	assets: bigint;
+	owner: Address;
+	sender?: Address;
+	swapQuote: SwapQuote;
+};
+
+export type EncodeRedeemAndSwapArgs = {
+	chainId: number;
+	vault: Address;
+	shares: bigint;
+	owner: Address;
+	sender?: Address;
+	swapQuote: SwapQuote;
 };
 
 export type CollateralShareSource = {
@@ -287,6 +344,11 @@ export type CollateralShareSource = {
 	shares: bigint;
 	/** Disable the source collateral flag before transferring shares when needed. */
 	disableCollateralFrom?: boolean;
+};
+
+export type WrappedNativeInfo = {
+	wrappedTokenAddress: Address;
+	nativeAmount: bigint;
 };
 
 export type EncodePermit2CallArgs = {
@@ -386,10 +448,7 @@ export type ContractCall = {
 	value: bigint;
 };
 
-export type TransactionPlanItem =
-	| RequiredApproval
-	| EVCBatch
-	| ContractCall;
+export type TransactionPlanItem = RequiredApproval | EVCBatch | ContractCall;
 
 export type TransactionPlan = TransactionPlanItem[];
 
@@ -401,6 +460,7 @@ export type PlanDepositArgs = {
 	account: Account<IHasVaultAddress>;
 	asset: Address;
 	enableCollateral?: boolean;
+	wrappedNativeInfo?: WrappedNativeInfo;
 };
 
 export type PlanMintArgs = {
@@ -411,6 +471,7 @@ export type PlanMintArgs = {
 	asset: Address;
 	enableCollateral?: boolean;
 	sharesToAssetsExchangeRateWad?: bigint;
+	wrappedNativeInfo?: WrappedNativeInfo;
 };
 
 export type PlanWithdrawArgs = {
@@ -437,6 +498,7 @@ export type PlanBorrowCollateral =
 			amount: bigint;
 			asset: Address;
 			source?: "wallet";
+			wrappedNativeInfo?: WrappedNativeInfo;
 	  }
 	| {
 			vault: Address;
@@ -488,6 +550,7 @@ export type PlanRepayWithSwapArgs = {
 	account: Account<IHasVaultAddress>;
 	swapQuote: SwapQuote;
 	cleanupOnMax?: boolean;
+	swapperMode?: SwapperMode;
 };
 
 export type PlanDepositWithSwapFromWalletArgs = {
@@ -496,6 +559,7 @@ export type PlanDepositWithSwapFromWalletArgs = {
 	amount: bigint; // amount of input token to transfer from wallet
 	tokenIn: Address; // input token address (for approval)
 	enableCollateral?: boolean;
+	wrappedNativeInfo?: WrappedNativeInfo;
 };
 
 export type PlanSwapFromWalletArgs = {
@@ -503,16 +567,19 @@ export type PlanSwapFromWalletArgs = {
 	swapQuote: SwapQuote;
 	amount: bigint; // amount of input token to transfer from wallet
 	tokenIn: Address; // input token address (for approval)
+	wrappedNativeInfo?: WrappedNativeInfo;
 };
 
 export type PlanSwapCollateralArgs = {
 	account: Account<IHasVaultAddress>;
 	swapQuote: SwapQuote;
+	swapperMode?: SwapperMode;
 };
 
 export type PlanSwapDebtArgs = {
 	account: Account<IHasVaultAddress>;
 	swapQuote: SwapQuote;
+	swapperMode?: SwapperMode;
 };
 
 export type PlanMigrateSameAssetCollateralArgs = {
@@ -565,7 +632,9 @@ export type PlanMultiplyWithSwapArgs = {
 	collateralAmount: bigint;
 	collateralAsset: Address;
 	collateralShareSource?: CollateralShareSource;
+	collateralWrappedNativeInfo?: WrappedNativeInfo;
 	swapQuote: SwapQuote;
+	swapperMode?: SwapperMode;
 };
 
 export type PlanMultiplySameAssetArgs = {
@@ -574,10 +643,52 @@ export type PlanMultiplySameAssetArgs = {
 	collateralAmount: bigint;
 	collateralAsset: Address;
 	collateralShareSource?: CollateralShareSource;
+	collateralWrappedNativeInfo?: WrappedNativeInfo;
 	liabilityVault: Address;
 	liabilityAmount: bigint;
 	longVault: Address;
 	receiver: Address;
+};
+
+export type PlanSwapAndBorrowFromWalletArgs = {
+	account: Account<IHasVaultAddress>;
+	swapQuote: SwapQuote;
+	amount: bigint;
+	tokenIn: Address;
+	borrowVault: Address;
+	borrowAmount: bigint;
+	borrowAccount?: Address;
+	receiver?: Address;
+	collateralVault?: Address;
+	wrappedNativeInfo?: WrappedNativeInfo;
+};
+
+export type PlanSwapAndRepayFromWalletArgs = {
+	account: Account<IHasVaultAddress>;
+	swapQuote: SwapQuote;
+	amount: bigint;
+	tokenIn: Address;
+	liabilityVault?: Address;
+	repayAccount?: Address;
+	isMax?: boolean;
+	cleanupOnMax?: boolean;
+	wrappedNativeInfo?: WrappedNativeInfo;
+};
+
+export type PlanWithdrawAndSwapArgs = {
+	account: Account<IHasVaultAddress>;
+	vault: Address;
+	assets: bigint;
+	owner: Address;
+	swapQuote: SwapQuote;
+};
+
+export type PlanRedeemAndSwapArgs = {
+	account: Account<IHasVaultAddress>;
+	vault: Address;
+	shares: bigint;
+	owner: Address;
+	swapQuote: SwapQuote;
 };
 
 // Decoded batch item data

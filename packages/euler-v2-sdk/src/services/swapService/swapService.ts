@@ -1,4 +1,4 @@
-import { type Address, encodeFunctionData, getAddress, zeroAddress } from "viem";
+import { getAddress, zeroAddress } from "viem";
 import type {
 	SwapQuote,
 	SwapQuoteRequest,
@@ -8,10 +8,10 @@ import type {
 	GetDepositQuoteArgs,
 	GetWalletSwapQuoteArgs,
 } from "./swapServiceTypes.js";
-import { SwapperMode } from "./swapServiceTypes.js";
-import { swapVerifierAbi } from "./swapVerifierAbi.js";
+import { SwapperMode, SwapVerificationType } from "./swapServiceTypes.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
+import { validateSwapQuoteVerifierData } from "./swapVerification.js";
 
 export interface SwapServiceConfig {
 	swapApiUrl: string;
@@ -33,9 +33,6 @@ export interface ISwapService {
 
 const DEFAULT_DEADLINE = 1800; // 30 minutes
 const MAX_SLIPPAGE = 50;
-const SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR = 10_000n;
-const SLIPPAGE_VALIDATION_TOLERANCE_UNITS = 1n; // 0.01%
-
 export class SwapService implements ISwapService {
 	constructor(
 		private readonly config: SwapServiceConfig,
@@ -132,7 +129,6 @@ export class SwapService implements ISwapService {
 		// Validate verifier and slippage data for each quote
 		for (const quote of jsonData.data) {
 			this.validateVerifierData(request, quote);
-			this.validateSlippageData(request, quote);
 		}
 
 		return jsonData.data;
@@ -233,59 +229,35 @@ export class SwapService implements ISwapService {
 		}
 		if (
 			getAddress(quote.verify.verifierAddress) !==
-				getAddress(expectedVerifierAddress)
+			getAddress(expectedVerifierAddress)
 		) {
 			throw new Error("SwapVerifier address mismatch");
-		}
-
-		let functionName:
-			| "verifyAmountMinAndSkim"
-			| "verifyDebtMax"
-			| "verifyAmountMinAndTransfer";
-		let amount: bigint;
-		let firstArg: Address; // vault or asset depending on verification type
-		let secondArg: Address; // receiver or account depending on verification type
-
-		const adjustForInterest = (debtAmount: bigint) =>
-			(debtAmount * 10_001n) / 10_000n;
-
-		if (request.isRepay) {
-			functionName = "verifyDebtMax";
-			firstArg = request.receiver;
-			secondArg = request.accountOut;
-			if (request.swapperMode === SwapperMode.TARGET_DEBT) {
-				amount = request.targetDebt || 0n;
-			} else {
-				amount = (request.currentDebt || 0n) - BigInt(quote.amountOutMin);
-				if (amount < 0n) amount = 0n;
-				amount = adjustForInterest(amount);
-			}
-		} else if (request.transferOutputToReceiver) {
-			functionName = "verifyAmountMinAndTransfer";
-			firstArg = request.tokenOut;
-			secondArg = request.receiver;
-			amount = BigInt(quote.amountOutMin);
-		} else {
-			functionName = "verifyAmountMinAndSkim";
-			firstArg = request.receiver;
-			secondArg = request.accountOut;
-			amount = BigInt(quote.amountOutMin);
 		}
 
 		const deadline =
 			request.deadline ||
 			Math.floor(Date.now() / 1000) +
 				(this.config.defaultDeadline || DEFAULT_DEADLINE);
-
-		const expectedVerifierData = encodeFunctionData({
-			abi: swapVerifierAbi,
-			functionName,
-			args: [firstArg, secondArg, amount, BigInt(deadline)],
+		validateSwapQuoteVerifierData({
+			quote,
+			swapperMode: request.swapperMode,
+			isRepay: request.isRepay,
+			requestedSlippage: request.slippage,
+			targetDebt: request.targetDebt,
+			currentDebt: request.currentDebt,
+			expectedVerifierAddress,
+			verification: {
+				type: request.isRepay
+					? SwapVerificationType.DebtMax
+					: request.transferOutputToReceiver
+						? SwapVerificationType.TransferMin
+						: SwapVerificationType.SkimMin,
+				vault: request.receiver,
+				account: request.accountOut,
+				transferAsset: request.tokenOut,
+				deadline,
+			},
 		});
-
-		if (quote.verify.verifierData !== expectedVerifierData) {
-			throw new Error("SwapVerifier data mismatch");
-		}
 	}
 
 	/**
@@ -485,7 +457,9 @@ export class SwapService implements ISwapService {
 	 * @param args.deadline - Quote deadline timestamp in seconds (optional)
 	 * @returns Promise of array of swap quotes (verify type transferMin). Throws if slippage invalid or no quotes.
 	 */
-	async fetchWalletSwapQuote(args: GetWalletSwapQuoteArgs): Promise<SwapQuote[]> {
+	async fetchWalletSwapQuote(
+		args: GetWalletSwapQuoteArgs,
+	): Promise<SwapQuote[]> {
 		const {
 			chainId,
 			fromAsset,
@@ -539,87 +513,5 @@ export class SwapService implements ISwapService {
 				"Valid slippage between 0 and 50% must be provided for swap",
 			);
 		}
-	}
-
-	private validateSlippageData(
-		request: SwapQuoteRequest,
-		quote: SwapQuote,
-	): void {
-		if (request.swapperMode === SwapperMode.TARGET_DEBT) {
-			const amountIn = BigInt(quote.amountIn);
-			const amountInMax = BigInt(quote.amountInMax);
-			const expectedAmountInMax = this.applySlippageToInput(
-				amountIn,
-				request.slippage,
-			);
-			const allowedAmountInMax = this.applyInputValidationTolerance(
-				expectedAmountInMax,
-			);
-
-			if (amountInMax > allowedAmountInMax) {
-				throw new Error("Swap quote amountInMax exceeds requested slippage");
-			}
-		} else {
-			const amountOut = BigInt(quote.amountOut);
-			const amountOutMin = BigInt(quote.amountOutMin);
-			const expectedAmountOutMin = this.applySlippageToOutput(
-				amountOut,
-				request.slippage,
-			);
-			const allowedAmountOutMin = this.applyOutputValidationTolerance(
-				expectedAmountOutMin,
-			);
-
-			if (amountOutMin < allowedAmountOutMin) {
-				throw new Error("Swap quote amountOutMin exceeds requested slippage");
-			}
-		}
-	}
-
-	private applyOutputValidationTolerance(amount: bigint): bigint {
-		return (
-			amount *
-			(SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR -
-				SLIPPAGE_VALIDATION_TOLERANCE_UNITS)
-		) / SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR;
-	}
-
-	private applyInputValidationTolerance(amount: bigint): bigint {
-		return (
-			amount *
-				(SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR +
-					SLIPPAGE_VALIDATION_TOLERANCE_UNITS) +
-			SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR -
-			1n
-		) / SLIPPAGE_VALIDATION_TOLERANCE_DENOMINATOR;
-	}
-
-	private applySlippageToOutput(amount: bigint, slippage: number): bigint {
-		const { slippageUnits, denominator } = this.parseSlippagePercent(slippage);
-		return (amount * (denominator - slippageUnits)) / denominator;
-	}
-
-	private applySlippageToInput(amount: bigint, slippage: number): bigint {
-		const { slippageUnits, denominator } = this.parseSlippagePercent(slippage);
-		return (amount * (denominator + slippageUnits) + denominator - 1n) /
-			denominator;
-	}
-
-	private parseSlippagePercent(slippage: number): {
-		slippageUnits: bigint;
-		denominator: bigint;
-	} {
-		const slippageString = slippage.toLocaleString("en-US", {
-			useGrouping: false,
-			maximumFractionDigits: 20,
-		});
-		const [whole = "0", fraction = ""] = slippageString.split(".");
-		const scale = 10n ** BigInt(fraction.length);
-		const slippageUnits = BigInt(whole) * scale + BigInt(fraction || "0");
-
-		return {
-			slippageUnits,
-			denominator: 100n * scale,
-		};
 	}
 }

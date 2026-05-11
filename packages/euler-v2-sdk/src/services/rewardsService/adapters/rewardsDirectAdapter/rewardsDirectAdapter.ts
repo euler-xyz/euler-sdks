@@ -25,7 +25,6 @@ const DEFAULT_BREVIS_API_URL =
 const DEFAULT_BREVIS_PROOFS_API_URL =
 	"https://incentra-prd.brevis.network/v1/getMerkleProofsBatch";
 const DEFAULT_FUUL_API_URL = "https://api.fuul.xyz/api/v1";
-const DEFAULT_BREVIS_CHAIN_IDS = [1];
 
 const DEFAULT_MERKL_DISTRIBUTOR: Address =
 	"0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae";
@@ -49,7 +48,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	private fuulApiUrl: string;
 	private fuulTotalsUrl?: string;
 	private fuulClaimChecksUrl?: string;
-	private brevisChainIds: number[];
+	private brevisChainIds?: number[];
 	private merklDistributorAddress: Address;
 	private fuulManagerAddress: Address;
 	private fuulFactoryAddress: Address;
@@ -65,7 +64,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		this.fuulApiUrl = config?.fuulApiUrl ?? DEFAULT_FUUL_API_URL;
 		this.fuulTotalsUrl = config?.fuulTotalsUrl;
 		this.fuulClaimChecksUrl = config?.fuulClaimChecksUrl;
-		this.brevisChainIds = config?.brevisChainIds ?? DEFAULT_BREVIS_CHAIN_IDS;
+		this.brevisChainIds = config?.brevisChainIds;
 		this.merklDistributorAddress =
 			config?.merklDistributorAddress ?? DEFAULT_MERKL_DISTRIBUTOR;
 		this.fuulManagerAddress =
@@ -190,12 +189,14 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		return chainMap.get(vaultAddress.toLowerCase());
 	}
 
-	async fetchChainRewards(chainId: number): Promise<Map<string, VaultRewardInfo>> {
+	async fetchChainRewards(
+		chainId: number,
+	): Promise<Map<string, VaultRewardInfo>> {
 		const [merklCampaigns, brevisCampaigns, fuulCampaigns] = await Promise.all([
 			this.enableMerkl
 				? this.fetchMerklCampaigns(chainId)
 				: Promise.resolve([]),
-			this.enableBrevis && this.brevisChainIds.includes(chainId)
+			this.isBrevisChainEnabled(chainId)
 				? this.fetchBrevisCampaigns(chainId)
 				: Promise.resolve([]),
 			this.enableFuul ? this.fetchFuulCampaigns(chainId) : Promise.resolve([]),
@@ -209,12 +210,15 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		return rewardsMap;
 	}
 
-	async fetchUserRewards(chainId: number, address: Address): Promise<UserReward[]> {
+	async fetchUserRewards(
+		chainId: number,
+		address: Address,
+	): Promise<UserReward[]> {
 		const [merklRewards, brevisRewards, fuulRewards] = await Promise.all([
 			this.enableMerkl
 				? this.fetchMerklUserRewards(chainId, address)
 				: Promise.resolve([]),
-			this.enableBrevis && this.brevisChainIds.includes(chainId)
+			this.isBrevisChainEnabled(chainId)
 				? this.fetchBrevisUserRewards(chainId, address)
 				: Promise.resolve([]),
 			this.enableFuul
@@ -253,6 +257,30 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 
 	getFuulFactoryAddress(): Address {
 		return this.fuulFactoryAddress;
+	}
+
+	async fetchBrevisChainRewards(
+		chainId: number,
+	): Promise<Map<string, VaultRewardInfo>> {
+		if (!this.isBrevisChainEnabled(chainId)) return new Map();
+		const campaigns = await this.fetchBrevisCampaigns(chainId);
+		return this.mergeCampaigns([], campaigns, []);
+	}
+
+	async fetchBrevisUserRewardClaims(
+		chainId: number,
+		address: Address,
+	): Promise<UserReward[]> {
+		if (!this.isBrevisChainEnabled(chainId)) return [];
+		return this.fetchBrevisUserRewards(chainId, address);
+	}
+
+	private isBrevisChainEnabled(chainId: number): boolean {
+		return (
+			this.enableBrevis &&
+			(this.brevisChainIds === undefined ||
+				this.brevisChainIds.includes(chainId))
+		);
 	}
 
 	private async fetchMerklCampaigns(
@@ -482,6 +510,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				},
 				tokenPrice,
 				provider: "brevis",
+				campaignId: batch.campaignId,
 				accumulated,
 				unclaimed: batch.claimableRewards,
 				proof: batch.merkleProof as Hex[],
