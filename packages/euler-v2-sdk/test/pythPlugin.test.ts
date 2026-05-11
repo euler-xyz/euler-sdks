@@ -23,7 +23,8 @@ const GOOD_FEED =
 	"0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43" as const;
 const MISSING_FEED =
 	"0x70cd05521e3bdeaee2cadc1360f0d95397f03275f273199be35a029114f53a3b" as const;
-const PYTH = getAddress("0x00000000000000000000000000000000000000AA");
+const PYTH = getAddress("0x4305FB66699C3B2702D4d05CF36551390A4c69C6");
+const UNTRUSTED_PYTH = getAddress("0x00000000000000000000000000000000000000AA");
 const OWNER = getAddress("0x00000000000000000000000000000000000000BB");
 const EVC = getAddress("0x00000000000000000000000000000000000000CC");
 const CONTROLLER = getAddress("0x00000000000000000000000000000000000000DD");
@@ -236,6 +237,159 @@ test("Pyth plugin uses final batch controller and collateral state for health ch
 		assert.equal(items[0]?.targetContract, PYTH);
 		assert.equal(items[0]?.onBehalfOfAccount, OWNER);
 		assert.equal(items[0]?.value, 11n);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test("Pyth plugin skips untrusted Pyth contract addresses", async () => {
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = (async () =>
+		Response.json({
+			binary: {
+				encoding: "hex",
+				data: ["feedface"],
+			},
+		})) as typeof fetch;
+
+	try {
+		let queriedFee = false;
+		const provider = {
+			readContract: async () => {
+				queriedFee = true;
+				return 11n;
+			},
+		} as unknown as PublicClient;
+		const plugin = createPythPlugin();
+		const result = await plugin.getReadPrepend?.({
+			chainId: 1,
+			provider,
+			vaults: [
+				{
+					oracle: {
+						adapters: [
+							{
+								oracle: UNTRUSTED_PYTH,
+								name: "PythOracle",
+								base: ASSET,
+								quote: UNIT,
+								pythDetail: {
+									pyth: UNTRUSTED_PYTH,
+									base: ASSET,
+									quote: UNIT,
+									feedId: GOOD_FEED,
+									maxStaleness: 60n,
+									maxConfWidth: 1n,
+								},
+							},
+						],
+					},
+				} as never,
+			],
+		});
+
+		assert.equal(result, null);
+		assert.equal(queriedFee, false);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test("Pyth plugin allows explicitly configured custom Pyth addresses", async () => {
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = (async () =>
+		Response.json({
+			binary: {
+				encoding: "hex",
+				data: ["feedface"],
+			},
+		})) as typeof fetch;
+
+	try {
+		const provider = {
+			readContract: async () => 11n,
+		} as unknown as PublicClient;
+		const plugin = createPythPlugin({
+			pythAddresses: { 1: UNTRUSTED_PYTH },
+		});
+		const result = await plugin.getReadPrepend?.({
+			chainId: 1,
+			provider,
+			vaults: [
+				{
+					oracle: {
+						adapters: [
+							{
+								oracle: UNTRUSTED_PYTH,
+								name: "PythOracle",
+								base: ASSET,
+								quote: UNIT,
+								pythDetail: {
+									pyth: UNTRUSTED_PYTH,
+									base: ASSET,
+									quote: UNIT,
+									feedId: GOOD_FEED,
+									maxStaleness: 60n,
+									maxConfWidth: 1n,
+								},
+							},
+						],
+					},
+				} as never,
+			],
+		});
+
+		assert.equal(result?.items.length, 1);
+		assert.equal(result?.items[0]?.targetContract, UNTRUSTED_PYTH);
+		assert.equal(result?.items[0]?.value, 11n);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test("Pyth plugin skips update batches above the configured fee cap", async () => {
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = (async () =>
+		Response.json({
+			binary: {
+				encoding: "hex",
+				data: ["feedface"],
+			},
+		})) as typeof fetch;
+
+	try {
+		const provider = {
+			readContract: async () => 12n,
+		} as unknown as PublicClient;
+		const plugin = createPythPlugin({ maxUpdateFee: 11n });
+		const result = await plugin.getReadPrepend?.({
+			chainId: 1,
+			provider,
+			vaults: [
+				{
+					oracle: {
+						adapters: [
+							{
+								oracle: PYTH,
+								name: "PythOracle",
+								base: ASSET,
+								quote: UNIT,
+								pythDetail: {
+									pyth: PYTH,
+									base: ASSET,
+									quote: UNIT,
+									feedId: GOOD_FEED,
+									maxStaleness: 60n,
+									maxConfWidth: 1n,
+								},
+							},
+						],
+					},
+				} as never,
+			],
+		});
+
+		assert.equal(result, null);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}

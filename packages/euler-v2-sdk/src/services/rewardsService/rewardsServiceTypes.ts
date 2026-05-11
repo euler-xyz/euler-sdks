@@ -206,6 +206,8 @@ export interface BrevisRewardInfo {
 	token_symbol: string;
 	apr: number;
 	rewardUsdPrice?: number;
+	claim_chain_id?: number;
+	claim_contract?: string;
 }
 
 export interface BrevisCampaign {

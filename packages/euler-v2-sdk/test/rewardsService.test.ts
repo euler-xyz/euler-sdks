@@ -21,6 +21,12 @@ const vaultAddress = getAddress(
 const claimAddress = getAddress(
 	"0x0000000000000000000000000000000000000003",
 ) as Address;
+const merklDistributorAddress = getAddress(
+	"0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",
+) as Address;
+const zksyncMerklDistributorAddress = getAddress(
+	"0xe117ed7Ef16d3c28fCBA7eC49AFAD77f451a6a21",
+) as Address;
 const accountAddress = getAddress(
 	"0x0000000000000000000000000000000000000004",
 ) as Address;
@@ -65,6 +71,24 @@ const makeBrevisReward = (overrides: Partial<UserReward> = {}): UserReward => ({
 	provider: "brevis",
 	accumulated: "1000",
 	unclaimed: "1000",
+	...overrides,
+});
+
+const makeMerklReward = (overrides: Partial<UserReward> = {}): UserReward => ({
+	chainId: 1,
+	token: {
+		address: rewardToken,
+		chainId: 1,
+		symbol: "EUL",
+		name: "EUL",
+		decimals: 18,
+	},
+	tokenPrice: 2,
+	provider: "merkl",
+	accumulated: "1000",
+	unclaimed: "1000",
+	proof: ["0xabc" as `0x${string}`],
+	claimAddress: merklDistributorAddress,
 	...overrides,
 });
 
@@ -150,6 +174,7 @@ test("rewards service uses direct proof-backed Brevis rewards when V3 lacks clai
 				makeBrevisReward({
 					tokenPrice: 1,
 					claimAddress,
+					claimAddressVerified: true,
 					proof: ["0xabc" as `0x${string}`],
 					cumulativeAmounts: ["1000"],
 					epoch: "7",
@@ -187,6 +212,7 @@ test("rewards service includes Brevis rewards missing from V3 user rows", async 
 			return [
 				makeBrevisReward({
 					claimAddress,
+					claimAddressVerified: true,
 					proof: ["0xabc" as `0x${string}`],
 					cumulativeAmounts: ["1000"],
 					epoch: "7",
@@ -205,6 +231,117 @@ test("rewards service includes Brevis rewards missing from V3 user rows", async 
 	assert.equal(rewards.length, 1);
 	assert.equal(rewards[0]?.provider, "brevis");
 	assert.equal(rewards[0]?.claimAddress, claimAddress);
+});
+
+test("rewards service rejects Brevis rewards without verified claim address", async () => {
+	const service = new RewardsService(emptyAdapter, undefined, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	await assert.rejects(
+		() =>
+			service.buildClaimPlan({
+				reward: makeBrevisReward({
+					claimAddress,
+					proof: ["0xabc" as `0x${string}`],
+					cumulativeAmounts: ["1000"],
+					epoch: "7",
+				}),
+				account: accountAddress,
+			}),
+		/Unverified Brevis claim data/,
+	);
+});
+
+test("direct rewards adapter verifies Brevis claim target against campaign metadata", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryBrevisCampaigns(async () => ({
+		campaigns: [
+			{
+				chain_id: 1,
+				vault_address: vaultAddress,
+				action: 2002,
+				campaign_id: "brevis-1",
+				campaign_name: "Brevis",
+				start_time: 1,
+				end_time: 2,
+				reward_info: {
+					token_address: rewardToken,
+					token_symbol: "EUL",
+					apr: 0.01,
+					rewardUsdPrice: 1,
+					claim_chain_id: 1,
+					claim_contract: claimAddress,
+				},
+				status: 4,
+			},
+		],
+	}));
+	adapter.setQueryBrevisUserProofs(async () => ({
+		err: null,
+		rewardsBatch: [
+			{
+				campaignId: "brevis-1",
+				claimChainId: 1,
+				claimContractAddr: claimAddress,
+				claimableRewards: "1000",
+				epoch: "7",
+				cumulativeRewards: ["1000"],
+				merkleProof: ["0xabc"],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchBrevisUserRewardClaims(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.claimAddress, claimAddress);
+});
+
+test("direct rewards adapter drops Brevis proofs with mismatched claim target", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryBrevisCampaigns(async () => ({
+		campaigns: [
+			{
+				chain_id: 1,
+				vault_address: vaultAddress,
+				action: 2002,
+				campaign_id: "brevis-1",
+				campaign_name: "Brevis",
+				start_time: 1,
+				end_time: 2,
+				reward_info: {
+					token_address: rewardToken,
+					token_symbol: "EUL",
+					apr: 0.01,
+					rewardUsdPrice: 1,
+					claim_chain_id: 1,
+					claim_contract: claimAddress,
+				},
+				status: 4,
+			},
+		],
+	}));
+	adapter.setQueryBrevisUserProofs(async () => ({
+		err: null,
+		rewardsBatch: [
+			{
+				campaignId: "brevis-1",
+				claimChainId: 1,
+				claimContractAddr: otherAccountAddress,
+				claimableRewards: "1000",
+				epoch: "7",
+				cumulativeRewards: ["1000"],
+				merkleProof: ["0xabc"],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchBrevisUserRewardClaims(1, accountAddress);
+
+	assert.equal(rewards.length, 0);
 });
 
 test("rewards service merges Brevis APY campaigns from direct fallback", async () => {
@@ -239,6 +376,85 @@ test("rewards service merges Brevis APY campaigns from direct fallback", async (
 	assert.equal(info?.totalRewardsApr, 0.04);
 	assert.equal(info?.campaigns[0]?.source, "brevis");
 	assert.equal(info?.campaigns[0]?.action, "BORROW");
+});
+
+test("rewards service derives Merkl claim target from trusted distributor", async () => {
+	const service = new RewardsService(emptyAdapter, undefined, {
+		merklDistributorAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	const plan = await service.buildClaimPlans({
+		rewards: [makeMerklReward({ claimAddress: undefined })],
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "contractCall");
+	assert.equal(plan[0]?.to, merklDistributorAddress);
+});
+
+test("rewards service rejects Merkl rewards with untrusted claim address", async () => {
+	const service = new RewardsService(emptyAdapter, undefined, {
+		merklDistributorAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	await assert.rejects(
+		() =>
+			service.buildClaimPlans({
+				rewards: [makeMerklReward({ claimAddress })],
+				account: accountAddress,
+			}),
+		/Merkl claim address mismatch/,
+	);
+});
+
+test("rewards service uses chain-specific Merkl distributor overrides", async () => {
+	const service = new RewardsService(emptyAdapter, undefined, {
+		merklDistributorAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	const plan = await service.buildClaimPlans({
+		rewards: [
+			makeMerklReward({
+				chainId: 324,
+				claimAddress: zksyncMerklDistributorAddress,
+			}),
+		],
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "contractCall");
+	assert.equal(plan[0]?.chainId, 324);
+	assert.equal(plan[0]?.to, zksyncMerklDistributorAddress);
+});
+
+test("rewards service rejects default Merkl distributor on unknown chains", async () => {
+	const service = new RewardsService(emptyAdapter, undefined, {
+		merklDistributorAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	await assert.rejects(
+		() =>
+			service.buildClaimPlans({
+				rewards: [
+					makeMerklReward({
+						chainId: 999_999_999,
+						claimAddress: merklDistributorAddress,
+					}),
+				],
+				account: accountAddress,
+			}),
+		/No trusted Merkl distributor for chainId 999999999/,
+	);
 });
 
 test("direct rewards adapter filters Fuul claim checks for another recipient", async () => {

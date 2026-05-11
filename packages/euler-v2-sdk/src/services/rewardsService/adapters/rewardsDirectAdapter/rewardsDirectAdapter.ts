@@ -527,6 +527,19 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		for (const batch of proofsResponse.rewardsBatch) {
 			const campaign = campaignMap.get(batch.campaignId);
 			if (!campaign) continue;
+			const claimAddress = getAddress(batch.claimContractAddr) as Address;
+			if (
+				campaign.reward_info.claim_chain_id !== undefined &&
+				Number(campaign.reward_info.claim_chain_id) !== batch.claimChainId
+			) {
+				continue;
+			}
+			if (
+				!campaign.reward_info.claim_contract ||
+				getAddress(campaign.reward_info.claim_contract) !== claimAddress
+			) {
+				continue;
+			}
 
 			const tokenPrice = campaign.reward_info.rewardUsdPrice ?? 0;
 			if (!tokenPrice) continue;
@@ -550,7 +563,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				accumulated,
 				unclaimed: batch.claimableRewards,
 				proof: batch.merkleProof as Hex[],
-				claimAddress: getAddress(batch.claimContractAddr) as Address,
+				claimAddress,
 				cumulativeAmounts: batch.cumulativeRewards,
 				epoch: batch.epoch,
 			});

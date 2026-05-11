@@ -118,6 +118,20 @@ const FUUL_FACTORY_ABI = [
 	},
 ] as const;
 
+const MERKL_DEFAULT_DISTRIBUTOR: Address =
+	"0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae";
+const MERKL_DEFAULT_DISTRIBUTOR_CHAIN_IDS = new Set([
+	1, 10, 30, 56, 100, 122, 130, 137, 143, 146, 151, 169, 196, 239, 250, 252,
+	480, 592, 747, 988, 999, 1135, 1284, 1329, 1868, 1923, 2020, 4114, 4217, 4326,
+	5000, 5464, 6900, 8453, 9745, 13371, 16661, 25363, 31612, 34443, 42161, 42220,
+	42793, 43111, 43114, 48900, 57073, 59144, 60808, 80094, 81457, 98866, 167000,
+	534352, 685689, 747474, 1440000, 5064014, 21000000, 2046399126,
+]);
+const MERKL_DISTRIBUTOR_OVERRIDES = new Map<number, Address>([
+	[50, "0xDd8098dA94cF3aEA5253545162F1Feb371278F5a"],
+	[324, "0xe117ed7Ef16d3c28fCBA7eC49AFAD77f451a6a21"],
+]);
+
 type BrevisFallbackAdapter = IRewardsAdapter & {
 	fetchBrevisChainRewards?: (
 		chainId: number,
@@ -389,24 +403,46 @@ export class RewardsService implements IRewardsService {
 			(reward) => reward.provider === "merkl",
 		);
 		if (merklRewards.length > 0) {
-			const groupedMerklRewards = new Map<string, UserReward[]>();
+			const groupedMerklRewards = new Map<
+				string,
+				{ distributorAddress: Address; rewards: UserReward[] }
+			>();
 			for (const reward of merklRewards) {
-				if (!reward.claimAddress || !reward.proof?.length) {
+				if (!reward.proof?.length) {
 					throw new Error("Missing Merkl claim data");
 				}
-				const key = `${reward.chainId}:${reward.claimAddress.toLowerCase()}`;
-				const group = groupedMerklRewards.get(key) ?? [];
-				group.push(reward);
+				const distributorAddress = this.getTrustedMerklDistributorAddress(
+					reward.chainId,
+				);
+				if (
+					reward.claimAddress &&
+					getAddress(reward.claimAddress) !== distributorAddress
+				) {
+					throw new Error("Merkl claim address mismatch");
+				}
+				const key = `${reward.chainId}:${distributorAddress.toLowerCase()}`;
+				const group = groupedMerklRewards.get(key) ?? {
+					distributorAddress,
+					rewards: [],
+				};
+				group.rewards.push(reward);
 				groupedMerklRewards.set(key, group);
 			}
 
 			for (const group of groupedMerklRewards.values()) {
-				plan.push(this.buildMerklContractCall(group, account));
+				plan.push(
+					this.buildMerklContractCall(
+						group.rewards,
+						account,
+						group.distributorAddress,
+					),
+				);
 			}
 		}
 
 		for (const reward of rewards) {
 			if (reward.provider !== "brevis") continue;
+			await this.validateBrevisClaimTarget(reward, account);
 			plan.push(this.buildBrevisContractCall(reward, account));
 		}
 
@@ -440,16 +476,17 @@ export class RewardsService implements IRewardsService {
 	private buildMerklContractCall(
 		rewards: UserReward[],
 		account: Address,
+		distributorAddress: Address,
 	): ContractCall {
 		const firstReward = rewards[0];
-		if (!firstReward?.claimAddress) {
-			throw new Error("Missing Merkl claim address");
+		if (!firstReward) {
+			throw new Error("Missing Merkl claim data");
 		}
 
 		return {
 			type: "contractCall",
 			chainId: firstReward.chainId,
-			to: firstReward.claimAddress,
+			to: distributorAddress,
 			abi: MERKL_DISTRIBUTOR_ABI,
 			functionName: "claim",
 			args: [
@@ -460,6 +497,96 @@ export class RewardsService implements IRewardsService {
 			],
 			value: 0n,
 		};
+	}
+
+	private getTrustedMerklDistributorAddress(chainId: number): Address {
+		const configuredAddress = getAddress(
+			this.addresses.merklDistributorAddress,
+		) as Address;
+		if (configuredAddress !== MERKL_DEFAULT_DISTRIBUTOR) {
+			return configuredAddress;
+		}
+
+		const overrideAddress = MERKL_DISTRIBUTOR_OVERRIDES.get(chainId);
+		if (overrideAddress) return overrideAddress;
+		if (MERKL_DEFAULT_DISTRIBUTOR_CHAIN_IDS.has(chainId)) {
+			return MERKL_DEFAULT_DISTRIBUTOR;
+		}
+
+		throw new Error(`No trusted Merkl distributor for chainId ${chainId}`);
+	}
+
+	private async validateBrevisClaimTarget(
+		reward: UserReward,
+		account: Address,
+	): Promise<void> {
+		if (!hasBrevisClaimData(reward)) {
+			throw new Error("Missing Brevis claim data");
+		}
+
+		const claimAdapter = this.getBrevisClaimAdapter();
+		if (!claimAdapter) {
+			throw new Error("Unverified Brevis claim data");
+		}
+
+		const verifiedRewards = await claimAdapter.fetchBrevisUserRewardClaims!(
+			reward.chainId,
+			account,
+		).catch(() => []);
+		const match = verifiedRewards?.some((verifiedReward) =>
+			this.isSameBrevisClaim(reward, verifiedReward),
+		);
+		if (!match) {
+			throw new Error("Brevis claim address mismatch");
+		}
+	}
+
+	private getBrevisClaimAdapter(): BrevisFallbackAdapter | undefined {
+		if (this.directAdapter?.fetchBrevisUserRewardClaims) {
+			return this.directAdapter;
+		}
+
+		const adapter = this.adapter as BrevisFallbackAdapter;
+		return adapter.fetchBrevisUserRewardClaims ? adapter : undefined;
+	}
+
+	private isSameBrevisClaim(
+		reward: UserReward,
+		verifiedReward: UserReward,
+	): boolean {
+		if (verifiedReward.provider !== "brevis") return false;
+		if (verifiedReward.chainId !== reward.chainId) return false;
+		if (verifiedReward.campaignId !== reward.campaignId) return false;
+		if (
+			getAddress(verifiedReward.token.address) !==
+			getAddress(reward.token.address)
+		) {
+			return false;
+		}
+		if (
+			!verifiedReward.claimAddress ||
+			!reward.claimAddress ||
+			getAddress(verifiedReward.claimAddress) !==
+				getAddress(reward.claimAddress)
+		) {
+			return false;
+		}
+		if (verifiedReward.epoch !== reward.epoch) return false;
+
+		return (
+			this.arrayEquals(
+				verifiedReward.cumulativeAmounts,
+				reward.cumulativeAmounts,
+			) && this.arrayEquals(verifiedReward.proof, reward.proof)
+		);
+	}
+
+	private arrayEquals<T>(
+		left: readonly T[] | undefined,
+		right: readonly T[] | undefined,
+	): boolean {
+		if (!left || !right || left.length !== right.length) return false;
+		return left.every((value, index) => value === right[index]);
 	}
 
 	private buildBrevisContractCall(

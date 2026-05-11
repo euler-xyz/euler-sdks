@@ -1,11 +1,11 @@
 import {
+	type Abi,
 	type Address,
+	decodeFunctionData,
+	encodeFunctionData,
+	getAddress,
 	type Hex,
 	type PublicClient,
-	type Abi,
-	encodeFunctionData,
-	decodeFunctionData,
-	getAddress,
 	zeroAddress,
 } from "viem";
 import {
@@ -15,27 +15,27 @@ import {
 } from "../../entities/Account.js";
 import type { EVault, EVaultCollateral } from "../../entities/EVault.js";
 import type {
-	EulerPlugin,
-	PluginBatchItems,
-	PluginSDK,
-	ReadPluginContext,
-} from "../types.js";
-import type {
 	BatchItemDescription,
 	EVCBatchItem,
 	TransactionPlan,
 	TransactionPlanItem,
 } from "../../services/executionService/executionServiceTypes.js";
-import {
-	collectPythFeedsFromAdapters,
-	type PythFeed,
-} from "../../utils/oracle.js";
-import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
+import { applyBuildQuery, type BuildQueryFn } from "../../utils/buildQuery.js";
 import { createBundledCall } from "../../utils/callBundler.js";
 import {
 	calculateHealthCheckSets,
 	type HealthCheckAccountSet,
 } from "../../utils/healthCheckSets.js";
+import {
+	collectPythFeedsFromAdapters,
+	type PythFeed,
+} from "../../utils/oracle.js";
+import type {
+	EulerPlugin,
+	PluginBatchItems,
+	PluginSDK,
+	ReadPluginContext,
+} from "../types.js";
 
 // ── Pyth ABI (minimal: only the two functions we need) ──
 
@@ -65,6 +65,45 @@ const normalizeFeedId = (value: string): Hex =>
 	normalizeHex(value).toLowerCase() as Hex;
 
 const PYTH_PRICE_ID_PATTERN = /0x[0-9a-fA-F]{64}/g;
+const DEFAULT_MAX_PYTH_UPDATE_FEE = 10n ** 16n;
+const OFFICIAL_PYTH_ADDRESSES_BY_CHAIN_ID = new Map<number, Address>([
+	[1, "0x4305FB66699C3B2702D4d05CF36551390A4c69C6"],
+	[10, "0xff1a0f4744e8582DF1aE09D5611b887B6a12925C"],
+	[56, "0x4D7E825f80bDf85e913E0DD2A2D54927e9dE1594"],
+	[100, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[130, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[137, "0xff1a0f4744e8582DF1aE09D5611b887B6a12925C"],
+	[143, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[146, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[169, "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729"],
+	[204, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[252, "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729"],
+	[324, "0xf087c864AEccFb6A2Bf1Af6A0382B0d0f6c5D834"],
+	[480, "0xe9d69cdd6fe41e7b621b4a688c5d1a68cb5c8adc"],
+	[747, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[999, "0xe9d69CdD6Fe41e7B621B4A688C5D1a68cB5c8ADc"],
+	[1030, "0xe9d69CdD6Fe41e7B621B4A688C5D1a68cB5c8ADc"],
+	[1116, "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729"],
+	[1329, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[1868, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[1923, "0xDd24F84d36BF92C65F92307595335bdFab5Bbd21"],
+	[2020, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[2741, "0x8739d5024B5143278E2b15Bd9e7C26f6CEc658F1"],
+	[34443, "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729"],
+	[42161, "0xff1a0f4744e8582DF1aE09D5611b887B6a12925C"],
+	[42220, "0xff1a0f4744e8582DF1aE09D5611b887B6a12925C"],
+	[42793, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[43111, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[43114, "0x4305FB66699C3B2702D4d05CF36551390A4c69C6"],
+	[57073, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[59144, "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729"],
+	[80094, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[81457, "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729"],
+	[16661, "0x2880ab155794e7179c9ee2e38200202908c17b43"],
+	[31612, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[534352, "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729"],
+	[167000, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+]);
 
 const parseMissingPriceIds = (body: string): Set<Hex> => {
 	const matches = body.match(PYTH_PRICE_ID_PATTERN) ?? [];
@@ -164,6 +203,9 @@ async function buildPythBatchItems(
 	feeds: PythFeed[],
 	adapter: PythPluginAdapter,
 	provider: PublicClient,
+	chainId: number,
+	trustedPythAddresses: ReadonlySet<string>,
+	maxUpdateFee: bigint,
 	sender: Address = zeroAddress,
 ): Promise<PluginBatchItems> {
 	if (!feeds.length) return { items: [], totalValue: 0n };
@@ -171,9 +213,18 @@ async function buildPythBatchItems(
 	// Group feeds by Pyth contract address
 	const grouped = new Map<Address, Set<Hex>>();
 	for (const feed of feeds) {
-		const set = grouped.get(feed.pythAddress) || new Set();
+		const pythAddress = getAddress(feed.pythAddress) as Address;
+		if (!trustedPythAddresses.has(pythAddress.toLowerCase())) {
+			logPythPluginError(
+				pythAddress,
+				[feed.feedId],
+				new Error(`Untrusted Pyth contract for chainId ${chainId}`),
+			);
+			continue;
+		}
+		const set = grouped.get(pythAddress) || new Set();
 		set.add(feed.feedId);
-		grouped.set(feed.pythAddress, set);
+		grouped.set(pythAddress, set);
 	}
 
 	const items: EVCBatchItem[] = [];
@@ -189,6 +240,11 @@ async function buildPythBatchItems(
 				pythAddress,
 				updateData,
 			);
+			if (fee > maxUpdateFee) {
+				throw new Error(
+					`Pyth update fee ${fee.toString()} exceeds max ${maxUpdateFee.toString()}`,
+				);
+			}
 
 			items.push({
 				targetContract: pythAddress,
@@ -373,11 +429,33 @@ async function collectHealthCheckFeeds(
 export interface PythPluginConfig {
 	hermesUrl?: string;
 	buildQuery?: BuildQueryFn;
+	/** Additional trusted Pyth contract addresses by chain ID. Official addresses are allowed by default. */
+	pythAddresses?: Record<number, Address | readonly Address[]>;
+	/** Maximum native-token fee accepted for one Pyth update batch. Defaults to 0.01 native token. */
+	maxUpdateFee?: bigint;
 }
 
 export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 	const hermesUrl = config.hermesUrl || "https://hermes.pyth.network";
 	const adapter = new PythPluginAdapter(hermesUrl, config.buildQuery);
+	const maxUpdateFee = config.maxUpdateFee ?? DEFAULT_MAX_PYTH_UPDATE_FEE;
+	const getTrustedPythAddresses = (chainId: number): Set<string> => {
+		const addresses = new Set<string>();
+		const officialAddress = OFFICIAL_PYTH_ADDRESSES_BY_CHAIN_ID.get(chainId);
+		if (officialAddress)
+			addresses.add(getAddress(officialAddress).toLowerCase());
+
+		const configuredAddresses = config.pythAddresses?.[chainId];
+		const customAddresses = Array.isArray(configuredAddresses)
+			? configuredAddresses
+			: configuredAddresses
+				? [configuredAddresses]
+				: [];
+		for (const address of customAddresses) {
+			addresses.add(getAddress(address).toLowerCase());
+		}
+		return addresses;
+	};
 
 	return {
 		name: "pyth",
@@ -392,7 +470,14 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 			);
 
 			if (!feeds.length) return null;
-			const result = await buildPythBatchItems(feeds, adapter, ctx.provider);
+			const result = await buildPythBatchItems(
+				feeds,
+				adapter,
+				ctx.provider,
+				ctx.chainId,
+				getTrustedPythAddresses(ctx.chainId),
+				maxUpdateFee,
+			);
 			return result.items.length > 0 ? result : null;
 		},
 
@@ -439,6 +524,9 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 					feeds,
 					adapter,
 					provider,
+					chainId,
+					getTrustedPythAddresses(chainId),
+					maxUpdateFee,
 					sender,
 				);
 				processed.push(
