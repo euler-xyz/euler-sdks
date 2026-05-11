@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.1-beta] - 2026-05-11
+
+### Added
+
+- Added planner APIs and examples for wallet swap + borrow, wallet swap + repay, withdraw + swap, redeem + swap, and same-asset multiply flows.
+- Added InCentra rewards parity support across rewards adapters, account reward totals, docs, examples, and tests.
+
+### Changed
+
+- Centralized swap quote verifier/slippage validation and aligned execution planners with the correct verifier modes.
+- Updated execution and swap docs, SDK skill guidance, and the example runner so every transaction plan path has a runnable example.
+
+### Fixed
+
+- Hardened wallet-sourced repay planning around router sweep context and exact-input quote execution.
+- Refreshed same-asset migration and multiply examples to work against current live vault configuration and quote providers.
+
 ## [0.2.0-beta] - 2026-05-07
 
 ### Added
