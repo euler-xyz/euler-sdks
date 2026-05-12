@@ -67,7 +67,7 @@ export type V3CollateralRow = {
 	borrowLTV: string;
 	liquidationLTV: string;
 	initialLiquidationLTV: string;
-	targetTimestamp: number;
+	targetTimestamp: number | string;
 	rampDuration: number;
 	oraclePriceRaw?: V3OraclePrice | null;
 };

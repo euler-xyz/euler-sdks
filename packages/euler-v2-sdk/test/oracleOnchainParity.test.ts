@@ -352,3 +352,75 @@ test("convertVault maps V3 oracle resolved vault rows", () => {
 		},
 	]);
 });
+
+test("convertVault keeps active V3 collateral ramp-down rows with ISO target timestamps", () => {
+	const errors = [];
+	const vault = convertVault(
+		{
+			chainId: 1,
+			address: "0x0000000000000000000000000000000000000abc",
+			name: "Vault",
+			symbol: "eTEST",
+			decimals: 18,
+			asset: {
+				address: BASE,
+				symbol: "BASE",
+				decimals: 18,
+				name: "Base",
+			},
+			dToken: "0x0000000000000000000000000000000000000001",
+			creator: "0x0000000000000000000000000000000000000002",
+			governorAdmin: "0x0000000000000000000000000000000000000003",
+			totalShares: "0",
+			totalAssets: "0",
+			totalBorrows: "0",
+			totalBorrowed: "0",
+			totalCash: "0",
+			balanceTracker: "0x0000000000000000000000000000000000000004",
+			evcCompatibleAsset: true,
+			oraclePriceRaw: {
+				queryFailure: false,
+				queryFailureReason: "0x",
+				amountIn: "1",
+				amountOutMid: "1",
+				amountOutBid: "1",
+				amountOutAsk: "1",
+				timestamp: "1970-01-01T00:00:01.000Z",
+			},
+			timestamp: "2026-05-12T00:00:00.000Z",
+		},
+		[
+			{
+				collateral: "0x0000000000000000000000000000000000000def",
+				borrowLTV: "0",
+				liquidationLTV: "0",
+				initialLiquidationLTV: "9400",
+				targetTimestamp: "2026-05-23T10:28:35.000Z",
+				rampDuration: 2592000,
+				oraclePriceRaw: {
+					queryFailure: false,
+					queryFailureReason: "0x",
+					amountIn: "1",
+					amountOutMid: "1",
+					amountOutBid: "1",
+					amountOutAsk: "1",
+					timestamp: "1970-01-01T00:00:01.000Z",
+				},
+			},
+		],
+		errors as never[],
+		"0x0000000000000000000000000000000000000abc",
+	);
+
+	assert.equal(
+		errors.some((error) =>
+			error.locations?.some((location) => location.path === "$.targetTimestamp"),
+		),
+		false,
+	);
+	assert.equal(vault.collaterals.length, 1);
+	assert.equal(vault.collaterals[0]?.borrowLTV, 0);
+	assert.equal(vault.collaterals[0]?.liquidationLTV, 0);
+	assert.equal(vault.collaterals[0]?.ramping?.targetTimestamp, 1779532115);
+	assert.equal(vault.collaterals[0]?.ramping?.initialLiquidationLTV, 0.94);
+});

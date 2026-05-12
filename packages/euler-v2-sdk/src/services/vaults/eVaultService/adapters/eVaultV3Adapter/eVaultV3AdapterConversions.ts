@@ -15,6 +15,7 @@ import {
 	parseAddressField,
 	parseBigIntField,
 	parseBooleanField,
+	type DiagnosticsParserParams,
 	parseNumberField,
 	parseRatio1e4,
 	parseStringField,
@@ -106,6 +107,22 @@ const DEFAULT_INTEREST_RATES_BLOCK: NonNullable<
 function parseRate(value: string): number {
 	const parsed = Number.parseFloat(value);
 	return Number.isFinite(parsed) ? parsed * 100 : 0;
+}
+
+function parseV3TargetTimestamp(
+	value: string | number | undefined,
+	params: DiagnosticsParserParams,
+): number {
+	if (typeof value === "number") return parseNumberField(value, params);
+
+	const trimmed = value?.trim();
+	if (!trimmed) return parseTimestampField(undefined, params);
+
+	if (/^\d+(\.\d+)?$/.test(trimmed)) {
+		return parseNumberField(Number(trimmed), params);
+	}
+
+	return parseTimestampField(trimmed, params);
 }
 
 const DEFAULT_INTEREST_RATE_MODEL_BLOCK: NonNullable<
@@ -414,17 +431,12 @@ function convertCollaterals(
 			errors,
 			source: "eVaultV3",
 		});
-		const targetTimestamp = parseNumberField(
-			typeof row.targetTimestamp === "number"
-				? row.targetTimestamp
-				: Number(row.targetTimestamp),
-			{
-				path: "$.targetTimestamp",
-				owner: collateralOwner,
-				errors,
-				source: "eVaultV3",
-			},
-		);
+		const targetTimestamp = parseV3TargetTimestamp(row.targetTimestamp, {
+			path: "$.targetTimestamp",
+			owner: collateralOwner,
+			errors,
+			source: "eVaultV3",
+		});
 		const isRemovedCollateral =
 			borrowLTV === 0 &&
 			liquidationLTV === 0 &&
