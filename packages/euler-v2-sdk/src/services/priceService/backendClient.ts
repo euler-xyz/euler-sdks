@@ -143,9 +143,7 @@ export class PricingBackendClient {
 				const unique = [
 					...new Set(addresses.map((a) => a.toLowerCase())),
 				] as Address[];
-				const url = new URL("/v3/prices", this.endpoint);
-				url.searchParams.set("chainId", String(chainId));
-				url.searchParams.set("assets", unique.join(","));
+				const url = this.buildPricesUrl(chainId, unique);
 
 				const response = await fetch(url.toString(), {
 					method: "GET",
@@ -168,5 +166,20 @@ export class PricingBackendClient {
 
 	setQueryV3Price(fn: typeof this.queryV3Price): void {
 		this.queryV3Price = fn;
+	}
+
+	private buildPricesUrl(chainId: number, assets: Address[]): string {
+		const params = new URLSearchParams({
+			chainId: String(chainId),
+			assets: assets.join(","),
+		});
+		const normalizedEndpoint = this.endpoint.replace(/\/+$/, "");
+		const path = "/v3/prices";
+		const url =
+			normalizedEndpoint.startsWith("http://") ||
+			normalizedEndpoint.startsWith("https://")
+				? new URL(path, `${normalizedEndpoint}/`).toString()
+				: `${normalizedEndpoint}${path}`;
+		return `${url}?${params.toString()}`;
 	}
 }

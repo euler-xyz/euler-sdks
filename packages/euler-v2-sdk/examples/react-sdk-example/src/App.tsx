@@ -18,6 +18,7 @@ import { PortfolioPage } from "./pages/PortfolioPage.tsx";
 import { RewardsPage } from "./pages/RewardsPage.tsx";
 import { FeeFlowPage } from "./pages/FeeFlowPage.tsx";
 import { TotalsPage } from "./pages/TotalsPage.tsx";
+import { BadDebtPage } from "./pages/BadDebtPage.tsx";
 
 function AppShell() {
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -68,6 +69,7 @@ function AppShell() {
               <Route path="/rewards" element={<RewardsPage />} />
               <Route path="/fee-flow" element={<FeeFlowPage />} />
               <Route path="/totals" element={<TotalsPage />} />
+              <Route path="/bad-debt" element={<BadDebtPage />} />
             </Routes>
           </div>
         </div>

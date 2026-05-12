@@ -18,6 +18,36 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/v3/, ""),
       },
+      "/api/subgraphs/euler-simple-mainnet": {
+        target:
+          "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-mainnet/latest/gn",
+        changeOrigin: true,
+        rewrite: () => "",
+      },
+      "/api/subgraphs/euler-simple-unichain": {
+        target:
+          "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-unichain/latest/gn",
+        changeOrigin: true,
+        rewrite: () => "",
+      },
+      "/api/subgraphs/euler-simple-monad": {
+        target:
+          "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-monad/latest/gn",
+        changeOrigin: true,
+        rewrite: () => "",
+      },
+      "/api/subgraphs/euler-simple-sonic": {
+        target:
+          "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-sonic/latest/gn",
+        changeOrigin: true,
+        rewrite: () => "",
+      },
+      "/api/subgraphs/euler-simple-swell": {
+        target:
+          "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-swell/latest/gn",
+        changeOrigin: true,
+        rewrite: () => "",
+      },
     },
   },
   resolve: {

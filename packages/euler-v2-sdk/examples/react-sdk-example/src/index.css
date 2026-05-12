@@ -382,6 +382,29 @@ tr.clickable {
   background: #fff;
 }
 
+.bad-debt-form {
+  display: grid;
+  grid-template-columns: 120px minmax(260px, 1fr) minmax(280px, 1fr) auto;
+  gap: 10px 12px;
+  align-items: flex-end;
+  margin-bottom: 24px;
+}
+
+.bad-debt-vault-field {
+  min-width: 280px;
+}
+
+.bad-debt-collateral-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.section-title {
+  font-size: 14px;
+  margin: 24px 0 12px;
+}
+
 /* Detail page */
 .detail-header {
   margin-bottom: 24px;
@@ -2057,6 +2080,10 @@ tr.clickable {
 }
 
 @media (max-width: 900px) {
+  .bad-debt-form {
+    grid-template-columns: 1fr;
+  }
+
   .fee-flow-toolbar {
     flex-direction: column;
   }

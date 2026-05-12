@@ -6,7 +6,10 @@ import {
 	getCollateralOraclePrice,
 	PriceService,
 } from "../src/services/priceService/priceService.js";
-import { normalizeBackendPrice } from "../src/services/priceService/backendClient.js";
+import {
+	PricingBackendClient,
+	normalizeBackendPrice,
+} from "../src/services/priceService/backendClient.js";
 import type { OraclePrice } from "../src/utils/oracle.js";
 import type { Token } from "../src/utils/types.js";
 import { VaultType } from "../src/utils/types.js";
@@ -194,6 +197,36 @@ test("fetchAssetUsdPriceByAddress returns backend price when available", async (
 	const price = await service.fetchAssetUsdPriceByAddress(CHAIN_ID, ASSET);
 
 	assert.equal(price, expectedPrice);
+});
+
+test("PricingBackendClient supports relative V3 proxy endpoints", async () => {
+	const calls: string[] = [];
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = (async (input) => {
+		calls.push(String(input));
+		return new Response(
+			JSON.stringify({
+				data: [{ address: ASSET, priceUsd: 12.34, source: "test" }],
+			}),
+			{ status: 200, headers: { "content-type": "application/json" } },
+		);
+	}) as typeof fetch;
+
+	try {
+		const client = new PricingBackendClient({ endpoint: "/api/v3" });
+		const price = await client.queryV3Price({
+			address: ASSET,
+			chainId: CHAIN_ID,
+		});
+
+		assert.equal(price?.price, 12.34);
+		assert.equal(
+			calls[0],
+			`/api/v3/v3/prices?chainId=1&assets=${ASSET.toLowerCase()}`,
+		);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
 });
 
 test("fetchAssetUsdPriceByAddress falls back to on-chain asset pricing", async () => {
