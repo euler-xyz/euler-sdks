@@ -6,7 +6,7 @@ import type {
 } from "./tokenlistServiceTypes.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 
-/** Raw token shape from Euler API GET /v1/tokens response. */
+/** Raw token shape from Euler API GET /v3/tokens response. */
 interface ApiToken {
 	chainId: number;
 	address: string;
@@ -19,10 +19,52 @@ interface ApiToken {
 	coingeckoId?: string;
 }
 
+interface ApiTokenListPage {
+	data: ApiToken[];
+	meta?: {
+		total?: number | string;
+		offset?: number | string;
+		limit?: number | string;
+	};
+}
+
+type ApiTokenListResponse = ApiToken[] | ApiTokenListPage;
+
 export interface ITokenlistService {
 	loadTokenlist(chainId: number): Promise<TokenListItem[]>;
 	getToken(chainId: number, asset: Address): TokenListItem | undefined;
 	isLoaded(chainId: number): boolean;
+}
+
+function setSearchParam(url: string, key: string, value: string): string {
+	const hashIndex = url.indexOf("#");
+	const hash = hashIndex >= 0 ? url.slice(hashIndex) : "";
+	const withoutHash = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+	const queryIndex = withoutHash.indexOf("?");
+	const base =
+		queryIndex >= 0 ? withoutHash.slice(0, queryIndex) : withoutHash;
+	const query = queryIndex >= 0 ? withoutHash.slice(queryIndex + 1) : "";
+	const params = new URLSearchParams(query);
+	params.set(key, value);
+	const serialized = params.toString();
+	return `${base}${serialized ? `?${serialized}` : ""}${hash}`;
+}
+
+async function fetchTokenListPage(url: string): Promise<ApiTokenListResponse> {
+	const response = await fetch(url);
+	if (!response.ok) {
+		throw new Error(
+			`Failed to fetch token list: ${response.status} ${response.statusText}`,
+		);
+	}
+	const raw = (await response.json()) as ApiTokenListResponse;
+	if (Array.isArray(raw)) return raw;
+	if (raw && Array.isArray(raw.data)) return raw;
+	throw new Error(`Invalid token list response: expected array or data array`);
+}
+
+function nowMs(): number {
+	return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
 
 export class TokenlistService implements ITokenlistService {
@@ -35,17 +77,36 @@ export class TokenlistService implements ITokenlistService {
 	}
 
 	queryTokenList = async (url: string): Promise<ApiToken[]> => {
-		const response = await fetch(url);
-		if (!response.ok) {
-			throw new Error(
-				`Failed to fetch token list: ${response.status} ${response.statusText}`,
+		const firstPage = await fetchTokenListPage(url);
+		if (Array.isArray(firstPage)) return firstPage;
+
+		const tokens = [...firstPage.data];
+		const total = Number(firstPage.meta?.total);
+		const limit = Number(firstPage.meta?.limit);
+		const firstOffset = Number(firstPage.meta?.offset ?? 0);
+		if (
+			!Number.isFinite(total) ||
+			!Number.isFinite(limit) ||
+			limit <= 0 ||
+			firstOffset + firstPage.data.length >= total
+		) {
+			return tokens;
+		}
+
+		for (
+			let offset = firstOffset + limit;
+			offset < total;
+			offset += limit
+		) {
+			const page = await fetchTokenListPage(
+				setSearchParam(url, "offset", String(offset)),
 			);
+			if (Array.isArray(page)) {
+				throw new Error(`Invalid token list response: expected paginated data`);
+			}
+			tokens.push(...page.data);
 		}
-		const raw = (await response.json()) as ApiToken[];
-		if (!Array.isArray(raw)) {
-			throw new Error(`Invalid token list response: expected array`);
-		}
-		return raw;
+		return tokens;
 	};
 
 	setQueryTokenList(fn: typeof this.queryTokenList): void {
@@ -54,7 +115,12 @@ export class TokenlistService implements ITokenlistService {
 
 	async loadTokenlist(chainId: number): Promise<TokenListItem[]> {
 		const url = this.config.getTokenListUrl(chainId);
+		const startedAt = nowMs();
+		console.info(
+			`[sdk-tokenlist] loadTokenlist start chainId=${chainId} url=${url}`,
+		);
 		const raw = await this.queryTokenList(url);
+		const fetchedAt = nowMs();
 		const list: TokenListItem[] = raw
 			.filter((t) => t?.address)
 			.map((t) => ({
@@ -69,6 +135,10 @@ export class TokenlistService implements ITokenlistService {
 				...(t.coingeckoId != null ? { coingeckoId: t.coingeckoId } : undefined),
 			}));
 		this.cache.set(chainId, list);
+		const finishedAt = nowMs();
+		console.info(
+			`[sdk-tokenlist] loadTokenlist done chainId=${chainId} raw=${raw.length} tokens=${list.length} fetchMs=${(fetchedAt - startedAt).toFixed(1)} totalMs=${(finishedAt - startedAt).toFixed(1)}`,
+		);
 		return list;
 	}
 

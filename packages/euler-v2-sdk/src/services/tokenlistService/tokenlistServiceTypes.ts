@@ -1,7 +1,7 @@
 import type { Address } from "viem";
 
 /**
- * Token list entry shape matching Euler API GET /v1/tokens response.
+ * Token list entry shape matching Euler API GET /v3/tokens response.
  */
 export interface TokenListItem {
 	chainId: number;

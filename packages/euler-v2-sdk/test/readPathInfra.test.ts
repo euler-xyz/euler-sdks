@@ -864,6 +864,24 @@ test("native fetch-backed read helpers cover their error branches", async () => 
           ],
         } as Response;
       }
+      if (url.includes("tokens-v3")) {
+        const offset = Number(new URL(url).searchParams.get("offset") ?? "0");
+        return {
+          ok: true,
+          json: async () => ({
+            data: [
+              {
+                chainId: 1,
+                address:
+                  offset === 0
+                    ? "0x00000000000000000000000000000000000000aa"
+                    : "0x00000000000000000000000000000000000000bb",
+              },
+            ],
+            meta: { total: 2, offset, limit: 1 },
+          }),
+        } as Response;
+      }
       if (url.includes("labels-entities-ok")) {
         return {
           ok: true,
@@ -932,6 +950,13 @@ test("native fetch-backed read helpers cover their error branches", async () => 
       await tokenlistService.queryTokenList("https://tokens-ok"),
       [
         { chainId: 1, address: "0x00000000000000000000000000000000000000aa" },
+      ] as any,
+    );
+    assert.deepEqual(
+      await tokenlistService.queryTokenList("https://tokens-v3?limit=1"),
+      [
+        { chainId: 1, address: "0x00000000000000000000000000000000000000aa" },
+        { chainId: 1, address: "0x00000000000000000000000000000000000000bb" },
       ] as any,
     );
     await assert.rejects(

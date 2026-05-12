@@ -107,9 +107,9 @@ export const defaultDeploymentServiceConfig: DeploymentServiceConfig = {
 };
 
 export const DEFAULT_TOKENLIST_API_BASE_URL =
-	"https://indexer.euler.finance";
+	DEFAULT_V3_API_URL;
 
 export const defaultTokenlistServiceConfig: TokenlistServiceConfig = {
 	getTokenListUrl: (chainId: number) =>
-		`${DEFAULT_TOKENLIST_API_BASE_URL}/v1/tokens?chainId=${chainId}`,
+		`${DEFAULT_TOKENLIST_API_BASE_URL}/v3/tokens?chainId=${chainId}&limit=500`,
 };

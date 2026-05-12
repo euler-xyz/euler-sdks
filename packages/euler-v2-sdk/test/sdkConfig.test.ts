@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { buildEulerSDK } from "../src/sdk/buildSDK.js";
 import { readEulerSDKEnvConfig } from "../src/sdk/config.js";
+import {
+	DEFAULT_TOKENLIST_API_BASE_URL,
+	defaultTokenlistServiceConfig,
+} from "../src/sdk/defaultConfig.js";
 import type { IDeploymentService } from "../src/services/deploymentService/index.js";
 
 const deploymentService: IDeploymentService = {
@@ -48,6 +52,13 @@ describe("SDK env config", () => {
 
 		expect(config.rpcUrls).toEqual({ 1: "https://vite-mainnet.example" });
 		expect(config.v3ApiKey).toBe("vite-secret");
+	});
+
+	it("uses the V3 tokenlist endpoint by default", () => {
+		expect(DEFAULT_TOKENLIST_API_BASE_URL).toBe("https://v3.eul.dev");
+		expect(defaultTokenlistServiceConfig.getTokenListUrl(1)).toBe(
+			"https://v3.eul.dev/v3/tokens?chainId=1&limit=500",
+		);
 	});
 
 	it("throws for invalid scalar values", () => {
