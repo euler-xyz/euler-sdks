@@ -66,7 +66,9 @@ type AssetAllowances = {
 The on-chain wallet adapter uses these query methods:
 
 - `queryNativeBalance` for `eth_getBalance`.
-- `queryTokenBalances` for batched ERC20 balance reads through `utilsLens.tokenBalances`.
+- `queryTokenBalances` for per-token ERC20 balance reads. Concurrent calls with
+  the same provider, utils lens, and account are batched through
+  `utilsLens.tokenBalances`.
 - `queryBalanceOf` as the per-token fallback when a batched token-balance read fails.
 - `queryAllowance` for direct ERC20 approvals and account-to-Permit2 approvals.
 - `queryPermit2Allowance` for Permit2 spender allowance state.

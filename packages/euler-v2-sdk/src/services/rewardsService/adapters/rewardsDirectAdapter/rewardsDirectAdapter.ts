@@ -1,6 +1,8 @@
 import { type Address, getAddress, type Hex } from "viem";
 import {
 	applyBuildQuery,
+	normalizeQueryKeyObjectSets,
+	serializeQueryArgs,
 	type BuildQueryFn,
 } from "../../../../utils/buildQuery.js";
 import type {
@@ -174,6 +176,10 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		return res.json() as Promise<BrevisCampaignsResponse>;
 	};
 
+	getQueryKeyBrevisCampaigns(url: string, body: object): string | null {
+		return serializeQueryArgs([url, normalizeQueryKeyObjectSets(body)]);
+	}
+
 	setQueryBrevisCampaigns(fn: typeof this.queryBrevisCampaigns): void {
 		this.queryBrevisCampaigns = fn;
 	}
@@ -203,6 +209,10 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		if (!res.ok) return { err: null, rewardsBatch: null };
 		return res.json() as Promise<BrevisUserRewardsBatchResponse>;
 	};
+
+	getQueryKeyBrevisUserProofs(url: string, body: object): string | null {
+		return serializeQueryArgs([url, normalizeQueryKeyObjectSets(body)]);
+	}
 
 	setQueryBrevisUserProofs(fn: typeof this.queryBrevisUserProofs): void {
 		this.queryBrevisUserProofs = fn;
@@ -246,6 +256,10 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		const data = await res.json();
 		return Array.isArray(data) ? (data as FuulClaimCheck[]) : [];
 	};
+
+	getQueryKeyFuulClaimChecks(url: string, body: object): string | null {
+		return serializeQueryArgs([url, normalizeQueryKeyObjectSets(body)]);
+	}
 
 	setQueryFuulClaimChecks(fn: typeof this.queryFuulClaimChecks): void {
 		this.queryFuulClaimChecks = fn;

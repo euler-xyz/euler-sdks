@@ -10,7 +10,9 @@ import type {
 import {
 	type BuildQueryFn,
 	applyBuildQuery,
+	serializeQueryArgs,
 } from "../../../utils/buildQuery.js";
+import { createCallBundler } from "../../../utils/callBundler.js";
 import {
 	dataIssueLocation,
 	type DataIssue,
@@ -55,7 +57,84 @@ const utilsLensTokenBalancesAbi = [
 type BalanceResult = { value: bigint; failed: boolean };
 const TOKEN_BALANCES_CHUNK_SIZE = 250;
 
+type TokenBalanceQueryKey = {
+	provider: ReturnType<ProviderService["getProvider"]>;
+	utilsLensAddress: Address;
+	account: Address;
+	asset: Address;
+};
+
 export class WalletOnchainAdapter implements IWalletAdapter {
+	private readonly tokenBalanceLoader = createCallBundler(
+		async (keys: TokenBalanceQueryKey[]): Promise<bigint[]> => {
+			const values: Array<bigint | undefined> = new Array(keys.length);
+			const groups: Array<{
+				provider: TokenBalanceQueryKey["provider"];
+				utilsLensAddress: Address;
+				account: Address;
+				items: Array<{ index: number; asset: Address }>;
+			}> = [];
+
+			keys.forEach((key, index) => {
+				const utilsLensAddress = getAddress(key.utilsLensAddress);
+				const account = getAddress(key.account);
+				const asset = getAddress(key.asset);
+				const group = groups.find(
+					(candidate) =>
+						candidate.provider === key.provider &&
+						candidate.utilsLensAddress === utilsLensAddress &&
+						candidate.account === account,
+				);
+				if (group) {
+					group.items.push({ index, asset });
+				} else {
+					groups.push({
+						provider: key.provider,
+						utilsLensAddress,
+						account,
+						items: [{ index, asset }],
+					});
+				}
+			});
+
+			for (const group of groups) {
+				const assets = Array.from(
+					new Map(
+						group.items.map(({ asset }) => [
+							asset.toLowerCase(),
+							getAddress(asset),
+						]),
+					).values(),
+				);
+				const balances = await group.provider.readContract({
+					address: group.utilsLensAddress,
+					abi: utilsLensTokenBalancesAbi,
+					functionName: "tokenBalances",
+					args: [group.account, assets],
+				});
+				if (balances.length !== assets.length) {
+					throw new Error("utilsLens.tokenBalances returned an unexpected length");
+				}
+
+				const balancesByAsset = new Map<string, bigint>();
+				assets.forEach((asset, index) => {
+					balancesByAsset.set(asset.toLowerCase(), balances[index]!);
+				});
+				group.items.forEach(({ index, asset }) => {
+					values[index] = balancesByAsset.get(asset.toLowerCase());
+				});
+			}
+
+			return values.map((value) => {
+				if (value === undefined) {
+					throw new Error("Missing token balance result");
+				}
+				return value;
+			});
+		},
+		{ maxBatchSize: TOKEN_BALANCES_CHUNK_SIZE },
+	);
+
 	constructor(
 		private providerService: ProviderService,
 		private deploymentService: DeploymentService,
@@ -83,15 +162,24 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 		provider: ReturnType<ProviderService["getProvider"]>,
 		utilsLensAddress: Address,
 		account: Address,
-		assets: Address[],
-	): Promise<readonly bigint[]> => {
-		return provider.readContract({
-			address: utilsLensAddress,
-			abi: utilsLensTokenBalancesAbi,
-			functionName: "tokenBalances",
-			args: [account, assets],
+		asset: Address,
+	): Promise<bigint> => {
+		return this.tokenBalanceLoader({
+			provider,
+			utilsLensAddress,
+			account,
+			asset,
 		});
 	};
+
+	getQueryKeyTokenBalances(
+		provider: ReturnType<ProviderService["getProvider"]>,
+		utilsLensAddress: Address,
+		account: Address,
+		asset: Address,
+	): string | null {
+		return serializeQueryArgs([provider, utilsLensAddress, account, asset]);
+	}
 
 	setQueryTokenBalances(fn: typeof this.queryTokenBalances): void {
 		this.queryTokenBalances = fn;
@@ -223,89 +311,75 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 			);
 			if (erc20Assets.length) {
 				const utilsLensAddress = deployment.addresses.lensAddrs.utilsLens;
-				const chunks: Address[][] = [];
-				for (
-					let index = 0;
-					index < erc20Assets.length;
-					index += TOKEN_BALANCES_CHUNK_SIZE
-				) {
-					chunks.push(erc20Assets.slice(index, index + TOKEN_BALANCES_CHUNK_SIZE));
-				}
-
 				await Promise.all(
-					chunks.map(async (chunk, chunkIndex) => {
+					erc20Assets.map(async (assetAddress) => {
 						const tokenBalances = await this.queryTokenBalances(
 							provider,
 							utilsLensAddress,
 							accountAddress,
-							chunk,
+							assetAddress,
 						)
-							.then((values) => ({ values, failed: false as const }))
+							.then((value) => ({ value, failed: false as const }))
 							.catch(() => ({
-								values: chunk.map(() => 0n),
+								value: 0n,
 								failed: true as const,
 							}));
 
-						if (
-							tokenBalances.failed ||
-							tokenBalances.values.length !== chunk.length
-						) {
+						if (tokenBalances.failed) {
 							errors.push({
 								code: "SOURCE_UNAVAILABLE",
 								severity: "warning",
 								message:
-									"Failed to fetch batched token balances; falling back to balanceOf.",
+									"Failed to fetch token balance through utilsLens; falling back to balanceOf.",
 								locations: [
 									dataIssueLocation(
-										walletDiagnosticOwner(chainId, accountAddress),
-										`$.assets[${chunkIndex}]`,
+										walletAssetDiagnosticOwner(
+											chainId,
+											accountAddress,
+											assetAddress,
+										),
+										"$.balance",
 									),
 								],
 								source: "utilsLens.tokenBalances",
 								normalizedValue: "fallback-balanceOf",
 							});
 
-							await Promise.all(
-								chunk.map(async (assetAddress) => {
-									const balance = await this.queryBalanceOf(
-										provider,
-										assetAddress,
-										accountAddress,
-									)
-										.then((value) => ({ value, failed: false }))
-										.catch(() => ({ value: 0n, failed: true }));
-									if (balance.failed) {
-										errors.push({
-											code: "SOURCE_UNAVAILABLE",
-											severity: "warning",
-											message:
-												"Failed to fetch asset balance; defaulted to 0.",
-											locations: [
-												dataIssueLocation(
-													walletAssetDiagnosticOwner(
-														chainId,
-														accountAddress,
-														assetAddress,
-													),
-													"$.balance",
-												),
-											],
-											source: "erc20.balanceOf",
-											originalValue: assetAddress,
-											normalizedValue: "0",
-										});
-									}
-									balanceResults.set(assetAddress, balance);
-								}),
-							);
+							const balance = await this.queryBalanceOf(
+								provider,
+								assetAddress,
+								accountAddress,
+							)
+								.then((value) => ({ value, failed: false }))
+								.catch(() => ({ value: 0n, failed: true }));
+							if (balance.failed) {
+								errors.push({
+									code: "SOURCE_UNAVAILABLE",
+									severity: "warning",
+									message:
+										"Failed to fetch asset balance; defaulted to 0.",
+									locations: [
+										dataIssueLocation(
+											walletAssetDiagnosticOwner(
+												chainId,
+												accountAddress,
+												assetAddress,
+											),
+											"$.balance",
+										),
+									],
+									source: "erc20.balanceOf",
+									originalValue: assetAddress,
+									normalizedValue: "0",
+								});
+							}
+							balanceResults.set(assetAddress, balance);
 							return;
 						}
 
-						chunk.forEach((assetAddress, index) => {
-							balanceResults.set(assetAddress, {
-								value: tokenBalances.values[index] ?? 0n,
-								failed: false,
-							});
+						balanceResults.set(assetAddress, {
+							value: tokenBalances.value,
+							failed: false,
 						});
 					}),
 				);

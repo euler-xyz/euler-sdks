@@ -2,6 +2,8 @@ import type { Address } from "viem";
 import {
 	type BuildQueryFn,
 	applyBuildQuery,
+	normalizeQueryKeySet,
+	serializeQueryArgs,
 } from "../../../../utils/buildQuery.js";
 import { createCallBundler } from "../../../../utils/callBundler.js";
 import type {
@@ -63,11 +65,16 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 		limit: number,
 		assets?: Address[],
 	): Promise<V3ListEnvelope<V3IntrinsicApyRow>> => {
+		const normalizedAssets = assets?.length
+			? [...new Set(assets.map((address) => normalize(address)))].sort(
+					(left, right) => left.localeCompare(right),
+				)
+			: undefined;
 		const url = this.buildUrl(endpoint, "/v3/apys/intrinsic", {
 			chainId: String(chainId),
 			offset: String(offset),
 			limit: String(limit),
-			...(assets?.length ? { assets: assets.join(",") } : {}),
+			...(normalizedAssets?.length ? { assets: normalizedAssets.join(",") } : {}),
 		});
 
 		const response = await fetch(url, {
@@ -81,6 +88,22 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 		}
 		return response.json() as Promise<V3ListEnvelope<V3IntrinsicApyRow>>;
 	};
+
+	getQueryKeyV3IntrinsicApysPage(
+		endpoint: string,
+		chainId: number,
+		offset: number,
+		limit: number,
+		assets?: Address[],
+	): string | null {
+		return serializeQueryArgs([
+			endpoint,
+			chainId,
+			offset,
+			limit,
+			assets ? normalizeQueryKeySet(assets.map(normalize)) : undefined,
+		]);
+	}
 
 	private mapRowsToApyMap(
 		rows: V3IntrinsicApyRow[],

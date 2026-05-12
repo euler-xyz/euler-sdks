@@ -69,7 +69,7 @@ test("PythPluginAdapter retries Hermes 404s without missing price ids", async ()
 	]);
 
 	assert.deepEqual(updateData, ["0xabc123"]);
-	assert.deepEqual(requestedIds, [[GOOD_FEED, MISSING_FEED], [GOOD_FEED]]);
+	assert.deepEqual(requestedIds, [[MISSING_FEED, GOOD_FEED], [GOOD_FEED]]);
 });
 
 test("PythPluginAdapter returns no update data when all Hermes ids are missing", async () => {

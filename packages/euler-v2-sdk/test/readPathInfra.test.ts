@@ -5,6 +5,8 @@ import { getAddress, zeroAddress } from "viem";
 import {
   applyBuildQuery,
   createQueryCacheBuildQuery,
+  getEulerSdkQueryKey,
+  normalizeQueryKeySet,
   serializeQueryArgs,
   type BuildQueryFn,
 } from "../src/utils/buildQuery.js";
@@ -212,6 +214,55 @@ test("serializeQueryArgs handles nested bigint values for external caches", () =
     serializeQueryArgs([{ nested: { amount: 1n } }]),
     '[{"nested":{"amount":{"__type":"bigint","value":"1"}}}]',
   );
+});
+
+test("SDK query keys use generic normalization unless a query owns a typed key builder", async () => {
+  const providerA = { chain: { id: 1 }, transport: { key: "a" } };
+  const providerB = { chain: { id: 1 }, transport: { key: "b" } };
+  const account = "0x0000000000000000000000000000000000000001";
+  const asset = "0x0000000000000000000000000000000000000002";
+  const utilsLens = "0x0000000000000000000000000000000000000003";
+
+  assert.equal(
+    getEulerSdkQueryKey("queryTokenBalances", [
+      providerA,
+      utilsLens,
+      account,
+      asset,
+    ]),
+    getEulerSdkQueryKey("queryTokenBalances", [
+      providerB,
+      `0x${utilsLens.slice(2).toUpperCase()}`,
+      `0x${account.slice(2).toUpperCase()}`,
+      `0x${asset.slice(2).toUpperCase()}`,
+    ]),
+  );
+  assert.notEqual(
+    getEulerSdkQueryKey("queryBatchSimulation", [providerA, [account, asset]]),
+    getEulerSdkQueryKey("queryBatchSimulation", [providerA, [asset, account]]),
+  );
+
+  class QueryContainer {
+    queryFeeds = async (_feedIds: string[]) => "ok";
+
+    getQueryKeyFeeds(feedIds: string[]): string | null {
+      return serializeQueryArgs([normalizeQueryKeySet(feedIds)]);
+    }
+  }
+
+  const decorated = new QueryContainer();
+  const keys: Array<string | null> = [];
+  applyBuildQuery(decorated, (queryName, fn, _target, context) => {
+    assert.equal(queryName, "queryFeeds");
+    return (async (...args: Parameters<typeof fn>) => {
+      keys.push(context?.getCacheKey(args) ?? null);
+      return fn(...args);
+    }) as typeof fn;
+  });
+
+  await decorated.queryFeeds(["0x02", "0x01", "0x01"]);
+  await decorated.queryFeeds(["0x01", "0x02"]);
+  assert.equal(keys[0], keys[1]);
 });
 
 test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels services cover their read flows", async () => {

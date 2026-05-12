@@ -20,7 +20,12 @@ import type {
 	TransactionPlan,
 	TransactionPlanItem,
 } from "../../services/executionService/executionServiceTypes.js";
-import { applyBuildQuery, type BuildQueryFn } from "../../utils/buildQuery.js";
+import {
+	applyBuildQuery,
+	normalizeQueryKeySet,
+	serializeQueryArgs,
+	type BuildQueryFn,
+} from "../../utils/buildQuery.js";
 import { createBundledCall } from "../../utils/callBundler.js";
 import {
 	calculateHealthCheckSets,
@@ -134,12 +139,20 @@ export class PythPluginAdapter {
 	 */
 	queryPythUpdateData = createBundledCall(
 		async (feedIds: Hex[]): Promise<Hex[]> => {
-			const normalizedIds = [...new Set(feedIds.map(normalizeFeedId))];
+			const normalizedIds = [...new Set(feedIds.map(normalizeFeedId))].sort(
+				(left, right) => left.localeCompare(right),
+			);
 			if (!normalizedIds.length) return [];
 
 			return this.fetchPythUpdateData(normalizedIds);
 		},
 	);
+
+	getQueryKeyPythUpdateData(feedIds: Hex[]): string | null {
+		return serializeQueryArgs([
+			normalizeQueryKeySet(feedIds.map(normalizeFeedId)),
+		]);
+	}
 
 	private fetchPythUpdateData = async (feedIds: Hex[]): Promise<Hex[]> => {
 		if (!feedIds.length) return [];
@@ -187,6 +200,18 @@ export class PythPluginAdapter {
 			args: [updateData],
 		});
 	};
+
+	getQueryKeyPythUpdateFee(
+		provider: PublicClient,
+		pythAddress: Address,
+		updateData: Hex[],
+	): string | null {
+		return serializeQueryArgs([
+			provider,
+			pythAddress,
+			normalizeQueryKeySet(updateData),
+		]);
+	}
 
 	setQueryPythUpdateData(fn: typeof this.queryPythUpdateData): void {
 		this.queryPythUpdateData = fn;

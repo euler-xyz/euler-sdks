@@ -6,10 +6,15 @@
  * @param fn - The original query function
  * @returns A wrapped version of the query function
  */
+export interface BuildQueryContext {
+	getCacheKey: (args: unknown[]) => string | null;
+}
+
 export type BuildQueryFn = <T extends (...args: any[]) => Promise<any>>(
 	queryName: string,
 	fn: T,
 	target: object,
+	context?: BuildQueryContext,
 ) => T;
 
 export interface QueryCacheConfig {
@@ -19,18 +24,83 @@ export interface QueryCacheConfig {
 
 const DEFAULT_QUERY_CACHE_TTL_MS = 5_000;
 
+function normalizeAddress(value: string): string {
+	if (/^0x[0-9a-fA-F]{40}$/.test(value)) {
+		return value.toLowerCase();
+	}
+	return value;
+}
+
+function normalizeHex(value: string): string {
+	if (/^0x[0-9a-fA-F]+$/.test(value)) {
+		return value.toLowerCase();
+	}
+	return value;
+}
+
+export function normalizeQueryKeyValue(value: unknown): unknown {
+	if (typeof value === "bigint") {
+		return { __type: "bigint", value: value.toString() };
+	}
+	if (typeof value === "function") return "[function]";
+	if (typeof value === "undefined") return { __type: "undefined" };
+	if (typeof value === "string") return normalizeAddress(normalizeHex(value));
+	if (
+		value !== null &&
+		typeof value === "object" &&
+		"chain" in value &&
+		"transport" in value
+	) {
+		const client = value as { chain?: { id?: number } };
+		return { __type: "publicClient", chainId: client.chain?.id ?? "unknown" };
+	}
+	if (Array.isArray(value)) return value.map(normalizeQueryKeyValue);
+	if (value !== null && typeof value === "object") {
+		return Object.fromEntries(
+			Object.entries(value as Record<string, unknown>)
+				.sort(([left], [right]) => left.localeCompare(right))
+				.map(([key, entry]) => [key, normalizeQueryKeyValue(entry)]),
+		);
+	}
+	return value;
+}
+
+export function normalizeQueryKeySet(value: unknown[]): unknown[] {
+	const entries = new Map<string, unknown>();
+	for (const entry of value.map(normalizeQueryKeyValue)) {
+		entries.set(JSON.stringify(entry) ?? String(entry), entry);
+	}
+	return Array.from(entries.entries())
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([, entry]) => entry);
+}
+
+export function normalizeQueryKeyObjectSets(value: object): object {
+	return Object.fromEntries(
+		Object.entries(value as Record<string, unknown>)
+			.sort(([left], [right]) => left.localeCompare(right))
+			.map(([key, entry]) => [
+				key,
+				Array.isArray(entry)
+					? normalizeQueryKeySet(entry)
+					: normalizeQueryKeyValue(entry),
+			]),
+	);
+}
+
 export function serializeQueryArgs(args: unknown[]): string | null {
 	try {
-		return JSON.stringify(args, (_key, value) => {
-			if (typeof value === "bigint") {
-				return { __type: "bigint", value: value.toString() };
-			}
-			if (typeof value === "function") return "[function]";
-			return value;
-		});
+		return JSON.stringify(args.map(normalizeQueryKeyValue));
 	} catch {
 		return null;
 	}
+}
+
+export function getEulerSdkQueryKey(
+	_queryName: string,
+	args: unknown[],
+): string | null {
+	return serializeQueryArgs(args);
 }
 
 export function createQueryCacheBuildQuery(
@@ -40,9 +110,10 @@ export function createQueryCacheBuildQuery(
 	const ttlMs = config?.ttlMs ?? DEFAULT_QUERY_CACHE_TTL_MS;
 
 	return <T extends (...args: any[]) => Promise<any>>(
-		_queryName: string,
+		queryName: string,
 		fn: T,
 		_target: object,
+		context?: BuildQueryContext,
 	): T => {
 		if (!enabled || ttlMs <= 0) return fn;
 
@@ -56,7 +127,7 @@ export function createQueryCacheBuildQuery(
 		>();
 
 		const wrapped = (async (...args: Parameters<T>) => {
-			const cacheKey = serializeQueryArgs(args);
+			const cacheKey = context?.getCacheKey(args) ?? getEulerSdkQueryKey(queryName, args);
 			if (cacheKey === null) {
 				return fn(...args);
 			}
@@ -106,7 +177,14 @@ export function applyBuildQuery(
 ): void {
 	for (const key of Object.getOwnPropertyNames(target)) {
 		if (key.startsWith("query") && typeof (target as any)[key] === "function") {
-			(target as any)[key] = buildQuery(key, (target as any)[key], target);
+			const getQueryKeyName = `getQueryKey${key.slice("query".length)}`;
+			const getQueryKey = (target as any)[getQueryKeyName];
+			(target as any)[key] = buildQuery(key, (target as any)[key], target, {
+				getCacheKey: (args) =>
+					typeof getQueryKey === "function"
+						? getQueryKey.apply(target, args)
+						: getEulerSdkQueryKey(key, args),
+			});
 		}
 	}
 }

@@ -1406,7 +1406,7 @@ test("wallet onchain adapter setters, query wrappers, and top-level failure are 
 	working.setQueryAllowance(working.queryAllowance);
 	working.setQueryPermit2Allowance(working.queryPermit2Allowance);
 	assert.equal(await working.queryNativeBalance({ getBalance: () => Promise.resolve(6n) } as any, zeroAddress), 6n);
-	assert.deepEqual(await working.queryTokenBalances({ readContract: ({}) => Promise.resolve([6n]) } as any, utilsLens, zeroAddress, [asset]), [6n]);
+	assert.equal(await working.queryTokenBalances({ readContract: ({}) => Promise.resolve([6n]) } as any, utilsLens, zeroAddress, asset), 6n);
 	assert.equal(await working.queryBalanceOf({ readContract: ({}) => Promise.resolve(7n) } as any, zeroAddress, zeroAddress), 7n);
 	assert.equal(await working.queryAllowance({ readContract: ({}) => Promise.resolve(8n) } as any, zeroAddress, zeroAddress, zeroAddress), 8n);
 	assert.deepEqual(

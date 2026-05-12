@@ -43,9 +43,14 @@ export * from "./utils/accountPositionClassification.js";
 export { VaultType } from "./utils/types.js";
 export {
   type BuildQueryFn,
+  type BuildQueryContext,
   type QueryCacheConfig,
   applyBuildQuery,
   createQueryCacheBuildQuery,
+  getEulerSdkQueryKey,
+  normalizeQueryKeyObjectSets,
+  normalizeQueryKeySet,
+  normalizeQueryKeyValue,
   serializeQueryArgs,
 } from "./utils/buildQuery.js";
 export type { EulerSDKQueryName, QueryMethodName } from "./utils/queryNames.js";

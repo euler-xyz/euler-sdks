@@ -20,13 +20,14 @@ class EVaultOnchainAdapter {
 }
 ```
 
-At construction time, `applyBuildQuery` iterates all own properties starting with `"query"` and replaces each with `buildQuery(queryName, originalFn)`. The `BuildQueryFn` type:
+At construction time, `applyBuildQuery` iterates all own properties starting with `"query"` and replaces each with `buildQuery(queryName, originalFn, target, context)`. When the target also has a matching `getQueryKeyX` method for `queryX`, `context.getCacheKey(args)` calls that typed key builder; otherwise it uses the generic SDK serializer. The `BuildQueryFn` type:
 
 ```typescript
 type BuildQueryFn = <T extends (...args: any[]) => Promise<any>>(
   queryName: string,
   fn: T,
   target: object,
+  context?: { getCacheKey: (args: unknown[]) => string | null },
 ) => T;
 ```
 
@@ -79,18 +80,18 @@ The `examples/react-sdk-example` app shows how to use `buildQuery` to give every
 
 ```typescript
 import { QueryClient } from "@tanstack/react-query";
-import type { BuildQueryFn } from "@eulerxyz/euler-v2-sdk";
+import { serializeQueryArgs, type BuildQueryFn } from "@eulerxyz/euler-v2-sdk";
 
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1 } },
 });
 
-export const sdkBuildQuery: BuildQueryFn = (queryName, fn) => {
+export const sdkBuildQuery: BuildQueryFn = (queryName, fn, _target, context) => {
   const staleTime = STALE_TIMES[queryName] ?? DEFAULT_STALE_TIME;
 
   const wrapped = (...args: unknown[]) =>
     queryClient.fetchQuery({
-      queryKey: ["sdk", queryName, ...args.map(serializeArg)],
+      queryKey: ["sdk", queryName, context?.getCacheKey(args) ?? serializeQueryArgs(args)],
       queryFn: () => fn(...args),
       staleTime,
     });
@@ -99,7 +100,7 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn) => {
 };
 ```
 
-Each `query*` call becomes a `fetchQuery` with a deterministic cache key derived from the query name and serialized arguments. If the cached value is fresh (within `staleTime`), no network call is made.
+Each `query*` call becomes a `fetchQuery` with a deterministic cache key derived from the query name and the SDK-provided `context.getCacheKey(args)` helper. Generic keys remove provider-object noise and normalize address casing. Query-owned `getQueryKeyX` methods handle query-specific semantics such as unordered feed sets or asset filters while ordered payloads remain order-sensitive. If the cached value is fresh (within `staleTime`), no network call is made.
 
 ### Central stale time settings
 
@@ -234,7 +235,7 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 | Query | Type | Class | Args | Description |
 |-------|------|-------|------|-------------|
 | `queryNativeBalance` | rpc | `WalletOnchainAdapter` | `(provider, account)` | Read native token balance |
-| `queryTokenBalances` | rpc | `WalletOnchainAdapter` | `(provider, utilsLensAddress, account, assets)` | Read ERC20 balances through `utilsLens.tokenBalances` |
+| `queryTokenBalances` | rpc | `WalletOnchainAdapter` | `(provider, utilsLensAddress, account, asset)` | Read one ERC20 balance; concurrent calls are batched through `utilsLens.tokenBalances` |
 | `queryBalanceOf` | rpc | `WalletOnchainAdapter` | `(provider, asset, account)` | Read ERC20 balance |
 | `queryAllowance` | rpc | `WalletOnchainAdapter` | `(provider, asset, owner, spender)` | Read ERC20 allowance |
 | `queryPermit2Allowance` | rpc | `WalletOnchainAdapter` | `(provider, permit2Address, owner, asset, spender)` | Read Permit2 allowance |

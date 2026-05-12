@@ -6,23 +6,24 @@ import {
   type QueryKey,
   type UseQueryResult,
 } from "@tanstack/react-query";
-import type {
-  Account,
-  AccountPosition,
-  BuildQueryFn,
-  EulerSDKQueryName,
-  EVault,
-  EulerSDK,
-  EulerEarn,
-  FeeFlowState,
-  Portfolio,
-  PortfolioPositionFilter,
-  Wallet,
-  VaultEntity,
-  VaultRewardInfo,
-  DataIssue,
-  DataIssueLocation,
-  DataIssueOwnerRef,
+import {
+  serializeQueryArgs,
+  type Account,
+  type AccountPosition,
+  type BuildQueryFn,
+  type EulerSDKQueryName,
+  type EVault,
+  type EulerSDK,
+  type EulerEarn,
+  type FeeFlowState,
+  type Portfolio,
+  type PortfolioPositionFilter,
+  type Wallet,
+  type VaultEntity,
+  type VaultRewardInfo,
+  type DataIssue,
+  type DataIssueLocation,
+  type DataIssueOwnerRef,
 } from "@eulerxyz/euler-v2-sdk";
 import { getAddress, isAddress, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
@@ -56,23 +57,6 @@ export const queryClient = new QueryClient({
 // wrapped with queryClient.fetchQuery() so each individual RPC / subgraph
 // call gets its own React-Query cache entry.
 // ---------------------------------------------------------------------------
-
-function serializeArg(arg: unknown): unknown {
-  if (typeof arg === "bigint") return `bigint:${arg.toString()}`;
-
-  // viem PublicClient – use its chain id as identity
-  if (
-    arg !== null &&
-    typeof arg === "object" &&
-    "chain" in arg &&
-    "transport" in arg
-  ) {
-    const client = arg as { chain?: { id: number } };
-    return `client:${client.chain?.id ?? "unknown"}`;
-  }
-
-  return arg;
-}
 
 const MINUTE = 60_000;
 const EULER_LABELS_BASE =
@@ -185,7 +169,7 @@ function withDataInterceptor(
   };
 }
 
-export const sdkBuildQuery: BuildQueryFn = (queryName, fn) => {
+export const sdkBuildQuery: BuildQueryFn = (queryName, fn, _target, context) => {
   const staleTime = STALE_TIMES[queryName as EulerSDKQueryName] ?? DEFAULT_STALE_TIME;
   registerKnownQueries([queryName]);
   const interceptedFetcher = withDataInterceptor(queryName, (...args) =>
@@ -194,7 +178,11 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn) => {
 
   const wrapped = async (...args: unknown[]) => {
     recordExecution(queryName);
-    const queryKey = ["sdk", queryName, ...args.map(serializeArg)] as QueryKey;
+    const queryKey = [
+      "sdk",
+      queryName,
+      context?.getCacheKey(args) ?? serializeQueryArgs(args),
+    ] as QueryKey;
     const { disableCache, fetchQueryOptions: overrides } = getQueryBuildOverrides();
 
     const fetchOptions: FetchQueryOptions<unknown, Error, unknown, QueryKey> = {
