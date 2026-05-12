@@ -152,6 +152,59 @@ test("V3 rewards adapter normalizes Incentra APY campaigns as Brevis", async () 
 	assert.equal(info?.campaigns[0]?.apr, 0.045);
 });
 
+test("V3 rewards adapter preserves collateral and looping campaign metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "borrow-collateral-1",
+						provider: "merkl",
+						campaignType: "euler_borrow_collateral",
+						apr: 3,
+						collateralAsset: otherRewardToken,
+						sourceUrl: "https://app.merkl.xyz/opportunities/mainnet/EULER/x",
+						rewardToken: {
+							address: rewardToken,
+							symbol: "EUL",
+						},
+						status: "active",
+					},
+					{
+						id: "looping-1",
+						provider: "fuul",
+						campaignType: "euler_looping",
+						apr: 4,
+						collateralAsset: otherRewardToken,
+						sourceUrl: "https://www.fuul.xyz/",
+						minMultiplier: 2,
+						maxMultiplier: 5,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "EUL",
+						},
+						status: "active",
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 2);
+	assert.equal(info?.campaigns[0]?.action, "BORROW_COLLATERAL");
+	assert.equal(info?.campaigns[0]?.collateralAddress, otherRewardToken);
+	assert.equal(info?.campaigns[0]?.sourceUrl?.includes("merkl.xyz"), true);
+	assert.equal(info?.campaigns[1]?.action, "LOOPING");
+	assert.equal(info?.campaigns[1]?.collateralAddress, otherRewardToken);
+	assert.equal(info?.campaigns[1]?.minMultiplier, 2);
+	assert.equal(info?.campaigns[1]?.maxMultiplier, 5);
+});
+
 test("rewards service uses direct proof-backed Brevis rewards when V3 lacks claim metadata", async () => {
 	const primary: IRewardsAdapter = {
 		...emptyAdapter,
@@ -376,6 +429,76 @@ test("rewards service merges Brevis APY campaigns from direct fallback", async (
 	assert.equal(info?.totalRewardsApr, 0.04);
 	assert.equal(info?.campaigns[0]?.source, "brevis");
 	assert.equal(info?.campaigns[0]?.action, "BORROW");
+});
+
+test("direct rewards adapter maps Fuul lend and looping incentives", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryFuulIncentives(async (url) => {
+		if (url.includes("euler-looping")) {
+			return [
+				{
+					conversion: "",
+					project: "EUL",
+					protocol: "euler-looping",
+					chain_id: 1,
+					pool: {
+						name: "EUL",
+						token0_symbol: "EUL",
+						token0_address: rewardToken,
+					},
+					trigger: {
+						type: "looping",
+						context: {
+							chain_id: 1,
+							borrowVault: vaultAddress,
+							depositVault: otherRewardToken,
+							min_leverage: 2,
+							max_leverage: 5,
+						},
+					},
+					apr: 0.04,
+					tvl: 0,
+					refreshed_at: "",
+				},
+			];
+		}
+
+		return [
+			{
+				conversion: "",
+				project: "EUL",
+				protocol: "euler",
+				chain_id: 1,
+				pool: {
+					name: "EUL",
+					token0_symbol: "EUL",
+					token0_address: rewardToken,
+				},
+				trigger: {
+					type: "lend",
+					context: {
+						chain_id: 1,
+						token_address: vaultAddress,
+					},
+				},
+				apr: 0.03,
+				tvl: 0,
+				refreshed_at: "",
+			},
+		];
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 2);
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.equal(info?.campaigns[0]?.apr, 0.03);
+	assert.equal(info?.campaigns[1]?.action, "LOOPING");
+	assert.equal(info?.campaigns[1]?.apr, 0.04);
+	assert.equal(info?.campaigns[1]?.collateralAddress, otherRewardToken);
+	assert.equal(info?.campaigns[1]?.minMultiplier, 2);
+	assert.equal(info?.campaigns[1]?.maxMultiplier, 5);
 });
 
 test("rewards service derives Merkl claim target from trusted distributor", async () => {

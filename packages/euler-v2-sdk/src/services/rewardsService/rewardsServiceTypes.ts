@@ -7,7 +7,7 @@ import type { TransactionPlan } from "../executionService/index.js";
 // ---------------------------------------------------------------------------
 
 export type RewardSource = "merkl" | "brevis" | "fuul";
-export type RewardAction = "LEND" | "BORROW";
+export type RewardAction = "LEND" | "BORROW" | "BORROW_COLLATERAL" | "LOOPING";
 
 export interface RewardCampaign {
 	campaignId: string;
@@ -17,9 +17,18 @@ export interface RewardCampaign {
 	apr: number;
 	rewardTokenAddress?: Address;
 	rewardTokenSymbol: string;
+	rewardTokenIcon?: string;
 	dailyRewards?: number;
 	/** Campaign end time in seconds (unix timestamp). */
 	endTimestamp?: number;
+	/** Collateral/deposit vault address for collateral-specific borrow or looping rewards. */
+	collateralAddress?: Address;
+	/** Provider URL for the campaign/opportunity, when exposed by the source. */
+	sourceUrl?: string;
+	/** Minimum leverage multiplier for looping rewards. */
+	minMultiplier?: number;
+	/** Maximum leverage multiplier for looping rewards. */
+	maxMultiplier?: number;
 }
 
 export interface VaultRewardInfo {
@@ -176,14 +185,27 @@ export interface MerklCampaign {
 	id: string;
 	campaignId: string;
 	type: string;
+	subType?: number | null;
 	rewardToken: {
 		address: string;
 		symbol: string;
+		icon?: string;
 	};
 	apr: number;
 	dailyRewards: number;
 	startTimestamp: number;
 	endTimestamp: number;
+	params?: {
+		targetToken?: string;
+		evkAddress?: string;
+		collateralAddress?: string;
+		markets?: Array<{
+			campaignParameters?: {
+				evkAddress?: string;
+				targetToken?: string;
+			};
+		}>;
+	};
 }
 
 export interface MerklOpportunity {
@@ -195,6 +217,15 @@ export interface MerklOpportunity {
 	apr: number;
 	dailyRewards: number;
 	campaigns: MerklCampaign[];
+	chain?: {
+		name?: string;
+	};
+	aprRecord?: {
+		breakdowns?: Array<{
+			identifier: string;
+			value: number;
+		}>;
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -291,7 +322,11 @@ export interface FuulTrigger {
 	type: string;
 	context: {
 		chain_id: number;
-		token_address: string;
+		token_address?: string;
+		borrowVault?: string;
+		depositVault?: string;
+		min_leverage?: number;
+		max_leverage?: number;
 	};
 }
 

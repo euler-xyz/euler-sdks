@@ -46,6 +46,9 @@ const normalizeProvider = (value?: string): RewardSource | undefined => {
 const normalizeAction = (value?: string): RewardAction | undefined => {
 	const normalized = value?.trim().toLowerCase();
 	if (!normalized) return undefined;
+	if (normalized.includes("loop")) return "LOOPING";
+	if (normalized.includes("borrow") && normalized.includes("collateral"))
+		return "BORROW_COLLATERAL";
 	if (normalized.includes("borrow")) return "BORROW";
 	if (normalized.includes("lend") || normalized.includes("supply"))
 		return "LEND";
@@ -110,6 +113,22 @@ const normalizeFiniteNumber = (value: unknown): number | undefined => {
 	if (typeof value === "string" && value.trim().length > 0) {
 		const parsed = Number(value);
 		if (Number.isFinite(parsed)) return parsed;
+	}
+	return undefined;
+};
+
+const normalizeTimestampSeconds = (value: unknown): number | undefined => {
+	if (value === undefined || value === null || value === "") return undefined;
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return value > 1e12 ? Math.floor(value / 1000) : value;
+	}
+	if (typeof value === "string") {
+		const numeric = Number(value);
+		if (Number.isFinite(numeric)) {
+			return numeric > 1e12 ? Math.floor(numeric / 1000) : numeric;
+		}
+		const parsed = Date.parse(value);
+		if (Number.isFinite(parsed)) return Math.floor(parsed / 1000);
 	}
 	return undefined;
 };
@@ -322,6 +341,7 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 					campaignRow.rewardToken?.address,
 				);
 				const rewardTokenSymbol = campaignRow.rewardToken?.symbol;
+				const collateralAddress = normalizeAddress(campaignRow.collateralAsset);
 
 				if (!provider || !action || !apr || !rewardTokenSymbol) continue;
 
@@ -334,9 +354,15 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 					apr,
 					rewardTokenAddress,
 					rewardTokenSymbol,
-					endTimestamp: campaignRow.endTimestamp
-						? Date.parse(campaignRow.endTimestamp)
-						: undefined,
+					endTimestamp: normalizeTimestampSeconds(campaignRow.endTimestamp),
+					collateralAddress,
+					sourceUrl: campaignRow.sourceUrl ?? campaignRow.url,
+					minMultiplier: normalizeFiniteNumber(
+						campaignRow.minMultiplier ?? campaignRow.minLeverage,
+					),
+					maxMultiplier: normalizeFiniteNumber(
+						campaignRow.maxMultiplier ?? campaignRow.maxLeverage,
+					),
 				});
 			}
 
@@ -351,6 +377,7 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 		);
 		const rewardTokenSymbol =
 			row.rewardToken?.symbol ?? row.rewardTokenSymbol ?? row.token?.symbol;
+		const collateralAddress = normalizeAddress(row.collateralAsset);
 
 		if (!provider || !action || !apr || !rewardTokenSymbol) return;
 
@@ -365,7 +392,15 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			rewardTokenAddress,
 			rewardTokenSymbol,
 			dailyRewards: row.dailyRewards,
-			endTimestamp: row.endTimestamp ?? row.endTime,
+			endTimestamp: normalizeTimestampSeconds(row.endTimestamp ?? row.endTime),
+			collateralAddress,
+			sourceUrl: row.sourceUrl ?? row.url,
+			minMultiplier: normalizeFiniteNumber(
+				row.minMultiplier ?? row.minLeverage,
+			),
+			maxMultiplier: normalizeFiniteNumber(
+				row.maxMultiplier ?? row.maxLeverage,
+			),
 		});
 	}
 

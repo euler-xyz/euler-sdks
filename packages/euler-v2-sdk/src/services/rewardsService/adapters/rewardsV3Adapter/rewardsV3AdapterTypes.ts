@@ -27,6 +27,13 @@ export type V3RewardsApyRow = {
 	dailyRewards?: number;
 	endTimestamp?: number;
 	endTime?: number;
+	collateralAsset?: string;
+	sourceUrl?: string;
+	url?: string;
+	minMultiplier?: number | string;
+	maxMultiplier?: number | string;
+	minLeverage?: number | string;
+	maxLeverage?: number | string;
 	campaignType?: string;
 	rewardToken?: {
 		address?: string;
@@ -54,6 +61,12 @@ export type V3RewardsApyRow = {
 		endTimestamp?: string;
 		status?: string;
 		collateralAsset?: string;
+		sourceUrl?: string;
+		url?: string;
+		minMultiplier?: number | string;
+		maxMultiplier?: number | string;
+		minLeverage?: number | string;
+		maxLeverage?: number | string;
 		rewardToken?: {
 			address?: string;
 			symbol?: string;

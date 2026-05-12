@@ -14,6 +14,7 @@ import type {
 	MerklOpportunity,
 	MerklUserChainRewards,
 	RewardCampaign,
+	RewardAction,
 	RewardsDirectAdapterConfig,
 	UserReward,
 	VaultRewardInfo,
@@ -36,7 +37,12 @@ const DEFAULT_FUUL_FACTORY: Address =
 const BREVIS_LEND = 2002;
 const BREVIS_BORROW = 2001;
 
-const normalizeAddress = (value: string): Address | undefined => {
+type MerklOpportunityType = "EULER" | "MULTILENDBORROW" | "ERC20LOGPROCESSOR";
+
+const MERKL_EULER_SOURCE_URL = "https://app.merkl.xyz/?protocol=euler";
+
+const normalizeAddress = (value?: string): Address | undefined => {
+	if (!value) return undefined;
 	try {
 		return getAddress(value) as Address;
 	} catch {
@@ -71,6 +77,38 @@ const sanitizeFuulClaimChecks = (
 const extractMerklVaultAddress = (identifier: string): string | undefined => {
 	const match = identifier.match(/^0x[a-fA-F0-9]{40}/);
 	return match ? match[0]!.toLowerCase() : undefined;
+};
+
+const mapMerklSubType = (
+	subType: number | null | undefined,
+): RewardAction | undefined => {
+	if (subType === 0) return "LEND";
+	if (subType === 1) return "BORROW";
+	if (subType === 2) return "BORROW_COLLATERAL";
+	return undefined;
+};
+
+const merklOpportunityUrl = (
+	opportunity: MerklOpportunity,
+	type: MerklOpportunityType,
+): string => {
+	if (!opportunity.identifier) return MERKL_EULER_SOURCE_URL;
+
+	const chain = (
+		opportunity.chain?.name || opportunity.chainId?.toString()
+	)?.trim();
+	if (!chain) return MERKL_EULER_SOURCE_URL;
+
+	const chainSlug = chain.toLowerCase().replace(/\s+/g, "-");
+	return `https://app.merkl.xyz/opportunities/${encodeURIComponent(chainSlug)}/${type}/${encodeURIComponent(opportunity.identifier)}`;
+};
+
+const merklAprMap = (opportunity: MerklOpportunity): Map<string, number> => {
+	const map = new Map<string, number>();
+	for (const breakdown of opportunity.aprRecord?.breakdowns ?? []) {
+		map.set(breakdown.identifier, breakdown.value);
+	}
+	return map;
 };
 
 export class RewardsDirectAdapter implements IRewardsAdapter {
@@ -322,35 +360,95 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	private async fetchMerklCampaigns(
 		chainId: number,
 	): Promise<RewardCampaign[]> {
-		const urls = [
-			`${this.merklApiUrl}/opportunities/?chainId=${chainId}&type=EULER&campaigns=true`,
-			`${this.merklApiUrl}/opportunities/?chainId=${chainId}&mainProtocolId=euler&campaigns=true&type=ERC20LOGPROCESSOR`,
+		const typedUrls: Array<[MerklOpportunityType, string]> = [
+			[
+				"EULER",
+				`${this.merklApiUrl}/opportunities/?chainId=${chainId}&type=EULER&campaigns=true`,
+			],
+			[
+				"MULTILENDBORROW",
+				`${this.merklApiUrl}/opportunities/?chainId=${chainId}&type=MULTILENDBORROW&campaigns=true`,
+			],
+			[
+				"ERC20LOGPROCESSOR",
+				`${this.merklApiUrl}/opportunities/?chainId=${chainId}&mainProtocolId=euler&campaigns=true&type=ERC20LOGPROCESSOR`,
+			],
 		];
 
 		const results = await Promise.all(
-			urls.map((url) => this.queryMerklOpportunities(url).catch(() => [])),
+			typedUrls.map(([type, url]) =>
+				this.queryMerklOpportunities(url)
+					.then((opportunities) => ({ type, opportunities }))
+					.catch(() => ({ type, opportunities: [] })),
+			),
 		);
 
-		const opportunities: MerklOpportunity[] = results.flat();
 		const campaigns: RewardCampaign[] = [];
 
-		for (const opp of opportunities) {
-			if (opp.status !== "LIVE") continue;
-			const vaultAddress = extractMerklVaultAddress(opp.identifier);
-			if (!vaultAddress) continue;
+		for (const { type, opportunities } of results) {
+			for (const opp of opportunities) {
+				if (opp.status !== "LIVE") continue;
+				const aprs = merklAprMap(opp);
 
-			for (const c of opp.campaigns ?? []) {
-				campaigns.push({
-					campaignId: c.campaignId,
-					source: "merkl",
-					action: opp.action,
-					apr: c.apr / 100,
-					rewardTokenAddress: getAddress(c.rewardToken.address) as Address,
-					rewardTokenSymbol: c.rewardToken.symbol,
-					dailyRewards: c.dailyRewards,
-					endTimestamp: c.endTimestamp,
-					_vaultAddress: vaultAddress,
-				} as RewardCampaign & { _vaultAddress: string });
+				for (const c of opp.campaigns ?? []) {
+					if (type === "MULTILENDBORROW") {
+						const action =
+							opp.action === "LEND" ? ("LEND" as const) : ("BORROW" as const);
+						const apr = aprs.get(c.campaignId) ?? c.apr ?? 0;
+						if (!apr) continue;
+
+						for (const market of c.params?.markets ?? []) {
+							const vaultAddress = (
+								market.campaignParameters?.evkAddress ??
+								market.campaignParameters?.targetToken
+							)?.toLowerCase();
+							if (!vaultAddress) continue;
+
+							campaigns.push({
+								campaignId: c.campaignId,
+								source: "merkl",
+								action,
+								apr: apr / 100,
+								rewardTokenAddress: getAddress(
+									c.rewardToken.address,
+								) as Address,
+								rewardTokenSymbol: c.rewardToken.symbol,
+								rewardTokenIcon: c.rewardToken.icon,
+								dailyRewards: c.dailyRewards,
+								endTimestamp: c.endTimestamp,
+								sourceUrl: merklOpportunityUrl(opp, type),
+								_vaultAddress: vaultAddress,
+							} as RewardCampaign & { _vaultAddress: string });
+						}
+						continue;
+					}
+
+					const action = mapMerklSubType(c.subType) ?? opp.action;
+					const vaultAddress =
+						(type === "ERC20LOGPROCESSOR"
+							? c.params?.targetToken
+							: (c.params?.evkAddress ?? c.params?.targetToken)
+						)?.toLowerCase() ?? extractMerklVaultAddress(opp.identifier);
+					if (!vaultAddress) continue;
+
+					const apr = aprs.get(c.campaignId) ?? c.apr ?? 0;
+					if (!apr) continue;
+
+					campaigns.push({
+						campaignId: c.campaignId,
+						source: "merkl",
+						action,
+						apr: apr / 100,
+						rewardTokenAddress: getAddress(c.rewardToken.address) as Address,
+						rewardTokenSymbol: c.rewardToken.symbol,
+						rewardTokenIcon: c.rewardToken.icon,
+						dailyRewards: c.dailyRewards,
+						endTimestamp: c.endTimestamp,
+						collateralAddress: normalizeAddress(c.params?.collateralAddress),
+						sourceUrl: merklOpportunityUrl(opp, type),
+						_vaultAddress: vaultAddress,
+					} as RewardCampaign & { _vaultAddress: string });
+				}
 			}
 		}
 
@@ -386,29 +484,64 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 					) as Address,
 					rewardTokenSymbol: c.reward_info.token_symbol,
 					endTimestamp: c.end_time,
+					sourceUrl: "https://incentra.brevis.network/",
 					_vaultAddress: c.vault_address.toLowerCase(),
 				}) as RewardCampaign & { _vaultAddress: string },
 		);
 	}
 
 	private async fetchFuulCampaigns(chainId: number): Promise<RewardCampaign[]> {
-		const url = `${this.fuulApiUrl}/incentives?protocol=euler&chain_id=${chainId}`;
-		const incentives = await this.queryFuulIncentives(url).catch(() => []);
+		const [eulerIncentives, loopingIncentives] = await Promise.all([
+			this.queryFuulIncentives(
+				`${this.fuulApiUrl}/incentives?protocol=euler&chain_id=${chainId}`,
+			).catch(() => []),
+			this.queryFuulIncentives(
+				`${this.fuulApiUrl}/incentives?protocol=euler-looping&chain_id=${chainId}`,
+			).catch(() => []),
+		]);
 
-		return incentives
+		const lendCampaigns = eulerIncentives
 			.filter((item) => item.trigger?.context?.token_address)
-			.map(
+			.map((item) => {
+				const vaultAddress = item.trigger.context.token_address!.toLowerCase();
+				return {
+					campaignId: `${item.protocol}:${item.project}:${vaultAddress}`,
+					source: "fuul" as const,
+					action: "LEND" as const,
+					apr: item.apr,
+					rewardTokenSymbol: item.project,
+					endTimestamp: 0,
+					sourceUrl: "https://www.fuul.xyz/",
+					_vaultAddress: vaultAddress,
+				} as RewardCampaign & { _vaultAddress: string };
+			});
+
+		const loopingCampaigns = loopingIncentives
+			.filter(
 				(item) =>
-					({
-						campaignId: `${item.protocol}:${item.project}:${item.trigger.context.token_address.toLowerCase()}`,
-						source: "fuul" as const,
-						action: "LEND" as const,
-						apr: item.apr / 100,
-						rewardTokenSymbol: item.project,
-						endTimestamp: 0,
-						_vaultAddress: item.trigger.context.token_address.toLowerCase(),
-					}) as RewardCampaign & { _vaultAddress: string },
-			);
+					item.trigger?.context?.borrowVault &&
+					item.trigger?.context?.depositVault,
+			)
+			.map((item) => {
+				const borrowVault = item.trigger.context.borrowVault!.toLowerCase();
+				return {
+					campaignId: `${item.protocol}:${item.project}:${borrowVault}:${item.trigger.context.depositVault!.toLowerCase()}`,
+					source: "fuul" as const,
+					action: "LOOPING" as const,
+					apr: item.apr,
+					rewardTokenSymbol: item.pool?.token0_symbol || item.project,
+					endTimestamp: 0,
+					collateralAddress: getAddress(
+						item.trigger.context.depositVault!,
+					) as Address,
+					sourceUrl: "https://www.fuul.xyz/",
+					minMultiplier: item.trigger.context.min_leverage,
+					maxMultiplier: item.trigger.context.max_leverage,
+					_vaultAddress: borrowVault,
+				} as RewardCampaign & { _vaultAddress: string };
+			});
+
+		return [...lendCampaigns, ...loopingCampaigns];
 	}
 
 	private mergeCampaigns(
