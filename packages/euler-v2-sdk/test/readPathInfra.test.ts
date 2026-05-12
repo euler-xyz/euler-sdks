@@ -831,6 +831,7 @@ test("native fetch-backed read helpers cover their error branches", async () => 
   const originalFetch = globalThis.fetch;
   try {
     DeploymentService.setQueryDeployments(originalQueryDeployments);
+    const tokenUrls: string[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("deployments-ok")) {
@@ -865,6 +866,7 @@ test("native fetch-backed read helpers cover their error branches", async () => 
         } as Response;
       }
       if (url.includes("tokens-v3")) {
+        tokenUrls.push(url);
         const offset = Number(new URL(url).searchParams.get("offset") ?? "0");
         return {
           ok: true,
@@ -953,12 +955,16 @@ test("native fetch-backed read helpers cover their error branches", async () => 
       ] as any,
     );
     assert.deepEqual(
-      await tokenlistService.queryTokenList("https://tokens-v3?limit=1"),
+      await tokenlistService.queryTokenList("https://tokens-v3?limit=1&type=base"),
       [
         { chainId: 1, address: "0x00000000000000000000000000000000000000aa" },
         { chainId: 1, address: "0x00000000000000000000000000000000000000bb" },
       ] as any,
     );
+    assert.deepEqual(tokenUrls, [
+      "https://tokens-v3?limit=1&type=base",
+      "https://tokens-v3?limit=1&type=base&offset=1",
+    ]);
     await assert.rejects(
       () => tokenlistService.queryTokenList("https://tokens-bad-status"),
       /Failed to fetch token list: 500 Server Error/,

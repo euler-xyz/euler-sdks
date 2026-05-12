@@ -399,7 +399,7 @@ function makeTokenlistConfig(
 		getTokenListUrl: (chainId: number) =>
 			config.tokenlistUrlTemplate
 				? applyTemplate(config.tokenlistUrlTemplate, { base: baseUrl, chainId })
-				: `${baseUrl}/v3/tokens?chainId=${chainId}&limit=500`,
+				: `${baseUrl}/v3/tokens?chainId=${chainId}&limit=500&type=base`,
 	};
 }
 

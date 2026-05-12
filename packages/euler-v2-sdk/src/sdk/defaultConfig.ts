@@ -111,5 +111,5 @@ export const DEFAULT_TOKENLIST_API_BASE_URL =
 
 export const defaultTokenlistServiceConfig: TokenlistServiceConfig = {
 	getTokenListUrl: (chainId: number) =>
-		`${DEFAULT_TOKENLIST_API_BASE_URL}/v3/tokens?chainId=${chainId}&limit=500`,
+		`${DEFAULT_TOKENLIST_API_BASE_URL}/v3/tokens?chainId=${chainId}&limit=500&type=base`,
 };
