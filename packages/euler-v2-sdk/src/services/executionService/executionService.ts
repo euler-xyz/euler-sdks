@@ -182,6 +182,19 @@ function hasSuppliedPosition(
 	return position.assets > 0n || position.shares > 0n;
 }
 
+type VaultWithShareConversion = IHasVaultAddress & {
+	convertToShares(assets: bigint): bigint;
+};
+
+function hasShareConversion(vault: unknown): vault is VaultWithShareConversion {
+	return (
+		typeof vault === "object" &&
+		vault !== null &&
+		"convertToShares" in vault &&
+		typeof vault.convertToShares === "function"
+	);
+}
+
 function getStateTransition(
 	item: EVCBatchItem,
 ): EVCStateTransition | undefined {
@@ -1860,11 +1873,13 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 	/**
 	 * Builds a transaction plan for redeeming vault shares for underlying assets.
+	 * Pass `shares` directly, or pass `assets` to derive shares from the account's populated vault state.
 	 * Use `maxUint256` for `shares` to redeem all available shares.
 	 *
 	 * @param args - Redeem plan arguments
 	 * @param args.vault - Address of the vault to redeem shares from
 	 * @param args.shares - Number of vault shares to redeem (use maxUint256 for "redeem all")
+	 * @param args.assets - Underlying asset amount used to calculate shares from the account vault snapshot
 	 * @param args.owner - Sub-account address whose shares are being redeemed
 	 * @param args.receiver - Address that will receive the underlying assets
 	 * @param args.account - Account entity; used for chainId and position/collateral state
@@ -1874,7 +1889,6 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	planRedeem(args: PlanRedeemArgs): TransactionPlan {
 		const {
 			vault,
-			shares,
 			receiver,
 			owner,
 			account,
@@ -1884,6 +1898,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 		// Get position to check collateral state
 		const position = account?.getPosition(owner, vault);
+		const shares = this.resolveRedeemShares(args, position);
 
 		// Build EVC batch items
 		const batchItems = this.encodeRedeem({
@@ -1899,6 +1914,26 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		plan.push(...this.convertBatchItemsToPlan(batchItems, "redeem"));
 
 		return plan;
+	}
+
+	private resolveRedeemShares(
+		args: PlanRedeemArgs,
+		position: AccountPosition<IHasVaultAddress> | undefined,
+	): bigint {
+		if ("shares" in args && args.shares !== undefined) return args.shares;
+
+		const vault = position?.vault;
+		if (!hasShareConversion(vault)) {
+			throw new Error(
+				"planRedeem with assets requires account position vault state with convertToShares. Populate the account vaults before planning asset-denominated redeem.",
+			);
+		}
+
+		// Asset-denominated redeem intentionally rounds shares down via
+		// convertToShares. Calling withdraw(assets) rounds shares up, which can
+		// burn rounding remainders. The populated vault conversion keeps EVault
+		// virtual deposits in the share calculation.
+		return vault.convertToShares(args.assets);
 	}
 
 	/**

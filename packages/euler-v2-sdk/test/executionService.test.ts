@@ -742,6 +742,55 @@ test("deposit supports native wrapping before the vault deposit", () => {
 	assert.deepEqual(deposit.args, [AMOUNT, getAddress(ACCOUNT)]);
 });
 
+test("redeem accepts assets and converts to shares from account vault state", () => {
+	const service = createExecutionService();
+	const assets = 123_456n;
+	const totalAssets = 5_000_000n;
+	const totalShares = 7_000_000n;
+	const virtualDeposit = 1_000_000n;
+	const expectedShares =
+		(assets * (totalShares + virtualDeposit)) /
+		(totalAssets + virtualDeposit);
+	const account = {
+		chainId: 1,
+		getPosition: () => ({
+			isCollateral: false,
+			vault: {
+				address: VAULT_IN,
+				convertToShares: (value: bigint) =>
+					(value * (totalShares + virtualDeposit)) /
+					(totalAssets + virtualDeposit),
+			},
+		}),
+	} as never;
+
+	const plan = service.planRedeem({
+		account,
+		vault: VAULT_IN,
+		assets,
+		owner: ACCOUNT,
+		receiver: RECEIVER,
+	});
+
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = flattenBatchEntries(plan[0].items);
+	assert.equal(items.length, 1);
+	const redeem = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(redeem.functionName, "redeem");
+	assert.deepEqual(redeem.args, [
+		expectedShares,
+		getAddress(RECEIVER),
+		getAddress(ACCOUNT),
+	]);
+});
+
 test("deposit-with-swap-from-wallet emits explicit required approval", () => {
 	const service = createExecutionService();
 	const account = {

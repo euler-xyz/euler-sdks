@@ -483,14 +483,25 @@ export type PlanWithdrawArgs = {
 	disableCollateral?: boolean;
 };
 
-export type PlanRedeemArgs = {
+type PlanRedeemBaseArgs = {
 	account: Account<IHasVaultAddress>;
 	vault: Address;
-	shares: bigint;
 	owner: Address;
 	receiver: Address;
 	disableCollateral?: boolean;
 };
+
+export type PlanRedeemArgs = PlanRedeemBaseArgs &
+	(
+		| {
+				shares: bigint;
+				assets?: never;
+		  }
+		| {
+				assets: bigint;
+				shares?: never;
+		  }
+	);
 
 export type PlanBorrowCollateral =
 	| {

@@ -17,6 +17,9 @@
  * 💡 TIP - WITHDRAW vs REDEEM:
  *   • Withdraw: You specify the exact amount of assets you want to receive
  *   • Redeem: You specify the exact number of shares you want to burn
+ *   • planRedeem also accepts assets; it calculates shares from populated
+ *     account vault state and uses redeem to avoid withdraw's rounded-up share
+ *     burn, which can lose rounding remainders.
  *
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
@@ -93,6 +96,9 @@ async function withdrawExample({ walletClient }: Awaited<ReturnType<typeof initE
   // Update account data with the fetched sub-account
   accountData.updateSubAccounts(subAccountAfterDeposit!);
 
+  // planWithdraw is the exact-asset output path. If avoiding rounded-up share
+  // burn is more important than receiving this exact asset amount, use
+  // planRedeem({ assets: WITHDRAW_AMOUNT, ... }) with populated account vaults.
   let withdrawPlan = sdk.executionService.planWithdraw({
     account: accountData,
     vault: EULER_PRIME_USDC_VAULT,
