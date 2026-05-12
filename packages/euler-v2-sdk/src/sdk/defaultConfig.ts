@@ -42,7 +42,7 @@ export const defaultAccountVaultsAdapterConfig: AccountVaultsSubgraphAdapterConf
 		},
 	};
 
-export const DEFAULT_V3_API_URL = "https://v3.eul.dev";
+export const DEFAULT_V3_API_URL = "https://v3.euler.finance";
 
 export const defaultAccountV3AdapterConfig: AccountV3AdapterConfig = {
 	endpoint: DEFAULT_V3_API_URL,

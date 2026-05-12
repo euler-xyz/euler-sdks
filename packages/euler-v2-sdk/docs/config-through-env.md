@@ -16,7 +16,7 @@ RPC URLs use `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`.
 | Config field | Environment variable | Default |
 |---|---|---|
 | `rpcUrls[chainId]` | `EULER_SDK_RPC_URL_<chainId>` | none |
-| `v3ApiUrl` | `EULER_SDK_V3_API_URL` | `https://v3.eul.dev` |
+| `v3ApiUrl` | `EULER_SDK_V3_API_URL` | `https://v3.euler.finance` |
 | `v3ApiKey` | `EULER_SDK_V3_API_KEY` | none |
 | `queryCacheEnabled` | `EULER_SDK_QUERY_CACHE_ENABLED` | `true` |
 | `queryCacheTtlMs` | `EULER_SDK_QUERY_CACHE_TTL_MS` | `5000` |

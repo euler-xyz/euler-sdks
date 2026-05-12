@@ -14,7 +14,7 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api\/swap/, ""),
       },
       "/api/v3": {
-        target: "https://v3.eul.dev",
+        target: "https://v3.euler.finance",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/v3/, ""),
       },

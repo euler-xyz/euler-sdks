@@ -100,7 +100,7 @@ import { buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 
 const sdk = await buildEulerSDK({
   pricingServiceConfig: {
-    endpoint: 'https://v3.eul.dev',
+    endpoint: 'https://v3.euler.finance',
   },
 })
 

@@ -55,9 +55,9 @@ describe("SDK env config", () => {
 	});
 
 	it("uses the V3 tokenlist endpoint by default", () => {
-		expect(DEFAULT_TOKENLIST_API_BASE_URL).toBe("https://v3.eul.dev");
+		expect(DEFAULT_TOKENLIST_API_BASE_URL).toBe("https://v3.euler.finance");
 		expect(defaultTokenlistServiceConfig.getTokenListUrl(1)).toBe(
-			"https://v3.eul.dev/v3/tokens?chainId=1&limit=500",
+			"https://v3.euler.finance/v3/tokens?chainId=1&limit=500",
 		);
 	});
 
