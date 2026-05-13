@@ -1336,6 +1336,98 @@ test("evault service setters and empty branches are exercised", async () => {
 	);
 });
 
+test("collateral oracle adapter population resolves vault route to asset route", async () => {
+	const collateralVaultAddress =
+		"0x0000000000000000000000000000000000000aa1" as const;
+	const collateralAssetAddress =
+		"0x0000000000000000000000000000000000000aa2" as const;
+	const unitOfAccountAddress =
+		"0x0000000000000000000000000000000000000348" as const;
+	const vaultOracle = "0x0000000000000000000000000000000000000aa3" as const;
+
+	const makeTargetVault = () => {
+		const fixture = getCollateralizedEVaultFixture() as any;
+		fixture.unitOfAccount = {
+			address: unitOfAccountAddress,
+			decimals: 18,
+			name: "US Dollar",
+			symbol: "USD",
+		};
+		fixture.collaterals = [
+			{
+				...fixture.collaterals[0],
+				address: collateralVaultAddress,
+				oracleAdapters: [],
+			},
+		];
+		fixture.oracle = {
+			...fixture.oracle,
+			adapters: [
+				{
+					base: collateralVaultAddress,
+					name: "EulerV2PriceOracleAdapter",
+					oracle: vaultOracle,
+					quote: unitOfAccountAddress,
+				},
+			],
+			resolvedVaults: [
+				{
+					vault: collateralVaultAddress,
+					asset: collateralAssetAddress,
+					resolvedAssets: [collateralAssetAddress],
+					quote: unitOfAccountAddress,
+				},
+			],
+		};
+		return new EVault(fixture);
+	};
+
+	const makeCollateralVault = () => {
+		const fixture = getPlainEVaultFixture() as any;
+		fixture.address = collateralVaultAddress;
+		fixture.asset = {
+			...fixture.asset,
+			address: collateralAssetAddress,
+		};
+		return new EVault(fixture);
+	};
+
+	const vaultMetaService = {
+		async fetchVault(_chainId: number, address: Address) {
+			assert.equal(address, collateralVaultAddress);
+			return { result: makeCollateralVault(), errors: [] };
+		},
+		async fetchVaults(_chainId: number, addresses: Address[]) {
+			assert.deepEqual(addresses, [collateralVaultAddress]);
+			return { result: [makeCollateralVault()], errors: [] };
+		},
+	} as any;
+
+	const serviceTarget = makeTargetVault();
+	const service = new EVaultService({} as any, makeDeploymentService());
+	service.setVaultMetaService(vaultMetaService);
+	await service.populateCollaterals([serviceTarget]);
+	assert.deepEqual(
+		serviceTarget.collaterals[0]?.oracleAdapters?.map((adapter) => adapter.oracle),
+		[vaultOracle],
+	);
+	assert.equal(
+		serviceTarget.collaterals[0]?.oracleAdapters?.[0]?.base,
+		collateralAssetAddress,
+	);
+
+	const directTarget = makeTargetVault();
+	await directTarget.populateCollaterals(vaultMetaService);
+	assert.deepEqual(
+		directTarget.collaterals[0]?.oracleAdapters?.map((adapter) => adapter.oracle),
+		[vaultOracle],
+	);
+	assert.equal(
+		directTarget.collaterals[0]?.oracleAdapters?.[0]?.base,
+		collateralAssetAddress,
+	);
+});
+
 test("wallet onchain adapter setters, query wrappers, and top-level failure are covered", async () => {
 	const asset = "0x0000000000000000000000000000000000000002" as Address;
 	const spender = "0x0000000000000000000000000000000000000003" as Address;

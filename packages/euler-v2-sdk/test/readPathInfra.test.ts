@@ -816,6 +816,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   );
   assert.equal(
     getEulerLabelEntitiesByVault(labelsData, {
+      address: plainVault.address,
       governorAdmin: plainVault.address,
     })[0]?.name,
     "Euler",

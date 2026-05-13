@@ -247,6 +247,22 @@ export const isEulerLabelProductKeyring = (
 	productKey: string,
 ): boolean => data.products[productKey]?.keyring === true;
 
+export const getEulerLabelDeclaredEntityKeys = (
+	data: EulerLabelsData,
+	vaultAddress: string,
+): string[] | undefined => {
+	const product = getEulerLabelProductByVault(data, vaultAddress);
+	if (!product) return undefined;
+	if (Array.isArray(product.entity)) return product.entity;
+	return product.entity ? [product.entity] : [];
+};
+
+const entityHasAddress = (
+	entity: EulerLabelEntity | undefined,
+	address: string,
+): entity is EulerLabelEntity =>
+	!!entity && Object.keys(entity.addresses ?? {}).includes(address);
+
 export const getEulerLabelEntitiesByVault = (
 	data: EulerLabelsData,
 	vault: { governorAdmin?: string; governor?: string },
@@ -254,9 +270,16 @@ export const getEulerLabelEntitiesByVault = (
 	const governor = vault.governorAdmin ?? vault.governor;
 	if (!governor) return [];
 	const normalizedGovernor = normalizeAddress(governor);
-	return Object.values(data.entities).filter((entity) =>
-		Object.keys(entity.addresses ?? {}).includes(normalizedGovernor),
+	const declaredKeys = getEulerLabelDeclaredEntityKeys(
+		data,
+		"address" in vault && typeof vault.address === "string" ? vault.address : "",
 	);
+	if (!declaredKeys || declaredKeys.length === 0) return [];
+	return declaredKeys
+		.map((key) => data.entities[key])
+		.filter((entity): entity is EulerLabelEntity =>
+			entityHasAddress(entity, normalizedGovernor),
+		);
 };
 
 export const getEulerLabelEntitiesByEarnVault = (
@@ -264,9 +287,13 @@ export const getEulerLabelEntitiesByEarnVault = (
 	earnVault: EulerEarn,
 ): EulerLabelEntity[] => {
 	const ownerAddress = normalizeAddress(earnVault.governance.owner);
-	return Object.values(data.entities).filter((entity) =>
-		Object.keys(entity.addresses ?? {}).includes(ownerAddress),
-	);
+	const declaredKeys = getEulerLabelDeclaredEntityKeys(data, earnVault.address);
+	if (!declaredKeys || declaredKeys.length === 0) return [];
+	return declaredKeys
+		.map((key) => data.entities[key])
+		.filter((entity): entity is EulerLabelEntity =>
+			entityHasAddress(entity, ownerAddress),
+		);
 };
 
 export const getEulerLabelPointsByVault = (

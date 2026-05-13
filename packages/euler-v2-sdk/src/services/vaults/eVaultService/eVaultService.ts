@@ -2,6 +2,7 @@ import { getAddress, type Address } from "viem";
 import { EVault, type IEVault } from "../../../entities/EVault.js";
 import {
 	selectLeafAdaptersForPair,
+	selectResolvedVaultAdaptersForPair,
 	sortOracleAdapters,
 } from "../../../utils/oracle.js";
 import type { DeploymentService } from "../../deploymentService/index.js";
@@ -360,17 +361,15 @@ export class EVaultService implements IEVaultService {
 					collateral.vault.asset.address,
 					quoteAddress,
 				);
-				const byVault = selectLeafAdaptersForPair(
+				const byVault = selectResolvedVaultAdaptersForPair(
 					eVault.oracle.adapters,
+					eVault.oracle.resolvedVaults,
 					collateral.address,
 					quoteAddress,
 				);
-				const deduped = new Map<string, (typeof byAsset)[number]>();
-				[...byAsset, ...byVault].forEach((adapter) => {
-					const key = `${adapter.oracle.toLowerCase()}:${adapter.base.toLowerCase()}:${adapter.quote.toLowerCase()}`;
-					if (!deduped.has(key)) deduped.set(key, adapter);
-				});
-				collateral.oracleAdapters = sortOracleAdapters([...deduped.values()]);
+				const selected = byAsset.length > 0 ? byAsset : byVault;
+				collateral.oracleAdapters =
+					byAsset.length > 0 ? sortOracleAdapters(selected) : selected;
 			}
 			eVault.populated.collaterals = true;
 		}

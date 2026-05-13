@@ -6,9 +6,10 @@ import {
 	type OracleAdapterEntry,
 	type OracleInfo,
 	type OraclePrice,
+	selectLeafAdaptersForPair,
+	selectResolvedVaultAdaptersForPair,
 	sortOracleAdapters,
 	sortOracleResolvedVaults,
-	selectLeafAdaptersForPair,
 } from "../utils/oracle.js";
 import type { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
 import type { Token } from "../utils/types.js";
@@ -487,17 +488,13 @@ export class EVault
 				collateral.vault.asset.address,
 				quoteAddress,
 			);
-			const byVault = buildOracleAdaptersForPair(
+			const byVault = selectResolvedVaultAdaptersForPair(
 				this.oracle.adapters,
+				this.oracle.resolvedVaults,
 				collateral.address,
 				quoteAddress,
 			);
-			const deduped = new Map<string, (typeof byAsset)[number]>();
-			[...byAsset, ...byVault].forEach((adapter) => {
-				const key = `${adapter.oracle.toLowerCase()}:${adapter.base.toLowerCase()}:${adapter.quote.toLowerCase()}`;
-				if (!deduped.has(key)) deduped.set(key, adapter);
-			});
-			collateral.oracleAdapters = [...deduped.values()];
+			collateral.oracleAdapters = byAsset.length > 0 ? byAsset : byVault;
 		}
 		this.populated.collaterals = true;
 		return errors;

@@ -709,3 +709,56 @@ export const selectLeafAdaptersForPair = (
 
 	return leafCandidates.filter((adapter) => used.has(makeKey(adapter)));
 };
+
+export const selectResolvedVaultAdaptersForPair = (
+	adapters: OracleAdapterEntry[],
+	resolvedVaults: OracleResolvedVault[],
+	base: Address,
+	quote: Address,
+): OracleAdapterEntry[] => {
+	const baseKey = base.toLowerCase();
+	const quoteKey = quote.toLowerCase();
+	const resolvedVault = resolvedVaults.find(
+		(entry) =>
+			entry.vault.toLowerCase() === baseKey &&
+			entry.quote.toLowerCase() === quoteKey &&
+			entry.resolvedAssets.length > 0,
+	);
+
+	if (!resolvedVault) {
+		return sortOracleAdapters(selectLeafAdaptersForPair(adapters, base, quote));
+	}
+
+	const resolvedAssets = resolvedVault.resolvedAssets;
+	const finalBase = resolvedAssets.at(-1);
+	if (!finalBase) return [];
+
+	const unwrapAdapters: OracleAdapterEntry[] = [];
+	for (let i = 0; i < resolvedAssets.length - 1; i += 1) {
+		unwrapAdapters.push({
+			oracle: resolvedAssets[i]!,
+			name: "ERC4626Vault",
+			base: resolvedAssets[i]!,
+			quote: resolvedAssets[i + 1]!,
+		});
+	}
+
+	const finalAdapters = selectLeafAdaptersForPair(adapters, finalBase, quote);
+	const vaultAdapters = selectLeafAdaptersForPair(adapters, base, quote);
+	const rewrittenVaultAdapters = vaultAdapters.map((adapter) =>
+		adapter.base.toLowerCase() === baseKey
+			? { ...adapter, base: finalBase }
+			: adapter,
+	);
+
+	const selectedFinalAdapters =
+		finalAdapters.length > 0 ? finalAdapters : rewrittenVaultAdapters;
+
+	const deduped = new Map<string, OracleAdapterEntry>();
+	for (const adapter of [...unwrapAdapters, ...selectedFinalAdapters]) {
+		const key = `${adapter.oracle.toLowerCase()}:${adapter.base.toLowerCase()}:${adapter.quote.toLowerCase()}`;
+		if (!deduped.has(key)) deduped.set(key, adapter);
+	}
+
+	return [...deduped.values()];
+};
