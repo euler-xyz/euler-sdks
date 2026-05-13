@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.2.2-beta] - 2026-05-13
+
+### Added
+
+- Added the React example bad debt explorer.
+- Added asset-denominated redeem planning support.
+- Added rewards parity metadata and ISO timestamp support for V3 collateral targets.
+
+### Changed
+
+- Moved tokenlist reads to the V3 tokenlist endpoint and filtered defaults to base tokens.
+- Improved SDK query cache keys and external data query caching docs.
+- Updated SDK defaults and examples for the Euler Finance V3 endpoint.
+
+### Fixed
+
+- Fixed debt planning cleanup behavior.
+- Hardened reward and Pyth claim targets plus exact-out swap quote handling.
+- Fixed resolved vault metadata handling.
+
 ## [0.2.1-beta] - 2026-05-11
 
 ### Added
