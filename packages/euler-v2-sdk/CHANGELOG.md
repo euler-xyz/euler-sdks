@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.2.1-beta] - 2026-05-11
+
+### Added
+
+- Added planner APIs and examples for wallet swap + borrow, wallet swap + repay, withdraw + swap, redeem + swap, and same-asset multiply flows.
+- Added InCentra rewards parity support across rewards adapters, account reward totals, docs, examples, and tests.
+
+### Changed
+
+- Centralized swap quote verifier/slippage validation and aligned execution planners with the correct verifier modes.
+- Updated execution and swap docs, SDK skill guidance, and the example runner so every transaction plan path has a runnable example.
+
+### Fixed
+
+- Hardened wallet-sourced repay planning around router sweep context and exact-input quote execution.
+- Refreshed same-asset migration and multiply examples to work against current live vault configuration and quote providers.
+
+## [0.2.0-beta] - 2026-05-07
+
+### Added
+
+- Added execution plugin processing for simulation, gas estimation, and execution, including generic health-check sets for Pyth and Keyring flows.
+- Added vault computed properties, Securitize collateral-vault exports, vault source metadata, and portfolio fields used by Lite position displays.
+- Added normalized Euler labels selectors, oracle adapter metadata helpers, and read-path coverage for label and vault metadata behavior.
+- Added owner-reference diagnostic locations across SDK services, entities, generated fixtures, parity scripts, and the React example diagnostic index.
+- Added SDK-owned runtime configuration through partial `buildEulerSDK({ config })`, `EULER_SDK_*` env vars, and defaults, including `EULER_SDK_RPC_URL_<chainId>` RPC resolution.
+- Added native wallet balance reads, batched token balance reads, optional allowance spenders, Permit2 nonce metadata, wallet-service docs, and a wallet example.
+- Added `docs/config-through-env.md` as the complete reference for env/config-driven SDK settings.
+
+### Changed
+
+- Routed SDK configurable params through the resolution order `config`, explicit SDK option, `EULER_SDK_*` env var, then default; examples now rely on env/config for RPC URLs instead of standalone `rpcURLs` options.
+- Renamed pricing backend configuration to pricing service configuration and threaded the V3 API key consistently through pricing and V3 adapters.
+- Improved Lite migration support by exposing SDK serialization helpers, vault guards, vault source metadata, resolved oracle unwrap routes, and percentage-unit portfolio APY/ROE fields.
+- Reworked diagnostics from path-based mapping to owner references plus concrete locations, with updated docs, fixtures, tests, and React example rendering.
+- Exposed SDK market price, USD value, rewards value, and multiplier fields as plain numbers while keeping direct oracle and risk values as bigint.
+- Updated multiplier computation to use supplied collateral USD value over equity and return a plain number.
+- Updated React and script examples, pricing docs, portfolio docs, configuration docs, wallet docs, and SDK skill guidance for the release surface.
+- Refreshed generated fixtures, parity scripts, and health-check imports for the updated read paths.
+
+## [0.1.3-beta] - 2026-05-04
+
+### Added
+
+- Added transaction plan execution helpers, operation groups, and split encode/execute/simulate internals.
+- Added same-asset position migrations plus max-repay cleanup and savings-sourced planning examples.
+- Added portfolio yield breakdown fields and expanded example app portfolio coverage.
+
+### Changed
+
+- Merged simulation capabilities into the execution service and refreshed execution examples/docs around the new flow.
+- Updated V3 defaults, pricing configuration, and vault/account parity scripts.
+
+### Fixed
+
+- Paginated V3 account position reads so heavy accounts are no longer capped by the endpoint default page size.
+- Hardened user reward valuation against malformed V3 reward price and decimal fields.
+- Fixed keyring plugin batch prepending for transaction plan preparation.
+- Fixed release dry-run packaging so PR validation works with the pnpm version used in CI.
+
 ## [0.1.2-beta] - 2026-04-29
 
 ### Added
