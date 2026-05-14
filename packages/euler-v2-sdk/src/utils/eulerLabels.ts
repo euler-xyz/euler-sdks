@@ -288,7 +288,12 @@ export const getEulerLabelEntitiesByEarnVault = (
 ): EulerLabelEntity[] => {
 	const ownerAddress = normalizeAddress(earnVault.governance.owner);
 	const declaredKeys = getEulerLabelDeclaredEntityKeys(data, earnVault.address);
-	if (!declaredKeys || declaredKeys.length === 0) return [];
+	if (declaredKeys === undefined) {
+		return Object.values(data.entities).filter((entity): entity is EulerLabelEntity =>
+			entityHasAddress(entity, ownerAddress),
+		);
+	}
+	if (declaredKeys.length === 0) return [];
 	return declaredKeys
 		.map((key) => data.entities[key])
 		.filter((entity): entity is EulerLabelEntity =>

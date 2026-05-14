@@ -80,4 +80,35 @@ describe("Euler label entity helpers", () => {
 
 		expect(entities.map((entity) => entity.name)).toEqual(["Declared"]);
 	});
+
+	it("falls back to owner-address entity matching for Earn vaults outside products", () => {
+		const entities = getEulerLabelEntitiesByEarnVault(data, {
+			address: "0x0000000000000000000000000000000000000099",
+			governance: { owner: OTHER_ENTITY_GOVERNOR },
+		} as EulerEarn);
+
+		expect(entities.map((entity) => entity.name)).toEqual(["Undeclared"]);
+	});
+
+	it("does not fall back when a product explicitly declares no Earn entity", () => {
+		const emptyEntityData = {
+			...data,
+			products: {
+				empty: {
+					name: "Empty",
+					description: "",
+					entity: undefined,
+					url: "",
+					vaults: [VAULT],
+				},
+			},
+		};
+
+		const entities = getEulerLabelEntitiesByEarnVault(emptyEntityData, {
+			address: VAULT,
+			governance: { owner: GOVERNOR },
+		} as EulerEarn);
+
+		expect(entities).toEqual([]);
+	});
 });
