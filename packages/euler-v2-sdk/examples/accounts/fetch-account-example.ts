@@ -93,11 +93,11 @@ async function fetchAccountExample() {
       if (pos.marketPriceUsd != null) {
         console.log(`    Market Price:  ${formatUsd(pos.marketPriceUsd)}`);
       }
-      if (pos.suppliedValueUsd != null) {
-        console.log(`    Supplied USD:  ${formatUsd(pos.suppliedValueUsd)}`);
+      if (pos.suppliedMarketValueUsd != null) {
+        console.log(`    Supplied USD:  ${formatUsd(pos.suppliedMarketValueUsd)}`);
       }
-      if (pos.borrowedValueUsd != null) {
-        console.log(`    Borrowed USD:  ${formatUsd(pos.borrowedValueUsd)}`);
+      if (pos.borrowedMarketValueUsd != null) {
+        console.log(`    Borrowed USD:  ${formatUsd(pos.borrowedMarketValueUsd)}`);
       }
 
       // Labels (from populateLabels)

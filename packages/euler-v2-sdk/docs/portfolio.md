@@ -32,7 +32,7 @@ portfolio.savings
 //   subAccount: Address
 //   shares: bigint
 //   assets: bigint
-//   suppliedValueUsd?: number
+//   suppliedMarketValueUsd?: number
 //   apy?: number                 // percentage points, e.g. 5 = 5%
 //   apyBreakdown?: YieldApyBreakdown
 // }>
@@ -58,8 +58,8 @@ portfolio.borrows
 //   borrowLTV?: number
 //   liquidationLTV?: number
 //   accountLiquidationLTV?: number
-//   liabilityValueUsd?: number
-//   totalCollateralValueUsd?: number
+//   liabilityMarketValueUsd?: number
+//   totalCollateralMarketValueUsd?: number
 //   timeToLiquidation?: DaysToLiquidation
 //   multiplier?: number
 //   netApy?: number              // percentage points
@@ -75,20 +75,20 @@ Savings are supplied positions that are not actively supporting debt in the same
 
 Portfolio-level metrics are computed from the current account positions:
 
-- `totalSuppliedValueUsd`
-- `totalBorrowedValueUsd`
-- `netAssetValueUsd`
+- `totalSuppliedMarketValueUsd`
+- `totalBorrowedMarketValueUsd`
+- `netAssetMarketValueUsd`
 - `netApy`
 - `roe`
 - `apyBreakdown`
 - `roeBreakdown`
-- `totalRewardsValueUsd`
+- `totalRewardsMarketValueUsd`
 
 APY and ROE numeric values are percentage points (`5` means `5%`). Reward campaign APRs remain decimal fractions on the lower-level reward campaign objects, but Portfolio breakdowns convert them to the same percentage-point unit.
 
 The portfolio stores an account reference, not a copied snapshot. If the account is re-populated or its positions are updated, subsequent Portfolio computed-property reads reflect the new account state.
 
-`totalRewardsValueUsd` delegates to `account.totalRewardsValueUsd`, since user rewards are still account-scoped.
+`totalRewardsMarketValueUsd` delegates to `account.totalRewardsMarketValueUsd`, since user rewards are still account-scoped.
 
 ## Sub-account Selection
 

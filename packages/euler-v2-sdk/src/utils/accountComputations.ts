@@ -71,7 +71,7 @@ export function computeLiquidationLTV(
 
 /**
  * Leverage multiplier for a sub-account (1 = 1x).
- * `suppliedCollateralValueUsd / (suppliedCollateralValueUsd - borrowedValueUsd)`.
+ * `suppliedCollateralMarketValueUsd / (suppliedCollateralMarketValueUsd - borrowedMarketValueUsd)`.
  */
 export function computeMultiplier(
 	subAccount: ISubAccount<IHasVaultAddress>,
@@ -81,56 +81,57 @@ export function computeMultiplier(
 	return computeCollateralMultiplier(
 		sumPositionUsd(
 			findCollateralPositionsForBorrow(subAccount, borrow),
-			"suppliedValueUsd",
+			"suppliedMarketValueUsd",
 		),
-		borrow.borrowedValueUsd,
+		borrow.borrowedMarketValueUsd,
 	);
 }
 
 export function computeCollateralMultiplier(
-	suppliedValueUsd: number | undefined,
-	borrowedValueUsd: number | undefined,
+	suppliedMarketValueUsd: number | undefined,
+	borrowedMarketValueUsd: number | undefined,
 ): number | undefined {
-	if (suppliedValueUsd == null || borrowedValueUsd == null) return undefined;
-	const equity = suppliedValueUsd - borrowedValueUsd;
+	if (suppliedMarketValueUsd == null || borrowedMarketValueUsd == null)
+		return undefined;
+	const equity = suppliedMarketValueUsd - borrowedMarketValueUsd;
 	if (equity <= 0) return undefined;
-	return suppliedValueUsd / equity;
+	return suppliedMarketValueUsd / equity;
 }
 
 /**
- * Total collateral value in USD for a sub-account.
+ * Total collateral market value in USD for a sub-account.
  * Sourced from sub-account liquidity and populated by `populateMarketPrices`.
  */
-export function computeSubAccountTotalCollateralValueUsd(
+export function computeSubAccountTotalCollateralMarketValueUsd(
 	subAccount: ISubAccount<IHasVaultAddress>,
 ): number | undefined {
-	return findLiquidity(subAccount)?.totalCollateralValueUsd;
+	return findLiquidity(subAccount)?.totalCollateralMarketValueUsd;
 }
 
 /**
- * Liability value in USD for a sub-account.
+ * Liability market value in USD for a sub-account.
  * Sourced from sub-account liquidity and populated by `populateMarketPrices`.
  */
-export function computeSubAccountLiabilityValueUsd(
+export function computeSubAccountLiabilityMarketValueUsd(
 	subAccount: ISubAccount<IHasVaultAddress>,
 ): number | undefined {
-	return findLiquidity(subAccount)?.liabilityValueUsd;
+	return findLiquidity(subAccount)?.liabilityMarketValueUsd;
 }
 
 /**
- * Net value in USD for a sub-account: sum(suppliedValueUsd) - sum(borrowedValueUsd).
+ * Net market value in USD for a sub-account: sum(suppliedMarketValueUsd) - sum(borrowedMarketValueUsd).
  */
-export function computeSubAccountNetValueUsd(
+export function computeSubAccountNetMarketValueUsd(
 	subAccount: ISubAccount<IHasVaultAddress>,
 ): number | undefined {
 	let supplied: number | undefined;
 	let borrowed: number | undefined;
 
 	for (const p of subAccount.positions) {
-		if (p.suppliedValueUsd != null)
-			supplied = (supplied ?? 0) + p.suppliedValueUsd;
-		if (p.borrowedValueUsd != null)
-			borrowed = (borrowed ?? 0) + p.borrowedValueUsd;
+		if (p.suppliedMarketValueUsd != null)
+			supplied = (supplied ?? 0) + p.suppliedMarketValueUsd;
+		if (p.borrowedMarketValueUsd != null)
+			borrowed = (borrowed ?? 0) + p.borrowedMarketValueUsd;
 	}
 
 	if (supplied == null) return undefined;
@@ -239,8 +240,8 @@ export function computeSubAccountRoe(
 		const intrinsicApyDecimal = getVaultIntrinsicApy(vault);
 
 		// Supply side
-		if (p.suppliedValueUsd != null && p.suppliedValueUsd > 0) {
-			const supplyUsd = p.suppliedValueUsd;
+		if (p.suppliedMarketValueUsd != null && p.suppliedMarketValueUsd > 0) {
+			const supplyUsd = p.suppliedMarketValueUsd;
 
 			const supplyApy = getVaultSupplyApy(vault);
 			if (supplyApy != null) {
@@ -253,8 +254,8 @@ export function computeSubAccountRoe(
 		}
 
 		// Borrow side
-		if (p.borrowedValueUsd != null && p.borrowedValueUsd > 0) {
-			const borrowUsd = p.borrowedValueUsd;
+		if (p.borrowedMarketValueUsd != null && p.borrowedMarketValueUsd > 0) {
+			const borrowUsd = p.borrowedMarketValueUsd;
 			const borrowApy = getVaultBorrowApy(vault);
 			if (borrowApy != null) {
 				hasData = true;
@@ -514,7 +515,7 @@ function findCollateralPositionsForBorrow<T extends IHasVaultAddress>(
 
 function sumPositionUsd(
 	positions: Iterable<AccountYieldPosition>,
-	field: "suppliedValueUsd" | "borrowedValueUsd",
+	field: "suppliedMarketValueUsd" | "borrowedMarketValueUsd",
 ): number | undefined {
 	let total: number | undefined;
 	for (const position of positions) {
@@ -537,8 +538,8 @@ interface AccountYieldTotals {
 
 export interface AccountYieldPosition {
 	vault?: IHasVaultAddress;
-	suppliedValueUsd?: number;
-	borrowedValueUsd?: number;
+	suppliedMarketValueUsd?: number;
+	borrowedMarketValueUsd?: number;
 }
 
 function computeAccountYieldTotals(
@@ -570,8 +571,11 @@ function computePositionYieldTotals(
 		const vault = position.vault as any;
 		if (!vault) continue;
 
-		if (position.suppliedValueUsd != null && position.suppliedValueUsd > 0) {
-			const supplyUsd = position.suppliedValueUsd;
+		if (
+			position.suppliedMarketValueUsd != null &&
+			position.suppliedMarketValueUsd > 0
+		) {
+			const supplyUsd = position.suppliedMarketValueUsd;
 			const baseSupplyApy = getVaultSupplyApy(vault) ?? 0;
 			const intrinsicSupplyApy = getIntrinsicApyContribution(
 				baseSupplyApy,
@@ -588,8 +592,11 @@ function computePositionYieldTotals(
 			hasUsdData = true;
 		}
 
-		if (position.borrowedValueUsd != null && position.borrowedValueUsd > 0) {
-			const borrowUsd = position.borrowedValueUsd;
+		if (
+			position.borrowedMarketValueUsd != null &&
+			position.borrowedMarketValueUsd > 0
+		) {
+			const borrowUsd = position.borrowedMarketValueUsd;
 			const baseBorrowApy = getVaultBorrowApy(vault) ?? 0;
 			const intrinsicBorrowApy = getIntrinsicApyContribution(
 				baseBorrowApy,

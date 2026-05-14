@@ -13,7 +13,7 @@ Computed properties depend on data populated by calling `populateVaults`, `popul
 | Population Step | Method | Service | What It Provides |
 |---|---|---|---|
 | Vaults | `account.populateVaults(vaultMetaService)` | VaultMetaService | Vault entities on positions (APY, asset metadata, IRM) |
-| Market Prices | `account.populateMarketPrices(priceService)` | PriceService | `suppliedValueUsd`, `borrowedValueUsd` on positions; `liabilityValueUsd`, `totalCollateralValueUsd` on liquidity |
+| Market Prices | `account.populateMarketPrices(priceService)` | PriceService | `suppliedMarketValueUsd`, `borrowedMarketValueUsd` on positions; `liabilityMarketValueUsd`, `totalCollateralMarketValueUsd` on liquidity; `marketValueUsd` on liquidity collaterals |
 | Rewards (on vaults) | via `vaultFetchOptions.populateRewards` | RewardsService | `vault.rewards.campaigns` with per-campaign APR |
 | User Rewards | `account.populateUserRewards(rewardsService)` | RewardsService | `account.userRewards` (unclaimed reward tokens) |
 
@@ -36,10 +36,10 @@ For a direct high-level read, use `portfolioService.fetchPortfolio(...)`, which 
 | `healthFactor` | `bigint \| undefined` | Liquidity data (included by default) | `totalCollateralValue.liquidation / liabilityValue.liquidation` (WAD). `> 1e18` = healthy, `< 1e18` = liquidatable. |
 | `currentLTV` | `bigint \| undefined` | Liquidity data | `liabilityValue / totalCollateralValue` (WAD). Current loan-to-value ratio. |
 | `liquidationLTV` | `bigint \| undefined` | Liquidity data | `totalCollateralValue.liquidation / totalCollateralValue.oracleMid` (WAD). Weighted-average liquidation threshold. |
-| `multiplier` | `number \| undefined` | `populateMarketPrices` | `suppliedCollateralValueUsd / (suppliedCollateralValueUsd - borrowedValueUsd)`. Leverage multiplier (`1` = 1x). |
-| `totalCollateralValueUsd` | `number \| undefined` | `populateMarketPrices` | Total collateral value in USD from sub-account liquidity. |
-| `liabilityValueUsd` | `number \| undefined` | `populateMarketPrices` | Liability value in USD from sub-account liquidity. |
-| `netValueUsd` | `number \| undefined` | `populateMarketPrices` | `sum(suppliedValueUsd) - sum(borrowedValueUsd)`. Net asset value in USD. |
+| `multiplier` | `number \| undefined` | `populateMarketPrices` | `suppliedCollateralMarketValueUsd / (suppliedCollateralMarketValueUsd - borrowedMarketValueUsd)`. Leverage multiplier (`1` = 1x). |
+| `totalCollateralMarketValueUsd` | `number \| undefined` | `populateMarketPrices` | Total collateral market value in USD from liquidity collaterals. |
+| `liabilityMarketValueUsd` | `number \| undefined` | `populateMarketPrices` | Liability market value in USD from the borrowed amount and borrow vault market price. |
+| `netMarketValueUsd` | `number \| undefined` | `populateMarketPrices` | `sum(suppliedMarketValueUsd) - sum(borrowedMarketValueUsd)`. Net asset value in USD. |
 | `roe` | `SubAccountRoe \| undefined` | `populateVaults` + `populateMarketPrices` (+ `populateRewards` and `populateIntrinsicApy` for full breakdown) | Return on equity breakdown. See below. |
 
 ### ROE (Return on Equity)
@@ -101,9 +101,9 @@ Returns `undefined` when vault entities are not populated, no APY data is availa
 
 | Property | Type | Prerequisites | Description |
 |---|---|---|---|
-| `totalRewardsValueUsd` | `number \| undefined` | `populateUserRewards` | Total value of unclaimed reward tokens in USD. |
+| `totalRewardsMarketValueUsd` | `number \| undefined` | `populateUserRewards` | Total value of unclaimed reward tokens in USD. |
 
-`totalSuppliedValueUsd`, `totalBorrowedValueUsd`, `netAssetValueUsd`, `netApy`, and `roe` are Portfolio-level metrics so filtering rules are applied consistently.
+`totalSuppliedMarketValueUsd`, `totalBorrowedMarketValueUsd`, `netAssetMarketValueUsd`, `netApy`, and `roe` are Portfolio-level metrics so filtering rules are applied consistently.
 
 ### Sub-account Selection
 
@@ -123,14 +123,14 @@ const nextBorrowSubAccount = account.getNextSubAccount({ borrowVault })
 |---|---|---|---|
 | `savings` | `PortfolioSavingsPosition[]` | `populateVaults` + `populateMarketPrices` | Supplied positions that are not actively backing debt in the same sub-account. |
 | `borrows` | `PortfolioBorrowPosition[]` | `populateVaults` + `populateMarketPrices` | Debt positions plus their collateral positions and risk fields. |
-| `totalSuppliedValueUsd` | `number \| undefined` | `populateMarketPrices` | Sum of supplied USD value across positions included in this portfolio. |
-| `totalBorrowedValueUsd` | `number \| undefined` | `populateMarketPrices` | Sum of borrowed USD value across positions included in this portfolio. |
-| `netAssetValueUsd` | `number \| undefined` | `populateMarketPrices` | `totalSuppliedValueUsd - totalBorrowedValueUsd`. |
+| `totalSuppliedMarketValueUsd` | `number \| undefined` | `populateMarketPrices` | Sum of supplied market value across positions included in this portfolio. |
+| `totalBorrowedMarketValueUsd` | `number \| undefined` | `populateMarketPrices` | Sum of borrowed market value across positions included in this portfolio. |
+| `netAssetMarketValueUsd` | `number \| undefined` | `populateMarketPrices` | `totalSuppliedMarketValueUsd - totalBorrowedMarketValueUsd`. |
 | `netApy` | `number \| undefined` | `populateVaults` + `populateMarketPrices` | Net APY across positions included in this portfolio. |
 | `roe` | `number \| undefined` | `populateVaults` + `populateMarketPrices` | Return on equity across positions included in this portfolio. |
 | `apyBreakdown` | `YieldApyBreakdown \| undefined` | `populateVaults` + `populateMarketPrices` | Portfolio net APY contribution breakdown in percentage points. |
 | `roeBreakdown` | `YieldApyBreakdown \| undefined` | `populateVaults` + `populateMarketPrices` | Portfolio ROE contribution breakdown in percentage points. |
-| `totalRewardsValueUsd` | `number \| undefined` | `populateUserRewards` | Delegates to `account.totalRewardsValueUsd`. |
+| `totalRewardsMarketValueUsd` | `number \| undefined` | `populateUserRewards` | Delegates to `account.totalRewardsMarketValueUsd`. |
 
 ### Portfolio Categorization
 

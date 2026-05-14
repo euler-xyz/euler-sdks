@@ -33,7 +33,7 @@ type CollateralResult = {
   assets: bigint;
   shares: bigint;
   marketPriceUsd: number;
-  valueUsd: number;
+  marketValueUsd: number;
 };
 
 type BadDebtPositionResult = {
@@ -61,7 +61,7 @@ type BadDebtResult = {
   checkedDebtPositions: number;
   skippedPositions: number;
   totalDebtValueUsd: number;
-  totalCollateralValueUsd: number;
+  totalCollateralMarketValueUsd: number;
   badDebtUsd: number;
   missingPriceVaults: Address[];
   discoveredAt: string;
@@ -366,7 +366,7 @@ async function calculateBadDebt(args: {
         assets: position.assets,
         shares: position.shares,
         marketPriceUsd: price.priceUsd,
-        valueUsd: amountToUsd(position.assets, price.decimals, price.priceUsd),
+        marketValueUsd: amountToUsd(position.assets, price.decimals, price.priceUsd),
       });
     }
 
@@ -376,7 +376,7 @@ async function calculateBadDebt(args: {
       debtPrice.priceUsd
     );
     const activeCollateralValueUsd = collaterals.reduce(
-      (sum, collateral) => sum + collateral.valueUsd,
+      (sum, collateral) => sum + collateral.marketValueUsd,
       0
     );
 
@@ -396,7 +396,7 @@ async function calculateBadDebt(args: {
     (sum, position) => sum + position.debtValueUsd,
     0
   );
-  const totalCollateralValueUsd = debtPositions.reduce(
+  const totalCollateralMarketValueUsd = debtPositions.reduce(
     (sum, position) => sum + position.activeCollateralValueUsd,
     0
   );
@@ -422,7 +422,7 @@ async function calculateBadDebt(args: {
     checkedDebtPositions: debtRows.length,
     skippedPositions,
     totalDebtValueUsd,
-    totalCollateralValueUsd,
+    totalCollateralMarketValueUsd,
     badDebtUsd,
     missingPriceVaults,
     discoveredAt: new Date().toISOString(),
@@ -605,7 +605,7 @@ export function BadDebtPage() {
             </div>
             <div className="detail-item">
               <div className="label">Active Collateral Value</div>
-              <div className="value">{formatUsd(result.totalCollateralValueUsd)}</div>
+              <div className="value">{formatUsd(result.totalCollateralMarketValueUsd)}</div>
             </div>
             <div className="detail-item">
               <div className="label">Bad Positions</div>
@@ -702,7 +702,7 @@ export function BadDebtPage() {
                               <CopyAddress address={collateral.address} />{" "}
                               <span className="table-subline">
                                 {formatBigInt(collateral.assets, collateral.decimals, 6)}{" "}
-                                {collateral.symbol} · {formatPreciseUsd(collateral.valueUsd)}
+                                {collateral.symbol} · {formatPreciseUsd(collateral.marketValueUsd)}
                               </span>
                             </div>
                           ))}

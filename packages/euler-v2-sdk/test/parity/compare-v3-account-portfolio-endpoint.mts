@@ -73,14 +73,14 @@ const PORTFOLIO_FIELD_MAP = {
 	positions: "portfolio.positions",
 	savings: "portfolio.savings",
 	borrows: "portfolio.borrows",
-	totalSuppliedValueUsd: "portfolio.totals.suppliedValueUsd",
-	totalBorrowedValueUsd: "portfolio.totals.borrowedValueUsd",
-	netAssetValueUsd: "portfolio.totals.netAssetValueUsd",
+	totalSuppliedMarketValueUsd: "portfolio.totals.suppliedValueUsd",
+	totalBorrowedMarketValueUsd: "portfolio.totals.borrowedValueUsd",
+	netAssetMarketValueUsd: "portfolio.totals.netAssetValueUsd",
 	netApy: "portfolio.totals.netApy",
 	roe: "portfolio.totals.roe",
 	apyBreakdown: "portfolio.totals.apyBreakdown",
 	roeBreakdown: "portfolio.totals.roeBreakdown",
-	totalRewardsValueUsd: "portfolio.totals.rewardsValueUsd",
+	totalRewardsMarketValueUsd: "portfolio.totals.rewardsValueUsd",
 } as const;
 
 const SAVINGS_FIELDS = [
@@ -89,7 +89,7 @@ const SAVINGS_FIELDS = [
 	"subAccount",
 	"shares",
 	"assets",
-	"suppliedValueUsd",
+	"suppliedMarketValueUsd",
 	"apy",
 	"apyBreakdown",
 ] as const;
@@ -118,8 +118,8 @@ const BORROW_FIELDS = [
 	"accountLiquidationLTV",
 	"liabilityValueBorrowing",
 	"liabilityValueLiquidation",
-	"liabilityValueUsd",
-	"totalCollateralValueUsd",
+	"liabilityMarketValueUsd",
+	"totalCollateralMarketValueUsd",
 	"collateralValueLiquidation",
 	"timeToLiquidation",
 	"multiplier",
@@ -225,10 +225,10 @@ function serializePosition(position: any): JsonValue {
 		balanceForwarderEnabled: position.balanceForwarderEnabled,
 		marketPriceUsd:
 			bigintString(position.marketPriceUsd) ?? position.marketPriceUsd,
-		suppliedValueUsd:
-			bigintString(position.suppliedValueUsd) ?? position.suppliedValueUsd,
-		borrowedValueUsd:
-			bigintString(position.borrowedValueUsd) ?? position.borrowedValueUsd,
+		suppliedMarketValueUsd:
+			bigintString(position.suppliedMarketValueUsd) ?? position.suppliedMarketValueUsd,
+		borrowedMarketValueUsd:
+			bigintString(position.borrowedMarketValueUsd) ?? position.borrowedMarketValueUsd,
 		liquidity: position.liquidity
 			? {
 					vaultAddress:
@@ -252,17 +252,19 @@ function serializePosition(position: any): JsonValue {
 								marketPriceUsd:
 									bigintString(collateral.marketPriceUsd) ??
 									collateral.marketPriceUsd,
-								valueUsd: bigintString(collateral.valueUsd) ?? collateral.valueUsd,
+								marketValueUsd:
+									bigintString(collateral.marketValueUsd) ??
+									collateral.marketValueUsd,
 							}),
 						),
 						"address",
 					),
-					liabilityValueUsd:
-						bigintString(position.liquidity.liabilityValueUsd) ??
-						position.liquidity.liabilityValueUsd,
-					totalCollateralValueUsd:
-						bigintString(position.liquidity.totalCollateralValueUsd) ??
-						position.liquidity.totalCollateralValueUsd,
+					liabilityMarketValueUsd:
+						bigintString(position.liquidity.liabilityMarketValueUsd) ??
+						position.liquidity.liabilityMarketValueUsd,
+					totalCollateralMarketValueUsd:
+						bigintString(position.liquidity.totalCollateralMarketValueUsd) ??
+						position.liquidity.totalCollateralMarketValueUsd,
 				}
 			: undefined,
 		borrowLiquidationPriceUsd:
@@ -281,8 +283,8 @@ function serializeSavings(saving: any): JsonValue {
 		subAccount: asAddress(saving.subAccount) ?? saving.subAccount,
 		shares: bigintString(saving.shares) ?? saving.shares,
 		assets: bigintString(saving.assets) ?? saving.assets,
-		suppliedValueUsd:
-			bigintString(saving.suppliedValueUsd) ?? saving.suppliedValueUsd,
+		suppliedMarketValueUsd:
+			bigintString(saving.suppliedMarketValueUsd) ?? saving.suppliedMarketValueUsd,
 		apy: saving.apy,
 		apyBreakdown: saving.apyBreakdown,
 	}) as JsonValue;
@@ -333,11 +335,12 @@ function serializeBorrow(borrow: any): JsonValue {
 		liabilityValueLiquidation:
 			bigintString(borrow.liabilityValueLiquidation) ??
 			borrow.liabilityValueLiquidation,
-		liabilityValueUsd:
-			bigintString(borrow.liabilityValueUsd) ?? borrow.liabilityValueUsd,
-		totalCollateralValueUsd:
-			bigintString(borrow.totalCollateralValueUsd) ??
-			borrow.totalCollateralValueUsd,
+		liabilityMarketValueUsd:
+			bigintString(borrow.liabilityMarketValueUsd) ??
+			borrow.liabilityMarketValueUsd,
+		totalCollateralMarketValueUsd:
+			bigintString(borrow.totalCollateralMarketValueUsd) ??
+			borrow.totalCollateralMarketValueUsd,
 		collateralValueLiquidation:
 			bigintString(borrow.collateralValueLiquidation) ??
 			borrow.collateralValueLiquidation,
@@ -365,10 +368,10 @@ function serializePortfolio(portfolio: any) {
 		borrows: sortBorrows(portfolio.borrows.map(serializeBorrow)),
 		positions: sortPositions(portfolio.positions.map(serializePosition)),
 		totals: {
-			suppliedValueUsd: bigintString(portfolio.totalSuppliedValueUsd),
-			borrowedValueUsd: bigintString(portfolio.totalBorrowedValueUsd),
-			netAssetValueUsd: bigintString(portfolio.netAssetValueUsd),
-			rewardsValueUsd: bigintString(portfolio.totalRewardsValueUsd),
+			suppliedMarketValueUsd: bigintString(portfolio.totalSuppliedMarketValueUsd),
+			borrowedMarketValueUsd: bigintString(portfolio.totalBorrowedMarketValueUsd),
+			netAssetMarketValueUsd: bigintString(portfolio.netAssetMarketValueUsd),
+			rewardsValueUsd: bigintString(portfolio.totalRewardsMarketValueUsd),
 			netApy: portfolio.netApy,
 			roe: portfolio.roe,
 			apyBreakdown: portfolio.apyBreakdown,
@@ -411,10 +414,11 @@ function allPortfolioAccountPositions(portfolio: any): any[] {
 
 function normalizeEndpointPortfolio(data: any) {
 	const portfolio = data.portfolio ?? {};
+	const normalizedPortfolio = renameEndpointMarketValueFields(portfolio);
 	return clean({
-		savings: sortSavings(portfolio.savings ?? []),
+		savings: sortSavings(normalizedPortfolio.savings ?? []),
 		borrows: sortBorrows(
-			(portfolio.borrows ?? []).map((borrow: any) => ({
+			(normalizedPortfolio.borrows ?? []).map((borrow: any) => ({
 				...borrow,
 				accountLiquidationLTV: NORMALIZE_KNOWN_UNITS
 					? normalizeEndpointWadRatio(borrow.accountLiquidationLTV)
@@ -425,9 +429,46 @@ function normalizeEndpointPortfolio(data: any) {
 				),
 			})),
 		),
-		positions: sortPositions(portfolio.positions ?? []),
-		totals: portfolio.totals ?? {},
+		positions: sortPositions(normalizedPortfolio.positions ?? []),
+		totals: normalizedPortfolio.totals ?? {},
 	}) as Record<string, JsonValue>;
+}
+
+function renameEndpointMarketValueFields(value: any): any {
+	if (Array.isArray(value)) {
+		return value.map(renameEndpointMarketValueFields);
+	}
+	if (!isPlainObject(value)) return value;
+
+	const result: Record<string, JsonValue> = {};
+	for (const [key, child] of Object.entries(value)) {
+		result[endpointMarketValueFieldName(key)] =
+			renameEndpointMarketValueFields(child);
+	}
+	return result;
+}
+
+function endpointMarketValueFieldName(field: string): string {
+	switch (field) {
+		case "suppliedValueUsd":
+			return "suppliedMarketValueUsd";
+		case "borrowedValueUsd":
+			return "borrowedMarketValueUsd";
+		case "netValueUsd":
+			return "netMarketValueUsd";
+		case "totalSuppliedValueUsd":
+			return "totalSuppliedMarketValueUsd";
+		case "totalBorrowedValueUsd":
+			return "totalBorrowedMarketValueUsd";
+		case "netAssetValueUsd":
+			return "netAssetMarketValueUsd";
+		case "totalRewardsValueUsd":
+			return "totalRewardsMarketValueUsd";
+		case "valueUsd":
+			return "marketValueUsd";
+		default:
+			return field;
+	}
 }
 
 function normalizeEndpointWadRatio(value: unknown): unknown {

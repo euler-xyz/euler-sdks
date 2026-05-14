@@ -59,7 +59,7 @@ export interface PortfolioSavingsPosition<
 	subAccount: Address;
 	shares: bigint;
 	assets: bigint;
-	suppliedValueUsd?: number;
+	suppliedMarketValueUsd?: number;
 	/** Total supply APY for this savings position in percentage points, including intrinsic APY and rewards. */
 	apy?: number;
 	/** Supply APY contribution breakdown for this savings position. */
@@ -94,11 +94,11 @@ export interface PortfolioBorrowPosition<
 	accountLiquidationLTV?: number;
 	liabilityValueBorrowing?: bigint;
 	liabilityValueLiquidation?: bigint;
-	liabilityValueUsd?: number;
-	totalCollateralValueUsd?: number;
+	liabilityMarketValueUsd?: number;
+	totalCollateralMarketValueUsd?: number;
 	collateralValueLiquidation?: bigint;
 	timeToLiquidation?: DaysToLiquidation;
-	/** Effective collateral multiplier: supplied USD / equity USD. */
+	/** Effective collateral multiplier: supplied market value / equity market value. */
 	multiplier?: number;
 	/** Net APY in percentage points for this borrow position, relative to supplied collateral value. */
 	netApy?: number;
@@ -119,14 +119,14 @@ export interface IPortfolio<TVaultEntity extends IHasVaultAddress = never> {
 	readonly positions: AccountPosition<TVaultEntity>[];
 	readonly savings: PortfolioSavingsPosition<TVaultEntity>[];
 	readonly borrows: PortfolioBorrowPosition<TVaultEntity>[];
-	readonly totalSuppliedValueUsd?: number;
-	readonly totalBorrowedValueUsd?: number;
-	readonly netAssetValueUsd?: number;
+	readonly totalSuppliedMarketValueUsd?: number;
+	readonly totalBorrowedMarketValueUsd?: number;
+	readonly netAssetMarketValueUsd?: number;
 	readonly netApy?: number;
 	readonly roe?: number;
 	readonly apyBreakdown?: YieldApyBreakdown;
 	readonly roeBreakdown?: YieldApyBreakdown;
-	readonly totalRewardsValueUsd?: number;
+	readonly totalRewardsMarketValueUsd?: number;
 }
 
 /**
@@ -254,7 +254,7 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 					subAccount: position.account,
 					shares: position.shares,
 					assets: position.assets,
-					suppliedValueUsd: position.suppliedValueUsd,
+					suppliedMarketValueUsd: position.suppliedMarketValueUsd,
 					apy: apyBreakdown?.total,
 					apyBreakdown,
 				});
@@ -286,6 +286,12 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 				const apyBreakdown = computePositionsNetApyBreakdown(yieldPositions);
 				const roeBreakdown = computePositionsRoeBreakdown(yieldPositions);
 				const multiplier = computeBorrowMultiplier(borrow, collaterals);
+				const liabilityMarketValueUsd =
+					borrow.liquidity?.liabilityMarketValueUsd ??
+					borrow.borrowedMarketValueUsd;
+				const totalCollateralMarketValueUsd =
+					borrow.liquidity?.totalCollateralMarketValueUsd ??
+					sumYieldPositionUsd(collaterals, "suppliedMarketValueUsd");
 				const collateralValueLiquidation =
 					borrow.liquidity?.totalCollateralValue.liquidation;
 				const liabilityValueBorrowing =
@@ -329,8 +335,8 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 					accountLiquidationLTV: wadRatioToDecimal(subAccount.liquidationLTV),
 					liabilityValueBorrowing: borrow.liquidity?.liabilityValue.borrowing,
 					liabilityValueLiquidation,
-					liabilityValueUsd: borrow.liquidity?.liabilityValueUsd,
-					totalCollateralValueUsd: borrow.liquidity?.totalCollateralValueUsd,
+					liabilityMarketValueUsd,
+					totalCollateralMarketValueUsd,
 					collateralValueLiquidation,
 					timeToLiquidation: borrow.liquidity?.daysToLiquidation,
 					multiplier,
@@ -345,21 +351,21 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 		return borrows;
 	}
 
-	/** Sum of supplied USD value across positions that pass the portfolio filter. */
-	get totalSuppliedValueUsd(): number | undefined {
-		return sumYieldPositionUsd(this.yieldPositions, "suppliedValueUsd");
+	/** Sum of supplied market value across positions that pass the portfolio filter. */
+	get totalSuppliedMarketValueUsd(): number | undefined {
+		return sumYieldPositionUsd(this.yieldPositions, "suppliedMarketValueUsd");
 	}
 
-	/** Sum of borrowed USD value across positions that pass the portfolio filter. */
-	get totalBorrowedValueUsd(): number | undefined {
-		return sumYieldPositionUsd(this.yieldPositions, "borrowedValueUsd");
+	/** Sum of borrowed market value across positions that pass the portfolio filter. */
+	get totalBorrowedMarketValueUsd(): number | undefined {
+		return sumYieldPositionUsd(this.yieldPositions, "borrowedMarketValueUsd");
 	}
 
-	/** Net asset value in USD: supplied minus borrowed. */
-	get netAssetValueUsd(): number | undefined {
-		const supplied = this.totalSuppliedValueUsd;
+	/** Net asset market value in USD: supplied minus borrowed. */
+	get netAssetMarketValueUsd(): number | undefined {
+		const supplied = this.totalSuppliedMarketValueUsd;
 		if (supplied == null) return undefined;
-		return supplied - (this.totalBorrowedValueUsd ?? 0);
+		return supplied - (this.totalBorrowedMarketValueUsd ?? 0);
 	}
 
 	/** Net APY across positions that pass the portfolio filter. */
@@ -382,9 +388,9 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 		return computePositionsRoeBreakdown(this.yieldPositions);
 	}
 
-	/** Total unclaimed rewards value in USD, delegated to the wrapped Account. */
-	get totalRewardsValueUsd(): number | undefined {
-		return this.account.totalRewardsValueUsd;
+	/** Total unclaimed rewards market value in USD, delegated to the wrapped Account. */
+	get totalRewardsMarketValueUsd(): number | undefined {
+		return this.account.totalRewardsMarketValueUsd;
 	}
 
 	private get collateralUsageSet(): Set<string> {
@@ -420,19 +426,19 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 		for (const saving of this.savings) {
 			positions.push({
 				vault: saving.position.vault,
-				suppliedValueUsd: saving.position.suppliedValueUsd,
+				suppliedMarketValueUsd: saving.position.suppliedMarketValueUsd,
 			});
 		}
 
 		for (const borrow of this.borrows) {
 			positions.push({
 				vault: borrow.borrow.vault,
-				borrowedValueUsd: borrow.borrow.borrowedValueUsd,
+				borrowedMarketValueUsd: borrow.borrow.borrowedMarketValueUsd,
 			});
 			for (const collateral of borrow.collaterals) {
 				positions.push({
 					vault: collateral.vault,
-					suppliedValueUsd: collateral.suppliedValueUsd,
+					suppliedMarketValueUsd: collateral.suppliedMarketValueUsd,
 				});
 			}
 		}
@@ -488,7 +494,7 @@ function hasActiveSuppliedPosition<TVaultEntity extends IHasVaultAddress>(
 
 function sumYieldPositionUsd(
 	positions: AccountYieldPosition[],
-	field: "suppliedValueUsd" | "borrowedValueUsd",
+	field: "suppliedMarketValueUsd" | "borrowedMarketValueUsd",
 ): number | undefined {
 	let total: number | undefined;
 	for (const position of positions) {
@@ -506,11 +512,11 @@ function borrowYieldPositions<TVaultEntity extends IHasVaultAddress>(
 	return [
 		{
 			vault: borrow.vault,
-			borrowedValueUsd: borrow.borrowedValueUsd,
+			borrowedMarketValueUsd: borrow.borrowedMarketValueUsd,
 		},
 		...collaterals.map((collateral) => ({
 			vault: collateral.vault,
-			suppliedValueUsd: collateral.suppliedValueUsd,
+			suppliedMarketValueUsd: collateral.suppliedMarketValueUsd,
 		})),
 	];
 }
@@ -520,8 +526,8 @@ function computeBorrowMultiplier<TVaultEntity extends IHasVaultAddress>(
 	collaterals: AccountPosition<TVaultEntity>[],
 ): number | undefined {
 	return computeCollateralMultiplier(
-		sumYieldPositionUsd(collaterals, "suppliedValueUsd"),
-		borrow.borrowedValueUsd,
+		sumYieldPositionUsd(collaterals, "suppliedMarketValueUsd"),
+		borrow.borrowedMarketValueUsd,
 	);
 }
 
