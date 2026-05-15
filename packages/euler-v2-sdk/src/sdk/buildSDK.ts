@@ -944,15 +944,11 @@ export async function buildEulerSDK<
 							resolvedBuildQuery,
 						);
 
-			return new RewardsService(
-				rewardsAdapter,
-				resolvedRewardsServiceAdapter === "direct" ? undefined : directAdapter,
-				{
-					merklDistributorAddress: directAdapter.getMerklDistributorAddress(),
-					fuulManagerAddress: directAdapter.getFuulManagerAddress(),
-					fuulFactoryAddress: directAdapter.getFuulFactoryAddress(),
-				},
-			);
+			return new RewardsService(rewardsAdapter, {
+				merklDistributorAddress: directAdapter.getMerklDistributorAddress(),
+				fuulManagerAddress: directAdapter.getFuulManagerAddress(),
+				fuulFactoryAddress: directAdapter.getFuulFactoryAddress(),
+			});
 		})();
 
 	// Build intrinsic APY service if not overridden
