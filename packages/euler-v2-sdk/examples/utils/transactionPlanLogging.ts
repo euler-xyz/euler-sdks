@@ -40,6 +40,10 @@ export function createTransactionPlanLogger(sdk: EulerSDK) {
 			}
 			return;
 		}
+		if (item.type === "cowSwap") {
+			console.log(`  ✓ CoW ${item.kind}${hash ? ` (${hash})` : ""}`);
+			return;
+		}
 		console.log(`  ✓ ${item.functionName}${hash ? ` (${hash})` : ""}`);
 	};
 }

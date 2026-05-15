@@ -32,8 +32,8 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 - `walletService` for native/ERC20 wallet balances and direct/Permit2 allowance state
 - `executionService` for planning/encoding tx batches
   - executes generic `TransactionPlan` items, including direct `contractCall` items
-- `executionService` for plan simulation and pre-trade validation
-- `swapService` for quotes and providers
+- `executionService` for plan simulation and pre-trade validation; CoW plans execute here but are not simulation/gas-estimation inputs
+- `swapService` for quotes and providers, including `cowSwap` metadata for CoW-supported position flows
 - `oracleAdapterService` for oracle adapter metadata keyed by normalized `adapter.oracle` address
 - `rewardsService` for reward reads and provider-specific reward claim planning; the default V3 path normalizes Incentra rows as Brevis and returns direct proof-backed Brevis rows when V3 lacks claim metadata
 - `eulerLabelsService` plus exported label helpers for normalized products, Earn entries, notices, restrictions, and product/vault flags
@@ -136,11 +136,12 @@ Pattern:
 
 1. fetch quotes (`fetchDepositQuote`, `fetchRepayQuotes`)
 2. pick quote (best-first ordering)
-3. build plan (`planRepayWithSwap`, `planSwapCollateral`, `planSwapDebt`, `planSwapAndBorrowFromWallet`, `planSwapAndRepayFromWallet`, `planWithdrawAndSwap`, `planRedeemAndSwap`, `planMultiplyWithSwap`, `planMultiplySameAsset`)
+3. build plan (`planRepayWithSwap`, `planSwapCollateral`, `planSwapDebt`, `planSwapAndBorrowFromWallet`, `planSwapAndRepayFromWallet`, `planWithdrawAndSwap`, `planRedeemAndSwap`, `planMultiplyWithSwap`, `planMultiplySameAsset`, or a CoW-specific planner)
 4. simulate
 5. execute
 
 Re-quote near submission time and compare providers for advanced routing UIs.
+For CoW open-position, close-position, and collateral-swap routes, pass `cowSwap` to the regular quote method, use the matching CoW planner, and execute the plan with `executionService.executeCowSwapTransactionPlan(...)`. CoW plans return `orderUids`, settle asynchronously through CoW Protocol, and are not simulation or gas-estimation inputs. Track orders with `fetchCowSwapOrderStatus` / `pollCowSwapOrderStatus`; cancel open/collateral orders with `cancelCowSwapOrder` and close-position orders with `planCancelClosePositionWithCow`.
 
 ### 4.2 Scripts and Automation
 
@@ -150,6 +151,7 @@ Use SDK examples as templates:
 - `packages/euler-v2-sdk/examples/wallets/*` for wallet balance and allowance reads
 - `packages/euler-v2-sdk/examples/simulations/*` for pre-checks
 - `sdk.executionService.executeTransactionPlan(...)` for plugin processing + approval + Permit2 + EVC execution logic
+- `packages/euler-v2-sdk/examples/execution/open-position-with-cow-live-example.ts` for live CoW order submission with a real private key
 - `packages/euler-v2-sdk/examples/run-examples.sh` for fork-based regression runs
 
 Promote constants to config/env and add explicit chain/account flags in CLI tools.
@@ -169,6 +171,7 @@ Promote constants to config/env and add explicit chain/account flags in CLI tool
 - `packages/euler-v2-sdk/docs/labels.md`
 - `packages/euler-v2-sdk/docs/plugins.md`
 - `packages/euler-v2-sdk/docs/swaps.md`
+- `packages/euler-v2-sdk/docs/cow-swaps.md`
 - `packages/euler-v2-sdk/examples/react-sdk-example/src/context/SdkContext.tsx`
 - `packages/euler-v2-sdk/examples/react-sdk-example/src/queries/sdkQueries.ts`
 - `packages/euler-v2-sdk/examples/react-sdk-example/src/utils/txProgress.ts`

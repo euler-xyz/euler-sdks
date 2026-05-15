@@ -44,13 +44,15 @@ Execution checklist:
 
 1. Build plan with `planX`.
 2. Pass the plan to `sdk.executionService.executeTransactionPlan(...)`; it applies configured plugins before resolving approvals and sending transactions.
-3. Use `onProgress` to surface approval, Permit2 signature, direct call, EVC batch, and completion states.
+3. Use `onProgress` to surface approval, Permit2 signature, direct call, EVC batch, CoW signing/submission, and completion states.
 4. Wait for the returned receipts and refetch dependent queries.
 5. Decode contract errors for user-facing diagnostics.
+
+CoW swap plans are built with `planOpenPositionWithCoW`, `planClosePositionWithCow`, or `planSwapCollateralWithCoW`. They are executed through `executeCowSwapTransactionPlan`, return `orderUids`, and settle asynchronously through CoW Protocol. Track order state with `fetchCowSwapOrderStatus` or `pollCowSwapOrderStatus`. Cancel open-position and collateral-swap orders with `cancelCowSwapOrder`; cancel close-position orders with `planCancelClosePositionWithCow`, which invalidates the signed EVC permit nonce. Use `formatCowSwapExecutionErrorMessage` for short UI-safe errors. Do not pass CoW plans to simulation, gas estimation, `mergePlans`, or `describeBatch`.
 
 `executeTransactionPlan`, `simulateTransactionPlan`, and `estimateGasForTransactionPlan` accept `AddressOrAccount` (`Address | Account`) for the account argument. Pass an `Account` when the caller already has account state that plugins can reuse; pass an address when plugin-side minimal fetching is preferable.
 
 Use `mergePlans` to atomically combine multiple intents and `describeBatch` for previews/logging.
 Planner-created `evcBatch` entries contain named operations (`{ type: "operation", name, items }`). Keep those groups intact in previews and merge flows. Raw `EVCBatchItem` entries are still valid for low-level utilities and plugin-inserted setup calls. Use `convertBatchItemsToPlan(items, operationName)` when a raw encoded batch should be named as one operation; omit `operationName` to preserve the raw item array.
 
-Reference: `packages/euler-v2-sdk/docs/execution-service.md`, `packages/euler-v2-sdk/src/services/executionService/executionService.ts`, `examples/react-sdk-example/src/utils/txProgress.ts`
+Reference: `packages/euler-v2-sdk/docs/execution-service.md`, `packages/euler-v2-sdk/docs/cow-swaps.md`, `packages/euler-v2-sdk/src/services/executionService/executionService.ts`, `examples/react-sdk-example/src/utils/txProgress.ts`

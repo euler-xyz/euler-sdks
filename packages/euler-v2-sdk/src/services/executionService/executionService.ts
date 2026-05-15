@@ -6,8 +6,8 @@ import {
 	erc20Abi,
 	getAddress,
 	type Hex,
-	maxUint256,
 	maxUint160,
+	maxUint256,
 	type StateOverride,
 } from "viem";
 import type {
@@ -24,6 +24,11 @@ import type { IIntrinsicApyService } from "../intrinsicApyService/index.js";
 import type { IPriceService } from "../priceService/index.js";
 import type { ProviderService } from "../providerService/index.js";
 import type { IRewardsService } from "../rewardsService/index.js";
+import { SwapperMode } from "../swapService/swapServiceTypes.js";
+import {
+	adjustForInterest,
+	getSwapInputAmount,
+} from "../swapService/swapVerification.js";
 import type {
 	IVaultMetaService,
 	VaultEntity,
@@ -37,11 +42,30 @@ import { eVaultAbi } from "./abis/eVaultAbi.js";
 import { permit2PermitAbi } from "./abis/permit2PermitAbi.js";
 import { swapperAbi } from "./abis/swapperAbi.js";
 import { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
+import {
+	type CowSwapTransactionPlanExecutionResult,
+	type ExecuteCowSwapTransactionPlanArgs,
+	executeCowSwapTransactionPlan,
+} from "./cowExecutor.js";
+import {
+	computeNonceNamespace,
+	getCowSwapChainConfig,
+} from "./cowSwapHelpers.js";
 import * as encodeHelpers from "./encode.js";
+import {
+	type ExecuteTransactionPlanArgs,
+	type ExecuteTransactionPlanInternalArgs,
+	executeTransactionPlan,
+	type TransactionPlanExecutionResult,
+} from "./execute.js";
 import type {
 	ApproveCall,
 	BatchEntryDescription,
 	BatchItemDescription,
+	CowSwapCancelClosePositionPlanParams,
+	CowSwapClosePositionPlanParams,
+	CowSwapCollateralSwapPlanParams,
+	CowSwapOpenPositionPlanParams,
 	EncodeBorrowArgs,
 	EncodeDepositArgs,
 	EncodeDepositWithSwapFromWalletArgs,
@@ -53,8 +77,8 @@ import type {
 	EncodeMultiplyWithSwapArgs,
 	EncodePermit2CallArgs,
 	EncodePullDebtArgs,
-	EncodeRedeemArgs,
 	EncodeRedeemAndSwapArgs,
+	EncodeRedeemArgs,
 	EncodeRepayFromDepositArgs,
 	EncodeRepayFromWalletArgs,
 	EncodeRepayWithSwapArgs,
@@ -64,15 +88,17 @@ import type {
 	EncodeSwapDebtArgs,
 	EncodeSwapFromWalletArgs,
 	EncodeTransferArgs,
-	EncodeWithdrawArgs,
 	EncodeWithdrawAndSwapArgs,
+	EncodeWithdrawArgs,
 	EVCBatchEntry,
 	EVCBatchItem,
 	GetPermit2TypedDataArgs,
 	Permit2DataToSign,
 	PermitSingleTypedData,
 	PlanBorrowArgs,
+	PlanCancelClosePositionWithCowArgs,
 	PlanCleanupArgs,
+	PlanClosePositionWithCowArgs,
 	PlanDepositArgs,
 	PlanDepositWithSwapFromWalletArgs,
 	PlanLiquidationArgs,
@@ -81,53 +107,210 @@ import type {
 	PlanMintArgs,
 	PlanMultiplySameAssetArgs,
 	PlanMultiplyWithSwapArgs,
+	PlanOpenPositionWithCoWArgs,
 	PlanPullDebtArgs,
-	PlanRedeemArgs,
 	PlanRedeemAndSwapArgs,
+	PlanRedeemArgs,
 	PlanRepayFromDepositArgs,
 	PlanRepayFromWalletArgs,
 	PlanRepayWithSwapArgs,
 	PlanSwapAndBorrowFromWalletArgs,
 	PlanSwapAndRepayFromWalletArgs,
 	PlanSwapCollateralArgs,
+	PlanSwapCollateralWithCoWArgs,
 	PlanSwapDebtArgs,
 	PlanSwapFromWalletArgs,
 	PlanTransferArgs,
-	PlanWithdrawArgs,
 	PlanWithdrawAndSwapArgs,
+	PlanWithdrawArgs,
 	RequiredApproval,
 	ResolveRequiredApprovalsArgs,
 	ResolveRequiredApprovalsWithWalletArgs,
 	TransactionPlan,
 	TransactionPlanItem,
 } from "./executionServiceTypes.js";
-import { isEVCBatchOperation } from "./executionServiceTypes.js";
 import {
-	type ExecuteTransactionPlanArgs,
-	type ExecuteTransactionPlanInternalArgs,
-	executeTransactionPlan,
-	type TransactionPlanExecutionResult,
-} from "./execute.js";
+	assertNoCowSwapPlanItems,
+	isCowSwapPlanItem,
+	isEVCBatchOperation,
+} from "./executionServiceTypes.js";
 import {
 	deriveStateOverrides,
 	type EstimateGasForTransactionPlanOptions,
-	estimateGasForTransactionPlan,
 	type ExecutionSimulationContext,
+	estimateGasForTransactionPlan,
 	type SimulateBatchOptions,
 	type SimulateBatchResult,
-	simulateTransactionPlan,
 	type SimulationStateOverrideOptions,
+	simulateTransactionPlan,
 } from "./simulate.js";
-import {
-	adjustForInterest,
-	getSwapInputAmount,
-} from "../swapService/swapVerification.js";
-import { SwapperMode } from "../swapService/swapServiceTypes.js";
 
 const TOKENS_REQUIRING_ZERO_APPROVAL_RESET: Record<number, readonly Address[]> =
 	{
 		1: [getAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7")],
 	};
+const COWSWAP_ORDER_DEADLINE_SECONDS = 900;
+
+type CowSwapQuoteOrderAmounts = {
+	sellAmount: bigint;
+	buyAmount: bigint;
+	feeAmount: bigint;
+	quoteId?: number;
+};
+
+type CowSwapQuoteSlippageTarget = "buyAmount" | "sellAmount";
+
+function isCowSwapQuote(quote: { route?: Array<{ providerName?: string }> }) {
+	return quote.route?.some((hop) =>
+		hop.providerName?.toLowerCase().includes("cow"),
+	);
+}
+
+function assertNonCowSwapQuote(
+	quote: { route?: Array<{ providerName?: string }> },
+	planFunctionName: string,
+	cowPlanFunctionName?: string,
+): void {
+	if (!isCowSwapQuote(quote)) return;
+	const suffix = cowPlanFunctionName
+		? ` Use ${cowPlanFunctionName} instead.`
+		: " Use the appropriate CoW plan function instead.";
+	throw new Error(
+		`ExecutionService.${planFunctionName} does not support CoW swap quotes.${suffix}`,
+	);
+}
+
+function assertCowSwapQuote(
+	quote: { route?: Array<{ providerName?: string }> },
+	planFunctionName: string,
+): void {
+	if (isCowSwapQuote(quote)) return;
+	throw new Error(
+		`ExecutionService.${planFunctionName} requires a CoW swap quote.`,
+	);
+}
+
+function parseCowSwapAmount(field: string, value: unknown): bigint {
+	if (typeof value !== "string" || !/^\d+$/.test(value)) {
+		throw new Error(`CoW quote ${field} missing or invalid`);
+	}
+	return BigInt(value);
+}
+
+function normalizeCowSwapQuoteId(value: unknown): number | undefined {
+	if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
+		return value;
+	}
+	if (typeof value === "string" && /^\d+$/.test(value)) {
+		const parsed = Number(value);
+		if (Number.isSafeInteger(parsed)) return parsed;
+	}
+	return undefined;
+}
+
+function parseSlippagePercent(slippage: number): {
+	slippageUnits: bigint;
+	denominator: bigint;
+} {
+	if (!Number.isFinite(slippage) || slippage <= 0) {
+		return { slippageUnits: 0n, denominator: 1n };
+	}
+
+	const slippageString = slippage.toLocaleString("en-US", {
+		useGrouping: false,
+		maximumFractionDigits: 20,
+	});
+	const [whole = "0", fraction = ""] = slippageString.split(".");
+	const scale = 10n ** BigInt(fraction.length);
+	const slippageUnits = BigInt(whole) * scale + BigInt(fraction || "0");
+
+	return {
+		slippageUnits,
+		denominator: 100n * scale,
+	};
+}
+
+function reduceBySlippage(amount: bigint, slippage = 0): bigint {
+	const { slippageUnits, denominator } = parseSlippagePercent(slippage);
+	if (slippageUnits >= denominator) return 0n;
+	return (amount * (denominator - slippageUnits)) / denominator;
+}
+
+function increaseBySlippage(amount: bigint, slippage = 0): bigint {
+	const { slippageUnits, denominator } = parseSlippagePercent(slippage);
+	return (
+		(amount * (denominator + slippageUnits) + denominator - 1n) / denominator
+	);
+}
+
+function getCowSwapQuoteOrderAmounts(
+	quote: {
+		providerData?: {
+			quoteId?: number | string;
+			sellAmount?: string;
+			buyAmount?: string;
+			feeAmount?: string;
+		};
+		slippage?: number;
+	},
+	options: {
+		slippage?: number;
+		slippageTarget?: CowSwapQuoteSlippageTarget;
+		maxSellAmount?: bigint;
+	} = {},
+): CowSwapQuoteOrderAmounts {
+	const providerData = quote.providerData;
+	const quoteSellAmount = parseCowSwapAmount(
+		"providerData.sellAmount",
+		providerData?.sellAmount,
+	);
+	const buyAmount = parseCowSwapAmount(
+		"providerData.buyAmount",
+		providerData?.buyAmount,
+	);
+	const feeAmount = parseCowSwapAmount(
+		"providerData.feeAmount",
+		providerData?.feeAmount,
+	);
+	const quoteId = normalizeCowSwapQuoteId(providerData?.quoteId);
+
+	if (quoteSellAmount <= 0n || buyAmount <= 0n) {
+		throw new Error("CoW quote order amount must be positive");
+	}
+
+	const slippage = options.slippage ?? quote.slippage ?? 0;
+	const orderSellAmount = quoteSellAmount + feeAmount;
+	const slippageAdjustedSellAmount =
+		options.slippageTarget === "sellAmount"
+			? increaseBySlippage(orderSellAmount, slippage)
+			: orderSellAmount;
+	const adjustedSellAmount =
+		options.maxSellAmount !== undefined &&
+		slippageAdjustedSellAmount > options.maxSellAmount
+			? options.maxSellAmount
+			: slippageAdjustedSellAmount;
+	const adjustedBuyAmount =
+		options.slippageTarget === "buyAmount"
+			? reduceBySlippage(buyAmount, slippage)
+			: buyAmount;
+
+	if (adjustedSellAmount <= 0n || adjustedBuyAmount <= 0n) {
+		throw new Error("CoW quote order amount must be positive");
+	}
+
+	return {
+		sellAmount: adjustedSellAmount,
+		buyAmount: adjustedBuyAmount,
+		feeAmount,
+		quoteId,
+	};
+}
+
+function getCowSwapValidTo(validTo?: number): number {
+	return (
+		validTo ?? Math.floor(Date.now() / 1000) + COWSWAP_ORDER_DEADLINE_SECONDS
+	);
+}
 
 function requiresZeroApprovalReset(chainId: number, token: Address): boolean {
 	return (
@@ -358,6 +541,9 @@ export interface IExecutionService<
 	executeTransactionPlan(
 		args: ExecuteTransactionPlanArgs,
 	): Promise<TransactionPlanExecutionResult>;
+	executeCowSwapTransactionPlan(
+		args: ExecuteCowSwapTransactionPlanArgs,
+	): Promise<CowSwapTransactionPlanExecutionResult>;
 
 	encodeBatch(items: EVCBatchItem[]): Hex;
 	encodeDeposit(args: EncodeDepositArgs): EVCBatchItem[];
@@ -442,6 +628,14 @@ export interface IExecutionService<
 	planTransfer(args: PlanTransferArgs): TransactionPlan;
 	planPullDebt(args: PlanPullDebtArgs): TransactionPlan;
 	planMultiplyWithSwap(args: PlanMultiplyWithSwapArgs): TransactionPlan;
+	planOpenPositionWithCoW(args: PlanOpenPositionWithCoWArgs): TransactionPlan;
+	planClosePositionWithCow(args: PlanClosePositionWithCowArgs): TransactionPlan;
+	planCancelClosePositionWithCow(
+		args: PlanCancelClosePositionWithCowArgs,
+	): TransactionPlan;
+	planSwapCollateralWithCoW(
+		args: PlanSwapCollateralWithCoWArgs,
+	): TransactionPlan;
 	planMultiplySameAsset(args: PlanMultiplySameAssetArgs): TransactionPlan;
 
 	getPermit2TypedData(args: GetPermit2TypedDataArgs): PermitSingleTypedData;
@@ -551,6 +745,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		transactionPlan: TransactionPlan,
 		options?: SimulationStateOverrideOptions,
 	): Promise<StateOverride> {
+		assertNoCowSwapPlanItems(transactionPlan, "deriveStateOverrides");
 		return deriveStateOverrides(
 			this.getSimulationContext(),
 			chainId,
@@ -567,6 +762,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		transactionPlan: TransactionPlan,
 		options?: SimulateBatchOptions,
 	): Promise<SimulateBatchResult<TVaultEntity>> {
+		assertNoCowSwapPlanItems(transactionPlan, "simulateTransactionPlan");
 		const processedPlan = await this.processPlanPlugins(
 			transactionPlan,
 			account,
@@ -589,6 +785,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		transactionPlan: TransactionPlan,
 		options?: EstimateGasForTransactionPlanOptions,
 	): Promise<bigint> {
+		assertNoCowSwapPlanItems(transactionPlan, "estimateGasForTransactionPlan");
 		const processedPlan = await this.processPlanPlugins(
 			transactionPlan,
 			account,
@@ -608,26 +805,50 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	async executeTransactionPlan(
 		args: ExecuteTransactionPlanArgs,
 	): Promise<TransactionPlanExecutionResult> {
+		assertNoCowSwapPlanItems(args.plan, "executeTransactionPlan");
 		const { providerService } = this;
 		if (!providerService) {
 			throw new Error(
 				"ExecutionService.executeTransactionPlan requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
 			);
 		}
+		const processedPlan = await this.processPlanPlugins(
+			args.plan,
+			args.account,
+			args.chainId,
+		);
+		assertNoCowSwapPlanItems(processedPlan, "executeTransactionPlan");
 
 		const helperArgs: ExecuteTransactionPlanInternalArgs = {
 			...args,
-			plan: await this.processPlanPlugins(
-				args.plan,
-				args.account,
-				args.chainId,
-			),
+			plan: processedPlan,
 			executionService: this,
 			deploymentService: this.deploymentService,
 			providerService,
 		};
 
 		return executeTransactionPlan(helperArgs);
+	}
+
+	async executeCowSwapTransactionPlan(
+		args: ExecuteCowSwapTransactionPlanArgs,
+	): Promise<CowSwapTransactionPlanExecutionResult> {
+		const { providerService } = this;
+		if (!providerService) {
+			throw new Error(
+				"ExecutionService.executeCowSwapTransactionPlan requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
+			);
+		}
+		return executeCowSwapTransactionPlan({
+			...args,
+			plan: await this.processPlanPlugins(
+				args.plan,
+				args.account,
+				args.chainId,
+			),
+			deploymentService: this.deploymentService,
+			providerService,
+		});
 	}
 
 	private getSimulationContext(): ExecutionSimulationContext<TVaultEntity> {
@@ -1287,6 +1508,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 							items: cloneBatchEntries(item.items),
 						});
 					}
+				} else if (isCowSwapPlanItem(item)) {
+					throw new Error(
+						"ExecutionService.mergePlans cannot merge CoW swap plan items. Merge these plans manually to preserve CoW order boundaries.",
+					);
 				} else {
 					throw new Error(
 						"ExecutionService.mergePlans cannot merge contractCall plan items. Merge these plans manually to preserve call boundaries.",
@@ -1446,6 +1671,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			usePermit2 = true,
 			unlimitedApproval = false,
 		} = args;
+		assertNoCowSwapPlanItems(plan, "resolveRequiredApprovalsWithWallet");
 
 		const deployment = this.deploymentService.getDeployment(chainId);
 		const permit2 = deployment.addresses.coreAddrs.permit2;
@@ -1600,6 +1826,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			usePermit2 = true,
 			unlimitedApproval = false,
 		} = args;
+		assertNoCowSwapPlanItems(plan, "resolveRequiredApprovals");
 
 		if (!this.walletService) {
 			throw new Error(
@@ -1887,13 +2114,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of transaction plan items (EVC batch; no approvals needed for redeem)
 	 */
 	planRedeem(args: PlanRedeemArgs): TransactionPlan {
-		const {
-			vault,
-			receiver,
-			owner,
-			account,
-			disableCollateral = false,
-		} = args;
+		const { vault, receiver, owner, account, disableCollateral = false } = args;
 		const plan: TransactionPlanItem[] = [];
 
 		// Get position to check collateral state
@@ -2289,6 +2510,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 */
 	planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlan {
 		const { swapQuote, account, cleanupOnMax = false, swapperMode } = args;
+		assertNonCowSwapQuote(
+			swapQuote,
+			"planRepayWithSwap",
+			"planClosePositionWithCow",
+		);
 		const plan: TransactionPlanItem[] = [];
 
 		const liabilityPosition = account?.getPosition(
@@ -2337,6 +2563,99 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		return plan;
 	}
 
+	planClosePositionWithCow(
+		args: PlanClosePositionWithCowArgs,
+	): TransactionPlan {
+		const {
+			account,
+			swapQuote,
+			swapperMode = SwapperMode.TARGET_DEBT,
+			slippage,
+			validTo,
+			orderKind,
+			maxSellAmount,
+		} = args;
+		assertCowSwapQuote(swapQuote, "planClosePositionWithCow");
+
+		const isTargetDebt = swapperMode === SwapperMode.TARGET_DEBT;
+		const sourcePosition = account.getPosition(
+			swapQuote.accountIn,
+			swapQuote.vaultIn,
+		);
+		const resolvedMaxSellAmount =
+			maxSellAmount ?? (isTargetDebt ? sourcePosition?.shares : undefined);
+		const orderAmounts = getCowSwapQuoteOrderAmounts(swapQuote, {
+			slippage,
+			slippageTarget: "sellAmount",
+			maxSellAmount: resolvedMaxSellAmount,
+		});
+		const resolvedValidTo = getCowSwapValidTo(validTo);
+		const params: CowSwapClosePositionPlanParams = {
+			chainId: account.chainId,
+			sellToken: swapQuote.vaultIn,
+			buyToken: swapQuote.tokenOut.address,
+			sellAmount: orderAmounts.sellAmount,
+			buyAmount: orderAmounts.buyAmount,
+			feeAmount: orderAmounts.feeAmount,
+			quoteId: orderAmounts.quoteId,
+			slippageBips: Math.round((slippage ?? swapQuote.slippage) * 100),
+			validTo: resolvedValidTo,
+			orderKind: orderKind ?? (isTargetDebt ? "buy" : "sell"),
+			wrapper: {
+				owner: account.owner,
+				account: swapQuote.accountOut,
+				deadline: resolvedValidTo,
+				borrowVault: swapQuote.receiver,
+				collateralVault: swapQuote.vaultIn,
+				collateralAmount: orderAmounts.sellAmount,
+			},
+		};
+
+		return [
+			{
+				type: "cowSwap",
+				kind: "closePosition",
+				chainId: account.chainId,
+				params,
+			},
+		];
+	}
+
+	planCancelClosePositionWithCow(
+		args: PlanCancelClosePositionWithCowArgs,
+	): TransactionPlan {
+		const config = getCowSwapChainConfig(args.chainId);
+		if (!config && (!args.wrapperAddress || args.nonceNamespace == null)) {
+			throw new Error(`CoW Swap not supported on chain ${args.chainId}`);
+		}
+		const wrapperAddress = args.wrapperAddress ?? config?.closePositionWrapper;
+		const nonceNamespace =
+			args.nonceNamespace ??
+			(wrapperAddress ? computeNonceNamespace(wrapperAddress) : undefined);
+		if (nonceNamespace == null) {
+			throw new Error(
+				"nonceNamespace is required when wrapperAddress is not provided",
+			);
+		}
+
+		const params: CowSwapCancelClosePositionPlanParams = {
+			chainId: args.chainId,
+			owner: getAddress(args.owner),
+			nonce: args.nonce,
+			nonceNamespace,
+			wrapperAddress,
+		};
+
+		return [
+			{
+				type: "cowSwap",
+				kind: "cancelClosePosition",
+				chainId: args.chainId,
+				params,
+			},
+		];
+	}
+
 	/**
 	 * Builds a transaction plan for depositing into a vault using tokens from the user's wallet, going through a swap.
 	 * The approval is given to SwapVerifier (not the vault), then transferFromSender is used in the batch
@@ -2361,6 +2680,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			enableCollateral,
 			wrappedNativeInfo,
 		} = args;
+		assertNonCowSwapQuote(swapQuote, "planDepositWithSwapFromWallet");
 		const plan: TransactionPlanItem[] = [];
 
 		// Approval goes to the transferFromSender contract (which uses permit2 transferFrom internally)
@@ -2412,6 +2732,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 */
 	planSwapFromWallet(args: PlanSwapFromWalletArgs): TransactionPlan {
 		const { swapQuote, amount, tokenIn, account, wrappedNativeInfo } = args;
+		assertNonCowSwapQuote(swapQuote, "planSwapFromWallet");
 		const plan: TransactionPlanItem[] = [];
 
 		plan.push({
@@ -2450,6 +2771,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			collateralVault = swapQuote.receiver,
 			wrappedNativeInfo,
 		} = args;
+		assertNonCowSwapQuote(swapQuote, "planSwapAndBorrowFromWallet");
 		const plan: TransactionPlanItem[] = [];
 
 		plan.push({
@@ -2505,6 +2827,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			cleanupOnMax = false,
 			wrappedNativeInfo,
 		} = args;
+		assertNonCowSwapQuote(swapQuote, "planSwapAndRepayFromWallet");
 		const plan: TransactionPlanItem[] = [];
 
 		plan.push({
@@ -2554,6 +2877,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 	planWithdrawAndSwap(args: PlanWithdrawAndSwapArgs): TransactionPlan {
 		const { account, vault, assets, owner, swapQuote } = args;
+		assertNonCowSwapQuote(args.swapQuote, "planWithdrawAndSwap");
 		const batchItems = this.encodeWithdrawAndSwap({
 			chainId: account.chainId,
 			vault,
@@ -2568,6 +2892,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 	planRedeemAndSwap(args: PlanRedeemAndSwapArgs): TransactionPlan {
 		const { account, vault, shares, owner, swapQuote } = args;
+		assertNonCowSwapQuote(args.swapQuote, "planRedeemAndSwap");
 		const batchItems = this.encodeRedeemAndSwap({
 			chainId: account.chainId,
 			vault,
@@ -2590,6 +2915,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 */
 	planSwapCollateral(args: PlanSwapCollateralArgs): TransactionPlan {
 		const { swapQuote, account, swapperMode } = args;
+		assertNonCowSwapQuote(
+			swapQuote,
+			"planSwapCollateral",
+			"planSwapCollateralWithCoW",
+		);
 		const plan: TransactionPlanItem[] = [];
 
 		// Check if source collateral needs to be disabled (when all is swapped)
@@ -2625,6 +2955,57 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		return plan;
 	}
 
+	planSwapCollateralWithCoW(
+		args: PlanSwapCollateralWithCoWArgs,
+	): TransactionPlan {
+		const { swapQuote, account, slippage, validTo, disableSourceCollateral } =
+			args;
+		assertCowSwapQuote(swapQuote, "planSwapCollateralWithCoW");
+
+		const orderAmounts = getCowSwapQuoteOrderAmounts(swapQuote, {
+			slippage,
+			slippageTarget: "buyAmount",
+		});
+		const sourcePosition = account.getPosition(
+			swapQuote.accountIn,
+			swapQuote.vaultIn,
+		);
+		const resolvedValidTo = getCowSwapValidTo(validTo);
+		const params: CowSwapCollateralSwapPlanParams = {
+			chainId: account.chainId,
+			sellToken: swapQuote.vaultIn,
+			buyToken: swapQuote.receiver,
+			sellAmount: orderAmounts.sellAmount,
+			buyAmount: orderAmounts.buyAmount,
+			feeAmount: orderAmounts.feeAmount,
+			quoteId: orderAmounts.quoteId,
+			slippageBips: Math.round((slippage ?? swapQuote.slippage) * 100),
+			validTo: resolvedValidTo,
+			wrapper: {
+				owner: account.owner,
+				account: swapQuote.accountOut,
+				deadline: resolvedValidTo,
+				fromVault: swapQuote.vaultIn,
+				toVault: swapQuote.receiver,
+				fromAmount: orderAmounts.sellAmount,
+				disableSourceCollateral:
+					disableSourceCollateral ??
+					(sourcePosition
+						? sourcePosition.shares <= orderAmounts.sellAmount
+						: false),
+			},
+		};
+
+		return [
+			{
+				type: "cowSwap",
+				kind: "swapCollateral",
+				chainId: account.chainId,
+				params,
+			},
+		];
+	}
+
 	/**
 	 * Builds a transaction plan for swapping debt from one liability vault to another (borrow from source → swap → repay to destination).
 	 *
@@ -2635,6 +3016,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 */
 	planSwapDebt(args: PlanSwapDebtArgs): TransactionPlan {
 		const { swapQuote, account, swapperMode } = args;
+		assertNonCowSwapQuote(swapQuote, "planSwapDebt");
 		const plan: TransactionPlanItem[] = [];
 
 		const liabilityPosition = account?.getPosition(
@@ -2931,6 +3313,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			swapQuote,
 			swapperMode,
 		} = args;
+		assertNonCowSwapQuote(
+			swapQuote,
+			"planMultiplyWithSwap",
+			"planOpenPositionWithCoW",
+		);
 		const plan: TransactionPlanItem[] = [];
 
 		// 1. Check if collateral approval is needed (only if depositing collateral)
@@ -3009,6 +3396,59 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		plan.push(...this.convertBatchItemsToPlan(batchItems, "multiplyWithSwap"));
 
 		return plan;
+	}
+
+	planOpenPositionWithCoW(args: PlanOpenPositionWithCoWArgs): TransactionPlan {
+		const {
+			account,
+			collateralVault,
+			collateralAmount,
+			collateralAsset,
+			swapQuote,
+			slippage,
+			validTo,
+		} = args;
+		assertCowSwapQuote(swapQuote, "planOpenPositionWithCoW");
+
+		if (swapQuote.accountIn !== swapQuote.accountOut) {
+			throw new Error("Account in and account out must be the same");
+		}
+
+		const orderAmounts = getCowSwapQuoteOrderAmounts(swapQuote, {
+			slippage,
+			slippageTarget: "buyAmount",
+		});
+		const resolvedValidTo = getCowSwapValidTo(validTo);
+		const params: CowSwapOpenPositionPlanParams = {
+			chainId: account.chainId,
+			sellToken: swapQuote.tokenIn.address,
+			buyToken: swapQuote.receiver,
+			sellAmount: orderAmounts.sellAmount,
+			buyAmount: orderAmounts.buyAmount,
+			feeAmount: orderAmounts.feeAmount,
+			quoteId: orderAmounts.quoteId,
+			slippageBips: Math.round((slippage ?? swapQuote.slippage) * 100),
+			validTo: resolvedValidTo,
+			collateralToken: collateralAsset,
+			wrapper: {
+				owner: account.owner,
+				account: swapQuote.accountIn,
+				deadline: resolvedValidTo,
+				collateralVault,
+				borrowVault: swapQuote.vaultIn,
+				collateralAmount,
+				borrowAmount: orderAmounts.sellAmount,
+			},
+		};
+
+		return [
+			{
+				type: "cowSwap",
+				kind: "openPosition",
+				chainId: account.chainId,
+				params,
+			},
+		];
 	}
 
 	/**

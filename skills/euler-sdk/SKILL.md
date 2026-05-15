@@ -44,8 +44,8 @@ Reference these guidelines when:
 - `vaultMetaService` when vault type is unknown or mixed
 - `walletService` for native/ERC20 wallet balances and direct/Permit2 allowance state
 - `executionService` for `planX`/`encodeX` and approvals
-- `executionService` for plugin-aware plan simulation, gas estimation, execution, and pre-execution validation
-- `swapService` for provider quotes and route payloads
+- `executionService` for plugin-aware plan simulation, gas estimation, execution, and pre-execution validation; CoW plans execute through `executeCowSwapTransactionPlan`, expose order status/cancellation helpers, and are not simulation/gas-estimation inputs
+- `swapService` for provider quotes and route payloads, including `cowSwap` metadata for CoW-supported position flows
 - `rewardsService` for reward reads and provider-specific claim plans; the default V3 path normalizes Incentra rows as Brevis and returns direct proof-backed Brevis rows when V3 lacks claim metadata
 - `eulerLabelsService` plus exported `utils/eulerLabels` helpers for normalized labels metadata, notices, restrictions, and product/vault flags
 - `oracleAdapterService.fetchOracleAdapterMap(chainId)` returns metadata keyed by normalized `adapter.oracle` address
@@ -61,6 +61,8 @@ Built-in scalar config resolves as `config` prop, explicit SDK option, `EULER_SD
 3. Use service-level `fetch*` methods in hooks for reactive UI.
 4. Set population flags explicitly (`populateMarketPrices`, `populateRewards`, etc.).
 5. Simulate `TransactionPlan` before execution when user risk is non-trivial.
+
+CoW swap plans are an exception to the simulation step: build them from CoW quotes with the CoW-specific planners and execute them through `executeCowSwapTransactionPlan`, then track returned `orderUids` with `fetchCowSwapOrderStatus` or `pollCowSwapOrderStatus`. Use `cancelCowSwapOrder` for open-position/collateral-swap CoW orders and `planCancelClosePositionWithCow` for close-position CoW orders that cancel by invalidating the EVC permit nonce.
 
 ## Companion Skills
 

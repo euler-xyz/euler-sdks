@@ -6,9 +6,9 @@ import type {
 } from "../../entities/Account.js";
 import type { Wallet } from "../../entities/Wallet.js";
 import type {
+	SwapperMode,
 	SwapQuote,
 	SwapQuoteRequest,
-	SwapperMode,
 } from "../swapService/swapServiceTypes.js";
 
 export type EVCBatchItem = {
@@ -448,9 +448,116 @@ export type ContractCall = {
 	value: bigint;
 };
 
-export type TransactionPlanItem = RequiredApproval | EVCBatch | ContractCall;
+export type CowSwapPlanKind =
+	| "openPosition"
+	| "closePosition"
+	| "swapCollateral"
+	| "cancelClosePosition";
+
+export type CowSwapPlanItem<TParams extends object = Record<string, unknown>> =
+	{
+		type: "cowSwap";
+		kind: CowSwapPlanKind;
+		chainId: number;
+		params: TParams;
+	};
+
+export type TransactionPlanItem =
+	| RequiredApproval
+	| EVCBatch
+	| ContractCall
+	| CowSwapPlanItem;
 
 export type TransactionPlan = TransactionPlanItem[];
+
+export function isCowSwapPlanItem(
+	item: TransactionPlanItem,
+): item is CowSwapPlanItem {
+	return item.type === "cowSwap";
+}
+
+export function assertNoCowSwapPlanItems(
+	plan: readonly TransactionPlanItem[],
+	methodName: string,
+): void {
+	if (plan.some(isCowSwapPlanItem)) {
+		throw new Error(
+			`ExecutionService.${methodName} does not support CoW swap plans. Use executeCowSwapTransactionPlan.`,
+		);
+	}
+}
+
+export type CowSwapOpenPositionPlanParams = {
+	chainId: number;
+	sellToken: Address;
+	buyToken: Address;
+	sellAmount: bigint;
+	buyAmount: bigint;
+	feeAmount: bigint;
+	quoteId?: number;
+	slippageBips: number;
+	validTo: number;
+	collateralToken: Address;
+	wrapper: {
+		owner: Address;
+		account: Address;
+		deadline: number;
+		collateralVault: Address;
+		borrowVault: Address;
+		collateralAmount: bigint;
+		borrowAmount: bigint;
+	};
+};
+
+export type CowSwapCollateralSwapPlanParams = {
+	chainId: number;
+	sellToken: Address;
+	buyToken: Address;
+	sellAmount: bigint;
+	buyAmount: bigint;
+	feeAmount: bigint;
+	quoteId?: number;
+	slippageBips: number;
+	validTo: number;
+	wrapper: {
+		owner: Address;
+		account: Address;
+		deadline: number;
+		fromVault: Address;
+		toVault: Address;
+		fromAmount: bigint;
+		disableSourceCollateral: boolean;
+	};
+};
+
+export type CowSwapClosePositionPlanParams = {
+	chainId: number;
+	sellToken: Address;
+	buyToken: Address;
+	sellAmount: bigint;
+	buyAmount: bigint;
+	feeAmount: bigint;
+	quoteId?: number;
+	slippageBips: number;
+	validTo: number;
+	orderKind: "buy" | "sell";
+	wrapper: {
+		owner: Address;
+		account: Address;
+		deadline: number;
+		borrowVault: Address;
+		collateralVault: Address;
+		collateralAmount: bigint;
+	};
+};
+
+export type CowSwapCancelClosePositionPlanParams = {
+	chainId: number;
+	owner: Address;
+	nonce: bigint;
+	nonceNamespace?: bigint;
+	wrapperAddress?: Address;
+};
 
 // Plan function argument types
 export type PlanDepositArgs = {
@@ -592,6 +699,14 @@ export type PlanSwapCollateralArgs = {
 	swapperMode?: SwapperMode;
 };
 
+export type PlanSwapCollateralWithCoWArgs = {
+	account: Account<IHasVaultAddress>;
+	swapQuote: SwapQuote;
+	slippage?: number;
+	validTo?: number;
+	disableSourceCollateral?: boolean;
+};
+
 export type PlanSwapDebtArgs = {
 	account: Account<IHasVaultAddress>;
 	swapQuote: SwapQuote;
@@ -651,6 +766,34 @@ export type PlanMultiplyWithSwapArgs = {
 	collateralWrappedNativeInfo?: WrappedNativeInfo;
 	swapQuote: SwapQuote;
 	swapperMode?: SwapperMode;
+};
+
+export type PlanOpenPositionWithCoWArgs = {
+	account: Account<IHasVaultAddress>;
+	collateralVault: Address;
+	collateralAmount: bigint;
+	collateralAsset: Address;
+	swapQuote: SwapQuote;
+	slippage?: number;
+	validTo?: number;
+};
+
+export type PlanClosePositionWithCowArgs = {
+	account: Account<IHasVaultAddress>;
+	swapQuote: SwapQuote;
+	swapperMode?: SwapperMode;
+	slippage?: number;
+	validTo?: number;
+	orderKind?: "buy" | "sell";
+	maxSellAmount?: bigint;
+};
+
+export type PlanCancelClosePositionWithCowArgs = {
+	chainId: number;
+	owner: Address;
+	nonce: bigint;
+	nonceNamespace?: bigint;
+	wrapperAddress?: Address;
 };
 
 export type PlanMultiplySameAssetArgs = {

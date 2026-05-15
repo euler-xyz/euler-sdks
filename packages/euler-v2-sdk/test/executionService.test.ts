@@ -10,6 +10,7 @@ import {
 } from "viem";
 import { ExecutionService } from "../src/services/executionService/executionService.js";
 import {
+	type CowSwapPlanItem,
 	flattenBatchEntries,
 	type EVCBatchItem,
 	type TransactionPlan,
@@ -148,6 +149,19 @@ function createSwapQuote() {
 			deadline: 123,
 		},
 		route: [{ providerName: "OpenOcean" }],
+	};
+}
+
+function createCowSwapQuote() {
+	return {
+		...createSwapQuote(),
+		route: [{ providerName: "CoW Swap" }],
+		providerData: {
+			quoteId: 42,
+			sellAmount: "1000",
+			buyAmount: "2000",
+			feeAmount: "7",
+		},
 	};
 }
 
@@ -1869,6 +1883,128 @@ test("swap multiply can source supply from savings shares", () => {
 		getAddress(ACCOUNT),
 		getAddress(RECEIVER),
 	]);
+});
+
+test("generic swap-quote plan functions reject CoW quotes", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		isCollateralEnabled: () => false,
+		isControllerEnabled: () => false,
+		getCurrentController: () => undefined,
+		getPosition: () => ({ assets: AMOUNT, shares: AMOUNT, borrowed: AMOUNT }),
+	} as never;
+
+	assert.throws(
+		() =>
+			service.planMultiplyWithSwap({
+				account,
+				collateralVault: COLLATERAL_VAULT,
+				collateralAmount: AMOUNT,
+				collateralAsset: SAME_ASSET,
+				swapQuote: createCowSwapQuote() as never,
+			}),
+		/Use planOpenPositionWithCoW instead/,
+	);
+	assert.throws(
+		() =>
+			service.planSwapCollateral({
+				account,
+				swapQuote: createCowSwapQuote() as never,
+			}),
+		/Use planSwapCollateralWithCoW instead/,
+	);
+	assert.throws(
+		() =>
+			service.planRepayWithSwap({
+				account,
+				swapQuote: createCowSwapQuote() as never,
+			}),
+		/Use planClosePositionWithCow instead/,
+	);
+});
+
+test("CoW plan functions build CoW plan items from raw provider order amounts", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		getPosition: () => ({ assets: 1000n, shares: 1010n, borrowed: AMOUNT }),
+	} as never;
+	const quote = createCowSwapQuote() as never;
+
+	const openPlan = service.planOpenPositionWithCoW({
+		account,
+		collateralVault: COLLATERAL_VAULT,
+		collateralAmount: 5n,
+		collateralAsset: SAME_ASSET,
+		swapQuote: quote,
+		slippage: 0.5,
+		validTo: 1234,
+	});
+	const openItem = openPlan[0] as CowSwapPlanItem;
+	assert.equal(openItem.type, "cowSwap");
+	assert.equal(openItem.kind, "openPosition");
+	assert.deepEqual(openItem.params, {
+		chainId: 1,
+		sellToken: TOKEN_IN,
+		buyToken: RECEIVER,
+		sellAmount: 1007n,
+		buyAmount: 1990n,
+		feeAmount: 7n,
+		quoteId: 42,
+		slippageBips: 50,
+		validTo: 1234,
+		collateralToken: SAME_ASSET,
+		wrapper: {
+			owner: ACCOUNT,
+			account: ACCOUNT,
+			deadline: 1234,
+			collateralVault: COLLATERAL_VAULT,
+			borrowVault: VAULT_IN,
+			collateralAmount: 5n,
+			borrowAmount: 1007n,
+		},
+	});
+
+	const collateralPlan = service.planSwapCollateralWithCoW({
+		account,
+		swapQuote: quote,
+		slippage: 0.5,
+		validTo: 1234,
+		disableSourceCollateral: true,
+	});
+	const collateralItem = collateralPlan[0] as CowSwapPlanItem;
+	assert.equal(collateralItem.kind, "swapCollateral");
+	assert.equal(collateralItem.params.sellAmount, 1007n);
+	assert.equal(collateralItem.params.buyAmount, 1990n);
+	assert.equal(
+		(collateralItem.params as any).wrapper.disableSourceCollateral,
+		true,
+	);
+
+	const closePlan = service.planClosePositionWithCow({
+		account,
+		swapQuote: quote,
+		slippage: 0.5,
+		validTo: 1234,
+	});
+	const closeItem = closePlan[0] as CowSwapPlanItem;
+	assert.equal(closeItem.kind, "closePosition");
+	assert.equal(closeItem.params.sellAmount, 1010n);
+	assert.equal(closeItem.params.buyAmount, 2000n);
+	assert.equal((closeItem.params as any).orderKind, "buy");
+
+	const cancelPlan = service.planCancelClosePositionWithCow({
+		chainId: 1,
+		owner: ACCOUNT,
+		nonce: 17n,
+	});
+	const cancelItem = cancelPlan[0] as CowSwapPlanItem;
+	assert.equal(cancelItem.kind, "cancelClosePosition");
+	assert.equal(cancelItem.params.owner, getAddress(ACCOUNT));
+	assert.equal(cancelItem.params.nonce, 17n);
 });
 
 test("repay-with-swap full repay cleans up active collaterals and source shares when requested", () => {

@@ -1,12 +1,17 @@
 import {
-	encodeFunctionData,
-	maxUint256,
 	type Abi,
 	type Address,
+	encodeFunctionData,
 	type Hash,
 	type Hex,
+	maxUint256,
 	type TransactionReceipt,
 } from "viem";
+import type { AddressOrAccount } from "../../entities/Account.js";
+import {
+	type DecodedSmartContractError,
+	decodeSmartContractErrors,
+} from "../../utils/decodeSmartContractErrors.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
 import type { ProviderService } from "../providerService/index.js";
 import type { IExecutionService } from "./executionService.js";
@@ -16,12 +21,10 @@ import type {
 	TransactionPlan,
 	TransactionPlanItem,
 } from "./executionServiceTypes.js";
-import { flattenBatchEntries } from "./executionServiceTypes.js";
 import {
-	decodeSmartContractErrors,
-	type DecodedSmartContractError,
-} from "../../utils/decodeSmartContractErrors.js";
-import type { AddressOrAccount } from "../../entities/Account.js";
+	assertNoCowSwapPlanItems,
+	flattenBatchEntries,
+} from "./executionServiceTypes.js";
 
 const PERMIT2_ALLOWANCE_ABI = [
 	{
@@ -135,6 +138,7 @@ async function waitForSuccessfulReceipt(
 async function maybeResolveApprovals(
 	args: ExecuteTransactionPlanInternalArgs,
 ): Promise<TransactionPlan> {
+	assertNoCowSwapPlanItems(args.plan, "executeTransactionPlan");
 	const owner =
 		typeof args.account === "string" ? args.account : args.account.owner;
 	return args.executionService.resolveRequiredApprovals({
@@ -171,6 +175,7 @@ async function executeWithDecodedErrors<T>(fn: () => Promise<T>): Promise<T> {
 export async function executeTransactionPlan(
 	args: ExecuteTransactionPlanInternalArgs,
 ): Promise<TransactionPlanExecutionResult> {
+	assertNoCowSwapPlanItems(args.plan, "executeTransactionPlan");
 	const publicClient = args.providerService.getProvider(args.chainId);
 	const plan = await maybeResolveApprovals(args);
 
@@ -280,6 +285,12 @@ export async function executeTransactionPlan(
 				completed += 1;
 				emitProgress(item, "completed", hash);
 				continue;
+			}
+
+			if (item.type === "cowSwap") {
+				throw new Error(
+					"ExecutionService.executeTransactionPlan does not support CoW swap plans in the low-level executor. Use ExecutionService.executeCowSwapTransactionPlan.",
+				);
 			}
 
 			if (item.chainId !== args.chainId) {

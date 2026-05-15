@@ -1,10 +1,17 @@
 import { getAddress, zeroAddress } from "viem";
 import { applyBuildQuery, type BuildQueryFn } from "../../utils/buildQuery.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
+import {
+	buildClosePositionQuoteAppData,
+	buildCollateralSwapQuoteAppData,
+	buildOpenPositionQuoteAppData,
+	getCowSwapChainConfig,
+} from "../executionService/cowSwapHelpers.js";
 import type {
 	GetDepositQuoteArgs,
 	GetRepayQuoteArgs,
 	GetWalletSwapQuoteArgs,
+	SwapProviderExtraData,
 	SwapProvidersApiResponse,
 	SwapQuote,
 	SwapQuoteRequest,
@@ -35,6 +42,10 @@ export interface ISwapService {
 }
 
 const DEFAULT_DEADLINE = 1800; // 30 minutes
+const COWSWAP_ORDER_DEADLINE_SECONDS = 900;
+const COWSWAP_PROVIDER_NAME = "cow";
+const COWSWAP_PROVIDER_LABEL = "cow swap";
+const CLOSE_POSITION_FULL_REPAY_BUY_AMOUNT_BUFFER_DENOMINATOR = 100_000n;
 const MAX_SLIPPAGE = 50;
 export class SwapService implements ISwapService {
 	constructor(
@@ -137,9 +148,32 @@ export class SwapService implements ISwapService {
 		}
 
 		// Validate verifier and slippage data for each quote
-		for (const quote of jsonData.data) {
-			this.validateQuoteMatchesRequest(validatedRequest, quote);
-			this.validateVerifierData(validatedRequest, quote);
+		for (const [index, quote] of jsonData.data.entries()) {
+			try {
+				this.validateQuoteMatchesRequest(validatedRequest, quote);
+				this.validateVerifierData(validatedRequest, quote);
+				this.validateCowSwapQuoteMatchesRequest(validatedRequest, quote);
+			} catch (error) {
+				const route = quote.route
+					.map((hop) => hop.providerName)
+					.filter(Boolean)
+					.join(" -> ");
+				const context = [
+					`quote #${index + 1}`,
+					route ? `route=${route}` : undefined,
+					`amountIn=${quote.amountIn}`,
+					`amountOut=${quote.amountOut}`,
+					quote.providerData
+						? `providerData=${JSON.stringify(quote.providerData)}`
+						: undefined,
+				]
+					.filter(Boolean)
+					.join(", ");
+				const message = error instanceof Error ? error.message : String(error);
+				throw new Error(
+					`Swap quote validation failed (${context}): ${message}`,
+				);
+			}
 		}
 
 		return jsonData.data;
@@ -201,6 +235,13 @@ export class SwapService implements ISwapService {
 
 		if (request.provider) {
 			params.provider = request.provider;
+		}
+
+		if (request.providerExtraData) {
+			params.providerExtraData = JSON.stringify(
+				request.providerExtraData,
+				(_key, value) => (typeof value === "bigint" ? value.toString() : value),
+			);
 		}
 
 		if (request.unusedInputReceiver) {
@@ -346,6 +387,144 @@ export class SwapService implements ISwapService {
 		}
 	}
 
+	private validateCowSwapQuoteMatchesRequest(
+		request: SwapQuoteRequest,
+		quote: SwapQuote,
+	): void {
+		if (!request.providerExtraData) return;
+		this.validateSupportedCowSwapRequest(request);
+		const isCowQuote = this.isCowSwapQuote(quote);
+		if (
+			!isCowQuote &&
+			request.provider &&
+			this.isCowSwapProviderName(request.provider)
+		) {
+			throw new Error(`CoW quote route must include ${COWSWAP_PROVIDER_NAME}`);
+		}
+		if (!isCowQuote) return;
+
+		const quoteId = this.normalizeCowSwapQuoteId(quote.providerData?.quoteId);
+		if (quoteId === undefined) {
+			throw new Error(
+				`CoW quote providerData.quoteId missing or invalid: ${String(
+					quote.providerData?.quoteId,
+				)}`,
+			);
+		}
+		quote.providerData = { ...quote.providerData, quoteId };
+
+		const sellAmount = this.parseCowSwapProviderAmount(
+			"providerData.sellAmount",
+			quote.providerData?.sellAmount,
+		);
+		const feeAmount = this.parseCowSwapProviderAmount(
+			"providerData.feeAmount",
+			quote.providerData?.feeAmount,
+		);
+		const buyAmount = this.parseCowSwapProviderAmount(
+			"providerData.buyAmount",
+			quote.providerData?.buyAmount,
+		);
+
+		if (sellAmount <= 0n || buyAmount <= 0n) {
+			throw new Error("CoW quote order amount must be positive");
+		}
+
+		if (request.swapperMode === SwapperMode.TARGET_DEBT) {
+			this.assertBigIntValue(
+				"providerData.buyAmount",
+				buyAmount,
+				this.getExpectedCowSwapBuyAmount(request),
+			);
+			return;
+		}
+
+		const actualSellAmount = sellAmount + feeAmount;
+		const expectedSellAmount = this.getExpectedCowSwapSellAmount(request);
+		if (actualSellAmount !== expectedSellAmount) {
+			throw new Error(
+				`CoW quote providerData sell total mismatch: providerData.sellAmount (${sellAmount}) + providerData.feeAmount (${feeAmount}) = ${actualSellAmount}, expected ${expectedSellAmount}`,
+			);
+		}
+	}
+
+	private validateSupportedCowSwapRequest(request: SwapQuoteRequest): void {
+		if (
+			request.providerExtraData?.type === "closePosition" &&
+			request.swapperMode === SwapperMode.TARGET_DEBT &&
+			request.isRepay
+		) {
+			return;
+		}
+
+		if (
+			(request.providerExtraData?.type === "openPosition" ||
+				request.providerExtraData?.type === "collateralSwap") &&
+			request.swapperMode === SwapperMode.EXACT_IN &&
+			!request.isRepay
+		) {
+			return;
+		}
+
+		throw new Error("Unsupported CoW quote request");
+	}
+
+	private getExpectedCowSwapSellAmount(request: SwapQuoteRequest): bigint {
+		if (request.providerExtraData?.type === "collateralSwap") {
+			const sharesAmount =
+				request.providerExtraData.swapCollateralSharesAmountIn;
+			if (sharesAmount === undefined || sharesAmount <= 0n) {
+				throw new Error("CoW quote collateral swap sell amount missing");
+			}
+			return sharesAmount;
+		}
+		return request.amount;
+	}
+
+	private getExpectedCowSwapBuyAmount(request: SwapQuoteRequest): bigint {
+		if (
+			request.providerExtraData?.type === "closePosition" &&
+			request.targetDebt === 0n
+		) {
+			return (
+				request.currentDebt +
+				request.currentDebt /
+					CLOSE_POSITION_FULL_REPAY_BUY_AMOUNT_BUFFER_DENOMINATOR
+			);
+		}
+		return request.amount;
+	}
+
+	private parseCowSwapProviderAmount(field: string, value: unknown): bigint {
+		if (typeof value !== "string" || !/^\d+$/.test(value)) {
+			throw new Error(
+				`CoW quote ${field} missing or invalid: ${String(value)}`,
+			);
+		}
+		return BigInt(value);
+	}
+
+	private normalizeCowSwapQuoteId(quoteId: unknown): number | undefined {
+		if (
+			typeof quoteId === "number" &&
+			Number.isSafeInteger(quoteId) &&
+			quoteId >= 0
+		) {
+			return quoteId;
+		}
+		if (typeof quoteId === "string" && /^\d+$/.test(quoteId)) {
+			const parsed = Number(quoteId);
+			if (Number.isSafeInteger(parsed)) return parsed;
+		}
+		return undefined;
+	}
+
+	private isCowSwapQuote(quote: SwapQuote): boolean {
+		return quote.route.some((hop) =>
+			this.isCowSwapProviderName(hop.providerName),
+		);
+	}
+
 	private getExpectedVerifierAmount(
 		request: SwapQuoteRequest,
 		quote: SwapQuote,
@@ -375,8 +554,18 @@ export class SwapService implements ISwapService {
 		actual: string,
 		expected: bigint,
 	): void {
-		if (BigInt(actual) !== expected) {
-			throw new Error(`Swap quote ${field} mismatch`);
+		this.assertBigIntValue(field, BigInt(actual), expected);
+	}
+
+	private assertBigIntValue(
+		field: string,
+		actual: bigint,
+		expected: bigint,
+	): void {
+		if (actual !== expected) {
+			throw new Error(
+				`Swap quote ${field} mismatch: actual ${actual}, expected ${expected}`,
+			);
 		}
 	}
 
@@ -454,6 +643,12 @@ export class SwapService implements ISwapService {
 					: liabilityAmount;
 		}
 
+		const resolvedDeadline =
+			deadline ??
+			(args.providerExtraData ||
+			this.shouldBuildCowProviderExtraData(args.provider, args.cowSwap)
+				? this.getCowSwapDeadline()
+				: 0);
 		const quotes = await this.fetchSwapQuotes({
 			chainId,
 			tokenIn: fromAsset,
@@ -469,9 +664,12 @@ export class SwapService implements ISwapService {
 			isRepay: true,
 			targetDebt,
 			currentDebt,
-			deadline: deadline ?? 0,
+			deadline: resolvedDeadline,
 			unusedInputReceiver: args.unusedInputReceiver,
 			provider: args.provider,
+			providerExtraData:
+				args.providerExtraData ??
+				this.buildRepayCowSwapProviderExtraData(args, resolvedDeadline),
 		});
 
 		if (quotes.length === 0) {
@@ -529,6 +727,12 @@ export class SwapService implements ISwapService {
 
 		this.validateSlippage(slippage);
 
+		const resolvedDeadline =
+			deadline ??
+			(args.providerExtraData ||
+			this.shouldBuildCowProviderExtraData(args.provider, args.cowSwap)
+				? this.getCowSwapDeadline()
+				: 0);
 		const quotes = await this.fetchSwapQuotes({
 			chainId,
 			tokenIn: fromAsset,
@@ -544,10 +748,13 @@ export class SwapService implements ISwapService {
 			isRepay: false,
 			targetDebt: 0n,
 			currentDebt: 0n,
-			deadline: deadline ?? 0,
+			deadline: resolvedDeadline,
 			unusedInputReceiver: args.unusedInputReceiver,
 			skipSweepDepositOut: args.skipSweepDepositOut,
 			provider: args.provider,
+			providerExtraData:
+				args.providerExtraData ??
+				this.buildDepositCowSwapProviderExtraData(args, resolvedDeadline),
 		});
 
 		if (quotes.length === 0) {
@@ -613,6 +820,7 @@ export class SwapService implements ISwapService {
 			transferOutputToReceiver: true,
 			skipSweepDepositOut: true,
 			provider: args.provider,
+			providerExtraData: args.providerExtraData,
 		});
 
 		if (quotes.length === 0) {
@@ -633,5 +841,118 @@ export class SwapService implements ISwapService {
 				"Valid slippage between 0 and 50% must be provided for swap",
 			);
 		}
+	}
+
+	private buildDepositCowSwapProviderExtraData(
+		args: GetDepositQuoteArgs,
+		deadline: number,
+	): SwapProviderExtraData | undefined {
+		if (!this.shouldBuildCowProviderExtraData(args.provider, args.cowSwap)) {
+			return undefined;
+		}
+		const chainConfig = this.getRequiredCowSwapChainConfig(args.chainId);
+
+		if (args.cowSwap?.type === "openPosition") {
+			return {
+				type: "openPosition",
+				appData: buildOpenPositionQuoteAppData(
+					{
+						owner: args.cowSwap.owner,
+						account: args.fromAccount,
+						deadline,
+						collateralVault: args.cowSwap.collateralVault,
+						borrowVault: args.fromVault,
+						collateralAmount: args.cowSwap.collateralAmount,
+						borrowAmount: args.amount,
+					},
+					chainConfig.openPositionWrapper,
+					this.getSlippageBips(args.slippage),
+				),
+			};
+		}
+
+		if (args.cowSwap?.type === "collateralSwap") {
+			return {
+				type: "collateralSwap",
+				swapCollateralSharesAmountIn: args.cowSwap.sharesAmount,
+				appData: buildCollateralSwapQuoteAppData(
+					{
+						owner: args.cowSwap.owner,
+						account: args.toAccount,
+						deadline,
+						fromVault: args.fromVault,
+						toVault: args.toVault,
+						fromAmount: args.cowSwap.sharesAmount,
+						disableSourceCollateral:
+							args.cowSwap.disableSourceCollateral ?? false,
+					},
+					chainConfig.collateralSwapWrapper,
+					this.getSlippageBips(args.slippage),
+				),
+			};
+		}
+
+		return undefined;
+	}
+
+	private buildRepayCowSwapProviderExtraData(
+		args: GetRepayQuoteArgs,
+		deadline: number,
+	): SwapProviderExtraData | undefined {
+		if (!this.shouldBuildCowProviderExtraData(args.provider, args.cowSwap)) {
+			return undefined;
+		}
+		const chainConfig = this.getRequiredCowSwapChainConfig(args.chainId);
+
+		return {
+			type: "closePosition",
+			appData: buildClosePositionQuoteAppData(
+				{
+					owner: args.cowSwap.owner,
+					account: args.toAccount,
+					deadline,
+					borrowVault: args.liabilityVault,
+					collateralVault: args.fromVault,
+					collateralAmount: args.cowSwap.collateralSharesAmount,
+				},
+				chainConfig.closePositionWrapper,
+				this.getSlippageBips(args.slippage),
+			),
+		};
+	}
+
+	private shouldBuildCowProviderExtraData(
+		provider: string | undefined,
+		cowSwap: GetDepositQuoteArgs["cowSwap"] | GetRepayQuoteArgs["cowSwap"],
+	): cowSwap is NonNullable<
+		GetDepositQuoteArgs["cowSwap"] | GetRepayQuoteArgs["cowSwap"]
+	> {
+		return !!cowSwap && (!provider || this.isCowSwapProviderName(provider));
+	}
+
+	private getCowSwapDeadline(deadline?: number): number {
+		return (
+			deadline ?? Math.floor(Date.now() / 1000) + COWSWAP_ORDER_DEADLINE_SECONDS
+		);
+	}
+
+	private getSlippageBips(slippage: number): number {
+		return Math.round(slippage * 100);
+	}
+
+	private getRequiredCowSwapChainConfig(chainId: number) {
+		const chainConfig = getCowSwapChainConfig(chainId);
+		if (!chainConfig) {
+			throw new Error(`CoW Swap not supported on chain ${chainId}`);
+		}
+		return chainConfig;
+	}
+
+	private isCowSwapProviderName(provider: string): boolean {
+		const providerName = provider.toLowerCase();
+		return (
+			providerName === COWSWAP_PROVIDER_NAME ||
+			providerName === COWSWAP_PROVIDER_LABEL
+		);
 	}
 }

@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { encodeFunctionData, erc20Abi, getAddress, type Hex } from "viem";
 import {
+	decodeFunctionData,
+	encodeFunctionData,
+	erc20Abi,
+	getAddress,
+	type Hex,
+} from "viem";
+import {
+	cancelCowSwapOrder,
 	ExecutionService,
 	executeTransactionPlan,
+	fetchCowSwapOrderStatus,
+	getCowSwapOrderExplorerUrl,
+	pollCowSwapOrderStatus,
+	type CowSwapOpenPositionPlanParams,
+	type CowSwapPlanItem,
 	type EVCBatchItem,
 	type TransactionPlan,
 } from "../src/services/executionService/index.js";
@@ -249,4 +261,334 @@ test("ExecutionService.executeTransactionPlan executes through the service insta
 	assert.equal(waits.length, 1);
 	assert.deepEqual(result.hashes, waits);
 	assert.equal((sent[0] as { to: Hex }).to, EVC);
+});
+
+test("executeTransactionPlan rejects CoW swap plans", async () => {
+	const { executionService, deploymentService, providerService, walletClient } =
+		createExecutorMocks();
+	const cowPlanItem: CowSwapPlanItem = {
+		type: "cowSwap",
+		kind: "openPosition",
+		chainId: 1,
+		params: {},
+	};
+
+	await assert.rejects(
+		executeTransactionPlan({
+			plan: [cowPlanItem],
+			executionService,
+			deploymentService,
+			providerService,
+			chainId: 1,
+			account: ACCOUNT,
+			sendTransaction: walletClient.sendTransaction,
+		}),
+		/does not support CoW swap plans/,
+	);
+});
+
+test("ExecutionService.executeCowSwapTransactionPlan submits a CoW order", async () => {
+	const { deploymentService, walletService, walletClient } = createExecutorMocks();
+	const deadline = 1_800_000_000;
+	const cowPlanItem: CowSwapPlanItem<CowSwapOpenPositionPlanParams> = {
+		type: "cowSwap",
+		kind: "openPosition",
+		chainId: 1,
+		params: {
+			chainId: 1,
+			sellToken: TOKEN,
+			buyToken: TARGET,
+			sellAmount: 10n,
+			buyAmount: 20n,
+			feeAmount: 0n,
+			quoteId: 123,
+			slippageBips: 50,
+			validTo: deadline,
+			collateralToken: TOKEN,
+			wrapper: {
+				owner: ACCOUNT,
+				account: ACCOUNT,
+				deadline,
+				collateralVault: SPENDER,
+				borrowVault: TARGET,
+				collateralAmount: 5n,
+				borrowAmount: 10n,
+			},
+		},
+	};
+	let submittedBody: Record<string, unknown> | undefined;
+	const progress: string[] = [];
+	const publicClient = {
+		waitForTransactionReceipt: async ({ hash }: { hash: Hex }) => receipt(hash),
+		readContract: async (parameters: { functionName?: string }) => {
+			if (parameters.functionName === "allowance") return 100n;
+			if (parameters.functionName === "getNonce") return 1n;
+			if (parameters.functionName === "encodePermitData") return "0x1234";
+			throw new Error(`Unexpected readContract ${parameters.functionName}`);
+		},
+	} as never;
+	const providerService = {
+		getProvider: () => publicClient,
+	} as never;
+	const executionService = new ExecutionService(
+		deploymentService,
+		walletService,
+		providerService,
+	);
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = (async (_url, init) => {
+		submittedBody = JSON.parse(String(init?.body));
+		return new Response(JSON.stringify({ uid: "0xorderuid" }), {
+			status: 201,
+			headers: { "content-type": "application/json" },
+		});
+	}) as typeof fetch;
+
+	try {
+		const result = await executionService.executeCowSwapTransactionPlan({
+			plan: [cowPlanItem],
+			chainId: 1,
+			account: ACCOUNT,
+			sendTransaction: walletClient.sendTransaction,
+			signTypedData: async () => `0x${"11".repeat(64)}1b` as Hex,
+			onProgress: ({ status }) => {
+				if (status) progress.push(status);
+			},
+		});
+
+		assert.deepEqual(result.orderUids, ["0xorderuid"]);
+		assert.equal(submittedBody?.quoteId, 123);
+		assert.equal(submittedBody?.sellAmount, "10");
+		assert.equal(submittedBody?.buyAmount, "20");
+		assert.deepEqual(progress, [
+			"approval",
+			"signPermit",
+			"signOrder",
+			"submitOrder",
+			"completed",
+		]);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test("fetchCowSwapOrderStatus combines CoW competition and lifecycle status", async () => {
+	const originalFetch = globalThis.fetch;
+	const urls: string[] = [];
+	globalThis.fetch = (async (input) => {
+		const url = String(input);
+		urls.push(url);
+		if (url.endsWith("/status")) {
+			return new Response(JSON.stringify({ type: "active" }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		}
+		return new Response(JSON.stringify({ status: "fulfilled" }), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		});
+	}) as typeof fetch;
+
+	try {
+		const status = await fetchCowSwapOrderStatus({
+			orderUid: "0xorderuid",
+			orderbookUrl: "https://cow.example",
+		});
+
+		assert.equal(status.type, "fulfilled");
+		assert.equal(status.competitionType, "active");
+		assert.equal(status.orderType, "fulfilled");
+		assert.equal(status.terminal, true);
+		assert.deepEqual(urls.sort(), [
+			"https://cow.example/api/v1/orders/0xorderuid",
+			"https://cow.example/api/v1/orders/0xorderuid/status",
+		]);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test("getCowSwapOrderExplorerUrl builds CoW Explorer order links", () => {
+	assert.equal(
+		getCowSwapOrderExplorerUrl("0xorderuid"),
+		"https://explorer.cow.fi/orders/0xorderuid",
+	);
+});
+
+test("pollCowSwapOrderStatus resolves when the order becomes terminal", async () => {
+	const originalFetch = globalThis.fetch;
+	let lifecycleCalls = 0;
+	const seen: string[] = [];
+	globalThis.fetch = (async (input) => {
+		const url = String(input);
+		if (url.endsWith("/status")) {
+			return new Response(JSON.stringify({ type: "open" }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		}
+		lifecycleCalls += 1;
+		return new Response(
+			JSON.stringify({ status: lifecycleCalls === 1 ? "open" : "cancelled" }),
+			{
+				status: 200,
+				headers: { "content-type": "application/json" },
+			},
+		);
+	}) as typeof fetch;
+
+	try {
+		const status = await pollCowSwapOrderStatus({
+			orderUid: "0xorderuid",
+			orderbookUrl: "https://cow.example",
+			intervalMs: 1,
+			timeoutMs: 100,
+			onStatus: (nextStatus) => seen.push(nextStatus.type),
+		});
+
+		assert.equal(status.type, "cancelled");
+		assert.deepEqual(seen, ["open", "cancelled"]);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test("cancelCowSwapOrder signs cancellation typed data and submits DELETE", async () => {
+	const originalFetch = globalThis.fetch;
+	let submittedBody: Record<string, unknown> | undefined;
+	globalThis.fetch = (async (_input, init) => {
+		assert.equal(init?.method, "DELETE");
+		submittedBody = JSON.parse(String(init?.body));
+		return new Response(null, { status: 200 });
+	}) as typeof fetch;
+
+	try {
+		let typedData:
+			| {
+					domain: Record<string, unknown>;
+					primaryType: string;
+					message: Record<string, unknown>;
+			  }
+			| undefined;
+		await cancelCowSwapOrder({
+			orderUid: "0xorderuid",
+			chainId: 1,
+			orderbookUrl: "https://cow.example",
+			signTypedData: async (request) => {
+				typedData = request;
+				return "0xcancel" as Hex;
+			},
+		});
+
+		assert.equal(typedData?.primaryType, "OrderCancellations");
+		assert.equal(
+			typedData?.domain.verifyingContract,
+			"0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+		);
+		assert.deepEqual(typedData?.message.orderUids, ["0xorderuid"]);
+		assert.deepEqual(submittedBody, {
+			orderUids: ["0xorderuid"],
+			signature: "0xcancel",
+			signingScheme: "eip712",
+		});
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test("ExecutionService.executeCowSwapTransactionPlan invalidates close-position CoW permit nonce", async () => {
+	const { deploymentService, walletService, walletClient, sent } =
+		createExecutorMocks();
+	const publicClient = {
+		waitForTransactionReceipt: async ({ hash }: { hash: Hex }) => receipt(hash),
+		readContract: async (parameters: { functionName?: string }) => {
+			if (parameters.functionName === "getNonce") return 17n;
+			throw new Error(`Unexpected readContract ${parameters.functionName}`);
+		},
+	} as never;
+	const providerService = {
+		getProvider: () => publicClient,
+	} as never;
+	const executionService = new ExecutionService(
+		deploymentService,
+		walletService,
+		providerService,
+	);
+
+	const plan = executionService.planCancelClosePositionWithCow({
+		chainId: 1,
+		owner: ACCOUNT,
+		nonce: 17n,
+	});
+	const progress: string[] = [];
+	const result = await executionService.executeCowSwapTransactionPlan({
+		plan,
+		chainId: 1,
+		account: ACCOUNT,
+		sendTransaction: walletClient.sendTransaction,
+		signTypedData: async () => "0xunused" as Hex,
+		onProgress: ({ status }) => {
+			if (status) progress.push(status);
+		},
+	});
+
+	assert.deepEqual(progress, ["cancelPermit", "cancelPermit", "completed"]);
+	assert.equal(result.hashes.length, 1);
+	assert.equal(result.orderUids.length, 0);
+	assert.equal(result.results[0]?.permitCancellation?.nonce, 17n);
+	const tx = sent[0] as { to: Hex; data: Hex };
+	assert.equal(tx.to, EVC);
+	const decoded = decodeFunctionData({
+		abi: [
+			{
+				type: "function",
+				name: "setNonce",
+				inputs: [
+					{ name: "addressPrefix", type: "bytes19" },
+					{ name: "nonceNamespace", type: "uint256" },
+					{ name: "nonce", type: "uint256" },
+				],
+				outputs: [],
+				stateMutability: "payable",
+			},
+		],
+		data: tx.data,
+	});
+	assert.equal(decoded.functionName, "setNonce");
+	assert.equal(decoded.args[2], 18n);
+});
+
+test("ExecutionService.executeTransactionPlan rejects CoW plan items", async () => {
+	const { deploymentService, providerService, walletService, walletClient } =
+		createExecutorMocks();
+	const executionService = new ExecutionService(
+		deploymentService,
+		walletService,
+		providerService,
+	);
+
+	await assert.rejects(
+		executionService.executeTransactionPlan({
+			plan: [
+				{
+					type: "cowSwap",
+					kind: "openPosition",
+					chainId: 1,
+					params: {},
+				},
+				{
+					type: "requiredApproval",
+					token: TOKEN,
+					owner: ACCOUNT,
+					spender: SPENDER,
+					amount: 10n,
+				},
+			],
+			chainId: 1,
+			account: ACCOUNT,
+			sendTransaction: walletClient.sendTransaction,
+		}),
+		/does not support CoW swap plans/,
+	);
 });
