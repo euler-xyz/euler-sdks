@@ -39,7 +39,12 @@ const DEFAULT_FUUL_FACTORY: Address =
 const BREVIS_LEND = 2002;
 const BREVIS_BORROW = 2001;
 
-type MerklOpportunityType = "EULER" | "MULTILENDBORROW" | "ERC20LOGPROCESSOR";
+type MerklOpportunityType =
+	| "EULER"
+	| "MULTILENDBORROW"
+	| "ERC20LOGPROCESSOR"
+	| "EULER_BORROW_FROM_COLLATERAL"
+	| "EULER_MULTI_BORROW_FROM_COLLATERAL";
 
 const MERKL_EULER_SOURCE_URL = "https://app.merkl.xyz/?protocol=euler";
 
@@ -79,6 +84,13 @@ const sanitizeFuulClaimChecks = (
 const extractMerklVaultAddress = (identifier: string): string | undefined => {
 	const match = identifier.match(/^0x[a-fA-F0-9]{40}/);
 	return match ? match[0]!.toLowerCase() : undefined;
+};
+
+const normalizeAddressList = (
+	list?: readonly string[],
+): string[] | undefined => {
+	if (!list?.length) return undefined;
+	return list.map((address) => address.toLowerCase());
 };
 
 const mapMerklSubType = (
@@ -387,6 +399,14 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				"ERC20LOGPROCESSOR",
 				`${this.merklApiUrl}/opportunities/?chainId=${chainId}&mainProtocolId=euler&campaigns=true&type=ERC20LOGPROCESSOR`,
 			],
+			[
+				"EULER_BORROW_FROM_COLLATERAL",
+				`${this.merklApiUrl}/opportunities/?chainId=${chainId}&mainProtocolId=euler&campaigns=true&type=EULER_BORROW_FROM_COLLATERAL`,
+			],
+			[
+				"EULER_MULTI_BORROW_FROM_COLLATERAL",
+				`${this.merklApiUrl}/opportunities/?chainId=${chainId}&mainProtocolId=euler&campaigns=true&type=EULER_MULTI_BORROW_FROM_COLLATERAL`,
+			],
 		];
 
 		const results = await Promise.all(
@@ -405,9 +425,70 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				const aprs = merklAprMap(opp);
 
 				for (const c of opp.campaigns ?? []) {
+					if (
+						type === "EULER_BORROW_FROM_COLLATERAL" ||
+						type === "EULER_MULTI_BORROW_FROM_COLLATERAL"
+					) {
+						const apr = aprs.get(c.campaignId) ?? c.apr ?? 0;
+						if (!apr) continue;
+
+						const pairs: Array<{ vault: string; collateral: string }> = [];
+						for (const vault of c.params?.vaults ?? []) {
+							const vaultAddress = vault.evkAddress?.toLowerCase();
+							if (!vaultAddress) continue;
+							for (const collateral of vault.collaterals ?? []) {
+								const collateralAddress =
+									collateral.tokenAddress?.toLowerCase();
+								if (!collateralAddress) continue;
+								pairs.push({
+									vault: vaultAddress,
+									collateral: collateralAddress,
+								});
+							}
+						}
+
+						if (
+							pairs.length === 0 &&
+							c.params?.evkAddress &&
+							c.params.collateralAddress
+						) {
+							pairs.push({
+								vault: c.params.evkAddress.toLowerCase(),
+								collateral: c.params.collateralAddress.toLowerCase(),
+							});
+						}
+
+						for (const pair of pairs) {
+							campaigns.push({
+								campaignId: c.campaignId,
+								source: "merkl",
+								action: "BORROW_COLLATERAL",
+								apr: apr / 100,
+								rewardTokenAddress: getAddress(
+									c.rewardToken.address,
+								) as Address,
+								rewardTokenSymbol: c.rewardToken.symbol,
+								rewardTokenIcon: c.rewardToken.icon,
+								dailyRewards: c.dailyRewards,
+								endTimestamp: c.endTimestamp,
+								collateralAddress: normalizeAddress(pair.collateral),
+								sourceUrl: merklOpportunityUrl(opp, type),
+								whitelist: normalizeAddressList(c.params?.whitelist),
+								blacklist: normalizeAddressList(c.params?.blacklist),
+								_vaultAddress: pair.vault,
+							} as RewardCampaign & { _vaultAddress: string });
+						}
+						continue;
+					}
+
 					if (type === "MULTILENDBORROW") {
 						const action =
-							opp.action === "LEND" ? ("LEND" as const) : ("BORROW" as const);
+							opp.action === "LEND"
+								? ("LEND" as const)
+								: opp.action === "BORROW"
+									? ("BORROW" as const)
+									: undefined;
+						if (!action) continue;
 						const apr = aprs.get(c.campaignId) ?? c.apr ?? 0;
 						if (!apr) continue;
 
@@ -431,13 +512,20 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 								dailyRewards: c.dailyRewards,
 								endTimestamp: c.endTimestamp,
 								sourceUrl: merklOpportunityUrl(opp, type),
+								whitelist: normalizeAddressList(c.params?.whitelist),
+								blacklist: normalizeAddressList(c.params?.blacklist),
 								_vaultAddress: vaultAddress,
 							} as RewardCampaign & { _vaultAddress: string });
 						}
 						continue;
 					}
 
-					const action = mapMerklSubType(c.subType) ?? opp.action;
+					const action =
+						mapMerklSubType(c.subType) ??
+						(opp.action === "LEND" || opp.action === "BORROW"
+							? opp.action
+							: undefined);
+					if (!action) continue;
 					const vaultAddress =
 						(type === "ERC20LOGPROCESSOR"
 							? c.params?.targetToken
@@ -460,6 +548,8 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 						endTimestamp: c.endTimestamp,
 						collateralAddress: normalizeAddress(c.params?.collateralAddress),
 						sourceUrl: merklOpportunityUrl(opp, type),
+						whitelist: normalizeAddressList(c.params?.whitelist),
+						blacklist: normalizeAddressList(c.params?.blacklist),
 						_vaultAddress: vaultAddress,
 					} as RewardCampaign & { _vaultAddress: string });
 				}
@@ -581,9 +671,22 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				map.set(key, info);
 			}
 
-			const dedupeKey = `${campaign.source}:${campaign.campaignId}`;
+			const dedupeKey = [
+				campaign.source,
+				campaign.campaignId,
+				campaign.action,
+				campaign.collateralAddress?.toLowerCase(),
+				campaign.rewardTokenAddress?.toLowerCase(),
+			].join(":");
 			const exists = info.campaigns.some(
-				(c) => `${c.source}:${c.campaignId}` === dedupeKey,
+				(c) =>
+					[
+						c.source,
+						c.campaignId,
+						c.action,
+						c.collateralAddress?.toLowerCase(),
+						c.rewardTokenAddress?.toLowerCase(),
+					].join(":") === dedupeKey,
 			);
 			if (exists) continue;
 

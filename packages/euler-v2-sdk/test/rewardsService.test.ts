@@ -9,6 +9,7 @@ import type {
 	UserReward,
 	VaultRewardInfo,
 } from "../src/services/rewardsService/index.js";
+import type { MerklOpportunity } from "../src/services/rewardsService/rewardsServiceTypes.js";
 import { RewardsV3Adapter } from "../src/services/rewardsService/adapters/rewardsV3Adapter/index.js";
 import { RewardsDirectAdapter } from "../src/services/rewardsService/adapters/rewardsDirectAdapter/index.js";
 
@@ -39,6 +40,13 @@ const fuulProjectAddress = getAddress(
 const otherRewardToken = getAddress(
 	"0x0000000000000000000000000000000000000007",
 ) as Address;
+const secondCollateralAddress = getAddress(
+	"0x0000000000000000000000000000000000000008",
+) as Address;
+const secondVaultAddress = getAddress(
+	"0x0000000000000000000000000000000000000009",
+) as Address;
+const farFutureTimestamp = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
 
 const emptyAdapter: IRewardsAdapter = {
 	async fetchVaultRewards() {
@@ -125,6 +133,60 @@ const makeFuulReward = (overrides: Partial<UserReward> = {}): UserReward => ({
 	...overrides,
 });
 
+const makeMerklOpportunity = (
+	overrides: Partial<MerklOpportunity>,
+): MerklOpportunity =>
+	({
+		chainId: 1,
+		chain: { name: "Ethereum" },
+		type: "EULER",
+		identifier: `${vaultAddress}-test`,
+		status: "LIVE",
+		action: "LEND",
+		apr: 0,
+		dailyRewards: 0,
+		aprRecord: { breakdowns: [] },
+		campaigns: [],
+		...overrides,
+	}) as MerklOpportunity;
+
+const makeMerklCampaign = (
+	overrides: Partial<MerklOpportunity["campaigns"][number]>,
+): MerklOpportunity["campaigns"][number] =>
+	({
+		id: "campaign-row-1",
+		campaignId: "campaign-1",
+		type: "EULER",
+		subType: 0,
+		rewardToken: {
+			address: rewardToken,
+			symbol: "EUL",
+			icon: "https://example.invalid/eul.png",
+		},
+		apr: 0,
+		dailyRewards: 100,
+		startTimestamp: 0,
+		endTimestamp: farFutureTimestamp,
+		params: {
+			targetToken: vaultAddress,
+		},
+		...overrides,
+	}) as MerklOpportunity["campaigns"][number];
+
+const makeDirectRewardsAdapter = (
+	opportunitiesByType: Record<string, MerklOpportunity[]>,
+): RewardsDirectAdapter => {
+	const adapter = new RewardsDirectAdapter({
+		enableBrevis: false,
+		enableFuul: false,
+	});
+	adapter.setQueryMerklOpportunities(async (url) => {
+		const type = new URL(url).searchParams.get("type");
+		return type ? (opportunitiesByType[type] ?? []) : [];
+	});
+	return adapter;
+};
+
 test("V3 rewards adapter normalizes Incentra APY campaigns as Brevis", async () => {
 	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
 	adapter.setQueryV3RewardsApyPage(async () => ({
@@ -203,6 +265,184 @@ test("V3 rewards adapter preserves collateral and looping campaign metadata", as
 	assert.equal(info?.campaigns[1]?.collateralAddress, otherRewardToken);
 	assert.equal(info?.campaigns[1]?.minMultiplier, 2);
 	assert.equal(info?.campaigns[1]?.maxMultiplier, 5);
+});
+
+test("direct rewards adapter expands Merkl MULTILENDBORROW markets", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		MULTILENDBORROW: [
+			makeMerklOpportunity({
+				type: "MULTILENDBORROW",
+				identifier: "multi-lend-borrow-1",
+				action: "BORROW",
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "multi-1",
+						type: "MULTILENDBORROW",
+						apr: 2.5,
+						params: {
+							whitelist: [accountAddress],
+							blacklist: [otherAccountAddress],
+							markets: [
+								{
+									campaignParameters: {
+										evkAddress: vaultAddress,
+									},
+								},
+								{
+									campaignParameters: {
+										targetToken: secondVaultAddress,
+									},
+								},
+							],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const first = rewards.get(vaultAddress.toLowerCase());
+	const second = rewards.get(secondVaultAddress.toLowerCase());
+
+	assert.equal(first?.campaigns.length, 1);
+	assert.equal(second?.campaigns.length, 1);
+	assert.equal(first?.campaigns[0]?.action, "BORROW");
+	assert.equal(first?.campaigns[0]?.apr, 0.025);
+	assert.deepEqual(first?.campaigns[0]?.whitelist, [
+		accountAddress.toLowerCase(),
+	]);
+	assert.deepEqual(first?.campaigns[0]?.blacklist, [
+		otherAccountAddress.toLowerCase(),
+	]);
+	assert.match(first?.campaigns[0]?.sourceUrl ?? "", /MULTILENDBORROW/);
+});
+
+test("direct rewards adapter fans out Merkl borrow-from-collateral pairs", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER_MULTI_BORROW_FROM_COLLATERAL: [
+			makeMerklOpportunity({
+				type: "EULER_MULTI_BORROW_FROM_COLLATERAL",
+				identifier: "borrow-from-collateral-1",
+				action: "BORROW",
+				aprRecord: {
+					breakdowns: [
+						{
+							identifier: "borrow-collateral-1",
+							value: 7,
+						},
+					],
+				},
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "borrow-collateral-1",
+						type: "EULER_MULTI_BORROW_FROM_COLLATERAL",
+						apr: 1,
+						params: {
+							vaults: [
+								{
+									evkAddress: vaultAddress,
+									collaterals: [
+										{ tokenAddress: otherRewardToken },
+										{ tokenAddress: secondCollateralAddress },
+									],
+								},
+							],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 2);
+	assert.equal(info?.campaigns[0]?.action, "BORROW_COLLATERAL");
+	assert.equal(info?.campaigns[0]?.apr, 0.07);
+	assert.deepEqual(
+		info?.campaigns.map((campaign) => campaign.collateralAddress).sort(),
+		[otherRewardToken, secondCollateralAddress].sort(),
+	);
+	assert.match(
+		info?.campaigns[0]?.sourceUrl ?? "",
+		/EULER_MULTI_BORROW_FROM_COLLATERAL/,
+	);
+});
+
+test("direct rewards adapter accepts flat Merkl borrow-from-collateral params", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER_BORROW_FROM_COLLATERAL: [
+			makeMerklOpportunity({
+				type: "EULER_BORROW_FROM_COLLATERAL",
+				identifier: "borrow-from-collateral-flat",
+				action: "BORROW",
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "borrow-collateral-flat-1",
+						type: "EULER_BORROW_FROM_COLLATERAL",
+						apr: 3,
+						params: {
+							evkAddress: vaultAddress,
+							collateralAddress: otherRewardToken,
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.action, "BORROW_COLLATERAL");
+	assert.equal(info?.campaigns[0]?.collateralAddress, otherRewardToken);
+	assert.equal(info?.campaigns[0]?.apr, 0.03);
+});
+
+test("direct rewards adapter preserves standard Merkl allowlist metadata", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER: [
+			makeMerklOpportunity({
+				aprRecord: {
+					breakdowns: [
+						{
+							identifier: "standard-1",
+							value: 4.2,
+						},
+					],
+				},
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "standard-1",
+						subType: 0,
+						apr: 0,
+						params: {
+							evkAddress: vaultAddress,
+							whitelist: [accountAddress],
+							blacklist: [otherAccountAddress],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.equal(info?.campaigns[0]?.apr, 0.042);
+	assert.equal(info?.campaigns[0]?.rewardTokenIcon, "https://example.invalid/eul.png");
+	assert.deepEqual(info?.campaigns[0]?.whitelist, [
+		accountAddress.toLowerCase(),
+	]);
+	assert.deepEqual(info?.campaigns[0]?.blacklist, [
+		otherAccountAddress.toLowerCase(),
+	]);
 });
 
 test("rewards service uses direct proof-backed Brevis rewards when V3 lacks claim metadata", async () => {
