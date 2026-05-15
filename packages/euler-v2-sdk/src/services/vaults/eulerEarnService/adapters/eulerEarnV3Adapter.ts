@@ -16,6 +16,10 @@ import {
 	parseAddressField,
 	parseBigIntField,
 	parseNumberField,
+	parseOptionalAddressField,
+	parseOptionalNumberField,
+	parseOptionalStringField,
+	parseOptionalTimestampField,
 	parsePerformanceFee,
 	parseStringField,
 	parseTimestampField,
@@ -51,9 +55,9 @@ type V3ListEnvelope<T> = {
 
 type V3Token = {
 	address: string;
-	symbol?: string;
+	symbol?: string | null;
 	decimals: number;
-	name?: string;
+	name?: string | null;
 };
 
 type V3EulerEarnStrategy = {
@@ -73,9 +77,9 @@ type V3EulerEarnStrategy = {
 	allocationCap?: {
 		current?: string;
 		pending?: string;
-		pendingValidAt?: number;
+		pendingValidAt?: number | string | null;
 	};
-	removableAt?: number;
+	removableAt?: number | string | null;
 };
 
 type V3EulerEarnDetail = {
@@ -87,7 +91,7 @@ type V3EulerEarnDetail = {
 	asset: V3Token;
 	totalAssets: string;
 	totalShares: string;
-	supplyApy: number;
+	supplyApy?: number | null;
 	lostAssets?: string;
 	availableAssets?: string;
 	strategies?: V3EulerEarnStrategy[];
@@ -98,10 +102,10 @@ type V3EulerEarnDetail = {
 		guardian?: string;
 		feeReceiver?: string;
 		timelock?: number;
-		pendingTimelock?: number;
-		pendingTimelockValidAt?: number;
-		pendingGuardian?: string;
-		pendingGuardianValidAt?: number;
+		pendingTimelock?: number | null;
+		pendingTimelockValidAt?: number | string | null;
+		pendingGuardian?: string | null;
+		pendingGuardianValidAt?: number | string | null;
 	};
 	management?: {
 		owner?: string;
@@ -152,14 +156,14 @@ function convertToken(
 			fallback: fallbackAddress,
 			fallbackLabel: "fallback token address",
 		}),
-		name: parseStringField(token.name, {
+		name: parseOptionalStringField(token.name, {
 			path: `${path}.name`,
 			owner,
 			errors,
 			source: "eulerEarnV3",
 			fallback: fallbackName,
 		}),
-		symbol: parseStringField(token.symbol, {
+		symbol: parseOptionalStringField(token.symbol, {
 			path: `${path}.symbol`,
 			owner,
 			errors,
@@ -211,13 +215,16 @@ function convertGovernance(
 			detail.governance?.timelock ?? detail.management?.timelockSeconds,
 			{ path: "$.governance.timelock", owner, errors, source: "eulerEarnV3" },
 		),
-		pendingTimelock: parseNumberField(detail.governance?.pendingTimelock, {
-			path: "$.governance.pendingTimelock",
-			owner,
-			errors,
-			source: "eulerEarnV3",
-		}),
-		pendingTimelockValidAt: parseNumberField(
+		pendingTimelock: parseOptionalNumberField(
+			detail.governance?.pendingTimelock,
+			{
+				path: "$.governance.pendingTimelock",
+				owner,
+				errors,
+				source: "eulerEarnV3",
+			},
+		),
+		pendingTimelockValidAt: parseOptionalTimestampField(
 			detail.governance?.pendingTimelockValidAt,
 			{
 				path: "$.governance.pendingTimelockValidAt",
@@ -226,13 +233,16 @@ function convertGovernance(
 				source: "eulerEarnV3",
 			},
 		),
-		pendingGuardian: parseAddressField(detail.governance?.pendingGuardian, {
-			path: "$.governance.pendingGuardian",
-			owner,
-			errors,
-			source: "eulerEarnV3",
-		}),
-		pendingGuardianValidAt: parseNumberField(
+		pendingGuardian: parseOptionalAddressField(
+			detail.governance?.pendingGuardian,
+			{
+				path: "$.governance.pendingGuardian",
+				owner,
+				errors,
+				source: "eulerEarnV3",
+			},
+		),
+		pendingGuardianValidAt: parseOptionalTimestampField(
 			detail.governance?.pendingGuardianValidAt,
 			{
 				path: "$.governance.pendingGuardianValidAt",
@@ -372,7 +382,7 @@ function convertStrategies(
 					errors,
 					source: "eulerEarnV3",
 				}),
-				pendingValidAt: parseNumberField(
+				pendingValidAt: parseOptionalTimestampField(
 					strategy.allocationCap?.pendingValidAt,
 					{
 						path: "$.allocationCap.pendingValidAt",
@@ -392,7 +402,7 @@ function convertStrategies(
 				allocatedAssets,
 				availableAssets,
 				allocationCap,
-				removableAt: parseNumberField(strategy.removableAt, {
+				removableAt: parseOptionalTimestampField(strategy.removableAt, {
 					path: "$.removableAt",
 					owner: strategyOwner,
 					errors,
@@ -451,7 +461,7 @@ function convertEulerEarn(
 			detail.asset.symbol ?? "UNKNOWN",
 		),
 		supplyApy1h: normalizeEulerEarnApy(
-			parseNumberField(detail.supplyApy, {
+			parseOptionalNumberField(detail.supplyApy, {
 				path: "$.supplyApy1h",
 				owner,
 				errors,

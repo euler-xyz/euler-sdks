@@ -27,7 +27,7 @@ import {
 	parseBigIntField,
 	parseBooleanField,
 	parseDaysToLiquidation,
-	parseNumberField,
+	parseTimestampField,
 } from "../../../../utils/parsing.js";
 import type { AccountV3AdapterConfig } from "../../accountServiceConfig.js";
 import type { IAccountAdapter } from "../../accountService.js";
@@ -82,8 +82,8 @@ type V3LiquidityCollateral = {
 
 type V3SubAccount = {
 	owner: string;
-	timestamp: number;
-	lastAccountStatusCheckTimestamp: number;
+	timestamp: number | string;
+	lastAccountStatusCheckTimestamp: number | string;
 	enabledControllers: string[];
 	enabledCollaterals: string[];
 	isLockdownMode: boolean;
@@ -337,7 +337,7 @@ function buildSubAccount(
 	);
 
 	return {
-		timestamp: parseNumberField(meta.timestamp, {
+		timestamp: parseTimestampField(meta.timestamp, {
 			path: "$.timestamp",
 			owner: subAccountDiagnosticOwner(chainId, account),
 			errors,
@@ -352,7 +352,7 @@ function buildSubAccount(
 			fallback: account,
 			fallbackLabel: "account address",
 		}),
-		lastAccountStatusCheckTimestamp: parseNumberField(
+		lastAccountStatusCheckTimestamp: parseTimestampField(
 			meta.lastAccountStatusCheckTimestamp,
 			{
 				path: "$.lastAccountStatusCheckTimestamp",

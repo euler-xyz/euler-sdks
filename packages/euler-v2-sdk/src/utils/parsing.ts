@@ -85,6 +85,17 @@ export function parseAddressField(
 	return fallback;
 }
 
+export function parseOptionalAddressField(
+	value: string | null | undefined,
+	params: DiagnosticsParserParams & {
+		fallback?: Address;
+		fallbackLabel?: string;
+	},
+): Address {
+	if (value == null || value === "") return params.fallback ?? ZERO_ADDRESS;
+	return parseAddressField(value, params);
+}
+
 export function parseAddressArrayField(
 	value: string[] | undefined,
 	params: DiagnosticsParserParams,
@@ -131,6 +142,16 @@ export function parseStringField(
 	return fallback;
 }
 
+export function parseOptionalStringField(
+	value: string | null | undefined,
+	params: DiagnosticsParserParams & {
+		fallback?: string;
+	},
+): string {
+	if (value == null) return params.fallback ?? "";
+	return parseStringField(value, params);
+}
+
 export function parseNumberField(
 	value: number | undefined,
 	params: DiagnosticsParserParams & {
@@ -152,6 +173,16 @@ export function parseNumberField(
 	return fallback;
 }
 
+export function parseOptionalNumberField(
+	value: number | null | undefined,
+	params: DiagnosticsParserParams & {
+		fallback?: number;
+	},
+): number {
+	if (value == null) return params.fallback ?? 0;
+	return parseNumberField(value, params);
+}
+
 export function parseBooleanField(
 	value: boolean | undefined,
 	params: DiagnosticsParserParams & {
@@ -171,6 +202,16 @@ export function parseBooleanField(
 		normalizedValue: fallback,
 	});
 	return fallback;
+}
+
+export function parseOptionalBooleanField(
+	value: boolean | null | undefined,
+	params: DiagnosticsParserParams & {
+		fallback?: boolean;
+	},
+): boolean {
+	if (value == null) return params.fallback ?? false;
+	return parseBooleanField(value, params);
 }
 
 export function parseDaysToLiquidation(
@@ -197,9 +238,11 @@ export function parseDaysToLiquidation(
 }
 
 export function parseTimestampField(
-	value: string | undefined,
+	value: number | string | undefined,
 	params: DiagnosticsParserParams,
 ): number {
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+
 	if (!value) {
 		params.errors.push({
 			code: "DEFAULT_APPLIED",
@@ -207,6 +250,19 @@ export function parseTimestampField(
 			message: `Missing timestamp at ${params.path}; defaulted to 0.`,
 			locations: [dataIssueLocation(params.owner, params.path)],
 			source: params.source,
+			normalizedValue: 0,
+		});
+		return 0;
+	}
+
+	if (typeof value !== "string") {
+		params.errors.push({
+			code: "DEFAULT_APPLIED",
+			severity: "warning",
+			message: `Failed to parse timestamp at ${params.path}; defaulted to 0.`,
+			locations: [dataIssueLocation(params.owner, params.path)],
+			source: params.source,
+			originalValue: value,
 			normalizedValue: 0,
 		});
 		return 0;
@@ -225,6 +281,16 @@ export function parseTimestampField(
 		normalizedValue: 0,
 	});
 	return 0;
+}
+
+export function parseOptionalTimestampField(
+	value: number | string | null | undefined,
+	params: DiagnosticsParserParams & {
+		fallback?: number;
+	},
+): number {
+	if (value == null || value === "") return params.fallback ?? 0;
+	return parseTimestampField(value, params);
 }
 
 export function parsePerformanceFee(

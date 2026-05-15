@@ -17,6 +17,10 @@ import {
 	parseBooleanField,
 	type DiagnosticsParserParams,
 	parseNumberField,
+	parseOptionalAddressField,
+	parseOptionalBooleanField,
+	parseOptionalNumberField,
+	parseOptionalStringField,
 	parseRatio1e4,
 	parseStringField,
 	parseTimestampField,
@@ -133,16 +137,6 @@ const DEFAULT_INTEREST_RATE_MODEL_BLOCK: NonNullable<
 	data: null,
 };
 
-const DEFAULT_ORACLE_PRICE_BLOCK: V3OraclePrice = {
-	queryFailure: true,
-	queryFailureReason: "0x",
-	amountIn: "0",
-	amountOutMid: "0",
-	amountOutBid: "0",
-	amountOutAsk: "0",
-	timestamp: "",
-};
-
 function normalizeUnitOfAccountToken(token: Token): Token | undefined {
 	if (token.address.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
 		return undefined;
@@ -176,6 +170,11 @@ function convertToken(
 	path: string,
 	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
+	optionalFields: {
+		name?: boolean;
+		symbol?: boolean;
+		decimals?: boolean;
+	} = {},
 ): Token {
 	return {
 		address: parseAddressField(token.address, {
@@ -184,24 +183,45 @@ function convertToken(
 			errors,
 			source: "eVaultV3",
 		}),
-		name: parseStringField(token.name, {
-			path: `${path}.name`,
-			owner,
-			errors,
-			source: "eVaultV3",
-		}),
-		symbol: parseStringField(token.symbol, {
-			path: `${path}.symbol`,
-			owner,
-			errors,
-			source: "eVaultV3",
-		}),
-		decimals: parseNumberField(token.decimals, {
-			path: `${path}.decimals`,
-			owner,
-			errors,
-			source: "eVaultV3",
-		}),
+		name: optionalFields.name
+			? parseOptionalStringField(token.name, {
+					path: `${path}.name`,
+					owner,
+					errors,
+					source: "eVaultV3",
+				})
+			: parseStringField(token.name ?? undefined, {
+					path: `${path}.name`,
+					owner,
+					errors,
+					source: "eVaultV3",
+				}),
+		symbol: optionalFields.symbol
+			? parseOptionalStringField(token.symbol, {
+					path: `${path}.symbol`,
+					owner,
+					errors,
+					source: "eVaultV3",
+				})
+			: parseStringField(token.symbol ?? undefined, {
+					path: `${path}.symbol`,
+					owner,
+					errors,
+					source: "eVaultV3",
+				}),
+		decimals: optionalFields.decimals
+			? parseOptionalNumberField(token.decimals, {
+					path: `${path}.decimals`,
+					owner,
+					errors,
+					source: "eVaultV3",
+				})
+			: parseNumberField(token.decimals ?? undefined, {
+					path: `${path}.decimals`,
+					owner,
+					errors,
+					source: "eVaultV3",
+				}),
 	};
 }
 
@@ -466,18 +486,6 @@ function convertCollaterals(
 					},
 		};
 
-		if (!row.oraclePriceRaw) {
-			errors.push({
-				code: "DEFAULT_APPLIED",
-				severity: "warning",
-				message:
-					"Missing collateral oraclePriceRaw; default zero-price placeholder applied.",
-				locations: [dataIssueLocation(collateralOwner, "$.oraclePriceRaw")],
-				source: "eVaultV3",
-				normalizedValue: "queryFailure:true",
-			});
-		}
-
 		if (targetTimestamp > vaultTimestamp) {
 			const ramping: EVaultCollateralRamping = {
 				initialLiquidationLTV: parseRatio1e4(row.initialLiquidationLTV, {
@@ -603,24 +611,6 @@ export function convertVault(
 	const unitOfAccountData = detail.unitOfAccount ?? DEFAULT_TOKEN_BLOCK;
 	const unitOfAccountErrors = suppressUnitOfAccountDiagnostics ? [] : errors;
 
-	if (!detail.fees) {
-		errors.push({
-			code: "DEFAULT_APPLIED",
-			severity: "warning",
-			message: "Missing fees object; defaulted all fee fields to 0.",
-			locations: [dataIssueLocation(owner, "$.fees")],
-			source: "eVaultV3",
-			normalizedValue: {
-				interestFee: 0,
-				accumulatedFeesShares: "0",
-				accumulatedFeesAssets: "0",
-				governorFeeReceiver: ZERO_ADDRESS,
-				protocolFeeReceiver: ZERO_ADDRESS,
-				protocolFeeShare: 0,
-			},
-		});
-	}
-
 	const feeData = detail.fees ?? {
 		interestFee: 0,
 		accumulatedFeesShares: "0",
@@ -631,7 +621,12 @@ export function convertVault(
 	};
 
 	const fees: EVaultFees = {
-		interestFee: feeData.interestFee ?? 0,
+		interestFee: parseOptionalNumberField(feeData.interestFee, {
+			path: "$.fees.interestFee",
+			owner,
+			errors,
+			source: "eVaultV3",
+		}),
 		accumulatedFeesShares: parseBigIntField(
 			feeData.accumulatedFeesShares ?? "0",
 			{
@@ -650,19 +645,30 @@ export function convertVault(
 				source: "eVaultV3",
 			},
 		),
-		governorFeeReceiver: parseAddressField(feeData.governorFeeReceiver, {
-			path: "$.fees.governorFeeReceiver",
+		governorFeeReceiver: parseOptionalAddressField(
+			feeData.governorFeeReceiver,
+			{
+				path: "$.fees.governorFeeReceiver",
+				owner,
+				errors,
+				source: "eVaultV3",
+			},
+		),
+		protocolFeeReceiver: parseOptionalAddressField(
+			feeData.protocolFeeReceiver,
+			{
+				path: "$.fees.protocolFeeReceiver",
+				owner,
+				errors,
+				source: "eVaultV3",
+			},
+		),
+		protocolFeeShare: parseOptionalNumberField(feeData.protocolFeeShare, {
+			path: "$.fees.protocolFeeShare",
 			owner,
 			errors,
 			source: "eVaultV3",
 		}),
-		protocolFeeReceiver: parseAddressField(feeData.protocolFeeReceiver, {
-			path: "$.fees.protocolFeeReceiver",
-			owner,
-			errors,
-			source: "eVaultV3",
-		}),
-		protocolFeeShare: feeData.protocolFeeShare ?? 0,
 	};
 
 	const hooks: EVaultHooks = {
@@ -670,34 +676,13 @@ export function convertVault(
 			...DEFAULT_HOOKED_OPERATIONS,
 			...(detail.hooks?.hookedOperations ?? {}),
 		},
-		hookTarget: parseAddressField(detail.hooks?.hookTarget, {
+		hookTarget: parseOptionalAddressField(detail.hooks?.hookTarget, {
 			path: "$.hooks.hookTarget",
 			owner,
 			errors,
 			source: "eVaultV3",
 		}),
 	};
-	if (!detail.hooks?.hookedOperations) {
-		errors.push({
-			code: "DEFAULT_APPLIED",
-			severity: "warning",
-			message: "Missing hookedOperations; defaulted all operations to false.",
-			locations: [dataIssueLocation(owner, "$.hooks.hookedOperations")],
-			source: "eVaultV3",
-			normalizedValue: DEFAULT_HOOKED_OPERATIONS,
-		});
-	}
-
-	if (!detail.caps) {
-		errors.push({
-			code: "DEFAULT_APPLIED",
-			severity: "warning",
-			message: "Missing caps block; defaulted all cap fields to 0.",
-			locations: [dataIssueLocation(owner, "$.caps")],
-			source: "eVaultV3",
-			normalizedValue: DEFAULT_CAPS_BLOCK,
-		});
-	}
 	const capsData = detail.caps ?? DEFAULT_CAPS_BLOCK;
 	const caps: EVaultCaps = {
 		supplyCap: parseBigIntField(capsData.supplyCap ?? "0", {
@@ -714,43 +699,39 @@ export function convertVault(
 		}),
 	};
 
-	if (!detail.liquidation) {
-		errors.push({
-			code: "DEFAULT_APPLIED",
-			severity: "warning",
-			message:
-				"Missing liquidation block; defaulted all liquidation fields to 0/false.",
-			locations: [dataIssueLocation(owner, "$.liquidation")],
-			source: "eVaultV3",
-			normalizedValue: {
-				maxLiquidationDiscount: 0,
-				liquidationCoolOffTime: 0,
-				socializeDebt: false,
-			},
-		});
-	}
 	const liquidationData = detail.liquidation ?? DEFAULT_LIQUIDATION_BLOCK;
 	const liquidation: EVaultLiquidation = {
-		maxLiquidationDiscount: liquidationData.maxLiquidationDiscount ?? 0,
-		liquidationCoolOffTime: liquidationData.liquidationCoolOffTime ?? 0,
-		socializeDebt: liquidationData.socializeDebt ?? false,
+		maxLiquidationDiscount: parseOptionalNumberField(
+			liquidationData.maxLiquidationDiscount,
+			{
+				path: "$.liquidation.maxLiquidationDiscount",
+				owner,
+				errors,
+				source: "eVaultV3",
+			},
+		),
+		liquidationCoolOffTime: parseOptionalNumberField(
+			liquidationData.liquidationCoolOffTime,
+			{
+				path: "$.liquidation.liquidationCoolOffTime",
+				owner,
+				errors,
+				source: "eVaultV3",
+			},
+		),
+		socializeDebt: parseOptionalBooleanField(liquidationData.socializeDebt, {
+			path: "$.liquidation.socializeDebt",
+			owner,
+			errors,
+			source: "eVaultV3",
+		}),
 	};
 
-	if (!detail.interestRates) {
-		errors.push({
-			code: "DEFAULT_APPLIED",
-			severity: "warning",
-			message: "Missing interestRates block; defaulted all rate fields to 0.",
-			locations: [dataIssueLocation(owner, "$.interestRates")],
-			source: "eVaultV3",
-			normalizedValue: DEFAULT_INTEREST_RATES_BLOCK,
-		});
-	}
 	const interestRatesData =
 		detail.interestRates ?? DEFAULT_INTEREST_RATES_BLOCK;
 	const interestRates: InterestRates = {
 		borrowSPY: parseRate(
-			parseStringField(interestRatesData.borrowSPY, {
+			parseOptionalStringField(interestRatesData.borrowSPY, {
 				path: "$.interestRates.borrowSPY",
 				owner,
 				errors,
@@ -759,7 +740,7 @@ export function convertVault(
 			}),
 		),
 		borrowAPY: parseRate(
-			parseStringField(interestRatesData.borrowAPY, {
+			parseOptionalStringField(interestRatesData.borrowAPY, {
 				path: "$.interestRates.borrowAPY",
 				owner,
 				errors,
@@ -768,7 +749,7 @@ export function convertVault(
 			}),
 		),
 		supplyAPY: parseRate(
-			parseStringField(interestRatesData.supplyAPY, {
+			parseOptionalStringField(interestRatesData.supplyAPY, {
 				path: "$.interestRates.supplyAPY",
 				owner,
 				errors,
@@ -778,21 +759,10 @@ export function convertVault(
 		),
 	};
 
-	if (!detail.interestRateModel) {
-		errors.push({
-			code: "DEFAULT_APPLIED",
-			severity: "warning",
-			message:
-				"Missing interestRateModel block; defaulted all model fields to 0/unknown.",
-			locations: [dataIssueLocation(owner, "$.interestRateModel")],
-			source: "eVaultV3",
-			normalizedValue: DEFAULT_INTEREST_RATE_MODEL_BLOCK,
-		});
-	}
 	const interestRateModelData =
 		detail.interestRateModel ?? DEFAULT_INTEREST_RATE_MODEL_BLOCK;
 	const interestRateModelType = mapInterestRateModelType(
-		parseStringField(interestRateModelData.type, {
+		parseOptionalStringField(interestRateModelData.type, {
 			path: "$.interestRateModel.type",
 			owner,
 			errors,
@@ -805,7 +775,7 @@ export function convertVault(
 		interestRateModelData.data,
 	);
 	const interestRateModelAddress = parseAddressField(
-		interestRateModelData.address,
+		interestRateModelData.address ?? ZERO_ADDRESS,
 		{
 			path: "$.interestRateModel.address",
 			owner,
@@ -866,18 +836,22 @@ export function convertVault(
 								params: null,
 							};
 
-	if (!detail.oraclePriceRaw) {
-		errors.push({
-			code: "DEFAULT_APPLIED",
-			severity: "warning",
-			message:
-				"Missing oraclePriceRaw block; defaulted all oracle price fields to 0.",
-			locations: [dataIssueLocation(owner, "$.oraclePriceRaw")],
-			source: "eVaultV3",
-			normalizedValue: DEFAULT_ORACLE_PRICE_BLOCK,
-		});
-	}
-	const oraclePriceData = detail.oraclePriceRaw ?? DEFAULT_ORACLE_PRICE_BLOCK;
+	const oraclePriceRaw = detail.oraclePriceRaw
+		? convertOraclePrice(
+				detail.oraclePriceRaw,
+				errors,
+				"$.oraclePriceRaw",
+				owner,
+			)
+		: {
+				queryFailure: true,
+				queryFailureReason: "0x" as Hex,
+				amountIn: 0n,
+				amountOutMid: 0n,
+				amountOutBid: 0n,
+				amountOutAsk: 0n,
+				timestamp: 0,
+			};
 	const timestamp = parseTimestampField(detail.timestamp, {
 		path: "$.timestamp",
 		owner,
@@ -897,6 +871,7 @@ export function convertVault(
 			"$.unitOfAccount",
 			owner,
 			unitOfAccountErrors,
+			{ name: true, symbol: true, decimals: true },
 		),
 	);
 
@@ -904,8 +879,15 @@ export function convertVault(
 		type: VaultType.EVault,
 		chainId: detail.chainId,
 		address: vaultAddress,
-		shares: convertToken(sharesData, "$.shares", owner, errors),
-		asset: convertToken(assetData, "$.asset", owner, errors),
+		shares: convertToken(sharesData, "$.shares", owner, errors, {
+			name: true,
+			symbol: true,
+			decimals: true,
+		}),
+		asset: convertToken(assetData, "$.asset", owner, errors, {
+			name: true,
+			symbol: true,
+		}),
 		unitOfAccount,
 		totalShares: parseBigIntField(detail.totalShares, {
 			path: "$.totalShares",
@@ -949,7 +931,7 @@ export function convertVault(
 			errors,
 			source: "eVaultV3",
 		}),
-		balanceTracker: parseAddressField(detail.balanceTracker, {
+		balanceTracker: parseOptionalAddressField(detail.balanceTracker, {
 			path: "$.balanceTracker",
 			owner,
 			errors,
@@ -964,18 +946,13 @@ export function convertVault(
 		interestRateModel,
 		collaterals,
 		isBorrowable: hasActiveBorrowableLtv(collaterals, timestamp),
-		evcCompatibleAsset: parseBooleanField(detail.evcCompatibleAsset, {
+		evcCompatibleAsset: parseOptionalBooleanField(detail.evcCompatibleAsset, {
 			path: "$.evcCompatibleAsset",
 			owner,
 			errors,
 			source: "eVaultV3",
 		}),
-		oraclePriceRaw: convertOraclePrice(
-			oraclePriceData,
-			errors,
-			"$.oraclePriceRaw",
-			owner,
-		),
+		oraclePriceRaw,
 		timestamp,
 	};
 }

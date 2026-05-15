@@ -16,9 +16,9 @@ export type V3ListEnvelope<T> = {
 
 export type V3Token = {
 	address: string;
-	symbol: string;
-	decimals: number;
-	name: string;
+	symbol?: string | null;
+	decimals?: number | null;
+	name?: string | null;
 };
 
 export type V3PythOracleDetail = {
@@ -78,16 +78,16 @@ export type V3VaultDetail = {
 	name: string;
 	symbol: string;
 	decimals: number;
-	shares?: V3Token;
-	asset?: V3Token;
+	shares?: V3Token | null;
+	asset?: V3Token | null;
 	dToken: string;
 	oracle?: {
 		oracle: string;
 		name: string;
 		adapters: V3OracleAdapter[];
 		resolvedVaults: V3OracleResolvedVault[];
-	};
-	unitOfAccount?: V3Token;
+	} | null;
+	unitOfAccount?: V3Token | null;
 	creator: string;
 	governor?: string;
 	governorAdmin: string;
@@ -100,40 +100,40 @@ export type V3VaultDetail = {
 	interestRate?: string;
 	interestAccumulator?: string;
 	accumulatedFees?: string;
-	balanceTracker: string;
+	balanceTracker?: string | null;
 	fees?: {
-		interestFee: number;
-		accumulatedFeesShares: string;
-		accumulatedFeesAssets: string;
-		governorFeeReceiver: string;
-		protocolFeeReceiver: string;
-		protocolFeeShare: number;
-	};
+		interestFee?: number | null;
+		accumulatedFeesShares?: string | null;
+		accumulatedFeesAssets?: string | null;
+		governorFeeReceiver?: string | null;
+		protocolFeeReceiver?: string | null;
+		protocolFeeShare?: number | null;
+	} | null;
 	hooks?: {
 		hookedOperations?: Partial<Record<keyof EVaultHookedOperations, boolean>>;
-		hookTarget: string;
-	};
+		hookTarget?: string | null;
+	} | null;
 	caps?: {
-		supplyCap: string;
-		borrowCap: string;
-	};
+		supplyCap?: string | null;
+		borrowCap?: string | null;
+	} | null;
 	liquidation?: {
-		maxLiquidationDiscount: number;
-		liquidationCoolOffTime: number;
-		socializeDebt: boolean;
-	};
+		maxLiquidationDiscount?: number | null;
+		liquidationCoolOffTime?: number | null;
+		socializeDebt?: boolean | null;
+	} | null;
 	interestRates?: {
-		borrowSPY: string;
-		borrowAPY: string;
-		supplyAPY: string;
-	};
+		borrowSPY?: string | null;
+		borrowAPY?: string | null;
+		supplyAPY?: string | null;
+	} | null;
 	interestRateModel?: {
-		address: string;
-		type: string;
+		address?: string | null;
+		type?: string | null;
 		data: unknown;
-	};
-	evcCompatibleAsset: boolean;
-	oraclePriceRaw?: V3OraclePrice;
+	} | null;
+	evcCompatibleAsset?: boolean | null;
+	oraclePriceRaw?: V3OraclePrice | null;
 	timestamp: string;
 };
 
