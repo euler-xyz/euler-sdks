@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.3-beta] - 2026-05-15
+
+### Changed
+
+- Restored account and portfolio USD-value property names while keeping market-value semantics available for SDK consumers.
+- Improved optional V3 diagnostic parsing for account, EVault, and Euler Earn read paths.
+- Updated SDK UI data-layer guidance for market-price and USD-value fields.
+
+### Fixed
+
+- Fixed Euler Earn label lookup behavior.
+- Added regression coverage for optional V3 diagnostics, parsing, Earn labels, and account portfolio value fields.
+
 ## [0.2.2-beta] - 2026-05-13
 
 ### Added

@@ -1,17 +1,16 @@
-# euler-v2-sdk v0.2.2-beta
+# euler-v2-sdk v0.2.3-beta
 
 ## Summary
 
-This beta release refreshes the V3 read-path defaults, adds bad-debt inspection coverage in the React example, expands reward metadata support, and tightens planner and oracle metadata handling.
+This beta release tightens V3 read-path compatibility by restoring the SDK's USD-value property surface, adding optional diagnostic parsing, and fixing Euler Earn label resolution.
 
 ## Highlights
 
-- Added the React example bad debt explorer.
-- Added asset-denominated redeem planning support.
-- Switched tokenlist reads to the V3 tokenlist endpoint with base-token default filtering.
-- Improved SDK query cache keys and external query caching documentation.
-- Hardened reward/Pyth claim target handling and exact-out swap quote checks.
-- Fixed resolved vault metadata handling.
+- Restored account and portfolio USD-value property names while preserving market-value semantics for consumers.
+- Added optional V3 diagnostic parsing for account, EVault, and Euler Earn adapters.
+- Fixed Euler Earn label lookup behavior.
+- Added regression coverage for optional diagnostics, parsing, Earn labels, and portfolio value fields.
+- Updated SDK UI data-layer guidance for market-price and USD-value fields.
 
 ## Validation
 
