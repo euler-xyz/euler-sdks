@@ -186,10 +186,10 @@ export function PortfolioPage() {
 
   const totals = useMemo(() => {
     return {
-      supplied: sumNumbers(results.map((r) => r.portfolio?.totalSuppliedMarketValueUsd)),
-      borrowed: sumNumbers(results.map((r) => r.portfolio?.totalBorrowedMarketValueUsd)),
-      nav: sumNumbers(results.map((r) => r.portfolio?.netAssetMarketValueUsd)),
-      rewards: sumNumbers(results.map((r) => r.account?.totalRewardsMarketValueUsd)),
+      supplied: sumNumbers(results.map((r) => r.portfolio?.totalSuppliedValueUsd)),
+      borrowed: sumNumbers(results.map((r) => r.portfolio?.totalBorrowedValueUsd)),
+      nav: sumNumbers(results.map((r) => r.portfolio?.netAssetValueUsd)),
+      rewards: sumNumbers(results.map((r) => r.account?.totalRewardsValueUsd)),
     };
   }, [results]);
 
@@ -202,8 +202,8 @@ export function PortfolioPage() {
     for (const result of results) {
       const portfolio = result.portfolio;
       if (!portfolio) continue;
-      const suppliedValue = portfolio.totalSuppliedMarketValueUsd ?? 0;
-      const borrowedValue = portfolio.totalBorrowedMarketValueUsd ?? 0;
+      const suppliedValue = portfolio.totalSuppliedValueUsd ?? 0;
+      const borrowedValue = portfolio.totalBorrowedValueUsd ?? 0;
       const positionEquity = suppliedValue - borrowedValue;
       const netApyYield =
         portfolio.netApy === undefined ? undefined : suppliedValue * portfolio.netApy;
@@ -223,14 +223,14 @@ export function PortfolioPage() {
       apyBreakdown: aggregateYieldBreakdown(
         results.map((result) => ({
           breakdown: result.portfolio?.apyBreakdown,
-          weight: result.portfolio?.totalSuppliedMarketValueUsd ?? 0,
+          weight: result.portfolio?.totalSuppliedValueUsd ?? 0,
         }))
       ),
       roeBreakdown: aggregateYieldBreakdown(
         results.map((result) => {
           const portfolio = result.portfolio;
-          const suppliedValue = portfolio?.totalSuppliedMarketValueUsd ?? 0;
-          const borrowedValue = portfolio?.totalBorrowedMarketValueUsd ?? 0;
+          const suppliedValue = portfolio?.totalSuppliedValueUsd ?? 0;
+          const borrowedValue = portfolio?.totalBorrowedValueUsd ?? 0;
           return {
             breakdown: portfolio?.roeBreakdown,
             weight: Math.max(suppliedValue - borrowedValue, 0),
@@ -592,10 +592,10 @@ function ChainPortfolioView({
       <PortfolioOverviewCards
         netApy={portfolio.netApy}
         roe={portfolio.roe}
-        supplied={portfolio.totalSuppliedMarketValueUsd}
-        borrowed={portfolio.totalBorrowedMarketValueUsd}
-        nav={portfolio.netAssetMarketValueUsd}
-        rewards={portfolio.totalRewardsMarketValueUsd}
+        supplied={portfolio.totalSuppliedValueUsd}
+        borrowed={portfolio.totalBorrowedValueUsd}
+        nav={portfolio.netAssetValueUsd}
+        rewards={portfolio.totalRewardsValueUsd}
         apyBreakdown={portfolio.apyBreakdown}
         roeBreakdown={portfolio.roeBreakdown}
       />
@@ -720,12 +720,12 @@ function BorrowPositionCard({
         <PortfolioStat
           label="Borrowed"
           value={`${formatBigInt(borrow.borrowed, vaultAssetDecimals(borrowVault))} ${vaultAssetSymbol(borrowVault)}`}
-          subValue={formatUsdValue(borrow.borrowedMarketValueUsd)}
+          subValue={formatUsdValue(borrow.borrowedValueUsd)}
         />
         <PortfolioStat
           label="Collateral"
           value={`${formatBigInt(position.supplied, vaultAssetDecimals(collateralVault))} ${collateralLabel}`}
-          subValue={formatUsdValue(position.totalCollateralMarketValueUsd)}
+          subValue={formatUsdValue(position.totalCollateralValueUsd)}
         />
         <PortfolioStat
           label="Multiplier"
@@ -796,7 +796,7 @@ function SavingsPositionCard({
         <PortfolioStat
           label="Deposited"
           value={`${formatBigInt(position.assets, vaultAssetDecimals(vault))} ${vaultAssetSymbol(vault)}`}
-          subValue={formatUsdValue(position.suppliedMarketValueUsd)}
+          subValue={formatUsdValue(position.suppliedValueUsd)}
         />
         <PortfolioStat
           label="APY"
@@ -893,8 +893,8 @@ function sortBorrowPositions(
   b: PortfolioBorrowPosition<VaultEntity>
 ) {
   return (
-    (b.liabilityMarketValueUsd ?? b.borrow.borrowedMarketValueUsd ?? 0) -
-    (a.liabilityMarketValueUsd ?? a.borrow.borrowedMarketValueUsd ?? 0)
+    (b.liabilityValueUsd ?? b.borrow.borrowedValueUsd ?? 0) -
+    (a.liabilityValueUsd ?? a.borrow.borrowedValueUsd ?? 0)
   );
 }
 
@@ -902,7 +902,7 @@ function sortSavingsPositions(
   a: PortfolioSavingsPosition<VaultEntity>,
   b: PortfolioSavingsPosition<VaultEntity>
 ) {
-  return (b.suppliedMarketValueUsd ?? 0) - (a.suppliedMarketValueUsd ?? 0);
+  return (b.suppliedValueUsd ?? 0) - (a.suppliedValueUsd ?? 0);
 }
 
 function isManagedSavings(position: PortfolioSavingsPosition<VaultEntity>): boolean {
@@ -1119,15 +1119,15 @@ function ChainAccountSection({
         </div>
         <div className="detail-item">
           <div className="label">Supplied (USD)</div>
-          <div className="value">{formatUsdValue(portfolio?.totalSuppliedMarketValueUsd)}</div>
+          <div className="value">{formatUsdValue(portfolio?.totalSuppliedValueUsd)}</div>
         </div>
         <div className="detail-item">
           <div className="label">Borrowed (USD)</div>
-          <div className="value">{formatUsdValue(portfolio?.totalBorrowedMarketValueUsd)}</div>
+          <div className="value">{formatUsdValue(portfolio?.totalBorrowedValueUsd)}</div>
         </div>
         <div className="detail-item">
           <div className="label">Net Value (USD)</div>
-          <div className="value">{formatUsdValue(portfolio?.netAssetMarketValueUsd)}</div>
+          <div className="value">{formatUsdValue(portfolio?.netAssetValueUsd)}</div>
         </div>
         <div className="detail-item">
           <div className="label">Net APY</div>
@@ -1139,7 +1139,7 @@ function ChainAccountSection({
         </div>
         <div className="detail-item">
           <div className="label">Rewards (USD)</div>
-          <div className="value">{formatUsdValue(account.totalRewardsMarketValueUsd)}</div>
+          <div className="value">{formatUsdValue(account.totalRewardsValueUsd)}</div>
         </div>
       </div>
 
@@ -1312,7 +1312,7 @@ function ChainAccountSection({
               </div>
               <div className="detail-item">
                 <div className="label">Net Value (USD)</div>
-                <div className="value">{formatUsdValue(sub.netMarketValueUsd)}</div>
+                <div className="value">{formatUsdValue(sub.netValueUsd)}</div>
               </div>
               <div className="detail-item">
                 <div className="label">ROE</div>

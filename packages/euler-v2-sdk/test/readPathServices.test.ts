@@ -161,24 +161,24 @@ test("account service fetches and populates real account fixtures through vault,
 		.find(
 			(position) =>
 				position.borrowed > 0n &&
-				position.liquidity?.liabilityMarketValueUsd !== undefined,
+				position.liquidity?.liabilityValueUsd !== undefined,
 		);
 	assert.ok(borrowWithLiquidity);
 	assert.equal(
-		borrowWithLiquidity.liquidity!.liabilityMarketValueUsd,
-		borrowWithLiquidity.borrowedMarketValueUsd,
+		borrowWithLiquidity.liquidity!.liabilityValueUsd,
+		borrowWithLiquidity.borrowedValueUsd,
 	);
 	const collateralMarketValues =
 		borrowWithLiquidity.liquidity!.collaterals.map(
-			(collateral) => collateral.marketValueUsd,
+			(collateral) => collateral.valueUsd,
 		);
 	assert.ok(collateralMarketValues.length > 0);
 	assert.ok(collateralMarketValues.every((value) => value !== undefined));
 	assert.equal(
-		borrowWithLiquidity.liquidity!.totalCollateralMarketValueUsd,
+		borrowWithLiquidity.liquidity!.totalCollateralValueUsd,
 		collateralMarketValues.reduce((sum, value) => sum + value!, 0),
 	);
-	assert.ok(fetched.result.totalRewardsMarketValueUsd !== undefined);
+	assert.ok(fetched.result.totalRewardsValueUsd !== undefined);
 	assert.ok(
 		fetched.result.getPosition(
 			firstSubAccountAddress,
@@ -262,7 +262,7 @@ test("account total rewards skips malformed reward pricing", () => {
 		},
 	];
 
-	assert.equal(account.totalRewardsMarketValueUsd, 2);
+	assert.equal(account.totalRewardsValueUsd, 2);
 });
 
 test("V3 rewards adapter normalizes malformed user reward price to zero", async () => {

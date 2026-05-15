@@ -29,9 +29,9 @@ import {
 	computeCurrentLTV,
 	computeLiquidationLTV,
 	computeMultiplier,
-	computeSubAccountTotalCollateralMarketValueUsd,
-	computeSubAccountLiabilityMarketValueUsd,
-	computeSubAccountNetMarketValueUsd,
+	computeSubAccountTotalCollateralValueUsd,
+	computeSubAccountLiabilityValueUsd,
+	computeSubAccountNetValueUsd,
 	computeSubAccountRoe,
 	computeCollateralLiquidationPrices,
 	computeBorrowLiquidationPrice,
@@ -77,8 +77,8 @@ export interface AccountLiquidityCollateral<
 	value: AssetValue;
 	/** USD price per underlying asset. Populated by `populateMarketPrices`. */
 	marketPriceUsd?: PriceUsd;
-	/** Collateral market value in USD. `collateral deposit amount * marketPriceUsd`. */
-	marketValueUsd?: number;
+	/** Collateral value in USD. `collateral deposit amount * marketPriceUsd`. */
+	valueUsd?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,10 +96,10 @@ export interface IAccountLiquidity<
 	liabilityValue: AssetValue;
 	totalCollateralValue: AssetValue;
 	collaterals: AccountLiquidityCollateral<TVaultEntity>[];
-	/** Liability market value in USD. Populated by `populateMarketPrices`. */
-	liabilityMarketValueUsd?: number;
-	/** Total collateral market value in USD. Populated by `populateMarketPrices`. */
-	totalCollateralMarketValueUsd?: number;
+	/** Liability value in USD. Populated by `populateMarketPrices`. */
+	liabilityValueUsd?: number;
+	/** Total collateral value in USD. Populated by `populateMarketPrices`. */
+	totalCollateralValueUsd?: number;
 	/** Per-collateral liquidation price multipliers (WAD). Computed getter on AccountLiquidity class. */
 	readonly collateralLiquidationPrices?: Record<Address, bigint>;
 	/** Borrow liquidation price multiplier (WAD). `> 1` = safe margin. Computed getter on AccountLiquidity class. */
@@ -117,8 +117,8 @@ export class AccountLiquidity<TVaultEntity extends IHasVaultAddress = never>
 	liabilityValue: AssetValue;
 	totalCollateralValue: AssetValue;
 	collaterals: AccountLiquidityCollateral<TVaultEntity>[];
-	liabilityMarketValueUsd?: number;
-	totalCollateralMarketValueUsd?: number;
+	liabilityValueUsd?: number;
+	totalCollateralValueUsd?: number;
 
 	constructor(data: IAccountLiquidity<TVaultEntity>) {
 		this.vaultAddress = data.vaultAddress;
@@ -128,8 +128,8 @@ export class AccountLiquidity<TVaultEntity extends IHasVaultAddress = never>
 		this.liabilityValue = data.liabilityValue;
 		this.totalCollateralValue = data.totalCollateralValue;
 		this.collaterals = data.collaterals;
-		this.liabilityMarketValueUsd = data.liabilityMarketValueUsd;
-		this.totalCollateralMarketValueUsd = data.totalCollateralMarketValueUsd;
+		this.liabilityValueUsd = data.liabilityValueUsd;
+		this.totalCollateralValueUsd = data.totalCollateralValueUsd;
 	}
 
 	/** Per-collateral liquidation price multipliers (WAD). */
@@ -172,10 +172,10 @@ export interface IAccountPosition<
 
 	/** USD price per underlying asset. Populated by `populateMarketPrices`. */
 	marketPriceUsd?: PriceUsd;
-	/** Supplied market value in USD. `assets * marketPriceUsd / 10^decimals`. */
-	suppliedMarketValueUsd?: number;
-	/** Borrowed market value in USD. `borrowed * marketPriceUsd / 10^decimals`. */
-	borrowedMarketValueUsd?: number;
+	/** Supplied value in USD. `assets * marketPriceUsd / 10^decimals`. */
+	suppliedValueUsd?: number;
+	/** Borrowed value in USD. `borrowed * marketPriceUsd / 10^decimals`. */
+	borrowedValueUsd?: number;
 
 	/** Borrow liquidation price in USD. Computed getter on positions. */
 	readonly borrowLiquidationPriceUsd?: number;
@@ -202,8 +202,8 @@ export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
 	liquidity?: IAccountLiquidity<TVaultEntity>;
 
 	marketPriceUsd?: PriceUsd;
-	suppliedMarketValueUsd?: number;
-	borrowedMarketValueUsd?: number;
+	suppliedValueUsd?: number;
+	borrowedValueUsd?: number;
 
 	constructor(data: IAccountPosition<TVaultEntity>) {
 		this.account = data.account;
@@ -226,8 +226,8 @@ export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
 		}
 
 		this.marketPriceUsd = data.marketPriceUsd;
-		this.suppliedMarketValueUsd = data.suppliedMarketValueUsd;
-		this.borrowedMarketValueUsd = data.borrowedMarketValueUsd;
+		this.suppliedValueUsd = data.suppliedValueUsd;
+		this.borrowedValueUsd = data.borrowedValueUsd;
 	}
 
 	get borrowLiquidationPriceUsd(): number | undefined {
@@ -287,12 +287,12 @@ export interface ISubAccount<TVaultEntity extends IHasVaultAddress = never> {
 	readonly liquidationLTV?: bigint;
 	/** Leverage multiplier (1 = 1x). Requires USD data. Computed getter on SubAccount class. */
 	readonly multiplier?: number;
-	/** Total collateral market value in USD. Requires USD data. Computed getter on SubAccount class. */
-	readonly totalCollateralMarketValueUsd?: number;
-	/** Liability market value in USD. Requires USD data. Computed getter on SubAccount class. */
-	readonly liabilityMarketValueUsd?: number;
-	/** Net market value in USD: sum(supplied) - sum(borrowed). Computed getter on SubAccount class. */
-	readonly netMarketValueUsd?: number;
+	/** Total collateral value in USD. Requires USD data. Computed getter on SubAccount class. */
+	readonly totalCollateralValueUsd?: number;
+	/** Liability value in USD. Requires USD data. Computed getter on SubAccount class. */
+	readonly liabilityValueUsd?: number;
+	/** Net value in USD: sum(supplied) - sum(borrowed). Computed getter on SubAccount class. */
+	readonly netValueUsd?: number;
 	/** ROE breakdown (percentage points). Requires populated vaults + market prices. Computed getter on SubAccount class. */
 	readonly roe?: SubAccountRoe;
 }
@@ -346,23 +346,23 @@ export class SubAccount<TVaultEntity extends IHasVaultAddress = never>
 		return computeMultiplier(this as unknown as ISubAccount<IHasVaultAddress>);
 	}
 
-	/** Total collateral market value in USD. Requires USD data. */
-	get totalCollateralMarketValueUsd(): number | undefined {
-		return computeSubAccountTotalCollateralMarketValueUsd(
+	/** Total collateral value in USD. Requires USD data. */
+	get totalCollateralValueUsd(): number | undefined {
+		return computeSubAccountTotalCollateralValueUsd(
 			this as unknown as ISubAccount<IHasVaultAddress>,
 		);
 	}
 
-	/** Liability market value in USD. Requires USD data. */
-	get liabilityMarketValueUsd(): number | undefined {
-		return computeSubAccountLiabilityMarketValueUsd(
+	/** Liability value in USD. Requires USD data. */
+	get liabilityValueUsd(): number | undefined {
+		return computeSubAccountLiabilityValueUsd(
 			this as unknown as ISubAccount<IHasVaultAddress>,
 		);
 	}
 
-	/** Net market value in USD: sum(supplied) - sum(borrowed). */
-	get netMarketValueUsd(): number | undefined {
-		return computeSubAccountNetMarketValueUsd(
+	/** Net value in USD: sum(supplied) - sum(borrowed). */
+	get netValueUsd(): number | undefined {
+		return computeSubAccountNetValueUsd(
 			this as unknown as ISubAccount<IHasVaultAddress>,
 		);
 	}
@@ -781,13 +781,13 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 					const price = vault.marketPriceUsd as number;
 					const decimals = vault.asset.decimals as number;
 					p.marketPriceUsd = price;
-					p.suppliedMarketValueUsd = tokenAmountToUsdValue(
+					p.suppliedValueUsd = tokenAmountToUsdValue(
 						p.assets,
 						decimals,
 						price,
 					);
 					if (p.borrowed > 0n) {
-						p.borrowedMarketValueUsd = tokenAmountToUsdValue(
+						p.borrowedValueUsd = tokenAmountToUsdValue(
 							p.borrowed,
 							decimals,
 							price,
@@ -795,10 +795,10 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 					}
 				}
 
-				// Populate liquidity market values from actual borrow/deposit amounts.
+				// Populate liquidity values from actual borrow/deposit amounts.
 				if (p.liquidity) {
-					p.liquidity.liabilityMarketValueUsd = p.borrowedMarketValueUsd;
-					let totalCollateralMarketValueUsd: number | undefined = 0;
+					p.liquidity.liabilityValueUsd = p.borrowedValueUsd;
+					let totalCollateralValueUsd: number | undefined = 0;
 					for (const c of p.liquidity.collaterals) {
 						const collVault = c.vault as any;
 						const price = collVault?.marketPriceUsd;
@@ -809,25 +809,25 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 						);
 						const collateralAssets = collateralPosition?.assets ?? 0n;
 						if (collateralAssets === 0n) {
-							c.marketValueUsd = 0;
+							c.valueUsd = 0;
 						} else if (price != null && collVault?.asset?.decimals != null) {
-							c.marketValueUsd = tokenAmountToUsdValue(
+							c.valueUsd = tokenAmountToUsdValue(
 								collateralAssets,
 								collVault.asset.decimals as number,
 								price as number,
 							);
 						} else {
-							c.marketValueUsd = undefined;
+							c.valueUsd = undefined;
 						}
 
-						if (c.marketValueUsd == null) {
-							totalCollateralMarketValueUsd = undefined;
-						} else if (totalCollateralMarketValueUsd != null) {
-							totalCollateralMarketValueUsd += c.marketValueUsd;
+						if (c.valueUsd == null) {
+							totalCollateralValueUsd = undefined;
+						} else if (totalCollateralValueUsd != null) {
+							totalCollateralValueUsd += c.valueUsd;
 						}
 					}
-					p.liquidity.totalCollateralMarketValueUsd =
-						totalCollateralMarketValueUsd;
+					p.liquidity.totalCollateralValueUsd =
+						totalCollateralValueUsd;
 				}
 			}
 		}
@@ -836,8 +836,8 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 		return errors;
 	}
 
-	/** Total unclaimed rewards market value in USD. `undefined` if no user rewards populated. */
-	get totalRewardsMarketValueUsd(): number | undefined {
+	/** Total unclaimed rewards value in USD. `undefined` if no user rewards populated. */
+	get totalRewardsValueUsd(): number | undefined {
 		if (!this.userRewards || this.userRewards.length === 0) return undefined;
 		let total = 0;
 		for (const reward of this.userRewards) {

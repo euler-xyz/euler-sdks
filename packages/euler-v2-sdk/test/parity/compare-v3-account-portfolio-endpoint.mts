@@ -73,14 +73,14 @@ const PORTFOLIO_FIELD_MAP = {
 	positions: "portfolio.positions",
 	savings: "portfolio.savings",
 	borrows: "portfolio.borrows",
-	totalSuppliedMarketValueUsd: "portfolio.totals.suppliedValueUsd",
-	totalBorrowedMarketValueUsd: "portfolio.totals.borrowedValueUsd",
-	netAssetMarketValueUsd: "portfolio.totals.netAssetValueUsd",
+	totalSuppliedValueUsd: "portfolio.totals.suppliedValueUsd",
+	totalBorrowedValueUsd: "portfolio.totals.borrowedValueUsd",
+	netAssetValueUsd: "portfolio.totals.netAssetValueUsd",
 	netApy: "portfolio.totals.netApy",
 	roe: "portfolio.totals.roe",
 	apyBreakdown: "portfolio.totals.apyBreakdown",
 	roeBreakdown: "portfolio.totals.roeBreakdown",
-	totalRewardsMarketValueUsd: "portfolio.totals.rewardsValueUsd",
+	totalRewardsValueUsd: "portfolio.totals.rewardsValueUsd",
 } as const;
 
 const SAVINGS_FIELDS = [
@@ -89,7 +89,7 @@ const SAVINGS_FIELDS = [
 	"subAccount",
 	"shares",
 	"assets",
-	"suppliedMarketValueUsd",
+	"suppliedValueUsd",
 	"apy",
 	"apyBreakdown",
 ] as const;
@@ -118,8 +118,8 @@ const BORROW_FIELDS = [
 	"accountLiquidationLTV",
 	"liabilityValueBorrowing",
 	"liabilityValueLiquidation",
-	"liabilityMarketValueUsd",
-	"totalCollateralMarketValueUsd",
+	"liabilityValueUsd",
+	"totalCollateralValueUsd",
 	"collateralValueLiquidation",
 	"timeToLiquidation",
 	"multiplier",
@@ -225,10 +225,10 @@ function serializePosition(position: any): JsonValue {
 		balanceForwarderEnabled: position.balanceForwarderEnabled,
 		marketPriceUsd:
 			bigintString(position.marketPriceUsd) ?? position.marketPriceUsd,
-		suppliedMarketValueUsd:
-			bigintString(position.suppliedMarketValueUsd) ?? position.suppliedMarketValueUsd,
-		borrowedMarketValueUsd:
-			bigintString(position.borrowedMarketValueUsd) ?? position.borrowedMarketValueUsd,
+		suppliedValueUsd:
+			bigintString(position.suppliedValueUsd) ?? position.suppliedValueUsd,
+		borrowedValueUsd:
+			bigintString(position.borrowedValueUsd) ?? position.borrowedValueUsd,
 		liquidity: position.liquidity
 			? {
 					vaultAddress:
@@ -252,19 +252,19 @@ function serializePosition(position: any): JsonValue {
 								marketPriceUsd:
 									bigintString(collateral.marketPriceUsd) ??
 									collateral.marketPriceUsd,
-								marketValueUsd:
-									bigintString(collateral.marketValueUsd) ??
-									collateral.marketValueUsd,
+								valueUsd:
+									bigintString(collateral.valueUsd) ??
+									collateral.valueUsd,
 							}),
 						),
 						"address",
 					),
-					liabilityMarketValueUsd:
-						bigintString(position.liquidity.liabilityMarketValueUsd) ??
-						position.liquidity.liabilityMarketValueUsd,
-					totalCollateralMarketValueUsd:
-						bigintString(position.liquidity.totalCollateralMarketValueUsd) ??
-						position.liquidity.totalCollateralMarketValueUsd,
+					liabilityValueUsd:
+						bigintString(position.liquidity.liabilityValueUsd) ??
+						position.liquidity.liabilityValueUsd,
+					totalCollateralValueUsd:
+						bigintString(position.liquidity.totalCollateralValueUsd) ??
+						position.liquidity.totalCollateralValueUsd,
 				}
 			: undefined,
 		borrowLiquidationPriceUsd:
@@ -283,8 +283,8 @@ function serializeSavings(saving: any): JsonValue {
 		subAccount: asAddress(saving.subAccount) ?? saving.subAccount,
 		shares: bigintString(saving.shares) ?? saving.shares,
 		assets: bigintString(saving.assets) ?? saving.assets,
-		suppliedMarketValueUsd:
-			bigintString(saving.suppliedMarketValueUsd) ?? saving.suppliedMarketValueUsd,
+		suppliedValueUsd:
+			bigintString(saving.suppliedValueUsd) ?? saving.suppliedValueUsd,
 		apy: saving.apy,
 		apyBreakdown: saving.apyBreakdown,
 	}) as JsonValue;
@@ -335,12 +335,12 @@ function serializeBorrow(borrow: any): JsonValue {
 		liabilityValueLiquidation:
 			bigintString(borrow.liabilityValueLiquidation) ??
 			borrow.liabilityValueLiquidation,
-		liabilityMarketValueUsd:
-			bigintString(borrow.liabilityMarketValueUsd) ??
-			borrow.liabilityMarketValueUsd,
-		totalCollateralMarketValueUsd:
-			bigintString(borrow.totalCollateralMarketValueUsd) ??
-			borrow.totalCollateralMarketValueUsd,
+		liabilityValueUsd:
+			bigintString(borrow.liabilityValueUsd) ??
+			borrow.liabilityValueUsd,
+		totalCollateralValueUsd:
+			bigintString(borrow.totalCollateralValueUsd) ??
+			borrow.totalCollateralValueUsd,
 		collateralValueLiquidation:
 			bigintString(borrow.collateralValueLiquidation) ??
 			borrow.collateralValueLiquidation,
@@ -368,10 +368,10 @@ function serializePortfolio(portfolio: any) {
 		borrows: sortBorrows(portfolio.borrows.map(serializeBorrow)),
 		positions: sortPositions(portfolio.positions.map(serializePosition)),
 		totals: {
-			suppliedMarketValueUsd: bigintString(portfolio.totalSuppliedMarketValueUsd),
-			borrowedMarketValueUsd: bigintString(portfolio.totalBorrowedMarketValueUsd),
-			netAssetMarketValueUsd: bigintString(portfolio.netAssetMarketValueUsd),
-			rewardsValueUsd: bigintString(portfolio.totalRewardsMarketValueUsd),
+			suppliedValueUsd: bigintString(portfolio.totalSuppliedValueUsd),
+			borrowedValueUsd: bigintString(portfolio.totalBorrowedValueUsd),
+			netAssetValueUsd: bigintString(portfolio.netAssetValueUsd),
+			rewardsValueUsd: bigintString(portfolio.totalRewardsValueUsd),
 			netApy: portfolio.netApy,
 			roe: portfolio.roe,
 			apyBreakdown: portfolio.apyBreakdown,
@@ -451,21 +451,21 @@ function renameEndpointMarketValueFields(value: any): any {
 function endpointMarketValueFieldName(field: string): string {
 	switch (field) {
 		case "suppliedValueUsd":
-			return "suppliedMarketValueUsd";
+			return "suppliedValueUsd";
 		case "borrowedValueUsd":
-			return "borrowedMarketValueUsd";
+			return "borrowedValueUsd";
 		case "netValueUsd":
-			return "netMarketValueUsd";
+			return "netValueUsd";
 		case "totalSuppliedValueUsd":
-			return "totalSuppliedMarketValueUsd";
+			return "totalSuppliedValueUsd";
 		case "totalBorrowedValueUsd":
-			return "totalBorrowedMarketValueUsd";
+			return "totalBorrowedValueUsd";
 		case "netAssetValueUsd":
-			return "netAssetMarketValueUsd";
+			return "netAssetValueUsd";
 		case "totalRewardsValueUsd":
-			return "totalRewardsMarketValueUsd";
+			return "totalRewardsValueUsd";
 		case "valueUsd":
-			return "marketValueUsd";
+			return "valueUsd";
 		default:
 			return field;
 	}

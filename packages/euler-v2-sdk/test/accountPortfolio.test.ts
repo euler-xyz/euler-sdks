@@ -433,18 +433,18 @@ test("portfolio permanently filters positions from lists and metrics", () => {
 					vault: verified,
 					shares: 100n,
 					assets: 100n,
-					suppliedMarketValueUsd: usd(100),
+					suppliedValueUsd: usd(100),
 				}),
 				position(collateralVault, {
 					vault: unverified,
 					shares: 100n,
 					assets: 100n,
-					suppliedMarketValueUsd: usd(100),
+					suppliedValueUsd: usd(100),
 				}),
 				position(borrowVault, {
 					vault: borrow,
 					borrowed: 50n,
-					borrowedMarketValueUsd: usd(50),
+					borrowedValueUsd: usd(50),
 				}),
 			]),
 		},
@@ -459,8 +459,8 @@ test("portfolio permanently filters positions from lists and metrics", () => {
 		portfolio.savings.map((saving) => saving.position.vaultAddress),
 		[savingsVault],
 	);
-	assert.equal(portfolio.totalSuppliedMarketValueUsd, usd(100));
-	assert.equal(portfolio.totalBorrowedMarketValueUsd, usd(50));
+	assert.equal(portfolio.totalSuppliedValueUsd, usd(100));
+	assert.equal(portfolio.totalBorrowedValueUsd, usd(50));
 	assert.equal(portfolio.netApy, (100 * 0.1 - 50 * 0.05) / 100);
 	assert.equal(portfolio.roe, (100 * 0.1 - 50 * 0.05) / 50);
 });
@@ -476,12 +476,12 @@ test("portfolio does not expose filtered borrow collateral as savings", () => {
 					vault: vault(collateralVault, { eulerLabel: labelled }),
 					shares: 100n,
 					assets: 100n,
-					suppliedMarketValueUsd: usd(100),
+					suppliedValueUsd: usd(100),
 				}),
 				position(borrowVault, {
 					vault: vault(borrowVault),
 					borrowed: 50n,
-					borrowedMarketValueUsd: usd(50),
+					borrowedValueUsd: usd(50),
 					liquidity: {
 						vaultAddress: borrowVault,
 						unitOfAccount: zeroAddress,
@@ -512,7 +512,7 @@ test("portfolio does not expose filtered borrow collateral as savings", () => {
 					vault: vault(savingsVault, { eulerLabel: labelled }),
 					shares: 10n,
 					assets: 10n,
-					suppliedMarketValueUsd: usd(10),
+					suppliedValueUsd: usd(10),
 				}),
 			]),
 		},
@@ -527,7 +527,7 @@ test("portfolio does not expose filtered borrow collateral as savings", () => {
 		[savingsVault],
 	);
 	assert.deepEqual(portfolio.borrows, []);
-	assert.equal(portfolio.totalSuppliedMarketValueUsd, usd(10));
+	assert.equal(portfolio.totalSuppliedValueUsd, usd(10));
 });
 
 test("portfolio getters reflect account position mutations", () => {
@@ -542,16 +542,16 @@ test("portfolio getters reflect account position mutations", () => {
 					}),
 					shares: 100n,
 					assets: 100n,
-					suppliedMarketValueUsd: usd(100),
+					suppliedValueUsd: usd(100),
 				}),
 			]),
 		},
 	});
 	const portfolio = new Portfolio(account);
 
-	assert.equal(portfolio.totalSuppliedMarketValueUsd, usd(100));
-	account.getPosition(subAccount, savingsVault)!.suppliedMarketValueUsd = usd(125);
-	assert.equal(portfolio.totalSuppliedMarketValueUsd, usd(125));
+	assert.equal(portfolio.totalSuppliedValueUsd, usd(100));
+	account.getPosition(subAccount, savingsVault)!.suppliedValueUsd = usd(125);
+	assert.equal(portfolio.totalSuppliedValueUsd, usd(125));
 });
 
 test("portfolio service fetches populated accounts and forwards position filter", async () => {
@@ -567,7 +567,7 @@ test("portfolio service fetches populated accounts and forwards position filter"
 					}),
 					shares: 100n,
 					assets: 100n,
-					suppliedMarketValueUsd: usd(100),
+					suppliedValueUsd: usd(100),
 				}),
 			]),
 		},
@@ -594,7 +594,7 @@ test("portfolio service fetches populated accounts and forwards position filter"
 			portfolioAccount === account && pos.assets > 0n,
 	});
 
-	assert.equal(fetched.result.totalSuppliedMarketValueUsd, usd(100));
+	assert.equal(fetched.result.totalSuppliedValueUsd, usd(100));
 	assert.deepEqual(observedOptions, {
 		populateAll: true,
 	});
@@ -658,18 +658,18 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 						vault: collateral,
 						shares: 200n,
 						assets: 200n,
-						suppliedMarketValueUsd: usd(200),
+						suppliedValueUsd: usd(200),
 					}),
 					position(borrowVault, {
 						vault: borrow,
 						borrowed: 100n,
-						borrowedMarketValueUsd: usd(100),
+						borrowedValueUsd: usd(100),
 					}),
 					position(savingsVault, {
 						vault: savings,
 						shares: 100n,
 						assets: 100n,
-						suppliedMarketValueUsd: usd(100),
+						suppliedValueUsd: usd(100),
 					}),
 				],
 				[collateralVault],
@@ -745,7 +745,7 @@ test("portfolio applies intrinsic APY", () => {
 					vault: intrinsicVault,
 					shares: 100n,
 					assets: 100n,
-					suppliedMarketValueUsd: usd(100),
+					suppliedValueUsd: usd(100),
 				}),
 			]),
 		},
@@ -787,7 +787,7 @@ test("portfolio uses EulerEarn supplyApy1h for yield metrics", () => {
 					vault: eulerEarn,
 					shares: 100n,
 					assets: 100n,
-					suppliedMarketValueUsd: usd(100),
+					suppliedValueUsd: usd(100),
 				}),
 			]),
 		},
@@ -828,20 +828,20 @@ test("portfolio treats populated positions without APY data as zero yield", () =
 					vault: vault(collateralVault),
 					shares: 100n,
 					assets: 100n,
-					suppliedMarketValueUsd: usd(100),
+					suppliedValueUsd: usd(100),
 				}),
 				position(borrowVault, {
 					vault: vault(borrowVault),
 					borrowed: 50n,
-					borrowedMarketValueUsd: usd(50),
+					borrowedValueUsd: usd(50),
 				}),
 			]),
 		},
 	}));
 
-	assert.equal(portfolio.totalSuppliedMarketValueUsd, usd(100));
-	assert.equal(portfolio.totalBorrowedMarketValueUsd, usd(50));
-	assert.equal(portfolio.netAssetMarketValueUsd, usd(50));
+	assert.equal(portfolio.totalSuppliedValueUsd, usd(100));
+	assert.equal(portfolio.totalBorrowedValueUsd, usd(50));
+	assert.equal(portfolio.netAssetValueUsd, usd(50));
 	assert.equal(portfolio.netApy, 0);
 	assert.equal(portfolio.roe, 0);
 });
@@ -857,7 +857,7 @@ test("portfolio yield metrics return zero when equity is not positive", () => {
 						interestRates: { supplyAPY: "0", borrowAPY: "0.08" },
 					}),
 					borrowed: 100n,
-					borrowedMarketValueUsd: usd(100),
+					borrowedValueUsd: usd(100),
 				}),
 			]),
 		},
@@ -867,7 +867,7 @@ test("portfolio yield metrics return zero when equity is not positive", () => {
 	assert.equal(portfolio.roe, 0);
 });
 
-test("account market price population treats missing collateral position as zero market value", async () => {
+test("account market price population treats missing collateral position as zero value", async () => {
 	const emptyCollateralVault = getAddress(
 		"0x9000000000000000000000000000000000000000",
 	);
@@ -936,14 +936,14 @@ test("account market price population treats missing collateral position as zero
 	await account.populateMarketPrices({} as any);
 
 	const borrow = account.getPosition(subAccount, borrowVault)!;
-	assert.equal(borrow.borrowedMarketValueUsd, 1);
+	assert.equal(borrow.borrowedValueUsd, 1);
 	assert.equal(borrow.liquidity!.collaterals[0]!.marketPriceUsd, 1);
-	assert.equal(borrow.liquidity!.collaterals[0]!.marketValueUsd, 2);
-	assert.equal(borrow.liquidity!.collaterals[1]!.marketValueUsd, 0);
-	assert.equal(borrow.liquidity!.totalCollateralMarketValueUsd, 2);
+	assert.equal(borrow.liquidity!.collaterals[0]!.valueUsd, 2);
+	assert.equal(borrow.liquidity!.collaterals[1]!.valueUsd, 0);
+	assert.equal(borrow.liquidity!.totalCollateralValueUsd, 2);
 });
 
-test("portfolio borrow market values fall back to raw position market values when liquidity is unavailable", () => {
+test("portfolio borrow values fall back to raw position values when liquidity is unavailable", () => {
 	const portfolio = new Portfolio(populatedAccount({
 		chainId: 1,
 		owner,
@@ -955,13 +955,13 @@ test("portfolio borrow market values fall back to raw position market values whe
 						vault: pricedVault(collateralVault),
 						assets: 2_000000n,
 						isCollateral: true,
-						suppliedMarketValueUsd: usd(2),
+						suppliedValueUsd: usd(2),
 					}),
 					position(borrowVault, {
 						vault: pricedVault(borrowVault),
 						borrowed: 1_000000n,
 						isController: true,
-						borrowedMarketValueUsd: usd(1),
+						borrowedValueUsd: usd(1),
 					}),
 				],
 				[collateralVault],
@@ -971,6 +971,6 @@ test("portfolio borrow market values fall back to raw position market values whe
 	}));
 
 	const borrow = portfolio.borrows[0]!;
-	assert.equal(borrow.liabilityMarketValueUsd, 1);
-	assert.equal(borrow.totalCollateralMarketValueUsd, 2);
+	assert.equal(borrow.liabilityValueUsd, 1);
+	assert.equal(borrow.totalCollateralValueUsd, 2);
 });
