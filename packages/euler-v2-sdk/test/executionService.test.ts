@@ -762,9 +762,12 @@ test("redeem accepts assets and converts to shares from account vault state", ()
 	const totalAssets = 5_000_000n;
 	const totalShares = 7_000_000n;
 	const virtualDeposit = 1_000_000n;
-	const expectedShares =
-		(assets * (totalShares + virtualDeposit)) /
-		(totalAssets + virtualDeposit);
+	// previewWithdraw rounds shares UP so redeem(shares) yields at least `assets`.
+	// Mirror the on-chain Math.mulDiv(Rounding.Ceil) using the virtual-deposit-
+	// adjusted totals, matching ExecutionService.resolveRedeemShares.
+	const numerator = assets * (totalShares + virtualDeposit);
+	const denominator = totalAssets + virtualDeposit;
+	const expectedShares = (numerator + denominator - 1n) / denominator;
 	const account = {
 		chainId: 1,
 		getPosition: () => ({
@@ -774,6 +777,11 @@ test("redeem accepts assets and converts to shares from account vault state", ()
 				convertToShares: (value: bigint) =>
 					(value * (totalShares + virtualDeposit)) /
 					(totalAssets + virtualDeposit),
+				previewWithdraw: (value: bigint) => {
+					const num = value * (totalShares + virtualDeposit);
+					const den = totalAssets + virtualDeposit;
+					return (num + den - 1n) / den;
+				},
 			},
 		}),
 	} as never;

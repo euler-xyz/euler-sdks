@@ -369,6 +369,18 @@ export class EVault
 		return (assets * totalSharesAdjusted) / totalAssetsAdjusted;
 	}
 
+	/**
+	 * Shares required to withdraw `assets` of underlying, rounded UP.
+	 * Mirrors EVault's `previewWithdraw(uint256)` (Math.mulDiv with Rounding.Ceil)
+	 * including the VIRTUAL_DEPOSIT_AMOUNT offset.
+	 */
+	override previewWithdraw(assets: bigint): bigint {
+		const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
+		const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
+		const numerator = assets * totalSharesAdjusted;
+		return (numerator + totalAssetsAdjusted - 1n) / totalAssetsAdjusted;
+	}
+
 	get availableToBorrow(): bigint {
 		const { borrowCap } = this.caps;
 		if (borrowCap === maxUint256) return this.totalCash;

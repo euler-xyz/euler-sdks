@@ -36,4 +36,9 @@ export class SecuritizeCollateralVault
 	override convertToShares(assets: bigint): bigint {
 		return assets;
 	}
+
+	/** 1:1 conversion (rounding-up is a no-op when totalShares === totalAssets). */
+	override previewWithdraw(assets: bigint): bigint {
+		return assets;
+	}
 }

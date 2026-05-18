@@ -367,6 +367,7 @@ function hasSuppliedPosition(
 
 type VaultWithShareConversion = IHasVaultAddress & {
 	convertToShares(assets: bigint): bigint;
+	previewWithdraw(assets: bigint): bigint;
 };
 
 function hasShareConversion(vault: unknown): vault is VaultWithShareConversion {
@@ -374,7 +375,9 @@ function hasShareConversion(vault: unknown): vault is VaultWithShareConversion {
 		typeof vault === "object" &&
 		vault !== null &&
 		"convertToShares" in vault &&
-		typeof vault.convertToShares === "function"
+		typeof vault.convertToShares === "function" &&
+		"previewWithdraw" in vault &&
+		typeof vault.previewWithdraw === "function"
 	);
 }
 
@@ -2146,15 +2149,16 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const vault = position?.vault;
 		if (!hasShareConversion(vault)) {
 			throw new Error(
-				"planRedeem with assets requires account position vault state with convertToShares. Populate the account vaults before planning asset-denominated redeem.",
+				"planRedeem with assets requires account position vault state with previewWithdraw. Populate the account vaults before planning asset-denominated redeem.",
 			);
 		}
 
-		// Asset-denominated redeem intentionally rounds shares down via
-		// convertToShares. Calling withdraw(assets) rounds shares up, which can
-		// burn rounding remainders. The populated vault conversion keeps EVault
-		// virtual deposits in the share calculation.
-		return vault.convertToShares(args.assets);
+		// Asset-denominated redeem must round shares UP so the user receives at
+		// least the requested assets. `convertToShares` rounds down, leaving a
+		// rounding dust shortfall. `previewWithdraw` mirrors the on-chain
+		// previewWithdraw(uint256) — Math.mulDiv with Rounding.Ceil over the
+		// virtual-deposit-adjusted total{Shares,Assets}.
+		return vault.previewWithdraw(args.assets);
 	}
 
 	/**

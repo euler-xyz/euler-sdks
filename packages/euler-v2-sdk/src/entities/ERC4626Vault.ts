@@ -43,6 +43,12 @@ export interface IERC4626Vault extends ERC4626Data {
 export interface IERC4626VaultConversion {
 	convertToAssets(shares: bigint): bigint;
 	convertToShares(assets: bigint): bigint;
+	/**
+	 * Shares needed to withdraw `assets` of underlying — rounded UP so that
+	 * redeem(shares) yields at least `assets`. Counterpart to ERC4626
+	 * `previewWithdraw(uint256)` and required for asset-denominated redeems.
+	 */
+	previewWithdraw(assets: bigint): bigint;
 }
 
 export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
@@ -90,6 +96,11 @@ export class ERC4626Vault implements IERC4626Vault, IERC4626VaultConversion {
 
 	/** 1:1 conversion (standard ERC4626 when totalShares === totalAssets). */
 	convertToShares(assets: bigint): bigint {
+		return assets;
+	}
+
+	/** 1:1 conversion (rounding-up is a no-op when totalShares === totalAssets). */
+	previewWithdraw(assets: bigint): bigint {
 		return assets;
 	}
 
