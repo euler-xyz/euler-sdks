@@ -39,7 +39,12 @@ const DEFAULT_FUUL_FACTORY: Address =
 const BREVIS_LEND = 2002;
 const BREVIS_BORROW = 2001;
 
-type MerklOpportunityType = "EULER" | "MULTILENDBORROW" | "ERC20LOGPROCESSOR";
+type MerklOpportunityType =
+	| "EULER"
+	| "MULTILENDBORROW"
+	| "ERC20LOGPROCESSOR"
+	| "EULER_BORROW_FROM_COLLATERAL"
+	| "EULER_MULTI_BORROW_FROM_COLLATERAL";
 
 const MERKL_EULER_SOURCE_URL = "https://app.merkl.xyz/?protocol=euler";
 
@@ -50,6 +55,14 @@ const normalizeAddress = (value?: string): Address | undefined => {
 	} catch {
 		return undefined;
 	}
+};
+
+const normalizeAddressList = (value?: string[]): string[] | undefined => {
+	if (!Array.isArray(value) || value.length === 0) return undefined;
+	const addresses = value
+		.map((address) => normalizeAddress(address)?.toLowerCase())
+		.filter((address): address is string => address !== undefined);
+	return addresses.length > 0 ? addresses : undefined;
 };
 
 const sanitizeFuulClaimChecks = (
@@ -387,6 +400,14 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				"ERC20LOGPROCESSOR",
 				`${this.merklApiUrl}/opportunities/?chainId=${chainId}&mainProtocolId=euler&campaigns=true&type=ERC20LOGPROCESSOR`,
 			],
+			[
+				"EULER_BORROW_FROM_COLLATERAL",
+				`${this.merklApiUrl}/opportunities/?chainId=${chainId}&type=EULER_BORROW_FROM_COLLATERAL&campaigns=true`,
+			],
+			[
+				"EULER_MULTI_BORROW_FROM_COLLATERAL",
+				`${this.merklApiUrl}/opportunities/?chainId=${chainId}&type=EULER_MULTI_BORROW_FROM_COLLATERAL&campaigns=true`,
+			],
 		];
 
 		const results = await Promise.all(
@@ -405,6 +426,65 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				const aprs = merklAprMap(opp);
 
 				for (const c of opp.campaigns ?? []) {
+					if (
+						type === "EULER_BORROW_FROM_COLLATERAL" ||
+						type === "EULER_MULTI_BORROW_FROM_COLLATERAL"
+					) {
+						const apr = aprs.get(c.campaignId) ?? c.apr ?? 0;
+						if (!apr) continue;
+
+						const pairs: Array<{ vaultAddress: string; collateralAddress: Address }> =
+							[];
+						for (const vault of c.params?.vaults ?? []) {
+							const vaultAddress = vault.evkAddress?.toLowerCase();
+							if (!vaultAddress) continue;
+							for (const collateral of vault.collaterals ?? []) {
+								const collateralAddress = normalizeAddress(
+									collateral.tokenAddress,
+								);
+								if (!collateralAddress) continue;
+								pairs.push({ vaultAddress, collateralAddress });
+							}
+						}
+
+						const flatVaultAddress = c.params?.evkAddress?.toLowerCase();
+						const flatCollateralAddress = normalizeAddress(
+							c.params?.collateralAddress,
+						);
+						if (
+							pairs.length === 0 &&
+							flatVaultAddress &&
+							flatCollateralAddress
+						) {
+							pairs.push({
+								vaultAddress: flatVaultAddress,
+								collateralAddress: flatCollateralAddress,
+							});
+						}
+
+						for (const pair of pairs) {
+							campaigns.push({
+								campaignId: c.campaignId,
+								source: "merkl",
+								action: "BORROW_COLLATERAL",
+								apr: apr / 100,
+								rewardTokenAddress: getAddress(
+									c.rewardToken.address,
+								) as Address,
+								rewardTokenSymbol: c.rewardToken.symbol,
+								rewardTokenIcon: c.rewardToken.icon,
+								dailyRewards: c.dailyRewards,
+								endTimestamp: c.endTimestamp,
+								collateralAddress: pair.collateralAddress,
+								sourceUrl: merklOpportunityUrl(opp, type),
+								whitelist: normalizeAddressList(c.params?.whitelist),
+								blacklist: normalizeAddressList(c.params?.blacklist),
+								_vaultAddress: pair.vaultAddress,
+							} as RewardCampaign & { _vaultAddress: string });
+						}
+						continue;
+					}
+
 					if (type === "MULTILENDBORROW") {
 						const action =
 							opp.action === "LEND" ? ("LEND" as const) : ("BORROW" as const);
@@ -431,6 +511,8 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 								dailyRewards: c.dailyRewards,
 								endTimestamp: c.endTimestamp,
 								sourceUrl: merklOpportunityUrl(opp, type),
+								whitelist: normalizeAddressList(c.params?.whitelist),
+								blacklist: normalizeAddressList(c.params?.blacklist),
 								_vaultAddress: vaultAddress,
 							} as RewardCampaign & { _vaultAddress: string });
 						}
@@ -460,6 +542,8 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 						endTimestamp: c.endTimestamp,
 						collateralAddress: normalizeAddress(c.params?.collateralAddress),
 						sourceUrl: merklOpportunityUrl(opp, type),
+						whitelist: normalizeAddressList(c.params?.whitelist),
+						blacklist: normalizeAddressList(c.params?.blacklist),
 						_vaultAddress: vaultAddress,
 					} as RewardCampaign & { _vaultAddress: string });
 				}
@@ -564,6 +648,15 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		fuulCampaigns: RewardCampaign[] = [],
 	): Map<string, VaultRewardInfo> {
 		const map = new Map<string, VaultRewardInfo>();
+		const campaignKey = (campaign: RewardCampaign): string =>
+			[
+				campaign.source,
+				campaign.campaignId,
+				campaign.action,
+				campaign.collateralAddress?.toLowerCase(),
+			].join(":");
+		const aggregateKey = (campaign: RewardCampaign): string =>
+			[campaign.source, campaign.campaignId, campaign.action].join(":");
 
 		const all = [
 			...merklCampaigns,
@@ -581,15 +674,18 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				map.set(key, info);
 			}
 
-			const dedupeKey = `${campaign.source}:${campaign.campaignId}`;
-			const exists = info.campaigns.some(
-				(c) => `${c.source}:${c.campaignId}` === dedupeKey,
-			);
+			const dedupeKey = campaignKey(campaign);
+			const exists = info.campaigns.some((c) => campaignKey(c) === dedupeKey);
 			if (exists) continue;
 
+			const aggregateExists = info.campaigns.some(
+				(c) => aggregateKey(c) === aggregateKey(campaign),
+			);
 			const { _vaultAddress, ...cleanCampaign } = campaign;
 			info.campaigns.push(cleanCampaign);
-			info.totalRewardsApr += cleanCampaign.apr;
+			if (!aggregateExists) {
+				info.totalRewardsApr += cleanCampaign.apr;
+			}
 		}
 
 		return map;

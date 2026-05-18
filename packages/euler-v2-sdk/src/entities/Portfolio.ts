@@ -433,11 +433,16 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 		for (const borrow of this.borrows) {
 			positions.push({
 				vault: borrow.borrow.vault,
+				vaultAddress: borrow.borrow.vaultAddress,
 				borrowedValueUsd: borrow.borrow.borrowedValueUsd,
+				collateralAddresses: borrow.collaterals.map((collateral) =>
+					getAddress(collateral.vaultAddress),
+				),
 			});
 			for (const collateral of borrow.collaterals) {
 				positions.push({
 					vault: collateral.vault,
+					vaultAddress: collateral.vaultAddress,
 					suppliedValueUsd: collateral.suppliedValueUsd,
 				});
 			}
@@ -512,10 +517,15 @@ function borrowYieldPositions<TVaultEntity extends IHasVaultAddress>(
 	return [
 		{
 			vault: borrow.vault,
+			vaultAddress: borrow.vaultAddress,
 			borrowedValueUsd: borrow.borrowedValueUsd,
+			collateralAddresses: collaterals.map((collateral) =>
+				getAddress(collateral.vaultAddress),
+			),
 		},
 		...collaterals.map((collateral) => ({
 			vault: collateral.vault,
+			vaultAddress: collateral.vaultAddress,
 			suppliedValueUsd: collateral.suppliedValueUsd,
 		})),
 	];

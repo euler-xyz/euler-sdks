@@ -258,10 +258,19 @@ export function computeSubAccountRoe(
 			const borrowUsd = p.borrowedValueUsd;
 			const borrowApy = getVaultBorrowApy(vault);
 			if (borrowApy != null) {
+				const collateralPositions = findCollateralPositionsForBorrow(
+					subAccount,
+					p,
+				);
+				const collateralAddresses = collateralPositions.map((position) =>
+					getAddress(position.vaultAddress),
+				);
 				hasData = true;
 				totalBorrowUsd += borrowUsd;
 				totalBorrowingYield += borrowUsd * borrowApy;
-				totalRewardYield += borrowUsd * getVaultRewardApr(vault, "BORROW");
+				totalRewardYield +=
+					borrowUsd *
+					getVaultRewardApr(vault, "BORROW", { collateralAddresses });
 				totalIntrinsicYield -= borrowUsd * intrinsicApyDecimal;
 			}
 		}
@@ -538,6 +547,8 @@ interface AccountYieldTotals {
 
 export interface AccountYieldPosition {
 	vault?: IHasVaultAddress;
+	vaultAddress?: Address;
+	collateralAddresses?: Address[];
 	suppliedValueUsd?: number;
 	borrowedValueUsd?: number;
 }
@@ -548,7 +559,22 @@ function computeAccountYieldTotals(
 	function* positions(): Iterable<AccountYieldPosition> {
 		for (const subAccount of Object.values(account.subAccounts ?? {})) {
 			if (!subAccount) continue;
-			yield* subAccount.positions;
+			for (const position of subAccount.positions) {
+				if (position.borrowed > 0n) {
+					const collaterals = findCollateralPositionsForBorrow(
+						subAccount,
+						position,
+					);
+					yield {
+						...position,
+						collateralAddresses: collaterals.map((collateral) =>
+							getAddress(collateral.vaultAddress),
+						),
+					};
+				} else {
+					yield position;
+				}
+			}
 		}
 	}
 
@@ -603,7 +629,9 @@ function computePositionYieldTotals(
 				getVaultIntrinsicApy(vault),
 			);
 			const borrowApy = baseBorrowApy + intrinsicBorrowApy;
-			const borrowRewardApy = getVaultRewardApr(vault, "BORROW");
+			const borrowRewardApy = getVaultRewardApr(vault, "BORROW", {
+				collateralAddresses: position.collateralAddresses,
+			});
 
 			totalNetYield -= borrowUsd * (borrowApy - borrowRewardApy);
 			totalBorrowingYield += borrowUsd * baseBorrowApy;
@@ -702,13 +730,39 @@ function getIntrinsicApyContribution(
 }
 
 /** Sum reward APRs for a given action as percentage points from vault campaigns. */
-function getVaultRewardApr(vault: any, action: string): number {
+function getVaultRewardApr(
+	vault: any,
+	action: string,
+	options: { collateralAddresses?: readonly Address[] } = {},
+): number {
 	if (!vault.rewards?.campaigns) return 0;
 	let total = 0;
+	const collateralAddresses = options.collateralAddresses?.map((address) =>
+		getAddress(address),
+	);
 	for (const c of vault.rewards.campaigns) {
-		if (c.action === action && typeof c.apr === "number") {
+		if (typeof c.apr !== "number") continue;
+		if (c.action === action) {
+			total += c.apr * 100;
+			continue;
+		}
+		if (
+			action === "BORROW" &&
+			c.action === "BORROW_COLLATERAL" &&
+			rewardMatchesCollateral(c, collateralAddresses)
+		) {
 			total += c.apr * 100;
 		}
 	}
 	return total;
+}
+
+function rewardMatchesCollateral(
+	campaign: { collateralAddress?: Address },
+	collateralAddresses: readonly Address[] | undefined,
+): boolean {
+	if (!campaign.collateralAddress || !collateralAddresses?.length) return false;
+	return collateralAddresses.some((address) =>
+		isAddressEqual(address, campaign.collateralAddress!),
+	);
 }

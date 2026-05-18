@@ -29,6 +29,10 @@ export interface RewardCampaign {
 	minMultiplier?: number;
 	/** Maximum leverage multiplier for looping rewards. */
 	maxMultiplier?: number;
+	/** Lowercase recipient allowlist, when the upstream campaign restricts earning. */
+	whitelist?: string[];
+	/** Lowercase recipient denylist, when the upstream campaign excludes earners. */
+	blacklist?: string[];
 }
 
 export interface VaultRewardInfo {
@@ -199,11 +203,19 @@ export interface MerklCampaign {
 		targetToken?: string;
 		evkAddress?: string;
 		collateralAddress?: string;
+		whitelist?: string[];
+		blacklist?: string[];
 		markets?: Array<{
 			campaignParameters?: {
 				evkAddress?: string;
 				targetToken?: string;
 			};
+		}>;
+		vaults?: Array<{
+			evkAddress?: string;
+			collaterals?: Array<{
+				tokenAddress?: string;
+			}>;
 		}>;
 	};
 }
@@ -212,7 +224,7 @@ export interface MerklOpportunity {
 	chainId: number;
 	type: string;
 	identifier: string;
-	status: "LIVE" | "PAST";
+	status: "LIVE" | "PAST" | "SOON";
 	action: "LEND" | "BORROW";
 	apr: number;
 	dailyRewards: number;

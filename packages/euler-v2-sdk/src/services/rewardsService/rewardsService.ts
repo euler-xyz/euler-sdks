@@ -142,8 +142,24 @@ type BrevisFallbackAdapter = IRewardsAdapter & {
 	) => Promise<UserReward[]>;
 };
 
-const rewardCampaignKey = (reward: { source: string; campaignId: string }) =>
-	`${reward.source}:${reward.campaignId}`;
+const rewardCampaignKey = (reward: {
+	source: string;
+	campaignId: string;
+	action?: string;
+	collateralAddress?: Address;
+}) =>
+	[
+		reward.source,
+		reward.campaignId,
+		reward.action,
+		reward.collateralAddress?.toLowerCase(),
+	].join(":");
+
+const rewardCampaignAggregateKey = (reward: {
+	source: string;
+	campaignId: string;
+	action?: string;
+}) => [reward.source, reward.campaignId, reward.action].join(":");
 
 const mergeVaultRewardMaps = (
 	primary: Map<string, VaultRewardInfo>,
@@ -167,11 +183,18 @@ const mergeVaultRewardMaps = (
 		}
 
 		const existing = new Set(info.campaigns.map(rewardCampaignKey));
+		const existingAggregates = new Set(
+			info.campaigns.map(rewardCampaignAggregateKey),
+		);
 		for (const campaign of fallbackInfo.campaigns) {
 			const campaignKey = rewardCampaignKey(campaign);
 			if (existing.has(campaignKey)) continue;
 			info.campaigns.push(campaign);
-			info.totalRewardsApr += campaign.apr;
+			const aggregateKey = rewardCampaignAggregateKey(campaign);
+			if (!existingAggregates.has(aggregateKey)) {
+				info.totalRewardsApr += campaign.apr;
+				existingAggregates.add(aggregateKey);
+			}
 			existing.add(campaignKey);
 		}
 	}

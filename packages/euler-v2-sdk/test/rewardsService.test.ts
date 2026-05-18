@@ -166,6 +166,8 @@ test("V3 rewards adapter preserves collateral and looping campaign metadata", as
 						apr: 3,
 						collateralAsset: otherRewardToken,
 						sourceUrl: "https://app.merkl.xyz/opportunities/mainnet/EULER/x",
+						whitelist: [accountAddress.toLowerCase()],
+						blacklist: [otherAccountAddress],
 						rewardToken: {
 							address: rewardToken,
 							symbol: "EUL",
@@ -199,10 +201,80 @@ test("V3 rewards adapter preserves collateral and looping campaign metadata", as
 	assert.equal(info?.campaigns[0]?.action, "BORROW_COLLATERAL");
 	assert.equal(info?.campaigns[0]?.collateralAddress, otherRewardToken);
 	assert.equal(info?.campaigns[0]?.sourceUrl?.includes("merkl.xyz"), true);
+	assert.deepEqual(info?.campaigns[0]?.whitelist, [
+		accountAddress.toLowerCase(),
+	]);
+	assert.deepEqual(info?.campaigns[0]?.blacklist, [
+		otherAccountAddress.toLowerCase(),
+	]);
 	assert.equal(info?.campaigns[1]?.action, "LOOPING");
 	assert.equal(info?.campaigns[1]?.collateralAddress, otherRewardToken);
 	assert.equal(info?.campaigns[1]?.minMultiplier, 2);
 	assert.equal(info?.campaigns[1]?.maxMultiplier, 5);
+});
+
+test("direct rewards adapter fans out Merkl borrow-from-collateral campaigns", async () => {
+	const adapter = new RewardsDirectAdapter({
+		enableBrevis: false,
+		enableFuul: false,
+	});
+	adapter.setQueryMerklOpportunities(async (url) => {
+		if (!url.includes("EULER_MULTI_BORROW_FROM_COLLATERAL")) return [];
+		return [
+			{
+				chainId: 1,
+				type: "EULER_MULTI_BORROW_FROM_COLLATERAL",
+				identifier: "multi",
+				status: "LIVE",
+				action: "BORROW",
+				apr: 0,
+				dailyRewards: 0,
+				campaigns: [
+					{
+						id: "campaign",
+						campaignId: "campaign",
+						type: "EULER_MULTI_BORROW_FROM_COLLATERAL",
+						rewardToken: {
+							address: rewardToken,
+							symbol: "EUL",
+						},
+						apr: 1.5,
+						dailyRewards: 10,
+						startTimestamp: 0,
+						endTimestamp: 9999999999,
+						params: {
+							whitelist: [accountAddress],
+							blacklist: [otherAccountAddress],
+							vaults: [
+								{
+									evkAddress: vaultAddress,
+									collaterals: [
+										{ tokenAddress: otherRewardToken },
+										{ tokenAddress: claimAddress },
+									],
+								},
+							],
+						},
+					},
+				],
+			},
+		] as any;
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 2);
+	assert.equal(info?.totalRewardsApr, 0.015);
+	assert.equal(info?.campaigns[0]?.action, "BORROW_COLLATERAL");
+	assert.equal(info?.campaigns[0]?.collateralAddress, otherRewardToken);
+	assert.deepEqual(info?.campaigns[0]?.whitelist, [
+		accountAddress.toLowerCase(),
+	]);
+	assert.deepEqual(info?.campaigns[0]?.blacklist, [
+		otherAccountAddress.toLowerCase(),
+	]);
+	assert.equal(info?.campaigns[1]?.collateralAddress, claimAddress);
 });
 
 test("rewards service uses direct proof-backed Brevis rewards when V3 lacks claim metadata", async () => {

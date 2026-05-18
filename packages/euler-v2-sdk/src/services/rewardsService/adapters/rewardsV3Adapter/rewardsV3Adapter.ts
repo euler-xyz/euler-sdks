@@ -33,6 +33,14 @@ const normalizeAddress = (value?: string): Address | undefined => {
 	}
 };
 
+const normalizeAddressList = (value?: string[]): string[] | undefined => {
+	if (!Array.isArray(value) || value.length === 0) return undefined;
+	const addresses = value
+		.map((address) => normalizeAddress(address)?.toLowerCase())
+		.filter((address): address is string => address !== undefined);
+	return addresses.length > 0 ? addresses : undefined;
+};
+
 const normalizeProvider = (value?: string): RewardSource | undefined => {
 	const normalized = value?.trim().toLowerCase();
 	if (!normalized) return undefined;
@@ -306,15 +314,31 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			map.set(key, info);
 		}
 
+		const campaignKey = (campaign: RewardCampaign): string =>
+			[
+				campaign.source,
+				campaign.campaignId,
+				campaign.action,
+				campaign.collateralAddress?.toLowerCase(),
+			].join(":");
+
+		const aggregateKey = (campaign: RewardCampaign): string =>
+			[campaign.source, campaign.campaignId, campaign.action].join(":");
+
 		const addCampaign = (campaign: RewardCampaign): void => {
-			const dedupeKey = `${campaign.source}:${campaign.campaignId}`;
+			const dedupeKey = campaignKey(campaign);
 			const exists = info!.campaigns.some(
-				(existing) => `${existing.source}:${existing.campaignId}` === dedupeKey,
+				(existing) => campaignKey(existing) === dedupeKey,
 			);
 			if (exists) return;
 
+			const aggregateExists = info!.campaigns.some(
+				(existing) => aggregateKey(existing) === aggregateKey(campaign),
+			);
 			info!.campaigns.push(campaign);
-			info!.totalRewardsApr += campaign.apr;
+			if (!aggregateExists) {
+				info!.totalRewardsApr += campaign.apr;
+			}
 		};
 
 		if (Array.isArray(row.campaigns) && row.campaigns.length > 0) {
@@ -363,6 +387,8 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 					maxMultiplier: normalizeFiniteNumber(
 						campaignRow.maxMultiplier ?? campaignRow.maxLeverage,
 					),
+					whitelist: normalizeAddressList(campaignRow.whitelist),
+					blacklist: normalizeAddressList(campaignRow.blacklist),
 				});
 			}
 
@@ -401,6 +427,8 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			maxMultiplier: normalizeFiniteNumber(
 				row.maxMultiplier ?? row.maxLeverage,
 			),
+			whitelist: normalizeAddressList(row.whitelist),
+			blacklist: normalizeAddressList(row.blacklist),
 		});
 	}
 

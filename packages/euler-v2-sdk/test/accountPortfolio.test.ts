@@ -727,6 +727,112 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 	});
 });
 
+test("portfolio includes collateral-specific borrow rewards", () => {
+	const collateral = vault(collateralVault, {
+		interestRates: { supplyAPY: 5, borrowAPY: 0 },
+		rewards: {
+			campaigns: [
+				{
+					campaignId: "supply",
+					source: "merkl",
+					action: "LEND",
+					apr: 0.02,
+					rewardTokenSymbol: "EUL",
+				},
+			],
+		},
+	});
+	const borrow = vault(borrowVault, {
+		interestRates: { supplyAPY: 0, borrowAPY: 8 },
+		rewards: {
+			campaigns: [
+				{
+					campaignId: "borrow",
+					source: "merkl",
+					action: "BORROW",
+					apr: 0.01,
+					rewardTokenSymbol: "EUL",
+				},
+				{
+					campaignId: "borrow-collateral",
+					source: "merkl",
+					action: "BORROW_COLLATERAL",
+					apr: 0.03,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: collateralVault,
+				},
+				{
+					campaignId: "mismatched",
+					source: "merkl",
+					action: "BORROW_COLLATERAL",
+					apr: 0.5,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: fallbackCollateralVault,
+				},
+			],
+		},
+	});
+
+	const portfolio = new Portfolio(populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(
+				subAccount,
+				[
+					position(collateralVault, {
+						vault: collateral,
+						shares: 200n,
+						assets: 200n,
+						suppliedValueUsd: usd(200),
+					}),
+					position(borrowVault, {
+						vault: borrow,
+						borrowed: 100n,
+						borrowedValueUsd: usd(100),
+					}),
+				],
+				[collateralVault],
+			),
+		},
+	}));
+
+	const borrowPosition = portfolio.borrows[0]!;
+
+	assert.equal(borrowPosition.netApy, 5);
+	assert.equal(borrowPosition.roe, 10);
+	assert.deepEqual(borrowPosition.apyBreakdown, {
+		lending: 5,
+		borrowing: -4,
+		rewards: 4,
+		intrinsicApy: 0,
+		total: 5,
+	});
+	assert.deepEqual(borrowPosition.roeBreakdown, {
+		lending: 10,
+		borrowing: -8,
+		rewards: 8,
+		intrinsicApy: 0,
+		total: 10,
+	});
+	assert.equal(portfolio.netApy, 5);
+	assert.equal(portfolio.roe, 10);
+	assert.deepEqual(portfolio.apyBreakdown, {
+		lending: 5,
+		borrowing: -4,
+		rewards: 4,
+		intrinsicApy: 0,
+		total: 5,
+	});
+	assert.deepEqual(portfolio.roeBreakdown, {
+		lending: 10,
+		borrowing: -8,
+		rewards: 8,
+		intrinsicApy: 0,
+		total: 10,
+	});
+});
+
 test("portfolio applies intrinsic APY", () => {
 	const intrinsicVault = vault(savingsVault, {
 		interestRates: { supplyAPY: 10, borrowAPY: 0 },
