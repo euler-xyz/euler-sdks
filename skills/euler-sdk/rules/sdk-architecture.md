@@ -54,9 +54,10 @@ Use these default boundaries:
 - `executionService`: transaction planning, execution, plan validation, and post-state preview
 - `swapService`: quotes and providers
 - `rewardsService`: reward reads and provider-specific claim planning
+- `reulLockService`: rEUL vesting lock reads and unlock transaction plans
 - `eulerLabelsService`: normalized off-chain labels metadata; use exported helpers from `utils/eulerLabels` for product/vault flags, notices, and restrictions
 - `oracleAdapterService`: oracle adapter metadata keyed by normalized `adapter.oracle` address
 
 All service `fetch*` methods return `{ result, errors }`; keep diagnostics with the fetched entity when rendering warnings or enforcing data-quality policy.
 
-Reference: `packages/euler-v2-sdk/docs/services.md`, `packages/euler-v2-sdk/docs/config-through-env.md`, `packages/euler-v2-sdk/docs/wallet-service.md`, `packages/euler-v2-sdk/docs/entity-diagnostics.md`, `docs/data-architecture.md`, `src/sdk/buildSDK.ts`
+Reference: `packages/euler-v2-sdk/docs/services.md`, `packages/euler-v2-sdk/docs/config-through-env.md`, `packages/euler-v2-sdk/docs/wallet-service.md`, `packages/euler-v2-sdk/docs/reul-lock-service.md`, `packages/euler-v2-sdk/docs/entity-diagnostics.md`, `docs/data-architecture.md`, `src/sdk/buildSDK.ts`

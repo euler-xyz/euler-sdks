@@ -67,7 +67,7 @@ const simulation = await sdk.simulationService.simulateTransactionPlan(
 - planning and composing EVC transaction batches
 - resolving approvals (approve/Permit2 paths)
 - simulating transactions before execution
-- handling vault swaps, wallet-to-wallet swaps, pricing, rewards, normalized euler-labels metadata, and deployed addresses
+- handling vault swaps, wallet-to-wallet swaps, pricing, rewards, rEUL locks, normalized euler-labels metadata, and deployed addresses
 - fetching oracle adapter metadata/checks keyed by oracle adapter address (provider, methodology, checks)
 
 The SDK is built with dependency injection, so you can use `buildEulerSDK()` for a default setup, run individual services in isolation, or modify the behavior with your custom implementations.
@@ -90,17 +90,18 @@ All docs are in [`./docs`](./docs).
 8. [Simulations and State Overrides](./docs/simulations-and-state-overrides.md) - Plan simulation flow, validation output, and state override utilities.
 9. [Swaps](./docs/swaps.md) - Swap quote APIs and how swap payloads fit into plans.
 10. [CoW Swaps](./docs/cow-swaps.md) - CoW quote metadata, CoW-specific planners, order submission, status polling, and cancellation.
-11. [Pricing System](./docs/pricing-system.md) - Price data pipeline, fallback behavior, and pricing integration points.
-12. [Data Architecture](./docs/data-architecture.md) - Entities/adapters/services layering, population model, and data flow.
-13. [Cross-Service Data Population](./docs/cross-service-data-population.md) - How services enrich entities with prices, rewards, labels, and nested vaults.
-14. [Portfolio](./docs/portfolio.md) - High-level savings/borrows abstraction built from populated accounts.
-15. [Entity Reference](./docs/entities/index.md) - Property-level reference for exported entity shapes.
-16. [Account Computed Properties](./docs/account-computed-properties.md) - Health factor/LTV/net-value computed fields and data prerequisites.
-17. [Caching External Data Queries](./docs/caching-external-data-queries.md) - `query*` decoration pattern for caching/logging/profiling.
-18. [Plugins](./docs/plugins.md) - Plugin system for read-path and plan-path extensions.
-19. [Labels](./docs/labels.md) - Label metadata model and usage.
-20. [Decoding Smart Contract Errors](./docs/decode-smart-contract-errors.md) - Revert decoding utilities for better error handling.
-21. [Entity Diagnostics](./docs/entity-diagnostics.md) - Sidecar metadata for data normalization, fallbacks, and per-field warnings.
+11. [rEUL Lock Service](./docs/reul-lock-service.md) - rEUL lock reads and unlock transaction planning.
+12. [Pricing System](./docs/pricing-system.md) - Price data pipeline, fallback behavior, and pricing integration points.
+13. [Data Architecture](./docs/data-architecture.md) - Entities/adapters/services layering, population model, and data flow.
+14. [Cross-Service Data Population](./docs/cross-service-data-population.md) - How services enrich entities with prices, rewards, labels, and nested vaults.
+15. [Portfolio](./docs/portfolio.md) - High-level savings/borrows abstraction built from populated accounts.
+16. [Entity Reference](./docs/entities/index.md) - Property-level reference for exported entity shapes.
+17. [Account Computed Properties](./docs/account-computed-properties.md) - Health factor/LTV/net-value computed fields and data prerequisites.
+18. [Caching External Data Queries](./docs/caching-external-data-queries.md) - `query*` decoration pattern for caching/logging/profiling.
+19. [Plugins](./docs/plugins.md) - Plugin system for read-path and plan-path extensions.
+20. [Labels](./docs/labels.md) - Label metadata model and usage.
+21. [Decoding Smart Contract Errors](./docs/decode-smart-contract-errors.md) - Revert decoding utilities for better error handling.
+22. [Entity Diagnostics](./docs/entity-diagnostics.md) - Sidecar metadata for data normalization, fallbacks, and per-field warnings.
 
 ## Examples
 

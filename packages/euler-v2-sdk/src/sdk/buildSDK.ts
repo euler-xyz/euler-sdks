@@ -111,6 +111,10 @@ import {
 	type FeeFlowServiceConfig,
 } from "../services/feeFlowService/index.js";
 import {
+	REULLockService,
+	type IREULLockService,
+} from "../services/reulLockService/index.js";
+import {
 	type EulerSDKConfig,
 	readEulerSDKEnvConfig,
 	type VaultTypeAdapterKind,
@@ -163,6 +167,7 @@ export interface BuildSDKOverrides<
 	intrinsicApyService?: IIntrinsicApyService;
 	oracleAdapterService?: IOracleAdapterService;
 	feeFlowService?: IFeeFlowService;
+	reulLockService?: IREULLockService;
 }
 
 export type { EulerSDKConfig } from "./config.js";
@@ -1030,6 +1035,9 @@ export async function buildEulerSDK<
 			},
 			resolvedBuildQuery,
 		);
+	const reulLockService =
+		servicesOverrides?.reulLockService ??
+		new REULLockService(providerService, deploymentService);
 
 	if (executionService instanceof ExecutionService) {
 		executionService.setProviderService(providerService as ProviderService);
@@ -1121,6 +1129,7 @@ export async function buildEulerSDK<
 		intrinsicApyService,
 		oracleAdapterService,
 		feeFlowService,
+		reulLockService,
 		plugins,
 	});
 

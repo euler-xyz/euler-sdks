@@ -37,6 +37,8 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 - `oracleAdapterService`: Fetches oracle adapter metadata/checks (provider, methodology, checks) from the oracle checks dataset and builds maps keyed by normalized `adapter.oracle` address for UI/tooling.
 - `rewardsService`: Fetches reward campaign data used to populate vault/account rewards and builds provider-specific reward claim plans. The default V3 path returns proof-backed direct Brevis/Incentra rewards when claim planning needs metadata that V3 does not include.
   See: [`rewards-service.md`](./rewards-service.md)
+- `reulLockService`: Fetches rEUL vesting locks and builds rEUL unlock `contractCall` transaction plans.
+  See: [`reul-lock-service.md`](./reul-lock-service.md)
 - `feeFlowService`: Fetches FeeFlow state, filters eligible vaults, and builds FeeFlow buy plans.
   See: [`fee-flow-service.md`](./fee-flow-service.md)
 - `intrinsicApyService`: Fetches intrinsic APY data used by vault enrichments.
