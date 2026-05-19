@@ -1,6 +1,7 @@
 import type { Abi, Address, Hex, TypedDataDomain } from "viem";
 import type {
 	Account,
+	AddressOrAccount,
 	IHasVaultAddress,
 	ISubAccount,
 } from "../../entities/Account.js";
@@ -469,6 +470,34 @@ export type TransactionPlanItem =
 	| CowSwapPlanItem;
 
 export type TransactionPlan = TransactionPlanItem[];
+
+/**
+ * A transaction plan that has been through {@link ExecutionService.prepareTransactionPlan}:
+ * plugins have been applied and every `requiredApproval` item has its `resolved`
+ * array populated. The execution context (`chainId`, `account`, `usePermit2`,
+ * `unlimitedApproval`) is carried alongside so simulate/execute can consume the
+ * envelope directly without the caller re-passing context — and so they can
+ * skip the internal plugin/approval-resolution pipeline that would otherwise
+ * re-run on a raw plan.
+ */
+export type TransactionPlanPrepared = {
+	readonly __prepared: true;
+	plan: TransactionPlan;
+	chainId: number;
+	account: AddressOrAccount;
+	usePermit2: boolean;
+	unlimitedApproval: boolean;
+};
+
+export function isPreparedTransactionPlan(
+	value: unknown,
+): value is TransactionPlanPrepared {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		(value as { __prepared?: unknown }).__prepared === true
+	);
+}
 
 export function isCowSwapPlanItem(
 	item: TransactionPlanItem,

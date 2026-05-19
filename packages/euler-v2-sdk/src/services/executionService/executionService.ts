@@ -53,6 +53,7 @@ import {
 } from "./cowSwapHelpers.js";
 import * as encodeHelpers from "./encode.js";
 import {
+	type ExecutePreparedTransactionPlanArgs,
 	type ExecuteTransactionPlanArgs,
 	type ExecuteTransactionPlanInternalArgs,
 	executeTransactionPlan,
@@ -128,6 +129,7 @@ import type {
 	ResolveRequiredApprovalsWithWalletArgs,
 	TransactionPlan,
 	TransactionPlanItem,
+	TransactionPlanPrepared,
 } from "./executionServiceTypes.js";
 import {
 	assertNoCowSwapPlanItems,
@@ -528,6 +530,10 @@ export interface IExecutionService<
 		transactionPlan: TransactionPlan,
 		options?: SimulateBatchOptions,
 	): Promise<SimulateBatchResult<TVaultEntity>>;
+	simulatePreparedTransactionPlan(
+		prepared: TransactionPlanPrepared,
+		options?: SimulateBatchOptions,
+	): Promise<SimulateBatchResult<TVaultEntity>>;
 	estimateGasForTransactionPlan(
 		chainId: number,
 		account: AddressOrAccount,
@@ -541,8 +547,23 @@ export interface IExecutionService<
 	resolveRequiredApprovals(
 		args: ResolveRequiredApprovalsArgs,
 	): Promise<TransactionPlan>;
+	/**
+	 * Run plugins and resolve required approvals up front, packaging the result
+	 * with its execution context so simulate/execute can be called repeatedly
+	 * without re-running plugins or refetching wallet allowances.
+	 */
+	prepareTransactionPlan(args: {
+		plan: TransactionPlan;
+		chainId: number;
+		account: AddressOrAccount;
+		usePermit2?: boolean;
+		unlimitedApproval?: boolean;
+	}): Promise<TransactionPlanPrepared>;
 	executeTransactionPlan(
 		args: ExecuteTransactionPlanArgs,
+	): Promise<TransactionPlanExecutionResult>;
+	executePreparedTransactionPlan(
+		args: ExecutePreparedTransactionPlanArgs,
 	): Promise<TransactionPlanExecutionResult>;
 	executeCowSwapTransactionPlan(
 		args: ExecuteCowSwapTransactionPlanArgs,
@@ -781,6 +802,71 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		);
 	}
 
+	/**
+	 * Simulate a {@link TransactionPlanPrepared} envelope. Plugins and approval
+	 * resolution have already run via {@link prepareTransactionPlan}, so this
+	 * skips the plugin pipeline and uses the envelope's chainId/account context
+	 * directly — no re-fetches of plugin-side data on each click.
+	 */
+	async simulatePreparedTransactionPlan(
+		prepared: TransactionPlanPrepared,
+		options?: SimulateBatchOptions,
+	): Promise<SimulateBatchResult<TVaultEntity>> {
+		assertNoCowSwapPlanItems(prepared.plan, "simulatePreparedTransactionPlan");
+		const owner = this.getAccountOwner(prepared.account);
+		return simulateTransactionPlan(
+			this.getSimulationContext(),
+			prepared.chainId,
+			owner,
+			prepared.plan,
+			options,
+		);
+	}
+
+	/**
+	 * Run plugins and resolve required approvals up front, packaging the result
+	 * with its execution context. Simulate and execute can be called against the
+	 * returned envelope repeatedly without re-running plugins or refetching
+	 * wallet allowances.
+	 */
+	async prepareTransactionPlan(args: {
+		plan: TransactionPlan;
+		chainId: number;
+		account: AddressOrAccount;
+		usePermit2?: boolean;
+		unlimitedApproval?: boolean;
+	}): Promise<TransactionPlanPrepared> {
+		const {
+			plan,
+			chainId,
+			account,
+			usePermit2 = true,
+			unlimitedApproval = false,
+		} = args;
+		assertNoCowSwapPlanItems(plan, "prepareTransactionPlan");
+		const processedPlan = await this.processPlanPlugins(
+			plan,
+			account,
+			chainId,
+		);
+		const owner = this.getAccountOwner(account);
+		const resolvedPlan = await this.resolveRequiredApprovals({
+			plan: processedPlan,
+			chainId,
+			account: owner,
+			usePermit2,
+			unlimitedApproval,
+		});
+		return {
+			__prepared: true,
+			plan: resolvedPlan,
+			chainId,
+			account,
+			usePermit2,
+			unlimitedApproval,
+		};
+	}
+
 	/** Estimate gas for the full transaction plan after applying the same simulation pipeline used for execution. */
 	async estimateGasForTransactionPlan(
 		chainId: number,
@@ -808,13 +894,14 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	async executeTransactionPlan(
 		args: ExecuteTransactionPlanArgs,
 	): Promise<TransactionPlanExecutionResult> {
-		assertNoCowSwapPlanItems(args.plan, "executeTransactionPlan");
 		const { providerService } = this;
 		if (!providerService) {
 			throw new Error(
 				"ExecutionService.executeTransactionPlan requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
 			);
 		}
+
+		assertNoCowSwapPlanItems(args.plan, "executeTransactionPlan");
 		const processedPlan = await this.processPlanPlugins(
 			args.plan,
 			args.account,
@@ -830,6 +917,39 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			providerService,
 		};
 
+		return executeTransactionPlan(helperArgs);
+	}
+
+	/**
+	 * Execute a {@link TransactionPlanPrepared} envelope. Plugins and approval
+	 * resolution were already applied by {@link prepareTransactionPlan}, so
+	 * this skips both — no per-execute plugin re-runs or wallet re-fetch.
+	 */
+	async executePreparedTransactionPlan(
+		args: ExecutePreparedTransactionPlanArgs,
+	): Promise<TransactionPlanExecutionResult> {
+		const { providerService } = this;
+		if (!providerService) {
+			throw new Error(
+				"ExecutionService.executePreparedTransactionPlan requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
+			);
+		}
+		const { prepared, sendTransaction, signTypedData, onProgress } = args;
+		assertNoCowSwapPlanItems(prepared.plan, "executePreparedTransactionPlan");
+		const helperArgs: ExecuteTransactionPlanInternalArgs = {
+			plan: prepared.plan,
+			chainId: prepared.chainId,
+			account: prepared.account,
+			usePermit2: prepared.usePermit2,
+			unlimitedApproval: prepared.unlimitedApproval,
+			sendTransaction,
+			signTypedData,
+			onProgress,
+			alreadyResolved: true,
+			executionService: this,
+			deploymentService: this.deploymentService,
+			providerService,
+		};
 		return executeTransactionPlan(helperArgs);
 	}
 
@@ -1831,16 +1951,22 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		} = args;
 		assertNoCowSwapPlanItems(plan, "resolveRequiredApprovals");
 
+		// Filter transaction plan for only RequiredApproval items
+		const requiredApprovals = plan.filter(
+			(item): item is RequiredApproval => item.type === "requiredApproval",
+		);
+
+		// No approvals in the plan → nothing to resolve, no wallet fetch needed.
+		// Withdraw/redeem flows always hit this path (they don't transfer assets in).
+		if (requiredApprovals.length === 0) {
+			return plan;
+		}
+
 		if (!this.walletService) {
 			throw new Error(
 				"ExecutionService.resolveRequiredApprovals requires a walletService. Pass it to the ExecutionService constructor or call setWalletService().",
 			);
 		}
-
-		// Filter transaction plan for only RequiredApproval items
-		const requiredApprovals = plan.filter(
-			(item): item is RequiredApproval => item.type === "requiredApproval",
-		);
 
 		// Transform RequiredApprovals into AssetWithSpenders
 		const assetSpendersMap = new Map<Address, Set<Address>>();

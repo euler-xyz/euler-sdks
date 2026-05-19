@@ -157,17 +157,9 @@ export async function deriveStateOverrides(
 	options?: SimulationStateOverrideOptions,
 ): Promise<StateOverride> {
 	assertNoCowSwapPlanItems(transactionPlan, "deriveStateOverrides");
-	if (!ctx.providerService) {
-		throw new Error(
-			"ExecutionService.deriveStateOverrides requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
-		);
-	}
 
 	const owner = getAddress(account);
 	const nativeBalance = options?.nativeBalance ?? parseEther("1000");
-	const permit2Address =
-		ctx.deploymentService.getDeployment(chainId).addresses.coreAddrs.permit2;
-	const provider = ctx.providerService.getProvider(chainId);
 
 	const balanceRequirements = extractBalanceRequirements(
 		transactionPlan,
@@ -177,6 +169,29 @@ export async function deriveStateOverrides(
 		transactionPlan,
 		owner,
 	);
+
+	// Fast path: plans without `requiredApproval` items (e.g. withdraw, redeem)
+	// have no balance or approval requirements to override. We can skip the
+	// provider lookup and per-token balance/allowance reads entirely and just
+	// emit the synthetic native-balance override.
+	if (
+		balanceRequirements.length === 0 &&
+		approvalRequirements.length === 0
+	) {
+		return nativeBalance > 0n
+			? mergeStateOverrides([{ address: owner, balance: nativeBalance }])
+			: [];
+	}
+
+	if (!ctx.providerService) {
+		throw new Error(
+			"ExecutionService.deriveStateOverrides requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
+		);
+	}
+
+	const permit2Address =
+		ctx.deploymentService.getDeployment(chainId).addresses.coreAddrs.permit2;
+	const provider = ctx.providerService.getProvider(chainId);
 
 	const [balanceOverrides, approvalOverrides] = await Promise.all([
 		getBalanceOverrides(provider, owner, balanceRequirements),

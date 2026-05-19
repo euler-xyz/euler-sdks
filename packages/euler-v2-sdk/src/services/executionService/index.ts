@@ -41,6 +41,7 @@ export {
 } from "./cowSwapHelpers.js";
 export {
 	approvalAmountLabel,
+	type ExecutePreparedTransactionPlanArgs,
 	type ExecuteTransactionPlanArgs,
 	executeTransactionPlan,
 	TransactionPlanExecutionError,
@@ -126,6 +127,7 @@ export type {
 	// Transaction plan types
 	TransactionPlan,
 	TransactionPlanItem,
+	TransactionPlanPrepared,
 	WrappedNativeInfo,
 } from "./executionServiceTypes.js";
 export {
@@ -133,6 +135,7 @@ export {
 	flattenBatchEntries,
 	isCowSwapPlanItem,
 	isEVCBatchOperation,
+	isPreparedTransactionPlan,
 } from "./executionServiceTypes.js";
 export type {
 	EstimateGasForTransactionPlanOptions,

@@ -20,6 +20,7 @@ import type {
 	PermitSingleTypedData,
 	TransactionPlan,
 	TransactionPlanItem,
+	TransactionPlanPrepared,
 } from "./executionServiceTypes.js";
 import {
 	assertNoCowSwapPlanItems,
@@ -97,11 +98,31 @@ export type ExecuteTransactionPlanArgs = {
 	onProgress?: (progress: TransactionPlanExecutionProgress) => void;
 };
 
+/**
+ * Execute against a {@link TransactionPlanPrepared} envelope produced by
+ * {@link IExecutionService.prepareTransactionPlan}. Plugins and required-approval
+ * resolution have already run, so execution skips them — the executor walks the
+ * envelope's plan as-is.
+ */
+export type ExecutePreparedTransactionPlanArgs = {
+	prepared: TransactionPlanPrepared;
+	sendTransaction: (
+		parameters: TransactionPlanTransactionRequest,
+	) => Promise<Hash>;
+	signTypedData?: (
+		parameters: TransactionPlanSignTypedDataRequest,
+	) => Promise<Hex>;
+	onProgress?: (progress: TransactionPlanExecutionProgress) => void;
+};
+
 export type ExecuteTransactionPlanInternalArgs = ExecuteTransactionPlanArgs & {
 	plan: TransactionPlan;
 	executionService: IExecutionService;
 	deploymentService: IDeploymentService;
 	providerService: ProviderService;
+	/** When true, skip wallet fetch + resolveRequiredApprovals — the plan's
+	 *  requiredApproval items already have `.resolved` populated. */
+	alreadyResolved?: boolean;
 };
 
 export class TransactionPlanExecutionError extends Error {
@@ -177,7 +198,9 @@ export async function executeTransactionPlan(
 ): Promise<TransactionPlanExecutionResult> {
 	assertNoCowSwapPlanItems(args.plan, "executeTransactionPlan");
 	const publicClient = args.providerService.getProvider(args.chainId);
-	const plan = await maybeResolveApprovals(args);
+	const plan = args.alreadyResolved
+		? args.plan
+		: await maybeResolveApprovals(args);
 
 	const hashes: Hash[] = [];
 	const receipts: TransactionReceipt[] = [];
