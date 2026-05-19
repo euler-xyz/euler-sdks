@@ -17,12 +17,13 @@ export type RetryStrategy =
   | "count"
   | "always";
 
-export type SdkAdapterMode = "v3" | "onchain";
+export type SdkAdapterMode = "v3" | "onchain" | "fallback";
 
 export interface QueryOptionsSettings {
   chainSetVersion: number;
   adapterMode: SdkAdapterMode;
   proxyV3Calls: boolean;
+  simulateV3Failure: boolean;
   enabledChainIds: number[];
   showQueryProfiler: boolean;
   disableCache: boolean;
@@ -42,8 +43,9 @@ export interface QueryBuildOverrides {
 
 const DEFAULT_SETTINGS: QueryOptionsSettings = {
   chainSetVersion: CHAIN_SET_VERSION,
-  adapterMode: "v3",
+  adapterMode: "fallback",
   proxyV3Calls: true,
+  simulateV3Failure: false,
   enabledChainIds: DEFAULT_ENABLED_CHAIN_IDS,
   showQueryProfiler: true,
   disableCache: false,
@@ -142,13 +144,19 @@ function sanitizeSettings(value: unknown): QueryOptionsSettings {
   const sanitized = {
     chainSetVersion: CHAIN_SET_VERSION,
     adapterMode:
-      candidate.adapterMode === "onchain" || candidate.adapterMode === "v3"
+      candidate.adapterMode === "onchain" ||
+      candidate.adapterMode === "v3" ||
+      candidate.adapterMode === "fallback"
         ? candidate.adapterMode
         : DEFAULT_SETTINGS.adapterMode,
     proxyV3Calls:
       typeof candidate.proxyV3Calls === "boolean"
         ? candidate.proxyV3Calls
         : DEFAULT_SETTINGS.proxyV3Calls,
+    simulateV3Failure:
+      typeof candidate.simulateV3Failure === "boolean"
+        ? candidate.simulateV3Failure
+        : DEFAULT_SETTINGS.simulateV3Failure,
     enabledChainIds: sanitizeEnabledChainIds(candidate.enabledChainIds),
     showQueryProfiler:
       typeof candidate.showQueryProfiler === "boolean"
@@ -237,6 +245,22 @@ export function useProxyV3Calls() {
   );
 }
 
+function currentSimulateV3FailureSnapshot() {
+  return currentSettings.simulateV3Failure;
+}
+
+export function useSimulateV3Failure() {
+  return useSyncExternalStore(
+    subscribe,
+    currentSimulateV3FailureSnapshot,
+    currentSimulateV3FailureSnapshot
+  );
+}
+
+export function getSimulateV3Failure() {
+  return currentSettings.simulateV3Failure;
+}
+
 function currentEnabledChainIdsSnapshot() {
   return currentSettings.enabledChainIds;
 }
@@ -284,6 +308,7 @@ export function hasActiveQueryOptionsOverrides(
   return (
     settings.adapterMode !== DEFAULT_SETTINGS.adapterMode ||
     settings.proxyV3Calls !== DEFAULT_SETTINGS.proxyV3Calls ||
+    settings.simulateV3Failure !== DEFAULT_SETTINGS.simulateV3Failure ||
     settings.enabledChainIds.length !== DEFAULT_SETTINGS.enabledChainIds.length ||
     settings.enabledChainIds.some(
       (chainId, index) => chainId !== DEFAULT_SETTINGS.enabledChainIds[index]

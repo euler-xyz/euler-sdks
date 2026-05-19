@@ -1,15 +1,18 @@
 export {
-	SwapService,
 	type ISwapService,
+	SwapService,
 	type SwapServiceConfig,
 } from "./swapService.js";
-export { SwapperMode, SwapVerificationType } from "./swapServiceTypes.js";
 export type {
-	GetRepayQuoteArgs,
 	GetDepositQuoteArgs,
+	GetRepayQuoteArgs,
 	GetWalletSwapQuoteArgs,
+	SwapProviderData,
+	SwapProviderExtraData,
+	SwapProviderExtraDataType,
+	SwapProvidersApiResponse,
 	SwapQuote,
 	SwapQuoteRequest,
 	SwapsApiResponse,
-	SwapProvidersApiResponse,
 } from "./swapServiceTypes.js";
+export { SwapperMode, SwapVerificationType } from "./swapServiceTypes.js";

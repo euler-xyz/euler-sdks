@@ -3,13 +3,19 @@ import type { AccountServiceAdapter } from "../services/accountService/accountSe
 import type { EVaultServiceAdapter } from "../services/vaults/eVaultService/eVaultServiceConfig.js";
 import type { EulerEarnServiceAdapter } from "../services/vaults/eulerEarnService/eulerEarnServiceConfig.js";
 
-export type VaultTypeAdapterKind = "v3" | "subgraph";
-export type RewardsServiceAdapterKind = "v3" | "direct";
+export type VaultTypeAdapterKind = "v3" | "subgraph" | "fallback";
+export type RewardsServiceAdapterKind = "v3" | "direct" | "fallback";
 
 export interface EulerSDKConfig {
 	rpcUrls?: Record<number, string>;
 	v3ApiUrl?: string;
 	v3ApiKey?: string;
+	/**
+	 * Globally disables the V3 HTTP adapter as the primary in all fallback chains.
+	 * When true, services configured for `fallback` use the secondary adapter only
+	 * (onchain / direct / subgraph). Per-service `adapter` overrides still apply.
+	 */
+	disableV3?: boolean;
 
 	accountServiceAdapter?: AccountServiceAdapter;
 	accountV3ApiUrl?: string;
@@ -229,10 +235,12 @@ export function readEulerSDKEnvConfig(
 		rpcUrls: readNumberKeyedUrls(env, "EULER_SDK_RPC_URL_"),
 		v3ApiUrl: readString(env, "EULER_SDK_V3_API_URL"),
 		v3ApiKey: readString(env, "EULER_SDK_V3_API_KEY"),
+		disableV3: readBoolean(env, "EULER_SDK_DISABLE_V3"),
 
 		accountServiceAdapter: readEnum(env, "EULER_SDK_ACCOUNT_SERVICE_ADAPTER", [
 			"v3",
 			"onchain",
+			"fallback",
 		] as const),
 		accountV3ApiUrl: readString(env, "EULER_SDK_ACCOUNT_V3_API_URL"),
 		accountV3ApiKey: readString(env, "EULER_SDK_ACCOUNT_V3_API_KEY"),
@@ -245,6 +253,7 @@ export function readEulerSDKEnvConfig(
 		eVaultServiceAdapter: readEnum(env, "EULER_SDK_EVAULT_SERVICE_ADAPTER", [
 			"v3",
 			"onchain",
+			"fallback",
 		] as const),
 		eVaultV3ApiUrl: readString(env, "EULER_SDK_EVAULT_V3_API_URL"),
 		eVaultV3ApiKey: readString(env, "EULER_SDK_EVAULT_V3_API_KEY"),
@@ -253,7 +262,7 @@ export function readEulerSDKEnvConfig(
 		eulerEarnServiceAdapter: readEnum(
 			env,
 			"EULER_SDK_EULER_EARN_SERVICE_ADAPTER",
-			["v3", "onchain"] as const,
+			["v3", "onchain", "fallback"] as const,
 		),
 		eulerEarnV3ApiUrl: readString(env, "EULER_SDK_EULER_EARN_V3_API_URL"),
 		eulerEarnV3ApiKey: readString(env, "EULER_SDK_EULER_EARN_V3_API_KEY"),
@@ -261,6 +270,7 @@ export function readEulerSDKEnvConfig(
 		vaultTypeAdapter: readEnum(env, "EULER_SDK_VAULT_TYPE_ADAPTER", [
 			"v3",
 			"subgraph",
+			"fallback",
 		] as const),
 		vaultTypeV3ApiUrl: readString(env, "EULER_SDK_VAULT_TYPE_V3_API_URL"),
 		vaultTypeV3ApiKey: readString(env, "EULER_SDK_VAULT_TYPE_V3_API_KEY"),
@@ -287,6 +297,7 @@ export function readEulerSDKEnvConfig(
 		rewardsServiceAdapter: readEnum(env, "EULER_SDK_REWARDS_SERVICE_ADAPTER", [
 			"v3",
 			"direct",
+			"fallback",
 		] as const),
 		rewardsV3ApiUrl: readString(env, "EULER_SDK_REWARDS_V3_API_URL"),
 		rewardsV3ApiKey: readString(env, "EULER_SDK_REWARDS_V3_API_KEY"),

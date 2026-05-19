@@ -9,15 +9,20 @@ import {
 import {
   buildEulerSDK,
   createPythPlugin,
-  defaultVaultTypeSubgraphAdapterConfig,
   type BuildSDKOptions,
   type EulerSDK,
 } from "@eulerxyz/euler-v2-sdk";
-import { sdkBuildQuery } from "../queries/sdkQueries.ts";
+import { queryClient, sdkBuildQuery } from "../queries/sdkQueries.ts";
+import {
+  clearFallbackLog,
+  recordFallback,
+} from "../queries/fallbackLogStore.ts";
 import {
   useProxyV3Calls,
   useSdkAdapterMode,
+  useSimulateV3Failure,
 } from "../queries/queryOptionsStore.ts";
+import { installV3FailureSimulator } from "../utils/v3FailureSimulator.ts";
 import { resetQueryProfile } from "../queries/queryProfileStore.ts";
 import {
   CHAIN_NAMES,
@@ -38,9 +43,12 @@ interface SdkContextValue {
 
 const SdkContext = createContext<SdkContextValue | null>(null);
 
+installV3FailureSimulator();
+
 export function SdkProvider({ children }: { children: ReactNode }) {
   const adapterMode = useSdkAdapterMode();
   const proxyV3Calls = useProxyV3Calls();
+  const simulateV3Failure = useSimulateV3Failure();
   const [sdk, setSdk] = useState<EulerSDK | null>(null);
   const [chainId, setChainId] = useState(DEFAULT_CHAIN);
   const [loading, setLoading] = useState(true);
@@ -48,8 +56,27 @@ export function SdkProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    const useV3Adapters = adapterMode === "v3";
+    queryClient.clear();
+    clearFallbackLog();
     const v3ApiEndpoint = getV3ApiEndpoint(proxyV3Calls);
+    const eVaultAdapter =
+      adapterMode === "v3"
+        ? "v3"
+        : adapterMode === "onchain"
+          ? "onchain"
+          : "fallback";
+    const rewardsAdapter =
+      adapterMode === "v3"
+        ? "v3"
+        : adapterMode === "onchain"
+          ? "direct"
+          : "fallback";
+    const vaultTypeAdapter =
+      adapterMode === "v3"
+        ? "v3"
+        : adapterMode === "onchain"
+          ? "subgraph"
+          : "fallback";
 
     queueMicrotask(() => {
       if (cancelled) return;
@@ -65,22 +92,15 @@ export function SdkProvider({ children }: { children: ReactNode }) {
         v3ApiUrl: v3ApiEndpoint,
         v3ApiKey: import.meta.env.EULER_SDK_V3_API_KEY,
         swapApiUrl: SWAP_PROXY_ENDPOINT,
+        vaultTypeAdapter,
       },
       buildQuery: sdkBuildQuery,
-      accountServiceConfig: {
-        adapter: useV3Adapters ? "v3" : "onchain",
-      },
-      eVaultServiceConfig: {
-        adapter: useV3Adapters ? "v3" : "onchain",
-      },
-      eulerEarnServiceConfig: {
-        adapter: useV3Adapters ? "v3" : "onchain",
-      },
-      rewardsServiceConfig: {
-        adapter: useV3Adapters ? "v3" : "direct",
-      },
-      vaultTypeAdapterConfig: useV3Adapters ? undefined : defaultVaultTypeSubgraphAdapterConfig,
+      accountServiceConfig: { adapter: eVaultAdapter },
+      eVaultServiceConfig: { adapter: eVaultAdapter },
+      eulerEarnServiceConfig: { adapter: eVaultAdapter },
+      rewardsServiceConfig: { adapter: rewardsAdapter },
       plugins: [createPythPlugin({ buildQuery: sdkBuildQuery })],
+      onFallback: recordFallback,
     };
 
     buildEulerSDK(sdkConfig)
@@ -100,7 +120,7 @@ export function SdkProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [adapterMode, proxyV3Calls]);
+  }, [adapterMode, proxyV3Calls, simulateV3Failure]);
 
   const handleSetChainId = useCallback((id: number) => {
     setChainId(id);

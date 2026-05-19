@@ -16,7 +16,8 @@ Some services below are lower-level building blocks and usually do not need to b
 - `portfolioService`: Fetches the same underlying data as an opinionated, position-first savings/borrows view. It always enables vault and market-price population.
 - `vaultMetaService`: Type-agnostic vault access. Routes vault addresses to the right vault service (`EVault`, `EulerEarn`, `Securitize`) and returns the correct entity type.
 - `executionService`: Builds, simulates, estimates gas for, and executes transaction plans for core actions (deposit, withdraw, borrow, repay, swap-based operations, liquidation, debt operations).
-- `swapService`: Fetches swap quotes and routes for asset exchange flows.
+- `swapService`: Fetches swap quotes and routes for asset exchange flows,
+  including CoW provider metadata for supported CoW position flows.
 
 ## Vault-Specific Services
 
@@ -36,6 +37,8 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 - `oracleAdapterService`: Fetches oracle adapter metadata/checks (provider, methodology, checks) from the oracle checks dataset and builds maps keyed by normalized `adapter.oracle` address for UI/tooling.
 - `rewardsService`: Fetches reward campaign data used to populate vault/account rewards and builds provider-specific reward claim plans. The default V3 path returns proof-backed direct Brevis/Incentra rewards when claim planning needs metadata that V3 does not include.
   See: [`rewards-service.md`](./rewards-service.md)
+- `reulLockService`: Fetches rEUL vesting locks and builds rEUL unlock `contractCall` transaction plans.
+  See: [`reul-lock-service.md`](./reul-lock-service.md)
 - `feeFlowService`: Fetches FeeFlow state, filters eligible vaults, and builds FeeFlow buy plans.
   See: [`fee-flow-service.md`](./fee-flow-service.md)
 - `intrinsicApyService`: Fetches intrinsic APY data used by vault enrichments.
@@ -57,7 +60,7 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 | `portfolioService` | Account-derived portfolio data | Yes (`populateAll`) | Yes (`populateAll`) | Yes (`populateAll`) | Yes (`populateAll`) | Fetches the backing account with `populateAll: true`; see [`portfolio.md`](./portfolio.md) |
 | `executionService` | Simulates plans | Can populate simulated results | Can populate simulated results | Can populate simulated results | Can populate simulated results | Produces transaction plans/EVC batch payloads, resolves approvals, executes plans, and estimates gas |
 | `walletService` | Wallet assets only | No | No | No | No | Fetches requested native/ERC20 balances and direct/Permit2 allowances; `spenders` are optional when only balances are needed |
-| `swapService` | No (quotes only) | No | No | No | No | Returns swap quotes/providers for execution plans |
+| `swapService` | No (quotes only) | No | No | No | No | Returns swap quotes/providers for execution plans; CoW flows use regular quote methods with `cowSwap` metadata |
 | `oracleAdapterService` | No | No | No | No | No | Oracle adapter metadata API (`fetchOracleAdapters`, `fetchOracleAdapterMap`, `enrichAdapters`); maps are keyed by `adapter.oracle.toLowerCase()` |
 
-See also: [`execution-service.md`](./execution-service.md).
+See also: [`execution-service.md`](./execution-service.md), [`swaps.md`](./swaps.md), and [`cow-swaps.md`](./cow-swaps.md).

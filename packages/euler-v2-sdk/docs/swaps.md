@@ -139,6 +139,37 @@ const plan = sdk.executionService.planSwapCollateral({
 })
 ```
 
+CoW collateral swaps use the same `fetchDepositQuote` method with a `cowSwap`
+payload and then the CoW planner:
+
+```typescript
+const quotes = await sdk.swapService.fetchDepositQuote({
+  chainId: 1,
+  fromVault: USDC_VAULT,
+  toVault: WETH_VAULT,
+  fromAccount: subAccountAddress,
+  toAccount: subAccountAddress,
+  fromAsset: USDC,
+  toAsset: WETH,
+  amount: swapAmount,
+  origin: walletAddress,
+  slippage: 0.5,
+  provider: "cow",
+  cowSwap: {
+    type: "collateralSwap",
+    owner: walletAddress,
+    sharesAmount: sharesToSell,
+    disableSourceCollateral: true,
+  },
+})
+
+const plan = sdk.executionService.planSwapCollateralWithCoW({
+  account: accountData,
+  swapQuote: quotes[0],
+  disableSourceCollateral: true,
+})
+```
+
 ### Swap Debt
 
 Borrow a new asset, swap it to the current debt asset, and repay. Used for refinancing into a different debt asset.
@@ -292,6 +323,39 @@ const plan = sdk.executionService.planMultiplyWithSwap({
 })
 ```
 
+CoW open-position quotes also use `fetchDepositQuote`; pass `cowSwap` so the
+swap API can build the wrapper appData:
+
+```typescript
+const quotes = await sdk.swapService.fetchDepositQuote({
+  chainId: 1,
+  fromVault: LIABILITY_VAULT,
+  toVault: LONG_VAULT,
+  fromAccount: subAccountAddress,
+  toAccount: subAccountAddress,
+  fromAsset: USDT,
+  toAsset: WETH,
+  amount: borrowAmount,
+  origin: walletAddress,
+  slippage: 0.5,
+  provider: "cow",
+  cowSwap: {
+    type: "openPosition",
+    owner: walletAddress,
+    collateralVault: USDC_VAULT,
+    collateralAmount: depositAmount,
+  },
+})
+
+const plan = sdk.executionService.planOpenPositionWithCoW({
+  account: accountData,
+  collateralVault: USDC_VAULT,
+  collateralAmount: depositAmount,
+  collateralAsset: USDC,
+  swapQuote: quotes[0],
+})
+```
+
 **Multiply same asset** — when the borrowed asset and long asset are the same (no swap needed):
 
 ```typescript
@@ -332,6 +396,36 @@ const quotes = await sdk.swapService.fetchDepositQuote({
 ```
 
 With the `fetchProviders` endpoint and `provider` filter, it is possible to build a [LlamaSwap](https://swap.defillama.com/)-like meta-aggregation UI by sending one request per provider in parallel, letting users compare quotes across all sources. The providers list changes rarely and can be cached for a long time.
+
+## CoW Swap Provider Flow
+
+CoW swaps are supported for open-position, close-position, and collateral-swap
+flows. CoW quotes carry provider order metadata and execute through signed CoW
+orders instead of an immediate Swapper EVC batch.
+
+Use the regular quote methods with `cowSwap` to build CoW provider metadata. If
+`provider` is `"cow"` / `"cow swap"` or unset, the SDK attaches the generated
+CoW metadata. If `provider` is a different provider, no generated CoW metadata
+is sent.
+
+CoW quotes must be planned with:
+
+- `planOpenPositionWithCoW`
+- `planClosePositionWithCow`
+- `planSwapCollateralWithCoW`
+
+Execute the returned plan with `executionService.executeCowSwapTransactionPlan`. CoW
+plans cannot be simulated or gas-estimated because settlement is performed later
+by CoW Protocol.
+
+Track submitted orders with `fetchCowSwapOrderStatus` or
+`pollCowSwapOrderStatus`. Open-position and collateral-swap orders are cancelled
+with `cancelCowSwapOrder`. Close-position orders are cancelled by invalidating
+the signed EVC permit nonce with `planCancelClosePositionWithCow`.
+
+See [`cow-swaps.md`](./cow-swaps.md) for the full flow and
+[`open-position-with-cow-live-example.ts`](../examples/execution/open-position-with-cow-live-example.ts)
+for a live mainnet example.
 
 ## Swap Verification
 

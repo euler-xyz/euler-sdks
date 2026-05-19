@@ -1,10 +1,10 @@
 ---
 name: euler-sdk
-description: Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. This skill should be used when implementing apps on top of the `euler-v2-sdk` package, including account/vault/wallet reads, transaction planning, approval handling, simulation, swaps, plugins, and query caching. Triggers on tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `walletService`, `executionService`, `swapService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`.
+description: Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. This skill should be used when implementing apps on top of the `euler-v2-sdk` package, including account/vault/wallet reads, transaction planning, approval handling, simulation, swaps, rEUL locks, plugins, and query caching. Triggers on tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `walletService`, `executionService`, `swapService`, `reulLockService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`.
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.1.2"
+  version: "1.2.0"
 ---
 
 # Euler SDK Agent Skill
@@ -31,6 +31,7 @@ Reference these guidelines when:
 | `sdk-simulation-safety` | CRITICAL | Simulate plans before sending and gate execution on checks |
 | `sdk-caching-buildquery` | HIGH | Wrap all `query*` calls via `buildQuery` with per-query stale times |
 | `sdk-plugins` | HIGH | Use plugins for oracle/keyring preconditions on read and write paths |
+| `sdk-fallback-adapter` | HIGH | Configure V3 → onchain/subgraph/direct fallback chains and observe `onFallback` telemetry |
 | `sdk-swaps` | HIGH | Quote, select, and execute swap-driven operations safely |
 | `sdk-scripts` | MEDIUM | Use SDK examples as templates for scripts, bots, and CI checks |
 
@@ -44,9 +45,10 @@ Reference these guidelines when:
 - `vaultMetaService` when vault type is unknown or mixed
 - `walletService` for native/ERC20 wallet balances and direct/Permit2 allowance state
 - `executionService` for `planX`/`encodeX` and approvals
-- `executionService` for plugin-aware plan simulation, gas estimation, execution, and pre-execution validation
-- `swapService` for provider quotes and route payloads
+- `executionService` for plugin-aware plan simulation, gas estimation, execution, and pre-execution validation; CoW plans execute through `executeCowSwapTransactionPlan`, expose order status/cancellation helpers, and are not simulation/gas-estimation inputs
+- `swapService` for provider quotes and route payloads, including `cowSwap` metadata for CoW-supported position flows
 - `rewardsService` for reward reads and provider-specific claim plans; the default V3 path normalizes Incentra rows as Brevis and returns direct proof-backed Brevis rows when V3 lacks claim metadata
+- `reulLockService` for rEUL vesting lock reads and unlock transaction plans
 - `eulerLabelsService` plus exported `utils/eulerLabels` helpers for normalized labels metadata, notices, restrictions, and product/vault flags
 - `oracleAdapterService.fetchOracleAdapterMap(chainId)` returns metadata keyed by normalized `adapter.oracle` address
 
@@ -61,6 +63,8 @@ Built-in scalar config resolves as `config` prop, explicit SDK option, `EULER_SD
 3. Use service-level `fetch*` methods in hooks for reactive UI.
 4. Set population flags explicitly (`populateMarketPrices`, `populateRewards`, etc.).
 5. Simulate `TransactionPlan` before execution when user risk is non-trivial.
+
+CoW swap plans are an exception to the simulation step: build them from CoW quotes with the CoW-specific planners and execute them through `executeCowSwapTransactionPlan`, then track returned `orderUids` with `fetchCowSwapOrderStatus` or `pollCowSwapOrderStatus`. Use `cancelCowSwapOrder` for open-position/collateral-swap CoW orders and `planCancelClosePositionWithCow` for close-position CoW orders that cancel by invalidating the EVC permit nonce.
 
 ## Companion Skills
 
@@ -81,6 +85,7 @@ rules/sdk-execution-flow.md
 rules/sdk-simulation-safety.md
 rules/sdk-caching-buildquery.md
 rules/sdk-plugins.md
+rules/sdk-fallback-adapter.md
 rules/sdk-swaps.md
 rules/sdk-scripts.md
 ```

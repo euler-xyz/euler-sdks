@@ -111,6 +111,10 @@ import {
 	type FeeFlowServiceConfig,
 } from "../services/feeFlowService/index.js";
 import {
+	REULLockService,
+	type IREULLockService,
+} from "../services/reulLockService/index.js";
+import {
 	type EulerSDKConfig,
 	readEulerSDKEnvConfig,
 	type VaultTypeAdapterKind,
@@ -138,6 +142,15 @@ import {
 	type BuildQueryFn,
 	type QueryCacheConfig,
 } from "../utils/buildQuery.js";
+import {
+	createFallbackAdapter,
+	type FallbackInfo,
+} from "../utils/fallbackAdapter.js";
+import type { IAccountAdapter } from "../services/accountService/accountService.js";
+import type { IEVaultAdapter } from "../services/vaults/eVaultService/eVaultService.js";
+import type { IEulerEarnAdapter } from "../services/vaults/eulerEarnService/eulerEarnService.js";
+import type { IRewardsAdapter } from "../services/rewardsService/rewardsServiceTypes.js";
+import type { IVaultTypeAdapter } from "../services/vaults/vaultMetaService/adapters/IVaultTypeAdapter.js";
 import type { EulerPlugin } from "../plugins/types.js";
 import { BatchSimulationAdapter } from "../plugins/batchSimulation.js";
 
@@ -163,6 +176,7 @@ export interface BuildSDKOverrides<
 	intrinsicApyService?: IIntrinsicApyService;
 	oracleAdapterService?: IOracleAdapterService;
 	feeFlowService?: IFeeFlowService;
+	reulLockService?: IREULLockService;
 }
 
 export type { EulerSDKConfig } from "./config.js";
@@ -200,6 +214,11 @@ export interface BuildSDKOptions<
 	buildQuery?: BuildQueryFn;
 	/** Plugins that enrich on-chain reads (via batchSimulation) and transaction plans (via processPlan). */
 	plugins?: EulerPlugin[];
+	/**
+	 * Optional callback invoked whenever a built-in fallback adapter routes a call from the primary
+	 * to the secondary. Use for telemetry, dashboards, or in-app diagnostics.
+	 */
+	onFallback?: (info: FallbackInfo) => void;
 	servicesOverrides?: BuildSDKOverrides<TVaultEntity>;
 }
 
@@ -485,6 +504,7 @@ export async function buildEulerSDK<
 		queryCacheConfig,
 		buildQuery,
 		plugins,
+		onFallback,
 		servicesOverrides,
 		feeFlowServiceConfig,
 	} = options;
@@ -523,55 +543,109 @@ export async function buildEulerSDK<
 	const providerService =
 		servicesOverrides?.providerService ?? new ProviderService(resolvedRpcUrls);
 
+	const disableV3 =
+		pickConfigValue(config?.disableV3, undefined, envConfig.disableV3) ?? false;
+
 	// Account adapter is built early so it can be used when building account service (after vault meta service)
 	const resolvedAccountServiceConfig = accountServiceConfig ?? {};
-	const resolvedAccountServiceAdapter = pickConfigValue(
-		config?.accountServiceAdapter,
-		resolvedAccountServiceConfig.adapter,
-		envConfig.accountServiceAdapter,
+	const resolvedAccountServiceAdapter =
+		pickConfigValue(
+			config?.accountServiceAdapter,
+			resolvedAccountServiceConfig.adapter,
+			envConfig.accountServiceAdapter,
+		) ?? "fallback";
+	const effectiveAccountServiceAdapter = (() => {
+		if (!disableV3) return resolvedAccountServiceAdapter;
+		if (resolvedAccountServiceAdapter === "v3") {
+			console.warn(
+				"[buildEulerSDK] disableV3 is set but accountServiceAdapter='v3'; forcing 'onchain'.",
+			);
+			return "onchain" as const;
+		}
+		if (resolvedAccountServiceAdapter === "fallback") return "onchain" as const;
+		return resolvedAccountServiceAdapter;
+	})();
+
+	const accountV3Config = resolveV3AdapterConfig(defaultAccountV3AdapterConfig, {
+		explicitConfig: resolvedAccountServiceConfig.v3AdapterConfig,
+		explicitV3ApiKey: v3ApiKey,
+		envConfig,
+		config,
+		envEndpoint: envConfig.accountV3ApiUrl,
+		configEndpoint: config?.accountV3ApiUrl,
+		envApiKey: envConfig.accountV3ApiKey,
+		configApiKey: config?.accountV3ApiKey,
+		envExtra: {
+			...maybeField("forceFresh", envConfig.accountV3ForceFresh),
+		},
+		configExtra: {
+			...maybeField("forceFresh", config?.accountV3ForceFresh),
+		},
+	});
+	const accountVaultsSubgraphUrls = mergeNumberRecords(
+		defaultAccountVaultsAdapterConfig.subgraphURLs,
+		envConfig.accountVaultsSubgraphUrls,
+		accountVaultsAdapterConfig?.subgraphURLs,
+		config?.accountVaultsSubgraphUrls,
 	);
+	const canBuildAccountV3 = !!accountV3Config.endpoint;
+	const canBuildAccountOnchain =
+		Object.keys(accountVaultsSubgraphUrls).length > 0;
+
 	let accountOnchainAdapter: AccountOnchainAdapter | undefined;
-	const accountAdapter =
-		resolvedAccountServiceAdapter === "onchain"
-			? (() => {
-					const accountVaultsAdapter = new AccountVaultsSubgraphAdapter(
-						{
-							subgraphURLs: mergeNumberRecords(
-								defaultAccountVaultsAdapterConfig.subgraphURLs,
-								envConfig.accountVaultsSubgraphUrls,
-								accountVaultsAdapterConfig?.subgraphURLs,
-								config?.accountVaultsSubgraphUrls,
-							),
-						},
-						resolvedBuildQuery,
-					);
-					accountOnchainAdapter = new AccountOnchainAdapter(
-						providerService as ProviderService,
-						deploymentService as DeploymentService,
-						accountVaultsAdapter,
-						resolvedBuildQuery,
-					);
-					return accountOnchainAdapter;
-				})()
-			: new AccountV3Adapter(
-					resolveV3AdapterConfig(defaultAccountV3AdapterConfig, {
-						explicitConfig: resolvedAccountServiceConfig.v3AdapterConfig,
-						explicitV3ApiKey: v3ApiKey,
-						envConfig,
-						config,
-						envEndpoint: envConfig.accountV3ApiUrl,
-						configEndpoint: config?.accountV3ApiUrl,
-						envApiKey: envConfig.accountV3ApiKey,
-						configApiKey: config?.accountV3ApiKey,
-						envExtra: {
-							...maybeField("forceFresh", envConfig.accountV3ForceFresh),
-						},
-						configExtra: {
-							...maybeField("forceFresh", config?.accountV3ForceFresh),
-						},
-					}),
-					resolvedBuildQuery,
-				);
+	const buildAccountV3 = () =>
+		new AccountV3Adapter(accountV3Config, resolvedBuildQuery);
+	const buildAccountOnchain = () => {
+		const accountVaultsAdapter = new AccountVaultsSubgraphAdapter(
+			{ subgraphURLs: accountVaultsSubgraphUrls },
+			resolvedBuildQuery,
+		);
+		accountOnchainAdapter = new AccountOnchainAdapter(
+			providerService as ProviderService,
+			deploymentService as DeploymentService,
+			accountVaultsAdapter,
+			resolvedBuildQuery,
+		);
+		return accountOnchainAdapter;
+	};
+
+	let accountAdapter: IAccountAdapter;
+	if (effectiveAccountServiceAdapter === "v3") {
+		if (!canBuildAccountV3)
+			throw new Error(
+				"[buildEulerSDK] accountServiceAdapter='v3' but no V3 endpoint is configured.",
+			);
+		accountAdapter = buildAccountV3();
+	} else if (effectiveAccountServiceAdapter === "onchain") {
+		if (!canBuildAccountOnchain)
+			throw new Error(
+				"[buildEulerSDK] accountServiceAdapter='onchain' but no accountVaultsSubgraphUrls are configured.",
+			);
+		accountAdapter = buildAccountOnchain();
+	} else if (canBuildAccountV3 && canBuildAccountOnchain) {
+		accountAdapter = createFallbackAdapter<
+			IAccountAdapter,
+			"fetchAccount" | "fetchSubAccount"
+		>(buildAccountV3(), buildAccountOnchain(), {
+			methods: ["fetchAccount", "fetchSubAccount"],
+			adapterNames: { primary: "accountV3", secondary: "accountOnchain" },
+			onFallback,
+		});
+	} else if (canBuildAccountV3) {
+		console.warn(
+			"[buildEulerSDK] accountService fallback disabled: onchain adapter requires accountVaultsSubgraphUrls. Using V3 only.",
+		);
+		accountAdapter = buildAccountV3();
+	} else if (canBuildAccountOnchain) {
+		console.warn(
+			"[buildEulerSDK] accountService fallback disabled: V3 endpoint not configured. Using onchain only.",
+		);
+		accountAdapter = buildAccountOnchain();
+	} else {
+		throw new Error(
+			"[buildEulerSDK] cannot build account adapter: neither V3 endpoint nor accountVaultsSubgraphUrls are configured.",
+		);
+	}
 
 	// Build wallet service if not overridden
 	let walletService: IWalletService;
@@ -593,41 +667,88 @@ export async function buildEulerSDK<
 		eVaultService = servicesOverrides.eVaultService;
 	} else {
 		const resolvedEVaultServiceConfig = eVaultServiceConfig ?? {};
-		const resolvedEVaultServiceAdapter = pickConfigValue(
-			config?.eVaultServiceAdapter,
-			resolvedEVaultServiceConfig.adapter,
-			envConfig.eVaultServiceAdapter,
-		);
-		const selectedEVaultAdapter =
-			resolvedEVaultServiceAdapter === "onchain"
-				? (() => {
-						eVaultAdapter = new EVaultOnchainAdapter(
-							providerService as ProviderService,
-							deploymentService as DeploymentService,
-							resolvedBuildQuery,
-						);
-						return eVaultAdapter;
-					})()
-				: new EVaultV3Adapter(
-						resolveV3AdapterConfig(defaultEVaultV3AdapterConfig, {
-							explicitConfig: resolvedEVaultServiceConfig.v3AdapterConfig,
-							explicitV3ApiKey: v3ApiKey,
-							envConfig,
-							config,
-							envEndpoint: envConfig.eVaultV3ApiUrl,
-							configEndpoint: config?.eVaultV3ApiUrl,
-							envApiKey: envConfig.eVaultV3ApiKey,
-							configApiKey: config?.eVaultV3ApiKey,
-							envExtra: {
-								...maybeField("batchSize", envConfig.eVaultV3BatchSize),
-							},
-							configExtra: {
-								...maybeField("batchSize", config?.eVaultV3BatchSize),
-							},
-						}),
-						providerService as ProviderService,
-						resolvedBuildQuery,
-					);
+		const resolvedEVaultServiceAdapter =
+			pickConfigValue(
+				config?.eVaultServiceAdapter,
+				resolvedEVaultServiceConfig.adapter,
+				envConfig.eVaultServiceAdapter,
+			) ?? "fallback";
+		const effectiveEVaultServiceAdapter = (() => {
+			if (!disableV3) return resolvedEVaultServiceAdapter;
+			if (resolvedEVaultServiceAdapter === "v3") {
+				console.warn(
+					"[buildEulerSDK] disableV3 is set but eVaultServiceAdapter='v3'; forcing 'onchain'.",
+				);
+				return "onchain" as const;
+			}
+			if (resolvedEVaultServiceAdapter === "fallback") return "onchain" as const;
+			return resolvedEVaultServiceAdapter;
+		})();
+
+		const eVaultV3Config = resolveV3AdapterConfig(defaultEVaultV3AdapterConfig, {
+			explicitConfig: resolvedEVaultServiceConfig.v3AdapterConfig,
+			explicitV3ApiKey: v3ApiKey,
+			envConfig,
+			config,
+			envEndpoint: envConfig.eVaultV3ApiUrl,
+			configEndpoint: config?.eVaultV3ApiUrl,
+			envApiKey: envConfig.eVaultV3ApiKey,
+			configApiKey: config?.eVaultV3ApiKey,
+			envExtra: { ...maybeField("batchSize", envConfig.eVaultV3BatchSize) },
+			configExtra: { ...maybeField("batchSize", config?.eVaultV3BatchSize) },
+		});
+		const canBuildEVaultV3 = !!eVaultV3Config.endpoint;
+		const canBuildEVaultOnchain = true; // onchain only needs provider + deployment, always available
+
+		const buildEVaultV3 = () =>
+			new EVaultV3Adapter(
+				eVaultV3Config,
+				providerService as ProviderService,
+				resolvedBuildQuery,
+			);
+		const buildEVaultOnchain = () => {
+			eVaultAdapter = new EVaultOnchainAdapter(
+				providerService as ProviderService,
+				deploymentService as DeploymentService,
+				resolvedBuildQuery,
+			);
+			return eVaultAdapter;
+		};
+
+		let selectedEVaultAdapter: IEVaultAdapter;
+		if (effectiveEVaultServiceAdapter === "v3") {
+			if (!canBuildEVaultV3)
+				throw new Error(
+					"[buildEulerSDK] eVaultServiceAdapter='v3' but no V3 endpoint is configured.",
+				);
+			selectedEVaultAdapter = buildEVaultV3();
+		} else if (effectiveEVaultServiceAdapter === "onchain") {
+			selectedEVaultAdapter = buildEVaultOnchain();
+		} else if (canBuildEVaultV3 && canBuildEVaultOnchain) {
+			selectedEVaultAdapter = createFallbackAdapter<
+				IEVaultAdapter,
+				"fetchVaults" | "fetchAllVaults" | "fetchVerifiedVaultsAddresses"
+			>(buildEVaultV3(), buildEVaultOnchain(), {
+				methods: [
+					"fetchVaults",
+					"fetchAllVaults",
+					"fetchVerifiedVaultsAddresses",
+				],
+				adapterNames: { primary: "eVaultV3", secondary: "eVaultOnchain" },
+				onFallback,
+			});
+		} else if (canBuildEVaultV3) {
+			console.warn(
+				"[buildEulerSDK] eVaultService fallback disabled: onchain adapter unavailable. Using V3 only.",
+			);
+			selectedEVaultAdapter = buildEVaultV3();
+		} else {
+			console.warn(
+				"[buildEulerSDK] eVaultService fallback disabled: V3 endpoint not configured. Using onchain only.",
+			);
+			selectedEVaultAdapter = buildEVaultOnchain();
+		}
+
 		eVaultService = new EVaultService(
 			selectedEVaultAdapter,
 			deploymentService as DeploymentService,
@@ -640,31 +761,80 @@ export async function buildEulerSDK<
 		eulerEarnService = servicesOverrides.eulerEarnService;
 	} else {
 		const resolvedEulerEarnServiceConfig = eulerEarnServiceConfig ?? {};
-		const resolvedEulerEarnServiceAdapter = pickConfigValue(
-			config?.eulerEarnServiceAdapter,
-			resolvedEulerEarnServiceConfig.adapter,
-			envConfig.eulerEarnServiceAdapter,
+		const resolvedEulerEarnServiceAdapter =
+			pickConfigValue(
+				config?.eulerEarnServiceAdapter,
+				resolvedEulerEarnServiceConfig.adapter,
+				envConfig.eulerEarnServiceAdapter,
+			) ?? "fallback";
+		const effectiveEulerEarnServiceAdapter = (() => {
+			if (!disableV3) return resolvedEulerEarnServiceAdapter;
+			if (resolvedEulerEarnServiceAdapter === "v3") {
+				console.warn(
+					"[buildEulerSDK] disableV3 is set but eulerEarnServiceAdapter='v3'; forcing 'onchain'.",
+				);
+				return "onchain" as const;
+			}
+			if (resolvedEulerEarnServiceAdapter === "fallback")
+				return "onchain" as const;
+			return resolvedEulerEarnServiceAdapter;
+		})();
+
+		const eulerEarnV3Config = resolveV3AdapterConfig(
+			defaultEulerEarnV3AdapterConfig,
+			{
+				explicitConfig: resolvedEulerEarnServiceConfig.v3AdapterConfig,
+				explicitV3ApiKey: v3ApiKey,
+				envConfig,
+				config,
+				envEndpoint: envConfig.eulerEarnV3ApiUrl,
+				configEndpoint: config?.eulerEarnV3ApiUrl,
+				envApiKey: envConfig.eulerEarnV3ApiKey,
+				configApiKey: config?.eulerEarnV3ApiKey,
+			},
 		);
-		const eulerEarnAdapter =
-			resolvedEulerEarnServiceAdapter === "onchain"
-				? new EulerEarnOnchainAdapter(
-						providerService as ProviderService,
-						deploymentService as DeploymentService,
-						resolvedBuildQuery,
-					)
-				: new EulerEarnV3Adapter(
-						resolveV3AdapterConfig(defaultEulerEarnV3AdapterConfig, {
-							explicitConfig: resolvedEulerEarnServiceConfig.v3AdapterConfig,
-							explicitV3ApiKey: v3ApiKey,
-							envConfig,
-							config,
-							envEndpoint: envConfig.eulerEarnV3ApiUrl,
-							configEndpoint: config?.eulerEarnV3ApiUrl,
-							envApiKey: envConfig.eulerEarnV3ApiKey,
-							configApiKey: config?.eulerEarnV3ApiKey,
-						}),
-						resolvedBuildQuery,
-					);
+		const canBuildEulerEarnV3 = !!eulerEarnV3Config.endpoint;
+		const buildEulerEarnV3 = () =>
+			new EulerEarnV3Adapter(eulerEarnV3Config, resolvedBuildQuery);
+		const buildEulerEarnOnchain = () =>
+			new EulerEarnOnchainAdapter(
+				providerService as ProviderService,
+				deploymentService as DeploymentService,
+				resolvedBuildQuery,
+			);
+
+		let eulerEarnAdapter: IEulerEarnAdapter;
+		if (effectiveEulerEarnServiceAdapter === "v3") {
+			if (!canBuildEulerEarnV3)
+				throw new Error(
+					"[buildEulerSDK] eulerEarnServiceAdapter='v3' but no V3 endpoint is configured.",
+				);
+			eulerEarnAdapter = buildEulerEarnV3();
+		} else if (effectiveEulerEarnServiceAdapter === "onchain") {
+			eulerEarnAdapter = buildEulerEarnOnchain();
+		} else if (canBuildEulerEarnV3) {
+			eulerEarnAdapter = createFallbackAdapter<
+				IEulerEarnAdapter,
+				"fetchVaults" | "fetchAllVaults" | "fetchVerifiedVaultsAddresses"
+			>(buildEulerEarnV3(), buildEulerEarnOnchain(), {
+				methods: [
+					"fetchVaults",
+					"fetchAllVaults",
+					"fetchVerifiedVaultsAddresses",
+				],
+				adapterNames: {
+					primary: "eulerEarnV3",
+					secondary: "eulerEarnOnchain",
+				},
+				onFallback,
+			});
+		} else {
+			console.warn(
+				"[buildEulerSDK] eulerEarnService fallback disabled: V3 endpoint not configured. Using onchain only.",
+			);
+			eulerEarnAdapter = buildEulerEarnOnchain();
+		}
+
 		eulerEarnService = new EulerEarnService(
 			eulerEarnAdapter,
 			deploymentService as DeploymentService,
@@ -700,60 +870,116 @@ export async function buildEulerSDK<
 			config?.vaultTypeAdapter,
 			explicitVaultTypeAdapterKind,
 			envConfig.vaultTypeAdapter,
-			"v3",
+			"fallback",
 		);
-		const vaultTypeAdapter =
-			resolvedVaultTypeAdapterKind === "subgraph"
-				? new VaultTypeSubgraphAdapter(
-						{
-							subgraphURLs: mergeNumberRecords(
-								defaultAccountVaultsAdapterConfig.subgraphURLs,
-								envConfig.vaultTypeSubgraphUrls,
-								vaultTypeAdapterConfig &&
-									"subgraphURLs" in vaultTypeAdapterConfig
-									? vaultTypeAdapterConfig.subgraphURLs
-									: undefined,
-								config?.vaultTypeSubgraphUrls,
-							),
-						},
-						resolvedBuildQuery,
-					)
-				: new VaultTypeV3Adapter(
-						resolveV3AdapterConfig(defaultVaultTypeAdapterConfig, {
-							explicitConfig:
-								vaultTypeAdapterConfig &&
-								!("subgraphURLs" in vaultTypeAdapterConfig)
-									? {
-											...vaultTypeAdapterConfig,
-											...maybeField(
-												"typeMap",
-												mergeStringRecords(
-													envConfig.vaultTypeV3TypeMap,
-													vaultTypeAdapterConfig.typeMap,
-													config?.vaultTypeV3TypeMap,
-												),
-											),
-										}
-									: {
-											...maybeField(
-												"typeMap",
-												mergeStringRecords(
-													envConfig.vaultTypeV3TypeMap,
-													undefined,
-													config?.vaultTypeV3TypeMap,
-												),
-											),
-										},
-							explicitV3ApiKey: v3ApiKey,
-							envConfig,
-							config,
-							envEndpoint: envConfig.vaultTypeV3ApiUrl,
-							configEndpoint: config?.vaultTypeV3ApiUrl,
-							envApiKey: envConfig.vaultTypeV3ApiKey,
-							configApiKey: config?.vaultTypeV3ApiKey,
-						}),
-						resolvedBuildQuery,
-					);
+		const effectiveVaultTypeAdapterKind = (() => {
+			if (!disableV3) return resolvedVaultTypeAdapterKind;
+			if (resolvedVaultTypeAdapterKind === "v3") {
+				console.warn(
+					"[buildEulerSDK] disableV3 is set but vaultTypeAdapter='v3'; forcing 'subgraph'.",
+				);
+				return "subgraph" as const;
+			}
+			if (resolvedVaultTypeAdapterKind === "fallback")
+				return "subgraph" as const;
+			return resolvedVaultTypeAdapterKind;
+		})();
+
+		const vaultTypeSubgraphUrls = mergeNumberRecords(
+			defaultAccountVaultsAdapterConfig.subgraphURLs,
+			envConfig.vaultTypeSubgraphUrls,
+			vaultTypeAdapterConfig && "subgraphURLs" in vaultTypeAdapterConfig
+				? vaultTypeAdapterConfig.subgraphURLs
+				: undefined,
+			config?.vaultTypeSubgraphUrls,
+		);
+		const vaultTypeV3Config = resolveV3AdapterConfig(
+			defaultVaultTypeAdapterConfig,
+			{
+				explicitConfig:
+					vaultTypeAdapterConfig &&
+					!("subgraphURLs" in vaultTypeAdapterConfig)
+						? {
+								...vaultTypeAdapterConfig,
+								...maybeField(
+									"typeMap",
+									mergeStringRecords(
+										envConfig.vaultTypeV3TypeMap,
+										vaultTypeAdapterConfig.typeMap,
+										config?.vaultTypeV3TypeMap,
+									),
+								),
+							}
+						: {
+								...maybeField(
+									"typeMap",
+									mergeStringRecords(
+										envConfig.vaultTypeV3TypeMap,
+										undefined,
+										config?.vaultTypeV3TypeMap,
+									),
+								),
+							},
+				explicitV3ApiKey: v3ApiKey,
+				envConfig,
+				config,
+				envEndpoint: envConfig.vaultTypeV3ApiUrl,
+				configEndpoint: config?.vaultTypeV3ApiUrl,
+				envApiKey: envConfig.vaultTypeV3ApiKey,
+				configApiKey: config?.vaultTypeV3ApiKey,
+			},
+		);
+		const canBuildVaultTypeV3 = !!vaultTypeV3Config.endpoint;
+		const canBuildVaultTypeSubgraph =
+			Object.keys(vaultTypeSubgraphUrls).length > 0;
+		const buildVaultTypeV3 = () =>
+			new VaultTypeV3Adapter(vaultTypeV3Config, resolvedBuildQuery);
+		const buildVaultTypeSubgraph = () =>
+			new VaultTypeSubgraphAdapter(
+				{ subgraphURLs: vaultTypeSubgraphUrls },
+				resolvedBuildQuery,
+			);
+
+		let vaultTypeAdapter: IVaultTypeAdapter;
+		if (effectiveVaultTypeAdapterKind === "v3") {
+			if (!canBuildVaultTypeV3)
+				throw new Error(
+					"[buildEulerSDK] vaultTypeAdapter='v3' but no V3 endpoint is configured.",
+				);
+			vaultTypeAdapter = buildVaultTypeV3();
+		} else if (effectiveVaultTypeAdapterKind === "subgraph") {
+			if (!canBuildVaultTypeSubgraph)
+				throw new Error(
+					"[buildEulerSDK] vaultTypeAdapter='subgraph' but no subgraph URLs are configured.",
+				);
+			vaultTypeAdapter = buildVaultTypeSubgraph();
+		} else if (canBuildVaultTypeV3 && canBuildVaultTypeSubgraph) {
+			vaultTypeAdapter = createFallbackAdapter<
+				IVaultTypeAdapter,
+				"fetchVaultType" | "fetchVaultFactories" | "fetchVaultTypes"
+			>(buildVaultTypeV3(), buildVaultTypeSubgraph(), {
+				methods: ["fetchVaultType", "fetchVaultFactories", "fetchVaultTypes"],
+				adapterNames: {
+					primary: "vaultTypeV3",
+					secondary: "vaultTypeSubgraph",
+				},
+				onFallback,
+			});
+		} else if (canBuildVaultTypeV3) {
+			console.warn(
+				"[buildEulerSDK] vaultTypeAdapter fallback disabled: subgraph URLs not configured. Using V3 only.",
+			);
+			vaultTypeAdapter = buildVaultTypeV3();
+		} else if (canBuildVaultTypeSubgraph) {
+			console.warn(
+				"[buildEulerSDK] vaultTypeAdapter fallback disabled: V3 endpoint not configured. Using subgraph only.",
+			);
+			vaultTypeAdapter = buildVaultTypeSubgraph();
+		} else {
+			throw new Error(
+				"[buildEulerSDK] cannot build vault type adapter: neither V3 endpoint nor subgraph URLs are configured.",
+			);
+		}
 		const allVaultServices: VaultServiceEntry<TVaultEntity>[] = [
 			{
 				type: VaultType.EVault,
@@ -912,47 +1138,96 @@ export async function buildEulerSDK<
 	const rewardsService =
 		servicesOverrides?.rewardsService ??
 		(() => {
-			const resolvedRewardsServiceAdapter = pickConfigValue(
-				config?.rewardsServiceAdapter,
-				rewardsServiceConfig?.adapter,
-				envConfig.rewardsServiceAdapter,
-				"v3",
-			);
+			const resolvedRewardsServiceAdapter =
+				pickConfigValue(
+					config?.rewardsServiceAdapter,
+					rewardsServiceConfig?.adapter,
+					envConfig.rewardsServiceAdapter,
+				) ?? "fallback";
+			const effectiveRewardsServiceAdapter = (() => {
+				if (!disableV3) return resolvedRewardsServiceAdapter;
+				if (resolvedRewardsServiceAdapter === "v3") {
+					console.warn(
+						"[buildEulerSDK] disableV3 is set but rewardsServiceAdapter='v3'; forcing 'direct'.",
+					);
+					return "direct" as const;
+				}
+				if (resolvedRewardsServiceAdapter === "fallback")
+					return "direct" as const;
+				return resolvedRewardsServiceAdapter;
+			})();
+
 			const directAdapterConfig = resolveRewardsDirectAdapterConfig(
 				rewardsServiceConfig,
 				envConfig,
 				config,
 			);
+			// directAdapter is always constructed because RewardsService also reads
+			// merkl/fuul addresses from it, regardless of which adapter serves data.
 			const directAdapter = new RewardsDirectAdapter(
 				directAdapterConfig,
 				resolvedBuildQuery,
 			);
-			const rewardsAdapter =
-				resolvedRewardsServiceAdapter === "direct"
-					? directAdapter
-					: new RewardsV3Adapter(
-							resolveV3AdapterConfig(defaultRewardsV3AdapterConfig, {
-								explicitConfig: rewardsServiceConfig?.v3AdapterConfig,
-								explicitV3ApiKey: v3ApiKey,
-								envConfig,
-								config,
-								envEndpoint: envConfig.rewardsV3ApiUrl,
-								configEndpoint: config?.rewardsV3ApiUrl,
-								envApiKey: envConfig.rewardsV3ApiKey,
-								configApiKey: config?.rewardsV3ApiKey,
-							}),
-							resolvedBuildQuery,
-						);
-
-			return new RewardsService(
-				rewardsAdapter,
-				resolvedRewardsServiceAdapter === "direct" ? undefined : directAdapter,
+			const rewardsV3Config = resolveV3AdapterConfig(
+				defaultRewardsV3AdapterConfig,
 				{
-					merklDistributorAddress: directAdapter.getMerklDistributorAddress(),
-					fuulManagerAddress: directAdapter.getFuulManagerAddress(),
-					fuulFactoryAddress: directAdapter.getFuulFactoryAddress(),
+					explicitConfig: rewardsServiceConfig?.v3AdapterConfig,
+					explicitV3ApiKey: v3ApiKey,
+					envConfig,
+					config,
+					envEndpoint: envConfig.rewardsV3ApiUrl,
+					configEndpoint: config?.rewardsV3ApiUrl,
+					envApiKey: envConfig.rewardsV3ApiKey,
+					configApiKey: config?.rewardsV3ApiKey,
 				},
 			);
+			const canBuildRewardsV3 = !!rewardsV3Config.endpoint;
+			const buildRewardsV3 = () =>
+				new RewardsV3Adapter(rewardsV3Config, resolvedBuildQuery);
+
+			let rewardsAdapter: IRewardsAdapter;
+			if (effectiveRewardsServiceAdapter === "direct") {
+				rewardsAdapter = directAdapter;
+			} else if (effectiveRewardsServiceAdapter === "v3") {
+				if (!canBuildRewardsV3)
+					throw new Error(
+						"[buildEulerSDK] rewardsServiceAdapter='v3' but no V3 endpoint is configured.",
+					);
+				rewardsAdapter = buildRewardsV3();
+			} else if (canBuildRewardsV3) {
+				rewardsAdapter = createFallbackAdapter<
+					IRewardsAdapter,
+					| "fetchVaultRewards"
+					| "fetchChainRewards"
+					| "fetchUserRewards"
+					| "fetchFuulTotals"
+					| "fetchFuulClaimChecks"
+				>(buildRewardsV3(), directAdapter, {
+					methods: [
+						"fetchVaultRewards",
+						"fetchChainRewards",
+						"fetchUserRewards",
+						"fetchFuulTotals",
+						"fetchFuulClaimChecks",
+					],
+					adapterNames: {
+						primary: "rewardsV3",
+						secondary: "rewardsDirect",
+					},
+					onFallback,
+				});
+			} else {
+				console.warn(
+					"[buildEulerSDK] rewardsService fallback disabled: V3 endpoint not configured. Using direct only.",
+				);
+				rewardsAdapter = directAdapter;
+			}
+
+			return new RewardsService(rewardsAdapter, {
+				merklDistributorAddress: directAdapter.getMerklDistributorAddress(),
+				fuulManagerAddress: directAdapter.getFuulManagerAddress(),
+				fuulFactoryAddress: directAdapter.getFuulFactoryAddress(),
+			});
 		})();
 
 	// Build intrinsic APY service if not overridden
@@ -1034,6 +1309,9 @@ export async function buildEulerSDK<
 			},
 			resolvedBuildQuery,
 		);
+	const reulLockService =
+		servicesOverrides?.reulLockService ??
+		new REULLockService(providerService, deploymentService);
 
 	if (executionService instanceof ExecutionService) {
 		executionService.setProviderService(providerService as ProviderService);
@@ -1125,6 +1403,7 @@ export async function buildEulerSDK<
 		intrinsicApyService,
 		oracleAdapterService,
 		feeFlowService,
+		reulLockService,
 		plugins,
 	});
 

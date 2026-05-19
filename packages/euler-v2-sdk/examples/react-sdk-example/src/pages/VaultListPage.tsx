@@ -32,6 +32,10 @@ import {
   createEntityDiagnosticIndex,
   formatDiagnosticIssues,
 } from "../utils/diagnosticIndex.ts";
+import {
+  clearFallbackLog,
+  useFallbackLog,
+} from "../queries/fallbackLogStore.ts";
 import { getEffectiveBorrowApy, getEffectiveSupplyApy } from "../utils/apy.ts";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { ApyCell } from "../components/ApyCell.tsx";
@@ -446,6 +450,8 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
   const { isConnected } = useAccount();
   const [openDeposit, setOpenDeposit] = useState<string | null>(null);
   const [showFailedVaults, setShowFailedVaults] = useState(false);
+  const [showFallbacks, setShowFallbacks] = useState(false);
+  const fallbackEntries = useFallbackLog();
   const coldLoadTimerLabelRef = useRef<string | null>(null);
 
   const {
@@ -644,6 +650,90 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
   if (sdkError)
     return <div className="error-message">SDK Error: {sdkError}</div>;
 
+  const renderFallbackPanel = (keyPrefix: string) => {
+    if (fallbackEntries.length === 0) return null;
+
+    return (
+      <div className="failed-vaults-panel">
+        <div className="failed-vaults-summary">
+          <div className="failed-vaults-title">
+            Fallbacks ({fallbackEntries.length})
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              className="failed-vaults-toggle"
+              onClick={() => setShowFallbacks((current) => !current)}
+            >
+              {showFallbacks ? "Hide details" : "Show details"}
+            </button>
+            <button
+              type="button"
+              className="failed-vaults-toggle"
+              onClick={() => clearFallbackLog()}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+        {showFallbacks && (
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Adapter</th>
+                <th>Method</th>
+                <th>Args</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fallbackEntries.map((entry) => {
+                const reason = (() => {
+                  switch (entry.trigger) {
+                    case "primary-threw":
+                      return `primary threw${entry.primaryError ? `: ${entry.primaryError}` : ""}`;
+                    case "result-undefined":
+                      return "result was undefined";
+                    case "array-missing-slots": {
+                      const count = entry.missingIndices?.length ?? 0;
+                      const preview = (entry.missingIndices ?? []).slice(0, 8).join(", ");
+                      const ellipsis = count > 8 ? "…" : "";
+                      return `${count} missing slot${count === 1 ? "" : "s"} [${preview}${ellipsis}]`;
+                    }
+                    case "custom-shouldFallback":
+                      return "custom shouldFallback() returned true";
+                    case "circuit-open":
+                      return "circuit breaker open";
+                  }
+                })();
+                const issueSuffix =
+                  entry.primaryIssueCount > 0
+                    ? ` · ${entry.primaryIssueCount} ${entry.primaryIssueCodes.join(", ")}`
+                    : "";
+                return (
+                  <tr key={`${keyPrefix}-${entry.id}`}>
+                    <td>{new Date(entry.timestamp).toLocaleTimeString()}</td>
+                    <td>
+                      {entry.primaryName} → {entry.secondaryName}
+                    </td>
+                    <td>{entry.method}</td>
+                    <td>
+                      <code style={{ fontSize: "0.85em" }}>
+                        {entry.argsPreview}
+                      </code>
+                    </td>
+                    <td>{reason}{issueSuffix}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    );
+  };
+
   const renderFailedVaultPanel = (keyPrefix: string) => {
     if (failedVaults.length === 0) return null;
 
@@ -724,6 +814,7 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
             <div className="error-message">Error: {String(error)}</div>
           ) : (
             <>
+              {renderFallbackPanel("fallback-evault")}
               {renderFailedVaultPanel("failed-evault")}
 
               {eVaults.length === 0 ? (
@@ -941,6 +1032,7 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
             <div className="error-message">Error: {String(error)}</div>
           ) : (
             <>
+              {renderFallbackPanel("fallback-earn")}
               {renderFailedVaultPanel("failed-earn")}
               {earnVaults.length === 0 ? (
                 <div className="status-message">No Euler Earn vaults found</div>

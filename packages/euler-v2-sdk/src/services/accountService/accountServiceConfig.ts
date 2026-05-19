@@ -1,4 +1,4 @@
-export type AccountServiceAdapter = "v3" | "onchain";
+export type AccountServiceAdapter = "v3" | "onchain" | "fallback";
 
 export interface AccountV3AdapterConfig {
 	/** Base HTTP endpoint, for example `https://v3.euler.finance`. */
@@ -10,7 +10,7 @@ export interface AccountV3AdapterConfig {
 }
 
 export interface AccountServiceConfig {
-	/** Selects which built-in account adapter `buildEulerSDK` should construct. Defaults to `v3`. */
+	/** Selects which built-in account adapter `buildEulerSDK` should construct. Defaults to `fallback` (v3 primary, onchain secondary). */
 	adapter?: AccountServiceAdapter;
 	/** Configuration used when the `v3` account adapter is selected. */
 	v3AdapterConfig?: AccountV3AdapterConfig;

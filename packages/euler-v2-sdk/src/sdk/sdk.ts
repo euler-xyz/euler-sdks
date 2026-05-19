@@ -25,6 +25,7 @@ import type { IRewardsService } from "../services/rewardsService/index.js";
 import type { IIntrinsicApyService } from "../services/intrinsicApyService/index.js";
 import type { IOracleAdapterService } from "../services/oracleAdapterService/index.js";
 import type { IFeeFlowService } from "../services/feeFlowService/index.js";
+import type { IREULLockService } from "../services/reulLockService/index.js";
 import type { EulerPlugin } from "../plugins/types.js";
 import type { TransactionPlan } from "../services/executionService/executionServiceTypes.js";
 import type { Address } from "viem";
@@ -51,6 +52,7 @@ export interface EulerSDKOptions<
 	intrinsicApyService: IIntrinsicApyService;
 	oracleAdapterService: IOracleAdapterService;
 	feeFlowService: IFeeFlowService;
+	reulLockService: IREULLockService;
 	plugins?: EulerPlugin[];
 }
 
@@ -74,6 +76,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 	public readonly intrinsicApyService: IIntrinsicApyService;
 	public readonly oracleAdapterService: IOracleAdapterService;
 	public readonly feeFlowService: IFeeFlowService;
+	public readonly reulLockService: IREULLockService;
 	public readonly plugins: EulerPlugin[];
 
 	constructor(options: EulerSDKOptions<TVaultEntity>) {
@@ -96,6 +99,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 		this.intrinsicApyService = options.intrinsicApyService;
 		this.oracleAdapterService = options.oracleAdapterService;
 		this.feeFlowService = options.feeFlowService;
+		this.reulLockService = options.reulLockService;
 		this.plugins = options.plugins ?? [];
 	}
 

@@ -62,8 +62,14 @@ Common plan functions include:
 - `planWithdrawAndSwap`, `planRedeemAndSwap`, `planSwapCollateral`, `planSwapDebt`
 - `planMigrateSameAssetCollateral`, `planMigrateSameAssetDebt`
 - `planTransfer`, `planMultiplyWithSwap`, `planMultiplySameAsset`
+- `planOpenPositionWithCoW`, `planClosePositionWithCow`, `planSwapCollateralWithCoW`, `planCancelClosePositionWithCow`
 
 Repay planners accept `cleanupOnMax`. When set on a full repay, the planner appends cleanup calls that disable active collaterals on the repaid sub-account and transfer those collateral shares back to the owner. Source-deposit repay and swap repay also transfer any remaining source-vault shares to the owner. For same-asset different-vault repay, pre-existing liability-vault deposits are preserved.
+
+CoW planners produce `cowSwap` plan items instead of EVC batch items. They are
+executed by `executeCowSwapTransactionPlan`, but they are not supported by
+`simulateTransactionPlan`, `estimateGasForTransactionPlan`, `mergePlans`, or
+`describeBatch`. Execute a CoW plan as a standalone user action.
 
 After planning, use:
 
@@ -96,6 +102,15 @@ The bundled executor:
 3. Collects/appends Permit2 calls when needed
 4. Executes `contractCall` items directly
 5. Sends the final EVC batch transaction
+
+For CoW plans, use `executeCowSwapTransactionPlan`. It runs ERC20 approvals,
+EVC permit signing, CoW order signing, and order submission. The result includes
+`orderUids` for submitted CoW orders. CoW settlement happens asynchronously
+through CoW Protocol, so `orderUids` indicate order submission rather than final
+settlement. Use `fetchCowSwapOrderStatus` or `pollCowSwapOrderStatus` to track
+the order. Use `cancelCowSwapOrder` for CoW API cancellation of open-position
+and collateral-swap orders. Use `planCancelClosePositionWithCow` to invalidate
+the EVC permit nonce for close-position orders.
 
 ## Embedding Payloads in Higher-Level Flows
 
@@ -141,4 +156,9 @@ Useful entry points:
 - [`examples/execution/redeem-and-swap-example.ts`](../examples/execution/redeem-and-swap-example.ts)
 - [`examples/execution/same-asset-position-migration-example.ts`](../examples/execution/same-asset-position-migration-example.ts)
 - [`examples/execution/merge-plans-example.ts`](../examples/execution/merge-plans-example.ts)
+- [`examples/execution/open-position-with-cow-live-example.ts`](../examples/execution/open-position-with-cow-live-example.ts)
 - [`run-examples.sh`](../examples/run-examples.sh)
+
+The CoW example uses live mainnet and requires `PRIVATE_KEY` plus a mainnet RPC
+URL. It is not a fork example because CoW order submission depends on the
+external CoW orderbook.

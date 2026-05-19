@@ -321,17 +321,12 @@ function formatIssueRaw(issue: DiagnosticIssue): string {
 function failedVaultRefFromOwner(
   owner: DataIssueOwnerRef
 ): { chainId?: number; address: string } | undefined {
+  // Nested kinds (vaultCollateral, vaultStrategy, accountPositionCollateral) describe warnings on dependencies of a vault that loaded fine — not missing vaults.
   switch (owner.kind) {
     case "vault":
       return { chainId: owner.chainId, address: owner.address };
-    case "vaultCollateral":
-      return { chainId: owner.chainId, address: owner.collateral };
-    case "vaultStrategy":
-      return { chainId: owner.chainId, address: owner.strategy };
     case "accountPosition":
       return { chainId: owner.chainId, address: owner.vault };
-    case "accountPositionCollateral":
-      return { chainId: owner.chainId, address: owner.collateral };
     default:
       return undefined;
   }

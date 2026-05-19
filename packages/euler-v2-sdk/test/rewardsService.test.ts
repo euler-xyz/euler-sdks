@@ -7,8 +7,8 @@ import type {
 	FuulClaimCheck,
 	IRewardsAdapter,
 	UserReward,
-	VaultRewardInfo,
 } from "../src/services/rewardsService/index.js";
+import type { MerklOpportunity } from "../src/services/rewardsService/rewardsServiceTypes.js";
 import { RewardsV3Adapter } from "../src/services/rewardsService/adapters/rewardsV3Adapter/index.js";
 import { RewardsDirectAdapter } from "../src/services/rewardsService/adapters/rewardsDirectAdapter/index.js";
 
@@ -39,6 +39,13 @@ const fuulProjectAddress = getAddress(
 const otherRewardToken = getAddress(
 	"0x0000000000000000000000000000000000000007",
 ) as Address;
+const secondCollateralAddress = getAddress(
+	"0x0000000000000000000000000000000000000008",
+) as Address;
+const secondVaultAddress = getAddress(
+	"0x0000000000000000000000000000000000000009",
+) as Address;
+const farFutureTimestamp = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
 
 const emptyAdapter: IRewardsAdapter = {
 	async fetchVaultRewards() {
@@ -125,6 +132,60 @@ const makeFuulReward = (overrides: Partial<UserReward> = {}): UserReward => ({
 	...overrides,
 });
 
+const makeMerklOpportunity = (
+	overrides: Partial<MerklOpportunity>,
+): MerklOpportunity =>
+	({
+		chainId: 1,
+		chain: { name: "Ethereum" },
+		type: "EULER",
+		identifier: `${vaultAddress}-test`,
+		status: "LIVE",
+		action: "LEND",
+		apr: 0,
+		dailyRewards: 0,
+		aprRecord: { breakdowns: [] },
+		campaigns: [],
+		...overrides,
+	}) as MerklOpportunity;
+
+const makeMerklCampaign = (
+	overrides: Partial<MerklOpportunity["campaigns"][number]>,
+): MerklOpportunity["campaigns"][number] =>
+	({
+		id: "campaign-row-1",
+		campaignId: "campaign-1",
+		type: "EULER",
+		subType: 0,
+		rewardToken: {
+			address: rewardToken,
+			symbol: "EUL",
+			icon: "https://example.invalid/eul.png",
+		},
+		apr: 0,
+		dailyRewards: 100,
+		startTimestamp: 0,
+		endTimestamp: farFutureTimestamp,
+		params: {
+			targetToken: vaultAddress,
+		},
+		...overrides,
+	}) as MerklOpportunity["campaigns"][number];
+
+const makeDirectRewardsAdapter = (
+	opportunitiesByType: Record<string, MerklOpportunity[]>,
+): RewardsDirectAdapter => {
+	const adapter = new RewardsDirectAdapter({
+		enableBrevis: false,
+		enableFuul: false,
+	});
+	adapter.setQueryMerklOpportunities(async (url) => {
+		const type = new URL(url).searchParams.get("type");
+		return type ? (opportunitiesByType[type] ?? []) : [];
+	});
+	return adapter;
+};
+
 test("V3 rewards adapter normalizes Incentra APY campaigns as Brevis", async () => {
 	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
 	adapter.setQueryV3RewardsApyPage(async () => ({
@@ -205,7 +266,185 @@ test("V3 rewards adapter preserves collateral and looping campaign metadata", as
 	assert.equal(info?.campaigns[1]?.maxMultiplier, 5);
 });
 
-test("rewards service uses direct proof-backed Brevis rewards when V3 lacks claim metadata", async () => {
+test("direct rewards adapter expands Merkl MULTILENDBORROW markets", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		MULTILENDBORROW: [
+			makeMerklOpportunity({
+				type: "MULTILENDBORROW",
+				identifier: "multi-lend-borrow-1",
+				action: "BORROW",
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "multi-1",
+						type: "MULTILENDBORROW",
+						apr: 2.5,
+						params: {
+							whitelist: [accountAddress],
+							blacklist: [otherAccountAddress],
+							markets: [
+								{
+									campaignParameters: {
+										evkAddress: vaultAddress,
+									},
+								},
+								{
+									campaignParameters: {
+										targetToken: secondVaultAddress,
+									},
+								},
+							],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const first = rewards.get(vaultAddress.toLowerCase());
+	const second = rewards.get(secondVaultAddress.toLowerCase());
+
+	assert.equal(first?.campaigns.length, 1);
+	assert.equal(second?.campaigns.length, 1);
+	assert.equal(first?.campaigns[0]?.action, "BORROW");
+	assert.equal(first?.campaigns[0]?.apr, 0.025);
+	assert.deepEqual(first?.campaigns[0]?.whitelist, [
+		accountAddress.toLowerCase(),
+	]);
+	assert.deepEqual(first?.campaigns[0]?.blacklist, [
+		otherAccountAddress.toLowerCase(),
+	]);
+	assert.match(first?.campaigns[0]?.sourceUrl ?? "", /MULTILENDBORROW/);
+});
+
+test("direct rewards adapter fans out Merkl borrow-from-collateral pairs", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER_MULTI_BORROW_FROM_COLLATERAL: [
+			makeMerklOpportunity({
+				type: "EULER_MULTI_BORROW_FROM_COLLATERAL",
+				identifier: "borrow-from-collateral-1",
+				action: "BORROW",
+				aprRecord: {
+					breakdowns: [
+						{
+							identifier: "borrow-collateral-1",
+							value: 7,
+						},
+					],
+				},
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "borrow-collateral-1",
+						type: "EULER_MULTI_BORROW_FROM_COLLATERAL",
+						apr: 1,
+						params: {
+							vaults: [
+								{
+									evkAddress: vaultAddress,
+									collaterals: [
+										{ tokenAddress: otherRewardToken },
+										{ tokenAddress: secondCollateralAddress },
+									],
+								},
+							],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 2);
+	assert.equal(info?.campaigns[0]?.action, "BORROW_COLLATERAL");
+	assert.equal(info?.campaigns[0]?.apr, 0.07);
+	assert.deepEqual(
+		info?.campaigns.map((campaign) => campaign.collateralAddress).sort(),
+		[otherRewardToken, secondCollateralAddress].sort(),
+	);
+	assert.match(
+		info?.campaigns[0]?.sourceUrl ?? "",
+		/EULER_MULTI_BORROW_FROM_COLLATERAL/,
+	);
+});
+
+test("direct rewards adapter accepts flat Merkl borrow-from-collateral params", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER_BORROW_FROM_COLLATERAL: [
+			makeMerklOpportunity({
+				type: "EULER_BORROW_FROM_COLLATERAL",
+				identifier: "borrow-from-collateral-flat",
+				action: "BORROW",
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "borrow-collateral-flat-1",
+						type: "EULER_BORROW_FROM_COLLATERAL",
+						apr: 3,
+						params: {
+							evkAddress: vaultAddress,
+							collateralAddress: otherRewardToken,
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.action, "BORROW_COLLATERAL");
+	assert.equal(info?.campaigns[0]?.collateralAddress, otherRewardToken);
+	assert.equal(info?.campaigns[0]?.apr, 0.03);
+});
+
+test("direct rewards adapter preserves standard Merkl allowlist metadata", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER: [
+			makeMerklOpportunity({
+				aprRecord: {
+					breakdowns: [
+						{
+							identifier: "standard-1",
+							value: 4.2,
+						},
+					],
+				},
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "standard-1",
+						subType: 0,
+						apr: 0,
+						params: {
+							evkAddress: vaultAddress,
+							whitelist: [accountAddress],
+							blacklist: [otherAccountAddress],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.equal(info?.campaigns[0]?.apr, 0.042);
+	assert.equal(info?.campaigns[0]?.rewardTokenIcon, "https://example.invalid/eul.png");
+	assert.deepEqual(info?.campaigns[0]?.whitelist, [
+		accountAddress.toLowerCase(),
+	]);
+	assert.deepEqual(info?.campaigns[0]?.blacklist, [
+		otherAccountAddress.toLowerCase(),
+	]);
+});
+
+test("rewards service uses only selected adapter for user rewards", async () => {
 	const primary: IRewardsAdapter = {
 		...emptyAdapter,
 		async fetchUserRewards() {
@@ -220,22 +459,7 @@ test("rewards service uses direct proof-backed Brevis rewards when V3 lacks clai
 			];
 		},
 	};
-	const fallback = {
-		...emptyAdapter,
-		async fetchBrevisUserRewardClaims() {
-			return [
-				makeBrevisReward({
-					tokenPrice: 1,
-					claimAddress,
-					claimAddressVerified: true,
-					proof: ["0xabc" as `0x${string}`],
-					cumulativeAmounts: ["1000"],
-					epoch: "7",
-				}),
-			];
-		},
-	};
-	const service = new RewardsService(primary, fallback, {
+	const service = new RewardsService(primary, {
 		merklDistributorAddress: zeroAddress,
 		fuulManagerAddress: zeroAddress,
 		fuulFactoryAddress: zeroAddress,
@@ -245,35 +469,21 @@ test("rewards service uses direct proof-backed Brevis rewards when V3 lacks clai
 
 	assert.equal(rewards.length, 1);
 	assert.equal(rewards[0]?.provider, "brevis");
-	assert.equal(rewards[0]?.tokenPrice, 1);
-	assert.equal(rewards[0]?.claimAddress, claimAddress);
-	assert.deepEqual(rewards[0]?.proof, ["0xabc"]);
-	assert.deepEqual(rewards[0]?.cumulativeAmounts, ["1000"]);
-	assert.equal(rewards[0]?.epoch, "7");
+	assert.equal(rewards[0]?.tokenPrice, 3);
+	assert.equal(rewards[0]?.claimAddress, undefined);
 
-	const plan = await service.buildClaimPlan({
-		reward: rewards[0]!,
-		account: zeroAddress,
-	});
-	assert.equal(plan.length, 1);
+	await assert.rejects(
+		() =>
+			service.buildClaimPlan({
+				reward: rewards[0]!,
+				account: zeroAddress,
+			}),
+		/Missing Brevis claim data/,
+	);
 });
 
-test("rewards service includes Brevis rewards missing from V3 user rows", async () => {
-	const fallback = {
-		...emptyAdapter,
-		async fetchBrevisUserRewardClaims() {
-			return [
-				makeBrevisReward({
-					claimAddress,
-					claimAddressVerified: true,
-					proof: ["0xabc" as `0x${string}`],
-					cumulativeAmounts: ["1000"],
-					epoch: "7",
-				}),
-			];
-		},
-	};
-	const service = new RewardsService(emptyAdapter, fallback, {
+test("rewards service does not add Brevis rewards outside the selected adapter", async () => {
+	const service = new RewardsService(emptyAdapter, {
 		merklDistributorAddress: zeroAddress,
 		fuulManagerAddress: zeroAddress,
 		fuulFactoryAddress: zeroAddress,
@@ -281,13 +491,11 @@ test("rewards service includes Brevis rewards missing from V3 user rows", async 
 
 	const rewards = await service.fetchUserRewards(1, zeroAddress);
 
-	assert.equal(rewards.length, 1);
-	assert.equal(rewards[0]?.provider, "brevis");
-	assert.equal(rewards[0]?.claimAddress, claimAddress);
+	assert.equal(rewards.length, 0);
 });
 
 test("rewards service rejects Brevis rewards without verified claim address", async () => {
-	const service = new RewardsService(emptyAdapter, undefined, {
+	const service = new RewardsService(emptyAdapter, {
 		merklDistributorAddress: zeroAddress,
 		fuulManagerAddress: zeroAddress,
 		fuulFactoryAddress: zeroAddress,
@@ -310,28 +518,32 @@ test("rewards service rejects Brevis rewards without verified claim address", as
 
 test("direct rewards adapter verifies Brevis claim target against campaign metadata", async () => {
 	const adapter = new RewardsDirectAdapter();
-	adapter.setQueryBrevisCampaigns(async () => ({
-		campaigns: [
-			{
-				chain_id: 1,
-				vault_address: vaultAddress,
-				action: 2002,
-				campaign_id: "brevis-1",
-				campaign_name: "Brevis",
-				start_time: 1,
-				end_time: 2,
-				reward_info: {
-					token_address: rewardToken,
-					token_symbol: "EUL",
-					apr: 0.01,
-					rewardUsdPrice: 1,
-					claim_chain_id: 1,
-					claim_contract: claimAddress,
+	let campaignsBody: unknown;
+	adapter.setQueryBrevisCampaigns(async (_url, body) => {
+		campaignsBody = body;
+		return {
+			campaigns: [
+				{
+					chain_id: 1,
+					vault_address: vaultAddress,
+					action: 2002,
+					campaign_id: "brevis-1",
+					campaign_name: "Brevis",
+					start_time: 1,
+					end_time: 2,
+					reward_info: {
+						token_address: rewardToken,
+						token_symbol: "EUL",
+						apr: 0.01,
+						rewardUsdPrice: 1,
+						claim_chain_id: 1,
+						claim_contract: claimAddress,
+					},
+					status: 4,
 				},
-				status: 4,
-			},
-		],
-	}));
+			],
+		};
+	});
 	adapter.setQueryBrevisUserProofs(async () => ({
 		err: null,
 		rewardsBatch: [
@@ -351,6 +563,11 @@ test("direct rewards adapter verifies Brevis claim target against campaign metad
 
 	assert.equal(rewards.length, 1);
 	assert.equal(rewards[0]?.claimAddress, claimAddress);
+	assert.deepEqual(campaignsBody, {
+		chain_id: [1],
+		user_address: [accountAddress],
+		status: [3, 4],
+	});
 });
 
 test("direct rewards adapter drops Brevis proofs with mismatched claim target", async () => {
@@ -397,27 +614,8 @@ test("direct rewards adapter drops Brevis proofs with mismatched claim target", 
 	assert.equal(rewards.length, 0);
 });
 
-test("rewards service merges Brevis APY campaigns from direct fallback", async () => {
-	const fallbackInfo: VaultRewardInfo = {
-		totalRewardsApr: 0.04,
-		campaigns: [
-			{
-				campaignId: "brevis-1",
-				source: "brevis",
-				action: "BORROW",
-				apr: 0.04,
-				rewardTokenAddress: rewardToken,
-				rewardTokenSymbol: "EUL",
-			},
-		],
-	};
-	const fallback = {
-		...emptyAdapter,
-		async fetchBrevisChainRewards() {
-			return new Map([[vaultAddress.toLowerCase(), fallbackInfo]]);
-		},
-	};
-	const service = new RewardsService(emptyAdapter, fallback, {
+test("rewards service uses only selected adapter for APY campaigns", async () => {
+	const service = new RewardsService(emptyAdapter, {
 		merklDistributorAddress: zeroAddress,
 		fuulManagerAddress: zeroAddress,
 		fuulFactoryAddress: zeroAddress,
@@ -426,9 +624,7 @@ test("rewards service merges Brevis APY campaigns from direct fallback", async (
 	const rewards = await service.fetchChainRewards(1);
 	const info = rewards.get(vaultAddress.toLowerCase());
 
-	assert.equal(info?.totalRewardsApr, 0.04);
-	assert.equal(info?.campaigns[0]?.source, "brevis");
-	assert.equal(info?.campaigns[0]?.action, "BORROW");
+	assert.equal(info, undefined);
 });
 
 test("direct rewards adapter maps Fuul lend and looping incentives", async () => {
@@ -502,7 +698,7 @@ test("direct rewards adapter maps Fuul lend and looping incentives", async () =>
 });
 
 test("rewards service derives Merkl claim target from trusted distributor", async () => {
-	const service = new RewardsService(emptyAdapter, undefined, {
+	const service = new RewardsService(emptyAdapter, {
 		merklDistributorAddress,
 		fuulManagerAddress: zeroAddress,
 		fuulFactoryAddress: zeroAddress,
@@ -519,7 +715,7 @@ test("rewards service derives Merkl claim target from trusted distributor", asyn
 });
 
 test("rewards service rejects Merkl rewards with untrusted claim address", async () => {
-	const service = new RewardsService(emptyAdapter, undefined, {
+	const service = new RewardsService(emptyAdapter, {
 		merklDistributorAddress,
 		fuulManagerAddress: zeroAddress,
 		fuulFactoryAddress: zeroAddress,
@@ -536,7 +732,7 @@ test("rewards service rejects Merkl rewards with untrusted claim address", async
 });
 
 test("rewards service uses chain-specific Merkl distributor overrides", async () => {
-	const service = new RewardsService(emptyAdapter, undefined, {
+	const service = new RewardsService(emptyAdapter, {
 		merklDistributorAddress,
 		fuulManagerAddress: zeroAddress,
 		fuulFactoryAddress: zeroAddress,
@@ -559,7 +755,7 @@ test("rewards service uses chain-specific Merkl distributor overrides", async ()
 });
 
 test("rewards service rejects default Merkl distributor on unknown chains", async () => {
-	const service = new RewardsService(emptyAdapter, undefined, {
+	const service = new RewardsService(emptyAdapter, {
 		merklDistributorAddress,
 		fuulManagerAddress: zeroAddress,
 		fuulFactoryAddress: zeroAddress,
@@ -618,7 +814,7 @@ test("rewards service rejects Fuul claim checks whose recipient differs from the
 			};
 		},
 	};
-	const service = new RewardsService(adapter, undefined, {
+	const service = new RewardsService(adapter, {
 		merklDistributorAddress: zeroAddress,
 		fuulManagerAddress: zeroAddress,
 		fuulFactoryAddress: zeroAddress,
@@ -654,7 +850,7 @@ test("rewards service rejects Fuul claim checks outside chain unclaimed metadata
 			};
 		},
 	};
-	const service = new RewardsService(adapter, undefined, {
+	const service = new RewardsService(adapter, {
 		merklDistributorAddress: zeroAddress,
 		fuulManagerAddress: zeroAddress,
 		fuulFactoryAddress: zeroAddress,

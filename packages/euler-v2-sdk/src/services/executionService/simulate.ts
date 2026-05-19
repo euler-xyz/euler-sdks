@@ -1,4 +1,13 @@
 import {
+	type Address,
+	decodeFunctionResult,
+	getAddress,
+	type Hex,
+	parseEther,
+	type StateOverride,
+} from "viem";
+import { estimateContractGas } from "viem/actions";
+import {
 	Account,
 	type IAccount,
 	type ISubAccount,
@@ -6,15 +15,16 @@ import {
 import { EulerEarn } from "../../entities/EulerEarn.js";
 import { EVault } from "../../entities/EVault.js";
 import {
-	decodeSmartContractErrors,
 	type DecodedSmartContractError,
+	decodeSmartContractErrors,
 } from "../../utils/decodeSmartContractErrors.js";
-import { isSubAccount } from "../../utils/subAccounts.js";
 import { getApprovalOverrides } from "../../utils/stateOverrides/approvalOverrides.js";
 import { getBalanceOverrides } from "../../utils/stateOverrides/balanceOverrides.js";
 import { mergeStateOverrides } from "../../utils/stateOverrides/mergeStateOverrides.js";
+import { isSubAccount } from "../../utils/subAccounts.js";
 import { VaultType } from "../../utils/types.js";
 import type { AccountFetchOptions } from "../accountService/accountService.js";
+import { accountLensAbi } from "../accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
 import type {
 	EVCAccountInfo,
 	VaultAccountInfo,
@@ -24,22 +34,21 @@ import {
 	getEVCAccountInfoLensBatchItem,
 	getVaultAccountInfoLensBatchItem,
 } from "../accountService/adapters/accountOnchainAdapter/accountOnchainAdapter.js";
-import { accountLensAbi } from "../accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
 import type { IEulerLabelsService } from "../eulerLabelsService/index.js";
 import type { IIntrinsicApyService } from "../intrinsicApyService/index.js";
 import type { IPriceService } from "../priceService/index.js";
 import type { ProviderService } from "../providerService/index.js";
 import type { IRewardsService } from "../rewardsService/index.js";
-import type { VaultFetchOptions } from "../vaults/index.js";
 import { eulerEarnVaultLensAbi } from "../vaults/eulerEarnService/adapters/abis/eulerEarnVaultLensAbi.js";
-import type { EulerEarnVaultInfoFull } from "../vaults/eulerEarnService/adapters/eulerEarnLensTypes.js";
 import { convertEulerEarnVaultInfoFullToIEulerEarn } from "../vaults/eulerEarnService/adapters/eulerEarnInfoConverter.js";
+import type { EulerEarnVaultInfoFull } from "../vaults/eulerEarnService/adapters/eulerEarnLensTypes.js";
 import { getEulerEarnVaultInfoFullLensBatchItem } from "../vaults/eulerEarnService/adapters/eulerEarnOnchainAdapter.js";
 import { vaultLensAbi } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/abis/vaultLensAbi.js";
-import { getVaultInfoFullLensBatchItem } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultOnchainAdapter.js";
 import type { VaultInfoFull } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
+import { getVaultInfoFullLensBatchItem } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultOnchainAdapter.js";
 import { convertVaultInfoFullToIEVault } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/vaultInfoConverter.js";
+import type { VaultFetchOptions } from "../vaults/index.js";
 import type {
 	IVaultMetaService,
 	VaultEntity,
@@ -52,16 +61,10 @@ import type {
 	RequiredApproval,
 	TransactionPlan,
 } from "./executionServiceTypes.js";
-import { flattenBatchEntries } from "./executionServiceTypes.js";
 import {
-	type Address,
-	decodeFunctionResult,
-	getAddress,
-	type Hex,
-	parseEther,
-	type StateOverride,
-} from "viem";
-import { estimateContractGas } from "viem/actions";
+	assertNoCowSwapPlanItems,
+	flattenBatchEntries,
+} from "./executionServiceTypes.js";
 
 type BatchItemResult = {
 	success: boolean;
@@ -153,17 +156,10 @@ export async function deriveStateOverrides(
 	transactionPlan: TransactionPlan,
 	options?: SimulationStateOverrideOptions,
 ): Promise<StateOverride> {
-	if (!ctx.providerService) {
-		throw new Error(
-			"ExecutionService.deriveStateOverrides requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
-		);
-	}
+	assertNoCowSwapPlanItems(transactionPlan, "deriveStateOverrides");
 
 	const owner = getAddress(account);
 	const nativeBalance = options?.nativeBalance ?? parseEther("1000");
-	const permit2Address =
-		ctx.deploymentService.getDeployment(chainId).addresses.coreAddrs.permit2;
-	const provider = ctx.providerService.getProvider(chainId);
 
 	const balanceRequirements = extractBalanceRequirements(
 		transactionPlan,
@@ -173,6 +169,29 @@ export async function deriveStateOverrides(
 		transactionPlan,
 		owner,
 	);
+
+	// Fast path: plans without `requiredApproval` items (e.g. withdraw, redeem)
+	// have no balance or approval requirements to override. We can skip the
+	// provider lookup and per-token balance/allowance reads entirely and just
+	// emit the synthetic native-balance override.
+	if (
+		balanceRequirements.length === 0 &&
+		approvalRequirements.length === 0
+	) {
+		return nativeBalance > 0n
+			? mergeStateOverrides([{ address: owner, balance: nativeBalance }])
+			: [];
+	}
+
+	if (!ctx.providerService) {
+		throw new Error(
+			"ExecutionService.deriveStateOverrides requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
+		);
+	}
+
+	const permit2Address =
+		ctx.deploymentService.getDeployment(chainId).addresses.coreAddrs.permit2;
+	const provider = ctx.providerService.getProvider(chainId);
 
 	const [balanceOverrides, approvalOverrides] = await Promise.all([
 		getBalanceOverrides(provider, owner, balanceRequirements),
@@ -198,6 +217,7 @@ export async function simulateTransactionPlan<
 	transactionPlan: TransactionPlan,
 	options?: SimulateBatchOptions,
 ): Promise<SimulateBatchResult<TVaultEntity>> {
+	assertNoCowSwapPlanItems(transactionPlan, "simulateTransactionPlan");
 	const owner = getAddress(account);
 	const useStateOverrides = options?.stateOverrides ?? true;
 	let effectiveStateOverrides: StateOverride | undefined;
@@ -467,6 +487,7 @@ export async function estimateGasForTransactionPlan(
 	transactionPlan: TransactionPlan,
 	options?: EstimateGasForTransactionPlanOptions,
 ): Promise<bigint> {
+	assertNoCowSwapPlanItems(transactionPlan, "estimateGasForTransactionPlan");
 	if (!ctx.providerService) {
 		throw new Error(
 			"ExecutionService.estimateGasForTransactionPlan requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
@@ -508,6 +529,12 @@ export async function estimateGasForTransactionPlan(
 				stateOverride,
 			});
 			continue;
+		}
+
+		if (item.type === "cowSwap") {
+			throw new Error(
+				"ExecutionService.estimateGasForTransactionPlan does not support CoW swap plans. Use executeCowSwapTransactionPlan.",
+			);
 		}
 
 		if (item.chainId !== chainId) {

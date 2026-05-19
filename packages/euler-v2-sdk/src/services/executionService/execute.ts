@@ -1,12 +1,17 @@
 import {
-	encodeFunctionData,
-	maxUint256,
 	type Abi,
 	type Address,
+	encodeFunctionData,
 	type Hash,
 	type Hex,
+	maxUint256,
 	type TransactionReceipt,
 } from "viem";
+import type { AddressOrAccount } from "../../entities/Account.js";
+import {
+	type DecodedSmartContractError,
+	decodeSmartContractErrors,
+} from "../../utils/decodeSmartContractErrors.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
 import type { ProviderService } from "../providerService/index.js";
 import type { IExecutionService } from "./executionService.js";
@@ -15,13 +20,12 @@ import type {
 	PermitSingleTypedData,
 	TransactionPlan,
 	TransactionPlanItem,
+	TransactionPlanPrepared,
 } from "./executionServiceTypes.js";
-import { flattenBatchEntries } from "./executionServiceTypes.js";
 import {
-	decodeSmartContractErrors,
-	type DecodedSmartContractError,
-} from "../../utils/decodeSmartContractErrors.js";
-import type { AddressOrAccount } from "../../entities/Account.js";
+	assertNoCowSwapPlanItems,
+	flattenBatchEntries,
+} from "./executionServiceTypes.js";
 
 const PERMIT2_ALLOWANCE_ABI = [
 	{
@@ -94,11 +98,31 @@ export type ExecuteTransactionPlanArgs = {
 	onProgress?: (progress: TransactionPlanExecutionProgress) => void;
 };
 
+/**
+ * Execute against a {@link TransactionPlanPrepared} envelope produced by
+ * {@link IExecutionService.prepareTransactionPlan}. Plugins and required-approval
+ * resolution have already run, so execution skips them — the executor walks the
+ * envelope's plan as-is.
+ */
+export type ExecutePreparedTransactionPlanArgs = {
+	prepared: TransactionPlanPrepared;
+	sendTransaction: (
+		parameters: TransactionPlanTransactionRequest,
+	) => Promise<Hash>;
+	signTypedData?: (
+		parameters: TransactionPlanSignTypedDataRequest,
+	) => Promise<Hex>;
+	onProgress?: (progress: TransactionPlanExecutionProgress) => void;
+};
+
 export type ExecuteTransactionPlanInternalArgs = ExecuteTransactionPlanArgs & {
 	plan: TransactionPlan;
 	executionService: IExecutionService;
 	deploymentService: IDeploymentService;
 	providerService: ProviderService;
+	/** When true, skip wallet fetch + resolveRequiredApprovals — the plan's
+	 *  requiredApproval items already have `.resolved` populated. */
+	alreadyResolved?: boolean;
 };
 
 export class TransactionPlanExecutionError extends Error {
@@ -135,6 +159,7 @@ async function waitForSuccessfulReceipt(
 async function maybeResolveApprovals(
 	args: ExecuteTransactionPlanInternalArgs,
 ): Promise<TransactionPlan> {
+	assertNoCowSwapPlanItems(args.plan, "executeTransactionPlan");
 	const owner =
 		typeof args.account === "string" ? args.account : args.account.owner;
 	return args.executionService.resolveRequiredApprovals({
@@ -171,8 +196,11 @@ async function executeWithDecodedErrors<T>(fn: () => Promise<T>): Promise<T> {
 export async function executeTransactionPlan(
 	args: ExecuteTransactionPlanInternalArgs,
 ): Promise<TransactionPlanExecutionResult> {
+	assertNoCowSwapPlanItems(args.plan, "executeTransactionPlan");
 	const publicClient = args.providerService.getProvider(args.chainId);
-	const plan = await maybeResolveApprovals(args);
+	const plan = args.alreadyResolved
+		? args.plan
+		: await maybeResolveApprovals(args);
 
 	const hashes: Hash[] = [];
 	const receipts: TransactionReceipt[] = [];
@@ -280,6 +308,12 @@ export async function executeTransactionPlan(
 				completed += 1;
 				emitProgress(item, "completed", hash);
 				continue;
+			}
+
+			if (item.type === "cowSwap") {
+				throw new Error(
+					"ExecutionService.executeTransactionPlan does not support CoW swap plans in the low-level executor. Use ExecutionService.executeCowSwapTransactionPlan.",
+				);
 			}
 
 			if (item.chainId !== args.chainId) {

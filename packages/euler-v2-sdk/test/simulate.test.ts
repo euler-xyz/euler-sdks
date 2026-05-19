@@ -120,6 +120,42 @@ test("estimateGasForTransactionPlan estimates executable plan items", async () =
 	assert.equal(contractEstimate.stateOverride, undefined);
 });
 
+test("simulateTransactionPlan rejects CoW swap plans", async () => {
+	const service = createExecutionService();
+	const plan: TransactionPlan = [
+		{
+			type: "cowSwap",
+			kind: "openPosition",
+			chainId: 1,
+			params: {},
+		},
+	];
+
+	await assert.rejects(
+		service.simulateTransactionPlan(1, ACCOUNT, plan),
+		/does not support CoW swap plans/,
+	);
+});
+
+test("estimateGasForTransactionPlan rejects CoW swap plans", async () => {
+	const service = createExecutionService();
+	const plan: TransactionPlan = [
+		{
+			type: "cowSwap",
+			kind: "swapCollateral",
+			chainId: 1,
+			params: {},
+		},
+	];
+
+	await assert.rejects(
+		service.estimateGasForTransactionPlan(1, ACCOUNT, plan, {
+			stateOverrides: false,
+		}),
+		/does not support CoW swap plans/,
+	);
+});
+
 test("estimateGasForTransactionPlan processes plugins and accepts Account entities", async () => {
 	const service = createExecutionService();
 	const account = new Account({

@@ -36,7 +36,27 @@ export interface SwapQuoteRequest {
 	transferOutputToReceiver?: boolean; // transfer output tokens to receiver instead of depositing. Not valid for repay swaps
 	skipSweepDepositOut?: boolean; // don't add a final deposit of the output token, leave assets in Swapper
 	provider?: string; // preselected provider, see fetchProviders
+	providerExtraData?: SwapProviderExtraData; // provider-specific request payload, serialized by the swap API
 }
+
+export type SwapProviderExtraDataType =
+	| "openPosition"
+	| "closePosition"
+	| "collateralSwap";
+
+export interface SwapProviderExtraData {
+	type: SwapProviderExtraDataType;
+	swapCollateralSharesAmountIn?: bigint;
+	appData?: string;
+}
+
+export interface SwapProviderData {
+	quoteId?: number | string;
+	sellAmount?: string;
+	buyAmount?: string;
+	feeAmount?: string;
+}
+
 // TODO parse this to bigint
 export interface SwapQuote {
 	amountIn: string;
@@ -69,6 +89,7 @@ export interface SwapQuote {
 	swap: SwapperData;
 	verify: SwapVerifierData;
 	route: SwapRouteHop[];
+	providerData?: SwapProviderData;
 	transferOutputToReceiver?: boolean;
 }
 
@@ -89,6 +110,12 @@ export interface GetRepayQuoteArgs {
 	deadline?: number;
 	unusedInputReceiver?: Address; // address to receive unused input instead of depositing to vaultIn/accountIn
 	provider?: string; // preselected provider, see fetchProviders
+	providerExtraData?: SwapProviderExtraData;
+	cowSwap?: {
+		type: "closePosition";
+		owner: Address;
+		collateralSharesAmount: bigint;
+	};
 }
 
 export interface GetDepositQuoteArgs {
@@ -106,6 +133,20 @@ export interface GetDepositQuoteArgs {
 	unusedInputReceiver?: Address; // address to receive unused input instead of depositing to vaultIn/accountIn
 	skipSweepDepositOut?: boolean; // don't add a final deposit of the output token, leave assets in Swapper
 	provider?: string; // preselected provider, see fetchProviders
+	providerExtraData?: SwapProviderExtraData;
+	cowSwap?:
+		| {
+				type: "openPosition";
+				owner: Address;
+				collateralVault: Address;
+				collateralAmount: bigint;
+		  }
+		| {
+				type: "collateralSwap";
+				owner: Address;
+				sharesAmount: bigint;
+				disableSourceCollateral?: boolean;
+		  };
 }
 
 export interface GetWalletSwapQuoteArgs {
@@ -118,6 +159,7 @@ export interface GetWalletSwapQuoteArgs {
 	slippage: number;
 	deadline?: number;
 	provider?: string; // preselected provider, see fetchProviders
+	providerExtraData?: SwapProviderExtraData;
 }
 
 export interface SwapperData {

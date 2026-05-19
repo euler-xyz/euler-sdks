@@ -33,6 +33,7 @@ export * from "./services/rewardsService/index.js";
 export * from "./services/intrinsicApyService/index.js";
 export * from "./services/oracleAdapterService/index.js";
 export * from "./services/feeFlowService/index.js";
+export * from "./services/reulLockService/index.js";
 
 // Plugins
 export * from "./plugins/index.js";
@@ -59,6 +60,7 @@ export * from "./utils/oracle.js";
 export * from "./utils/accountComputations.js";
 export * from "./utils/callBundler.js";
 export * from "./utils/entityDiagnostics.js";
+export * from "./utils/fallbackAdapter.js";
 export * from "./utils/normalization.js";
 export * from "./utils/parsing.js";
 export * from "./utils/decodeSmartContractErrors.js";
