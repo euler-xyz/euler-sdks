@@ -24,8 +24,10 @@ import type {
 } from "./executionServiceTypes.js";
 
 export const COWSWAP_APPDATA_VERSION = "0.9.0";
+export const COWSWAP_ORDER_DEADLINE_SECONDS = 900;
 export const COWSWAP_ORDER_POLL_INTERVAL_MS = 3_000;
-export const COWSWAP_ORDER_POLL_MAX_DURATION_MS = 16 * 60 * 1_000;
+export const COWSWAP_ORDER_POLL_MAX_DURATION_MS =
+	(COWSWAP_ORDER_DEADLINE_SECONDS + 60) * 1_000;
 export const INBOX_DOMAIN_NAME = "Inbox";
 export const INBOX_DOMAIN_VERSION = "1";
 const OMITTED_PERMIT_SIGNATURE = "0x" as Hex;

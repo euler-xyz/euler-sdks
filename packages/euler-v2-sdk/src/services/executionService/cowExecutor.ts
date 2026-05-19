@@ -45,6 +45,7 @@ import type {
 	TransactionPlanItem,
 } from "./executionServiceTypes.js";
 import { isCowSwapPlanItem } from "./executionServiceTypes.js";
+import { requiresZeroApprovalReset } from "./tokenApprovalReset.js";
 
 export type CowSwapPermitCancellation = {
 	type: "evcPermitNonce";
@@ -174,7 +175,10 @@ async function safeApprove(args: {
 	if (allowance >= args.amount) return [];
 
 	const hashes: Hash[] = [];
-	if (allowance > 0n) {
+	if (
+		allowance > 0n &&
+		requiresZeroApprovalReset(args.executionArgs.chainId, args.token)
+	) {
 		hashes.push(
 			await sendAndWait(args.executionArgs, {
 				to: args.token,
