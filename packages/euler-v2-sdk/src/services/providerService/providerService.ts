@@ -20,6 +20,7 @@ import {
 	monad,
 	swellchain,
 	avalanche,
+	hyperEvm,
 } from "viem/chains";
 
 const defaultChains = [
@@ -37,6 +38,7 @@ const defaultChains = [
 	monad,
 	swellchain,
 	avalanche,
+	hyperEvm,
 ];
 
 const VIEM_HTTP_BATCH_CONFIG = {
