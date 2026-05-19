@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.4-beta] - 2026-05-19
+
+### Added
+
+- Added `TransactionPlanPrepared` envelope and `ExecutionService.prepareTransactionPlan` so consumers can run plugins + required-approval resolution once and reuse the result across simulate and execute.
+- Added `ExecutionService.simulatePreparedTransactionPlan` and `ExecutionService.executePreparedTransactionPlan` that consume the envelope and skip the internal plugin pipeline (and, for execute, the approval re-resolution).
+- Added `isPreparedTransactionPlan` type guard.
+
+### Fixed
+
+- `ExecutionService.resolveRequiredApprovals` now short-circuits when the plan has no `requiredApproval` items, avoiding an unnecessary `walletService.fetchWallet` call on withdraw/redeem flows.
+- `deriveStateOverrides` skips the provider lookup and per-token balance/allowance reads when the plan has no balance or approval requirements, emitting only the synthetic native-balance override.
+
 ## [0.2.3-beta] - 2026-05-15
 
 ### Changed
