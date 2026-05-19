@@ -320,7 +320,7 @@ test.each([
 		mutate: (quote: SwapQuote) => {
 			quote.swap.swapperAddress = OTHER_VERIFIER;
 		},
-		error: /Swap quote swap\.swapperAddress mismatch/,
+		error: /swap\.swapperAddress.*is not in the canonical allowlist/,
 	},
 	{
 		name: "verify.type",

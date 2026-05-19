@@ -22,6 +22,7 @@ import {
 	adjustForInterest,
 	validateSwapQuoteVerifierData,
 } from "./swapVerification.js";
+import { getAllowedSwapperAddresses } from "./swapAllowlist.js";
 
 export interface SwapServiceConfig {
 	swapApiUrl: string;
@@ -348,15 +349,27 @@ export class SwapService implements ISwapService {
 			throw new Error("Swap quote transferOutputToReceiver mismatch");
 		}
 
-		const expectedSwapperAddress = this.deploymentService.getDeployment(
+		// Compare against the chain's full canonical swapper allowlist
+		// (peripheryAddrs.swapper + eulerSwapAddrs.eulerSwapV{1,2}Periphery).
+		// Older versions only checked peripheryAddrs.swapper, which rejected
+		// quotes routed through the EulerSwap periphery contracts.
+		const deploymentAddresses = this.deploymentService.getDeployment(
 			request.chainId,
-		).addresses.peripheryAddrs?.swapper;
-		if (expectedSwapperAddress) {
-			this.assertAddressField(
-				"swap.swapperAddress",
-				quote.swap.swapperAddress,
-				expectedSwapperAddress,
-			);
+		).addresses;
+		const allowedSwappers = getAllowedSwapperAddresses({
+			swapper: deploymentAddresses.peripheryAddrs?.swapper,
+			eulerSwapV1Periphery:
+				deploymentAddresses.eulerSwapAddrs?.eulerSwapV1Periphery,
+			eulerSwapV2Periphery:
+				deploymentAddresses.eulerSwapAddrs?.eulerSwapV2Periphery,
+		});
+		if (allowedSwappers.length > 0) {
+			const quoteSwapper = getAddress(quote.swap.swapperAddress).toLowerCase();
+			if (!allowedSwappers.includes(quoteSwapper)) {
+				throw new Error(
+					`Swap quote swap.swapperAddress (${quote.swap.swapperAddress}) is not in the canonical allowlist: ${allowedSwappers.join(", ")}`,
+				);
+			}
 		}
 
 		const expectedVerificationType = request.isRepay
