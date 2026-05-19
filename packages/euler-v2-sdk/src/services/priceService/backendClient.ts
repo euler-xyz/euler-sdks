@@ -64,6 +64,15 @@ export const normalizeBackendPrice = (
 	}
 };
 
+/**
+ * Max addresses per `/v3/prices` request. The endpoint caps `limit` server-side
+ * (currently 100); requests over that silently truncate the response, which
+ * looks to the SDK like "no price" and triggers an on-chain fallback. Chunk
+ * client-side and request each chunk with an explicit `limit` so we never get
+ * truncated.
+ */
+const V3_PRICES_PAGE_SIZE = 100;
+
 /** Instance-based V3 pricing API client with batching. */
 export class PricingBackendClient {
 	private readonly endpoint: string;
@@ -125,7 +134,9 @@ export class PricingBackendClient {
 
 	/**
 	 * Fetch a single asset price. Concurrent calls within the same microtask
-	 * are bundled into a single request per chainId.
+	 * are bundled into a single request per chainId, chunked into pages of
+	 * {@link V3_PRICES_PAGE_SIZE} addresses so we never exceed the server's
+	 * `limit` cap.
 	 */
 	queryV3Price = createCallBundler(
 		async (keys: { address: Address; chainId: number }[]) => {
@@ -137,26 +148,36 @@ export class PricingBackendClient {
 				byChain.set(key.chainId, arr);
 			}
 
-			// One request per chainId
 			const chainResults = new Map<number, Map<string, BackendPriceData>>();
-			for (const [chainId, addresses] of byChain) {
-				const unique = [
-					...new Set(addresses.map((a) => a.toLowerCase())),
-				] as Address[];
-				const url = this.buildPricesUrl(chainId, unique);
+			await Promise.all(
+				Array.from(byChain.entries()).map(async ([chainId, addresses]) => {
+					const unique = [
+						...new Set(addresses.map((a) => a.toLowerCase())),
+					] as Address[];
 
-				const response = await fetch(url.toString(), {
-					method: "GET",
-					headers: this.getHeaders(),
-				});
-
-				if (response.ok) {
-					const data = (await response.json()) as
-						| BackendPriceResponse
-						| V3PriceResponse;
-					chainResults.set(chainId, this.parseResponse(data));
-				}
-			}
+					const merged = new Map<string, BackendPriceData>();
+					for (
+						let offset = 0;
+						offset < unique.length;
+						offset += V3_PRICES_PAGE_SIZE
+					) {
+						const chunk = unique.slice(offset, offset + V3_PRICES_PAGE_SIZE);
+						const url = this.buildPricesUrl(chainId, chunk, chunk.length);
+						const response = await fetch(url.toString(), {
+							method: "GET",
+							headers: this.getHeaders(),
+						});
+						if (!response.ok) continue;
+						const data = (await response.json()) as
+							| BackendPriceResponse
+							| V3PriceResponse;
+						for (const [addr, priceData] of this.parseResponse(data)) {
+							merged.set(addr, priceData);
+						}
+					}
+					chainResults.set(chainId, merged);
+				}),
+			);
 
 			return keys.map((key) =>
 				chainResults.get(key.chainId)?.get(key.address.toLowerCase()),
@@ -168,11 +189,16 @@ export class PricingBackendClient {
 		this.queryV3Price = fn;
 	}
 
-	private buildPricesUrl(chainId: number, assets: Address[]): string {
+	private buildPricesUrl(
+		chainId: number,
+		assets: Address[],
+		limit?: number,
+	): string {
 		const params = new URLSearchParams({
 			chainId: String(chainId),
 			assets: assets.join(","),
 		});
+		if (limit !== undefined) params.set("limit", String(limit));
 		const normalizedEndpoint = this.endpoint.replace(/\/+$/, "");
 		const path = "/v3/prices";
 		const url =

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { Address } from "viem";
 import { test } from "vitest";
 import { EVault } from "../src/entities/EVault.js";
 import { EulerEarn } from "../src/entities/EulerEarn.js";
@@ -222,8 +223,56 @@ test("PricingBackendClient supports relative V3 proxy endpoints", async () => {
 		assert.equal(price?.price, 12.34);
 		assert.equal(
 			calls[0],
-			`/api/v3/v3/prices?chainId=1&assets=${ASSET.toLowerCase()}`,
+			`/api/v3/v3/prices?chainId=1&assets=${ASSET.toLowerCase()}&limit=1`,
 		);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test("PricingBackendClient pages requests over 100 addresses", async () => {
+	const calls: string[] = [];
+	const originalFetch = globalThis.fetch;
+	const mkAddr = (i: number): Address =>
+		(`0x${i.toString(16).padStart(40, "0")}`) as Address;
+
+	globalThis.fetch = (async (input) => {
+		const url = new URL(String(input), "http://test/");
+		calls.push(url.search);
+		const requested = (url.searchParams.get("assets") ?? "").split(",");
+		const rows = requested.map((address, i) => ({
+			address,
+			priceUsd: 1 + i,
+			source: "test",
+		}));
+		return new Response(JSON.stringify({ data: rows }), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		});
+	}) as typeof fetch;
+
+	try {
+		const client = new PricingBackendClient({ endpoint: "/api/v3" });
+		// 250 unique addresses → 3 paged requests of 100, 100, 50.
+		const results = await Promise.all(
+			Array.from({ length: 250 }, (_, i) =>
+				client.queryV3Price({ address: mkAddr(i + 1), chainId: CHAIN_ID }),
+			),
+		);
+
+		assert.equal(results.length, 250);
+		for (const r of results) {
+			assert.ok(r && typeof r.price === "number" && r.price > 0);
+		}
+		assert.equal(calls.length, 3);
+		const sizes = calls
+			.map((s) => new URLSearchParams(s).get("assets")?.split(",").length ?? 0)
+			.sort((a, b) => b - a);
+		assert.deepEqual(sizes, [100, 100, 50]);
+		const limits = calls
+			.map((s) => new URLSearchParams(s).get("limit"))
+			.sort();
+		assert.deepEqual(limits, ["100", "100", "50"]);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
