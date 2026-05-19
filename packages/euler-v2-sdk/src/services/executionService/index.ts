@@ -17,6 +17,8 @@ export {
 	buildCowSwapCancelOrderTypedData,
 	buildOpenPositionQuoteAppData,
 	type CancelCowSwapOrderArgs,
+	COWSWAP_APPDATA_VERSION,
+	COWSWAP_ORDER_DEADLINE_SECONDS,
 	COWSWAP_ORDER_POLL_INTERVAL_MS,
 	COWSWAP_ORDER_POLL_MAX_DURATION_MS,
 	type CowSwapChainConfig,
@@ -56,6 +58,7 @@ export {
 	ExecutionService,
 	type IExecutionService,
 } from "./executionService.js";
+export { requiresZeroApprovalReset } from "./tokenApprovalReset.js";
 export type {
 	ApproveCall,
 	BatchEntryDescription,

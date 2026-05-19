@@ -16,3 +16,10 @@ export type {
 	SwapsApiResponse,
 } from "./swapServiceTypes.js";
 export { SwapperMode, SwapVerificationType } from "./swapServiceTypes.js";
+export {
+	type KnownSwapAddresses,
+	assertSwapQuoteContractsAllowed,
+	assertSwapperAllowed,
+	assertSwapVerifierAllowed,
+	getAllowedSwapperAddresses,
+} from "./swapAllowlist.js";
