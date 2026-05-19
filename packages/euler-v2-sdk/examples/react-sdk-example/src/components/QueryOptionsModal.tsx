@@ -19,6 +19,7 @@ type Props = {
 type FormState = {
   adapterMode: SdkAdapterMode;
   proxyV3Calls: boolean;
+  simulateV3Failure: boolean;
   enabledChainIds: number[];
   showQueryProfiler: boolean;
   disableCache: boolean;
@@ -35,6 +36,7 @@ function toFormState(settings: QueryOptionsSettings): FormState {
   return {
     adapterMode: settings.adapterMode,
     proxyV3Calls: settings.proxyV3Calls,
+    simulateV3Failure: settings.simulateV3Failure,
     enabledChainIds: settings.enabledChainIds,
     showQueryProfiler: settings.showQueryProfiler,
     disableCache: settings.disableCache,
@@ -73,6 +75,7 @@ function toSettings(form: FormState): QueryOptionsSettings {
     chainSetVersion: QUERY_OPTIONS_CHAIN_SET_VERSION,
     adapterMode: form.adapterMode,
     proxyV3Calls: form.proxyV3Calls,
+    simulateV3Failure: form.simulateV3Failure,
     enabledChainIds: [...form.enabledChainIds].sort((a, b) => a - b),
     showQueryProfiler: form.showQueryProfiler,
     disableCache: form.disableCache,
@@ -175,32 +178,30 @@ export function QueryOptionsModal({ open, onClose }: Props) {
                 </span>
               </label>
 
-              <label className="query-options-toggle-card">
-                <span className="query-options-toggle-copy">
-                  <span className="query-options-toggle-title">
-                    Use V3 adapters
-                  </span>
-                  <span className="query-options-toggle-description">
-                    On enables V3 HTTP adapters. Off rebuilds the SDK with
-                    onchain adapters where available.
-                  </span>
-                </span>
-                <span className="query-options-switch">
-                  <input
-                    type="checkbox"
-                    checked={form.adapterMode === "v3"}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        adapterMode: event.target.checked ? "v3" : "onchain",
-                      }))
-                    }
-                  />
-                  <span className="query-options-switch-track">
-                    <span className="query-options-switch-thumb" />
-                  </span>
-                </span>
-              </label>
+              <div className="query-options-field" style={{ gridColumn: "1 / -1" }}>
+                <span>Adapter mode</span>
+                <select
+                  className="filter-select"
+                  value={form.adapterMode}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      adapterMode: event.target.value as SdkAdapterMode,
+                    }))
+                  }
+                >
+                  <option value="fallback">
+                    fallback — V3 primary, onchain/direct secondary
+                  </option>
+                  <option value="v3">v3 — HTTP only</option>
+                  <option value="onchain">onchain / direct only</option>
+                </select>
+                <div className="query-options-summary" style={{ marginTop: 8 }}>
+                  Applies to account, EVault, EulerEarn, rewards, and vault type
+                  adapters. `fallback` routes from V3 to onchain (or direct /
+                  subgraph) on throw or SOURCE_UNAVAILABLE.
+                </div>
+              </div>
 
               <label className="query-options-toggle-card">
                 <span className="query-options-toggle-copy">
@@ -220,6 +221,33 @@ export function QueryOptionsModal({ open, onClose }: Props) {
                       setForm((prev) => ({
                         ...prev,
                         proxyV3Calls: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span className="query-options-switch-track">
+                    <span className="query-options-switch-thumb" />
+                  </span>
+                </span>
+              </label>
+
+              <label className="query-options-toggle-card">
+                <span className="query-options-toggle-copy">
+                  <span className="query-options-toggle-title">
+                    Simulate V3 failure
+                  </span>
+                  <span className="query-options-toggle-description">
+                    Forces every V3 HTTP request to fail. Use with adapter mode
+                    `fallback` to observe the secondary adapter taking over.
+                  </span>
+                </span>
+                <span className="query-options-switch">
+                  <input
+                    type="checkbox"
+                    checked={form.simulateV3Failure}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        simulateV3Failure: event.target.checked,
                       }))
                     }
                   />

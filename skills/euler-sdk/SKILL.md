@@ -4,7 +4,7 @@ description: Euler V2 SDK integration guide for building production UIs, bots, s
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.1.2"
+  version: "1.2.0"
 ---
 
 # Euler SDK Agent Skill
@@ -31,6 +31,7 @@ Reference these guidelines when:
 | `sdk-simulation-safety` | CRITICAL | Simulate plans before sending and gate execution on checks |
 | `sdk-caching-buildquery` | HIGH | Wrap all `query*` calls via `buildQuery` with per-query stale times |
 | `sdk-plugins` | HIGH | Use plugins for oracle/keyring preconditions on read and write paths |
+| `sdk-fallback-adapter` | HIGH | Configure V3 → onchain/subgraph/direct fallback chains and observe `onFallback` telemetry |
 | `sdk-swaps` | HIGH | Quote, select, and execute swap-driven operations safely |
 | `sdk-scripts` | MEDIUM | Use SDK examples as templates for scripts, bots, and CI checks |
 
@@ -84,6 +85,7 @@ rules/sdk-execution-flow.md
 rules/sdk-simulation-safety.md
 rules/sdk-caching-buildquery.md
 rules/sdk-plugins.md
+rules/sdk-fallback-adapter.md
 rules/sdk-swaps.md
 rules/sdk-scripts.md
 ```

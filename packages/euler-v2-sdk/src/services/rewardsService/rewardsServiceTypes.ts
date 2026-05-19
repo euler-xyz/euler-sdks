@@ -106,7 +106,7 @@ export interface RewardsV3AdapterConfig {
 }
 
 export interface RewardsServiceConfig {
-	adapter?: "v3" | "direct";
+	adapter?: "v3" | "direct" | "fallback";
 	merklApiUrl?: string;
 	brevisApiUrl?: string;
 	/** URL for Brevis user rewards proofs endpoint. */

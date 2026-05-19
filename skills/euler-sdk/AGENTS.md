@@ -1,6 +1,6 @@
 # Euler SDK Agent Skill
 
-**Version 1.1.2**
+**Version 1.2.0**
 Euler Labs
 May 2026
 
@@ -8,7 +8,7 @@ May 2026
 
 ## Abstract
 
-Integration guide for `euler-v2-sdk` focused on building production UIs, automation scripts, and developer tools. Covers service boundaries, entity population, transaction planning, approvals, simulation safety, caching via `buildQuery`, plugin integration, swap flows, and script templates.
+Integration guide for `euler-v2-sdk` focused on building production UIs, automation scripts, and developer tools. Covers service boundaries, entity population, transaction planning, approvals, simulation safety, caching via `buildQuery`, plugin integration, V3 → onchain/subgraph/direct fallback chains, swap flows, and script templates.
 
 ---
 
@@ -126,6 +126,53 @@ Use plugins when vault interactions require side data/actions:
 Write-path plugins run automatically inside `simulateTransactionPlan`, `estimateGasForTransactionPlan`, and `executeTransactionPlan`. The account argument is `AddressOrAccount` (`Address | Account`); pass an `Account` when available so plugins can reuse state, or pass an address to let plugins fetch minimal data.
 
 Keep plugin ordering deterministic. Use shared caching decorators for plugin query paths.
+
+### 3.3 Fallback Adapter for V3 / Onchain Routing
+
+`buildEulerSDK` wires `accountService`, `eVaultService`, `eulerEarnService`, `vaultMetaService`, and `rewardsService` as fallback chains (V3 → onchain / subgraph / direct) when both adapters are buildable. Configure them explicitly per service rather than relying on implicit behavior:
+
+```ts
+const sdk = await buildEulerSDK({
+  config: {
+    v3ApiUrl: process.env.EULER_SDK_V3_API_URL,
+    v3ApiKey: process.env.EULER_SDK_V3_API_KEY,
+    eVaultServiceAdapter: "fallback",     // default when both adapters available
+    accountServiceAdapter: "v3",          // pin to V3 only
+    rewardsServiceAdapter: "direct",      // pin to direct only
+    disableV3: false,                     // set true for a global V3 kill switch
+  },
+});
+```
+
+If V3 credentials are unset, fallback chains collapse to the secondary adapter with a one-line warning during construction — no throw.
+
+The default trigger logic is intentionally conservative. Fallback fires only when:
+
+- the primary throws,
+- `ServiceResult.result` is `undefined`, or
+- `result` is an array containing at least one `undefined` slot.
+
+Per-entity warnings on a fully-populated response (e.g. `SOURCE_UNAVAILABLE` on a nested oracle) do **not** trigger fallback. The secondary cannot recover information the primary already returned, and re-fetching only doubles latency.
+
+Observe fallback events with `onFallback`. Route on `info.trigger`, not on the count of `primaryIssues`:
+
+```ts
+import { buildEulerSDK, type FallbackInfo } from "@eulerxyz/euler-v2-sdk";
+
+const sdk = await buildEulerSDK({
+  onFallback: (info: FallbackInfo) => {
+    metrics.increment("sdk.fallback", {
+      method: info.method,
+      adapter: info.primaryName,
+      trigger: info.trigger,
+    });
+  },
+});
+```
+
+`FallbackInfo.trigger` is one of `"primary-threw" | "result-undefined" | "array-missing-slots" | "custom-shouldFallback" | "circuit-open"`; `missingIndices` is populated for the array case. The secondary's `ServiceResult` is also prefixed with a `FALLBACK_USED` diagnostic for UIs that surface diagnostics.
+
+For non-built-in adapters, compose with `createFallbackAdapter(primary, secondary, { methods, adapterNames, circuitBreaker?, shouldFallback?, onFallback? })`. Only listed methods are wrapped; setters and other state pass through to the primary unchanged. Reference: [`docs/fallback-system.md`](../../packages/euler-v2-sdk/docs/fallback-system.md).
 
 ---
 

@@ -65,6 +65,7 @@ Related docs:
 - [Pricing System](./pricing-system.md)
 - [Swaps](./swaps.md)
 - [Caching External Data Queries](./caching-external-data-queries.md)
+- [Fallback System](./fallback-system.md)
 
 ## Where to Continue
 
