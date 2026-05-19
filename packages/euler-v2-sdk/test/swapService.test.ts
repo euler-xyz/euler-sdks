@@ -580,7 +580,7 @@ test("fetchSwapQuotes reports detailed CoW provider amount mismatches", async ()
 test("fetchDepositQuote builds collateral-swap CoW provider data when provider is unset", async () => {
 	let requestedUrl = "";
 	const quote = {
-		...createQuote(),
+		...createQuote({ amountIn: 121n }),
 		route: [{ providerName: "cow" }],
 		providerData: {
 			quoteId: 7,

@@ -330,9 +330,14 @@ export class SwapService implements ISwapService {
 			throw new Error("Swap quote tokenOut.chainId mismatch");
 		}
 
-		if (request.swapperMode === SwapperMode.EXACT_IN) {
+		const isCowWrapperQuote =
+			!!request.providerExtraData && this.isCowSwapQuote(quote);
+		if (!isCowWrapperQuote && request.swapperMode === SwapperMode.EXACT_IN) {
 			this.assertBigIntField("amountIn", quote.amountIn, request.amount);
-		} else if (request.swapperMode === SwapperMode.EXACT_OUT) {
+		} else if (
+			!isCowWrapperQuote &&
+			request.swapperMode === SwapperMode.EXACT_OUT
+		) {
 			this.assertBigIntField("amountOut", quote.amountOut, request.amount);
 		}
 
