@@ -129,7 +129,10 @@ export class PythPluginAdapter {
 		fetchFn: typeof fetch = globalThis.fetch,
 	) {
 		this.hermesUrl = hermesUrl;
-		this.fetchFn = fetchFn;
+		// Browser fetch throws "Illegal invocation" if `this` is anything but
+		// Window; storing it on the instance and calling via `this.fetchFn(...)`
+		// rebinds away. Bind once at construction.
+		this.fetchFn = fetchFn.bind(globalThis);
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
 
@@ -458,11 +461,13 @@ export interface PythPluginConfig {
 	pythAddresses?: Record<number, Address | readonly Address[]>;
 	/** Maximum native-token fee accepted for one Pyth update batch. Defaults to 0.01 native token. */
 	maxUpdateFee?: bigint;
+	/** Override fetch used to call the Hermes endpoint. Apps that proxy Hermes through their own backend (e.g. to satisfy CSP) pass a fetcher that rewrites the request URL. */
+	fetchFn?: typeof fetch;
 }
 
 export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 	const hermesUrl = config.hermesUrl || "https://hermes.pyth.network";
-	const adapter = new PythPluginAdapter(hermesUrl, config.buildQuery);
+	const adapter = new PythPluginAdapter(hermesUrl, config.buildQuery, config.fetchFn);
 	const maxUpdateFee = config.maxUpdateFee ?? DEFAULT_MAX_PYTH_UPDATE_FEE;
 	const getTrustedPythAddresses = (chainId: number): Set<string> => {
 		const addresses = new Set<string>();
