@@ -18,6 +18,7 @@ import {
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
 import { ethereumVaultConnectorAbi } from "../src/services/executionService/abis/ethereumVaultConnectorAbi.js";
+import { VaultType } from "../src/utils/types.js";
 
 const ACCOUNT = "0x00000000000000000000000000000000000000aa" as const;
 const TOKEN_IN = "0x00000000000000000000000000000000000000bb" as const;
@@ -253,6 +254,7 @@ function createRepayFromDepositAccount({
 						{
 							account: RECEIVER,
 							vaultAddress: COLLATERAL_VAULT,
+							vault: { type: VaultType.EVault, address: COLLATERAL_VAULT },
 							asset: SAME_ASSET,
 							assets: AMOUNT,
 							shares: AMOUNT,
@@ -1121,6 +1123,7 @@ test("swap-and-repay-from-wallet main-account full cleanup disables collateral w
 						{
 							account: ACCOUNT,
 							vaultAddress: COLLATERAL_VAULT,
+							vault: { type: VaultType.EVault, address: COLLATERAL_VAULT },
 							asset: SAME_ASSET,
 							assets: AMOUNT,
 							shares: AMOUNT,
@@ -1939,6 +1942,7 @@ test("repay-from-wallet main-account full cleanup disables collateral without tr
 						{
 							account: ACCOUNT,
 							vaultAddress: COLLATERAL_VAULT,
+							vault: { type: VaultType.EVault, address: COLLATERAL_VAULT },
 							asset: SAME_ASSET,
 							assets: AMOUNT,
 							shares: AMOUNT,
@@ -2502,6 +2506,7 @@ test("repay-with-swap main-account full cleanup disables collateral without tran
 						{
 							account: ACCOUNT,
 							vaultAddress: COLLATERAL_VAULT,
+							vault: { type: VaultType.EVault, address: COLLATERAL_VAULT },
 							asset: SAME_ASSET,
 							assets: AMOUNT,
 							shares: AMOUNT,
