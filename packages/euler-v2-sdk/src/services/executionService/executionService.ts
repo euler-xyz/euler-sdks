@@ -29,9 +29,10 @@ import {
 	adjustForInterest,
 	getSwapInputAmount,
 } from "../swapService/swapVerification.js";
-import type {
-	IVaultMetaService,
-	VaultEntity,
+import {
+	type IVaultMetaService,
+	isEVault,
+	type VaultEntity,
 } from "../vaults/vaultMetaService/index.js";
 import type {
 	AssetWithSpenders,
@@ -1731,7 +1732,16 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				),
 			);
 
-			if (getAddress(receiver) !== getAddress(account.owner)) {
+			// Only EVK vaults expose the transferFromMax used by the cleanup
+			// sweep. Other vault types (e.g. Securitize RWA collaterals) don't
+			// implement it and the underlying transfer would revert against the
+			// ERC-20 whitelist anyway, taking the whole repay batch down. The
+			// disable step above still runs for every active collateral.
+			const isEvkCollateral = isEVault(collateral.vault);
+			if (
+				isEvkCollateral &&
+				getAddress(receiver) !== getAddress(account.owner)
+			) {
 				batchItems.push(
 					this.encodeTransferFromMax(
 						collateral.vaultAddress,
@@ -1741,9 +1751,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				);
 			}
 
-			transferredPositions.add(
-				`${getAddress(receiver)}:${getAddress(collateral.vaultAddress)}`,
-			);
+			if (isEvkCollateral) {
+				transferredPositions.add(
+					`${getAddress(receiver)}:${getAddress(collateral.vaultAddress)}`,
+				);
+			}
 		}
 
 		if (sourceAccount && sourceVault) {
