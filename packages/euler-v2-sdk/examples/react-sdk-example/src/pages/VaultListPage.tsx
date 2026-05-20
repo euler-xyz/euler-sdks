@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSDK } from "../context/SdkContext.tsx";
 import {
@@ -452,8 +452,6 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
   const [showFailedVaults, setShowFailedVaults] = useState(false);
   const [showFallbacks, setShowFallbacks] = useState(false);
   const fallbackEntries = useFallbackLog();
-  const coldLoadTimerLabelRef = useRef<string | null>(null);
-
   const {
     data: eVaultData,
     isLoading: isEVaultsLoading,
@@ -486,39 +484,9 @@ export function VaultListPage({ tab }: { tab: VaultListTab }) {
     : eVaultDiagnosticsUpdatedAt;
   const isLoading = tab === "eulerEarn" ? isEarnLoading : isEVaultsLoading;
   const error = tab === "eulerEarn" ? earnError : eVaultError;
-  const activeData = tab === "eulerEarn" ? earnData : eVaultData;
-
-  useEffect(() => {
-    const nextLabel = `vaultListPage:coldLoad:all-chains:${tab}`;
-    if (isLoading && coldLoadTimerLabelRef.current === null) {
-      coldLoadTimerLabelRef.current = nextLabel;
-      console.time(nextLabel);
-      return;
-    }
-
-    if (
-      coldLoadTimerLabelRef.current &&
-      !sdkLoading &&
-      !isLoading &&
-      (activeData !== undefined || error)
-    ) {
-      console.timeEnd(coldLoadTimerLabelRef.current);
-      coldLoadTimerLabelRef.current = null;
-    }
-  }, [activeData, error, isLoading, sdkLoading, tab]);
-
   useEffect(() => {
     setShowFailedVaults(false);
   }, [tab]);
-
-  useEffect(() => {
-    return () => {
-      if (coldLoadTimerLabelRef.current) {
-        console.timeEnd(coldLoadTimerLabelRef.current);
-        coldLoadTimerLabelRef.current = null;
-      }
-    };
-  }, []);
 
   const eVaultMarkets = useMemo(() => {
     const byName = new Map<string, number>();

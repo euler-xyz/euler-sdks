@@ -350,6 +350,12 @@ type BatchItemRef = {
 	transition?: EVCStateTransition;
 };
 
+type CleanupBatchItems = {
+	items: EVCBatchItem[];
+	disabledControllers: Set<Address>;
+	disabledCollaterals: Set<Address>;
+};
+
 function hasSuppliedPosition(
 	position: Pick<AccountPosition, "assets" | "shares">,
 ): boolean {
@@ -2005,6 +2011,77 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		});
 	}
 
+	private buildCleanupBatchItems(
+		account: Account<IHasVaultAddress>,
+		subAccount: Address,
+	): CleanupBatchItems {
+		const empty = (): CleanupBatchItems => ({
+			items: [],
+			disabledControllers: new Set<Address>(),
+			disabledCollaterals: new Set<Address>(),
+		});
+		if (typeof account.getSubAccount !== "function") return empty();
+
+		const subAccountSnapshot = account.getSubAccount(subAccount);
+		if (!subAccountSnapshot) return empty();
+
+		const collaterals = subAccountSnapshot.enabledCollaterals ?? [];
+		const controllers = subAccountSnapshot.enabledControllers ?? [];
+		if (collaterals.length === 0 && controllers.length === 0) return empty();
+
+		const items: EVCBatchItem[] = [];
+		const disabledControllers = new Set<Address>();
+		const disabledCollaterals = new Set<Address>();
+		const disableCollateral = (collateral: Address) => {
+			const normalizedCollateral = getAddress(collateral);
+			disabledCollaterals.add(normalizedCollateral);
+			items.push(
+				this.encodeDisableCollateral(
+					account.chainId,
+					subAccount,
+					normalizedCollateral,
+				),
+			);
+		};
+		const disableAllCollaterals = () => {
+			for (const collateral of collaterals) {
+				disableCollateral(collateral);
+			}
+		};
+
+		if (controllers.length === 0) {
+			disableAllCollaterals();
+			return { items, disabledControllers, disabledCollaterals };
+		}
+
+		const hasActiveBorrow = subAccountSnapshot.positions.some(
+			(position) => position.borrowed > 0n,
+		);
+
+		if (!hasActiveBorrow) {
+			disableAllCollaterals();
+			for (const controller of controllers) {
+				const normalizedController = getAddress(controller);
+				disabledControllers.add(normalizedController);
+				items.push(this.encodeDisableController(normalizedController, subAccount));
+			}
+			return { items, disabledControllers, disabledCollaterals };
+		}
+
+		const depositedVaults = new Set(
+			subAccountSnapshot.positions
+				.filter(hasSuppliedPosition)
+				.map((position) => getAddress(position.vaultAddress)),
+		);
+
+		for (const collateral of collaterals) {
+			if (depositedVaults.has(getAddress(collateral))) continue;
+			disableCollateral(collateral);
+		}
+
+		return { items, disabledControllers, disabledCollaterals };
+	}
+
 	// ========== Transaction plan functions ==========
 
 	/**
@@ -2019,55 +2096,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 */
 	planCleanup(args: PlanCleanupArgs): TransactionPlan {
 		const { account, subAccount } = args;
-		if (typeof account.getSubAccount !== "function") return [];
-
-		const subAccountSnapshot = account.getSubAccount(subAccount);
-		if (!subAccountSnapshot) return [];
-
-		const collaterals = subAccountSnapshot.enabledCollaterals ?? [];
-		const controllers = subAccountSnapshot.enabledControllers ?? [];
-		if (collaterals.length === 0 && controllers.length === 0) return [];
-
-		const items: EVCBatchItem[] = [];
-		const disableAllCollaterals = () => {
-			for (const collateral of collaterals) {
-				items.push(
-					this.encodeDisableCollateral(account.chainId, subAccount, collateral),
-				);
-			}
-		};
-
-		if (controllers.length === 0) {
-			disableAllCollaterals();
-			return this.convertBatchItemsToPlan(items, "cleanup");
-		}
-
-		const hasActiveBorrow = subAccountSnapshot.positions.some(
-			(position) => position.borrowed > 0n,
-		);
-
-		if (!hasActiveBorrow) {
-			disableAllCollaterals();
-			for (const controller of controllers) {
-				items.push(this.encodeDisableController(controller, subAccount));
-			}
-			return this.convertBatchItemsToPlan(items, "cleanup");
-		}
-
-		const depositedVaults = new Set(
-			subAccountSnapshot.positions
-				.filter(hasSuppliedPosition)
-				.map((position) => getAddress(position.vaultAddress)),
-		);
-
-		for (const collateral of collaterals) {
-			if (depositedVaults.has(getAddress(collateral))) continue;
-			items.push(
-				this.encodeDisableCollateral(account.chainId, subAccount, collateral),
-			);
-		}
-
-		return this.convertBatchItemsToPlan(items, "cleanup");
+		const cleanup = this.buildCleanupBatchItems(account, subAccount);
+		return this.convertBatchItemsToPlan(cleanup.items, "cleanup");
 	}
 
 	/**
@@ -2304,9 +2334,23 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of transaction plan items (optional approval + EVC batch)
 	 */
 	planBorrow(args: PlanBorrowArgs): TransactionPlan {
-		const { vault, amount, receiver, borrowAccount, account, collateral } =
-			args;
+		const {
+			vault,
+			amount,
+			receiver,
+			borrowAccount,
+			account,
+			collateral,
+			skipCleanup = false,
+		} = args;
 		const plan: TransactionPlanItem[] = [];
+		const cleanup = skipCleanup
+			? {
+					items: [],
+					disabledControllers: new Set<Address>(),
+					disabledCollaterals: new Set<Address>(),
+				}
+			: this.buildCleanupBatchItems(account, borrowAccount);
 		const savingsCollateral = isSavingsCollateral(collateral)
 			? collateral
 			: undefined;
@@ -2316,18 +2360,25 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 		const enableCollateral =
 			collateral && collateral.amount > 0n
-				? !(
-						account?.isCollateralEnabled(borrowAccount, collateral.vault) ??
-						false
-					)
+				? cleanup.disabledCollaterals.has(getAddress(collateral.vault)) ||
+					!(
+							account?.isCollateralEnabled(borrowAccount, collateral.vault) ??
+							false
+						)
 				: false;
 
 		// Check if controller needs to be enabled
 		// Default: controller is not enabled when account/sub-account is not available
-		const currentController = account?.getCurrentController(borrowAccount);
-		const enableController = !(
-			account?.isControllerEnabled(borrowAccount, vault) ?? false
-		);
+		const currentControllerBeforeCleanup =
+			account?.getCurrentController(borrowAccount);
+		const currentController =
+			currentControllerBeforeCleanup &&
+			!cleanup.disabledControllers.has(getAddress(currentControllerBeforeCleanup))
+				? currentControllerBeforeCleanup
+				: undefined;
+		const enableController =
+			cleanup.disabledControllers.size > 0 ||
+			!(account?.isControllerEnabled(borrowAccount, vault) ?? false);
 
 		if (walletCollateral && walletCollateral.amount > 0n) {
 			// Approval is needed from the account owner (who owns the wallet tokens)
@@ -2341,33 +2392,36 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			});
 		}
 
-		const batchItems = this.encodeBorrow({
-			chainId: account.chainId,
-			vault,
-			amount,
-			owner: account.owner,
-			borrowAccount,
-			receiver,
-			enableController,
-			currentController: currentController || undefined,
-			enableCollateral,
-			collateralVault: collateral?.vault,
-			collateralAmount: walletCollateral?.amount,
-			collateralWrappedNativeInfo: walletCollateral?.wrappedNativeInfo,
-			collateralShareSource: savingsCollateral
-				? {
-						from: savingsCollateral.from,
-						shares: savingsCollateral.amount,
-						disableCollateralFrom:
-							savingsCollateral.disableCollateralFrom &&
-							(account?.isCollateralEnabled(
-								savingsCollateral.from,
-								savingsCollateral.vault,
-							) ??
-								false),
-					}
-				: undefined,
-		});
+		const batchItems = [
+			...cleanup.items,
+			...this.encodeBorrow({
+				chainId: account.chainId,
+				vault,
+				amount,
+				owner: account.owner,
+				borrowAccount,
+				receiver,
+				enableController,
+				currentController: currentController || undefined,
+				enableCollateral,
+				collateralVault: collateral?.vault,
+				collateralAmount: walletCollateral?.amount,
+				collateralWrappedNativeInfo: walletCollateral?.wrappedNativeInfo,
+				collateralShareSource: savingsCollateral
+					? {
+							from: savingsCollateral.from,
+							shares: savingsCollateral.amount,
+							disableCollateralFrom:
+								savingsCollateral.disableCollateralFrom &&
+								(account?.isCollateralEnabled(
+									savingsCollateral.from,
+									savingsCollateral.vault,
+								) ??
+									false),
+						}
+					: undefined,
+			}),
+		];
 
 		plan.push(...this.convertBatchItemsToPlan(batchItems, "borrow"));
 
@@ -2900,9 +2954,17 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			receiver = account.owner,
 			collateralVault = swapQuote.receiver,
 			wrappedNativeInfo,
+			skipCleanup = false,
 		} = args;
 		assertNonCowSwapQuote(swapQuote, "planSwapAndBorrowFromWallet");
 		const plan: TransactionPlanItem[] = [];
+		const cleanup = skipCleanup
+			? {
+					items: [],
+					disabledControllers: new Set<Address>(),
+					disabledCollaterals: new Set<Address>(),
+				}
+			: this.buildCleanupBatchItems(account, borrowAccount);
 
 		plan.push({
 			type: "requiredApproval",
@@ -2912,29 +2974,38 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			amount,
 		});
 
-		const enableController = !(
-			account?.isControllerEnabled(borrowAccount, borrowVault) ?? false
-		);
-		const enableCollateral = !(
-			account?.isCollateralEnabled(borrowAccount, collateralVault) ?? false
-		);
-		const currentController = account?.getCurrentController(borrowAccount);
+		const enableController =
+			cleanup.disabledControllers.size > 0 ||
+			!(account?.isControllerEnabled(borrowAccount, borrowVault) ?? false);
+		const enableCollateral =
+			cleanup.disabledCollaterals.has(getAddress(collateralVault)) ||
+			!(account?.isCollateralEnabled(borrowAccount, collateralVault) ?? false);
+		const currentControllerBeforeCleanup =
+			account?.getCurrentController(borrowAccount);
+		const currentController =
+			currentControllerBeforeCleanup &&
+			!cleanup.disabledControllers.has(getAddress(currentControllerBeforeCleanup))
+				? currentControllerBeforeCleanup
+				: undefined;
 
-		const batchItems = this.encodeSwapAndBorrowFromWallet({
-			chainId: account.chainId,
-			swapQuote,
-			amount,
-			sender: account.owner,
-			borrowAccount,
-			collateralVault,
-			borrowVault,
-			borrowAmount,
-			receiver,
-			currentController: currentController || undefined,
-			enableController,
-			enableCollateral,
-			wrappedNativeInfo,
-		});
+		const batchItems = [
+			...cleanup.items,
+			...this.encodeSwapAndBorrowFromWallet({
+				chainId: account.chainId,
+				swapQuote,
+				amount,
+				sender: account.owner,
+				borrowAccount,
+				collateralVault,
+				borrowVault,
+				borrowAmount,
+				receiver,
+				currentController: currentController || undefined,
+				enableController,
+				enableCollateral,
+				wrappedNativeInfo,
+			}),
+		];
 
 		plan.push(
 			...this.convertBatchItemsToPlan(batchItems, "swapAndBorrowFromWallet"),
@@ -3442,6 +3513,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			account,
 			swapQuote,
 			swapperMode,
+			skipCleanup = false,
 		} = args;
 		assertNonCowSwapQuote(
 			swapQuote,
@@ -3467,6 +3539,13 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const receiver = swapQuote.accountIn;
 		const liabilityVault = swapQuote.vaultIn;
 		const longVault = swapQuote.receiver;
+		const cleanup = skipCleanup
+			? {
+					items: [],
+					disabledControllers: new Set<Address>(),
+					disabledCollaterals: new Set<Address>(),
+				}
+			: this.buildCleanupBatchItems(account, receiver);
 		const liabilityAmount = getSwapInputAmount(
 			swapQuote,
 			swapperMode ?? SwapperMode.EXACT_IN,
@@ -3478,10 +3557,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			: collateralAmount > 0n;
 		const enableCollateral =
 			hasCollateralInput &&
-			!(account?.isCollateralEnabled(receiver, collateralVault) ?? false);
-		const enableCollateralLong = !(
-			account?.isCollateralEnabled(receiver, longVault) ?? false
-		);
+			(cleanup.disabledCollaterals.has(getAddress(collateralVault)) ||
+				!(account?.isCollateralEnabled(receiver, collateralVault) ?? false));
+		const enableCollateralLong =
+			cleanup.disabledCollaterals.has(getAddress(longVault)) ||
+			!(account?.isCollateralEnabled(receiver, longVault) ?? false);
 		const resolvedCollateralShareSource = collateralShareSource
 			? {
 					...collateralShareSource,
@@ -3496,32 +3576,41 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			: undefined;
 
 		// 3. Determine if controller needs to be enabled
-		const enableController = !(
-			account?.isControllerEnabled(receiver, liabilityVault) ?? false
-		);
+		const enableController =
+			cleanup.disabledControllers.size > 0 ||
+			!(account?.isControllerEnabled(receiver, liabilityVault) ?? false);
 
 		// 4. Get current controller (may need to disable if different)
-		const currentController = account?.getCurrentController(receiver);
+		const currentControllerBeforeCleanup =
+			account?.getCurrentController(receiver);
+		const currentController =
+			currentControllerBeforeCleanup &&
+			!cleanup.disabledControllers.has(getAddress(currentControllerBeforeCleanup))
+				? currentControllerBeforeCleanup
+				: undefined;
 
 		// 5. Build EVC batch items
-		const batchItems = this.encodeMultiplyWithSwap({
-			chainId: account.chainId,
-			collateralVault,
-			collateralAmount,
-			liabilityVault,
-			liabilityAmount,
-			longVault,
-			owner: account.owner,
-			receiver,
-			enableCollateral,
-			currentController: currentController || undefined,
-			enableController,
-			collateralShareSource: resolvedCollateralShareSource,
-			collateralWrappedNativeInfo,
-			swapQuote,
-			enableCollateralLong,
-			// Permit2 is handled separately in the plan
-		});
+		const batchItems = [
+			...cleanup.items,
+			...this.encodeMultiplyWithSwap({
+				chainId: account.chainId,
+				collateralVault,
+				collateralAmount,
+				liabilityVault,
+				liabilityAmount,
+				longVault,
+				owner: account.owner,
+				receiver,
+				enableCollateral,
+				currentController: currentController || undefined,
+				enableController,
+				collateralShareSource: resolvedCollateralShareSource,
+				collateralWrappedNativeInfo,
+				swapQuote,
+				enableCollateralLong,
+				// Permit2 is handled separately in the plan
+			}),
+		];
 
 		plan.push(...this.convertBatchItemsToPlan(batchItems, "multiplyWithSwap"));
 
@@ -3608,8 +3697,16 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			longVault,
 			receiver,
 			account,
+			skipCleanup = false,
 		} = args;
 		const plan: TransactionPlanItem[] = [];
+		const cleanup = skipCleanup
+			? {
+					items: [],
+					disabledControllers: new Set<Address>(),
+					disabledCollaterals: new Set<Address>(),
+				}
+			: this.buildCleanupBatchItems(account, receiver);
 
 		// 1. Check if collateral approval is needed (only if depositing collateral)
 		if (!collateralShareSource && collateralAmount > 0n) {
@@ -3629,10 +3726,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			: collateralAmount > 0n;
 		const enableCollateral =
 			hasCollateralInput &&
-			!(account?.isCollateralEnabled(receiver, collateralVault) ?? false);
-		const enableCollateralLong = !(
-			account?.isCollateralEnabled(receiver, longVault) ?? false
-		);
+			(cleanup.disabledCollaterals.has(getAddress(collateralVault)) ||
+				!(account?.isCollateralEnabled(receiver, collateralVault) ?? false));
+		const enableCollateralLong =
+			cleanup.disabledCollaterals.has(getAddress(longVault)) ||
+			!(account?.isCollateralEnabled(receiver, longVault) ?? false);
 		const resolvedCollateralShareSource = collateralShareSource
 			? {
 					...collateralShareSource,
@@ -3647,31 +3745,40 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			: undefined;
 
 		// 3. Determine if controller needs to be enabled
-		const enableController = !(
-			account?.isControllerEnabled(receiver, liabilityVault) ?? false
-		);
+		const enableController =
+			cleanup.disabledControllers.size > 0 ||
+			!(account?.isControllerEnabled(receiver, liabilityVault) ?? false);
 
 		// 4. Get current controller (may need to disable if different)
-		const currentController = account?.getCurrentController(receiver);
+		const currentControllerBeforeCleanup =
+			account?.getCurrentController(receiver);
+		const currentController =
+			currentControllerBeforeCleanup &&
+			!cleanup.disabledControllers.has(getAddress(currentControllerBeforeCleanup))
+				? currentControllerBeforeCleanup
+				: undefined;
 
 		// 5. Build EVC batch items
-		const batchItems = this.encodeMultiplySameAsset({
-			chainId: account.chainId,
-			collateralVault,
-			collateralAmount,
-			liabilityVault,
-			liabilityAmount,
-			longVault,
-			owner: account.owner,
-			receiver,
-			enableCollateral,
-			currentController: currentController || undefined,
-			enableController,
-			collateralShareSource: resolvedCollateralShareSource,
-			collateralWrappedNativeInfo,
-			enableCollateralLong,
-			// Permit2 is handled separately in the plan
-		});
+		const batchItems = [
+			...cleanup.items,
+			...this.encodeMultiplySameAsset({
+				chainId: account.chainId,
+				collateralVault,
+				collateralAmount,
+				liabilityVault,
+				liabilityAmount,
+				longVault,
+				owner: account.owner,
+				receiver,
+				enableCollateral,
+				currentController: currentController || undefined,
+				enableController,
+				collateralShareSource: resolvedCollateralShareSource,
+				collateralWrappedNativeInfo,
+				enableCollateralLong,
+				// Permit2 is handled separately in the plan
+			}),
+		];
 
 		plan.push(...this.convertBatchItemsToPlan(batchItems, "multiplySameAsset"));
 

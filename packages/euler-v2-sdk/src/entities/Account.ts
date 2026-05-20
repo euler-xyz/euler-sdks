@@ -437,6 +437,13 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 		return this.subAccounts[getSubAccountAddress(this.owner, id)];
 	}
 
+	setSubAccount(
+		subAccount: ISubAccount<TVaultEntity> | SubAccount<TVaultEntity>,
+	): void {
+		this.subAccounts[getAddress(subAccount.account)] =
+			subAccount instanceof SubAccount ? subAccount : new SubAccount(subAccount);
+	}
+
 	/**
 	 * Returns sub-account addresses with no active supplied or borrowed position.
 	 */

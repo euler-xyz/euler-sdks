@@ -705,9 +705,6 @@ export function BorrowPairPage() {
           },
         }
       );
-      if (rawBatchResults?.length) {
-        console.debug("[preview] raw batch results (plan only):", rawBatchResults);
-      }
       if (failedBatchItems?.length) {
         setPreviewSimulationError(formatFailedBatchItems(failedBatchItems));
         setSimulatedAccountPreview(null);

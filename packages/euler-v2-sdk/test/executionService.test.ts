@@ -26,6 +26,7 @@ const SWAPPER = "0x00000000000000000000000000000000000000cc" as const;
 const VERIFIER = "0x00000000000000000000000000000000000000dd" as const;
 const RECEIVER = "0x00000000000000000000000000000000000000ee" as const;
 const VAULT_IN = "0x00000000000000000000000000000000000000ff" as const;
+const EVC = "0x0000000000000000000000000000000000000011" as const;
 const SOURCE_ACCOUNT = "0x0000000000000000000000000000000000000a01" as const;
 const SOURCE_VAULT = "0x0000000000000000000000000000000000000a02" as const;
 const LIABILITY_VAULT = "0x0000000000000000000000000000000000000a03" as const;
@@ -43,7 +44,7 @@ function createExecutionService() {
 			getDeployment: () => ({
 				addresses: {
 					coreAddrs: {
-						evc: "0x0000000000000000000000000000000000000011",
+						evc: EVC,
 						permit2: PERMIT2,
 					},
 				},
@@ -67,6 +68,20 @@ function createBatchItem(
 			args: [],
 		}),
 	};
+}
+
+function decodeBatchFunctionName(item: EVCBatchItem): string {
+	const abi = item.targetContract === EVC ? ethereumVaultConnectorAbi : eVaultAbi;
+	return decodeFunctionData({ abi, data: item.data }).functionName;
+}
+
+function getOnlyEvcBatchItems(plan: TransactionPlan): EVCBatchItem[] {
+	const batch = plan.find((item) => item.type === "evcBatch");
+	assert.equal(batch?.type, "evcBatch");
+	if (batch?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+	return flattenBatchEntries(batch.items);
 }
 
 function encodeSkimVerifierData(
@@ -998,6 +1013,46 @@ test("swap-and-borrow-from-wallet builds wallet swap, collateral, controller, an
 	});
 	assert.equal(borrow.functionName, "borrow");
 	assert.deepEqual(borrow.args, [AMOUNT + 1n, getAddress(ACCOUNT)]);
+});
+
+test("swap-and-borrow-from-wallet prepends stale-state cleanup by default", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		getSubAccount: () => ({
+			enabledControllers: [LIABILITY_VAULT],
+			enabledCollaterals: [COLLATERAL_VAULT, DESTINATION_VAULT],
+			positions: [],
+		}),
+		isCollateralEnabled: (_account: string, vault: string) =>
+			vault === DESTINATION_VAULT,
+		isControllerEnabled: () => true,
+		getCurrentController: () => LIABILITY_VAULT,
+	} as never;
+
+	const plan = service.planSwapAndBorrowFromWallet({
+		account,
+		swapQuote: createSwapQuote() as never,
+		amount: AMOUNT,
+		tokenIn: TOKEN_IN,
+		borrowVault: LIABILITY_VAULT,
+		borrowAmount: AMOUNT + 1n,
+		borrowAccount: RECEIVER,
+		collateralVault: DESTINATION_VAULT,
+	});
+
+	const items = getOnlyEvcBatchItems(plan);
+	assert.deepEqual(items.slice(0, 3).map(decodeBatchFunctionName), [
+		"disableCollateral",
+		"disableCollateral",
+		"disableController",
+	]);
+	assert.deepEqual(items.slice(-3).map(decodeBatchFunctionName), [
+		"enableController",
+		"enableCollateral",
+		"borrow",
+	]);
 });
 
 test("swap-and-repay-from-wallet builds wallet swap repay and full cleanup", () => {
@@ -2059,6 +2114,81 @@ test("borrow can source collateral from existing savings shares", () => {
 	assert.deepEqual(borrow.args, [AMOUNT, getAddress(ACCOUNT)]);
 });
 
+test("borrow prepends stale-state cleanup by default", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		getSubAccount: () => ({
+			enabledControllers: [LIABILITY_VAULT],
+			enabledCollaterals: [COLLATERAL_VAULT, DESTINATION_VAULT],
+			positions: [],
+		}),
+		isCollateralEnabled: (_account: string, vault: string) =>
+			vault === COLLATERAL_VAULT,
+		isControllerEnabled: () => true,
+		getCurrentController: () => LIABILITY_VAULT,
+	} as never;
+
+	const plan = service.planBorrow({
+		account,
+		vault: LIABILITY_VAULT,
+		amount: AMOUNT,
+		borrowAccount: RECEIVER,
+		receiver: ACCOUNT,
+		collateral: {
+			vault: COLLATERAL_VAULT,
+			amount: AMOUNT,
+			asset: SAME_ASSET,
+		},
+	});
+
+	const items = getOnlyEvcBatchItems(plan);
+	assert.deepEqual(items.map(decodeBatchFunctionName), [
+		"disableCollateral",
+		"disableCollateral",
+		"disableController",
+		"enableCollateral",
+		"deposit",
+		"enableController",
+		"borrow",
+	]);
+});
+
+test("borrow can skip automatic cleanup", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		getSubAccount: () => ({
+			enabledControllers: [LIABILITY_VAULT],
+			enabledCollaterals: [COLLATERAL_VAULT],
+			positions: [],
+		}),
+		isCollateralEnabled: (_account: string, vault: string) =>
+			vault === COLLATERAL_VAULT,
+		isControllerEnabled: () => true,
+		getCurrentController: () => LIABILITY_VAULT,
+	} as never;
+
+	const plan = service.planBorrow({
+		account,
+		vault: LIABILITY_VAULT,
+		amount: AMOUNT,
+		borrowAccount: RECEIVER,
+		receiver: ACCOUNT,
+		collateral: {
+			vault: COLLATERAL_VAULT,
+			amount: AMOUNT,
+			asset: SAME_ASSET,
+		},
+		skipCleanup: true,
+	});
+
+	const items = getOnlyEvcBatchItems(plan);
+	assert.deepEqual(items.map(decodeBatchFunctionName), ["deposit", "borrow"]);
+});
+
 test("same-asset multiply can source supply from savings shares", () => {
 	const service = createExecutionService();
 	const account = {
@@ -2139,6 +2269,85 @@ test("same-asset multiply can source supply from savings shares", () => {
 	assert.deepEqual(enableLongCollateral.args, [
 		getAddress(RECEIVER),
 		getAddress(DESTINATION_VAULT),
+	]);
+});
+
+test("same-asset multiply prepends stale-state cleanup by default", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		getSubAccount: () => ({
+			enabledControllers: [LIABILITY_VAULT],
+			enabledCollaterals: [COLLATERAL_VAULT, DESTINATION_VAULT],
+			positions: [],
+		}),
+		isCollateralEnabled: (_account: string, vault: string) =>
+			vault === COLLATERAL_VAULT || vault === DESTINATION_VAULT,
+		isControllerEnabled: () => true,
+		getCurrentController: () => LIABILITY_VAULT,
+	} as never;
+
+	const plan = service.planMultiplySameAsset({
+		account,
+		collateralVault: COLLATERAL_VAULT,
+		collateralAmount: AMOUNT,
+		collateralAsset: SAME_ASSET,
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: AMOUNT,
+		longVault: DESTINATION_VAULT,
+		receiver: RECEIVER,
+	});
+
+	const items = getOnlyEvcBatchItems(plan);
+	assert.deepEqual(items.map(decodeBatchFunctionName), [
+		"disableCollateral",
+		"disableCollateral",
+		"disableController",
+		"enableCollateral",
+		"deposit",
+		"enableController",
+		"borrow",
+		"skim",
+		"enableCollateral",
+	]);
+	assert.equal(items[2]?.targetContract, LIABILITY_VAULT);
+	assert.equal(items[2]?.onBehalfOfAccount, RECEIVER);
+});
+
+test("same-asset multiply can skip automatic cleanup", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		getSubAccount: () => ({
+			enabledControllers: [LIABILITY_VAULT],
+			enabledCollaterals: [COLLATERAL_VAULT, DESTINATION_VAULT],
+			positions: [],
+		}),
+		isCollateralEnabled: (_account: string, vault: string) =>
+			vault === COLLATERAL_VAULT || vault === DESTINATION_VAULT,
+		isControllerEnabled: () => true,
+		getCurrentController: () => LIABILITY_VAULT,
+	} as never;
+
+	const plan = service.planMultiplySameAsset({
+		account,
+		collateralVault: COLLATERAL_VAULT,
+		collateralAmount: AMOUNT,
+		collateralAsset: SAME_ASSET,
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: AMOUNT,
+		longVault: DESTINATION_VAULT,
+		receiver: RECEIVER,
+		skipCleanup: true,
+	});
+
+	const items = getOnlyEvcBatchItems(plan);
+	assert.deepEqual(items.map(decodeBatchFunctionName), [
+		"deposit",
+		"borrow",
+		"skim",
 	]);
 });
 

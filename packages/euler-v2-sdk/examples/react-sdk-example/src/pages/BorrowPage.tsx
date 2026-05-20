@@ -117,7 +117,6 @@ export function BorrowPage() {
   const eVaults = useMemo(() => (allVaults?.filter(isEVault) ?? []), [allVaults]);
 
   const rows = useMemo(() => {
-    console.time("borrowRows:derive");
     const byAddress = new Map<string, EVault>(
       eVaults.map((v) => [v.address.toLowerCase(), v])
     );
@@ -137,7 +136,6 @@ export function BorrowPage() {
         const lltv = normalizeLltv(collateral.liquidationLTV as number | bigint);
         const collateralVault = byAddress.get(collateral.address.toLowerCase());
         if (!collateralVault) {
-          console.log('missing collateral', debtVault.address, collateral.address);
           continue;
         }
         const relationExists = debtVault.collaterals.some(
@@ -169,8 +167,6 @@ export function BorrowPage() {
       }
     }
 
-    console.timeEnd("borrowRows:derive");
-    console.log('borrowRows.length: ', nextRows.length);
     return nextRows;
   }, [eVaults]);
 

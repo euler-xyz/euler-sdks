@@ -8,8 +8,12 @@ import {
 	type ISubAccount,
 } from "../src/entities/Account.js";
 import { Portfolio } from "../src/entities/Portfolio.js";
+import {
+	AccountService,
+	type IAccountAdapter,
+	type IAccountService,
+} from "../src/services/accountService/index.js";
 import { PortfolioService } from "../src/services/portfolioService/index.js";
-import type { IAccountService } from "../src/services/accountService/index.js";
 import {
 	getFreeSubAccounts,
 	getSubAccountAddress,
@@ -270,6 +274,75 @@ test("account selects the next sub-account for new positions", () => {
 		account.getNewSubAccount({ borrowVault, endId: 4 }),
 		fourthSubAccount,
 	);
+});
+
+test("account can attach a fresh sub-account snapshot before selection", () => {
+	const account = populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {},
+	});
+
+	assert.equal(account.getNewSubAccount({ borrowVault, endId: 3 }), subAccount);
+
+	account.setSubAccount(subAccountData(subAccount, [], [], [otherBorrowVault]));
+	account.setSubAccount(subAccountData(secondSubAccount, [], [], [borrowVault]));
+
+	assert.equal(
+		account.getNewSubAccount({ borrowVault, endId: 3 }),
+		secondSubAccount,
+	);
+});
+
+test("account service checks free sub-account controller snapshots in chunks", async () => {
+	const checked: Address[] = [];
+	const account = populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {},
+	});
+	const adapter: IAccountAdapter = {
+		async fetchAccount(chainId, address) {
+			return {
+				result: {
+					chainId,
+					owner: getAddress(address),
+					subAccounts: {},
+				},
+				errors: [],
+			};
+		},
+		async fetchSubAccount(_chainId, account) {
+			const normalizedAccount = getAddress(account);
+			checked.push(normalizedAccount);
+			const subAccountId = getSubAccountId(owner, normalizedAccount);
+			return {
+				result: subAccountData(
+					normalizedAccount,
+					[],
+					[],
+					subAccountId === 27 ? [borrowVault] : [otherBorrowVault],
+				),
+				errors: [],
+			};
+		},
+	};
+	const service = new AccountService(adapter, {} as never);
+
+	const resolved = await service.resolveNewSubAccount(1, owner, {
+		account,
+		borrowVault,
+		endId: 60,
+		fetchOptions: { populateVaults: false },
+	});
+
+	const compatibleSubAccount = getSubAccountAddress(owner, 27);
+	assert.equal(resolved.result, compatibleSubAccount);
+	assert.equal(account.getSubAccount(compatibleSubAccount), undefined);
+	assert.equal(checked.length, 50);
+	assert.equal(checked[0], subAccount);
+	assert.equal(checked[49], getSubAccountAddress(owner, 50));
+	assert.equal(checked.includes(getSubAccountAddress(owner, 51)), false);
 });
 
 test("portfolio sub-account selection respects its position filter", () => {
