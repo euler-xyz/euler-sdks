@@ -55,6 +55,7 @@ import {
 	type AdaptiveCurveIRMInfo,
 	type KinkyIRMInfo,
 	type FixedCyclicalBinaryIRMInfo,
+	type FixedCyclicalBinaryMonthlyIRMInfo,
 } from "../../../../../utils/irm.js";
 
 const DEFAULT_HOOKED_OPERATIONS: EVaultHookedOperations = {
@@ -160,6 +161,9 @@ function mapInterestRateModelType(type: string): InterestRateModelType {
 		case "fixed_cyclical_binary":
 		case "fixed-cyclical-binary":
 			return InterestRateModelType.FIXED_CYCLICAL_BINARY;
+		case "fixed_cyclical_binary_monthly":
+		case "fixed-cyclical-binary-monthly":
+			return InterestRateModelType.FIXED_CYCLICAL_BINARY_MONTHLY;
 		default:
 			return InterestRateModelType.UNKNOWN;
 	}
@@ -829,12 +833,24 @@ export function convertVault(
 									fees.interestFee,
 								),
 							}
-						: {
-								address: interestRateModelAddress,
-								type: InterestRateModelType.UNKNOWN,
-								data: null,
-								params: null,
-							};
+						: interestRateModelType ===
+								InterestRateModelType.FIXED_CYCLICAL_BINARY_MONTHLY
+							? {
+									address: interestRateModelAddress,
+									type: InterestRateModelType.FIXED_CYCLICAL_BINARY_MONTHLY,
+									data: normalizedIRMData as FixedCyclicalBinaryMonthlyIRMInfo | null,
+									params: decorateIRMParams(
+										interestRateModelType,
+										normalizedIRMData as FixedCyclicalBinaryMonthlyIRMInfo | null,
+										fees.interestFee,
+									),
+								}
+							: {
+									address: interestRateModelAddress,
+									type: InterestRateModelType.UNKNOWN,
+									data: null,
+									params: null,
+								};
 
 	const oraclePriceRaw = detail.oraclePriceRaw
 		? convertOraclePrice(

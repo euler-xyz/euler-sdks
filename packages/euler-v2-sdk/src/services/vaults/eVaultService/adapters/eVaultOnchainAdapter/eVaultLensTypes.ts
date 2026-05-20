@@ -37,6 +37,7 @@ export enum InterestRateModelType {
 	ADAPTIVE_CURVE = 2,
 	KINKY = 3,
 	FIXED_CYCLICAL_BINARY = 4,
+	FIXED_CYCLICAL_BINARY_MONTHLY = 5,
 }
 
 export interface InterestRateModelDetailedInfo {

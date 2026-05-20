@@ -6,6 +6,7 @@ export enum InterestRateModelType {
 	ADAPTIVE_CURVE = 2,
 	KINKY = 3,
 	FIXED_CYCLICAL_BINARY = 4,
+	FIXED_CYCLICAL_BINARY_MONTHLY = 5,
 }
 
 export interface KinkIRMInfo {
@@ -50,11 +51,19 @@ export interface FixedCyclicalBinaryIRMInfo {
 	startTimestamp: bigint;
 }
 
+export interface FixedCyclicalBinaryMonthlyIRMInfo {
+	primaryRate: bigint;
+	secondaryRate: bigint;
+	cycleStartDay: bigint;
+	secondaryDays: bigint;
+}
+
 export type IRMParams =
 	| KinkIRMInfo
 	| AdaptiveCurveIRMInfo
 	| KinkyIRMInfo
-	| FixedCyclicalBinaryIRMInfo;
+	| FixedCyclicalBinaryIRMInfo
+	| FixedCyclicalBinaryMonthlyIRMInfo;
 
 const UINT32_MAX = 2n ** 32n - 1n;
 const SECONDS_PER_YEAR = 31_556_952;
@@ -153,6 +162,25 @@ export function decodeIRMParams(
 			};
 		}
 
+		case InterestRateModelType.FIXED_CYCLICAL_BINARY_MONTHLY: {
+			const [primaryRate, secondaryRate, cycleStartDay, secondaryDays] =
+				decodeAbiParameters(
+					[
+						{ name: "primaryRate", type: "uint256" },
+						{ name: "secondaryRate", type: "uint256" },
+						{ name: "cycleStartDay", type: "uint256" },
+						{ name: "secondaryDays", type: "uint256" },
+					],
+					params,
+				);
+			return {
+				primaryRate,
+				secondaryRate,
+				cycleStartDay,
+				secondaryDays,
+			};
+		}
+
 		default:
 			throw new Error(
 				`Cannot decode IRM params for type: ${InterestRateModelType[type]}`,
@@ -240,6 +268,24 @@ export function normalizeIRMParams(
 				: null;
 		}
 
+		case InterestRateModelType.FIXED_CYCLICAL_BINARY_MONTHLY: {
+			const primaryRate = toBigIntValue(data, "primaryRate");
+			const secondaryRate = toBigIntValue(data, "secondaryRate");
+			const cycleStartDay = toBigIntValue(data, "cycleStartDay");
+			const secondaryDays = toBigIntValue(data, "secondaryDays");
+			return primaryRate !== null &&
+				secondaryRate !== null &&
+				cycleStartDay !== null &&
+				secondaryDays !== null
+				? {
+						primaryRate,
+						secondaryRate,
+						cycleStartDay,
+						secondaryDays,
+					}
+				: null;
+		}
+
 		default:
 			return null;
 	}
@@ -263,6 +309,11 @@ export function decorateIRMParams(
 export function decorateIRMParams(
 	type: InterestRateModelType.FIXED_CYCLICAL_BINARY,
 	data: FixedCyclicalBinaryIRMInfo | null,
+	interestFee: number,
+): null;
+export function decorateIRMParams(
+	type: InterestRateModelType.FIXED_CYCLICAL_BINARY_MONTHLY,
+	data: FixedCyclicalBinaryMonthlyIRMInfo | null,
 	interestFee: number,
 ): null;
 export function decorateIRMParams(
@@ -308,6 +359,7 @@ export function decorateIRMParams(
 		case InterestRateModelType.ADAPTIVE_CURVE:
 		case InterestRateModelType.KINKY:
 		case InterestRateModelType.FIXED_CYCLICAL_BINARY:
+		case InterestRateModelType.FIXED_CYCLICAL_BINARY_MONTHLY:
 		default:
 			return null;
 	}

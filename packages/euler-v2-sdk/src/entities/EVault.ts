@@ -16,6 +16,7 @@ import type { Token } from "../utils/types.js";
 import type {
 	AdaptiveCurveIRMInfo,
 	FixedCyclicalBinaryIRMInfo,
+	FixedCyclicalBinaryMonthlyIRMInfo,
 	KinkIRMInfo,
 	KinkyIRMInfo,
 	LinearKinkIRMParams,
@@ -130,6 +131,12 @@ export type InterestRateModel =
 			address: Address;
 			type: InterestRateModelType.FIXED_CYCLICAL_BINARY;
 			data: FixedCyclicalBinaryIRMInfo | null;
+			params: null;
+	  }
+	| {
+			address: Address;
+			type: InterestRateModelType.FIXED_CYCLICAL_BINARY_MONTHLY;
+			data: FixedCyclicalBinaryMonthlyIRMInfo | null;
 			params: null;
 	  }
 	| {

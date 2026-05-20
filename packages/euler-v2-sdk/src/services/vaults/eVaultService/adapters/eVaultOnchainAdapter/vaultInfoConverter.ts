@@ -33,6 +33,7 @@ import {
 	type AdaptiveCurveIRMInfo,
 	type KinkyIRMInfo,
 	type FixedCyclicalBinaryIRMInfo,
+	type FixedCyclicalBinaryMonthlyIRMInfo,
 } from "../../../../../utils/irm.js";
 import {
 	dataIssueLocation,
@@ -514,6 +515,17 @@ function convertInterestRateModel(
 				params: decorateIRMParams(
 					type,
 					decodedParams as FixedCyclicalBinaryIRMInfo | null,
+					interestFee,
+				),
+			};
+		case InterestRateModelType.FIXED_CYCLICAL_BINARY_MONTHLY:
+			return {
+				address,
+				type,
+				data: decodedParams as FixedCyclicalBinaryMonthlyIRMInfo | null,
+				params: decorateIRMParams(
+					type,
+					decodedParams as FixedCyclicalBinaryMonthlyIRMInfo | null,
 					interestFee,
 				),
 			};
