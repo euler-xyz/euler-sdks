@@ -57,6 +57,9 @@ Hermes requests are automatically batched (50 ms window) and cached (15 s TTL) t
 ```typescript
 createPythPlugin({
   hermesUrl: "https://hermes.pyth.network", // optional, this is the default
+  // Optional: route Hermes through your own backend (e.g. to satisfy CSP).
+  // The fetcher receives the original Hermes URL and may rewrite it.
+  fetchFn: (input, init) => fetch(input, init),
 })
 ```
 

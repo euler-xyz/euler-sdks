@@ -119,6 +119,8 @@ const nextBorrowSubAccount = account.getNextSubAccount({ borrowVault })
 
 `getFreeSubAccounts()` returns addresses with no active supplied or borrowed position. `getNextSubAccount()` returns the first address suitable for a new position. When `borrowVault` is provided, existing supplied and borrowed positions are treated as occupied, and any known enabled controllers on a candidate sub-account must match that borrow vault.
 
+When picking a sub-account for a borrow plan, prefer `accountService.resolveNewSubAccount(chainId, owner, { borrowVault, startId?, endId?, account?, fetchOptions? })`. The cached `Account` only sees controllers that were enabled at fetch time, so a sub-account that recently had its controller disabled on-chain can look free in the cache while the SDK still treats it as carrying stale controller state. `resolveNewSubAccount` walks the free-sub-account candidates in chunks, fetches a fresh per-sub-account snapshot from the adapter (`SUB_ACCOUNT_CHECK_CHUNK_SIZE` per round), and returns the first candidate whose live `enabledControllers` are compatible with the target `borrowVault` (or `undefined` if none match in range). When `borrowVault` is omitted, it falls back to the cached `getNewSubAccount(range)` lookup.
+
 ## Portfolio Properties
 
 | Property | Type | Prerequisites | Description |

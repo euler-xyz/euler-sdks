@@ -75,6 +75,7 @@ After planning, use:
 
 - `resolveRequiredApprovals(...)` or `resolveRequiredApprovalsWithWallet(...)` to resolve approval requirements into concrete `approve` calls or Permit2 signatures metadata.
 - `executeTransactionPlan(...)` to process plugins, resolve any unresolved approvals, request Permit2 signatures, send direct contract calls and EVC batches, and report `onProgress` updates.
+- `prepareTransactionPlan(...)` when the same plan will be both simulated and executed (typical Review-then-Confirm UX). It runs plugins and resolves approvals once and returns a `TransactionPlanPrepared` envelope that carries `plan`, `chainId`, `account`, `usePermit2`, and `unlimitedApproval`. Pass the envelope to `simulatePreparedTransactionPlan(...)` and `executePreparedTransactionPlan(...)` to skip the redundant plugin pass (and, for execute, the approval re-resolution). Use the `isPreparedTransactionPlan` type guard to discriminate envelope vs raw plan.
 
 ## Consuming a Plan
 
@@ -102,6 +103,29 @@ The bundled executor:
 3. Collects/appends Permit2 calls when needed
 4. Executes `contractCall` items directly
 5. Sends the final EVC batch transaction
+
+For flows that simulate-then-execute the same plan (e.g. a Review screen that previews state changes and then submits on Confirm), prepare the plan once and reuse the envelope to avoid re-running plugins (TOS / Keyring / Pyth) and re-fetching wallet allowances on each step:
+
+```typescript
+const prepared = await sdk.executionService.prepareTransactionPlan({
+  plan,
+  chainId,
+  account, // AddressOrAccount
+  usePermit2: true,
+  unlimitedApproval: false,
+})
+
+const simulation = await sdk.executionService.simulatePreparedTransactionPlan(prepared)
+
+const result = await sdk.executionService.executePreparedTransactionPlan({
+  prepared,
+  sendTransaction: walletClient.sendTransaction,
+  signTypedData: walletClient.signTypedData,
+  onProgress,
+})
+```
+
+The original `simulateTransactionPlan` / `executeTransactionPlan` entry points are unchanged — the prepared variants are additive. Do not pass CoW plans to `prepareTransactionPlan`.
 
 For CoW plans, use `executeCowSwapTransactionPlan`. It runs ERC20 approvals,
 EVC permit signing, CoW order signing, and order submission. The result includes
