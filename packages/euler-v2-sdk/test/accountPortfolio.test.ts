@@ -23,6 +23,7 @@ import {
 	isSubAccount,
 	selectBorrowCompatibleSubAccount,
 } from "../src/utils/subAccounts.js";
+import { computeSubAccountRoe } from "../src/utils/accountComputations.js";
 
 const owner = getAddress("0x1000000000000000000000000000000000000000");
 const subAccount = getAddress("0x1000000000000000000000000000000000000001");
@@ -811,6 +812,206 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 		intrinsicApy: 0,
 		total: 7,
 	});
+});
+
+test("portfolio borrow breakdown picks up BORROW_COLLATERAL rewards on collateral match", () => {
+	const otherCollateral = getAddress(
+		"0x9000000000000000000000000000000000000000",
+	);
+	const collateral = vault(collateralVault, {
+		interestRates: { supplyAPY: "5", borrowAPY: "0" },
+	});
+	const borrow = vault(borrowVault, {
+		interestRates: { supplyAPY: "0", borrowAPY: "8" },
+		rewards: {
+			campaigns: [
+				{
+					campaignId: "borrow",
+					source: "merkl",
+					action: "BORROW",
+					apr: 0.01,
+					rewardTokenSymbol: "EUL",
+				},
+				{
+					campaignId: "collat-match",
+					source: "merkl",
+					action: "BORROW_COLLATERAL",
+					apr: 0.03,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: collateralVault,
+				},
+				{
+					campaignId: "collat-mismatch",
+					source: "merkl",
+					action: "BORROW_COLLATERAL",
+					apr: 0.07,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: otherCollateral,
+				},
+			],
+		},
+	});
+
+	const portfolio = new Portfolio(populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(
+				subAccount,
+				[
+					position(collateralVault, {
+						vault: collateral,
+						shares: 200n,
+						assets: 200n,
+						suppliedValueUsd: usd(200),
+					}),
+					position(borrowVault, {
+						vault: borrow,
+						borrowed: 100n,
+						borrowedValueUsd: usd(100),
+					}),
+				],
+				[collateralVault],
+			),
+		},
+	}));
+
+	const borrowPosition = portfolio.borrows[0]!;
+	// Borrow leg rewards = BORROW (1%) + BORROW_COLLATERAL (matching 3%) = 4%.
+	// The mismatching 7% campaign must NOT count.
+	// Net APY denominator is supplied (200). Rewards contribution = 100*4% / 200 = 2.
+	assert.equal(borrowPosition.apyBreakdown?.rewards, 2);
+	// ROE denominator is equity (200-100=100). Rewards contribution = 100*4% / 100 = 4.
+	assert.equal(borrowPosition.roeBreakdown?.rewards, 4);
+});
+
+test("portfolio borrow breakdown picks up LOOPING rewards on multiplier match", () => {
+	const collateral = vault(collateralVault, {
+		interestRates: { supplyAPY: "0", borrowAPY: "0" },
+	});
+	const borrow = vault(borrowVault, {
+		interestRates: { supplyAPY: "0", borrowAPY: "0" },
+		rewards: {
+			campaigns: [
+				// In range (multiplier 2 falls in [1.5, 3]).
+				{
+					campaignId: "loop-in-range",
+					source: "merkl",
+					action: "LOOPING",
+					apr: 0.05,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: collateralVault,
+					minMultiplier: 1.5,
+					maxMultiplier: 3,
+				},
+				// Below range (multiplier 2 < min 4).
+				{
+					campaignId: "loop-too-low",
+					source: "merkl",
+					action: "LOOPING",
+					apr: 0.10,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: collateralVault,
+					minMultiplier: 4,
+				},
+				// Collateral mismatch.
+				{
+					campaignId: "loop-wrong-collat",
+					source: "merkl",
+					action: "LOOPING",
+					apr: 0.20,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: getAddress(
+						"0x9000000000000000000000000000000000000000",
+					),
+				},
+			],
+		},
+	});
+
+	// Collateral 200, borrow 100 → multiplier = 2, equity = 100.
+	const portfolio = new Portfolio(populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(
+				subAccount,
+				[
+					position(collateralVault, {
+						vault: collateral,
+						shares: 200n,
+						assets: 200n,
+						suppliedValueUsd: usd(200),
+					}),
+					position(borrowVault, {
+						vault: borrow,
+						borrowed: 100n,
+						borrowedValueUsd: usd(100),
+					}),
+				],
+				[collateralVault],
+			),
+		},
+	}));
+
+	const borrowPosition = portfolio.borrows[0]!;
+	assert.equal(borrowPosition.multiplier, 2);
+	// LOOPING is paid on equity (100), apr 5% → looping yield = 100 * 5 = 500.
+	// Net APY denominator is supplied (200). Rewards = 500 / 200 = 2.5.
+	assert.equal(borrowPosition.apyBreakdown?.rewards, 2.5);
+	// ROE denominator is equity (100). Rewards = 500 / 100 = 5.
+	assert.equal(borrowPosition.roeBreakdown?.rewards, 5);
+});
+
+test("subAccount ROE picks up BORROW_COLLATERAL rewards", () => {
+	const collateral = vault(collateralVault, {
+		interestRates: { supplyAPY: "0", borrowAPY: "0" },
+	});
+	const borrow = vault(borrowVault, {
+		interestRates: { supplyAPY: "0", borrowAPY: "0" },
+		rewards: {
+			campaigns: [
+				{
+					campaignId: "collat-match",
+					source: "merkl",
+					action: "BORROW_COLLATERAL",
+					apr: 0.04,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: collateralVault,
+				},
+			],
+		},
+	});
+
+	const account = populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(
+				subAccount,
+				[
+					position(collateralVault, {
+						vault: collateral,
+						shares: 200n,
+						assets: 200n,
+						suppliedValueUsd: usd(200),
+					}),
+					position(borrowVault, {
+						vault: borrow,
+						borrowed: 100n,
+						borrowedValueUsd: usd(100),
+					}),
+				],
+				[collateralVault],
+			),
+		},
+	});
+
+	const sa = Object.values(account.subAccounts!)[0]!;
+	const roe = computeSubAccountRoe(sa, undefined);
+	// 100 borrow * 4% BORROW_COLLATERAL / 100 equity = 4.
+	assert.equal(roe?.rewards, 4);
+	assert.equal(roe?.total, 4);
 });
 
 test("portfolio breakdowns drop whitelisted-ineligible rewards for a non-eligible viewer", () => {

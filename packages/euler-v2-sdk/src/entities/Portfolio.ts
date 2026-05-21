@@ -739,10 +739,25 @@ function borrowYieldPositions<TVaultEntity extends IHasVaultAddress>(
 	borrow: AccountPosition<TVaultEntity>,
 	collaterals: AccountPosition<TVaultEntity>[],
 ): AccountYieldPosition[] {
+	const suppliedSum = sumYieldPositionUsd(collaterals, "suppliedValueUsd");
+	const multiplier = computeBorrowMultiplier(borrow, collaterals);
+	const equityUsd =
+		suppliedSum != null && borrow.borrowedValueUsd != null
+			? suppliedSum - borrow.borrowedValueUsd
+			: undefined;
+
 	return [
 		{
 			vault: borrow.vault,
 			borrowedValueUsd: borrow.borrowedValueUsd,
+			borrowContext: {
+				collateralAddresses: collaterals.map((collateral) =>
+					getAddress(collateral.vaultAddress),
+				),
+				multiplier,
+				equityUsd:
+					equityUsd != null && equityUsd > 0 ? equityUsd : undefined,
+			},
 		},
 		...collaterals.map((collateral) => ({
 			vault: collateral.vault,
