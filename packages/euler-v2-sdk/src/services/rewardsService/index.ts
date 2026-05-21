@@ -1,10 +1,11 @@
 export { RewardsService } from "./rewardsService.js";
 export { RewardsDirectAdapter } from "./adapters/rewardsDirectAdapter/index.js";
 export { RewardsV3Adapter } from "./adapters/rewardsV3Adapter/index.js";
+export { VaultRewardInfo } from "./vaultRewardInfo.js";
+export type { VaultRewardInfoArgs } from "./vaultRewardInfo.js";
 export type {
 	IRewardsAdapter,
 	IRewardsService,
-	VaultRewardInfo,
 	RewardCampaign,
 	RewardSource,
 	RewardAction,
@@ -22,3 +23,8 @@ export type {
 	FuulTotalEntry,
 } from "./rewardsServiceTypes.js";
 export type { V3RewardsBreakdownEnvelope, V3RewardsBreakdownRow } from "./adapters/rewardsV3Adapter/index.js";
+export {
+	defaultIsActiveForViewer,
+	type IsActiveForViewerFn,
+	type ViewerOptions,
+} from "./rewardCampaignEligibility.js";

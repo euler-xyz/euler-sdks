@@ -1045,7 +1045,10 @@ export function useChainRewards() {
       for (const [vaultAddress, info] of map) {
         entries.push({ vaultAddress, info });
       }
-      entries.sort((a, b) => b.info.totalRewardsApr - a.info.totalRewardsApr);
+      entries.sort(
+        (a, b) =>
+          b.info.getTotalRewardsApr() - a.info.getTotalRewardsApr(),
+      );
       return entries;
     },
     enabled,

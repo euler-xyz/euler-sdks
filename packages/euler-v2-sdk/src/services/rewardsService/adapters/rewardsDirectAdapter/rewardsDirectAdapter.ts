@@ -19,8 +19,8 @@ import type {
 	RewardAction,
 	RewardsDirectAdapterConfig,
 	UserReward,
-	VaultRewardInfo,
 } from "../../rewardsServiceTypes.js";
+import { VaultRewardInfo } from "../../vaultRewardInfo.js";
 
 const DEFAULT_MERKL_API_URL = "https://api.merkl.xyz/v4";
 const DEFAULT_BREVIS_API_URL =
@@ -667,7 +667,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 
 			let info = map.get(key);
 			if (!info) {
-				info = { totalRewardsApr: 0, campaigns: [] };
+				info = new VaultRewardInfo({ campaigns: [] });
 				map.set(key, info);
 			}
 
@@ -692,7 +692,6 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 
 			const { _vaultAddress, ...cleanCampaign } = campaign;
 			info.campaigns.push(cleanCampaign);
-			info.totalRewardsApr += cleanCampaign.apr;
 		}
 
 		return map;

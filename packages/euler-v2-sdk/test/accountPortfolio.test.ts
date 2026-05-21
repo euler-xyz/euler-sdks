@@ -8,6 +8,7 @@ import {
 	type ISubAccount,
 } from "../src/entities/Account.js";
 import { Portfolio } from "../src/entities/Portfolio.js";
+import { VaultRewardInfo } from "../src/services/rewardsService/vaultRewardInfo.js";
 import {
 	AccountService,
 	type IAccountAdapter,
@@ -78,10 +79,19 @@ function usd(value: number): number {
 }
 
 function vault(address: string, overrides: Record<string, unknown> = {}) {
-	return {
+	const result: Record<string, unknown> = {
 		address: getAddress(address),
 		...overrides,
 	};
+	const rawRewards = (overrides as { rewards?: unknown }).rewards as
+		| { campaigns?: unknown[] }
+		| undefined;
+	if (rawRewards && !(rawRewards instanceof VaultRewardInfo)) {
+		result.rewards = new VaultRewardInfo({
+			campaigns: (rawRewards.campaigns ?? []) as never,
+		});
+	}
+	return result;
 }
 
 function pricedVault(address: string, marketPriceUsd = 1, decimals = 6) {
@@ -534,8 +544,8 @@ test("portfolio permanently filters positions from lists and metrics", () => {
 	);
 	assert.equal(portfolio.totalSuppliedValueUsd, usd(100));
 	assert.equal(portfolio.totalBorrowedValueUsd, usd(50));
-	assert.equal(portfolio.netApy, (100 * 0.1 - 50 * 0.05) / 100);
-	assert.equal(portfolio.roe, (100 * 0.1 - 50 * 0.05) / 50);
+	assert.equal(portfolio.getNetApy(), (100 * 0.1 - 50 * 0.05) / 100);
+	assert.equal(portfolio.getRoe(), (100 * 0.1 - 50 * 0.05) / 50);
 });
 
 test("portfolio does not expose filtered borrow collateral as savings", () => {
@@ -751,16 +761,16 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 	}));
 
 	// Net yield = 200*(5%+2%) - 100*(8%-1%) + 100*(4%+1%) = 12.
-	assert.equal(portfolio.netApy, 4);
-	assert.equal(portfolio.roe, 6);
-	assert.deepEqual(portfolio.apyBreakdown, {
+	assert.equal(portfolio.getNetApy(), 4);
+	assert.equal(portfolio.getRoe(), 6);
+	assert.deepEqual(portfolio.getNetApyBreakdown(), {
 		lending: 14 / 3,
 		borrowing: -8 / 3,
 		rewards: 2,
 		intrinsicApy: 0,
 		total: 4,
 	});
-	assert.deepEqual(portfolio.roeBreakdown, {
+	assert.deepEqual(portfolio.getRoeBreakdown(), {
 		lending: 7,
 		borrowing: -4,
 		rewards: 3,
@@ -772,6 +782,7 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 		(position) => position.position.vaultAddress === savingsVault,
 	)!;
 	assert.equal(saving.apy, 5);
+	assert.equal(saving.apyBreakdown?.total, 5);
 	assert.deepEqual(saving.apyBreakdown, {
 		lending: 4,
 		borrowing: 0,
@@ -784,6 +795,8 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 	assert.equal(borrowPosition.multiplier, 2);
 	assert.equal(borrowPosition.netApy, 3.5);
 	assert.equal(borrowPosition.roe, 7);
+	assert.equal(borrowPosition.apyBreakdown?.total, 3.5);
+	assert.equal(borrowPosition.roeBreakdown?.total, 7);
 	assert.deepEqual(borrowPosition.apyBreakdown, {
 		lending: 5,
 		borrowing: -4,
@@ -798,6 +811,89 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 		intrinsicApy: 0,
 		total: 7,
 	});
+});
+
+test("portfolio breakdowns drop whitelisted-ineligible rewards for a non-eligible viewer", () => {
+	const viewerEligible = getAddress(
+		"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	);
+	const viewerOther = getAddress(
+		"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	);
+
+	const savings = vault(savingsVault, {
+		interestRates: { supplyAPY: "4", borrowAPY: "0" },
+		rewards: {
+			campaigns: [
+				{
+					campaignId: "open",
+					source: "merkl",
+					action: "LEND",
+					apr: 0.01,
+					rewardTokenSymbol: "EUL",
+				},
+				{
+					campaignId: "gated",
+					source: "merkl",
+					action: "LEND",
+					apr: 0.02,
+					rewardTokenSymbol: "EUL",
+					whitelist: [viewerEligible.toLowerCase()],
+				},
+			],
+		},
+	});
+
+	const portfolio = new Portfolio(populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(subAccount, [
+				position(savingsVault, {
+					vault: savings,
+					shares: 100n,
+					assets: 100n,
+					suppliedValueUsd: usd(100),
+				}),
+			]),
+		},
+	}));
+
+	// Headline (no viewer): both campaigns count → rewards = 1% + 2% = 3%.
+	const headline = portfolio.getNetApyBreakdown();
+	assert.equal(headline?.rewards, 3);
+	assert.equal(headline?.total, 4 + 3);
+
+	// Eligible viewer: still both campaigns.
+	const eligible = portfolio.getNetApyBreakdown({ viewer: viewerEligible });
+	assert.equal(eligible?.rewards, 3);
+	assert.equal(eligible?.total, 7);
+
+	// Non-eligible viewer: only the open campaign counts → rewards = 1%.
+	const filtered = portfolio.getNetApyBreakdown({ viewer: viewerOther });
+	assert.equal(filtered?.rewards, 1);
+	assert.equal(filtered?.total, 4 + 1);
+
+	// Additivity holds under viewer: lending + borrowing + rewards + intrinsicApy === total.
+	const sumComponents = (b: { lending: number; borrowing: number; rewards: number; intrinsicApy: number; total: number; }) =>
+		b.lending + b.borrowing + b.rewards + b.intrinsicApy;
+	assert.equal(sumComponents(headline!), headline?.total);
+	assert.equal(sumComponents(eligible!), eligible?.total);
+	assert.equal(sumComponents(filtered!), filtered?.total);
+
+	// Scalar conveniences agree with the breakdowns.
+	assert.equal(portfolio.getNetApy({ viewer: viewerOther }), filtered?.total);
+	assert.equal(portfolio.getRoe({ viewer: viewerOther }), filtered?.total);
+
+	// Default-view getters mirror the no-viewer method call.
+	assert.equal(portfolio.netApy, headline?.total);
+	assert.equal(portfolio.apyBreakdown?.rewards, headline?.rewards);
+
+	// Per-position breakdowns: default-view is headline, opts.viewer filters.
+	const saving = portfolio.savings[0]!;
+	assert.equal(saving.apyBreakdown?.rewards, 3);
+	assert.equal(saving.getApyBreakdown({ viewer: viewerEligible })?.rewards, 3);
+	assert.equal(saving.getApyBreakdown({ viewer: viewerOther })?.rewards, 1);
 });
 
 test("portfolio applies intrinsic APY", () => {
@@ -824,8 +920,8 @@ test("portfolio applies intrinsic APY", () => {
 		},
 	}));
 
-	assert.equal(portfolio.netApy, 10 + 1.1 * 5);
-	assert.equal(portfolio.roe, 10 + 1.1 * 5);
+	assert.equal(portfolio.getNetApy(), 10 + 1.1 * 5);
+	assert.equal(portfolio.getRoe(), 10 + 1.1 * 5);
 	assert.deepEqual(portfolio.savings[0]?.apyBreakdown, {
 		lending: 10,
 		borrowing: 0,
@@ -866,8 +962,8 @@ test("portfolio uses EulerEarn supplyApy1h for yield metrics", () => {
 		},
 	}));
 
-	assert.equal(portfolio.netApy, 8);
-	assert.equal(portfolio.roe, 8);
+	assert.equal(portfolio.getNetApy(), 8);
+	assert.equal(portfolio.getRoe(), 8);
 });
 
 test("portfolio yield metrics return undefined without populated USD positions", () => {
@@ -887,8 +983,8 @@ test("portfolio yield metrics return undefined without populated USD positions",
 		},
 	}));
 
-	assert.equal(portfolio.netApy, undefined);
-	assert.equal(portfolio.roe, undefined);
+	assert.equal(portfolio.getNetApy(), undefined);
+	assert.equal(portfolio.getRoe(), undefined);
 });
 
 test("portfolio treats populated positions without APY data as zero yield", () => {
@@ -915,8 +1011,8 @@ test("portfolio treats populated positions without APY data as zero yield", () =
 	assert.equal(portfolio.totalSuppliedValueUsd, usd(100));
 	assert.equal(portfolio.totalBorrowedValueUsd, usd(50));
 	assert.equal(portfolio.netAssetValueUsd, usd(50));
-	assert.equal(portfolio.netApy, 0);
-	assert.equal(portfolio.roe, 0);
+	assert.equal(portfolio.getNetApy(), 0);
+	assert.equal(portfolio.getRoe(), 0);
 });
 
 test("portfolio yield metrics return zero when equity is not positive", () => {
@@ -936,8 +1032,8 @@ test("portfolio yield metrics return zero when equity is not positive", () => {
 		},
 	}));
 
-	assert.equal(portfolio.netApy, 0);
-	assert.equal(portfolio.roe, 0);
+	assert.equal(portfolio.getNetApy(), 0);
+	assert.equal(portfolio.getRoe(), 0);
 });
 
 test("account market price population treats missing collateral position as zero value", async () => {

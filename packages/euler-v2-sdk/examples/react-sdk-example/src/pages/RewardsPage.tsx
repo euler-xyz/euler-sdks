@@ -38,7 +38,7 @@ export function RewardsPage() {
           {entries.map(({ vaultAddress, info }) => (
             <tr key={vaultAddress}>
               <td><CopyAddress address={vaultAddress} /></td>
-              <td>{formatPercent(info.totalRewardsApr)}</td>
+              <td>{formatPercent(info.getTotalRewardsApr())}</td>
               <td>{info.campaigns.length}</td>
             </tr>
           ))}
@@ -51,7 +51,7 @@ export function RewardsPage() {
         <details key={vaultAddress} className="rewards-vault-details">
           <summary>
             <CopyAddress address={vaultAddress} /> &mdash;{" "}
-            {formatPercent(info.totalRewardsApr)} ({info.campaigns.length}{" "}
+            {formatPercent(info.getTotalRewardsApr())} ({info.campaigns.length}{" "}
             campaign{info.campaigns.length !== 1 ? "s" : ""})
           </summary>
           <table>

@@ -225,6 +225,7 @@ export interface YieldApyBreakdown {
  */
 export function computeSubAccountRoe(
 	subAccount: ISubAccount<IHasVaultAddress>,
+	viewer: Address | string | undefined | null,
 ): SubAccountRoe | undefined {
 	let totalLendingYield = 0;
 	let totalBorrowingYield = 0;
@@ -248,7 +249,8 @@ export function computeSubAccountRoe(
 				hasData = true;
 				totalSupplyUsd += supplyUsd;
 				totalLendingYield += supplyUsd * supplyApy;
-				totalRewardYield += supplyUsd * getVaultRewardApr(vault, "LEND");
+				totalRewardYield +=
+					supplyUsd * getVaultRewardApr(vault, "LEND", viewer);
 				totalIntrinsicYield += supplyUsd * intrinsicApyDecimal;
 			}
 		}
@@ -261,7 +263,8 @@ export function computeSubAccountRoe(
 				hasData = true;
 				totalBorrowUsd += borrowUsd;
 				totalBorrowingYield += borrowUsd * borrowApy;
-				totalRewardYield += borrowUsd * getVaultRewardApr(vault, "BORROW");
+				totalRewardYield +=
+					borrowUsd * getVaultRewardApr(vault, "BORROW", viewer);
 				totalIntrinsicYield -= borrowUsd * intrinsicApyDecimal;
 			}
 		}
@@ -298,8 +301,9 @@ export function computeSubAccountRoe(
  */
 export function computeAccountNetApy(
 	account: IAccount<IHasVaultAddress>,
+	viewer: Address | string | undefined | null,
 ): number | undefined {
-	const totals = computeAccountYieldTotals(account);
+	const totals = computeAccountYieldTotals(account, viewer);
 	if (!totals) return undefined;
 	if (totals.totalSupplyUsd === 0) return 0;
 	return totals.totalNetYield / totals.totalSupplyUsd;
@@ -311,8 +315,9 @@ export function computeAccountNetApy(
  */
 export function computePositionsNetApy(
 	positions: Iterable<AccountYieldPosition>,
+	viewer: Address | string | undefined | null,
 ): number | undefined {
-	const totals = computePositionYieldTotals(positions);
+	const totals = computePositionYieldTotals(positions, viewer);
 	if (!totals) return undefined;
 	if (totals.totalSupplyUsd === 0) return 0;
 	return totals.totalNetYield / totals.totalSupplyUsd;
@@ -325,8 +330,9 @@ export function computePositionsNetApy(
  */
 export function computeAccountRoe(
 	account: IAccount<IHasVaultAddress>,
+	viewer: Address | string | undefined | null,
 ): number | undefined {
-	const totals = computeAccountYieldTotals(account);
+	const totals = computeAccountYieldTotals(account, viewer);
 	if (!totals) return undefined;
 	if (totals.totalEquityUsd <= 0) return 0;
 	return totals.totalNetYield / totals.totalEquityUsd;
@@ -338,8 +344,9 @@ export function computeAccountRoe(
  */
 export function computePositionsRoe(
 	positions: Iterable<AccountYieldPosition>,
+	viewer: Address | string | undefined | null,
 ): number | undefined {
-	const totals = computePositionYieldTotals(positions);
+	const totals = computePositionYieldTotals(positions, viewer);
 	if (!totals) return undefined;
 	if (totals.totalEquityUsd <= 0) return 0;
 	return totals.totalNetYield / totals.totalEquityUsd;
@@ -350,8 +357,9 @@ export function computePositionsRoe(
  */
 export function computePositionsNetApyBreakdown(
 	positions: Iterable<AccountYieldPosition>,
+	viewer: Address | string | undefined | null,
 ): YieldApyBreakdown | undefined {
-	const totals = computePositionYieldTotals(positions);
+	const totals = computePositionYieldTotals(positions, viewer);
 	if (!totals) return undefined;
 	if (totals.totalSupplyUsd === 0) return zeroYieldApyBreakdown();
 	return divideYieldTotals(totals, totals.totalSupplyUsd);
@@ -362,8 +370,9 @@ export function computePositionsNetApyBreakdown(
  */
 export function computePositionsRoeBreakdown(
 	positions: Iterable<AccountYieldPosition>,
+	viewer: Address | string | undefined | null,
 ): YieldApyBreakdown | undefined {
-	const totals = computePositionYieldTotals(positions);
+	const totals = computePositionYieldTotals(positions, viewer);
 	if (!totals) return undefined;
 	if (totals.totalEquityUsd <= 0) return zeroYieldApyBreakdown();
 	return divideYieldTotals(totals, totals.totalEquityUsd);
@@ -375,6 +384,7 @@ export function computePositionsRoeBreakdown(
  */
 export function computeSupplyApyBreakdown(
 	vault: IHasVaultAddress | undefined,
+	viewer: Address | string | undefined | null,
 ): YieldApyBreakdown | undefined {
 	if (!vault) return undefined;
 
@@ -383,7 +393,7 @@ export function computeSupplyApyBreakdown(
 		lending,
 		getVaultIntrinsicApy(vault),
 	);
-	const rewards = getVaultRewardApr(vault, "LEND");
+	const rewards = getVaultRewardApr(vault, "LEND", viewer);
 
 	return {
 		lending,
@@ -544,6 +554,7 @@ export interface AccountYieldPosition {
 
 function computeAccountYieldTotals(
 	account: IAccount<IHasVaultAddress>,
+	viewer: Address | string | undefined | null,
 ): AccountYieldTotals | undefined {
 	function* positions(): Iterable<AccountYieldPosition> {
 		for (const subAccount of Object.values(account.subAccounts ?? {})) {
@@ -552,11 +563,12 @@ function computeAccountYieldTotals(
 		}
 	}
 
-	return computePositionYieldTotals(positions());
+	return computePositionYieldTotals(positions(), viewer);
 }
 
 function computePositionYieldTotals(
 	positions: Iterable<AccountYieldPosition>,
+	viewer: Address | string | undefined | null,
 ): AccountYieldTotals | undefined {
 	let totalNetYield = 0;
 	let totalLendingYield = 0;
@@ -582,7 +594,7 @@ function computePositionYieldTotals(
 				getVaultIntrinsicApy(vault),
 			);
 			const supplyApy = baseSupplyApy + intrinsicSupplyApy;
-			const supplyRewardApy = getVaultRewardApr(vault, "LEND");
+			const supplyRewardApy = getVaultRewardApr(vault, "LEND", viewer);
 
 			totalNetYield += supplyUsd * (supplyApy + supplyRewardApy);
 			totalLendingYield += supplyUsd * baseSupplyApy;
@@ -603,7 +615,7 @@ function computePositionYieldTotals(
 				getVaultIntrinsicApy(vault),
 			);
 			const borrowApy = baseBorrowApy + intrinsicBorrowApy;
-			const borrowRewardApy = getVaultRewardApr(vault, "BORROW");
+			const borrowRewardApy = getVaultRewardApr(vault, "BORROW", viewer);
 
 			totalNetYield -= borrowUsd * (borrowApy - borrowRewardApy);
 			totalBorrowingYield += borrowUsd * baseBorrowApy;
@@ -701,11 +713,21 @@ function getIntrinsicApyContribution(
 	return (1 + baseApy / 100) * intrinsicApy;
 }
 
-/** Sum reward APRs for a given action as percentage points from vault campaigns. */
-function getVaultRewardApr(vault: any, action: string): number {
-	if (!vault.rewards?.campaigns) return 0;
+/**
+ * Sum reward APRs (percentage points) for a given action from vault campaigns
+ * eligible to the supplied viewer.
+ *
+ * Uses `vault.rewards.getActiveCampaigns(viewer)` so whitelist/blacklist
+ * filtering is applied consistently with the rest of the SDK.
+ */
+function getVaultRewardApr(
+	vault: any,
+	action: string,
+	viewer: Address | string | undefined | null,
+): number {
+	if (!vault.rewards?.getActiveCampaigns) return 0;
 	let total = 0;
-	for (const c of vault.rewards.campaigns) {
+	for (const c of vault.rewards.getActiveCampaigns({ viewer })) {
 		if (c.action === action && typeof c.apr === "number") {
 			total += c.apr * 100;
 		}

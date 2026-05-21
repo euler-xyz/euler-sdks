@@ -12,8 +12,8 @@ import type {
 	RewardSource,
 	UserReward,
 	UserRewardToken,
-	VaultRewardInfo,
 } from "../../rewardsServiceTypes.js";
+import { VaultRewardInfo } from "../../vaultRewardInfo.js";
 import type {
 	RewardsV3AdapterConfig,
 	V3ListEnvelope,
@@ -302,7 +302,7 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 		const key = vaultAddress.toLowerCase();
 		let info = map.get(key);
 		if (!info) {
-			info = { totalRewardsApr: 0, campaigns: [] };
+			info = new VaultRewardInfo({ campaigns: [] });
 			map.set(key, info);
 		}
 
@@ -314,7 +314,6 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			if (exists) return;
 
 			info!.campaigns.push(campaign);
-			info!.totalRewardsApr += campaign.apr;
 		};
 
 		if (Array.isArray(row.campaigns) && row.campaigns.length > 0) {

@@ -407,8 +407,8 @@ export function BorrowPairPage() {
     return accountData.getSubAccount(targetSubAccount);
   }, [accountData, targetSubAccount]);
 
-  const projectedRoe = previewSubAccount?.roe;
-  const currentRoe = currentSubAccount?.roe;
+  const projectedRoe = previewSubAccount?.getRoe({ viewer: accountData?.owner });
+  const currentRoe = currentSubAccount?.getRoe({ viewer: accountData?.owner });
 
   const previewPositionWithLiquidity = useMemo(() => {
     if (!previewSubAccount) return undefined;

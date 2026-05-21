@@ -126,7 +126,9 @@ function aggregateYieldBreakdown(
 
 function hasPortfolioActivity(result: AccountByChainResult): boolean {
   if ((result.account?.userRewards?.length ?? 0) > 0) return true;
-  return (result.portfolio?.positions.length ?? 0) > 0;
+  const portfolio = result.portfolio;
+  if (!portfolio) return false;
+  return portfolio.positions.length > 0;
 }
 
 function hasAccountActivity(result: AccountByChainResult): boolean {
@@ -205,15 +207,18 @@ export function PortfolioPage() {
       const suppliedValue = portfolio.totalSuppliedValueUsd ?? 0;
       const borrowedValue = portfolio.totalBorrowedValueUsd ?? 0;
       const positionEquity = suppliedValue - borrowedValue;
+      const viewer = portfolio.account.owner;
+      const portfolioNetApy = portfolio.getNetApy({ viewer });
+      const portfolioRoe = portfolio.getRoe({ viewer });
       const netApyYield =
-        portfolio.netApy === undefined ? undefined : suppliedValue * portfolio.netApy;
+        portfolioNetApy === undefined ? undefined : suppliedValue * portfolioNetApy;
 
       if (netApyYield !== undefined) {
         netYield = (netYield ?? 0) + netApyYield;
         continue;
       }
-      if (portfolio.roe !== undefined && positionEquity > 0) {
-        netYield = (netYield ?? 0) + positionEquity * portfolio.roe;
+      if (portfolioRoe !== undefined && positionEquity > 0) {
+        netYield = (netYield ?? 0) + positionEquity * portfolioRoe;
       }
     }
 
@@ -222,7 +227,9 @@ export function PortfolioPage() {
       roe: netYield === undefined || equity <= 0 ? undefined : netYield / equity,
       apyBreakdown: aggregateYieldBreakdown(
         results.map((result) => ({
-          breakdown: result.portfolio?.apyBreakdown,
+          breakdown: result.portfolio?.getNetApyBreakdown({
+            viewer: result.portfolio.account.owner,
+          }),
           weight: result.portfolio?.totalSuppliedValueUsd ?? 0,
         }))
       ),
@@ -232,7 +239,7 @@ export function PortfolioPage() {
           const suppliedValue = portfolio?.totalSuppliedValueUsd ?? 0;
           const borrowedValue = portfolio?.totalBorrowedValueUsd ?? 0;
           return {
-            breakdown: portfolio?.roeBreakdown,
+            breakdown: portfolio?.getRoeBreakdown({ viewer: portfolio.account.owner }),
             weight: Math.max(suppliedValue - borrowedValue, 0),
           };
         })
@@ -566,11 +573,13 @@ function ChainPortfolioView({
   const portfolio = result.portfolio;
   if (!portfolio) return null;
 
+  const viewer = portfolio.account.owner;
+  const savings = portfolio.savings;
   const borrowPositions = [...portfolio.borrows].sort(sortBorrowPositions);
-  const managedSavings = portfolio.savings
+  const managedSavings = savings
     .filter((saving) => isManagedSavings(saving))
     .sort(sortSavingsPositions);
-  const directSavings = portfolio.savings
+  const directSavings = savings
     .filter((saving) => !isManagedSavings(saving))
     .sort(sortSavingsPositions);
 
@@ -583,21 +592,21 @@ function ChainPortfolioView({
           </h3>
           <div className="portfolio-chain-subtitle">
             {borrowPositions.length} borrow position{borrowPositions.length === 1 ? "" : "s"} /{" "}
-            {portfolio.savings.length} saving{portfolio.savings.length === 1 ? "" : "s"}
+            {savings.length} saving{savings.length === 1 ? "" : "s"}
           </div>
         </div>
         <RawEntityDialog title={`Raw Portfolio Entity (${chainName})`} entity={portfolio} />
       </div>
 
       <PortfolioOverviewCards
-        netApy={portfolio.netApy}
-        roe={portfolio.roe}
+        netApy={portfolio.getNetApy({ viewer })}
+        roe={portfolio.getRoe({ viewer })}
         supplied={portfolio.totalSuppliedValueUsd}
         borrowed={portfolio.totalBorrowedValueUsd}
         nav={portfolio.netAssetValueUsd}
         rewards={portfolio.totalRewardsValueUsd}
-        apyBreakdown={portfolio.apyBreakdown}
-        roeBreakdown={portfolio.roeBreakdown}
+        apyBreakdown={portfolio.getNetApyBreakdown({ viewer })}
+        roeBreakdown={portfolio.getRoeBreakdown({ viewer })}
       />
 
       <PortfolioSection
@@ -696,6 +705,9 @@ function BorrowPositionCard({
     position.collaterals.length > 1
       ? `${vaultAssetSymbol(collateralVault)} & others`
       : vaultAssetSymbol(collateralVault);
+  // Filter whitelist/blacklist rewards by the owner who actually accrues them.
+  const apyBreakdown = position.getApyBreakdown({ viewer: owner });
+  const roeBreakdown = position.getRoeBreakdown({ viewer: owner });
 
   return (
     <article className="portfolio-position-card">
@@ -735,8 +747,8 @@ function BorrowPositionCard({
           label="Net APY"
           value={
             <YieldBreakdownValue
-              value={position.netApy}
-              breakdown={position.apyBreakdown}
+              value={apyBreakdown?.total}
+              breakdown={apyBreakdown}
               title="Net APY Breakdown"
             />
           }
@@ -745,8 +757,8 @@ function BorrowPositionCard({
           label="ROE"
           value={
             <YieldBreakdownValue
-              value={position.roe}
-              breakdown={position.roeBreakdown}
+              value={roeBreakdown?.total}
+              breakdown={roeBreakdown}
               title="ROE Breakdown"
             />
           }
@@ -779,6 +791,7 @@ function SavingsPositionCard({
   position: PortfolioSavingsPosition<VaultEntity>;
 }) {
   const vault = position.vault ?? position.position.vault;
+  const apyBreakdown = position.getApyBreakdown({ viewer: owner });
 
   return (
     <article className="portfolio-position-card">
@@ -802,8 +815,8 @@ function SavingsPositionCard({
           label="APY"
           value={
             <YieldBreakdownValue
-              value={position.apy}
-              breakdown={position.apyBreakdown}
+              value={apyBreakdown?.total}
+              breakdown={apyBreakdown}
               title="APY Breakdown"
             />
           }
@@ -1131,11 +1144,15 @@ function ChainAccountSection({
         </div>
         <div className="detail-item">
           <div className="label">Net APY</div>
-          <div className="value">{formatOptionalPercent(portfolio?.netApy)}</div>
+          <div className="value">
+            {formatOptionalPercent(portfolio?.getNetApy({ viewer: account.owner }))}
+          </div>
         </div>
         <div className="detail-item">
           <div className="label">ROE</div>
-          <div className="value">{formatOptionalPercent(portfolio?.roe)}</div>
+          <div className="value">
+            {formatOptionalPercent(portfolio?.getRoe({ viewer: account.owner }))}
+          </div>
         </div>
         <div className="detail-item">
           <div className="label">Rewards (USD)</div>
@@ -1316,7 +1333,7 @@ function ChainAccountSection({
               </div>
               <div className="detail-item">
                 <div className="label">ROE</div>
-                <div className="value"><RoeCell roe={sub.roe} /></div>
+                <div className="value"><RoeCell roe={sub.getRoe({ viewer: account.owner })} /></div>
               </div>
             </div>
 
