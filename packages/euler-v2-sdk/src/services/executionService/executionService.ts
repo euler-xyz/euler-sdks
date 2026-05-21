@@ -1875,6 +1875,15 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				}
 
 				if (usePermit2) {
+					// Skip Permit2 entirely when an existing direct token→vault
+					// allowance already covers the requirement. Avoids prompting
+					// the user for a Permit2 approve+signature when a prior
+					// direct ERC-20 approval is sufficient.
+					if (allowances.assetForVault >= amount) {
+						approval.resolved = [];
+						continue;
+					}
+
 					// Check permit2 allowances
 					const assetForPermit2 = allowances.assetForPermit2;
 					const assetForVaultInPermit2 = allowances.assetForVaultInPermit2;

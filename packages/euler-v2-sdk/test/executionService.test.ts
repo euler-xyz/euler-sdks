@@ -1550,6 +1550,50 @@ test("resolveRequiredApprovalsWithWallet defaults to Lite Permit2 approval sizin
 	});
 });
 
+test("resolveRequiredApprovalsWithWallet skips Permit2 when direct vault allowance already covers amount", () => {
+	const service = createExecutionService();
+	const plan = [
+		{
+			type: "requiredApproval",
+			token: TOKEN_IN,
+			owner: ACCOUNT,
+			spender: VAULT_IN,
+			amount: AMOUNT,
+		},
+	] as const;
+	const wallet = {
+		chainId: 1,
+		account: ACCOUNT,
+		getAsset: () => ({
+			account: ACCOUNT,
+			asset: TOKEN_IN,
+			balance: AMOUNT,
+			allowances: {
+				[VAULT_IN]: {
+					// Existing direct ERC-20 allowance fully covers the borrow.
+					assetForVault: AMOUNT,
+					assetForPermit2: 0n,
+					assetForVaultInPermit2: 0n,
+					permit2ExpirationTime: 0,
+					permit2Nonce: 0,
+				},
+			},
+		}),
+	} as never;
+
+	const resolved = service.resolveRequiredApprovalsWithWallet({
+		plan: [...plan],
+		chainId: 1,
+		wallet,
+	});
+	const approval = resolved[0];
+	assert.equal(approval?.type, "requiredApproval");
+	if (approval?.type !== "requiredApproval") {
+		throw new Error("expected requiredApproval");
+	}
+	assert.deepEqual(approval.resolved, []);
+});
+
 test("getPermit2TypedData defaults Permit2 expiration to the signature window", () => {
 	const service = createExecutionService();
 	const before = BigInt(Math.floor(Date.now() / 1000)) + 60n * 60n;
