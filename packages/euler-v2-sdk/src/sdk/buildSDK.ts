@@ -1412,8 +1412,11 @@ export async function buildEulerSDK<
 	});
 
 	if (executionService instanceof ExecutionService) {
-		executionService.setPluginProcessor((plan, account, chainId) =>
-			sdk.processPlugins(plan, account, chainId),
+		executionService.setPluginProcessor((plan, account, chainId, prefetch) =>
+			sdk.processPlugins(plan, account, chainId, prefetch),
+		);
+		executionService.setPluginPrefetcher((plan, account, chainId) =>
+			sdk.prefetchPluginData(plan, account, chainId),
 		);
 	}
 

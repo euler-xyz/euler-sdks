@@ -9,12 +9,50 @@ import type { TransactionPlan } from "../../services/executionService/executionS
 import { getBalanceOverrides } from "./balanceOverrides.js";
 import { getApprovalOverrides } from "./approvalOverrides.js";
 import { mergeStateOverrides } from "./mergeStateOverrides.js";
+import type { SlotHints } from "./slotHints.js";
 
 export type DeriveStateOverridesOptions = {
 	/** Override the native (ETH) balance. Defaults to 1000 ETH. Set to 0n to skip. */
 	nativeBalance?: bigint;
 	/** Permit2 contract address. Required for approval overrides. */
 	permit2Address: Address;
+	/**
+	 * Skip ERC20 balance overrides entirely. Use when the caller has already
+	 * validated that the account holds sufficient funds (e.g. UI form validation).
+	 * No `balanceOf` reads, no slot probing — only allowance overrides + native
+	 * balance + Permit2 deterministic overrides are emitted.
+	 */
+	noBalanceOverride?: boolean;
+	/**
+	 * Skip ERC20 allowance overrides entirely (the Permit2 deterministic
+	 * overrides are still emitted because they cost no RPC). Use when the
+	 * caller knows the account has already approved the relevant spenders.
+	 */
+	noAllowanceOverride?: boolean;
+	/**
+	 * Caller-supplied wallet snapshot. Lets the SDK skip per-call `balanceOf`
+	 * and `allowance` reads when the supplied values already cover the
+	 * requirement.
+	 *
+	 *  - `balances[token]`: when ≥ the plan's required amount, no override
+	 *    is emitted and no `balanceOf` RPC fires.
+	 *  - `allowances[token:spender]`: when `maxUint256`, no override is emitted
+	 *    and no `allowance` RPC fires.
+	 */
+	wallet?: {
+		balances?: Record<Address, bigint>;
+		allowances?: Record<`${Address}:${Address}`, bigint>;
+	};
+	/**
+	 * Caller-supplied storage slot hints. When the `balanceSlotIndex` or
+	 * `allowanceSlotIndex` is present for a token, the SDK computes the slot
+	 * cryptographically and bypasses access-list discovery. Missing entries
+	 * fall through to the SDK's own probing + final access-list fallback.
+	 *
+	 * Pre-fetch with `fetchErc20SlotHints` (exported from this module) to
+	 * amortise discovery across many simulate/estimate calls.
+	 */
+	slotHints?: SlotHints;
 };
 
 /**
@@ -97,14 +135,31 @@ export async function deriveStateOverrides(
 	account: Address,
 	options: DeriveStateOverridesOptions,
 ): Promise<StateOverride> {
-	const { nativeBalance = parseEther("1000"), permit2Address } = options;
+	const {
+		nativeBalance = parseEther("1000"),
+		permit2Address,
+		noBalanceOverride = false,
+		noAllowanceOverride = false,
+		wallet,
+		slotHints,
+	} = options;
 
-	const balanceTokens = extractBalanceRequirements(plan, account);
+	const balanceTokens = noBalanceOverride
+		? []
+		: extractBalanceRequirements(plan, account);
 	const approvalPairs = extractApprovalRequirements(plan, account);
 
 	const [balanceOverrides, approvalOverrides] = await Promise.all([
-		getBalanceOverrides(client, account, balanceTokens),
-		getApprovalOverrides(client, account, approvalPairs, permit2Address),
+		getBalanceOverrides(client, account, balanceTokens, {
+			walletBalances: wallet?.balances,
+			slotHints,
+		}),
+		noAllowanceOverride
+			? Promise.resolve([] as StateOverride)
+			: getApprovalOverrides(client, account, approvalPairs, permit2Address, {
+					walletAllowances: wallet?.allowances,
+					slotHints,
+				}),
 	]);
 
 	const allOverrides: StateOverride = [];

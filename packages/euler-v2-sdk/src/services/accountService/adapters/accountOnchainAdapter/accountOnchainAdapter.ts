@@ -18,6 +18,7 @@ import {
 import type {
 	EulerPlugin,
 	PluginBatchItems,
+	PluginPrefetchData,
 } from "../../../../plugins/types.js";
 import {
 	executeBatchSimulation,
@@ -510,6 +511,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 	private async collectReadPrepend(
 		chainId: number,
 		vaults: EVault[],
+		prefetch?: PluginPrefetchData,
 	): Promise<PluginBatchItems | null> {
 		const provider = this.providerService.getProvider(chainId);
 		const allItems: PluginBatchItems = { items: [], totalValue: 0n };
@@ -517,11 +519,14 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		for (const plugin of this.plugins) {
 			if (!plugin.getReadPrepend) continue;
 			try {
-				const result = await plugin.getReadPrepend({
-					chainId,
-					vaults,
-					provider,
-				});
+				const result = await plugin.getReadPrepend(
+					{
+						chainId,
+						vaults,
+						provider,
+					},
+					prefetch,
+				);
 				if (result) {
 					allItems.items.push(...result.items);
 					allItems.totalValue += result.totalValue;

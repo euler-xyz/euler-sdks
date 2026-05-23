@@ -2158,20 +2158,20 @@ test("borrow can source collateral from existing savings shares", () => {
 	assert.deepEqual(borrow.args, [AMOUNT, getAddress(ACCOUNT)]);
 });
 
-test("borrow prepends stale-state cleanup by default", () => {
+test("borrow only cleans incompatible stale controller by default", () => {
 	const service = createExecutionService();
 	const account = {
 		owner: ACCOUNT,
 		chainId: 1,
 		getSubAccount: () => ({
-			enabledControllers: [LIABILITY_VAULT],
+			enabledControllers: [DESTINATION_VAULT],
 			enabledCollaterals: [COLLATERAL_VAULT, DESTINATION_VAULT],
 			positions: [],
 		}),
 		isCollateralEnabled: (_account: string, vault: string) =>
 			vault === COLLATERAL_VAULT,
-		isControllerEnabled: () => true,
-		getCurrentController: () => LIABILITY_VAULT,
+		isControllerEnabled: () => false,
+		getCurrentController: () => DESTINATION_VAULT,
 	} as never;
 
 	const plan = service.planBorrow({
@@ -2189,11 +2189,38 @@ test("borrow prepends stale-state cleanup by default", () => {
 
 	const items = getOnlyEvcBatchItems(plan);
 	assert.deepEqual(items.map(decodeBatchFunctionName), [
-		"disableCollateral",
-		"disableCollateral",
 		"disableController",
-		"enableCollateral",
 		"deposit",
+		"enableController",
+		"borrow",
+	]);
+});
+
+test("borrow preserves existing collaterals when no controller is enabled", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		getSubAccount: () => ({
+			enabledControllers: [],
+			enabledCollaterals: [COLLATERAL_VAULT, DESTINATION_VAULT],
+			positions: [],
+		}),
+		isCollateralEnabled: () => false,
+		isControllerEnabled: () => false,
+		getCurrentController: () => undefined,
+	} as never;
+
+	const plan = service.planBorrow({
+		account,
+		vault: LIABILITY_VAULT,
+		amount: AMOUNT,
+		borrowAccount: RECEIVER,
+		receiver: ACCOUNT,
+	});
+
+	const items = getOnlyEvcBatchItems(plan);
+	assert.deepEqual(items.map(decodeBatchFunctionName), [
 		"enableController",
 		"borrow",
 	]);

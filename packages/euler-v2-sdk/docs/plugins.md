@@ -37,9 +37,15 @@ Each plugin implements the `EulerPlugin` interface and can hook into two points:
 | `getReadPrepend` | Before lens reads (via `batchSimulation`) | Returns batch items that are atomically prepended to the simulated call, injecting state changes (e.g. price updates) without an on-chain transaction. |
 | `processPlan` | Before a transaction plan is simulated, gas-estimated, or executed | Transforms the plan by prepending batch items to relevant `evcBatch` entries (e.g. oracle updates, credential creation). |
 
-`processPlan` receives `(plan, account, chainId, sdk)`, where `account` is `AddressOrAccount` (`Address | Account`) and `sdk` is the full SDK instance. This lets plugins use any SDK service without a plugin-specific context object.
+`processPlan` receives `(plan, account, chainId, sdk, prefetch?)`, where `account` is `AddressOrAccount` (`Address | Account`), `sdk` is the full SDK instance, and `prefetch` is an optional per-plugin payload that lets the plugin skip its own network I/O. This lets plugins use any SDK service without a plugin-specific context object.
 
 Plugins execute in array order. Each receives the plan as modified by the previous plugin. Errors in individual plugins are caught gracefully &mdash; the operation proceeds without that plugin's enrichment.
+
+### Prefetch for fan-out flows
+
+When the same form builds many plans per user interaction (swap-quote sweeps, leverage explorers), resolve the prefetch payload once via `executionService.prefetchPluginDataForPlan(plan, account, chainId)` and pass the returned `PluginPrefetchData` into every subsequent `prepare* / simulate* / estimateGas* / execute*` call via the `prefetch` option. The plugin pipeline reads its slice from the payload instead of pulling Hermes / reading Keyring on every call. See [Execution Service](./execution-service.md#prefetching-plugin-data).
+
+Individual plugins can implement `prefetchForPlan(plan, account, chainId, sdk)` to populate their slice of the payload. The default no-op is fine — only network-bound plugins (Pyth, Keyring) benefit.
 
 ## Available Plugins
 

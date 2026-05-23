@@ -16,7 +16,7 @@ import type {
 	AddressOrAccount,
 	IHasVaultAddress,
 } from "../../entities/Account.js";
-import type { EulerPlugin } from "../../plugins/types.js";
+import type { EulerPlugin, PluginPrefetchData } from "../../plugins/types.js";
 import { resolveBorrowCollateralPositions } from "../../utils/accountPositionClassification.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
 import type { IEulerLabelsService } from "../eulerLabelsService/index.js";
@@ -356,6 +356,11 @@ type CleanupBatchItems = {
 	disabledCollaterals: Set<Address>;
 };
 
+type CleanupBatchItemOptions = {
+	skipCollateralCleanup?: boolean;
+	controllerToKeep?: Address;
+};
+
 function hasSuppliedPosition(
 	position: Pick<AccountPosition, "assets" | "shares">,
 ): boolean {
@@ -523,7 +528,7 @@ export interface IExecutionService<
 		chainId: number,
 		account: AddressOrAccount,
 		transactionPlan: TransactionPlan,
-		options?: SimulateBatchOptions,
+		options?: SimulateBatchOptions & { prefetch?: PluginPrefetchData },
 	): Promise<SimulateBatchResult<TVaultEntity>>;
 	simulatePreparedTransactionPlan(
 		prepared: TransactionPlanPrepared,
@@ -533,6 +538,20 @@ export interface IExecutionService<
 		chainId: number,
 		account: AddressOrAccount,
 		transactionPlan: TransactionPlan,
+		options?: EstimateGasForTransactionPlanOptions & {
+			prefetch?: PluginPrefetchData;
+		},
+	): Promise<bigint>;
+	/**
+	 * Estimate gas for a {@link TransactionPlanPrepared} envelope. Plugins and
+	 * approval resolution have already run via {@link prepareTransactionPlan},
+	 * so this skips the plugin pipeline (TOS / Keyring / Pyth) and uses the
+	 * envelope's chainId/account context directly. Use this from quote-sweep
+	 * gas estimation when an envelope is already in hand to avoid re-running
+	 * plugins per quote.
+	 */
+	estimateGasForPreparedTransactionPlan(
+		prepared: TransactionPlanPrepared,
 		options?: EstimateGasForTransactionPlanOptions,
 	): Promise<bigint>;
 
@@ -553,7 +572,30 @@ export interface IExecutionService<
 		account: AddressOrAccount;
 		usePermit2?: boolean;
 		unlimitedApproval?: boolean;
+		prefetch?: PluginPrefetchData;
 	}): Promise<TransactionPlanPrepared>;
+	/**
+	 * Run each plugin's processPlan in registration order. Lower-level than
+	 * prepare/simulate/estimate — callers usually want those. Exposed for
+	 * advanced flows that want to materialise the plugin-processed plan once
+	 * and feed it into multiple downstream calls.
+	 */
+	processPlanPlugins(
+		plan: TransactionPlan,
+		account: AddressOrAccount,
+		chainId: number,
+		prefetch?: PluginPrefetchData,
+	): Promise<TransactionPlan>;
+	/**
+	 * Resolve each plugin's prefetch payload for a given plan once. Pass the
+	 * returned record to subsequent prepare/simulate/estimate/execute calls so
+	 * plugins skip their own network I/O on each invocation.
+	 */
+	prefetchPluginDataForPlan(
+		plan: TransactionPlan,
+		account: AddressOrAccount,
+		chainId: number,
+	): Promise<PluginPrefetchData>;
 	executeTransactionPlan(
 		args: ExecuteTransactionPlanArgs,
 	): Promise<TransactionPlanExecutionResult>;
@@ -684,7 +726,14 @@ export type ProcessPlanPlugins = (
 	plan: TransactionPlan,
 	account: AddressOrAccount,
 	chainId: number,
+	prefetch?: PluginPrefetchData,
 ) => Promise<TransactionPlan>;
+
+export type PrefetchPlanPlugins = (
+	plan: TransactionPlan,
+	account: AddressOrAccount,
+	chainId: number,
+) => Promise<PluginPrefetchData>;
 
 const WAD = 10n ** 18n;
 // TODO explain how this service is coupled to the concrete abis of ERC4626, permit2 and EVK.
@@ -701,6 +750,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	private intrinsicApyService?: IIntrinsicApyService;
 	private eulerLabelsService?: IEulerLabelsService;
 	private processPlugins?: ProcessPlanPlugins;
+	private prefetchPlugins?: PrefetchPlanPlugins;
 
 	constructor(
 		private deploymentService: IDeploymentService,
@@ -757,6 +807,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		this.processPlugins = processPlugins;
 	}
 
+	setPluginPrefetcher(prefetchPlugins: PrefetchPlanPlugins): void {
+		this.prefetchPlugins = prefetchPlugins;
+	}
+
 	/** Derive storage overrides needed to simulate the plan against the current account state. */
 	async deriveStateOverrides(
 		chainId: number,
@@ -779,13 +833,14 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		chainId: number,
 		account: AddressOrAccount,
 		transactionPlan: TransactionPlan,
-		options?: SimulateBatchOptions,
+		options?: SimulateBatchOptions & { prefetch?: PluginPrefetchData },
 	): Promise<SimulateBatchResult<TVaultEntity>> {
 		assertNoCowSwapPlanItems(transactionPlan, "simulateTransactionPlan");
 		const processedPlan = await this.processPlanPlugins(
 			transactionPlan,
 			account,
 			chainId,
+			options?.prefetch,
 		);
 		const owner = this.getAccountOwner(account);
 		return simulateTransactionPlan(
@@ -830,6 +885,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		account: AddressOrAccount;
 		usePermit2?: boolean;
 		unlimitedApproval?: boolean;
+		prefetch?: PluginPrefetchData;
 	}): Promise<TransactionPlanPrepared> {
 		const {
 			plan,
@@ -837,12 +893,14 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			account,
 			usePermit2 = true,
 			unlimitedApproval = false,
+			prefetch,
 		} = args;
 		assertNoCowSwapPlanItems(plan, "prepareTransactionPlan");
 		const processedPlan = await this.processPlanPlugins(
 			plan,
 			account,
 			chainId,
+			prefetch,
 		);
 		const owner = this.getAccountOwner(account);
 		const resolvedPlan = await this.resolveRequiredApprovals({
@@ -867,13 +925,16 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		chainId: number,
 		account: AddressOrAccount,
 		transactionPlan: TransactionPlan,
-		options?: EstimateGasForTransactionPlanOptions,
+		options?: EstimateGasForTransactionPlanOptions & {
+			prefetch?: PluginPrefetchData;
+		},
 	): Promise<bigint> {
 		assertNoCowSwapPlanItems(transactionPlan, "estimateGasForTransactionPlan");
 		const processedPlan = await this.processPlanPlugins(
 			transactionPlan,
 			account,
 			chainId,
+			options?.prefetch,
 		);
 		const owner = this.getAccountOwner(account);
 		return estimateGasForTransactionPlan(
@@ -881,6 +942,33 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			chainId,
 			owner,
 			processedPlan,
+			options,
+		);
+	}
+
+	/**
+	 * Estimate gas for a {@link TransactionPlanPrepared} envelope. Plugins and
+	 * approval resolution were already applied by {@link prepareTransactionPlan},
+	 * so this skips the plugin pipeline (TOS / Keyring / Pyth) entirely — the
+	 * plan's batch items are used as-is. Net effect: per-call gas estimate
+	 * drops from "plugin pipeline + estimate" to just the estimate, mirroring
+	 * the simulatePreparedTransactionPlan / executePreparedTransactionPlan
+	 * pattern.
+	 */
+	async estimateGasForPreparedTransactionPlan(
+		prepared: TransactionPlanPrepared,
+		options?: EstimateGasForTransactionPlanOptions,
+	): Promise<bigint> {
+		assertNoCowSwapPlanItems(
+			prepared.plan,
+			"estimateGasForPreparedTransactionPlan",
+		);
+		const owner = this.getAccountOwner(prepared.account);
+		return estimateGasForTransactionPlan(
+			this.getSimulationContext(),
+			prepared.chainId,
+			owner,
+			prepared.plan,
 			options,
 		);
 	}
@@ -901,6 +989,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			args.plan,
 			args.account,
 			args.chainId,
+			args.prefetch,
 		);
 		assertNoCowSwapPlanItems(processedPlan, "executeTransactionPlan");
 
@@ -963,6 +1052,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				args.plan,
 				args.account,
 				args.chainId,
+				args.prefetch,
 			),
 			deploymentService: this.deploymentService,
 			providerService,
@@ -983,14 +1073,40 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		};
 	}
 
-	private async processPlanPlugins(
+	/**
+	 * Run each plugin's processPlan in registration order. Plugins receive the
+	 * plan as modified by previous plugins; errors are caught per-plugin so a
+	 * single failing plugin can't poison the pipeline.
+	 *
+	 * `prefetch` carries form-level data each plugin pre-resolved via
+	 * {@link prefetchPluginDataForPlan} — passing it lets the plugin skip its
+	 * own network I/O (Hermes pulls, keyring hook reads, etc.).
+	 */
+	async processPlanPlugins(
 		plan: TransactionPlan,
 		account: AddressOrAccount,
 		chainId: number,
+		prefetch?: PluginPrefetchData,
 	): Promise<TransactionPlan> {
 		return this.processPlugins
-			? this.processPlugins(plan, account, chainId)
+			? this.processPlugins(plan, account, chainId, prefetch)
 			: plan;
+	}
+
+	/**
+	 * Resolve each plugin's prefetch payload for a given plan once, so per-quote
+	 * prepare/estimate/simulate calls can reuse the data instead of refetching.
+	 * Returns an open record keyed by plugin name — known SDK slots are typed
+	 * (`pyth`, `keyring`); external plugins populate their own keys.
+	 */
+	async prefetchPluginDataForPlan(
+		plan: TransactionPlan,
+		account: AddressOrAccount,
+		chainId: number,
+	): Promise<PluginPrefetchData> {
+		return this.prefetchPlugins
+			? this.prefetchPlugins(plan, account, chainId)
+			: {};
 	}
 
 	private getAccountOwner(account: AddressOrAccount): Address {
@@ -2023,7 +2139,12 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	private buildCleanupBatchItems(
 		account: Account<IHasVaultAddress>,
 		subAccount: Address,
+		options: CleanupBatchItemOptions = {},
 	): CleanupBatchItems {
+		const { skipCollateralCleanup = false, controllerToKeep } = options;
+		const normalizedControllerToKeep = controllerToKeep
+			? getAddress(controllerToKeep)
+			: undefined;
 		const empty = (): CleanupBatchItems => ({
 			items: [],
 			disabledControllers: new Set<Address>(),
@@ -2042,6 +2163,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const disabledControllers = new Set<Address>();
 		const disabledCollaterals = new Set<Address>();
 		const disableCollateral = (collateral: Address) => {
+			if (skipCollateralCleanup) return;
 			const normalizedCollateral = getAddress(collateral);
 			disabledCollaterals.add(normalizedCollateral);
 			items.push(
@@ -2057,6 +2179,12 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				disableCollateral(collateral);
 			}
 		};
+		const disableController = (controller: Address) => {
+			const normalizedController = getAddress(controller);
+			if (normalizedController === normalizedControllerToKeep) return;
+			disabledControllers.add(normalizedController);
+			items.push(this.encodeDisableController(normalizedController, subAccount));
+		};
 
 		if (controllers.length === 0) {
 			disableAllCollaterals();
@@ -2070,9 +2198,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		if (!hasActiveBorrow) {
 			disableAllCollaterals();
 			for (const controller of controllers) {
-				const normalizedController = getAddress(controller);
-				disabledControllers.add(normalizedController);
-				items.push(this.encodeDisableController(normalizedController, subAccount));
+				disableController(controller);
 			}
 			return { items, disabledControllers, disabledCollaterals };
 		}
@@ -2359,7 +2485,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 					disabledControllers: new Set<Address>(),
 					disabledCollaterals: new Set<Address>(),
 				}
-			: this.buildCleanupBatchItems(account, borrowAccount);
+			: this.buildCleanupBatchItems(account, borrowAccount, {
+					skipCollateralCleanup: true,
+					controllerToKeep: vault,
+				});
 		const savingsCollateral = isSavingsCollateral(collateral)
 			? collateral
 			: undefined;

@@ -21,6 +21,7 @@ import {
 import { getApprovalOverrides } from "../../utils/stateOverrides/approvalOverrides.js";
 import { getBalanceOverrides } from "../../utils/stateOverrides/balanceOverrides.js";
 import { mergeStateOverrides } from "../../utils/stateOverrides/mergeStateOverrides.js";
+import type { SlotHints } from "../../utils/stateOverrides/slotHints.js";
 import { isSubAccount } from "../../utils/subAccounts.js";
 import { VaultType } from "../../utils/types.js";
 import type { AccountFetchOptions } from "../accountService/accountService.js";
@@ -114,6 +115,7 @@ export interface SimulateBatchResult<
 export type SimulateBatchOptions = {
 	/** When true, fetches state overrides internally from the transaction plan before simulation. */
 	stateOverrides?: boolean;
+	stateOverrideOptions?: SimulationStateOverrideOptions;
 	vaultFetchOptions?: VaultFetchOptions;
 	accountFetchOptions?: AccountFetchOptions;
 };
@@ -127,6 +129,33 @@ export type EstimateGasForTransactionPlanOptions = {
 export type SimulationStateOverrideOptions = {
 	/** Override the native (ETH) balance. Defaults to 1000 ETH. Set to 0n to skip. */
 	nativeBalance?: bigint;
+	/**
+	 * Skip ERC20 balance overrides entirely. Use when the caller has already
+	 * validated that the account holds sufficient funds (e.g. UI form
+	 * validation). Drops per-call `balanceOf` and balance-slot discovery RPCs.
+	 */
+	noBalanceOverride?: boolean;
+	/**
+	 * Skip ERC20 allowance overrides. Permit2 storage-slot overrides are
+	 * always emitted (they cost no RPC). Use when the caller knows the
+	 * account has already approved the relevant spenders.
+	 */
+	noAllowanceOverride?: boolean;
+	/**
+	 * Caller-supplied wallet snapshot. Lets the SDK skip per-call balance/
+	 * allowance RPCs when the supplied values already cover the requirement.
+	 */
+	wallet?: {
+		balances?: Record<Address, bigint>;
+		allowances?: Record<`${Address}:${Address}`, bigint>;
+	};
+	/**
+	 * Caller-supplied storage-slot hints, owner-/spender-agnostic. When
+	 * present, the SDK derives slots cryptographically and bypasses
+	 * `eth_createAccessList` discovery. Pre-fetch with `fetchErc20SlotHints`
+	 * once per token and pass it on every simulate/estimate call to amortise.
+	 */
+	slotHints?: SlotHints;
 };
 
 type LensMeta =
@@ -160,11 +189,14 @@ export async function deriveStateOverrides(
 
 	const owner = getAddress(account);
 	const nativeBalance = options?.nativeBalance ?? parseEther("1000");
+	const noBalanceOverride = options?.noBalanceOverride ?? false;
+	const noAllowanceOverride = options?.noAllowanceOverride ?? false;
+	const wallet = options?.wallet;
+	const slotHints = options?.slotHints;
 
-	const balanceRequirements = extractBalanceRequirements(
-		transactionPlan,
-		owner,
-	);
+	const balanceRequirements = noBalanceOverride
+		? []
+		: extractBalanceRequirements(transactionPlan, owner);
 	const approvalRequirements = extractApprovalRequirements(
 		transactionPlan,
 		owner,
@@ -176,8 +208,39 @@ export async function deriveStateOverrides(
 	// emit the synthetic native-balance override.
 	if (
 		balanceRequirements.length === 0 &&
-		approvalRequirements.length === 0
+		(approvalRequirements.length === 0 || noAllowanceOverride)
 	) {
+		// Approval requirements with `noAllowanceOverride` still need the
+		// Permit2 deterministic overrides — those cost no RPC.
+		if (approvalRequirements.length > 0 && noAllowanceOverride) {
+			const permit2Address =
+				ctx.deploymentService.getDeployment(chainId).addresses.coreAddrs
+					.permit2;
+			if (!ctx.providerService) {
+				throw new Error(
+					"ExecutionService.deriveStateOverrides requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
+				);
+			}
+			const provider = ctx.providerService.getProvider(chainId);
+			const permit2Only = await getApprovalOverrides(
+				provider,
+				owner,
+				approvalRequirements,
+				permit2Address,
+				{
+					walletAllowances: wallet?.allowances,
+					slotHints,
+				},
+			);
+			const merged: StateOverride = [];
+			if (nativeBalance > 0n)
+				merged.push({ address: owner, balance: nativeBalance });
+			// Drop ERC20 entries; keep only the Permit2 deterministic block.
+			for (const ov of permit2Only) {
+				if (getAddress(ov.address) === getAddress(permit2Address)) merged.push(ov);
+			}
+			return mergeStateOverrides(merged);
+		}
 		return nativeBalance > 0n
 			? mergeStateOverrides([{ address: owner, balance: nativeBalance }])
 			: [];
@@ -194,8 +257,22 @@ export async function deriveStateOverrides(
 	const provider = ctx.providerService.getProvider(chainId);
 
 	const [balanceOverrides, approvalOverrides] = await Promise.all([
-		getBalanceOverrides(provider, owner, balanceRequirements),
-		getApprovalOverrides(provider, owner, approvalRequirements, permit2Address),
+		getBalanceOverrides(provider, owner, balanceRequirements, {
+			walletBalances: wallet?.balances,
+			slotHints,
+		}),
+		noAllowanceOverride
+			? Promise.resolve([] as StateOverride)
+			: getApprovalOverrides(
+					provider,
+					owner,
+					approvalRequirements,
+					permit2Address,
+					{
+						walletAllowances: wallet?.allowances,
+						slotHints,
+					},
+				),
 	]);
 
 	const allOverrides: StateOverride = [];
@@ -227,6 +304,7 @@ export async function simulateTransactionPlan<
 			chainId,
 			owner,
 			transactionPlan,
+			options?.stateOverrideOptions,
 		);
 	}
 

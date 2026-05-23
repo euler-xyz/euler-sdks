@@ -1,8 +1,4 @@
-import type {
-	Account,
-	IHasVaultAddress,
-	IVaultEntity,
-} from "../entities/Account.js";
+import type { IVaultEntity } from "../entities/Account.js";
 import type { IAccountService } from "../services/accountService/index.js";
 import type { IPortfolioService } from "../services/portfolioService/index.js";
 import type { IDeploymentService } from "../services/deploymentService/index.js";
@@ -26,9 +22,9 @@ import type { IIntrinsicApyService } from "../services/intrinsicApyService/index
 import type { IOracleAdapterService } from "../services/oracleAdapterService/index.js";
 import type { IFeeFlowService } from "../services/feeFlowService/index.js";
 import type { IREULLockService } from "../services/reulLockService/index.js";
-import type { EulerPlugin } from "../plugins/types.js";
+import type { EulerPlugin, PluginPrefetchData } from "../plugins/types.js";
 import type { TransactionPlan } from "../services/executionService/executionServiceTypes.js";
-import type { Address } from "viem";
+import type { AddressOrAccount } from "../entities/Account.js";
 
 export interface EulerSDKOptions<
 	TVaultEntity extends IVaultEntity = VaultEntity,
@@ -107,23 +103,72 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 	 * Run all plugins' processPlan methods on a transaction plan.
 	 * Plugins execute in array order; each receives the plan as modified by previous plugins.
 	 * Errors in individual plugins are caught gracefully — the plan continues without that plugin.
+	 *
+	 * `prefetch` carries per-plugin form-level data (Pyth Hermes updates,
+	 * keyring vault gating, …) so the plugin can skip its own network I/O.
 	 */
 	async processPlugins(
 		plan: TransactionPlan,
-		account: Address | Account<IHasVaultAddress>,
+		account: AddressOrAccount,
 		chainId: number,
+		prefetch?: PluginPrefetchData,
 	): Promise<TransactionPlan> {
 		if (this.plugins.length === 0) return plan;
 
 		for (const plugin of this.plugins) {
 			if (!plugin.processPlan) continue;
 			try {
-				plan = await plugin.processPlan(plan, account, chainId, this);
-			} catch {
+				plan = await plugin.processPlan(plan, account, chainId, this, prefetch);
+			} catch (err) {
+				if (typeof console !== "undefined") {
+					console.warn(
+						`[euler-v2-sdk] plugin "${plugin.name}" processPlan failed`,
+						err,
+					);
+				}
 				// Plugin failed — skip it gracefully, operation proceeds without this plugin's enrichment
 			}
 		}
 
 		return plan;
+	}
+
+	/**
+	 * Resolve each plugin's prefetch payload for a given plan. Returns an open
+	 * record keyed by plugin name; known SDK slots (`pyth`, `keyring`) are
+	 * typed. Run once per form-load so per-quote prepare/estimate/simulate can
+	 * pass the result back via `processPlugins(plan, account, chainId, prefetch)`
+	 * without re-doing the expensive lookups.
+	 */
+	async prefetchPluginData(
+		plan: TransactionPlan,
+		account: AddressOrAccount,
+		chainId: number,
+	): Promise<PluginPrefetchData> {
+		if (this.plugins.length === 0) return {};
+
+		const entries = await Promise.all(
+			this.plugins.map(async (plugin) => {
+				if (!plugin.prefetch) return null;
+				try {
+					const data = await plugin.prefetch(plan, account, chainId, this);
+					return data === undefined ? null : ([plugin.name, data] as const);
+				} catch (err) {
+					if (typeof console !== "undefined") {
+						console.warn(
+							`[euler-v2-sdk] plugin "${plugin.name}" prefetch failed`,
+							err,
+						);
+					}
+					return null;
+				}
+			}),
+		);
+
+		const result: PluginPrefetchData = {};
+		for (const entry of entries) {
+			if (entry) result[entry[0]] = entry[1];
+		}
+		return result;
 	}
 }

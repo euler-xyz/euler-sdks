@@ -9,6 +9,12 @@ import {
 } from "viem";
 import { encodeFunctionData } from "viem/utils";
 import { getAccessedSlots } from "./accessList.js";
+import {
+	computeBalanceSlot,
+	fetchErc20SlotHints,
+	getCachedSlotHints,
+	type SlotHints,
+} from "./slotHints.js";
 import type { StorageSlot } from "./types.js";
 
 type SlotCacheKey = `${number}:${Address}:${Address}`;
@@ -67,21 +73,41 @@ function findIndexOfLargest(arr: bigint[]): number {
 	return maxIndex;
 }
 
+export type GetBalanceOverridesOptions = {
+	/**
+	 * Caller-supplied on-chain balances. When a token's balance here meets the
+	 * required amount, the per-call `balanceOf` RPC is skipped and no override
+	 * is emitted.
+	 */
+	walletBalances?: Record<Address, bigint>;
+	/**
+	 * Caller-supplied slot hints. When `balanceSlotIndex` is present for a
+	 * token, the slot is computed cryptographically; access-list discovery is
+	 * skipped. Missing entries fall back to `fetchErc20SlotHints` (sequential
+	 * probing) before finally falling back to access-list discovery.
+	 */
+	slotHints?: SlotHints;
+};
+
 /**
  * Generate state overrides that give `account` sufficient ERC20 balances.
  *
- * For each token where the on-chain balance is below the requested amount,
- * uses eth_createAccessList to discover the balanceOf storage slot, then builds
- * a stateDiff that sets that slot to the desired value.
+ * Resolution order, per token:
+ *  1. Use caller-supplied wallet balance when sufficient → no work.
+ *  2. Read `balanceOf` on-chain; skip if sufficient.
+ *  3. Use caller-supplied `balanceSlotIndex` → compute slot cryptographically.
+ *  4. Use cached probed slot index (`fetchErc20SlotHints` cache) → same.
+ *  5. Probe sequentially via `fetchErc20SlotHints` (small N `eth_call`s).
+ *  6. Fall back to legacy `eth_createAccessList` discovery + per-slot probe.
  *
- * @param client - viem PublicClient (must support eth_createAccessList and eth_call with state overrides)
- * @param account - address whose balance to override
- * @param tokens - array of [tokenAddress, requiredAmount]
+ * Steps 3–5 are dramatically cheaper than (6) and work for the vast majority
+ * of ERC20 layouts. Step 6 remains as a safety net for exotic packed storage.
  */
 export async function getBalanceOverrides(
 	client: PublicClient,
 	account: Address,
 	tokens: [Address, bigint][],
+	options: GetBalanceOverridesOptions = {},
 ): Promise<StateOverride> {
 	if (tokens.length === 0) return [];
 
@@ -89,10 +115,23 @@ export async function getBalanceOverrides(
 	if (!chainId) throw new Error("Client must have a chain configured");
 
 	const stateOverride: StateOverride = [];
+	const { walletBalances, slotHints } = options;
 
-	// Batch-read current balances
+	// Determine which tokens still need work after applying caller-supplied
+	// balances. Tokens with `walletBalances[token] >= requiredAmount` need
+	// nothing at all.
+	const remaining: [Address, bigint][] = [];
+	for (const [token, requiredAmount] of tokens) {
+		const supplied = walletBalances?.[getAddress(token)];
+		if (supplied !== undefined && supplied >= requiredAmount) continue;
+		remaining.push([token, requiredAmount]);
+	}
+	if (remaining.length === 0) return [];
+
+	// Batch-read current balances for the remaining set (those without a
+	// caller-supplied sufficient balance).
 	const currentBalances = await Promise.all(
-		tokens.map(([token]) =>
+		remaining.map(([token]) =>
 			client
 				.readContract({
 					abi: erc20Abi,
@@ -104,14 +143,28 @@ export async function getBalanceOverrides(
 		),
 	);
 
-	for (const [i, [token, requiredAmount]] of tokens.entries()) {
+	for (const [i, [token, requiredAmount]] of remaining.entries()) {
 		const currentBalance = currentBalances[i] ?? 0n;
 		if (currentBalance >= requiredAmount) continue;
 
-		const cacheKey = `${chainId}:${account}:${token}` as SlotCacheKey;
+		const tokenAddr = getAddress(token);
 		const valueHex = numberToHex(requiredAmount, { size: 32 });
 
-		// Check cache first
+		// Fast path: caller hint → cryptographic slot computation, no RPC.
+		const callerHintIdx = slotHints?.[tokenAddr]?.balanceSlotIndex;
+		if (callerHintIdx !== undefined && !shouldSkipCaching(token)) {
+			const slot = computeBalanceSlot(account, callerHintIdx);
+			stateOverride.push({
+				address: tokenAddr,
+				stateDiff: [{ slot, value: valueHex }],
+			});
+			continue;
+		}
+
+		// Per-account slot cache (legacy: keyed by chainId:owner:token, useful
+		// when discovery was done via access-list against this account
+		// directly).
+		const cacheKey = `${chainId}:${account}:${token}` as SlotCacheKey;
 		const cached = balanceSlotCache.get(cacheKey);
 		if (cached && !shouldSkipCaching(token)) {
 			stateOverride.push({
@@ -121,7 +174,36 @@ export async function getBalanceOverrides(
 			continue;
 		}
 
-		// Use eth_createAccessList to find candidate storage slots
+		// Token-keyed cache from `fetchErc20SlotHints` (owner-agnostic).
+		const probed = getCachedSlotHints(chainId, tokenAddr);
+		if (probed?.balanceSlotIndex !== undefined && !shouldSkipCaching(token)) {
+			const slot = computeBalanceSlot(account, probed.balanceSlotIndex);
+			stateOverride.push({
+				address: tokenAddr,
+				stateDiff: [{ slot, value: valueHex }],
+			});
+			continue;
+		}
+
+		// Sequential probing via fetchErc20SlotHints (cheap, owner-agnostic).
+		try {
+			const fresh = await fetchErc20SlotHints(client, tokenAddr, {
+				skipAllowance: true,
+			});
+			if (fresh.balanceSlotIndex !== undefined && !shouldSkipCaching(token)) {
+				const slot = computeBalanceSlot(account, fresh.balanceSlotIndex);
+				stateOverride.push({
+					address: tokenAddr,
+					stateDiff: [{ slot, value: valueHex }],
+				});
+				continue;
+			}
+		} catch (e) {
+			// fall through to legacy access-list discovery
+		}
+
+		// Legacy fallback: eth_createAccessList-based discovery. Only reached
+		// for exotic storage layouts where the small-integer slot probe failed.
 		try {
 			const accessedSlots = await getAccessedSlots(client, {
 				data: encodeFunctionData({
