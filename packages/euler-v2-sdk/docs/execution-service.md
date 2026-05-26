@@ -75,6 +75,7 @@ After planning, use:
 
 - `resolveRequiredApprovals(...)` or `resolveRequiredApprovalsWithWallet(...)` to resolve approval requirements into concrete `approve` calls or Permit2 signatures metadata.
 - `executeTransactionPlan(...)` to process plugins, resolve any unresolved approvals, request Permit2 signatures, send direct contract calls and EVC batches, and report `onProgress` updates.
+- `prepareTransactionPlan(...)` when the same plan will be both simulated and executed (typical Review-then-Confirm UX). It runs plugins and resolves approvals once and returns a `TransactionPlanPrepared` envelope that carries `plan`, `chainId`, `account`, `usePermit2`, and `unlimitedApproval`. Pass the envelope to `simulatePreparedTransactionPlan(...)` and `executePreparedTransactionPlan(...)` to skip the redundant plugin pass (and, for execute, the approval re-resolution). Use the `isPreparedTransactionPlan` type guard to discriminate envelope vs raw plan.
 
 ## Consuming a Plan
 
@@ -102,6 +103,57 @@ The bundled executor:
 3. Collects/appends Permit2 calls when needed
 4. Executes `contractCall` items directly
 5. Sends the final EVC batch transaction
+
+For flows that simulate-then-execute the same plan (e.g. a Review screen that previews state changes and then submits on Confirm), prepare the plan once and reuse the envelope to avoid re-running plugins (TOS / Keyring / Pyth) and re-fetching wallet allowances on each step:
+
+```typescript
+const prepared = await sdk.executionService.prepareTransactionPlan({
+  plan,
+  chainId,
+  account, // AddressOrAccount
+  usePermit2: true,
+  unlimitedApproval: false,
+})
+
+const simulation = await sdk.executionService.simulatePreparedTransactionPlan(prepared)
+
+const result = await sdk.executionService.executePreparedTransactionPlan({
+  prepared,
+  sendTransaction: walletClient.sendTransaction,
+  signTypedData: walletClient.signTypedData,
+  onProgress,
+})
+```
+
+The original `simulateTransactionPlan` / `executeTransactionPlan` entry points are unchanged — the prepared variants are additive. Do not pass CoW plans to `prepareTransactionPlan`.
+
+### Prefetching plugin data
+
+For flows that build N plans per user interaction — typical for swap-quote sweeps where each provider produces a different swap calldata — the per-plan plugin pass (Pyth Hermes pull, Keyring credential check, etc.) is the dominant cost. `prefetchPluginDataForPlan` resolves each plugin's prefetch payload from one representative plan; subsequent `prepare*` / `simulate*` / `estimateGas*` / `execute*` calls accept that payload via the `prefetch` option and skip plugins' own network I/O.
+
+```typescript
+const prefetch = await sdk.executionService.prefetchPluginDataForPlan(
+  representativePlan,
+  account,  // AddressOrAccount
+  chainId,
+)
+
+// Reuse on every per-quote prepare/estimate in the sweep:
+for (const quote of quotes) {
+  const plan = sdk.executionService.planMultiplyWithSwap({ ...args, swapQuote: quote })
+  const prepared = await sdk.executionService.prepareTransactionPlan({
+    plan, chainId, account, prefetch,
+  })
+  const gas = await sdk.executionService.estimateGasForPreparedTransactionPlan(prepared, {
+    stateOverrides: true,
+    stateOverrideOptions, // see simulations-and-state-overrides.md
+  })
+}
+```
+
+A single Hermes pull + Keyring read per sweep instead of one per quote. The payload is plan-shape-agnostic — any plan whose effective controllers/collaterals match the sweep is a valid representative.
+
+`processPlanPlugins(plan, account, chainId, prefetch?)` is the lower-level building block (used inside `prepareTransactionPlan` / simulate / estimate / execute) when you want to materialise the plugin-processed plan once and feed it into multiple downstream calls.
 
 For CoW plans, use `executeCowSwapTransactionPlan`. It runs ERC20 approvals,
 EVC permit signing, CoW order signing, and order submission. The result includes

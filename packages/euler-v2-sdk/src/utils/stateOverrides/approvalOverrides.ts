@@ -14,6 +14,12 @@ import {
 } from "viem";
 import { encodeFunctionData } from "viem/utils";
 import { getAccessedSlots } from "./accessList.js";
+import {
+	computeAllowanceSlot,
+	fetchErc20SlotHints,
+	getCachedSlotHints,
+	type SlotHints,
+} from "./slotHints.js";
 
 /**
  * Compute Permit2 allowance storage slots for the given approvals.
@@ -63,7 +69,7 @@ export function computePermit2StateDiff(
  * Traces allowance(account, permit2) to find candidate slots, then
  * tests each by overriding and re-reading to verify.
  */
-async function discoverAllowanceSlots(
+async function discoverAllowanceSlotsViaAccessList(
 	client: PublicClient,
 	account: Address,
 	assets: Address[],
@@ -127,28 +133,54 @@ async function discoverAllowanceSlots(
 	return stateOverride;
 }
 
+export type GetApprovalOverridesOptions = {
+	/**
+	 * Caller-supplied on-chain allowances keyed by `${asset}:${spender}`.
+	 * When the supplied allowance is `maxUint256` the approval override for
+	 * that pair is skipped entirely (no override, no RPC).
+	 */
+	walletAllowances?: Record<`${Address}:${Address}`, bigint>;
+	/**
+	 * Caller-supplied slot hints. When `allowanceSlotIndex` is present for an
+	 * asset, the storage slot is computed cryptographically and no probing
+	 * RPC fires.
+	 */
+	slotHints?: SlotHints;
+};
+
+const allowanceKey = (asset: Address, spender: Address) =>
+	`${getAddress(asset)}:${getAddress(spender)}` as `${Address}:${Address}`;
+
 /**
  * Generate state overrides for ERC20 approvals and Permit2 allowances.
  *
- * 1. Computes Permit2 storage slots deterministically (keccak256 mapping layout)
- * 2. Traces actual ERC20 approve() calls to discover approval storage slots
- *
- * @param client - viem PublicClient (must support eth_createAccessList and eth_call with state overrides)
- * @param account - token owner address
- * @param approvals - array of [assetAddress, spenderAddress] pairs
- * @param permit2Address - Permit2 contract address
+ * Resolution order, per asset:
+ *  1. Permit2 storage slots are always derivable cryptographically — no RPC.
+ *  2. Apply caller-supplied `walletAllowances[asset:spender]` — if `maxUint256`,
+ *     skip emitting an override entirely.
+ *  3. Use caller-supplied `slotHints[asset].allowanceSlotIndex` →
+ *     cryptographic slot, no RPC.
+ *  4. Use cached probed slot index (`fetchErc20SlotHints` cache) → same.
+ *  5. Probe sequentially via `fetchErc20SlotHints`.
+ *  6. Fall back to legacy `eth_createAccessList` discovery.
  */
 export async function getApprovalOverrides(
 	client: PublicClient,
 	account: Address,
 	approvals: [Address, Address][],
 	permit2Address: Address,
+	options: GetApprovalOverridesOptions = {},
 ): Promise<StateOverride> {
 	if (approvals.length === 0) return [];
 
-	const stateOverride: StateOverride = [];
+	const chainId = client.chain?.id;
+	if (!chainId) throw new Error("Client must have a chain configured");
 
-	// 1. Permit2 allowance overrides (deterministic slot computation)
+	const stateOverride: StateOverride = [];
+	const { walletAllowances, slotHints } = options;
+	const valueHex = toHex(maxUint256, { size: 32 });
+
+	// 1. Permit2 allowance overrides (deterministic, no RPC).
 	const permit2StateDiff = computePermit2StateDiff(account, approvals);
 	if (permit2StateDiff.length > 0) {
 		stateOverride.push({
@@ -157,17 +189,73 @@ export async function getApprovalOverrides(
 		});
 	}
 
-	// 2. ERC20 approval overrides (discovered via eth_createAccessList)
-	const uniqueAssets = [
-		...new Set(approvals.map(([asset]) => getAddress(asset))),
-	];
-	const allowanceOverrides = await discoverAllowanceSlots(
-		client,
-		account,
-		uniqueAssets,
-		permit2Address,
-	);
-	stateOverride.push(...allowanceOverrides);
+	// Decide which assets still need an ERC20 allowance override.
+	const uniqueAssets: Address[] = [];
+	const seen = new Set<Address>();
+	for (const [asset, spender] of approvals) {
+		const a = getAddress(asset);
+		// Token already approved → skip.
+		const supplied = walletAllowances?.[allowanceKey(a, spender)];
+		if (supplied !== undefined && supplied === maxUint256) continue;
+		if (!seen.has(a)) {
+			seen.add(a);
+			uniqueAssets.push(a);
+		}
+	}
+
+	// Partition assets by which resolution path applies.
+	const fallbackAssets: Address[] = [];
+	for (const asset of uniqueAssets) {
+		const callerHintIdx = slotHints?.[asset]?.allowanceSlotIndex;
+		const cachedIdx = getCachedSlotHints(chainId, asset)?.allowanceSlotIndex;
+		const idx = callerHintIdx ?? cachedIdx;
+		if (idx !== undefined) {
+			const slot = computeAllowanceSlot(account, permit2Address, idx);
+			stateOverride.push({
+				address: asset,
+				stateDiff: [{ slot, value: valueHex }],
+			});
+			continue;
+		}
+		fallbackAssets.push(asset);
+	}
+
+	// Probe via sequential scan first; only fall back to access-list for the
+	// rare token where that fails.
+	const stillUnknown: Address[] = [];
+	for (const asset of fallbackAssets) {
+		try {
+			const hints = await fetchErc20SlotHints(client, asset, {
+				skipBalance: true,
+				allowanceSpender: permit2Address,
+			});
+			if (hints.allowanceSlotIndex !== undefined) {
+				const slot = computeAllowanceSlot(
+					account,
+					permit2Address,
+					hints.allowanceSlotIndex,
+				);
+				stateOverride.push({
+					address: asset,
+					stateDiff: [{ slot, value: valueHex }],
+				});
+				continue;
+			}
+		} catch (e) {
+			// fall through
+		}
+		stillUnknown.push(asset);
+	}
+
+	if (stillUnknown.length > 0) {
+		const legacy = await discoverAllowanceSlotsViaAccessList(
+			client,
+			account,
+			stillUnknown,
+			permit2Address,
+		);
+		stateOverride.push(...legacy);
+	}
 
 	return stateOverride;
 }

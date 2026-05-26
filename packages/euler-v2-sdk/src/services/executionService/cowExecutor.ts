@@ -7,6 +7,7 @@ import {
 	type Hex,
 } from "viem";
 import type { IDeploymentService } from "../deploymentService/index.js";
+import type { PluginPrefetchData } from "../../plugins/types.js";
 import type { ProviderService } from "../providerService/index.js";
 import {
 	CLOSE_POSITION_WRAPPER_ABI,
@@ -92,6 +93,8 @@ export type ExecuteCowSwapTransactionPlanArgs = {
 		parameters: TransactionPlanTransactionRequest,
 	) => Promise<Hash>;
 	signTypedData: (parameters: CowSwapTypedDataRequest) => Promise<Hex>;
+	/** Optional plugin prefetch payload to skip per-plugin network I/O. */
+	prefetch?: PluginPrefetchData;
 	onProgress?: (progress: CowSwapTransactionPlanExecutionProgress) => void;
 };
 

@@ -8,6 +8,7 @@ import {
 	type TransactionReceipt,
 } from "viem";
 import type { AddressOrAccount } from "../../entities/Account.js";
+import type { PluginPrefetchData } from "../../plugins/types.js";
 import {
 	type DecodedSmartContractError,
 	decodeSmartContractErrors,
@@ -95,6 +96,13 @@ export type ExecuteTransactionPlanArgs = {
 	usePermit2?: boolean;
 	/** Defaults to false. When enabled, newly created approvals use max allowance values. */
 	unlimitedApproval?: boolean;
+	/**
+	 * Optional plugin prefetch payload (Pyth Hermes updates, keyring vault
+	 * gating, …) to skip per-plugin network I/O. For execute-time freshness,
+	 * callers typically omit this so plugins pull fresh Pyth updates at
+	 * broadcast time and avoid on-chain staleness reverts.
+	 */
+	prefetch?: PluginPrefetchData;
 	onProgress?: (progress: TransactionPlanExecutionProgress) => void;
 };
 

@@ -25,6 +25,23 @@ const TARGET_TIME_AGO_SECONDS = 60 * 60;
 const SAMPLE_DISTANCE_BLOCKS = 10_000;
 const EULER_EARN_FETCH_BATCH_SIZE = 4;
 
+// Blocks to step back from the latest head when picking the "current" sample
+// point. Load-balanced JSON-RPC fleets can serve subsequent eth_calls from
+// nodes whose heads lag the node that answered `getBlockNumber()` by 1–2
+// blocks; pinning convertToAssets to `latest.number` would then fail on lagging
+// nodes. Backing off by a few blocks puts the measurement at a height that
+// every plausibly-synced backend has seen, while the resulting staleness
+// (~60s on Ethereum, sub-second on most L2s) is negligible against the 3600s
+// measurement window.
+const MEASUREMENT_BLOCK_BACKOFF = 5n;
+
+// Extra digits of precision added on top of share decimals when probing the
+// vault exchange rate. The probe is linear in `convertToAssets`, so scaling it
+// up costs nothing other than headroom against uint256 overflow. With 1e12 on
+// top of asset decimals, even low-decimal assets (USDC/cbBTC) keep tens of
+// significant digits of resolution in the 1h rate change.
+const PROBE_PRECISION_BOOST = 12n;
+
 const verifiedArrayAbi = [
 	{
 		type: "function",
@@ -154,26 +171,29 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 	private async getSupplyApyWindow(
 		provider: ReturnType<ProviderService["getProvider"]>,
 	): Promise<{
-		currentBlockNumber: bigint;
+		measurementBlockNumber: bigint;
 		oneHourAgoBlockNumber: bigint;
 		elapsedSeconds: number;
 	}> {
 		const latestBlockNumber = await this.queryBlockNumber(provider);
-		const currentBlockNumber =
-			latestBlockNumber > 0n ? latestBlockNumber - 1n : 0n;
+		if (latestBlockNumber <= MEASUREMENT_BLOCK_BACKOFF) {
+			throw new Error("Failed to estimate 1h EulerEarn APY block window.");
+		}
+		const measurementBlockNumber = latestBlockNumber - MEASUREMENT_BLOCK_BACKOFF;
 		const sampleDistanceBlocks =
-			currentBlockNumber > BigInt(SAMPLE_DISTANCE_BLOCKS)
+			measurementBlockNumber > BigInt(SAMPLE_DISTANCE_BLOCKS)
 				? BigInt(SAMPLE_DISTANCE_BLOCKS)
-				: currentBlockNumber;
-		const sampleBlockNumber = currentBlockNumber - sampleDistanceBlocks;
+				: measurementBlockNumber;
+		const sampleBlockNumber = measurementBlockNumber - sampleDistanceBlocks;
 
-		const [currentBlockData, sampleBlockData] = await Promise.all([
-			this.queryBlock(provider, currentBlockNumber),
+		const [measurementBlockData, sampleBlockData] = await Promise.all([
+			this.queryBlock(provider, measurementBlockNumber),
 			this.queryBlock(provider, sampleBlockNumber),
 		]);
 
 		const elapsedForSample =
-			Number(currentBlockData.timestamp) - Number(sampleBlockData.timestamp);
+			Number(measurementBlockData.timestamp) -
+			Number(sampleBlockData.timestamp);
 		if (elapsedForSample <= 0) {
 			throw new Error("Failed to estimate 1h EulerEarn APY block window.");
 		}
@@ -183,28 +203,49 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 		const oneHourAgoBlockOffset = Math.round(
 			TARGET_TIME_AGO_SECONDS / averageBlockTimeSeconds,
 		);
+
+		// Bail if the chain has less than ~1h of history rather than silently
+		// clamping to genesis — the latter would normalise the rate change against
+		// a too-short window and explode the displayed APY.
+		if (measurementBlockNumber <= BigInt(oneHourAgoBlockOffset)) {
+			throw new Error("Failed to determine 1h EulerEarn APY time delta.");
+		}
 		const oneHourAgoBlockNumber =
-			currentBlockNumber > BigInt(oneHourAgoBlockOffset)
-				? currentBlockNumber - BigInt(oneHourAgoBlockOffset)
-				: 0n;
-		const elapsedSeconds = oneHourAgoBlockOffset * averageBlockTimeSeconds;
+			measurementBlockNumber - BigInt(oneHourAgoBlockOffset);
+
+		// Read the actual timestamp at the prior block instead of trusting the
+		// 10K-block average. Block-rate variance over the last hour (sequencer
+		// hiccups, MEV bursts, late-block stretches) would otherwise scale the
+		// displayed APY by the inverse of the rate skew.
+		const priorBlockData = await this.queryBlock(
+			provider,
+			oneHourAgoBlockNumber,
+		);
+		const elapsedSeconds =
+			Number(measurementBlockData.timestamp) -
+			Number(priorBlockData.timestamp);
 		if (elapsedSeconds <= 0) {
 			throw new Error("Failed to determine 1h EulerEarn APY time delta.");
 		}
 
-		return { currentBlockNumber, oneHourAgoBlockNumber, elapsedSeconds };
+		return { measurementBlockNumber, oneHourAgoBlockNumber, elapsedSeconds };
 	}
 
+	// Compound a measured rate change observed over `elapsedSeconds` into an APY,
+	// using continuous-per-second compounding to match the EVK/Lens convention.
+	// Equivalent to `(1 + spy) ** SECONDS_IN_YEAR - 1` where
+	// `spy = rateChange / elapsedSeconds`.
 	private computeSupplyApy1h(
 		currentRate: bigint,
 		oldRate: bigint,
 		elapsedSeconds: number,
 	): number | undefined {
-		if (oldRate <= 0n) return undefined;
+		if (oldRate <= 0n || elapsedSeconds <= 0) return undefined;
 
 		const rateChange = Number(currentRate - oldRate) / Number(oldRate);
-		const apy = (rateChange * SECONDS_IN_YEAR) / elapsedSeconds;
-		return Number.isFinite(apy) ? apy * 100 : undefined;
+		const spy = rateChange / elapsedSeconds;
+		const apy = ((1 + spy) ** SECONDS_IN_YEAR - 1) * 100;
+		return Number.isFinite(apy) ? apy : undefined;
 	}
 
 	async fetchVaults(
@@ -273,17 +314,20 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 										: supplyApyWindow.value.message,
 							});
 						} else {
+							const probeShares =
+								10n ** (vaultInfo.vaultDecimals + PROBE_PRECISION_BOOST);
 							const [currentRateResult, oldRateResult] =
 								await Promise.allSettled([
 									this.queryEulerEarnConvertToAssets(
 										provider,
 										vault,
-										10n ** vaultInfo.vaultDecimals,
+										probeShares,
+										supplyApyWindow.value.measurementBlockNumber,
 									),
 									this.queryEulerEarnConvertToAssets(
 										provider,
 										vault,
-										10n ** vaultInfo.vaultDecimals,
+										probeShares,
 										supplyApyWindow.value.oneHourAgoBlockNumber,
 									),
 								]);

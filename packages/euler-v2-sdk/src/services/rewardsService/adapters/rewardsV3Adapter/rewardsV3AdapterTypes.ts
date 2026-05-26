@@ -51,6 +51,8 @@ export type V3RewardsApyRow = {
 	rewardTokenSymbol?: string;
 	rewardTokenName?: string;
 	rewardTokenDecimals?: number | string;
+	whitelist?: string[];
+	blacklist?: string[];
 	campaigns?: Array<{
 		id?: string;
 		provider?: string;
@@ -67,6 +69,8 @@ export type V3RewardsApyRow = {
 		maxMultiplier?: number | string;
 		minLeverage?: number | string;
 		maxLeverage?: number | string;
+		whitelist?: string[];
+		blacklist?: string[];
 		rewardToken?: {
 			address?: string;
 			symbol?: string;

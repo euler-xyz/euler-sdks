@@ -52,6 +52,8 @@ CoW swap plans are built with `planOpenPositionWithCoW`, `planClosePositionWithC
 
 `executeTransactionPlan`, `simulateTransactionPlan`, and `estimateGasForTransactionPlan` accept `AddressOrAccount` (`Address | Account`) for the account argument. Pass an `Account` when the caller already has account state that plugins can reuse; pass an address when plugin-side minimal fetching is preferable.
 
+When the same plan is both simulated (for a Review preview) and then executed (on Confirm), call `prepareTransactionPlan({ plan, chainId, account, usePermit2?, unlimitedApproval? })` once and pass the returned `TransactionPlanPrepared` envelope to `simulatePreparedTransactionPlan(prepared, options?)` and `executePreparedTransactionPlan({ prepared, sendTransaction, signTypedData, onProgress })`. The prepared variants skip the internal plugin pipeline (and approval re-resolution for execute), so plugin reads — TOS, Keyring, Pyth — run once per Review instead of three times. Use `isPreparedTransactionPlan` to discriminate envelope vs raw plan. CoW plans are not supported by `prepareTransactionPlan`.
+
 Use `mergePlans` to atomically combine multiple intents and `describeBatch` for previews/logging.
 Planner-created `evcBatch` entries contain named operations (`{ type: "operation", name, items }`). Keep those groups intact in previews and merge flows. Raw `EVCBatchItem` entries are still valid for low-level utilities and plugin-inserted setup calls. Use `convertBatchItemsToPlan(items, operationName)` when a raw encoded batch should be named as one operation; omit `operationName` to preserve the raw item array.
 

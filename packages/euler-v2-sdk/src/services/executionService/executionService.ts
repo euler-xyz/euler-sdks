@@ -16,7 +16,7 @@ import type {
 	AddressOrAccount,
 	IHasVaultAddress,
 } from "../../entities/Account.js";
-import type { EulerPlugin } from "../../plugins/types.js";
+import type { EulerPlugin, PluginPrefetchData } from "../../plugins/types.js";
 import { resolveBorrowCollateralPositions } from "../../utils/accountPositionClassification.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
 import type { IEulerLabelsService } from "../eulerLabelsService/index.js";
@@ -350,6 +350,17 @@ type BatchItemRef = {
 	transition?: EVCStateTransition;
 };
 
+type CleanupBatchItems = {
+	items: EVCBatchItem[];
+	disabledControllers: Set<Address>;
+	disabledCollaterals: Set<Address>;
+};
+
+type CleanupBatchItemOptions = {
+	skipCollateralCleanup?: boolean;
+	controllerToKeep?: Address;
+};
+
 function hasSuppliedPosition(
 	position: Pick<AccountPosition, "assets" | "shares">,
 ): boolean {
@@ -517,7 +528,7 @@ export interface IExecutionService<
 		chainId: number,
 		account: AddressOrAccount,
 		transactionPlan: TransactionPlan,
-		options?: SimulateBatchOptions,
+		options?: SimulateBatchOptions & { prefetch?: PluginPrefetchData },
 	): Promise<SimulateBatchResult<TVaultEntity>>;
 	simulatePreparedTransactionPlan(
 		prepared: TransactionPlanPrepared,
@@ -527,6 +538,20 @@ export interface IExecutionService<
 		chainId: number,
 		account: AddressOrAccount,
 		transactionPlan: TransactionPlan,
+		options?: EstimateGasForTransactionPlanOptions & {
+			prefetch?: PluginPrefetchData;
+		},
+	): Promise<bigint>;
+	/**
+	 * Estimate gas for a {@link TransactionPlanPrepared} envelope. Plugins and
+	 * approval resolution have already run via {@link prepareTransactionPlan},
+	 * so this skips the plugin pipeline (TOS / Keyring / Pyth) and uses the
+	 * envelope's chainId/account context directly. Use this from quote-sweep
+	 * gas estimation when an envelope is already in hand to avoid re-running
+	 * plugins per quote.
+	 */
+	estimateGasForPreparedTransactionPlan(
+		prepared: TransactionPlanPrepared,
 		options?: EstimateGasForTransactionPlanOptions,
 	): Promise<bigint>;
 
@@ -547,7 +572,30 @@ export interface IExecutionService<
 		account: AddressOrAccount;
 		usePermit2?: boolean;
 		unlimitedApproval?: boolean;
+		prefetch?: PluginPrefetchData;
 	}): Promise<TransactionPlanPrepared>;
+	/**
+	 * Run each plugin's processPlan in registration order. Lower-level than
+	 * prepare/simulate/estimate — callers usually want those. Exposed for
+	 * advanced flows that want to materialise the plugin-processed plan once
+	 * and feed it into multiple downstream calls.
+	 */
+	processPlanPlugins(
+		plan: TransactionPlan,
+		account: AddressOrAccount,
+		chainId: number,
+		prefetch?: PluginPrefetchData,
+	): Promise<TransactionPlan>;
+	/**
+	 * Resolve each plugin's prefetch payload for a given plan once. Pass the
+	 * returned record to subsequent prepare/simulate/estimate/execute calls so
+	 * plugins skip their own network I/O on each invocation.
+	 */
+	prefetchPluginDataForPlan(
+		plan: TransactionPlan,
+		account: AddressOrAccount,
+		chainId: number,
+	): Promise<PluginPrefetchData>;
 	executeTransactionPlan(
 		args: ExecuteTransactionPlanArgs,
 	): Promise<TransactionPlanExecutionResult>;
@@ -678,7 +726,14 @@ export type ProcessPlanPlugins = (
 	plan: TransactionPlan,
 	account: AddressOrAccount,
 	chainId: number,
+	prefetch?: PluginPrefetchData,
 ) => Promise<TransactionPlan>;
+
+export type PrefetchPlanPlugins = (
+	plan: TransactionPlan,
+	account: AddressOrAccount,
+	chainId: number,
+) => Promise<PluginPrefetchData>;
 
 const WAD = 10n ** 18n;
 // TODO explain how this service is coupled to the concrete abis of ERC4626, permit2 and EVK.
@@ -695,6 +750,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	private intrinsicApyService?: IIntrinsicApyService;
 	private eulerLabelsService?: IEulerLabelsService;
 	private processPlugins?: ProcessPlanPlugins;
+	private prefetchPlugins?: PrefetchPlanPlugins;
 
 	constructor(
 		private deploymentService: IDeploymentService,
@@ -751,6 +807,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		this.processPlugins = processPlugins;
 	}
 
+	setPluginPrefetcher(prefetchPlugins: PrefetchPlanPlugins): void {
+		this.prefetchPlugins = prefetchPlugins;
+	}
+
 	/** Derive storage overrides needed to simulate the plan against the current account state. */
 	async deriveStateOverrides(
 		chainId: number,
@@ -773,13 +833,14 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		chainId: number,
 		account: AddressOrAccount,
 		transactionPlan: TransactionPlan,
-		options?: SimulateBatchOptions,
+		options?: SimulateBatchOptions & { prefetch?: PluginPrefetchData },
 	): Promise<SimulateBatchResult<TVaultEntity>> {
 		assertNoCowSwapPlanItems(transactionPlan, "simulateTransactionPlan");
 		const processedPlan = await this.processPlanPlugins(
 			transactionPlan,
 			account,
 			chainId,
+			options?.prefetch,
 		);
 		const owner = this.getAccountOwner(account);
 		return simulateTransactionPlan(
@@ -824,6 +885,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		account: AddressOrAccount;
 		usePermit2?: boolean;
 		unlimitedApproval?: boolean;
+		prefetch?: PluginPrefetchData;
 	}): Promise<TransactionPlanPrepared> {
 		const {
 			plan,
@@ -831,12 +893,14 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			account,
 			usePermit2 = true,
 			unlimitedApproval = false,
+			prefetch,
 		} = args;
 		assertNoCowSwapPlanItems(plan, "prepareTransactionPlan");
 		const processedPlan = await this.processPlanPlugins(
 			plan,
 			account,
 			chainId,
+			prefetch,
 		);
 		const owner = this.getAccountOwner(account);
 		const resolvedPlan = await this.resolveRequiredApprovals({
@@ -861,13 +925,16 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		chainId: number,
 		account: AddressOrAccount,
 		transactionPlan: TransactionPlan,
-		options?: EstimateGasForTransactionPlanOptions,
+		options?: EstimateGasForTransactionPlanOptions & {
+			prefetch?: PluginPrefetchData;
+		},
 	): Promise<bigint> {
 		assertNoCowSwapPlanItems(transactionPlan, "estimateGasForTransactionPlan");
 		const processedPlan = await this.processPlanPlugins(
 			transactionPlan,
 			account,
 			chainId,
+			options?.prefetch,
 		);
 		const owner = this.getAccountOwner(account);
 		return estimateGasForTransactionPlan(
@@ -875,6 +942,33 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			chainId,
 			owner,
 			processedPlan,
+			options,
+		);
+	}
+
+	/**
+	 * Estimate gas for a {@link TransactionPlanPrepared} envelope. Plugins and
+	 * approval resolution were already applied by {@link prepareTransactionPlan},
+	 * so this skips the plugin pipeline (TOS / Keyring / Pyth) entirely — the
+	 * plan's batch items are used as-is. Net effect: per-call gas estimate
+	 * drops from "plugin pipeline + estimate" to just the estimate, mirroring
+	 * the simulatePreparedTransactionPlan / executePreparedTransactionPlan
+	 * pattern.
+	 */
+	async estimateGasForPreparedTransactionPlan(
+		prepared: TransactionPlanPrepared,
+		options?: EstimateGasForTransactionPlanOptions,
+	): Promise<bigint> {
+		assertNoCowSwapPlanItems(
+			prepared.plan,
+			"estimateGasForPreparedTransactionPlan",
+		);
+		const owner = this.getAccountOwner(prepared.account);
+		return estimateGasForTransactionPlan(
+			this.getSimulationContext(),
+			prepared.chainId,
+			owner,
+			prepared.plan,
 			options,
 		);
 	}
@@ -895,6 +989,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			args.plan,
 			args.account,
 			args.chainId,
+			args.prefetch,
 		);
 		assertNoCowSwapPlanItems(processedPlan, "executeTransactionPlan");
 
@@ -957,6 +1052,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				args.plan,
 				args.account,
 				args.chainId,
+				args.prefetch,
 			),
 			deploymentService: this.deploymentService,
 			providerService,
@@ -977,14 +1073,40 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		};
 	}
 
-	private async processPlanPlugins(
+	/**
+	 * Run each plugin's processPlan in registration order. Plugins receive the
+	 * plan as modified by previous plugins; errors are caught per-plugin so a
+	 * single failing plugin can't poison the pipeline.
+	 *
+	 * `prefetch` carries form-level data each plugin pre-resolved via
+	 * {@link prefetchPluginDataForPlan} — passing it lets the plugin skip its
+	 * own network I/O (Hermes pulls, keyring hook reads, etc.).
+	 */
+	async processPlanPlugins(
 		plan: TransactionPlan,
 		account: AddressOrAccount,
 		chainId: number,
+		prefetch?: PluginPrefetchData,
 	): Promise<TransactionPlan> {
 		return this.processPlugins
-			? this.processPlugins(plan, account, chainId)
+			? this.processPlugins(plan, account, chainId, prefetch)
 			: plan;
+	}
+
+	/**
+	 * Resolve each plugin's prefetch payload for a given plan once, so per-quote
+	 * prepare/estimate/simulate calls can reuse the data instead of refetching.
+	 * Returns an open record keyed by plugin name — known SDK slots are typed
+	 * (`pyth`, `keyring`); external plugins populate their own keys.
+	 */
+	async prefetchPluginDataForPlan(
+		plan: TransactionPlan,
+		account: AddressOrAccount,
+		chainId: number,
+	): Promise<PluginPrefetchData> {
+		return this.prefetchPlugins
+			? this.prefetchPlugins(plan, account, chainId)
+			: {};
 	}
 
 	private getAccountOwner(account: AddressOrAccount): Address {
@@ -1869,6 +1991,15 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				}
 
 				if (usePermit2) {
+					// Skip Permit2 entirely when an existing direct token→vault
+					// allowance already covers the requirement. Avoids prompting
+					// the user for a Permit2 approve+signature when a prior
+					// direct ERC-20 approval is sufficient.
+					if (allowances.assetForVault >= amount) {
+						approval.resolved = [];
+						continue;
+					}
+
 					// Check permit2 allowances
 					const assetForPermit2 = allowances.assetForPermit2;
 					const assetForVaultInPermit2 = allowances.assetForVaultInPermit2;
@@ -2005,6 +2136,87 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		});
 	}
 
+	private buildCleanupBatchItems(
+		account: Account<IHasVaultAddress>,
+		subAccount: Address,
+		options: CleanupBatchItemOptions = {},
+	): CleanupBatchItems {
+		const { skipCollateralCleanup = false, controllerToKeep } = options;
+		const normalizedControllerToKeep = controllerToKeep
+			? getAddress(controllerToKeep)
+			: undefined;
+		const empty = (): CleanupBatchItems => ({
+			items: [],
+			disabledControllers: new Set<Address>(),
+			disabledCollaterals: new Set<Address>(),
+		});
+		if (typeof account.getSubAccount !== "function") return empty();
+
+		const subAccountSnapshot = account.getSubAccount(subAccount);
+		if (!subAccountSnapshot) return empty();
+
+		const collaterals = subAccountSnapshot.enabledCollaterals ?? [];
+		const controllers = subAccountSnapshot.enabledControllers ?? [];
+		if (collaterals.length === 0 && controllers.length === 0) return empty();
+
+		const items: EVCBatchItem[] = [];
+		const disabledControllers = new Set<Address>();
+		const disabledCollaterals = new Set<Address>();
+		const disableCollateral = (collateral: Address) => {
+			if (skipCollateralCleanup) return;
+			const normalizedCollateral = getAddress(collateral);
+			disabledCollaterals.add(normalizedCollateral);
+			items.push(
+				this.encodeDisableCollateral(
+					account.chainId,
+					subAccount,
+					normalizedCollateral,
+				),
+			);
+		};
+		const disableAllCollaterals = () => {
+			for (const collateral of collaterals) {
+				disableCollateral(collateral);
+			}
+		};
+		const disableController = (controller: Address) => {
+			const normalizedController = getAddress(controller);
+			if (normalizedController === normalizedControllerToKeep) return;
+			disabledControllers.add(normalizedController);
+			items.push(this.encodeDisableController(normalizedController, subAccount));
+		};
+
+		if (controllers.length === 0) {
+			disableAllCollaterals();
+			return { items, disabledControllers, disabledCollaterals };
+		}
+
+		const hasActiveBorrow = subAccountSnapshot.positions.some(
+			(position) => position.borrowed > 0n,
+		);
+
+		if (!hasActiveBorrow) {
+			disableAllCollaterals();
+			for (const controller of controllers) {
+				disableController(controller);
+			}
+			return { items, disabledControllers, disabledCollaterals };
+		}
+
+		const depositedVaults = new Set(
+			subAccountSnapshot.positions
+				.filter(hasSuppliedPosition)
+				.map((position) => getAddress(position.vaultAddress)),
+		);
+
+		for (const collateral of collaterals) {
+			if (depositedVaults.has(getAddress(collateral))) continue;
+			disableCollateral(collateral);
+		}
+
+		return { items, disabledControllers, disabledCollaterals };
+	}
+
 	// ========== Transaction plan functions ==========
 
 	/**
@@ -2019,55 +2231,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 */
 	planCleanup(args: PlanCleanupArgs): TransactionPlan {
 		const { account, subAccount } = args;
-		if (typeof account.getSubAccount !== "function") return [];
-
-		const subAccountSnapshot = account.getSubAccount(subAccount);
-		if (!subAccountSnapshot) return [];
-
-		const collaterals = subAccountSnapshot.enabledCollaterals ?? [];
-		const controllers = subAccountSnapshot.enabledControllers ?? [];
-		if (collaterals.length === 0 && controllers.length === 0) return [];
-
-		const items: EVCBatchItem[] = [];
-		const disableAllCollaterals = () => {
-			for (const collateral of collaterals) {
-				items.push(
-					this.encodeDisableCollateral(account.chainId, subAccount, collateral),
-				);
-			}
-		};
-
-		if (controllers.length === 0) {
-			disableAllCollaterals();
-			return this.convertBatchItemsToPlan(items, "cleanup");
-		}
-
-		const hasActiveBorrow = subAccountSnapshot.positions.some(
-			(position) => position.borrowed > 0n,
-		);
-
-		if (!hasActiveBorrow) {
-			disableAllCollaterals();
-			for (const controller of controllers) {
-				items.push(this.encodeDisableController(controller, subAccount));
-			}
-			return this.convertBatchItemsToPlan(items, "cleanup");
-		}
-
-		const depositedVaults = new Set(
-			subAccountSnapshot.positions
-				.filter(hasSuppliedPosition)
-				.map((position) => getAddress(position.vaultAddress)),
-		);
-
-		for (const collateral of collaterals) {
-			if (depositedVaults.has(getAddress(collateral))) continue;
-			items.push(
-				this.encodeDisableCollateral(account.chainId, subAccount, collateral),
-			);
-		}
-
-		return this.convertBatchItemsToPlan(items, "cleanup");
+		const cleanup = this.buildCleanupBatchItems(account, subAccount);
+		return this.convertBatchItemsToPlan(cleanup.items, "cleanup");
 	}
 
 	/**
@@ -2304,9 +2469,26 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @returns Array of transaction plan items (optional approval + EVC batch)
 	 */
 	planBorrow(args: PlanBorrowArgs): TransactionPlan {
-		const { vault, amount, receiver, borrowAccount, account, collateral } =
-			args;
+		const {
+			vault,
+			amount,
+			receiver,
+			borrowAccount,
+			account,
+			collateral,
+			skipCleanup = false,
+		} = args;
 		const plan: TransactionPlanItem[] = [];
+		const cleanup = skipCleanup
+			? {
+					items: [],
+					disabledControllers: new Set<Address>(),
+					disabledCollaterals: new Set<Address>(),
+				}
+			: this.buildCleanupBatchItems(account, borrowAccount, {
+					skipCollateralCleanup: true,
+					controllerToKeep: vault,
+				});
 		const savingsCollateral = isSavingsCollateral(collateral)
 			? collateral
 			: undefined;
@@ -2316,18 +2498,25 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 		const enableCollateral =
 			collateral && collateral.amount > 0n
-				? !(
-						account?.isCollateralEnabled(borrowAccount, collateral.vault) ??
-						false
-					)
+				? cleanup.disabledCollaterals.has(getAddress(collateral.vault)) ||
+					!(
+							account?.isCollateralEnabled(borrowAccount, collateral.vault) ??
+							false
+						)
 				: false;
 
 		// Check if controller needs to be enabled
 		// Default: controller is not enabled when account/sub-account is not available
-		const currentController = account?.getCurrentController(borrowAccount);
-		const enableController = !(
-			account?.isControllerEnabled(borrowAccount, vault) ?? false
-		);
+		const currentControllerBeforeCleanup =
+			account?.getCurrentController(borrowAccount);
+		const currentController =
+			currentControllerBeforeCleanup &&
+			!cleanup.disabledControllers.has(getAddress(currentControllerBeforeCleanup))
+				? currentControllerBeforeCleanup
+				: undefined;
+		const enableController =
+			cleanup.disabledControllers.size > 0 ||
+			!(account?.isControllerEnabled(borrowAccount, vault) ?? false);
 
 		if (walletCollateral && walletCollateral.amount > 0n) {
 			// Approval is needed from the account owner (who owns the wallet tokens)
@@ -2341,33 +2530,36 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			});
 		}
 
-		const batchItems = this.encodeBorrow({
-			chainId: account.chainId,
-			vault,
-			amount,
-			owner: account.owner,
-			borrowAccount,
-			receiver,
-			enableController,
-			currentController: currentController || undefined,
-			enableCollateral,
-			collateralVault: collateral?.vault,
-			collateralAmount: walletCollateral?.amount,
-			collateralWrappedNativeInfo: walletCollateral?.wrappedNativeInfo,
-			collateralShareSource: savingsCollateral
-				? {
-						from: savingsCollateral.from,
-						shares: savingsCollateral.amount,
-						disableCollateralFrom:
-							savingsCollateral.disableCollateralFrom &&
-							(account?.isCollateralEnabled(
-								savingsCollateral.from,
-								savingsCollateral.vault,
-							) ??
-								false),
-					}
-				: undefined,
-		});
+		const batchItems = [
+			...cleanup.items,
+			...this.encodeBorrow({
+				chainId: account.chainId,
+				vault,
+				amount,
+				owner: account.owner,
+				borrowAccount,
+				receiver,
+				enableController,
+				currentController: currentController || undefined,
+				enableCollateral,
+				collateralVault: collateral?.vault,
+				collateralAmount: walletCollateral?.amount,
+				collateralWrappedNativeInfo: walletCollateral?.wrappedNativeInfo,
+				collateralShareSource: savingsCollateral
+					? {
+							from: savingsCollateral.from,
+							shares: savingsCollateral.amount,
+							disableCollateralFrom:
+								savingsCollateral.disableCollateralFrom &&
+								(account?.isCollateralEnabled(
+									savingsCollateral.from,
+									savingsCollateral.vault,
+								) ??
+									false),
+						}
+					: undefined,
+			}),
+		];
 
 		plan.push(...this.convertBatchItemsToPlan(batchItems, "borrow"));
 
@@ -2900,9 +3092,17 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			receiver = account.owner,
 			collateralVault = swapQuote.receiver,
 			wrappedNativeInfo,
+			skipCleanup = false,
 		} = args;
 		assertNonCowSwapQuote(swapQuote, "planSwapAndBorrowFromWallet");
 		const plan: TransactionPlanItem[] = [];
+		const cleanup = skipCleanup
+			? {
+					items: [],
+					disabledControllers: new Set<Address>(),
+					disabledCollaterals: new Set<Address>(),
+				}
+			: this.buildCleanupBatchItems(account, borrowAccount);
 
 		plan.push({
 			type: "requiredApproval",
@@ -2912,29 +3112,38 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			amount,
 		});
 
-		const enableController = !(
-			account?.isControllerEnabled(borrowAccount, borrowVault) ?? false
-		);
-		const enableCollateral = !(
-			account?.isCollateralEnabled(borrowAccount, collateralVault) ?? false
-		);
-		const currentController = account?.getCurrentController(borrowAccount);
+		const enableController =
+			cleanup.disabledControllers.size > 0 ||
+			!(account?.isControllerEnabled(borrowAccount, borrowVault) ?? false);
+		const enableCollateral =
+			cleanup.disabledCollaterals.has(getAddress(collateralVault)) ||
+			!(account?.isCollateralEnabled(borrowAccount, collateralVault) ?? false);
+		const currentControllerBeforeCleanup =
+			account?.getCurrentController(borrowAccount);
+		const currentController =
+			currentControllerBeforeCleanup &&
+			!cleanup.disabledControllers.has(getAddress(currentControllerBeforeCleanup))
+				? currentControllerBeforeCleanup
+				: undefined;
 
-		const batchItems = this.encodeSwapAndBorrowFromWallet({
-			chainId: account.chainId,
-			swapQuote,
-			amount,
-			sender: account.owner,
-			borrowAccount,
-			collateralVault,
-			borrowVault,
-			borrowAmount,
-			receiver,
-			currentController: currentController || undefined,
-			enableController,
-			enableCollateral,
-			wrappedNativeInfo,
-		});
+		const batchItems = [
+			...cleanup.items,
+			...this.encodeSwapAndBorrowFromWallet({
+				chainId: account.chainId,
+				swapQuote,
+				amount,
+				sender: account.owner,
+				borrowAccount,
+				collateralVault,
+				borrowVault,
+				borrowAmount,
+				receiver,
+				currentController: currentController || undefined,
+				enableController,
+				enableCollateral,
+				wrappedNativeInfo,
+			}),
+		];
 
 		plan.push(
 			...this.convertBatchItemsToPlan(batchItems, "swapAndBorrowFromWallet"),
@@ -3442,6 +3651,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			account,
 			swapQuote,
 			swapperMode,
+			skipCleanup = false,
 		} = args;
 		assertNonCowSwapQuote(
 			swapQuote,
@@ -3467,6 +3677,13 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const receiver = swapQuote.accountIn;
 		const liabilityVault = swapQuote.vaultIn;
 		const longVault = swapQuote.receiver;
+		const cleanup = skipCleanup
+			? {
+					items: [],
+					disabledControllers: new Set<Address>(),
+					disabledCollaterals: new Set<Address>(),
+				}
+			: this.buildCleanupBatchItems(account, receiver);
 		const liabilityAmount = getSwapInputAmount(
 			swapQuote,
 			swapperMode ?? SwapperMode.EXACT_IN,
@@ -3478,10 +3695,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			: collateralAmount > 0n;
 		const enableCollateral =
 			hasCollateralInput &&
-			!(account?.isCollateralEnabled(receiver, collateralVault) ?? false);
-		const enableCollateralLong = !(
-			account?.isCollateralEnabled(receiver, longVault) ?? false
-		);
+			(cleanup.disabledCollaterals.has(getAddress(collateralVault)) ||
+				!(account?.isCollateralEnabled(receiver, collateralVault) ?? false));
+		const enableCollateralLong =
+			cleanup.disabledCollaterals.has(getAddress(longVault)) ||
+			!(account?.isCollateralEnabled(receiver, longVault) ?? false);
 		const resolvedCollateralShareSource = collateralShareSource
 			? {
 					...collateralShareSource,
@@ -3496,32 +3714,41 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			: undefined;
 
 		// 3. Determine if controller needs to be enabled
-		const enableController = !(
-			account?.isControllerEnabled(receiver, liabilityVault) ?? false
-		);
+		const enableController =
+			cleanup.disabledControllers.size > 0 ||
+			!(account?.isControllerEnabled(receiver, liabilityVault) ?? false);
 
 		// 4. Get current controller (may need to disable if different)
-		const currentController = account?.getCurrentController(receiver);
+		const currentControllerBeforeCleanup =
+			account?.getCurrentController(receiver);
+		const currentController =
+			currentControllerBeforeCleanup &&
+			!cleanup.disabledControllers.has(getAddress(currentControllerBeforeCleanup))
+				? currentControllerBeforeCleanup
+				: undefined;
 
 		// 5. Build EVC batch items
-		const batchItems = this.encodeMultiplyWithSwap({
-			chainId: account.chainId,
-			collateralVault,
-			collateralAmount,
-			liabilityVault,
-			liabilityAmount,
-			longVault,
-			owner: account.owner,
-			receiver,
-			enableCollateral,
-			currentController: currentController || undefined,
-			enableController,
-			collateralShareSource: resolvedCollateralShareSource,
-			collateralWrappedNativeInfo,
-			swapQuote,
-			enableCollateralLong,
-			// Permit2 is handled separately in the plan
-		});
+		const batchItems = [
+			...cleanup.items,
+			...this.encodeMultiplyWithSwap({
+				chainId: account.chainId,
+				collateralVault,
+				collateralAmount,
+				liabilityVault,
+				liabilityAmount,
+				longVault,
+				owner: account.owner,
+				receiver,
+				enableCollateral,
+				currentController: currentController || undefined,
+				enableController,
+				collateralShareSource: resolvedCollateralShareSource,
+				collateralWrappedNativeInfo,
+				swapQuote,
+				enableCollateralLong,
+				// Permit2 is handled separately in the plan
+			}),
+		];
 
 		plan.push(...this.convertBatchItemsToPlan(batchItems, "multiplyWithSwap"));
 
@@ -3608,8 +3835,16 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			longVault,
 			receiver,
 			account,
+			skipCleanup = false,
 		} = args;
 		const plan: TransactionPlanItem[] = [];
+		const cleanup = skipCleanup
+			? {
+					items: [],
+					disabledControllers: new Set<Address>(),
+					disabledCollaterals: new Set<Address>(),
+				}
+			: this.buildCleanupBatchItems(account, receiver);
 
 		// 1. Check if collateral approval is needed (only if depositing collateral)
 		if (!collateralShareSource && collateralAmount > 0n) {
@@ -3629,10 +3864,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			: collateralAmount > 0n;
 		const enableCollateral =
 			hasCollateralInput &&
-			!(account?.isCollateralEnabled(receiver, collateralVault) ?? false);
-		const enableCollateralLong = !(
-			account?.isCollateralEnabled(receiver, longVault) ?? false
-		);
+			(cleanup.disabledCollaterals.has(getAddress(collateralVault)) ||
+				!(account?.isCollateralEnabled(receiver, collateralVault) ?? false));
+		const enableCollateralLong =
+			cleanup.disabledCollaterals.has(getAddress(longVault)) ||
+			!(account?.isCollateralEnabled(receiver, longVault) ?? false);
 		const resolvedCollateralShareSource = collateralShareSource
 			? {
 					...collateralShareSource,
@@ -3647,31 +3883,40 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			: undefined;
 
 		// 3. Determine if controller needs to be enabled
-		const enableController = !(
-			account?.isControllerEnabled(receiver, liabilityVault) ?? false
-		);
+		const enableController =
+			cleanup.disabledControllers.size > 0 ||
+			!(account?.isControllerEnabled(receiver, liabilityVault) ?? false);
 
 		// 4. Get current controller (may need to disable if different)
-		const currentController = account?.getCurrentController(receiver);
+		const currentControllerBeforeCleanup =
+			account?.getCurrentController(receiver);
+		const currentController =
+			currentControllerBeforeCleanup &&
+			!cleanup.disabledControllers.has(getAddress(currentControllerBeforeCleanup))
+				? currentControllerBeforeCleanup
+				: undefined;
 
 		// 5. Build EVC batch items
-		const batchItems = this.encodeMultiplySameAsset({
-			chainId: account.chainId,
-			collateralVault,
-			collateralAmount,
-			liabilityVault,
-			liabilityAmount,
-			longVault,
-			owner: account.owner,
-			receiver,
-			enableCollateral,
-			currentController: currentController || undefined,
-			enableController,
-			collateralShareSource: resolvedCollateralShareSource,
-			collateralWrappedNativeInfo,
-			enableCollateralLong,
-			// Permit2 is handled separately in the plan
-		});
+		const batchItems = [
+			...cleanup.items,
+			...this.encodeMultiplySameAsset({
+				chainId: account.chainId,
+				collateralVault,
+				collateralAmount,
+				liabilityVault,
+				liabilityAmount,
+				longVault,
+				owner: account.owner,
+				receiver,
+				enableCollateral,
+				currentController: currentController || undefined,
+				enableController,
+				collateralShareSource: resolvedCollateralShareSource,
+				collateralWrappedNativeInfo,
+				enableCollateralLong,
+				// Permit2 is handled separately in the plan
+			}),
+		];
 
 		plan.push(...this.convertBatchItemsToPlan(batchItems, "multiplySameAsset"));
 

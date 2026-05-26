@@ -12,8 +12,8 @@ import type {
 	RewardSource,
 	UserReward,
 	UserRewardToken,
-	VaultRewardInfo,
 } from "../../rewardsServiceTypes.js";
+import { VaultRewardInfo } from "../../vaultRewardInfo.js";
 import type {
 	RewardsV3AdapterConfig,
 	V3ListEnvelope,
@@ -138,6 +138,13 @@ const normalizeNonNegativeInteger = (value: unknown): number | undefined => {
 	if (parsed === undefined) return undefined;
 	const integer = Math.trunc(parsed);
 	return integer >= 0 ? integer : undefined;
+};
+
+const normalizeAddressList = (
+	list?: readonly string[],
+): string[] | undefined => {
+	if (!list?.length) return undefined;
+	return list.map((address) => address.toLowerCase());
 };
 
 export class RewardsV3Adapter implements IRewardsAdapter {
@@ -302,7 +309,7 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 		const key = vaultAddress.toLowerCase();
 		let info = map.get(key);
 		if (!info) {
-			info = { totalRewardsApr: 0, campaigns: [] };
+			info = new VaultRewardInfo({ campaigns: [] });
 			map.set(key, info);
 		}
 
@@ -314,7 +321,6 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			if (exists) return;
 
 			info!.campaigns.push(campaign);
-			info!.totalRewardsApr += campaign.apr;
 		};
 
 		if (Array.isArray(row.campaigns) && row.campaigns.length > 0) {
@@ -363,6 +369,8 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 					maxMultiplier: normalizeFiniteNumber(
 						campaignRow.maxMultiplier ?? campaignRow.maxLeverage,
 					),
+					whitelist: normalizeAddressList(campaignRow.whitelist),
+					blacklist: normalizeAddressList(campaignRow.blacklist),
 				});
 			}
 
@@ -401,6 +409,8 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			maxMultiplier: normalizeFiniteNumber(
 				row.maxMultiplier ?? row.maxLeverage,
 			),
+			whitelist: normalizeAddressList(row.whitelist),
+			blacklist: normalizeAddressList(row.blacklist),
 		});
 	}
 

@@ -8,8 +8,13 @@ import {
 	type ISubAccount,
 } from "../src/entities/Account.js";
 import { Portfolio } from "../src/entities/Portfolio.js";
+import { VaultRewardInfo } from "../src/services/rewardsService/vaultRewardInfo.js";
+import {
+	AccountService,
+	type IAccountAdapter,
+	type IAccountService,
+} from "../src/services/accountService/index.js";
 import { PortfolioService } from "../src/services/portfolioService/index.js";
-import type { IAccountService } from "../src/services/accountService/index.js";
 import {
 	getFreeSubAccounts,
 	getSubAccountAddress,
@@ -18,6 +23,7 @@ import {
 	isSubAccount,
 	selectBorrowCompatibleSubAccount,
 } from "../src/utils/subAccounts.js";
+import { computeSubAccountRoe } from "../src/utils/accountComputations.js";
 
 const owner = getAddress("0x1000000000000000000000000000000000000000");
 const subAccount = getAddress("0x1000000000000000000000000000000000000001");
@@ -74,10 +80,19 @@ function usd(value: number): number {
 }
 
 function vault(address: string, overrides: Record<string, unknown> = {}) {
-	return {
+	const result: Record<string, unknown> = {
 		address: getAddress(address),
 		...overrides,
 	};
+	const rawRewards = (overrides as { rewards?: unknown }).rewards as
+		| { campaigns?: unknown[] }
+		| undefined;
+	if (rawRewards && !(rawRewards instanceof VaultRewardInfo)) {
+		result.rewards = new VaultRewardInfo({
+			campaigns: (rawRewards.campaigns ?? []) as never,
+		});
+	}
+	return result;
 }
 
 function pricedVault(address: string, marketPriceUsd = 1, decimals = 6) {
@@ -272,6 +287,75 @@ test("account selects the next sub-account for new positions", () => {
 	);
 });
 
+test("account can attach a fresh sub-account snapshot before selection", () => {
+	const account = populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {},
+	});
+
+	assert.equal(account.getNewSubAccount({ borrowVault, endId: 3 }), subAccount);
+
+	account.setSubAccount(subAccountData(subAccount, [], [], [otherBorrowVault]));
+	account.setSubAccount(subAccountData(secondSubAccount, [], [], [borrowVault]));
+
+	assert.equal(
+		account.getNewSubAccount({ borrowVault, endId: 3 }),
+		secondSubAccount,
+	);
+});
+
+test("account service checks free sub-account controller snapshots in chunks", async () => {
+	const checked: Address[] = [];
+	const account = populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {},
+	});
+	const adapter: IAccountAdapter = {
+		async fetchAccount(chainId, address) {
+			return {
+				result: {
+					chainId,
+					owner: getAddress(address),
+					subAccounts: {},
+				},
+				errors: [],
+			};
+		},
+		async fetchSubAccount(_chainId, account) {
+			const normalizedAccount = getAddress(account);
+			checked.push(normalizedAccount);
+			const subAccountId = getSubAccountId(owner, normalizedAccount);
+			return {
+				result: subAccountData(
+					normalizedAccount,
+					[],
+					[],
+					subAccountId === 27 ? [borrowVault] : [otherBorrowVault],
+				),
+				errors: [],
+			};
+		},
+	};
+	const service = new AccountService(adapter, {} as never);
+
+	const resolved = await service.resolveNewSubAccount(1, owner, {
+		account,
+		borrowVault,
+		endId: 60,
+		fetchOptions: { populateVaults: false },
+	});
+
+	const compatibleSubAccount = getSubAccountAddress(owner, 27);
+	assert.equal(resolved.result, compatibleSubAccount);
+	assert.equal(account.getSubAccount(compatibleSubAccount), undefined);
+	assert.equal(checked.length, 50);
+	assert.equal(checked[0], subAccount);
+	assert.equal(checked[49], getSubAccountAddress(owner, 50));
+	assert.equal(checked.includes(getSubAccountAddress(owner, 51)), false);
+});
+
 test("portfolio sub-account selection respects its position filter", () => {
 	const account = populatedAccount({
 		chainId: 1,
@@ -461,8 +545,8 @@ test("portfolio permanently filters positions from lists and metrics", () => {
 	);
 	assert.equal(portfolio.totalSuppliedValueUsd, usd(100));
 	assert.equal(portfolio.totalBorrowedValueUsd, usd(50));
-	assert.equal(portfolio.netApy, (100 * 0.1 - 50 * 0.05) / 100);
-	assert.equal(portfolio.roe, (100 * 0.1 - 50 * 0.05) / 50);
+	assert.equal(portfolio.getNetApy(), (100 * 0.1 - 50 * 0.05) / 100);
+	assert.equal(portfolio.getRoe(), (100 * 0.1 - 50 * 0.05) / 50);
 });
 
 test("portfolio does not expose filtered borrow collateral as savings", () => {
@@ -678,16 +762,16 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 	}));
 
 	// Net yield = 200*(5%+2%) - 100*(8%-1%) + 100*(4%+1%) = 12.
-	assert.equal(portfolio.netApy, 4);
-	assert.equal(portfolio.roe, 6);
-	assert.deepEqual(portfolio.apyBreakdown, {
+	assert.equal(portfolio.getNetApy(), 4);
+	assert.equal(portfolio.getRoe(), 6);
+	assert.deepEqual(portfolio.getNetApyBreakdown(), {
 		lending: 14 / 3,
 		borrowing: -8 / 3,
 		rewards: 2,
 		intrinsicApy: 0,
 		total: 4,
 	});
-	assert.deepEqual(portfolio.roeBreakdown, {
+	assert.deepEqual(portfolio.getRoeBreakdown(), {
 		lending: 7,
 		borrowing: -4,
 		rewards: 3,
@@ -699,6 +783,7 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 		(position) => position.position.vaultAddress === savingsVault,
 	)!;
 	assert.equal(saving.apy, 5);
+	assert.equal(saving.apyBreakdown?.total, 5);
 	assert.deepEqual(saving.apyBreakdown, {
 		lending: 4,
 		borrowing: 0,
@@ -711,6 +796,8 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 	assert.equal(borrowPosition.multiplier, 2);
 	assert.equal(borrowPosition.netApy, 3.5);
 	assert.equal(borrowPosition.roe, 7);
+	assert.equal(borrowPosition.apyBreakdown?.total, 3.5);
+	assert.equal(borrowPosition.roeBreakdown?.total, 7);
 	assert.deepEqual(borrowPosition.apyBreakdown, {
 		lending: 5,
 		borrowing: -4,
@@ -725,6 +812,289 @@ test("portfolio computes net APY and ROE from supplied and borrowed value", () =
 		intrinsicApy: 0,
 		total: 7,
 	});
+});
+
+test("portfolio borrow breakdown picks up BORROW_COLLATERAL rewards on collateral match", () => {
+	const otherCollateral = getAddress(
+		"0x9000000000000000000000000000000000000000",
+	);
+	const collateral = vault(collateralVault, {
+		interestRates: { supplyAPY: "5", borrowAPY: "0" },
+	});
+	const borrow = vault(borrowVault, {
+		interestRates: { supplyAPY: "0", borrowAPY: "8" },
+		rewards: {
+			campaigns: [
+				{
+					campaignId: "borrow",
+					source: "merkl",
+					action: "BORROW",
+					apr: 0.01,
+					rewardTokenSymbol: "EUL",
+				},
+				{
+					campaignId: "collat-match",
+					source: "merkl",
+					action: "BORROW_COLLATERAL",
+					apr: 0.03,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: collateralVault,
+				},
+				{
+					campaignId: "collat-mismatch",
+					source: "merkl",
+					action: "BORROW_COLLATERAL",
+					apr: 0.07,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: otherCollateral,
+				},
+			],
+		},
+	});
+
+	const portfolio = new Portfolio(populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(
+				subAccount,
+				[
+					position(collateralVault, {
+						vault: collateral,
+						shares: 200n,
+						assets: 200n,
+						suppliedValueUsd: usd(200),
+					}),
+					position(borrowVault, {
+						vault: borrow,
+						borrowed: 100n,
+						borrowedValueUsd: usd(100),
+					}),
+				],
+				[collateralVault],
+			),
+		},
+	}));
+
+	const borrowPosition = portfolio.borrows[0]!;
+	// Borrow leg rewards = BORROW (1%) + BORROW_COLLATERAL (matching 3%) = 4%.
+	// The mismatching 7% campaign must NOT count.
+	// Net APY denominator is supplied (200). Rewards contribution = 100*4% / 200 = 2.
+	assert.equal(borrowPosition.apyBreakdown?.rewards, 2);
+	// ROE denominator is equity (200-100=100). Rewards contribution = 100*4% / 100 = 4.
+	assert.equal(borrowPosition.roeBreakdown?.rewards, 4);
+});
+
+test("portfolio borrow breakdown picks up LOOPING rewards on multiplier match", () => {
+	const collateral = vault(collateralVault, {
+		interestRates: { supplyAPY: "0", borrowAPY: "0" },
+	});
+	const borrow = vault(borrowVault, {
+		interestRates: { supplyAPY: "0", borrowAPY: "0" },
+		rewards: {
+			campaigns: [
+				// In range (multiplier 2 falls in [1.5, 3]).
+				{
+					campaignId: "loop-in-range",
+					source: "merkl",
+					action: "LOOPING",
+					apr: 0.05,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: collateralVault,
+					minMultiplier: 1.5,
+					maxMultiplier: 3,
+				},
+				// Below range (multiplier 2 < min 4).
+				{
+					campaignId: "loop-too-low",
+					source: "merkl",
+					action: "LOOPING",
+					apr: 0.10,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: collateralVault,
+					minMultiplier: 4,
+				},
+				// Collateral mismatch.
+				{
+					campaignId: "loop-wrong-collat",
+					source: "merkl",
+					action: "LOOPING",
+					apr: 0.20,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: getAddress(
+						"0x9000000000000000000000000000000000000000",
+					),
+				},
+			],
+		},
+	});
+
+	// Collateral 200, borrow 100 → multiplier = 2, equity = 100.
+	const portfolio = new Portfolio(populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(
+				subAccount,
+				[
+					position(collateralVault, {
+						vault: collateral,
+						shares: 200n,
+						assets: 200n,
+						suppliedValueUsd: usd(200),
+					}),
+					position(borrowVault, {
+						vault: borrow,
+						borrowed: 100n,
+						borrowedValueUsd: usd(100),
+					}),
+				],
+				[collateralVault],
+			),
+		},
+	}));
+
+	const borrowPosition = portfolio.borrows[0]!;
+	assert.equal(borrowPosition.multiplier, 2);
+	// LOOPING is paid on equity (100), apr 5% → looping yield = 100 * 5 = 500.
+	// Net APY denominator is supplied (200). Rewards = 500 / 200 = 2.5.
+	assert.equal(borrowPosition.apyBreakdown?.rewards, 2.5);
+	// ROE denominator is equity (100). Rewards = 500 / 100 = 5.
+	assert.equal(borrowPosition.roeBreakdown?.rewards, 5);
+});
+
+test("subAccount ROE picks up BORROW_COLLATERAL rewards", () => {
+	const collateral = vault(collateralVault, {
+		interestRates: { supplyAPY: "0", borrowAPY: "0" },
+	});
+	const borrow = vault(borrowVault, {
+		interestRates: { supplyAPY: "0", borrowAPY: "0" },
+		rewards: {
+			campaigns: [
+				{
+					campaignId: "collat-match",
+					source: "merkl",
+					action: "BORROW_COLLATERAL",
+					apr: 0.04,
+					rewardTokenSymbol: "EUL",
+					collateralAddress: collateralVault,
+				},
+			],
+		},
+	});
+
+	const account = populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(
+				subAccount,
+				[
+					position(collateralVault, {
+						vault: collateral,
+						shares: 200n,
+						assets: 200n,
+						suppliedValueUsd: usd(200),
+					}),
+					position(borrowVault, {
+						vault: borrow,
+						borrowed: 100n,
+						borrowedValueUsd: usd(100),
+					}),
+				],
+				[collateralVault],
+			),
+		},
+	});
+
+	const sa = Object.values(account.subAccounts!)[0]!;
+	const roe = computeSubAccountRoe(sa, undefined);
+	// 100 borrow * 4% BORROW_COLLATERAL / 100 equity = 4.
+	assert.equal(roe?.rewards, 4);
+	assert.equal(roe?.total, 4);
+});
+
+test("portfolio breakdowns drop whitelisted-ineligible rewards for a non-eligible viewer", () => {
+	const viewerEligible = getAddress(
+		"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	);
+	const viewerOther = getAddress(
+		"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	);
+
+	const savings = vault(savingsVault, {
+		interestRates: { supplyAPY: "4", borrowAPY: "0" },
+		rewards: {
+			campaigns: [
+				{
+					campaignId: "open",
+					source: "merkl",
+					action: "LEND",
+					apr: 0.01,
+					rewardTokenSymbol: "EUL",
+				},
+				{
+					campaignId: "gated",
+					source: "merkl",
+					action: "LEND",
+					apr: 0.02,
+					rewardTokenSymbol: "EUL",
+					whitelist: [viewerEligible.toLowerCase()],
+				},
+			],
+		},
+	});
+
+	const portfolio = new Portfolio(populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(subAccount, [
+				position(savingsVault, {
+					vault: savings,
+					shares: 100n,
+					assets: 100n,
+					suppliedValueUsd: usd(100),
+				}),
+			]),
+		},
+	}));
+
+	// Headline (no viewer): both campaigns count → rewards = 1% + 2% = 3%.
+	const headline = portfolio.getNetApyBreakdown();
+	assert.equal(headline?.rewards, 3);
+	assert.equal(headline?.total, 4 + 3);
+
+	// Eligible viewer: still both campaigns.
+	const eligible = portfolio.getNetApyBreakdown({ viewer: viewerEligible });
+	assert.equal(eligible?.rewards, 3);
+	assert.equal(eligible?.total, 7);
+
+	// Non-eligible viewer: only the open campaign counts → rewards = 1%.
+	const filtered = portfolio.getNetApyBreakdown({ viewer: viewerOther });
+	assert.equal(filtered?.rewards, 1);
+	assert.equal(filtered?.total, 4 + 1);
+
+	// Additivity holds under viewer: lending + borrowing + rewards + intrinsicApy === total.
+	const sumComponents = (b: { lending: number; borrowing: number; rewards: number; intrinsicApy: number; total: number; }) =>
+		b.lending + b.borrowing + b.rewards + b.intrinsicApy;
+	assert.equal(sumComponents(headline!), headline?.total);
+	assert.equal(sumComponents(eligible!), eligible?.total);
+	assert.equal(sumComponents(filtered!), filtered?.total);
+
+	// Scalar conveniences agree with the breakdowns.
+	assert.equal(portfolio.getNetApy({ viewer: viewerOther }), filtered?.total);
+	assert.equal(portfolio.getRoe({ viewer: viewerOther }), filtered?.total);
+
+	// Default-view getters mirror the no-viewer method call.
+	assert.equal(portfolio.netApy, headline?.total);
+	assert.equal(portfolio.apyBreakdown?.rewards, headline?.rewards);
+
+	// Per-position breakdowns: default-view is headline, opts.viewer filters.
+	const saving = portfolio.savings[0]!;
+	assert.equal(saving.apyBreakdown?.rewards, 3);
+	assert.equal(saving.getApyBreakdown({ viewer: viewerEligible })?.rewards, 3);
+	assert.equal(saving.getApyBreakdown({ viewer: viewerOther })?.rewards, 1);
 });
 
 test("portfolio applies intrinsic APY", () => {
@@ -751,8 +1121,8 @@ test("portfolio applies intrinsic APY", () => {
 		},
 	}));
 
-	assert.equal(portfolio.netApy, 10 + 1.1 * 5);
-	assert.equal(portfolio.roe, 10 + 1.1 * 5);
+	assert.equal(portfolio.getNetApy(), 10 + 1.1 * 5);
+	assert.equal(portfolio.getRoe(), 10 + 1.1 * 5);
 	assert.deepEqual(portfolio.savings[0]?.apyBreakdown, {
 		lending: 10,
 		borrowing: 0,
@@ -793,8 +1163,8 @@ test("portfolio uses EulerEarn supplyApy1h for yield metrics", () => {
 		},
 	}));
 
-	assert.equal(portfolio.netApy, 8);
-	assert.equal(portfolio.roe, 8);
+	assert.equal(portfolio.getNetApy(), 8);
+	assert.equal(portfolio.getRoe(), 8);
 });
 
 test("portfolio yield metrics return undefined without populated USD positions", () => {
@@ -814,8 +1184,8 @@ test("portfolio yield metrics return undefined without populated USD positions",
 		},
 	}));
 
-	assert.equal(portfolio.netApy, undefined);
-	assert.equal(portfolio.roe, undefined);
+	assert.equal(portfolio.getNetApy(), undefined);
+	assert.equal(portfolio.getRoe(), undefined);
 });
 
 test("portfolio treats populated positions without APY data as zero yield", () => {
@@ -842,8 +1212,8 @@ test("portfolio treats populated positions without APY data as zero yield", () =
 	assert.equal(portfolio.totalSuppliedValueUsd, usd(100));
 	assert.equal(portfolio.totalBorrowedValueUsd, usd(50));
 	assert.equal(portfolio.netAssetValueUsd, usd(50));
-	assert.equal(portfolio.netApy, 0);
-	assert.equal(portfolio.roe, 0);
+	assert.equal(portfolio.getNetApy(), 0);
+	assert.equal(portfolio.getRoe(), 0);
 });
 
 test("portfolio yield metrics return zero when equity is not positive", () => {
@@ -863,8 +1233,8 @@ test("portfolio yield metrics return zero when equity is not positive", () => {
 		},
 	}));
 
-	assert.equal(portfolio.netApy, 0);
-	assert.equal(portfolio.roe, 0);
+	assert.equal(portfolio.getNetApy(), 0);
+	assert.equal(portfolio.getRoe(), 0);
 });
 
 test("account market price population treats missing collateral position as zero value", async () => {

@@ -266,6 +266,81 @@ test("V3 rewards adapter preserves collateral and looping campaign metadata", as
 	assert.equal(info?.campaigns[1]?.maxMultiplier, 5);
 });
 
+test("V3 rewards adapter maps campaign whitelist and blacklist (lowercased)", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "gated-1",
+						provider: "merkl",
+						campaignType: "euler_lend",
+						apr: 5,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "EUL",
+						},
+						status: "active",
+						whitelist: [accountAddress],
+						blacklist: [otherAccountAddress],
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.deepEqual(info?.campaigns[0]?.whitelist, [
+		accountAddress.toLowerCase(),
+	]);
+	assert.deepEqual(info?.campaigns[0]?.blacklist, [
+		otherAccountAddress.toLowerCase(),
+	]);
+	// Eligibility predicate honours the mapped lists.
+	assert.equal(info?.getActiveCampaigns({ viewer: accountAddress }).length, 1);
+	assert.equal(
+		info?.getActiveCampaigns({ viewer: otherAccountAddress }).length,
+		0,
+	);
+});
+
+test("V3 rewards adapter maps whitelist and blacklist on flat rows", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				provider: "merkl",
+				action: "LEND",
+				id: "flat-gated-1",
+				apr: 5,
+				rewardToken: {
+					address: rewardToken,
+					symbol: "EUL",
+				},
+				whitelist: [accountAddress],
+				blacklist: [otherAccountAddress],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.deepEqual(info?.campaigns[0]?.whitelist, [
+		accountAddress.toLowerCase(),
+	]);
+	assert.deepEqual(info?.campaigns[0]?.blacklist, [
+		otherAccountAddress.toLowerCase(),
+	]);
+});
+
 test("direct rewards adapter expands Merkl MULTILENDBORROW markets", async () => {
 	const adapter = makeDirectRewardsAdapter({
 		MULTILENDBORROW: [

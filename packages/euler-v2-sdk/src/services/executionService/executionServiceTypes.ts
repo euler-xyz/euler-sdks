@@ -662,6 +662,7 @@ export type PlanBorrowArgs = {
 	borrowAccount: Address;
 	receiver: Address;
 	collateral?: PlanBorrowCollateral;
+	skipCleanup?: boolean;
 };
 
 export type PlanCleanupArgs = {
@@ -795,6 +796,7 @@ export type PlanMultiplyWithSwapArgs = {
 	collateralWrappedNativeInfo?: WrappedNativeInfo;
 	swapQuote: SwapQuote;
 	swapperMode?: SwapperMode;
+	skipCleanup?: boolean;
 };
 
 export type PlanOpenPositionWithCoWArgs = {
@@ -836,6 +838,7 @@ export type PlanMultiplySameAssetArgs = {
 	liabilityAmount: bigint;
 	longVault: Address;
 	receiver: Address;
+	skipCleanup?: boolean;
 };
 
 export type PlanSwapAndBorrowFromWalletArgs = {
@@ -849,6 +852,7 @@ export type PlanSwapAndBorrowFromWalletArgs = {
 	receiver?: Address;
 	collateralVault?: Address;
 	wrappedNativeInfo?: WrappedNativeInfo;
+	skipCleanup?: boolean;
 };
 
 export type PlanSwapAndRepayFromWalletArgs = {

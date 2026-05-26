@@ -225,64 +225,21 @@ export interface YieldApyBreakdown {
  */
 export function computeSubAccountRoe(
 	subAccount: ISubAccount<IHasVaultAddress>,
+	viewer: Address | string | undefined | null,
 ): SubAccountRoe | undefined {
-	let totalLendingYield = 0;
-	let totalBorrowingYield = 0;
-	let totalRewardYield = 0;
-	let totalIntrinsicYield = 0;
-	let totalSupplyUsd = 0;
-	let totalBorrowUsd = 0;
-	let hasData = false;
-	for (const p of subAccount.positions) {
-		const vault = p.vault as any;
-		if (!vault) continue;
-
-		const intrinsicApyDecimal = getVaultIntrinsicApy(vault);
-
-		// Supply side
-		if (p.suppliedValueUsd != null && p.suppliedValueUsd > 0) {
-			const supplyUsd = p.suppliedValueUsd;
-
-			const supplyApy = getVaultSupplyApy(vault);
-			if (supplyApy != null) {
-				hasData = true;
-				totalSupplyUsd += supplyUsd;
-				totalLendingYield += supplyUsd * supplyApy;
-				totalRewardYield += supplyUsd * getVaultRewardApr(vault, "LEND");
-				totalIntrinsicYield += supplyUsd * intrinsicApyDecimal;
-			}
-		}
-
-		// Borrow side
-		if (p.borrowedValueUsd != null && p.borrowedValueUsd > 0) {
-			const borrowUsd = p.borrowedValueUsd;
-			const borrowApy = getVaultBorrowApy(vault);
-			if (borrowApy != null) {
-				hasData = true;
-				totalBorrowUsd += borrowUsd;
-				totalBorrowingYield += borrowUsd * borrowApy;
-				totalRewardYield += borrowUsd * getVaultRewardApr(vault, "BORROW");
-				totalIntrinsicYield -= borrowUsd * intrinsicApyDecimal;
-			}
-		}
-	}
-
-	if (!hasData) return undefined;
-
-	const equity = totalSupplyUsd - totalBorrowUsd;
-	if (equity <= 0) return undefined;
-
-	const lending = totalLendingYield / equity;
-	const borrowing = -totalBorrowingYield / equity;
-	const rewards = totalRewardYield / equity;
-	const intrinsicApy = totalIntrinsicYield / equity;
-
+	const totals = computePositionYieldTotals(
+		subAccountYieldPositions(subAccount),
+		viewer,
+	);
+	if (!totals) return undefined;
+	if (totals.totalEquityUsd <= 0) return undefined;
+	const breakdown = divideYieldTotals(totals, totals.totalEquityUsd);
 	return {
-		lending,
-		borrowing,
-		rewards,
-		intrinsicApy,
-		total: lending + borrowing + rewards + intrinsicApy,
+		lending: breakdown.lending,
+		borrowing: breakdown.borrowing,
+		rewards: breakdown.rewards,
+		intrinsicApy: breakdown.intrinsicApy,
+		total: breakdown.total,
 	};
 }
 
@@ -298,8 +255,9 @@ export function computeSubAccountRoe(
  */
 export function computeAccountNetApy(
 	account: IAccount<IHasVaultAddress>,
+	viewer: Address | string | undefined | null,
 ): number | undefined {
-	const totals = computeAccountYieldTotals(account);
+	const totals = computeAccountYieldTotals(account, viewer);
 	if (!totals) return undefined;
 	if (totals.totalSupplyUsd === 0) return 0;
 	return totals.totalNetYield / totals.totalSupplyUsd;
@@ -311,8 +269,9 @@ export function computeAccountNetApy(
  */
 export function computePositionsNetApy(
 	positions: Iterable<AccountYieldPosition>,
+	viewer: Address | string | undefined | null,
 ): number | undefined {
-	const totals = computePositionYieldTotals(positions);
+	const totals = computePositionYieldTotals(positions, viewer);
 	if (!totals) return undefined;
 	if (totals.totalSupplyUsd === 0) return 0;
 	return totals.totalNetYield / totals.totalSupplyUsd;
@@ -325,8 +284,9 @@ export function computePositionsNetApy(
  */
 export function computeAccountRoe(
 	account: IAccount<IHasVaultAddress>,
+	viewer: Address | string | undefined | null,
 ): number | undefined {
-	const totals = computeAccountYieldTotals(account);
+	const totals = computeAccountYieldTotals(account, viewer);
 	if (!totals) return undefined;
 	if (totals.totalEquityUsd <= 0) return 0;
 	return totals.totalNetYield / totals.totalEquityUsd;
@@ -338,8 +298,9 @@ export function computeAccountRoe(
  */
 export function computePositionsRoe(
 	positions: Iterable<AccountYieldPosition>,
+	viewer: Address | string | undefined | null,
 ): number | undefined {
-	const totals = computePositionYieldTotals(positions);
+	const totals = computePositionYieldTotals(positions, viewer);
 	if (!totals) return undefined;
 	if (totals.totalEquityUsd <= 0) return 0;
 	return totals.totalNetYield / totals.totalEquityUsd;
@@ -350,8 +311,9 @@ export function computePositionsRoe(
  */
 export function computePositionsNetApyBreakdown(
 	positions: Iterable<AccountYieldPosition>,
+	viewer: Address | string | undefined | null,
 ): YieldApyBreakdown | undefined {
-	const totals = computePositionYieldTotals(positions);
+	const totals = computePositionYieldTotals(positions, viewer);
 	if (!totals) return undefined;
 	if (totals.totalSupplyUsd === 0) return zeroYieldApyBreakdown();
 	return divideYieldTotals(totals, totals.totalSupplyUsd);
@@ -362,8 +324,9 @@ export function computePositionsNetApyBreakdown(
  */
 export function computePositionsRoeBreakdown(
 	positions: Iterable<AccountYieldPosition>,
+	viewer: Address | string | undefined | null,
 ): YieldApyBreakdown | undefined {
-	const totals = computePositionYieldTotals(positions);
+	const totals = computePositionYieldTotals(positions, viewer);
 	if (!totals) return undefined;
 	if (totals.totalEquityUsd <= 0) return zeroYieldApyBreakdown();
 	return divideYieldTotals(totals, totals.totalEquityUsd);
@@ -375,6 +338,7 @@ export function computePositionsRoeBreakdown(
  */
 export function computeSupplyApyBreakdown(
 	vault: IHasVaultAddress | undefined,
+	viewer: Address | string | undefined | null,
 ): YieldApyBreakdown | undefined {
 	if (!vault) return undefined;
 
@@ -383,7 +347,7 @@ export function computeSupplyApyBreakdown(
 		lending,
 		getVaultIntrinsicApy(vault),
 	);
-	const rewards = getVaultRewardApr(vault, "LEND");
+	const rewards = getVaultRewardApr(vault, "LEND", viewer);
 
 	return {
 		lending,
@@ -540,23 +504,109 @@ export interface AccountYieldPosition {
 	vault?: IHasVaultAddress;
 	suppliedValueUsd?: number;
 	borrowedValueUsd?: number;
+	/**
+	 * Optional borrow-side context. When present on a borrow position, the
+	 * yield computation also picks up `BORROW_COLLATERAL` campaigns (gated by
+	 * the collateral set) and `LOOPING` campaigns (gated by the position
+	 * multiplier). Without this context, those campaigns are excluded — the
+	 * SDK has no way to know which collaterals back the borrow or what the
+	 * effective leverage is.
+	 */
+	borrowContext?: BorrowYieldContext;
+}
+
+/**
+ * Context attached to a borrow `AccountYieldPosition` so collateral-conditional
+ * and leverage-conditional rewards can be attributed to the position.
+ */
+export interface BorrowYieldContext {
+	/**
+	 * Collateral vault addresses backing this borrow.
+	 * `BORROW_COLLATERAL` campaigns whose `collateralAddress` matches an entry
+	 * here are added to the borrow-side reward yield.
+	 */
+	collateralAddresses: Address[];
+	/**
+	 * Effective leverage multiplier (supplied / equity) for this borrow.
+	 * `LOOPING` campaigns count when this value is within the campaign's
+	 * `[minMultiplier, maxMultiplier]` envelope.
+	 */
+	multiplier?: number;
+	/**
+	 * Equity (NAV) in USD for this borrow-collateral set.
+	 * `LOOPING` rewards are paid per unit of equity (not scaled by leverage),
+	 * so their contribution to the yield total is `equityUsd * loopingApr`.
+	 */
+	equityUsd?: number;
 }
 
 function computeAccountYieldTotals(
 	account: IAccount<IHasVaultAddress>,
+	viewer: Address | string | undefined | null,
 ): AccountYieldTotals | undefined {
 	function* positions(): Iterable<AccountYieldPosition> {
 		for (const subAccount of Object.values(account.subAccounts ?? {})) {
 			if (!subAccount) continue;
-			yield* subAccount.positions;
+			yield* subAccountYieldPositions(subAccount);
 		}
 	}
 
-	return computePositionYieldTotals(positions());
+	return computePositionYieldTotals(positions(), viewer);
+}
+
+/**
+ * Lifts a sub-account's positions into `AccountYieldPosition` entries with
+ * borrow-side context populated. For each borrow position, the collaterals
+ * backing it (via `findCollateralPositionsForBorrow`) are recorded so the
+ * yield computation can pick up `BORROW_COLLATERAL` and `LOOPING` rewards.
+ */
+function subAccountYieldPositions<T extends IHasVaultAddress>(
+	subAccount: ISubAccount<T>,
+): AccountYieldPosition[] {
+	const out: AccountYieldPosition[] = [];
+	for (const p of subAccount.positions) {
+		if (p.borrowedValueUsd != null && p.borrowedValueUsd > 0) {
+			const collaterals = findCollateralPositionsForBorrow(subAccount, p);
+			const suppliedSum = sumPositionUsd(collaterals, "suppliedValueUsd");
+			const multiplier = computeCollateralMultiplier(
+				suppliedSum,
+				p.borrowedValueUsd,
+			);
+			const equityUsd =
+				suppliedSum != null ? suppliedSum - p.borrowedValueUsd : undefined;
+			out.push({
+				vault: p.vault,
+				borrowedValueUsd: p.borrowedValueUsd,
+				borrowContext: {
+					collateralAddresses: collaterals.map((c) =>
+						getAddress(c.vaultAddress),
+					),
+					multiplier,
+					equityUsd:
+						equityUsd != null && equityUsd > 0 ? equityUsd : undefined,
+				},
+			});
+			// If the same vault also carries a supply leg (mixed position), emit
+			// it separately so supply rewards still accrue.
+			if (p.suppliedValueUsd != null && p.suppliedValueUsd > 0) {
+				out.push({
+					vault: p.vault,
+					suppliedValueUsd: p.suppliedValueUsd,
+				});
+			}
+			continue;
+		}
+		out.push({
+			vault: p.vault,
+			suppliedValueUsd: p.suppliedValueUsd,
+		});
+	}
+	return out;
 }
 
 function computePositionYieldTotals(
 	positions: Iterable<AccountYieldPosition>,
+	viewer: Address | string | undefined | null,
 ): AccountYieldTotals | undefined {
 	let totalNetYield = 0;
 	let totalLendingYield = 0;
@@ -582,7 +632,7 @@ function computePositionYieldTotals(
 				getVaultIntrinsicApy(vault),
 			);
 			const supplyApy = baseSupplyApy + intrinsicSupplyApy;
-			const supplyRewardApy = getVaultRewardApr(vault, "LEND");
+			const supplyRewardApy = getVaultRewardApr(vault, "LEND", viewer);
 
 			totalNetYield += supplyUsd * (supplyApy + supplyRewardApy);
 			totalLendingYield += supplyUsd * baseSupplyApy;
@@ -603,7 +653,17 @@ function computePositionYieldTotals(
 				getVaultIntrinsicApy(vault),
 			);
 			const borrowApy = baseBorrowApy + intrinsicBorrowApy;
-			const borrowRewardApy = getVaultRewardApr(vault, "BORROW");
+			let borrowRewardApy = getVaultRewardApr(vault, "BORROW", viewer);
+
+			const ctx = position.borrowContext;
+			if (ctx && ctx.collateralAddresses.length > 0) {
+				borrowRewardApy += getVaultRewardApr(
+					vault,
+					"BORROW_COLLATERAL",
+					viewer,
+					(c) => matchesCollateral(c, ctx.collateralAddresses),
+				);
+			}
 
 			totalNetYield -= borrowUsd * (borrowApy - borrowRewardApy);
 			totalBorrowingYield += borrowUsd * baseBorrowApy;
@@ -611,6 +671,34 @@ function computePositionYieldTotals(
 			totalIntrinsicYield -= borrowUsd * intrinsicBorrowApy;
 			totalBorrowUsd += borrowUsd;
 			hasUsdData = true;
+
+			// LOOPING rewards are paid per unit of equity (independent of
+			// leverage), so we add `equityUsd * loopingApr` to the reward
+			// totals when the position has a matching, eligible campaign.
+			if (
+				ctx &&
+				ctx.collateralAddresses.length > 0 &&
+				ctx.multiplier != null &&
+				ctx.equityUsd != null &&
+				ctx.equityUsd > 0
+			) {
+				const loopingApr = getVaultRewardApr(
+					vault,
+					"LOOPING",
+					viewer,
+					(c) =>
+						isLoopingEligible(
+							c,
+							ctx.collateralAddresses,
+							ctx.multiplier!,
+						),
+				);
+				if (loopingApr !== 0) {
+					const loopingYield = ctx.equityUsd * loopingApr;
+					totalNetYield += loopingYield;
+					totalRewardYield += loopingYield;
+				}
+			}
 		}
 	}
 
@@ -701,14 +789,60 @@ function getIntrinsicApyContribution(
 	return (1 + baseApy / 100) * intrinsicApy;
 }
 
-/** Sum reward APRs for a given action as percentage points from vault campaigns. */
-function getVaultRewardApr(vault: any, action: string): number {
-	if (!vault.rewards?.campaigns) return 0;
+/**
+ * Sum reward APRs (percentage points) for a given action from vault campaigns
+ * eligible to the supplied viewer.
+ *
+ * Uses `vault.rewards.getActiveCampaigns(viewer)` so whitelist/blacklist
+ * filtering is applied consistently with the rest of the SDK. An optional
+ * predicate further narrows the campaigns — used to gate
+ * `BORROW_COLLATERAL` on collateral match and `LOOPING` on multiplier range.
+ */
+function getVaultRewardApr(
+	vault: any,
+	action: string,
+	viewer: Address | string | undefined | null,
+	predicate?: (campaign: any) => boolean,
+): number {
+	if (!vault.rewards?.getActiveCampaigns) return 0;
 	let total = 0;
-	for (const c of vault.rewards.campaigns) {
-		if (c.action === action && typeof c.apr === "number") {
-			total += c.apr * 100;
-		}
+	for (const c of vault.rewards.getActiveCampaigns({ viewer })) {
+		if (c.action !== action) continue;
+		if (typeof c.apr !== "number") continue;
+		if (predicate && !predicate(c)) continue;
+		total += c.apr * 100;
 	}
 	return total;
+}
+
+/** Predicate for `BORROW_COLLATERAL` campaigns: collateral address must match. */
+function matchesCollateral(
+	campaign: { collateralAddress?: Address },
+	collateralAddresses: Address[],
+): boolean {
+	if (!campaign.collateralAddress) return false;
+	return collateralAddresses.some((address) =>
+		isAddressEqual(address, campaign.collateralAddress!),
+	);
+}
+
+/**
+ * Predicate for `LOOPING` campaigns: collateral match AND multiplier within
+ * the campaign's `[minMultiplier, maxMultiplier]` envelope (open ends count).
+ */
+function isLoopingEligible(
+	campaign: {
+		collateralAddress?: Address;
+		minMultiplier?: number;
+		maxMultiplier?: number;
+	},
+	collateralAddresses: Address[],
+	multiplier: number,
+): boolean {
+	if (!matchesCollateral(campaign, collateralAddresses)) return false;
+	if (campaign.minMultiplier != null && multiplier < campaign.minMultiplier)
+		return false;
+	if (campaign.maxMultiplier != null && multiplier > campaign.maxMultiplier)
+		return false;
+	return true;
 }

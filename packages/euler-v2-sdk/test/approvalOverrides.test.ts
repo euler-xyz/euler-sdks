@@ -25,6 +25,7 @@ test("getApprovalOverrides discovers allowance slots from access-list candidates
 	const requestPayloads: Array<Record<string, unknown>> = [];
 
 	const client = {
+		chain: { id: 1 },
 		request: async ({
 			params,
 		}: {

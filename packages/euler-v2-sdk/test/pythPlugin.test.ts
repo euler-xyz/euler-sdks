@@ -266,24 +266,23 @@ test("Pyth plugin skips untrusted Pyth contract addresses", async () => {
 			provider,
 			vaults: [
 				{
-					oracle: {
-						adapters: [
-							{
-								oracle: UNTRUSTED_PYTH,
-								name: "PythOracle",
+					debtPricingOracleAdapters: [
+						{
+							oracle: UNTRUSTED_PYTH,
+							name: "PythOracle",
+							base: ASSET,
+							quote: UNIT,
+							pythDetail: {
+								pyth: UNTRUSTED_PYTH,
 								base: ASSET,
 								quote: UNIT,
-								pythDetail: {
-									pyth: UNTRUSTED_PYTH,
-									base: ASSET,
-									quote: UNIT,
-									feedId: GOOD_FEED,
-									maxStaleness: 60n,
-									maxConfWidth: 1n,
-								},
+								feedId: GOOD_FEED,
+								maxStaleness: 60n,
+								maxConfWidth: 1n,
 							},
-						],
-					},
+						},
+					],
+					collaterals: [],
 				} as never,
 			],
 		});
@@ -317,24 +316,23 @@ test("Pyth plugin allows explicitly configured custom Pyth addresses", async () 
 			provider,
 			vaults: [
 				{
-					oracle: {
-						adapters: [
-							{
-								oracle: UNTRUSTED_PYTH,
-								name: "PythOracle",
+					debtPricingOracleAdapters: [
+						{
+							oracle: UNTRUSTED_PYTH,
+							name: "PythOracle",
+							base: ASSET,
+							quote: UNIT,
+							pythDetail: {
+								pyth: UNTRUSTED_PYTH,
 								base: ASSET,
 								quote: UNIT,
-								pythDetail: {
-									pyth: UNTRUSTED_PYTH,
-									base: ASSET,
-									quote: UNIT,
-									feedId: GOOD_FEED,
-									maxStaleness: 60n,
-									maxConfWidth: 1n,
-								},
+								feedId: GOOD_FEED,
+								maxStaleness: 60n,
+								maxConfWidth: 1n,
 							},
-						],
-					},
+						},
+					],
+					collaterals: [],
 				} as never,
 			],
 		});
@@ -367,24 +365,23 @@ test("Pyth plugin skips update batches above the configured fee cap", async () =
 			provider,
 			vaults: [
 				{
-					oracle: {
-						adapters: [
-							{
-								oracle: PYTH,
-								name: "PythOracle",
+					debtPricingOracleAdapters: [
+						{
+							oracle: PYTH,
+							name: "PythOracle",
+							base: ASSET,
+							quote: UNIT,
+							pythDetail: {
+								pyth: PYTH,
 								base: ASSET,
 								quote: UNIT,
-								pythDetail: {
-									pyth: PYTH,
-									base: ASSET,
-									quote: UNIT,
-									feedId: GOOD_FEED,
-									maxStaleness: 60n,
-									maxConfWidth: 1n,
-								},
+								feedId: GOOD_FEED,
+								maxStaleness: 60n,
+								maxConfWidth: 1n,
 							},
-						],
-					},
+						},
+					],
+					collaterals: [],
 				} as never,
 			],
 		});

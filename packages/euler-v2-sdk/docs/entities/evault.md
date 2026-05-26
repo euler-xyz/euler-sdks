@@ -81,6 +81,7 @@ Every variant has `address`, `type`, `data`, and `params`.
 | `ADAPTIVE_CURVE` | `AdaptiveCurveIRMInfo | null` | `null` |
 | `KINKY` | `KinkyIRMInfo | null` | `null` |
 | `FIXED_CYCLICAL_BINARY` | `FixedCyclicalBinaryIRMInfo | null` | `null` |
+| `FIXED_CYCLICAL_BINARY_MONTHLY` | `FixedCyclicalBinaryMonthlyIRMInfo | null` | `null` |
 | `UNKNOWN` | `null` | `null` |
 
 ### `IEVaultCollateral` and `EVaultCollateral`

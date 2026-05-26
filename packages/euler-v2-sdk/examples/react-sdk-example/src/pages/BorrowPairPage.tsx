@@ -407,8 +407,8 @@ export function BorrowPairPage() {
     return accountData.getSubAccount(targetSubAccount);
   }, [accountData, targetSubAccount]);
 
-  const projectedRoe = previewSubAccount?.roe;
-  const currentRoe = currentSubAccount?.roe;
+  const projectedRoe = previewSubAccount?.getRoe({ viewer: accountData?.owner });
+  const currentRoe = currentSubAccount?.getRoe({ viewer: accountData?.owner });
 
   const previewPositionWithLiquidity = useMemo(() => {
     if (!previewSubAccount) return undefined;
@@ -705,9 +705,6 @@ export function BorrowPairPage() {
           },
         }
       );
-      if (rawBatchResults?.length) {
-        console.debug("[preview] raw batch results (plan only):", rawBatchResults);
-      }
       if (failedBatchItems?.length) {
         setPreviewSimulationError(formatFailedBatchItems(failedBatchItems));
         setSimulatedAccountPreview(null);

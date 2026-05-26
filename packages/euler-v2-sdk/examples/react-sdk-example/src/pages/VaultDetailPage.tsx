@@ -163,15 +163,6 @@ export function VaultDetailPage() {
     [diagnostics]
   );
 
-  useEffect(() => {
-    if (!data) return;
-    console.log("VaultDetailPage.fetchVault", {
-      chainId,
-      address,
-      data,
-    });
-  }, [address, chainId, data]);
-
   const collateralDiagnosticIndex = useMemo(() => {
     if (!vault) {
       return createEntityDiagnosticIndex({

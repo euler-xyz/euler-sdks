@@ -26,7 +26,7 @@ if (result.simulationError) {
 }
 ```
 
-See [examples/simulations/simulate-deposit-example.ts](../examples/simulations/simulate-deposit-example.ts) for a full runnable example:
+See [examples/simulations/simulate-deposit-example.ts](../examples/simulations/simulate-deposit-example.ts) for a full runnable example. For the performance-tuned fan-out pattern (slot-hint prime + wallet snapshot + plugin prefetch), see [examples/simulations/simulate-with-prefetch-and-slot-hints-example.ts](../examples/simulations/simulate-with-prefetch-and-slot-hints-example.ts).
 
 ## Execution service simulation API
 
@@ -64,6 +64,75 @@ const gas = await sdk.executionService.estimateGasForTransactionPlan(
   plan,
 )
 ```
+
+## Performance tuning: `SimulationStateOverrideOptions`
+
+`simulateTransactionPlan`, `estimateGasForTransactionPlan`, and the prepared-envelope variants accept a `stateOverrideOptions: SimulationStateOverrideOptions` field. The same shape is also taken by the lower-level `deriveStateOverrides` / `prepareTransactionPlan` (via `stateOverrides.options`). Use it when you want to amortise simulation cost across many calls — typical for swap-quote fan-outs, leverage calculators, or any UI that simulates dozens of candidate plans for a single user interaction.
+
+```typescript
+const overrides = {
+  // The UI already validated "Not enough balance". The simulator doesn't need
+  // to forge balances at all — skip balanceOf reads + slot probing.
+  noBalanceOverride: true,
+  // The sender has already approved Permit2 / direct allowances. Skip the
+  // allowance branch entirely.
+  noAllowanceOverride: false,
+  // The wallet snapshot the UI already holds. When a value here is ≥ the
+  // plan's requirement, the SDK emits no override and skips the per-call RPC.
+  wallet: {
+    balances: { [getAddress(token)]: 1_000n * 10n ** 6n },
+    allowances: { [`${getAddress(token)}:${getAddress(spender)}`]: maxUint256 },
+  },
+  // Pre-fetched ERC20 storage-slot hints. Lets the SDK bypass eth_createAccessList
+  // discovery and compute the slot cryptographically.
+  slotHints,
+}
+
+const gas = await sdk.executionService.estimateGasForTransactionPlan(
+  chainId,
+  accountAddress,
+  plan,
+  { stateOverrides: true, stateOverrideOptions: overrides },
+)
+```
+
+| Field | When to set | What it skips |
+|---|---|---|
+| `noBalanceOverride: true` | UI validates wallet balance up front (or operation doesn't consume wallet ERC20 at all — e.g. collateral-swap repay, debt swap). | Every `balanceOf` RPC + balance-slot discovery for this call. |
+| `noAllowanceOverride: true` | Caller has already approved direct allowance / Permit2 for the spenders this plan needs. | Per-call `allowance` reads. Permit2 deterministic overrides are still emitted (they cost no RPC). |
+| `wallet.balances[token]` | UI already holds a wallet balance snapshot for this token. | The `balanceOf` RPC for `token` when the snapshot ≥ the plan's required amount. Falls through otherwise. |
+| `wallet.allowances[token:spender]` | UI knows the user has an unlimited allowance (e.g. set during onboarding). | The `allowance` RPC when set to `maxUint256`. |
+| `slotHints[token]` | Pre-fetched once with `fetchErc20SlotHints`. | `eth_createAccessList` discovery on every estimate/sim. |
+
+### Priming slot hints
+
+Slot hints are owner-/spender-agnostic, deterministic per-token storage layouts. Compute them once per token and reuse forever:
+
+```typescript
+import { fetchErc20SlotHints, fetchErc20SlotHintsBatch } from "@eulerxyz/euler-v2-sdk"
+
+const hints = await fetchErc20SlotHints(provider, token, {
+  // Optional: a known approver makes the allowance-slot probe deterministic.
+  allowanceSpender: permit2Address,
+})
+
+// Or batch:
+const hintMap = await fetchErc20SlotHintsBatch(provider, [tokenA, tokenB, tokenC], {
+  allowanceSpender: permit2Address,
+})
+```
+
+Successful probes are also cached in a module-scope `slotHintsCache` keyed on chain ID + token. `getCachedSlotHints(chainId, token)` reads it; `primeSlotHintsCache(chainId, hints)` writes pre-computed entries (useful for hydration from a backend).
+
+Pass the result on every subsequent `simulate*` / `estimateGas*` / `prepare*` call via `stateOverrideOptions.slotHints` and the SDK derives slots cryptographically instead of probing.
+
+### Recommended pattern for UI fan-outs
+
+For a form that simulates N candidate plans per user interaction (e.g. one swap quote per provider):
+
+1. **On form mount** — call `fetchErc20SlotHints` for each relevant token. Reuse the returned map.
+2. **Per simulate/estimate call** — assemble `SimulationStateOverrideOptions` from the form's already-validated wallet snapshot + the slot-hint map, with `noBalanceOverride: true` when the form gates submit on balance.
+3. **For per-plan plugin work** — see `prefetchPluginDataForPlan` in [Execution Service](./execution-service.md#prefetching-plugin-data) so the sweep does one Hermes pull + one Keyring read instead of N.
 
 ### Population of simulated accounts
 

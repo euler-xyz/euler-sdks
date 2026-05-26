@@ -13,6 +13,7 @@ import type { IPriceService } from "../services/priceService/index.js";
 import type {
 	IRewardsService,
 	UserReward,
+	ViewerOptions,
 } from "../services/rewardsService/index.js";
 import {
 	accountDiagnosticOwner,
@@ -367,10 +368,21 @@ export class SubAccount<TVaultEntity extends IHasVaultAddress = never>
 		);
 	}
 
-	/** ROE breakdown (percentage points, 5 = 5%). Requires populated vaults + market prices. */
+	/** Default-view (no viewer) ROE breakdown. Same as `getRoe()`. */
 	get roe(): SubAccountRoe | undefined {
+		return this.getRoe();
+	}
+
+	/**
+	 * ROE breakdown (percentage points, 5 = 5%). Requires populated vaults + market prices.
+	 *
+	 * `opts.viewer` filters whitelist/blacklist-gated rewards (see
+	 * `defaultIsActiveForViewer`). Omit it for the headline view.
+	 */
+	getRoe(opts: ViewerOptions = {}): SubAccountRoe | undefined {
 		return computeSubAccountRoe(
 			this as unknown as ISubAccount<IHasVaultAddress>,
+			opts.viewer,
 		);
 	}
 }
@@ -435,6 +447,13 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 
 	getSubAccountById(id: number): SubAccount<TVaultEntity> | undefined {
 		return this.subAccounts[getSubAccountAddress(this.owner, id)];
+	}
+
+	setSubAccount(
+		subAccount: ISubAccount<TVaultEntity> | SubAccount<TVaultEntity>,
+	): void {
+		this.subAccounts[getAddress(subAccount.account)] =
+			subAccount instanceof SubAccount ? subAccount : new SubAccount(subAccount);
 	}
 
 	/**

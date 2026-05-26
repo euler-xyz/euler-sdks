@@ -491,36 +491,6 @@ export async function fetchEarnVaultAddressesFromLabels(
   return addresses;
 }
 
-function logVaultFetchResults(
-  kind: "eVault" | "eulerEarn" | "securitize",
-  chainId: number,
-  addresses: Address[],
-  result: Array<VaultEntity | undefined>,
-  diagnostics: DiagnosticIssue[]
-) {
-  console.log(`[react-sdk-example] ${kind} fetch`, {
-    chainId,
-    requestedCount: addresses.length,
-    requestedAddressSample: addresses.slice(0, 5),
-    resolvedCount: result.filter((vault): vault is VaultEntity => vault !== undefined).length,
-    resolvedVaultSample: result
-      .filter((vault): vault is VaultEntity => vault !== undefined)
-      .slice(0, 5)
-      .map((vault) => ({
-        address: vault.address,
-        name: vault.shares.name,
-        symbol: vault.shares.symbol,
-      })),
-    missingAddressSample: result
-      .map((vault, index) => (vault === undefined ? addresses[index] : undefined))
-      .filter((address): address is Address => address !== undefined)
-      .slice(0, 5),
-    missingCount: result.filter((vault) => vault === undefined).length,
-    diagnosticCount: diagnostics.length,
-    diagnosticSample: diagnostics.slice(0, 5),
-  });
-}
-
 async function fetchLabeledVaultsWithDiagnostics(
   sdk: EulerSDK,
   chainId: number
@@ -536,7 +506,6 @@ async function fetchLabeledVaultsWithDiagnostics(
       populateLabels: true,
     })
   );
-  logVaultFetchResults("eVault", chainId, addresses, res.result as Array<VaultEntity | undefined>, res.diagnostics);
   return res;
 }
 
@@ -556,7 +525,6 @@ async function fetchEulerEarnVaultsWithDiagnostics(
       populateLabels: true,
     })
   );
-  logVaultFetchResults("eulerEarn", chainId, addresses, res.result as Array<VaultEntity | undefined>, res.diagnostics);
   return res;
 }
 
@@ -575,7 +543,6 @@ async function fetchSecuritizeVaultsWithDiagnostics(
       populateLabels: true,
     })
   );
-  logVaultFetchResults("securitize", chainId, addresses, res.result as Array<VaultEntity | undefined>, res.diagnostics);
   return res;
 }
 
@@ -1078,7 +1045,10 @@ export function useChainRewards() {
       for (const [vaultAddress, info] of map) {
         entries.push({ vaultAddress, info });
       }
-      entries.sort((a, b) => b.info.totalRewardsApr - a.info.totalRewardsApr);
+      entries.sort(
+        (a, b) =>
+          b.info.getTotalRewardsApr() - a.info.getTotalRewardsApr(),
+      );
       return entries;
     },
     enabled,

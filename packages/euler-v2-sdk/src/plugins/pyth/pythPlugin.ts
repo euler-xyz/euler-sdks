@@ -35,11 +35,14 @@ import {
 	collectPythFeedsFromAdapters,
 	type PythFeed,
 } from "../../utils/oracle.js";
-import type {
-	EulerPlugin,
-	PluginBatchItems,
-	PluginSDK,
-	ReadPluginContext,
+import {
+	type EulerPlugin,
+	type PluginBatchItems,
+	type PluginPrefetchData,
+	type PluginSDK,
+	prependToBatch,
+	type PythPluginPrefetch,
+	type ReadPluginContext,
 } from "../types.js";
 
 // ── Pyth ABI (minimal: only the two functions we need) ──
@@ -129,7 +132,10 @@ export class PythPluginAdapter {
 		fetchFn: typeof fetch = globalThis.fetch,
 	) {
 		this.hermesUrl = hermesUrl;
-		this.fetchFn = fetchFn;
+		// Browser fetch throws "Illegal invocation" if `this` is anything but
+		// Window; storing it on the instance and calling via `this.fetchFn(...)`
+		// rebinds away. Bind once at construction.
+		this.fetchFn = fetchFn.bind(globalThis);
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
 
@@ -458,11 +464,13 @@ export interface PythPluginConfig {
 	pythAddresses?: Record<number, Address | readonly Address[]>;
 	/** Maximum native-token fee accepted for one Pyth update batch. Defaults to 0.01 native token. */
 	maxUpdateFee?: bigint;
+	/** Override fetch used to call the Hermes endpoint. Apps that proxy Hermes through their own backend (e.g. to satisfy CSP) pass a fetcher that rewrites the request URL. */
+	fetchFn?: typeof fetch;
 }
 
 export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 	const hermesUrl = config.hermesUrl || "https://hermes.pyth.network";
-	const adapter = new PythPluginAdapter(hermesUrl, config.buildQuery);
+	const adapter = new PythPluginAdapter(hermesUrl, config.buildQuery, config.fetchFn);
 	const maxUpdateFee = config.maxUpdateFee ?? DEFAULT_MAX_PYTH_UPDATE_FEE;
 	const getTrustedPythAddresses = (chainId: number): Set<string> => {
 		const addresses = new Set<string>();
@@ -482,18 +490,123 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 		return addresses;
 	};
 
+	const buildBatchItemsFromPrefetch = (
+		entries: PythPluginPrefetch["entries"],
+		sender: Address,
+	): { items: EVCBatchItem[]; totalValue: bigint } => {
+		const items: EVCBatchItem[] = [];
+		let totalValue = 0n;
+		for (const entry of entries) {
+			if (!entry.updates.length) continue;
+			if (entry.fee > maxUpdateFee) continue;
+			items.push({
+				targetContract: entry.pythAddress,
+				onBehalfOfAccount: sender,
+				value: entry.fee,
+				data: encodeFunctionData({
+					abi: PYTH_ABI,
+					functionName: "updatePriceFeeds",
+					args: [entry.updates],
+				}),
+			});
+			totalValue += entry.fee;
+		}
+		return { items, totalValue };
+	};
+
 	return {
 		name: "pyth",
 
+		async prefetch(
+			plan: TransactionPlan,
+			account: AddressOrAccount,
+			chainId: number,
+			sdk: PluginSDK,
+		): Promise<PythPluginPrefetch | undefined> {
+			const resolvedAccount = await resolveAccount(account, chainId, sdk);
+			const planSets = calculateHealthCheckSets(plan, resolvedAccount);
+			const allAccounts: HealthCheckAccountSet[] = [];
+			for (const set of planSets) allAccounts.push(...set.accounts);
+			if (!allAccounts.length) return undefined;
+
+			const feeds = await collectHealthCheckFeeds(
+				allAccounts,
+				chainId,
+				sdk,
+			);
+			if (!feeds.length) return undefined;
+
+			const provider = sdk.providerService.getProvider(chainId);
+			const trusted = getTrustedPythAddresses(chainId);
+			const grouped = new Map<Address, Set<Hex>>();
+			for (const feed of feeds) {
+				const pythAddress = getAddress(feed.pythAddress);
+				if (!trusted.has(pythAddress.toLowerCase())) {
+					logPythPluginError(
+						pythAddress,
+						[feed.feedId],
+						new Error(`Untrusted Pyth contract for chainId ${chainId}`),
+					);
+					continue;
+				}
+				const set = grouped.get(pythAddress) ?? new Set<Hex>();
+				set.add(feed.feedId);
+				grouped.set(pythAddress, set);
+			}
+
+			const entries: PythPluginPrefetch["entries"] = [];
+			await Promise.all(
+				[...grouped.entries()].map(async ([pythAddress, feedSet]) => {
+					const feedIds = [...feedSet];
+					try {
+						const updates = await adapter.queryPythUpdateData(feedIds);
+						if (!updates.length) return;
+						const fee = await adapter.queryPythUpdateFee(
+							provider,
+							pythAddress,
+							updates,
+						);
+						entries.push({ pythAddress, feedIds, updates, fee });
+					} catch (err) {
+						logPythPluginError(pythAddress, feedIds, err);
+					}
+				}),
+			);
+			return entries.length ? { entries } : undefined;
+		},
+
 		async getReadPrepend(
 			ctx: ReadPluginContext,
+			prefetch?: PluginPrefetchData,
 		): Promise<PluginBatchItems | null> {
-			const feeds = deduplicateFeeds(
-				ctx.vaults.flatMap((v) =>
-					collectPythFeedsFromAdapters(v.oracle.adapters),
-				),
-			);
+			const pythPrefetch = prefetch?.pyth;
+			if (pythPrefetch?.entries.length) {
+				const built = buildBatchItemsFromPrefetch(
+					pythPrefetch.entries,
+					zeroAddress,
+				);
+				return built.items.length ? built : null;
+			}
 
+			// Route-aware live collection: use the route-filtered adapter lists
+			// EVault already pre-computes (debt-asset and per-collateral routes),
+			// not the full router adapter set.
+			const collectedFeeds: PythFeed[] = [];
+			for (const v of ctx.vaults) {
+				if (v.debtPricingOracleAdapters?.length) {
+					collectedFeeds.push(
+						...collectPythFeedsFromAdapters(v.debtPricingOracleAdapters),
+					);
+				}
+				for (const collateral of v.collaterals ?? []) {
+					if (collateral.oracleAdapters?.length) {
+						collectedFeeds.push(
+							...collectPythFeedsFromAdapters(collateral.oracleAdapters),
+						);
+					}
+				}
+			}
+			const feeds = deduplicateFeeds(collectedFeeds);
 			if (!feeds.length) return null;
 			const result = await buildPythBatchItems(
 				feeds,
@@ -511,7 +624,19 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 			account: AddressOrAccount,
 			chainId: number,
 			sdk: PluginSDK,
+			prefetch?: PluginPrefetchData,
 		): Promise<TransactionPlan> {
+			const sender = getAccountOwner(account);
+			const pythPrefetch = prefetch?.pyth;
+			if (pythPrefetch?.entries.length) {
+				// Prepend the prefetched Pyth update once. Pyth updates are
+				// multicall-scoped: a single update at the head of the first
+				// evcBatch serves every health-check downstream in that batch.
+				const built = buildBatchItemsFromPrefetch(pythPrefetch.entries, sender);
+				if (!built.items.length) return plan;
+				return prependToBatch(plan, built.items);
+			}
+
 			const resolvedAccount = await resolveAccount(account, chainId, sdk);
 			const healthCheckSets = new Map(
 				calculateHealthCheckSets(plan, resolvedAccount).map((set) => [
@@ -520,7 +645,6 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 				]),
 			);
 			const provider = sdk.providerService.getProvider(chainId);
-			const sender = getAccountOwner(account);
 			const processed: TransactionPlanItem[] = [];
 
 			for (const [planIndex, entry] of plan.entries()) {

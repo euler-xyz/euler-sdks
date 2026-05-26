@@ -624,6 +624,131 @@ export const collectChainlinkOracles = (
 };
 
 /**
+ * Walk an OracleDetailedInfo tree for the active price path of (base, quote)
+ * and collect only the Pyth feed IDs actually used to price that pair.
+ *
+ * Unlike collectPythFeedIds (which returns every Pyth feed anywhere in the
+ * tree) this avoids pulling Hermes updates for fallback routes that aren't
+ * exercised during a given operation.
+ */
+export const collectPythFeedIdsForPair = (
+	oracleInfo: OracleDetailedInfo | null | undefined,
+	base: Address,
+	quote: Address,
+	maxDepth = 3,
+): PythFeed[] => {
+	const feeds: PythFeed[] = [];
+	const visited = new Set<string>();
+
+	const visit = (
+		info: OracleDetailedInfo | null | undefined,
+		depth: number,
+		context: OracleAdapterContext,
+	) => {
+		if (!info || depth > maxDepth) return;
+		const key = `${info.oracle}-${info.name}-${info.oracleInfo}-${context.base || ""}-${context.quote || ""}`;
+		if (visited.has(key)) return;
+		visited.add(key);
+
+		if (info.name === "EulerRouter") {
+			const decoded = decodeEulerRouterInfo(info.oracleInfo);
+			if (!decoded) return;
+			const targetBase = context.base?.toLowerCase();
+			const targetQuote = context.quote?.toLowerCase();
+			let matched = false;
+			const total = Math.max(
+				decoded.resolvedOraclesInfo?.length ?? 0,
+				decoded.bases?.length ?? 0,
+				decoded.quotes?.length ?? 0,
+			);
+			for (let i = 0; i < total; i += 1) {
+				const child = decoded.resolvedOraclesInfo?.[i];
+				const childBase = decoded.bases?.[i];
+				const childQuote = decoded.quotes?.[i];
+				const resolvedAssets = decoded.resolvedAssets?.[i] ?? [];
+				if (!child) continue;
+				if (targetBase && targetQuote) {
+					if (!childBase || !childQuote) continue;
+					if (
+						childBase.toLowerCase() !== targetBase ||
+						childQuote.toLowerCase() !== targetQuote
+					)
+						continue;
+					matched = true;
+				}
+				visit(child, depth + 1, {
+					base: resolvedAssets.at(-1) ?? childBase,
+					quote: childQuote,
+				});
+			}
+			if (
+				decoded.fallbackOracleInfo &&
+				(!targetBase || !targetQuote || !matched)
+			) {
+				visit(decoded.fallbackOracleInfo, depth + 1, context);
+			}
+			return;
+		}
+
+		if (info.name === "CrossAdapter") {
+			const decoded = decodeCrossAdapterInfo(info.oracleInfo);
+			if (!decoded) return;
+			visit(decoded.oracleBaseCrossInfo, depth + 1, {
+				base: decoded.base,
+				quote: decoded.cross,
+			});
+			visit(decoded.oracleCrossQuoteInfo, depth + 1, {
+				base: decoded.cross,
+				quote: decoded.quote,
+			});
+			return;
+		}
+
+		if (info.name === "PythOracle") {
+			const decoded = decodePythOracleInfo(info.oracleInfo);
+			const pair = resolveAdapterPair(
+				context,
+				decoded ? { base: decoded.base, quote: decoded.quote } : undefined,
+			);
+			if (decoded && pair) {
+				feeds.push({
+					pythAddress: decoded.pyth,
+					feedId: normalizeHex(decoded.feedId),
+				});
+			}
+		}
+	};
+
+	visit(oracleInfo, 0, { base, quote });
+
+	const deduped = new Map<string, PythFeed>();
+	for (const feed of feeds) {
+		const key = `${feed.pythAddress.toLowerCase()}:${feed.feedId.toLowerCase()}`;
+		if (!deduped.has(key)) deduped.set(key, feed);
+	}
+	return [...deduped.values()];
+};
+
+/**
+ * Route-aware Pyth feed selection over already-decoded OracleAdapterEntry[].
+ * Uses selectResolvedVaultAdaptersForPair / selectLeafAdaptersForPair to pick
+ * only the adapters on the active (base, quote) route, then extracts Pyth
+ * feeds from that subset.
+ */
+export const collectPythFeedsForPair = (
+	adapters: OracleAdapterEntry[],
+	resolvedVaults: OracleResolvedVault[] | undefined,
+	base: Address,
+	quote: Address,
+): PythFeed[] => {
+	const routeAdapters =
+		resolvedVaults && resolvedVaults.length
+			? selectResolvedVaultAdaptersForPair(adapters, resolvedVaults, base, quote)
+			: selectLeafAdaptersForPair(adapters, base, quote);
+	return collectPythFeedsFromAdapters(routeAdapters);
+};
+
+/**
  * Extract unique PythFeed entries from already-decoded oracle adapters.
  * Use this instead of collectPythFeedIds when you have OracleAdapterEntry[] (e.g. from vault.oracle.adapters).
  */

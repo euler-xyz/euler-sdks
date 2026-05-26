@@ -14,4 +14,5 @@ export type {
 	IAccountService,
 	IAccountAdapter,
 	AccountFetchOptions,
+	ResolveNewSubAccountOptions,
 } from "./accountService.js";

@@ -1,4 +1,9 @@
-import { Account, type IAccount, SubAccount } from "../../entities/Account.js";
+import {
+	Account,
+	type GetNextSubAccountOptions,
+	type IAccount,
+	SubAccount,
+} from "../../entities/Account.js";
 import { type Address, getAddress } from "viem";
 import type { IVaultMetaService } from "../vaults/vaultMetaService/index.js";
 import type {
@@ -16,6 +21,7 @@ import {
 	type DataIssue,
 	type ServiceResult,
 } from "../../utils/entityDiagnostics.js";
+import { isBorrowControllerCompatible } from "../../utils/subAccounts.js";
 
 export interface AccountFetchOptions {
 	/** When true, enables all supported populate steps and overrides granular populate flags. */
@@ -28,6 +34,21 @@ export interface AccountFetchOptions {
 	/** Options forwarded to vault services when populating vaults. */
 	vaultFetchOptions?: VaultFetchOptions;
 }
+
+export interface ResolveNewSubAccountOptions<
+	TVaultEntity extends IHasVaultAddress = IHasVaultAddress,
+> extends GetNextSubAccountOptions {
+	account?: Account<TVaultEntity>;
+	fetchOptions?: AccountFetchOptions;
+}
+
+const SUB_ACCOUNT_CHECK_CHUNK_SIZE = 25;
+
+const SUB_ACCOUNT_SNAPSHOT_FETCH_OPTIONS: AccountFetchOptions = {
+	populateVaults: false,
+	populateMarketPrices: false,
+	populateUserRewards: false,
+};
 
 /** Collects unique vault addresses from a sub-account's positions and liquidity collaterals only. */
 function collectVaultAddressesFromSubAccountPositionsAndLiquidity(
@@ -71,6 +92,11 @@ export interface IAccountService<
 		vaults?: Address[],
 		options?: AccountFetchOptions,
 	): Promise<ServiceResult<SubAccount<TVaultEntity> | undefined>>;
+	resolveNewSubAccount(
+		chainId: number,
+		address: Address,
+		options?: ResolveNewSubAccountOptions<TVaultEntity>,
+	): Promise<ServiceResult<Address | undefined>>;
 	populateVaults(
 		accounts: Account<never>[],
 		options?: AccountFetchOptions,
@@ -232,6 +258,78 @@ export class AccountService<
 			result: tempAccount.getSubAccount(getAddress(sa.account)),
 			errors: compressDataIssues(errors),
 		};
+	}
+
+	async resolveNewSubAccount(
+		chainId: number,
+		address: Address,
+		options: ResolveNewSubAccountOptions<TVaultEntity> = {},
+	): Promise<ServiceResult<Address | undefined>> {
+		const errors: DataIssue[] = [];
+		const owner = getAddress(address);
+		let account = options.account;
+		if (!account) {
+			const fetched = await this.fetchAccount(chainId, owner, options.fetchOptions);
+			errors.push(...fetched.errors);
+			account = fetched.result;
+		}
+		if (!account) {
+			return { result: undefined, errors: compressDataIssues(errors) };
+		}
+		const range = { startId: options.startId, endId: options.endId };
+		const snapshotFetchOptions =
+			options.fetchOptions ?? SUB_ACCOUNT_SNAPSHOT_FETCH_OPTIONS;
+
+		const fetchSubAccountSnapshot = async (
+			subAccount: Address,
+		): Promise<SubAccount<TVaultEntity> | undefined> => {
+			const fetched = await this.fetchSubAccount(
+				chainId,
+				getAddress(subAccount),
+				[],
+				snapshotFetchOptions,
+			);
+			errors.push(...fetched.errors);
+			return fetched.result ?? account.getSubAccount(subAccount);
+		};
+
+		if (!options.borrowVault) {
+			const subAccount = account.getNewSubAccount(range);
+			return {
+				result: subAccount ? getAddress(subAccount) : undefined,
+				errors: compressDataIssues(errors),
+			};
+		}
+
+		const borrowVault = getAddress(options.borrowVault);
+		const candidates = account.getFreeSubAccounts(range);
+		for (
+			let index = 0;
+			index < candidates.length;
+			index += SUB_ACCOUNT_CHECK_CHUNK_SIZE
+		) {
+			const chunk = candidates.slice(index, index + SUB_ACCOUNT_CHECK_CHUNK_SIZE);
+			const snapshots = await Promise.all(
+				chunk.map((subAccount) => fetchSubAccountSnapshot(subAccount)),
+			);
+
+			for (let i = 0; i < chunk.length; i++) {
+				const subAccount = chunk[i]!;
+				const snapshot = snapshots[i];
+				const enabledControllers =
+					snapshot?.enabledControllers ??
+					account.getSubAccount(subAccount)?.enabledControllers ??
+					[];
+				if (isBorrowControllerCompatible(enabledControllers, borrowVault)) {
+					return {
+						result: getAddress(subAccount),
+						errors: compressDataIssues(errors),
+					};
+				}
+			}
+		}
+
+		return { result: undefined, errors: compressDataIssues(errors) };
 	}
 
 	async populateVaults(

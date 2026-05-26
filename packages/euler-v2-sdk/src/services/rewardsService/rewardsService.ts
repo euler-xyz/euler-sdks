@@ -16,6 +16,10 @@ import type {
 	UserReward,
 	VaultRewardInfo,
 } from "./rewardsServiceTypes.js";
+import {
+	defaultIsActiveForViewer,
+	type IsActiveForViewerFn,
+} from "./rewardCampaignEligibility.js";
 
 const MERKL_DISTRIBUTOR_ABI = [
 	{
@@ -154,6 +158,7 @@ const fuulRewardKey = (currency: string, currencyType?: number): string =>
 
 export class RewardsService implements IRewardsService {
 	private providerService?: ProviderService;
+	private isActiveForViewer: IsActiveForViewerFn;
 
 	constructor(
 		private adapter: IRewardsAdapter,
@@ -162,7 +167,11 @@ export class RewardsService implements IRewardsService {
 			fuulManagerAddress: Address;
 			fuulFactoryAddress: Address;
 		},
-	) {}
+		options?: { isActiveForViewer?: IsActiveForViewerFn },
+	) {
+		this.isActiveForViewer =
+			options?.isActiveForViewer ?? defaultIsActiveForViewer;
+	}
 
 	setAdapter(adapter: IRewardsAdapter): void {
 		this.adapter = adapter;
@@ -172,17 +181,31 @@ export class RewardsService implements IRewardsService {
 		this.providerService = providerService;
 	}
 
+	setIsActiveForViewer(fn: IsActiveForViewerFn): void {
+		this.isActiveForViewer = fn;
+	}
+
+	getIsActiveForViewer(): IsActiveForViewerFn {
+		return this.isActiveForViewer;
+	}
+
 	async fetchVaultRewards(
 		chainId: number,
 		vaultAddress: Address,
 	): Promise<VaultRewardInfo | undefined> {
-		return this.adapter.fetchVaultRewards(chainId, vaultAddress);
+		const info = await this.adapter.fetchVaultRewards(chainId, vaultAddress);
+		if (info) info.setIsActiveForViewer(this.isActiveForViewer);
+		return info;
 	}
 
 	async fetchChainRewards(
 		chainId: number,
 	): Promise<Map<string, VaultRewardInfo>> {
-		return this.adapter.fetchChainRewards(chainId);
+		const map = await this.adapter.fetchChainRewards(chainId);
+		for (const info of map.values()) {
+			info.setIsActiveForViewer(this.isActiveForViewer);
+		}
+		return map;
 	}
 
 	async populateRewards(vaults: ERC4626Vault[]): Promise<void> {

@@ -1,6 +1,10 @@
 import type { Address, Hex } from "viem";
 import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
 import type { TransactionPlan } from "../executionService/index.js";
+import type { IsActiveForViewerFn } from "./rewardCampaignEligibility.js";
+
+export { VaultRewardInfo } from "./vaultRewardInfo.js";
+import type { VaultRewardInfo } from "./vaultRewardInfo.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -32,12 +36,6 @@ export interface RewardCampaign {
 	/** Lowercased Merkl recipient allowlist/denylist, when provided by campaign params. */
 	whitelist?: string[];
 	blacklist?: string[];
-}
-
-export interface VaultRewardInfo {
-	/** Sum of all LIVE campaign APRs (decimal fraction). */
-	totalRewardsApr: number;
-	campaigns: RewardCampaign[];
 }
 
 export interface UserRewardToken {
@@ -131,6 +129,11 @@ export interface RewardsServiceConfig {
 	enableFuul?: boolean;
 	directAdapterConfig?: RewardsDirectAdapterConfig;
 	v3AdapterConfig?: RewardsV3AdapterConfig;
+	/**
+	 * Optional override for per-viewer eligibility (whitelist/blacklist).
+	 * Defaults to Merkl semantics (see `defaultIsActiveForViewer`).
+	 */
+	isActiveForViewer?: IsActiveForViewerFn;
 }
 
 export interface BuildRewardClaimPlanArgs {

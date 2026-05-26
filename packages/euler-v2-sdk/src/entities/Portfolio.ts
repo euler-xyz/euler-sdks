@@ -30,6 +30,7 @@ import {
 	bigintRatioToNumber,
 	wadRatioToDecimal,
 } from "../utils/normalization.js";
+import type { ViewerOptions } from "../services/rewardsService/index.js";
 
 export interface PortfolioPositionFilterContext<
 	TVaultEntity extends IHasVaultAddress = IHasVaultAddress,
@@ -51,7 +52,7 @@ export interface PortfolioOptions<
 	positionFilter?: PortfolioPositionFilter<TVaultEntity>;
 }
 
-export interface PortfolioSavingsPosition<
+export interface PortfolioSavingsPositionArgs<
 	TVaultEntity extends IHasVaultAddress = never,
 > {
 	position: AccountPosition<TVaultEntity>;
@@ -60,13 +61,94 @@ export interface PortfolioSavingsPosition<
 	shares: bigint;
 	assets: bigint;
 	suppliedValueUsd?: number;
-	/** Total supply APY for this savings position in percentage points, including intrinsic APY and rewards. */
-	apy?: number;
-	/** Supply APY contribution breakdown for this savings position. */
-	apyBreakdown?: YieldApyBreakdown;
 }
 
-export interface PortfolioBorrowPosition<
+/**
+ * Savings entry produced by `Portfolio.savings`.
+ *
+ * The default-view getters (`apy`, `apyBreakdown`) return the no-viewer
+ * "headline" numbers. Pass a viewer through `getApyBreakdown({ viewer })`
+ * to apply whitelist/blacklist eligibility on the rewards bucket.
+ */
+export class PortfolioSavingsPosition<
+	TVaultEntity extends IHasVaultAddress = never,
+> {
+	position: AccountPosition<TVaultEntity>;
+	vault?: TVaultEntity;
+	subAccount: Address;
+	shares: bigint;
+	assets: bigint;
+	suppliedValueUsd?: number;
+
+	constructor(args: PortfolioSavingsPositionArgs<TVaultEntity>) {
+		this.position = args.position;
+		this.vault = args.vault;
+		this.subAccount = args.subAccount;
+		this.shares = args.shares;
+		this.assets = args.assets;
+		this.suppliedValueUsd = args.suppliedValueUsd;
+	}
+
+	/** Default-view APY total (no viewer). */
+	get apy(): number | undefined {
+		return this.getApyBreakdown()?.total;
+	}
+
+	/** Default-view APY breakdown (no viewer). */
+	get apyBreakdown(): YieldApyBreakdown | undefined {
+		return this.getApyBreakdown();
+	}
+
+	/**
+	 * Supply APY contribution breakdown for this savings position.
+	 * `opts.viewer` filters whitelist/blacklist-gated rewards.
+	 */
+	getApyBreakdown(opts: ViewerOptions = {}): YieldApyBreakdown | undefined {
+		return computeSupplyApyBreakdown(this.vault, opts.viewer);
+	}
+}
+
+export interface PortfolioBorrowPositionArgs<
+	TVaultEntity extends IHasVaultAddress = never,
+> {
+	borrow: AccountPosition<TVaultEntity>;
+	collaterals: AccountPosition<TVaultEntity>[];
+	collateral?: AccountPosition<TVaultEntity>;
+	borrowVault?: TVaultEntity;
+	collateralVault?: TVaultEntity;
+	collateralVaults: Address[];
+	subAccount: Address;
+	healthFactor?: bigint;
+	userLTV?: bigint;
+	currentLTV?: bigint;
+	borrowed: bigint;
+	supplied: bigint;
+	price?: number;
+	primaryCollateralLiquidationPrice?: number;
+	borrowLiquidationPriceUsd?: number;
+	collateralLiquidationPricesUsd?: Record<Address, number>;
+	liquidatable: boolean;
+	borrowLTV?: number;
+	liquidationLTV?: number;
+	accountLiquidationLTV?: number;
+	liabilityValueBorrowing?: bigint;
+	liabilityValueLiquidation?: bigint;
+	liabilityValueUsd?: number;
+	totalCollateralValueUsd?: number;
+	collateralValueLiquidation?: bigint;
+	timeToLiquidation?: DaysToLiquidation;
+	multiplier?: number;
+}
+
+/**
+ * Borrow entry produced by `Portfolio.borrows`.
+ *
+ * Default-view getters (`netApy`, `roe`, `apyBreakdown`, `roeBreakdown`) return
+ * the no-viewer "headline" numbers. Pass a viewer through `getApyBreakdown({ viewer })`
+ * or `getRoeBreakdown({ viewer })` to apply whitelist/blacklist eligibility on
+ * the rewards bucket.
+ */
+export class PortfolioBorrowPosition<
 	TVaultEntity extends IHasVaultAddress = never,
 > {
 	/** Underlying debt position. */
@@ -100,14 +182,76 @@ export interface PortfolioBorrowPosition<
 	timeToLiquidation?: DaysToLiquidation;
 	/** Effective collateral multiplier: supplied value / equity value. */
 	multiplier?: number;
-	/** Net APY in percentage points for this borrow position, relative to supplied collateral value. */
-	netApy?: number;
-	/** Return on equity in percentage points for this borrow position, relative to supplied minus borrowed value. */
-	roe?: number;
-	/** Net APY contribution breakdown for this borrow position. */
-	apyBreakdown?: YieldApyBreakdown;
-	/** ROE contribution breakdown for this borrow position. */
-	roeBreakdown?: YieldApyBreakdown;
+
+	constructor(args: PortfolioBorrowPositionArgs<TVaultEntity>) {
+		this.borrow = args.borrow;
+		this.collaterals = args.collaterals;
+		this.collateral = args.collateral;
+		this.borrowVault = args.borrowVault;
+		this.collateralVault = args.collateralVault;
+		this.collateralVaults = args.collateralVaults;
+		this.subAccount = args.subAccount;
+		this.healthFactor = args.healthFactor;
+		this.userLTV = args.userLTV;
+		this.currentLTV = args.currentLTV;
+		this.borrowed = args.borrowed;
+		this.supplied = args.supplied;
+		this.price = args.price;
+		this.primaryCollateralLiquidationPrice = args.primaryCollateralLiquidationPrice;
+		this.borrowLiquidationPriceUsd = args.borrowLiquidationPriceUsd;
+		this.collateralLiquidationPricesUsd = args.collateralLiquidationPricesUsd;
+		this.liquidatable = args.liquidatable;
+		this.borrowLTV = args.borrowLTV;
+		this.liquidationLTV = args.liquidationLTV;
+		this.accountLiquidationLTV = args.accountLiquidationLTV;
+		this.liabilityValueBorrowing = args.liabilityValueBorrowing;
+		this.liabilityValueLiquidation = args.liabilityValueLiquidation;
+		this.liabilityValueUsd = args.liabilityValueUsd;
+		this.totalCollateralValueUsd = args.totalCollateralValueUsd;
+		this.collateralValueLiquidation = args.collateralValueLiquidation;
+		this.timeToLiquidation = args.timeToLiquidation;
+		this.multiplier = args.multiplier;
+	}
+
+	/** Default-view net APY (no viewer). */
+	get netApy(): number | undefined {
+		return this.getApyBreakdown()?.total;
+	}
+
+	/** Default-view ROE (no viewer). */
+	get roe(): number | undefined {
+		return this.getRoeBreakdown()?.total;
+	}
+
+	/** Default-view APY breakdown (no viewer). */
+	get apyBreakdown(): YieldApyBreakdown | undefined {
+		return this.getApyBreakdown();
+	}
+
+	/** Default-view ROE breakdown (no viewer). */
+	get roeBreakdown(): YieldApyBreakdown | undefined {
+		return this.getRoeBreakdown();
+	}
+
+	/**
+	 * Net APY contribution breakdown for this borrow position.
+	 * `opts.viewer` filters whitelist/blacklist-gated rewards.
+	 */
+	getApyBreakdown(opts: ViewerOptions = {}): YieldApyBreakdown | undefined {
+		return computePositionsNetApyBreakdown(this.yieldPositions, opts.viewer);
+	}
+
+	/**
+	 * ROE contribution breakdown for this borrow position.
+	 * `opts.viewer` filters whitelist/blacklist-gated rewards.
+	 */
+	getRoeBreakdown(opts: ViewerOptions = {}): YieldApyBreakdown | undefined {
+		return computePositionsRoeBreakdown(this.yieldPositions, opts.viewer);
+	}
+
+	private get yieldPositions(): AccountYieldPosition[] {
+		return borrowYieldPositions(this.borrow, this.collaterals);
+	}
 }
 
 export interface IPortfolio<TVaultEntity extends IHasVaultAddress = never> {
@@ -116,16 +260,34 @@ export interface IPortfolio<TVaultEntity extends IHasVaultAddress = never> {
 	getFreeSubAccounts(options?: GetFreeSubAccountsOptions): Address[];
 	getNextSubAccount(options?: GetNextSubAccountOptions): Address | undefined;
 	getNewSubAccount(options?: GetNextSubAccountOptions): Address | undefined;
+	/** Structural set of positions across the portfolio. Viewer-independent. */
 	readonly positions: AccountPosition<TVaultEntity>[];
+	/**
+	 * Savings positions. Per-position `apyBreakdown` is the default-view (no
+	 * viewer) value; use `position.getApyBreakdown({ viewer })` for viewer-aware.
+	 */
 	readonly savings: PortfolioSavingsPosition<TVaultEntity>[];
+	/**
+	 * Borrow positions. Per-position `apyBreakdown` / `roeBreakdown` are
+	 * default-view; use `position.getApyBreakdown({ viewer })` /
+	 * `position.getRoeBreakdown({ viewer })` for viewer-aware.
+	 */
 	readonly borrows: PortfolioBorrowPosition<TVaultEntity>[];
 	readonly totalSuppliedValueUsd?: number;
 	readonly totalBorrowedValueUsd?: number;
 	readonly netAssetValueUsd?: number;
+	/** Default-view net APY (no viewer). Equivalent to `getNetApy()`. */
 	readonly netApy?: number;
+	getNetApy(opts?: ViewerOptions): number | undefined;
+	/** Default-view ROE (no viewer). Equivalent to `getRoe()`. */
 	readonly roe?: number;
+	getRoe(opts?: ViewerOptions): number | undefined;
+	/** Default-view net APY breakdown (no viewer). Equivalent to `getNetApyBreakdown()`. */
 	readonly apyBreakdown?: YieldApyBreakdown;
+	getNetApyBreakdown(opts?: ViewerOptions): YieldApyBreakdown | undefined;
+	/** Default-view ROE breakdown (no viewer). Equivalent to `getRoeBreakdown()`. */
 	readonly roeBreakdown?: YieldApyBreakdown;
+	getRoeBreakdown(opts?: ViewerOptions): YieldApyBreakdown | undefined;
 	readonly totalRewardsValueUsd?: number;
 }
 
@@ -205,6 +367,7 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 		return this.getNextSubAccount(options);
 	}
 
+	/** Structural set of positions across the portfolio. Viewer-independent. */
 	get positions(): AccountPosition<TVaultEntity>[] {
 		const byKey = new Map<string, AccountPosition<TVaultEntity>>();
 		for (const saving of this.savings) {
@@ -231,6 +394,12 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 		return Array.from(byKey.values());
 	}
 
+	/**
+	 * Savings positions visible to the portfolio.
+	 *
+	 * Each entry's default-view `apyBreakdown` reflects the headline rewards.
+	 * Use `entry.getApyBreakdown({ viewer })` for viewer-aware values.
+	 */
 	get savings(): PortfolioSavingsPosition<TVaultEntity>[] {
 		const savings: PortfolioSavingsPosition<TVaultEntity>[] = [];
 		const collateralUsageSet = this.collateralUsageSet;
@@ -247,23 +416,29 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 				) {
 					continue;
 				}
-				const apyBreakdown = computeSupplyApyBreakdown(position.vault);
-				savings.push({
-					position,
-					vault: position.vault,
-					subAccount: position.account,
-					shares: position.shares,
-					assets: position.assets,
-					suppliedValueUsd: position.suppliedValueUsd,
-					apy: apyBreakdown?.total,
-					apyBreakdown,
-				});
+				savings.push(
+					new PortfolioSavingsPosition({
+						position,
+						vault: position.vault,
+						subAccount: position.account,
+						shares: position.shares,
+						assets: position.assets,
+						suppliedValueUsd: position.suppliedValueUsd,
+					}),
+				);
 			}
 		}
 
 		return savings;
 	}
 
+	/**
+	 * Borrow positions visible to the portfolio.
+	 *
+	 * Each entry's default-view `apyBreakdown` / `roeBreakdown` reflect the
+	 * headline rewards. Use `entry.getApyBreakdown({ viewer })` or
+	 * `entry.getRoeBreakdown({ viewer })` for viewer-aware values.
+	 */
 	get borrows(): PortfolioBorrowPosition<TVaultEntity>[] {
 		const borrows: PortfolioBorrowPosition<TVaultEntity>[] = [];
 
@@ -282,9 +457,6 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 				const ltv = collateral
 					? findCollateralLtv(borrow.vault, collateral.vaultAddress)
 					: undefined;
-				const yieldPositions = borrowYieldPositions(borrow, collaterals);
-				const apyBreakdown = computePositionsNetApyBreakdown(yieldPositions);
-				const roeBreakdown = computePositionsRoeBreakdown(yieldPositions);
 				const multiplier = computeBorrowMultiplier(borrow, collaterals);
 				const liabilityValueUsd =
 					borrow.liquidity?.liabilityValueUsd ??
@@ -310,41 +482,40 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 					collateralValueLiquidation,
 				);
 
-				borrows.push({
-					borrow,
-					collaterals,
-					collateral,
-					borrowVault: borrow.vault,
-					collateralVault: collateral?.vault,
-					collateralVaults: collaterals.map((position) =>
-						getAddress(position.vaultAddress),
-					),
-					subAccount: borrow.account,
-					healthFactor: subAccount.healthFactor,
-					userLTV: subAccount.currentLTV,
-					currentLTV: subAccount.currentLTV,
-					borrowed: borrow.borrowed,
-					supplied: collateral?.assets ?? 0n,
-					price: borrow.borrowLiquidationPriceUsd,
-					primaryCollateralLiquidationPrice,
-					borrowLiquidationPriceUsd: borrow.borrowLiquidationPriceUsd,
-					collateralLiquidationPricesUsd: borrow.collateralLiquidationPricesUsd,
-					liquidatable,
-					borrowLTV: ltv?.borrowLTV,
-					liquidationLTV: ltv?.liquidationLTV,
-					accountLiquidationLTV: wadRatioToDecimal(subAccount.liquidationLTV),
-					liabilityValueBorrowing: borrow.liquidity?.liabilityValue.borrowing,
-					liabilityValueLiquidation,
-					liabilityValueUsd,
-					totalCollateralValueUsd,
-					collateralValueLiquidation,
-					timeToLiquidation: borrow.liquidity?.daysToLiquidation,
-					multiplier,
-					netApy: apyBreakdown?.total,
-					roe: roeBreakdown?.total,
-					apyBreakdown,
-					roeBreakdown,
-				});
+				borrows.push(
+					new PortfolioBorrowPosition({
+						borrow,
+						collaterals,
+						collateral,
+						borrowVault: borrow.vault,
+						collateralVault: collateral?.vault,
+						collateralVaults: collaterals.map((position) =>
+							getAddress(position.vaultAddress),
+						),
+						subAccount: borrow.account,
+						healthFactor: subAccount.healthFactor,
+						userLTV: subAccount.currentLTV,
+						currentLTV: subAccount.currentLTV,
+						borrowed: borrow.borrowed,
+						supplied: collateral?.assets ?? 0n,
+						price: borrow.borrowLiquidationPriceUsd,
+						primaryCollateralLiquidationPrice,
+						borrowLiquidationPriceUsd: borrow.borrowLiquidationPriceUsd,
+						collateralLiquidationPricesUsd:
+							borrow.collateralLiquidationPricesUsd,
+						liquidatable,
+						borrowLTV: ltv?.borrowLTV,
+						liquidationLTV: ltv?.liquidationLTV,
+						accountLiquidationLTV: wadRatioToDecimal(subAccount.liquidationLTV),
+						liabilityValueBorrowing: borrow.liquidity?.liabilityValue.borrowing,
+						liabilityValueLiquidation,
+						liabilityValueUsd,
+						totalCollateralValueUsd,
+						collateralValueLiquidation,
+						timeToLiquidation: borrow.liquidity?.daysToLiquidation,
+						multiplier,
+					}),
+				);
 			}
 		}
 
@@ -368,24 +539,53 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 		return supplied - (this.totalBorrowedValueUsd ?? 0);
 	}
 
-	/** Net APY across positions that pass the portfolio filter. */
+	/** Default-view net APY (no viewer). Equivalent to `getNetApy()`. */
 	get netApy(): number | undefined {
-		return computePositionsNetApy(this.yieldPositions);
+		return this.getNetApy();
 	}
 
-	/** Return on equity across positions that pass the portfolio filter. */
+	/**
+	 * Net APY across positions that pass the portfolio filter.
+	 *
+	 * For include/exclude filtering (drop rewards / intrinsicApy) use
+	 * `getNetApyBreakdown(opts)` and reduce the components you want.
+	 */
+	getNetApy(opts: ViewerOptions = {}): number | undefined {
+		return computePositionsNetApy(this.yieldPositions, opts.viewer);
+	}
+
+	/** Default-view ROE (no viewer). Equivalent to `getRoe()`. */
 	get roe(): number | undefined {
-		return computePositionsRoe(this.yieldPositions);
+		return this.getRoe();
+	}
+
+	/**
+	 * Return on equity across positions that pass the portfolio filter.
+	 *
+	 * For include/exclude filtering use `getRoeBreakdown(opts)`.
+	 */
+	getRoe(opts: ViewerOptions = {}): number | undefined {
+		return computePositionsRoe(this.yieldPositions, opts.viewer);
+	}
+
+	/** Default-view net APY breakdown (no viewer). Equivalent to `getNetApyBreakdown()`. */
+	get apyBreakdown(): YieldApyBreakdown | undefined {
+		return this.getNetApyBreakdown();
 	}
 
 	/** Net APY contribution breakdown across positions that pass the portfolio filter. */
-	get apyBreakdown(): YieldApyBreakdown | undefined {
-		return computePositionsNetApyBreakdown(this.yieldPositions);
+	getNetApyBreakdown(opts: ViewerOptions = {}): YieldApyBreakdown | undefined {
+		return computePositionsNetApyBreakdown(this.yieldPositions, opts.viewer);
+	}
+
+	/** Default-view ROE breakdown (no viewer). Equivalent to `getRoeBreakdown()`. */
+	get roeBreakdown(): YieldApyBreakdown | undefined {
+		return this.getRoeBreakdown();
 	}
 
 	/** ROE contribution breakdown across positions that pass the portfolio filter. */
-	get roeBreakdown(): YieldApyBreakdown | undefined {
-		return computePositionsRoeBreakdown(this.yieldPositions);
+	getRoeBreakdown(opts: ViewerOptions = {}): YieldApyBreakdown | undefined {
+		return computePositionsRoeBreakdown(this.yieldPositions, opts.viewer);
 	}
 
 	/** Total unclaimed rewards value in USD, delegated to the wrapped Account. */
@@ -420,26 +620,56 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 		return collateralUsageSet;
 	}
 
+	/**
+	 * Structural set of yield-bearing positions, derived without viewer.
+	 * `suppliedValueUsd` / `borrowedValueUsd` are dollar amounts which don't depend on viewer;
+	 * viewer affects the reward APR applied per-position downstream.
+	 */
 	private get yieldPositions(): AccountYieldPosition[] {
 		const positions: AccountYieldPosition[] = [];
+		const collateralUsageSet = this.collateralUsageSet;
 
-		for (const saving of this.savings) {
-			positions.push({
-				vault: saving.position.vault,
-				suppliedValueUsd: saving.position.suppliedValueUsd,
-			});
-		}
+		for (const subAccount of Object.values(this.account.subAccounts ?? {})) {
+			if (!subAccount) continue;
 
-		for (const borrow of this.borrows) {
-			positions.push({
-				vault: borrow.borrow.vault,
-				borrowedValueUsd: borrow.borrow.borrowedValueUsd,
-			});
-			for (const collateral of borrow.collaterals) {
+			// Savings (supply positions not used as collateral for a borrow).
+			for (const position of subAccount.positions) {
+				if (position.assets === 0n && position.shares === 0n) continue;
+				if (!this.includePosition(position)) continue;
+				if (
+					collateralUsageSet.has(
+						portfolioPositionKey(position.account, position.vaultAddress),
+					)
+				) {
+					continue;
+				}
 				positions.push({
-					vault: collateral.vault,
-					suppliedValueUsd: collateral.suppliedValueUsd,
+					vault: position.vault,
+					suppliedValueUsd: position.suppliedValueUsd,
 				});
+			}
+
+			// Borrows + their collaterals.
+			for (const borrow of subAccount.positions) {
+				if (borrow.borrowed === 0n) continue;
+				if (!this.includePosition(borrow)) continue;
+
+				positions.push({
+					vault: borrow.vault,
+					borrowedValueUsd: borrow.borrowedValueUsd,
+				});
+
+				const collaterals = resolveBorrowCollateralPositions(
+					subAccount,
+					borrow,
+					(position) => this.includePosition(position),
+				);
+				for (const collateral of collaterals) {
+					positions.push({
+						vault: collateral.vault,
+						suppliedValueUsd: collateral.suppliedValueUsd,
+					});
+				}
 			}
 		}
 
@@ -509,10 +739,25 @@ function borrowYieldPositions<TVaultEntity extends IHasVaultAddress>(
 	borrow: AccountPosition<TVaultEntity>,
 	collaterals: AccountPosition<TVaultEntity>[],
 ): AccountYieldPosition[] {
+	const suppliedSum = sumYieldPositionUsd(collaterals, "suppliedValueUsd");
+	const multiplier = computeBorrowMultiplier(borrow, collaterals);
+	const equityUsd =
+		suppliedSum != null && borrow.borrowedValueUsd != null
+			? suppliedSum - borrow.borrowedValueUsd
+			: undefined;
+
 	return [
 		{
 			vault: borrow.vault,
 			borrowedValueUsd: borrow.borrowedValueUsd,
+			borrowContext: {
+				collateralAddresses: collaterals.map((collateral) =>
+					getAddress(collateral.vaultAddress),
+				),
+				multiplier,
+				equityUsd:
+					equityUsd != null && equityUsd > 0 ? equityUsd : undefined,
+			},
 		},
 		...collaterals.map((collateral) => ({
 			vault: collateral.vault,

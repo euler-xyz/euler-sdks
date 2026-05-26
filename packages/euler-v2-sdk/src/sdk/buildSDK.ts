@@ -1223,11 +1223,15 @@ export async function buildEulerSDK<
 				rewardsAdapter = directAdapter;
 			}
 
-			return new RewardsService(rewardsAdapter, {
-				merklDistributorAddress: directAdapter.getMerklDistributorAddress(),
-				fuulManagerAddress: directAdapter.getFuulManagerAddress(),
-				fuulFactoryAddress: directAdapter.getFuulFactoryAddress(),
-			});
+			return new RewardsService(
+				rewardsAdapter,
+				{
+					merklDistributorAddress: directAdapter.getMerklDistributorAddress(),
+					fuulManagerAddress: directAdapter.getFuulManagerAddress(),
+					fuulFactoryAddress: directAdapter.getFuulFactoryAddress(),
+				},
+				{ isActiveForViewer: rewardsServiceConfig?.isActiveForViewer },
+			);
 		})();
 
 	// Build intrinsic APY service if not overridden
@@ -1408,8 +1412,11 @@ export async function buildEulerSDK<
 	});
 
 	if (executionService instanceof ExecutionService) {
-		executionService.setPluginProcessor((plan, account, chainId) =>
-			sdk.processPlugins(plan, account, chainId),
+		executionService.setPluginProcessor((plan, account, chainId, prefetch) =>
+			sdk.processPlugins(plan, account, chainId, prefetch),
+		);
+		executionService.setPluginPrefetcher((plan, account, chainId) =>
+			sdk.prefetchPluginData(plan, account, chainId),
 		);
 	}
 

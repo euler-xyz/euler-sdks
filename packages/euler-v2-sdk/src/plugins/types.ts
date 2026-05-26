@@ -27,16 +27,67 @@ export interface Signer {
 
 export type PluginSDK = EulerSDK<any>;
 
+/**
+ * Per-plugin prefetched data, keyed by plugin `name`. Plugins that participate
+ * in prefetching populate their slot via `prefetch(...)`; downstream methods
+ * (`getReadPrepend`, `processPlan`) consume their slot via `prefetch[this.name]`.
+ *
+ * Known SDK plugins type their slot explicitly. The index signature lets
+ * external plugins register their own keyed payloads without changing this
+ * interface.
+ */
+export type PythPluginPrefetch = {
+	entries: Array<{
+		pythAddress: Address;
+		feedIds: Hex[];
+		updates: Hex[];
+		fee: bigint;
+	}>;
+};
+
+export type KeyringPluginPrefetch = {
+	gatedVaults: Map<
+		Address,
+		{
+			hookTarget: Address;
+			policyId: number;
+			keyring: Address;
+		} | null
+	>;
+};
+
+export type PluginPrefetchData = {
+	pyth?: PythPluginPrefetch;
+	keyring?: KeyringPluginPrefetch;
+	[pluginName: string]: unknown;
+};
+
 export interface EulerPlugin {
 	name: string;
+	/**
+	 * Optional form-level prefetch hook. Called once with the same arguments as
+	 * processPlan; the returned value is stored at `prefetch[plugin.name]` and
+	 * passed back to getReadPrepend/processPlan to avoid per-call network I/O.
+	 * Return undefined to opt out of prefetch (or to signal no useful data).
+	 */
+	prefetch?(
+		plan: TransactionPlan,
+		account: AddressOrAccount,
+		chainId: number,
+		sdk: PluginSDK,
+	): Promise<unknown>;
 	/** Return batch items to prepend when simulating lens reads. null = not relevant for these vaults. */
-	getReadPrepend?(ctx: ReadPluginContext): Promise<PluginBatchItems | null>;
+	getReadPrepend?(
+		ctx: ReadPluginContext,
+		prefetch?: PluginPrefetchData,
+	): Promise<PluginBatchItems | null>;
 	/** Transform a transaction plan (e.g. prepend oracle updates, resolve approvals). */
 	processPlan?(
 		plan: TransactionPlan,
 		account: AddressOrAccount,
 		chainId: number,
 		sdk: PluginSDK,
+		prefetch?: PluginPrefetchData,
 	): Promise<TransactionPlan>;
 	/** Decode a batch item that this plugin produced. Return null if the item is not from this plugin. */
 	decodeBatchItem?(item: EVCBatchItem): BatchItemDescription | null;

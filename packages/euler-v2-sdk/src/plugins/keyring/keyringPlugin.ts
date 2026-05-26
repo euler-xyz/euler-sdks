@@ -22,7 +22,12 @@ import type {
 } from "../../services/executionService/executionServiceTypes.js";
 import { flattenBatchEntries } from "../../services/executionService/executionServiceTypes.js";
 import { applyBuildQuery, type BuildQueryFn } from "../../utils/buildQuery.js";
-import type { EulerPlugin, PluginSDK } from "../types.js";
+import type {
+	EulerPlugin,
+	KeyringPluginPrefetch,
+	PluginPrefetchData,
+	PluginSDK,
+} from "../types.js";
 
 // ── Keyring ABIs (minimal: only the functions we need) ──
 
@@ -246,16 +251,72 @@ async function resolveTargetVaults(
 export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 	const adapter = new KeyringPluginAdapter(config.buildQuery);
 
+	type GateInfo = NonNullable<
+		ReturnType<KeyringPluginPrefetch["gatedVaults"]["get"]>
+	>;
+
+	const resolveGateInfo = async (
+		provider: PublicClient,
+		hookTarget: Address,
+	): Promise<GateInfo> => {
+		const [policyId, keyring] = await Promise.all([
+			adapter.queryKeyringPolicyId(provider, hookTarget),
+			adapter.queryKeyringAddress(provider, hookTarget),
+		]);
+		return { hookTarget, policyId, keyring };
+	};
+
 	return {
 		name: "keyring",
 
 		// Keyring does not affect reads — no getReadPrepend
+
+		async prefetch(
+			plan: TransactionPlan,
+			account: AddressOrAccount,
+			chainId: number,
+			sdk: PluginSDK,
+		): Promise<KeyringPluginPrefetch | undefined> {
+			const chainHookTargets = config.hookTargets[chainId];
+			if (!chainHookTargets?.length) return undefined;
+
+			const targetVaults = await resolveTargetVaults(
+				plan,
+				account,
+				chainId,
+				sdk,
+			);
+			if (!targetVaults.length) return undefined;
+			const provider = sdk.providerService.getProvider(chainId);
+
+			const entries = await Promise.all(
+				targetVaults.map(async (vault) => {
+					const address = getAddress(vault.address);
+					if (!isKeyringHook(vault, chainHookTargets)) {
+						return [address, null] as const;
+					}
+					try {
+						const info = await resolveGateInfo(
+							provider,
+							getAddress(vault.hooks.hookTarget),
+						);
+						return [address, info] as const;
+					} catch {
+						return [address, null] as const;
+					}
+				}),
+			);
+
+			const gatedVaults = new Map<Address, GateInfo | null>(entries);
+			return { gatedVaults };
+		},
 
 		async processPlan(
 			plan: TransactionPlan,
 			account: AddressOrAccount,
 			chainId: number,
 			sdk: PluginSDK,
+			prefetch?: PluginPrefetchData,
 		): Promise<TransactionPlan> {
 			const chainHookTargets = config.hookTargets[chainId];
 			if (!chainHookTargets?.length) return plan;
@@ -265,43 +326,71 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 					: getAddress(account.owner);
 			const provider = sdk.providerService.getProvider(chainId);
 
-			// Find vaults that have keyring hooks
-			const keyringVaults = (
-				await resolveTargetVaults(plan, account, chainId, sdk)
-			).filter((v) => isKeyringHook(v, chainHookTargets));
-			if (!keyringVaults.length) return plan;
+			const keyringPrefetch = prefetch?.keyring;
+
+			// Short-circuit: the form's vaults were prefetched and none are gated.
+			if (keyringPrefetch && keyringPrefetch.gatedVaults.size > 0) {
+				const anyGated = [...keyringPrefetch.gatedVaults.values()].some(
+					(info) => info !== null,
+				);
+				if (!anyGated) return plan;
+			}
+
+			// Resolve the keyring vaults to act on: prefer the prefetch's already-
+			// classified set, fall back to plan-walk + live isKeyringHook check.
+			let keyringEntries: Array<{ vault: EVault; gate: GateInfo }> = [];
+			if (keyringPrefetch) {
+				const targetVaults = await resolveTargetVaults(
+					plan,
+					account,
+					chainId,
+					sdk,
+				);
+				for (const vault of targetVaults) {
+					const address = getAddress(vault.address);
+					const gate = keyringPrefetch.gatedVaults.get(address);
+					if (gate) keyringEntries.push({ vault, gate });
+				}
+			} else {
+				const candidates = (
+					await resolveTargetVaults(plan, account, chainId, sdk)
+				).filter((v) => isKeyringHook(v, chainHookTargets));
+				keyringEntries = await Promise.all(
+					candidates.map(async (vault) => ({
+						vault,
+						gate: await resolveGateInfo(
+							provider,
+							getAddress(vault.hooks.hookTarget),
+						),
+					})),
+				);
+			}
+			if (!keyringEntries.length) return plan;
 
 			const items: EVCBatchItem[] = [];
 
-			for (const vault of keyringVaults) {
+			for (const { gate } of keyringEntries) {
 				try {
-					const hookTarget = vault.hooks.hookTarget;
-
-					// Check if credential is already valid
+					// Credential validity is intentionally re-checked here even if
+					// prefetched: it can flip between prefetch and submit if the
+					// user opens/closes an extension session.
 					const hasCredential = await adapter.queryKeyringCheckCredential(
 						provider,
-						hookTarget,
+						gate.hookTarget,
 						sender,
 					);
 					if (hasCredential) continue;
 
-					// Read policyId and keyring address from hook target
-					const [policyId, keyringAddress] = await Promise.all([
-						adapter.queryKeyringPolicyId(provider, hookTarget),
-						adapter.queryKeyringAddress(provider, hookTarget),
-					]);
-
-					// Get credential data from consumer callback
 					const credentialData = await config.getCredentialData({
 						chainId,
 						account: sender,
-						hookTarget,
-						policyId,
+						hookTarget: gate.hookTarget,
+						policyId: gate.policyId,
 					});
 					if (!credentialData) continue;
 
 					items.push({
-						targetContract: keyringAddress,
+						targetContract: gate.keyring,
 						onBehalfOfAccount: sender,
 						value: BigInt(credentialData.cost),
 						data: encodeFunctionData({

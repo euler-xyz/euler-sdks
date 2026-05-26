@@ -47,4 +47,11 @@ Gate execution on:
 
 If simulation fails, decode and surface actionable messages rather than raw revert bytes.
 
-Reference: `packages/euler-v2-sdk/docs/simulations-and-state-overrides.md`, `docs/decode-smart-contract-errors.md`, `examples/simulations/simulate-deposit-example.ts`
+For UI fan-outs that simulate N candidate plans per user action (swap-quote sweeps, leverage explorers), avoid blowing up RPC + Hermes traffic:
+
+- Pass `stateOverrideOptions` (`SimulationStateOverrideOptions`) to skip overrides the form already validated: `noBalanceOverride: true` when the form gates submit on wallet balance, `wallet.balances`/`wallet.allowances` from the snapshot the form already holds, and `slotHints` pre-fetched once per token with `fetchErc20SlotHints(provider, token, { allowanceSpender })`.
+- Compute `prefetch` once per sweep with `executionService.prefetchPluginDataForPlan(plan, account, chainId)` and thread it through every `prepareTransactionPlan` / `simulatePreparedTransactionPlan` / `estimateGasForPreparedTransactionPlan` / `executePreparedTransactionPlan` call. The Pyth / Keyring plugin work happens once instead of N times.
+
+These options are additive and degrade gracefully — omit them and the SDK falls back to full derivation + per-call plugin fetch.
+
+Reference: `packages/euler-v2-sdk/docs/simulations-and-state-overrides.md`, `docs/execution-service.md`, `docs/decode-smart-contract-errors.md`, `examples/simulations/simulate-deposit-example.ts`
