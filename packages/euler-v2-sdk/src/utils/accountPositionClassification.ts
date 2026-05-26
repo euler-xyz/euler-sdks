@@ -44,9 +44,17 @@ export function resolveBorrowCollateralVaults<
 	borrow: AccountPosition<TVaultEntity>,
 ): Address[] {
 	const liquidityCollaterals =
-		borrow.liquidity?.collaterals.map((collateral) =>
-			getAddress(collateral.address),
-		) ?? [];
+		borrow.liquidity?.collaterals
+			.map((collateral, index) => ({
+				address: getAddress(collateral.address),
+				index,
+				value: collateral.value.oracleMid,
+			}))
+			.sort((left, right) => {
+				if (left.value === right.value) return left.index - right.index;
+				return left.value > right.value ? -1 : 1;
+			})
+			.map(({ address }) => address) ?? [];
 
 	return liquidityCollaterals.length > 0
 		? liquidityCollaterals

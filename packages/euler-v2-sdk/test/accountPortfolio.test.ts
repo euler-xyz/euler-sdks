@@ -496,6 +496,82 @@ test("portfolio treats all-zero liquidity collaterals as collateral usage", () =
 	assert.deepEqual(portfolio.savings, []);
 });
 
+test("portfolio chooses the largest oracle-value collateral as primary borrow collateral", () => {
+	const account = populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(subAccount, [
+				position(borrowVault, {
+					borrowed: 100n,
+					isController: true,
+					liquidity: {
+						vaultAddress: borrowVault,
+						unitOfAccount: zeroAddress,
+						daysToLiquidation: "Infinity",
+						liabilityValue: {
+							borrowing: 100n,
+							liquidation: 100n,
+							oracleMid: 100n,
+						},
+						totalCollateralValue: {
+							borrowing: 100n,
+							liquidation: 100n,
+							oracleMid: 100n,
+						},
+						collaterals: [
+							{
+								address: collateralVault,
+								value: {
+									borrowing: 20n,
+									liquidation: 20n,
+									oracleMid: 20n,
+								},
+							},
+							{
+								address: fallbackCollateralVault,
+								value: {
+									borrowing: 80n,
+									liquidation: 80n,
+									oracleMid: 80n,
+								},
+							},
+						],
+					},
+				}),
+				position(collateralVault, {
+					shares: 1_000n,
+					assets: 1_000n,
+					isCollateral: true,
+				}),
+				position(fallbackCollateralVault, {
+					shares: 1n,
+					assets: 1n,
+					isCollateral: true,
+				}),
+			]),
+		},
+	});
+
+	const portfolioBorrow = new Portfolio(account).borrows[0];
+
+	assert.deepEqual(
+		portfolioBorrow?.collaterals.map(
+			(collateral) => collateral.vaultAddress,
+		),
+		[fallbackCollateralVault, collateralVault],
+	);
+	assert.equal(
+		portfolioBorrow?.collateral?.vaultAddress,
+		fallbackCollateralVault,
+	);
+	assert.deepEqual(portfolioBorrow?.collateralVaults, [
+		fallbackCollateralVault,
+		collateralVault,
+	]);
+	assert.equal(portfolioBorrow?.supplied, 1n);
+});
+
 test("portfolio permanently filters positions from lists and metrics", () => {
 	const verified = vault(savingsVault, {
 		eulerLabel: { vault: {}, entities: [], products: [], points: [] },
