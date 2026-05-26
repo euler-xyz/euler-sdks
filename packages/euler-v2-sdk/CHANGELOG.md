@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.2.8-beta] - 2026-05-26
+
+### Added
+
+- Added plugin prefetch support for fan-out simulation and quote flows, including `executionService.prefetchPluginDataForPlan`, `PluginPrefetchData`, and Pyth/Keyring plugin prefetch handling.
+- Added `SimulationStateOverrideOptions` performance controls, wallet snapshots, ERC20 slot-hint helpers, and the `simulate-with-prefetch-and-slot-hints` example.
+- Added viewer-aware rewards filtering through `VaultRewardInfo`, `ViewerOptions`, and configurable `isActiveForViewer` predicates.
+- Added borrow-side reward attribution for `BORROW_COLLATERAL` and `LOOPING` campaigns in account, portfolio, and ROE calculations.
+- Added `accountService.resolveNewSubAccount` for borrow flows that need a live stale-controller check before selecting a free sub-account.
+
+### Changed
+
+- Pyth plugin reads now support a custom Hermes `fetchFn`, route-aware feed collection, and prefetched update batches.
+- Execution planners expose `skipCleanup` controls where callers need to manage cleanup explicitly.
+- React example portfolio, rewards, vault list, and query flows now use the updated rewards and simulation surfaces.
+
+### Fixed
+
+- Borrow planners now avoid stale sub-account state before building borrow plans.
+- Approval resolution skips Permit2 when an existing direct vault allowance already covers the required amount.
+- Euler Earn one-hour supply APY and V3 rewards adapter parsing now match current V3 reward payloads.
+
 ## [0.2.4-beta] - 2026-05-19
 
 ### Added
