@@ -140,6 +140,13 @@ const normalizeNonNegativeInteger = (value: unknown): number | undefined => {
 	return integer >= 0 ? integer : undefined;
 };
 
+const normalizeAddressList = (
+	list?: readonly string[],
+): string[] | undefined => {
+	if (!list?.length) return undefined;
+	return list.map((address) => address.toLowerCase());
+};
+
 export class RewardsV3Adapter implements IRewardsAdapter {
 	constructor(
 		private config: RewardsV3AdapterConfig,
@@ -362,6 +369,8 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 					maxMultiplier: normalizeFiniteNumber(
 						campaignRow.maxMultiplier ?? campaignRow.maxLeverage,
 					),
+					whitelist: normalizeAddressList(campaignRow.whitelist),
+					blacklist: normalizeAddressList(campaignRow.blacklist),
 				});
 			}
 
@@ -400,6 +409,8 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			maxMultiplier: normalizeFiniteNumber(
 				row.maxMultiplier ?? row.maxLeverage,
 			),
+			whitelist: normalizeAddressList(row.whitelist),
+			blacklist: normalizeAddressList(row.blacklist),
 		});
 	}
 
