@@ -45,7 +45,6 @@ export interface ISwapService {
 const DEFAULT_DEADLINE = 1800; // 30 minutes
 const COWSWAP_ORDER_DEADLINE_SECONDS = 900;
 const COWSWAP_PROVIDER_NAME = "cow";
-const COWSWAP_PROVIDER_LABEL = "cow swap";
 const CLOSE_POSITION_FULL_REPAY_BUY_AMOUNT_BUFFER_DENOMINATOR = 100_000n;
 const MAX_SLIPPAGE = 50;
 export class SwapService implements ISwapService {
@@ -332,7 +331,8 @@ export class SwapService implements ISwapService {
 		}
 
 		const isCowWrapperQuote =
-			!!request.providerExtraData && this.isCowSwapQuote(quote);
+			!!request.providerExtraData &&
+			this.shouldTreatAsCowSwapQuote(request, quote);
 		if (!isCowWrapperQuote && request.swapperMode === SwapperMode.EXACT_IN) {
 			this.assertBigIntField("amountIn", quote.amountIn, request.amount);
 		} else if (
@@ -410,16 +410,8 @@ export class SwapService implements ISwapService {
 		quote: SwapQuote,
 	): void {
 		if (!request.providerExtraData) return;
+		if (!this.shouldTreatAsCowSwapQuote(request, quote)) return;
 		this.validateSupportedCowSwapRequest(request);
-		const isCowQuote = this.isCowSwapQuote(quote);
-		if (
-			!isCowQuote &&
-			request.provider &&
-			this.isCowSwapProviderName(request.provider)
-		) {
-			throw new Error(`CoW quote route must include ${COWSWAP_PROVIDER_NAME}`);
-		}
-		if (!isCowQuote) return;
 
 		const quoteId = this.normalizeCowSwapQuoteId(quote.providerData?.quoteId);
 		if (quoteId === undefined) {
@@ -537,9 +529,19 @@ export class SwapService implements ISwapService {
 		return undefined;
 	}
 
-	private isCowSwapQuote(quote: SwapQuote): boolean {
+	private shouldTreatAsCowSwapQuote(
+		request: SwapQuoteRequest,
+		quote: SwapQuote,
+	): boolean {
+		if (request.provider) {
+			return this.isCowSwapProviderName(request.provider);
+		}
+		return this.isCowSwapRouteLabel(quote);
+	}
+
+	private isCowSwapRouteLabel(quote: SwapQuote): boolean {
 		return quote.route.some((hop) =>
-			this.isCowSwapProviderName(hop.providerName),
+			hop.providerName?.toLowerCase().includes(COWSWAP_PROVIDER_NAME),
 		);
 	}
 
@@ -967,10 +969,6 @@ export class SwapService implements ISwapService {
 	}
 
 	private isCowSwapProviderName(provider: string): boolean {
-		const providerName = provider.toLowerCase();
-		return (
-			providerName === COWSWAP_PROVIDER_NAME ||
-			providerName === COWSWAP_PROVIDER_LABEL
-		);
+		return provider.toLowerCase() === COWSWAP_PROVIDER_NAME;
 	}
 }

@@ -515,7 +515,7 @@ test("fetchSwapQuotes serializes and validates CoW provider data", async () => {
 	let requestedUrl = "";
 	const quote = {
 		...createQuote(),
-		route: [{ providerName: "cow" }],
+		route: [{ providerName: "CoW Protocol" }],
 		providerData: {
 			quoteId: "7",
 			sellAmount: "990",
@@ -553,7 +553,7 @@ test("fetchSwapQuotes serializes and validates CoW provider data", async () => {
 test("fetchSwapQuotes reports detailed CoW provider amount mismatches", async () => {
 	const quote = {
 		...createQuote(),
-		route: [{ providerName: "cow" }],
+		route: [{ providerName: "CoW Protocol" }],
 		providerData: {
 			quoteId: 7,
 			sellAmount: "1000",
@@ -573,7 +573,7 @@ test("fetchSwapQuotes reports detailed CoW provider amount mismatches", async ()
 					appData: "cow-app-data",
 				},
 			}),
-		/Swap quote validation failed \(quote #1, route=cow, amountIn=1000, amountOut=950, providerData=.*CoW quote providerData sell total mismatch: providerData\.sellAmount \(1000\) \+ providerData\.feeAmount \(10\) = 1010, expected 1000/,
+		/Swap quote validation failed \(quote #1, route=CoW Protocol, amountIn=1000, amountOut=950, providerData=.*CoW quote providerData sell total mismatch: providerData\.sellAmount \(1000\) \+ providerData\.feeAmount \(10\) = 1010, expected 1000/,
 	);
 });
 
@@ -664,7 +664,7 @@ test("fetchDepositQuote accepts non-CoW quotes when CoW data is attached without
 	assert.equal(JSON.parse(params.get("providerExtraData") ?? "{}").type, "openPosition");
 });
 
-test("fetchDepositQuote rejects non-CoW quote when CoW provider is explicit", async () => {
+test("fetchDepositQuote validates provider data when CoW provider is explicit", async () => {
 	const service = new SwapService(
 		{ swapApiUrl: "https://swap.example" },
 		createDeploymentService(VERIFIER),
@@ -693,7 +693,7 @@ test("fetchDepositQuote rejects non-CoW quote when CoW provider is explicit", as
 					collateralAmount: 100n,
 				},
 			}),
-		/CoW quote route must include cow/,
+		/CoW quote providerData\.quoteId missing or invalid/,
 	);
 });
 
