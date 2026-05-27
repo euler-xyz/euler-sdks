@@ -45,7 +45,6 @@ export interface ISwapService {
 const DEFAULT_DEADLINE = 1800; // 30 minutes
 const COWSWAP_ORDER_DEADLINE_SECONDS = 900;
 const COWSWAP_PROVIDER_NAME = "cow";
-const CLOSE_POSITION_FULL_REPAY_BUY_AMOUNT_BUFFER_DENOMINATOR = 100_000n;
 const MAX_SLIPPAGE = 50;
 export class SwapService implements ISwapService {
 	constructor(
@@ -496,11 +495,12 @@ export class SwapService implements ISwapService {
 			request.providerExtraData?.type === "closePosition" &&
 			request.targetDebt === 0n
 		) {
-			return (
-				request.currentDebt +
-				request.currentDebt /
-					CLOSE_POSITION_FULL_REPAY_BUY_AMOUNT_BUFFER_DENOMINATOR
-			);
+			// Pad the full-repay buy amount with the standard interest cushion
+			// (0.01%) so the order still covers the debt after interest accrues
+			// between quote and CoW settlement (up to ~900s). Must match the
+			// cushion used elsewhere (approvals, verifier amounts, same-asset
+			// repay) — a smaller pad leaves debt dust on close.
+			return adjustForInterest(request.currentDebt);
 		}
 		return request.amount;
 	}
