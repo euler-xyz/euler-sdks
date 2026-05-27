@@ -409,16 +409,18 @@ export function getRoe(
 
 /**
  * Maximum multiplier for a given borrow LTV.
- * `1 / (1 - (borrowLtv - safetyMargin))` where borrowLtv is decimal (0.85 = 85%).
+ * `1 / (1 - borrowLtv) - safetyMargin` where borrowLtv is decimal (0.85 = 85%).
+ * The safety margin is deducted from the multiplier itself (not from the LTV),
+ * so a 0.5% margin shaves ~0.005 off the result rather than dropping it sharply
+ * near high LTV.
  * Floored to 2 decimal places, minimum 1.
  */
 export function getMaxMultiplier(
 	borrowLtv: number,
 	safetyMargin = 0.005,
 ): number {
-	const effective = borrowLtv - safetyMargin;
-	if (effective >= 1) return 1;
-	const raw = 1 / (1 - effective);
+	if (borrowLtv <= 0 || borrowLtv >= 1) return 1;
+	const raw = 1 / (1 - borrowLtv) - safetyMargin;
 	return Math.max(1, Math.floor(raw * 100) / 100);
 }
 
