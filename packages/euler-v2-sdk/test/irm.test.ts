@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import { encodeAbiParameters } from "viem";
 import {
+	ADAPTIVE_RATE_AT_TARGET_TO_BORROW_SPY_SCALE,
+	adaptiveRateAtTargetToBorrowSPY,
 	decodeIRMParams,
 	type FixedCyclicalBinaryMonthlyIRMInfo,
 	InterestRateModelType,
@@ -55,4 +57,20 @@ test("normalizeIRMParams accepts string/number inputs for FIXED_CYCLICAL_BINARY_
 		cycleStartDay: 15n,
 		secondaryDays: 5n,
 	});
+});
+
+test("adaptiveRateAtTargetToBorrowSPY scales non-negative WAD per-second rates", () => {
+	assert.equal(adaptiveRateAtTargetToBorrowSPY(0n), 0n);
+	assert.equal(
+		adaptiveRateAtTargetToBorrowSPY(1n),
+		ADAPTIVE_RATE_AT_TARGET_TO_BORROW_SPY_SCALE,
+	);
+	assert.equal(
+		adaptiveRateAtTargetToBorrowSPY(123_456_789n),
+		123_456_789n * ADAPTIVE_RATE_AT_TARGET_TO_BORROW_SPY_SCALE,
+	);
+});
+
+test("adaptiveRateAtTargetToBorrowSPY rejects negative WAD per-second rates", () => {
+	assert.equal(adaptiveRateAtTargetToBorrowSPY(-1n), null);
 });

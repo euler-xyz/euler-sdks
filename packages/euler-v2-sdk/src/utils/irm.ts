@@ -67,6 +67,14 @@ export type IRMParams =
 
 const UINT32_MAX = 2n ** 32n - 1n;
 const SECONDS_PER_YEAR = 31_556_952;
+export const ADAPTIVE_RATE_AT_TARGET_TO_BORROW_SPY_SCALE = 10n ** 9n;
+
+export function adaptiveRateAtTargetToBorrowSPY(
+	wadPerSecond: bigint,
+): bigint | null {
+	if (wadPerSecond < 0n) return null;
+	return wadPerSecond * ADAPTIVE_RATE_AT_TARGET_TO_BORROW_SPY_SCALE;
+}
 
 /**
  * Decodes IRM parameters from the encoded bytes returned by IRMLens.getInterestRateModelInfo
