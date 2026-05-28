@@ -119,7 +119,8 @@ const extractVaultOverrides = (
 			override.notExplorableLend = entry.notExplorableLend;
 		if (typeof entry.notExplorableBorrow === "boolean")
 			override.notExplorableBorrow = entry.notExplorableBorrow;
-		if (typeof entry.keyring === "boolean") override.keyring = entry.keyring;
+		const tags = filterStringArray(entry.tags);
+		if (tags) override.tags = tags;
 		if (Object.keys(override).length > 0) {
 			overrides[normalizedKey] = override;
 		}

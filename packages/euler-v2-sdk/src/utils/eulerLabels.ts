@@ -232,20 +232,47 @@ export const isEulerLabelVaultNotExplorableBorrow = (
 	return product?.vaultOverrides?.[normalized]?.notExplorableBorrow === true;
 };
 
+const productHasTag = (
+	product: EulerLabelProduct | undefined,
+	tag: string,
+): boolean => product?.tags?.includes(tag) ?? false;
+
+const vaultOverrideHasTag = (
+	product: EulerLabelProduct | undefined,
+	normalizedVaultAddress: string,
+	tag: string,
+): boolean =>
+	product?.vaultOverrides?.[normalizedVaultAddress]?.tags?.includes(tag) ??
+	false;
+
 export const isEulerLabelVaultKeyring = (
 	data: EulerLabelsData,
 	vaultAddress: string,
 ): boolean => {
 	const normalized = normalizeAddress(vaultAddress);
 	const product = getEulerLabelProductByVault(data, normalized);
-	if (product?.keyring === true) return true;
-	return product?.vaultOverrides?.[normalized]?.keyring === true;
+	return (
+		productHasTag(product, "keyring") ||
+		vaultOverrideHasTag(product, normalized, "keyring")
+	);
 };
 
 export const isEulerLabelProductKeyring = (
 	data: EulerLabelsData,
 	productKey: string,
-): boolean => data.products[productKey]?.keyring === true;
+): boolean => productHasTag(data.products[productKey], "keyring");
+
+export const isEulerLabelVaultAccessControlled = (
+	data: EulerLabelsData,
+	vaultAddress: string,
+): boolean => {
+	const normalized = normalizeAddress(vaultAddress);
+	const product = getEulerLabelProductByVault(data, normalized);
+	return (
+		productHasTag(product, "access control") ||
+		vaultOverrideHasTag(product, normalized, "access control")
+	);
+};
 
 export const getEulerLabelDeclaredEntityKeys = (
 	data: EulerLabelsData,

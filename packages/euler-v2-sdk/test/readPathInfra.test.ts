@@ -709,7 +709,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
       deprecateReason: "legacy reason",
       featuredVaults: [plainVault.address.toLowerCase()],
       notExplorable: true,
-      keyring: true,
+      tags: ["keyring"],
       portfolioNotice: "product notice",
       vaultOverrides: {
         [plainVault.address.toLowerCase()]: {
