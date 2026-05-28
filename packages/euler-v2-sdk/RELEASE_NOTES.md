@@ -1,18 +1,19 @@
-# euler-v2-sdk v0.2.4-beta
+# euler-v2-sdk v0.2.8-beta
 
 ## Summary
 
-This beta release adds a prepared-plan envelope to `ExecutionService` so consumers can run plugins and required-approval resolution once per plan and reuse the result across simulate and execute. The two adjacent fixes — short-circuit `resolveRequiredApprovals` for plans with no approvals, and a fast path in `deriveStateOverrides` for plans with no balance/approval requirements — remove redundant chain reads from withdraw and redeem flows.
+This beta release focuses on high-fanout simulation performance, reward accuracy, and borrow-plan correctness. It adds plugin prefetching, state-override wallet snapshots, ERC20 slot hints, viewer-aware rewards, borrow collateral and looping reward attribution, stale-controller-safe borrow sub-account selection, and Pyth Hermes fetch customization.
 
 ## Highlights
 
-- Added `TransactionPlanPrepared` envelope (carries `plan`, `chainId`, `account`, `usePermit2`, `unlimitedApproval`) and the `isPreparedTransactionPlan` type guard.
-- Added `ExecutionService.prepareTransactionPlan(args)` — runs `processPlanPlugins` + `resolveRequiredApprovals` once and returns the envelope.
-- Added `ExecutionService.simulatePreparedTransactionPlan(prepared, options?)` and `ExecutionService.executePreparedTransactionPlan(args)` — consume the envelope and skip the plugin pipeline (and, for execute, the approval re-resolution).
-- `ExecutionService.resolveRequiredApprovals` early-returns when the plan has no `requiredApproval` items, avoiding a redundant `walletService.fetchWallet` call.
-- `deriveStateOverrides` short-circuits when `extractBalanceRequirements` and `extractApprovalRequirements` both yield empty arrays — emits only the synthetic native-balance override, no provider lookup, no per-token reads.
-
-The original `simulateTransactionPlan` and `executeTransactionPlan` signatures are unchanged; the prepared variants are additive.
+- `executionService.prefetchPluginDataForPlan(...)` resolves plugin payloads once per form or quote sweep, and Pyth/Keyring consume the payload through the existing prepare, simulate, estimate, and execute paths.
+- `SimulationStateOverrideOptions` accepts `noBalanceOverride`, `noAllowanceOverride`, `wallet`, and `slotHints` so callers can reuse validated wallet state and avoid repeated balance, allowance, and slot-probing RPCs.
+- `fetchErc20SlotHints`, `fetchErc20SlotHintsBatch`, `primeSlotHintsCache`, and related helpers are exported for precomputing ERC20 balance and allowance storage slots.
+- Rewards are viewer-aware through `VaultRewardInfo.getActiveCampaigns({ viewer })` and `getTotalRewardsApr({ viewer })`; the default predicate keeps headline APR visible without a connected viewer.
+- Account and portfolio yield calculations include eligible `BORROW_COLLATERAL` and `LOOPING` rewards when borrow-side collateral and multiplier context is available.
+- `accountService.resolveNewSubAccount(...)` refreshes candidate sub-account snapshots before borrow planning so stale cached controllers do not cause the SDK to reuse an incompatible account.
+- `createPythPlugin({ fetchFn })` lets apps route Hermes requests through a custom fetcher, and Pyth feed collection now uses route-filtered oracle adapters.
+- Approval resolution skips Permit2 when direct vault allowance already covers the required spend, avoiding unnecessary Permit2 approval/signature prompts.
 
 ## Validation
 
