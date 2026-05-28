@@ -84,6 +84,19 @@ Every variant has `address`, `type`, `data`, and `params`.
 | `FIXED_CYCLICAL_BINARY_MONTHLY` | `FixedCyclicalBinaryMonthlyIRMInfo | null` | `null` |
 | `UNKNOWN` | `null` | `null` |
 
+### Oracle Routing
+
+`OracleInfo.routes` contains the decoded effective oracle routes exposed by the
+vault oracle. A route is for one `base -> quote` pair and its `steps` array is
+ordered in the same order a UI should display or quote it.
+
+| Type | Description |
+| --- | --- |
+| `OracleRoute` | Effective route for a `base -> quote` pair. `steps` is the primary display surface. `adapters` is the leaf-adapter projection of adapter steps. `resolvedVaults` is the vault-step projection. |
+| `OracleRouteAdapterStep` | Leaf oracle adapter step. Quote it with `getQuote(amountIn, base, quote)` on `oracle`. |
+| `OracleRouteVaultStep` | ERC4626-style vault/share resolution step. Quote it with `convertToAssets(amountIn)` on `vault`. |
+| `OracleRouteSource` | `configured` for an explicit EulerRouter route, `fallback` when the router fallback oracle handles the pair, and `direct` when the root oracle info handles the pair directly. |
+
 ### `IEVaultCollateral` and `EVaultCollateral`
 
 | Property | Type | Description |
@@ -94,7 +107,8 @@ Every variant has `address`, `type`, `data`, and `params`.
 | `ramping` | `EVaultCollateralRamping | undefined` | Active or scheduled liquidation LTV ramp data. |
 | `oraclePriceRaw` | `OraclePrice` | Raw oracle price data. Use EVault price helpers for risk pricing. |
 | `vault` | `VaultEntity | undefined` | Resolved collateral vault entity, populated by `populateCollaterals`. |
-| `oracleAdapters` | `OracleAdapterEntry[] | undefined` | Resolved oracle adapter path for this collateral. |
+| `oracleRoute` | `OracleRoute | undefined` | Effective ordered collateral-to-unit-of-account route. Includes adapter steps and ERC4626 vault resolution steps. |
+| `oracleAdapters` | `OracleAdapterEntry[] | undefined` | Leaf adapter projection of `oracleRoute`, populated for callers that only need oracle adapter contracts. |
 | `marketPriceUsd` | `PriceUsd | undefined` | USD price per collateral underlying, populated by `populateMarketPrices`. |
 | `currentLiquidationLTV` | `number` | Computed current liquidation LTV, including active ramping. |
 | `isLiquidationLTVRamping` | `boolean` | Computed `true` while liquidation LTV is actively ramping. |
@@ -141,7 +155,7 @@ properties plus:
 | `hooks` | `EVaultHooks` | Hook configuration. |
 | `caps` | `EVaultCaps` | Supply and borrow caps. |
 | `liquidation` | `EVaultLiquidation` | Liquidation configuration. |
-| `oracle` | `OracleInfo` | Oracle metadata, adapters, and resolved vault routes. |
+| `oracle` | `OracleInfo` | Oracle metadata, decoded routes, leaf adapters, and resolved vault projections. |
 | `interestRates` | `InterestRates` | Current supply and borrow rates. |
 | `interestRateModel` | `InterestRateModel` | Interest-rate model metadata. |
 | `collaterals` | `IEVaultCollateral[]` | Supported collateral configs. |
@@ -159,7 +173,8 @@ plus the `IEVault` properties above. Constructor normalization also adds:
 | --- | --- | --- |
 | `caps` | `EVaultCapsComputed` | Caps with computed utilization getters. |
 | `collaterals` | `EVaultCollateral[]` | Collaterals with computed ramping fields. |
-| `debtPricingOracleAdapters` | `OracleAdapterEntry[]` | Sorted asset-to-unit-of-account oracle adapter path used for debt pricing. Empty when the vault is not borrowable or has no unit of account. |
+| `debtPricingOracleRoute` | `OracleRoute | undefined` | Effective ordered asset-to-unit-of-account route used for debt pricing. |
+| `debtPricingOracleAdapters` | `OracleAdapterEntry[]` | Leaf adapter projection of `debtPricingOracleRoute`. Empty when the vault is not borrowable or has no unit of account. |
 | `populated` | `EVaultPopulated` | Base population flags plus `collaterals`. |
 
 ## Computed Getters
@@ -182,7 +197,7 @@ plus the `IEVault` properties above. Constructor normalization also adds:
 | `fetchUnitOfAccountMarketPriceUsd(priceService)` | `Promise<number | undefined>` | Fetches the unit-of-account USD rate. |
 | `fetchCollateralMarketPriceUsd(collateralVault, priceService)` | `Promise<number | undefined>` | Fetches collateral underlying USD price. |
 | `fetchCollateralMarketValueUsd(amount, collateralVault, priceService)` | `Promise<number | undefined>` | Converts a collateral amount to USD using the price service. |
-| `populateCollaterals(vaultMetaService)` | `Promise<DataIssue[]>` | Resolves collateral vault entities, collateral oracle adapters, and `populated.collaterals`. |
+| `populateCollaterals(vaultMetaService)` | `Promise<DataIssue[]>` | Resolves collateral vault entities, collateral oracle routes, collateral oracle adapter projections, and `populated.collaterals`. |
 | `populateMarketPrices(priceService)` | `Promise<DataIssue[]>` | Populates asset and resolved collateral USD prices and `populated.marketPrices`. |
 
 ## Other Exports

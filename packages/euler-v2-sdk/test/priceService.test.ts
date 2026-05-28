@@ -132,6 +132,7 @@ function makeEVaultCollateral(overrides: {
 			name: "",
 			adapters: [],
 			resolvedVaults: [],
+			routes: [],
 		},
 		interestRates: { borrowSPY: 0, borrowAPY: 0, supplyAPY: 0 },
 		interestRateModel: {

@@ -1,8 +1,13 @@
 import { type Address, type Hex, getAddress } from "viem";
 import type {
 	OracleAdapterEntry,
+	OracleDetailedInfo,
 	OracleInfo,
 	OraclePrice,
+} from "../../../../../utils/oracle.js";
+import {
+	decodeOracleRouteForPair,
+	decodeOracleRoutes,
 } from "../../../../../utils/oracle.js";
 import {
 	dataIssueLocation,
@@ -43,6 +48,7 @@ import { type Token, VaultType } from "../../../../../utils/types.js";
 import { InterestRateModelType } from "../eVaultOnchainAdapter/eVaultLensTypes.js";
 import type {
 	V3CollateralRow,
+	V3OracleDetailedInfo,
 	V3OraclePrice,
 	V3OracleAdapter,
 	V3Token,
@@ -385,6 +391,37 @@ function convertOracleAdapter(
 	return converted;
 }
 
+function convertOracleDetailedInfo(
+	info: V3OracleDetailedInfo | null | undefined,
+	owner: DataIssueOwnerRef,
+	errors: DataIssue[],
+	path: string,
+): OracleDetailedInfo | undefined {
+	if (!info) return undefined;
+
+	return {
+		oracle: parseAddressField(info.oracle, {
+			path: `${path}.oracle`,
+			owner,
+			errors,
+			source: "eVaultV3",
+		}),
+		name: parseStringField(info.name, {
+			path: `${path}.name`,
+			owner,
+			errors,
+			source: "eVaultV3",
+		}),
+		oracleInfo: parseStringField(info.oracleInfo, {
+			path: `${path}.oracleInfo`,
+			owner,
+			errors,
+			source: "eVaultV3",
+			fallback: "0x",
+		}) as Hex,
+	};
+}
+
 function convertOracleResolvedVaults(
 	resolvedVaults: NonNullable<V3VaultDetail["oracle"]>["resolvedVaults"],
 	owner: DataIssueOwnerRef,
@@ -427,6 +464,8 @@ function convertCollaterals(
 	vaultEntityId: Address,
 	chainId: number,
 	errors: DataIssue[],
+	oracleDetailedInfo?: OracleDetailedInfo,
+	unitOfAccount?: Address,
 ): IEVaultCollateral[] {
 	const collaterals: IEVaultCollateral[] = [];
 	const vaultOwner = vaultDiagnosticOwner(chainId, vaultEntityId);
@@ -467,6 +506,14 @@ function convertCollaterals(
 			targetTimestamp < vaultTimestamp;
 
 		if (isRemovedCollateral) continue;
+		const oracleRoute =
+			oracleDetailedInfo && unitOfAccount
+				? decodeOracleRouteForPair(
+						oracleDetailedInfo,
+						collateralAddress,
+						unitOfAccount,
+					)
+				: undefined;
 
 		const collateral: IEVaultCollateral = {
 			address: collateralAddress,
@@ -488,6 +535,9 @@ function convertCollaterals(
 						amountOutAsk: 0n,
 						timestamp: 0,
 					},
+			...(oracleRoute
+				? { oracleRoute, oracleAdapters: oracleRoute.adapters }
+				: {}),
 		};
 
 		if (targetTimestamp > vaultTimestamp) {
@@ -551,6 +601,12 @@ export function convertVault(
 		});
 	}
 	const oracleData = detail.oracle ?? DEFAULT_ORACLE_BLOCK;
+	const oracleDetailedInfo = convertOracleDetailedInfo(
+		oracleData.detailedInfo,
+		owner,
+		errors,
+		"$.oracle.detailedInfo",
+	);
 	const oracle: OracleInfo = {
 		oracle: parseAddressField(oracleData.oracle, {
 			path: "$.oracle.oracle",
@@ -572,7 +628,11 @@ export function convertVault(
 			owner,
 			errors,
 		),
+		routes: oracleDetailedInfo ? decodeOracleRoutes(oracleDetailedInfo) : [],
 	};
+	if (oracleDetailedInfo) {
+		oracle.detailedInfo = oracleDetailedInfo;
+	}
 	const suppressUnitOfAccountDiagnostics = hasZeroOracleAddress;
 
 	if (!detail.shares) {
@@ -874,13 +934,6 @@ export function convertVault(
 		errors,
 		source: "eVaultV3",
 	});
-	const collaterals = convertCollaterals(
-		collateralRows,
-		timestamp,
-		vaultAddress,
-		detail.chainId,
-		errors,
-	);
 	const unitOfAccount = normalizeUnitOfAccountToken(
 		convertToken(
 			unitOfAccountData,
@@ -889,6 +942,15 @@ export function convertVault(
 			unitOfAccountErrors,
 			{ name: true, symbol: true, decimals: true },
 		),
+	);
+	const collaterals = convertCollaterals(
+		collateralRows,
+		timestamp,
+		vaultAddress,
+		detail.chainId,
+		errors,
+		oracleDetailedInfo,
+		unitOfAccount?.address,
 	);
 
 	return {

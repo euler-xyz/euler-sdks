@@ -9,8 +9,10 @@ import {
 export type OracleInfo = {
 	oracle: Address;
 	name: string;
+	detailedInfo?: OracleDetailedInfo;
 	adapters: OracleAdapterEntry[];
 	resolvedVaults: OracleResolvedVault[];
+	routes: OracleRoute[];
 };
 
 export type OracleDetailedInfo = {
@@ -73,6 +75,60 @@ export type OracleAdapterEntry = {
 	chainlinkDetail?: { oracle: Address };
 };
 
+/** A leaf oracle contract call in an effective price route. */
+export type OracleRouteAdapterStep = {
+	kind: "adapter";
+	oracle: Address;
+	name: string;
+	base: Address;
+	quote: Address;
+	adapter: OracleAdapterEntry;
+};
+
+/**
+ * An ERC4626-style vault/share unwrapping hop in an effective price route.
+ *
+ * This is not a PriceOracle adapter. Consumers can still display and quote it
+ * like the other route steps by calling `convertToAssets` on `vault`.
+ */
+export type OracleRouteVaultStep = {
+	kind: "vault";
+	oracle: Address;
+	name: "ERC4626Vault";
+	base: Address;
+	quote: Address;
+	vault: Address;
+	asset: Address;
+};
+
+export type OracleRouteStep = OracleRouteAdapterStep | OracleRouteVaultStep;
+
+/**
+ * Where a route came from while resolving the root oracle info.
+ *
+ * configured: an explicit EulerRouter `base -> quote` entry.
+ * fallback: the EulerRouter fallback oracle handled the requested pair.
+ * direct: the root oracle info itself handled the requested pair.
+ */
+export type OracleRouteSource = "configured" | "fallback" | "direct";
+
+/**
+ * Effective ordered oracle route for one `base -> quote` pair.
+ *
+ * `steps` is the primary consumer surface: walk it in order to display or
+ * quote the complete route. `adapters` and `resolvedVaults` are projections of
+ * `steps` for compatibility with callers that only understand leaf adapters or
+ * resolved vault metadata.
+ */
+export type OracleRoute = {
+	base: Address;
+	quote: Address;
+	steps: OracleRouteStep[];
+	adapters: OracleAdapterEntry[];
+	resolvedVaults: OracleResolvedVault[];
+	source: OracleRouteSource;
+};
+
 /**
  * A vault-address price route configured on EulerRouter.
  *
@@ -96,6 +152,8 @@ export type OracleResolvedVault = {
 function oracleAdapterStableRepr(
 	value:
 		| OracleAdapterEntry
+		| OracleRoute
+		| OracleRouteStep
 		| OracleResolvedVault
 		| PythOracleInfo
 		| { oracle: Address }
@@ -117,6 +175,8 @@ function oracleAdapterStableRepr(
 			const nested = oracleAdapterStableRepr(
 				(value as Record<string, unknown>)[key] as
 					| OracleAdapterEntry
+					| OracleRoute
+					| OracleRouteStep
 					| OracleResolvedVault
 					| PythOracleInfo
 					| { oracle: Address }
@@ -354,6 +414,300 @@ const resolveAdapterPair = (
 	const quote = override?.quote ?? context.quote;
 	if (!base || !quote) return null;
 	return { base, quote };
+};
+
+const routeKey = (route: Pick<OracleRoute, "base" | "quote" | "source">) =>
+	`${route.source}:${route.base.toLowerCase()}:${route.quote.toLowerCase()}`;
+
+const makeOracleAdapterEntry = (
+	info: OracleDetailedInfo,
+	context: OracleAdapterContext,
+	override?: OracleAdapterContext,
+): OracleAdapterEntry | null => {
+	const pair = resolveAdapterPair(context, override);
+	if (!pair) return null;
+	const extra = isChainlinkOracleName(info.name)
+		? { chainlinkDetail: { oracle: info.oracle } }
+		: undefined;
+	return {
+		oracle: info.oracle,
+		name: info.name,
+		base: pair.base,
+		quote: pair.quote,
+		...extra,
+	};
+};
+
+const makeRouteAdapterStep = (
+	info: OracleDetailedInfo,
+	context: Required<OracleAdapterContext>,
+): OracleRouteAdapterStep | null => {
+	if (info.name === "PythOracle") {
+		const decoded = decodePythOracleInfo(info.oracleInfo);
+		if (decoded) {
+			if (
+				decoded.base.toLowerCase() !== context.base.toLowerCase() ||
+				decoded.quote.toLowerCase() !== context.quote.toLowerCase()
+			) {
+				return null;
+			}
+			const adapter: OracleAdapterEntry = {
+				oracle: info.oracle,
+				name: info.name,
+				base: decoded.base,
+				quote: decoded.quote,
+				pythDetail: decoded,
+			};
+			return {
+				kind: "adapter",
+				oracle: adapter.oracle,
+				name: adapter.name,
+				base: adapter.base,
+				quote: adapter.quote,
+				adapter,
+			};
+		}
+	}
+
+	const adapter = makeOracleAdapterEntry(info, context);
+	if (!adapter) return null;
+	return {
+		kind: "adapter",
+		oracle: adapter.oracle,
+		name: adapter.name,
+		base: adapter.base,
+		quote: adapter.quote,
+		adapter,
+	};
+};
+
+const buildVaultRouteSteps = (
+	resolvedAssets: Address[] | undefined,
+	base: Address | undefined,
+): OracleRouteVaultStep[] => {
+	if (!base || !resolvedAssets?.length) return [];
+	const path =
+		resolvedAssets.length >= 2
+			? [...resolvedAssets]
+			: [base, ...resolvedAssets];
+	const steps: OracleRouteVaultStep[] = [];
+	for (let i = 0; i < path.length - 1; i += 1) {
+		const vault = path[i]!;
+		const asset = path[i + 1]!;
+		if (vault.toLowerCase() === asset.toLowerCase()) continue;
+		steps.push({
+			kind: "vault",
+			oracle: vault,
+			name: "ERC4626Vault",
+			base: vault,
+			quote: asset,
+			vault,
+			asset,
+		});
+	}
+	return steps;
+};
+
+const makeRoute = (
+	base: Address,
+	quote: Address,
+	steps: OracleRouteStep[],
+	source: OracleRouteSource,
+): OracleRoute => {
+	const adapters = steps
+		.filter((step): step is OracleRouteAdapterStep => step.kind === "adapter")
+		.map((step) => step.adapter);
+	const resolvedVaults = steps
+		.filter((step): step is OracleRouteVaultStep => step.kind === "vault")
+		.map((step) => ({
+			vault: step.vault,
+			quote,
+			asset: step.asset,
+			resolvedAssets: [step.asset],
+		}));
+	return { base, quote, steps, adapters, resolvedVaults, source };
+};
+
+export const selectOracleRouteForPair = (
+	routes: OracleRoute[] | undefined,
+	base: Address,
+	quote: Address,
+): OracleRoute | undefined => {
+	const baseKey = base.toLowerCase();
+	const quoteKey = quote.toLowerCase();
+	return routes?.find(
+		(route) =>
+			route.base.toLowerCase() === baseKey &&
+			route.quote.toLowerCase() === quoteKey,
+	);
+};
+
+export const decodeOracleRouteForPair = (
+	oracleInfo: OracleDetailedInfo | null | undefined,
+	base: Address,
+	quote: Address,
+	maxDepth = 3,
+): OracleRoute | undefined => {
+	const visited = new Set<string>();
+
+	const visit = (
+		info: OracleDetailedInfo | null | undefined,
+		depth: number,
+		context: Required<OracleAdapterContext>,
+		source: OracleRouteSource,
+	): { steps: OracleRouteStep[]; source: OracleRouteSource } | null => {
+		if (!isValidOracleDetailedInfo(info) || depth > maxDepth) return null;
+		const key = `${info.oracle}-${info.name}-${info.oracleInfo}-${context.base}-${context.quote}`;
+		if (visited.has(key)) return null;
+		visited.add(key);
+
+		if (info.name === "EulerRouter") {
+			const decoded = decodeEulerRouterInfo(info.oracleInfo);
+			if (!decoded) return null;
+			const targetBase = context.base.toLowerCase();
+			const targetQuote = context.quote.toLowerCase();
+			const total = Math.max(
+				decoded.resolvedOraclesInfo?.length ?? 0,
+				decoded.bases?.length ?? 0,
+				decoded.quotes?.length ?? 0,
+			);
+			for (let i = 0; i < total; i += 1) {
+				const child = decoded.resolvedOraclesInfo?.[i];
+				const childBase = decoded.bases?.[i];
+				const childQuote = decoded.quotes?.[i];
+				if (!child || !childBase || !childQuote) continue;
+				if (
+					childBase.toLowerCase() !== targetBase ||
+					childQuote.toLowerCase() !== targetQuote
+				) {
+					continue;
+				}
+
+				const vaultSteps = buildVaultRouteSteps(
+					decoded.resolvedAssets?.[i],
+					childBase,
+				);
+				const effectiveBase = vaultSteps.at(-1)?.quote ?? childBase;
+				const childRoute = visit(
+					child,
+					depth + 1,
+					{ base: effectiveBase, quote: childQuote },
+					"configured",
+				);
+				if (childRoute) {
+					return {
+						steps: [...vaultSteps, ...childRoute.steps],
+						source: "configured",
+					};
+				}
+				if (
+					vaultSteps.length > 0 &&
+					effectiveBase.toLowerCase() === childQuote.toLowerCase()
+				) {
+					return { steps: vaultSteps, source: "configured" };
+				}
+			}
+
+			const fallbackRoute = visit(
+				decoded.fallbackOracleInfo,
+				depth + 1,
+				context,
+				"fallback",
+			);
+			return fallbackRoute;
+		}
+
+		if (info.name === "CrossAdapter") {
+			const decoded = decodeCrossAdapterInfo(info.oracleInfo);
+			if (!decoded) {
+				const adapterStep = makeRouteAdapterStep(info, context);
+				return adapterStep ? { steps: [adapterStep], source } : null;
+			}
+			if (
+				decoded.base.toLowerCase() !== context.base.toLowerCase() ||
+				decoded.quote.toLowerCase() !== context.quote.toLowerCase()
+			) {
+				return null;
+			}
+			const baseCross = visit(
+				decoded.oracleBaseCrossInfo,
+				depth + 1,
+				{ base: decoded.base, quote: decoded.cross },
+				source,
+			);
+			const crossQuote = visit(
+				decoded.oracleCrossQuoteInfo,
+				depth + 1,
+				{ base: decoded.cross, quote: decoded.quote },
+				source,
+			);
+			const steps = [...(baseCross?.steps ?? []), ...(crossQuote?.steps ?? [])];
+			if (steps.length > 0) return { steps, source };
+			const adapterStep = makeRouteAdapterStep(info, context);
+			return adapterStep ? { steps: [adapterStep], source } : null;
+		}
+
+		const adapterStep = makeRouteAdapterStep(info, context);
+		return adapterStep ? { steps: [adapterStep], source } : null;
+	};
+
+	const route = visit(oracleInfo, 0, { base, quote }, "direct");
+	if (!route || route.steps.length === 0) return undefined;
+	return makeRoute(base, quote, route.steps, route.source);
+};
+
+export const decodeOracleRoutes = (
+	oracleInfo: OracleDetailedInfo | null | undefined,
+	maxDepth = 3,
+): OracleRoute[] => {
+	if (!isValidOracleDetailedInfo(oracleInfo)) return [];
+	const routes: OracleRoute[] = [];
+
+	if (oracleInfo.name === "EulerRouter") {
+		const decoded = decodeEulerRouterInfo(oracleInfo.oracleInfo);
+		if (!decoded) return [];
+		const total = Math.max(
+			decoded.resolvedOraclesInfo?.length ?? 0,
+			decoded.bases?.length ?? 0,
+			decoded.quotes?.length ?? 0,
+		);
+		for (let i = 0; i < total; i += 1) {
+			const base = decoded.bases?.[i];
+			const quote = decoded.quotes?.[i];
+			if (!base || !quote) continue;
+			const route = decodeOracleRouteForPair(oracleInfo, base, quote, maxDepth);
+			if (route) routes.push(route);
+		}
+	} else if (oracleInfo.name === "CrossAdapter") {
+		const decoded = decodeCrossAdapterInfo(oracleInfo.oracleInfo);
+		if (decoded) {
+			const route = decodeOracleRouteForPair(
+				oracleInfo,
+				decoded.base,
+				decoded.quote,
+				maxDepth,
+			);
+			if (route) routes.push(route);
+		}
+	} else if (oracleInfo.name === "PythOracle") {
+		const decoded = decodePythOracleInfo(oracleInfo.oracleInfo);
+		if (decoded) {
+			const route = decodeOracleRouteForPair(
+				oracleInfo,
+				decoded.base,
+				decoded.quote,
+				maxDepth,
+			);
+			if (route) routes.push(route);
+		}
+	}
+
+	const deduped = new Map<string, OracleRoute>();
+	for (const route of routes) {
+		const key = routeKey(route);
+		if (!deduped.has(key)) deduped.set(key, route);
+	}
+	return [...deduped.values()];
 };
 
 export const decodeOracleInfo = (
@@ -743,7 +1097,12 @@ export const collectPythFeedsForPair = (
 ): PythFeed[] => {
 	const routeAdapters =
 		resolvedVaults && resolvedVaults.length
-			? selectResolvedVaultAdaptersForPair(adapters, resolvedVaults, base, quote)
+			? selectResolvedVaultAdaptersForPair(
+					adapters,
+					resolvedVaults,
+					base,
+					quote,
+				)
 			: selectLeafAdaptersForPair(adapters, base, quote);
 	return collectPythFeedsFromAdapters(routeAdapters);
 };

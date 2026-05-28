@@ -1,8 +1,10 @@
 import { getAddress, type Address } from "viem";
 import { EVault, type IEVault } from "../../../entities/EVault.js";
 import {
+	decodeOracleRouteForPair,
 	selectLeafAdaptersForPair,
 	selectResolvedVaultAdaptersForPair,
+	selectOracleRouteForPair,
 	sortOracleAdapters,
 } from "../../../utils/oracle.js";
 import type { DeploymentService } from "../../deploymentService/index.js";
@@ -356,6 +358,22 @@ export class EVaultService implements IEVaultService {
 				}
 
 				const quoteAddress = eVault.unitOfAccount.address;
+				collateral.oracleRoute =
+					collateral.oracleRoute ??
+					selectOracleRouteForPair(
+						eVault.oracle.routes,
+						collateral.address,
+						quoteAddress,
+					) ??
+					decodeOracleRouteForPair(
+						eVault.oracle.detailedInfo,
+						collateral.address,
+						quoteAddress,
+					);
+				if (collateral.oracleRoute) {
+					collateral.oracleAdapters = collateral.oracleRoute.adapters;
+					continue;
+				}
 				const byAsset = selectLeafAdaptersForPair(
 					eVault.oracle.adapters,
 					collateral.vault.asset.address,

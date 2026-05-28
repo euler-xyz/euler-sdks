@@ -1,6 +1,8 @@
 import {
 	decodeOracleInfo,
 	decodeOracleResolvedVaults,
+	decodeOracleRoutes,
+	decodeOracleRouteForPair,
 	sortOracleAdapters,
 	type OracleAdapterEntry,
 	type OracleInfo,
@@ -168,6 +170,9 @@ export function convertVaultInfoFullToIEVault(
 	const oracle: OracleInfo = {
 		oracle: vaultInfo.oracleInfo.oracle,
 		name: vaultInfo.oracleInfo.name,
+		...(shouldSuppressRootOracleAdapter
+			? {}
+			: { detailedInfo: vaultInfo.oracleInfo }),
 		adapters: mergeOracleAdapters(
 			debtAssetOracleAdapters,
 			routedOracleAdapters,
@@ -175,6 +180,9 @@ export function convertVaultInfoFullToIEVault(
 		resolvedVaults: shouldSuppressRootOracleAdapter
 			? []
 			: decodeOracleResolvedVaults(vaultInfo.oracleInfo),
+		routes: shouldSuppressRootOracleAdapter
+			? []
+			: decodeOracleRoutes(vaultInfo.oracleInfo),
 	};
 
 	const shares = normalizeTokenMetadata(
@@ -360,6 +368,14 @@ export function convertVaultInfoFullToIEVault(
 			owner: collateralOwner,
 		});
 		const isRamping = targetTimestamp > vaultTimestamp;
+		const oracleRoute =
+			quote && !shouldSuppressRootOracleAdapter
+				? decodeOracleRouteForPair(
+						vaultInfo.oracleInfo,
+						ltvInfo.collateral,
+						quote,
+					)
+				: undefined;
 
 		const collateral: IEVaultCollateral = {
 			address: ltvInfo.collateral,
@@ -376,6 +392,9 @@ export function convertVaultInfoFullToIEVault(
 				collateralOwner,
 			),
 			oraclePriceRaw,
+			...(oracleRoute
+				? { oracleRoute, oracleAdapters: oracleRoute.adapters }
+				: {}),
 		};
 
 		if (isRamping) {

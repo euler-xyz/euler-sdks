@@ -3,6 +3,7 @@ import { test } from "vitest";
 import { encodeAbiParameters, getAddress, zeroAddress } from "viem";
 import {
 	decodeOracleInfo,
+	decodeOracleRouteForPair,
 	decodeOracleResolvedVaults,
 } from "../src/utils/oracle.js";
 import { convertVaultInfoFullToIEVault } from "../src/services/vaults/eVaultService/adapters/eVaultOnchainAdapter/vaultInfoConverter.js";
@@ -10,6 +11,8 @@ import { convertVault } from "../src/services/vaults/eVaultService/adapters/eVau
 
 const BASE = "0x00000000000000000000000000000000000000f1" as const;
 const QUOTE = "0x0000000000000000000000000000000000000348" as const;
+const PYTH_FEED_ID =
+	"0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20" as const;
 
 function encodeRouterInfo({
 	fallbackOracleInfo,
@@ -74,6 +77,42 @@ function encodeRouterInfo({
 				resolvedAssets: resolvedAssets ?? [],
 				resolvedOracles: resolvedOraclesInfo.map((info) => info.oracle),
 				resolvedOraclesInfo,
+			},
+		],
+	);
+}
+
+function encodePythOracleInfo({
+	pyth,
+	base,
+	quote,
+}: {
+	pyth: `0x${string}`;
+	base: `0x${string}`;
+	quote: `0x${string}`;
+}) {
+	return encodeAbiParameters(
+		[
+			{
+				type: "tuple",
+				components: [
+					{ name: "pyth", type: "address" },
+					{ name: "base", type: "address" },
+					{ name: "quote", type: "address" },
+					{ name: "feedId", type: "bytes32" },
+					{ name: "maxStaleness", type: "uint256" },
+					{ name: "maxConfWidth", type: "uint256" },
+				],
+			},
+		],
+		[
+			{
+				pyth,
+				base,
+				quote,
+				feedId: PYTH_FEED_ID,
+				maxStaleness: 60n,
+				maxConfWidth: 0n,
 			},
 		],
 	);
@@ -222,6 +261,99 @@ test("convertVaultInfoFullToIEVault suppresses blank root oracle tuples like V3"
 	assert.equal(vault.oracle.name, "");
 	assert.deepEqual(vault.oracle.adapters, []);
 	assert.deepEqual(vault.oracle.resolvedVaults, []);
+	assert.deepEqual(vault.oracle.routes, []);
+});
+
+test("oracle routes preserve vault unwrap steps and exact configured leaves", () => {
+	const collateralVault = "0x0000000000000000000000000000000000000a11";
+	const collateralAsset = getAddress(
+		"0x0000000000000000000000000000000000000a12",
+	);
+	const chainlinkOracle = "0x0000000000000000000000000000000000000c11";
+	const pythOracle = "0x0000000000000000000000000000000000000c12";
+	const oracleInfo = {
+		oracle: "0x00000000000000000000000000000000000000d3",
+		name: "EulerRouter",
+		oracleInfo: encodeRouterInfo({
+			fallbackOracleInfo: {
+				oracle: pythOracle,
+				name: "PythOracle",
+				oracleInfo: encodePythOracleInfo({
+					pyth: "0x0000000000000000000000000000000000000c13",
+					base: collateralVault,
+					quote: QUOTE,
+				}),
+			},
+			resolvedOraclesInfo: [
+				{
+					oracle: chainlinkOracle,
+					name: "ChainlinkOracle",
+					oracleInfo: "0x",
+				},
+			],
+			bases: [collateralVault],
+			quotes: [QUOTE],
+			resolvedAssets: [[collateralAsset]],
+		}),
+	} as const;
+
+	const route = decodeOracleRouteForPair(oracleInfo, collateralVault, QUOTE);
+	assert.equal(route?.source, "configured");
+	assert.deepEqual(
+		route?.steps.map((step) => step.kind),
+		["vault", "adapter"],
+	);
+	assert.equal(route?.steps[0]?.oracle, collateralVault);
+	assert.equal(route?.steps[0]?.base, collateralVault);
+	assert.equal(route?.steps[0]?.quote, collateralAsset);
+	assert.equal(route?.steps[1]?.oracle, chainlinkOracle);
+	assert.equal(route?.steps[1]?.base, collateralAsset);
+	assert.equal(route?.steps[1]?.quote, QUOTE);
+	assert.deepEqual(route?.adapters.map((adapter) => adapter.oracle), [
+		chainlinkOracle,
+	]);
+
+	const errors: unknown[] = [];
+	const vault = convertVaultInfoFullToIEVault(
+		{
+			...makeVaultInfo(oracleInfo),
+			collateralLTVInfo: [
+				{
+					collateral: collateralVault,
+					borrowLTV: 9_000n,
+					liquidationLTV: 9_300n,
+					initialLiquidationLTV: 0n,
+					targetTimestamp: 1n,
+					rampDuration: 0n,
+				},
+			],
+			collateralPriceInfo: [
+				{
+					queryFailure: false,
+					queryFailureReason: "0x",
+					timestamp: 1n,
+					oracle: oracleInfo.oracle,
+					asset: collateralVault,
+					unitOfAccount: QUOTE,
+					amountIn: 1n,
+					amountOutMid: 1n,
+					amountOutBid: 1n,
+					amountOutAsk: 1n,
+				},
+			],
+		},
+		1,
+		errors as never[],
+	);
+
+	assert.deepEqual(
+		vault.collaterals[0]?.oracleRoute?.steps.map((step) => step.kind),
+		["vault", "adapter"],
+	);
+	assert.deepEqual(
+		vault.collaterals[0]?.oracleAdapters?.map((adapter) => adapter.oracle),
+		[chainlinkOracle],
+	);
 });
 
 test("convertVault maps V3 oracle resolved vault rows", () => {
