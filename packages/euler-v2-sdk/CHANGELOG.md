@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.10-beta] - 2026-05-28
+
+### Added
+
+- Exposed `adaptiveRateAtTargetToBorrowSPY` helper and `ADAPTIVE_RATE_AT_TARGET_TO_BORROW_SPY_SCALE` constant for scaling adaptive IRM `rateAtTarget` (wad/second) to borrow SPY.
+
 ## [0.2.9-beta] - 2026-05-28
 
 ### Added
