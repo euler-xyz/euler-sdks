@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.9-beta] - 2026-05-28
+
+### Added
+
+- Added pairwise oracle route decoding: `EVault.debtRoute` / `collateralRoute` expose ordered route steps for both onchain and V3 adapters, with oracle utilities for decoding raw lens route data.
+
+### Changed
+
+- CoW close-position full-repay buy amount now uses the standard `adjustForInterest` cushion shared with approvals, verifier amounts, and same-asset repay (instead of a separate 1/100_000 pad) so the order reliably covers debt that accrues between quote and settlement.
+- Portfolio borrow collaterals are returned ordered by oracle value (descending).
+
+### Fixed
+
+- `getMaxMultiplier` now applies the safety margin to the multiplier itself (`1 / (1 - borrowLtv) - safetyMargin`) instead of shifting the LTV input, avoiding sharp drops near high LTVs.
+- CoW swap quote validation flow corrected (swapper/verifier checks).
+
 ## [0.2.8-beta] - 2026-05-26
 
 ### Added
