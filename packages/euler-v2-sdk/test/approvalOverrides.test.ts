@@ -65,6 +65,7 @@ test("getApprovalOverrides discovers allowance slots from access-list candidates
 	);
 
 	assert.equal("from" in requestPayloads[0]!, false);
+	assert.equal(requestPayloads[0]!.gas, "0x989680");
 	assert.deepEqual(overrides, [
 		{
 			address: PERMIT2,

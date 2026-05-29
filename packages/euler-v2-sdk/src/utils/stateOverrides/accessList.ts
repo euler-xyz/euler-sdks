@@ -4,7 +4,10 @@ type CallParams = {
 	data: Hex;
 	to: Address;
 	from?: Address;
+	gas?: Hex;
 };
+
+const DEFAULT_ACCESS_LIST_GAS = "0x989680" as const; // 10,000,000
 
 /**
  * Discover storage slots accessed by a call using eth_createAccessList.
@@ -19,6 +22,7 @@ export async function getAccessedSlots(
 	const tx = {
 		to: params.to,
 		data: params.data,
+		gas: params.gas ?? DEFAULT_ACCESS_LIST_GAS,
 		...(params.from ? { from: params.from } : {}),
 	};
 

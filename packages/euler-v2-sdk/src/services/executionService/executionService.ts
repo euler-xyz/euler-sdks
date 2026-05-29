@@ -3366,6 +3366,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const isMax = liabilityPosition
 			? liabilityPosition.borrowed <= BigInt(swapQuote.amountOutMin)
 			: false;
+		const isFullDebtRepay =
+			swapQuote.verify.type === "debtMax" &&
+			BigInt(swapQuote.verify.amount || 0) === 0n;
 
 		const enableController = !(
 			account?.isControllerEnabled(swapQuote.accountOut, swapQuote.vaultIn) ??
@@ -3377,7 +3380,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			swapQuote,
 			enableController,
 			disableControllerOnMax: true,
-			isMax,
+			isMax: isMax || isFullDebtRepay,
 			swapperMode,
 		});
 

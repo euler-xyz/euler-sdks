@@ -1287,6 +1287,55 @@ test("swap-debt disables the old liability controller when the swap fully repays
 	assert.equal(items.at(-1)?.onBehalfOfAccount, RECEIVER);
 });
 
+test("debt swap disables the old liability controller when verifier targets zero debt", () => {
+	const service = createExecutionService();
+	const quote = {
+		...createRepaySwapQuote(),
+		accountIn: RECEIVER,
+		accountOut: RECEIVER,
+		vaultIn: NEW_LIABILITY_VAULT,
+		receiver: LIABILITY_VAULT,
+		amountOut: (AMOUNT + 2n).toString(),
+		amountOutMin: (AMOUNT - 3n).toString(),
+		verify: {
+			type: "debtMax",
+			verifierAddress: VERIFIER,
+			verifierData: encodeDebtVerifierData(LIABILITY_VAULT, RECEIVER, 0n),
+			vault: LIABILITY_VAULT,
+			account: RECEIVER,
+			amount: "0",
+			deadline: 123,
+		},
+	};
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		getPosition: (accountAddress: string, vault: string) => {
+			if (accountAddress === RECEIVER && vault === LIABILITY_VAULT) {
+				return { borrowed: AMOUNT };
+			}
+			return undefined;
+		},
+		isControllerEnabled: (accountAddress: string, vault: string) =>
+			accountAddress === RECEIVER && vault === NEW_LIABILITY_VAULT,
+	} as never;
+
+	const plan = service.planSwapDebt({
+		account,
+		swapQuote: quote as never,
+	});
+
+	const items = getOnlyEvcBatchItems(plan);
+	const disableController = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items.at(-1)?.data ?? "0x",
+	});
+
+	assert.equal(disableController.functionName, "disableController");
+	assert.equal(items.at(-1)?.targetContract, LIABILITY_VAULT);
+	assert.equal(items.at(-1)?.onBehalfOfAccount, RECEIVER);
+});
+
 test("withdraw-and-swap and redeem-and-swap withdraw to swapper and verify transfer output", () => {
 	const service = createExecutionService();
 	const account = {
