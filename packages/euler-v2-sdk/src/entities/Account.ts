@@ -586,6 +586,9 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 		const push = (a: Address) => set.add(getAddress(a));
 		for (const sa of Object.values(this.subAccounts ?? {})) {
 			if (!sa) continue;
+			for (const controller of sa.enabledControllers) {
+				push(controller);
+			}
 			for (const p of sa.positions) {
 				push(p.vaultAddress);
 				if (p.liquidity) {

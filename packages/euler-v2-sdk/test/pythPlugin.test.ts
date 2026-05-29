@@ -18,6 +18,7 @@ import type {
 	TransactionPlan,
 } from "../src/services/executionService/index.js";
 import { flattenBatchEntries } from "../src/services/executionService/index.js";
+import type { PluginPrefetchData } from "../src/plugins/types.js";
 
 const GOOD_FEED =
 	"0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43" as const;
@@ -222,13 +223,7 @@ test("Pyth plugin uses final batch controller and collateral state for health ch
 		const processed = await createPythPlugin().processPlan?.(plan, OWNER, 1, sdk);
 		assert.ok(processed);
 		assert.equal(fetchedAccount, true);
-		assert.deepEqual(fetchedVaultOptions, {
-			populateCollaterals: true,
-			populateMarketPrices: false,
-			populateRewards: false,
-			populateIntrinsicApy: false,
-			populateLabels: false,
-		});
+		assert.equal(fetchedVaultOptions, undefined);
 		const [entry] = processed;
 		assert.equal(entry.type, "evcBatch");
 		if (entry.type !== "evcBatch") throw new Error("expected evcBatch");
@@ -240,6 +235,156 @@ test("Pyth plugin uses final batch controller and collateral state for health ch
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
+});
+
+test("Pyth plugin caches empty prefetch results as a no-op", async () => {
+	const plugin = createPythPlugin();
+	let fetchedAccount = false;
+	let fetchedVaults = 0;
+	const provider = {
+		readContract: async () => {
+			throw new Error("should not query Pyth fee");
+		},
+	} as unknown as PublicClient;
+	const sdk = {
+		accountService: {
+			fetchAccount: async () => {
+				fetchedAccount = true;
+				return {
+					result: new Account({
+						chainId: 1,
+						owner: OWNER,
+						populated: { vaults: true },
+						isLockdownMode: false,
+						isPermitDisabledMode: false,
+						subAccounts: {},
+					}),
+					errors: [],
+				};
+			},
+		},
+		providerService: {
+			getProvider: () => provider,
+		},
+		vaultMetaService: {
+			fetchVaults: async () => {
+				fetchedVaults += 1;
+				return {
+					result: [
+						{
+							address: CONTROLLER,
+							debtPricingOracleAdapters: [],
+							collaterals: [{ address: COLLATERAL, oracleAdapters: [] }],
+						},
+					],
+					errors: [],
+				};
+			},
+		},
+	} as never;
+
+	const batchItem = (
+		targetContract: Address,
+		onBehalfOfAccount: Address,
+		data: EVCBatchItem["data"],
+	): EVCBatchItem => ({
+		targetContract,
+		onBehalfOfAccount,
+		value: 0n,
+		data,
+	});
+
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				batchItem(
+					EVC,
+					OWNER,
+					encodeFunctionData({
+						abi: ethereumVaultConnectorAbi,
+						functionName: "enableController",
+						args: [OWNER, CONTROLLER],
+					}),
+				),
+				batchItem(
+					EVC,
+					OWNER,
+					encodeFunctionData({
+						abi: ethereumVaultConnectorAbi,
+						functionName: "enableCollateral",
+						args: [OWNER, COLLATERAL],
+					}),
+				),
+				batchItem(
+					CONTROLLER,
+					OWNER,
+					encodeFunctionData({
+						abi: eVaultAbi,
+						functionName: "borrow",
+						args: [1n, OWNER],
+					}),
+				),
+			],
+		},
+	];
+
+	const prefetch = await plugin.prefetch?.(plan, OWNER, 1, sdk);
+	assert.deepEqual(prefetch, { entries: [] });
+	assert.equal(fetchedAccount, true);
+	assert.equal(fetchedVaults, 1);
+
+	const processed = await plugin.processPlan?.(
+		plan,
+		OWNER,
+		1,
+		sdk,
+		{ pyth: prefetch } as PluginPrefetchData,
+	);
+	assert.equal(processed, plan);
+	assert.equal(fetchedVaults, 1);
+});
+
+test("Pyth plugin read prepend honors empty prefetch results", async () => {
+	let queriedFee = false;
+	const provider = {
+		readContract: async () => {
+			queriedFee = true;
+			return 11n;
+		},
+	} as unknown as PublicClient;
+	const plugin = createPythPlugin();
+	const result = await plugin.getReadPrepend?.(
+		{
+			chainId: 1,
+			provider,
+			vaults: [
+				{
+					debtPricingOracleAdapters: [
+						{
+							oracle: PYTH,
+							name: "PythOracle",
+							base: ASSET,
+							quote: UNIT,
+							pythDetail: {
+								pyth: PYTH,
+								base: ASSET,
+								quote: UNIT,
+								feedId: GOOD_FEED,
+								maxStaleness: 60n,
+								maxConfWidth: 1n,
+							},
+						},
+					],
+					collaterals: [],
+				} as never,
+			],
+		},
+		{ pyth: { entries: [] } },
+	);
+
+	assert.equal(result, null);
+	assert.equal(queriedFee, false);
 });
 
 test("Pyth plugin skips untrusted Pyth contract addresses", async () => {

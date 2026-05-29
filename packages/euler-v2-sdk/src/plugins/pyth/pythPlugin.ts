@@ -318,14 +318,6 @@ const MINIMAL_ACCOUNT_FETCH_OPTIONS = {
 	populateVaults: true,
 	populateMarketPrices: false,
 	populateUserRewards: false,
-	vaultFetchOptions: {
-		populateAll: false,
-		populateMarketPrices: false,
-		populateCollaterals: false,
-		populateRewards: false,
-		populateIntrinsicApy: false,
-		populateLabels: false,
-	},
 } as const;
 
 const CONTROLLER_SELF = "__controller_self__";
@@ -405,13 +397,6 @@ async function collectHealthCheckFeeds(
 	const fetched = await sdk.vaultMetaService.fetchVaults(
 		chainId,
 		[...controllerAddresses],
-		{
-			populateCollaterals: true,
-			populateMarketPrices: false,
-			populateRewards: false,
-			populateIntrinsicApy: false,
-			populateLabels: false,
-		},
 	);
 
 	const controllers = new Map<Address, PythControllerVault>();
@@ -514,6 +499,11 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 		return { items, totalValue };
 	};
 
+	const hasPythPrefetch = (
+		prefetch: PluginPrefetchData | undefined,
+	): prefetch is PluginPrefetchData & { pyth: PythPluginPrefetch } =>
+		Object.hasOwn(prefetch ?? {}, "pyth");
+
 	return {
 		name: "pyth",
 
@@ -527,14 +517,14 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 			const planSets = calculateHealthCheckSets(plan, resolvedAccount);
 			const allAccounts: HealthCheckAccountSet[] = [];
 			for (const set of planSets) allAccounts.push(...set.accounts);
-			if (!allAccounts.length) return undefined;
+			if (!allAccounts.length) return { entries: [] };
 
 			const feeds = await collectHealthCheckFeeds(
 				allAccounts,
 				chainId,
 				sdk,
 			);
-			if (!feeds.length) return undefined;
+			if (!feeds.length) return { entries: [] };
 
 			const provider = sdk.providerService.getProvider(chainId);
 			const trusted = getTrustedPythAddresses(chainId);
@@ -555,6 +545,7 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 			}
 
 			const entries: PythPluginPrefetch["entries"] = [];
+			let hadError = false;
 			await Promise.all(
 				[...grouped.entries()].map(async ([pythAddress, feedSet]) => {
 					const feedIds = [...feedSet];
@@ -568,21 +559,21 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 						);
 						entries.push({ pythAddress, feedIds, updates, fee });
 					} catch (err) {
+						hadError = true;
 						logPythPluginError(pythAddress, feedIds, err);
 					}
 				}),
 			);
-			return entries.length ? { entries } : undefined;
+			return entries.length || !hadError ? { entries } : undefined;
 		},
 
 		async getReadPrepend(
 			ctx: ReadPluginContext,
 			prefetch?: PluginPrefetchData,
 		): Promise<PluginBatchItems | null> {
-			const pythPrefetch = prefetch?.pyth;
-			if (pythPrefetch?.entries.length) {
+			if (hasPythPrefetch(prefetch)) {
 				const built = buildBatchItemsFromPrefetch(
-					pythPrefetch.entries,
+					prefetch.pyth.entries,
 					zeroAddress,
 				);
 				return built.items.length ? built : null;
@@ -627,12 +618,11 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 			prefetch?: PluginPrefetchData,
 		): Promise<TransactionPlan> {
 			const sender = getAccountOwner(account);
-			const pythPrefetch = prefetch?.pyth;
-			if (pythPrefetch?.entries.length) {
+			if (hasPythPrefetch(prefetch)) {
 				// Prepend the prefetched Pyth update once. Pyth updates are
 				// multicall-scoped: a single update at the head of the first
 				// evcBatch serves every health-check downstream in that batch.
-				const built = buildBatchItemsFromPrefetch(pythPrefetch.entries, sender);
+				const built = buildBatchItemsFromPrefetch(prefetch.pyth.entries, sender);
 				if (!built.items.length) return plan;
 				return prependToBatch(plan, built.items);
 			}

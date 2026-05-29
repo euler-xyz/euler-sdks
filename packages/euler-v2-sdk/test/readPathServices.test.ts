@@ -587,6 +587,61 @@ test("account service setters and successful fetchSubAccount address collection 
 	}
 });
 
+test("account population warms enabled controller vaults even without positions", async () => {
+	const owner = getAddress("0x00000000000000000000000000000000000000a1");
+	const subAccount = getAddress("0x00000000000000000000000000000000000000a2");
+	const controller = getAddress("0x00000000000000000000000000000000000000a3");
+	const positionVault = getAddress("0x00000000000000000000000000000000000000a4");
+	const asset = getAddress("0x00000000000000000000000000000000000000a5");
+	const account = new Account({
+		chainId: 1,
+		owner,
+		isLockdownMode: false,
+		isPermitDisabledMode: false,
+		subAccounts: {
+			[subAccount]: {
+				timestamp: 0,
+				account: subAccount,
+				owner,
+				lastAccountStatusCheckTimestamp: 0,
+				enabledControllers: [controller],
+				enabledCollaterals: [],
+				positions: [
+					{
+						account: subAccount,
+						vaultAddress: positionVault,
+						asset,
+						shares: 1n,
+						assets: 1n,
+						borrowed: 0n,
+						isController: false,
+						isCollateral: true,
+						balanceForwarderEnabled: false,
+					},
+				],
+			},
+		},
+	});
+	const fetchedAddresses: Address[] = [];
+
+	await account.populateVaults(
+		{
+			async fetchVaults(_chainId, addresses) {
+				fetchedAddresses.push(...addresses);
+				return {
+					result: addresses.map((address) => ({ address })),
+					errors: [],
+				};
+			},
+		} as any,
+	);
+
+	assert.deepEqual(
+		fetchedAddresses.map((address) => getAddress(address)).sort(),
+		[controller, positionVault].sort(),
+	);
+});
+
 test("vault meta service routes by type, remaps diagnostics, dedupes verified addresses, and tolerates failures", async () => {
 	const { plain, collateralized } = makeResolvedVaults();
 
