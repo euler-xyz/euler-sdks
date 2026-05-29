@@ -19,6 +19,7 @@ Examples:
 - `encodeRepayWithSwap`
 - `encodeSwapCollateral`
 - `encodeTransfer`
+- `encodeEnableCollateral`, `encodeDisableCollateral`, `encodeEnableController`, `encodeDisableController` (EVC collateral/controller state)
 
 These are building blocks. They do not perform wallet allowance checks and do not resolve approval requirements for you.
 
@@ -62,9 +63,12 @@ Common plan functions include:
 - `planWithdrawAndSwap`, `planRedeemAndSwap`, `planSwapCollateral`, `planSwapDebt`
 - `planMigrateSameAssetCollateral`, `planMigrateSameAssetDebt`
 - `planTransfer`, `planMultiplyWithSwap`, `planMultiplySameAsset`
+- `planCleanup`
 - `planOpenPositionWithCoW`, `planClosePositionWithCow`, `planSwapCollateralWithCoW`, `planCancelClosePositionWithCow`
 
-Repay planners accept `cleanupOnMax`. When set on a full repay, the planner appends cleanup calls that disable active collaterals on the repaid sub-account and transfer those collateral shares back to the owner. Source-deposit repay and swap repay also transfer any remaining source-vault shares to the owner. For same-asset different-vault repay, pre-existing liability-vault deposits are preserved.
+Repay planners accept `cleanupOnMax`. When set on a full repay, the planner appends cleanup calls that disable active collaterals on the repaid sub-account and transfer those collateral shares back to the owner. The share transfer applies only to EVK collateral vaults; non-EVK collaterals (e.g. Securitize RWA vaults) are still disabled but not swept, since they don't implement the `transferFromMax` used by the sweep. Source-deposit repay and swap repay also transfer any remaining source-vault shares to the owner. For same-asset different-vault repay, pre-existing liability-vault deposits are preserved.
+
+Borrow and leverage planners (`planBorrow`, `planSwapAndBorrowFromWallet`, `planMultiplyWithSwap`, `planMultiplySameAsset`) automatically prepend cleanup calls that disable stale enabled collaterals/controllers on the target sub-account before the borrow batch, so a fresh borrow doesn't inherit leftover EVC state. Pass `skipCleanup: true` to opt out when the caller manages EVC state explicitly. `planCleanup` builds that cleanup batch on its own, and the `encodeEnable*`/`encodeDisable*` encoders expose the individual collateral/controller state transitions.
 
 CoW planners produce `cowSwap` plan items instead of EVC batch items. They are
 executed by `executeCowSwapTransactionPlan`, but they are not supported by
@@ -73,7 +77,7 @@ executed by `executeCowSwapTransactionPlan`, but they are not supported by
 
 After planning, use:
 
-- `resolveRequiredApprovals(...)` or `resolveRequiredApprovalsWithWallet(...)` to resolve approval requirements into concrete `approve` calls or Permit2 signatures metadata.
+- `resolveRequiredApprovals(...)` or `resolveRequiredApprovalsWithWallet(...)` to resolve approval requirements into concrete `approve` calls or Permit2 signatures metadata. Even when `usePermit2` is set, no Permit2 step is emitted if an existing direct ERC-20 allowance to the vault already covers the required amount.
 - `executeTransactionPlan(...)` to process plugins, resolve any unresolved approvals, request Permit2 signatures, send direct contract calls and EVC batches, and report `onProgress` updates.
 - `prepareTransactionPlan(...)` when the same plan will be both simulated and executed (typical Review-then-Confirm UX). It runs plugins and resolves approvals once and returns a `TransactionPlanPrepared` envelope that carries `plan`, `chainId`, `account`, `usePermit2`, and `unlimitedApproval`. Pass the envelope to `simulatePreparedTransactionPlan(...)` and `executePreparedTransactionPlan(...)` to skip the redundant plugin pass (and, for execute, the approval re-resolution). Use the `isPreparedTransactionPlan` type guard to discriminate envelope vs raw plan.
 
@@ -184,7 +188,7 @@ Reward claim planning is intentionally kept out of `executionService`. Provider-
 
 ## `mergePlans` and `describeBatch`
 
-- `mergePlans(plans)`: merges multiple plans into one plan. Required approvals for the same `(token, owner, spender)` are summed, executable items keep their order, adjacent EVC batches are concatenated, and operation groupings are preserved. `contractCall` items are not merged automatically; merge those flows manually.
+- `mergePlans(plans)`: merges multiple plans into one plan. Required approvals for the same `(token, owner, spender)` are summed, executable items keep their order, adjacent EVC batches are concatenated, and operation groupings are preserved. Redundant EVC state transitions across the merged batches are collapsed — e.g. a `disableCollateral` from a cleanup plan followed by a matching `enableCollateral` in a borrow plan cancel out — so merging a `planCleanup` plan with a borrow plan produces a minimal batch. `contractCall` items are not merged automatically; merge those flows manually.
 - `describeBatch(batch, extraAbis?)`: decodes batch item calldata into human-readable function names and arguments. If the input batch contains operation entries, the returned description preserves the same operation grouping and operation names while decoding child items.
 
 `describeBatch` is a decoder/inspector only; it does not execute anything.
@@ -207,6 +211,7 @@ Useful entry points:
 - [`examples/execution/withdraw-and-swap-example.ts`](../examples/execution/withdraw-and-swap-example.ts)
 - [`examples/execution/redeem-and-swap-example.ts`](../examples/execution/redeem-and-swap-example.ts)
 - [`examples/execution/same-asset-position-migration-example.ts`](../examples/execution/same-asset-position-migration-example.ts)
+- [`examples/execution/borrow-with-cleanup-example.ts`](../examples/execution/borrow-with-cleanup-example.ts)
 - [`examples/execution/merge-plans-example.ts`](../examples/execution/merge-plans-example.ts)
 - [`examples/execution/open-position-with-cow-live-example.ts`](../examples/execution/open-position-with-cow-live-example.ts)
 - [`run-examples.sh`](../examples/run-examples.sh)

@@ -48,6 +48,8 @@ Keep `errors` alongside the entity snapshot. Diagnostics are not entity state; u
 
 APY/ROE values on SDK vault and portfolio entities are percentage points (`5` = `5%`). Raw reward campaign APRs are decimal fractions; convert them before adding them to vault APYs in custom UI code, or use the SDK's computed breakdown fields.
 
+Vault rewards are exposed as a `VaultRewardInfo` whose `getTotalRewardsApr({ viewer })` / `getActiveCampaigns({ viewer })` apply Merkl-style whitelist/blacklist eligibility — the plain `totalRewardsApr` getter stays headline (no viewer). Portfolio, per-position, and sub-account views mirror this: headline `netApy`/`roe`/`apyBreakdown`/`roeBreakdown` getters vs viewer-aware `getNetApy/getRoe/getApyBreakdown/getRoeBreakdown({ viewer })`. Pass the connected address as `viewer` once a wallet is connected so gated campaigns don't inflate displayed APY. These breakdowns also pick up `BORROW_COLLATERAL` and `LOOPING` reward campaigns.
+
 USD market price and value fields (`marketPriceUsd`, `suppliedValueUsd`, `borrowedValueUsd`, `totalRewardsValueUsd`, portfolio USD totals) are plain `number` values. Direct oracle/risk fields such as `oraclePriceRaw`, `assetRiskPrice`, `healthFactor`, and LTV ratios remain `bigint`.
 
 For React UIs:

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.12-beta] - 2026-05-29
+
+### Fixed
+
+- Pyth plugin quote prefetch now caches empty results (returns `{ entries: [] }` instead of `undefined`) and collects feeds from controllers, so fan-out flows don't re-fetch Hermes for vaults with no Pyth feeds.
+
+## [0.2.11-beta] - 2026-05-28
+
+### Changed
+
+- **Breaking:** `EulerLabelProduct` and `EulerLabelVaultOverride` now carry a freeform `tags: string[]` array instead of a boolean `keyring` field. Keyring classification is derived from the `"keyring"` tag.
+
+### Added
+
+- Added `isEulerLabelVaultAccessControlled` (tag `"access control"`); `isEulerLabelVaultKeyring` / `isEulerLabelProductKeyring` now resolve the `"keyring"` tag.
+
 ## [0.2.10-beta] - 2026-05-28
 
 ### Added

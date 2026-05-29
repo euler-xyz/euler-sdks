@@ -83,7 +83,7 @@ const quotes = await sdk.swapService.fetchRepayQuotes({
 })
 ```
 
-`cowSwap` creates `providerExtraData` for the swap API when `provider` is `"cow"` / `"cow swap"` or when `provider` is not set. If you explicitly request a non-CoW provider, the SDK does not attach generated CoW metadata. This lets broad quote screens request all providers while still giving the router enough data to build CoW quotes.
+`cowSwap` creates `providerExtraData` for the swap API when `provider` is `"cow"` or when `provider` is not set. If you explicitly request a non-CoW provider, the SDK does not attach generated CoW metadata. This lets broad quote screens request all providers while still giving the router enough data to build CoW quotes.
 
 CoW quotes include `providerData.quoteId`, `providerData.sellAmount`, `providerData.buyAmount`, and `providerData.feeAmount`. The SDK validates those fields against the quote request before returning CoW quotes.
 

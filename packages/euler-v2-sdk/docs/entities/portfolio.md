@@ -51,7 +51,7 @@ It is applied to every `AccountPosition` considered by the portfolio.
 | `collateral` | `AccountPosition<TVaultEntity> | undefined` | Primary collateral position. |
 | `borrowVault` | `TVaultEntity | undefined` | Resolved borrow vault entity. |
 | `collateralVault` | `TVaultEntity | undefined` | Resolved primary collateral vault entity. |
-| `collateralVaults` | `Address[]` | Collateral vault addresses backing the debt. |
+| `collateralVaults` | `Address[]` | Collateral vault addresses backing the debt, ordered by descending oracle value. |
 | `subAccount` | `Address` | Sub-account that owns the borrow position. |
 | `healthFactor` | `bigint | undefined` | Sub-account health factor in WAD. |
 | `userLTV` | `bigint | undefined` | Alias of current sub-account LTV in WAD. |
@@ -108,4 +108,8 @@ It is applied to every `AccountPosition` considered by the portfolio.
 | `getFreeSubAccounts(options)` | `Address[]` | Returns sub-accounts without active supplied or borrowed positions in this portfolio view. |
 | `getNextSubAccount(options)` | `Address | undefined` | Returns the first suitable sub-account for a new position in this portfolio view. |
 | `getNewSubAccount(options)` | `Address | undefined` | Alias for `getNextSubAccount`. |
+| `getNetApy(opts?)` | `number | undefined` | Net APY across included positions. Pass `{ viewer }` to apply reward whitelist/blacklist eligibility; the `netApy` getter is the headline (no-viewer) value. |
+| `getRoe(opts?)` | `number | undefined` | Return on equity across included positions. Pass `{ viewer }` for viewer-aware eligibility; the `roe` getter is the headline value. |
+| `getApyBreakdown(opts?)` | `YieldApyBreakdown | undefined` | Net APY contribution breakdown. Pass `{ viewer }` for viewer-aware eligibility; the `apyBreakdown` getter is the headline value. |
+| `getRoeBreakdown(opts?)` | `YieldApyBreakdown | undefined` | ROE contribution breakdown. Pass `{ viewer }` for viewer-aware eligibility; the `roeBreakdown` getter is the headline value. |
 

@@ -4,7 +4,7 @@ Labels are purely off-chain metadata sourced from [`euler-labels`](https://githu
 
 ## What labels provide
 
-- **Products** &mdash; named groupings of vaults with vault-level overrides, notices, deprecation, featured, keyring, and exploration flags
+- **Products** &mdash; named groupings of vaults with vault-level overrides, notices, deprecation, featured, classification tags (e.g. `keyring`, `access control`), and exploration flags
 - **Entities** &mdash; the organisation(s) governing a vault (name, logo, website, socials)
 - **Points** &mdash; third-party points programs available on specific vaults
 - **Euler Earn entries** &mdash; Earn vault membership, descriptions, notices, block/restricted countries, featured/deprecated/not-explorable flags
@@ -45,3 +45,21 @@ console.log(vaultEntity?.eulerLabel?.deprecated)
 ```
 
 See [`examples/vaults/fetch-vault-details-example.ts`](../examples/vaults/fetch-vault-details-example.ts) for a complete working example.
+
+## Classification tags
+
+Products and vault overrides carry a freeform `tags: string[]` array rather than dedicated boolean flags. The SDK exposes helpers that resolve well-known tags for a vault (checking both the product and any vault-level override):
+
+```typescript
+import {
+  isEulerLabelVaultKeyring,
+  isEulerLabelProductKeyring,
+  isEulerLabelVaultAccessControlled,
+} from '@eulerxyz/euler-v2-sdk'
+
+isEulerLabelVaultKeyring(labelsData, vaultAddress)         // tag "keyring"
+isEulerLabelVaultAccessControlled(labelsData, vaultAddress) // tag "access control"
+isEulerLabelProductKeyring(labelsData, productKey)
+```
+
+To check any other tag, read `tags` directly off the resolved product or vault override.

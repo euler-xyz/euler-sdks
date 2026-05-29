@@ -23,6 +23,7 @@ import {
   isEulerEarn,
   type EVault,
   type EulerEarn,
+  type RewardAction,
 } from "@eulerxyz/euler-v2-sdk";
 
 async function fetchTopVerifiedVaultsExample() {
@@ -72,7 +73,8 @@ fetchTopVerifiedVaultsExample().catch((error) => {
 
 
 type WithUsd<T> = { vault: T; usd: number };
-type RewardAction = "LEND" | "BORROW";
+// RewardAction is "LEND" | "BORROW" | "BORROW_COLLATERAL" | "LOOPING"; this
+// example only sums the plain "LEND"/"BORROW" actions for its headline display.
 
 function calcVaultUsd(
   totalAssets: bigint,

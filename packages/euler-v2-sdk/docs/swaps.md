@@ -113,7 +113,7 @@ const plan = sdk.executionService.planRepayWithSwap({
 })
 ```
 
-`cleanupOnMax` is optional. Use it for full repay flows when the post-repay batch should disable active collaterals on the repaid sub-account, move those collateral shares to the owner, and move remaining source-vault shares to the owner.
+`cleanupOnMax` is optional. Use it for full repay flows when the post-repay batch should disable active collaterals on the repaid sub-account, move those collateral shares to the owner, and move remaining source-vault shares to the owner. The collateral-share transfer applies only to EVK collateral vaults; non-EVK collaterals (e.g. Securitize RWA vaults) are disabled but not swept.
 
 ### Swap Collateral
 
@@ -404,7 +404,7 @@ flows. CoW quotes carry provider order metadata and execute through signed CoW
 orders instead of an immediate Swapper EVC batch.
 
 Use the regular quote methods with `cowSwap` to build CoW provider metadata. If
-`provider` is `"cow"` / `"cow swap"` or unset, the SDK attaches the generated
+`provider` is `"cow"` or unset, the SDK attaches the generated
 CoW metadata. If `provider` is a different provider, no generated CoW metadata
 is sent.
 

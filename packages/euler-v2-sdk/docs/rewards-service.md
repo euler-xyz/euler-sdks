@@ -20,6 +20,29 @@ Use these methods for reward discovery and display:
 - `fetchFuulTotals(address)` for Fuul claimed/unclaimed totals
 - `fetchFuulClaimChecks(address)` for Fuul claim payloads
 
+### Reward objects and viewer-aware filtering
+
+`fetchVaultRewards` / `fetchChainRewards` (and the populated `vault.rewards`) return `VaultRewardInfo`, which holds the raw `campaigns: RewardCampaign[]` and exposes viewer-aware reads:
+
+- `totalRewardsApr` (getter) — headline sum of all campaign APRs, no viewer. Same as `getTotalRewardsApr()`.
+- `getActiveCampaigns({ viewer })` — campaigns the viewer is eligible for.
+- `getTotalRewardsApr({ viewer })` — sums APR over eligible campaigns.
+
+Eligibility is decided by `defaultIsActiveForViewer` (Merkl semantics): no viewer means eligible (so discovery surfaces keep showing the full APR to unconnected visitors); a non-empty campaign `whitelist` restricts eligibility to listed addresses (overriding the blacklist); otherwise `blacklist` membership disqualifies. Address comparison is case-insensitive, and `whitelist`/`blacklist` arrive already lowercased from both the direct and V3 adapters.
+
+Override the predicate globally via `rewardsServiceConfig.isActiveForViewer`, or at runtime via `rewardsService.setIsActiveForViewer(fn)` / `getIsActiveForViewer()`. The service re-binds the active predicate onto every `VaultRewardInfo` it returns.
+
+### Reward actions and yield attribution
+
+`RewardCampaign.action` is one of `"LEND" | "BORROW" | "BORROW_COLLATERAL" | "LOOPING"`. Account/portfolio yield computations attribute these to positions as follows:
+
+- `LEND` — added to a supplied position's reward APY.
+- `BORROW` — added to a borrow position's reward APY.
+- `BORROW_COLLATERAL` — added to a borrow's reward APY when the campaign's collateral matches a collateral in the position.
+- `LOOPING` — applied when the position's leverage multiplier falls inside the campaign's `[minMultiplier, maxMultiplier]` window, contributing `equityUsd * loopingApr`.
+
+On `Portfolio`, per-position, and sub-account views, the plain `netApy` / `roe` / `apyBreakdown` / `roeBreakdown` getters stay headline (no viewer), while the `getNetApy({ viewer })`, `getRoe({ viewer })`, `getApyBreakdown({ viewer })`, and `getRoeBreakdown({ viewer })` methods apply whitelist/blacklist eligibility so it flows through to net APY and ROE.
+
 ## Adapters
 
 `rewardsService` now uses an internal read adapter:
@@ -94,6 +117,7 @@ Relevant `rewardsServiceConfig` fields:
 - `adapter`
 - `directAdapterConfig`
 - `v3AdapterConfig`
+- `isActiveForViewer` (viewer-eligibility predicate; defaults to Merkl whitelist/blacklist semantics)
 - `merklApiUrl`
 - `brevisApiUrl`
 - `brevisProofsApiUrl`

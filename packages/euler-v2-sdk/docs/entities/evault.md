@@ -84,6 +84,8 @@ Every variant has `address`, `type`, `data`, and `params`.
 | `FIXED_CYCLICAL_BINARY_MONTHLY` | `FixedCyclicalBinaryMonthlyIRMInfo | null` | `null` |
 | `UNKNOWN` | `null` | `null` |
 
+For Adaptive Curve IRMs, `adaptiveRateAtTargetToBorrowSPY(wadPerSecond)` scales a WAD-per-second `rateAtTarget` into a borrow SPY (multiplying by `ADAPTIVE_RATE_AT_TARGET_TO_BORROW_SPY_SCALE`, i.e. `1e9`). It returns `bigint | null` (`null` for negative input).
+
 ### Oracle Routing
 
 `OracleInfo.routes` contains the decoded effective oracle routes exposed by the

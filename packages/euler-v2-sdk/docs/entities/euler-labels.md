@@ -36,7 +36,7 @@ than classes.
 | `block` | `string[] | undefined` | Block rules attached to the product. |
 | `restricted` | `string[] | undefined` | Restriction rules attached to the product. |
 | `notExplorable` | `boolean | undefined` | Whether product vaults should be hidden from explorer-style surfaces. |
-| `keyring` | `boolean | undefined` | Whether the product is keyring-gated. |
+| `tags` | `string[] | undefined` | Freeform classification tags (e.g. `"keyring"`, `"access control"`). |
 | `portfolioNotice` | `string | undefined` | Product-level portfolio notice. |
 | `vaultOverrides` | `Record<string, EulerLabelVaultOverride> | undefined` | Per-vault product overrides keyed by vault address. |
 
@@ -52,7 +52,7 @@ than classes.
 | `restricted` | `string[] | undefined` | Vault restriction-rule override. |
 | `notExplorableLend` | `boolean | undefined` | Whether lend exploration should hide this vault. |
 | `notExplorableBorrow` | `boolean | undefined` | Whether borrow exploration should hide this vault. |
-| `keyring` | `boolean | undefined` | Whether this vault is keyring-gated. |
+| `tags` | `string[] | undefined` | Freeform classification tags overriding/augmenting product tags (e.g. `"keyring"`, `"access control"`). |
 
 ## `EulerLabelPoint`
 
