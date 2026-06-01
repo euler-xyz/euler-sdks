@@ -10,7 +10,7 @@ import type { VaultRewardInfo } from "./vaultRewardInfo.js";
 // Public types
 // ---------------------------------------------------------------------------
 
-export type RewardSource = "merkl" | "brevis" | "fuul";
+export type RewardSource = "merkl" | "brevis" | "fuul" | "turtle";
 export type RewardAction = "LEND" | "BORROW" | "BORROW_COLLATERAL" | "LOOPING";
 
 export interface RewardCampaign {
@@ -69,6 +69,34 @@ export interface UserReward {
 	cumulativeAmounts?: string[];
 	/** Epoch identifier (Brevis). */
 	epoch?: string;
+	/** Merkle-root timestamp in seconds for timestamp-based claiming (Turtle). */
+	rootTimestamp?: string;
+}
+
+export interface TurtleRewardTokenConfig {
+	address: Address;
+	symbol?: string;
+	name?: string;
+	decimals?: number;
+	icon?: string;
+	priceUsd?: number;
+}
+
+export interface TurtleStreamMapping {
+	/** Turtle stream UUID. */
+	streamId: string;
+	/** Euler vault address when Turtle stream metadata does not expose it directly. */
+	vaultAddress?: Address;
+	/** Euler reward action for this stream. Defaults to LEND when a vault can be resolved. */
+	action?: RewardAction;
+	/** Collateral/deposit vault address for collateral-specific borrow or looping rewards. */
+	collateralAddress?: Address;
+	/** Chain override when the stream must be known before querying Turtle stream metadata. */
+	chainId?: number;
+	/** Optional source URL to expose on reward campaigns. */
+	sourceUrl?: string;
+	/** Optional reward-token metadata for proof-only integrations. */
+	rewardToken?: TurtleRewardTokenConfig;
 }
 
 export interface RewardsDirectAdapterConfig {
@@ -78,6 +106,12 @@ export interface RewardsDirectAdapterConfig {
 	brevisProofsApiUrl?: string;
 	/** Public Fuul incentives API base URL. */
 	fuulApiUrl?: string;
+	/** Turtle Earn API base URL. */
+	turtleApiUrl?: string;
+	/** Turtle API key used for organization-scoped stream and wallet reads. */
+	turtleApiKey?: string;
+	/** Optional mapping from Turtle stream IDs to Euler vault/action metadata. */
+	turtleStreamMappings?: TurtleStreamMapping[];
 	/** Optional caller-hosted endpoint for Fuul totals. */
 	fuulTotalsUrl?: string;
 	/** Optional caller-hosted endpoint for Fuul claim checks. */
@@ -94,6 +128,7 @@ export interface RewardsDirectAdapterConfig {
 	enableMerkl?: boolean;
 	enableBrevis?: boolean;
 	enableFuul?: boolean;
+	enableTurtle?: boolean;
 }
 
 export interface RewardsV3AdapterConfig {
@@ -111,6 +146,12 @@ export interface RewardsServiceConfig {
 	brevisProofsApiUrl?: string;
 	/** Public Fuul incentives API base URL. */
 	fuulApiUrl?: string;
+	/** Turtle Earn API base URL. */
+	turtleApiUrl?: string;
+	/** Turtle API key used for organization-scoped stream and wallet reads. */
+	turtleApiKey?: string;
+	/** Optional mapping from Turtle stream IDs to Euler vault/action metadata. */
+	turtleStreamMappings?: TurtleStreamMapping[];
 	/** Optional caller-hosted endpoint for Fuul totals. */
 	fuulTotalsUrl?: string;
 	/** Optional caller-hosted endpoint for Fuul claim checks. */
@@ -127,6 +168,7 @@ export interface RewardsServiceConfig {
 	enableMerkl?: boolean;
 	enableBrevis?: boolean;
 	enableFuul?: boolean;
+	enableTurtle?: boolean;
 	directAdapterConfig?: RewardsDirectAdapterConfig;
 	v3AdapterConfig?: RewardsV3AdapterConfig;
 	/**

@@ -5,6 +5,7 @@ import {
 	serializeQueryArgs,
 	type BuildQueryFn,
 } from "../../../../utils/buildQuery.js";
+import type { ProviderService } from "../../../providerService/index.js";
 import type {
 	BrevisCampaign,
 	BrevisCampaignsResponse,
@@ -18,6 +19,7 @@ import type {
 	RewardCampaign,
 	RewardAction,
 	RewardsDirectAdapterConfig,
+	TurtleStreamMapping,
 	UserReward,
 } from "../../rewardsServiceTypes.js";
 import { VaultRewardInfo } from "../../vaultRewardInfo.js";
@@ -28,6 +30,7 @@ const DEFAULT_BREVIS_API_URL =
 const DEFAULT_BREVIS_PROOFS_API_URL =
 	"https://incentra-prd.brevis.network/v1/getMerkleProofsBatch";
 const DEFAULT_FUUL_API_URL = "https://api.fuul.xyz/api/v1";
+const DEFAULT_TURTLE_API_URL = "https://earn.turtle.xyz";
 
 const DEFAULT_MERKL_DISTRIBUTOR: Address =
 	"0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae";
@@ -39,6 +42,21 @@ const DEFAULT_FUUL_FACTORY: Address =
 const BREVIS_LEND = 2002;
 const BREVIS_BORROW = 2001;
 
+const TURTLE_STREAM_ABI = [
+	{
+		type: "function",
+		name: "canClaim",
+		inputs: [
+			{ name: "user", type: "address", internalType: "address" },
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+			{ name: "timestamp", type: "uint40", internalType: "uint40" },
+			{ name: "merkleProof", type: "bytes32[]", internalType: "bytes32[]" },
+		],
+		outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+		stateMutability: "view",
+	},
+] as const;
+
 type MerklOpportunityType =
 	| "EULER"
 	| "MULTILENDBORROW"
@@ -46,7 +64,81 @@ type MerklOpportunityType =
 	| "EULER_BORROW_FROM_COLLATERAL"
 	| "EULER_MULTI_BORROW_FROM_COLLATERAL";
 
+type TurtleSupportedToken = {
+	address?: string;
+	symbol?: string;
+	name?: string;
+	decimals?: number | string;
+	logoUrl?: string;
+	priceUsd?: number | string;
+	chainId?: number | string;
+};
+
+type TurtleStreamSnapshot = {
+	timestamp?: string;
+	amountDistributed?: string;
+	apr?: number | string | null;
+	baseApr?: number | string | null;
+	rewardTokenPrice?: number | string | null;
+};
+
+type TurtleStream = {
+	id: string;
+	chainId?: number | null;
+	contractAddress?: string | null;
+	type?: number;
+	startTimestamp?: string;
+	endTimestamp?: string | null;
+	claimPaused?: boolean;
+	customArgs?: Record<string, unknown>;
+	adapters?: Array<{ type?: string; params?: Record<string, unknown> }>;
+	point?: unknown | null;
+	strategy?: string;
+	lastSnapshot?: TurtleStreamSnapshot | null;
+	committedSnapshot?: TurtleStreamSnapshot | null;
+	rewardToken?: TurtleSupportedToken | null;
+};
+
+type TurtleStreamsResponse = {
+	streams?: TurtleStream[];
+};
+
+type TurtleMerkleProof = {
+	streamId: string;
+	chainId: number;
+	contractAddress: string;
+	amount: string;
+	timestamp: string;
+	proof: string[];
+	rootHash?: string;
+};
+
+type TurtleMerkleProofsResponse = {
+	proofs?: TurtleMerkleProof[];
+};
+
+type TurtleResolvedStream = {
+	streamId: string;
+	chainId: number;
+	contractAddress?: Address;
+	vaultAddress?: Address;
+	action?: RewardAction;
+	collateralAddress?: Address;
+	sourceUrl?: string;
+	rewardToken?: {
+		address: Address;
+		symbol: string;
+		name: string;
+		decimals: number;
+		icon?: string;
+		priceUsd: number;
+	};
+	apr?: number;
+	endTimestamp?: number;
+};
+
 const MERKL_EULER_SOURCE_URL = "https://app.merkl.xyz/?protocol=euler";
+const TURTLE_SOURCE_URL = "https://app.turtle.xyz/";
 
 const normalizeAddress = (value?: string): Address | undefined => {
 	if (!value) return undefined;
@@ -55,6 +147,84 @@ const normalizeAddress = (value?: string): Address | undefined => {
 	} catch {
 		return undefined;
 	}
+};
+
+const normalizeFiniteNumber = (value: unknown): number | undefined => {
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	if (typeof value === "string" && value.trim().length > 0) {
+		const parsed = Number(value);
+		if (Number.isFinite(parsed)) return parsed;
+	}
+	return undefined;
+};
+
+const normalizeNonNegativeInteger = (value: unknown): number | undefined => {
+	const parsed = normalizeFiniteNumber(value);
+	if (parsed === undefined) return undefined;
+	const integer = Math.trunc(parsed);
+	return integer >= 0 ? integer : undefined;
+};
+
+const normalizeTimestampSeconds = (value: unknown): number | undefined => {
+	if (value === undefined || value === null || value === "") return undefined;
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return value > 1e12 ? Math.floor(value / 1000) : Math.floor(value);
+	}
+	if (typeof value === "string") {
+		const numeric = Number(value);
+		if (Number.isFinite(numeric)) {
+			return numeric > 1e12 ? Math.floor(numeric / 1000) : Math.floor(numeric);
+		}
+		const parsed = Date.parse(value);
+		if (Number.isFinite(parsed)) return Math.floor(parsed / 1000);
+	}
+	return undefined;
+};
+
+const normalizeTurtleAction = (value: unknown): RewardAction | undefined => {
+	if (typeof value !== "string") return undefined;
+	const normalized = value.trim().toLowerCase();
+	if (!normalized) return undefined;
+	if (normalized.includes("loop")) return "LOOPING";
+	if (normalized.includes("borrow") && normalized.includes("collateral")) {
+		return "BORROW_COLLATERAL";
+	}
+	if (normalized.includes("borrow")) return "BORROW";
+	if (
+		normalized.includes("lend") ||
+		normalized.includes("supply") ||
+		normalized.includes("deposit")
+	) {
+		return "LEND";
+	}
+	return undefined;
+};
+
+const readAddressFromRecord = (
+	record: Record<string, unknown> | undefined,
+	keys: readonly string[],
+): Address | undefined => {
+	if (!record) return undefined;
+	for (const key of keys) {
+		const value = record[key];
+		if (typeof value !== "string") continue;
+		const address = normalizeAddress(value);
+		if (address) return address;
+	}
+	return undefined;
+};
+
+const readNestedAddressFromRecord = (
+	record: Record<string, unknown> | undefined,
+	key: string,
+	nestedKey: string,
+): Address | undefined => {
+	const nested = record?.[key];
+	if (!nested || typeof nested !== "object" || Array.isArray(nested)) {
+		return undefined;
+	}
+	const value = (nested as Record<string, unknown>)[nestedKey];
+	return typeof value === "string" ? normalizeAddress(value) : undefined;
 };
 
 const sanitizeFuulClaimChecks = (
@@ -130,6 +300,9 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	private brevisApiUrl: string;
 	private brevisProofsApiUrl: string;
 	private fuulApiUrl: string;
+	private turtleApiUrl: string;
+	private turtleApiKey?: string;
+	private turtleStreamMappings: TurtleStreamMapping[];
 	private fuulTotalsUrl?: string;
 	private fuulClaimChecksUrl?: string;
 	private brevisChainIds?: number[];
@@ -139,6 +312,8 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	private enableMerkl: boolean;
 	private enableBrevis: boolean;
 	private enableFuul: boolean;
+	private enableTurtle: boolean;
+	private providerService?: ProviderService;
 
 	constructor(config?: RewardsDirectAdapterConfig, buildQuery?: BuildQueryFn) {
 		this.merklApiUrl = config?.merklApiUrl ?? DEFAULT_MERKL_API_URL;
@@ -146,6 +321,9 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		this.brevisProofsApiUrl =
 			config?.brevisProofsApiUrl ?? DEFAULT_BREVIS_PROOFS_API_URL;
 		this.fuulApiUrl = config?.fuulApiUrl ?? DEFAULT_FUUL_API_URL;
+		this.turtleApiUrl = config?.turtleApiUrl ?? DEFAULT_TURTLE_API_URL;
+		this.turtleApiKey = config?.turtleApiKey;
+		this.turtleStreamMappings = config?.turtleStreamMappings ?? [];
 		this.fuulTotalsUrl = config?.fuulTotalsUrl;
 		this.fuulClaimChecksUrl = config?.fuulClaimChecksUrl;
 		this.brevisChainIds = config?.brevisChainIds;
@@ -158,8 +336,13 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		this.enableMerkl = config?.enableMerkl ?? true;
 		this.enableBrevis = config?.enableBrevis ?? true;
 		this.enableFuul = config?.enableFuul ?? true;
+		this.enableTurtle = config?.enableTurtle ?? false;
 
 		if (buildQuery) applyBuildQuery(this, buildQuery);
+	}
+
+	setProviderService(providerService: ProviderService): void {
+		this.providerService = providerService;
 	}
 
 	queryMerklOpportunities = async (
@@ -277,6 +460,39 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		this.queryFuulClaimChecks = fn;
 	}
 
+	queryTurtleStreams = async (
+		url: string,
+		headers: Record<string, string>,
+	): Promise<TurtleStreamsResponse> => {
+		const res = await fetch(url, { method: "GET", headers });
+		if (!res.ok) return { streams: [] };
+		return res.json() as Promise<TurtleStreamsResponse>;
+	};
+
+	getQueryKeyTurtleStreams(url: string): string | null {
+		return serializeQueryArgs([url]);
+	}
+
+	setQueryTurtleStreams(fn: typeof this.queryTurtleStreams): void {
+		this.queryTurtleStreams = fn;
+	}
+
+	queryTurtleMerkleProofs = async (
+		url: string,
+	): Promise<TurtleMerkleProofsResponse> => {
+		const res = await fetch(url, { method: "GET" });
+		if (!res.ok) return { proofs: [] };
+		return res.json() as Promise<TurtleMerkleProofsResponse>;
+	};
+
+	getQueryKeyTurtleMerkleProofs(url: string): string | null {
+		return serializeQueryArgs([url]);
+	}
+
+	setQueryTurtleMerkleProofs(fn: typeof this.queryTurtleMerkleProofs): void {
+		this.queryTurtleMerkleProofs = fn;
+	}
+
 	async fetchVaultRewards(
 		chainId: number,
 		vaultAddress: Address,
@@ -288,20 +504,27 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	async fetchChainRewards(
 		chainId: number,
 	): Promise<Map<string, VaultRewardInfo>> {
-		const [merklCampaigns, brevisCampaigns, fuulCampaigns] = await Promise.all([
-			this.enableMerkl
-				? this.fetchMerklCampaigns(chainId)
-				: Promise.resolve([]),
-			this.isBrevisChainEnabled(chainId)
-				? this.fetchBrevisCampaigns(chainId)
-				: Promise.resolve([]),
-			this.enableFuul ? this.fetchFuulCampaigns(chainId) : Promise.resolve([]),
-		]);
+		const [merklCampaigns, brevisCampaigns, fuulCampaigns, turtleCampaigns] =
+			await Promise.all([
+				this.enableMerkl
+					? this.fetchMerklCampaigns(chainId)
+					: Promise.resolve([]),
+				this.isBrevisChainEnabled(chainId)
+					? this.fetchBrevisCampaigns(chainId)
+					: Promise.resolve([]),
+				this.enableFuul
+					? this.fetchFuulCampaigns(chainId)
+					: Promise.resolve([]),
+				this.enableTurtle
+					? this.fetchTurtleCampaigns(chainId)
+					: Promise.resolve([]),
+			]);
 
 		const rewardsMap = this.mergeCampaigns(
 			merklCampaigns,
 			brevisCampaigns,
 			fuulCampaigns,
+			turtleCampaigns,
 		);
 		return rewardsMap;
 	}
@@ -310,19 +533,28 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		chainId: number,
 		address: Address,
 	): Promise<UserReward[]> {
-		const [merklRewards, brevisRewards, fuulRewards] = await Promise.all([
-			this.enableMerkl
-				? this.fetchMerklUserRewards(chainId, address)
-				: Promise.resolve([]),
-			this.isBrevisChainEnabled(chainId)
-				? this.fetchBrevisUserRewards(chainId, address)
-				: Promise.resolve([]),
-			this.enableFuul
-				? this.fetchFuulUserRewards(chainId, address)
-				: Promise.resolve([]),
-		]);
+		const [merklRewards, brevisRewards, fuulRewards, turtleRewards] =
+			await Promise.all([
+				this.enableMerkl
+					? this.fetchMerklUserRewards(chainId, address)
+					: Promise.resolve([]),
+				this.isBrevisChainEnabled(chainId)
+					? this.fetchBrevisUserRewards(chainId, address)
+					: Promise.resolve([]),
+				this.enableFuul
+					? this.fetchFuulUserRewards(chainId, address)
+					: Promise.resolve([]),
+				this.enableTurtle
+					? this.fetchTurtleUserRewards(chainId, address)
+					: Promise.resolve([]),
+			]);
 
-		return [...merklRewards, ...brevisRewards, ...fuulRewards];
+		return [
+			...merklRewards,
+			...brevisRewards,
+			...fuulRewards,
+			...turtleRewards,
+		];
 	}
 
 	async fetchFuulTotals(address: Address): Promise<FuulTotals> {
@@ -648,10 +880,311 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		return [...lendCampaigns, ...loopingCampaigns];
 	}
 
+	private async fetchTurtleCampaigns(
+		chainId: number,
+	): Promise<RewardCampaign[]> {
+		const streams = await this.fetchTurtleResolvedStreams(chainId);
+		const campaigns: RewardCampaign[] = [];
+
+		for (const stream of streams) {
+			if (!stream.vaultAddress || !stream.action || !stream.rewardToken)
+				continue;
+			if (!stream.apr) continue;
+
+			campaigns.push({
+				campaignId: stream.streamId,
+				source: "turtle",
+				action: stream.action,
+				apr: stream.apr,
+				rewardTokenAddress: stream.rewardToken.address,
+				rewardTokenSymbol: stream.rewardToken.symbol,
+				rewardTokenIcon: stream.rewardToken.icon,
+				endTimestamp: stream.endTimestamp,
+				collateralAddress: stream.collateralAddress,
+				sourceUrl: stream.sourceUrl,
+				_vaultAddress: stream.vaultAddress.toLowerCase(),
+			} as RewardCampaign & { _vaultAddress: string });
+		}
+
+		return campaigns;
+	}
+
+	private async fetchTurtleUserRewards(
+		chainId: number,
+		address: Address,
+	): Promise<UserReward[]> {
+		const streams = await this.fetchTurtleResolvedStreams(chainId);
+		const streamsWithTokens = streams.filter((stream) => stream.rewardToken);
+		if (streamsWithTokens.length === 0) return [];
+
+		const params = new URLSearchParams({ wallet: address });
+		for (const stream of streamsWithTokens) {
+			params.append("streamIds", stream.streamId);
+		}
+
+		const response = await this.queryTurtleMerkleProofs(
+			this.buildTurtleUrl("/v1/streams/merkle_proofs", params),
+		).catch(() => ({ proofs: [] }) as TurtleMerkleProofsResponse);
+
+		const streamById = new Map(
+			streamsWithTokens.map((stream) => [
+				stream.streamId.toLowerCase(),
+				stream,
+			]),
+		);
+		const rewards: UserReward[] = [];
+
+		for (const proof of response.proofs ?? []) {
+			const stream = streamById.get(proof.streamId.toLowerCase());
+			if (!stream?.rewardToken) continue;
+			if (proof.chainId !== chainId) continue;
+
+			const claimAddress = normalizeAddress(proof.contractAddress);
+			if (!claimAddress) continue;
+			if (
+				stream.contractAddress &&
+				getAddress(stream.contractAddress) !== claimAddress
+			) {
+				continue;
+			}
+
+			const rootTimestamp = normalizeTimestampSeconds(proof.timestamp);
+			if (rootTimestamp === undefined) continue;
+
+			const proofBytes = proof.proof as Hex[];
+			const accumulated = proof.amount;
+			let accumulatedAmount: bigint;
+			try {
+				accumulatedAmount = BigInt(accumulated);
+			} catch {
+				continue;
+			}
+			let unclaimed: bigint;
+			try {
+				unclaimed = await this.readTurtleClaimable(
+					chainId,
+					address,
+					claimAddress,
+					accumulated,
+					rootTimestamp,
+					proofBytes,
+				);
+			} catch {
+				unclaimed = accumulatedAmount;
+			}
+			if (unclaimed <= 0n) continue;
+
+			rewards.push({
+				chainId,
+				token: {
+					address: stream.rewardToken.address,
+					chainId,
+					symbol: stream.rewardToken.symbol,
+					name: stream.rewardToken.name,
+					decimals: stream.rewardToken.decimals,
+				},
+				tokenPrice: stream.rewardToken.priceUsd,
+				provider: "turtle",
+				campaignId: proof.streamId,
+				accumulated,
+				unclaimed: unclaimed.toString(),
+				proof: proofBytes,
+				claimAddress,
+				rootTimestamp: rootTimestamp.toString(),
+			});
+		}
+
+		return rewards;
+	}
+
+	private async fetchTurtleResolvedStreams(
+		chainId: number,
+	): Promise<TurtleResolvedStream[]> {
+		const streamRows = await this.fetchTurtleStreamRows();
+		const mappingById = new Map(
+			this.turtleStreamMappings.map((mapping) => [
+				mapping.streamId.toLowerCase(),
+				mapping,
+			]),
+		);
+
+		const resolvedById = new Map<string, TurtleResolvedStream>();
+		for (const stream of streamRows) {
+			const resolved = this.resolveTurtleStream(
+				stream,
+				mappingById.get(stream.id.toLowerCase()),
+			);
+			if (resolved && resolved.chainId === chainId) {
+				resolvedById.set(resolved.streamId.toLowerCase(), resolved);
+			}
+		}
+
+		for (const mapping of this.turtleStreamMappings) {
+			const key = mapping.streamId.toLowerCase();
+			if (resolvedById.has(key)) continue;
+			const resolved = this.resolveTurtleStream(undefined, mapping);
+			if (resolved && resolved.chainId === chainId) {
+				resolvedById.set(key, resolved);
+			}
+		}
+
+		return [...resolvedById.values()];
+	}
+
+	private async fetchTurtleStreamRows(): Promise<TurtleStream[]> {
+		if (!this.turtleApiKey) return [];
+		const response = await this.queryTurtleStreams(
+			this.buildTurtleUrl(
+				"/v1/streams/",
+				new URLSearchParams({
+					withSnapshots: "false",
+					usersCount: "false",
+				}),
+			),
+			this.getTurtleHeaders(),
+		).catch(() => ({ streams: [] }) as TurtleStreamsResponse);
+
+		return Array.isArray(response.streams) ? response.streams : [];
+	}
+
+	private resolveTurtleStream(
+		stream?: TurtleStream,
+		mapping?: TurtleStreamMapping,
+	): TurtleResolvedStream | undefined {
+		const streamId = stream?.id ?? mapping?.streamId;
+		if (!streamId) return undefined;
+
+		const chainId =
+			typeof stream?.chainId === "number" ? stream.chainId : mapping?.chainId;
+		if (!chainId) return undefined;
+
+		const customArgs = stream?.customArgs;
+		const vaultAddress =
+			mapping?.vaultAddress ??
+			readAddressFromRecord(customArgs, [
+				"vaultAddress",
+				"vault",
+				"evkAddress",
+				"targetToken",
+				"targetTokenAddress",
+				"target_token",
+			]) ??
+			readNestedAddressFromRecord(customArgs, "targetToken", "address");
+		const action =
+			mapping?.action ??
+			normalizeTurtleAction(customArgs?.action) ??
+			normalizeTurtleAction(customArgs?.rewardAction) ??
+			normalizeTurtleAction(stream?.strategy) ??
+			(vaultAddress ? "LEND" : undefined);
+		const collateralAddress =
+			mapping?.collateralAddress ??
+			readAddressFromRecord(customArgs, [
+				"collateralAddress",
+				"collateral",
+				"depositVault",
+				"depositVaultAddress",
+			]);
+		const rawApr =
+			normalizeFiniteNumber(stream?.lastSnapshot?.apr) ??
+			normalizeFiniteNumber(stream?.committedSnapshot?.apr) ??
+			normalizeFiniteNumber(customArgs?.apr);
+		const apr =
+			rawApr === undefined ? undefined : rawApr > 1 ? rawApr / 100 : rawApr;
+		const rewardToken = this.resolveTurtleRewardToken(stream, mapping, chainId);
+		const contractAddress = normalizeAddress(
+			stream?.contractAddress ?? undefined,
+		);
+
+		return {
+			streamId,
+			chainId,
+			contractAddress,
+			vaultAddress,
+			action,
+			collateralAddress,
+			sourceUrl: mapping?.sourceUrl ?? TURTLE_SOURCE_URL,
+			rewardToken,
+			apr,
+			endTimestamp: normalizeTimestampSeconds(stream?.endTimestamp),
+		};
+	}
+
+	private resolveTurtleRewardToken(
+		stream: TurtleStream | undefined,
+		mapping: TurtleStreamMapping | undefined,
+		chainId: number,
+	): TurtleResolvedStream["rewardToken"] {
+		const mappedToken = mapping?.rewardToken;
+		const tokenAddress =
+			mappedToken?.address ?? normalizeAddress(stream?.rewardToken?.address);
+		if (!tokenAddress) return undefined;
+
+		const symbol =
+			mappedToken?.symbol ?? stream?.rewardToken?.symbol ?? tokenAddress;
+		const name = mappedToken?.name ?? stream?.rewardToken?.name ?? symbol;
+		const decimals =
+			mappedToken?.decimals ??
+			normalizeNonNegativeInteger(stream?.rewardToken?.decimals) ??
+			18;
+		const tokenChainId =
+			normalizeNonNegativeInteger(stream?.rewardToken?.chainId) ?? chainId;
+		if (tokenChainId !== chainId) return undefined;
+
+		return {
+			address: tokenAddress,
+			symbol,
+			name,
+			decimals,
+			icon: mappedToken?.icon ?? stream?.rewardToken?.logoUrl,
+			priceUsd:
+				mappedToken?.priceUsd ??
+				normalizeFiniteNumber(stream?.rewardToken?.priceUsd) ??
+				0,
+		};
+	}
+
+	private async readTurtleClaimable(
+		chainId: number,
+		account: Address,
+		claimAddress: Address,
+		amount: string,
+		rootTimestamp: number,
+		proof: Hex[],
+	): Promise<bigint> {
+		if (!this.providerService) return BigInt(amount);
+		const provider = this.providerService.getProvider(chainId);
+		return provider.readContract({
+			address: claimAddress,
+			abi: TURTLE_STREAM_ABI,
+			functionName: "canClaim",
+			args: [account, BigInt(amount), rootTimestamp, proof],
+		});
+	}
+
+	private getTurtleHeaders(): Record<string, string> {
+		return {
+			Accept: "application/json",
+			...(this.turtleApiKey ? { "X-API-Key": this.turtleApiKey } : {}),
+		};
+	}
+
+	private buildTurtleUrl(path: string, params?: URLSearchParams): string {
+		const normalizedApiUrl = this.turtleApiUrl.replace(/\/+$/, "");
+		const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+		const url =
+			normalizedApiUrl.startsWith("http://") ||
+			normalizedApiUrl.startsWith("https://")
+				? new URL(normalizedPath, `${normalizedApiUrl}/`).toString()
+				: `${normalizedApiUrl}${normalizedPath}`;
+		const query = params?.toString();
+		return query ? `${url}?${query}` : url;
+	}
+
 	private mergeCampaigns(
 		merklCampaigns: RewardCampaign[],
 		brevisCampaigns: RewardCampaign[],
 		fuulCampaigns: RewardCampaign[] = [],
+		turtleCampaigns: RewardCampaign[] = [],
 	): Map<string, VaultRewardInfo> {
 		const map = new Map<string, VaultRewardInfo>();
 
@@ -659,6 +1192,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 			...merklCampaigns,
 			...brevisCampaigns,
 			...fuulCampaigns,
+			...turtleCampaigns,
 		] as (RewardCampaign & { _vaultAddress: string })[];
 
 		for (const campaign of all) {

@@ -2,6 +2,7 @@ import type { Address } from "viem";
 import type { AccountServiceAdapter } from "../services/accountService/accountServiceConfig.js";
 import type { EVaultServiceAdapter } from "../services/vaults/eVaultService/eVaultServiceConfig.js";
 import type { EulerEarnServiceAdapter } from "../services/vaults/eulerEarnService/eulerEarnServiceConfig.js";
+import type { TurtleStreamMapping } from "../services/rewardsService/index.js";
 
 export type VaultTypeAdapterKind = "v3" | "subgraph" | "fallback";
 export type RewardsServiceAdapterKind = "v3" | "direct" | "fallback";
@@ -50,6 +51,9 @@ export interface EulerSDKConfig {
 	rewardsBrevisApiUrl?: string;
 	rewardsBrevisProofsApiUrl?: string;
 	rewardsFuulApiUrl?: string;
+	rewardsTurtleApiUrl?: string;
+	rewardsTurtleApiKey?: string;
+	rewardsTurtleStreamMappings?: TurtleStreamMapping[];
 	rewardsFuulTotalsUrl?: string;
 	rewardsFuulClaimChecksUrl?: string;
 	rewardsBrevisChainIds?: number[];
@@ -59,6 +63,7 @@ export interface EulerSDKConfig {
 	rewardsEnableMerkl?: boolean;
 	rewardsEnableBrevis?: boolean;
 	rewardsEnableFuul?: boolean;
+	rewardsEnableTurtle?: boolean;
 
 	pricingApiUrl?: string;
 	pricingApiKey?: string;
@@ -194,6 +199,12 @@ function readStringMap(
 	return parsed as Record<string, string>;
 }
 
+function readJson<T>(env: EnvRecord, name: string): T | undefined {
+	const value = readString(env, name);
+	if (value === undefined) return undefined;
+	return JSON.parse(value) as T;
+}
+
 function readNumberKeyedUrls(
 	env: EnvRecord,
 	prefix: string,
@@ -308,6 +319,12 @@ export function readEulerSDKEnvConfig(
 			"EULER_SDK_REWARDS_BREVIS_PROOFS_API_URL",
 		),
 		rewardsFuulApiUrl: readString(env, "EULER_SDK_REWARDS_FUUL_API_URL"),
+		rewardsTurtleApiUrl: readString(env, "EULER_SDK_REWARDS_TURTLE_API_URL"),
+		rewardsTurtleApiKey: readString(env, "EULER_SDK_REWARDS_TURTLE_API_KEY"),
+		rewardsTurtleStreamMappings: readJson<TurtleStreamMapping[]>(
+			env,
+			"EULER_SDK_REWARDS_TURTLE_STREAM_MAPPINGS_JSON",
+		),
 		rewardsFuulTotalsUrl: readString(env, "EULER_SDK_REWARDS_FUUL_TOTALS_URL"),
 		rewardsFuulClaimChecksUrl: readString(
 			env,
@@ -332,6 +349,7 @@ export function readEulerSDKEnvConfig(
 		rewardsEnableMerkl: readBoolean(env, "EULER_SDK_REWARDS_ENABLE_MERKL"),
 		rewardsEnableBrevis: readBoolean(env, "EULER_SDK_REWARDS_ENABLE_BREVIS"),
 		rewardsEnableFuul: readBoolean(env, "EULER_SDK_REWARDS_ENABLE_FUUL"),
+		rewardsEnableTurtle: readBoolean(env, "EULER_SDK_REWARDS_ENABLE_TURTLE"),
 
 		pricingApiUrl: readString(env, "EULER_SDK_PRICING_API_URL"),
 		pricingApiKey: readString(env, "EULER_SDK_PRICING_API_KEY"),

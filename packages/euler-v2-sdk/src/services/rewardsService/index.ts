@@ -12,6 +12,8 @@ export type {
 	RewardsServiceConfig,
 	RewardsDirectAdapterConfig,
 	RewardsV3AdapterConfig,
+	TurtleRewardTokenConfig,
+	TurtleStreamMapping,
 	BuildRewardClaimPlanArgs,
 	BuildRewardClaimsPlanArgs,
 	BuildRewardClaimAllPlanArgs,

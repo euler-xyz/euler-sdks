@@ -122,6 +122,20 @@ const FUUL_FACTORY_ABI = [
 	},
 ] as const;
 
+const TURTLE_STREAM_ABI = [
+	{
+		type: "function",
+		name: "claim",
+		inputs: [
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+			{ name: "timestamp", type: "uint40", internalType: "uint40" },
+			{ name: "merkleProof", type: "bytes32[]", internalType: "bytes32[]" },
+		],
+		outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+		stateMutability: "nonpayable",
+	},
+] as const;
+
 const MERKL_DEFAULT_DISTRIBUTOR: Address =
 	"0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae";
 const MERKL_DEFAULT_DISTRIBUTOR_CHAIN_IDS = new Set([
@@ -143,6 +157,10 @@ type BrevisFallbackAdapter = IRewardsAdapter & {
 	) => Promise<UserReward[]>;
 };
 
+type ProviderAwareRewardsAdapter = IRewardsAdapter & {
+	setProviderService?: (providerService: ProviderService) => void;
+};
+
 const hasBrevisClaimData = (reward: UserReward): boolean =>
 	reward.provider !== "brevis" ||
 	!!(
@@ -151,6 +169,15 @@ const hasBrevisClaimData = (reward: UserReward): boolean =>
 		reward.cumulativeAmounts?.length &&
 		reward.epoch !== undefined &&
 		reward.epoch !== ""
+	);
+
+const hasTurtleClaimData = (reward: UserReward): boolean =>
+	reward.provider !== "turtle" ||
+	!!(
+		reward.claimAddress &&
+		Array.isArray(reward.proof) &&
+		reward.rootTimestamp !== undefined &&
+		reward.rootTimestamp !== ""
 	);
 
 const fuulRewardKey = (currency: string, currencyType?: number): string =>
@@ -175,10 +202,18 @@ export class RewardsService implements IRewardsService {
 
 	setAdapter(adapter: IRewardsAdapter): void {
 		this.adapter = adapter;
+		if (this.providerService) {
+			(adapter as ProviderAwareRewardsAdapter).setProviderService?.(
+				this.providerService,
+			);
+		}
 	}
 
 	setProviderService(providerService: ProviderService): void {
 		this.providerService = providerService;
+		(this.adapter as ProviderAwareRewardsAdapter).setProviderService?.(
+			providerService,
+		);
 	}
 
 	setIsActiveForViewer(fn: IsActiveForViewerFn): void {
@@ -328,6 +363,11 @@ export class RewardsService implements IRewardsService {
 			);
 		}
 
+		for (const reward of rewards) {
+			if (reward.provider !== "turtle") continue;
+			plan.push(this.buildTurtleContractCall(reward));
+		}
+
 		return plan;
 	}
 
@@ -475,6 +515,26 @@ export class RewardsService implements IRewardsService {
 				reward.cumulativeAmounts.map((amount) => BigInt(amount)),
 				BigInt(reward.epoch),
 				reward.proof,
+			],
+			value: 0n,
+		};
+	}
+
+	private buildTurtleContractCall(reward: UserReward): ContractCall {
+		if (!hasTurtleClaimData(reward)) {
+			throw new Error("Missing Turtle claim data");
+		}
+
+		return {
+			type: "contractCall",
+			chainId: reward.chainId,
+			to: reward.claimAddress!,
+			abi: TURTLE_STREAM_ABI,
+			functionName: "claim",
+			args: [
+				BigInt(reward.accumulated),
+				Number(reward.rootTimestamp),
+				reward.proof ?? [],
 			],
 			value: 0n,
 		};

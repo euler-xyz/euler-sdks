@@ -432,6 +432,12 @@ function resolveRewardsDirectAdapterConfig(
 		...maybeField("brevisApiUrl", envConfig.rewardsBrevisApiUrl),
 		...maybeField("brevisProofsApiUrl", envConfig.rewardsBrevisProofsApiUrl),
 		...maybeField("fuulApiUrl", envConfig.rewardsFuulApiUrl),
+		...maybeField("turtleApiUrl", envConfig.rewardsTurtleApiUrl),
+		...maybeField("turtleApiKey", envConfig.rewardsTurtleApiKey),
+		...maybeField(
+			"turtleStreamMappings",
+			envConfig.rewardsTurtleStreamMappings,
+		),
 		...maybeField("fuulTotalsUrl", envConfig.rewardsFuulTotalsUrl),
 		...maybeField("fuulClaimChecksUrl", envConfig.rewardsFuulClaimChecksUrl),
 		...maybeField("brevisChainIds", envConfig.rewardsBrevisChainIds),
@@ -444,10 +450,14 @@ function resolveRewardsDirectAdapterConfig(
 		...maybeField("enableMerkl", envConfig.rewardsEnableMerkl),
 		...maybeField("enableBrevis", envConfig.rewardsEnableBrevis),
 		...maybeField("enableFuul", envConfig.rewardsEnableFuul),
+		...maybeField("enableTurtle", envConfig.rewardsEnableTurtle),
 		...maybeField("merklApiUrl", explicitConfig?.merklApiUrl),
 		...maybeField("brevisApiUrl", explicitConfig?.brevisApiUrl),
 		...maybeField("brevisProofsApiUrl", explicitConfig?.brevisProofsApiUrl),
 		...maybeField("fuulApiUrl", explicitConfig?.fuulApiUrl),
+		...maybeField("turtleApiUrl", explicitConfig?.turtleApiUrl),
+		...maybeField("turtleApiKey", explicitConfig?.turtleApiKey),
+		...maybeField("turtleStreamMappings", explicitConfig?.turtleStreamMappings),
 		...maybeField("fuulTotalsUrl", explicitConfig?.fuulTotalsUrl),
 		...maybeField("fuulClaimChecksUrl", explicitConfig?.fuulClaimChecksUrl),
 		...maybeField("brevisChainIds", explicitConfig?.brevisChainIds),
@@ -460,11 +470,15 @@ function resolveRewardsDirectAdapterConfig(
 		...maybeField("enableMerkl", explicitConfig?.enableMerkl),
 		...maybeField("enableBrevis", explicitConfig?.enableBrevis),
 		...maybeField("enableFuul", explicitConfig?.enableFuul),
+		...maybeField("enableTurtle", explicitConfig?.enableTurtle),
 		...(explicitConfig?.directAdapterConfig ?? {}),
 		...maybeField("merklApiUrl", config?.rewardsMerklApiUrl),
 		...maybeField("brevisApiUrl", config?.rewardsBrevisApiUrl),
 		...maybeField("brevisProofsApiUrl", config?.rewardsBrevisProofsApiUrl),
 		...maybeField("fuulApiUrl", config?.rewardsFuulApiUrl),
+		...maybeField("turtleApiUrl", config?.rewardsTurtleApiUrl),
+		...maybeField("turtleApiKey", config?.rewardsTurtleApiKey),
+		...maybeField("turtleStreamMappings", config?.rewardsTurtleStreamMappings),
 		...maybeField("fuulTotalsUrl", config?.rewardsFuulTotalsUrl),
 		...maybeField("fuulClaimChecksUrl", config?.rewardsFuulClaimChecksUrl),
 		...maybeField("brevisChainIds", config?.rewardsBrevisChainIds),
@@ -477,6 +491,7 @@ function resolveRewardsDirectAdapterConfig(
 		...maybeField("enableMerkl", config?.rewardsEnableMerkl),
 		...maybeField("enableBrevis", config?.rewardsEnableBrevis),
 		...maybeField("enableFuul", config?.rewardsEnableFuul),
+		...maybeField("enableTurtle", config?.rewardsEnableTurtle),
 	};
 }
 
@@ -1168,6 +1183,7 @@ export async function buildEulerSDK<
 				directAdapterConfig,
 				resolvedBuildQuery,
 			);
+			directAdapter.setProviderService(providerService as ProviderService);
 			const rewardsV3Config = resolveV3AdapterConfig(
 				defaultRewardsV3AdapterConfig,
 				{
