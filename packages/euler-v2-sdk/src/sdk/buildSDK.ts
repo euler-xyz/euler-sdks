@@ -1183,7 +1183,7 @@ export async function buildEulerSDK<
 			);
 			const canBuildRewardsV3 = !!rewardsV3Config.endpoint;
 			const buildRewardsV3 = () =>
-				new RewardsV3Adapter(rewardsV3Config, resolvedBuildQuery);
+				new RewardsV3Adapter(rewardsV3Config, resolvedBuildQuery, directAdapter);
 
 			let rewardsAdapter: IRewardsAdapter;
 			if (effectiveRewardsServiceAdapter === "direct") {

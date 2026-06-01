@@ -147,16 +147,31 @@ const normalizeAddressList = (
 	return list.map((address) => address.toLowerCase());
 };
 
+type RewardsClaimAdapter = Pick<
+	IRewardsAdapter,
+	"fetchFuulTotals" | "fetchFuulClaimChecks"
+> & {
+	fetchBrevisUserRewardClaims?: (
+		chainId: number,
+		address: Address,
+	) => Promise<UserReward[]>;
+};
+
 export class RewardsV3Adapter implements IRewardsAdapter {
 	constructor(
 		private config: RewardsV3AdapterConfig,
 		buildQuery?: BuildQueryFn,
+		private claimAdapter?: RewardsClaimAdapter,
 	) {
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
 
 	setConfig(config: RewardsV3AdapterConfig): void {
 		this.config = config;
+	}
+
+	setClaimAdapter(adapter?: RewardsClaimAdapter): void {
+		this.claimAdapter = adapter;
 	}
 
 	private getHeaders(): Record<string, string> {
@@ -262,11 +277,23 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 	}
 
 	async fetchFuulTotals(address: Address): Promise<FuulTotals> {
-		return { claimed: [], unclaimed: [] };
+		return this.claimAdapter?.fetchFuulTotals(address) ?? {
+			claimed: [],
+			unclaimed: [],
+		};
 	}
 
 	async fetchFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]> {
-		return [];
+		return this.claimAdapter?.fetchFuulClaimChecks(address) ?? [];
+	}
+
+	async fetchBrevisUserRewardClaims(
+		chainId: number,
+		address: Address,
+	): Promise<UserReward[]> {
+		return (
+			this.claimAdapter?.fetchBrevisUserRewardClaims?.(chainId, address) ?? []
+		);
 	}
 
 	private async fetchRewardsApyMap(
