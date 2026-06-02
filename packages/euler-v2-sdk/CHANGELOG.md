@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.14-beta] - 2026-06-02
+
+### Changed
+
+- EVault oracle data now serializes only the selected asset and collateral `OracleRoute` data; root oracle internals and derived adapter/resolved-vault projections are no longer duplicated on EVault payloads.
+- Pyth feed collection now derives feeds from `debtPricingOracleRoute` and per-collateral `oracleRoute` steps.
+
+### Fixed
+
+- Account portfolio computations now report zero LTV for debt positions without enabled collateral.
+
 ## [0.2.12-beta] - 2026-05-29
 
 ### Fixed
