@@ -4,10 +4,10 @@ Labels are purely off-chain metadata sourced from [`euler-labels`](https://githu
 
 ## What labels provide
 
-- **Products** &mdash; named groupings of vaults with vault-level overrides, notices, deprecation, featured, classification tags (e.g. `keyring`, `access control`), and exploration flags
+- **Products** &mdash; named groupings of vaults with vault-level overrides, notices, deprecation, recently-added markers, classification tags (e.g. `keyring`, `access control`), and exploration flags
 - **Entities** &mdash; the organisation(s) governing a vault (name, logo, website, socials)
 - **Points** &mdash; third-party points programs available on specific vaults
-- **Euler Earn entries** &mdash; Earn vault membership, descriptions, notices, block/restricted countries, featured/deprecated/not-explorable flags
+- **Euler Earn entries** &mdash; Earn vault membership, descriptions, notices, block/restricted countries, recently-added/deprecated/not-explorable flags
 - **Asset rules** &mdash; explicit or pattern-based block/restricted-country rules
 
 ## Usage
@@ -18,7 +18,7 @@ import {
   getEulerLabelProductByVault,
   getEulerLabelVaultNotice,
   isEulerLabelVaultDeprecated,
-  isEulerLabelVaultFeatured,
+  isEulerLabelVaultRecentlyAdded,
 } from '@eulerxyz/euler-v2-sdk'
 
 const sdk = await buildEulerSDK()
@@ -29,7 +29,7 @@ const vaultAddress = '0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2'
 console.log(getEulerLabelProductByVault(labelsData, vaultAddress)?.name)
 console.log(getEulerLabelVaultNotice(labelsData, vaultAddress))
 console.log(isEulerLabelVaultDeprecated(labelsData, vaultAddress))
-console.log(isEulerLabelVaultFeatured(labelsData, vaultAddress))
+console.log(isEulerLabelVaultRecentlyAdded(labelsData, vaultAddress))
 ```
 
 For normal vault reads, prefer `populateLabels` or `populateAll`; the SDK attaches a normalized `eulerLabel` object directly to populated vault entities:

@@ -30,9 +30,9 @@ than classes.
 | `logo` | `string | undefined` | Product logo URL. |
 | `vaults` | `string[]` | Product vault addresses. |
 | `deprecatedVaults` | `string[] | undefined` | Vault addresses marked deprecated for this product. |
+| `recentlyAddedVaults` | `string[] | undefined` | Vault addresses marked recently added for this product. |
 | `deprecationReason` | `string | undefined` | Deprecation reason exposed by normalizers. |
 | `deprecateReason` | `string | undefined` | Alternative spelling accepted from labels data. |
-| `featuredVaults` | `string[] | undefined` | Vault addresses marked featured for this product. |
 | `block` | `string[] | undefined` | Block rules attached to the product. |
 | `restricted` | `string[] | undefined` | Restriction rules attached to the product. |
 | `notExplorable` | `boolean | undefined` | Whether product vaults should be hidden from explorer-style surfaces. |
@@ -76,7 +76,7 @@ than classes.
 | `address` | `string` | Earn vault address. |
 | `block` | `string[] | undefined` | Block rules for the earn vault. |
 | `restricted` | `string[] | undefined` | Restriction rules for the earn vault. |
-| `featured` | `boolean | undefined` | Whether the earn vault is featured. |
+| `recentlyAdded` | `boolean | undefined` | Whether the earn vault is marked recently added. |
 | `deprecated` | `boolean | undefined` | Whether the earn vault is deprecated. |
 | `deprecationReason` | `string | undefined` | Earn vault deprecation reason. |
 | `description` | `string | undefined` | Earn vault description. |
@@ -118,7 +118,7 @@ than classes.
 | `earnVaultEntries` | `Record<string, EulerLabelEarnVaultEntry>` | Earn vault entries keyed by address. |
 | `earnVaultBlocks` | `Record<string, string[]>` | Earn vault block rules keyed by address. |
 | `earnVaultRestrictions` | `Record<string, string[]>` | Earn vault restriction rules keyed by address. |
-| `featuredEarnVaults` | `Set<string>` | Featured earn vault addresses. |
+| `recentlyAddedEarnVaults` | `Set<string>` | Recently added earn vault addresses. |
 | `deprecatedEarnVaults` | `Record<string, string>` | Deprecated earn vault reasons keyed by address. |
 | `earnVaultDescriptions` | `Record<string, string>` | Earn vault descriptions keyed by address. |
 | `earnVaultNotices` | `Record<string, string>` | Earn vault portfolio notices keyed by address. |
@@ -139,8 +139,7 @@ than classes.
 | `earnVault` | `EulerLabelEarnVaultEntry | undefined` | Resolved earn vault label entry. |
 | `description` | `string | undefined` | Resolved vault description. |
 | `portfolioNotice` | `string | undefined` | Resolved vault portfolio notice. |
-| `featured` | `boolean | undefined` | Whether the vault is featured. |
+| `recentlyAdded` | `boolean | undefined` | Whether the vault is marked recently added. |
 | `notExplorable` | `boolean | undefined` | Whether explorer-style surfaces should hide this vault. |
 | `block` | `string[] | undefined` | Resolved block rules. |
 | `restricted` | `string[] | undefined` | Resolved restriction rules. |
-

@@ -120,8 +120,8 @@ async function fetchAccountExample() {
         if (label.portfolioNotice) {
           console.log(`      Notice:     ${label.portfolioNotice}`);
         }
-        if (label.featured) {
-          console.log(`      Featured:   true`);
+        if (label.recentlyAdded) {
+          console.log(`      Recently added: true`);
         }
       }
 
