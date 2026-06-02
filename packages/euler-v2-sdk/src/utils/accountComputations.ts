@@ -43,7 +43,9 @@ export function computeCurrentLTV(
 ): bigint | undefined {
 	const liq = findLiquidity(subAccount);
 	if (!liq) return undefined;
-	if (liq.totalCollateralValue.oracleMid === 0n) return undefined;
+	if (liq.totalCollateralValue.oracleMid === 0n) {
+		return liq.liabilityValue.oracleMid > 0n ? 0n : undefined;
+	}
 	return (
 		(liq.liabilityValue.oracleMid * WAD) / liq.totalCollateralValue.oracleMid
 	);
@@ -58,7 +60,9 @@ export function computeLiquidationLTV(
 ): bigint | undefined {
 	const liq = findLiquidity(subAccount);
 	if (!liq) return undefined;
-	if (liq.totalCollateralValue.oracleMid === 0n) return undefined;
+	if (liq.totalCollateralValue.oracleMid === 0n) {
+		return liq.liabilityValue.liquidation > 0n ? 0n : undefined;
+	}
 	return (
 		(liq.totalCollateralValue.liquidation * WAD) /
 		liq.totalCollateralValue.oracleMid

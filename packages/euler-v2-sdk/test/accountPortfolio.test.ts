@@ -239,6 +239,47 @@ test("portfolio splits savings and borrows across sub-accounts", () => {
 	);
 });
 
+test("portfolio reports zero LTVs when liability has no valued collateral", () => {
+	const account = populatedAccount({
+		chainId: 1,
+		owner,
+		subAccounts: {
+			[subAccount]: subAccountData(subAccount, [
+				position(borrowVault, {
+					borrowed: 100n,
+					isController: true,
+					liquidity: {
+						vaultAddress: borrowVault,
+						unitOfAccount: zeroAddress,
+						daysToLiquidation: -1,
+						liabilityValue: {
+							borrowing: 100n,
+							liquidation: 100n,
+							oracleMid: 100n,
+						},
+						totalCollateralValue: {
+							borrowing: 0n,
+							liquidation: 0n,
+							oracleMid: 0n,
+						},
+						collaterals: [],
+					},
+				}),
+			]),
+		},
+	});
+
+	const portfolio = new Portfolio(account);
+	const borrow = portfolio.borrows[0];
+
+	assert.equal(account.subAccounts[subAccount]?.currentLTV, 0n);
+	assert.equal(account.subAccounts[subAccount]?.liquidationLTV, 0n);
+	assert.equal(borrow?.userLTV, 0n);
+	assert.equal(borrow?.currentLTV, 0n);
+	assert.equal(borrow?.accountLiquidationLTV, 0);
+	assert.equal(borrow?.liquidatable, true);
+});
+
 test("account selects the next sub-account for new positions", () => {
 	const account = populatedAccount({
 		chainId: 1,
