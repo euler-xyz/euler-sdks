@@ -88,13 +88,14 @@ For Adaptive Curve IRMs, `adaptiveRateAtTargetToBorrowSPY(wadPerSecond)` scales 
 
 ### Oracle Routing
 
-`OracleInfo.routes` contains the decoded effective oracle routes exposed by the
-vault oracle. A route is for one `base -> quote` pair and its `steps` array is
-ordered in the same order a UI should display or quote it.
+`oracle` contains the root oracle identity (`oracle`, `name`). Selected pricing
+routes are stored on `debtPricingOracleRoute` and `collaterals[].oracleRoute`.
+A route is for one `base -> quote` pair and its `steps` array is ordered in the
+same order a UI should display or quote it.
 
 | Type | Description |
 | --- | --- |
-| `OracleRoute` | Effective route for a `base -> quote` pair. `steps` is the primary display surface. `adapters` is the leaf-adapter projection of adapter steps. `resolvedVaults` is the vault-step projection. |
+| `OracleRoute` | Effective route for a `base -> quote` pair. `steps` is the canonical display and quote surface. Use `getOracleRouteAdapters(route)` or `getOracleRouteResolvedVaults(route)` for derived projections. |
 | `OracleRouteAdapterStep` | Leaf oracle adapter step. Quote it with `getQuote(amountIn, base, quote)` on `oracle`. |
 | `OracleRouteVaultStep` | ERC4626-style vault/share resolution step. Quote it with `convertToAssets(amountIn)` on `vault`. |
 | `OracleRouteSource` | `configured` for an explicit EulerRouter route, `fallback` when the router fallback oracle handles the pair, and `direct` when the root oracle info handles the pair directly. |
@@ -110,7 +111,6 @@ ordered in the same order a UI should display or quote it.
 | `oraclePriceRaw` | `OraclePrice` | Raw oracle price data. Use EVault price helpers for risk pricing. |
 | `vault` | `VaultEntity | undefined` | Resolved collateral vault entity, populated by `populateCollaterals`. |
 | `oracleRoute` | `OracleRoute | undefined` | Effective ordered collateral-to-unit-of-account route. Includes adapter steps and ERC4626 vault resolution steps. |
-| `oracleAdapters` | `OracleAdapterEntry[] | undefined` | Leaf adapter projection of `oracleRoute`, populated for callers that only need oracle adapter contracts. |
 | `marketPriceUsd` | `PriceUsd | undefined` | USD price per collateral underlying, populated by `populateMarketPrices`. |
 | `currentLiquidationLTV` | `number` | Computed current liquidation LTV, including active ramping. |
 | `isLiquidationLTVRamping` | `boolean` | Computed `true` while liquidation LTV is actively ramping. |
@@ -175,8 +175,7 @@ plus the `IEVault` properties above. Constructor normalization also adds:
 | --- | --- | --- |
 | `caps` | `EVaultCapsComputed` | Caps with computed utilization getters. |
 | `collaterals` | `EVaultCollateral[]` | Collaterals with computed ramping fields. |
-| `debtPricingOracleRoute` | `OracleRoute | undefined` | Effective ordered asset-to-unit-of-account route used for debt pricing. |
-| `debtPricingOracleAdapters` | `OracleAdapterEntry[]` | Leaf adapter projection of `debtPricingOracleRoute`. Empty when the vault is not borrowable or has no unit of account. |
+| `debtPricingOracleRoute` | `OracleRoute | undefined` | Effective ordered asset-to-unit-of-account route when the vault has a unit of account. |
 | `populated` | `EVaultPopulated` | Base population flags plus `collaterals`. |
 
 ## Computed Getters

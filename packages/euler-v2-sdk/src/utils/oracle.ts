@@ -9,10 +9,6 @@ import {
 export type OracleInfo = {
 	oracle: Address;
 	name: string;
-	detailedInfo?: OracleDetailedInfo;
-	adapters: OracleAdapterEntry[];
-	resolvedVaults: OracleResolvedVault[];
-	routes: OracleRoute[];
 };
 
 export type OracleDetailedInfo = {
@@ -82,7 +78,8 @@ export type OracleRouteAdapterStep = {
 	name: string;
 	base: Address;
 	quote: Address;
-	adapter: OracleAdapterEntry;
+	pythDetail?: PythOracleInfo;
+	chainlinkDetail?: { oracle: Address };
 };
 
 /**
@@ -115,17 +112,14 @@ export type OracleRouteSource = "configured" | "fallback" | "direct";
 /**
  * Effective ordered oracle route for one `base -> quote` pair.
  *
- * `steps` is the primary consumer surface: walk it in order to display or
- * quote the complete route. `adapters` and `resolvedVaults` are projections of
- * `steps` for compatibility with callers that only understand leaf adapters or
- * resolved vault metadata.
+ * `steps` is the consumer surface: walk it in order to display or quote the
+ * complete route. Use `getOracleRouteAdapters` or
+ * `getOracleRouteResolvedVaults` when a caller needs the older projections.
  */
 export type OracleRoute = {
 	base: Address;
 	quote: Address;
 	steps: OracleRouteStep[];
-	adapters: OracleAdapterEntry[];
-	resolvedVaults: OracleResolvedVault[];
 	source: OracleRouteSource;
 };
 
@@ -204,6 +198,48 @@ export function sortOracleAdapters(
 ): OracleAdapterEntry[] {
 	return [...adapters].sort((left, right) =>
 		getOracleAdapterSortKey(left).localeCompare(getOracleAdapterSortKey(right)),
+	);
+}
+
+export function oracleRouteAdapterStepToAdapter(
+	step: OracleRouteAdapterStep,
+): OracleAdapterEntry {
+	return {
+		oracle: step.oracle,
+		name: step.name,
+		base: step.base,
+		quote: step.quote,
+		...(step.pythDetail ? { pythDetail: step.pythDetail } : {}),
+		...(step.chainlinkDetail ? { chainlinkDetail: step.chainlinkDetail } : {}),
+	};
+}
+
+export function getOracleRouteAdapters(
+	routeOrSteps: OracleRoute | readonly OracleRouteStep[] | null | undefined,
+): OracleAdapterEntry[] {
+	if (!routeOrSteps) return [];
+	const steps = "steps" in routeOrSteps ? routeOrSteps.steps : routeOrSteps;
+	if (!steps?.length) return [];
+	return sortOracleAdapters(
+		steps
+			.filter((step): step is OracleRouteAdapterStep => step.kind === "adapter")
+			.map(oracleRouteAdapterStepToAdapter),
+	);
+}
+
+export function getOracleRouteResolvedVaults(
+	route: OracleRoute | null | undefined,
+): OracleResolvedVault[] {
+	if (!route?.steps.length) return [];
+	return sortOracleResolvedVaults(
+		route.steps
+			.filter((step): step is OracleRouteVaultStep => step.kind === "vault")
+			.map((step) => ({
+				vault: step.vault,
+				quote: route.quote,
+				asset: step.asset,
+				resolvedAssets: [step.asset],
+			})),
 	);
 }
 
@@ -464,7 +500,7 @@ const makeRouteAdapterStep = (
 				name: adapter.name,
 				base: adapter.base,
 				quote: adapter.quote,
-				adapter,
+				pythDetail: adapter.pythDetail,
 			};
 		}
 	}
@@ -477,7 +513,10 @@ const makeRouteAdapterStep = (
 		name: adapter.name,
 		base: adapter.base,
 		quote: adapter.quote,
-		adapter,
+		...(adapter.pythDetail ? { pythDetail: adapter.pythDetail } : {}),
+		...(adapter.chainlinkDetail
+			? { chainlinkDetail: adapter.chainlinkDetail }
+			: {}),
 	};
 };
 
@@ -514,18 +553,7 @@ const makeRoute = (
 	steps: OracleRouteStep[],
 	source: OracleRouteSource,
 ): OracleRoute => {
-	const adapters = steps
-		.filter((step): step is OracleRouteAdapterStep => step.kind === "adapter")
-		.map((step) => step.adapter);
-	const resolvedVaults = steps
-		.filter((step): step is OracleRouteVaultStep => step.kind === "vault")
-		.map((step) => ({
-			vault: step.vault,
-			quote,
-			asset: step.asset,
-			resolvedAssets: [step.asset],
-		}));
-	return { base, quote, steps, adapters, resolvedVaults, source };
+	return { base, quote, steps, source };
 };
 
 export const selectOracleRouteForPair = (
@@ -1109,7 +1137,7 @@ export const collectPythFeedsForPair = (
 
 /**
  * Extract unique PythFeed entries from already-decoded oracle adapters.
- * Use this instead of collectPythFeedIds when you have OracleAdapterEntry[] (e.g. from vault.oracle.adapters).
+ * Use this instead of collectPythFeedIds when you have OracleAdapterEntry[].
  */
 export const collectPythFeedsFromAdapters = (
 	adapters: OracleAdapterEntry[],
@@ -1127,6 +1155,14 @@ export const collectPythFeedsFromAdapters = (
 	}
 	return [...deduped.values()];
 };
+
+/**
+ * Extract unique PythFeed entries from route steps without requiring the
+ * adapter projection to be stored on the vault.
+ */
+export const collectPythFeedsFromRouteSteps = (
+	routeOrSteps: OracleRoute | readonly OracleRouteStep[] | null | undefined,
+): PythFeed[] => collectPythFeedsFromAdapters(getOracleRouteAdapters(routeOrSteps));
 
 /**
  * Select adapters representing leaf pricing route(s) for a base->quote pair.

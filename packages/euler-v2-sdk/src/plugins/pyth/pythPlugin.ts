@@ -32,7 +32,7 @@ import {
 	type HealthCheckAccountSet,
 } from "../../utils/healthCheckSets.js";
 import {
-	collectPythFeedsFromAdapters,
+	collectPythFeedsFromRouteSteps,
 	type PythFeed,
 } from "../../utils/oracle.js";
 import {
@@ -309,9 +309,9 @@ function deduplicateFeeds(feeds: PythFeed[]): PythFeed[] {
 
 type PythControllerVault = Pick<
 	EVault,
-	"address" | "debtPricingOracleAdapters"
+	"address" | "debtPricingOracleRoute"
 > & {
-	collaterals: Pick<EVaultCollateral, "address" | "oracleAdapters">[];
+	collaterals: Pick<EVaultCollateral, "address" | "oracleRoute">[];
 };
 
 const MINIMAL_ACCOUNT_FETCH_OPTIONS = {
@@ -328,7 +328,6 @@ function isPythControllerVault(vault: unknown): vault is PythControllerVault {
 		typeof vault === "object" &&
 		vault !== null &&
 		"address" in vault &&
-		"debtPricingOracleAdapters" in vault &&
 		"collaterals" in vault
 	);
 }
@@ -417,7 +416,7 @@ async function collectHealthCheckFeeds(
 			if (!seenPairs.has(selfKey)) {
 				seenPairs.add(selfKey);
 				feeds.push(
-					...collectPythFeedsFromAdapters(controller.debtPricingOracleAdapters),
+					...collectPythFeedsFromRouteSteps(controller.debtPricingOracleRoute),
 				);
 			}
 
@@ -430,9 +429,7 @@ async function collectHealthCheckFeeds(
 					(c) => getAddress(c.address) === getAddress(collateralAddress),
 				);
 				if (!collateral) continue;
-				feeds.push(
-					...collectPythFeedsFromAdapters(collateral.oracleAdapters ?? []),
-				);
+				feeds.push(...collectPythFeedsFromRouteSteps(collateral.oracleRoute));
 			}
 		}
 	}
@@ -579,22 +576,17 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 				return built.items.length ? built : null;
 			}
 
-			// Route-aware live collection: use the route-filtered adapter lists
-			// EVault already pre-computes (debt-asset and per-collateral routes),
-			// not the full router adapter set.
+			// Route-aware live collection: derive feeds from the selected
+			// debt-asset and per-collateral routes, not the full router tree.
 			const collectedFeeds: PythFeed[] = [];
 			for (const v of ctx.vaults) {
-				if (v.debtPricingOracleAdapters?.length) {
-					collectedFeeds.push(
-						...collectPythFeedsFromAdapters(v.debtPricingOracleAdapters),
-					);
-				}
+				collectedFeeds.push(
+					...collectPythFeedsFromRouteSteps(v.debtPricingOracleRoute),
+				);
 				for (const collateral of v.collaterals ?? []) {
-					if (collateral.oracleAdapters?.length) {
-						collectedFeeds.push(
-							...collectPythFeedsFromAdapters(collateral.oracleAdapters),
-						);
-					}
+					collectedFeeds.push(
+						...collectPythFeedsFromRouteSteps(collateral.oracleRoute),
+					);
 				}
 			}
 			const feeds = deduplicateFeeds(collectedFeeds);

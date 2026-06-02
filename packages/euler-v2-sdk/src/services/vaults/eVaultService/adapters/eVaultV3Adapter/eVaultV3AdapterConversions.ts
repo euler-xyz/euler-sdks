@@ -1,14 +1,10 @@
 import { type Address, type Hex, getAddress } from "viem";
 import type {
-	OracleAdapterEntry,
 	OracleDetailedInfo,
 	OracleInfo,
 	OraclePrice,
 } from "../../../../../utils/oracle.js";
-import {
-	decodeOracleRouteForPair,
-	decodeOracleRoutes,
-} from "../../../../../utils/oracle.js";
+import { decodeOracleRouteForPair } from "../../../../../utils/oracle.js";
 import {
 	dataIssueLocation,
 	type DataIssue,
@@ -50,7 +46,6 @@ import type {
 	V3CollateralRow,
 	V3OracleDetailedInfo,
 	V3OraclePrice,
-	V3OracleAdapter,
 	V3Token,
 	V3VaultDetail,
 } from "./eVaultV3AdapterTypes.js";
@@ -303,94 +298,6 @@ function convertOraclePrice(
 	return converted;
 }
 
-function convertOracleAdapter(
-	adapter: V3OracleAdapter,
-	owner: DataIssueOwnerRef,
-	errors: DataIssue[],
-): OracleAdapterEntry {
-	const converted: OracleAdapterEntry = {
-		oracle: parseAddressField(adapter.oracle, {
-			path: "$.oracle.adapters[].oracle",
-			owner,
-			errors,
-			source: "eVaultV3",
-		}),
-		name: parseStringField(adapter.name, {
-			path: "$.oracle.adapters[].name",
-			owner,
-			errors,
-			source: "eVaultV3",
-		}),
-		base: parseAddressField(adapter.base, {
-			path: "$.oracle.adapters[].base",
-			owner,
-			errors,
-			source: "eVaultV3",
-		}),
-		quote: parseAddressField(adapter.quote, {
-			path: "$.oracle.adapters[].quote",
-			owner,
-			errors,
-			source: "eVaultV3",
-		}),
-	};
-
-	if (adapter.pythDetail) {
-		converted.pythDetail = {
-			pyth: parseAddressField(adapter.pythDetail.pyth, {
-				path: "$.oracle.adapters[].pythDetail.pyth",
-				owner,
-				errors,
-				source: "eVaultV3",
-			}),
-			base: parseAddressField(adapter.pythDetail.base, {
-				path: "$.oracle.adapters[].pythDetail.base",
-				owner,
-				errors,
-				source: "eVaultV3",
-			}),
-			quote: parseAddressField(adapter.pythDetail.quote, {
-				path: "$.oracle.adapters[].pythDetail.quote",
-				owner,
-				errors,
-				source: "eVaultV3",
-			}),
-			feedId: parseStringField(adapter.pythDetail.feedId, {
-				path: "$.oracle.adapters[].pythDetail.feedId",
-				owner,
-				errors,
-				source: "eVaultV3",
-				fallback: "0x",
-			}) as Hex,
-			maxStaleness: parseBigIntField(String(adapter.pythDetail.maxStaleness), {
-				path: "$.oracle.adapters[].pythDetail.maxStaleness",
-				owner,
-				errors,
-				source: "eVaultV3",
-			}),
-			maxConfWidth: parseBigIntField(String(adapter.pythDetail.maxConfWidth), {
-				path: "$.oracle.adapters[].pythDetail.maxConfWidth",
-				owner,
-				errors,
-				source: "eVaultV3",
-			}),
-		};
-	}
-
-	if (adapter.chainlinkDetail) {
-		converted.chainlinkDetail = {
-			oracle: parseAddressField(adapter.chainlinkDetail.oracle, {
-				path: "$.oracle.adapters[].chainlinkDetail.oracle",
-				owner,
-				errors,
-				source: "eVaultV3",
-			}),
-		};
-	}
-
-	return converted;
-}
-
 function convertOracleDetailedInfo(
 	info: V3OracleDetailedInfo | null | undefined,
 	owner: DataIssueOwnerRef,
@@ -420,42 +327,6 @@ function convertOracleDetailedInfo(
 			fallback: "0x",
 		}) as Hex,
 	};
-}
-
-function convertOracleResolvedVaults(
-	resolvedVaults: NonNullable<V3VaultDetail["oracle"]>["resolvedVaults"],
-	owner: DataIssueOwnerRef,
-	errors: DataIssue[],
-): OracleInfo["resolvedVaults"] {
-	return (resolvedVaults ?? []).map((resolvedVault, index) => ({
-		vault: parseAddressField(resolvedVault.vault, {
-			path: `$.oracle.resolvedVaults[${index}].vault`,
-			owner,
-			errors,
-			source: "eVaultV3",
-		}),
-		quote: parseAddressField(resolvedVault.quote, {
-			path: `$.oracle.resolvedVaults[${index}].quote`,
-			owner,
-			errors,
-			source: "eVaultV3",
-		}),
-		asset: parseAddressField(resolvedVault.asset, {
-			path: `$.oracle.resolvedVaults[${index}].asset`,
-			owner,
-			errors,
-			source: "eVaultV3",
-		}),
-		resolvedAssets: (resolvedVault.resolvedAssets ?? []).map(
-			(asset, assetIndex) =>
-				parseAddressField(asset, {
-					path: `$.oracle.resolvedVaults[${index}].resolvedAssets[${assetIndex}]`,
-					owner,
-					errors,
-					source: "eVaultV3",
-				}),
-		),
-	}));
 }
 
 function convertCollaterals(
@@ -534,10 +405,8 @@ function convertCollaterals(
 						amountOutBid: 0n,
 						amountOutAsk: 0n,
 						timestamp: 0,
-					},
-			...(oracleRoute
-				? { oracleRoute, oracleAdapters: oracleRoute.adapters }
-				: {}),
+			},
+			...(oracleRoute ? { oracleRoute } : {}),
 		};
 
 		if (targetTimestamp > vaultTimestamp) {
@@ -620,19 +489,7 @@ export function convertVault(
 			errors,
 			source: "eVaultV3",
 		}),
-		adapters: (oracleData.adapters ?? []).map((adapter) =>
-			convertOracleAdapter(adapter, owner, errors),
-		),
-		resolvedVaults: convertOracleResolvedVaults(
-			oracleData.resolvedVaults,
-			owner,
-			errors,
-		),
-		routes: oracleDetailedInfo ? decodeOracleRoutes(oracleDetailedInfo) : [],
 	};
-	if (oracleDetailedInfo) {
-		oracle.detailedInfo = oracleDetailedInfo;
-	}
 	const suppressUnitOfAccountDiagnostics = hasZeroOracleAddress;
 
 	if (!detail.shares) {
@@ -943,6 +800,15 @@ export function convertVault(
 			{ name: true, symbol: true, decimals: true },
 		),
 	);
+	const shares = convertToken(sharesData, "$.shares", owner, errors, {
+		name: true,
+		symbol: true,
+		decimals: true,
+	});
+	const asset = convertToken(assetData, "$.asset", owner, errors, {
+		name: true,
+		symbol: true,
+	});
 	const collaterals = convertCollaterals(
 		collateralRows,
 		timestamp,
@@ -952,20 +818,22 @@ export function convertVault(
 		oracleDetailedInfo,
 		unitOfAccount?.address,
 	);
+	const isBorrowable = hasActiveBorrowableLtv(collaterals, timestamp);
+	const debtPricingOracleRoute =
+		unitOfAccount && oracleDetailedInfo
+			? decodeOracleRouteForPair(
+					oracleDetailedInfo,
+					asset.address,
+					unitOfAccount.address,
+				)
+			: undefined;
 
 	return {
 		type: VaultType.EVault,
 		chainId: detail.chainId,
 		address: vaultAddress,
-		shares: convertToken(sharesData, "$.shares", owner, errors, {
-			name: true,
-			symbol: true,
-			decimals: true,
-		}),
-		asset: convertToken(assetData, "$.asset", owner, errors, {
-			name: true,
-			symbol: true,
-		}),
+		shares,
+		asset,
 		unitOfAccount,
 		totalShares: parseBigIntField(detail.totalShares, {
 			path: "$.totalShares",
@@ -1023,7 +891,8 @@ export function convertVault(
 		interestRates,
 		interestRateModel,
 		collaterals,
-		isBorrowable: hasActiveBorrowableLtv(collaterals, timestamp),
+		debtPricingOracleRoute,
+		isBorrowable,
 		evcCompatibleAsset: parseOptionalBooleanField(detail.evcCompatibleAsset, {
 			path: "$.evcCompatibleAsset",
 			owner,

@@ -1,10 +1,5 @@
 import {
-	decodeOracleInfo,
-	decodeOracleResolvedVaults,
-	decodeOracleRoutes,
 	decodeOracleRouteForPair,
-	sortOracleAdapters,
-	type OracleAdapterEntry,
 	type OracleInfo,
 	type OraclePrice,
 } from "../../../../../utils/oracle.js";
@@ -128,17 +123,6 @@ function normalizeUnitOfAccountToken(token: Token): Token | undefined {
 	};
 }
 
-function mergeOracleAdapters(
-	...adapterLists: OracleAdapterEntry[][]
-): OracleAdapterEntry[] {
-	const deduped = new Map<string, OracleAdapterEntry>();
-	adapterLists.flat().forEach((adapter) => {
-		const key = `${adapter.oracle.toLowerCase()}:${adapter.base.toLowerCase()}:${adapter.quote.toLowerCase()}`;
-		if (!deduped.has(key)) deduped.set(key, adapter);
-	});
-	return sortOracleAdapters([...deduped.values()]);
-}
-
 /**
  * Converts VaultLens's VaultInfoFull object to an IEVault object
  * @param vaultInfo - The VaultInfoFull object to convert
@@ -158,31 +142,9 @@ export function convertVaultInfoFullToIEVault(
 		vaultInfo.unitOfAccount.toLowerCase() === ZERO_ADDRESS.toLowerCase()
 			? undefined
 			: vaultInfo.unitOfAccount;
-	const debtAssetOracleAdapters = shouldSuppressRootOracleAdapter
-		? []
-		: decodeOracleInfo(vaultInfo.oracleInfo, 3, {
-				base: vaultInfo.asset,
-				quote,
-			});
-	const routedOracleAdapters = shouldSuppressRootOracleAdapter
-		? []
-		: decodeOracleInfo(vaultInfo.oracleInfo, 3);
 	const oracle: OracleInfo = {
 		oracle: vaultInfo.oracleInfo.oracle,
 		name: vaultInfo.oracleInfo.name,
-		...(shouldSuppressRootOracleAdapter
-			? {}
-			: { detailedInfo: vaultInfo.oracleInfo }),
-		adapters: mergeOracleAdapters(
-			debtAssetOracleAdapters,
-			routedOracleAdapters,
-		),
-		resolvedVaults: shouldSuppressRootOracleAdapter
-			? []
-			: decodeOracleResolvedVaults(vaultInfo.oracleInfo),
-		routes: shouldSuppressRootOracleAdapter
-			? []
-			: decodeOracleRoutes(vaultInfo.oracleInfo),
 	};
 
 	const shares = normalizeTokenMetadata(
@@ -392,9 +354,7 @@ export function convertVaultInfoFullToIEVault(
 				collateralOwner,
 			),
 			oraclePriceRaw,
-			...(oracleRoute
-				? { oracleRoute, oracleAdapters: oracleRoute.adapters }
-				: {}),
+			...(oracleRoute ? { oracleRoute } : {}),
 		};
 
 		if (isRamping) {
@@ -425,6 +385,15 @@ export function convertVaultInfoFullToIEVault(
 			suppressQueryFailureIssue: hasDisabledOracle,
 		},
 	);
+	const isBorrowable = hasActiveBorrowableLtv(collaterals, vaultTimestamp);
+	const debtPricingOracleRoute =
+		unitOfAccount && !shouldSuppressRootOracleAdapter
+			? decodeOracleRouteForPair(
+					vaultInfo.oracleInfo,
+					asset.address,
+					unitOfAccount.address,
+				)
+			: undefined;
 
 	const result: IEVault = {
 		type: VaultType.EVault,
@@ -450,7 +419,8 @@ export function convertVaultInfoFullToIEVault(
 		interestRates,
 		interestRateModel,
 		collaterals,
-		isBorrowable: hasActiveBorrowableLtv(collaterals, vaultTimestamp),
+		debtPricingOracleRoute,
+		isBorrowable,
 		oraclePriceRaw,
 		timestamp: vaultTimestamp,
 	};

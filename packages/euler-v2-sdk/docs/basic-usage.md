@@ -321,10 +321,14 @@ const { result: eVaultsOnly } = await sdk.vaultMetaService.fetchAllVaults(1, {
 Use `oracleAdapterService` to get provider/methodology/check metadata for oracle adapter entries. `fetchOracleAdapterMap()` is keyed by the normalized `adapter.oracle` address and each metadata entry also exposes normalized `oracle`, `base`, and `quote` addresses when present:
 
 ```typescript
+import { getOracleRouteAdapters } from '@eulerxyz/euler-v2-sdk';
+
 const adapterMap = await sdk.oracleAdapterService.fetchOracleAdapterMap(1);
-const adapter = vault.oracle.adapters[0];
-const metadata = adapterMap[adapter.oracle.toLowerCase()];
-console.log(metadata?.provider, metadata?.base, metadata?.quote, metadata?.checks);
+const adapter = getOracleRouteAdapters(vault.debtPricingOracleRoute)[0];
+if (adapter) {
+  const metadata = adapterMap[adapter.oracle.toLowerCase()];
+  console.log(metadata?.provider, metadata?.base, metadata?.quote, metadata?.checks);
+}
 ```
 
 ## How Vault Types Work

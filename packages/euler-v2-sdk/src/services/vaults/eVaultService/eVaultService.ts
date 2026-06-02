@@ -1,12 +1,5 @@
 import { getAddress, type Address } from "viem";
 import { EVault, type IEVault } from "../../../entities/EVault.js";
-import {
-	decodeOracleRouteForPair,
-	selectLeafAdaptersForPair,
-	selectResolvedVaultAdaptersForPair,
-	selectOracleRouteForPair,
-	sortOracleAdapters,
-} from "../../../utils/oracle.js";
 import type { DeploymentService } from "../../deploymentService/index.js";
 import type {
 	FetchAllVaultsArgs,
@@ -347,47 +340,6 @@ export class EVaultService implements IEVaultService {
 		for (const eVault of eVaults) {
 			for (const collateral of eVault.collaterals) {
 				collateral.vault = vaultByAddress.get(collateral.address.toLowerCase());
-				if (!collateral.vault) {
-					collateral.oracleAdapters = [];
-					continue;
-				}
-
-				if (!eVault.unitOfAccount) {
-					collateral.oracleAdapters = [];
-					continue;
-				}
-
-				const quoteAddress = eVault.unitOfAccount.address;
-				collateral.oracleRoute =
-					collateral.oracleRoute ??
-					selectOracleRouteForPair(
-						eVault.oracle.routes,
-						collateral.address,
-						quoteAddress,
-					) ??
-					decodeOracleRouteForPair(
-						eVault.oracle.detailedInfo,
-						collateral.address,
-						quoteAddress,
-					);
-				if (collateral.oracleRoute) {
-					collateral.oracleAdapters = collateral.oracleRoute.adapters;
-					continue;
-				}
-				const byAsset = selectLeafAdaptersForPair(
-					eVault.oracle.adapters,
-					collateral.vault.asset.address,
-					quoteAddress,
-				);
-				const byVault = selectResolvedVaultAdaptersForPair(
-					eVault.oracle.adapters,
-					eVault.oracle.resolvedVaults,
-					collateral.address,
-					quoteAddress,
-				);
-				const selected = byAsset.length > 0 ? byAsset : byVault;
-				collateral.oracleAdapters =
-					byAsset.length > 0 ? sortOracleAdapters(selected) : selected;
 			}
 			eVault.populated.collaterals = true;
 		}

@@ -33,6 +33,29 @@ const COLLATERAL = getAddress("0x00000000000000000000000000000000000000EE");
 const ASSET = getAddress("0x00000000000000000000000000000000000000A1");
 const UNIT = getAddress("0x00000000000000000000000000000000000000A2");
 
+const makePythRoute = (oracle = PYTH) => ({
+	base: ASSET,
+	quote: UNIT,
+	source: "direct" as const,
+	steps: [
+		{
+			kind: "adapter" as const,
+			oracle,
+			name: "PythOracle",
+			base: ASSET,
+			quote: UNIT,
+			pythDetail: {
+				pyth: oracle,
+				base: ASSET,
+				quote: UNIT,
+				feedId: GOOD_FEED,
+				maxStaleness: 60n,
+				maxConfWidth: 1n,
+			},
+		},
+	],
+});
+
 function getRequestedIds(url: string): string[] {
 	return new URL(url).searchParams.getAll("ids[]");
 }
@@ -144,26 +167,11 @@ test("Pyth plugin uses final batch controller and collateral state for health ch
 						result: [
 							{
 								address: CONTROLLER,
-								debtPricingOracleAdapters: [],
+								debtPricingOracleRoute: undefined,
 								collaterals: [
 									{
 										address: COLLATERAL,
-										oracleAdapters: [
-											{
-												oracle: PYTH,
-												name: "PythOracle",
-												base: ASSET,
-												quote: UNIT,
-												pythDetail: {
-													pyth: PYTH,
-													base: ASSET,
-													quote: UNIT,
-													feedId: GOOD_FEED,
-													maxStaleness: 60n,
-													maxConfWidth: 1n,
-												},
-											},
-										],
+										oracleRoute: makePythRoute(),
 									},
 								],
 							},
@@ -273,8 +281,8 @@ test("Pyth plugin caches empty prefetch results as a no-op", async () => {
 					result: [
 						{
 							address: CONTROLLER,
-							debtPricingOracleAdapters: [],
-							collaterals: [{ address: COLLATERAL, oracleAdapters: [] }],
+							debtPricingOracleRoute: undefined,
+							collaterals: [{ address: COLLATERAL, oracleRoute: undefined }],
 						},
 					],
 					errors: [],
@@ -360,22 +368,7 @@ test("Pyth plugin read prepend honors empty prefetch results", async () => {
 			provider,
 			vaults: [
 				{
-					debtPricingOracleAdapters: [
-						{
-							oracle: PYTH,
-							name: "PythOracle",
-							base: ASSET,
-							quote: UNIT,
-							pythDetail: {
-								pyth: PYTH,
-								base: ASSET,
-								quote: UNIT,
-								feedId: GOOD_FEED,
-								maxStaleness: 60n,
-								maxConfWidth: 1n,
-							},
-						},
-					],
+					debtPricingOracleRoute: makePythRoute(),
 					collaterals: [],
 				} as never,
 			],
@@ -411,22 +404,7 @@ test("Pyth plugin skips untrusted Pyth contract addresses", async () => {
 			provider,
 			vaults: [
 				{
-					debtPricingOracleAdapters: [
-						{
-							oracle: UNTRUSTED_PYTH,
-							name: "PythOracle",
-							base: ASSET,
-							quote: UNIT,
-							pythDetail: {
-								pyth: UNTRUSTED_PYTH,
-								base: ASSET,
-								quote: UNIT,
-								feedId: GOOD_FEED,
-								maxStaleness: 60n,
-								maxConfWidth: 1n,
-							},
-						},
-					],
+					debtPricingOracleRoute: makePythRoute(UNTRUSTED_PYTH),
 					collaterals: [],
 				} as never,
 			],
@@ -461,22 +439,7 @@ test("Pyth plugin allows explicitly configured custom Pyth addresses", async () 
 			provider,
 			vaults: [
 				{
-					debtPricingOracleAdapters: [
-						{
-							oracle: UNTRUSTED_PYTH,
-							name: "PythOracle",
-							base: ASSET,
-							quote: UNIT,
-							pythDetail: {
-								pyth: UNTRUSTED_PYTH,
-								base: ASSET,
-								quote: UNIT,
-								feedId: GOOD_FEED,
-								maxStaleness: 60n,
-								maxConfWidth: 1n,
-							},
-						},
-					],
+					debtPricingOracleRoute: makePythRoute(UNTRUSTED_PYTH),
 					collaterals: [],
 				} as never,
 			],
@@ -510,22 +473,7 @@ test("Pyth plugin skips update batches above the configured fee cap", async () =
 			provider,
 			vaults: [
 				{
-					debtPricingOracleAdapters: [
-						{
-							oracle: PYTH,
-							name: "PythOracle",
-							base: ASSET,
-							quote: UNIT,
-							pythDetail: {
-								pyth: PYTH,
-								base: ASSET,
-								quote: UNIT,
-								feedId: GOOD_FEED,
-								maxStaleness: 60n,
-								maxConfWidth: 1n,
-							},
-						},
-					],
+					debtPricingOracleRoute: makePythRoute(),
 					collaterals: [],
 				} as never,
 			],

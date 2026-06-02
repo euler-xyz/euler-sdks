@@ -1,7 +1,11 @@
 import { useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { maxUint256 } from "viem";
-import type { OracleAdapterEntry, OracleResolvedVault } from "@eulerxyz/euler-v2-sdk";
+import {
+  getOracleRouteAdapters,
+  getOracleRouteResolvedVaults,
+  type OracleAdapterEntry,
+} from "@eulerxyz/euler-v2-sdk";
 import { useSDK } from "../context/SdkContext.tsx";
 import {
   type DiagnosticIssue,
@@ -62,39 +66,6 @@ function normalizeCollateralDisplayAdapters(
   }
 
   return [...deduped.values()];
-}
-
-function getCollateralResolvedVaults(
-  allResolvedVaults: OracleResolvedVault[],
-  collateralAddress: string,
-  collateralAssetAddress: string | undefined
-): OracleResolvedVault[] {
-  const reachable = new Set<string>([collateralAddress.toLowerCase()]);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const resolvedVault of allResolvedVaults) {
-      if (!reachable.has(resolvedVault.vault.toLowerCase())) continue;
-      for (const addr of resolvedVault.resolvedAssets) {
-        const key = addr.toLowerCase();
-        if (!reachable.has(key)) {
-          reachable.add(key);
-          changed = true;
-        }
-      }
-    }
-  }
-  const collateralKey = collateralAddress.toLowerCase();
-  const assetKey = collateralAssetAddress?.toLowerCase();
-  return allResolvedVaults.filter((resolvedVault) => {
-    if (!reachable.has(resolvedVault.vault.toLowerCase())) return false;
-    const isImplicitCollateralJump =
-      resolvedVault.vault.toLowerCase() === collateralKey &&
-      resolvedVault.resolvedAssets.length === 1 &&
-      !!assetKey &&
-      resolvedVault.resolvedAssets[0]!.toLowerCase() === assetKey;
-    return !isImplicitCollateralJump;
-  });
 }
 
 function getMissingResolvedVaultDetails(args: {
@@ -511,15 +482,11 @@ export function VaultDetailPage() {
           <tbody>
             {vault.collaterals.map((col) => {
               const displayAdapters = normalizeCollateralDisplayAdapters(
-                col.oracleAdapters,
+                getOracleRouteAdapters(col.oracleRoute),
                 col.vault?.asset.address
               );
-              const resolvedVaults = getCollateralResolvedVaults(
-                vault.oracle.resolvedVaults ?? [],
-                col.address,
-                col.vault?.asset.address
-              );
-              const hasResolvedVault = (vault.oracle.resolvedVaults ?? []).some(
+              const resolvedVaults = getOracleRouteResolvedVaults(col.oracleRoute);
+              const hasResolvedVault = resolvedVaults.some(
                 (resolvedVault) =>
                   resolvedVault.vault.toLowerCase() === col.address.toLowerCase()
               );
@@ -552,7 +519,7 @@ export function VaultDetailPage() {
                     chainId,
                     collateral: {
                       ...col,
-                      oracleAdapters: displayAdapters,
+                      oracleRoute: col.oracleRoute,
                     },
                     unitOfAccountAddress: vault.unitOfAccount.address,
                     metadataMap:
@@ -588,7 +555,7 @@ export function VaultDetailPage() {
                   {formatPercent(col.liquidationLTV)}
                 </td>
                 <td>
-                  {!adapterPairMismatchDetails && renderCollateralFieldIcon(col.address, ["$.oraclePriceRaw", "$.oracleAdapters"])}
+                  {!adapterPairMismatchDetails && renderCollateralFieldIcon(col.address, ["$.oraclePriceRaw", "$.oracleRoute"])}
                   <OracleAdaptersInfo
                     chainId={chainId}
                     adapters={displayAdapters}
@@ -608,7 +575,7 @@ export function VaultDetailPage() {
                     : "N/A"}
                 </td>
                 <td>
-                  {renderCollateralFieldIcon(col.address, ["$.marketPriceUsd", "$.oracleAdapters"])}
+                  {renderCollateralFieldIcon(col.address, ["$.marketPriceUsd", "$.oracleRoute"])}
                   {formatPriceUsd(col.marketPriceUsd)}
                 </td>
               </tr>

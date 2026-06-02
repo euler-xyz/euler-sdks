@@ -1,4 +1,8 @@
 import { getAddress, isAddress } from "viem";
+import {
+  getOracleRouteAdapters,
+  type OracleRoute,
+} from "@eulerxyz/euler-v2-sdk";
 
 export type AdapterMetadataMap = Record<string, Record<string, unknown>>;
 export type TokenSymbolMap = Record<string, string>;
@@ -7,7 +11,7 @@ export type CollateralAdapterContext = {
   address: string;
   vault?: { asset: { address: string } };
   oraclePriceRaw?: { amountOutMid?: bigint };
-  oracleAdapters?: Array<{ oracle: string; base: string; quote: string }>;
+  oracleRoute?: OracleRoute;
 };
 
 function normalizeAddress(address: unknown): string | undefined {
@@ -39,7 +43,7 @@ export function getAdapterMismatchDetails(args: {
   if (!expectedBase || !expectedQuote) return undefined;
 
   const mismatches: string[] = [];
-  for (const adapter of collateral.oracleAdapters ?? []) {
+  for (const adapter of getOracleRouteAdapters(collateral.oracleRoute)) {
     const metadata = metadataMap?.[adapter.oracle.toLowerCase()];
     const actualBase = normalizeAddress(metadata?.base ?? adapter.base);
     const actualQuote = normalizeAddress(metadata?.quote ?? adapter.quote);

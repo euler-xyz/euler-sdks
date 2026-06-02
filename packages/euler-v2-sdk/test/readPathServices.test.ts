@@ -15,6 +15,7 @@ import { WalletOnchainAdapter } from "../src/services/walletService/adapters/wal
 import { Account, SubAccount } from "../src/entities/Account.js";
 import { EVault } from "../src/entities/EVault.js";
 import { VaultType } from "../src/utils/types.js";
+import { getOracleRouteAdapters } from "../src/utils/oracle.js";
 import {
 	dataIssueLocation,
 	serviceDiagnosticOwner,
@@ -1274,7 +1275,6 @@ test("evault service setters and empty branches are exercised", async () => {
 		unitOfAccount: undefined,
 	});
 	await remapService.populateCollaterals([noUnitOfAccount]);
-	assert.deepEqual(noUnitOfAccount.collaterals[0]?.oracleAdapters, []);
 
 	const collateralPriceFailure = new EVaultService(adapterA as any, makeDeploymentService());
 	collateralPriceFailure.setPriceService({
@@ -1382,7 +1382,6 @@ test("evault service setters and empty branches are exercised", async () => {
 	const noUnitVault = new EVault(getCollateralizedEVaultFixture());
 	(noUnitVault as any).unitOfAccount = undefined;
 	await noUnitOfAccountService.populateCollaterals([noUnitVault]);
-	assert.deepEqual(noUnitVault.collaterals[0]?.oracleAdapters, []);
 
 	const stringEnrichmentFailures = new EVaultService(adapterA as any, makeDeploymentService());
 	stringEnrichmentFailures.setRewardsService({
@@ -1414,7 +1413,7 @@ test("evault service setters and empty branches are exercised", async () => {
 	);
 });
 
-test("collateral oracle adapter population resolves vault route to asset route", async () => {
+test("collateral route data stays explicit while collateral vault metadata populates", async () => {
 	const collateralVaultAddress =
 		"0x0000000000000000000000000000000000000aa1" as const;
 	const collateralAssetAddress =
@@ -1435,28 +1434,31 @@ test("collateral oracle adapter population resolves vault route to asset route",
 			{
 				...fixture.collaterals[0],
 				address: collateralVaultAddress,
-				oracleAdapters: [],
+				oracleRoute: {
+					base: collateralVaultAddress,
+					quote: unitOfAccountAddress,
+					source: "configured",
+					steps: [
+						{
+							kind: "vault",
+							oracle: collateralVaultAddress,
+							name: "ERC4626Vault",
+							base: collateralVaultAddress,
+							quote: collateralAssetAddress,
+							vault: collateralVaultAddress,
+							asset: collateralAssetAddress,
+						},
+						{
+							kind: "adapter",
+							base: collateralAssetAddress,
+							name: "EulerV2PriceOracleAdapter",
+							oracle: vaultOracle,
+							quote: unitOfAccountAddress,
+						},
+					],
+				},
 			},
 		];
-		fixture.oracle = {
-			...fixture.oracle,
-			adapters: [
-				{
-					base: collateralVaultAddress,
-					name: "EulerV2PriceOracleAdapter",
-					oracle: vaultOracle,
-					quote: unitOfAccountAddress,
-				},
-			],
-			resolvedVaults: [
-				{
-					vault: collateralVaultAddress,
-					asset: collateralAssetAddress,
-					resolvedAssets: [collateralAssetAddress],
-					quote: unitOfAccountAddress,
-				},
-			],
-		};
 		return new EVault(fixture);
 	};
 
@@ -1485,23 +1487,29 @@ test("collateral oracle adapter population resolves vault route to asset route",
 	const service = new EVaultService({} as any, makeDeploymentService());
 	service.setVaultMetaService(vaultMetaService);
 	await service.populateCollaterals([serviceTarget]);
+	assert.equal(serviceTarget.collaterals[0]?.vault?.address, collateralVaultAddress);
 	assert.deepEqual(
-		serviceTarget.collaterals[0]?.oracleAdapters?.map((adapter) => adapter.oracle),
+		getOracleRouteAdapters(serviceTarget.collaterals[0]?.oracleRoute).map(
+			(adapter) => adapter.oracle,
+		),
 		[vaultOracle],
 	);
 	assert.equal(
-		serviceTarget.collaterals[0]?.oracleAdapters?.[0]?.base,
+		getOracleRouteAdapters(serviceTarget.collaterals[0]?.oracleRoute)[0]?.base,
 		collateralAssetAddress,
 	);
 
 	const directTarget = makeTargetVault();
 	await directTarget.populateCollaterals(vaultMetaService);
+	assert.equal(directTarget.collaterals[0]?.vault?.address, collateralVaultAddress);
 	assert.deepEqual(
-		directTarget.collaterals[0]?.oracleAdapters?.map((adapter) => adapter.oracle),
+		getOracleRouteAdapters(directTarget.collaterals[0]?.oracleRoute).map(
+			(adapter) => adapter.oracle,
+		),
 		[vaultOracle],
 	);
 	assert.equal(
-		directTarget.collaterals[0]?.oracleAdapters?.[0]?.base,
+		getOracleRouteAdapters(directTarget.collaterals[0]?.oracleRoute)[0]?.base,
 		collateralAssetAddress,
 	);
 });

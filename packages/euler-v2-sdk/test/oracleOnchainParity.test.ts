@@ -5,6 +5,8 @@ import {
 	decodeOracleInfo,
 	decodeOracleRouteForPair,
 	decodeOracleResolvedVaults,
+	getOracleRouteAdapters,
+	getOracleRouteResolvedVaults,
 } from "../src/utils/oracle.js";
 import { convertVaultInfoFullToIEVault } from "../src/services/vaults/eVaultService/adapters/eVaultOnchainAdapter/vaultInfoConverter.js";
 import { convertVault } from "../src/services/vaults/eVaultService/adapters/eVaultV3Adapter/eVaultV3AdapterConversions.js";
@@ -259,9 +261,11 @@ test("convertVaultInfoFullToIEVault suppresses blank root oracle tuples like V3"
 	);
 
 	assert.equal(vault.oracle.name, "");
-	assert.deepEqual(vault.oracle.adapters, []);
-	assert.deepEqual(vault.oracle.resolvedVaults, []);
-	assert.deepEqual(vault.oracle.routes, []);
+	assert.deepEqual(vault.oracle, {
+		oracle: zeroAddress,
+		name: "",
+	});
+	assert.equal(vault.debtPricingOracleRoute, undefined);
 });
 
 test("oracle routes preserve vault unwrap steps and exact configured leaves", () => {
@@ -309,7 +313,7 @@ test("oracle routes preserve vault unwrap steps and exact configured leaves", ()
 	assert.equal(route?.steps[1]?.oracle, chainlinkOracle);
 	assert.equal(route?.steps[1]?.base, collateralAsset);
 	assert.equal(route?.steps[1]?.quote, QUOTE);
-	assert.deepEqual(route?.adapters.map((adapter) => adapter.oracle), [
+	assert.deepEqual(getOracleRouteAdapters(route).map((adapter) => adapter.oracle), [
 		chainlinkOracle,
 	]);
 
@@ -351,18 +355,22 @@ test("oracle routes preserve vault unwrap steps and exact configured leaves", ()
 		["vault", "adapter"],
 	);
 	assert.deepEqual(
-		vault.collaterals[0]?.oracleAdapters?.map((adapter) => adapter.oracle),
+		getOracleRouteAdapters(vault.collaterals[0]?.oracleRoute).map(
+			(adapter) => adapter.oracle,
+		),
 		[chainlinkOracle],
 	);
 });
 
-test("convertVault maps V3 oracle resolved vault rows", () => {
+test("convertVault maps V3 oracle resolved vault routes", () => {
 	const collateralVault = "0x0000000000000000000000000000000000000a11";
 	const collateralAsset = getAddress(
 		"0x0000000000000000000000000000000000000a12",
 	);
 	const resolvedVault = getAddress("0x0000000000000000000000000000000000000b11");
 	const resolvedAsset = getAddress("0x0000000000000000000000000000000000000b12");
+	const chainlinkOracle = getAddress("0x0000000000000000000000000000000000000c11");
+	const rootOracle = getAddress("0x00000000000000000000000000000000000000d3");
 	const errors: unknown[] = [];
 	const vault = convertVault(
 		{
@@ -385,7 +393,7 @@ test("convertVault maps V3 oracle resolved vault rows", () => {
 			},
 			dToken: "0x0000000000000000000000000000000000000003",
 			oracle: {
-				oracle: "0x00000000000000000000000000000000000000d3",
+				oracle: rootOracle,
 				name: "EulerRouter",
 				adapters: [],
 				resolvedVaults: [
@@ -396,6 +404,27 @@ test("convertVault maps V3 oracle resolved vault rows", () => {
 						resolvedAssets: [resolvedAsset],
 					},
 				],
+				detailedInfo: {
+					oracle: rootOracle,
+					name: "EulerRouter",
+					oracleInfo: encodeRouterInfo({
+						fallbackOracleInfo: {
+							oracle: chainlinkOracle,
+							name: "ChainlinkOracle",
+							oracleInfo: "0x",
+						},
+						resolvedOraclesInfo: [
+							{
+								oracle: chainlinkOracle,
+								name: "ChainlinkOracle",
+								oracleInfo: "0x",
+							},
+						],
+						bases: [collateralVault],
+						quotes: [QUOTE],
+						resolvedAssets: [[resolvedAsset]],
+					}),
+				},
 			},
 			unitOfAccount: {
 				address: QUOTE,
@@ -475,14 +504,23 @@ test("convertVault maps V3 oracle resolved vault rows", () => {
 		"0x0000000000000000000000000000000000000abc",
 	);
 
-	assert.deepEqual(vault.oracle.resolvedVaults, [
-		{
-			vault: resolvedVault,
-			asset: resolvedAsset,
-			quote: QUOTE,
-			resolvedAssets: [resolvedAsset],
-		},
-	]);
+	assert.deepEqual(
+		getOracleRouteResolvedVaults(vault.collaterals[0]?.oracleRoute),
+		[
+			{
+				vault: collateralVault,
+				asset: resolvedAsset,
+				quote: QUOTE,
+				resolvedAssets: [resolvedAsset],
+			},
+		],
+	);
+	assert.deepEqual(
+		getOracleRouteAdapters(vault.collaterals[0]?.oracleRoute).map(
+			(adapter) => adapter.oracle,
+		),
+		[chainlinkOracle],
+	);
 });
 
 test("convertVault keeps active V3 collateral ramp-down rows with ISO target timestamps", () => {

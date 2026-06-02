@@ -2,17 +2,10 @@
 // Numeric on-chain values use bigint to avoid precision loss.
 
 import { type Address, maxUint256 } from "viem";
-import {
-	type OracleAdapterEntry,
-	type OracleInfo,
-	type OraclePrice,
-	type OracleRoute,
-	decodeOracleRouteForPair,
-	selectOracleRouteForPair,
-	selectLeafAdaptersForPair,
-	selectResolvedVaultAdaptersForPair,
-	sortOracleAdapters,
-	sortOracleResolvedVaults,
+import type {
+	OracleInfo,
+	OraclePrice,
+	OracleRoute,
 } from "../utils/oracle.js";
 import type { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
 import type { Token } from "../utils/types.js";
@@ -157,7 +150,6 @@ export interface IEVaultCollateral {
 	oraclePriceRaw: OraclePrice; // shouldn't be used directly, use EVault price getters instead
 	vault?: VaultEntity;
 	oracleRoute?: OracleRoute;
-	oracleAdapters?: OracleAdapterEntry[];
 	marketPriceUsd?: PriceUsd;
 }
 
@@ -197,6 +189,7 @@ export interface IEVault extends IERC4626Vault {
 	interestRates: InterestRates;
 	interestRateModel: InterestRateModel;
 	collaterals: IEVaultCollateral[];
+	debtPricingOracleRoute?: OracleRoute;
 
 	evcCompatibleAsset: boolean;
 
@@ -207,16 +200,6 @@ export interface IEVault extends IERC4626Vault {
 
 export interface EVaultPopulated extends ERC4626VaultPopulated {
 	collaterals: boolean;
-}
-
-function buildOracleAdaptersForPair(
-	vaultOracleAdapters: OracleAdapterEntry[],
-	baseAddress: Address,
-	quoteAddress: Address,
-): OracleAdapterEntry[] {
-	return sortOracleAdapters(
-		selectLeafAdaptersForPair(vaultOracleAdapters, baseAddress, quoteAddress),
-	);
 }
 
 function collateralHasActiveLtv(
@@ -267,7 +250,16 @@ function buildCollateral(
 		: collateral.liquidationLTV;
 
 	return {
-		...collateral,
+		address: collateral.address,
+		borrowLTV: collateral.borrowLTV,
+		liquidationLTV: collateral.liquidationLTV,
+		...(collateral.ramping ? { ramping: collateral.ramping } : {}),
+		oraclePriceRaw: collateral.oraclePriceRaw,
+		...(collateral.vault ? { vault: collateral.vault } : {}),
+		...(collateral.oracleRoute ? { oracleRoute: collateral.oracleRoute } : {}),
+		...(collateral.marketPriceUsd !== undefined
+			? { marketPriceUsd: collateral.marketPriceUsd }
+			: {}),
 		currentLiquidationLTV,
 		isLiquidationLTVRamping,
 		rampTimeRemaining,
@@ -291,7 +283,6 @@ export class EVault
 	liquidation: EVaultLiquidation;
 	oracle: OracleInfo;
 	debtPricingOracleRoute?: OracleRoute;
-	debtPricingOracleAdapters: OracleAdapterEntry[];
 	interestRates: InterestRates;
 	interestRateModel: InterestRateModel;
 	collaterals: EVaultCollateral[];
@@ -314,10 +305,8 @@ export class EVault
 		this.caps = this.buildCaps(args.caps);
 		this.liquidation = args.liquidation;
 		this.oracle = {
-			...args.oracle,
-			adapters: sortOracleAdapters(args.oracle.adapters),
-			resolvedVaults: sortOracleResolvedVaults(args.oracle.resolvedVaults),
-			routes: args.oracle.routes ?? [],
+			oracle: args.oracle.oracle,
+			name: args.oracle.name,
 		};
 		this.interestRates = args.interestRates;
 		this.interestRateModel = args.interestRateModel;
@@ -325,46 +314,8 @@ export class EVault
 		this.collaterals = args.collaterals.map((collateral) =>
 			buildCollateral(collateral, this.timestamp),
 		);
-		if (this.unitOfAccount) {
-			for (const collateral of this.collaterals) {
-				collateral.oracleRoute =
-					collateral.oracleRoute ??
-					selectOracleRouteForPair(
-						this.oracle.routes,
-						collateral.address,
-						this.unitOfAccount.address,
-					) ??
-					decodeOracleRouteForPair(
-						this.oracle.detailedInfo,
-						collateral.address,
-						this.unitOfAccount.address,
-					);
-				collateral.oracleAdapters =
-					collateral.oracleAdapters ?? collateral.oracleRoute?.adapters;
-			}
-		}
 		this.debtPricingOracleRoute =
-			this.isBorrowable && this.unitOfAccount
-				? (selectOracleRouteForPair(
-						this.oracle.routes,
-						this.asset.address,
-						this.unitOfAccount.address,
-					) ??
-					decodeOracleRouteForPair(
-						this.oracle.detailedInfo,
-						this.asset.address,
-						this.unitOfAccount.address,
-					))
-				: undefined;
-		this.debtPricingOracleAdapters =
-			this.isBorrowable && this.unitOfAccount
-				? (this.debtPricingOracleRoute?.adapters ??
-					buildOracleAdaptersForPair(
-						this.oracle.adapters,
-						this.asset.address,
-						this.unitOfAccount.address,
-					))
-				: [];
+			this.unitOfAccount ? args.debtPricingOracleRoute : undefined;
 		this.evcCompatibleAsset = args.evcCompatibleAsset;
 		this.oraclePriceRaw = args.oraclePriceRaw;
 		this.populated = {
@@ -529,45 +480,6 @@ export class EVault
 
 		for (const collateral of this.collaterals) {
 			collateral.vault = vaultByAddress.get(collateral.address.toLowerCase());
-			if (!collateral.vault) {
-				collateral.oracleAdapters = [];
-				continue;
-			}
-
-			if (!this.unitOfAccount) {
-				collateral.oracleAdapters = [];
-				continue;
-			}
-
-			const quoteAddress = this.unitOfAccount.address;
-			collateral.oracleRoute =
-				collateral.oracleRoute ??
-				selectOracleRouteForPair(
-					this.oracle.routes,
-					collateral.address,
-					quoteAddress,
-				) ??
-				decodeOracleRouteForPair(
-					this.oracle.detailedInfo,
-					collateral.address,
-					quoteAddress,
-				);
-			if (collateral.oracleRoute) {
-				collateral.oracleAdapters = collateral.oracleRoute.adapters;
-				continue;
-			}
-			const byAsset = buildOracleAdaptersForPair(
-				this.oracle.adapters,
-				collateral.vault.asset.address,
-				quoteAddress,
-			);
-			const byVault = selectResolvedVaultAdaptersForPair(
-				this.oracle.adapters,
-				this.oracle.resolvedVaults,
-				collateral.address,
-				quoteAddress,
-			);
-			collateral.oracleAdapters = byAsset.length > 0 ? byAsset : byVault;
 		}
 		this.populated.collaterals = true;
 		return errors;
