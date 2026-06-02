@@ -17,6 +17,7 @@ export const createEmptyEulerLabelsData = (): EulerLabelsData => ({
 	earnVaultBlocks: {},
 	earnVaultRestrictions: {},
 	featuredEarnVaults: new Set(),
+	recentlyAddedEarnVaults: new Set(),
 	deprecatedEarnVaults: {},
 	earnVaultDescriptions: {},
 	earnVaultNotices: {},
@@ -95,7 +96,8 @@ export const getEulerLabelVaultBlock = (
 export const getEulerLabelEarnVaultBlock = (
 	data: EulerLabelsData,
 	vaultAddress: string,
-): string[] | undefined => data.earnVaultBlocks[normalizeAddress(vaultAddress).toLowerCase()];
+): string[] | undefined =>
+	data.earnVaultBlocks[normalizeAddress(vaultAddress).toLowerCase()];
 
 export const getEulerLabelVaultRestricted = (
 	data: EulerLabelsData,
@@ -146,30 +148,56 @@ export const isEulerLabelVaultFeatured = (
 	);
 };
 
+export const isEulerLabelVaultRecentlyAdded = (
+	data: EulerLabelsData,
+	vaultAddress: string,
+): boolean => {
+	const normalized = normalizeAddress(vaultAddress);
+	if (
+		Object.values(data.products).some(
+			(product) => product.recentlyAddedVaults?.includes(normalized) ?? false,
+		)
+	) {
+		return true;
+	}
+	return (
+		data.recentlyAddedEarnVaults.has(normalized) ||
+		data.recentlyAddedEarnVaults.has(normalized.toLowerCase())
+	);
+};
+
 export const isEulerLabelEarnVaultDeprecated = (
 	data: EulerLabelsData,
 	vaultAddress: string,
-): boolean => normalizeAddress(vaultAddress).toLowerCase() in data.deprecatedEarnVaults;
+): boolean =>
+	normalizeAddress(vaultAddress).toLowerCase() in data.deprecatedEarnVaults;
 
 export const isEulerLabelEarnVaultNotExplorable = (
 	data: EulerLabelsData,
 	vaultAddress: string,
-): boolean => data.notExplorableEarnVaults.has(normalizeAddress(vaultAddress).toLowerCase());
+): boolean =>
+	data.notExplorableEarnVaults.has(
+		normalizeAddress(vaultAddress).toLowerCase(),
+	);
 
 export const getEulerLabelEarnVaultDeprecationReason = (
 	data: EulerLabelsData,
 	vaultAddress: string,
-): string => data.deprecatedEarnVaults[normalizeAddress(vaultAddress).toLowerCase()] ?? "";
+): string =>
+	data.deprecatedEarnVaults[normalizeAddress(vaultAddress).toLowerCase()] ?? "";
 
 export const getEulerLabelEarnVaultDescription = (
 	data: EulerLabelsData,
 	vaultAddress: string,
-): string => data.earnVaultDescriptions[normalizeAddress(vaultAddress).toLowerCase()] ?? "";
+): string =>
+	data.earnVaultDescriptions[normalizeAddress(vaultAddress).toLowerCase()] ??
+	"";
 
 export const getEulerLabelEarnVaultNotice = (
 	data: EulerLabelsData,
 	vaultAddress: string,
-): string => data.earnVaultNotices[normalizeAddress(vaultAddress).toLowerCase()] ?? "";
+): string =>
+	data.earnVaultNotices[normalizeAddress(vaultAddress).toLowerCase()] ?? "";
 
 export const getEulerLabelVaultNotice = (
 	data: EulerLabelsData,
@@ -210,7 +238,8 @@ export const isEulerLabelVaultDeprecated = (
 export const isEulerLabelVaultNotExplorable = (
 	data: EulerLabelsData,
 	vaultAddress: string,
-): boolean => getEulerLabelProductByVault(data, vaultAddress)?.notExplorable === true;
+): boolean =>
+	getEulerLabelProductByVault(data, vaultAddress)?.notExplorable === true;
 
 export const isEulerLabelVaultNotExplorableLend = (
 	data: EulerLabelsData,
@@ -299,7 +328,9 @@ export const getEulerLabelEntitiesByVault = (
 	const normalizedGovernor = normalizeAddress(governor);
 	const declaredKeys = getEulerLabelDeclaredEntityKeys(
 		data,
-		"address" in vault && typeof vault.address === "string" ? vault.address : "",
+		"address" in vault && typeof vault.address === "string"
+			? vault.address
+			: "",
 	);
 	if (!declaredKeys || declaredKeys.length === 0) return [];
 	return declaredKeys
@@ -316,8 +347,9 @@ export const getEulerLabelEntitiesByEarnVault = (
 	const ownerAddress = normalizeAddress(earnVault.governance.owner);
 	const declaredKeys = getEulerLabelDeclaredEntityKeys(data, earnVault.address);
 	if (declaredKeys === undefined) {
-		return Object.values(data.entities).filter((entity): entity is EulerLabelEntity =>
-			entityHasAddress(entity, ownerAddress),
+		return Object.values(data.entities).filter(
+			(entity): entity is EulerLabelEntity =>
+				entityHasAddress(entity, ownerAddress),
 		);
 	}
 	if (declaredKeys.length === 0) return [];
@@ -338,5 +370,7 @@ export const getEulerLabelVaultProductName = (
 	vaultAddress: string,
 ): string => {
 	const product = getEulerLabelProductByVault(data, vaultAddress);
-	return product ? applyEulerLabelVaultOverrides(product, vaultAddress).name : "";
+	return product
+		? applyEulerLabelVaultOverrides(product, vaultAddress).name
+		: "";
 };

@@ -3,8 +3,10 @@ import {
 	createEmptyEulerLabelsData,
 	getEulerLabelEntitiesByEarnVault,
 	getEulerLabelEntitiesByVault,
+	isEulerLabelVaultRecentlyAdded,
 } from "../src/utils/eulerLabels.js";
-import type { EulerEarn, EVault } from "../src/index.js";
+import { EulerLabelsService } from "../src/index.js";
+import type { EulerEarn, EVault, IEulerLabelsAdapter } from "../src/index.js";
 
 const VAULT = "0x0000000000000000000000000000000000000001";
 const GOVERNOR = "0x0000000000000000000000000000000000000002";
@@ -110,5 +112,47 @@ describe("Euler label entity helpers", () => {
 		} as EulerEarn);
 
 		expect(entities).toEqual([]);
+	});
+});
+
+describe("Euler recently-added labels", () => {
+	it("normalizes product recently-added vaults", async () => {
+		const service = new EulerLabelsService({
+			fetchEulerLabelsEntities: async () => ({}),
+			fetchEulerLabelsProducts: async () => ({
+				prime: {
+					name: "Prime",
+					description: "",
+					url: "",
+					vaults: [VAULT.toLowerCase()],
+					recentlyAddedVaults: [VAULT.toLowerCase()],
+				},
+			}),
+			fetchEulerLabelsPoints: async () => [],
+		} satisfies IEulerLabelsAdapter);
+
+		const labels = await service.fetchEulerLabelsData(1);
+
+		expect(labels.products.prime?.recentlyAddedVaults).toEqual([VAULT]);
+		expect(isEulerLabelVaultRecentlyAdded(labels, VAULT)).toBe(true);
+	});
+
+	it("normalizes Earn recently-added entries", async () => {
+		const service = new EulerLabelsService({
+			fetchEulerLabelsEntities: async () => ({}),
+			fetchEulerLabelsProducts: async () => ({}),
+			fetchEulerLabelsPoints: async () => [],
+			fetchEulerLabelsEarnVaults: async () => [
+				{ address: VAULT.toLowerCase(), recentlyAdded: true },
+			],
+		} satisfies IEulerLabelsAdapter);
+
+		const labels = await service.fetchEulerLabelsData(1);
+
+		expect(labels.earnVaultEntries[VAULT.toLowerCase()]?.recentlyAdded).toBe(
+			true,
+		);
+		expect(labels.recentlyAddedEarnVaults.has(VAULT)).toBe(true);
+		expect(isEulerLabelVaultRecentlyAdded(labels, VAULT)).toBe(true);
 	});
 });

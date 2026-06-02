@@ -53,6 +53,7 @@ const EMPTY_LABELS_DATA: EulerLabelsData = {
 	earnVaultBlocks: {},
 	earnVaultRestrictions: {},
 	featuredEarnVaults: new Set(),
+	recentlyAddedEarnVaults: new Set(),
 	deprecatedEarnVaults: {},
 	earnVaultDescriptions: {},
 	earnVaultNotices: {},
@@ -154,6 +155,13 @@ const normalizeProducts = (
 		)
 			.map(tryNormalizeAddress)
 			.filter((v): v is string => v !== undefined);
+		const normalizedRecentlyAdded = (
+			Array.isArray(product.recentlyAddedVaults)
+				? product.recentlyAddedVaults
+				: []
+		)
+			.map(tryNormalizeAddress)
+			.filter((v): v is string => v !== undefined);
 		const raw = product as unknown as Record<string, unknown>;
 		const fallbackReason =
 			typeof raw.deprecateReason === "string" ? raw.deprecateReason : undefined;
@@ -163,6 +171,7 @@ const normalizeProducts = (
 			vaults: normalizedVaults,
 			deprecatedVaults: normalizedDeprecated,
 			featuredVaults: normalizedFeatured,
+			recentlyAddedVaults: normalizedRecentlyAdded,
 			deprecationReason: product.deprecationReason || fallbackReason,
 			vaultOverrides: extractVaultOverrides(raw),
 		};
@@ -215,6 +224,7 @@ const normalizeEarnVaults = (
 	const earnVaultBlocks: Record<string, string[]> = {};
 	const earnVaultRestrictions: Record<string, string[]> = {};
 	const featuredEarnVaults = new Set<string>();
+	const recentlyAddedEarnVaults = new Set<string>();
 	const deprecatedEarnVaults: Record<string, string> = {};
 	const earnVaultDescriptions: Record<string, string> = {};
 	const earnVaultNotices: Record<string, string> = {};
@@ -237,6 +247,7 @@ const normalizeEarnVaults = (
 		if (entry.block?.length) earnVaultBlocks[key] = entry.block;
 		if (entry.restricted?.length) earnVaultRestrictions[key] = entry.restricted;
 		if (entry.featured) featuredEarnVaults.add(normalized);
+		if (entry.recentlyAdded) recentlyAddedEarnVaults.add(normalized);
 		if (entry.deprecated)
 			deprecatedEarnVaults[key] = entry.deprecationReason ?? "";
 		if (entry.description) earnVaultDescriptions[key] = entry.description;
@@ -250,6 +261,7 @@ const normalizeEarnVaults = (
 		earnVaultBlocks,
 		earnVaultRestrictions,
 		featuredEarnVaults,
+		recentlyAddedEarnVaults,
 		deprecatedEarnVaults,
 		earnVaultDescriptions,
 		earnVaultNotices,
@@ -404,6 +416,7 @@ export class EulerLabelsService implements IEulerLabelsService {
 			earnVaultBlocks: earn.earnVaultBlocks,
 			earnVaultRestrictions: earn.earnVaultRestrictions,
 			featuredEarnVaults: earn.featuredEarnVaults,
+			recentlyAddedEarnVaults: earn.recentlyAddedEarnVaults,
 			deprecatedEarnVaults: earn.deprecatedEarnVaults,
 			earnVaultDescriptions: earn.earnVaultDescriptions,
 			earnVaultNotices: earn.earnVaultNotices,
@@ -519,6 +532,7 @@ export class EulerLabelsService implements IEulerLabelsService {
 						portfolioNotice: earnVault.portfolioNotice,
 					}),
 					...(earnVault?.featured && { featured: true }),
+					...(earnVault?.recentlyAdded && { recentlyAdded: true }),
 					...(earnVault?.notExplorable && { notExplorable: true }),
 					...(earnVault?.block && { block: earnVault.block }),
 					...(earnVault?.restricted && { restricted: earnVault.restricted }),
