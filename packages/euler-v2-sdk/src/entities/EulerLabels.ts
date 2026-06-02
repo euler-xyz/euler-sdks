@@ -27,7 +27,6 @@ export type EulerLabelProduct = {
 	/** Legacy spelling still present in some labels files. Normalizers should
 	 * expose it as deprecationReason. */
 	deprecateReason?: string;
-	featuredVaults?: string[];
 	block?: string[];
 	restricted?: string[];
 	notExplorable?: boolean;
@@ -64,7 +63,6 @@ export type EulerLabelEarnVaultEntry = {
 	address: string;
 	block?: string[];
 	restricted?: string[];
-	featured?: boolean;
 	recentlyAdded?: boolean;
 	deprecated?: boolean;
 	deprecationReason?: string;
@@ -98,7 +96,6 @@ export type EulerLabelsData = {
 	earnVaultEntries: Record<string, EulerLabelEarnVaultEntry>;
 	earnVaultBlocks: Record<string, string[]>;
 	earnVaultRestrictions: Record<string, string[]>;
-	featuredEarnVaults: Set<string>;
 	recentlyAddedEarnVaults: Set<string>;
 	deprecatedEarnVaults: Record<string, string>;
 	earnVaultDescriptions: Record<string, string>;
@@ -120,7 +117,6 @@ export type EulerLabel = {
 	earnVault?: EulerLabelEarnVaultEntry;
 	description?: string;
 	portfolioNotice?: string;
-	featured?: boolean;
 	recentlyAdded?: boolean;
 	notExplorable?: boolean;
 	block?: string[];

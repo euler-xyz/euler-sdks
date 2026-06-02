@@ -16,7 +16,6 @@ export const createEmptyEulerLabelsData = (): EulerLabelsData => ({
 	earnVaultEntries: {},
 	earnVaultBlocks: {},
 	earnVaultRestrictions: {},
-	featuredEarnVaults: new Set(),
 	recentlyAddedEarnVaults: new Set(),
 	deprecatedEarnVaults: {},
 	earnVaultDescriptions: {},
@@ -129,24 +128,6 @@ export const getEulerLabelAssetRestricted = (
 	assetAddress
 		? data.assetRestrictions[normalizeAddress(assetAddress).toLowerCase()]
 		: undefined;
-
-export const isEulerLabelVaultFeatured = (
-	data: EulerLabelsData,
-	vaultAddress: string,
-): boolean => {
-	const normalized = normalizeAddress(vaultAddress);
-	if (
-		Object.values(data.products).some(
-			(product) => product.featuredVaults?.includes(normalized) ?? false,
-		)
-	) {
-		return true;
-	}
-	return (
-		data.featuredEarnVaults.has(normalized) ||
-		data.featuredEarnVaults.has(normalized.toLowerCase())
-	);
-};
 
 export const isEulerLabelVaultRecentlyAdded = (
 	data: EulerLabelsData,

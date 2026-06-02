@@ -58,7 +58,7 @@ thin UI.
 ### Market discovery and labels metadata
 
 Euler Lite groups markets/products, computes product-level metrics, handles
-verified/unverified exposure, borrow-pair availability, featured vaults,
+verified/unverified exposure, borrow-pair availability, recently added vaults,
 restricted/blocked/not-explorable labels, portfolio notices, earn metadata, and
 escrow classification. The SDK has labels and vault services, but not the full
 market discovery view model or label schema parity.

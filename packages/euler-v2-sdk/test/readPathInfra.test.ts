@@ -33,13 +33,13 @@ import {
   createEmptyEulerLabelsData,
   getEulerLabelAssetBlock,
   getEulerLabelEntitiesByVault,
-  getEulerLabelProductByVault,
-  getEulerLabelVaultNotice,
-  isEulerLabelEarnVaultDeprecated,
-  isEulerLabelVaultDeprecated,
-  isEulerLabelVaultFeatured,
-  isEulerLabelVaultKeyring,
-  isEulerLabelVaultNotExplorable,
+	getEulerLabelProductByVault,
+	getEulerLabelVaultNotice,
+	isEulerLabelEarnVaultDeprecated,
+	isEulerLabelVaultDeprecated,
+	isEulerLabelVaultKeyring,
+	isEulerLabelVaultNotExplorable,
+	isEulerLabelVaultRecentlyAdded,
 } from "../src/utils/eulerLabels.js";
 import {
   dataIssueLocation,
@@ -707,7 +707,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
       vaults: [plainVault.address.toLowerCase()],
       deprecatedVaults: [stringEntityVault.address.toLowerCase()],
       deprecateReason: "legacy reason",
-      featuredVaults: [plainVault.address.toLowerCase()],
+      recentlyAddedVaults: [plainVault.address.toLowerCase()],
       notExplorable: true,
       tags: ["keyring"],
       portfolioNotice: "product notice",
@@ -742,7 +742,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
       address: collateralVault.address.toLowerCase(),
       block: ["US"],
       restricted: ["DE"],
-      featured: true,
+      recentlyAdded: true,
       deprecated: true,
       deprecationReason: "earn migrated",
       description: "earn description",
@@ -792,7 +792,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   assert.deepEqual(labelsData.earnVaultBlocks[collateralVault.address.toLowerCase()], [
     "US",
   ]);
-  assert.equal(labelsData.featuredEarnVaults.has(collateralVault.address), true);
+  assert.equal(labelsData.recentlyAddedEarnVaults.has(collateralVault.address), true);
   assert.equal(
     labelsData.deprecatedEarnVaults[collateralVault.address.toLowerCase()],
     "earn migrated",
@@ -823,8 +823,8 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   );
   assert.equal(getEulerLabelVaultNotice(labelsData, plainVault.address), "override notice");
   assert.equal(getEulerLabelAssetBlock(labelsData, plainVault.asset.address)?.[0], "US");
-  assert.equal(isEulerLabelVaultFeatured(labelsData, plainVault.address), true);
-  assert.equal(isEulerLabelVaultFeatured(labelsData, collateralVault.address), true);
+  assert.equal(isEulerLabelVaultRecentlyAdded(labelsData, plainVault.address), true);
+  assert.equal(isEulerLabelVaultRecentlyAdded(labelsData, collateralVault.address), true);
   assert.equal(isEulerLabelVaultDeprecated(labelsData, stringEntityVault.address), true);
   assert.equal(isEulerLabelEarnVaultDeprecated(labelsData, collateralVault.address), true);
   assert.equal(isEulerLabelVaultKeyring(labelsData, plainVault.address), true);
