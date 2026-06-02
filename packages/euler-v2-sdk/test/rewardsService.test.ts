@@ -519,6 +519,65 @@ test("direct rewards adapter preserves standard Merkl allowlist metadata", async
 	]);
 });
 
+test("direct rewards adapter maps split Merkl Euler lend and borrow opportunity types", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER_LEND: [
+			makeMerklOpportunity({
+				type: "EULER_LEND",
+				identifier: `${vaultAddress}-lend`,
+				action: "",
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "split-lend-1",
+						type: "EULER_LEND",
+						subType: null,
+						apr: 2,
+						params: {
+							evkAddress: vaultAddress,
+						},
+					}),
+				],
+			}),
+		],
+		EULER_BORROW: [
+			makeMerklOpportunity({
+				type: "EULER_BORROW",
+				identifier: `${vaultAddress}-borrow`,
+				action: "",
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "split-borrow-1",
+						type: "EULER_BORROW",
+						subType: null,
+						apr: 3,
+						params: {
+							evkAddress: vaultAddress,
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 2);
+	assert.deepEqual(
+		info?.campaigns.map((campaign) => campaign.action).sort(),
+		["BORROW", "LEND"],
+	);
+	assert.deepEqual(
+		info?.campaigns.map((campaign) => campaign.apr).sort(),
+		[0.02, 0.03],
+	);
+	assert.ok(
+		info?.campaigns.every((campaign) =>
+			campaign.sourceUrl?.includes(`EULER_${campaign.action}`),
+		),
+	);
+});
+
 test("rewards service uses only selected adapter for user rewards", async () => {
 	const primary: IRewardsAdapter = {
 		...emptyAdapter,

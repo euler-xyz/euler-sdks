@@ -1,9 +1,9 @@
 import { type Address, getAddress, type Hex } from "viem";
 import {
 	applyBuildQuery,
+	type BuildQueryFn,
 	normalizeQueryKeyObjectSets,
 	serializeQueryArgs,
-	type BuildQueryFn,
 } from "../../../../utils/buildQuery.js";
 import type {
 	BrevisCampaign,
@@ -15,8 +15,8 @@ import type {
 	IRewardsAdapter,
 	MerklOpportunity,
 	MerklUserChainRewards,
-	RewardCampaign,
 	RewardAction,
+	RewardCampaign,
 	RewardsDirectAdapterConfig,
 	UserReward,
 } from "../../rewardsServiceTypes.js";
@@ -41,6 +41,8 @@ const BREVIS_BORROW = 2001;
 
 type MerklOpportunityType =
 	| "EULER"
+	| "EULER_LEND"
+	| "EULER_BORROW"
 	| "MULTILENDBORROW"
 	| "ERC20LOGPROCESSOR"
 	| "EULER_BORROW_FROM_COLLATERAL"
@@ -99,6 +101,14 @@ const mapMerklSubType = (
 	if (subType === 0) return "LEND";
 	if (subType === 1) return "BORROW";
 	if (subType === 2) return "BORROW_COLLATERAL";
+	return undefined;
+};
+
+const mapMerklOpportunityTypeAction = (
+	type: MerklOpportunityType,
+): RewardAction | undefined => {
+	if (type === "EULER_LEND") return "LEND";
+	if (type === "EULER_BORROW") return "BORROW";
 	return undefined;
 };
 
@@ -392,6 +402,14 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				`${this.merklApiUrl}/opportunities/?chainId=${chainId}&type=EULER&campaigns=true`,
 			],
 			[
+				"EULER_LEND",
+				`${this.merklApiUrl}/opportunities/?chainId=${chainId}&type=EULER_LEND&campaigns=true`,
+			],
+			[
+				"EULER_BORROW",
+				`${this.merklApiUrl}/opportunities/?chainId=${chainId}&type=EULER_BORROW&campaigns=true`,
+			],
+			[
 				"MULTILENDBORROW",
 				`${this.merklApiUrl}/opportunities/?chainId=${chainId}&type=MULTILENDBORROW&campaigns=true`,
 			],
@@ -521,6 +539,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 					}
 
 					const action =
+						mapMerklOpportunityTypeAction(type) ??
 						mapMerklSubType(c.subType) ??
 						(opp.action === "LEND" || opp.action === "BORROW"
 							? opp.action
