@@ -339,47 +339,74 @@ const normalizeHex = (value: Hex | string | Uint8Array): Hex => {
 	return toHex(value);
 };
 
-export const decodeEulerRouterInfo = (
-	oracleInfo: Hex | string | Uint8Array,
-): EulerRouterInfo | null => {
-	try {
-		const [decoded] = decodeAbiParameters(
-			[{ type: "tuple", components: EULER_ROUTER_COMPONENTS }],
-			normalizeHex(oracleInfo),
-		);
-		return decoded as EulerRouterInfo;
-	} catch {
-		return null;
-	}
+/**
+ * The same encoded `oracleInfo` blob is decoded repeatedly: once per collateral
+ * pair (plus the debt route) inside a single `convertVaultInfoFullToIEVault`,
+ * and again on every portfolio refetch. `decodeAbiParameters` over the nested
+ * EulerRouter tuple is the dominant cost. These decoders are pure functions of
+ * the encoded bytes, so memoize by the normalized hex. The returned objects are
+ * shared by reference and must be treated as read-only by callers. Bounded so a
+ * long-lived session can't grow the cache without limit (oldest-out eviction).
+ */
+const DECODE_CACHE_MAX = 1024;
+const memoizeHexDecode = <T>(
+	decode: (hex: Hex) => T,
+): ((oracleInfo: Hex | string | Uint8Array) => T) => {
+	const cache = new Map<Hex, T>();
+	return (oracleInfo) => {
+		const hex = normalizeHex(oracleInfo);
+		if (cache.has(hex)) return cache.get(hex) as T;
+		const value = decode(hex);
+		cache.set(hex, value);
+		if (cache.size > DECODE_CACHE_MAX) {
+			const oldest = cache.keys().next().value;
+			if (oldest !== undefined) cache.delete(oldest);
+		}
+		return value;
+	};
 };
 
-export const decodeCrossAdapterInfo = (
-	oracleInfo: Hex | string | Uint8Array,
-): CrossAdapterInfo | null => {
-	try {
-		const [decoded] = decodeAbiParameters(
-			[{ type: "tuple", components: CROSS_ADAPTER_COMPONENTS }],
-			normalizeHex(oracleInfo),
-		);
-		return decoded as CrossAdapterInfo;
-	} catch {
-		return null;
-	}
-};
+export const decodeEulerRouterInfo = memoizeHexDecode<EulerRouterInfo | null>(
+	(hex) => {
+		try {
+			const [decoded] = decodeAbiParameters(
+				[{ type: "tuple", components: EULER_ROUTER_COMPONENTS }],
+				hex,
+			);
+			return decoded as EulerRouterInfo;
+		} catch {
+			return null;
+		}
+	},
+);
 
-export const decodePythOracleInfo = (
-	oracleInfo: Hex | string | Uint8Array,
-): PythOracleInfo | null => {
-	try {
-		const [decoded] = decodeAbiParameters(
-			[{ type: "tuple", components: PYTH_ORACLE_COMPONENTS }],
-			normalizeHex(oracleInfo),
-		);
-		return decoded as PythOracleInfo;
-	} catch {
-		return null;
-	}
-};
+export const decodeCrossAdapterInfo = memoizeHexDecode<CrossAdapterInfo | null>(
+	(hex) => {
+		try {
+			const [decoded] = decodeAbiParameters(
+				[{ type: "tuple", components: CROSS_ADAPTER_COMPONENTS }],
+				hex,
+			);
+			return decoded as CrossAdapterInfo;
+		} catch {
+			return null;
+		}
+	},
+);
+
+export const decodePythOracleInfo = memoizeHexDecode<PythOracleInfo | null>(
+	(hex) => {
+		try {
+			const [decoded] = decodeAbiParameters(
+				[{ type: "tuple", components: PYTH_ORACLE_COMPONENTS }],
+				hex,
+			);
+			return decoded as PythOracleInfo;
+		} catch {
+			return null;
+		}
+	},
+);
 
 export const collectPythFeedIds = (
 	oracleInfo: OracleDetailedInfo | null | undefined,
