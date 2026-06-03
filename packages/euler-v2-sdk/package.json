@@ -60,7 +60,7 @@
     "provenance": true
   },
   "dependencies": {
-    "viem": "2.43.3"
+    "viem": "2.48.8"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.13",
