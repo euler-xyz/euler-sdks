@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.0] - 2026-06-03
+
+### Changed
+
+- Published the Euler V2 SDK as a stable 1.0.0 release.
+
 ## [0.2.16-beta] - 2026-06-03
 
 ### Changed

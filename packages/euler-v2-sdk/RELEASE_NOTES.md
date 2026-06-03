@@ -1,8 +1,8 @@
-# euler-v2-sdk v0.2.16-beta
+# euler-v2-sdk v1.0.0
 
 ## Summary
 
-This beta release improves oracle route decoding performance.
+This stable release publishes the current Euler V2 SDK package as 1.0.0.
 
 ## Highlights
 
