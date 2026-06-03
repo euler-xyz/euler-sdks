@@ -10,7 +10,9 @@ import type {
 	BrevisCampaignsResponse,
 	BrevisUserRewardsBatchResponse,
 	FuulClaimCheck,
+	FuulClaimableReward,
 	FuulIncentive,
+	FuulTotalEntry,
 	FuulTotals,
 	IRewardsAdapter,
 	MerklOpportunity,
@@ -81,6 +83,97 @@ const sanitizeFuulClaimChecks = (
 			},
 		];
 	});
+};
+
+const normalizeFuulClaimableReward = (
+	reward: FuulClaimableReward,
+	address: Address,
+): FuulClaimableReward | undefined => {
+	const requestedAddress = getAddress(address);
+	const userAddress = normalizeAddress(reward.user_address);
+	const projectAddress = normalizeAddress(reward.project_address);
+	const currencyAddress = normalizeAddress(reward.currency_address);
+	const currencyChainId = Number(reward.currency_chain_id);
+	const currencyDecimals =
+		reward.currency_decimals === undefined
+			? undefined
+			: Number(reward.currency_decimals);
+	const reason = Number(reward.reason);
+	let amount: bigint;
+	try {
+		amount = BigInt(reward.amount);
+		BigInt(reward.token_id);
+		BigInt(reward.deadline);
+	} catch {
+		return undefined;
+	}
+
+	if (!userAddress || !projectAddress || !currencyAddress) return undefined;
+	if (userAddress !== requestedAddress) return undefined;
+	if (!Number.isFinite(currencyChainId)) return undefined;
+	if (currencyDecimals !== undefined && !Number.isFinite(currencyDecimals)) {
+		return undefined;
+	}
+	if (!Number.isFinite(reason)) return undefined;
+	if (!Array.isArray(reward.signatures)) return undefined;
+	if (amount <= 0n) return undefined;
+	if (
+		reward.status &&
+		!["claimable", "unclaimed"].includes(reward.status.toLowerCase())
+	) {
+		return undefined;
+	}
+
+	return {
+		...reward,
+		user_address: userAddress,
+		project_address: projectAddress,
+		currency_address: currencyAddress,
+		currency_chain_id: currencyChainId,
+		currency_decimals: currencyDecimals,
+		amount: amount.toString(),
+	};
+};
+
+const fuulClaimableRewardToClaimCheck = (
+	reward: FuulClaimableReward,
+): FuulClaimCheck => ({
+	project_address: reward.project_address,
+	to: reward.user_address,
+	currency: reward.currency_address,
+	currency_type: 1,
+	amount: reward.amount,
+	reason: Number(reward.reason),
+	token_id: reward.token_id.toString(),
+	deadline: reward.deadline.toString(),
+	proof: reward.proof,
+	signatures: reward.signatures,
+});
+
+const fuulClaimableRewardToTotalEntry = (
+	reward: FuulClaimableReward,
+): FuulTotalEntry => ({
+	currency: reward.currency_address,
+	currency_type: 1,
+	amount: reward.amount,
+	chain_id: Number(reward.currency_chain_id),
+});
+
+const aggregateFuulTotals = (
+	rewards: FuulClaimableReward[],
+): FuulTotalEntry[] => {
+	const totals = new Map<string, FuulTotalEntry>();
+	for (const reward of rewards) {
+		const entry = fuulClaimableRewardToTotalEntry(reward);
+		const key = `${entry.chain_id}:${entry.currency.toLowerCase()}:${entry.currency_type}`;
+		const existing = totals.get(key);
+		if (existing) {
+			existing.amount = (BigInt(existing.amount) + BigInt(entry.amount)).toString();
+		} else {
+			totals.set(key, entry);
+		}
+	}
+	return [...totals.values()];
 };
 
 const extractMerklVaultAddress = (identifier: string): string | undefined => {
@@ -287,6 +380,21 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		this.queryFuulClaimChecks = fn;
 	}
 
+	queryFuulClaimableRewards = async (
+		url: string,
+	): Promise<FuulClaimableReward[]> => {
+		const res = await fetch(url);
+		if (!res.ok) return [];
+		const data = await res.json();
+		return Array.isArray(data) ? (data as FuulClaimableReward[]) : [];
+	};
+
+	setQueryFuulClaimableRewards(
+		fn: typeof this.queryFuulClaimableRewards,
+	): void {
+		this.queryFuulClaimableRewards = fn;
+	}
+
 	async fetchVaultRewards(
 		chainId: number,
 		vaultAddress: Address,
@@ -335,8 +443,18 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		return [...merklRewards, ...brevisRewards, ...fuulRewards];
 	}
 
-	async fetchFuulTotals(address: Address): Promise<FuulTotals> {
-		if (!this.fuulTotalsUrl) return { claimed: [], unclaimed: [] };
+	async fetchFuulTotals(address: Address, chainId?: number): Promise<FuulTotals> {
+		if (!this.fuulTotalsUrl) {
+			if (chainId === undefined) return { claimed: [], unclaimed: [] };
+			const rewards = await this.fetchFuulClaimableRewards(
+				chainId,
+				address,
+			).catch(() => []);
+			return {
+				claimed: [],
+				unclaimed: aggregateFuulTotals(rewards),
+			};
+		}
 		const separator = this.fuulTotalsUrl.includes("?") ? "&" : "?";
 		const url = `${this.fuulTotalsUrl}${separator}user_identifier=${encodeURIComponent(address)}&user_identifier_type=evm_address`;
 		return this.queryFuulTotals(url).catch(() => ({
@@ -345,8 +463,18 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		}));
 	}
 
-	async fetchFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]> {
-		if (!this.fuulClaimChecksUrl) return [];
+	async fetchFuulClaimChecks(
+		address: Address,
+		chainId?: number,
+	): Promise<FuulClaimCheck[]> {
+		if (!this.fuulClaimChecksUrl) {
+			if (chainId === undefined) return [];
+			const rewards = await this.fetchFuulClaimableRewards(
+				chainId,
+				address,
+			).catch(() => []);
+			return rewards.map(fuulClaimableRewardToClaimCheck);
+		}
 		const claimChecks = await this.queryFuulClaimChecks(
 			this.fuulClaimChecksUrl,
 			{
@@ -844,6 +972,57 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		chainId: number,
 		address: Address,
 	): Promise<UserReward[]> {
+		if (!this.fuulTotalsUrl) {
+			const claimableRewards = await this.fetchFuulClaimableRewards(
+				chainId,
+				address,
+			);
+			const totals = new Map<
+				string,
+				{
+					chainId: number;
+					token: Address;
+					symbol: string;
+					decimals: number;
+					amount: bigint;
+				}
+			>();
+
+			for (const reward of claimableRewards) {
+				const claimChainId = Number(reward.currency_chain_id);
+				const tokenAddress = getAddress(reward.currency_address) as Address;
+				const key = `${claimChainId}:${tokenAddress.toLowerCase()}`;
+				const existing = totals.get(key);
+				if (existing) {
+					existing.amount += BigInt(reward.amount);
+				} else {
+					totals.set(key, {
+						chainId: claimChainId,
+						token: tokenAddress,
+						symbol: reward.currency_name || tokenAddress,
+						decimals: Number(reward.currency_decimals ?? 18),
+						amount: BigInt(reward.amount),
+					});
+				}
+			}
+
+			return [...totals.values()].map((reward) => ({
+				chainId: reward.chainId,
+				token: {
+					address: reward.token,
+					chainId: reward.chainId,
+					symbol: reward.symbol,
+					name: reward.symbol,
+					decimals: reward.decimals,
+				},
+				tokenPrice: 0,
+				provider: "fuul",
+				accumulated: reward.amount.toString(),
+				unclaimed: reward.amount.toString(),
+				claimAddress: this.fuulManagerAddress,
+			}));
+		}
+
 		const totals = await this.fetchFuulTotals(address);
 		const rewards: UserReward[] = [];
 
@@ -868,5 +1047,18 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		}
 
 		return rewards;
+	}
+
+	private async fetchFuulClaimableRewards(
+		chainId: number,
+		address: Address,
+	): Promise<FuulClaimableReward[]> {
+		const separator = this.fuulApiUrl.includes("?") ? "&" : "?";
+		const url = `${this.fuulApiUrl}/claimable-rewards${separator}protocol=euler&user_address=${encodeURIComponent(address)}&chain_id=${chainId}`;
+		const rewards = await this.queryFuulClaimableRewards(url).catch(() => []);
+		return rewards.flatMap((reward) => {
+			const normalized = normalizeFuulClaimableReward(reward, address);
+			return normalized ? [normalized] : [];
+		});
 	}
 }
