@@ -1,13 +1,12 @@
-# euler-v2-sdk v0.2.15-beta
+# euler-v2-sdk v0.2.16-beta
 
 ## Summary
 
-This beta release aligns the SDK runtime `viem` dependency with the apps.
+This beta release improves oracle route decoding performance.
 
 ## Highlights
 
-- Updated `viem` from `2.43.3` to `2.48.8`.
-- Kept the SDK package lock in sync with the updated dependency closure.
+- Memoized oracle route adapter ABI decoding to avoid repeated decode work when resolving route steps.
 
 ## Validation
 

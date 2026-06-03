@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.16-beta] - 2026-06-03
+
+### Changed
+
+- Oracle route adapter ABI decoding is memoized to avoid repeated decode work when resolving route steps.
+
 ## [0.2.15-beta] - 2026-06-03
 
 ### Changed
