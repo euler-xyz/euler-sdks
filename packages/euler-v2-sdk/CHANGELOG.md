@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.15-beta] - 2026-06-03
+
+### Changed
+
+- Updated the SDK runtime `viem` dependency to `2.48.8` to match the app dependency version.
+
 ## [0.2.14-beta] - 2026-06-02
 
 ### Changed
