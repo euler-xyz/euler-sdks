@@ -17,12 +17,17 @@ export type {
 	BuildRewardClaimAllPlanArgs,
 	UserReward,
 	UserRewardToken,
+	TurtleMerkleProof,
+	TurtleStreamConfig,
 	FuulClaimCheck,
 	FuulIncentive,
 	FuulTotals,
 	FuulTotalEntry,
 } from "./rewardsServiceTypes.js";
-export type { V3RewardsBreakdownEnvelope, V3RewardsBreakdownRow } from "./adapters/rewardsV3Adapter/index.js";
+export type {
+	V3RewardsBreakdownEnvelope,
+	V3RewardsBreakdownRow,
+} from "./adapters/rewardsV3Adapter/index.js";
 export {
 	defaultIsActiveForViewer,
 	type IsActiveForViewerFn,

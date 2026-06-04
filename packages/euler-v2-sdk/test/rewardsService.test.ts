@@ -7,6 +7,7 @@ import type {
 	FuulClaimCheck,
 	FuulClaimableReward,
 	IRewardsAdapter,
+	TurtleMerkleProof,
 	UserReward,
 } from "../src/services/rewardsService/index.js";
 import type { MerklOpportunity } from "../src/services/rewardsService/rewardsServiceTypes.js";
@@ -39,6 +40,9 @@ const fuulProjectAddress = getAddress(
 ) as Address;
 const otherRewardToken = getAddress(
 	"0x0000000000000000000000000000000000000007",
+) as Address;
+const turtleStreamAddress = getAddress(
+	"0x0000000000000000000000000000000000000010",
 ) as Address;
 const secondCollateralAddress = getAddress(
 	"0x0000000000000000000000000000000000000008",
@@ -153,6 +157,47 @@ const makeFuulReward = (overrides: Partial<UserReward> = {}): UserReward => ({
 	...overrides,
 });
 
+const makeTurtleReward = (overrides: Partial<UserReward> = {}): UserReward => ({
+	chainId: 1,
+	token: {
+		address: rewardToken,
+		chainId: 1,
+		symbol: "EUL",
+		name: "EUL",
+		decimals: 18,
+	},
+	tokenPrice: 1,
+	provider: "turtle",
+	campaignId: "stream-1",
+	streamId: "stream-1",
+	streamAddress: turtleStreamAddress,
+	accumulated: "1000",
+	unclaimed: "1000",
+	proof: ["0xabc" as `0x${string}`],
+	timestamp: "2026-05-20T13:05:10Z",
+	...overrides,
+});
+
+const makeTurtleMerkleProof = (
+	overrides: Partial<TurtleMerkleProof> = {},
+): TurtleMerkleProof => ({
+	streamId: "stream-1",
+	streamAddress: turtleStreamAddress,
+	amount: "1000",
+	claimable: "1000",
+	timestamp: "2026-05-20T13:05:10Z",
+	proof: ["0xabc"],
+	rewardToken: {
+		address: rewardToken,
+		chainId: 1,
+		symbol: "EUL",
+		name: "EUL",
+		decimals: 18,
+	},
+	tokenPrice: 1,
+	...overrides,
+});
+
 const makeMerklOpportunity = (
 	overrides: Partial<MerklOpportunity>,
 ): MerklOpportunity =>
@@ -232,6 +277,42 @@ test("V3 rewards adapter normalizes Incentra APY campaigns as Brevis", async () 
 	assert.equal(info?.campaigns[0]?.source, "brevis");
 	assert.equal(info?.campaigns[0]?.action, "LEND");
 	assert.equal(info?.campaigns[0]?.apr, 0.045);
+});
+
+test("V3 rewards adapter normalizes Turtle user rewards", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsBreakdown(async () => ({
+		data: [
+			{
+				chainId: 1,
+				provider: "Turtle",
+				token: {
+					address: rewardToken,
+					chainId: 1,
+					symbol: "EUL",
+					name: "EUL",
+					decimals: 18,
+				},
+				tokenPrice: 1,
+				campaignId: "stream-1",
+				streamId: "stream-1",
+				streamAddress: turtleStreamAddress,
+				accumulated: "1000",
+				unclaimed: "1000",
+				merkleProof: ["0xabc"],
+				timestamp: "2026-05-20T13:05:10Z",
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "turtle");
+	assert.equal(rewards[0]?.campaignId, "stream-1");
+	assert.equal(rewards[0]?.streamId, "stream-1");
+	assert.equal(rewards[0]?.streamAddress, turtleStreamAddress);
+	assert.equal(rewards[0]?.timestamp, "2026-05-20T13:05:10Z");
 });
 
 test("V3 rewards adapter preserves collateral and looping campaign metadata", async () => {
@@ -1051,6 +1132,60 @@ test("direct rewards adapter fetches Fuul user rewards from public claimable rew
 	assert.equal(rewards[0]?.unclaimed, "1500");
 });
 
+test("direct rewards adapter fetches Turtle user rewards from configured streams", async () => {
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+			},
+		],
+	});
+	let requestUrl = "";
+	adapter.setQueryTurtleMerkleProofs(async (url) => {
+		requestUrl = url;
+		return [makeTurtleMerkleProof({ claimable: "900" })];
+	});
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+	const params = new URL(requestUrl).searchParams;
+
+	assert.equal(requestUrl.startsWith("https://earn.turtle.xyz/v1/streams/merkle_proofs"), true);
+	assert.equal(params.get("wallet"), accountAddress);
+	assert.equal(params.get("streamIds"), "stream-1");
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "turtle");
+	assert.equal(rewards[0]?.chainId, 1);
+	assert.equal(rewards[0]?.token.address, rewardToken);
+	assert.equal(rewards[0]?.campaignId, "stream-1");
+	assert.equal(rewards[0]?.streamId, "stream-1");
+	assert.equal(rewards[0]?.streamAddress, turtleStreamAddress);
+	assert.equal(rewards[0]?.accumulated, "1000");
+	assert.equal(rewards[0]?.unclaimed, "900");
+});
+
+test("direct rewards adapter does not treat Turtle cumulative allocation as claimable", async () => {
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+			},
+		],
+	});
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({ claimable: undefined }),
+	]);
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.accumulated, "1000");
+	assert.equal(rewards[0]?.unclaimed, "0");
+});
+
 test("rewards service builds Fuul claim plan from public claimable rewards", async () => {
 	const adapter = new RewardsDirectAdapter();
 	adapter.setQueryFuulClaimableRewards(async () => [
@@ -1086,6 +1221,174 @@ test("rewards service builds Fuul claim plan from public claimable rewards", asy
 	assert.equal((plan[0]?.args[0] as any[])[0]?.projectAddress, fuulProjectAddress);
 	assert.equal((plan[0]?.args[0] as any[])[0]?.currencyType, 1);
 	assert.equal((plan[0]?.args[0] as any[])[0]?.amount, 1000n);
+});
+
+test("rewards service hydrates Turtle claimable amount with canClaim", async () => {
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+			},
+		],
+	});
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({ claimable: undefined }),
+	]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					return 777n;
+				},
+			};
+		},
+	} as any);
+
+	const rewards = await service.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "turtle");
+	assert.equal(rewards[0]?.accumulated, "1000");
+	assert.equal(rewards[0]?.unclaimed, "777");
+});
+
+test("rewards service builds Turtle claim plan from stream proof data", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryTurtleMerkleProofs(async () => [makeTurtleMerkleProof()]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	let canClaimArgs: readonly unknown[] | undefined;
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract({ args }: { args: readonly unknown[] }) {
+					canClaimArgs = args;
+					return 1000n;
+				},
+			};
+		},
+	} as any);
+
+	const plan = await service.buildClaimPlans({
+		rewards: [
+			makeTurtleReward({
+				proof: undefined,
+				streamAddress: undefined,
+				timestamp: undefined,
+			}),
+		],
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "contractCall");
+	assert.equal(plan[0]?.chainId, 1);
+	assert.equal(plan[0]?.to, turtleStreamAddress);
+	assert.equal(plan[0]?.functionName, "claim");
+	assert.deepEqual(canClaimArgs, [
+		accountAddress,
+		1000n,
+		Math.floor(Date.parse("2026-05-20T13:05:10Z") / 1000),
+		["0xabc"],
+	]);
+	assert.deepEqual(plan[0]?.args, [
+		1000n,
+		Math.floor(Date.parse("2026-05-20T13:05:10Z") / 1000),
+		["0xabc"],
+	]);
+});
+
+test("rewards service fetches Turtle proof through V3 claim adapter", async () => {
+	const directAdapter = new RewardsDirectAdapter();
+	let proofRequestUrl = "";
+	directAdapter.setQueryTurtleMerkleProofs(async (url) => {
+		proofRequestUrl = url;
+		return [makeTurtleMerkleProof()];
+	});
+	const v3Adapter = new RewardsV3Adapter(
+		{ endpoint: "https://example.invalid" },
+		undefined,
+		directAdapter,
+	);
+	const service = new RewardsService(v3Adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	let canClaimArgs: readonly unknown[] | undefined;
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract({ args }: { args: readonly unknown[] }) {
+					canClaimArgs = args;
+					return 1000n;
+				},
+			};
+		},
+	} as any);
+
+	const plan = await service.buildClaimPlans({
+		rewards: [
+			makeTurtleReward({
+				proof: undefined,
+				streamAddress: undefined,
+				timestamp: undefined,
+			}),
+		],
+		account: accountAddress,
+	});
+	const proofParams = new URL(proofRequestUrl).searchParams;
+
+	assert.equal(plan.length, 1);
+	assert.equal(proofParams.get("wallet"), accountAddress);
+	assert.equal(proofParams.get("streamIds"), "stream-1");
+	assert.deepEqual(canClaimArgs, [
+		accountAddress,
+		1000n,
+		Math.floor(Date.parse("2026-05-20T13:05:10Z") / 1000),
+		["0xabc"],
+	]);
+	assert.deepEqual(plan[0]?.args, [
+		1000n,
+		Math.floor(Date.parse("2026-05-20T13:05:10Z") / 1000),
+		["0xabc"],
+	]);
+});
+
+test("rewards service rejects Turtle rewards when canClaim returns zero", async () => {
+	const service = new RewardsService(emptyAdapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					return 0n;
+				},
+			};
+		},
+	} as any);
+
+	await assert.rejects(
+		() =>
+			service.buildClaimPlans({
+				rewards: [makeTurtleReward()],
+				account: accountAddress,
+			}),
+		/No claimable Turtle rewards found/,
+	);
 });
 
 test("V3 rewards adapter delegates Fuul claim data to direct adapter", async () => {

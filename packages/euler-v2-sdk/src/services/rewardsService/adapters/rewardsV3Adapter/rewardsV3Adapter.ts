@@ -10,6 +10,7 @@ import type {
 	RewardAction,
 	RewardCampaign,
 	RewardSource,
+	TurtleMerkleProof,
 	UserReward,
 	UserRewardToken,
 } from "../../rewardsServiceTypes.js";
@@ -40,6 +41,7 @@ const normalizeProvider = (value?: string): RewardSource | undefined => {
 	if (normalized.includes("brevis") || normalized.includes("incentra"))
 		return "brevis";
 	if (normalized.includes("fuul")) return "fuul";
+	if (normalized.includes("turtle")) return "turtle";
 	return undefined;
 };
 
@@ -155,6 +157,10 @@ type RewardsClaimAdapter = Pick<
 		chainId: number,
 		address: Address,
 	) => Promise<UserReward[]>;
+	fetchTurtleProofs?: (
+		address: Address,
+		streamIds: string[],
+	) => Promise<TurtleMerkleProof[]>;
 };
 
 export class RewardsV3Adapter implements IRewardsAdapter {
@@ -276,11 +282,16 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			.filter((reward): reward is UserReward => reward !== undefined);
 	}
 
-	async fetchFuulTotals(address: Address, chainId?: number): Promise<FuulTotals> {
-		return this.claimAdapter?.fetchFuulTotals(address, chainId) ?? {
-			claimed: [],
-			unclaimed: [],
-		};
+	async fetchFuulTotals(
+		address: Address,
+		chainId?: number,
+	): Promise<FuulTotals> {
+		return (
+			this.claimAdapter?.fetchFuulTotals(address, chainId) ?? {
+				claimed: [],
+				unclaimed: [],
+			}
+		);
 	}
 
 	async fetchFuulClaimChecks(
@@ -297,6 +308,13 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 		return (
 			this.claimAdapter?.fetchBrevisUserRewardClaims?.(chainId, address) ?? []
 		);
+	}
+
+	async fetchTurtleProofs(
+		address: Address,
+		streamIds: string[],
+	): Promise<TurtleMerkleProof[]> {
+		return this.claimAdapter?.fetchTurtleProofs?.(address, streamIds) ?? [];
 	}
 
 	private async fetchRewardsApyMap(
@@ -509,6 +527,11 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			),
 			cumulativeAmounts: row.cumulativeAmounts ?? row.cumulativeRewards,
 			epoch: typeof row.epoch === "number" ? String(row.epoch) : row.epoch,
+			streamId: row.streamId ?? row.stream_id,
+			streamAddress: normalizeAddress(
+				row.streamAddress ?? row.stream_address ?? row.contractAddress,
+			),
+			timestamp: row.timestamp,
 		};
 	}
 }

@@ -20,6 +20,8 @@ import type {
 	RewardAction,
 	RewardCampaign,
 	RewardsDirectAdapterConfig,
+	TurtleMerkleProof,
+	TurtleStreamConfig,
 	UserReward,
 } from "../../rewardsServiceTypes.js";
 import { VaultRewardInfo } from "../../vaultRewardInfo.js";
@@ -30,6 +32,7 @@ const DEFAULT_BREVIS_API_URL =
 const DEFAULT_BREVIS_PROOFS_API_URL =
 	"https://incentra-prd.brevis.network/v1/getMerkleProofsBatch";
 const DEFAULT_FUUL_API_URL = "https://api.fuul.xyz/api/v1";
+const DEFAULT_TURTLE_API_URL = "https://earn.turtle.xyz/v1";
 
 const DEFAULT_MERKL_DISTRIBUTOR: Address =
 	"0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae";
@@ -168,7 +171,9 @@ const aggregateFuulTotals = (
 		const key = `${entry.chain_id}:${entry.currency.toLowerCase()}:${entry.currency_type}`;
 		const existing = totals.get(key);
 		if (existing) {
-			existing.amount = (BigInt(existing.amount) + BigInt(entry.amount)).toString();
+			existing.amount = (
+				BigInt(existing.amount) + BigInt(entry.amount)
+			).toString();
 		} else {
 			totals.set(key, entry);
 		}
@@ -186,6 +191,75 @@ const normalizeAddressList = (
 ): string[] | undefined => {
 	if (!list?.length) return undefined;
 	return list.map((address) => address.toLowerCase());
+};
+
+const normalizeFiniteNumber = (value: unknown): number | undefined => {
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	if (typeof value === "string" && value.trim().length > 0) {
+		const parsed = Number(value);
+		if (Number.isFinite(parsed)) return parsed;
+	}
+	return undefined;
+};
+
+const parseRawAmount = (value: unknown): bigint | undefined => {
+	if (typeof value === "bigint") return value;
+	if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+		return BigInt(value);
+	}
+	if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
+	return undefined;
+};
+
+const proofStreamId = (proof: TurtleMerkleProof): string | undefined =>
+	proof.streamId ?? proof.stream_id ?? proof.id;
+
+const proofStreamAddress = (
+	proof: TurtleMerkleProof,
+	stream?: TurtleStreamConfig,
+): Address | undefined =>
+	normalizeAddress(
+		proof.streamAddress ??
+			proof.stream_address ??
+			proof.contractAddress ??
+			proof.contract_address ??
+			proof.claimAddress,
+	) ?? stream?.streamAddress;
+
+const proofAmount = (proof: TurtleMerkleProof): bigint | undefined =>
+	parseRawAmount(
+		proof.amount ?? proof.cumulativeAmount ?? proof.cumulative_amount,
+	);
+
+const proofClaimableAmount = (proof: TurtleMerkleProof): bigint | undefined =>
+	parseRawAmount(
+		proof.claimable ??
+			proof.claimableAmount ??
+			proof.claimable_amount ??
+			proof.unclaimed ??
+			proof.unclaimedAmount ??
+			proof.unclaimed_amount,
+	);
+
+const extractTurtleProofs = (payload: unknown): TurtleMerkleProof[] => {
+	if (Array.isArray(payload)) return payload as TurtleMerkleProof[];
+	if (!payload || typeof payload !== "object") return [];
+	const record = payload as Record<string, unknown>;
+	for (const key of [
+		"proofs",
+		"merkleProofs",
+		"merkle_proofs",
+		"streams",
+		"rewards",
+		"data",
+	]) {
+		const value = record[key];
+		if (Array.isArray(value)) return value as TurtleMerkleProof[];
+	}
+	return Object.values(record).filter(
+		(value): value is TurtleMerkleProof =>
+			!!value && typeof value === "object" && !Array.isArray(value),
+	);
 };
 
 const mapMerklSubType = (
@@ -233,15 +307,18 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	private brevisApiUrl: string;
 	private brevisProofsApiUrl: string;
 	private fuulApiUrl: string;
+	private turtleApiUrl: string;
 	private fuulTotalsUrl?: string;
 	private fuulClaimChecksUrl?: string;
 	private brevisChainIds?: number[];
+	private turtleStreams: TurtleStreamConfig[];
 	private merklDistributorAddress: Address;
 	private fuulManagerAddress: Address;
 	private fuulFactoryAddress: Address;
 	private enableMerkl: boolean;
 	private enableBrevis: boolean;
 	private enableFuul: boolean;
+	private enableTurtle: boolean;
 
 	constructor(config?: RewardsDirectAdapterConfig, buildQuery?: BuildQueryFn) {
 		this.merklApiUrl = config?.merklApiUrl ?? DEFAULT_MERKL_API_URL;
@@ -249,9 +326,11 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		this.brevisProofsApiUrl =
 			config?.brevisProofsApiUrl ?? DEFAULT_BREVIS_PROOFS_API_URL;
 		this.fuulApiUrl = config?.fuulApiUrl ?? DEFAULT_FUUL_API_URL;
+		this.turtleApiUrl = config?.turtleApiUrl ?? DEFAULT_TURTLE_API_URL;
 		this.fuulTotalsUrl = config?.fuulTotalsUrl;
 		this.fuulClaimChecksUrl = config?.fuulClaimChecksUrl;
 		this.brevisChainIds = config?.brevisChainIds;
+		this.turtleStreams = config?.turtleStreams ?? [];
 		this.merklDistributorAddress =
 			config?.merklDistributorAddress ?? DEFAULT_MERKL_DISTRIBUTOR;
 		this.fuulManagerAddress =
@@ -261,6 +340,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		this.enableMerkl = config?.enableMerkl ?? true;
 		this.enableBrevis = config?.enableBrevis ?? true;
 		this.enableFuul = config?.enableFuul ?? true;
+		this.enableTurtle = config?.enableTurtle ?? true;
 
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
@@ -395,6 +475,18 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		this.queryFuulClaimableRewards = fn;
 	}
 
+	queryTurtleMerkleProofs = async (
+		url: string,
+	): Promise<TurtleMerkleProof[]> => {
+		const res = await fetch(url);
+		if (!res.ok) return [];
+		return extractTurtleProofs(await res.json());
+	};
+
+	setQueryTurtleMerkleProofs(fn: typeof this.queryTurtleMerkleProofs): void {
+		this.queryTurtleMerkleProofs = fn;
+	}
+
 	async fetchVaultRewards(
 		chainId: number,
 		vaultAddress: Address,
@@ -428,22 +520,34 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		chainId: number,
 		address: Address,
 	): Promise<UserReward[]> {
-		const [merklRewards, brevisRewards, fuulRewards] = await Promise.all([
-			this.enableMerkl
-				? this.fetchMerklUserRewards(chainId, address)
-				: Promise.resolve([]),
-			this.isBrevisChainEnabled(chainId)
-				? this.fetchBrevisUserRewards(chainId, address)
-				: Promise.resolve([]),
-			this.enableFuul
-				? this.fetchFuulUserRewards(chainId, address)
-				: Promise.resolve([]),
-		]);
+		const [merklRewards, brevisRewards, fuulRewards, turtleRewards] =
+			await Promise.all([
+				this.enableMerkl
+					? this.fetchMerklUserRewards(chainId, address)
+					: Promise.resolve([]),
+				this.isBrevisChainEnabled(chainId)
+					? this.fetchBrevisUserRewards(chainId, address)
+					: Promise.resolve([]),
+				this.enableFuul
+					? this.fetchFuulUserRewards(chainId, address)
+					: Promise.resolve([]),
+				this.enableTurtle
+					? this.fetchTurtleUserRewards(chainId, address)
+					: Promise.resolve([]),
+			]);
 
-		return [...merklRewards, ...brevisRewards, ...fuulRewards];
+		return [
+			...merklRewards,
+			...brevisRewards,
+			...fuulRewards,
+			...turtleRewards,
+		];
 	}
 
-	async fetchFuulTotals(address: Address, chainId?: number): Promise<FuulTotals> {
+	async fetchFuulTotals(
+		address: Address,
+		chainId?: number,
+	): Promise<FuulTotals> {
 		if (!this.fuulTotalsUrl) {
 			if (chainId === undefined) return { claimed: [], unclaimed: [] };
 			const rewards = await this.fetchFuulClaimableRewards(
@@ -483,6 +587,16 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 			},
 		).catch(() => []);
 		return sanitizeFuulClaimChecks(claimChecks, address);
+	}
+
+	async fetchTurtleProofs(
+		address: Address,
+		streamIds: string[],
+	): Promise<TurtleMerkleProof[]> {
+		if (streamIds.length === 0) return [];
+		const separator = this.turtleApiUrl.includes("?") ? "&" : "?";
+		const url = `${this.turtleApiUrl}/streams/merkle_proofs${separator}wallet=${encodeURIComponent(address)}&streamIds=${encodeURIComponent(streamIds.join(","))}`;
+		return this.queryTurtleMerkleProofs(url).catch(() => []);
 	}
 
 	getMerklDistributorAddress(): Address {
@@ -1060,5 +1174,74 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 			const normalized = normalizeFuulClaimableReward(reward, address);
 			return normalized ? [normalized] : [];
 		});
+	}
+
+	private async fetchTurtleUserRewards(
+		chainId: number,
+		address: Address,
+	): Promise<UserReward[]> {
+		const streams = this.turtleStreams.filter(
+			(stream) => stream.chainId === chainId,
+		);
+		if (streams.length === 0) return [];
+
+		const streamById = new Map(
+			streams.map((stream) => [stream.streamId, stream]),
+		);
+		const proofs = await this.fetchTurtleProofs(
+			address,
+			streams.map((stream) => stream.streamId),
+		);
+		const rewards: UserReward[] = [];
+
+		for (const proof of proofs) {
+			const streamId = proofStreamId(proof);
+			if (!streamId) continue;
+			const stream = streamById.get(streamId);
+			if (!stream) continue;
+
+			const amount = proofAmount(proof);
+			if (amount === undefined || amount <= 0n) continue;
+			const claimableAmount = proofClaimableAmount(proof);
+			if (claimableAmount !== undefined && claimableAmount <= 0n) continue;
+
+			const streamAddress = proofStreamAddress(proof, stream);
+			if (!streamAddress) continue;
+
+			const token = proof.rewardToken ?? proof.token ?? stream.rewardToken;
+			const tokenAddress = normalizeAddress(token?.address);
+			if (!tokenAddress) continue;
+
+			rewards.push({
+				chainId,
+				token: {
+					address: tokenAddress,
+					chainId: token?.chainId ?? chainId,
+					symbol: token?.symbol ?? tokenAddress,
+					name: token?.name ?? token?.symbol ?? tokenAddress,
+					decimals: token?.decimals ?? 18,
+				},
+				tokenPrice:
+					normalizeFiniteNumber(
+						proof.rewardTokenPriceUsd ??
+							proof.tokenPriceUsd ??
+							proof.tokenPrice ??
+							stream.tokenPrice,
+					) ?? 0,
+				provider: "turtle",
+				campaignId: streamId,
+				accumulated: amount.toString(),
+				unclaimed: (claimableAmount ?? 0n).toString(),
+				proof: (proof.proof ?? proof.merkleProof ?? proof.merkle_proof) as
+					| Hex[]
+					| undefined,
+				claimAddress: streamAddress,
+				streamId,
+				streamAddress,
+				timestamp: proof.timestamp,
+			});
+		}
+
+		return rewards;
 	}
 }

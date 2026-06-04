@@ -13,6 +13,7 @@ import type {
 	FuulTotals,
 	IRewardsAdapter,
 	IRewardsService,
+	TurtleMerkleProof,
 	UserReward,
 	VaultRewardInfo,
 } from "./rewardsServiceTypes.js";
@@ -122,6 +123,32 @@ const FUUL_FACTORY_ABI = [
 	},
 ] as const;
 
+const TURTLE_STREAM_ABI = [
+	{
+		type: "function",
+		name: "canClaim",
+		inputs: [
+			{ name: "user", type: "address", internalType: "address" },
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+			{ name: "timestamp", type: "uint40", internalType: "uint40" },
+			{ name: "merkleProof", type: "bytes32[]", internalType: "bytes32[]" },
+		],
+		outputs: [{ name: "claimable", type: "uint256", internalType: "uint256" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "claim",
+		inputs: [
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+			{ name: "timestamp", type: "uint40", internalType: "uint40" },
+			{ name: "merkleProof", type: "bytes32[]", internalType: "bytes32[]" },
+		],
+		outputs: [{ name: "claimed", type: "uint256", internalType: "uint256" }],
+		stateMutability: "nonpayable",
+	},
+] as const;
+
 const MERKL_DEFAULT_DISTRIBUTOR: Address =
 	"0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae";
 const MERKL_DEFAULT_DISTRIBUTOR_CHAIN_IDS = new Set([
@@ -143,6 +170,13 @@ type BrevisFallbackAdapter = IRewardsAdapter & {
 	) => Promise<UserReward[]>;
 };
 
+type TurtleProofAdapter = IRewardsAdapter & {
+	fetchTurtleProofs?: (
+		address: Address,
+		streamIds: string[],
+	) => Promise<TurtleMerkleProof[]>;
+};
+
 const hasBrevisClaimData = (reward: UserReward): boolean =>
 	reward.provider !== "brevis" ||
 	!!(
@@ -155,6 +189,77 @@ const hasBrevisClaimData = (reward: UserReward): boolean =>
 
 const fuulRewardKey = (currency: string, currencyType?: number): string =>
 	`${getAddress(currency).toLowerCase()}:${currencyType ?? "*"}`;
+
+const parseTurtleAmount = (value: unknown): bigint | undefined => {
+	if (typeof value === "bigint") return value;
+	if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+		return BigInt(value);
+	}
+	if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
+	return undefined;
+};
+
+const parseTurtleTimestamp = (value: unknown): number | undefined => {
+	if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
+		return value;
+	}
+	if (typeof value === "string" && /^\d+$/.test(value)) {
+		const numeric = Number(value);
+		return Number.isSafeInteger(numeric) && numeric >= 0 ? numeric : undefined;
+	}
+	if (typeof value === "string" && value.trim()) {
+		const parsed = Date.parse(value);
+		if (Number.isFinite(parsed)) return Math.floor(parsed / 1000);
+	}
+	return undefined;
+};
+
+const turtleProofStreamId = (proof: TurtleMerkleProof): string | undefined =>
+	proof.streamId ?? proof.stream_id ?? proof.id;
+
+const turtleProofAmount = (
+	reward: UserReward,
+	proof?: TurtleMerkleProof,
+): bigint | undefined =>
+	parseTurtleAmount(
+		proof?.amount ??
+			proof?.cumulativeAmount ??
+			proof?.cumulative_amount ??
+			reward.accumulated,
+	);
+
+const turtleProofTimestamp = (
+	reward: UserReward,
+	proof?: TurtleMerkleProof,
+): number | undefined =>
+	parseTurtleTimestamp(proof?.timestamp ?? reward.timestamp);
+
+const turtleProofStreamAddress = (
+	reward: UserReward,
+	proof?: TurtleMerkleProof,
+): Address | undefined => {
+	const value =
+		proof?.streamAddress ??
+		proof?.stream_address ??
+		proof?.contractAddress ??
+		proof?.contract_address ??
+		proof?.claimAddress;
+	try {
+		return value
+			? (getAddress(value) as Address)
+			: (reward.streamAddress ?? reward.claimAddress);
+	} catch {
+		return reward.streamAddress ?? reward.claimAddress;
+	}
+};
+
+const turtleProofArray = (
+	reward: UserReward,
+	proof?: TurtleMerkleProof,
+): Hex[] | undefined =>
+	(proof?.proof ?? proof?.merkleProof ?? proof?.merkle_proof ?? reward.proof) as
+		| Hex[]
+		| undefined;
 
 export class RewardsService implements IRewardsService {
 	private providerService?: ProviderService;
@@ -233,10 +338,14 @@ export class RewardsService implements IRewardsService {
 		chainId: number,
 		address: Address,
 	): Promise<UserReward[]> {
-		return this.adapter.fetchUserRewards(chainId, address);
+		const rewards = await this.adapter.fetchUserRewards(chainId, address);
+		return this.hydrateTurtleClaimableRewards(rewards, address);
 	}
 
-	async fetchFuulTotals(address: Address, chainId?: number): Promise<FuulTotals> {
+	async fetchFuulTotals(
+		address: Address,
+		chainId?: number,
+	): Promise<FuulTotals> {
 		return this.adapter.fetchFuulTotals(address, chainId);
 	}
 
@@ -329,6 +438,11 @@ export class RewardsService implements IRewardsService {
 					fuulRewards,
 				),
 			);
+		}
+
+		for (const reward of rewards) {
+			if (reward.provider !== "turtle") continue;
+			plan.push(await this.buildTurtleContractCall(reward, account));
 		}
 
 		return plan;
@@ -623,6 +737,135 @@ export class RewardsService implements IRewardsService {
 		});
 
 		return feesInfo.nativeUserClaimFee;
+	}
+
+	private async hydrateTurtleClaimableRewards(
+		rewards: UserReward[],
+		account: Address,
+	): Promise<UserReward[]> {
+		if (!this.providerService) return rewards;
+
+		const hydratedRewards = await Promise.all(
+			rewards.map(async (reward): Promise<UserReward | undefined> => {
+				if (reward.provider !== "turtle") return reward;
+
+				try {
+					const proof = await this.fetchTurtleProof(reward, account);
+					const streamAddress = turtleProofStreamAddress(reward, proof);
+					const amount = turtleProofAmount(reward, proof);
+					const timestamp = turtleProofTimestamp(reward, proof);
+					const proofArray = turtleProofArray(reward, proof);
+					if (
+						!streamAddress ||
+						amount === undefined ||
+						timestamp === undefined ||
+						!proofArray?.length
+					) {
+						return reward;
+					}
+
+					const claimable = await this.readTurtleCanClaim(
+						reward.chainId,
+						streamAddress,
+						account,
+						amount,
+						timestamp,
+						proofArray,
+					);
+					const claimableAmount = parseTurtleAmount(claimable);
+					if (claimableAmount === undefined) return reward;
+					if (claimableAmount <= 0n) return undefined;
+					return { ...reward, unclaimed: claimableAmount.toString() };
+				} catch {
+					return reward;
+				}
+			}),
+		);
+
+		return hydratedRewards.filter((reward): reward is UserReward => !!reward);
+	}
+
+	private async buildTurtleContractCall(
+		reward: UserReward,
+		account: Address,
+	): Promise<ContractCall> {
+		const proof = await this.fetchTurtleProof(reward, account);
+		const streamAddress = turtleProofStreamAddress(reward, proof);
+		const amount = turtleProofAmount(reward, proof);
+		const timestamp = turtleProofTimestamp(reward, proof);
+		const proofArray = turtleProofArray(reward, proof);
+
+		if (!streamAddress) throw new Error("Missing Turtle stream contract");
+		if (amount === undefined) {
+			throw new Error("Missing Turtle cumulative reward amount");
+		}
+		if (timestamp === undefined)
+			throw new Error("Missing Turtle proof timestamp");
+		if (!proofArray?.length) throw new Error("Missing Turtle merkle proof");
+
+		const claimable = await this.readTurtleCanClaim(
+			reward.chainId,
+			streamAddress,
+			account,
+			amount,
+			timestamp,
+			proofArray,
+		);
+		if (typeof claimable === "boolean" && !claimable) {
+			throw new Error("No claimable Turtle rewards found");
+		}
+		if (typeof claimable === "bigint" && claimable <= 0n) {
+			throw new Error("No claimable Turtle rewards found");
+		}
+
+		return {
+			type: "contractCall",
+			chainId: reward.chainId,
+			to: streamAddress,
+			abi: TURTLE_STREAM_ABI,
+			functionName: "claim",
+			args: [amount, timestamp, proofArray],
+			value: 0n,
+		};
+	}
+
+	private async fetchTurtleProof(
+		reward: UserReward,
+		account: Address,
+	): Promise<TurtleMerkleProof | undefined> {
+		const streamId = reward.streamId ?? reward.campaignId;
+		if (!streamId) return undefined;
+
+		const adapter = this.adapter as TurtleProofAdapter;
+		if (!adapter.fetchTurtleProofs) return undefined;
+
+		const proofs = await adapter
+			.fetchTurtleProofs(account, [streamId])
+			.catch(() => []);
+		return (
+			proofs.find((proof) => turtleProofStreamId(proof) === streamId) ??
+			proofs[0]
+		);
+	}
+
+	private async readTurtleCanClaim(
+		chainId: number,
+		streamAddress: Address,
+		account: Address,
+		amount: bigint,
+		timestamp: number,
+		proof: Hex[],
+	): Promise<unknown> {
+		if (!this.providerService) {
+			throw new Error("RewardsService providerService not configured");
+		}
+		const provider = this.providerService.getProvider(chainId);
+		return provider.readContract({
+			address: streamAddress,
+			abi: TURTLE_STREAM_ABI,
+			functionName: "canClaim",
+			args: [account, amount, timestamp, proof],
+		});
 	}
 
 	getMerklDistributorAddress(): Address {

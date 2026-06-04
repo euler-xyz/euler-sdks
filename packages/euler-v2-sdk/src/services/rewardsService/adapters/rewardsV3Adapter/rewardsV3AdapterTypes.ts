@@ -131,4 +131,10 @@ export type V3RewardsBreakdownRow = {
 	cumulativeAmounts?: string[];
 	cumulativeRewards?: string[];
 	epoch?: string | number;
+	streamId?: string;
+	stream_id?: string;
+	streamAddress?: string;
+	stream_address?: string;
+	contractAddress?: string;
+	timestamp?: string | number;
 };

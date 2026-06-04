@@ -432,6 +432,7 @@ function resolveRewardsDirectAdapterConfig(
 		...maybeField("brevisApiUrl", envConfig.rewardsBrevisApiUrl),
 		...maybeField("brevisProofsApiUrl", envConfig.rewardsBrevisProofsApiUrl),
 		...maybeField("fuulApiUrl", envConfig.rewardsFuulApiUrl),
+		...maybeField("turtleApiUrl", envConfig.rewardsTurtleApiUrl),
 		...maybeField("fuulTotalsUrl", envConfig.rewardsFuulTotalsUrl),
 		...maybeField("fuulClaimChecksUrl", envConfig.rewardsFuulClaimChecksUrl),
 		...maybeField("brevisChainIds", envConfig.rewardsBrevisChainIds),
@@ -441,13 +442,16 @@ function resolveRewardsDirectAdapterConfig(
 		),
 		...maybeField("fuulManagerAddress", envConfig.rewardsFuulManagerAddress),
 		...maybeField("fuulFactoryAddress", envConfig.rewardsFuulFactoryAddress),
+		...maybeField("turtleStreams", envConfig.rewardsTurtleStreams),
 		...maybeField("enableMerkl", envConfig.rewardsEnableMerkl),
 		...maybeField("enableBrevis", envConfig.rewardsEnableBrevis),
 		...maybeField("enableFuul", envConfig.rewardsEnableFuul),
+		...maybeField("enableTurtle", envConfig.rewardsEnableTurtle),
 		...maybeField("merklApiUrl", explicitConfig?.merklApiUrl),
 		...maybeField("brevisApiUrl", explicitConfig?.brevisApiUrl),
 		...maybeField("brevisProofsApiUrl", explicitConfig?.brevisProofsApiUrl),
 		...maybeField("fuulApiUrl", explicitConfig?.fuulApiUrl),
+		...maybeField("turtleApiUrl", explicitConfig?.turtleApiUrl),
 		...maybeField("fuulTotalsUrl", explicitConfig?.fuulTotalsUrl),
 		...maybeField("fuulClaimChecksUrl", explicitConfig?.fuulClaimChecksUrl),
 		...maybeField("brevisChainIds", explicitConfig?.brevisChainIds),
@@ -457,14 +461,17 @@ function resolveRewardsDirectAdapterConfig(
 		),
 		...maybeField("fuulManagerAddress", explicitConfig?.fuulManagerAddress),
 		...maybeField("fuulFactoryAddress", explicitConfig?.fuulFactoryAddress),
+		...maybeField("turtleStreams", explicitConfig?.turtleStreams),
 		...maybeField("enableMerkl", explicitConfig?.enableMerkl),
 		...maybeField("enableBrevis", explicitConfig?.enableBrevis),
 		...maybeField("enableFuul", explicitConfig?.enableFuul),
+		...maybeField("enableTurtle", explicitConfig?.enableTurtle),
 		...(explicitConfig?.directAdapterConfig ?? {}),
 		...maybeField("merklApiUrl", config?.rewardsMerklApiUrl),
 		...maybeField("brevisApiUrl", config?.rewardsBrevisApiUrl),
 		...maybeField("brevisProofsApiUrl", config?.rewardsBrevisProofsApiUrl),
 		...maybeField("fuulApiUrl", config?.rewardsFuulApiUrl),
+		...maybeField("turtleApiUrl", config?.rewardsTurtleApiUrl),
 		...maybeField("fuulTotalsUrl", config?.rewardsFuulTotalsUrl),
 		...maybeField("fuulClaimChecksUrl", config?.rewardsFuulClaimChecksUrl),
 		...maybeField("brevisChainIds", config?.rewardsBrevisChainIds),
@@ -474,9 +481,11 @@ function resolveRewardsDirectAdapterConfig(
 		),
 		...maybeField("fuulManagerAddress", config?.rewardsFuulManagerAddress),
 		...maybeField("fuulFactoryAddress", config?.rewardsFuulFactoryAddress),
+		...maybeField("turtleStreams", config?.rewardsTurtleStreams),
 		...maybeField("enableMerkl", config?.rewardsEnableMerkl),
 		...maybeField("enableBrevis", config?.rewardsEnableBrevis),
 		...maybeField("enableFuul", config?.rewardsEnableFuul),
+		...maybeField("enableTurtle", config?.rewardsEnableTurtle),
 	};
 }
 
@@ -566,22 +575,25 @@ export async function buildEulerSDK<
 		return resolvedAccountServiceAdapter;
 	})();
 
-	const accountV3Config = resolveV3AdapterConfig(defaultAccountV3AdapterConfig, {
-		explicitConfig: resolvedAccountServiceConfig.v3AdapterConfig,
-		explicitV3ApiKey: v3ApiKey,
-		envConfig,
-		config,
-		envEndpoint: envConfig.accountV3ApiUrl,
-		configEndpoint: config?.accountV3ApiUrl,
-		envApiKey: envConfig.accountV3ApiKey,
-		configApiKey: config?.accountV3ApiKey,
-		envExtra: {
-			...maybeField("forceFresh", envConfig.accountV3ForceFresh),
+	const accountV3Config = resolveV3AdapterConfig(
+		defaultAccountV3AdapterConfig,
+		{
+			explicitConfig: resolvedAccountServiceConfig.v3AdapterConfig,
+			explicitV3ApiKey: v3ApiKey,
+			envConfig,
+			config,
+			envEndpoint: envConfig.accountV3ApiUrl,
+			configEndpoint: config?.accountV3ApiUrl,
+			envApiKey: envConfig.accountV3ApiKey,
+			configApiKey: config?.accountV3ApiKey,
+			envExtra: {
+				...maybeField("forceFresh", envConfig.accountV3ForceFresh),
+			},
+			configExtra: {
+				...maybeField("forceFresh", config?.accountV3ForceFresh),
+			},
 		},
-		configExtra: {
-			...maybeField("forceFresh", config?.accountV3ForceFresh),
-		},
-	});
+	);
 	const accountVaultsSubgraphUrls = mergeNumberRecords(
 		defaultAccountVaultsAdapterConfig.subgraphURLs,
 		envConfig.accountVaultsSubgraphUrls,
@@ -681,22 +693,26 @@ export async function buildEulerSDK<
 				);
 				return "onchain" as const;
 			}
-			if (resolvedEVaultServiceAdapter === "fallback") return "onchain" as const;
+			if (resolvedEVaultServiceAdapter === "fallback")
+				return "onchain" as const;
 			return resolvedEVaultServiceAdapter;
 		})();
 
-		const eVaultV3Config = resolveV3AdapterConfig(defaultEVaultV3AdapterConfig, {
-			explicitConfig: resolvedEVaultServiceConfig.v3AdapterConfig,
-			explicitV3ApiKey: v3ApiKey,
-			envConfig,
-			config,
-			envEndpoint: envConfig.eVaultV3ApiUrl,
-			configEndpoint: config?.eVaultV3ApiUrl,
-			envApiKey: envConfig.eVaultV3ApiKey,
-			configApiKey: config?.eVaultV3ApiKey,
-			envExtra: { ...maybeField("batchSize", envConfig.eVaultV3BatchSize) },
-			configExtra: { ...maybeField("batchSize", config?.eVaultV3BatchSize) },
-		});
+		const eVaultV3Config = resolveV3AdapterConfig(
+			defaultEVaultV3AdapterConfig,
+			{
+				explicitConfig: resolvedEVaultServiceConfig.v3AdapterConfig,
+				explicitV3ApiKey: v3ApiKey,
+				envConfig,
+				config,
+				envEndpoint: envConfig.eVaultV3ApiUrl,
+				configEndpoint: config?.eVaultV3ApiUrl,
+				envApiKey: envConfig.eVaultV3ApiKey,
+				configApiKey: config?.eVaultV3ApiKey,
+				envExtra: { ...maybeField("batchSize", envConfig.eVaultV3BatchSize) },
+				configExtra: { ...maybeField("batchSize", config?.eVaultV3BatchSize) },
+			},
+		);
 		const canBuildEVaultV3 = !!eVaultV3Config.endpoint;
 		const canBuildEVaultOnchain = true; // onchain only needs provider + deployment, always available
 
@@ -897,8 +913,7 @@ export async function buildEulerSDK<
 			defaultVaultTypeAdapterConfig,
 			{
 				explicitConfig:
-					vaultTypeAdapterConfig &&
-					!("subgraphURLs" in vaultTypeAdapterConfig)
+					vaultTypeAdapterConfig && !("subgraphURLs" in vaultTypeAdapterConfig)
 						? {
 								...vaultTypeAdapterConfig,
 								...maybeField(
@@ -1183,7 +1198,11 @@ export async function buildEulerSDK<
 			);
 			const canBuildRewardsV3 = !!rewardsV3Config.endpoint;
 			const buildRewardsV3 = () =>
-				new RewardsV3Adapter(rewardsV3Config, resolvedBuildQuery, directAdapter);
+				new RewardsV3Adapter(
+					rewardsV3Config,
+					resolvedBuildQuery,
+					directAdapter,
+				);
 
 			let rewardsAdapter: IRewardsAdapter;
 			if (effectiveRewardsServiceAdapter === "direct") {
@@ -1199,17 +1218,19 @@ export async function buildEulerSDK<
 					IRewardsAdapter,
 					| "fetchVaultRewards"
 					| "fetchChainRewards"
-					| "fetchUserRewards"
-					| "fetchFuulTotals"
-					| "fetchFuulClaimChecks"
-				>(buildRewardsV3(), directAdapter, {
-					methods: [
-						"fetchVaultRewards",
-						"fetchChainRewards",
-						"fetchUserRewards",
-						"fetchFuulTotals",
-						"fetchFuulClaimChecks",
-					],
+						| "fetchUserRewards"
+						| "fetchFuulTotals"
+						| "fetchFuulClaimChecks"
+						| "fetchTurtleProofs"
+					>(buildRewardsV3(), directAdapter, {
+						methods: [
+							"fetchVaultRewards",
+							"fetchChainRewards",
+							"fetchUserRewards",
+							"fetchFuulTotals",
+							"fetchFuulClaimChecks",
+							"fetchTurtleProofs",
+						],
 					adapterNames: {
 						primary: "rewardsV3",
 						secondary: "rewardsDirect",

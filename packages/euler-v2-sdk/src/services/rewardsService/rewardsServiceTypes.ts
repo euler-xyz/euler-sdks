@@ -10,7 +10,7 @@ import type { VaultRewardInfo } from "./vaultRewardInfo.js";
 // Public types
 // ---------------------------------------------------------------------------
 
-export type RewardSource = "merkl" | "brevis" | "fuul";
+export type RewardSource = "merkl" | "brevis" | "fuul" | "turtle";
 export type RewardAction = "LEND" | "BORROW" | "BORROW_COLLATERAL" | "LOOPING";
 
 export interface RewardCampaign {
@@ -69,6 +69,49 @@ export interface UserReward {
 	cumulativeAmounts?: string[];
 	/** Epoch identifier (Brevis). */
 	epoch?: string;
+	/** Stream identifier for stream-based rewards (Turtle). */
+	streamId?: string;
+	/** Stream contract address for stream-based rewards (Turtle). */
+	streamAddress?: Address;
+	/** Proof timestamp for stream-based rewards. ISO string or Unix seconds. */
+	timestamp?: string | number;
+}
+
+export interface TurtleStreamConfig {
+	streamId: string;
+	chainId: number;
+	streamAddress?: Address;
+	rewardToken?: Partial<UserRewardToken>;
+	tokenPrice?: number;
+}
+
+export interface TurtleMerkleProof {
+	streamId?: string;
+	stream_id?: string;
+	id?: string;
+	streamAddress?: string;
+	stream_address?: string;
+	contractAddress?: string;
+	contract_address?: string;
+	claimAddress?: string;
+	amount?: string | number;
+	cumulativeAmount?: string | number;
+	cumulative_amount?: string | number;
+	claimable?: string | number;
+	claimableAmount?: string | number;
+	claimable_amount?: string | number;
+	unclaimed?: string | number;
+	unclaimedAmount?: string | number;
+	unclaimed_amount?: string | number;
+	timestamp?: string | number;
+	proof?: string[];
+	merkleProof?: string[];
+	merkle_proof?: string[];
+	token?: Partial<UserRewardToken>;
+	rewardToken?: Partial<UserRewardToken>;
+	tokenPrice?: string | number;
+	tokenPriceUsd?: string | number;
+	rewardTokenPriceUsd?: string | number;
 }
 
 export interface RewardsDirectAdapterConfig {
@@ -78,6 +121,8 @@ export interface RewardsDirectAdapterConfig {
 	brevisProofsApiUrl?: string;
 	/** Public Fuul incentives API base URL. */
 	fuulApiUrl?: string;
+	/** Turtle Earn API base URL. */
+	turtleApiUrl?: string;
 	/** Optional caller-hosted endpoint for Fuul totals. */
 	fuulTotalsUrl?: string;
 	/** Optional caller-hosted endpoint for Fuul claim checks. */
@@ -90,10 +135,13 @@ export interface RewardsDirectAdapterConfig {
 	fuulManagerAddress?: Address;
 	/** Override the Fuul factory address used to read per-project claim fees. */
 	fuulFactoryAddress?: Address;
+	/** Stream IDs/metadata used to query Turtle proof data directly. */
+	turtleStreams?: TurtleStreamConfig[];
 	/** Feature flags for individual providers. */
 	enableMerkl?: boolean;
 	enableBrevis?: boolean;
 	enableFuul?: boolean;
+	enableTurtle?: boolean;
 }
 
 export interface RewardsV3AdapterConfig {
@@ -111,6 +159,8 @@ export interface RewardsServiceConfig {
 	brevisProofsApiUrl?: string;
 	/** Public Fuul incentives API base URL. */
 	fuulApiUrl?: string;
+	/** Turtle Earn API base URL. */
+	turtleApiUrl?: string;
 	/** Optional caller-hosted endpoint for Fuul totals. */
 	fuulTotalsUrl?: string;
 	/** Optional caller-hosted endpoint for Fuul claim checks. */
@@ -123,10 +173,13 @@ export interface RewardsServiceConfig {
 	fuulManagerAddress?: Address;
 	/** Override the Fuul factory address used to read per-project claim fees. */
 	fuulFactoryAddress?: Address;
+	/** Stream IDs/metadata used to query Turtle proof data directly. */
+	turtleStreams?: TurtleStreamConfig[];
 	/** Feature flags for individual providers. */
 	enableMerkl?: boolean;
 	enableBrevis?: boolean;
 	enableFuul?: boolean;
+	enableTurtle?: boolean;
 	directAdapterConfig?: RewardsDirectAdapterConfig;
 	v3AdapterConfig?: RewardsV3AdapterConfig;
 	/**
@@ -187,6 +240,10 @@ export interface IRewardsAdapter {
 		address: Address,
 		chainId?: number,
 	): Promise<FuulClaimCheck[]>;
+	fetchTurtleProofs?(
+		address: Address,
+		streamIds: string[],
+	): Promise<TurtleMerkleProof[]>;
 }
 
 // ---------------------------------------------------------------------------
