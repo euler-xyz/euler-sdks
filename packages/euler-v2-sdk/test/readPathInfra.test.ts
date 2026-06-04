@@ -38,6 +38,7 @@ import {
 	isEulerLabelEarnVaultDeprecated,
 	isEulerLabelVaultDeprecated,
 	isEulerLabelVaultGovernanceLimited,
+	isEulerLabelVaultHighUtilisationWarningSuppressed,
 	isEulerLabelVaultKeyring,
 	isEulerLabelVaultNotExplorable,
 	isEulerLabelVaultRecentlyAdded,
@@ -716,7 +717,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
           name: "Overridden Product",
           description: "override",
           portfolioNotice: "override notice",
-          tags: ["recently added"],
+          tags: ["recently added", "suppress high utilisation warning"],
         },
       },
     },
@@ -829,6 +830,10 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   assert.equal(isEulerLabelVaultRecentlyAdded(labelsData, plainVault.address), true);
   assert.equal(isEulerLabelVaultRecentlyAdded(labelsData, collateralVault.address), true);
   assert.equal(isEulerLabelVaultGovernanceLimited(labelsData, plainVault.address), true);
+  assert.equal(
+    isEulerLabelVaultHighUtilisationWarningSuppressed(labelsData, plainVault.address),
+    true,
+  );
   assert.equal(isEulerLabelVaultDeprecated(labelsData, stringEntityVault.address), true);
   assert.equal(isEulerLabelEarnVaultDeprecated(labelsData, collateralVault.address), true);
   assert.equal(isEulerLabelVaultKeyring(labelsData, plainVault.address), true);

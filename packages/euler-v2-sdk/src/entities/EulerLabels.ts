@@ -30,7 +30,7 @@ export type EulerLabelProduct = {
 	restricted?: string[];
 	notExplorable?: boolean;
 	/** Freeform classification tags, e.g. `"keyring"`, `"access control"`,
-	 * or `"governance limited"`. */
+	 * `"governance limited"`, or `"suppress high utilisation warning"`. */
 	tags?: string[];
 	portfolioNotice?: string;
 	vaultOverrides?: Record<string, EulerLabelVaultOverride>;
@@ -45,7 +45,7 @@ export type EulerLabelVaultOverride = {
 	notExplorableLend?: boolean;
 	notExplorableBorrow?: boolean;
 	/** Freeform classification tags, e.g. `"keyring"`, `"access control"`,
-	 * or `"recently added"`. */
+	 * `"recently added"`, or `"suppress high utilisation warning"`. */
 	tags?: string[];
 };
 export type EulerLabelPoint = {

@@ -4,6 +4,7 @@ import {
 	getEulerLabelEntitiesByEarnVault,
 	getEulerLabelEntitiesByVault,
 	isEulerLabelVaultGovernanceLimited,
+	isEulerLabelVaultHighUtilisationWarningSuppressed,
 	isEulerLabelVaultRecentlyAdded,
 } from "../src/utils/eulerLabels.js";
 import { EulerLabelsService } from "../src/index.js";
@@ -229,5 +230,49 @@ describe("Euler governance-limited labels", () => {
 		};
 
 		expect(isEulerLabelVaultGovernanceLimited(labels, VAULT)).toBe(true);
+	});
+});
+
+describe("Euler vault warning labels", () => {
+	it("reads high-utilisation warning suppression product tags", () => {
+		const labels = {
+			...createEmptyEulerLabelsData(),
+			products: {
+				prime: {
+					name: "Prime",
+					description: "",
+					url: "",
+					vaults: [VAULT],
+					tags: ["suppress high utilisation warning"],
+				},
+			},
+		};
+
+		expect(
+			isEulerLabelVaultHighUtilisationWarningSuppressed(labels, VAULT),
+		).toBe(true);
+	});
+
+	it("reads high-utilisation warning suppression vault override tags", () => {
+		const labels = {
+			...createEmptyEulerLabelsData(),
+			products: {
+				prime: {
+					name: "Prime",
+					description: "",
+					url: "",
+					vaults: [VAULT],
+					vaultOverrides: {
+						[VAULT]: {
+							tags: ["suppress high utilisation warning"],
+						},
+					},
+				},
+			},
+		};
+
+		expect(
+			isEulerLabelVaultHighUtilisationWarningSuppressed(labels, VAULT),
+		).toBe(true);
 	});
 });

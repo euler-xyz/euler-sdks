@@ -308,6 +308,22 @@ export const isEulerLabelVaultGovernanceLimited = (
 	);
 };
 
+export const isEulerLabelVaultHighUtilisationWarningSuppressed = (
+	data: EulerLabelsData,
+	vaultAddress: string,
+): boolean => {
+	const normalized = normalizeAddress(vaultAddress);
+	const product = getEulerLabelProductByVault(data, normalized);
+	return (
+		productHasTag(product, "suppress high utilisation warning") ||
+		vaultOverrideHasTag(
+			product,
+			normalized,
+			"suppress high utilisation warning",
+		)
+	);
+};
+
 export const isEulerLabelProductGovernanceLimited = (
 	data: EulerLabelsData,
 	productKey: string,

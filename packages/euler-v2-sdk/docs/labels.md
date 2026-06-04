@@ -56,11 +56,13 @@ import {
   isEulerLabelProductKeyring,
   isEulerLabelVaultAccessControlled,
   isEulerLabelVaultGovernanceLimited,
+  isEulerLabelVaultHighUtilisationWarningSuppressed,
 } from '@eulerxyz/euler-v2-sdk'
 
 isEulerLabelVaultKeyring(labelsData, vaultAddress)         // tag "keyring"
 isEulerLabelVaultAccessControlled(labelsData, vaultAddress) // tag "access control"
 isEulerLabelVaultGovernanceLimited(labelsData, vaultAddress) // tag "governance limited"
+isEulerLabelVaultHighUtilisationWarningSuppressed(labelsData, vaultAddress) // tag "suppress high utilisation warning"
 isEulerLabelProductKeyring(labelsData, productKey)
 ```
 
