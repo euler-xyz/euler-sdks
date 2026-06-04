@@ -22,7 +22,6 @@ export type EulerLabelProduct = {
 	logo?: string;
 	vaults: string[];
 	deprecatedVaults?: string[];
-	recentlyAddedVaults?: string[];
 	deprecationReason?: string;
 	/** Legacy spelling still present in some labels files. Normalizers should
 	 * expose it as deprecationReason. */
@@ -30,7 +29,8 @@ export type EulerLabelProduct = {
 	block?: string[];
 	restricted?: string[];
 	notExplorable?: boolean;
-	/** Freeform classification tags, e.g. `"keyring"` or `"access control"`. */
+	/** Freeform classification tags, e.g. `"keyring"`, `"access control"`,
+	 * or `"governance limited"`. */
 	tags?: string[];
 	portfolioNotice?: string;
 	vaultOverrides?: Record<string, EulerLabelVaultOverride>;
@@ -44,7 +44,8 @@ export type EulerLabelVaultOverride = {
 	restricted?: string[];
 	notExplorableLend?: boolean;
 	notExplorableBorrow?: boolean;
-	/** Freeform classification tags, e.g. `"keyring"` or `"access control"`. */
+	/** Freeform classification tags, e.g. `"keyring"`, `"access control"`,
+	 * or `"recently added"`. */
 	tags?: string[];
 };
 export type EulerLabelPoint = {
@@ -63,7 +64,8 @@ export type EulerLabelEarnVaultEntry = {
 	address: string;
 	block?: string[];
 	restricted?: string[];
-	recentlyAdded?: boolean;
+	/** Freeform classification tags, e.g. `"recently added"`. */
+	tags?: string[];
 	deprecated?: boolean;
 	deprecationReason?: string;
 	description?: string;
@@ -96,7 +98,6 @@ export type EulerLabelsData = {
 	earnVaultEntries: Record<string, EulerLabelEarnVaultEntry>;
 	earnVaultBlocks: Record<string, string[]>;
 	earnVaultRestrictions: Record<string, string[]>;
-	recentlyAddedEarnVaults: Set<string>;
 	deprecatedEarnVaults: Record<string, string>;
 	earnVaultDescriptions: Record<string, string>;
 	earnVaultNotices: Record<string, string>;
@@ -117,7 +118,6 @@ export type EulerLabel = {
 	earnVault?: EulerLabelEarnVaultEntry;
 	description?: string;
 	portfolioNotice?: string;
-	recentlyAdded?: boolean;
 	notExplorable?: boolean;
 	block?: string[];
 	restricted?: string[];

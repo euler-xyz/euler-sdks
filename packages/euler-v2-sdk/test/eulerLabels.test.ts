@@ -3,6 +3,7 @@ import {
 	createEmptyEulerLabelsData,
 	getEulerLabelEntitiesByEarnVault,
 	getEulerLabelEntitiesByVault,
+	isEulerLabelVaultGovernanceLimited,
 	isEulerLabelVaultRecentlyAdded,
 } from "../src/utils/eulerLabels.js";
 import { EulerLabelsService } from "../src/index.js";
@@ -116,7 +117,7 @@ describe("Euler label entity helpers", () => {
 });
 
 describe("Euler recently-added labels", () => {
-	it("normalizes product recently-added vaults", async () => {
+	it("reads recently-added product vault override tags", async () => {
 		const service = new EulerLabelsService({
 			fetchEulerLabelsEntities: async () => ({}),
 			fetchEulerLabelsProducts: async () => ({
@@ -125,7 +126,11 @@ describe("Euler recently-added labels", () => {
 					description: "",
 					url: "",
 					vaults: [VAULT.toLowerCase()],
-					recentlyAddedVaults: [VAULT.toLowerCase()],
+					vaultOverrides: {
+						[VAULT.toLowerCase()]: {
+							tags: ["recently added"],
+						},
+					},
 				},
 			}),
 			fetchEulerLabelsPoints: async () => [],
@@ -133,26 +138,96 @@ describe("Euler recently-added labels", () => {
 
 		const labels = await service.fetchEulerLabelsData(1);
 
-		expect(labels.products.prime?.recentlyAddedVaults).toEqual([VAULT]);
+		expect(labels.products.prime?.vaultOverrides?.[VAULT]?.tags).toEqual([
+			"recently added",
+		]);
 		expect(isEulerLabelVaultRecentlyAdded(labels, VAULT)).toBe(true);
 	});
 
-	it("normalizes Earn recently-added entries", async () => {
+	it("preserves recently-added override tags when populating vault labels", async () => {
+		const service = new EulerLabelsService({
+			fetchEulerLabelsEntities: async () => ({}),
+			fetchEulerLabelsProducts: async () => ({
+				prime: {
+					name: "Prime",
+					description: "",
+					url: "",
+					vaults: [VAULT.toLowerCase()],
+					vaultOverrides: {
+						[VAULT]: {
+							tags: ["recently added"],
+						},
+					},
+				},
+			}),
+			fetchEulerLabelsPoints: async () => [],
+		} satisfies IEulerLabelsAdapter);
+		const vault = {
+			address: VAULT.toLowerCase(),
+			chainId: 1,
+			populated: {},
+		} as EVault;
+
+		await service.populateLabels([vault]);
+
+		expect(vault.eulerLabel?.products[0]?.tags).toContain("recently added");
+	});
+
+	it("reads Earn recently-added tags", async () => {
 		const service = new EulerLabelsService({
 			fetchEulerLabelsEntities: async () => ({}),
 			fetchEulerLabelsProducts: async () => ({}),
 			fetchEulerLabelsPoints: async () => [],
 			fetchEulerLabelsEarnVaults: async () => [
-				{ address: VAULT.toLowerCase(), recentlyAdded: true },
+				{ address: VAULT.toLowerCase(), tags: ["recently added"] },
 			],
 		} satisfies IEulerLabelsAdapter);
 
 		const labels = await service.fetchEulerLabelsData(1);
 
-		expect(labels.earnVaultEntries[VAULT.toLowerCase()]?.recentlyAdded).toBe(
-			true,
-		);
-		expect(labels.recentlyAddedEarnVaults.has(VAULT)).toBe(true);
+		expect(labels.earnVaultEntries[VAULT.toLowerCase()]?.tags).toEqual([
+			"recently added",
+		]);
 		expect(isEulerLabelVaultRecentlyAdded(labels, VAULT)).toBe(true);
+	});
+});
+
+describe("Euler governance-limited labels", () => {
+	it("reads governance-limited product tags", () => {
+		const labels = {
+			...createEmptyEulerLabelsData(),
+			products: {
+				prime: {
+					name: "Prime",
+					description: "",
+					url: "",
+					vaults: [VAULT],
+					tags: ["governance limited"],
+				},
+			},
+		};
+
+		expect(isEulerLabelVaultGovernanceLimited(labels, VAULT)).toBe(true);
+	});
+
+	it("reads governance-limited vault override tags", () => {
+		const labels = {
+			...createEmptyEulerLabelsData(),
+			products: {
+				prime: {
+					name: "Prime",
+					description: "",
+					url: "",
+					vaults: [VAULT],
+					vaultOverrides: {
+						[VAULT]: {
+							tags: ["governance limited"],
+						},
+					},
+				},
+			},
+		};
+
+		expect(isEulerLabelVaultGovernanceLimited(labels, VAULT)).toBe(true);
 	});
 });

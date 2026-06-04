@@ -37,6 +37,7 @@ import {
 	getEulerLabelVaultNotice,
 	isEulerLabelEarnVaultDeprecated,
 	isEulerLabelVaultDeprecated,
+	isEulerLabelVaultGovernanceLimited,
 	isEulerLabelVaultKeyring,
 	isEulerLabelVaultNotExplorable,
 	isEulerLabelVaultRecentlyAdded,
@@ -707,15 +708,15 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
       vaults: [plainVault.address.toLowerCase()],
       deprecatedVaults: [stringEntityVault.address.toLowerCase()],
       deprecateReason: "legacy reason",
-      recentlyAddedVaults: [plainVault.address.toLowerCase()],
       notExplorable: true,
-      tags: ["keyring"],
+      tags: ["keyring", "governance limited"],
       portfolioNotice: "product notice",
       vaultOverrides: {
         [plainVault.address.toLowerCase()]: {
           name: "Overridden Product",
           description: "override",
           portfolioNotice: "override notice",
+          tags: ["recently added"],
         },
       },
     },
@@ -742,7 +743,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
       address: collateralVault.address.toLowerCase(),
       block: ["US"],
       restricted: ["DE"],
-      recentlyAdded: true,
+      tags: ["recently added"],
       deprecated: true,
       deprecationReason: "earn migrated",
       description: "earn description",
@@ -792,7 +793,9 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   assert.deepEqual(labelsData.earnVaultBlocks[collateralVault.address.toLowerCase()], [
     "US",
   ]);
-  assert.equal(labelsData.recentlyAddedEarnVaults.has(collateralVault.address), true);
+  assert.deepEqual(labelsData.earnVaultEntries[collateralVault.address.toLowerCase()]?.tags, [
+    "recently added",
+  ]);
   assert.equal(
     labelsData.deprecatedEarnVaults[collateralVault.address.toLowerCase()],
     "earn migrated",
@@ -825,6 +828,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   assert.equal(getEulerLabelAssetBlock(labelsData, plainVault.asset.address)?.[0], "US");
   assert.equal(isEulerLabelVaultRecentlyAdded(labelsData, plainVault.address), true);
   assert.equal(isEulerLabelVaultRecentlyAdded(labelsData, collateralVault.address), true);
+  assert.equal(isEulerLabelVaultGovernanceLimited(labelsData, plainVault.address), true);
   assert.equal(isEulerLabelVaultDeprecated(labelsData, stringEntityVault.address), true);
   assert.equal(isEulerLabelEarnVaultDeprecated(labelsData, collateralVault.address), true);
   assert.equal(isEulerLabelVaultKeyring(labelsData, plainVault.address), true);
