@@ -31,11 +31,12 @@ import {
 import {
   applyEulerLabelVaultOverrides,
   createEmptyEulerLabelsData,
-  getEulerLabelAssetBlock,
-  getEulerLabelEntitiesByVault,
+	getEulerLabelAssetBlock,
+	getEulerLabelEntitiesByVault,
 	getEulerLabelProductByVault,
 	getEulerLabelVaultNotice,
 	isEulerLabelEarnVaultDeprecated,
+	isEulerLabelVaultCyclicalNote,
 	isEulerLabelVaultDeprecated,
 	isEulerLabelVaultGovernanceLimited,
 	isEulerLabelVaultKeyring,
@@ -709,7 +710,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
       deprecatedVaults: [stringEntityVault.address.toLowerCase()],
       deprecateReason: "legacy reason",
       notExplorable: true,
-      tags: ["keyring", "governance limited"],
+      tags: ["keyring", "governance limited", "cyclical note"],
       portfolioNotice: "product notice",
       vaultOverrides: {
         [plainVault.address.toLowerCase()]: {
@@ -829,6 +830,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   assert.equal(isEulerLabelVaultRecentlyAdded(labelsData, plainVault.address), true);
   assert.equal(isEulerLabelVaultRecentlyAdded(labelsData, collateralVault.address), true);
   assert.equal(isEulerLabelVaultGovernanceLimited(labelsData, plainVault.address), true);
+  assert.equal(isEulerLabelVaultCyclicalNote(labelsData, plainVault.address), true);
   assert.equal(isEulerLabelVaultDeprecated(labelsData, stringEntityVault.address), true);
   assert.equal(isEulerLabelEarnVaultDeprecated(labelsData, collateralVault.address), true);
   assert.equal(isEulerLabelVaultKeyring(labelsData, plainVault.address), true);
