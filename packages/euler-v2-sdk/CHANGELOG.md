@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.2] - 2026-06-05
+
+### Added
+
+- Added tag-based Euler label classification support for products, vault overrides, and Earn labels.
+- Added helpers for recently-added, governance-limited, high-utilisation warning suppression, and cyclical-note classifications.
+
+### Changed
+
+- Populated vault labels now preserve vault override tags so SDK consumers receive the same classifications exposed by raw labels data.
+- Updated SDK docs, examples, and tests for the tag-based labels shape.
+
 ## [1.0.0] - 2026-06-03
 
 ### Changed
