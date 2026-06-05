@@ -324,6 +324,18 @@ export const isEulerLabelVaultHighUtilisationWarningSuppressed = (
 	);
 };
 
+export const isEulerLabelVaultCyclicalNote = (
+	data: EulerLabelsData,
+	vaultAddress: string,
+): boolean => {
+	const normalized = normalizeAddress(vaultAddress);
+	const product = getEulerLabelProductByVault(data, normalized);
+	return (
+		productHasTag(product, "cyclical note") ||
+		vaultOverrideHasTag(product, normalized, "cyclical note")
+	);
+};
+
 export const isEulerLabelProductGovernanceLimited = (
 	data: EulerLabelsData,
 	productKey: string,

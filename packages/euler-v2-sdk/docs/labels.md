@@ -4,7 +4,7 @@ Labels are purely off-chain metadata sourced from [`euler-labels`](https://githu
 
 ## What labels provide
 
-- **Products** &mdash; named groupings of vaults with vault-level overrides, notices, deprecation, classification tags (e.g. `keyring`, `access control`, `governance limited`), and exploration flags
+- **Products** &mdash; named groupings of vaults with vault-level overrides, notices, deprecation, classification tags (e.g. `keyring`, `access control`, `governance limited`, `cyclical note`), and exploration flags
 - **Entities** &mdash; the organisation(s) governing a vault (name, logo, website, socials)
 - **Points** &mdash; third-party points programs available on specific vaults
 - **Euler Earn entries** &mdash; Earn vault membership, descriptions, notices, block/restricted countries, classification tags, and deprecated/not-explorable flags
@@ -55,6 +55,7 @@ import {
   isEulerLabelVaultKeyring,
   isEulerLabelProductKeyring,
   isEulerLabelVaultAccessControlled,
+  isEulerLabelVaultCyclicalNote,
   isEulerLabelVaultGovernanceLimited,
   isEulerLabelVaultHighUtilisationWarningSuppressed,
 } from '@eulerxyz/euler-v2-sdk'
@@ -63,6 +64,7 @@ isEulerLabelVaultKeyring(labelsData, vaultAddress)         // tag "keyring"
 isEulerLabelVaultAccessControlled(labelsData, vaultAddress) // tag "access control"
 isEulerLabelVaultGovernanceLimited(labelsData, vaultAddress) // tag "governance limited"
 isEulerLabelVaultHighUtilisationWarningSuppressed(labelsData, vaultAddress) // tag "suppress high utilisation warning"
+isEulerLabelVaultCyclicalNote(labelsData, vaultAddress) // tag "cyclical note"
 isEulerLabelProductKeyring(labelsData, productKey)
 ```
 

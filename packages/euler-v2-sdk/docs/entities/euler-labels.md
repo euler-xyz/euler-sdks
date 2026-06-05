@@ -35,7 +35,7 @@ than classes.
 | `block` | `string[] | undefined` | Block rules attached to the product. |
 | `restricted` | `string[] | undefined` | Restriction rules attached to the product. |
 | `notExplorable` | `boolean | undefined` | Whether product vaults should be hidden from explorer-style surfaces. |
-| `tags` | `string[] | undefined` | Freeform classification tags (e.g. `"keyring"`, `"access control"`, `"governance limited"`, `"suppress high utilisation warning"`). |
+| `tags` | `string[] | undefined` | Freeform classification tags (e.g. `"keyring"`, `"access control"`, `"governance limited"`, `"suppress high utilisation warning"`, `"cyclical note"`). |
 | `portfolioNotice` | `string | undefined` | Product-level portfolio notice. |
 | `vaultOverrides` | `Record<string, EulerLabelVaultOverride> | undefined` | Per-vault product overrides keyed by vault address. |
 
@@ -51,7 +51,7 @@ than classes.
 | `restricted` | `string[] | undefined` | Vault restriction-rule override. |
 | `notExplorableLend` | `boolean | undefined` | Whether lend exploration should hide this vault. |
 | `notExplorableBorrow` | `boolean | undefined` | Whether borrow exploration should hide this vault. |
-| `tags` | `string[] | undefined` | Freeform classification tags overriding/augmenting product tags (e.g. `"keyring"`, `"access control"`, `"recently added"`, `"suppress high utilisation warning"`). |
+| `tags` | `string[] | undefined` | Freeform classification tags overriding/augmenting product tags (e.g. `"keyring"`, `"access control"`, `"recently added"`, `"suppress high utilisation warning"`, `"cyclical note"`). |
 
 ## `EulerLabelPoint`
 

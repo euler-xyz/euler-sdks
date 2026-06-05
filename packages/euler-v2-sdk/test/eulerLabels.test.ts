@@ -3,6 +3,7 @@ import {
 	createEmptyEulerLabelsData,
 	getEulerLabelEntitiesByEarnVault,
 	getEulerLabelEntitiesByVault,
+	isEulerLabelVaultCyclicalNote,
 	isEulerLabelVaultGovernanceLimited,
 	isEulerLabelVaultHighUtilisationWarningSuppressed,
 	isEulerLabelVaultRecentlyAdded,
@@ -274,5 +275,45 @@ describe("Euler vault warning labels", () => {
 		expect(
 			isEulerLabelVaultHighUtilisationWarningSuppressed(labels, VAULT),
 		).toBe(true);
+	});
+});
+
+describe("Euler cyclical-note labels", () => {
+	it("reads cyclical-note product tags", () => {
+		const labels = {
+			...createEmptyEulerLabelsData(),
+			products: {
+				prime: {
+					name: "Prime",
+					description: "",
+					url: "",
+					vaults: [VAULT],
+					tags: ["cyclical note"],
+				},
+			},
+		};
+
+		expect(isEulerLabelVaultCyclicalNote(labels, VAULT)).toBe(true);
+	});
+
+	it("reads cyclical-note vault override tags", () => {
+		const labels = {
+			...createEmptyEulerLabelsData(),
+			products: {
+				prime: {
+					name: "Prime",
+					description: "",
+					url: "",
+					vaults: [VAULT],
+					vaultOverrides: {
+						[VAULT]: {
+							tags: ["cyclical note"],
+						},
+					},
+				},
+			},
+		};
+
+		expect(isEulerLabelVaultCyclicalNote(labels, VAULT)).toBe(true);
 	});
 });
