@@ -12,6 +12,13 @@
 - Populated vault labels now preserve vault override tags so SDK consumers receive the same classifications exposed by raw labels data.
 - Updated SDK docs, examples, and tests for the tag-based labels shape.
 
+## [1.0.1] - 2026-06-03
+
+### Fixed
+
+- Restored Fuul user reward reads through Fuul's public claimable-rewards endpoint when caller-hosted Fuul totals or claim-check URLs are not configured.
+- Preserved existing Fuul override URL behavior and passed claim-chain context through claim verification for direct-adapter Fuul claims.
+
 ## [1.0.0] - 2026-06-03
 
 ### Changed
