@@ -1040,15 +1040,54 @@ function collectCandidateVaults(
 		const fn = item.functionName.toLowerCase();
 		const target = getAddress(item.targetContract);
 
-		if (fn === "transfer" || fn === "transferfrom") {
+		if (
+			fn === "enablecollateral" ||
+			fn === "disablecollateral" ||
+			fn === "enablecontroller"
+		) {
+			const account = item.args.account as Address | undefined;
+			const vault = item.args.vault as Address | undefined;
+			if (vault) addCandidateVault(vault);
+			if (account && vault) addSubAccountVault(account, vault);
+			continue;
+		}
+
+		if (fn === "transfer" || fn === "transferfrom" || fn === "transferfrommax") {
 			const to = item.args.to as Address | undefined;
 			const from =
-				fn === "transferfrom"
+				fn === "transferfrom" || fn === "transferfrommax"
 					? (item.args.from as Address | undefined)
 					: ((item.args.from as Address | undefined) ?? item.onBehalfOfAccount);
 
 			if (from) addSubAccountVault(from, target);
 			if (to) addSubAccountVault(to, target);
+			addCandidateVault(target);
+			continue;
+		}
+
+		if (fn === "withdraw" || fn === "redeem") {
+			const owner = item.args.owner as Address | undefined;
+			if (owner) addSubAccountVault(owner, target);
+			addCandidateVault(target);
+			continue;
+		}
+
+		if (fn === "liquidate") {
+			const violator = item.args.violator as Address | undefined;
+			const collateral = item.args.collateral as Address | undefined;
+			if (violator) addSubAccountVault(violator, target);
+			if (violator && collateral) addSubAccountVault(violator, collateral);
+			if (collateral) {
+				addSubAccountVault(item.onBehalfOfAccount, collateral);
+				addCandidateVault(collateral);
+			}
+			addCandidateVault(target);
+			continue;
+		}
+
+		if (fn === "pulldebt") {
+			const from = item.args.from as Address | undefined;
+			if (from) addSubAccountVault(from, target);
 			addCandidateVault(target);
 			continue;
 		}
@@ -1069,6 +1108,20 @@ function collectCandidateVaults(
 			const receiver = item.args.receiver as Address | undefined;
 			if (receiver) addSubAccountVault(receiver, target);
 			addCandidateVault(target);
+		}
+
+		if (fn === "verifyamountminanddeposit" || fn === "verifyamountminandskim") {
+			const vault = item.args.vault as Address | undefined;
+			const receiver = item.args.receiver as Address | undefined;
+			if (vault) addCandidateVault(vault);
+			if (vault && receiver) addSubAccountVault(receiver, vault);
+		}
+
+		if (fn === "verifydebtmax") {
+			const vault = item.args.vault as Address | undefined;
+			const account = item.args.account as Address | undefined;
+			if (vault) addCandidateVault(vault);
+			if (vault && account) addSubAccountVault(account, vault);
 		}
 	}
 

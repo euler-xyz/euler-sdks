@@ -427,10 +427,10 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 
 		// Wrap raw ISubAccount data into SubAccount class instances
 		const wrapped: SubAccountsMap<TVaultEntity> = {};
-		for (const [addr, sa] of Object.entries(account.subAccounts ?? {})) {
+		for (const sa of Object.values(account.subAccounts ?? {})) {
 			if (sa) {
-				wrapped[addr as Address] =
-					sa instanceof SubAccount ? sa : new SubAccount(sa);
+				const subAccount = sa instanceof SubAccount ? sa : new SubAccount(sa);
+				wrapped[getAddress(subAccount.account)] = subAccount;
 			}
 		}
 		this.subAccounts = wrapped;

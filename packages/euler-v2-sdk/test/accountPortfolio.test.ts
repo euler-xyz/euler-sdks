@@ -109,6 +109,25 @@ function populatedAccount(args: IAccount<any>) {
 	});
 }
 
+test("Account constructor normalizes sub-account map keys", () => {
+	const lowerSubAccount =
+		"0x8a54c278d117854486db0f6460d901a180fff517" as Address;
+	const checksumSubAccount = getAddress(lowerSubAccount);
+	const account = new Account({
+		chainId: 1,
+		owner,
+		isLockdownMode: false,
+		isPermitDisabledMode: false,
+		subAccounts: {
+			[lowerSubAccount]: subAccountData(checksumSubAccount, []),
+		},
+	});
+
+	assert.equal(account.subAccounts[lowerSubAccount], undefined);
+	assert.equal(account.subAccounts[checksumSubAccount]?.account, checksumSubAccount);
+	assert.equal(account.getSubAccount(lowerSubAccount)?.account, checksumSubAccount);
+});
+
 test("sub-account helpers find free and borrow-compatible addresses", () => {
 	assert.equal(getSubAccountAddress(owner, 256), maxSubAccount);
 	assert.equal(getSubAccountId(owner, maxSubAccount), 256);
