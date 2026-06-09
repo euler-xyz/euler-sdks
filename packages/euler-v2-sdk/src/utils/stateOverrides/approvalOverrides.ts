@@ -161,7 +161,7 @@ const allowanceKey = (asset: Address, spender: Address) =>
  *  3. Use caller-supplied `slotHints[asset].allowanceSlotIndex` →
  *     cryptographic slot, no RPC.
  *  4. Use cached probed slot index (`fetchErc20SlotHints` cache) → same.
- *  5. Probe via `eth_createAccessList`; this handles proxy / namespaced token
+ *  5. Probe once via `eth_createAccessList`; this handles proxy / namespaced token
  *     layouts without burning many failed state-override reads first.
  *  6. Fall back to sequential `fetchErc20SlotHints` probing when access-list
  *     discovery is unavailable.
@@ -237,7 +237,6 @@ export async function getApprovalOverrides(
 		accessListOverrides.map((override) => getAddress(override.address)),
 	);
 
-	const stillUnknown: Address[] = [];
 	for (const asset of fallbackAssets) {
 		if (accessListResolved.has(getAddress(asset))) continue;
 		try {
@@ -258,19 +257,9 @@ export async function getApprovalOverrides(
 				continue;
 			}
 		} catch (e) {
-			// fall through
+			// access-list discovery already failed or returned no match; leave
+			// unresolved rather than retrying the same unavailable method.
 		}
-		stillUnknown.push(asset);
-	}
-
-	if (stillUnknown.length > 0) {
-		const legacy = await discoverAllowanceSlotsViaAccessList(
-			client,
-			account,
-			stillUnknown,
-			permit2Address,
-		);
-		stateOverride.push(...legacy);
 	}
 
 	return stateOverride;
