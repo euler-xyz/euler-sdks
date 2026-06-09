@@ -254,7 +254,6 @@ export async function getApprovalOverrides(
 					address: asset,
 					stateDiff: [{ slot, value: valueHex }],
 				});
-				continue;
 			}
 		} catch (e) {
 			// access-list discovery already failed or returned no match; leave
