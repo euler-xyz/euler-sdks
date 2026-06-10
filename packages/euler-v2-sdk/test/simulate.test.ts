@@ -3,6 +3,7 @@ import { beforeEach, test, vi } from "vitest";
 import {
 	decodeFunctionData,
 	encodeFunctionData,
+	encodeFunctionResult,
 	getAddress,
 	type Abi,
 } from "viem";
@@ -42,6 +43,45 @@ const testAbi = [
 		stateMutability: "payable",
 		inputs: [{ name: "amount", type: "uint256" }],
 		outputs: [],
+	},
+] as const satisfies Abi;
+
+const erc20BalanceAbi = [
+	{
+		type: "function",
+		name: "balanceOf",
+		stateMutability: "view",
+		inputs: [{ name: "account", type: "address" }],
+		outputs: [{ name: "", type: "uint256" }],
+	},
+] as const satisfies Abi;
+
+const merklClaimAbi = [
+	{
+		type: "function",
+		name: "claim",
+		stateMutability: "nonpayable",
+		inputs: [
+			{ name: "users", type: "address[]" },
+			{ name: "tokens", type: "address[]" },
+			{ name: "amounts", type: "uint256[]" },
+			{ name: "proofs", type: "bytes32[][]" },
+		],
+		outputs: [],
+	},
+] as const satisfies Abi;
+
+const reulLockAbi = [
+	{
+		type: "function",
+		name: "withdrawToByLockTimestamp",
+		stateMutability: "nonpayable",
+		inputs: [
+			{ name: "account", type: "address" },
+			{ name: "lockTimestamp", type: "uint256" },
+			{ name: "allowRemainderLoss", type: "bool" },
+		],
+		outputs: [{ name: "success", type: "bool" }],
 	},
 ] as const satisfies Abi;
 
@@ -148,6 +188,97 @@ async function simulateAndCollectVaultAccountReads(
 	return vaultAccountReads;
 }
 
+async function simulateAndCollectWalletBalanceReads(
+	plan: TransactionPlan,
+	options: {
+		eulToken?: Address;
+		readUnderlying?: Address;
+	} = {},
+): Promise<Set<string>> {
+	const simulateContract = vi.fn(
+		async ({ args }: { args: readonly [EVCBatchItem[]] }) => {
+			const fullBatch = args[0];
+			return {
+				result: [
+					fullBatch.map((item) => {
+						try {
+							const decoded = decodeFunctionData({
+								abi: erc20BalanceAbi,
+								data: item.data,
+							});
+							if (decoded.functionName === "balanceOf") {
+								return {
+									success: true,
+									result: encodeFunctionResult({
+										abi: erc20BalanceAbi,
+										functionName: "balanceOf",
+										result: 0n,
+									}),
+								};
+							}
+						} catch {}
+						return { success: false, result: "0x" };
+					}),
+					[],
+					[],
+				],
+			};
+		},
+	);
+	const provider = {
+		simulateContract,
+		multicall: vi.fn(async () => []),
+		readContract: vi.fn(async ({ functionName }: { functionName: string }) => {
+			if (functionName === "underlying" && options.readUnderlying) {
+				return options.readUnderlying;
+			}
+			throw new Error("read unavailable");
+		}),
+	};
+	const service = new ExecutionService(
+		{
+			getDeployment: () => ({
+				addresses: {
+					coreAddrs: {
+						evc: EVC,
+						permit2: "0x0000000000000000000000000000000000000012",
+					},
+					lensAddrs: {
+						accountLens: ACCOUNT_LENS,
+						vaultLens: VAULT_LENS,
+						eulerEarnVaultLens: EULER_EARN_LENS,
+					},
+					tokenAddrs: options.eulToken ? { EUL: options.eulToken } : {},
+				},
+			}),
+		} as never,
+		undefined,
+		{ getProvider: () => provider } as never,
+		{
+			fetchVaultTypes: async () => ({}),
+		} as never,
+	);
+
+	await service.simulateTransactionPlan(1, CHECKSUM_ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+
+	const fullBatch = simulateContract.mock.calls[0]?.[0].args[0] ?? [];
+	const walletBalanceReads = new Set<string>();
+	for (const item of fullBatch) {
+		try {
+			const decoded = decodeFunctionData({
+				abi: erc20BalanceAbi,
+				data: item.data,
+			});
+			if (decoded.functionName === "balanceOf") {
+				walletBalanceReads.add(getAddress(item.targetContract));
+			}
+		} catch {}
+	}
+	return walletBalanceReads;
+}
+
 test("estimateGasForTransactionPlan estimates executable plan items", async () => {
 	const service = createExecutionService();
 	vi.mocked(estimateContractGas)
@@ -225,6 +356,100 @@ test("simulateTransactionPlan rejects CoW swap plans", async () => {
 		service.simulateTransactionPlan(1, ACCOUNT, plan),
 		/does not support CoW swap plans/,
 	);
+});
+
+test("simulateTransactionPlan tracks operation wallet balance tokens", async () => {
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					type: "operation",
+					name: "Claim rewards",
+					walletBalanceTokens: [TOKEN],
+					items: [
+						{
+							targetContract: TARGET,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: testAbi,
+								functionName: "doThing",
+								args: [1n],
+							}),
+						},
+					],
+				},
+			],
+		},
+	];
+
+	const reads = await simulateAndCollectWalletBalanceReads(plan);
+
+	assert.ok(reads.has(getAddress(TOKEN)));
+});
+
+test("simulateTransactionPlan tracks Merkl claim reward tokens", async () => {
+	const proof =
+		"0x1111111111111111111111111111111111111111111111111111111111111111" as const;
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					type: "operation",
+					name: "Claim rewards",
+					items: [
+						{
+							targetContract: TARGET,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: merklClaimAbi,
+								functionName: "claim",
+								args: [[ACCOUNT], [TOKEN], [1n], [[proof]]],
+							}),
+						},
+					],
+				},
+			],
+		},
+	];
+
+	const reads = await simulateAndCollectWalletBalanceReads(plan);
+
+	assert.ok(reads.has(getAddress(TOKEN)));
+});
+
+test("simulateTransactionPlan tracks EUL balance for rEUL unlocks", async () => {
+	const eulToken = getAddress("0x0000000000000000000000000000000000000017");
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					type: "operation",
+					name: "Unlock rEUL",
+					items: [
+						{
+							targetContract: TARGET,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: reulLockAbi,
+								functionName: "withdrawToByLockTimestamp",
+								args: [ACCOUNT, 1n, true],
+							}),
+						},
+					],
+				},
+			],
+		},
+	];
+
+	const reads = await simulateAndCollectWalletBalanceReads(plan, { eulToken });
+
+	assert.ok(reads.has(eulToken));
 });
 
 test("estimateGasForTransactionPlan rejects CoW swap plans", async () => {

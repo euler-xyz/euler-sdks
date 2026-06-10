@@ -169,6 +169,7 @@ export interface IAccountPosition<
 	isCollateral: boolean;
 
 	balanceForwarderEnabled: boolean;
+	rewardStreams?: AccountRewardStream[];
 	liquidity?: IAccountLiquidity<TVaultEntity>;
 
 	/** USD price per underlying asset. Populated by `populateMarketPrices`. */
@@ -182,6 +183,19 @@ export interface IAccountPosition<
 	readonly borrowLiquidationPriceUsd?: number;
 	/** Per-collateral liquidation price in USD. Computed getter on positions. */
 	readonly collateralLiquidationPricesUsd?: Record<Address, number>;
+}
+
+export interface AccountRewardStream {
+	/** Account/sub-account that accrues and claims the reward. */
+	account: Address;
+	/** Vault/rewarded address passed to the reward stream contract. */
+	vault: Address;
+	/** Reward token address. */
+	reward: Address;
+	/** Claimable amount from `earnedReward(..., ignoreRecentReward=false)`. */
+	earnedReward: bigint;
+	/** Claimable amount from `earnedReward(..., ignoreRecentReward=true)`. */
+	earnedRewardRecentIgnored: bigint;
 }
 
 export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
@@ -200,6 +214,7 @@ export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
 	isCollateral: boolean;
 
 	balanceForwarderEnabled: boolean;
+	rewardStreams?: AccountRewardStream[];
 	liquidity?: IAccountLiquidity<TVaultEntity>;
 
 	marketPriceUsd?: PriceUsd;
@@ -220,6 +235,7 @@ export class AccountPosition<TVaultEntity extends IHasVaultAddress = never>
 		this.isCollateral = data.isCollateral;
 
 		this.balanceForwarderEnabled = data.balanceForwarderEnabled;
+		this.rewardStreams = data.rewardStreams;
 		if (data.liquidity && !(data.liquidity instanceof AccountLiquidity)) {
 			this.liquidity = new AccountLiquidity(data.liquidity);
 		} else {

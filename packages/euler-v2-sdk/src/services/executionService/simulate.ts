@@ -1,11 +1,14 @@
 import {
 	type Address,
+	decodeFunctionData,
 	decodeFunctionResult,
 	encodeFunctionData,
 	getAddress,
 	type Hex,
 	parseEther,
 	type StateOverride,
+	toFunctionSelector,
+	zeroAddress,
 } from "viem";
 import { estimateContractGas } from "viem/actions";
 
@@ -14,7 +17,78 @@ import { estimateContractGas } from "viem/actions";
 const walletBalanceAbi = [
 	{ type: "function", name: "asset", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
 	{ type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
+	{ type: "function", name: "underlying", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
 ] as const;
+
+const merklClaimAbi = [
+	{
+		type: "function",
+		name: "claim",
+		inputs: [
+			{ name: "users", type: "address[]" },
+			{ name: "tokens", type: "address[]" },
+			{ name: "amounts", type: "uint256[]" },
+			{ name: "proofs", type: "bytes32[][]" },
+		],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+] as const;
+
+const fuulClaimAbi = [
+	{
+		type: "function",
+		name: "claim",
+		inputs: [
+			{
+				name: "claimChecks",
+				type: "tuple[]",
+				components: [
+					{ name: "projectAddress", type: "address" },
+					{ name: "to", type: "address" },
+					{ name: "currency", type: "address" },
+					{ name: "currencyType", type: "uint8" },
+					{ name: "amount", type: "uint256" },
+					{ name: "reason", type: "uint8" },
+					{ name: "tokenId", type: "uint256" },
+					{ name: "deadline", type: "uint256" },
+					{ name: "proof", type: "bytes32" },
+					{ name: "signatures", type: "bytes[]" },
+				],
+			},
+		],
+		outputs: [],
+		stateMutability: "payable",
+	},
+] as const;
+
+const rewardStreamsClaimAbi = [
+	{
+		type: "function",
+		name: "claimReward",
+		inputs: [
+			{ name: "rewarded", type: "address" },
+			{ name: "reward", type: "address" },
+			{ name: "to", type: "address" },
+			{ name: "ignoreRecentReward", type: "bool" },
+		],
+		outputs: [{ name: "amount", type: "uint256" }],
+		stateMutability: "nonpayable",
+	},
+] as const;
+
+const MERKL_CLAIM_SELECTOR = toFunctionSelector(
+	"function claim(address[],address[],uint256[],bytes32[][])",
+);
+const FUUL_CLAIM_SELECTOR = toFunctionSelector(
+	"function claim((address,address,address,uint8,uint256,uint8,uint256,uint256,bytes32,bytes[])[])",
+);
+const REWARD_STREAM_CLAIM_SELECTOR = toFunctionSelector(
+	"function claimReward(address,address,address,bool)",
+);
+const REUL_UNLOCK_SELECTOR = toFunctionSelector(
+	"function withdrawToByLockTimestamp(address,uint256,bool)",
+);
 import {
 	Account,
 	type IAccount,
@@ -366,7 +440,7 @@ export async function simulateTransactionPlan<
 		ctx,
 		chainId,
 		owner,
-		batch,
+		operations,
 	);
 
 	// Assemble the EVC batch, interleaving a lens-read block before the first
@@ -522,24 +596,89 @@ export async function simulateTransactionPlan<
 
 // Walk the plan preserving EVCBatchOperation boundaries. Each operation entry
 // is one layer boundary; bare items become their own single-item op.
-function collectOperations(
-	transactionPlan: TransactionPlan,
-): Array<{ name: string | undefined; items: EVCBatchItem[] }> {
-	const operations: Array<{
-		name: string | undefined;
-		items: EVCBatchItem[];
-	}> = [];
+type SimulationOperation = {
+	name: string | undefined;
+	items: EVCBatchItem[];
+	walletBalanceTokens?: Address[];
+};
+
+function collectOperations(transactionPlan: TransactionPlan): SimulationOperation[] {
+	const operations: SimulationOperation[] = [];
 	for (const item of transactionPlan) {
 		if (item.type !== "evcBatch") continue;
 		for (const entry of item.items) {
 			if (isEVCBatchOperation(entry)) {
-				operations.push({ name: entry.name, items: entry.items });
+				operations.push({
+					name: entry.name,
+					items: entry.items,
+					walletBalanceTokens: entry.walletBalanceTokens,
+				});
 			} else {
 				operations.push({ name: undefined, items: [entry] });
 			}
 		}
 	}
 	return operations;
+}
+
+const addWalletToken = (
+	tokens: Set<Address>,
+	token: string | Address | undefined,
+) => {
+	if (!token) return;
+	try {
+		const checksum = getAddress(token) as Address;
+		if (checksum !== zeroAddress) tokens.add(checksum);
+	} catch {
+		// Ignore malformed optional metadata / decoded calldata.
+	}
+};
+
+const getSelector = (data: Hex): Hex => data.slice(0, 10) as Hex;
+
+function collectClaimWalletBalanceTokens(batch: EVCBatchItem[]): Address[] {
+	const tokens = new Set<Address>();
+
+	for (const item of batch) {
+		const selector = getSelector(item.data);
+		try {
+			if (selector === MERKL_CLAIM_SELECTOR) {
+				const decoded = decodeFunctionData({
+					abi: merklClaimAbi,
+					data: item.data,
+				});
+				const rewardTokens = decoded.args[1] as readonly Address[];
+				for (const token of rewardTokens) addWalletToken(tokens, token);
+				continue;
+			}
+
+			if (selector === FUUL_CLAIM_SELECTOR) {
+				const decoded = decodeFunctionData({
+					abi: fuulClaimAbi,
+					data: item.data,
+				});
+				const claimChecks = decoded.args[0] as readonly {
+					currency: Address;
+				}[];
+				for (const check of claimChecks) {
+					addWalletToken(tokens, check.currency);
+				}
+				continue;
+			}
+
+			if (selector === REWARD_STREAM_CLAIM_SELECTOR) {
+				const decoded = decodeFunctionData({
+					abi: rewardStreamsClaimAbi,
+					data: item.data,
+				});
+				addWalletToken(tokens, decoded.args[1] as Address);
+			}
+		} catch {
+			// Unknown or malformed claim-like calldata should not block simulation.
+		}
+	}
+
+	return [...tokens];
 }
 
 // Decode the lens-read block for a single layer into a populated Account plus
@@ -818,12 +957,13 @@ async function buildSimulationBatch(
 	ctx: ExecutionSimulationContext,
 	chainId: number,
 	owner: Address,
-	batch: EVCBatchItem[],
+	operations: SimulationOperation[],
 ): Promise<{
 	lensItems: EVCBatchItem[];
 	lensMeta: LensMeta[];
 	evcAddress: Address;
 }> {
+	const batch = operations.flatMap((op) => op.items);
 	const { candidateVaults, subAccountVaults } = collectCandidateVaults(
 		ctx,
 		owner,
@@ -963,11 +1103,11 @@ async function buildSimulationBatch(
 		}
 	}
 
-	// Wallet-balance reads: resolve the underlying asset of each touched vault and
-	// read balanceOf(owner) for it. Interleaved per layer like the other lens
-	// reads, so the wallet balance of deposited/withdrawn/borrowed/repaid assets
-	// is captured after every operation. Balances are forged by state overrides,
-	// so consumers stitch using the delta vs the pre-batch layer.
+	// Wallet-balance reads: resolve the underlying asset of each touched vault,
+	// plus reward tokens from claim/unlock operations, and read balanceOf(owner)
+	// for each token. Interleaved per layer like the other lens reads, so wallet
+	// balances are captured after every operation. Balances are forged by state
+	// overrides, so consumers stitch using the delta vs the pre-batch layer.
 	const provider = ctx.providerService?.getProvider(chainId);
 	if (provider) {
 		const vaultsForAssets = [...eVaults, ...eulerEarnVaults];
@@ -985,6 +1125,42 @@ async function buildSimulationBatch(
 		);
 		const assetTokens = new Set<Address>();
 		for (const a of assets) if (a) assetTokens.add(getAddress(a));
+		for (const operation of operations) {
+			for (const token of operation.walletBalanceTokens ?? []) {
+				addWalletToken(assetTokens, token);
+			}
+		}
+		for (const token of collectClaimWalletBalanceTokens(batch)) {
+			addWalletToken(assetTokens, token);
+		}
+
+		const unlockItems = batch.filter(
+			(item) => getSelector(item.data) === REUL_UNLOCK_SELECTOR,
+		);
+		if (unlockItems.length > 0) {
+			const configuredEul =
+				deployment.addresses.tokenAddrs?.EUL;
+			if (configuredEul) {
+				addWalletToken(assetTokens, configuredEul);
+			} else {
+				const underlyingTokens = await Promise.all(
+					unlockItems.map((item) =>
+						provider
+							.readContract({
+								address: item.targetContract,
+								abi: walletBalanceAbi,
+								functionName: "underlying",
+							})
+							.then((a) => getAddress(a as Address))
+							.catch(() => null),
+					),
+				);
+				for (const token of underlyingTokens) {
+					if (token) addWalletToken(assetTokens, token);
+				}
+			}
+		}
+
 		for (const token of assetTokens) {
 			pushLensItem(
 				{

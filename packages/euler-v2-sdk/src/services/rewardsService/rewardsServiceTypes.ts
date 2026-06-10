@@ -1,5 +1,6 @@
 import type { Address, Hex } from "viem";
 import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
+import type { AccountRewardStream } from "../../entities/Account.js";
 import type { TransactionPlan } from "../executionService/index.js";
 import type { IsActiveForViewerFn } from "./rewardCampaignEligibility.js";
 
@@ -151,6 +152,24 @@ export interface BuildRewardClaimAllPlanArgs {
 	account: Address;
 }
 
+export interface RewardStreamPosition {
+	account: Address;
+	vault: Address;
+}
+
+export interface FetchRewardStreamsArgs {
+	chainId: number;
+	positions: RewardStreamPosition[];
+	accountLensAddress?: Address;
+}
+
+export interface BuildRewardStreamClaimPlanArgs {
+	chainId: number;
+	rewardStreams: AccountRewardStream[];
+	recipient: Address;
+	rewardStreamsAddress?: Address;
+}
+
 // ---------------------------------------------------------------------------
 // Service interface
 // ---------------------------------------------------------------------------
@@ -165,11 +184,17 @@ export interface IRewardsService {
 	fetchUserRewards(chainId: number, address: Address): Promise<UserReward[]>;
 	fetchFuulTotals(address: Address): Promise<FuulTotals>;
 	fetchFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]>;
+	fetchRewardStreams(
+		args: FetchRewardStreamsArgs,
+	): Promise<AccountRewardStream[]>;
 	buildClaimPlan(args: BuildRewardClaimPlanArgs): Promise<TransactionPlan>;
 	buildClaimPlans(args: BuildRewardClaimsPlanArgs): Promise<TransactionPlan>;
 	buildClaimAllPlan(
 		args: BuildRewardClaimAllPlanArgs,
 	): Promise<TransactionPlan>;
+	buildRewardStreamClaimPlan(
+		args: BuildRewardStreamClaimPlanArgs,
+	): TransactionPlan;
 }
 
 export interface IRewardsAdapter {
