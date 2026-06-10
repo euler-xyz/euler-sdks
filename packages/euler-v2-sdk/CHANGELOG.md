@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.3] - 2026-06-10
+
+### Added
+
+- Added token category tags to token list entries so SDK consumers can use V3 token metadata classifications.
+
+### Changed
+
+- Token list service preserves string `tags` from API responses while filtering out non-string tag values.
+
+### Tests
+
+- Added read-path coverage for token tags across full token list loads and paginated token list queries.
+
 ## [1.0.2] - 2026-06-05
 
 ### Added
