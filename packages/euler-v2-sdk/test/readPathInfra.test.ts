@@ -343,6 +343,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
         decimals: 6,
         logoURI: "usdc.svg",
         groups: ["stable"],
+        tags: [" Stablecoin ", "stablecoin", "other"],
         metadata: { verified: true },
         coingeckoId: "usd-coin",
       },
@@ -366,6 +367,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   const tokenlist = await tokenlistService.loadTokenlist(1);
   assert.equal(tokenlist.length, 2);
   assert.equal(tokenlist[0]?.logoURI, "usdc.svg");
+  assert.deepEqual(tokenlist[0]?.tags, [" Stablecoin ", "stablecoin", "other"]);
   assert.equal(tokenlist[1]?.name, "");
   assert.equal(tokenlist[1]?.symbol, "");
   assert.equal(Number.isNaN(tokenlist[1]?.decimals), true);
@@ -941,6 +943,10 @@ test("native fetch-backed read helpers cover their error branches", async () => 
                   offset === 0
                     ? "0x00000000000000000000000000000000000000aa"
                     : "0x00000000000000000000000000000000000000bb",
+                tags:
+                  offset === 0
+                    ? [" Stablecoin ", "stablecoin", "other"]
+                    : ["btc"],
               },
             ],
             meta: { total: 2, offset, limit: 1 },
@@ -1020,8 +1026,16 @@ test("native fetch-backed read helpers cover their error branches", async () => 
     assert.deepEqual(
       await tokenlistService.queryTokenList("https://tokens-v3?limit=1&type=base"),
       [
-        { chainId: 1, address: "0x00000000000000000000000000000000000000aa" },
-        { chainId: 1, address: "0x00000000000000000000000000000000000000bb" },
+        {
+          chainId: 1,
+          address: "0x00000000000000000000000000000000000000aa",
+          tags: [" Stablecoin ", "stablecoin", "other"],
+        },
+        {
+          chainId: 1,
+          address: "0x00000000000000000000000000000000000000bb",
+          tags: ["btc"],
+        },
       ] as any,
     );
     assert.deepEqual(tokenUrls, [
