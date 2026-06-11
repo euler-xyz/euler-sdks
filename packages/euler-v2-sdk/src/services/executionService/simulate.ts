@@ -1554,21 +1554,26 @@ async function fetchSimulationDiagnostics(
 	};
 }
 
-function extractBalanceRequirements(
+// Sum the required amount per token across every approval the owner must fund.
+// Each requiredApproval is a wallet outflow, and several can draw on the same
+// token within one batch (e.g. supplying it into two vaults, or supply + repay),
+// so the wallet must cover their *total*, not the largest single one. Forging
+// the sum lets an underfunded batch simulate through to completion — so the
+// running-balance shortfall reports the true peak deficit instead of the batch
+// reverting partway with E_InsufficientBalance. Over-forging is harmless: the
+// shortfall is computed against the real balance, not this forged amount.
+export function extractBalanceRequirements(
 	transactionPlan: TransactionPlan,
 	account: Address,
 ): [Address, bigint][] {
-	const maxPerToken = new Map<Address, bigint>();
+	const totalPerToken = new Map<Address, bigint>();
 	for (const item of transactionPlan) {
 		if (item.type !== "requiredApproval") continue;
 		if (getAddress(item.owner) !== getAddress(account)) continue;
 		const token = getAddress(item.token);
-		const current = maxPerToken.get(token) ?? 0n;
-		if (item.amount > current) {
-			maxPerToken.set(token, item.amount);
-		}
+		totalPerToken.set(token, (totalPerToken.get(token) ?? 0n) + item.amount);
 	}
-	return Array.from(maxPerToken.entries());
+	return Array.from(totalPerToken.entries());
 }
 
 function extractApprovalRequirements(

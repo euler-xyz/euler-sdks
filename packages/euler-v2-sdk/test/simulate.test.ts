@@ -14,6 +14,7 @@ import { ethereumVaultConnectorAbi } from "../src/services/executionService/abis
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
 import { ExecutionService } from "../src/services/executionService/executionService.js";
+import { extractBalanceRequirements } from "../src/services/executionService/simulate.js";
 import type {
 	EVCBatchItem,
 	TransactionPlan,
@@ -789,4 +790,23 @@ test("simulateTransactionPlan reads swap-verifier account candidates", async () 
 
 	assert.ok(vaultAccountReads.has(`${subAccount}:${getAddress(TARGET)}`));
 	assert.ok(vaultAccountReads.has(`${subAccount}:${getAddress(TOKEN)}`));
+});
+
+test("extractBalanceRequirements sums a token's approvals across spenders", () => {
+	// Same token pulled by two different spenders (e.g. supplying it into two
+	// vaults) — the wallet must fund the total, so the forge requirement is the
+	// sum, not the largest single approval. Forging only the max would let the
+	// second pull revert mid-simulation with E_InsufficientBalance.
+	const SPENDER_B = "0x00000000000000000000000000000000000000c2" as const;
+	const OTHER_OWNER = "0x00000000000000000000000000000000000000f1" as const;
+	const plan: TransactionPlan = [
+		{ type: "requiredApproval", token: TOKEN, owner: ACCOUNT, spender: SPENDER, amount: 50n },
+		{ type: "requiredApproval", token: TOKEN, owner: ACCOUNT, spender: SPENDER_B, amount: 50n },
+		// A different owner's approval must not count toward this account.
+		{ type: "requiredApproval", token: TOKEN, owner: OTHER_OWNER, spender: SPENDER, amount: 999n },
+	];
+
+	const requirements = extractBalanceRequirements(plan, ACCOUNT);
+
+	assert.deepEqual(requirements, [[getAddress(TOKEN), 100n]]);
 });
