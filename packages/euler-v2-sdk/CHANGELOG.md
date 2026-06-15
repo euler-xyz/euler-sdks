@@ -2,26 +2,37 @@
 
 ## [1.0.4] - 2026-06-15
 
-### Changed
-
-- Reissued the SDK package under a new patch version after `1.0.3` was already present on npm.
-
-## [1.0.3] - 2026-06-15
-
 ### Added
 
 - Added reward stream reads on account positions and reward stream claim plan generation through the rewards service.
-- Added wallet balance metadata to contract calls and EVC batch operations so simulation layers can track claim and cleanup balance changes.
+- Added wallet balance metadata to contract calls and EVC batch operations so simulation layers can track claim, rEUL unlock, and cleanup balance changes.
+- Added a native balance accessor on `Wallet`.
 
 ### Changed
 
-- Token list entries now preserve raw tag metadata for SDK consumers.
 - Simulations now stitch batched operation state through wallet, account, cleanup, and reward-claim readbacks.
+- rEUL unlock plans now use EVC batch operations and track resulting EUL wallet balances.
 
 ### Fixed
 
 - Fixed approval and balance override fallback handling when access-list discovery is unavailable.
 - Fixed simulation balance requirements so multiple operations that need the same token are summed before wallet checks.
+- Fixed cleanup-state reads in simulations so post-operation state is fetched consistently.
+- Normalized direct `Account` construction so sub-account map keys use checksum addresses.
+
+## [1.0.3] - 2026-06-10
+
+### Added
+
+- Added token category tags to token list entries so SDK consumers can use V3 token metadata classifications.
+
+### Changed
+
+- Token list service preserves string `tags` from API responses while filtering out non-string tag values.
+
+### Tests
+
+- Added read-path coverage for token tags across full token list loads and paginated token list queries.
 
 ## [1.0.2] - 2026-06-05
 
