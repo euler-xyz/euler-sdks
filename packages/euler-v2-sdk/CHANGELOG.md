@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.3] - 2026-06-15
+
+### Added
+
+- Added reward stream reads on account positions and reward stream claim plan generation through the rewards service.
+- Added wallet balance metadata to contract calls and EVC batch operations so simulation layers can track claim and cleanup balance changes.
+
+### Changed
+
+- Token list entries now preserve raw tag metadata for SDK consumers.
+- Simulations now stitch batched operation state through wallet, account, cleanup, and reward-claim readbacks.
+
+### Fixed
+
+- Fixed approval and balance override fallback handling when access-list discovery is unavailable.
+- Fixed simulation balance requirements so multiple operations that need the same token are summed before wallet checks.
+
 ## [1.0.2] - 2026-06-05
 
 ### Added
