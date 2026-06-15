@@ -1,8 +1,8 @@
-# euler-v2-sdk v1.0.3
+# euler-v2-sdk v1.0.4
 
 ## Summary
 
-This release improves transaction simulation readbacks, reward stream handling, and token tag propagation for SDK consumers.
+This release publishes the prepared SDK changes under `1.0.4` after `1.0.3` was already present on npm.
 
 ## Highlights
 

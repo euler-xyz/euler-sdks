@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.4] - 2026-06-15
+
+### Changed
+
+- Reissued the SDK package under a new patch version after `1.0.3` was already present on npm.
+
 ## [1.0.3] - 2026-06-15
 
 ### Added
