@@ -1146,15 +1146,15 @@ async function buildSimulationBatch(
 	}
 
 	for (const vault of securitizeVaults) {
-		pushLensItem(getVaultInfoERC4626LensBatchItem(utilsLensAddress, vault), {
+		pushLensItem(getVaultInfoERC4626LensBatchItem(utilsLensAddress, vault, owner), {
 			kind: "securitizeInfo",
 			vault,
 		});
-		pushLensItem(getSecuritizeGovernorAdminBatchItem(vault), {
+		pushLensItem(getSecuritizeGovernorAdminBatchItem(vault, owner), {
 			kind: "securitizeGovernor",
 			vault,
 		});
-		pushLensItem(getSecuritizeSupplyCapResolvedBatchItem(vault), {
+		pushLensItem(getSecuritizeSupplyCapResolvedBatchItem(vault, owner), {
 			kind: "securitizeSupplyCap",
 			vault,
 		});

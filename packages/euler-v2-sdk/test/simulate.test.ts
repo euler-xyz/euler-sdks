@@ -35,6 +35,8 @@ const ACCOUNT_LENS = "0x0000000000000000000000000000000000000013" as const;
 const VAULT_LENS = "0x0000000000000000000000000000000000000014" as const;
 const EULER_EARN_LENS = "0x0000000000000000000000000000000000000015" as const;
 const VERIFIER = "0x0000000000000000000000000000000000000016" as const;
+const UTILS_LENS = "0x0000000000000000000000000000000000000017" as const;
+const SECURITIZE_VAULT = "0x0000000000000000000000000000000000000018" as const;
 const CHECKSUM_ACCOUNT = getAddress(ACCOUNT);
 
 const testAbi = [
@@ -101,6 +103,7 @@ function createExecutionService() {
 						vaultLens: "0x0000000000000000000000000000000000000014",
 						eulerEarnVaultLens:
 							"0x0000000000000000000000000000000000000015",
+						utilsLens: UTILS_LENS,
 					},
 				},
 			}),
@@ -159,6 +162,7 @@ async function simulateAndCollectVaultAccountReads(
 						accountLens: ACCOUNT_LENS,
 						vaultLens: VAULT_LENS,
 						eulerEarnVaultLens: EULER_EARN_LENS,
+						utilsLens: UTILS_LENS,
 					},
 				},
 			}),
@@ -248,6 +252,7 @@ async function simulateAndCollectWalletBalanceReads(
 						accountLens: ACCOUNT_LENS,
 						vaultLens: VAULT_LENS,
 						eulerEarnVaultLens: EULER_EARN_LENS,
+						utilsLens: UTILS_LENS,
 					},
 					tokenAddrs: options.eulToken ? { EUL: options.eulToken } : {},
 				},
@@ -575,6 +580,7 @@ test("simulateTransactionPlan reports direct allowance deficits from spender all
 						vaultLens: "0x0000000000000000000000000000000000000014",
 						eulerEarnVaultLens:
 							"0x0000000000000000000000000000000000000015",
+						utilsLens: UTILS_LENS,
 					},
 				},
 			}),
@@ -706,6 +712,94 @@ test("simulateTransactionPlan reads EVC account-mode candidates", async () => {
 
 	assert.ok(vaultAccountReads.has(`${subAccount}:${getAddress(TARGET)}`));
 	assert.ok(vaultAccountReads.has(`${subAccount}:${getAddress(TOKEN)}`));
+});
+
+test("simulateTransactionPlan reads Securitize vault info on behalf of the owner", async () => {
+	const actionData = encodeFunctionData({
+		abi: testAbi,
+		functionName: "doThing",
+		args: [1n],
+	});
+	const simulateContract = vi.fn(
+		async ({ args }: { args: readonly [EVCBatchItem[]] }) => {
+			const fullBatch = args[0];
+			return {
+				result: [
+					fullBatch.map((item) => ({
+						success:
+							getAddress(item.targetContract) === getAddress(SECURITIZE_VAULT) &&
+							item.data === actionData,
+						result: "0x",
+					})),
+					[],
+					[],
+				],
+			};
+		},
+	);
+	const provider = {
+		simulateContract,
+		multicall: vi.fn(async () => []),
+		readContract: vi.fn(async () => {
+			throw new Error("asset unavailable");
+		}),
+	};
+	const service = new ExecutionService(
+		{
+			getDeployment: () => ({
+				addresses: {
+					coreAddrs: {
+						evc: EVC,
+						permit2: "0x0000000000000000000000000000000000000012",
+					},
+					lensAddrs: {
+						accountLens: ACCOUNT_LENS,
+						vaultLens: VAULT_LENS,
+						eulerEarnVaultLens: EULER_EARN_LENS,
+						utilsLens: UTILS_LENS,
+					},
+				},
+			}),
+		} as never,
+		undefined,
+		{ getProvider: () => provider } as never,
+		{
+			fetchVaultTypes: async () => ({
+				[getAddress(SECURITIZE_VAULT)]: VaultType.SecuritizeCollateral,
+			}),
+		} as never,
+	);
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: SECURITIZE_VAULT,
+					onBehalfOfAccount: CHECKSUM_ACCOUNT,
+					value: 0n,
+					data: actionData,
+				},
+			],
+		},
+	];
+
+	await service.simulateTransactionPlan(1, CHECKSUM_ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+
+	const fullBatch = simulateContract.mock.calls[0]?.[0].args[0] ?? [];
+	const securitizeReadItems = fullBatch.filter(
+		(item) =>
+			getAddress(item.targetContract) === getAddress(UTILS_LENS) ||
+			(getAddress(item.targetContract) === getAddress(SECURITIZE_VAULT) &&
+				item.data !== actionData),
+	);
+
+	assert.equal(securitizeReadItems.length, 6);
+	assert.deepEqual(
+		securitizeReadItems.map((item) => getAddress(item.onBehalfOfAccount)),
+		Array.from({ length: 6 }, () => CHECKSUM_ACCOUNT),
+	);
 });
 
 test("simulateTransactionPlan reads liquidation and pull-debt candidates", async () => {
