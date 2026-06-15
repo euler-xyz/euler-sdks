@@ -276,15 +276,18 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			.filter((reward): reward is UserReward => reward !== undefined);
 	}
 
-	async fetchFuulTotals(address: Address): Promise<FuulTotals> {
-		return this.claimAdapter?.fetchFuulTotals(address) ?? {
+	async fetchFuulTotals(address: Address, chainId?: number): Promise<FuulTotals> {
+		return this.claimAdapter?.fetchFuulTotals(address, chainId) ?? {
 			claimed: [],
 			unclaimed: [],
 		};
 	}
 
-	async fetchFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]> {
-		return this.claimAdapter?.fetchFuulClaimChecks(address) ?? [];
+	async fetchFuulClaimChecks(
+		address: Address,
+		chainId?: number,
+	): Promise<FuulClaimCheck[]> {
+		return this.claimAdapter?.fetchFuulClaimChecks(address, chainId) ?? [];
 	}
 
 	async fetchBrevisUserRewardClaims(

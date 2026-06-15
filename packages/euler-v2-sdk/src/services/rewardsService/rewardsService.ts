@@ -283,12 +283,15 @@ export class RewardsService implements IRewardsService {
 		return this.adapter.fetchUserRewards(chainId, address);
 	}
 
-	async fetchFuulTotals(address: Address): Promise<FuulTotals> {
-		return this.adapter.fetchFuulTotals(address);
+	async fetchFuulTotals(address: Address, chainId?: number): Promise<FuulTotals> {
+		return this.adapter.fetchFuulTotals(address, chainId);
 	}
 
-	async fetchFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]> {
-		return this.adapter.fetchFuulClaimChecks(address);
+	async fetchFuulClaimChecks(
+		address: Address,
+		chainId?: number,
+	): Promise<FuulClaimCheck[]> {
+		return this.adapter.fetchFuulClaimChecks(address, chainId);
 	}
 
 	queryVaultAccountInfo = async (
@@ -727,7 +730,7 @@ export class RewardsService implements IRewardsService {
 		account: Address,
 		rewards: UserReward[],
 	): Promise<ContractCall> {
-		const claimChecks = await this.fetchFuulClaimChecks(account);
+		const claimChecks = await this.fetchFuulClaimChecks(account, chainId);
 		if (claimChecks.length === 0) {
 			throw new Error("No claimable Fuul rewards found");
 		}
@@ -786,7 +789,7 @@ export class RewardsService implements IRewardsService {
 		claimChecks: FuulClaimCheck[],
 	): Promise<void> {
 		const requestedAccount = getAddress(account);
-		const totals = await this.fetchFuulTotals(account).catch(() => ({
+		const totals = await this.fetchFuulTotals(account, chainId).catch(() => ({
 			claimed: [],
 			unclaimed: [],
 		}));

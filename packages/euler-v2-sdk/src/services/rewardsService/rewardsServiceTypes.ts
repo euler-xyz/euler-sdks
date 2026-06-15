@@ -182,8 +182,11 @@ export interface IRewardsService {
 	fetchChainRewards(chainId: number): Promise<Map<string, VaultRewardInfo>>;
 	populateRewards(vaults: ERC4626Vault[]): Promise<void>;
 	fetchUserRewards(chainId: number, address: Address): Promise<UserReward[]>;
-	fetchFuulTotals(address: Address): Promise<FuulTotals>;
-	fetchFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]>;
+	fetchFuulTotals(address: Address, chainId?: number): Promise<FuulTotals>;
+	fetchFuulClaimChecks(
+		address: Address,
+		chainId?: number,
+	): Promise<FuulClaimCheck[]>;
 	fetchRewardStreams(
 		args: FetchRewardStreamsArgs,
 	): Promise<AccountRewardStream[]>;
@@ -204,8 +207,11 @@ export interface IRewardsAdapter {
 	): Promise<VaultRewardInfo | undefined>;
 	fetchChainRewards(chainId: number): Promise<Map<string, VaultRewardInfo>>;
 	fetchUserRewards(chainId: number, address: Address): Promise<UserReward[]>;
-	fetchFuulTotals(address: Address): Promise<FuulTotals>;
-	fetchFuulClaimChecks(address: Address): Promise<FuulClaimCheck[]>;
+	fetchFuulTotals(address: Address, chainId?: number): Promise<FuulTotals>;
+	fetchFuulClaimChecks(
+		address: Address,
+		chainId?: number,
+	): Promise<FuulClaimCheck[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -392,6 +398,24 @@ export interface FuulClaimCheck {
 	deadline: string;
 	proof: string;
 	signatures: string[];
+}
+
+export interface FuulClaimableReward {
+	id?: string;
+	user_address: string;
+	currency_address: string;
+	currency_chain_id: number | string;
+	currency_name?: string;
+	currency_decimals?: number | string;
+	amount: string;
+	project_address: string;
+	reason: number | string;
+	token_id: number | string;
+	deadline: number | string;
+	proof: string;
+	signatures: string[];
+	status?: string;
+	sources?: Array<Record<string, unknown>>;
 }
 
 export interface FuulTotalEntry {

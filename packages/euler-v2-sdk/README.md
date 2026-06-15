@@ -1,7 +1,5 @@
 # Euler V2 SDK
 
-# NOTE this is a beta version, proceed with caution.
-
 ## Installation
 
 ```bash

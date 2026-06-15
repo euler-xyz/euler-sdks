@@ -11,6 +11,7 @@ import {
 import { RewardsService } from "../src/services/rewardsService/rewardsService.js";
 import type {
 	FuulClaimCheck,
+	FuulClaimableReward,
 	IRewardsAdapter,
 	UserReward,
 } from "../src/services/rewardsService/index.js";
@@ -238,6 +239,26 @@ const makeFuulClaimCheck = (
 	deadline: "9999999999",
 	proof: proofHash,
 	signatures: ["0x123"],
+	...overrides,
+});
+
+const makeFuulClaimableReward = (
+	overrides: Partial<FuulClaimableReward> = {},
+): FuulClaimableReward => ({
+	id: "claimable-1",
+	user_address: accountAddress,
+	currency_address: rewardToken,
+	currency_chain_id: 1,
+	currency_name: "USDC",
+	currency_decimals: 6,
+	amount: "1000",
+	project_address: fuulProjectAddress,
+	reason: 0,
+	token_id: "0",
+	deadline: "9999999999",
+	proof: proofHash,
+	signatures: ["0x123"],
+	status: "claimable",
 	...overrides,
 });
 
@@ -1368,6 +1389,87 @@ test("direct rewards adapter filters Fuul claim checks for another recipient", a
 	assert.equal(claimChecks[0]?.to, accountAddress);
 	assert.equal(claimChecks[0]?.project_address, fuulProjectAddress);
 	assert.equal(claimChecks[0]?.currency, rewardToken);
+});
+
+test("direct rewards adapter fetches Fuul user rewards from public claimable rewards", async () => {
+	const adapter = new RewardsDirectAdapter();
+	let requestUrl = "";
+	adapter.setQueryFuulClaimableRewards(async (url) => {
+		requestUrl = url;
+		return [
+			makeFuulClaimableReward({
+				currency_chain_id: 8453,
+				currency_name: "USDC",
+				currency_decimals: 6,
+			}),
+			makeFuulClaimableReward({
+				currency_chain_id: 8453,
+				amount: "500",
+			}),
+			makeFuulClaimableReward({ user_address: otherAccountAddress }),
+		];
+	});
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+	const params = new URL(requestUrl).searchParams;
+
+	assert.equal(requestUrl.startsWith("https://api.fuul.xyz/api/v1/claimable-rewards"), true);
+	assert.equal(params.get("protocol"), "euler");
+	assert.equal(params.get("user_address"), accountAddress);
+	assert.equal(params.get("chain_id"), "1");
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "fuul");
+	assert.equal(rewards[0]?.chainId, 8453);
+	assert.equal(rewards[0]?.token.address, rewardToken);
+	assert.equal(rewards[0]?.token.chainId, 8453);
+	assert.equal(rewards[0]?.token.symbol, "USDC");
+	assert.equal(rewards[0]?.token.decimals, 6);
+	assert.equal(rewards[0]?.unclaimed, "1500");
+});
+
+test("rewards service builds Fuul claim plan from public claimable rewards", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryFuulClaimableRewards(async () => [
+		makeFuulClaimableReward(),
+	]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: claimAddress,
+		fuulFactoryAddress: fuulProjectAddress,
+	});
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					return { nativeUserClaimFee: 123n };
+				},
+			};
+		},
+	} as any);
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+	const plan = await service.buildClaimPlans({
+		rewards,
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.equal(operation.items[0]?.targetContract, claimAddress);
+	assert.equal(operation.items[0]?.value, 123n);
+	const decoded = decodeFunctionData({
+		abi: FUUL_MANAGER_ABI,
+		data: operation.items[0]!.data,
+	});
+	assert.equal(decoded.functionName, "claim");
+	const claimCheck = (decoded.args[0] as any[])[0];
+	assert.equal(claimCheck?.projectAddress, fuulProjectAddress);
+	assert.equal(claimCheck?.currencyType, 1);
+	assert.equal(claimCheck?.amount, 1000n);
 });
 
 test("V3 rewards adapter delegates Fuul claim data to direct adapter", async () => {
