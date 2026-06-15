@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.5] - 2026-06-15
+
+### Fixed
+
+- Fixed simulation readbacks for Securitize collateral vaults so vault entities are stitched from ERC4626, governor, and resolved supply-cap reads.
+- Fixed Securitize simulation readbacks to run vault metadata reads on behalf of the simulated owner.
+- Preserved static wallet shortfall diagnostics when failed simulation items prevent wallet delta readbacks.
+- Added direct owner-to-spender ERC20 allowance overrides alongside Permit2 allowance overrides for raw plan simulations.
+
 ## [1.0.4] - 2026-06-15
 
 ### Added

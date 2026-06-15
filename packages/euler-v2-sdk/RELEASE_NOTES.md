@@ -1,16 +1,15 @@
-# euler-v2-sdk v1.0.4
+# euler-v2-sdk v1.0.5
 
 ## Summary
 
-This release improves batch simulation readbacks, reward stream handling, and wallet-balance tracking for claim and unlock flows.
+This release fixes collateral simulation readbacks for Securitize vaults and direct spender allowance overrides.
 
 ## Highlights
 
-- Reward streams are exposed on account positions and can be fetched and claimed through the rewards service.
-- EVC batch simulations track wallet balance metadata across reward claims, rEUL unlocks, and cleanup reads.
-- Approval and balance override fallback behavior handles unavailable access-list discovery without retrying the same unavailable path.
-- Simulation wallet balance requirements sum repeated token needs before checking available balances.
-- Direct `Account` construction normalizes sub-account map keys to checksum addresses.
+- Securitize collateral vaults are included in simulation readbacks and stitched from ERC4626, governor, and resolved supply-cap reads.
+- Securitize metadata reads run on behalf of the simulated owner so owner-scoped reads resolve correctly.
+- Static wallet shortfall diagnostics are preserved when failed simulation items prevent wallet delta readbacks.
+- Raw plan simulations now override direct owner-to-spender ERC20 allowances in addition to Permit2 allowances.
 
 ## Validation
 
