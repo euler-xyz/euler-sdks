@@ -40,6 +40,30 @@ export const getVaultInfoERC4626LensBatchItem = (
 	}),
 });
 
+export const getSecuritizeGovernorAdminBatchItem = (
+	vault: Address,
+): EVCBatchItem => ({
+	targetContract: vault,
+	onBehalfOfAccount: zeroAddress,
+	value: 0n,
+	data: encodeFunctionData({
+		abi: erc4626EvcCollateralSecuritizeAbi,
+		functionName: "governorAdmin",
+	}),
+});
+
+export const getSecuritizeSupplyCapResolvedBatchItem = (
+	vault: Address,
+): EVCBatchItem => ({
+	targetContract: vault,
+	onBehalfOfAccount: zeroAddress,
+	value: 0n,
+	data: encodeFunctionData({
+		abi: erc4626EvcCollateralSecuritizeAbi,
+		functionName: "supplyCapResolved",
+	}),
+});
+
 export class SecuritizeVaultOnchainAdapter
 	implements ISecuritizeCollateralAdapter
 {

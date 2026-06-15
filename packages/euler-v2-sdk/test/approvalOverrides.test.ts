@@ -23,8 +23,10 @@ afterEach(() => {
 });
 
 test("getApprovalOverrides discovers allowance slots from access-list candidates", async () => {
-	const expectedSlot =
+	const permit2Slot =
 		"0x0000000000000000000000000000000000000000000000000000000000001234" as Hex;
+	const directSlot =
+		"0x0000000000000000000000000000000000000000000000000000000000009abc" as Hex;
 	const decoySlot =
 		"0x0000000000000000000000000000000000000000000000000000000000005678" as Hex;
 	const permit2StateDiff = computePermit2StateDiff(ACCOUNT, [[TOKEN, SPENDER]]);
@@ -39,6 +41,7 @@ test("getApprovalOverrides discovers allowance slots from access-list candidates
 			params: [Record<string, unknown>, string];
 		}) => {
 			requestPayloads.push(params[0]);
+			const expectedSlot = requestPayloads.length === 1 ? permit2Slot : directSlot;
 			return {
 				accessList: [
 					{
@@ -60,7 +63,7 @@ test("getApprovalOverrides discovers allowance slots from access-list candidates
 				return 0n;
 			}
 
-			return slot === expectedSlot ? maxUint256 : 0n;
+			return slot === permit2Slot || slot === directSlot ? maxUint256 : 0n;
 		},
 	};
 
@@ -73,6 +76,7 @@ test("getApprovalOverrides discovers allowance slots from access-list candidates
 
 	assert.equal("from" in requestPayloads[0]!, false);
 	assert.equal(requestPayloads[0]!.gas, "0x989680");
+	assert.equal(requestPayloads.length, 2);
 	assert.deepEqual(overrides, [
 		{
 			address: PERMIT2,
@@ -80,7 +84,11 @@ test("getApprovalOverrides discovers allowance slots from access-list candidates
 		},
 		{
 			address: TOKEN,
-			stateDiff: [{ slot: expectedSlot, value: expectedValue }],
+			stateDiff: [{ slot: permit2Slot, value: expectedValue }],
+		},
+		{
+			address: TOKEN,
+			stateDiff: [{ slot: directSlot, value: expectedValue }],
 		},
 	]);
 });
@@ -90,8 +98,10 @@ test("getApprovalOverrides falls back to raw slot probing after access-list fail
 
 	const token = "0x00000000000000000000000000000000000000b1" as const;
 	const slotIndex = 2n;
-	const probeSlot = computeAllowanceSlot(PROBE_OWNER, PERMIT2, slotIndex);
-	const expectedSlot = computeAllowanceSlot(ACCOUNT, PERMIT2, slotIndex);
+	const permit2ProbeSlot = computeAllowanceSlot(PROBE_OWNER, PERMIT2, slotIndex);
+	const directProbeSlot = computeAllowanceSlot(PROBE_OWNER, SPENDER, slotIndex);
+	const permit2ExpectedSlot = computeAllowanceSlot(ACCOUNT, PERMIT2, slotIndex);
+	const directExpectedSlot = computeAllowanceSlot(ACCOUNT, SPENDER, slotIndex);
 	const expectedValue = toHex(maxUint256, { size: 32 });
 	let requestCount = 0;
 
@@ -109,7 +119,9 @@ test("getApprovalOverrides falls back to raw slot probing after access-list fail
 			}>;
 		}) => {
 			const slot = stateOverride?.[0]?.stateDiff?.[0]?.slot;
-			return slot === probeSlot ? maxUint256 : 0n;
+			return slot === permit2ProbeSlot || slot === directProbeSlot
+				? maxUint256
+				: 0n;
 		},
 	};
 
@@ -120,7 +132,7 @@ test("getApprovalOverrides falls back to raw slot probing after access-list fail
 		PERMIT2,
 	);
 
-	assert.equal(requestCount, 1);
+	assert.equal(requestCount, 2);
 	assert.deepEqual(overrides, [
 		{
 			address: PERMIT2,
@@ -128,7 +140,11 @@ test("getApprovalOverrides falls back to raw slot probing after access-list fail
 		},
 		{
 			address: getAddress(token),
-			stateDiff: [{ slot: expectedSlot, value: expectedValue }],
+			stateDiff: [{ slot: permit2ExpectedSlot, value: expectedValue }],
+		},
+		{
+			address: getAddress(token),
+			stateDiff: [{ slot: directExpectedSlot, value: expectedValue }],
 		},
 	]);
 });
@@ -155,7 +171,7 @@ test("getApprovalOverrides does not retry access-list after raw probing fails", 
 		PERMIT2,
 	);
 
-	assert.equal(requestCount, 1);
+	assert.equal(requestCount, 2);
 	assert.deepEqual(overrides, [
 		{
 			address: PERMIT2,

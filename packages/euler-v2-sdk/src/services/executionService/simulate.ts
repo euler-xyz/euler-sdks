@@ -131,6 +131,17 @@ import { vaultLensAbi } from "../vaults/eVaultService/adapters/eVaultOnchainAdap
 import type { VaultInfoFull } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
 import { getVaultInfoFullLensBatchItem } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultOnchainAdapter.js";
 import { convertVaultInfoFullToIEVault } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/vaultInfoConverter.js";
+import { SecuritizeCollateralVault } from "../../entities/SecuritizeCollateralVault.js";
+import { utilsLensAbi } from "../vaults/securitizeVaultService/adapters/abis/utilsLensAbi.js";
+import { erc4626EvcCollateralSecuritizeAbi } from "../vaults/securitizeVaultService/adapters/abis/erc4626EvcCollateralSecuritizeAbi.js";
+import type { VaultInfoERC4626 } from "../vaults/securitizeVaultService/adapters/securitizeVaultLensTypes.js";
+import { convertToISecuritizeCollateralVault } from "../vaults/securitizeVaultService/adapters/securitizeVaultInfoConverter.js";
+import {
+	getVaultInfoERC4626LensBatchItem,
+	getSecuritizeGovernorAdminBatchItem,
+	getSecuritizeSupplyCapResolvedBatchItem,
+} from "../vaults/securitizeVaultService/adapters/securitizeVaultOnchainAdapter.js";
+import type { DataIssue } from "../../utils/entityDiagnostics.js";
 import type { VaultFetchOptions } from "../vaults/index.js";
 import type {
 	IVaultMetaService,
@@ -270,6 +281,9 @@ export type SimulationStateOverrideOptions = {
 type LensMeta =
 	| { kind: "eVault"; vault: Address }
 	| { kind: "eulerEarn"; vault: Address }
+	| { kind: "securitizeInfo"; vault: Address }
+	| { kind: "securitizeGovernor"; vault: Address }
+	| { kind: "securitizeSupplyCap"; vault: Address }
 	| { kind: "evcAccount"; subAccount: Address }
 	| { kind: "vaultAccount"; subAccount: Address; vault: Address }
 	| { kind: "walletBalance"; token: Address };
@@ -559,14 +573,16 @@ export async function simulateTransactionPlan<
 	const simulatedWalletBalances = snapshots.map((s) => s.walletBalances);
 
 	// Accurate wallet shortfall from the per-layer balances (running-min over the
-	// real-anchored balance), which nets out intra-batch funding. Overrides the
-	// static approval-based estimate from fetchSimulationDiagnostics.
-	const insufficientWalletAssets = await computeWalletShortfall(
-		ctx,
-		chainId,
-		owner,
-		simulatedWalletBalances,
-	);
+	// real-anchored balance), which nets out intra-batch funding. Prefer it when
+	// available; if an item reverted before wallet deltas could be observed, keep
+	// the static requiredApproval diagnostic from fetchSimulationDiagnostics.
+	const insufficientWalletAssets =
+		(await computeWalletShortfall(
+			ctx,
+			chainId,
+			owner,
+			simulatedWalletBalances,
+		)) ?? diagnostics.insufficientWalletAssets;
 
 	const canExecute =
 		failedBatchItems.length === 0 &&
@@ -701,6 +717,12 @@ async function decodeAccountSnapshot<
 	const evcInfos = new Map<Address, EVCAccountInfo>();
 	const vaultInfosBySub = new Map<Address, VaultAccountInfo[]>();
 	const walletBalances: Record<string, bigint> = {};
+	// Securitize collateral vaults are assembled from three separate reads
+	// (ERC4626 info via UtilsLens, plus governorAdmin and supplyCapResolved read
+	// directly off the vault), keyed by vault address and stitched after the loop.
+	const securitizeInfos = new Map<Address, VaultInfoERC4626>();
+	const securitizeGovernors = new Map<Address, Address>();
+	const securitizeSupplyCaps = new Map<Address, bigint>();
 
 	for (let i = 0; i < lensMeta.length; i++) {
 		const meta = lensMeta[i]!;
@@ -741,6 +763,33 @@ async function decodeAccountSnapshot<
 			vaultsByAddress.set(getAddress(meta.vault), entity);
 		}
 
+		if (meta.kind === "securitizeInfo") {
+			const decoded = decodeFunctionResult({
+				abi: utilsLensAbi,
+				functionName: "getVaultInfoERC4626",
+				data: resultItem.result,
+			}) as unknown as VaultInfoERC4626;
+			securitizeInfos.set(getAddress(meta.vault), decoded);
+		}
+
+		if (meta.kind === "securitizeGovernor") {
+			const decoded = decodeFunctionResult({
+				abi: erc4626EvcCollateralSecuritizeAbi,
+				functionName: "governorAdmin",
+				data: resultItem.result,
+			}) as unknown as Address;
+			securitizeGovernors.set(getAddress(meta.vault), decoded);
+		}
+
+		if (meta.kind === "securitizeSupplyCap") {
+			const decoded = decodeFunctionResult({
+				abi: erc4626EvcCollateralSecuritizeAbi,
+				functionName: "supplyCapResolved",
+				data: resultItem.result,
+			}) as unknown as bigint;
+			securitizeSupplyCaps.set(getAddress(meta.vault), decoded);
+		}
+
 		if (meta.kind === "evcAccount") {
 			const decodedAccount = decodeFunctionResult({
 				abi: accountLensAbi,
@@ -761,6 +810,26 @@ async function decodeAccountSnapshot<
 			list.push(decodedVaultInfo);
 			vaultInfosBySub.set(key, list);
 		}
+	}
+
+	// Stitch the three Securitize reads into vault entities. Skip any vault whose
+	// governor/supply-cap read failed (kept undefined) so a partial read degrades
+	// to "no entity" rather than throwing — mirrors the per-vault tolerance above.
+	for (const [vault, info] of securitizeInfos.entries()) {
+		const governor = securitizeGovernors.get(vault);
+		const supplyCap = securitizeSupplyCaps.get(vault);
+		if (governor === undefined || supplyCap === undefined) continue;
+		const conversionErrors: DataIssue[] = [];
+		const entity = new SecuritizeCollateralVault(
+			convertToISecuritizeCollateralVault(
+				info,
+				governor,
+				supplyCap,
+				chainId,
+				conversionErrors,
+			),
+		);
+		vaultsByAddress.set(vault, entity);
 	}
 
 	const simulatedVaults = Array.from(
@@ -1021,15 +1090,19 @@ async function buildSimulationBatch(
 	const validVaults = new Set<Address>();
 	const eVaults: Address[] = [];
 	const eulerEarnVaults: Address[] = [];
+	const securitizeVaults: Address[] = [];
 
 	for (const vault of vaultCandidatesList) {
 		const key = getAddress(vault);
 		const type = vaultTypes[key];
 		if (!type) continue;
-		if (type === VaultType.SecuritizeCollateral) continue;
 		validVaults.add(key);
 		if (type === VaultType.EVault) eVaults.push(key);
 		if (type === VaultType.EulerEarn) eulerEarnVaults.push(key);
+		// Securitize RWA collaterals are real Euler collateral vaults; keep them in
+		// validVaults so their per-account position (getVaultAccountInfo) is read,
+		// and queue the dedicated reads below so the vault entity is resolved too.
+		if (type === VaultType.SecuritizeCollateral) securitizeVaults.push(key);
 	}
 
 	const deployment = ctx.deploymentService.getDeployment(chainId);
@@ -1037,6 +1110,7 @@ async function buildSimulationBatch(
 	const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
 	const eulerEarnLensAddress =
 		deployment.addresses.lensAddrs.eulerEarnVaultLens;
+	const utilsLensAddress = deployment.addresses.lensAddrs.utilsLens;
 	const evcAddress = deployment.addresses.coreAddrs.evc;
 
 	const lensItems: EVCBatchItem[] = [];
@@ -1069,6 +1143,21 @@ async function buildSimulationBatch(
 				vault,
 			},
 		);
+	}
+
+	for (const vault of securitizeVaults) {
+		pushLensItem(getVaultInfoERC4626LensBatchItem(utilsLensAddress, vault), {
+			kind: "securitizeInfo",
+			vault,
+		});
+		pushLensItem(getSecuritizeGovernorAdminBatchItem(vault), {
+			kind: "securitizeGovernor",
+			vault,
+		});
+		pushLensItem(getSecuritizeSupplyCapResolvedBatchItem(vault), {
+			kind: "securitizeSupplyCap",
+			vault,
+		});
 	}
 
 	for (const [subAccount, vaults] of subAccountVaults.entries()) {
@@ -1110,7 +1199,7 @@ async function buildSimulationBatch(
 	// overrides, so consumers stitch using the delta vs the pre-batch layer.
 	const provider = ctx.providerService?.getProvider(chainId);
 	if (provider) {
-		const vaultsForAssets = [...eVaults, ...eulerEarnVaults];
+		const vaultsForAssets = [...eVaults, ...eulerEarnVaults, ...securitizeVaults];
 		const assets = await Promise.all(
 			vaultsForAssets.map((vault) =>
 				provider
