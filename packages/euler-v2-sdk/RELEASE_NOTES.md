@@ -1,15 +1,14 @@
-# euler-v2-sdk v1.0.5
+# euler-v2-sdk v1.0.6
 
 ## Summary
 
-This release fixes collateral simulation readbacks for Securitize vaults and direct spender allowance overrides.
+This release fixes wallet shortfall diagnostics for batched wallet-sourced deposits funded by earlier simulated operations.
 
 ## Highlights
 
-- Securitize collateral vaults are included in simulation readbacks and stitched from ERC4626, governor, and resolved supply-cap reads.
-- Securitize metadata reads run on behalf of the simulated owner so owner-scoped reads resolve correctly.
-- Static wallet shortfall diagnostics are preserved when failed simulation items prevent wallet delta readbacks.
-- Raw plan simulations now override direct owner-to-spender ERC20 allowances in addition to Permit2 allowances.
+- Required-approval wallet tokens are now included in simulation wallet balance layers.
+- Batched deposits can use wallet funds created by earlier withdraw or swap steps before reporting a missing wallet balance.
+- Empty computed wallet shortfalls no longer fall back to static approval diagnostics.
 
 ## Validation
 

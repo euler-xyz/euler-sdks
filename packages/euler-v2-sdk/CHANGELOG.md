@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.6] - 2026-06-18
+
+### Fixed
+
+- Fixed wallet shortfall diagnostics for batched wallet-sourced deposits so funds created by earlier simulated operations are counted before reporting a missing wallet balance.
+- Tracked required-approval wallet tokens in simulation balance layers, covering wallet input tokens that are not touched vault underlyings.
+- Treated an empty computed wallet shortfall as authoritative instead of falling back to static approval diagnostics.
+
 ## [1.0.5] - 2026-06-15
 
 ### Fixed
