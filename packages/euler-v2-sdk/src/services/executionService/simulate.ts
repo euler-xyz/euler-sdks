@@ -455,6 +455,7 @@ export async function simulateTransactionPlan<
 		chainId,
 		owner,
 		operations,
+		extractBalanceRequirements(transactionPlan, owner).map(([token]) => token),
 	);
 
 	// Assemble the EVC batch, interleaving a lens-read block before the first
@@ -574,15 +575,20 @@ export async function simulateTransactionPlan<
 
 	// Accurate wallet shortfall from the per-layer balances (running-min over the
 	// real-anchored balance), which nets out intra-batch funding. Prefer it when
-	// available; if an item reverted before wallet deltas could be observed, keep
-	// the static requiredApproval diagnostic from fetchSimulationDiagnostics.
+	// available; if wallet deltas could not be observed, keep the static
+	// requiredApproval diagnostic from fetchSimulationDiagnostics.
+	const computedWalletShortfall = await computeWalletShortfall(
+		ctx,
+		chainId,
+		owner,
+		simulatedWalletBalances,
+	);
 	const insufficientWalletAssets =
-		(await computeWalletShortfall(
-			ctx,
-			chainId,
-			owner,
-			simulatedWalletBalances,
-		)) ?? diagnostics.insufficientWalletAssets;
+		computedWalletShortfall === undefined
+			? diagnostics.insufficientWalletAssets
+			: computedWalletShortfall.length > 0
+				? computedWalletShortfall
+				: undefined;
 
 	const canExecute =
 		failedBatchItems.length === 0 &&
@@ -1027,6 +1033,7 @@ async function buildSimulationBatch(
 	chainId: number,
 	owner: Address,
 	operations: SimulationOperation[],
+	requiredWalletBalanceTokens: Address[] = [],
 ): Promise<{
 	lensItems: EVCBatchItem[];
 	lensMeta: LensMeta[];
@@ -1214,6 +1221,9 @@ async function buildSimulationBatch(
 		);
 		const assetTokens = new Set<Address>();
 		for (const a of assets) if (a) assetTokens.add(getAddress(a));
+		for (const token of requiredWalletBalanceTokens) {
+			addWalletToken(assetTokens, token);
+		}
 		for (const operation of operations) {
 			for (const token of operation.walletBalanceTokens ?? []) {
 				addWalletToken(assetTokens, token);
@@ -1543,7 +1553,7 @@ async function computeWalletShortfall(
 		if (minAvailable < 0n)
 			shortfalls.push({ token: getAddress(t), amount: -minAvailable });
 	}
-	return shortfalls.length > 0 ? shortfalls : undefined;
+	return shortfalls;
 }
 
 async function fetchSimulationDiagnostics(

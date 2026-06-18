@@ -395,6 +395,187 @@ test("simulateTransactionPlan tracks operation wallet balance tokens", async () 
 	assert.ok(reads.has(getAddress(TOKEN)));
 });
 
+test("simulateTransactionPlan tracks required approval wallet balance tokens", async () => {
+	const plan: TransactionPlan = [
+		{
+			type: "requiredApproval",
+			token: TOKEN,
+			owner: ACCOUNT,
+			spender: SPENDER,
+			amount: 100n,
+		},
+		{
+			type: "evcBatch",
+			items: [
+				{
+					type: "operation",
+					name: "depositWithSwapFromWallet",
+					items: [
+						{
+							targetContract: TARGET,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: testAbi,
+								functionName: "doThing",
+								args: [1n],
+							}),
+						},
+					],
+				},
+			],
+		},
+	];
+
+	const reads = await simulateAndCollectWalletBalanceReads(plan);
+
+	assert.ok(reads.has(getAddress(TOKEN)));
+});
+
+test("simulateTransactionPlan nets required approval shortfalls from wallet balance layers", async () => {
+	const layerBalances = [0n, 150n, 50n];
+	let balanceReadIndex = 0;
+	const simulateContract = vi.fn(
+		async ({ args }: { args: readonly [EVCBatchItem[]] }) => {
+			const fullBatch = args[0];
+			return {
+				result: [
+					fullBatch.map((item) => {
+						if (getAddress(item.targetContract) === getAddress(ACCOUNT_LENS)) {
+							return { success: false, result: "0x" };
+						}
+						try {
+							const decoded = decodeFunctionData({
+								abi: erc20BalanceAbi,
+								data: item.data,
+							});
+							if (
+								decoded.functionName === "balanceOf" &&
+								getAddress(item.targetContract) === getAddress(TOKEN)
+							) {
+								const balance =
+									layerBalances[Math.min(balanceReadIndex, layerBalances.length - 1)]!;
+								balanceReadIndex++;
+								return {
+									success: true,
+									result: encodeFunctionResult({
+										abi: erc20BalanceAbi,
+										functionName: "balanceOf",
+										result: balance,
+									}),
+								};
+							}
+						} catch {}
+						return { success: true, result: "0x" };
+					}),
+					[],
+					[],
+				],
+			};
+		},
+	);
+	const service = new ExecutionService(
+		{
+			getDeployment: () => ({
+				addresses: {
+					coreAddrs: {
+						evc: EVC,
+						permit2: "0x0000000000000000000000000000000000000012",
+					},
+					lensAddrs: {
+						accountLens: ACCOUNT_LENS,
+						vaultLens: VAULT_LENS,
+						eulerEarnVaultLens: EULER_EARN_LENS,
+						utilsLens: UTILS_LENS,
+					},
+				},
+			}),
+		} as never,
+		{
+			fetchWallet: async () => ({
+				result: {
+					getAsset: () => ({
+						balance: 0n,
+						allowances: {
+							[SPENDER]: {
+								assetForVault: 1_000n,
+								assetForVaultInPermit2: 1_000n,
+								permit2ExpirationTime: Math.floor(Date.now() / 1000) + 60,
+							},
+						},
+					}),
+					getBalance: () => 0n,
+				},
+			}),
+		} as never,
+		{
+			getProvider: () => ({
+				simulateContract,
+				multicall: vi.fn(async () => []),
+				readContract: vi.fn(async () => {
+					throw new Error("read unavailable");
+				}),
+			}),
+		} as never,
+		{
+			fetchVaultTypes: async () => ({}),
+		} as never,
+	);
+	const plan: TransactionPlan = [
+		{
+			type: "requiredApproval",
+			token: TOKEN,
+			owner: ACCOUNT,
+			spender: SPENDER,
+			amount: 100n,
+		},
+		{
+			type: "evcBatch",
+			items: [
+				{
+					type: "operation",
+					name: "withdraw",
+					items: [
+						{
+							targetContract: TARGET,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: testAbi,
+								functionName: "doThing",
+								args: [1n],
+							}),
+						},
+					],
+				},
+				{
+					type: "operation",
+					name: "depositWithSwapFromWallet",
+					items: [
+						{
+							targetContract: TARGET,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: testAbi,
+								functionName: "doThing",
+								args: [2n],
+							}),
+						},
+					],
+				},
+			],
+		},
+	];
+
+	const result = await service.simulateTransactionPlan(1, ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+
+	assert.equal(balanceReadIndex, 3);
+	assert.equal(result.insufficientWalletAssets, undefined);
+});
+
 test("simulateTransactionPlan tracks Merkl claim reward tokens", async () => {
 	const proof =
 		"0x1111111111111111111111111111111111111111111111111111111111111111" as const;
