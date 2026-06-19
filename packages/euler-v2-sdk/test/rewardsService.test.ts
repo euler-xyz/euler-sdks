@@ -360,6 +360,136 @@ test("V3 rewards adapter normalizes Incentra APY campaigns as Brevis", async () 
 	assert.equal(info?.campaigns[0]?.apr, 0.045);
 });
 
+test("V3 rewards adapter uses source when provider is attribution metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "accountable-valos-boost",
+						provider: "VALOS",
+						source: "merkl",
+						campaignType: "euler_lend",
+						apr: 0.27760914,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "MON",
+						},
+						status: "active",
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "merkl");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.ok(
+		Math.abs((info?.campaigns[0]?.apr ?? 0) - 0.0027760914) < 1e-12,
+	);
+	assert.equal(info?.campaigns[0]?.rewardTokenSymbol, "MON");
+	assert.ok(Math.abs((info?.getTotalRewardsApr() ?? 0) - 0.0027760914) < 1e-12);
+});
+
+test("V3 rewards adapter uses source for flat APY rows with attribution provider metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				id: "flat-accountable-valos-boost",
+				provider: "VALOS",
+				source: "merkl",
+				campaignType: "euler_lend",
+				apr: 0.27760914,
+				rewardToken: {
+					address: rewardToken,
+					symbol: "MON",
+				},
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "merkl");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.ok(
+		Math.abs((info?.campaigns[0]?.apr ?? 0) - 0.0027760914) < 1e-12,
+	);
+});
+
+test("V3 rewards adapter falls back to provider when source is unknown", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "unknown-source-merkl-provider",
+						provider: "merkl",
+						source: "accountable",
+						campaignType: "euler_lend",
+						apr: 1.5,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "EUL",
+						},
+						status: "active",
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "merkl");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.equal(info?.campaigns[0]?.apr, 0.015);
+});
+
+test("V3 rewards adapter leaves unsupported Turtle APY rows dropped", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "turtle-shells",
+						provider: "turtle",
+						source: "turtle",
+						campaignType: "turtle_stream",
+						apr: 0,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "Turtle Shells",
+						},
+						status: "active",
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 0);
+});
+
 test("V3 rewards adapter preserves collateral and looping campaign metadata", async () => {
 	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
 	adapter.setQueryV3RewardsApyPage(async () => ({
