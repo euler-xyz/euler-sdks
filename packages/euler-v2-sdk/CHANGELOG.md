@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.7] - 2026-06-19
+
+### Fixed
+
+- Fixed V3 rewards source normalization so reward rows use backend `source` before attribution `provider` metadata.
+- Preserved Accountable-backed Merkl reward rows as normal Merkl LEND campaigns when V3 rows report `source: "merkl"`.
+
+### Tests
+
+- Added regression coverage for nested and flat V3 APY rows with attribution provider metadata.
+- Added coverage for unknown-source fallback behavior and unsupported Turtle APY row filtering.
+
 ## [1.0.6] - 2026-06-18
 
 ### Fixed
