@@ -1,0 +1,136 @@
+name: Release euler-v2-sdk
+
+on:
+  push:
+    tags:
+      - "euler-v2-sdk-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to publish, for example euler-v2-sdk-v1.0.8"
+        required: true
+        type: string
+      dry_run:
+        description: "Run validation and package dry-runs without publishing or updating the GitHub Release"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: euler-v2-sdk-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Validate and publish euler-v2-sdk
+    runs-on: ubuntu-latest
+    environment: npm-release
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+      PACKAGE_DIR: packages/euler-v2-sdk
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate release metadata
+        id: metadata
+        run: |
+          metadata="$(node scripts/validate-euler-v2-sdk-release.mjs "$RELEASE_TAG" --json)"
+          echo "$metadata"
+          {
+            echo "version=$(echo "$metadata" | jq -r .version)"
+            echo "npm_tag=$(echo "$metadata" | jq -r .npmTag)"
+            echo "prerelease=$(echo "$metadata" | jq -r .prerelease)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check npm publication state
+        id: npm
+        run: |
+          if npm view "@eulerxyz/euler-v2-sdk@${{ steps.metadata.outputs.version }}" version >/dev/null 2>&1; then
+            echo "@eulerxyz/euler-v2-sdk@${{ steps.metadata.outputs.version }} is already published."
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run release gate
+        run: pnpm -C "$PACKAGE_DIR" run release:check
+
+      - name: Pack publish artifact dry run
+        run: npm pack --dry-run
+        working-directory: ${{ env.PACKAGE_DIR }}
+
+      - name: Stop before publish in dry run
+        if: ${{ env.DRY_RUN == 'true' }}
+        run: echo "Dry run complete; skipping npm publish and GitHub Release update."
+
+      - name: Publish to npm
+        if: ${{ env.DRY_RUN != 'true' && steps.npm.outputs.already_published != 'true' }}
+        working-directory: ${{ env.PACKAGE_DIR }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [[ -n "${NODE_AUTH_TOKEN:-}" ]]; then
+            npm config set //registry.npmjs.org/:_authToken "$NODE_AUTH_TOKEN"
+          fi
+
+          npm publish --access public --tag "${{ steps.metadata.outputs.npm_tag }}"
+
+      - name: Create or update GitHub Release
+        if: ${{ env.DRY_RUN != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
+        run: |
+          title="euler-v2-sdk v${VERSION}"
+          notes_file="${PACKAGE_DIR}/RELEASE_NOTES.md"
+          release_flags=(--title "$title" --notes-file "$notes_file" --verify-tag)
+
+          if [[ "$PRERELEASE" == "true" ]]; then
+            release_flags+=(--prerelease --latest=false)
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "$title" --notes-file "$notes_file" --verify-tag
+          else
+            gh release create "$RELEASE_TAG" "${release_flags[@]}"
+          fi
+
+      - name: Verify published package
+        if: ${{ env.DRY_RUN != 'true' }}
+        run: |
+          published="$(npm view "@eulerxyz/euler-v2-sdk@${{ steps.metadata.outputs.version }}" version)"
+          if [[ "$published" != "${{ steps.metadata.outputs.version }}" ]]; then
+            echo "Expected npm version ${{ steps.metadata.outputs.version }}, got $published"
+            exit 1
+          fi
+
+      - name: Verify GitHub Release
+        if: ${{ env.DRY_RUN != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view "$RELEASE_TAG" --json tagName,name,isPrerelease
