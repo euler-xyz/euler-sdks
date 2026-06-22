@@ -19,6 +19,7 @@ import type {
 import type { MerklOpportunity } from "../src/services/rewardsService/rewardsServiceTypes.js";
 import { RewardsV3Adapter } from "../src/services/rewardsService/adapters/rewardsV3Adapter/index.js";
 import { RewardsDirectAdapter } from "../src/services/rewardsService/adapters/rewardsDirectAdapter/index.js";
+import { buildEulerSDK } from "../src/sdk/buildSDK.js";
 
 const rewardToken = getAddress(
 	"0x0000000000000000000000000000000000000001",
@@ -494,6 +495,56 @@ test("V3 rewards adapter enriches Turtle breakdown rows from campaign metadata",
 	assert.equal(rewards[0]?.token.decimals, 6);
 	assert.equal(rewards[0]?.accumulated, "42035");
 	assert.equal(rewards[0]?.unclaimed, "42035");
+});
+
+test("fallback rewards service preserves V3 non-Turtle user rewards when direct succeeds empty", async () => {
+	const sdk = await buildEulerSDK({
+		config: {
+			rewardsServiceAdapter: "fallback",
+			rewardsV3ApiUrl: "https://example.invalid",
+		},
+		rewardsServiceConfig: {
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			enableTurtle: false,
+		},
+		buildQuery(queryName, fn) {
+			if (queryName === "queryV3RewardsBreakdown") {
+				return (async () => ({
+					data: [
+						{
+							chainId: 1,
+							provider: "merkl",
+							token: {
+								address: rewardToken,
+								chainId: 1,
+								symbol: "EUL",
+								name: "EUL",
+								decimals: 18,
+							},
+							tokenPrice: 2,
+							campaignId: "merkl-1",
+							accumulated: "1000",
+							unclaimed: "1000",
+							proof: [proofHash],
+							claimAddress: merklDistributorAddress,
+						},
+					],
+				})) as typeof fn;
+			}
+			if (queryName === "queryV3RewardsApyPage") {
+				return (async () => ({ data: [] })) as typeof fn;
+			}
+			return fn;
+		},
+	});
+
+	const rewards = await sdk.rewardsService.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "merkl");
+	assert.equal(rewards[0]?.campaignId, "merkl-1");
 });
 
 test("V3 rewards adapter uses source when provider is attribution metadata", async () => {

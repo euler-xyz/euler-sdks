@@ -209,6 +209,68 @@ function readStringMap(
 	return parsed as Record<string, string>;
 }
 
+function readTurtleStreams(
+	env: EnvRecord,
+	name: string,
+): EulerSDKConfig["rewardsTurtleStreams"] | undefined {
+	const value = readString(env, name);
+	if (value === undefined) return undefined;
+
+	const parsed = JSON.parse(value) as unknown;
+	if (!Array.isArray(parsed)) {
+		throw new Error(`${name} must be a JSON array of Turtle stream objects`);
+	}
+
+	return parsed.map((entry) => {
+		if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+			throw new Error(`${name} must be a JSON array of Turtle stream objects`);
+		}
+		const stream = entry as Record<string, unknown>;
+		if (typeof stream.streamId !== "string" || !stream.streamId.trim()) {
+			throw new Error(`${name} entries must include a string streamId`);
+		}
+		if (typeof stream.chainId !== "number" || !Number.isFinite(stream.chainId)) {
+			throw new Error(`${name} entries must include a numeric chainId`);
+		}
+		if (
+			stream.streamAddress !== undefined &&
+			typeof stream.streamAddress !== "string"
+		) {
+			throw new Error(`${name} streamAddress values must be strings`);
+		}
+		if (
+			stream.tokenPrice !== undefined &&
+			(typeof stream.tokenPrice !== "number" ||
+				!Number.isFinite(stream.tokenPrice))
+		) {
+			throw new Error(`${name} tokenPrice values must be finite numbers`);
+		}
+
+		const rewardToken =
+			stream.rewardToken === undefined ? undefined : stream.rewardToken;
+		if (
+			rewardToken !== undefined &&
+			(typeof rewardToken !== "object" ||
+				rewardToken === null ||
+				Array.isArray(rewardToken))
+		) {
+			throw new Error(`${name} rewardToken values must be objects`);
+		}
+
+		return {
+			streamId: stream.streamId,
+			chainId: stream.chainId,
+			...(stream.streamAddress
+				? { streamAddress: stream.streamAddress as Address }
+				: {}),
+			...(rewardToken ? { rewardToken } : {}),
+			...(stream.tokenPrice !== undefined
+				? { tokenPrice: stream.tokenPrice }
+				: {}),
+		};
+	});
+}
+
 function readNumberKeyedUrls(
 	env: EnvRecord,
 	prefix: string,
@@ -323,6 +385,7 @@ export function readEulerSDKEnvConfig(
 			"EULER_SDK_REWARDS_BREVIS_PROOFS_API_URL",
 		),
 		rewardsFuulApiUrl: readString(env, "EULER_SDK_REWARDS_FUUL_API_URL"),
+		rewardsTurtleApiUrl: readString(env, "EULER_SDK_REWARDS_TURTLE_API_URL"),
 		rewardsFuulTotalsUrl: readString(env, "EULER_SDK_REWARDS_FUUL_TOTALS_URL"),
 		rewardsFuulClaimChecksUrl: readString(
 			env,
@@ -344,9 +407,14 @@ export function readEulerSDKEnvConfig(
 			env,
 			"EULER_SDK_REWARDS_FUUL_FACTORY_ADDRESS",
 		) as Address | undefined,
+		rewardsTurtleStreams: readTurtleStreams(
+			env,
+			"EULER_SDK_REWARDS_TURTLE_STREAMS_JSON",
+		),
 		rewardsEnableMerkl: readBoolean(env, "EULER_SDK_REWARDS_ENABLE_MERKL"),
 		rewardsEnableBrevis: readBoolean(env, "EULER_SDK_REWARDS_ENABLE_BREVIS"),
 		rewardsEnableFuul: readBoolean(env, "EULER_SDK_REWARDS_ENABLE_FUUL"),
+		rewardsEnableTurtle: readBoolean(env, "EULER_SDK_REWARDS_ENABLE_TURTLE"),
 
 		pricingApiUrl: readString(env, "EULER_SDK_PRICING_API_URL"),
 		pricingApiKey: readString(env, "EULER_SDK_PRICING_API_KEY"),

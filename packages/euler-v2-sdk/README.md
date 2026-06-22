@@ -111,6 +111,8 @@ Comparison, parity-check, and other test-oriented scripts and reports live under
 
 This package is published through the repo-local [`RELEASE.md`](./RELEASE.md) playbook and the local `$publish` skill.
 
-Git tags and GitHub Releases are the release-note source of truth. The committed [`package.json`](./package.json) does not carry a release version; `$publish` derives the npm version from the `euler-v2-sdk-vX.Y.Z` tag.
+Git tags and GitHub Releases are the release-note source of truth. The committed [`package.json`](./package.json) does not carry a release version; `$publish` derives the npm version from the `euler-v2-sdk-vX.Y.Z` tag, including prerelease tags such as `euler-v2-sdk-vX.Y.Z-beta.0`.
 
-The publish flow runs `pnpm -C packages/euler-v2-sdk run release:check`, creates an `euler-v2-sdk-vX.Y.Z` tag from the selected `main` commit, temporarily writes the tag version for npm, publishes with `npm publish --access public --provenance=false`, restores the working tree, and creates or updates the GitHub Release from the generated changelist. Publishing uses the operator's local npm session so npm 2FA prompts can be completed interactively.
+The publish flow verifies npm auth, runs `pnpm -C packages/euler-v2-sdk run release:check`, creates an `euler-v2-sdk-vX.Y.Z` tag from the selected `main` commit, temporarily writes the tag version for npm, dry-runs the package, publishes with `npm publish --access public --provenance=false`, restores the working tree, and creates or updates the GitHub Release from a generated notes file. Prereleases publish with the matching npm dist-tag, for example `npm publish --access public --tag beta --provenance=false`.
+
+Publishing uses the operator's local npm session. npm may prompt for a one-time password or provide a browser authentication URL; complete that prompt before the publish process exits.

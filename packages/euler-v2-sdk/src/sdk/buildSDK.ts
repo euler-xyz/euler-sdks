@@ -1209,19 +1209,36 @@ export async function buildEulerSDK<
 				directRewards: UserReward[],
 				v3Rewards: UserReward[],
 			): UserReward[] => {
-				const rewards = [...directRewards];
-				const existing = new Set(
-					rewards.map(
-						(reward) =>
-							`${reward.provider}:${reward.chainId}:${reward.campaignId ?? reward.streamId ?? ""}:${reward.token.address.toLowerCase()}`,
-					),
+				const rewardKey = (reward: UserReward) =>
+					`${reward.provider}:${reward.chainId}:${reward.campaignId ?? reward.streamId ?? ""}:${reward.token.address.toLowerCase()}`;
+				const mergeTurtleReward = (
+					base: UserReward,
+					supplement: UserReward,
+				): UserReward => ({
+					...base,
+					proof: base.proof?.length ? base.proof : supplement.proof,
+					claimAddress: base.claimAddress ?? supplement.claimAddress,
+					streamId: base.streamId ?? supplement.streamId,
+					streamAddress: base.streamAddress ?? supplement.streamAddress,
+					timestamp: base.timestamp ?? supplement.timestamp,
+				});
+				const rewards = [...v3Rewards];
+				const existing = new Map(
+					rewards.map((reward, index) => [rewardKey(reward), index]),
 				);
 
-				for (const reward of v3Rewards) {
+				for (const reward of directRewards) {
 					if (reward.provider !== "turtle") continue;
-					const key = `${reward.provider}:${reward.chainId}:${reward.campaignId ?? reward.streamId ?? ""}:${reward.token.address.toLowerCase()}`;
-					if (existing.has(key)) continue;
-					existing.add(key);
+					const key = rewardKey(reward);
+					const existingIndex = existing.get(key);
+					if (existingIndex !== undefined) {
+						rewards[existingIndex] = mergeTurtleReward(
+							rewards[existingIndex]!,
+							reward,
+						);
+						continue;
+					}
+					existing.set(key, rewards.length);
 					rewards.push(reward);
 				}
 
@@ -1274,12 +1291,14 @@ export async function buildEulerSDK<
 								directAdapter.fetchUserRewards(chainId, address),
 								rewardsV3Adapter.fetchUserRewards(chainId, address),
 							]);
+							if (v3Result.status !== "fulfilled") {
+								if (directResult.status === "fulfilled") return directResult.value;
+								throw directResult.reason;
+							}
 							const directRewards =
 								directResult.status === "fulfilled" ? directResult.value : [];
-							const v3Rewards =
-								v3Result.status === "fulfilled" ? v3Result.value : [];
 
-							return mergeUserRewards(directRewards, v3Rewards);
+							return mergeUserRewards(directRewards, v3Result.value);
 						};
 					},
 				});
