@@ -218,6 +218,71 @@ const hasBrevisClaimData = (reward: UserReward): boolean =>
 const fuulRewardKey = (currency: string, currencyType?: number): string =>
 	`${getAddress(currency).toLowerCase()}:${currencyType ?? "*"}`;
 
+const userRewardClaimKey = (reward: UserReward): string =>
+	[
+		reward.provider,
+		reward.chainId,
+		reward.token.address.toLowerCase(),
+		reward.claimAddress?.toLowerCase() ?? "",
+		reward.campaignId ?? "",
+		reward.streamId ?? "",
+		reward.streamAddress?.toLowerCase() ?? "",
+		reward.epoch ?? "",
+		reward.accumulated,
+		reward.unclaimed,
+		reward.proof?.join(",") ?? "",
+		reward.cumulativeAmounts?.join(",") ?? "",
+		reward.timestamp ?? "",
+	].join(":");
+
+const dedupeUserRewards = (rewards: UserReward[]): UserReward[] => {
+	const seen = new Set<string>();
+	const deduped: UserReward[] = [];
+
+	for (const reward of rewards) {
+		const key = userRewardClaimKey(reward);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		deduped.push(reward);
+	}
+
+	return deduped;
+};
+
+const collapseMerklCumulativeRewards = (rewards: UserReward[]): UserReward[] => {
+	const collapsed: UserReward[] = [];
+	const indexes = new Map<string, number>();
+
+	for (const reward of rewards) {
+		if (reward.provider !== "merkl") {
+			collapsed.push(reward);
+			continue;
+		}
+
+		const key = [
+			reward.chainId,
+			reward.token.address.toLowerCase(),
+			reward.claimAddress?.toLowerCase() ?? "",
+		].join(":");
+		const existingIndex = indexes.get(key);
+		if (existingIndex === undefined) {
+			indexes.set(key, collapsed.length);
+			collapsed.push(reward);
+			continue;
+		}
+
+		const existing = collapsed[existingIndex]!;
+		if (BigInt(reward.accumulated) > BigInt(existing.accumulated)) {
+			collapsed[existingIndex] = reward;
+		}
+	}
+
+	return collapsed;
+};
+
+const normalizeUserRewards = (rewards: UserReward[]): UserReward[] =>
+	dedupeUserRewards(collapseMerklCumulativeRewards(rewards));
+
 const parseTurtleAmount = (value: unknown): bigint | undefined => {
 	if (typeof value === "bigint") return value;
 	if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
@@ -385,7 +450,9 @@ export class RewardsService implements IRewardsService {
 		address: Address,
 	): Promise<UserReward[]> {
 		const rewards = await this.adapter.fetchUserRewards(chainId, address);
-		return this.hydrateTurtleClaimableRewards(rewards, address);
+		return normalizeUserRewards(
+			await this.hydrateTurtleClaimableRewards(rewards, address),
+		);
 	}
 
 	async fetchFuulTotals(
@@ -475,7 +542,7 @@ export class RewardsService implements IRewardsService {
 		args: BuildRewardClaimsPlanArgs,
 	): Promise<TransactionPlan> {
 		const account = getAddress(args.account) as Address;
-		const rewards = args.rewards.filter(
+		const rewards = normalizeUserRewards(args.rewards).filter(
 			(reward) => BigInt(reward.unclaimed) > 0n,
 		);
 		if (rewards.length === 0) return [];

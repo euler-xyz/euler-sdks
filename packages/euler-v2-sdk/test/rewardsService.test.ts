@@ -1396,6 +1396,179 @@ test("rewards service derives Merkl claim target from trusted distributor", asyn
 	assert.equal(operation.items[0]?.targetContract, merklDistributorAddress);
 });
 
+test("rewards service deduplicates identical user reward claims", async () => {
+	const otherProofHash =
+		"0x2222222222222222222222222222222222222222222222222222222222222222" as Hex;
+	const duplicateReward = makeMerklReward();
+	const distinctReward = makeMerklReward({
+		token: {
+			address: otherRewardToken,
+			chainId: 1,
+			symbol: "USDC",
+			name: "USDC",
+			decimals: 6,
+		},
+		proof: [otherProofHash],
+		accumulated: "2000",
+		unclaimed: "2000",
+	});
+	const service = new RewardsService(
+		{
+			...emptyAdapter,
+			async fetchUserRewards() {
+				return [duplicateReward, { ...duplicateReward }, distinctReward];
+			},
+		},
+		{
+			merklDistributorAddress,
+			fuulManagerAddress: zeroAddress,
+			fuulFactoryAddress: zeroAddress,
+		},
+	);
+
+	const rewards = await service.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 2);
+	assert.deepEqual(
+		rewards.map((reward) => reward.accumulated),
+		["1000", "2000"],
+	);
+});
+
+test("rewards service keeps latest cumulative Merkl reward per token", async () => {
+	const olderProofHash =
+		"0x2222222222222222222222222222222222222222222222222222222222222222" as Hex;
+	const latestProofHash =
+		"0x3333333333333333333333333333333333333333333333333333333333333333" as Hex;
+	const service = new RewardsService(
+		{
+			...emptyAdapter,
+			async fetchUserRewards() {
+				return [
+					makeMerklReward({
+						accumulated: "1000",
+						unclaimed: "1000",
+						proof: [olderProofHash],
+					}),
+					makeMerklReward({
+						accumulated: "2000",
+						unclaimed: "2000",
+						proof: [latestProofHash],
+					}),
+				];
+			},
+		},
+		{
+			merklDistributorAddress,
+			fuulManagerAddress: zeroAddress,
+			fuulFactoryAddress: zeroAddress,
+		},
+	);
+
+	const rewards = await service.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.accumulated, "2000");
+	assert.equal(rewards[0]?.unclaimed, "2000");
+	assert.deepEqual(rewards[0]?.proof, [latestProofHash]);
+});
+
+test("direct rewards adapter keeps latest Merkl cumulative reward per token", async () => {
+	const olderProofHash =
+		"0x2222222222222222222222222222222222222222222222222222222222222222" as Hex;
+	const latestProofHash =
+		"0x3333333333333333333333333333333333333333333333333333333333333333" as Hex;
+	const adapter = new RewardsDirectAdapter({
+		merklApiUrl: "https://example.invalid/merkl",
+		enableBrevis: false,
+		enableFuul: false,
+		enableTurtle: false,
+	});
+	adapter.setQueryMerklUserRewards(async () => [
+		{
+			chainId: 1,
+			rewards: [
+				{
+					token: {
+						address: rewardToken,
+						chainId: 1,
+						price: 2,
+						symbol: "EUL",
+						name: "EUL",
+						decimals: 18,
+					},
+					amount: "1000",
+					claimed: "0",
+					proofs: [olderProofHash],
+				},
+				{
+					token: {
+						address: rewardToken,
+						chainId: 1,
+						price: 2,
+						symbol: "EUL",
+						name: "EUL",
+						decimals: 18,
+					},
+					amount: "2000",
+					claimed: "0",
+					proofs: [latestProofHash],
+				},
+				{
+					token: {
+						address: rewardToken,
+						chainId: 1,
+						price: 2,
+						symbol: "EUL",
+						name: "EUL",
+						decimals: 18,
+					},
+					amount: "2000",
+					claimed: "0",
+					proofs: [latestProofHash],
+				},
+			],
+		},
+	]);
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.accumulated, "2000");
+	assert.equal(rewards[0]?.unclaimed, "2000");
+	assert.deepEqual(rewards[0]?.proof, [latestProofHash]);
+});
+
+test("rewards service deduplicates identical Merkl rewards before claim planning", async () => {
+	const service = new RewardsService(emptyAdapter, {
+		merklDistributorAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	const reward = makeMerklReward();
+
+	const plan = await service.buildClaimPlans({
+		rewards: [reward, { ...reward }],
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	const merklDecoded = decodeFunctionData({
+		abi: MERKL_CLAIM_ABI,
+		data: operation.items[0]!.data,
+	});
+	assert.equal(merklDecoded.functionName, "claim");
+	assert.equal(merklDecoded.args[0].length, 1);
+	assert.equal(merklDecoded.args[1].length, 1);
+	assert.equal(merklDecoded.args[2].length, 1);
+	assert.equal(merklDecoded.args[3].length, 1);
+});
+
 test("rewards service can build EVC batch items for claim providers", async () => {
 	const brevisReward = makeBrevisReward({
 		campaignId: "brevis-1",
