@@ -2057,6 +2057,77 @@ test("rewards service hydrates Turtle claimable amount with canClaim", async () 
 	assert.equal(rewards[0]?.unclaimed, "777");
 });
 
+test("rewards service uses Turtle proof chain as claim chain", async () => {
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+			},
+		],
+	});
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({ chainId: 11155111, claimable: undefined }),
+	]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	let providerChainId: number | undefined;
+	service.setProviderService({
+		getProvider(chainId: number) {
+			providerChainId = chainId;
+			return {
+				async readContract() {
+					return 777n;
+				},
+			};
+		},
+	} as any);
+
+	const rewards = await service.fetchUserRewards(1, accountAddress);
+
+	assert.equal(providerChainId, 11155111);
+	assert.equal(rewards[0]?.chainId, 11155111);
+	assert.equal(rewards[0]?.unclaimed, "777");
+});
+
+test("rewards service preserves Turtle proof chain when canClaim read fails", async () => {
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+			},
+		],
+	});
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({ chainId: 11155111, claimable: undefined }),
+	]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					throw new Error("missing rpc");
+				},
+			};
+		},
+	} as any);
+
+	const rewards = await service.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.chainId, 11155111);
+	assert.equal(rewards[0]?.unclaimed, "0");
+});
+
 test("rewards service builds Turtle claim plan from stream proof data", async () => {
 	const adapter = new RewardsDirectAdapter();
 	adapter.setQueryTurtleMerkleProofs(async () => [makeTurtleMerkleProof()]);
@@ -2107,6 +2178,44 @@ test("rewards service builds Turtle claim plan from stream proof data", async ()
 		Math.floor(Date.parse("2026-05-20T13:05:10Z") / 1000),
 		["0xabc"],
 	]);
+});
+
+test("rewards service builds Turtle claim plan on proof chain", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({ chainId: 11155111 }),
+	]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	let providerChainId: number | undefined;
+	service.setProviderService({
+		getProvider(chainId: number) {
+			providerChainId = chainId;
+			return {
+				async readContract() {
+					return 1000n;
+				},
+			};
+		},
+	} as any);
+
+	const plan = await service.buildClaimPlans({
+		rewards: [
+			makeTurtleReward({
+				proof: undefined,
+				streamAddress: undefined,
+				timestamp: undefined,
+			}),
+		],
+		account: accountAddress,
+	});
+
+	assert.equal(providerChainId, 11155111);
+	assert.equal(plan[0]?.type, "contractCall");
+	assert.equal(plan[0]?.chainId, 11155111);
 });
 
 test("rewards service fetches Turtle proof through V3 claim adapter", async () => {
