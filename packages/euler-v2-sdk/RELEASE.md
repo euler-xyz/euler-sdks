@@ -14,7 +14,7 @@ The publish skill should use this file as the repo-local playbook for `@eulerxyz
 - Prerelease tag format: `euler-v2-sdk-vX.Y.Z-beta.N`, `euler-v2-sdk-vX.Y.Z-rc.N`, or `euler-v2-sdk-vX.Y.Z-alpha.N`
 - Release gate: `pnpm -C packages/euler-v2-sdk run release:check`
 - Publish command: `npm publish --access public --provenance=false` from `packages/euler-v2-sdk`
-- Prerelease publish command: `npm publish --access public --tag beta --provenance=false` from `packages/euler-v2-sdk`
+- Prerelease publish command: `npm publish --access public --tag <prerelease-id> --provenance=false` from `packages/euler-v2-sdk`
 - GitHub Release title: `euler-v2-sdk vX.Y.Z`
 
 ## Operator flow
@@ -49,7 +49,7 @@ npm pack --dry-run
 npm publish --access public --provenance=false
 git restore package.json
 cd ../..
-gh release create $TAG --title "euler-v2-sdk v$VERSION" --notes-file "$NOTES_FILE"
+gh release create $TAG --verify-tag --title "euler-v2-sdk v$VERSION" --notes-file "$NOTES_FILE"
 ```
 
 For prereleases, use a prerelease version and npm's matching dist-tag:
@@ -57,13 +57,25 @@ For prereleases, use a prerelease version and npm's matching dist-tag:
 ```sh
 VERSION=X.Y.Z-beta.0
 TAG=euler-v2-sdk-vX.Y.Z-beta.0
+DIST_TAG=beta
 NOTES_FILE=/tmp/euler-v2-sdk-vX.Y.Z-beta.0-notes.md
 
+git fetch origin main --tags
+git switch main
+git pull --ff-only origin main
+npm whoami
+npm view @eulerxyz/euler-v2-sdk version dist-tags --json
+npm view @eulerxyz/euler-v2-sdk@$VERSION version --json || true
+pnpm -C packages/euler-v2-sdk run release:check
+git tag -a $TAG -m "$TAG"
+git push origin $TAG
+cd packages/euler-v2-sdk
 npm pkg set version=$VERSION
 npm pack --dry-run
-npm publish --access public --tag beta --provenance=false
+npm publish --access public --tag $DIST_TAG --provenance=false
 git restore package.json
-gh release create $TAG --title "euler-v2-sdk v$VERSION" --notes-file "$NOTES_FILE" --prerelease
+cd ../..
+gh release create $TAG --verify-tag --title "euler-v2-sdk v$VERSION" --notes-file "$NOTES_FILE" --prerelease
 ```
 
 ## Auth and 2FA

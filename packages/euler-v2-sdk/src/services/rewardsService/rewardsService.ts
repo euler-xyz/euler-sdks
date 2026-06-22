@@ -249,6 +249,69 @@ const dedupeUserRewards = (rewards: UserReward[]): UserReward[] => {
 	return deduped;
 };
 
+const turtleRewardStreamKey = (reward: UserReward): string | undefined => {
+	if (reward.provider !== "turtle") return undefined;
+	const streamId = reward.streamId ?? reward.campaignId;
+	if (!streamId) return undefined;
+	return [
+		reward.chainId,
+		streamId,
+		reward.token.address.toLowerCase(),
+		reward.streamAddress?.toLowerCase() ?? reward.claimAddress?.toLowerCase() ?? "",
+	].join(":");
+};
+
+const mergeTurtleReward = (
+	base: UserReward,
+	candidate: UserReward,
+): UserReward => {
+	const baseUnclaimed = BigInt(base.unclaimed);
+	const candidateUnclaimed = BigInt(candidate.unclaimed);
+	const selected =
+		candidateUnclaimed > baseUnclaimed ||
+		(candidateUnclaimed === baseUnclaimed &&
+			BigInt(candidate.accumulated) > BigInt(base.accumulated))
+			? candidate
+			: base;
+	const supplement = selected === base ? candidate : base;
+
+	return {
+		...selected,
+		proof: selected.proof?.length ? selected.proof : supplement.proof,
+		claimAddress: selected.claimAddress ?? supplement.claimAddress,
+		streamId: selected.streamId ?? supplement.streamId,
+		streamAddress: selected.streamAddress ?? supplement.streamAddress,
+		timestamp: selected.timestamp ?? supplement.timestamp,
+	};
+};
+
+const collapseTurtleStreamRewards = (rewards: UserReward[]): UserReward[] => {
+	const collapsed: UserReward[] = [];
+	const indexes = new Map<string, number>();
+
+	for (const reward of rewards) {
+		const key = turtleRewardStreamKey(reward);
+		if (!key) {
+			collapsed.push(reward);
+			continue;
+		}
+
+		const existingIndex = indexes.get(key);
+		if (existingIndex === undefined) {
+			indexes.set(key, collapsed.length);
+			collapsed.push(reward);
+			continue;
+		}
+
+		collapsed[existingIndex] = mergeTurtleReward(
+			collapsed[existingIndex]!,
+			reward,
+		);
+	}
+
+	return collapsed;
+};
+
 const collapseMerklCumulativeRewards = (rewards: UserReward[]): UserReward[] => {
 	const collapsed: UserReward[] = [];
 	const indexes = new Map<string, number>();
@@ -281,7 +344,9 @@ const collapseMerklCumulativeRewards = (rewards: UserReward[]): UserReward[] => 
 };
 
 const normalizeUserRewards = (rewards: UserReward[]): UserReward[] =>
-	dedupeUserRewards(collapseMerklCumulativeRewards(rewards));
+	dedupeUserRewards(
+		collapseTurtleStreamRewards(collapseMerklCumulativeRewards(rewards)),
+	);
 
 const parseTurtleAmount = (value: unknown): bigint | undefined => {
 	if (typeof value === "bigint") return value;
@@ -1183,7 +1248,7 @@ export class RewardsService implements IRewardsService {
 			.catch(() => []);
 		return (
 			proofs.find((proof) => turtleProofStreamId(proof) === streamId) ??
-			proofs[0]
+			proofs.find((proof) => !turtleProofStreamId(proof))
 		);
 	}
 

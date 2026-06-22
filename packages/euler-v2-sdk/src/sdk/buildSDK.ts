@@ -1214,18 +1214,43 @@ export async function buildEulerSDK<
 				const mergeTurtleReward = (
 					base: UserReward,
 					supplement: UserReward,
-				): UserReward => ({
-					...base,
-					proof: base.proof?.length ? base.proof : supplement.proof,
-					claimAddress: base.claimAddress ?? supplement.claimAddress,
-					streamId: base.streamId ?? supplement.streamId,
-					streamAddress: base.streamAddress ?? supplement.streamAddress,
-					timestamp: base.timestamp ?? supplement.timestamp,
-				});
-				const rewards = [...v3Rewards];
-				const existing = new Map(
-					rewards.map((reward, index) => [rewardKey(reward), index]),
-				);
+				): UserReward => {
+					const selected =
+						BigInt(supplement.unclaimed) > BigInt(base.unclaimed) ||
+						(BigInt(supplement.unclaimed) === BigInt(base.unclaimed) &&
+							BigInt(supplement.accumulated) > BigInt(base.accumulated))
+							? supplement
+							: base;
+					const fallback = selected === base ? supplement : base;
+
+					return {
+						...selected,
+						proof: selected.proof?.length ? selected.proof : fallback.proof,
+						claimAddress: selected.claimAddress ?? fallback.claimAddress,
+						streamId: selected.streamId ?? fallback.streamId,
+						streamAddress: selected.streamAddress ?? fallback.streamAddress,
+						timestamp: selected.timestamp ?? fallback.timestamp,
+					};
+				};
+				const rewards: UserReward[] = [];
+				const existing = new Map<string, number>();
+				for (const reward of v3Rewards) {
+					if (reward.provider !== "turtle") {
+						rewards.push(reward);
+						continue;
+					}
+					const key = rewardKey(reward);
+					const existingIndex = existing.get(key);
+					if (existingIndex !== undefined) {
+						rewards[existingIndex] = mergeTurtleReward(
+							rewards[existingIndex]!,
+							reward,
+						);
+						continue;
+					}
+					existing.set(key, rewards.length);
+					rewards.push(reward);
+				}
 
 				for (const reward of directRewards) {
 					if (reward.provider !== "turtle") continue;

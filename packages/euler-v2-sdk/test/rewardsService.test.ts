@@ -547,6 +547,80 @@ test("fallback rewards service preserves V3 non-Turtle user rewards when direct 
 	assert.equal(rewards[0]?.campaignId, "merkl-1");
 });
 
+test("fallback rewards service collapses duplicate V3 Turtle stream rows", async () => {
+	const sdk = await buildEulerSDK({
+		config: {
+			rewardsServiceAdapter: "fallback",
+			rewardsV3ApiUrl: "https://example.invalid",
+		},
+		rewardsServiceConfig: {
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			enableTurtle: false,
+		},
+		buildQuery(queryName, fn) {
+			if (queryName === "queryV3RewardsBreakdown") {
+				return (async () => ({
+					data: [
+						{
+							chainId: 1,
+							provider: "turtle",
+							source: "turtle",
+							vault: vaultAddress,
+							rewardToken,
+							amount: "1000",
+							campaignId: "stream-1",
+							timestamp: "2026-05-20T13:05:10Z",
+						},
+						{
+							chainId: 1,
+							provider: "turtle",
+							source: "turtle",
+							vault: vaultAddress,
+							rewardToken,
+							amount: "1500",
+							campaignId: "stream-1",
+							timestamp: "2026-05-20T13:05:10Z",
+						},
+					],
+				})) as typeof fn;
+			}
+			if (queryName === "queryV3RewardsApyPage") {
+				return (async () => ({
+					data: [
+						{
+							vault: vaultAddress,
+							campaigns: [
+								{
+									id: "stream-1",
+									provider: "turtle",
+									source: "turtle",
+									campaignType: "turtle_stream",
+									rewardToken: {
+										address: rewardToken,
+										symbol: "EUL",
+										name: "EUL",
+										decimals: 18,
+									},
+								},
+							],
+						},
+					],
+				})) as typeof fn;
+			}
+			return fn;
+		},
+	});
+
+	const rewards = await sdk.rewardsService.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "turtle");
+	assert.equal(rewards[0]?.campaignId, "stream-1");
+	assert.equal(rewards[0]?.unclaimed, "1500");
+});
+
 test("V3 rewards adapter uses source when provider is attribution metadata", async () => {
 	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
 	adapter.setQueryV3RewardsApyPage(async () => ({
@@ -2216,6 +2290,75 @@ test("rewards service builds Turtle claim plan on proof chain", async () => {
 	assert.equal(providerChainId, 11155111);
 	assert.equal(plan[0]?.type, "contractCall");
 	assert.equal(plan[0]?.chainId, 11155111);
+});
+
+test("rewards service ignores Turtle proofs for another stream", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({ streamId: "stream-2" }),
+	]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					return 1000n;
+				},
+			};
+		},
+	} as any);
+
+	await assert.rejects(
+		() =>
+			service.buildClaimPlans({
+				rewards: [
+					makeTurtleReward({
+						proof: undefined,
+						streamAddress: undefined,
+						timestamp: undefined,
+					}),
+				],
+				account: accountAddress,
+			}),
+		/Missing Turtle stream contract/,
+	);
+});
+
+test("rewards service collapses duplicate Turtle stream claim plans", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryTurtleMerkleProofs(async () => [makeTurtleMerkleProof()]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	let canClaimReads = 0;
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					canClaimReads++;
+					return 1000n;
+				},
+			};
+		},
+	} as any);
+
+	const plan = await service.buildClaimPlans({
+		rewards: [
+			makeTurtleReward({ unclaimed: "500" }),
+			makeTurtleReward({ accumulated: "1500", unclaimed: "1000" }),
+		],
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "contractCall");
+	assert.equal(canClaimReads, 1);
 });
 
 test("rewards service fetches Turtle proof through V3 claim adapter", async () => {
