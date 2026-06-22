@@ -72,19 +72,19 @@ export function computePermit2StateDiff(
 async function discoverAllowanceSlotsViaAccessList(
 	client: PublicClient,
 	account: Address,
-	assets: Address[],
-	permit2: Address,
-): Promise<StateOverride> {
+	approvals: [Address, Address][],
+): Promise<{ stateOverride: StateOverride; resolvedPairs: Set<string> }> {
 	const stateOverride: StateOverride = [];
+	const resolvedPairs = new Set<string>();
 	const valueHex = toHex(maxUint256, { size: 32 });
 
-	for (const asset of assets) {
+	for (const [asset, spender] of approvals) {
 		try {
 			const accessedSlots = await getAccessedSlots(client, {
 				data: encodeFunctionData({
 					abi: erc20Abi,
 					functionName: "allowance",
-					args: [account, permit2],
+					args: [account, spender],
 				}),
 				to: asset,
 			});
@@ -100,7 +100,7 @@ async function discoverAllowanceSlotsViaAccessList(
 							abi: erc20Abi,
 							address: asset,
 							functionName: "allowance",
-							args: [account, permit2],
+							args: [account, spender],
 							stateOverride: [
 								{
 									address: asset,
@@ -121,6 +121,7 @@ async function discoverAllowanceSlotsViaAccessList(
 
 			if (stateDiff.length > 0) {
 				stateOverride.push({ address: asset, stateDiff });
+				resolvedPairs.add(approvalPairKey(asset, spender));
 			}
 		} catch (e) {
 			console.warn(
@@ -130,7 +131,7 @@ async function discoverAllowanceSlotsViaAccessList(
 		}
 	}
 
-	return stateOverride;
+	return { stateOverride, resolvedPairs };
 }
 
 export type GetApprovalOverridesOptions = {
@@ -151,6 +152,9 @@ export type GetApprovalOverridesOptions = {
 const allowanceKey = (asset: Address, spender: Address) =>
 	`${getAddress(asset)}:${getAddress(spender)}` as `${Address}:${Address}`;
 
+const approvalPairKey = (asset: Address, spender: Address) =>
+	`${getAddress(asset)}:${getAddress(spender)}`;
+
 /**
  * Generate state overrides for ERC20 approvals and Permit2 allowances.
  *
@@ -161,7 +165,7 @@ const allowanceKey = (asset: Address, spender: Address) =>
  *  3. Use caller-supplied `slotHints[asset].allowanceSlotIndex` →
  *     cryptographic slot, no RPC.
  *  4. Use cached probed slot index (`fetchErc20SlotHints` cache) → same.
- *  5. Probe via `eth_createAccessList`; this handles proxy / namespaced token
+ *  5. Probe once via `eth_createAccessList`; this handles proxy / namespaced token
  *     layouts without burning many failed state-override reads first.
  *  6. Fall back to sequential `fetchErc20SlotHints` probing when access-list
  *     discovery is unavailable.
@@ -191,86 +195,77 @@ export async function getApprovalOverrides(
 		});
 	}
 
-	// Decide which assets still need an ERC20 allowance override.
-	const uniqueAssets: Address[] = [];
-	const seen = new Set<Address>();
+	// Decide which ERC20 allowance pairs still need an override. Raw plan
+	// simulation executes the vault deposit call without signed Permit2 data, so
+	// it needs the direct owner -> spender allowance as well as the owner ->
+	// Permit2 allowance used by prepared execution.
+	const uniquePairs: [Address, Address][] = [];
+	const seen = new Set<string>();
 	for (const [asset, spender] of approvals) {
 		const a = getAddress(asset);
-		// Token already approved → skip.
-		const supplied = walletAllowances?.[allowanceKey(a, spender)];
-		if (supplied !== undefined && supplied === maxUint256) continue;
-		if (!seen.has(a)) {
-			seen.add(a);
-			uniqueAssets.push(a);
+		const pairSpenders = [getAddress(permit2Address), getAddress(spender)];
+		for (const pairSpender of pairSpenders) {
+			const key = approvalPairKey(a, pairSpender);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			// Token already approved → skip.
+			const supplied = walletAllowances?.[allowanceKey(a, pairSpender)];
+			if (supplied !== undefined && supplied === maxUint256) continue;
+			uniquePairs.push([a, pairSpender]);
 		}
 	}
 
-	// Partition assets by which resolution path applies.
-	const fallbackAssets: Address[] = [];
-	for (const asset of uniqueAssets) {
+	// Partition pairs by which resolution path applies.
+	const fallbackPairs: [Address, Address][] = [];
+	for (const [asset, spender] of uniquePairs) {
 		const callerHintIdx = slotHints?.[asset]?.allowanceSlotIndex;
 		const cachedIdx = getCachedSlotHints(chainId, asset)?.allowanceSlotIndex;
 		const idx = callerHintIdx ?? cachedIdx;
 		if (idx !== undefined) {
-			const slot = computeAllowanceSlot(account, permit2Address, idx);
+			const slot = computeAllowanceSlot(account, spender, idx);
 			stateOverride.push({
 				address: asset,
 				stateDiff: [{ slot, value: valueHex }],
 			});
 			continue;
 		}
-		fallbackAssets.push(asset);
+		fallbackPairs.push([asset, spender]);
 	}
 
-	const accessListOverrides =
-		fallbackAssets.length > 0
+	const accessListResult =
+		fallbackPairs.length > 0
 			? await discoverAllowanceSlotsViaAccessList(
 					client,
 					account,
-					fallbackAssets,
-					permit2Address,
+					fallbackPairs,
 				)
-			: [];
+			: { stateOverride: [], resolvedPairs: new Set<string>() };
+	const accessListOverrides = accessListResult.stateOverride;
 	stateOverride.push(...accessListOverrides);
 
-	const accessListResolved = new Set(
-		accessListOverrides.map((override) => getAddress(override.address)),
-	);
-
-	const stillUnknown: Address[] = [];
-	for (const asset of fallbackAssets) {
-		if (accessListResolved.has(getAddress(asset))) continue;
+	for (const [asset, spender] of fallbackPairs) {
+		if (accessListResult.resolvedPairs.has(approvalPairKey(asset, spender)))
+			continue;
 		try {
 			const hints = await fetchErc20SlotHints(client, asset, {
 				skipBalance: true,
-				allowanceSpender: permit2Address,
+				allowanceSpender: spender,
 			});
 			if (hints.allowanceSlotIndex !== undefined) {
 				const slot = computeAllowanceSlot(
 					account,
-					permit2Address,
+					spender,
 					hints.allowanceSlotIndex,
 				);
 				stateOverride.push({
 					address: asset,
 					stateDiff: [{ slot, value: valueHex }],
 				});
-				continue;
 			}
 		} catch (e) {
-			// fall through
+			// access-list discovery already failed or returned no match; leave
+			// unresolved rather than retrying the same unavailable method.
 		}
-		stillUnknown.push(asset);
-	}
-
-	if (stillUnknown.length > 0) {
-		const legacy = await discoverAllowanceSlotsViaAccessList(
-			client,
-			account,
-			stillUnknown,
-			permit2Address,
-		);
-		stateOverride.push(...legacy);
 	}
 
 	return stateOverride;

@@ -1,7 +1,7 @@
-import { type Address, type Hex, getAddress } from "viem";
+import { type Address, getAddress, type Hex } from "viem";
 import {
-	type BuildQueryFn,
 	applyBuildQuery,
+	type BuildQueryFn,
 } from "../../../../utils/buildQuery.js";
 import type {
 	FuulClaimCheck,
@@ -52,6 +52,7 @@ const normalizeAction = (value?: string): RewardAction | undefined => {
 	if (normalized.includes("borrow") && normalized.includes("collateral"))
 		return "BORROW_COLLATERAL";
 	if (normalized.includes("borrow")) return "BORROW";
+	if (normalized.includes("turtle_stream")) return "LEND";
 	if (normalized.includes("lend") || normalized.includes("supply"))
 		return "LEND";
 	return undefined;
@@ -485,9 +486,9 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 					continue;
 				}
 
-				const provider = normalizeProvider(
-					campaignRow.provider ?? campaignRow.source,
-				);
+				const provider =
+					normalizeProvider(campaignRow.source) ??
+					normalizeProvider(campaignRow.provider);
 				const action = normalizeAction(campaignRow.campaignType);
 				const apr =
 					typeof campaignRow.apr === "number"
@@ -527,7 +528,8 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			return;
 		}
 
-		const provider = normalizeProvider(row.provider ?? row.source);
+		const provider =
+			normalizeProvider(row.source) ?? normalizeProvider(row.provider);
 		const action = normalizeAction(row.action ?? row.campaignType);
 		const apr = typeof row.apr === "number" ? row.apr / 100 : undefined;
 		const rewardTokenAddress = normalizeAddress(

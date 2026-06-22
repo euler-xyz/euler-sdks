@@ -1,13 +1,16 @@
-import type { Abi, Address } from "viem";
+import { type Abi, type Address, encodeFunctionData, getAddress } from "viem";
 import type { IDeploymentService } from "../deploymentService/index.js";
 import type { IProviderService } from "../providerService/index.js";
+import type {
+	EVCBatchItem,
+	TransactionPlan,
+} from "../executionService/index.js";
 import type {
 	BuildUnlockREULPlanArgs,
 	FetchREULLocksArgs,
 	IREULLockService,
 	REULLock,
 } from "./reulLockServiceTypes.js";
-import type { TransactionPlan } from "../executionService/index.js";
 
 export const reulLockAbi = [
 	{
@@ -106,7 +109,7 @@ export class REULLockService implements IREULLockService {
 	}
 
 	/**
-	 * Build a direct rEUL unlock transaction plan.
+	 * Build an rEUL unlock transaction plan.
 	 *
 	 * @param args.chainId - Chain where the unlock transaction will be sent.
 	 * @param args.account - Recipient/account argument passed to `withdrawToByLockTimestamp`.
@@ -115,19 +118,36 @@ export class REULLockService implements IREULLockService {
 	 * @param args.allowRemainderLoss - Contract `allowRemainderLoss` argument; defaults to true.
 	 */
 	buildUnlockPlan(args: BuildUnlockREULPlanArgs): TransactionPlan {
-		return [
-			{
-				type: "contractCall",
-				chainId: args.chainId,
-				to: this.resolveREULAddress(args.chainId, args.rEulAddress),
+		const rEulAddress = this.resolveREULAddress(args.chainId, args.rEulAddress);
+		const eulAddress = this.deploymentService.getDeployment(args.chainId)
+			.addresses.tokenAddrs?.EUL;
+		const item: EVCBatchItem = {
+			targetContract: rEulAddress,
+			onBehalfOfAccount: args.account,
+			value: 0n,
+			data: encodeFunctionData({
 				abi: reulLockAbi,
 				functionName: "withdrawToByLockTimestamp",
 				args: [
 					args.account,
 					args.lockTimestamp,
 					args.allowRemainderLoss ?? true,
-				] as const,
-				value: 0n,
+				],
+			}),
+		};
+		return [
+			{
+				type: "evcBatch",
+				items: [
+					{
+						type: "operation",
+						name: "Unlock rEUL",
+						items: [item],
+						...(eulAddress
+							? { walletBalanceTokens: [getAddress(eulAddress) as Address] }
+							: {}),
+					},
+				],
 			},
 		];
 	}

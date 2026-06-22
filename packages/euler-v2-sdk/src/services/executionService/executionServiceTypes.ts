@@ -23,6 +23,10 @@ export type EVCBatchOperation = {
 	type: "operation";
 	name: string;
 	items: EVCBatchItem[];
+	/** Additional wallet tokens whose `balanceOf(account)` should be tracked in
+	 * simulation layers. This is metadata only; it is not encoded into EVC
+	 * calldata. */
+	walletBalanceTokens?: Address[];
 };
 
 export type EVCBatchEntry = EVCBatchItem | EVCBatchOperation;
@@ -447,6 +451,8 @@ export type ContractCall = {
 	functionName: string;
 	args: readonly unknown[];
 	value: bigint;
+	/** Metadata consumed when this call is converted into an EVC batch operation. */
+	walletBalanceTokens?: Address[];
 };
 
 export type CowSwapPlanKind =

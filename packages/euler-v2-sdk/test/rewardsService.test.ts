@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { getAddress, type Address, zeroAddress } from "viem";
+import {
+	decodeFunctionData,
+	getAddress,
+	type Address,
+	type Hex,
+	zeroAddress,
+} from "viem";
 
 import { RewardsService } from "../src/services/rewardsService/rewardsService.js";
 import type {
@@ -50,7 +56,87 @@ const secondCollateralAddress = getAddress(
 const secondVaultAddress = getAddress(
 	"0x0000000000000000000000000000000000000009",
 ) as Address;
+const accountLensAddress = getAddress(
+	"0x0000000000000000000000000000000000000010",
+) as Address;
+const rewardStreamsAddress = getAddress(
+	"0x0000000000000000000000000000000000000011",
+) as Address;
+const proofHash =
+	"0x0000000000000000000000000000000000000000000000000000000000000abc" as Hex;
 const farFutureTimestamp = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+
+const MERKL_CLAIM_ABI = [
+	{
+		type: "function",
+		name: "claim",
+		inputs: [
+			{ name: "users", type: "address[]" },
+			{ name: "tokens", type: "address[]" },
+			{ name: "amounts", type: "uint256[]" },
+			{ name: "proofs", type: "bytes32[][]" },
+		],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+] as const;
+
+const BREVIS_CLAIM_ABI = [
+	{
+		type: "function",
+		name: "claim",
+		inputs: [
+			{ name: "earner", type: "address" },
+			{ name: "cumulativeAmounts", type: "uint256[]" },
+			{ name: "epoch", type: "uint64" },
+			{ name: "proof", type: "bytes32[]" },
+		],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+] as const;
+
+const FUUL_MANAGER_ABI = [
+	{
+		type: "function",
+		name: "claim",
+		inputs: [
+			{
+				name: "claimChecks",
+				type: "tuple[]",
+				components: [
+					{ name: "projectAddress", type: "address" },
+					{ name: "to", type: "address" },
+					{ name: "currency", type: "address" },
+					{ name: "currencyType", type: "uint8" },
+					{ name: "amount", type: "uint256" },
+					{ name: "reason", type: "uint8" },
+					{ name: "tokenId", type: "uint256" },
+					{ name: "deadline", type: "uint256" },
+					{ name: "proof", type: "bytes32" },
+					{ name: "signatures", type: "bytes[]" },
+				],
+			},
+		],
+		outputs: [],
+		stateMutability: "payable",
+	},
+] as const;
+
+const REWARD_STREAMS_ABI = [
+	{
+		type: "function",
+		name: "claimReward",
+		inputs: [
+			{ name: "rewarded", type: "address" },
+			{ name: "reward", type: "address" },
+			{ name: "to", type: "address" },
+			{ name: "ignoreRecentReward", type: "bool" },
+		],
+		outputs: [{ name: "amount", type: "uint256" }],
+		stateMutability: "nonpayable",
+	},
+] as const;
 
 const emptyAdapter: IRewardsAdapter = {
 	async fetchVaultRewards() {
@@ -68,6 +154,46 @@ const emptyAdapter: IRewardsAdapter = {
 	async fetchFuulClaimChecks() {
 		return [];
 	},
+};
+
+const makeRewardsService = () => {
+	const service = new RewardsService(emptyAdapter, {
+		merklDistributorAddress,
+		fuulManagerAddress: otherAccountAddress,
+		fuulFactoryAddress: fuulProjectAddress,
+	});
+	service.setProviderService({
+		getProvider(chainId: number) {
+			assert.equal(chainId, 1);
+			return {};
+		},
+		getSupportedChainIds() {
+			return [1];
+		},
+	} as any);
+	service.setDeploymentService({
+		getDeployment(chainId: number) {
+			assert.equal(chainId, 1);
+			return {
+				chainId,
+				name: "test",
+				status: "active",
+				addresses: {
+					coreAddrs: {
+						balanceTracker: rewardStreamsAddress,
+					},
+					lensAddrs: {
+						accountLens: accountLensAddress,
+					},
+				},
+			};
+		},
+		getDeploymentChainIds() {
+			return [1];
+		},
+		addDeployment() {},
+	} as any);
+	return service;
 };
 
 const makeBrevisReward = (overrides: Partial<UserReward> = {}): UserReward => ({
@@ -99,7 +225,7 @@ const makeMerklReward = (overrides: Partial<UserReward> = {}): UserReward => ({
 	provider: "merkl",
 	accumulated: "1000",
 	unclaimed: "1000",
-	proof: ["0xabc" as `0x${string}`],
+	proof: [proofHash],
 	claimAddress: merklDistributorAddress,
 	...overrides,
 });
@@ -115,7 +241,7 @@ const makeFuulClaimCheck = (
 	reason: 0,
 	token_id: "0",
 	deadline: "9999999999",
-	proof: "0xabc",
+	proof: proofHash,
 	signatures: ["0x123"],
 	...overrides,
 });
@@ -134,7 +260,7 @@ const makeFuulClaimableReward = (
 	reason: 0,
 	token_id: "0",
 	deadline: "9999999999",
-	proof: "0xabc",
+	proof: proofHash,
 	signatures: ["0x123"],
 	status: "claimable",
 	...overrides,
@@ -368,6 +494,141 @@ test("V3 rewards adapter enriches Turtle breakdown rows from campaign metadata",
 	assert.equal(rewards[0]?.token.decimals, 6);
 	assert.equal(rewards[0]?.accumulated, "42035");
 	assert.equal(rewards[0]?.unclaimed, "42035");
+});
+
+test("V3 rewards adapter uses source when provider is attribution metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "accountable-valos-boost",
+						provider: "VALOS",
+						source: "merkl",
+						campaignType: "euler_lend",
+						apr: 0.27760914,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "MON",
+						},
+						status: "active",
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "merkl");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.ok(
+		Math.abs((info?.campaigns[0]?.apr ?? 0) - 0.0027760914) < 1e-12,
+	);
+	assert.equal(info?.campaigns[0]?.rewardTokenSymbol, "MON");
+	assert.ok(Math.abs((info?.getTotalRewardsApr() ?? 0) - 0.0027760914) < 1e-12);
+});
+
+test("V3 rewards adapter uses source for flat APY rows with attribution provider metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				id: "flat-accountable-valos-boost",
+				provider: "VALOS",
+				source: "merkl",
+				campaignType: "euler_lend",
+				apr: 0.27760914,
+				rewardToken: {
+					address: rewardToken,
+					symbol: "MON",
+				},
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "merkl");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.ok(
+		Math.abs((info?.campaigns[0]?.apr ?? 0) - 0.0027760914) < 1e-12,
+	);
+});
+
+test("V3 rewards adapter falls back to provider when source is unknown", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "unknown-source-merkl-provider",
+						provider: "merkl",
+						source: "accountable",
+						campaignType: "euler_lend",
+						apr: 1.5,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "EUL",
+						},
+						status: "active",
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "merkl");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.equal(info?.campaigns[0]?.apr, 0.015);
+});
+
+test("V3 rewards adapter normalizes Turtle stream APY rows", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "turtle-shells",
+						provider: "turtle",
+						source: "turtle",
+						campaignType: "turtle_stream",
+						apr: 3.5,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "USDC",
+						},
+						status: "active",
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "turtle");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.equal(info?.campaigns[0]?.campaignId, "turtle-shells");
+	assert.equal(info?.campaigns[0]?.rewardTokenSymbol, "USDC");
+	assert.equal(info?.campaigns[0]?.apr, 0.035);
 });
 
 test("V3 rewards adapter preserves collateral and looping campaign metadata", async () => {
@@ -797,7 +1058,7 @@ test("rewards service rejects Brevis rewards without verified claim address", as
 			service.buildClaimPlan({
 				reward: makeBrevisReward({
 					claimAddress,
-					proof: ["0xabc" as `0x${string}`],
+					proof: [proofHash],
 					cumulativeAmounts: ["1000"],
 					epoch: "7",
 				}),
@@ -841,7 +1102,7 @@ test("V3 rewards adapter delegates Brevis claim verification to direct adapter",
 				claimableRewards: "1000",
 				epoch: "7",
 				cumulativeRewards: ["1000"],
-				merkleProof: ["0xabc"],
+				merkleProof: [proofHash],
 			},
 		],
 	}));
@@ -860,7 +1121,7 @@ test("V3 rewards adapter delegates Brevis claim verification to direct adapter",
 		reward: makeBrevisReward({
 			campaignId: "brevis-1",
 			claimAddress,
-			proof: ["0xabc" as `0x${string}`],
+			proof: [proofHash],
 			cumulativeAmounts: ["1000"],
 			epoch: "7",
 		}),
@@ -868,9 +1129,18 @@ test("V3 rewards adapter delegates Brevis claim verification to direct adapter",
 	});
 
 	assert.equal(plan.length, 1);
-	assert.equal(plan[0]?.type, "contractCall");
-	assert.equal(plan[0]?.to, claimAddress);
-	assert.equal(plan[0]?.functionName, "claim");
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.equal(operation.items.length, 1);
+	assert.equal(operation.items[0]?.targetContract, claimAddress);
+	const decoded = decodeFunctionData({
+		abi: BREVIS_CLAIM_ABI,
+		data: operation.items[0]!.data,
+	});
+	assert.equal(decoded.functionName, "claim");
 });
 
 test("direct rewards adapter verifies Brevis claim target against campaign metadata", async () => {
@@ -911,7 +1181,7 @@ test("direct rewards adapter verifies Brevis claim target against campaign metad
 				claimableRewards: "1000",
 				epoch: "7",
 				cumulativeRewards: ["1000"],
-				merkleProof: ["0xabc"],
+				merkleProof: [proofHash],
 			},
 		],
 	}));
@@ -961,7 +1231,7 @@ test("direct rewards adapter drops Brevis proofs with mismatched claim target", 
 				claimableRewards: "1000",
 				epoch: "7",
 				cumulativeRewards: ["1000"],
-				merkleProof: ["0xabc"],
+				merkleProof: [proofHash],
 			},
 		],
 	}));
@@ -1067,8 +1337,246 @@ test("rewards service derives Merkl claim target from trusted distributor", asyn
 	});
 
 	assert.equal(plan.length, 1);
-	assert.equal(plan[0]?.type, "contractCall");
-	assert.equal(plan[0]?.to, merklDistributorAddress);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.equal(operation.items[0]?.targetContract, merklDistributorAddress);
+});
+
+test("rewards service can build EVC batch items for claim providers", async () => {
+	const brevisReward = makeBrevisReward({
+		campaignId: "brevis-1",
+		claimAddress,
+		cumulativeAmounts: ["1000"],
+		epoch: "7",
+		proof: [proofHash],
+	});
+	const adapter = {
+		...emptyAdapter,
+		async fetchBrevisUserRewardClaims() {
+			return [brevisReward];
+		},
+		async fetchFuulClaimChecks() {
+			return [makeFuulClaimCheck()];
+		},
+		async fetchFuulTotals() {
+			return {
+				claimed: [],
+				unclaimed: [
+					{
+						currency: rewardToken,
+						currency_type: 0,
+						amount: "1000",
+						chain_id: 1,
+					},
+				],
+			};
+		},
+	} satisfies IRewardsAdapter & {
+		fetchBrevisUserRewardClaims: (
+			chainId: number,
+			address: Address,
+		) => Promise<UserReward[]>;
+	};
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress,
+		fuulManagerAddress: otherAccountAddress,
+		fuulFactoryAddress: fuulProjectAddress,
+	});
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					return { nativeUserClaimFee: 123n };
+				},
+			};
+		},
+	} as any);
+
+	const plan = await service.buildClaimPlans({
+		rewards: [
+			makeMerklReward({ claimAddress: undefined }),
+			brevisReward,
+			makeFuulReward(),
+		],
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) {
+		throw new Error("expected operation");
+	}
+	assert.equal(operation.name, "Claim rewards");
+	assert.equal(operation.items.length, 3);
+	assert.deepEqual(operation.walletBalanceTokens, [rewardToken]);
+
+	const [merklItem, brevisItem, fuulItem] = operation.items;
+	assert.equal(merklItem?.targetContract, merklDistributorAddress);
+	assert.equal(merklItem?.onBehalfOfAccount, accountAddress);
+	assert.equal(merklItem?.value, 0n);
+	const merklDecoded = decodeFunctionData({
+		abi: MERKL_CLAIM_ABI,
+		data: merklItem!.data,
+	});
+	assert.equal(merklDecoded.functionName, "claim");
+	assert.deepEqual(merklDecoded.args[0], [accountAddress]);
+	assert.deepEqual(merklDecoded.args[1], [rewardToken]);
+
+	assert.equal(brevisItem?.targetContract, claimAddress);
+	assert.equal(brevisItem?.onBehalfOfAccount, accountAddress);
+	assert.equal(brevisItem?.value, 0n);
+	const brevisDecoded = decodeFunctionData({
+		abi: BREVIS_CLAIM_ABI,
+		data: brevisItem!.data,
+	});
+	assert.equal(brevisDecoded.functionName, "claim");
+	assert.deepEqual(brevisDecoded.args, [
+		accountAddress,
+		[1000n],
+		7n,
+		[proofHash],
+	]);
+
+	assert.equal(fuulItem?.targetContract, otherAccountAddress);
+	assert.equal(fuulItem?.onBehalfOfAccount, accountAddress);
+	assert.equal(fuulItem?.value, 123n);
+	const fuulDecoded = decodeFunctionData({
+		abi: FUUL_MANAGER_ABI,
+		data: fuulItem!.data,
+	});
+	assert.equal(fuulDecoded.functionName, "claim");
+	assert.equal(fuulDecoded.args[0][0].to, accountAddress);
+});
+
+test("rewards service fetches claimable reward streams from account lens", async () => {
+	const service = makeRewardsService();
+	const calls: Array<{
+		accountLensAddress: Address;
+		account: Address;
+		vault: Address;
+	}> = [];
+	service.setQueryVaultAccountInfo(
+		async (_provider, queriedAccountLensAddress, account, vault) => {
+			calls.push({ accountLensAddress: queriedAccountLensAddress, account, vault });
+			return {
+				account,
+				vault,
+				enabledRewardsInfo: [
+					{
+						reward: rewardToken,
+						earnedReward: 100n,
+						earnedRewardRecentIgnored: 75n,
+					},
+					{
+						reward: otherRewardToken,
+						earnedReward: 0n,
+						earnedRewardRecentIgnored: 0n,
+					},
+				],
+			} as any;
+		},
+	);
+
+	const rewardStreams = await service.fetchRewardStreams({
+		chainId: 1,
+		positions: [
+			{ account: accountAddress, vault: vaultAddress },
+			{ account: accountAddress, vault: vaultAddress },
+		],
+	});
+
+	assert.equal(calls.length, 1);
+	assert.deepEqual(calls[0], {
+		accountLensAddress,
+		account: accountAddress,
+		vault: vaultAddress,
+	});
+	assert.deepEqual(rewardStreams, [
+		{
+			account: accountAddress,
+			vault: vaultAddress,
+			reward: rewardToken,
+			earnedReward: 100n,
+			earnedRewardRecentIgnored: 75n,
+		},
+	]);
+});
+
+test("rewards service builds reward stream claims as an EVC batch", () => {
+	const service = makeRewardsService();
+
+	const plan = service.buildRewardStreamClaimPlan({
+		chainId: 1,
+		recipient: otherAccountAddress,
+		rewardStreams: [
+			{
+				account: accountAddress,
+				vault: vaultAddress,
+				reward: rewardToken,
+				earnedReward: 100n,
+				earnedRewardRecentIgnored: 100n,
+			},
+			{
+				account: accountAddress,
+				vault: secondVaultAddress,
+				reward: otherRewardToken,
+				earnedReward: 50n,
+				earnedRewardRecentIgnored: 25n,
+			},
+			{
+				account: accountAddress,
+				vault: secondVaultAddress,
+				reward: rewardToken,
+				earnedReward: 0n,
+				earnedRewardRecentIgnored: 0n,
+			},
+		],
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) {
+		throw new Error("expected operation");
+	}
+	assert.equal(operation.name, "Claim rewards");
+	assert.equal(operation.items.length, 2);
+	const [firstItem, secondItem] = operation.items;
+	assert.equal(firstItem?.targetContract, rewardStreamsAddress);
+	assert.equal(firstItem?.onBehalfOfAccount, accountAddress);
+	assert.equal(firstItem?.value, 0n);
+	const firstDecoded = decodeFunctionData({
+		abi: REWARD_STREAMS_ABI,
+		data: firstItem!.data,
+	});
+	assert.deepEqual(firstDecoded.args, [
+		vaultAddress,
+		rewardToken,
+		otherAccountAddress,
+		true,
+	]);
+
+	assert.equal(secondItem?.targetContract, rewardStreamsAddress);
+	assert.equal(secondItem?.onBehalfOfAccount, accountAddress);
+	assert.equal(secondItem?.value, 0n);
+	const secondDecoded = decodeFunctionData({
+		abi: REWARD_STREAMS_ABI,
+		data: secondItem!.data,
+	});
+	assert.deepEqual(secondDecoded.args, [
+		secondVaultAddress,
+		otherRewardToken,
+		otherAccountAddress,
+		false,
+	]);
 });
 
 test("rewards service rejects Merkl rewards with untrusted claim address", async () => {
@@ -1106,9 +1614,12 @@ test("rewards service uses chain-specific Merkl distributor overrides", async ()
 	});
 
 	assert.equal(plan.length, 1);
-	assert.equal(plan[0]?.type, "contractCall");
-	assert.equal(plan[0]?.chainId, 324);
-	assert.equal(plan[0]?.to, zksyncMerklDistributorAddress);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.equal(operation.items[0]?.targetContract, zksyncMerklDistributorAddress);
 });
 
 test("rewards service rejects default Merkl distributor on unknown chains", async () => {
@@ -1268,14 +1779,22 @@ test("rewards service builds Fuul claim plan from public claimable rewards", asy
 	});
 
 	assert.equal(plan.length, 1);
-	assert.equal(plan[0]?.type, "contractCall");
-	assert.equal(plan[0]?.chainId, 1);
-	assert.equal(plan[0]?.to, claimAddress);
-	assert.equal(plan[0]?.functionName, "claim");
-	assert.equal(plan[0]?.value, 123n);
-	assert.equal((plan[0]?.args[0] as any[])[0]?.projectAddress, fuulProjectAddress);
-	assert.equal((plan[0]?.args[0] as any[])[0]?.currencyType, 1);
-	assert.equal((plan[0]?.args[0] as any[])[0]?.amount, 1000n);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.equal(operation.items[0]?.targetContract, claimAddress);
+	assert.equal(operation.items[0]?.value, 123n);
+	const decoded = decodeFunctionData({
+		abi: FUUL_MANAGER_ABI,
+		data: operation.items[0]!.data,
+	});
+	assert.equal(decoded.functionName, "claim");
+	const claimCheck = (decoded.args[0] as any[])[0];
+	assert.equal(claimCheck?.projectAddress, fuulProjectAddress);
+	assert.equal(claimCheck?.currencyType, 1);
+	assert.equal(claimCheck?.amount, 1000n);
 });
 
 test("rewards service hydrates Turtle claimable amount with canClaim", async () => {
@@ -1493,10 +2012,18 @@ test("V3 rewards adapter delegates Fuul claim data to direct adapter", async () 
 	});
 
 	assert.equal(plan.length, 1);
-	assert.equal(plan[0]?.type, "contractCall");
-	assert.equal(plan[0]?.to, claimAddress);
-	assert.equal(plan[0]?.functionName, "claim");
-	assert.equal(plan[0]?.value, 123n);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.equal(operation.items[0]?.targetContract, claimAddress);
+	assert.equal(operation.items[0]?.value, 123n);
+	const decoded = decodeFunctionData({
+		abi: FUUL_MANAGER_ABI,
+		data: operation.items[0]!.data,
+	});
+	assert.equal(decoded.functionName, "claim");
 });
 
 test("rewards service rejects Fuul claim checks whose recipient differs from the account", async () => {

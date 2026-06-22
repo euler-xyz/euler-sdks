@@ -1426,6 +1426,7 @@ export async function buildEulerSDK<
 
 	if (rewardsService instanceof RewardsService) {
 		rewardsService.setProviderService(providerService as ProviderService);
+		rewardsService.setDeploymentService(deploymentService as DeploymentService);
 	}
 	if (feeFlowService instanceof FeeFlowService) {
 		feeFlowService.setProviderService(providerService as ProviderService);

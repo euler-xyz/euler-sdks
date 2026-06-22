@@ -1,5 +1,87 @@
 # Changelog
 
+## [1.0.7] - 2026-06-19
+
+### Fixed
+
+- Fixed V3 rewards source normalization so reward rows use backend `source` before attribution `provider` metadata.
+- Preserved Accountable-backed Merkl reward rows as normal Merkl LEND campaigns when V3 rows report `source: "merkl"`.
+
+### Tests
+
+- Added regression coverage for nested and flat V3 APY rows with attribution provider metadata.
+- Added coverage for unknown-source fallback behavior and unsupported Turtle APY row filtering.
+
+## [1.0.6] - 2026-06-18
+
+### Fixed
+
+- Fixed wallet shortfall diagnostics for batched wallet-sourced deposits so funds created by earlier simulated operations are counted before reporting a missing wallet balance.
+- Tracked required-approval wallet tokens in simulation balance layers, covering wallet input tokens that are not touched vault underlyings.
+- Treated an empty computed wallet shortfall as authoritative instead of falling back to static approval diagnostics.
+
+## [1.0.5] - 2026-06-15
+
+### Fixed
+
+- Fixed simulation readbacks for Securitize collateral vaults so vault entities are stitched from ERC4626, governor, and resolved supply-cap reads.
+- Fixed Securitize simulation readbacks to run vault metadata reads on behalf of the simulated owner.
+- Preserved static wallet shortfall diagnostics when failed simulation items prevent wallet delta readbacks.
+- Added direct owner-to-spender ERC20 allowance overrides alongside Permit2 allowance overrides for raw plan simulations.
+
+## [1.0.4] - 2026-06-15
+
+### Added
+
+- Added reward stream reads on account positions and reward stream claim plan generation through the rewards service.
+- Added wallet balance metadata to contract calls and EVC batch operations so simulation layers can track claim, rEUL unlock, and cleanup balance changes.
+- Added a native balance accessor on `Wallet`.
+
+### Changed
+
+- Simulations now stitch batched operation state through wallet, account, cleanup, and reward-claim readbacks.
+- rEUL unlock plans now use EVC batch operations and track resulting EUL wallet balances.
+
+### Fixed
+
+- Fixed approval and balance override fallback handling when access-list discovery is unavailable.
+- Fixed simulation balance requirements so multiple operations that need the same token are summed before wallet checks.
+- Fixed cleanup-state reads in simulations so post-operation state is fetched consistently.
+- Normalized direct `Account` construction so sub-account map keys use checksum addresses.
+
+## [1.0.3] - 2026-06-10
+
+### Added
+
+- Added token category tags to token list entries so SDK consumers can use V3 token metadata classifications.
+
+### Changed
+
+- Token list service preserves string `tags` from API responses while filtering out non-string tag values.
+
+### Tests
+
+- Added read-path coverage for token tags across full token list loads and paginated token list queries.
+
+## [1.0.2] - 2026-06-05
+
+### Added
+
+- Added tag-based Euler label classification support for products, vault overrides, and Earn labels.
+- Added helpers for recently-added, governance-limited, high-utilisation warning suppression, and cyclical-note classifications.
+
+### Changed
+
+- Populated vault labels now preserve vault override tags so SDK consumers receive the same classifications exposed by raw labels data.
+- Updated SDK docs, examples, and tests for the tag-based labels shape.
+
+## [1.0.1] - 2026-06-03
+
+### Fixed
+
+- Restored Fuul user reward reads through Fuul's public claimable-rewards endpoint when caller-hosted Fuul totals or claim-check URLs are not configured.
+- Preserved existing Fuul override URL behavior and passed claim-chain context through claim verification for direct-adapter Fuul claims.
+
 ## [1.0.0] - 2026-06-03
 
 ### Changed
