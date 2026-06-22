@@ -50,15 +50,30 @@ export interface EulerSDKConfig {
 	rewardsBrevisApiUrl?: string;
 	rewardsBrevisProofsApiUrl?: string;
 	rewardsFuulApiUrl?: string;
+	rewardsTurtleApiUrl?: string;
 	rewardsFuulTotalsUrl?: string;
 	rewardsFuulClaimChecksUrl?: string;
 	rewardsBrevisChainIds?: number[];
 	rewardsMerklDistributorAddress?: Address;
 	rewardsFuulManagerAddress?: Address;
 	rewardsFuulFactoryAddress?: Address;
+	rewardsTurtleStreams?: Array<{
+		streamId: string;
+		chainId: number;
+		streamAddress?: Address;
+		rewardToken?: {
+			address?: Address;
+			chainId?: number;
+			symbol?: string;
+			name?: string;
+			decimals?: number;
+		};
+		tokenPrice?: number;
+	}>;
 	rewardsEnableMerkl?: boolean;
 	rewardsEnableBrevis?: boolean;
 	rewardsEnableFuul?: boolean;
+	rewardsEnableTurtle?: boolean;
 
 	pricingApiUrl?: string;
 	pricingApiKey?: string;
