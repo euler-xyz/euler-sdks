@@ -113,4 +113,4 @@ This package is published through the repo-local [`RELEASE.md`](./RELEASE.md) pl
 
 Release PRs bump only the version in [`package.json`](./package.json). Git tags and GitHub Releases are the release-note source of truth.
 
-The publish flow runs `pnpm -C packages/euler-v2-sdk run release:check`, creates an `euler-v2-sdk-vX.Y.Z` tag from the merged `main` commit, publishes with `npm publish --access public`, and creates or updates the GitHub Release from the generated changelist. Publishing uses the operator's local npm session so npm 2FA prompts can be completed interactively.
+The publish flow runs `pnpm -C packages/euler-v2-sdk run release:check`, creates an `euler-v2-sdk-vX.Y.Z` tag from the merged `main` commit, publishes with `npm publish --access public --provenance=false`, and creates or updates the GitHub Release from the generated changelist. Publishing uses the operator's local npm session so npm 2FA prompts can be completed interactively.

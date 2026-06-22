@@ -39,7 +39,7 @@
     "clean": "rm -rf dist",
     "release:check": "pnpm run clean && pnpm run build && pnpm run typecheck && npm pack --dry-run",
     "prepublishOnly": "pnpm run release:check",
-    "publish:public": "npm publish --access public"
+    "publish:public": "npm publish --access public --provenance=false"
   },
   "keywords": [
     "euler",

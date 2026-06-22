@@ -12,7 +12,7 @@ The publish skill should use this file as the repo-local playbook for `@eulerxyz
 - Package name: `@eulerxyz/euler-v2-sdk`
 - Tag format: `euler-v2-sdk-vX.Y.Z`
 - Release gate: `pnpm -C packages/euler-v2-sdk run release:check`
-- Publish command: `npm publish --access public` from `packages/euler-v2-sdk`
+- Publish command: `npm publish --access public --provenance=false` from `packages/euler-v2-sdk`
 - GitHub Release title: `euler-v2-sdk vX.Y.Z`
 
 ## Operator flow
@@ -37,7 +37,7 @@ pnpm -C packages/euler-v2-sdk run release:check
 git tag -a euler-v2-sdk-vX.Y.Z -m "euler-v2-sdk-vX.Y.Z"
 git push origin euler-v2-sdk-vX.Y.Z
 cd packages/euler-v2-sdk
-npm publish --access public
+npm publish --access public --provenance=false
 cd ../..
 gh release create euler-v2-sdk-vX.Y.Z --title "euler-v2-sdk vX.Y.Z" --notes "<generated changelist>"
 ```
@@ -45,7 +45,7 @@ gh release create euler-v2-sdk-vX.Y.Z --title "euler-v2-sdk vX.Y.Z" --notes "<ge
 For prereleases, publish with npm's matching dist-tag:
 
 ```sh
-npm publish --access public --tag beta
+npm publish --access public --tag beta --provenance=false
 ```
 
 ## Auth and 2FA
