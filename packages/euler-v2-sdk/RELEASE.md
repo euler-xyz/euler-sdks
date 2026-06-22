@@ -40,3 +40,5 @@ The workflow also supports a manual `workflow_dispatch` run against an existing 
 ## Publishing credentials
 
 The workflow is configured for npm trusted publishing with GitHub Actions OIDC and also accepts the `NPM_TOKEN` repository secret as a fallback. The npm trusted publisher, when used, must point at the `release-euler-v2-sdk.yml` workflow filename for the `euler-xyz/euler-sdks` repository.
+
+Trusted publishing is the preferred path for packages that require 2FA because npm exchanges the workflow's OIDC identity for a short-lived publish token. If `NPM_TOKEN` is used instead, it must be a granular token with read/write package access and 2FA bypass enabled for write actions; a normal user-session token can still fail on publish when npm asks for a one-time password.
