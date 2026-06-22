@@ -1,44 +1,60 @@
-# Euler V2 SDK release flow
+# Euler V2 SDK publish flow
 
-`@eulerxyz/euler-v2-sdk` releases are tag-driven once the release PR is merged to `main`. The npm package is published only from a matching `euler-v2-sdk-vX.Y.Z` tag after CI validates the package metadata and runs the package release gate.
+`@eulerxyz/euler-v2-sdk` is released by the local `$publish` skill. The package still uses `packages/euler-v2-sdk/package.json` as npm's version source, and npm publishing stays interactive so the operator can complete 2FA when npm asks for a one-time password.
 
-## Release preparation
+Git tags and GitHub Releases are the release-note source of truth. Do not add package-local changelog or release-notes files for new SDK releases.
 
-1. Create a release branch from `main`.
-2. Update `packages/euler-v2-sdk/package.json` to the intended version.
-3. Add a dated entry to `packages/euler-v2-sdk/CHANGELOG.md`.
-4. Update `packages/euler-v2-sdk/RELEASE_NOTES.md`; the first heading must be `# euler-v2-sdk vX.Y.Z`.
-5. Run the release gate locally:
+## Release inputs
 
-   ```sh
-   pnpm -C packages/euler-v2-sdk run release:check
-   ```
+The publish skill should use this file as the repo-local playbook for `@eulerxyz/euler-v2-sdk` releases.
 
-6. Open and merge the release PR into `main`.
+- Package directory: `packages/euler-v2-sdk`
+- Package name: `@eulerxyz/euler-v2-sdk`
+- Tag format: `euler-v2-sdk-vX.Y.Z`
+- Release gate: `pnpm -C packages/euler-v2-sdk run release:check`
+- Publish command: `npm publish --access public` from `packages/euler-v2-sdk`
+- GitHub Release title: `euler-v2-sdk vX.Y.Z`
 
-## Publish
+## Operator flow
 
-After the release PR is merged, create and push the release tag from the merged `main` commit:
+1. Run `$publish` from the repository.
+2. Let the skill inspect this playbook, `packages/euler-v2-sdk/package.json`, existing `euler-v2-sdk-v*` tags, and npm's current published version.
+3. Let the skill derive the next version from the requested semver bump.
+4. Let the skill generate the changelist from the actual diff since the previous `euler-v2-sdk-v*` tag. Prefer merged PR metadata when available, and validate the notes against the final net diff.
+5. Let the skill update only `packages/euler-v2-sdk/package.json` for the version bump.
+6. Merge the release PR to `main`; `main` is protected, so releases do not push directly to it.
+7. From the merged `main` commit, let the skill run the release gate, create and push the annotated tag, publish to npm, and create or update the GitHub Release.
+
+## Manual command sequence
+
+The publish skill should run the same sequence with confirmation before publishing:
 
 ```sh
 git fetch origin main --tags
 git switch main
 git pull --ff-only origin main
-node scripts/validate-euler-v2-sdk-release.mjs euler-v2-sdk-vX.Y.Z
+pnpm -C packages/euler-v2-sdk run release:check
 git tag -a euler-v2-sdk-vX.Y.Z -m "euler-v2-sdk-vX.Y.Z"
 git push origin euler-v2-sdk-vX.Y.Z
+cd packages/euler-v2-sdk
+npm publish --access public
+cd ../..
+gh release create euler-v2-sdk-vX.Y.Z --title "euler-v2-sdk vX.Y.Z" --notes "<generated changelist>"
 ```
 
-The `Release euler-v2-sdk` workflow checks out that tag, validates that the tag matches `packages/euler-v2-sdk/package.json`, confirms the changelog and release notes mention the same version, runs `pnpm -C packages/euler-v2-sdk run release:check`, publishes `@eulerxyz/euler-v2-sdk` to npm, and creates or updates the GitHub Release from `RELEASE_NOTES.md`. If the exact package version is already on npm, a rerun skips the duplicate publish and still reconciles the GitHub Release.
+For prereleases, publish with npm's matching dist-tag:
 
-Stable versions publish with the `latest` npm dist-tag. Prerelease versions publish with the first prerelease identifier as the npm dist-tag, for example `1.1.0-beta.0` publishes with `--tag beta`.
+```sh
+npm publish --access public --tag beta
+```
 
-## Manual dry run
+## Auth and 2FA
 
-The workflow also supports a manual `workflow_dispatch` run against an existing tag. Leave `dry_run` enabled to run the validation and package dry-run without publishing to npm or changing the GitHub Release.
+Use the operator's local npm session for publishing. If npm prompts for a one-time password, enter the current 2FA code and continue the publish. The package `prepublishOnly` hook runs `pnpm run release:check`, so npm publishing re-runs the release gate immediately before registry publication.
 
-## Publishing credentials
+After publishing, verify npm and GitHub:
 
-The workflow is configured for npm trusted publishing with GitHub Actions OIDC and also accepts the `NPM_TOKEN` repository secret as a fallback. The npm trusted publisher, when used, must point at the `release-euler-v2-sdk.yml` workflow filename for the `euler-xyz/euler-sdks` repository.
-
-Trusted publishing is the preferred path for packages that require 2FA because npm exchanges the workflow's OIDC identity for a short-lived publish token. If `NPM_TOKEN` is used instead, it must be a granular token with read/write package access and 2FA bypass enabled for write actions; a normal user-session token can still fail on publish when npm asks for a one-time password.
+```sh
+npm view @eulerxyz/euler-v2-sdk@X.Y.Z version dist.tarball dist.integrity
+gh release view euler-v2-sdk-vX.Y.Z
+```
