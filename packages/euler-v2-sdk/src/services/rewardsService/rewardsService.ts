@@ -440,12 +440,13 @@ export class RewardsService implements IRewardsService {
 			);
 		}
 
+		const turtlePlan: TransactionPlan = [];
 		for (const reward of rewards) {
 			if (reward.provider !== "turtle") continue;
-			plan.push(await this.buildTurtleContractCall(reward, account));
+			turtlePlan.push(await this.buildTurtleContractCall(reward, account));
 		}
 
-		return plan;
+		return [...plan, ...turtlePlan];
 	}
 
 	async buildClaimAllPlan(

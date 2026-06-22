@@ -163,6 +163,36 @@ type RewardsClaimAdapter = Pick<
 	) => Promise<TurtleMerkleProof[]>;
 };
 
+type RewardTokenLike = {
+	address?: string;
+	chainId?: number;
+	symbol?: string;
+	name?: string;
+	decimals?: number | string;
+} | null | undefined;
+
+type CampaignMetadata = {
+	provider?: string;
+	source?: string;
+	campaignType?: string;
+	rewardToken?: RewardTokenLike;
+};
+
+const campaignMetadataKey = (campaignId: string, vault?: string): string =>
+	`${vault?.toLowerCase() ?? ""}:${campaignId}`;
+
+const isUuidLike = (value?: string): boolean =>
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+		value ?? "",
+	);
+
+const normalizeRewardToken = (
+	value: string | RewardTokenLike,
+): RewardTokenLike => {
+	if (typeof value === "string") return { address: value };
+	return value;
+};
+
 export class RewardsV3Adapter implements IRewardsAdapter {
 	constructor(
 		private config: RewardsV3AdapterConfig,
@@ -277,8 +307,22 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 	): Promise<UserReward[]> {
 		const response = await this.queryV3RewardsBreakdown(chainId, address);
 		const rows = Array.isArray(response.data) ? response.data : [];
+		const campaignMetadata = await this.fetchCampaignMetadataMap(
+			chainId,
+			rows,
+		).catch(() => new Map<string, CampaignMetadata>());
+
 		return rows
-			.map((row) => this.convertRow(chainId, row))
+			.map((row) => {
+				const campaignId = row.campaignId ?? row.id;
+				const vaultAddress = normalizeAddress(row.vault ?? row.vaultAddress);
+				const metadata = campaignId
+					? campaignMetadata.get(campaignMetadataKey(campaignId, vaultAddress)) ??
+						campaignMetadata.get(campaignMetadataKey(campaignId))
+					: undefined;
+
+				return this.convertRow(chainId, row, metadata);
+			})
 			.filter((reward): reward is UserReward => reward !== undefined);
 	}
 
@@ -342,6 +386,64 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			offset += rows.length;
 			if (typeof page.meta?.total === "number" && offset >= page.meta.total)
 				break;
+		}
+
+		return map;
+	}
+
+	private async fetchCampaignMetadataMap(
+		chainId: number,
+		breakdownRows: V3RewardsBreakdownRow[],
+	): Promise<Map<string, CampaignMetadata>> {
+		const pageSize = DEFAULT_PAGE_SIZE;
+		const map = new Map<string, CampaignMetadata>();
+		const vaults = new Set(
+			breakdownRows
+				.map((row) => normalizeAddress(row.vault ?? row.vaultAddress))
+				.filter((vault): vault is Address => !!vault),
+		);
+
+		const readPage = async (vault?: Address): Promise<void> => {
+			let offset = 0;
+			for (;;) {
+				const page = await this.queryV3RewardsApyPage(
+					chainId,
+					offset,
+					pageSize,
+					vault,
+				);
+				const rows = Array.isArray(page.data) ? page.data : [];
+
+				for (const row of rows) {
+					const vaultAddress = normalizeAddress(row.vault ?? row.vaultAddress);
+					if (!vaultAddress || !Array.isArray(row.campaigns)) continue;
+
+					for (const campaign of row.campaigns) {
+						if (!campaign.id) continue;
+						const metadata: CampaignMetadata = {
+							provider: campaign.provider,
+							source: campaign.source,
+							campaignType: campaign.campaignType,
+							rewardToken: campaign.rewardToken,
+						};
+						map.set(campaignMetadataKey(campaign.id, vaultAddress), metadata);
+						if (!map.has(campaignMetadataKey(campaign.id))) {
+							map.set(campaignMetadataKey(campaign.id), metadata);
+						}
+					}
+				}
+
+				if (rows.length < pageSize) break;
+				offset += rows.length;
+				if (typeof page.meta?.total === "number" && offset >= page.meta.total)
+					break;
+			}
+		};
+
+		if (vaults.size > 0) {
+			await Promise.all(Array.from(vaults).map((vault) => readPage(vault)));
+		} else {
+			await readPage();
 		}
 
 		return map;
@@ -465,47 +567,77 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 	private convertRow(
 		defaultChainId: number,
 		row: V3RewardsBreakdownRow,
+		campaignMetadata?: CampaignMetadata,
 	): UserReward | undefined {
-		const provider = normalizeProvider(row.provider ?? row.source);
+		const campaignId = row.campaignId ?? row.id;
+		const provider =
+			normalizeProvider(row.provider ?? row.source) ??
+			normalizeProvider(campaignMetadata?.provider ?? campaignMetadata?.source) ??
+			(isUuidLike(campaignId) ? "turtle" : undefined);
 		if (!provider) return undefined;
 
+		const rowRewardToken = normalizeRewardToken(row.rewardToken);
+		const metadataRewardToken = campaignMetadata?.rewardToken;
 		const tokenAddress = normalizeAddress(
-			row.token?.address ?? row.rewardTokenAddress ?? row.tokenAddress,
+			row.token?.address ??
+				rowRewardToken?.address ??
+				row.rewardTokenAddress ??
+				row.tokenAddress ??
+				metadataRewardToken?.address,
 		);
 		if (!tokenAddress) return undefined;
 
 		const token: UserRewardToken = {
 			address: tokenAddress,
-			chainId: row.token?.chainId ?? row.chainId ?? defaultChainId,
+			chainId:
+				row.token?.chainId ??
+				rowRewardToken?.chainId ??
+				metadataRewardToken?.chainId ??
+				row.chainId ??
+				defaultChainId,
 			symbol:
 				row.token?.symbol ??
+				rowRewardToken?.symbol ??
 				row.rewardTokenSymbol ??
 				row.tokenSymbol ??
+				metadataRewardToken?.symbol ??
 				tokenAddress,
 			name:
 				row.token?.name ??
+				rowRewardToken?.name ??
 				row.rewardTokenName ??
 				row.tokenName ??
 				row.token?.symbol ??
+				rowRewardToken?.symbol ??
 				row.rewardTokenSymbol ??
 				row.tokenSymbol ??
+				metadataRewardToken?.name ??
+				metadataRewardToken?.symbol ??
 				tokenAddress,
 			decimals:
 				normalizeNonNegativeInteger(
-					row.token?.decimals ?? row.rewardTokenDecimals ?? row.tokenDecimals,
+					row.token?.decimals ??
+						rowRewardToken?.decimals ??
+						row.rewardTokenDecimals ??
+						row.tokenDecimals ??
+						metadataRewardToken?.decimals,
 				) ?? 18,
 		};
 
 		const accumulated =
 			normalizeBigintString(
-				row.accumulated ?? row.accumulatedAmount ?? row.totalAccumulated,
+				row.accumulated ??
+					row.accumulatedAmount ??
+					row.totalAccumulated ??
+					row.amount,
 			) ?? "0";
 		const unclaimed =
 			normalizeBigintString(
 				row.unclaimed ??
 					row.unclaimedAmount ??
 					row.claimable ??
-					row.claimableAmount,
+					row.claimableAmount ??
+					row.amount,
 			) ?? accumulated;
 
 		if (BigInt(unclaimed) <= 0n) return undefined;
@@ -518,7 +650,7 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 					row.rewardTokenPriceUsd ?? row.tokenPriceUsd ?? row.tokenPrice,
 				) ?? 0,
 			provider,
-			campaignId: row.campaignId ?? row.id,
+			campaignId,
 			accumulated,
 			unclaimed,
 			proof: (row.proof ?? row.proofs ?? row.merkleProof) as Hex[] | undefined,
@@ -527,7 +659,10 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			),
 			cumulativeAmounts: row.cumulativeAmounts ?? row.cumulativeRewards,
 			epoch: typeof row.epoch === "number" ? String(row.epoch) : row.epoch,
-			streamId: row.streamId ?? row.stream_id,
+			streamId:
+				row.streamId ??
+				row.stream_id ??
+				(provider === "turtle" ? campaignId : undefined),
 			streamAddress: normalizeAddress(
 				row.streamAddress ?? row.stream_address ?? row.contractAddress,
 			),

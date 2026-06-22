@@ -37,6 +37,7 @@ export type V3RewardsApyRow = {
 	campaignType?: string;
 	rewardToken?: {
 		address?: string;
+		chainId?: number;
 		symbol?: string;
 		name?: string;
 		decimals?: number | string;
@@ -73,6 +74,7 @@ export type V3RewardsApyRow = {
 		blacklist?: string[];
 		rewardToken?: {
 			address?: string;
+			chainId?: number;
 			symbol?: string;
 			name?: string;
 			decimals?: number | string;
@@ -93,6 +95,9 @@ export type V3RewardsBreakdownEnvelope = {
 
 export type V3RewardsBreakdownRow = {
 	chainId?: number;
+	vault?: string;
+	vaultAddress?: string;
+	recipient?: string;
 	source?: string;
 	provider?: string;
 	token?: {
@@ -108,11 +113,22 @@ export type V3RewardsBreakdownRow = {
 	tokenDecimals?: number | string;
 	tokenPrice?: number | string;
 	tokenPriceUsd?: number | string;
+	rewardToken?:
+		| string
+		| {
+				address?: string;
+				chainId?: number;
+				symbol?: string;
+				name?: string;
+				decimals?: number | string;
+		  }
+		| null;
 	rewardTokenAddress?: string;
 	rewardTokenSymbol?: string;
 	rewardTokenName?: string;
 	rewardTokenDecimals?: number | string;
 	rewardTokenPriceUsd?: number | string;
+	amount?: string | number;
 	campaignId?: string;
 	id?: string;
 	accumulated?: string | number;

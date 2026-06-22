@@ -1,3 +1,4 @@
+import type { Address } from "viem";
 import { EulerSDK } from "./sdk.js";
 import { ABIService, type IABIService } from "../services/abiService/index.js";
 import {
@@ -77,6 +78,7 @@ import {
 	type IRewardsService,
 	type RewardsDirectAdapterConfig,
 	type RewardsServiceConfig,
+	type UserReward,
 } from "../services/rewardsService/index.js";
 import {
 	IntrinsicApyService,
@@ -1203,6 +1205,28 @@ export async function buildEulerSDK<
 					resolvedBuildQuery,
 					directAdapter,
 				);
+			const mergeUserRewards = (
+				directRewards: UserReward[],
+				v3Rewards: UserReward[],
+			): UserReward[] => {
+				const rewards = [...directRewards];
+				const existing = new Set(
+					rewards.map(
+						(reward) =>
+							`${reward.provider}:${reward.chainId}:${reward.campaignId ?? reward.streamId ?? ""}:${reward.token.address.toLowerCase()}`,
+					),
+				);
+
+				for (const reward of v3Rewards) {
+					if (reward.provider !== "turtle") continue;
+					const key = `${reward.provider}:${reward.chainId}:${reward.campaignId ?? reward.streamId ?? ""}:${reward.token.address.toLowerCase()}`;
+					if (existing.has(key)) continue;
+					existing.add(key);
+					rewards.push(reward);
+				}
+
+				return rewards;
+			};
 
 			let rewardsAdapter: IRewardsAdapter;
 			if (effectiveRewardsServiceAdapter === "direct") {
@@ -1214,28 +1238,50 @@ export async function buildEulerSDK<
 					);
 				rewardsAdapter = buildRewardsV3();
 			} else if (canBuildRewardsV3) {
-				rewardsAdapter = createFallbackAdapter<
+				const rewardsV3Adapter = buildRewardsV3();
+				const fallbackAdapter = createFallbackAdapter<
 					IRewardsAdapter,
 					| "fetchVaultRewards"
 					| "fetchChainRewards"
-						| "fetchUserRewards"
-						| "fetchFuulTotals"
-						| "fetchFuulClaimChecks"
-						| "fetchTurtleProofs"
-					>(buildRewardsV3(), directAdapter, {
-						methods: [
-							"fetchVaultRewards",
-							"fetchChainRewards",
-							"fetchUserRewards",
-							"fetchFuulTotals",
-							"fetchFuulClaimChecks",
-							"fetchTurtleProofs",
-						],
+					| "fetchUserRewards"
+					| "fetchFuulTotals"
+					| "fetchFuulClaimChecks"
+					| "fetchTurtleProofs"
+				>(rewardsV3Adapter, directAdapter, {
+					methods: [
+						"fetchVaultRewards",
+						"fetchChainRewards",
+						"fetchUserRewards",
+						"fetchFuulTotals",
+						"fetchFuulClaimChecks",
+						"fetchTurtleProofs",
+					],
 					adapterNames: {
 						primary: "rewardsV3",
 						secondary: "rewardsDirect",
 					},
 					onFallback,
+				});
+				rewardsAdapter = new Proxy(fallbackAdapter, {
+					get(target, prop, receiver) {
+						if (prop !== "fetchUserRewards") {
+							const value = Reflect.get(target, prop, receiver);
+							return typeof value === "function" ? value.bind(target) : value;
+						}
+
+						return async (chainId: number, address: Address) => {
+							const [directResult, v3Result] = await Promise.allSettled([
+								directAdapter.fetchUserRewards(chainId, address),
+								rewardsV3Adapter.fetchUserRewards(chainId, address),
+							]);
+							const directRewards =
+								directResult.status === "fulfilled" ? directResult.value : [];
+							const v3Rewards =
+								v3Result.status === "fulfilled" ? v3Result.value : [];
+
+							return mergeUserRewards(directRewards, v3Rewards);
+						};
+					},
 				});
 			} else {
 				console.warn(

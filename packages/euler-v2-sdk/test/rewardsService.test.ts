@@ -315,6 +315,61 @@ test("V3 rewards adapter normalizes Turtle user rewards", async () => {
 	assert.equal(rewards[0]?.timestamp, "2026-05-20T13:05:10Z");
 });
 
+test("V3 rewards adapter enriches Turtle breakdown rows from campaign metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsBreakdown(async () => ({
+		data: [
+			{
+				chainId: 8453,
+				vault: vaultAddress,
+				recipient: accountAddress,
+				rewardToken,
+				amount: "42035",
+				campaignId: "557af9e9-88e8-4233-95e1-630b8b37b613",
+				timestamp: "2026-06-22T00:00:00.000Z",
+			},
+		],
+	}));
+	adapter.setQueryV3RewardsApyPage(async (_chainId, _offset, _limit, vault) => {
+		assert.equal(vault, vaultAddress);
+		return {
+			data: [
+				{
+					chainId: 8453,
+					vault: vaultAddress,
+					campaigns: [
+						{
+							id: "557af9e9-88e8-4233-95e1-630b8b37b613",
+							provider: "turtle",
+							source: "turtle",
+							campaignType: "turtle_stream",
+							apr: 0.03,
+							rewardToken: {
+								address: rewardToken,
+								symbol: "USDC",
+								name: "USD Coin",
+								decimals: 6,
+							},
+							status: "active",
+						},
+					],
+				},
+			],
+		};
+	});
+
+	const rewards = await adapter.fetchUserRewards(8453, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "turtle");
+	assert.equal(rewards[0]?.campaignId, "557af9e9-88e8-4233-95e1-630b8b37b613");
+	assert.equal(rewards[0]?.streamId, "557af9e9-88e8-4233-95e1-630b8b37b613");
+	assert.equal(rewards[0]?.token.symbol, "USDC");
+	assert.equal(rewards[0]?.token.decimals, 6);
+	assert.equal(rewards[0]?.accumulated, "42035");
+	assert.equal(rewards[0]?.unclaimed, "42035");
+});
+
 test("V3 rewards adapter preserves collateral and looping campaign metadata", async () => {
 	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
 	adapter.setQueryV3RewardsApyPage(async () => ({
@@ -1292,16 +1347,19 @@ test("rewards service builds Turtle claim plan from stream proof data", async ()
 
 	assert.equal(plan.length, 1);
 	assert.equal(plan[0]?.type, "contractCall");
-	assert.equal(plan[0]?.chainId, 1);
-	assert.equal(plan[0]?.to, turtleStreamAddress);
-	assert.equal(plan[0]?.functionName, "claim");
+	if (plan[0]?.type !== "contractCall")
+		throw new Error("expected contractCall");
+	assert.equal(plan[0].chainId, 1);
+	assert.equal(plan[0].to, turtleStreamAddress);
+	assert.equal(plan[0].value, 0n);
+	assert.equal(plan[0].functionName, "claim");
 	assert.deepEqual(canClaimArgs, [
 		accountAddress,
 		1000n,
 		Math.floor(Date.parse("2026-05-20T13:05:10Z") / 1000),
 		["0xabc"],
 	]);
-	assert.deepEqual(plan[0]?.args, [
+	assert.deepEqual(plan[0].args, [
 		1000n,
 		Math.floor(Date.parse("2026-05-20T13:05:10Z") / 1000),
 		["0xabc"],
@@ -1350,6 +1408,7 @@ test("rewards service fetches Turtle proof through V3 claim adapter", async () =
 	const proofParams = new URL(proofRequestUrl).searchParams;
 
 	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "contractCall");
 	assert.equal(proofParams.get("wallet"), accountAddress);
 	assert.equal(proofParams.get("streamIds"), "stream-1");
 	assert.deepEqual(canClaimArgs, [
