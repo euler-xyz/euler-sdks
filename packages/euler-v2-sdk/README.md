@@ -111,6 +111,6 @@ Comparison, parity-check, and other test-oriented scripts and reports live under
 
 This package is published through the repo-local [`RELEASE.md`](./RELEASE.md) playbook and the local `$publish` skill.
 
-Release PRs bump only the version in [`package.json`](./package.json). Git tags and GitHub Releases are the release-note source of truth.
+Git tags and GitHub Releases are the release-note source of truth. The committed [`package.json`](./package.json) does not carry a release version; `$publish` derives the npm version from the `euler-v2-sdk-vX.Y.Z` tag.
 
-The publish flow runs `pnpm -C packages/euler-v2-sdk run release:check`, creates an `euler-v2-sdk-vX.Y.Z` tag from the merged `main` commit, publishes with `npm publish --access public --provenance=false`, and creates or updates the GitHub Release from the generated changelist. Publishing uses the operator's local npm session so npm 2FA prompts can be completed interactively.
+The publish flow runs `pnpm -C packages/euler-v2-sdk run release:check`, creates an `euler-v2-sdk-vX.Y.Z` tag from the selected `main` commit, temporarily writes the tag version for npm, publishes with `npm publish --access public --provenance=false`, restores the working tree, and creates or updates the GitHub Release from the generated changelist. Publishing uses the operator's local npm session so npm 2FA prompts can be completed interactively.
