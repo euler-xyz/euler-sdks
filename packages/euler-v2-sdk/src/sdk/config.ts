@@ -1,4 +1,4 @@
-import type { Address } from "viem";
+import { getAddress, type Address } from "viem";
 import type { AccountServiceAdapter } from "../services/accountService/accountServiceConfig.js";
 import type { EVaultServiceAdapter } from "../services/vaults/eVaultService/eVaultServiceConfig.js";
 import type { EulerEarnServiceAdapter } from "../services/vaults/eulerEarnService/eulerEarnServiceConfig.js";
@@ -209,6 +209,86 @@ function readStringMap(
 	return parsed as Record<string, string>;
 }
 
+type TurtleStreamEnvConfig = NonNullable<
+	EulerSDKConfig["rewardsTurtleStreams"]
+>[number];
+type TurtleRewardTokenEnvConfig = NonNullable<
+	TurtleStreamEnvConfig["rewardToken"]
+>;
+
+function readPositiveInteger(value: unknown, message: string): number {
+	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+		throw new Error(message);
+	}
+	return value;
+}
+
+function readOptionalAddress(
+	value: unknown,
+	message: string,
+): Address | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "string") throw new Error(message);
+	try {
+		return getAddress(value) as Address;
+	} catch {
+		throw new Error(message);
+	}
+}
+
+function readOptionalString(value: unknown, message: string): string | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "string") throw new Error(message);
+	return value;
+}
+
+function readOptionalNonNegativeInteger(
+	value: unknown,
+	message: string,
+): number | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+		throw new Error(message);
+	}
+	return value;
+}
+
+function readTurtleRewardToken(
+	value: unknown,
+	name: string,
+): TurtleRewardTokenEnvConfig | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		throw new Error(`${name} rewardToken values must be objects`);
+	}
+
+	const token = value as Record<string, unknown>;
+	return removeUndefined({
+		address: readOptionalAddress(
+			token.address,
+			`${name} rewardToken.address values must be EVM addresses`,
+		),
+		chainId: token.chainId === undefined
+			? undefined
+			: readPositiveInteger(
+					token.chainId,
+					`${name} rewardToken.chainId values must be positive integers`,
+				),
+		symbol: readOptionalString(
+			token.symbol,
+			`${name} rewardToken.symbol values must be strings`,
+		),
+		name: readOptionalString(
+			token.name,
+			`${name} rewardToken.name values must be strings`,
+		),
+		decimals: readOptionalNonNegativeInteger(
+			token.decimals,
+			`${name} rewardToken.decimals values must be non-negative integers`,
+		),
+	});
+}
+
 function readTurtleStreams(
 	env: EnvRecord,
 	name: string,
@@ -229,40 +309,29 @@ function readTurtleStreams(
 		if (typeof stream.streamId !== "string" || !stream.streamId.trim()) {
 			throw new Error(`${name} entries must include a string streamId`);
 		}
-		if (typeof stream.chainId !== "number" || !Number.isFinite(stream.chainId)) {
-			throw new Error(`${name} entries must include a numeric chainId`);
-		}
-		if (
-			stream.streamAddress !== undefined &&
-			typeof stream.streamAddress !== "string"
-		) {
-			throw new Error(`${name} streamAddress values must be strings`);
-		}
+		const chainId = readPositiveInteger(
+			stream.chainId,
+			`${name} entries must include a positive integer chainId`,
+		);
+		const streamAddress = readOptionalAddress(
+			stream.streamAddress,
+			`${name} streamAddress values must be EVM addresses`,
+		);
 		if (
 			stream.tokenPrice !== undefined &&
 			(typeof stream.tokenPrice !== "number" ||
-				!Number.isFinite(stream.tokenPrice))
+				!Number.isFinite(stream.tokenPrice) ||
+				stream.tokenPrice < 0)
 		) {
-			throw new Error(`${name} tokenPrice values must be finite numbers`);
+			throw new Error(`${name} tokenPrice values must be non-negative numbers`);
 		}
 
-		const rewardToken =
-			stream.rewardToken === undefined ? undefined : stream.rewardToken;
-		if (
-			rewardToken !== undefined &&
-			(typeof rewardToken !== "object" ||
-				rewardToken === null ||
-				Array.isArray(rewardToken))
-		) {
-			throw new Error(`${name} rewardToken values must be objects`);
-		}
+		const rewardToken = readTurtleRewardToken(stream.rewardToken, name);
 
 		return {
-			streamId: stream.streamId,
-			chainId: stream.chainId,
-			...(stream.streamAddress
-				? { streamAddress: stream.streamAddress as Address }
-				: {}),
+			streamId: stream.streamId.trim(),
+			chainId,
+			...(streamAddress ? { streamAddress } : {}),
 			...(rewardToken ? { rewardToken } : {}),
 			...(stream.tokenPrice !== undefined
 				? { tokenPrice: stream.tokenPrice }

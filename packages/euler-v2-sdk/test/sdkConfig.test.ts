@@ -88,6 +88,33 @@ describe("SDK env config", () => {
 		).toThrow("EULER_SDK_QUERY_CACHE_ENABLED must be a boolean");
 	});
 
+	it("throws for invalid Turtle stream env config values", () => {
+		expect(() =>
+			readEulerSDKEnvConfig({
+				EULER_SDK_REWARDS_TURTLE_STREAMS_JSON:
+					'[{"streamId":"stream-1","chainId":1.5}]',
+			}),
+		).toThrow(
+			"EULER_SDK_REWARDS_TURTLE_STREAMS_JSON entries must include a positive integer chainId",
+		);
+		expect(() =>
+			readEulerSDKEnvConfig({
+				EULER_SDK_REWARDS_TURTLE_STREAMS_JSON:
+					'[{"streamId":"stream-1","chainId":1,"streamAddress":"not-an-address"}]',
+			}),
+		).toThrow(
+			"EULER_SDK_REWARDS_TURTLE_STREAMS_JSON streamAddress values must be EVM addresses",
+		);
+		expect(() =>
+			readEulerSDKEnvConfig({
+				EULER_SDK_REWARDS_TURTLE_STREAMS_JSON:
+					'[{"streamId":"stream-1","chainId":1,"rewardToken":{"decimals":"18"}}]',
+			}),
+		).toThrow(
+			"EULER_SDK_REWARDS_TURTLE_STREAMS_JSON rewardToken.decimals values must be non-negative integers",
+		);
+	});
+
 	it("applies the shared V3 API key to pricing service config", async () => {
 		const sdk = await buildEulerSDK({
 			v3ApiKey: "shared-key",
