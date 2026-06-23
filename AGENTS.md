@@ -3,9 +3,9 @@
 ## Skills
 
 ### Available skills
-- `euler-sdk` (v1.1.1): Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. Use for tasks involving `buildEulerSDK`, SDK services (`accountService`, `portfolioService`, `vaultMetaService`, `executionService`, `swapService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`. (file: `./skills/euler-sdk/SKILL.md`)
+- `euler-sdk`: Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. Use the canonical skill from [`euler-xyz/agent-skills`](https://github.com/euler-xyz/agent-skills/tree/main/skills/euler-sdk) for tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `walletService`, `executionService`, `swapService`, `reulLockService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`.
 
 ### How to use skills
-- Trigger rule: If user asks for SDK integration help or names `euler-sdk`, load and follow `./skills/euler-sdk/SKILL.md`.
+- Trigger rule: If user asks for SDK integration help or names `euler-sdk`, load and follow the canonical `euler-sdk` skill from `euler-xyz/agent-skills`.
 - Load minimally: Open `SKILL.md` first, then only the rule files needed for the current task.
-- Prefer local skill files in this repository over globally installed copies when both exist.
+- Treat the SDK implementation docs and examples in this repository as source material for SDK behavior, and treat `euler-xyz/agent-skills` as the source of truth for packaged agent skill instructions.
