@@ -1211,6 +1211,16 @@ export async function buildEulerSDK<
 			): UserReward[] => {
 				const rewardKey = (reward: UserReward) =>
 					`${reward.provider}:${reward.chainId}:${reward.campaignId ?? reward.streamId ?? ""}:${reward.token.address.toLowerCase()}`;
+				const merklRewardKey = (reward: UserReward) =>
+					`${reward.chainId}:${reward.token.address.toLowerCase()}`;
+				const mergeMerklReward = (
+					base: UserReward,
+					supplement: UserReward,
+				): UserReward => ({
+					...base,
+					proof: base.proof?.length ? base.proof : supplement.proof,
+					claimAddress: base.claimAddress ?? supplement.claimAddress,
+				});
 				const mergeTurtleReward = (
 					base: UserReward,
 					supplement: UserReward,
@@ -1234,7 +1244,14 @@ export async function buildEulerSDK<
 				};
 				const rewards: UserReward[] = [];
 				const existing = new Map<string, number>();
+				const merklExisting = new Map<string, number>();
 				for (const reward of v3Rewards) {
+					if (reward.provider === "merkl") {
+						const key = merklRewardKey(reward);
+						merklExisting.set(key, rewards.length);
+						rewards.push(reward);
+						continue;
+					}
 					if (reward.provider !== "turtle") {
 						rewards.push(reward);
 						continue;
@@ -1253,6 +1270,16 @@ export async function buildEulerSDK<
 				}
 
 				for (const reward of directRewards) {
+					if (reward.provider === "merkl") {
+						const existingIndex = merklExisting.get(merklRewardKey(reward));
+						if (existingIndex !== undefined) {
+							rewards[existingIndex] = mergeMerklReward(
+								rewards[existingIndex]!,
+								reward,
+							);
+						}
+						continue;
+					}
 					if (reward.provider !== "turtle") continue;
 					const key = rewardKey(reward);
 					const existingIndex = existing.get(key);

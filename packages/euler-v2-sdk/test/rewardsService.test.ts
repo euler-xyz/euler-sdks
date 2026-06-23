@@ -497,14 +497,14 @@ test("V3 rewards adapter enriches Turtle breakdown rows from campaign metadata",
 	assert.equal(rewards[0]?.unclaimed, "42035");
 });
 
-test("fallback rewards service preserves V3 non-Turtle user rewards when direct succeeds empty", async () => {
+test("fallback rewards service supplements V3 Merkl user rewards with direct claim proof", async () => {
 	const sdk = await buildEulerSDK({
 		config: {
 			rewardsServiceAdapter: "fallback",
 			rewardsV3ApiUrl: "https://example.invalid",
 		},
 		rewardsServiceConfig: {
-			enableMerkl: false,
+			enableMerkl: true,
 			enableBrevis: false,
 			enableFuul: false,
 			enableTurtle: false,
@@ -527,11 +527,32 @@ test("fallback rewards service preserves V3 non-Turtle user rewards when direct 
 							campaignId: "merkl-1",
 							accumulated: "1000",
 							unclaimed: "1000",
-							proof: [proofHash],
 							claimAddress: merklDistributorAddress,
 						},
 					],
 				})) as typeof fn;
+			}
+			if (queryName === "queryMerklUserRewards") {
+				return (async () => [
+					{
+						chainId: 1,
+						rewards: [
+							{
+								token: {
+									address: rewardToken,
+									chainId: 1,
+									price: 2,
+									symbol: "EUL",
+									name: "EUL",
+									decimals: 18,
+								},
+								amount: "1000",
+								claimed: "0",
+								proofs: [proofHash],
+							},
+						],
+					},
+				]) as typeof fn;
 			}
 			if (queryName === "queryV3RewardsApyPage") {
 				return (async () => ({ data: [] })) as typeof fn;
@@ -545,6 +566,15 @@ test("fallback rewards service preserves V3 non-Turtle user rewards when direct 
 	assert.equal(rewards.length, 1);
 	assert.equal(rewards[0]?.provider, "merkl");
 	assert.equal(rewards[0]?.campaignId, "merkl-1");
+	assert.deepEqual(rewards[0]?.proof, [proofHash]);
+
+	const plan = await sdk.rewardsService.buildClaimPlan({
+		reward: rewards[0]!,
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
 });
 
 test("fallback rewards service collapses duplicate V3 Turtle stream rows", async () => {
