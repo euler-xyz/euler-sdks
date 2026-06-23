@@ -577,6 +577,102 @@ test("fallback rewards service supplements V3 Merkl user rewards with direct cla
 	assert.equal(plan[0]?.type, "evcBatch");
 });
 
+test("fallback rewards service collapses V3 Merkl rows into the direct cumulative claim", async () => {
+	const sdk = await buildEulerSDK({
+		config: {
+			rewardsServiceAdapter: "fallback",
+			rewardsV3ApiUrl: "https://example.invalid",
+		},
+		rewardsServiceConfig: {
+			enableMerkl: true,
+			enableBrevis: false,
+			enableFuul: false,
+			enableTurtle: false,
+		},
+		buildQuery(queryName, fn) {
+			if (queryName === "queryV3RewardsBreakdown") {
+				return (async () => ({
+					data: [
+						{
+							chainId: 1,
+							provider: "merkl",
+							token: {
+								address: rewardToken,
+								chainId: 1,
+								symbol: "EUL",
+								name: "EUL",
+								decimals: 18,
+							},
+							tokenPrice: 2,
+							campaignId: "merkl-1",
+							accumulated: "400",
+							unclaimed: "400",
+						},
+						{
+							chainId: 1,
+							provider: "merkl",
+							token: {
+								address: rewardToken,
+								chainId: 1,
+								symbol: "EUL",
+								name: "EUL",
+								decimals: 18,
+							},
+							tokenPrice: 2,
+							campaignId: "merkl-2",
+							accumulated: "600",
+							unclaimed: "600",
+						},
+					],
+				})) as typeof fn;
+			}
+			if (queryName === "queryMerklUserRewards") {
+				return (async () => [
+					{
+						chainId: 1,
+						rewards: [
+							{
+								token: {
+									address: rewardToken,
+									chainId: 1,
+									price: 2,
+									symbol: "EUL",
+									name: "EUL",
+									decimals: 18,
+								},
+								amount: "1000",
+								claimed: "0",
+								proofs: [proofHash],
+							},
+						],
+					},
+				]) as typeof fn;
+			}
+			if (queryName === "queryV3RewardsApyPage") {
+				return (async () => ({ data: [] })) as typeof fn;
+			}
+			return fn;
+		},
+	});
+
+	const rewards = await sdk.rewardsService.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "merkl");
+	assert.equal(rewards[0]?.accumulated, "1000");
+	assert.equal(rewards[0]?.unclaimed, "1000");
+	assert.deepEqual(rewards[0]?.proof, [proofHash]);
+	assert.equal(rewards[0]?.claimAddress, merklDistributorAddress);
+
+	const plan = await sdk.rewardsService.buildClaimAllPlan({
+		chainId: 1,
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+});
+
 test("fallback rewards service collapses duplicate V3 Turtle stream rows", async () => {
 	const sdk = await buildEulerSDK({
 		config: {

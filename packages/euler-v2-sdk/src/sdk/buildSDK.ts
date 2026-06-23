@@ -1216,11 +1216,21 @@ export async function buildEulerSDK<
 				const mergeMerklReward = (
 					base: UserReward,
 					supplement: UserReward,
-				): UserReward => ({
-					...base,
-					proof: base.proof?.length ? base.proof : supplement.proof,
-					claimAddress: base.claimAddress ?? supplement.claimAddress,
-				});
+				): UserReward => {
+					const selected =
+						BigInt(supplement.accumulated) > BigInt(base.accumulated) ||
+						(BigInt(supplement.accumulated) === BigInt(base.accumulated) &&
+							BigInt(supplement.unclaimed) > BigInt(base.unclaimed))
+							? supplement
+							: base;
+					const fallback = selected === base ? supplement : base;
+
+					return {
+						...selected,
+						proof: selected.proof?.length ? selected.proof : fallback.proof,
+						claimAddress: selected.claimAddress ?? fallback.claimAddress,
+					};
+				};
 				const mergeTurtleReward = (
 					base: UserReward,
 					supplement: UserReward,
@@ -1248,6 +1258,14 @@ export async function buildEulerSDK<
 				for (const reward of v3Rewards) {
 					if (reward.provider === "merkl") {
 						const key = merklRewardKey(reward);
+						const existingIndex = merklExisting.get(key);
+						if (existingIndex !== undefined) {
+							rewards[existingIndex] = mergeMerklReward(
+								rewards[existingIndex]!,
+								reward,
+							);
+							continue;
+						}
 						merklExisting.set(key, rewards.length);
 						rewards.push(reward);
 						continue;
