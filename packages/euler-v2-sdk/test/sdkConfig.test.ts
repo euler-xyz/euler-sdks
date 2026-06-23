@@ -25,7 +25,11 @@ describe("SDK env config", () => {
 			EULER_SDK_ACCOUNT_SERVICE_ADAPTER: "onchain",
 			EULER_SDK_EVAULT_V3_BATCH_SIZE: "42",
 			EULER_SDK_REWARDS_ENABLE_MERKL: "false",
+			EULER_SDK_REWARDS_ENABLE_TURTLE: "false",
 			EULER_SDK_REWARDS_BREVIS_CHAIN_IDS: "1,8453",
+			EULER_SDK_REWARDS_TURTLE_API_URL: "https://turtle.example/v1",
+			EULER_SDK_REWARDS_TURTLE_STREAMS_JSON:
+				'[{"streamId":"stream-1","chainId":1,"streamAddress":"0x0000000000000000000000000000000000000001","rewardToken":{"address":"0x0000000000000000000000000000000000000002","symbol":"EUL","decimals":18},"tokenPrice":1.5}]',
 			EULER_SDK_VAULT_TYPE_V3_TYPE_MAP_JSON: '{"custom":"EVault"}',
 		});
 
@@ -39,7 +43,22 @@ describe("SDK env config", () => {
 			accountServiceAdapter: "onchain",
 			eVaultV3BatchSize: 42,
 			rewardsEnableMerkl: false,
+			rewardsEnableTurtle: false,
 			rewardsBrevisChainIds: [1, 8453],
+			rewardsTurtleApiUrl: "https://turtle.example/v1",
+			rewardsTurtleStreams: [
+				{
+					streamId: "stream-1",
+					chainId: 1,
+					streamAddress: "0x0000000000000000000000000000000000000001",
+					rewardToken: {
+						address: "0x0000000000000000000000000000000000000002",
+						symbol: "EUL",
+						decimals: 18,
+					},
+					tokenPrice: 1.5,
+				},
+			],
 			vaultTypeV3TypeMap: { custom: "EVault" },
 		});
 	});
@@ -67,6 +86,33 @@ describe("SDK env config", () => {
 				EULER_SDK_QUERY_CACHE_ENABLED: "sometimes",
 			}),
 		).toThrow("EULER_SDK_QUERY_CACHE_ENABLED must be a boolean");
+	});
+
+	it("throws for invalid Turtle stream env config values", () => {
+		expect(() =>
+			readEulerSDKEnvConfig({
+				EULER_SDK_REWARDS_TURTLE_STREAMS_JSON:
+					'[{"streamId":"stream-1","chainId":1.5}]',
+			}),
+		).toThrow(
+			"EULER_SDK_REWARDS_TURTLE_STREAMS_JSON entries must include a positive integer chainId",
+		);
+		expect(() =>
+			readEulerSDKEnvConfig({
+				EULER_SDK_REWARDS_TURTLE_STREAMS_JSON:
+					'[{"streamId":"stream-1","chainId":1,"streamAddress":"not-an-address"}]',
+			}),
+		).toThrow(
+			"EULER_SDK_REWARDS_TURTLE_STREAMS_JSON streamAddress values must be EVM addresses",
+		);
+		expect(() =>
+			readEulerSDKEnvConfig({
+				EULER_SDK_REWARDS_TURTLE_STREAMS_JSON:
+					'[{"streamId":"stream-1","chainId":1,"rewardToken":{"decimals":"18"}}]',
+			}),
+		).toThrow(
+			"EULER_SDK_REWARDS_TURTLE_STREAMS_JSON rewardToken.decimals values must be non-negative integers",
+		);
 	});
 
 	it("applies the shared V3 API key to pricing service config", async () => {

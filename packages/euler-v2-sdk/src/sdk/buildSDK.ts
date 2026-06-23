@@ -1209,19 +1209,61 @@ export async function buildEulerSDK<
 				directRewards: UserReward[],
 				v3Rewards: UserReward[],
 			): UserReward[] => {
-				const rewards = [...directRewards];
-				const existing = new Set(
-					rewards.map(
-						(reward) =>
-							`${reward.provider}:${reward.chainId}:${reward.campaignId ?? reward.streamId ?? ""}:${reward.token.address.toLowerCase()}`,
-					),
-				);
+				const rewardKey = (reward: UserReward) =>
+					`${reward.provider}:${reward.chainId}:${reward.campaignId ?? reward.streamId ?? ""}:${reward.token.address.toLowerCase()}`;
+				const mergeTurtleReward = (
+					base: UserReward,
+					supplement: UserReward,
+				): UserReward => {
+					const selected =
+						BigInt(supplement.unclaimed) > BigInt(base.unclaimed) ||
+						(BigInt(supplement.unclaimed) === BigInt(base.unclaimed) &&
+							BigInt(supplement.accumulated) > BigInt(base.accumulated))
+							? supplement
+							: base;
+					const fallback = selected === base ? supplement : base;
 
+					return {
+						...selected,
+						proof: selected.proof?.length ? selected.proof : fallback.proof,
+						claimAddress: selected.claimAddress ?? fallback.claimAddress,
+						streamId: selected.streamId ?? fallback.streamId,
+						streamAddress: selected.streamAddress ?? fallback.streamAddress,
+						timestamp: selected.timestamp ?? fallback.timestamp,
+					};
+				};
+				const rewards: UserReward[] = [];
+				const existing = new Map<string, number>();
 				for (const reward of v3Rewards) {
+					if (reward.provider !== "turtle") {
+						rewards.push(reward);
+						continue;
+					}
+					const key = rewardKey(reward);
+					const existingIndex = existing.get(key);
+					if (existingIndex !== undefined) {
+						rewards[existingIndex] = mergeTurtleReward(
+							rewards[existingIndex]!,
+							reward,
+						);
+						continue;
+					}
+					existing.set(key, rewards.length);
+					rewards.push(reward);
+				}
+
+				for (const reward of directRewards) {
 					if (reward.provider !== "turtle") continue;
-					const key = `${reward.provider}:${reward.chainId}:${reward.campaignId ?? reward.streamId ?? ""}:${reward.token.address.toLowerCase()}`;
-					if (existing.has(key)) continue;
-					existing.add(key);
+					const key = rewardKey(reward);
+					const existingIndex = existing.get(key);
+					if (existingIndex !== undefined) {
+						rewards[existingIndex] = mergeTurtleReward(
+							rewards[existingIndex]!,
+							reward,
+						);
+						continue;
+					}
+					existing.set(key, rewards.length);
 					rewards.push(reward);
 				}
 
@@ -1274,12 +1316,14 @@ export async function buildEulerSDK<
 								directAdapter.fetchUserRewards(chainId, address),
 								rewardsV3Adapter.fetchUserRewards(chainId, address),
 							]);
+							if (v3Result.status !== "fulfilled") {
+								if (directResult.status === "fulfilled") return directResult.value;
+								throw directResult.reason;
+							}
 							const directRewards =
 								directResult.status === "fulfilled" ? directResult.value : [];
-							const v3Rewards =
-								v3Result.status === "fulfilled" ? v3Result.value : [];
 
-							return mergeUserRewards(directRewards, v3Rewards);
+							return mergeUserRewards(directRewards, v3Result.value);
 						};
 					},
 				});

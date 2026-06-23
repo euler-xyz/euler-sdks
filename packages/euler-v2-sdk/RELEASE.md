@@ -11,8 +11,10 @@ The publish skill should use this file as the repo-local playbook for `@eulerxyz
 - Package directory: `packages/euler-v2-sdk`
 - Package name: `@eulerxyz/euler-v2-sdk`
 - Tag format: `euler-v2-sdk-vX.Y.Z`
+- Prerelease tag format: `euler-v2-sdk-vX.Y.Z-beta.N`, `euler-v2-sdk-vX.Y.Z-rc.N`, or `euler-v2-sdk-vX.Y.Z-alpha.N`
 - Release gate: `pnpm -C packages/euler-v2-sdk run release:check`
 - Publish command: `npm publish --access public --provenance=false` from `packages/euler-v2-sdk`
+- Prerelease publish command: `npm publish --access public --tag <prerelease-id> --provenance=false` from `packages/euler-v2-sdk`
 - GitHub Release title: `euler-v2-sdk vX.Y.Z`
 
 ## Operator flow
@@ -21,41 +23,73 @@ The publish skill should use this file as the repo-local playbook for `@eulerxyz
 2. Let the skill inspect this playbook, `packages/euler-v2-sdk/package.json`, existing `euler-v2-sdk-v*` tags, and npm's current published version.
 3. Let the skill derive the next release tag and npm version from the requested semver bump.
 4. Let the skill generate the changelist from the actual diff since the previous `euler-v2-sdk-v*` tag. Prefer merged PR metadata when available, and validate the notes against the final net diff.
-5. From the selected `main` commit, let the skill run the release gate, create and push the annotated tag, temporarily set `packages/euler-v2-sdk/package.json` to the tag version for npm, publish to npm, restore the working tree, and create or update the GitHub Release.
+5. From the selected `main` commit, let the skill verify npm auth, run the release gate, create and push the annotated tag, temporarily set `packages/euler-v2-sdk/package.json` to the tag version for npm, dry-run the package, publish to npm, restore the working tree, and create or update the GitHub Release.
 
 ## Manual command sequence
 
 The publish skill should run the same sequence with confirmation before publishing:
 
 ```sh
+VERSION=X.Y.Z
+TAG=euler-v2-sdk-vX.Y.Z
+NOTES_FILE=/tmp/euler-v2-sdk-vX.Y.Z-notes.md
+
 git fetch origin main --tags
 git switch main
 git pull --ff-only origin main
+npm whoami
+npm view @eulerxyz/euler-v2-sdk version dist-tags --json
+npm view @eulerxyz/euler-v2-sdk@$VERSION version --json || true
 pnpm -C packages/euler-v2-sdk run release:check
-git tag -a euler-v2-sdk-vX.Y.Z -m "euler-v2-sdk-vX.Y.Z"
-git push origin euler-v2-sdk-vX.Y.Z
+git tag -a $TAG -m "$TAG"
+git push origin $TAG
 cd packages/euler-v2-sdk
-npm pkg set version=X.Y.Z
+npm pkg set version=$VERSION
 npm pack --dry-run
 npm publish --access public --provenance=false
 git restore package.json
 cd ../..
-gh release create euler-v2-sdk-vX.Y.Z --title "euler-v2-sdk vX.Y.Z" --notes "<generated changelist>"
+gh release create $TAG --verify-tag --title "euler-v2-sdk v$VERSION" --notes-file "$NOTES_FILE"
 ```
 
-For prereleases, publish with npm's matching dist-tag:
+For prereleases, use a prerelease version and npm's matching dist-tag:
 
 ```sh
-npm publish --access public --tag beta --provenance=false
+VERSION=X.Y.Z-beta.0
+TAG=euler-v2-sdk-vX.Y.Z-beta.0
+DIST_TAG=beta
+NOTES_FILE=/tmp/euler-v2-sdk-vX.Y.Z-beta.0-notes.md
+
+git fetch origin main --tags
+git switch main
+git pull --ff-only origin main
+npm whoami
+npm view @eulerxyz/euler-v2-sdk version dist-tags --json
+npm view @eulerxyz/euler-v2-sdk@$VERSION version --json || true
+pnpm -C packages/euler-v2-sdk run release:check
+git tag -a $TAG -m "$TAG"
+git push origin $TAG
+cd packages/euler-v2-sdk
+npm pkg set version=$VERSION
+npm pack --dry-run
+npm publish --access public --tag $DIST_TAG --provenance=false
+git restore package.json
+cd ../..
+gh release create $TAG --verify-tag --title "euler-v2-sdk v$VERSION" --notes-file "$NOTES_FILE" --prerelease
 ```
 
 ## Auth and 2FA
 
-Use the operator's local npm session for publishing. If npm prompts for a one-time password, enter the current 2FA code and continue the publish. npm requires a concrete package version at publish time, so the publish flow temporarily writes the tag version into `packages/euler-v2-sdk/package.json` before `npm pack --dry-run` and `npm publish`, then restores the file.
+Use the operator's local npm session for publishing. Verify the session with `npm whoami` before pushing the release tag. During `npm publish`, npm may ask for a one-time password or print a browser authentication URL. Complete the prompt and keep the publish process running until it exits successfully.
+
+npm requires a concrete package version at publish time, so the publish flow temporarily writes the tag version into `packages/euler-v2-sdk/package.json` before `npm pack --dry-run` and `npm publish`, then restores the file.
+
+Use a real notes file path with `gh release create --notes-file`; do not paste angle-bracket placeholders into the shell.
 
 After publishing, verify npm and GitHub:
 
 ```sh
 npm view @eulerxyz/euler-v2-sdk@X.Y.Z version dist.tarball dist.integrity
+npm view @eulerxyz/euler-v2-sdk version dist-tags --json
 gh release view euler-v2-sdk-vX.Y.Z
 ```

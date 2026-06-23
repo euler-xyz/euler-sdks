@@ -218,6 +218,136 @@ const hasBrevisClaimData = (reward: UserReward): boolean =>
 const fuulRewardKey = (currency: string, currencyType?: number): string =>
 	`${getAddress(currency).toLowerCase()}:${currencyType ?? "*"}`;
 
+const userRewardClaimKey = (reward: UserReward): string =>
+	[
+		reward.provider,
+		reward.chainId,
+		reward.token.address.toLowerCase(),
+		reward.claimAddress?.toLowerCase() ?? "",
+		reward.campaignId ?? "",
+		reward.streamId ?? "",
+		reward.streamAddress?.toLowerCase() ?? "",
+		reward.epoch ?? "",
+		reward.accumulated,
+		reward.unclaimed,
+		reward.proof?.join(",") ?? "",
+		reward.cumulativeAmounts?.join(",") ?? "",
+		reward.timestamp ?? "",
+	].join(":");
+
+const dedupeUserRewards = (rewards: UserReward[]): UserReward[] => {
+	const seen = new Set<string>();
+	const deduped: UserReward[] = [];
+
+	for (const reward of rewards) {
+		const key = userRewardClaimKey(reward);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		deduped.push(reward);
+	}
+
+	return deduped;
+};
+
+const turtleRewardStreamKey = (reward: UserReward): string | undefined => {
+	if (reward.provider !== "turtle") return undefined;
+	const streamId = reward.streamId ?? reward.campaignId;
+	if (!streamId) return undefined;
+	return [
+		reward.chainId,
+		streamId,
+		reward.token.address.toLowerCase(),
+		reward.streamAddress?.toLowerCase() ?? reward.claimAddress?.toLowerCase() ?? "",
+	].join(":");
+};
+
+const mergeTurtleReward = (
+	base: UserReward,
+	candidate: UserReward,
+): UserReward => {
+	const baseUnclaimed = BigInt(base.unclaimed);
+	const candidateUnclaimed = BigInt(candidate.unclaimed);
+	const selected =
+		candidateUnclaimed > baseUnclaimed ||
+		(candidateUnclaimed === baseUnclaimed &&
+			BigInt(candidate.accumulated) > BigInt(base.accumulated))
+			? candidate
+			: base;
+	const supplement = selected === base ? candidate : base;
+
+	return {
+		...selected,
+		proof: selected.proof?.length ? selected.proof : supplement.proof,
+		claimAddress: selected.claimAddress ?? supplement.claimAddress,
+		streamId: selected.streamId ?? supplement.streamId,
+		streamAddress: selected.streamAddress ?? supplement.streamAddress,
+		timestamp: selected.timestamp ?? supplement.timestamp,
+	};
+};
+
+const collapseTurtleStreamRewards = (rewards: UserReward[]): UserReward[] => {
+	const collapsed: UserReward[] = [];
+	const indexes = new Map<string, number>();
+
+	for (const reward of rewards) {
+		const key = turtleRewardStreamKey(reward);
+		if (!key) {
+			collapsed.push(reward);
+			continue;
+		}
+
+		const existingIndex = indexes.get(key);
+		if (existingIndex === undefined) {
+			indexes.set(key, collapsed.length);
+			collapsed.push(reward);
+			continue;
+		}
+
+		collapsed[existingIndex] = mergeTurtleReward(
+			collapsed[existingIndex]!,
+			reward,
+		);
+	}
+
+	return collapsed;
+};
+
+const collapseMerklCumulativeRewards = (rewards: UserReward[]): UserReward[] => {
+	const collapsed: UserReward[] = [];
+	const indexes = new Map<string, number>();
+
+	for (const reward of rewards) {
+		if (reward.provider !== "merkl") {
+			collapsed.push(reward);
+			continue;
+		}
+
+		const key = [
+			reward.chainId,
+			reward.token.address.toLowerCase(),
+			reward.claimAddress?.toLowerCase() ?? "",
+		].join(":");
+		const existingIndex = indexes.get(key);
+		if (existingIndex === undefined) {
+			indexes.set(key, collapsed.length);
+			collapsed.push(reward);
+			continue;
+		}
+
+		const existing = collapsed[existingIndex]!;
+		if (BigInt(reward.accumulated) > BigInt(existing.accumulated)) {
+			collapsed[existingIndex] = reward;
+		}
+	}
+
+	return collapsed;
+};
+
+const normalizeUserRewards = (rewards: UserReward[]): UserReward[] =>
+	dedupeUserRewards(
+		collapseTurtleStreamRewards(collapseMerklCumulativeRewards(rewards)),
+	);
+
 const parseTurtleAmount = (value: unknown): bigint | undefined => {
 	if (typeof value === "bigint") return value;
 	if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
@@ -244,6 +374,17 @@ const parseTurtleTimestamp = (value: unknown): number | undefined => {
 
 const turtleProofStreamId = (proof: TurtleMerkleProof): string | undefined =>
 	proof.streamId ?? proof.stream_id ?? proof.id;
+
+const turtleProofChainId = (proof?: TurtleMerkleProof): number | undefined => {
+	if (typeof proof?.chainId === "number" && Number.isSafeInteger(proof.chainId)) {
+		return proof.chainId;
+	}
+	if (typeof proof?.chainId === "string" && /^\d+$/.test(proof.chainId)) {
+		const chainId = Number(proof.chainId);
+		return Number.isSafeInteger(chainId) ? chainId : undefined;
+	}
+	return undefined;
+};
 
 const turtleProofAmount = (
 	reward: UserReward,
@@ -385,7 +526,9 @@ export class RewardsService implements IRewardsService {
 		address: Address,
 	): Promise<UserReward[]> {
 		const rewards = await this.adapter.fetchUserRewards(chainId, address);
-		return this.hydrateTurtleClaimableRewards(rewards, address);
+		return normalizeUserRewards(
+			await this.hydrateTurtleClaimableRewards(rewards, address),
+		);
 	}
 
 	async fetchFuulTotals(
@@ -475,7 +618,7 @@ export class RewardsService implements IRewardsService {
 		args: BuildRewardClaimsPlanArgs,
 	): Promise<TransactionPlan> {
 		const account = getAddress(args.account) as Address;
-		const rewards = args.rewards.filter(
+		const rewards = normalizeUserRewards(args.rewards).filter(
 			(reward) => BigInt(reward.unclaimed) > 0n,
 		);
 		if (rewards.length === 0) return [];
@@ -999,6 +1142,7 @@ export class RewardsService implements IRewardsService {
 
 				try {
 					const proof = await this.fetchTurtleProof(reward, account);
+					const claimChainId = turtleProofChainId(proof) ?? reward.chainId;
 					const streamAddress = turtleProofStreamAddress(reward, proof);
 					const amount = turtleProofAmount(reward, proof);
 					const timestamp = turtleProofTimestamp(reward, proof);
@@ -1009,21 +1153,32 @@ export class RewardsService implements IRewardsService {
 						timestamp === undefined ||
 						!proofArray?.length
 					) {
-						return reward;
+						return { ...reward, chainId: claimChainId };
 					}
+					const rewardWithProofChain: UserReward = {
+						...reward,
+						chainId: claimChainId,
+						streamAddress,
+						claimAddress: reward.claimAddress ?? streamAddress,
+						proof: proofArray,
+						timestamp,
+					};
 
 					const claimable = await this.readTurtleCanClaim(
-						reward.chainId,
+						claimChainId,
 						streamAddress,
 						account,
 						amount,
 						timestamp,
 						proofArray,
-					);
+					).catch(() => undefined);
 					const claimableAmount = parseTurtleAmount(claimable);
-					if (claimableAmount === undefined) return reward;
+					if (claimableAmount === undefined) return rewardWithProofChain;
 					if (claimableAmount <= 0n) return undefined;
-					return { ...reward, unclaimed: claimableAmount.toString() };
+					return {
+						...rewardWithProofChain,
+						unclaimed: claimableAmount.toString(),
+					};
 				} catch {
 					return reward;
 				}
@@ -1038,6 +1193,7 @@ export class RewardsService implements IRewardsService {
 		account: Address,
 	): Promise<ContractCall> {
 		const proof = await this.fetchTurtleProof(reward, account);
+		const claimChainId = turtleProofChainId(proof) ?? reward.chainId;
 		const streamAddress = turtleProofStreamAddress(reward, proof);
 		const amount = turtleProofAmount(reward, proof);
 		const timestamp = turtleProofTimestamp(reward, proof);
@@ -1052,7 +1208,7 @@ export class RewardsService implements IRewardsService {
 		if (!proofArray?.length) throw new Error("Missing Turtle merkle proof");
 
 		const claimable = await this.readTurtleCanClaim(
-			reward.chainId,
+			claimChainId,
 			streamAddress,
 			account,
 			amount,
@@ -1068,7 +1224,7 @@ export class RewardsService implements IRewardsService {
 
 		return {
 			type: "contractCall",
-			chainId: reward.chainId,
+			chainId: claimChainId,
 			to: streamAddress,
 			abi: TURTLE_STREAM_ABI,
 			functionName: "claim",
@@ -1092,7 +1248,7 @@ export class RewardsService implements IRewardsService {
 			.catch(() => []);
 		return (
 			proofs.find((proof) => turtleProofStreamId(proof) === streamId) ??
-			proofs[0]
+			proofs.find((proof) => !turtleProofStreamId(proof))
 		);
 	}
 

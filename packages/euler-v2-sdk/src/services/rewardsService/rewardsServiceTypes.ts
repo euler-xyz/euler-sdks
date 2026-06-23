@@ -90,6 +90,7 @@ export interface TurtleMerkleProof {
 	streamId?: string;
 	stream_id?: string;
 	id?: string;
+	chainId?: number | string;
 	streamAddress?: string;
 	stream_address?: string;
 	contractAddress?: string;

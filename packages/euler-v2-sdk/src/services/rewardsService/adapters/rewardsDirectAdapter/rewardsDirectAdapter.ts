@@ -968,7 +968,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 			() => [],
 		);
 
-		const rewards: UserReward[] = [];
+		const rewardsByToken = new Map<string, UserReward>();
 		for (const chainRewards of chainRewardsList) {
 			for (const reward of chainRewards.rewards ?? []) {
 				const unclaimed = BigInt(reward.amount) - BigInt(reward.claimed);
@@ -977,10 +977,11 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				const tokenPrice =
 					Math.abs(reward.token.price) < 1e-8 ? 0 : reward.token.price;
 
-				rewards.push({
+				const tokenAddress = getAddress(reward.token.address) as Address;
+				const userReward: UserReward = {
 					chainId: reward.token.chainId,
 					token: {
-						address: getAddress(reward.token.address) as Address,
+						address: tokenAddress,
 						chainId: reward.token.chainId,
 						symbol: reward.token.symbol,
 						name: reward.token.name,
@@ -992,11 +993,16 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 					unclaimed: unclaimed.toString(),
 					proof: reward.proofs as Hex[],
 					claimAddress: this.merklDistributorAddress,
-				});
+				};
+				const key = `${userReward.chainId}:${tokenAddress.toLowerCase()}`;
+				const existing = rewardsByToken.get(key);
+				if (!existing || BigInt(userReward.accumulated) > BigInt(existing.accumulated)) {
+					rewardsByToken.set(key, userReward);
+				}
 			}
 		}
 
-		return rewards;
+		return [...rewardsByToken.values()];
 	}
 
 	private async fetchBrevisUserRewards(
