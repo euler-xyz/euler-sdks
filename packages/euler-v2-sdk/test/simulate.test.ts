@@ -608,6 +608,36 @@ test("simulateTransactionPlan tracks Merkl claim reward tokens", async () => {
 	assert.ok(reads.has(getAddress(TOKEN)));
 });
 
+test("simulateTransactionPlan tracks swap-verifier wallet output tokens", async () => {
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					type: "operation",
+					name: "withdrawAndSwap",
+					items: [
+						{
+							targetContract: TARGET,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: swapVerifierAbi,
+								functionName: "verifyAmountMinAndTransfer",
+								args: [TOKEN, ACCOUNT, 1n, 9999999999n],
+							}),
+						},
+					],
+				},
+			],
+		},
+	];
+
+	const reads = await simulateAndCollectWalletBalanceReads(plan);
+
+	assert.ok(reads.has(getAddress(TOKEN)));
+});
+
 test("simulateTransactionPlan tracks EUL balance for rEUL unlocks", async () => {
 	const eulToken = getAddress("0x0000000000000000000000000000000000000017");
 	const plan: TransactionPlan = [
