@@ -35,6 +35,7 @@ export * from "./services/oracleAdapterService/index.js";
 export * from "./services/feeFlowService/index.js";
 export * from "./services/reulLockService/index.js";
 export * from "./services/positionMigrationService/index.js";
+export * from "./services/activityService/index.js";
 
 // Plugins
 export * from "./plugins/index.js";
@@ -44,16 +45,16 @@ export * from "./utils/subAccounts.js";
 export * from "./utils/accountPositionClassification.js";
 export { VaultType } from "./utils/types.js";
 export {
-  type BuildQueryFn,
-  type BuildQueryContext,
-  type QueryCacheConfig,
-  applyBuildQuery,
-  createQueryCacheBuildQuery,
-  getEulerSdkQueryKey,
-  normalizeQueryKeyObjectSets,
-  normalizeQueryKeySet,
-  normalizeQueryKeyValue,
-  serializeQueryArgs,
+	type BuildQueryFn,
+	type BuildQueryContext,
+	type QueryCacheConfig,
+	applyBuildQuery,
+	createQueryCacheBuildQuery,
+	getEulerSdkQueryKey,
+	normalizeQueryKeyObjectSets,
+	normalizeQueryKeySet,
+	normalizeQueryKeyValue,
+	serializeQueryArgs,
 } from "./utils/buildQuery.js";
 export type { EulerSDKQueryName, QueryMethodName } from "./utils/queryNames.js";
 export * from "./utils/stateOverrides/index.js";

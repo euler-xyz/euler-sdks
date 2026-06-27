@@ -100,6 +100,7 @@ import {
 	defaultEulerEarnV3AdapterConfig,
 	defaultEulerLabelsURLAdapterConfig,
 	defaultIntrinsicApyV3AdapterConfig,
+	defaultActivityServiceConfig,
 	defaultPricingServiceConfig,
 	defaultRewardsV3AdapterConfig,
 	defaultSwapServiceConfig,
@@ -127,6 +128,11 @@ import {
 	type MorphoMigrationConnectorConfig,
 	type PositionMigrationServiceConfig,
 } from "../services/positionMigrationService/index.js";
+import {
+	ActivityService,
+	type ActivityServiceConfig,
+	type IActivityService,
+} from "../services/activityService/index.js";
 import {
 	type EulerSDKConfig,
 	readEulerSDKEnvConfig,
@@ -191,6 +197,7 @@ export interface BuildSDKOverrides<
 	feeFlowService?: IFeeFlowService;
 	reulLockService?: IREULLockService;
 	positionMigrationService?: IPositionMigrationService;
+	activityService?: IActivityService;
 }
 
 export type { EulerSDKConfig } from "./config.js";
@@ -228,6 +235,7 @@ export interface BuildSDKOptions<
 		aave?: AaveMigrationConnectorConfig;
 		metamorpho?: MetamorphoMigrationConnectorConfig;
 	};
+	activityServiceConfig?: ActivityServiceConfig;
 	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with 5s success and failure TTLs. */
 	queryCacheConfig?: QueryCacheConfig;
 	/** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
@@ -538,6 +546,7 @@ export async function buildEulerSDK<
 		feeFlowServiceConfig,
 		positionMigrationServiceConfig,
 		positionMigrationConnectorConfig,
+		activityServiceConfig,
 	} = options;
 
 	const envConfig = readEulerSDKEnvConfig();
@@ -1532,6 +1541,21 @@ export async function buildEulerSDK<
 				resolvedBuildQuery,
 			);
 		})();
+	const activityService =
+		servicesOverrides?.activityService ??
+		new ActivityService(
+			resolveV3AdapterConfig(defaultActivityServiceConfig, {
+				explicitConfig: activityServiceConfig,
+				explicitV3ApiKey: v3ApiKey,
+				envConfig,
+				config,
+				envEndpoint: envConfig.activityV3ApiUrl,
+				configEndpoint: config?.activityV3ApiUrl,
+				envApiKey: envConfig.activityV3ApiKey,
+				configApiKey: config?.activityV3ApiKey,
+			}),
+			resolvedBuildQuery,
+		);
 
 	if (executionService instanceof ExecutionService) {
 		executionService.setProviderService(providerService as ProviderService);
@@ -1626,6 +1650,7 @@ export async function buildEulerSDK<
 		feeFlowService,
 		reulLockService,
 		positionMigrationService,
+		activityService,
 		plugins,
 	});
 

@@ -102,6 +102,9 @@ export interface EulerSDKConfig {
 	feeFlowControllerUtilAddress?: Address;
 	feeFlowDefaultBuyDeadlineSeconds?: number;
 
+	activityV3ApiUrl?: string;
+	activityV3ApiKey?: string;
+
 	queryCacheEnabled?: boolean;
 	queryCacheTtlMs?: number;
 }
@@ -236,7 +239,10 @@ function readOptionalAddress(
 	}
 }
 
-function readOptionalString(value: unknown, message: string): string | undefined {
+function readOptionalString(
+	value: unknown,
+	message: string,
+): string | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") throw new Error(message);
 	return value;
@@ -268,12 +274,13 @@ function readTurtleRewardToken(
 			token.address,
 			`${name} rewardToken.address values must be EVM addresses`,
 		),
-		chainId: token.chainId === undefined
-			? undefined
-			: readPositiveInteger(
-					token.chainId,
-					`${name} rewardToken.chainId values must be positive integers`,
-				),
+		chainId:
+			token.chainId === undefined
+				? undefined
+				: readPositiveInteger(
+						token.chainId,
+						`${name} rewardToken.chainId values must be positive integers`,
+					),
 		symbol: readOptionalString(
 			token.symbol,
 			`${name} rewardToken.symbol values must be strings`,
@@ -547,6 +554,9 @@ export function readEulerSDKEnvConfig(
 			env,
 			"EULER_SDK_FEE_FLOW_DEFAULT_BUY_DEADLINE_SECONDS",
 		),
+
+		activityV3ApiUrl: readString(env, "EULER_SDK_ACTIVITY_V3_API_URL"),
+		activityV3ApiKey: readString(env, "EULER_SDK_ACTIVITY_V3_API_KEY"),
 
 		queryCacheEnabled: readBoolean(env, "EULER_SDK_QUERY_CACHE_ENABLED"),
 		queryCacheTtlMs: readNumber(env, "EULER_SDK_QUERY_CACHE_TTL_MS"),
