@@ -7,7 +7,7 @@ import { buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 
 // Set EULER_SDK_RPC_URL_1=https://... in the environment for on-chain reads.
 const sdk = await buildEulerSDK({
-  queryCacheConfig: { ttlMs: 10_000 },     // Optional: default cache is 5s
+  queryCacheConfig: { ttlMs: 10_000 },     // Optional: default success/failure cache is 5s
 })
 ```
 
