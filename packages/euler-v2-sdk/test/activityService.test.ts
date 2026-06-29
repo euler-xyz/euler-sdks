@@ -164,4 +164,23 @@ describe("ActivityService", () => {
 			"activity-key",
 		);
 	});
+
+	it("lets activity V3 config override the shared V3 endpoint and API key", async () => {
+		const sdk = await buildEulerSDK({
+			config: {
+				v3ApiUrl: "https://shared-v3.example",
+				v3ApiKey: "shared-config-key",
+				activityV3ApiUrl: "https://activity-v3.example",
+				activityV3ApiKey: "activity-v3-key",
+			},
+			servicesOverrides: { deploymentService },
+		});
+
+		expect((sdk.activityService as ActivityService as any).endpoint).toBe(
+			"https://activity-v3.example",
+		);
+		expect((sdk.activityService as ActivityService as any).apiKey).toBe(
+			"activity-v3-key",
+		);
+	});
 });
