@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getAddress } from "viem";
 import type { Address } from "viem";
 import { buildEulerSDK } from "../src/sdk/buildSDK.js";
+import { EulerSDK } from "../src/sdk/sdk.js";
 import type { IDeploymentService } from "../src/services/deploymentService/index.js";
 import {
 	ActivityService,
@@ -163,6 +164,33 @@ describe("ActivityService", () => {
 		expect((sdk.activityService as ActivityService as any).apiKey).toBe(
 			"activity-key",
 		);
+	});
+
+	it("keeps direct EulerSDK construction compatible without an activity service", () => {
+		const sdk = new EulerSDK({
+			accountService: {} as never,
+			portfolioService: {} as never,
+			walletService: {} as never,
+			eVaultService: {} as never,
+			eulerEarnService: {} as never,
+			securitizeVaultService: {} as never,
+			vaultMetaService: {} as never,
+			deploymentService,
+			providerService: {} as never,
+			abiService: {} as never,
+			eulerLabelsService: {} as never,
+			tokenlistService: {} as never,
+			swapService: {} as never,
+			executionService: {} as never,
+			priceService: {} as never,
+			rewardsService: {} as never,
+			intrinsicApyService: {} as never,
+			oracleAdapterService: {} as never,
+			feeFlowService: {} as never,
+			reulLockService: {} as never,
+		});
+
+		expect(sdk.activityService).toBeInstanceOf(ActivityService);
 	});
 
 	it("lets activity V3 config override the shared V3 endpoint and API key", async () => {

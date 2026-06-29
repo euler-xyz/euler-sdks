@@ -23,10 +23,14 @@ import type { IOracleAdapterService } from "../services/oracleAdapterService/ind
 import type { IFeeFlowService } from "../services/feeFlowService/index.js";
 import type { IREULLockService } from "../services/reulLockService/index.js";
 import type { IPositionMigrationService } from "../services/positionMigrationService/index.js";
-import type { IActivityService } from "../services/activityService/index.js";
+import {
+	ActivityService,
+	type IActivityService,
+} from "../services/activityService/index.js";
 import type { EulerPlugin, PluginPrefetchData } from "../plugins/types.js";
 import type { TransactionPlan } from "../services/executionService/executionServiceTypes.js";
 import type { AddressOrAccount } from "../entities/Account.js";
+import { defaultActivityServiceConfig } from "./defaultConfig.js";
 
 export interface EulerSDKOptions<
 	TVaultEntity extends IVaultEntity = VaultEntity,
@@ -52,7 +56,7 @@ export interface EulerSDKOptions<
 	feeFlowService: IFeeFlowService;
 	reulLockService: IREULLockService;
 	positionMigrationService: IPositionMigrationService;
-	activityService: IActivityService;
+	activityService?: IActivityService;
 	plugins?: EulerPlugin[];
 }
 
@@ -103,7 +107,8 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 		this.feeFlowService = options.feeFlowService;
 		this.reulLockService = options.reulLockService;
 		this.positionMigrationService = options.positionMigrationService;
-		this.activityService = options.activityService;
+		this.activityService =
+			options.activityService ?? new ActivityService(defaultActivityServiceConfig);
 		this.plugins = options.plugins ?? [];
 	}
 
