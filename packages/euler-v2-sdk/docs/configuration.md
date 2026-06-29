@@ -74,7 +74,7 @@ Use explicit nested service config when the option is a function or a custom obj
 | `rewardsServiceConfig` | `v3` adapter with direct Brevis/Fuul helper reads | Reward campaign data, per-user rewards, and reward claim planning |
 | `intrinsicApyServiceConfig` | V3 intrinsic APY API | Underlying yield data for vault assets |
 | `buildQuery` | 5s in-memory cache | Wrap all external queries for caching, logging, or profiling |
-| `queryCacheConfig` | `{ enabled: true, ttlMs: 5000 }` | Built-in query cache settings when `buildQuery` is not supplied |
+| `queryCacheConfig` | `{ enabled: true, ttlMs: 5000, failureTtlMs: 5000 }` | Built-in query cache settings when `buildQuery` is not supplied |
 | `plugins` | `[]` | Extend on-chain reads and transaction plans |
 | `servicesOverrides` | `{}` | Replace any built-in service with a custom implementation |
 
@@ -84,7 +84,7 @@ When `accountServiceConfig.adapter`, `eVaultServiceConfig.adapter`, `eulerEarnSe
 
 Adapter-specific keys override the shared key within the same configuration layer. Layer priority still applies, so `config.pricingApiKey` overrides `pricingServiceConfig.apiKey`, and `pricingServiceConfig.apiKey` overrides `EULER_SDK_PRICING_API_KEY`.
 
-`vaultTypeAdapterConfig` defaults to the V3 `POST /v3/evk/vaults/resolve` endpoint. Pass subgraph config when vault type resolution should use subgraphs:
+`vaultTypeAdapterConfig` defaults to the V3 `POST /v3/resolve/vaults` endpoint. Pass subgraph config when vault type resolution should use subgraphs:
 
 ```typescript
 vaultTypeAdapterConfig: {

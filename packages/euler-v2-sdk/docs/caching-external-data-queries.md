@@ -35,7 +35,7 @@ Pass `buildQuery` once when building the SDK and it propagates to every service 
 
 ```typescript
 const sdk = await buildEulerSDK({
-  queryCacheConfig: { ttlMs: 5000 }, // Optional: default is enabled with a 5s TTL
+  queryCacheConfig: { ttlMs: 5000 }, // Optional: default success/failure cache is 5s
   buildQuery: myBuildQueryFn,
   plugins: [createPythPlugin({ buildQuery: myBuildQueryFn })],
 })
@@ -50,11 +50,15 @@ Configure the built-in cache through `queryCacheConfig`:
 ```typescript
 const sdk = await buildEulerSDK({
   queryCacheConfig: {
-    enabled: true, // default
-    ttlMs: 5000,   // default
+    enabled: true,      // default
+    ttlMs: 5000,        // default success TTL
+    failureTtlMs: 5000, // default failure TTL
   },
 })
 ```
+
+Set `failureTtlMs: 0` when a consumer needs every failed query call to reach
+the underlying transport immediately.
 
 Disable it entirely:
 

@@ -210,7 +210,7 @@ export interface BuildSDKOptions<
 	intrinsicApyServiceConfig?: IntrinsicApyServiceConfig;
 	oracleAdapterServiceConfig?: OracleAdapterServiceConfig;
 	feeFlowServiceConfig?: FeeFlowServiceConfig;
-	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with a 5s TTL. */
+	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with 5s success and failure TTLs. */
 	queryCacheConfig?: QueryCacheConfig;
 	/** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
 	buildQuery?: BuildQueryFn;
@@ -1362,7 +1362,8 @@ export async function buildEulerSDK<
 								rewardsV3Adapter.fetchUserRewards(chainId, address),
 							]);
 							if (v3Result.status !== "fulfilled") {
-								if (directResult.status === "fulfilled") return directResult.value;
+								if (directResult.status === "fulfilled")
+									return directResult.value;
 								throw directResult.reason;
 							}
 							const directRewards =
