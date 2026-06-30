@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { beforeEach, test, vi } from "vitest";
-import { getAddress, type Abi } from "viem";
+import { decodeFunctionData, encodeFunctionData, getAddress, type Abi } from "viem";
 import { estimateContractGas } from "viem/actions";
 import { Account } from "../src/entities/Account.js";
+import { accountLensAbi } from "../src/services/accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
+import { ethereumVaultConnectorAbi } from "../src/services/executionService/abis/ethereumVaultConnectorAbi.js";
 import { ExecutionService } from "../src/services/executionService/executionService.js";
 import type { TransactionPlan } from "../src/services/executionService/executionServiceTypes.js";
+import { VaultType } from "../src/utils/types.js";
 
 vi.mock("viem/actions", () => ({
 	estimateContractGas: vi.fn(),
@@ -135,6 +138,84 @@ test("simulateTransactionPlan rejects CoW swap plans", async () => {
 		service.simulateTransactionPlan(1, ACCOUNT, plan),
 		/does not support CoW swap plans/,
 	);
+});
+
+test("simulateTransactionPlan reads vault account info for EVC enabled collateral", async () => {
+	let simulatedBatch:
+		| readonly { targetContract: string; data: `0x${string}` }[]
+		| undefined;
+	let requestedVaultTypes: string[] = [];
+	const accountLens = "0x0000000000000000000000000000000000000013";
+	const service = new ExecutionService(
+		{
+			getDeployment: () => ({
+				addresses: {
+					coreAddrs: {
+						evc: EVC,
+						permit2: "0x0000000000000000000000000000000000000012",
+					},
+					lensAddrs: {
+						accountLens,
+						vaultLens: "0x0000000000000000000000000000000000000014",
+						eulerEarnVaultLens:
+							"0x0000000000000000000000000000000000000015",
+					},
+				},
+			}),
+		} as never,
+		undefined,
+		{
+			getProvider: () => ({
+				simulateContract: async (request: {
+					args?: readonly [readonly { targetContract: string; data: `0x${string}` }[]];
+				}) => {
+					simulatedBatch = request.args?.[0];
+					throw new Error("stop after batch construction");
+				},
+			}),
+		} as never,
+		{
+			fetchVaultTypes: async (_chainId: number, vaults: string[]) => {
+				requestedVaultTypes = vaults.map((vault) => getAddress(vault));
+				return { [getAddress(TARGET)]: VaultType.EVault };
+			},
+		} as never,
+	);
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: EVC,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: ethereumVaultConnectorAbi,
+						functionName: "enableCollateral",
+						args: [ACCOUNT, TARGET],
+					}),
+				},
+			],
+		},
+	];
+
+	const result = await service.simulateTransactionPlan(1, ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+
+	assert.ok("simulationError" in result);
+	assert.ok(requestedVaultTypes.includes(getAddress(TARGET)));
+	const vaultAccountReads = (simulatedBatch ?? []).flatMap((item) => {
+		if (getAddress(item.targetContract) !== getAddress(accountLens)) return [];
+		try {
+			const decoded = decodeFunctionData({ abi: accountLensAbi, data: item.data });
+			if (decoded.functionName !== "getVaultAccountInfo") return [];
+			return [Array.from(decoded.args ?? [])];
+		} catch {
+			return [];
+		}
+	});
+	assert.deepEqual(vaultAccountReads, [[CHECKSUM_ACCOUNT, getAddress(TARGET)]]);
 });
 
 test("estimateGasForTransactionPlan rejects CoW swap plans", async () => {

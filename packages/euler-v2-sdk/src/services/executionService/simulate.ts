@@ -115,6 +115,8 @@ export interface SimulateBatchResult<
 export type SimulateBatchOptions = {
 	/** When true, fetches state overrides internally from the transaction plan before simulation. */
 	stateOverrides?: boolean;
+	/** Additional state overrides supplied by higher-level planners. */
+	extraStateOverrides?: StateOverride;
 	stateOverrideOptions?: SimulationStateOverrideOptions;
 	vaultFetchOptions?: VaultFetchOptions;
 	accountFetchOptions?: AccountFetchOptions;
@@ -237,7 +239,8 @@ export async function deriveStateOverrides(
 				merged.push({ address: owner, balance: nativeBalance });
 			// Drop ERC20 entries; keep only the Permit2 deterministic block.
 			for (const ov of permit2Only) {
-				if (getAddress(ov.address) === getAddress(permit2Address)) merged.push(ov);
+				if (getAddress(ov.address) === getAddress(permit2Address))
+					merged.push(ov);
 			}
 			return mergeStateOverrides(merged);
 		}
@@ -299,13 +302,19 @@ export async function simulateTransactionPlan<
 	const useStateOverrides = options?.stateOverrides ?? true;
 	let effectiveStateOverrides: StateOverride | undefined;
 	if (useStateOverrides) {
-		effectiveStateOverrides = await deriveStateOverrides(
+		const derivedStateOverrides = await deriveStateOverrides(
 			ctx,
 			chainId,
 			owner,
 			transactionPlan,
 			options?.stateOverrideOptions,
 		);
+		effectiveStateOverrides = mergeStateOverrides([
+			...derivedStateOverrides,
+			...(options?.extraStateOverrides ?? []),
+		]);
+	} else if (options?.extraStateOverrides?.length) {
+		effectiveStateOverrides = mergeStateOverrides(options.extraStateOverrides);
 	}
 
 	const batch = transactionPlan.flatMap((item) =>
@@ -822,6 +831,16 @@ function collectCandidateVaults(
 			const receiver = item.args.receiver as Address | undefined;
 			if (receiver) addSubAccountVault(receiver, target);
 			addCandidateVault(target);
+			continue;
+		}
+
+		if (fn === "enablecollateral") {
+			const account = item.args.account as Address | undefined;
+			const vault = item.args.vault as Address | undefined;
+			if (account && vault) {
+				addSubAccountVault(account, vault);
+				addCandidateVault(vault);
+			}
 		}
 	}
 

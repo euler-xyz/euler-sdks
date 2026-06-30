@@ -657,6 +657,7 @@ export interface IExecutionService<
 		vault: Address,
 	): EVCBatchItem;
 	encodeDisableController(vault: Address, account: Address): EVCBatchItem;
+	encodeTransferFromMax(vault: Address, from: Address, to: Address): EVCBatchItem;
 	/** Transaction plan functions: build plan items (approvals + EVC batch) for each operation. See implementation JSDoc for argument details. */
 	planCleanup(args: PlanCleanupArgs): TransactionPlan;
 	planDeposit(args: PlanDepositArgs): TransactionPlan;
@@ -1807,7 +1808,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		return [{ type: "evcBatch", items }];
 	}
 
-	private encodeTransferFromMax(
+	encodeTransferFromMax(
 		vault: Address,
 		from: Address,
 		to: Address,

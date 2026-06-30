@@ -115,6 +115,15 @@ import {
 	type IREULLockService,
 } from "../services/reulLockService/index.js";
 import {
+	AavePositionMigrationConnector,
+	MorphoPositionMigrationConnector,
+	PositionMigrationService,
+	type AaveMigrationConnectorConfig,
+	type IPositionMigrationService,
+	type MorphoMigrationConnectorConfig,
+	type PositionMigrationServiceConfig,
+} from "../services/positionMigrationService/index.js";
+import {
 	type EulerSDKConfig,
 	readEulerSDKEnvConfig,
 	type VaultTypeAdapterKind,
@@ -177,6 +186,7 @@ export interface BuildSDKOverrides<
 	oracleAdapterService?: IOracleAdapterService;
 	feeFlowService?: IFeeFlowService;
 	reulLockService?: IREULLockService;
+	positionMigrationService?: IPositionMigrationService;
 }
 
 export type { EulerSDKConfig } from "./config.js";
@@ -208,6 +218,11 @@ export interface BuildSDKOptions<
 	intrinsicApyServiceConfig?: IntrinsicApyServiceConfig;
 	oracleAdapterServiceConfig?: OracleAdapterServiceConfig;
 	feeFlowServiceConfig?: FeeFlowServiceConfig;
+	positionMigrationServiceConfig?: PositionMigrationServiceConfig;
+	positionMigrationConnectorConfig?: {
+		morpho?: MorphoMigrationConnectorConfig;
+		aave?: AaveMigrationConnectorConfig;
+	};
 	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with a 5s TTL. */
 	queryCacheConfig?: QueryCacheConfig;
 	/** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
@@ -507,6 +522,8 @@ export async function buildEulerSDK<
 		onFallback,
 		servicesOverrides,
 		feeFlowServiceConfig,
+		positionMigrationServiceConfig,
+		positionMigrationConnectorConfig,
 	} = options;
 
 	const envConfig = readEulerSDKEnvConfig();
@@ -1316,6 +1333,39 @@ export async function buildEulerSDK<
 	const reulLockService =
 		servicesOverrides?.reulLockService ??
 		new REULLockService(providerService, deploymentService);
+	const positionMigrationService =
+		servicesOverrides?.positionMigrationService ??
+		(() => {
+			const connectors = [
+				...(positionMigrationServiceConfig?.includeDefaultConnectors === false
+					? []
+					: [
+							new MorphoPositionMigrationConnector(
+								deploymentService,
+								providerService,
+								executionService,
+								positionMigrationConnectorConfig?.morpho,
+							),
+							new AavePositionMigrationConnector(
+								deploymentService,
+								providerService,
+								executionService,
+								positionMigrationConnectorConfig?.aave,
+							),
+						]),
+				...(positionMigrationServiceConfig?.connectors ?? []),
+			];
+
+			return new PositionMigrationService(
+				providerService,
+				executionService,
+				{
+					...positionMigrationServiceConfig,
+					connectors,
+				},
+				resolvedBuildQuery,
+			);
+		})();
 
 	if (executionService instanceof ExecutionService) {
 		executionService.setProviderService(providerService as ProviderService);
@@ -1408,6 +1458,7 @@ export async function buildEulerSDK<
 		oracleAdapterService,
 		feeFlowService,
 		reulLockService,
+		positionMigrationService,
 		plugins,
 	});
 
