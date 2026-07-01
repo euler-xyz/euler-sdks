@@ -564,3 +564,38 @@ test("Aave inbound debt swap strips Euler repay wrapper calls before Aave repay"
 	assert.equal(amountMin, 0n);
 	assert.equal(getAddress(to), getAddress(OWNER));
 });
+
+test("Aave inbound debt swap repays leftover input token", async () => {
+	const connector = createConnector();
+
+	const items = await connector.buildMigrationBatch({
+		direction: "external-to-euler",
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createAavePosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		debtSwapQuote: createWrappedDebtSwapQuote(),
+		collateralSwapQuote: createWrappedDebtSwapQuote(),
+	});
+
+	const calls = items.flatMap(decodeSwapperMulticall);
+	const repay = decodeFunctionData({
+		abi: swapperAbi,
+		data: calls.at(-1)!,
+	});
+	assert.equal(repay.functionName, "repay");
+	const [token, vault, amount, account] = repay.args as [
+		Address,
+		Address,
+		bigint,
+		Address,
+	];
+	assert.equal(getAddress(token), getAddress(TARGET_DEBT_ASSET));
+	assert.equal(getAddress(vault), getAddress(DEBT_VAULT));
+	assert.equal(amount, 1250n);
+	assert.equal(getAddress(account), getAddress(EULER_ACCOUNT));
+});

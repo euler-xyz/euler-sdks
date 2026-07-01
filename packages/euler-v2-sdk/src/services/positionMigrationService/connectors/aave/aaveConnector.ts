@@ -993,14 +993,18 @@ export class AavePositionMigrationConnector
 		});
 
 		const postDepositRepayCall =
-			hasDebt &&
-			targetBorrowVault &&
-			(target.repayExcessDebt ?? true) &&
-			!debtSwapQuote
+			hasDebt && targetBorrowVault && (target.repayExcessDebt ?? true)
 				? encodeFunctionData({
 						abi: swapperAbi,
 						functionName: "repay",
-						args: [debtAsset!, targetBorrowVault, borrowAmount, eulerAccount],
+						args: [
+							debtSwapQuote
+								? getAddress(debtSwapQuote.tokenIn.address)
+								: debtAsset!,
+							targetBorrowVault,
+							borrowAmount,
+							eulerAccount,
+						],
 					})
 				: undefined;
 		const postTransferSwapperCalls: Hex[] = [];

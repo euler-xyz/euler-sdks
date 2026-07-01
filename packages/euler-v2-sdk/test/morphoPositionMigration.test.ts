@@ -417,7 +417,7 @@ test("Morpho outgoing migration rejects supplied swap quotes", async () => {
 	);
 });
 
-test("Morpho inbound debt swap sweeps excess loan token after Morpho repay", async () => {
+test("Morpho inbound debt swap sweeps output token and repays leftover input token", async () => {
 	const connector = createConnector();
 
 	const items = await connector.buildMigrationBatch({
@@ -429,9 +429,9 @@ test("Morpho inbound debt swap sweeps excess loan token after Morpho repay", asy
 			eulerAccount: EULER_ACCOUNT,
 			borrowVault: DEBT_VAULT,
 			collateralVault: COLLATERAL_VAULT,
-			repayExcessDebt: false,
 		},
 		debtSwapQuote: createDebtSwapQuote(),
+		collateralSwapQuote: createSwapQuote(),
 	});
 
 	const calls = items.flatMap(decodeSwapperMulticall);
@@ -439,6 +439,8 @@ test("Morpho inbound debt swap sweeps excess loan token after Morpho repay", asy
 		"swap",
 		"swap",
 		"sweep",
+		"multicall",
+		"repay",
 	]);
 	const sweep = decodeFunctionData({ abi: swapperAbi, data: calls[2]! });
 	assert.equal(sweep.functionName, "sweep");
@@ -446,4 +448,17 @@ test("Morpho inbound debt swap sweeps excess loan token after Morpho repay", asy
 	assert.equal(getAddress(token), getAddress(DEBT_ASSET));
 	assert.equal(amountMin, 0n);
 	assert.equal(getAddress(to), getAddress(OWNER));
+
+	const repay = decodeFunctionData({ abi: swapperAbi, data: calls[4]! });
+	assert.equal(repay.functionName, "repay");
+	const [repayToken, repayVault, repayAmount, repayAccount] = repay.args as [
+		Address,
+		Address,
+		bigint,
+		Address,
+	];
+	assert.equal(getAddress(repayToken), getAddress(QUOTE_ASSET));
+	assert.equal(getAddress(repayVault), getAddress(DEBT_VAULT));
+	assert.equal(repayAmount, 124n);
+	assert.equal(getAddress(repayAccount), getAddress(EULER_ACCOUNT));
 });

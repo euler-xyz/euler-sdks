@@ -617,15 +617,14 @@ export class MorphoPositionMigrationConnector
 		// Multicall #2: run the collateral swap, if present, and repay any excess
 		// debt. No-swap collateral deposits are handled by SwapVerifier below.
 		const postDepositRepayCall =
-			hasDebt &&
-			targetBorrowVault &&
-			(target.repayExcessDebt ?? true) &&
-			!debtSwapQuote
+			hasDebt && targetBorrowVault && (target.repayExcessDebt ?? true)
 				? encodeFunctionData({
 						abi: swapperAbi,
 						functionName: "repay",
 						args: [
-							marketParams.loanToken,
+							debtSwapQuote
+								? getAddress(debtSwapQuote.tokenIn.address)
+								: marketParams.loanToken,
 							targetBorrowVault,
 							borrowAmount,
 							eulerAccount,
