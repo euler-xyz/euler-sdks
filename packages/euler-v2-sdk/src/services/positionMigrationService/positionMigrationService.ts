@@ -135,27 +135,42 @@ export class PositionMigrationService implements IPositionMigrationService {
 		args: ListMigrationTargetsArgs,
 	): Promise<MigrationTarget[]> {
 		const direction = args.direction ?? "euler-to-external";
-		const connectors = args.connectorId
-			? [this.getConnector(args.connectorId)]
-			: Array.from(this.connectors.values()).filter((connector) =>
-					ENABLED_MIGRATIONS.has(`${connector.id}:${direction}`),
-				);
 
 		if (args.connectorId) {
 			assertPositionMigrationEnabled({
 				connectorId: args.connectorId,
 				direction,
 			});
+			const connector = this.getConnector(args.connectorId);
+			return connector.listTargets
+				? connector.listTargets({ ...args, direction })
+				: [];
 		}
 
-		const results = await Promise.all(
+		const connectors = Array.from(this.connectors.values()).filter((connector) =>
+			ENABLED_MIGRATIONS.has(`${connector.id}:${direction}`),
+		);
+		const results = await Promise.allSettled(
 			connectors.map((connector) =>
 				connector.listTargets
 					? connector.listTargets({ ...args, direction })
 					: Promise.resolve([]),
 			),
 		);
-		return results.flat();
+		const targets = results.flatMap((result) =>
+			result.status === "fulfilled" ? result.value : [],
+		);
+		if (targets.length > 0) return targets;
+
+		const failures = results.filter(
+			(result): result is PromiseRejectedResult =>
+				result.status === "rejected",
+		);
+		const firstFailure = failures[0];
+		if (firstFailure && failures.length === results.length) {
+			throw firstFailure.reason;
+		}
+		return targets;
 	}
 
 	async getPosition(
