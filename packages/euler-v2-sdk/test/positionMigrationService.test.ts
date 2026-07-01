@@ -4,10 +4,13 @@ import { test } from "vitest";
 import { PositionMigrationService } from "../src/services/positionMigrationService/positionMigrationService.js";
 import type { EVCBatchItem } from "../src/services/executionService/index.js";
 import type {
+	BuildConnectorMigrationBatchArgs,
 	GetMigrationPositionArgs,
+	MigrationAuthorizationRequest,
 	MigrationPosition,
 	MigrationTarget,
 	PositionMigrationConnector,
+	SignedMigrationAuthorization,
 } from "../src/services/positionMigrationService/index.js";
 
 const CHAIN_ID = 8453;
@@ -56,7 +59,7 @@ function createConnector(args: {
 function createService(connectors: PositionMigrationConnector[]) {
 	return new PositionMigrationService(
 		{} as never,
-		{} as never,
+		{ convertBatchItemsToPlan: () => [] } as never,
 		{ includeDefaultConnectors: false, connectors },
 	);
 }
@@ -127,4 +130,140 @@ test("listTargets preserves direct connector errors", async () => {
 		() => service.listTargets({ ...listTargetArgs, connectorId: "morpho" }),
 		/Morpho unavailable/,
 	);
+});
+
+const migrationPosition: MigrationPosition = {
+	connectorId: "morpho",
+	protocol: "Morpho",
+	id: "morpho:position",
+	chainId: CHAIN_ID,
+	owner: getAddress(OWNER),
+	ref: {},
+	debt: { asset: getAddress(DEBT_ASSET), amount: 1n },
+	collateral: { asset: getAddress(COLLATERAL_ASSET), amount: 2n },
+	raw: {},
+};
+
+const morphoAuthorizationRequest: MigrationAuthorizationRequest = {
+	kind: "typedData",
+	connectorId: "morpho",
+	protocol: "Morpho",
+	chainId: CHAIN_ID,
+	owner: getAddress(OWNER),
+	typedData: {
+		domain: {
+			name: "Morpho Blue",
+			chainId: CHAIN_ID,
+			verifyingContract: "0x0000000000000000000000000000000000002001",
+		},
+		types: {
+			Authorization: [
+				{ name: "authorizer", type: "address" },
+				{ name: "authorized", type: "address" },
+				{ name: "isAuthorized", type: "bool" },
+				{ name: "nonce", type: "uint256" },
+				{ name: "deadline", type: "uint256" },
+			],
+		},
+		primaryType: "Authorization",
+		message: {
+			authorizer: getAddress(OWNER),
+			authorized: "0x0000000000000000000000000000000000002002",
+			isAuthorized: true,
+			nonce: 0n,
+			deadline: 1n,
+		},
+	},
+};
+
+function createMorphoSimulationConnector(args: {
+	onBuild?: (args: BuildConnectorMigrationBatchArgs) => void;
+	onGetAuthorization?: () => void;
+} = {}): PositionMigrationConnector {
+	return {
+		id: "morpho",
+		protocol: "Morpho",
+		name: "Morpho",
+		getPosition: async () => migrationPosition,
+		getAuthorization: async () => {
+			args.onGetAuthorization?.();
+			throw new Error("connector authorization should not be fetched");
+		},
+		buildMigrationBatch: (buildArgs) => {
+			args.onBuild?.(buildArgs);
+			return [];
+		},
+	};
+}
+
+test("planMigrationSimulation reuses a provided authorization request", async () => {
+	let getAuthorizationCalls = 0;
+	let builtAuthorization: SignedMigrationAuthorization | undefined;
+	const service = createService([
+		createMorphoSimulationConnector({
+			onGetAuthorization: () => {
+				getAuthorizationCalls++;
+			},
+			onBuild: args => {
+				builtAuthorization = args.authorization;
+			},
+		}),
+	]);
+
+	const result = await service.planMigrationSimulation({
+		direction: "external-to-euler",
+		connectorId: "morpho",
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		position: migrationPosition,
+		positionRef: migrationPosition.ref,
+		target: {
+			eulerAccount: getAddress(OWNER),
+			collateralVault: "0x0000000000000000000000000000000000003001",
+		},
+		authorizationRequest: morphoAuthorizationRequest,
+		validateEulerVaults: false,
+	});
+
+	assert.equal(getAuthorizationCalls, 0);
+	assert.equal(builtAuthorization?.request, morphoAuthorizationRequest);
+	assert.equal(result.stateOverrides.length, 1);
+});
+
+test("planMigrationSimulation reuses a provided signed authorization request", async () => {
+	let getAuthorizationCalls = 0;
+	let builtAuthorization: SignedMigrationAuthorization | undefined;
+	const service = createService([
+		createMorphoSimulationConnector({
+			onGetAuthorization: () => {
+				getAuthorizationCalls++;
+			},
+			onBuild: args => {
+				builtAuthorization = args.authorization;
+			},
+		}),
+	]);
+	const authorization: SignedMigrationAuthorization = {
+		request: morphoAuthorizationRequest,
+		signature: `0x${"11".repeat(65)}`,
+	};
+
+	const result = await service.planMigrationSimulation({
+		direction: "external-to-euler",
+		connectorId: "morpho",
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		position: migrationPosition,
+		positionRef: migrationPosition.ref,
+		target: {
+			eulerAccount: getAddress(OWNER),
+			collateralVault: "0x0000000000000000000000000000000000003001",
+		},
+		authorization,
+		validateEulerVaults: false,
+	});
+
+	assert.equal(getAuthorizationCalls, 0);
+	assert.equal(builtAuthorization?.request, morphoAuthorizationRequest);
+	assert.equal(result.stateOverrides.length, 1);
 });

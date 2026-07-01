@@ -189,6 +189,7 @@ export type BuildMigrationBatchArgs<
 	target?: EulerMigrationTarget;
 	source?: EulerMigrationSource;
 	externalTarget?: ExternalMigrationTarget;
+	authorizationRequest?: MigrationAuthorizationRequest;
 	authorization?: SignedMigrationAuthorization;
 	collateralSwapQuote?: SwapQuote;
 	debtSwapQuote?: SwapQuote;

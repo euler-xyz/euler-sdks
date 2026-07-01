@@ -217,9 +217,12 @@ export class PositionMigrationService implements IPositionMigrationService {
 
 		const connector = this.getConnector(args.connectorId);
 		const position = await this.resolvePosition(args);
-		const authorizationRequest = connector.getAuthorization
-			? await connector.getAuthorization({ ...args, position })
-			: undefined;
+		const authorizationRequest =
+			args.authorization?.request ??
+			args.authorizationRequest ??
+			(connector.getAuthorization
+				? await connector.getAuthorization({ ...args, position })
+				: undefined);
 		const simulationAuthorization = authorizationRequest
 			? this.getSimulationAuthorization(authorizationRequest)
 			: undefined;
