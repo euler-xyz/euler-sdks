@@ -9,6 +9,7 @@ import {
 	type Hex,
 } from "viem";
 import { test } from "vitest";
+import { Account } from "../src/entities/Account.js";
 import { swapperAbi } from "../src/services/executionService/abis/swapperAbi.js";
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
 import {
@@ -19,7 +20,10 @@ import {
 import { aaveV3PoolAbi } from "../src/services/positionMigrationService/connectors/aave/abis/aaveV3Abi.js";
 import type { AaveMigrationPosition } from "../src/services/positionMigrationService/connectors/aave/aaveConnectorTypes.js";
 import type { EVCBatchItem } from "../src/services/executionService/index.js";
-import type { SwapQuote } from "../src/services/swapService/index.js";
+import {
+	SwapVerificationType,
+	type SwapQuote,
+} from "../src/services/swapService/index.js";
 
 const CHAIN_ID = 8453;
 const OWNER = "0x0000000000000000000000000000000000000a01" as const;
@@ -139,6 +143,51 @@ function createAavePosition(): AaveMigrationPosition {
 	};
 }
 
+function createSourceAccount(args: {
+	debtAmount: bigint;
+	collateralAssets: bigint;
+	collateralShares: bigint;
+}) {
+	return new Account({
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		subAccounts: {
+			[getAddress(EULER_ACCOUNT)]: {
+				timestamp: 0,
+				account: getAddress(EULER_ACCOUNT),
+				owner: getAddress(OWNER),
+				lastAccountStatusCheckTimestamp: 0,
+				enabledControllers: [getAddress(DEBT_VAULT)],
+				enabledCollaterals: [getAddress(COLLATERAL_VAULT)],
+				positions: [
+					{
+						account: getAddress(EULER_ACCOUNT),
+						vaultAddress: getAddress(DEBT_VAULT),
+						asset: getAddress(DEBT_ASSET),
+						shares: 0n,
+						assets: 0n,
+						borrowed: args.debtAmount,
+						isController: true,
+						isCollateral: false,
+						balanceForwarderEnabled: false,
+					},
+					{
+						account: getAddress(EULER_ACCOUNT),
+						vaultAddress: getAddress(COLLATERAL_VAULT),
+						asset: getAddress(COLLATERAL_ASSET),
+						shares: args.collateralShares,
+						assets: args.collateralAssets,
+						borrowed: 0n,
+						isController: false,
+						isCollateral: true,
+						balanceForwarderEnabled: false,
+					},
+				],
+			},
+		},
+	});
+}
+
 function applyBuffer(amount: bigint, bufferBps: bigint): bigint {
 	return (amount * (BPS_SCALE + bufferBps) + BPS_SCALE - 1n) / BPS_SCALE;
 }
@@ -245,6 +294,100 @@ function createWrappedDebtSwapQuote(): SwapQuote {
 	} as SwapQuote;
 }
 
+function createCollateralSwapQuote(
+	args: {
+		verifierAddress?: Address;
+		verifierVault?: Address;
+		verifierAccount?: Address;
+		accountOut?: Address;
+		verifyAccountField?: Address;
+		verifierData?: Hex;
+		deadline?: bigint;
+	} = {},
+): SwapQuote {
+	const deadline = args.deadline ?? 0n;
+	const amountOut = "2000";
+	const amountOutMin = "1990";
+	const verifierVault = args.verifierVault ?? COLLATERAL_VAULT;
+	const verifierAccount = args.verifierAccount ?? EULER_ACCOUNT;
+	const swapCall = encodeFunctionData({
+		abi: swapperAbi,
+		functionName: "swap",
+		args: [
+			{
+				handler: SWAPPER_HANDLER_GENERIC,
+				mode: 0n,
+				account: EULER_ACCOUNT,
+				tokenIn: COLLATERAL_ASSET,
+				tokenOut: TARGET_DEBT_ASSET,
+				vaultIn: COLLATERAL_VAULT,
+				accountIn: EULER_ACCOUNT,
+				receiver: SWAPPER,
+				amountOut: 0n,
+				data: encodeAbiParameters(GENERIC_HANDLER_DATA_ABI, [SWAPPER, "0x"]),
+			},
+		],
+	});
+
+	return {
+		amountIn: "1500",
+		amountInMax: "1500",
+		amountOut,
+		amountOutMin,
+		accountIn: EULER_ACCOUNT,
+		accountOut: args.accountOut ?? EULER_ACCOUNT,
+		vaultIn: COLLATERAL_VAULT,
+		receiver: COLLATERAL_VAULT,
+		tokenIn: {
+			address: COLLATERAL_ASSET,
+			chainId: CHAIN_ID,
+			decimals: 18,
+			logoURI: "",
+			name: "Aave Collateral",
+			symbol: "ACOL",
+		},
+		tokenOut: {
+			address: TARGET_DEBT_ASSET,
+			chainId: CHAIN_ID,
+			decimals: 18,
+			logoURI: "",
+			name: "Target Collateral",
+			symbol: "TCOL",
+		},
+		slippage: 0.5,
+		swap: {
+			swapperAddress: SWAPPER,
+			swapperData: encodeFunctionData({
+				abi: swapperAbi,
+				functionName: "multicall",
+				args: [[swapCall]],
+			}),
+			multicallItems: [{ functionName: "swap", args: [], data: swapCall }],
+		},
+		verify: {
+			verifierAddress: args.verifierAddress ?? SWAP_VERIFIER,
+			verifierData:
+				args.verifierData ??
+				encodeFunctionData({
+					abi: swapVerifierAbi,
+					functionName: "verifyAmountMinAndSkim",
+					args: [
+						verifierVault,
+						verifierAccount,
+						BigInt(amountOutMin),
+						deadline,
+					],
+				}),
+			type: SwapVerificationType.SkimMin,
+			vault: verifierVault,
+			account: args.verifyAccountField ?? verifierAccount,
+			amount: amountOutMin,
+			deadline: Number(deadline),
+		},
+		route: [{ providerName: "test" }],
+	} as SwapQuote;
+}
+
 function containsAavePoolCall(item: EVCBatchItem, functionName: "repay" | "withdraw") {
 	return decodeSwapperMulticall(item).some((call) => {
 		const decoded = decodeFunctionData({ abi: swapperAbi, data: call });
@@ -260,6 +403,50 @@ function containsAavePoolCall(item: EVCBatchItem, functionName: "repay" | "withd
 			data: payload,
 		}).functionName === functionName;
 	});
+}
+
+function getAaveRepayAmount(item: EVCBatchItem): bigint | undefined {
+	for (const call of decodeSwapperMulticall(item)) {
+		const decoded = decodeFunctionData({ abi: swapperAbi, data: call });
+		if (decoded.functionName !== "swap") continue;
+		const [params] = decoded.args;
+		const [target, payload] = decodeAbiParameters(
+			GENERIC_HANDLER_DATA_ABI,
+			params.data,
+		) as [Address, Hex];
+		if (getAddress(target) !== getAddress(AAVE_POOL)) continue;
+		const aave = decodeFunctionData({ abi: aaveV3PoolAbi, data: payload });
+		if (aave.functionName !== "repay") continue;
+		const [, amount] = aave.args as [Address, bigint, bigint, Address];
+		return amount;
+	}
+	return undefined;
+}
+
+function getAaveSupplyAmount(item: EVCBatchItem): bigint | undefined {
+	for (const call of decodeSwapperMulticall(item)) {
+		const decoded = decodeFunctionData({ abi: swapperAbi, data: call });
+		if (decoded.functionName !== "swap") continue;
+		const [params] = decoded.args;
+		const [target, payload] = decodeAbiParameters(
+			GENERIC_HANDLER_DATA_ABI,
+			params.data,
+		) as [Address, Hex];
+		if (getAddress(target) !== getAddress(AAVE_POOL)) continue;
+		const aave = decodeFunctionData({ abi: aaveV3PoolAbi, data: payload });
+		if (aave.functionName !== "supply") continue;
+		const [, amount] = aave.args as [Address, bigint, Address, number];
+		return amount;
+	}
+	return undefined;
+}
+
+function getAaveBorrowAmount(item: EVCBatchItem): bigint | undefined {
+	if (getAddress(item.targetContract) !== getAddress(SWAP_VERIFIER)) return undefined;
+	const decoded = decodeFunctionData({ abi: swapVerifierAbi, data: item.data });
+	if (decoded.functionName !== "aaveBorrowForSender") return undefined;
+	const [, , amount] = decoded.args as [Address, Address, bigint, Address];
+	return amount;
 }
 
 function isATokenTransferFromSender(item: EVCBatchItem) {
@@ -343,7 +530,6 @@ test("Aave inbound migration repays Aave debt before transferring aToken collate
 			eulerAccount: EULER_ACCOUNT,
 			borrowVault: DEBT_VAULT,
 			collateralVault: COLLATERAL_VAULT,
-			repayExcessDebt: false,
 		},
 	});
 
@@ -382,7 +568,6 @@ test("Aave inbound no-swap migration buffers the aToken transfer cap without rai
 			eulerAccount: EULER_ACCOUNT,
 			borrowVault: DEBT_VAULT,
 			collateralVault: COLLATERAL_VAULT,
-			repayExcessDebt: false,
 		},
 		deadline: 123n,
 	});
@@ -401,7 +586,6 @@ test("Aave inbound no-swap migration buffers the aToken transfer cap without rai
 			eulerAccount: EULER_ACCOUNT,
 			borrowVault: DEBT_VAULT,
 			collateralVault: COLLATERAL_VAULT,
-			repayExcessDebt: false,
 		},
 		deadline: 123n,
 	});
@@ -441,7 +625,6 @@ test("Aave inbound migration does not use target minimum as the aToken transfer 
 			borrowVault: DEBT_VAULT,
 			collateralVault: COLLATERAL_VAULT,
 			minCollateralAssets,
-			repayExcessDebt: false,
 		},
 		deadline: 123n,
 	});
@@ -461,7 +644,6 @@ test("Aave inbound migration does not use target minimum as the aToken transfer 
 			borrowVault: DEBT_VAULT,
 			collateralVault: COLLATERAL_VAULT,
 			minCollateralAssets,
-			repayExcessDebt: false,
 		},
 		deadline: 123n,
 	});
@@ -479,12 +661,18 @@ test("Aave inbound migration does not use target minimum as the aToken transfer 
 
 test("Aave outgoing migration verifies the Euler source debt is fully repaid", async () => {
 	const connector = createConnector({ allowance: 20_000n });
+	const account = createSourceAccount({
+		debtAmount: 1_000n,
+		collateralAssets: 2_000n,
+		collateralShares: 2_000n,
+	});
 
 	const items = await connector.buildMigrationBatch({
 		direction: "euler-to-external",
 		chainId: CHAIN_ID,
 		owner: OWNER,
 		position: createAavePosition(),
+		account,
 		source: {
 			eulerAccount: EULER_ACCOUNT,
 			borrowVault: DEBT_VAULT,
@@ -503,6 +691,86 @@ test("Aave outgoing migration verifies the Euler source debt is fully repaid", a
 		amountMax: 0n,
 		deadline: 123n,
 	});
+});
+
+test("Aave outgoing migration reads source amounts from the supplied account snapshot", async () => {
+	const connector = createConnector();
+	const account = createSourceAccount({
+		debtAmount: 1_500n,
+		collateralAssets: 4_000n,
+		collateralShares: 3_900n,
+	});
+
+	const items = await connector.buildMigrationBatch({
+		direction: "euler-to-external",
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createAavePosition(),
+		account,
+		source: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+	});
+
+	const supplyAmount = items
+		.map((item) => getAaveSupplyAmount(item))
+		.find((amount) => amount !== undefined);
+	const borrowAmount = items
+		.map((item) => getAaveBorrowAmount(item))
+		.find((amount) => amount !== undefined);
+
+	assert.equal(supplyAmount, 4_000n);
+	assert.equal(borrowAmount, applyBuffer(1_500n, 1n));
+});
+
+test("Aave outgoing migration requires source amounts or an account snapshot", async () => {
+	const connector = createConnector({ allowance: 20_000n });
+
+	await assert.rejects(
+		connector.buildMigrationBatch({
+			direction: "euler-to-external",
+			chainId: CHAIN_ID,
+			owner: OWNER,
+			position: createAavePosition(),
+			source: {
+				eulerAccount: EULER_ACCOUNT,
+				borrowVault: DEBT_VAULT,
+				collateralVault: COLLATERAL_VAULT,
+			},
+		}),
+		/source debt amount requires source\.debtAmount or an account snapshot/,
+	);
+});
+
+test("Aave outgoing authorization reads borrow amount from the supplied account snapshot", async () => {
+	const connector = createConnector({ allowance: 0n });
+	const account = createSourceAccount({
+		debtAmount: 1_500n,
+		collateralAssets: 4_000n,
+		collateralShares: 3_900n,
+	});
+
+	const authorization = await connector.getAuthorization({
+		direction: "euler-to-external",
+		connectorId: AAVE_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createAavePosition(),
+		account,
+		source: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+	});
+
+	assert.equal(authorization?.authorizationType, "variableDebtDelegation");
+	assert.equal(
+		authorization?.typedData.message.value,
+		applyBuffer(1_500n, 1n),
+	);
 });
 
 test("Aave outgoing migration rejects supplied swap quotes", async () => {
@@ -540,7 +808,6 @@ test("Aave inbound debt swap strips Euler repay wrapper calls before Aave repay"
 			eulerAccount: EULER_ACCOUNT,
 			borrowVault: DEBT_VAULT,
 			collateralVault: COLLATERAL_VAULT,
-			repayExcessDebt: false,
 		},
 		debtSwapQuote: createWrappedDebtSwapQuote(),
 	});
@@ -565,6 +832,30 @@ test("Aave inbound debt swap strips Euler repay wrapper calls before Aave repay"
 	assert.equal(getAddress(to), getAddress(OWNER));
 });
 
+test("Aave inbound debt swap repays the buffered source debt amount", async () => {
+	const connector = createConnector();
+	const position = createAavePosition();
+
+	const items = await connector.buildMigrationBatch({
+		direction: "external-to-euler",
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		debtSwapQuote: createWrappedDebtSwapQuote(),
+	});
+
+	const repayAmount = items
+		.map((item) => getAaveRepayAmount(item))
+		.find((amount) => amount !== undefined);
+
+	assert.equal(repayAmount, applyBuffer(position.raw.variableDebt, 100n));
+});
+
 test("Aave inbound debt swap repays leftover input token", async () => {
 	const connector = createConnector();
 
@@ -579,7 +870,7 @@ test("Aave inbound debt swap repays leftover input token", async () => {
 			collateralVault: COLLATERAL_VAULT,
 		},
 		debtSwapQuote: createWrappedDebtSwapQuote(),
-		collateralSwapQuote: createWrappedDebtSwapQuote(),
+		collateralSwapQuote: createCollateralSwapQuote(),
 	});
 
 	const calls = items.flatMap(decodeSwapperMulticall);
@@ -598,4 +889,33 @@ test("Aave inbound debt swap repays leftover input token", async () => {
 	assert.equal(getAddress(vault), getAddress(DEBT_VAULT));
 	assert.equal(amount, 1250n);
 	assert.equal(getAddress(account), getAddress(EULER_ACCOUNT));
+});
+
+test("Aave inbound collateral swap validates verifier calldata against the migration target", async () => {
+	const connector = createConnector();
+	const tamperedVerifierData = encodeFunctionData({
+		abi: swapVerifierAbi,
+		functionName: "verifyAmountMinAndSkim",
+		args: [OWNER, EULER_ACCOUNT, 1990n, 123n],
+	});
+
+	await assert.rejects(
+		connector.buildMigrationBatch({
+			direction: "external-to-euler",
+			chainId: CHAIN_ID,
+			owner: OWNER,
+			position: createAavePosition(),
+			target: {
+				eulerAccount: EULER_ACCOUNT,
+				borrowVault: DEBT_VAULT,
+				collateralVault: COLLATERAL_VAULT,
+			},
+			collateralSwapQuote: createCollateralSwapQuote({
+				verifierData: tamperedVerifierData,
+				deadline: 123n,
+			}),
+			deadline: 123n,
+		}),
+		/SwapVerifier data mismatch/,
+	);
 });

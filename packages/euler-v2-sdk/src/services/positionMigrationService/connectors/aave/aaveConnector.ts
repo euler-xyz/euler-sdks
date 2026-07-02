@@ -15,7 +15,11 @@ import {
 	swapVerifierAbi,
 } from "../../../executionService/index.js";
 import type { IProviderService } from "../../../providerService/index.js";
-import type { SwapQuote } from "../../../swapService/index.js";
+import {
+	SwapVerificationType,
+	type SwapQuote,
+} from "../../../swapService/index.js";
+import { validateSwapQuoteVerifierData } from "../../../swapService/swapVerification.js";
 import type {
 	BuildConnectorMigrationBatchArgs,
 	EulerMigrationSource,
@@ -29,6 +33,7 @@ import type {
 	PositionMigrationConnector,
 	SignedMigrationAuthorization,
 } from "../../positionMigrationServiceTypes.js";
+import type { Account, IHasVaultAddress } from "../../../../entities/Account.js";
 import {
 	aaveATokenAbi,
 	aaveDebtTokenAbi,
@@ -484,8 +489,8 @@ export class AavePositionMigrationConnector
 		const source = assertEulerSource(args.source);
 		const swapVerifier = this.getSwapVerifierAddress(args.chainId);
 		const sourceAmounts = await this.resolveEulerSourceAmounts(
-			args.chainId,
 			source,
+			args.account,
 		);
 		const value =
 			args.externalTarget?.borrowAmount ??
@@ -813,8 +818,7 @@ export class AavePositionMigrationConnector
 		const swapVerifier = this.getSwapVerifierAddress(args.chainId);
 		const aToken = args.position.raw.collateralReserve.aTokenAddress;
 		const collateralAmount = args.position.raw.aTokenBalance;
-		const collateralMinAmount =
-			target.minCollateralAssets ?? collateralAmount;
+		const collateralMinAmount = target.minCollateralAssets ?? collateralAmount;
 		const collateralTransferMaxAmount = applyBuffer(
 			collateralAmount,
 			DEFAULT_ATOKEN_TRANSFER_BUFFER_BPS,
@@ -837,7 +841,7 @@ export class AavePositionMigrationConnector
 				? getSwapQuoteInputAmount(debtSwapQuote)
 				: baseDebtRepayAmount);
 		const externalDebtRepayAmount = debtSwapQuote
-			? getSwapQuoteOutputAmount(debtSwapQuote)
+			? baseDebtRepayAmount
 			: borrowAmount;
 
 		if (stableDebt > 0n) {
@@ -993,7 +997,7 @@ export class AavePositionMigrationConnector
 		});
 
 		const postDepositRepayCall =
-			hasDebt && targetBorrowVault && (target.repayExcessDebt ?? true)
+			hasDebt && targetBorrowVault
 				? encodeFunctionData({
 						abi: swapperAbi,
 						functionName: "repay",
@@ -1042,7 +1046,16 @@ export class AavePositionMigrationConnector
 		});
 
 		if (collateralSwapQuote) {
-			items.push(encodeSwapQuoteVerificationItem(collateralSwapQuote));
+			items.push(
+				encodeSwapQuoteVerificationItem({
+					quote: collateralSwapQuote,
+					swapVerifier,
+					vault: targetCollateralVault,
+					account: eulerAccount,
+					deadline:
+						args.deadline ?? BigInt(collateralSwapQuote.verify.deadline ?? 0),
+				}),
+			);
 		} else {
 			items.push(
 				encodeVerifyAmountMinAndDepositItem({
@@ -1081,17 +1094,13 @@ export class AavePositionMigrationConnector
 		const pool = args.position.raw.pool;
 		const swapper = this.getSwapperAddress(args.chainId, source.swapper);
 		const sourceAmounts = await this.resolveEulerSourceAmounts(
-			args.chainId,
 			source,
+			args.account,
 		);
 		const externalTarget = args.externalTarget ?? {};
 		const collateralAmount =
 			externalTarget.collateralAmount ?? sourceAmounts.collateralAmount;
 		const sourceCollateralAmount = collateralAmount;
-		const redeemCollateralShares =
-			externalTarget.collateralAmount === undefined
-				? sourceAmounts.collateralShares
-				: undefined;
 		const aaveBorrowAmount =
 			externalTarget.borrowAmount ??
 			applyBuffer(
@@ -1155,10 +1164,8 @@ export class AavePositionMigrationConnector
 			value: 0n,
 			data: encodeFunctionData({
 				abi: eVaultAbi,
-				functionName: redeemCollateralShares ? "redeem" : "withdraw",
-				args: redeemCollateralShares
-					? [redeemCollateralShares, swapper, eulerAccount]
-					: [sourceCollateralAmount, swapper, eulerAccount],
+				functionName: "withdraw",
+				args: [sourceCollateralAmount, swapper, eulerAccount],
 			}),
 		});
 
@@ -1209,32 +1216,25 @@ export class AavePositionMigrationConnector
 			encodeFunctionData({
 				abi: swapperAbi,
 				functionName: "repay",
-				args: [
-					debtAsset,
-					sourceBorrowVault,
-					eulerRepayAmount,
-					eulerAccount,
-				],
+				args: [debtAsset, sourceBorrowVault, eulerRepayAmount, eulerAccount],
 			}),
 		];
-		if (externalTarget.sweepExcessDebtAsset ?? true) {
-			postBorrowCalls.push(
-				encodeFunctionData({
-					abi: swapperAbi,
-					functionName: "sweep",
-					args: [debtAsset, 0n, owner],
-				}),
-			);
-			// Return collateral remainders from yield-bearing source-vault share drift
-			// to the owner rather than stranding them.
-			postBorrowCalls.push(
-				encodeFunctionData({
-					abi: swapperAbi,
-					functionName: "sweep",
-					args: [collateralAsset, 0n, owner],
-				}),
-			);
-		}
+		postBorrowCalls.push(
+			encodeFunctionData({
+				abi: swapperAbi,
+				functionName: "sweep",
+				args: [debtAsset, 0n, owner],
+			}),
+		);
+		// Return collateral remainders from yield-bearing source-vault share drift
+		// to the owner rather than stranding them.
+		postBorrowCalls.push(
+			encodeFunctionData({
+				abi: swapperAbi,
+				functionName: "sweep",
+				args: [collateralAsset, 0n, owner],
+			}),
+		);
 
 		items.push({
 			targetContract: swapper,
@@ -1540,59 +1540,55 @@ export class AavePositionMigrationConnector
 		return getAddress(swapVerifier);
 	}
 
-	private async resolveEulerSourceAmounts(
-		chainId: number,
+	private resolveEulerSourceAmounts(
 		source: EulerMigrationSource,
-	): Promise<{
+		account?: Account<IHasVaultAddress>,
+	): {
 		debtAmount: bigint;
 		collateralAmount: bigint;
-		collateralShares?: bigint;
-	}> {
-		const provider = this.providerService.getProvider(chainId);
+	} {
 		const eulerAccount = getAddress(source.eulerAccount);
+		const borrowVault = getAddress(source.borrowVault);
+		const collateralVault = getAddress(source.collateralVault);
+		const subAccount = account?.getSubAccount(eulerAccount);
+		const borrowPosition = subAccount?.positions.find(
+			(position) => getAddress(position.vaultAddress) === borrowVault,
+		);
+		const collateralPosition = subAccount?.positions.find(
+			(position) => getAddress(position.vaultAddress) === collateralVault,
+		);
 		const debtAmount =
 			source.debtAmount ??
-			((await provider.readContract({
-				address: getAddress(source.borrowVault),
-				abi: eVaultAbi,
-				functionName: "debtOf",
-				args: [eulerAccount],
-			})) as bigint);
+			borrowPosition?.borrowed;
+		if (debtAmount === undefined) {
+			throw new Error(
+				"Euler source debt amount requires source.debtAmount or an account snapshot with the source borrow position",
+			);
+		}
 
 		if (source.collateralAmount !== undefined) {
 			return {
 				debtAmount,
 				collateralAmount: source.collateralAmount,
-				collateralShares: source.collateralShares,
 			};
 		}
 
-		const collateralShares =
-			source.collateralShares ??
-			((await provider.readContract({
-				address: getAddress(source.collateralVault),
-				abi: eVaultAbi,
-				functionName: "balanceOf",
-				args: [eulerAccount],
-			})) as bigint);
-		const collateralAmount = (await provider.readContract({
-			address: getAddress(source.collateralVault),
-			abi: eVaultAbi,
-			functionName: "convertToAssets",
-			args: [collateralShares],
-		})) as bigint;
+		if (!collateralPosition) {
+			throw new Error(
+				"Euler source collateral amount requires source.collateralAmount or an account snapshot with the source collateral position",
+			);
+		}
 
-		return { debtAmount, collateralAmount, collateralShares };
+		return {
+			debtAmount,
+			collateralAmount: collateralPosition.assets,
+		};
 	}
 }
 
 function getSwapQuoteInputAmount(quote: SwapQuote): bigint {
 	const amountInMax = BigInt(quote.amountInMax || 0);
 	return amountInMax > 0n ? amountInMax : BigInt(quote.amountIn);
-}
-
-function getSwapQuoteOutputAmount(quote: SwapQuote): bigint {
-	return BigInt(quote.amountOutMin || quote.amountOut);
 }
 
 function assertSwapQuoteUsesSwapper(
@@ -1607,12 +1603,37 @@ function assertSwapQuoteUsesSwapper(
 	);
 }
 
-function encodeSwapQuoteVerificationItem(quote: SwapQuote): EVCBatchItem {
+function encodeSwapQuoteVerificationItem(args: {
+	quote: SwapQuote;
+	swapVerifier: Address;
+	vault: Address;
+	account: Address;
+	deadline: bigint;
+}): EVCBatchItem {
+	validateSwapQuoteVerifierData({
+		quote: args.quote,
+		expectedVerifierAddress: args.swapVerifier,
+		verification: {
+			type: SwapVerificationType.SkimMin,
+			vault: args.vault,
+			account: args.account,
+			deadline: args.deadline,
+		},
+	});
+	const onBehalfOfAccount = getAddress(
+		args.quote.verify.account || args.quote.accountOut,
+	);
+	assertSameAddress(
+		onBehalfOfAccount,
+		args.account,
+		"Aave collateral migration verifier account must match the Euler account",
+	);
+
 	return {
-		targetContract: quote.verify.verifierAddress,
-		onBehalfOfAccount: getAddress(quote.verify.account || quote.accountOut),
+		targetContract: getAddress(args.quote.verify.verifierAddress),
+		onBehalfOfAccount,
 		value: 0n,
-		data: quote.verify.verifierData,
+		data: args.quote.verify.verifierData,
 	};
 }
 

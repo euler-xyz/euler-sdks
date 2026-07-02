@@ -98,7 +98,8 @@ export type MigrationAuthorizationRequest =
 	| TransactionMigrationAuthorizationRequest;
 
 export type SignedMigrationAuthorization<
-	TRequest extends MigrationAuthorizationRequest = MigrationAuthorizationRequest,
+	TRequest extends
+		MigrationAuthorizationRequest = MigrationAuthorizationRequest,
 > = {
 	request: TRequest;
 	signature?: Hex;
@@ -116,7 +117,6 @@ export type EulerMigrationTarget = {
 	minCollateralAssets?: bigint;
 	enableController?: boolean;
 	enableCollateral?: boolean;
-	repayExcessDebt?: boolean;
 };
 
 export type EulerMigrationSource = {
@@ -126,7 +126,6 @@ export type EulerMigrationSource = {
 	swapper?: Address;
 	debtAmount?: bigint;
 	collateralAmount?: bigint;
-	collateralShares?: bigint;
 };
 
 export type ExternalMigrationTarget<TPositionRef = unknown> = {
@@ -135,7 +134,6 @@ export type ExternalMigrationTarget<TPositionRef = unknown> = {
 	collateralAmount?: bigint;
 	repayAmount?: bigint;
 	interestBufferBps?: bigint;
-	sweepExcessDebtAsset?: boolean;
 };
 
 export type ListMigrationPositionsArgs<TPositionRef = unknown> = {
@@ -175,6 +173,8 @@ export type GetMigrationAuthorizationArgs<
 	externalTarget?: ExternalMigrationTarget;
 	deadline?: bigint;
 	removeAuthorizationAfterMigration?: boolean;
+	/** Account snapshot used when authorization amounts depend on Euler source state. */
+	account?: Account<IHasVaultAddress>;
 };
 
 export type BuildMigrationBatchArgs<
@@ -216,11 +216,28 @@ export type PlanMigrationArgs<
 export type PlanMigrationSimulationResult = {
 	plan: TransactionPlan;
 	stateOverrides: StateOverride;
+	/**
+	 * The full migration plan including authorization items carrying placeholder
+	 * (stub) signatures — or the caller-provided signed authorization when one
+	 * was passed. Suitable for calldata preview/display without a second
+	 * `planMigration` round trip; the batch is built exactly once for both plans.
+	 */
+	previewPlan: TransactionPlan;
+	/**
+	 * The authorization request that must be signed at execution time, if any.
+	 * Resolved internally when the caller did not provide one, so consumers can
+	 * reuse it (e.g. for signature-step display) without a separate
+	 * `getAuthorization` call.
+	 */
+	authorizationRequest?: MigrationAuthorizationRequest;
 };
 
 export type BuildConnectorMigrationBatchArgs<
 	TPosition extends MigrationPosition = MigrationPosition,
-> = Omit<BuildMigrationBatchArgs<TPosition>, "connectorId" | "validateEulerVaults"> & {
+> = Omit<
+	BuildMigrationBatchArgs<TPosition>,
+	"connectorId" | "validateEulerVaults"
+> & {
 	position: TPosition;
 };
 
@@ -259,7 +276,10 @@ export interface IPositionMigrationService {
 	getConnectors(): PositionMigrationConnectorMetadata[];
 	registerConnector(connector: PositionMigrationConnector): void;
 	getConnector(connectorId: string): PositionMigrationConnector;
-	getConnectorProtocolAddress(connectorId: string, chainId: number): Address | undefined;
+	getConnectorProtocolAddress(
+		connectorId: string,
+		chainId: number,
+	): Address | undefined;
 	listPositions(args: ListMigrationPositionsArgs): Promise<MigrationPosition[]>;
 	listTargets(args: ListMigrationTargetsArgs): Promise<MigrationTarget[]>;
 	getPosition(args: GetMigrationPositionArgs): Promise<MigrationPosition>;

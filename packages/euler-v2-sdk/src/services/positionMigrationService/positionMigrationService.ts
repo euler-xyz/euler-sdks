@@ -230,7 +230,11 @@ export class PositionMigrationService implements IPositionMigrationService {
 			{
 				...args,
 				authorization:
-					simulationAuthorization?.authorization ?? args.authorization,
+					simulationAuthorization?.authorization ??
+					args.authorization ??
+					(authorizationRequest
+						? this.getStubAuthorization(authorizationRequest)
+						: undefined),
 			},
 			connector,
 			position,
@@ -241,13 +245,23 @@ export class PositionMigrationService implements IPositionMigrationService {
 						!isAuthorizationItem(item, simulationAuthorization.skippedCall!),
 				)
 			: items;
+		const operationName = args.operationName ?? DEFAULT_OPERATION_NAME;
 
 		return {
 			plan: this.executionService.convertBatchItemsToPlan(
 				simulationItems,
-				args.operationName ?? DEFAULT_OPERATION_NAME,
+				operationName,
 			),
 			stateOverrides: simulationAuthorization?.stateOverrides ?? [],
+			// The unfiltered items already carry stub-signed (or caller-signed)
+			// authorization calls — exactly what a calldata preview built via
+			// `planMigration` with a placeholder authorization would contain.
+			// Reusing them avoids a second position-resolve/validate/batch-build.
+			previewPlan: this.executionService.convertBatchItemsToPlan(
+				items,
+				operationName,
+			),
+			...(authorizationRequest ? { authorizationRequest } : {}),
 		};
 	}
 

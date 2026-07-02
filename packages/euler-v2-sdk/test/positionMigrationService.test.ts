@@ -228,6 +228,7 @@ test("planMigrationSimulation reuses a provided authorization request", async ()
 	assert.equal(getAuthorizationCalls, 0);
 	assert.equal(builtAuthorization?.request, morphoAuthorizationRequest);
 	assert.equal(result.stateOverrides.length, 1);
+	assert.equal(result.authorizationRequest, morphoAuthorizationRequest);
 });
 
 test("planMigrationSimulation reuses a provided signed authorization request", async () => {
@@ -265,5 +266,65 @@ test("planMigrationSimulation reuses a provided signed authorization request", a
 
 	assert.equal(getAuthorizationCalls, 0);
 	assert.equal(builtAuthorization?.request, morphoAuthorizationRequest);
+	assert.equal(result.stateOverrides.length, 1);
+});
+
+test("planMigrationSimulation returns a stub-signed preview plan and the resolved authorization request", async () => {
+	const morphoContract = getAddress(
+		"0x0000000000000000000000000000000000002001",
+	);
+	const authItem = {
+		targetContract: morphoContract,
+		data: "0x8069218f00",
+	} as unknown as EVCBatchItem;
+	const otherItem = {
+		targetContract: getAddress("0x0000000000000000000000000000000000004001"),
+		data: "0xdeadbeef",
+	} as unknown as EVCBatchItem;
+	let builtAuthorization: SignedMigrationAuthorization | undefined;
+	const connector: PositionMigrationConnector = {
+		id: "morpho",
+		protocol: "Morpho",
+		name: "Morpho",
+		getPosition: async () => migrationPosition,
+		getAuthorization: async () => morphoAuthorizationRequest,
+		buildMigrationBatch: (buildArgs) => {
+			builtAuthorization = buildArgs.authorization;
+			return [authItem, otherItem];
+		},
+	};
+	const service = new PositionMigrationService(
+		{} as never,
+		{
+			convertBatchItemsToPlan: (items: EVCBatchItem[]) => items,
+		} as never,
+		{ includeDefaultConnectors: false, connectors: [connector] },
+	);
+
+	const result = await service.planMigrationSimulation({
+		direction: "external-to-euler",
+		connectorId: "morpho",
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		position: migrationPosition,
+		target: {
+			eulerAccount: getAddress(OWNER),
+			collateralVault: "0x0000000000000000000000000000000000003001",
+		},
+		validateEulerVaults: false,
+	});
+
+	// The internally resolved request is surfaced to the caller.
+	assert.equal(result.authorizationRequest, morphoAuthorizationRequest);
+	// The single batch build ran with a stub-signed authorization.
+	assert.equal(builtAuthorization?.request, morphoAuthorizationRequest);
+	assert.equal(builtAuthorization?.signature, `0x${"00".repeat(65)}`);
+	// Preview plan keeps the authorization item; simulation plan filters it
+	// and relies on the state override instead.
+	assert.deepEqual(result.previewPlan as unknown as EVCBatchItem[], [
+		authItem,
+		otherItem,
+	]);
+	assert.deepEqual(result.plan as unknown as EVCBatchItem[], [otherItem]);
 	assert.equal(result.stateOverrides.length, 1);
 });

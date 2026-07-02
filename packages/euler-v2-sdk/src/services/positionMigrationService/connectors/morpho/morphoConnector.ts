@@ -16,7 +16,11 @@ import {
 	swapVerifierAbi,
 } from "../../../executionService/index.js";
 import type { IProviderService } from "../../../providerService/index.js";
-import type { SwapQuote } from "../../../swapService/index.js";
+import {
+	SwapVerificationType,
+	type SwapQuote,
+} from "../../../swapService/index.js";
+import { validateSwapQuoteVerifierData } from "../../../swapService/swapVerification.js";
 import type {
 	BuildConnectorMigrationBatchArgs,
 	EulerMigrationSource,
@@ -30,6 +34,7 @@ import type {
 	PositionMigrationConnector,
 	SignedMigrationAuthorization,
 } from "../../positionMigrationServiceTypes.js";
+import type { Account, IHasVaultAddress } from "../../../../entities/Account.js";
 import { morphoBlueAbi } from "./abis/morphoBlueAbi.js";
 import type {
 	MorphoAuthorization,
@@ -617,7 +622,7 @@ export class MorphoPositionMigrationConnector
 		// Multicall #2: run the collateral swap, if present, and repay any excess
 		// debt. No-swap collateral deposits are handled by SwapVerifier below.
 		const postDepositRepayCall =
-			hasDebt && targetBorrowVault && (target.repayExcessDebt ?? true)
+			hasDebt && targetBorrowVault
 				? encodeFunctionData({
 						abi: swapperAbi,
 						functionName: "repay",
@@ -651,7 +656,16 @@ export class MorphoPositionMigrationConnector
 		}
 
 		if (collateralSwapQuote) {
-			items.push(encodeSwapQuoteVerificationItem(collateralSwapQuote));
+			items.push(
+				encodeSwapQuoteVerificationItem({
+					quote: collateralSwapQuote,
+					swapVerifier,
+					vault: targetCollateralVault,
+					account: eulerAccount,
+					deadline:
+						args.deadline ?? BigInt(collateralSwapQuote.verify.deadline ?? 0),
+				}),
+			);
 		} else {
 			items.push(
 				encodeVerifyAmountMinAndDepositItem({
@@ -690,7 +704,9 @@ export class MorphoPositionMigrationConnector
 		args: BuildConnectorMigrationBatchArgs<MorphoMigrationPosition>,
 	): Promise<EVCBatchItem[]> {
 		if (args.collateralSwapQuote || args.debtSwapQuote) {
-			throw new Error("Morpho Euler to Morpho migration does not support swaps");
+			throw new Error(
+				"Morpho Euler to Morpho migration does not support swaps",
+			);
 		}
 		const source = assertEulerSource(args.source);
 		const owner = getAddress(args.owner);
@@ -704,17 +720,13 @@ export class MorphoPositionMigrationConnector
 		const verifierDeadline =
 			args.deadline ?? BigInt(Math.floor(Date.now() / 1000) + 60 * 60);
 		const sourceAmounts = await this.resolveEulerSourceAmounts(
-			args.chainId,
 			source,
+			args.account,
 		);
 		const externalTarget = args.externalTarget ?? {};
 		const collateralAmount =
 			externalTarget.collateralAmount ?? sourceAmounts.collateralAmount;
 		const sourceCollateralAmount = collateralAmount;
-		const redeemCollateralShares =
-			externalTarget.collateralAmount === undefined
-				? sourceAmounts.collateralShares
-				: undefined;
 		const morphoBorrowAmount =
 			externalTarget.borrowAmount ??
 			applyBuffer(
@@ -763,10 +775,8 @@ export class MorphoPositionMigrationConnector
 			value: 0n,
 			data: encodeFunctionData({
 				abi: eVaultAbi,
-				functionName: redeemCollateralShares ? "redeem" : "withdraw",
-				args: redeemCollateralShares
-					? [redeemCollateralShares, swapper, eulerAccount]
-					: [sourceCollateralAmount, swapper, eulerAccount],
+				functionName: "withdraw",
+				args: [sourceCollateralAmount, swapper, eulerAccount],
 			}),
 		});
 
@@ -823,24 +833,22 @@ export class MorphoPositionMigrationConnector
 				],
 			}),
 		];
-		if (externalTarget.sweepExcessDebtAsset ?? true) {
-			postBorrowCalls.push(
-				encodeFunctionData({
-					abi: swapperAbi,
-					functionName: "sweep",
-					args: [marketParams.loanToken, 0n, owner],
-				}),
-			);
-			// Return collateral remainders from yield-bearing source-vault share drift
-			// to the owner rather than stranding them.
-			postBorrowCalls.push(
-				encodeFunctionData({
-					abi: swapperAbi,
-					functionName: "sweep",
-					args: [marketParams.collateralToken, 0n, owner],
-				}),
-			);
-		}
+		postBorrowCalls.push(
+			encodeFunctionData({
+				abi: swapperAbi,
+				functionName: "sweep",
+				args: [marketParams.loanToken, 0n, owner],
+			}),
+		);
+		// Return collateral remainders from yield-bearing source-vault share drift
+		// to the owner rather than stranding them.
+		postBorrowCalls.push(
+			encodeFunctionData({
+				abi: swapperAbi,
+				functionName: "sweep",
+				args: [marketParams.collateralToken, 0n, owner],
+			}),
+		);
 
 		items.push({
 			targetContract: swapper,
@@ -928,49 +936,49 @@ export class MorphoPositionMigrationConnector
 		return getAddress(swapVerifier);
 	}
 
-	private async resolveEulerSourceAmounts(
-		chainId: number,
+	private resolveEulerSourceAmounts(
 		source: EulerMigrationSource,
-	): Promise<{
+		account?: Account<IHasVaultAddress>,
+	): {
 		debtAmount: bigint;
 		collateralAmount: bigint;
-		collateralShares?: bigint;
-	}> {
-		const provider = this.providerService.getProvider(chainId);
+	} {
 		const eulerAccount = getAddress(source.eulerAccount);
+		const borrowVault = getAddress(source.borrowVault);
+		const collateralVault = getAddress(source.collateralVault);
+		const subAccount = account?.getSubAccount(eulerAccount);
+		const borrowPosition = subAccount?.positions.find(
+			(position) => getAddress(position.vaultAddress) === borrowVault,
+		);
+		const collateralPosition = subAccount?.positions.find(
+			(position) => getAddress(position.vaultAddress) === collateralVault,
+		);
 		const debtAmount =
 			source.debtAmount ??
-			((await provider.readContract({
-				address: getAddress(source.borrowVault),
-				abi: eVaultAbi,
-				functionName: "debtOf",
-				args: [eulerAccount],
-			})) as bigint);
+			borrowPosition?.borrowed;
+		if (debtAmount === undefined) {
+			throw new Error(
+				"Euler source debt amount requires source.debtAmount or an account snapshot with the source borrow position",
+			);
+		}
 
 		if (source.collateralAmount !== undefined) {
 			return {
 				debtAmount,
 				collateralAmount: source.collateralAmount,
-				collateralShares: source.collateralShares,
 			};
 		}
 
-		const collateralShares =
-			source.collateralShares ??
-			((await provider.readContract({
-				address: getAddress(source.collateralVault),
-				abi: eVaultAbi,
-				functionName: "balanceOf",
-				args: [eulerAccount],
-			})) as bigint);
-		const collateralAmount = (await provider.readContract({
-			address: getAddress(source.collateralVault),
-			abi: eVaultAbi,
-			functionName: "convertToAssets",
-			args: [collateralShares],
-		})) as bigint;
+		if (!collateralPosition) {
+			throw new Error(
+				"Euler source collateral amount requires source.collateralAmount or an account snapshot with the source collateral position",
+			);
+		}
 
-		return { debtAmount, collateralAmount, collateralShares };
+		return {
+			debtAmount,
+			collateralAmount: collateralPosition.assets,
+		};
 	}
 
 	private encodeSetAuthorizationWithSigItem(args: {
@@ -1112,12 +1120,37 @@ function assertSwapQuoteUsesSwapper(
 	);
 }
 
-function encodeSwapQuoteVerificationItem(quote: SwapQuote): EVCBatchItem {
+function encodeSwapQuoteVerificationItem(args: {
+	quote: SwapQuote;
+	swapVerifier: Address;
+	vault: Address;
+	account: Address;
+	deadline: bigint;
+}): EVCBatchItem {
+	validateSwapQuoteVerifierData({
+		quote: args.quote,
+		expectedVerifierAddress: args.swapVerifier,
+		verification: {
+			type: SwapVerificationType.SkimMin,
+			vault: args.vault,
+			account: args.account,
+			deadline: args.deadline,
+		},
+	});
+	const onBehalfOfAccount = getAddress(
+		args.quote.verify.account || args.quote.accountOut,
+	);
+	assertSameAddress(
+		onBehalfOfAccount,
+		args.account,
+		"Morpho collateral migration verifier account must match the Euler account",
+	);
+
 	return {
-		targetContract: quote.verify.verifierAddress,
-		onBehalfOfAccount: getAddress(quote.verify.account || quote.accountOut),
+		targetContract: getAddress(args.quote.verify.verifierAddress),
+		onBehalfOfAccount,
 		value: 0n,
-		data: quote.verify.verifierData,
+		data: args.quote.verify.verifierData,
 	};
 }
 
