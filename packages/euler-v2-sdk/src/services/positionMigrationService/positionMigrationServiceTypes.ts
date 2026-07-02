@@ -126,6 +126,7 @@ export type EulerMigrationSource = {
 	swapper?: Address;
 	debtAmount?: bigint;
 	collateralAmount?: bigint;
+	collateralShares?: bigint;
 };
 
 export type ExternalMigrationTarget<TPositionRef = unknown> = {

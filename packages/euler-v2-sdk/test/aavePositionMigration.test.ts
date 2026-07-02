@@ -10,6 +10,7 @@ import {
 } from "viem";
 import { test } from "vitest";
 import { Account } from "../src/entities/Account.js";
+import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
 import { swapperAbi } from "../src/services/executionService/abis/swapperAbi.js";
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
 import {
@@ -449,6 +450,41 @@ function getAaveBorrowAmount(item: EVCBatchItem): bigint | undefined {
 	return amount;
 }
 
+function getEulerCollateralSourceCall(item: EVCBatchItem):
+	| { functionName: "withdraw"; amount: bigint; receiver: Address; owner: Address }
+	| { functionName: "redeem"; shares: bigint; receiver: Address; owner: Address }
+	| undefined {
+	if (getAddress(item.targetContract) !== getAddress(COLLATERAL_VAULT)) return undefined;
+	const decoded = decodeFunctionData({ abi: eVaultAbi, data: item.data });
+	if (decoded.functionName === "withdraw") {
+		const [amount, receiver, owner] = decoded.args as [
+			bigint,
+			Address,
+			Address,
+		];
+		return {
+			functionName: "withdraw",
+			amount,
+			receiver: getAddress(receiver),
+			owner: getAddress(owner),
+		};
+	}
+	if (decoded.functionName === "redeem") {
+		const [shares, receiver, owner] = decoded.args as [
+			bigint,
+			Address,
+			Address,
+		];
+		return {
+			functionName: "redeem",
+			shares,
+			receiver: getAddress(receiver),
+			owner: getAddress(owner),
+		};
+	}
+	return undefined;
+}
+
 function isATokenTransferFromSender(item: EVCBatchItem) {
 	if (getAddress(item.targetContract) !== getAddress(SWAP_VERIFIER)) return false;
 	const decoded = decodeFunctionData({ abi: swapVerifierAbi, data: item.data });
@@ -720,9 +756,18 @@ test("Aave outgoing migration reads source amounts from the supplied account sna
 	const borrowAmount = items
 		.map((item) => getAaveBorrowAmount(item))
 		.find((amount) => amount !== undefined);
+	const sourceCall = items
+		.map((item) => getEulerCollateralSourceCall(item))
+		.find((call) => call !== undefined);
 
 	assert.equal(supplyAmount, 4_000n);
 	assert.equal(borrowAmount, applyBuffer(1_500n, 1n));
+	assert.deepEqual(sourceCall, {
+		functionName: "redeem",
+		shares: 3_900n,
+		receiver: getAddress(SWAPPER),
+		owner: getAddress(EULER_ACCOUNT),
+	});
 });
 
 test("Aave outgoing migration requires source amounts or an account snapshot", async () => {

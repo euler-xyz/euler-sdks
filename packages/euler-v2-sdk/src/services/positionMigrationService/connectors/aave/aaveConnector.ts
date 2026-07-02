@@ -1101,6 +1101,10 @@ export class AavePositionMigrationConnector
 		const collateralAmount =
 			externalTarget.collateralAmount ?? sourceAmounts.collateralAmount;
 		const sourceCollateralAmount = collateralAmount;
+		const redeemCollateralShares =
+			externalTarget.collateralAmount === undefined
+				? sourceAmounts.collateralShares
+				: undefined;
 		const aaveBorrowAmount =
 			externalTarget.borrowAmount ??
 			applyBuffer(
@@ -1164,8 +1168,10 @@ export class AavePositionMigrationConnector
 			value: 0n,
 			data: encodeFunctionData({
 				abi: eVaultAbi,
-				functionName: "withdraw",
-				args: [sourceCollateralAmount, swapper, eulerAccount],
+				functionName: redeemCollateralShares ? "redeem" : "withdraw",
+				args: redeemCollateralShares
+					? [redeemCollateralShares, swapper, eulerAccount]
+					: [sourceCollateralAmount, swapper, eulerAccount],
 			}),
 		});
 
@@ -1546,6 +1552,7 @@ export class AavePositionMigrationConnector
 	): {
 		debtAmount: bigint;
 		collateralAmount: bigint;
+		collateralShares?: bigint;
 	} {
 		const eulerAccount = getAddress(source.eulerAccount);
 		const borrowVault = getAddress(source.borrowVault);
@@ -1570,6 +1577,7 @@ export class AavePositionMigrationConnector
 			return {
 				debtAmount,
 				collateralAmount: source.collateralAmount,
+				collateralShares: source.collateralShares,
 			};
 		}
 
@@ -1582,6 +1590,7 @@ export class AavePositionMigrationConnector
 		return {
 			debtAmount,
 			collateralAmount: collateralPosition.assets,
+			collateralShares: collateralPosition.shares,
 		};
 	}
 }
