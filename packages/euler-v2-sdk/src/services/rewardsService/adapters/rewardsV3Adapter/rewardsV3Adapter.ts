@@ -1,7 +1,7 @@
-import { type Address, type Hex, getAddress } from "viem";
+import { type Address, getAddress, type Hex } from "viem";
 import {
-	type BuildQueryFn,
 	applyBuildQuery,
+	type BuildQueryFn,
 } from "../../../../utils/buildQuery.js";
 import type {
 	FuulClaimCheck,
@@ -276,11 +276,16 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			.filter((reward): reward is UserReward => reward !== undefined);
 	}
 
-	async fetchFuulTotals(address: Address, chainId?: number): Promise<FuulTotals> {
-		return this.claimAdapter?.fetchFuulTotals(address, chainId) ?? {
-			claimed: [],
-			unclaimed: [],
-		};
+	async fetchFuulTotals(
+		address: Address,
+		chainId?: number,
+	): Promise<FuulTotals> {
+		return (
+			this.claimAdapter?.fetchFuulTotals(address, chainId) ?? {
+				claimed: [],
+				unclaimed: [],
+			}
+		);
 	}
 
 	async fetchFuulClaimChecks(
@@ -365,9 +370,9 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 					continue;
 				}
 
-				const provider = normalizeProvider(
-					campaignRow.provider ?? campaignRow.source,
-				);
+				const provider =
+					normalizeProvider(campaignRow.source) ??
+					normalizeProvider(campaignRow.provider);
 				const action = normalizeAction(campaignRow.campaignType);
 				const apr =
 					typeof campaignRow.apr === "number"
@@ -407,7 +412,8 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			return;
 		}
 
-		const provider = normalizeProvider(row.provider ?? row.source);
+		const provider =
+			normalizeProvider(row.source) ?? normalizeProvider(row.provider);
 		const action = normalizeAction(row.action ?? row.campaignType);
 		const apr = typeof row.apr === "number" ? row.apr / 100 : undefined;
 		const rewardTokenAddress = normalizeAddress(
