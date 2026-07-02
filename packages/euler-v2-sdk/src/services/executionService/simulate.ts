@@ -1,12 +1,94 @@
 import {
 	type Address,
+	decodeFunctionData,
 	decodeFunctionResult,
+	encodeFunctionData,
 	getAddress,
 	type Hex,
 	parseEther,
 	type StateOverride,
+	toFunctionSelector,
+	zeroAddress,
 } from "viem";
 import { estimateContractGas } from "viem/actions";
+
+// Minimal ABI for resolving a vault's underlying asset and reading wallet ERC20
+// balances inside the simulated batch (per-layer wallet-balance capture).
+const walletBalanceAbi = [
+	{ type: "function", name: "asset", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+	{ type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
+	{ type: "function", name: "underlying", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+] as const;
+
+const merklClaimAbi = [
+	{
+		type: "function",
+		name: "claim",
+		inputs: [
+			{ name: "users", type: "address[]" },
+			{ name: "tokens", type: "address[]" },
+			{ name: "amounts", type: "uint256[]" },
+			{ name: "proofs", type: "bytes32[][]" },
+		],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+] as const;
+
+const fuulClaimAbi = [
+	{
+		type: "function",
+		name: "claim",
+		inputs: [
+			{
+				name: "claimChecks",
+				type: "tuple[]",
+				components: [
+					{ name: "projectAddress", type: "address" },
+					{ name: "to", type: "address" },
+					{ name: "currency", type: "address" },
+					{ name: "currencyType", type: "uint8" },
+					{ name: "amount", type: "uint256" },
+					{ name: "reason", type: "uint8" },
+					{ name: "tokenId", type: "uint256" },
+					{ name: "deadline", type: "uint256" },
+					{ name: "proof", type: "bytes32" },
+					{ name: "signatures", type: "bytes[]" },
+				],
+			},
+		],
+		outputs: [],
+		stateMutability: "payable",
+	},
+] as const;
+
+const rewardStreamsClaimAbi = [
+	{
+		type: "function",
+		name: "claimReward",
+		inputs: [
+			{ name: "rewarded", type: "address" },
+			{ name: "reward", type: "address" },
+			{ name: "to", type: "address" },
+			{ name: "ignoreRecentReward", type: "bool" },
+		],
+		outputs: [{ name: "amount", type: "uint256" }],
+		stateMutability: "nonpayable",
+	},
+] as const;
+
+const MERKL_CLAIM_SELECTOR = toFunctionSelector(
+	"function claim(address[],address[],uint256[],bytes32[][])",
+);
+const FUUL_CLAIM_SELECTOR = toFunctionSelector(
+	"function claim((address,address,address,uint8,uint256,uint8,uint256,uint256,bytes32,bytes[])[])",
+);
+const REWARD_STREAM_CLAIM_SELECTOR = toFunctionSelector(
+	"function claimReward(address,address,address,bool)",
+);
+const REUL_UNLOCK_SELECTOR = toFunctionSelector(
+	"function withdrawToByLockTimestamp(address,uint256,bool)",
+);
 import {
 	Account,
 	type IAccount,
@@ -49,6 +131,17 @@ import { vaultLensAbi } from "../vaults/eVaultService/adapters/eVaultOnchainAdap
 import type { VaultInfoFull } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
 import { getVaultInfoFullLensBatchItem } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultOnchainAdapter.js";
 import { convertVaultInfoFullToIEVault } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/vaultInfoConverter.js";
+import { SecuritizeCollateralVault } from "../../entities/SecuritizeCollateralVault.js";
+import { utilsLensAbi } from "../vaults/securitizeVaultService/adapters/abis/utilsLensAbi.js";
+import { erc4626EvcCollateralSecuritizeAbi } from "../vaults/securitizeVaultService/adapters/abis/erc4626EvcCollateralSecuritizeAbi.js";
+import type { VaultInfoERC4626 } from "../vaults/securitizeVaultService/adapters/securitizeVaultLensTypes.js";
+import { convertToISecuritizeCollateralVault } from "../vaults/securitizeVaultService/adapters/securitizeVaultInfoConverter.js";
+import {
+	getVaultInfoERC4626LensBatchItem,
+	getSecuritizeGovernorAdminBatchItem,
+	getSecuritizeSupplyCapResolvedBatchItem,
+} from "../vaults/securitizeVaultService/adapters/securitizeVaultOnchainAdapter.js";
+import type { DataIssue } from "../../utils/entityDiagnostics.js";
 import type { VaultFetchOptions } from "../vaults/index.js";
 import type {
 	IVaultMetaService,
@@ -65,6 +158,7 @@ import type {
 import {
 	assertNoCowSwapPlanItems,
 	flattenBatchEntries,
+	isEVCBatchOperation,
 } from "./executionServiceTypes.js";
 
 type BatchItemResult = {
@@ -86,12 +180,30 @@ export type SimulationInsufficientRequirement = {
 export interface SimulateBatchResult<
 	TVaultEntity extends VaultEntity = VaultEntity,
 > {
+	/**
+	 * Per-layer simulated account snapshots: index 0 = pre-batch (real) state,
+	 * index i = state after operation i. The last entry is the final state.
+	 */
 	simulatedAccounts: Account<TVaultEntity>[];
+	/** Final-layer vault snapshots (the last entry of `simulatedVaultsLayers`). */
 	simulatedVaults: TVaultEntity[];
+	/** Per-layer vault snapshots aligned with `simulatedAccounts`. */
+	simulatedVaultsLayers?: TVaultEntity[][];
+	/**
+	 * Per-layer wallet ERC20 balances (lowercased token address → balance) for the
+	 * underlying assets of touched vaults, aligned with `simulatedAccounts`.
+	 * Balances are forged by state overrides, so consumers should stitch using the
+	 * delta vs layer 0.
+	 */
+	simulatedWalletBalances?: Record<string, bigint>[];
 	canExecute: boolean;
 	rawBatchResults?: BatchItemResult[];
 	failedBatchItems?: Array<{
 		index: number;
+		/** Index of the operation (cart entry) this batch item belongs to. */
+		operationIndex?: number;
+		/** Name of the operation (e.g. "deposit", "withdraw"), when known. */
+		operationName?: string;
 		item: BatchItemDescription;
 		error: Hex;
 		decodedError: DecodedSmartContractError[];
@@ -107,6 +219,14 @@ export interface SimulateBatchResult<
 		error: Hex;
 		decoded: DecodedSmartContractError[];
 	}>;
+	/**
+	 * Tokens the batch overdraws from the real wallet, accounting for intra-batch
+	 * funding. Computed from the per-layer wallet balances: tracking the running
+	 * real balance (real on-chain balance + each step's net inflow/outflow), the
+	 * shortfall is the worst dip below zero across all steps. This nets out
+	 * self-funding (e.g. withdraw-then-deposit the same asset) and still catches a
+	 * step that consumes more than is genuinely available at that point.
+	 */
 	insufficientWalletAssets?: SimulationInsufficientRequirement[];
 	insufficientPermit2Allowances?: SimulationInsufficientRequirement[];
 	insufficientDirectAllowances?: SimulationInsufficientRequirement[];
@@ -163,8 +283,12 @@ export type SimulationStateOverrideOptions = {
 type LensMeta =
 	| { kind: "eVault"; vault: Address }
 	| { kind: "eulerEarn"; vault: Address }
+	| { kind: "securitizeInfo"; vault: Address }
+	| { kind: "securitizeGovernor"; vault: Address }
+	| { kind: "securitizeSupplyCap"; vault: Address }
 	| { kind: "evcAccount"; subAccount: Address }
-	| { kind: "vaultAccount"; subAccount: Address; vault: Address };
+	| { kind: "vaultAccount"; subAccount: Address; vault: Address }
+	| { kind: "walletBalance"; token: Address };
 
 export type ExecutionSimulationContext<
 	TVaultEntity extends VaultEntity = VaultEntity,
@@ -317,9 +441,11 @@ export async function simulateTransactionPlan<
 		effectiveStateOverrides = mergeStateOverrides(options.extraStateOverrides);
 	}
 
-	const batch = transactionPlan.flatMap((item) =>
-		item.type === "evcBatch" ? flattenBatchEntries(item.items) : [],
-	);
+	// Preserve operation boundaries (EVCBatchOperation entries emitted by the
+	// planners / mergePlans) so reverts can be attributed to the operation that
+	// caused them and so we can snapshot state after each operation.
+	const operations = collectOperations(transactionPlan);
+	const batch = operations.flatMap((op) => op.items);
 	if (batch.length === 0) {
 		return {
 			simulatedAccounts: [],
@@ -333,8 +459,38 @@ export async function simulateTransactionPlan<
 		owner,
 		transactionPlan,
 	);
-	const { fullBatch, lensMeta, evcAddress, totalValue } =
-		await buildSimulationBatch(ctx, chainId, owner, batch);
+	const { lensItems, lensMeta, evcAddress } = await buildSimulationBatch(
+		ctx,
+		chainId,
+		owner,
+		operations,
+		extractBalanceRequirements(transactionPlan, owner).map(([token]) => token),
+	);
+
+	// Assemble the EVC batch, interleaving a lens-read block before the first
+	// operation (layer 0 = real state) and one after every operation (layer i =
+	// state after op i), so the full per-layer history is always captured.
+	const fullBatch: EVCBatchItem[] = [];
+	const actionPositions: number[] = []; // fullBatch indices of real items, in `batch` order
+	const opOfPosition: number[] = []; // operation index for each action position
+	const layerSlices: Array<{ lensStart: number }> = [];
+	const pushLensBlock = () => {
+		layerSlices.push({ lensStart: fullBatch.length });
+		for (const it of lensItems) fullBatch.push(it);
+	};
+	const pushOperation = (op: { items: EVCBatchItem[] }, opIndex: number) => {
+		for (const it of op.items) {
+			actionPositions.push(fullBatch.length);
+			opOfPosition.push(opIndex);
+			fullBatch.push(it);
+		}
+	};
+	pushLensBlock();
+	for (let i = 0; i < operations.length; i++) {
+		pushOperation(operations[i]!, i);
+		pushLensBlock();
+	}
+	const totalValue = fullBatch.reduce((sum, item) => sum + item.value, 0n);
 
 	const simulationResult = await runSimulation(
 		ctx,
@@ -356,7 +512,7 @@ export async function simulateTransactionPlan<
 	const { batchResults, accountStatusErrors, vaultStatusErrors } =
 		simulationResult;
 
-	const rawBatchResults = batchResults.slice(0, batch.length);
+	const rawBatchResults = actionPositions.map((pos) => batchResults[pos]!);
 	let describedBatch: BatchItemDescription[] | undefined;
 	try {
 		describedBatch = ctx.describeBatch(batch);
@@ -372,14 +528,17 @@ export async function simulateTransactionPlan<
 	const failedBatchItems = (
 		await Promise.all(
 			rawBatchResults.map(async (itemResult, index) => {
-				if (itemResult.success) return null;
+				if (!itemResult || itemResult.success) return null;
 				const decodedError = await decodeSmartContractErrors(itemResult.result);
 				const decodedItem =
 					describedBatch && describedBatch.length === batch.length
 						? describedBatch[index]!
 						: fallbackDescription(batch[index]!);
+				const operationIndex = opOfPosition[index];
 				return {
 					index,
+					operationIndex,
+					operationName: operations[operationIndex!]?.name,
 					item: decodedItem,
 					error: itemResult.result,
 					decodedError,
@@ -391,20 +550,209 @@ export async function simulateTransactionPlan<
 			item,
 		): item is {
 			index: number;
+			operationIndex: number | undefined;
+			operationName: string | undefined;
 			item: BatchItemDescription;
 			error: Hex;
 			decodedError: DecodedSmartContractError[];
 		} => item !== null,
 	);
 
+	// One account/vault/wallet snapshot per layer: [pre-batch, after op0, after op1, …].
+	const snapshots: Array<{
+		account: Account<TVaultEntity>;
+		vaults: TVaultEntity[];
+		walletBalances: Record<string, bigint>;
+	}> = [];
+	for (const slice of layerSlices) {
+		snapshots.push(
+			await decodeAccountSnapshot<TVaultEntity>(
+				ctx,
+				chainId,
+				owner,
+				lensMeta,
+				(i) => batchResults[slice.lensStart + i],
+				options,
+			),
+		);
+	}
+	const simulatedAccounts = snapshots.map((s) => s.account);
+	const simulatedVaultsLayers = snapshots.map((s) => s.vaults);
+	const simulatedVaults =
+		simulatedVaultsLayers[simulatedVaultsLayers.length - 1] ?? [];
+	const simulatedWalletBalances = snapshots.map((s) => s.walletBalances);
+
+	// Accurate wallet shortfall from the per-layer balances (running-min over the
+	// real-anchored balance), which nets out intra-batch funding. Prefer it when
+	// available; if wallet deltas could not be observed, keep the static
+	// requiredApproval diagnostic from fetchSimulationDiagnostics.
+	const computedWalletShortfall = await computeWalletShortfall(
+		ctx,
+		chainId,
+		owner,
+		simulatedWalletBalances,
+	);
+	const insufficientWalletAssets =
+		computedWalletShortfall === undefined
+			? diagnostics.insufficientWalletAssets
+			: computedWalletShortfall.length > 0
+				? computedWalletShortfall
+				: undefined;
+
+	const canExecute =
+		failedBatchItems.length === 0 &&
+		accountStatusErrors.length === 0 &&
+		vaultStatusErrors.length === 0 &&
+		!insufficientWalletAssets?.length &&
+		!diagnostics.insufficientPermit2Allowances?.length &&
+		!diagnostics.insufficientDirectAllowances?.length;
+
+	return {
+		simulatedAccounts,
+		simulatedVaults,
+		simulatedVaultsLayers,
+		simulatedWalletBalances,
+		canExecute,
+		rawBatchResults,
+		failedBatchItems:
+			failedBatchItems.length > 0 ? failedBatchItems : undefined,
+		accountStatusErrors:
+			accountStatusErrors.length > 0 ? accountStatusErrors : undefined,
+		vaultStatusErrors:
+			vaultStatusErrors.length > 0 ? vaultStatusErrors : undefined,
+		...diagnostics,
+		insufficientWalletAssets,
+	};
+}
+
+// Walk the plan preserving EVCBatchOperation boundaries. Each operation entry
+// is one layer boundary; bare items become their own single-item op.
+type SimulationOperation = {
+	name: string | undefined;
+	items: EVCBatchItem[];
+	walletBalanceTokens?: Address[];
+};
+
+function collectOperations(transactionPlan: TransactionPlan): SimulationOperation[] {
+	const operations: SimulationOperation[] = [];
+	for (const item of transactionPlan) {
+		if (item.type !== "evcBatch") continue;
+		for (const entry of item.items) {
+			if (isEVCBatchOperation(entry)) {
+				operations.push({
+					name: entry.name,
+					items: entry.items,
+					walletBalanceTokens: entry.walletBalanceTokens,
+				});
+			} else {
+				operations.push({ name: undefined, items: [entry] });
+			}
+		}
+	}
+	return operations;
+}
+
+const addWalletToken = (
+	tokens: Set<Address>,
+	token: string | Address | undefined,
+) => {
+	if (!token) return;
+	try {
+		const checksum = getAddress(token) as Address;
+		if (checksum !== zeroAddress) tokens.add(checksum);
+	} catch {
+		// Ignore malformed optional metadata / decoded calldata.
+	}
+};
+
+const getSelector = (data: Hex): Hex => data.slice(0, 10) as Hex;
+
+function collectClaimWalletBalanceTokens(batch: EVCBatchItem[]): Address[] {
+	const tokens = new Set<Address>();
+
+	for (const item of batch) {
+		const selector = getSelector(item.data);
+		try {
+			if (selector === MERKL_CLAIM_SELECTOR) {
+				const decoded = decodeFunctionData({
+					abi: merklClaimAbi,
+					data: item.data,
+				});
+				const rewardTokens = decoded.args[1] as readonly Address[];
+				for (const token of rewardTokens) addWalletToken(tokens, token);
+				continue;
+			}
+
+			if (selector === FUUL_CLAIM_SELECTOR) {
+				const decoded = decodeFunctionData({
+					abi: fuulClaimAbi,
+					data: item.data,
+				});
+				const claimChecks = decoded.args[0] as readonly {
+					currency: Address;
+				}[];
+				for (const check of claimChecks) {
+					addWalletToken(tokens, check.currency);
+				}
+				continue;
+			}
+
+			if (selector === REWARD_STREAM_CLAIM_SELECTOR) {
+				const decoded = decodeFunctionData({
+					abi: rewardStreamsClaimAbi,
+					data: item.data,
+				});
+				addWalletToken(tokens, decoded.args[1] as Address);
+			}
+		} catch {
+			// Unknown or malformed claim-like calldata should not block simulation.
+		}
+	}
+
+	return [...tokens];
+}
+
+// Decode the lens-read block for a single layer into a populated Account plus
+// the EVault/EulerEarn entities observed at that point in the batch.
+async function decodeAccountSnapshot<
+	TVaultEntity extends VaultEntity = VaultEntity,
+>(
+	ctx: ExecutionSimulationContext<TVaultEntity>,
+	chainId: number,
+	owner: Address,
+	lensMeta: LensMeta[],
+	resultAt: (index: number) => BatchItemResult | undefined,
+	options?: SimulateBatchOptions,
+): Promise<{
+	account: Account<TVaultEntity>;
+	vaults: TVaultEntity[];
+	walletBalances: Record<string, bigint>;
+}> {
 	const vaultsByAddress = new Map<Address, VaultEntity>();
 	const evcInfos = new Map<Address, EVCAccountInfo>();
 	const vaultInfosBySub = new Map<Address, VaultAccountInfo[]>();
+	const walletBalances: Record<string, bigint> = {};
+	// Securitize collateral vaults are assembled from three separate reads
+	// (ERC4626 info via UtilsLens, plus governorAdmin and supplyCapResolved read
+	// directly off the vault), keyed by vault address and stitched after the loop.
+	const securitizeInfos = new Map<Address, VaultInfoERC4626>();
+	const securitizeGovernors = new Map<Address, Address>();
+	const securitizeSupplyCaps = new Map<Address, bigint>();
 
 	for (let i = 0; i < lensMeta.length; i++) {
 		const meta = lensMeta[i]!;
-		const resultItem = batchResults[batch.length + i];
+		const resultItem = resultAt(i);
 		if (!resultItem?.success) continue;
+
+		if (meta.kind === "walletBalance") {
+			const bal = decodeFunctionResult({
+				abi: walletBalanceAbi,
+				functionName: "balanceOf",
+				data: resultItem.result,
+			}) as unknown as bigint;
+			walletBalances[getAddress(meta.token).toLowerCase()] = bal;
+			continue;
+		}
 
 		if (meta.kind === "eVault") {
 			const decodedVault = decodeFunctionResult({
@@ -430,6 +778,33 @@ export async function simulateTransactionPlan<
 			vaultsByAddress.set(getAddress(meta.vault), entity);
 		}
 
+		if (meta.kind === "securitizeInfo") {
+			const decoded = decodeFunctionResult({
+				abi: utilsLensAbi,
+				functionName: "getVaultInfoERC4626",
+				data: resultItem.result,
+			}) as unknown as VaultInfoERC4626;
+			securitizeInfos.set(getAddress(meta.vault), decoded);
+		}
+
+		if (meta.kind === "securitizeGovernor") {
+			const decoded = decodeFunctionResult({
+				abi: erc4626EvcCollateralSecuritizeAbi,
+				functionName: "governorAdmin",
+				data: resultItem.result,
+			}) as unknown as Address;
+			securitizeGovernors.set(getAddress(meta.vault), decoded);
+		}
+
+		if (meta.kind === "securitizeSupplyCap") {
+			const decoded = decodeFunctionResult({
+				abi: erc4626EvcCollateralSecuritizeAbi,
+				functionName: "supplyCapResolved",
+				data: resultItem.result,
+			}) as unknown as bigint;
+			securitizeSupplyCaps.set(getAddress(meta.vault), decoded);
+		}
+
 		if (meta.kind === "evcAccount") {
 			const decodedAccount = decodeFunctionResult({
 				abi: accountLensAbi,
@@ -450,6 +825,26 @@ export async function simulateTransactionPlan<
 			list.push(decodedVaultInfo);
 			vaultInfosBySub.set(key, list);
 		}
+	}
+
+	// Stitch the three Securitize reads into vault entities. Skip any vault whose
+	// governor/supply-cap read failed (kept undefined) so a partial read degrades
+	// to "no entity" rather than throwing — mirrors the per-vault tolerance above.
+	for (const [vault, info] of securitizeInfos.entries()) {
+		const governor = securitizeGovernors.get(vault);
+		const supplyCap = securitizeSupplyCaps.get(vault);
+		if (governor === undefined || supplyCap === undefined) continue;
+		const conversionErrors: DataIssue[] = [];
+		const entity = new SecuritizeCollateralVault(
+			convertToISecuritizeCollateralVault(
+				info,
+				governor,
+				supplyCap,
+				chainId,
+				conversionErrors,
+			),
+		);
+		vaultsByAddress.set(vault, entity);
 	}
 
 	const simulatedVaults = Array.from(
@@ -544,27 +939,7 @@ export async function simulateTransactionPlan<
 		await populatedAccount.populateUserRewards(ctx.rewardsService);
 	}
 
-	const result = {
-		simulatedAccounts: [populatedAccount],
-		simulatedVaults,
-		canExecute:
-			failedBatchItems.length === 0 &&
-			accountStatusErrors.length === 0 &&
-			vaultStatusErrors.length === 0 &&
-			!diagnostics.insufficientWalletAssets?.length &&
-			!diagnostics.insufficientPermit2Allowances?.length &&
-			!diagnostics.insufficientDirectAllowances?.length,
-		rawBatchResults,
-		failedBatchItems:
-			failedBatchItems.length > 0 ? failedBatchItems : undefined,
-		accountStatusErrors:
-			accountStatusErrors.length > 0 ? accountStatusErrors : undefined,
-		vaultStatusErrors:
-			vaultStatusErrors.length > 0 ? vaultStatusErrors : undefined,
-		...diagnostics,
-	};
-
-	return result;
+	return { account: populatedAccount, vaults: simulatedVaults, walletBalances };
 }
 
 export async function estimateGasForTransactionPlan(
@@ -666,18 +1041,56 @@ async function buildSimulationBatch(
 	ctx: ExecutionSimulationContext,
 	chainId: number,
 	owner: Address,
-	batch: EVCBatchItem[],
+	operations: SimulationOperation[],
+	requiredWalletBalanceTokens: Address[] = [],
 ): Promise<{
-	fullBatch: EVCBatchItem[];
+	lensItems: EVCBatchItem[];
 	lensMeta: LensMeta[];
 	evcAddress: Address;
-	totalValue: bigint;
 }> {
+	const batch = operations.flatMap((op) => op.items);
 	const { candidateVaults, subAccountVaults } = collectCandidateVaults(
 		ctx,
 		owner,
 		batch,
 	);
+
+	// Each touched sub-account's account-level liquidity (health factor, current
+	// LTV, collateral/liability values) rides on its *controller* vault's
+	// getVaultAccountInfo. An op that only touches collateral vaults (e.g. a
+	// collateral withdraw or supply) wouldn't otherwise read the controller, so
+	// the simulated liquidity would stay at the pre-batch (stale) state. Pull each
+	// touched sub-account's enabled controllers and read them too, so liquidity is
+	// recomputed post-op for every operation, not just borrows/repays.
+	const ctrlProvider = ctx.providerService?.getProvider(chainId);
+	const touchedSubs = Array.from(subAccountVaults.keys());
+	if (ctrlProvider && touchedSubs.length) {
+		const evc = ctx.deploymentService.getDeployment(chainId).addresses.coreAddrs
+			.evc;
+		try {
+			const controllerResults = await ctrlProvider.multicall({
+				allowFailure: true,
+				contracts: touchedSubs.map((sub) => ({
+					address: evc,
+					abi: ethereumVaultConnectorAbi,
+					functionName: "getControllers",
+					args: [sub],
+				})),
+			});
+			touchedSubs.forEach((sub, i) => {
+				const r = controllerResults[i];
+				if (r?.status !== "success") return;
+				for (const controller of (r.result as unknown as Address[]) ?? []) {
+					const c = getAddress(controller);
+					subAccountVaults.get(sub)?.add(c);
+					candidateVaults.add(c);
+				}
+			});
+		} catch {
+			// Best-effort: if controllers can't be fetched, liquidity may stay stale
+			// for collateral-only ops, but the simulation itself is unaffected.
+		}
+	}
 
 	const vaultCandidatesList = Array.from(candidateVaults);
 	if (!ctx.vaultMetaService) {
@@ -693,15 +1106,19 @@ async function buildSimulationBatch(
 	const validVaults = new Set<Address>();
 	const eVaults: Address[] = [];
 	const eulerEarnVaults: Address[] = [];
+	const securitizeVaults: Address[] = [];
 
 	for (const vault of vaultCandidatesList) {
 		const key = getAddress(vault);
 		const type = vaultTypes[key];
 		if (!type) continue;
-		if (type === VaultType.SecuritizeCollateral) continue;
 		validVaults.add(key);
 		if (type === VaultType.EVault) eVaults.push(key);
 		if (type === VaultType.EulerEarn) eulerEarnVaults.push(key);
+		// Securitize RWA collaterals are real Euler collateral vaults; keep them in
+		// validVaults so their per-account position (getVaultAccountInfo) is read,
+		// and queue the dedicated reads below so the vault entity is resolved too.
+		if (type === VaultType.SecuritizeCollateral) securitizeVaults.push(key);
 	}
 
 	const deployment = ctx.deploymentService.getDeployment(chainId);
@@ -709,6 +1126,7 @@ async function buildSimulationBatch(
 	const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
 	const eulerEarnLensAddress =
 		deployment.addresses.lensAddrs.eulerEarnVaultLens;
+	const utilsLensAddress = deployment.addresses.lensAddrs.utilsLens;
 	const evcAddress = deployment.addresses.coreAddrs.evc;
 
 	const lensItems: EVCBatchItem[] = [];
@@ -743,6 +1161,21 @@ async function buildSimulationBatch(
 		);
 	}
 
+	for (const vault of securitizeVaults) {
+		pushLensItem(getVaultInfoERC4626LensBatchItem(utilsLensAddress, vault, owner), {
+			kind: "securitizeInfo",
+			vault,
+		});
+		pushLensItem(getSecuritizeGovernorAdminBatchItem(vault, owner), {
+			kind: "securitizeGovernor",
+			vault,
+		});
+		pushLensItem(getSecuritizeSupplyCapResolvedBatchItem(vault, owner), {
+			kind: "securitizeSupplyCap",
+			vault,
+		});
+	}
+
 	for (const [subAccount, vaults] of subAccountVaults.entries()) {
 		pushLensItem(
 			getEVCAccountInfoLensBatchItem(
@@ -775,10 +1208,87 @@ async function buildSimulationBatch(
 		}
 	}
 
-	const fullBatch = [...batch, ...lensItems];
-	const totalValue = fullBatch.reduce((sum, item) => sum + item.value, 0n);
+	// Wallet-balance reads: resolve the underlying asset of each touched vault,
+	// plus reward tokens from claim/unlock operations, and read balanceOf(owner)
+	// for each token. Interleaved per layer like the other lens reads, so wallet
+	// balances are captured after every operation. Balances are forged by state
+	// overrides, so consumers stitch using the delta vs the pre-batch layer.
+	const provider = ctx.providerService?.getProvider(chainId);
+	if (provider) {
+		const vaultsForAssets = [...eVaults, ...eulerEarnVaults, ...securitizeVaults];
+		const assets = await Promise.all(
+			vaultsForAssets.map((vault) =>
+				provider
+					.readContract({
+						address: vault,
+						abi: walletBalanceAbi,
+						functionName: "asset",
+					})
+					.then((a) => getAddress(a as Address))
+					.catch(() => null),
+			),
+		);
+		const assetTokens = new Set<Address>();
+		for (const a of assets) if (a) assetTokens.add(getAddress(a));
+		for (const token of requiredWalletBalanceTokens) {
+			addWalletToken(assetTokens, token);
+		}
+		for (const operation of operations) {
+			for (const token of operation.walletBalanceTokens ?? []) {
+				addWalletToken(assetTokens, token);
+			}
+		}
+		for (const token of collectClaimWalletBalanceTokens(batch)) {
+			addWalletToken(assetTokens, token);
+		}
 
-	return { fullBatch, lensMeta, evcAddress, totalValue };
+		const unlockItems = batch.filter(
+			(item) => getSelector(item.data) === REUL_UNLOCK_SELECTOR,
+		);
+		if (unlockItems.length > 0) {
+			const configuredEul =
+				deployment.addresses.tokenAddrs?.EUL;
+			if (configuredEul) {
+				addWalletToken(assetTokens, configuredEul);
+			} else {
+				const underlyingTokens = await Promise.all(
+					unlockItems.map((item) =>
+						provider
+							.readContract({
+								address: item.targetContract,
+								abi: walletBalanceAbi,
+								functionName: "underlying",
+							})
+							.then((a) => getAddress(a as Address))
+							.catch(() => null),
+					),
+				);
+				for (const token of underlyingTokens) {
+					if (token) addWalletToken(assetTokens, token);
+				}
+			}
+		}
+
+		for (const token of assetTokens) {
+			pushLensItem(
+				{
+					targetContract: token,
+					onBehalfOfAccount: owner,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: walletBalanceAbi,
+						functionName: "balanceOf",
+						args: [owner],
+					}),
+				},
+				{ kind: "walletBalance", token },
+			);
+		}
+	}
+
+	// The caller assembles the final batch (interleaving these lens reads per the
+	// chosen layers mode), so we just return the reusable lens block.
+	return { lensItems, lensMeta, evcAddress };
 }
 
 function collectCandidateVaults(
@@ -814,15 +1324,54 @@ function collectCandidateVaults(
 		const fn = item.functionName.toLowerCase();
 		const target = getAddress(item.targetContract);
 
-		if (fn === "transfer" || fn === "transferfrom") {
+		if (
+			fn === "enablecollateral" ||
+			fn === "disablecollateral" ||
+			fn === "enablecontroller"
+		) {
+			const account = item.args.account as Address | undefined;
+			const vault = item.args.vault as Address | undefined;
+			if (vault) addCandidateVault(vault);
+			if (account && vault) addSubAccountVault(account, vault);
+			continue;
+		}
+
+		if (fn === "transfer" || fn === "transferfrom" || fn === "transferfrommax") {
 			const to = item.args.to as Address | undefined;
 			const from =
-				fn === "transferfrom"
+				fn === "transferfrom" || fn === "transferfrommax"
 					? (item.args.from as Address | undefined)
 					: ((item.args.from as Address | undefined) ?? item.onBehalfOfAccount);
 
 			if (from) addSubAccountVault(from, target);
 			if (to) addSubAccountVault(to, target);
+			addCandidateVault(target);
+			continue;
+		}
+
+		if (fn === "withdraw" || fn === "redeem") {
+			const owner = item.args.owner as Address | undefined;
+			if (owner) addSubAccountVault(owner, target);
+			addCandidateVault(target);
+			continue;
+		}
+
+		if (fn === "liquidate") {
+			const violator = item.args.violator as Address | undefined;
+			const collateral = item.args.collateral as Address | undefined;
+			if (violator) addSubAccountVault(violator, target);
+			if (violator && collateral) addSubAccountVault(violator, collateral);
+			if (collateral) {
+				addSubAccountVault(item.onBehalfOfAccount, collateral);
+				addCandidateVault(collateral);
+			}
+			addCandidateVault(target);
+			continue;
+		}
+
+		if (fn === "pulldebt") {
+			const from = item.args.from as Address | undefined;
+			if (from) addSubAccountVault(from, target);
 			addCandidateVault(target);
 			continue;
 		}
@@ -841,6 +1390,32 @@ function collectCandidateVaults(
 				addSubAccountVault(account, vault);
 				addCandidateVault(vault);
 			}
+		}
+
+		// repay(amount, receiver) / repayWithShares(amount, receiver): the *receiver*
+		// is the account whose debt is reduced, and it can differ from the batch
+		// item's onBehalfOfAccount (e.g. a repay-from-wallet runs on behalf of the
+		// owner but repays a sub-account's debt). Map the receiver so its post-repay
+		// debt position (and liquidity) is read — otherwise the simulated debt/health
+		// of the repaid sub-account stays at the pre-batch state.
+		if (fn === "repay" || fn === "repaywithshares") {
+			const receiver = item.args.receiver as Address | undefined;
+			if (receiver) addSubAccountVault(receiver, target);
+			addCandidateVault(target);
+		}
+
+		if (fn === "verifyamountminanddeposit" || fn === "verifyamountminandskim") {
+			const vault = item.args.vault as Address | undefined;
+			const receiver = item.args.receiver as Address | undefined;
+			if (vault) addCandidateVault(vault);
+			if (vault && receiver) addSubAccountVault(receiver, vault);
+		}
+
+		if (fn === "verifydebtmax") {
+			const vault = item.args.vault as Address | undefined;
+			const account = item.args.account as Address | undefined;
+			if (vault) addCandidateVault(vault);
+			if (vault && account) addSubAccountVault(account, vault);
 		}
 	}
 
@@ -946,6 +1521,60 @@ async function runSimulation(
 	return { batchResults, accountStatusErrors, vaultStatusErrors };
 }
 
+/**
+ * Wallet shortfall derived from the per-layer simulated balances. In-sim
+ * balances are forged by state overrides, so we anchor to the real on-chain
+ * balance and track the running balance across layers — real balance plus each
+ * layer's net delta vs the pre-batch layer. The shortfall per token is the worst
+ * dip below zero. This nets out intra-batch funding (e.g. withdraw then deposit
+ * the same asset → never dips) yet still flags a step that consumes more than is
+ * genuinely available at that point. Returns undefined when balances can't be
+ * resolved (no walletService / no touched tokens), so callers don't over-block.
+ */
+async function computeWalletShortfall(
+	ctx: ExecutionSimulationContext,
+	chainId: number,
+	owner: Address,
+	simulatedWalletBalances: Record<string, bigint>[],
+): Promise<SimulationInsufficientRequirement[] | undefined> {
+	if (!ctx.walletService || simulatedWalletBalances.length === 0)
+		return undefined;
+	const base = simulatedWalletBalances[0] ?? {};
+	const tokens = Object.keys(base);
+	if (tokens.length === 0) return undefined;
+
+	let realByToken: Record<string, bigint>;
+	try {
+		const wallet = (
+			await ctx.walletService.fetchWallet(
+				chainId,
+				owner,
+				tokens.map((t) => ({ asset: getAddress(t), spenders: [] })),
+			)
+		).result;
+		realByToken = {};
+		for (const t of tokens) realByToken[t] = wallet.getBalance(getAddress(t));
+	} catch {
+		return undefined;
+	}
+
+	const shortfalls: SimulationInsufficientRequirement[] = [];
+	for (const t of tokens) {
+		const baseBal = base[t] ?? 0n;
+		const real = realByToken[t] ?? 0n;
+		// Worst running balance across layers (layer 0's delta is 0 ⇒ starts at real).
+		let minAvailable = real;
+		for (let i = 1; i < simulatedWalletBalances.length; i++) {
+			const delta = (simulatedWalletBalances[i]![t] ?? 0n) - baseBal;
+			const available = real + delta;
+			if (available < minAvailable) minAvailable = available;
+		}
+		if (minAvailable < 0n)
+			shortfalls.push({ token: getAddress(t), amount: -minAvailable });
+	}
+	return shortfalls;
+}
+
 async function fetchSimulationDiagnostics(
 	ctx: ExecutionSimulationContext,
 	chainId: number,
@@ -1043,21 +1672,26 @@ async function fetchSimulationDiagnostics(
 	};
 }
 
-function extractBalanceRequirements(
+// Sum the required amount per token across every approval the owner must fund.
+// Each requiredApproval is a wallet outflow, and several can draw on the same
+// token within one batch (e.g. supplying it into two vaults, or supply + repay),
+// so the wallet must cover their *total*, not the largest single one. Forging
+// the sum lets an underfunded batch simulate through to completion — so the
+// running-balance shortfall reports the true peak deficit instead of the batch
+// reverting partway with E_InsufficientBalance. Over-forging is harmless: the
+// shortfall is computed against the real balance, not this forged amount.
+export function extractBalanceRequirements(
 	transactionPlan: TransactionPlan,
 	account: Address,
 ): [Address, bigint][] {
-	const maxPerToken = new Map<Address, bigint>();
+	const totalPerToken = new Map<Address, bigint>();
 	for (const item of transactionPlan) {
 		if (item.type !== "requiredApproval") continue;
 		if (getAddress(item.owner) !== getAddress(account)) continue;
 		const token = getAddress(item.token);
-		const current = maxPerToken.get(token) ?? 0n;
-		if (item.amount > current) {
-			maxPerToken.set(token, item.amount);
-		}
+		totalPerToken.set(token, (totalPerToken.get(token) ?? 0n) + item.amount);
 	}
-	return Array.from(maxPerToken.entries());
+	return Array.from(totalPerToken.entries());
 }
 
 function extractApprovalRequirements(

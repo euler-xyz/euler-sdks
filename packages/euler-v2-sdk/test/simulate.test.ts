@@ -1,12 +1,26 @@
 import assert from "node:assert/strict";
 import { beforeEach, test, vi } from "vitest";
-import { decodeFunctionData, encodeFunctionData, getAddress, type Abi } from "viem";
+import {
+	decodeFunctionData,
+	encodeFunctionData,
+	encodeFunctionResult,
+	getAddress,
+	type Address,
+	type Abi,
+} from "viem";
 import { estimateContractGas } from "viem/actions";
 import { Account } from "../src/entities/Account.js";
 import { accountLensAbi } from "../src/services/accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
 import { ethereumVaultConnectorAbi } from "../src/services/executionService/abis/ethereumVaultConnectorAbi.js";
+import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
+import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
 import { ExecutionService } from "../src/services/executionService/executionService.js";
-import type { TransactionPlan } from "../src/services/executionService/executionServiceTypes.js";
+import { extractBalanceRequirements } from "../src/services/executionService/simulate.js";
+import type {
+	EVCBatchItem,
+	TransactionPlan,
+} from "../src/services/executionService/executionServiceTypes.js";
+import { getSubAccountAddress } from "../src/utils/subAccounts.js";
 import { VaultType } from "../src/utils/types.js";
 
 vi.mock("viem/actions", () => ({
@@ -18,6 +32,12 @@ const TOKEN = "0x00000000000000000000000000000000000000bb" as const;
 const SPENDER = "0x00000000000000000000000000000000000000cc" as const;
 const EVC = "0x00000000000000000000000000000000000000dd" as const;
 const TARGET = "0x00000000000000000000000000000000000000ee" as const;
+const ACCOUNT_LENS = "0x0000000000000000000000000000000000000013" as const;
+const VAULT_LENS = "0x0000000000000000000000000000000000000014" as const;
+const EULER_EARN_LENS = "0x0000000000000000000000000000000000000015" as const;
+const VERIFIER = "0x0000000000000000000000000000000000000016" as const;
+const UTILS_LENS = "0x0000000000000000000000000000000000000017" as const;
+const SECURITIZE_VAULT = "0x0000000000000000000000000000000000000018" as const;
 const CHECKSUM_ACCOUNT = getAddress(ACCOUNT);
 
 const testAbi = [
@@ -27,6 +47,45 @@ const testAbi = [
 		stateMutability: "payable",
 		inputs: [{ name: "amount", type: "uint256" }],
 		outputs: [],
+	},
+] as const satisfies Abi;
+
+const erc20BalanceAbi = [
+	{
+		type: "function",
+		name: "balanceOf",
+		stateMutability: "view",
+		inputs: [{ name: "account", type: "address" }],
+		outputs: [{ name: "", type: "uint256" }],
+	},
+] as const satisfies Abi;
+
+const merklClaimAbi = [
+	{
+		type: "function",
+		name: "claim",
+		stateMutability: "nonpayable",
+		inputs: [
+			{ name: "users", type: "address[]" },
+			{ name: "tokens", type: "address[]" },
+			{ name: "amounts", type: "uint256[]" },
+			{ name: "proofs", type: "bytes32[][]" },
+		],
+		outputs: [],
+	},
+] as const satisfies Abi;
+
+const reulLockAbi = [
+	{
+		type: "function",
+		name: "withdrawToByLockTimestamp",
+		stateMutability: "nonpayable",
+		inputs: [
+			{ name: "account", type: "address" },
+			{ name: "lockTimestamp", type: "uint256" },
+			{ name: "allowRemainderLoss", type: "bool" },
+		],
+		outputs: [{ name: "success", type: "bool" }],
 	},
 ] as const satisfies Abi;
 
@@ -41,10 +100,11 @@ function createExecutionService() {
 						permit2: "0x0000000000000000000000000000000000000012",
 					},
 					lensAddrs: {
-						accountLens: "0x0000000000000000000000000000000000000013",
+						accountLens: ACCOUNT_LENS,
 						vaultLens: "0x0000000000000000000000000000000000000014",
 						eulerEarnVaultLens:
 							"0x0000000000000000000000000000000000000015",
+						utilsLens: UTILS_LENS,
 					},
 				},
 			}),
@@ -60,6 +120,171 @@ function createExecutionService() {
 beforeEach(() => {
 	vi.mocked(estimateContractGas).mockReset();
 });
+
+async function simulateAndCollectVaultAccountReads(
+	plan: TransactionPlan,
+	vaultTypes: Record<string, VaultType> = {
+		[getAddress(TARGET)]: VaultType.EVault,
+	},
+): Promise<Set<string>> {
+	const simulateContract = vi.fn(
+		async ({ args }: { args: readonly [EVCBatchItem[]] }) => {
+			const fullBatch = args[0];
+			return {
+				result: [
+					fullBatch.map((item) => ({
+						success:
+							getAddress(item.targetContract) === getAddress(TARGET) ||
+							getAddress(item.targetContract) === getAddress(VERIFIER),
+						result: "0x",
+					})),
+					[],
+					[],
+				],
+			};
+		},
+	);
+	const provider = {
+		simulateContract,
+		multicall: vi.fn(async () => []),
+		readContract: vi.fn(async () => {
+			throw new Error("asset unavailable");
+		}),
+	};
+	const service = new ExecutionService(
+		{
+			getDeployment: () => ({
+				addresses: {
+					coreAddrs: {
+						evc: EVC,
+						permit2: "0x0000000000000000000000000000000000000012",
+					},
+					lensAddrs: {
+						accountLens: ACCOUNT_LENS,
+						vaultLens: VAULT_LENS,
+						eulerEarnVaultLens: EULER_EARN_LENS,
+						utilsLens: UTILS_LENS,
+					},
+				},
+			}),
+		} as never,
+		undefined,
+		{ getProvider: () => provider } as never,
+		{
+			fetchVaultTypes: async () => vaultTypes,
+		} as never,
+	);
+
+	await service.simulateTransactionPlan(1, CHECKSUM_ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+
+	const fullBatch = simulateContract.mock.calls[0]?.[0].args[0] ?? [];
+	const vaultAccountReads = new Set<string>();
+	for (const item of fullBatch) {
+		if (getAddress(item.targetContract) !== getAddress(ACCOUNT_LENS)) continue;
+		const decoded = decodeFunctionData({
+			abi: accountLensAbi,
+			data: item.data,
+		});
+		if (decoded.functionName !== "getVaultAccountInfo") continue;
+		const [subAccount, vault] = decoded.args as [string, string];
+		vaultAccountReads.add(`${getAddress(subAccount)}:${getAddress(vault)}`);
+	}
+	return vaultAccountReads;
+}
+
+async function simulateAndCollectWalletBalanceReads(
+	plan: TransactionPlan,
+	options: {
+		eulToken?: Address;
+		readUnderlying?: Address;
+	} = {},
+): Promise<Set<string>> {
+	const simulateContract = vi.fn(
+		async ({ args }: { args: readonly [EVCBatchItem[]] }) => {
+			const fullBatch = args[0];
+			return {
+				result: [
+					fullBatch.map((item) => {
+						try {
+							const decoded = decodeFunctionData({
+								abi: erc20BalanceAbi,
+								data: item.data,
+							});
+							if (decoded.functionName === "balanceOf") {
+								return {
+									success: true,
+									result: encodeFunctionResult({
+										abi: erc20BalanceAbi,
+										functionName: "balanceOf",
+										result: 0n,
+									}),
+								};
+							}
+						} catch {}
+						return { success: false, result: "0x" };
+					}),
+					[],
+					[],
+				],
+			};
+		},
+	);
+	const provider = {
+		simulateContract,
+		multicall: vi.fn(async () => []),
+		readContract: vi.fn(async ({ functionName }: { functionName: string }) => {
+			if (functionName === "underlying" && options.readUnderlying) {
+				return options.readUnderlying;
+			}
+			throw new Error("read unavailable");
+		}),
+	};
+	const service = new ExecutionService(
+		{
+			getDeployment: () => ({
+				addresses: {
+					coreAddrs: {
+						evc: EVC,
+						permit2: "0x0000000000000000000000000000000000000012",
+					},
+					lensAddrs: {
+						accountLens: ACCOUNT_LENS,
+						vaultLens: VAULT_LENS,
+						eulerEarnVaultLens: EULER_EARN_LENS,
+						utilsLens: UTILS_LENS,
+					},
+					tokenAddrs: options.eulToken ? { EUL: options.eulToken } : {},
+				},
+			}),
+		} as never,
+		undefined,
+		{ getProvider: () => provider } as never,
+		{
+			fetchVaultTypes: async () => ({}),
+		} as never,
+	);
+
+	await service.simulateTransactionPlan(1, CHECKSUM_ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+
+	const fullBatch = simulateContract.mock.calls[0]?.[0].args[0] ?? [];
+	const walletBalanceReads = new Set<string>();
+	for (const item of fullBatch) {
+		try {
+			const decoded = decodeFunctionData({
+				abi: erc20BalanceAbi,
+				data: item.data,
+			});
+			if (decoded.functionName === "balanceOf") {
+				walletBalanceReads.add(getAddress(item.targetContract));
+			}
+		} catch {}
+	}
+	return walletBalanceReads;
+}
 
 test("estimateGasForTransactionPlan estimates executable plan items", async () => {
 	const service = createExecutionService();
@@ -140,12 +365,116 @@ test("simulateTransactionPlan rejects CoW swap plans", async () => {
 	);
 });
 
-test("simulateTransactionPlan reads vault account info for EVC enabled collateral", async () => {
-	let simulatedBatch:
-		| readonly { targetContract: string; data: `0x${string}` }[]
-		| undefined;
-	let requestedVaultTypes: string[] = [];
-	const accountLens = "0x0000000000000000000000000000000000000013";
+test("simulateTransactionPlan tracks operation wallet balance tokens", async () => {
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					type: "operation",
+					name: "Claim rewards",
+					walletBalanceTokens: [TOKEN],
+					items: [
+						{
+							targetContract: TARGET,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: testAbi,
+								functionName: "doThing",
+								args: [1n],
+							}),
+						},
+					],
+				},
+			],
+		},
+	];
+
+	const reads = await simulateAndCollectWalletBalanceReads(plan);
+
+	assert.ok(reads.has(getAddress(TOKEN)));
+});
+
+test("simulateTransactionPlan tracks required approval wallet balance tokens", async () => {
+	const plan: TransactionPlan = [
+		{
+			type: "requiredApproval",
+			token: TOKEN,
+			owner: ACCOUNT,
+			spender: SPENDER,
+			amount: 100n,
+		},
+		{
+			type: "evcBatch",
+			items: [
+				{
+					type: "operation",
+					name: "depositWithSwapFromWallet",
+					items: [
+						{
+							targetContract: TARGET,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: testAbi,
+								functionName: "doThing",
+								args: [1n],
+							}),
+						},
+					],
+				},
+			],
+		},
+	];
+
+	const reads = await simulateAndCollectWalletBalanceReads(plan);
+
+	assert.ok(reads.has(getAddress(TOKEN)));
+});
+
+test("simulateTransactionPlan nets required approval shortfalls from wallet balance layers", async () => {
+	const layerBalances = [0n, 150n, 50n];
+	let balanceReadIndex = 0;
+	const simulateContract = vi.fn(
+		async ({ args }: { args: readonly [EVCBatchItem[]] }) => {
+			const fullBatch = args[0];
+			return {
+				result: [
+					fullBatch.map((item) => {
+						if (getAddress(item.targetContract) === getAddress(ACCOUNT_LENS)) {
+							return { success: false, result: "0x" };
+						}
+						try {
+							const decoded = decodeFunctionData({
+								abi: erc20BalanceAbi,
+								data: item.data,
+							});
+							if (
+								decoded.functionName === "balanceOf" &&
+								getAddress(item.targetContract) === getAddress(TOKEN)
+							) {
+								const balance =
+									layerBalances[Math.min(balanceReadIndex, layerBalances.length - 1)]!;
+								balanceReadIndex++;
+								return {
+									success: true,
+									result: encodeFunctionResult({
+										abi: erc20BalanceAbi,
+										functionName: "balanceOf",
+										result: balance,
+									}),
+								};
+							}
+						} catch {}
+						return { success: true, result: "0x" };
+					}),
+					[],
+					[],
+				],
+			};
+		},
+	);
 	const service = new ExecutionService(
 		{
 			getDeployment: () => ({
@@ -155,45 +484,86 @@ test("simulateTransactionPlan reads vault account info for EVC enabled collatera
 						permit2: "0x0000000000000000000000000000000000000012",
 					},
 					lensAddrs: {
-						accountLens,
-						vaultLens: "0x0000000000000000000000000000000000000014",
-						eulerEarnVaultLens:
-							"0x0000000000000000000000000000000000000015",
+						accountLens: ACCOUNT_LENS,
+						vaultLens: VAULT_LENS,
+						eulerEarnVaultLens: EULER_EARN_LENS,
+						utilsLens: UTILS_LENS,
 					},
 				},
 			}),
 		} as never,
-		undefined,
 		{
-			getProvider: () => ({
-				simulateContract: async (request: {
-					args?: readonly [readonly { targetContract: string; data: `0x${string}` }[]];
-				}) => {
-					simulatedBatch = request.args?.[0];
-					throw new Error("stop after batch construction");
+			fetchWallet: async () => ({
+				result: {
+					getAsset: () => ({
+						balance: 0n,
+						allowances: {
+							[SPENDER]: {
+								assetForVault: 1_000n,
+								assetForVaultInPermit2: 1_000n,
+								permit2ExpirationTime: Math.floor(Date.now() / 1000) + 60,
+							},
+						},
+					}),
+					getBalance: () => 0n,
 				},
 			}),
 		} as never,
 		{
-			fetchVaultTypes: async (_chainId: number, vaults: string[]) => {
-				requestedVaultTypes = vaults.map((vault) => getAddress(vault));
-				return { [getAddress(TARGET)]: VaultType.EVault };
-			},
+			getProvider: () => ({
+				simulateContract,
+				multicall: vi.fn(async () => []),
+				readContract: vi.fn(async () => {
+					throw new Error("read unavailable");
+				}),
+			}),
+		} as never,
+		{
+			fetchVaultTypes: async () => ({}),
 		} as never,
 	);
 	const plan: TransactionPlan = [
 		{
+			type: "requiredApproval",
+			token: TOKEN,
+			owner: ACCOUNT,
+			spender: SPENDER,
+			amount: 100n,
+		},
+		{
 			type: "evcBatch",
 			items: [
 				{
-					targetContract: EVC,
-					onBehalfOfAccount: ACCOUNT,
-					value: 0n,
-					data: encodeFunctionData({
-						abi: ethereumVaultConnectorAbi,
-						functionName: "enableCollateral",
-						args: [ACCOUNT, TARGET],
-					}),
+					type: "operation",
+					name: "withdraw",
+					items: [
+						{
+							targetContract: TARGET,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: testAbi,
+								functionName: "doThing",
+								args: [1n],
+							}),
+						},
+					],
+				},
+				{
+					type: "operation",
+					name: "depositWithSwapFromWallet",
+					items: [
+						{
+							targetContract: TARGET,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: testAbi,
+								functionName: "doThing",
+								args: [2n],
+							}),
+						},
+					],
 				},
 			],
 		},
@@ -203,19 +573,71 @@ test("simulateTransactionPlan reads vault account info for EVC enabled collatera
 		stateOverrides: false,
 	});
 
-	assert.ok("simulationError" in result);
-	assert.ok(requestedVaultTypes.includes(getAddress(TARGET)));
-	const vaultAccountReads = (simulatedBatch ?? []).flatMap((item) => {
-		if (getAddress(item.targetContract) !== getAddress(accountLens)) return [];
-		try {
-			const decoded = decodeFunctionData({ abi: accountLensAbi, data: item.data });
-			if (decoded.functionName !== "getVaultAccountInfo") return [];
-			return [Array.from(decoded.args ?? [])];
-		} catch {
-			return [];
-		}
-	});
-	assert.deepEqual(vaultAccountReads, [[CHECKSUM_ACCOUNT, getAddress(TARGET)]]);
+	assert.equal(balanceReadIndex, 3);
+	assert.equal(result.insufficientWalletAssets, undefined);
+});
+
+test("simulateTransactionPlan tracks Merkl claim reward tokens", async () => {
+	const proof =
+		"0x1111111111111111111111111111111111111111111111111111111111111111" as const;
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					type: "operation",
+					name: "Claim rewards",
+					items: [
+						{
+							targetContract: TARGET,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: merklClaimAbi,
+								functionName: "claim",
+								args: [[ACCOUNT], [TOKEN], [1n], [[proof]]],
+							}),
+						},
+					],
+				},
+			],
+		},
+	];
+
+	const reads = await simulateAndCollectWalletBalanceReads(plan);
+
+	assert.ok(reads.has(getAddress(TOKEN)));
+});
+
+test("simulateTransactionPlan tracks EUL balance for rEUL unlocks", async () => {
+	const eulToken = getAddress("0x0000000000000000000000000000000000000017");
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					type: "operation",
+					name: "Unlock rEUL",
+					items: [
+						{
+							targetContract: TARGET,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: reulLockAbi,
+								functionName: "withdrawToByLockTimestamp",
+								args: [ACCOUNT, 1n, true],
+							}),
+						},
+					],
+				},
+			],
+		},
+	];
+
+	const reads = await simulateAndCollectWalletBalanceReads(plan, { eulToken });
+
+	assert.ok(reads.has(eulToken));
 });
 
 test("estimateGasForTransactionPlan rejects CoW swap plans", async () => {
@@ -340,6 +762,7 @@ test("simulateTransactionPlan reports direct allowance deficits from spender all
 						vaultLens: "0x0000000000000000000000000000000000000014",
 						eulerEarnVaultLens:
 							"0x0000000000000000000000000000000000000015",
+						utilsLens: UTILS_LENS,
 					},
 				},
 			}),
@@ -402,4 +825,288 @@ test("simulateTransactionPlan reports direct allowance deficits from spender all
 		{ token: TOKEN, amount: 60n },
 	]);
 	assert.equal(result.insufficientPermit2Allowances, undefined);
+});
+
+test("simulateTransactionPlan reads both sides of transferFromMax cleanup", async () => {
+	const fromSubAccount = getSubAccountAddress(CHECKSUM_ACCOUNT, 1);
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: TARGET,
+					onBehalfOfAccount: fromSubAccount,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: eVaultAbi,
+						functionName: "transferFromMax",
+						args: [fromSubAccount, CHECKSUM_ACCOUNT],
+					}),
+				},
+			],
+		},
+	];
+
+	const vaultAccountReads = await simulateAndCollectVaultAccountReads(plan);
+
+	assert.ok(
+		vaultAccountReads.has(`${fromSubAccount}:${getAddress(TARGET)}`),
+	);
+	assert.ok(
+		vaultAccountReads.has(`${CHECKSUM_ACCOUNT}:${getAddress(TARGET)}`),
+	);
+});
+
+test("simulateTransactionPlan reads EVC account-mode candidates", async () => {
+	const subAccount = getSubAccountAddress(CHECKSUM_ACCOUNT, 1);
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: EVC,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: ethereumVaultConnectorAbi,
+						functionName: "enableCollateral",
+						args: [subAccount, TARGET],
+					}),
+				},
+				{
+					targetContract: EVC,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: ethereumVaultConnectorAbi,
+						functionName: "enableController",
+						args: [subAccount, TOKEN],
+					}),
+				},
+			],
+		},
+	];
+
+	const vaultAccountReads = await simulateAndCollectVaultAccountReads(plan, {
+		[getAddress(TARGET)]: VaultType.EVault,
+		[getAddress(TOKEN)]: VaultType.EVault,
+	});
+
+	assert.ok(vaultAccountReads.has(`${subAccount}:${getAddress(TARGET)}`));
+	assert.ok(vaultAccountReads.has(`${subAccount}:${getAddress(TOKEN)}`));
+});
+
+test("simulateTransactionPlan reads vault account info for EVC enabled collateral", async () => {
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: EVC,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: ethereumVaultConnectorAbi,
+						functionName: "enableCollateral",
+						args: [ACCOUNT, TARGET],
+					}),
+				},
+			],
+		},
+	];
+
+	const vaultAccountReads = await simulateAndCollectVaultAccountReads(plan);
+
+	assert.ok(vaultAccountReads.has(`${CHECKSUM_ACCOUNT}:${getAddress(TARGET)}`));
+});
+
+test("simulateTransactionPlan reads Securitize vault info on behalf of the owner", async () => {
+	const actionData = encodeFunctionData({
+		abi: testAbi,
+		functionName: "doThing",
+		args: [1n],
+	});
+	const simulateContract = vi.fn(
+		async ({ args }: { args: readonly [EVCBatchItem[]] }) => {
+			const fullBatch = args[0];
+			return {
+				result: [
+					fullBatch.map((item) => ({
+						success:
+							getAddress(item.targetContract) === getAddress(SECURITIZE_VAULT) &&
+							item.data === actionData,
+						result: "0x",
+					})),
+					[],
+					[],
+				],
+			};
+		},
+	);
+	const provider = {
+		simulateContract,
+		multicall: vi.fn(async () => []),
+		readContract: vi.fn(async () => {
+			throw new Error("asset unavailable");
+		}),
+	};
+	const service = new ExecutionService(
+		{
+			getDeployment: () => ({
+				addresses: {
+					coreAddrs: {
+						evc: EVC,
+						permit2: "0x0000000000000000000000000000000000000012",
+					},
+					lensAddrs: {
+						accountLens: ACCOUNT_LENS,
+						vaultLens: VAULT_LENS,
+						eulerEarnVaultLens: EULER_EARN_LENS,
+						utilsLens: UTILS_LENS,
+					},
+				},
+			}),
+		} as never,
+		undefined,
+		{ getProvider: () => provider } as never,
+		{
+			fetchVaultTypes: async () => ({
+				[getAddress(SECURITIZE_VAULT)]: VaultType.SecuritizeCollateral,
+			}),
+		} as never,
+	);
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: SECURITIZE_VAULT,
+					onBehalfOfAccount: CHECKSUM_ACCOUNT,
+					value: 0n,
+					data: actionData,
+				},
+			],
+		},
+	];
+
+	await service.simulateTransactionPlan(1, CHECKSUM_ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+
+	const fullBatch = simulateContract.mock.calls[0]?.[0].args[0] ?? [];
+	const securitizeReadItems = fullBatch.filter(
+		(item) =>
+			getAddress(item.targetContract) === getAddress(UTILS_LENS) ||
+			(getAddress(item.targetContract) === getAddress(SECURITIZE_VAULT) &&
+				item.data !== actionData),
+	);
+
+	assert.equal(securitizeReadItems.length, 6);
+	assert.deepEqual(
+		securitizeReadItems.map((item) => getAddress(item.onBehalfOfAccount)),
+		Array.from({ length: 6 }, () => CHECKSUM_ACCOUNT),
+	);
+});
+
+test("simulateTransactionPlan reads liquidation and pull-debt candidates", async () => {
+	const liquidator = getSubAccountAddress(CHECKSUM_ACCOUNT, 1);
+	const violator = getSubAccountAddress(CHECKSUM_ACCOUNT, 2);
+	const debtFrom = getSubAccountAddress(CHECKSUM_ACCOUNT, 3);
+	const debtTo = getSubAccountAddress(CHECKSUM_ACCOUNT, 4);
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: TARGET,
+					onBehalfOfAccount: liquidator,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: eVaultAbi,
+						functionName: "liquidate",
+						args: [violator, TOKEN, 100n, 1n],
+					}),
+				},
+				{
+					targetContract: TARGET,
+					onBehalfOfAccount: debtTo,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: eVaultAbi,
+						functionName: "pullDebt",
+						args: [50n, debtFrom],
+					}),
+				},
+			],
+		},
+	];
+
+	const vaultAccountReads = await simulateAndCollectVaultAccountReads(plan, {
+		[getAddress(TARGET)]: VaultType.EVault,
+		[getAddress(TOKEN)]: VaultType.EVault,
+	});
+
+	assert.ok(vaultAccountReads.has(`${violator}:${getAddress(TARGET)}`));
+	assert.ok(vaultAccountReads.has(`${violator}:${getAddress(TOKEN)}`));
+	assert.ok(vaultAccountReads.has(`${liquidator}:${getAddress(TOKEN)}`));
+	assert.ok(vaultAccountReads.has(`${debtFrom}:${getAddress(TARGET)}`));
+	assert.ok(vaultAccountReads.has(`${debtTo}:${getAddress(TARGET)}`));
+});
+
+test("simulateTransactionPlan reads swap-verifier account candidates", async () => {
+	const subAccount = getSubAccountAddress(CHECKSUM_ACCOUNT, 1);
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: VERIFIER,
+					onBehalfOfAccount: subAccount,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: swapVerifierAbi,
+						functionName: "verifyAmountMinAndSkim",
+						args: [TARGET, subAccount, 100n, 0n],
+					}),
+				},
+				{
+					targetContract: VERIFIER,
+					onBehalfOfAccount: subAccount,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: swapVerifierAbi,
+						functionName: "verifyDebtMax",
+						args: [TOKEN, subAccount, 100n, 0n],
+					}),
+				},
+			],
+		},
+	];
+
+	const vaultAccountReads = await simulateAndCollectVaultAccountReads(plan, {
+		[getAddress(TARGET)]: VaultType.EVault,
+		[getAddress(TOKEN)]: VaultType.EVault,
+	});
+
+	assert.ok(vaultAccountReads.has(`${subAccount}:${getAddress(TARGET)}`));
+	assert.ok(vaultAccountReads.has(`${subAccount}:${getAddress(TOKEN)}`));
+});
+
+test("extractBalanceRequirements sums a token's approvals across spenders", () => {
+	// Same token pulled by two different spenders (e.g. supplying it into two
+	// vaults) — the wallet must fund the total, so the forge requirement is the
+	// sum, not the largest single approval. Forging only the max would let the
+	// second pull revert mid-simulation with E_InsufficientBalance.
+	const SPENDER_B = "0x00000000000000000000000000000000000000c2" as const;
+	const OTHER_OWNER = "0x00000000000000000000000000000000000000f1" as const;
+	const plan: TransactionPlan = [
+		{ type: "requiredApproval", token: TOKEN, owner: ACCOUNT, spender: SPENDER, amount: 50n },
+		{ type: "requiredApproval", token: TOKEN, owner: ACCOUNT, spender: SPENDER_B, amount: 50n },
+		// A different owner's approval must not count toward this account.
+		{ type: "requiredApproval", token: TOKEN, owner: OTHER_OWNER, spender: SPENDER, amount: 999n },
+	];
+
+	const requirements = extractBalanceRequirements(plan, ACCOUNT);
+
+	assert.deepEqual(requirements, [[getAddress(TOKEN), 100n]]);
 });

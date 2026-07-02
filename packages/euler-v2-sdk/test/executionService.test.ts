@@ -546,6 +546,44 @@ test("mergePlans preserves operation groupings while concatenating adjacent batc
 	assert.deepEqual(flattenBatchEntries(merged[0].items), [first, extra, second]);
 });
 
+test("mergePlans preserves operation wallet balance token metadata", () => {
+	const service = createExecutionService();
+	const first = createBatchItem(VAULT_IN);
+	const second = createBatchItem(LIABILITY_VAULT);
+	const firstPlan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					type: "operation",
+					name: "claim",
+					items: [first],
+					walletBalanceTokens: [TOKEN_IN],
+				},
+			],
+		},
+	];
+	const secondPlan = service.convertBatchItemsToPlan([second], "second");
+
+	const merged = service.mergePlans([firstPlan, secondPlan]);
+
+	assert.equal(merged[0]?.type, "evcBatch");
+	if (merged[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+	const firstEntry = merged[0].items[0];
+	assert.equal(
+		firstEntry && "type" in firstEntry ? firstEntry.type : undefined,
+		"operation",
+	);
+	assert.deepEqual(
+		firstEntry && "type" in firstEntry
+			? firstEntry.walletBalanceTokens
+			: undefined,
+		[TOKEN_IN],
+	);
+});
+
 test("mergePlans collapses collateral state transitions to the resulting action", () => {
 	const service = createExecutionService();
 	const enable = service.encodeEnableCollateral(1, ACCOUNT, COLLATERAL_VAULT);

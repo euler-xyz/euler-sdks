@@ -1,4 +1,4 @@
-import { type Address, getAddress, isAddressEqual } from "viem";
+import { type Address, getAddress, isAddressEqual, zeroAddress } from "viem";
 
 export interface IWallet {
 	chainId: number;
@@ -38,6 +38,16 @@ export class Wallet implements IWallet {
 
 	getBalance(asset: Address): bigint {
 		return this.getAsset(asset)?.balance ?? 0n;
+	}
+
+	/**
+	 * Native (gas) token balance. The wallet adapter fetches it via
+	 * `eth_getBalance` when the zero address is among the requested assets and
+	 * stores it as a `WalletAsset` keyed by the zero address, so this is just an
+	 * explicit accessor for that convention.
+	 */
+	getNativeBalance(): bigint {
+		return this.getBalance(zeroAddress);
 	}
 
 	getAllowances(asset: Address, spender: Address): AssetAllowances | undefined {

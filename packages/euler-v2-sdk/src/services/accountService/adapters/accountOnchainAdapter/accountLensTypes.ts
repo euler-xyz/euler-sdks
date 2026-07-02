@@ -48,6 +48,11 @@ export interface VaultAccountInfo {
 	assetAllowanceExpirationVaultPermit2: bigint;
 	assetAllowancePermit2: bigint;
 	balanceForwarderEnabled: boolean;
+	enabledRewardsInfo?: {
+		reward: Address;
+		earnedReward: bigint;
+		earnedRewardRecentIgnored: bigint;
+	}[];
 	isController: boolean;
 	isCollateral: boolean;
 	liquidityInfo: AccountLiquidityInfo;

@@ -1,14 +1,27 @@
-import { type Address, getAddress, type Hex } from "viem";
+import {
+	type Address,
+	encodeFunctionData,
+	getAddress,
+	type Hex,
+	zeroAddress,
+} from "viem";
 import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
+import type { AccountRewardStream } from "../../entities/Account.js";
 import type {
 	ContractCall,
+	EVCBatchItem,
 	TransactionPlan,
 } from "../executionService/index.js";
 import type { ProviderService } from "../providerService/index.js";
+import type { DeploymentService } from "../deploymentService/index.js";
+import { accountLensAbi } from "../accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
+import type { VaultAccountInfo } from "../accountService/adapters/accountOnchainAdapter/accountLensTypes.js";
 import type {
 	BuildRewardClaimAllPlanArgs,
 	BuildRewardClaimPlanArgs,
 	BuildRewardClaimsPlanArgs,
+	FetchRewardStreamsArgs,
+	BuildRewardStreamClaimPlanArgs,
 	FuulClaimCheck,
 	FuulTotals,
 	IRewardsAdapter,
@@ -122,6 +135,21 @@ const FUUL_FACTORY_ABI = [
 	},
 ] as const;
 
+const REWARD_STREAMS_ABI = [
+	{
+		type: "function",
+		name: "claimReward",
+		inputs: [
+			{ name: "rewarded", type: "address", internalType: "address" },
+			{ name: "reward", type: "address", internalType: "address" },
+			{ name: "to", type: "address", internalType: "address" },
+			{ name: "ignoreRecentReward", type: "bool", internalType: "bool" },
+		],
+		outputs: [{ name: "amount", type: "uint256", internalType: "uint256" }],
+		stateMutability: "nonpayable",
+	},
+] as const;
+
 const MERKL_DEFAULT_DISTRIBUTOR: Address =
 	"0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae";
 const MERKL_DEFAULT_DISTRIBUTOR_CHAIN_IDS = new Set([
@@ -156,8 +184,22 @@ const hasBrevisClaimData = (reward: UserReward): boolean =>
 const fuulRewardKey = (currency: string, currencyType?: number): string =>
 	`${getAddress(currency).toLowerCase()}:${currencyType ?? "*"}`;
 
+const uniqueAddresses = (
+	addresses: Iterable<string | Address | undefined>,
+): Address[] => {
+	const out = new Map<string, Address>();
+	for (const address of addresses) {
+		if (!address) continue;
+		const checksum = getAddress(address);
+		if (checksum === zeroAddress) continue;
+		out.set(checksum.toLowerCase(), checksum as Address);
+	}
+	return [...out.values()];
+};
+
 export class RewardsService implements IRewardsService {
 	private providerService?: ProviderService;
+	private deploymentService?: DeploymentService;
 	private isActiveForViewer: IsActiveForViewerFn;
 
 	constructor(
@@ -166,6 +208,7 @@ export class RewardsService implements IRewardsService {
 			merklDistributorAddress: Address;
 			fuulManagerAddress: Address;
 			fuulFactoryAddress: Address;
+			rewardStreamsAddress?: Address;
 		},
 		options?: { isActiveForViewer?: IsActiveForViewerFn },
 	) {
@@ -179,6 +222,10 @@ export class RewardsService implements IRewardsService {
 
 	setProviderService(providerService: ProviderService): void {
 		this.providerService = providerService;
+	}
+
+	setDeploymentService(deploymentService: DeploymentService): void {
+		this.deploymentService = deploymentService;
 	}
 
 	setIsActiveForViewer(fn: IsActiveForViewerFn): void {
@@ -245,6 +292,66 @@ export class RewardsService implements IRewardsService {
 		chainId?: number,
 	): Promise<FuulClaimCheck[]> {
 		return this.adapter.fetchFuulClaimChecks(address, chainId);
+	}
+
+	queryVaultAccountInfo = async (
+		provider: ReturnType<ProviderService["getProvider"]>,
+		accountLensAddress: Address,
+		account: Address,
+		vault: Address,
+	): Promise<VaultAccountInfo> => {
+		return provider.readContract({
+			address: accountLensAddress,
+			abi: accountLensAbi,
+			functionName: "getVaultAccountInfo",
+			args: [account, vault],
+		}) as Promise<VaultAccountInfo>;
+	};
+
+	setQueryVaultAccountInfo(fn: typeof this.queryVaultAccountInfo): void {
+		this.queryVaultAccountInfo = fn;
+	}
+
+	async fetchRewardStreams(
+		args: FetchRewardStreamsArgs,
+	): Promise<AccountRewardStream[]> {
+		const provider = this.getProvider(args.chainId);
+		const accountLensAddress = this.resolveAccountLensAddress(
+			args.chainId,
+			args.accountLensAddress,
+		);
+		const uniquePositions = Array.from(
+			new Map(
+				args.positions.map((position) => {
+					const account = getAddress(position.account) as Address;
+					const vault = getAddress(position.vault) as Address;
+					return [`${account}:${vault}`, { account, vault }];
+				}),
+			).values(),
+		);
+
+		const vaultAccountInfos = await Promise.all(
+			uniquePositions.map((position) =>
+				this.queryVaultAccountInfo(
+					provider,
+					accountLensAddress,
+					position.account,
+					position.vault,
+				),
+			),
+		);
+
+		return vaultAccountInfos.flatMap((vaultAccountInfo) =>
+			(vaultAccountInfo.enabledRewardsInfo ?? [])
+				.filter((rewardInfo) => rewardInfo.earnedReward > 0n)
+				.map((rewardInfo) => ({
+					account: getAddress(vaultAccountInfo.account) as Address,
+					vault: getAddress(vaultAccountInfo.vault) as Address,
+					reward: getAddress(rewardInfo.reward) as Address,
+					earnedReward: rewardInfo.earnedReward,
+					earnedRewardRecentIgnored: rewardInfo.earnedRewardRecentIgnored,
+				})),
+		);
 	}
 
 	async buildClaimPlan(
@@ -331,14 +438,145 @@ export class RewardsService implements IRewardsService {
 			);
 		}
 
-		return plan;
+		return this.buildContractCallBatchPlan(plan, account, "Claim rewards");
 	}
 
 	async buildClaimAllPlan(
 		args: BuildRewardClaimAllPlanArgs,
 	): Promise<TransactionPlan> {
 		const rewards = await this.fetchUserRewards(args.chainId, args.account);
-		return this.buildClaimPlans({ rewards, account: args.account });
+		return this.buildClaimPlans({
+			rewards,
+			account: args.account,
+		});
+	}
+
+	buildRewardStreamClaimPlan(
+		args: BuildRewardStreamClaimPlanArgs,
+	): TransactionPlan {
+		const rewardStreamsAddress = this.resolveRewardStreamsAddress(
+			args.chainId,
+			args.rewardStreamsAddress,
+		);
+		const recipient = getAddress(args.recipient) as Address;
+		const items: EVCBatchItem[] = args.rewardStreams
+			.filter((rewardStream) => rewardStream.earnedReward > 0n)
+			.map((rewardStream) => ({
+				targetContract: rewardStreamsAddress,
+				onBehalfOfAccount: getAddress(rewardStream.account) as Address,
+				value: 0n,
+				data: encodeFunctionData({
+					abi: REWARD_STREAMS_ABI,
+					functionName: "claimReward",
+					args: [
+						getAddress(rewardStream.vault) as Address,
+						getAddress(rewardStream.reward) as Address,
+						recipient,
+						rewardStream.earnedReward ===
+							rewardStream.earnedRewardRecentIgnored,
+					],
+				}),
+			}));
+
+		if (items.length === 0) return [];
+		const walletBalanceTokens = uniqueAddresses(
+			args.rewardStreams
+				.filter((rewardStream) => rewardStream.earnedReward > 0n)
+				.map((rewardStream) => rewardStream.reward),
+		);
+		return [
+			{
+				type: "evcBatch",
+				items: [
+					{
+						type: "operation",
+						name: "Claim rewards",
+						items,
+						...(walletBalanceTokens.length ? { walletBalanceTokens } : {}),
+					},
+				],
+			},
+		];
+	}
+
+	private getProvider(
+		chainId: number,
+	): ReturnType<ProviderService["getProvider"]> {
+		if (!this.providerService) {
+			throw new Error("Provider service not configured");
+		}
+		return this.providerService.getProvider(chainId);
+	}
+
+	private getDeployment(chainId: number) {
+		if (!this.deploymentService) {
+			throw new Error("Deployment service not configured");
+		}
+		return this.deploymentService.getDeployment(chainId);
+	}
+
+	private resolveRewardStreamsAddress(
+		chainId: number,
+		override?: Address,
+	): Address {
+		return (
+			override ??
+			this.addresses.rewardStreamsAddress ??
+			this.getDeployment(chainId).addresses.coreAddrs.balanceTracker
+		);
+	}
+
+	private resolveAccountLensAddress(
+		chainId: number,
+		override?: Address,
+	): Address {
+		return (
+			override ?? this.getDeployment(chainId).addresses.lensAddrs.accountLens
+		);
+	}
+
+	private buildContractCallBatchPlan(
+		plan: TransactionPlan,
+		account: Address,
+		operationName: string,
+	): TransactionPlan {
+		const items: EVCBatchItem[] = plan.map((item) => {
+			if (item.type !== "contractCall") {
+				throw new Error(
+					"RewardsService can only convert contract-call reward claims to EVC batch items",
+				);
+			}
+			return {
+				targetContract: item.to,
+				onBehalfOfAccount: account,
+				value: item.value,
+				data: encodeFunctionData({
+					abi: item.abi,
+					functionName: item.functionName,
+					args: item.args,
+				}),
+			};
+		});
+
+		if (items.length === 0) return [];
+		const walletBalanceTokens = uniqueAddresses(
+			plan.flatMap((item) =>
+				item.type === "contractCall" ? (item.walletBalanceTokens ?? []) : [],
+			),
+		);
+		return [
+			{
+				type: "evcBatch",
+				items: [
+					{
+						type: "operation",
+							name: operationName,
+							items,
+							...(walletBalanceTokens.length ? { walletBalanceTokens } : {}),
+						},
+					],
+				},
+		];
 	}
 
 	private buildMerklContractCall(
@@ -364,6 +602,9 @@ export class RewardsService implements IRewardsService {
 				rewards.map((reward) => reward.proof ?? []),
 			],
 			value: 0n,
+			walletBalanceTokens: uniqueAddresses(
+				rewards.map((reward) => reward.token.address),
+			),
 		};
 	}
 
@@ -480,6 +721,7 @@ export class RewardsService implements IRewardsService {
 				reward.proof,
 			],
 			value: 0n,
+			walletBalanceTokens: [getAddress(reward.token.address) as Address],
 		};
 	}
 
@@ -534,6 +776,9 @@ export class RewardsService implements IRewardsService {
 				})),
 			],
 			value: totalFee,
+			walletBalanceTokens: uniqueAddresses(
+				claimChecks.map((check) => check.currency),
+			),
 		};
 	}
 

@@ -39,6 +39,6 @@ export interface BuildUnlockREULPlanArgs {
 export interface IREULLockService {
 	/** Fetch all rEUL locks and their current withdraw amounts for an account. */
 	fetchLocks(args: FetchREULLocksArgs): Promise<REULLock[]>;
-	/** Build a direct contract-call transaction plan for one rEUL lock unlock. */
+	/** Build a transaction plan for one rEUL lock unlock. */
 	buildUnlockPlan(args: BuildUnlockREULPlanArgs): TransactionPlan;
 }

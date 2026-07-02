@@ -1,12 +1,14 @@
-# euler-v2-sdk v1.0.0
+# euler-v2-sdk v1.0.6
 
 ## Summary
 
-This stable release publishes the current Euler V2 SDK package as 1.0.0.
+This release fixes wallet shortfall diagnostics for batched wallet-sourced deposits funded by earlier simulated operations.
 
 ## Highlights
 
-- Memoized oracle route adapter ABI decoding to avoid repeated decode work when resolving route steps.
+- Required-approval wallet tokens are now included in simulation wallet balance layers.
+- Batched deposits can use wallet funds created by earlier withdraw or swap steps before reporting a missing wallet balance.
+- Empty computed wallet shortfalls no longer fall back to static approval diagnostics.
 
 ## Validation
 

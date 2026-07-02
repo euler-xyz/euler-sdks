@@ -29,14 +29,41 @@ import {
 export const getVaultInfoERC4626LensBatchItem = (
 	utilsLensAddress: Address,
 	vault: Address,
+	onBehalfOfAccount: Address = zeroAddress,
 ): EVCBatchItem => ({
 	targetContract: utilsLensAddress,
-	onBehalfOfAccount: zeroAddress,
+	onBehalfOfAccount,
 	value: 0n,
 	data: encodeFunctionData({
 		abi: utilsLensAbi,
 		functionName: "getVaultInfoERC4626",
 		args: [vault],
+	}),
+});
+
+export const getSecuritizeGovernorAdminBatchItem = (
+	vault: Address,
+	onBehalfOfAccount: Address = zeroAddress,
+): EVCBatchItem => ({
+	targetContract: vault,
+	onBehalfOfAccount,
+	value: 0n,
+	data: encodeFunctionData({
+		abi: erc4626EvcCollateralSecuritizeAbi,
+		functionName: "governorAdmin",
+	}),
+});
+
+export const getSecuritizeSupplyCapResolvedBatchItem = (
+	vault: Address,
+	onBehalfOfAccount: Address = zeroAddress,
+): EVCBatchItem => ({
+	targetContract: vault,
+	onBehalfOfAccount,
+	value: 0n,
+	data: encodeFunctionData({
+		abi: erc4626EvcCollateralSecuritizeAbi,
+		functionName: "supplyCapResolved",
 	}),
 });
 

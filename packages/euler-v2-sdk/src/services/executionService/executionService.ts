@@ -332,7 +332,14 @@ function isWalletCollateral(
 function cloneBatchEntries(entries: readonly EVCBatchEntry[]): EVCBatchEntry[] {
 	return entries.map((entry) =>
 		"type" in entry && entry.type === "operation"
-			? { type: "operation", name: entry.name, items: [...entry.items] }
+			? {
+					type: "operation",
+					name: entry.name,
+					items: [...entry.items],
+					...(entry.walletBalanceTokens?.length
+						? { walletBalanceTokens: [...entry.walletBalanceTokens] }
+						: {}),
+				}
 			: entry,
 	);
 }
@@ -501,7 +508,14 @@ function normalizeEVCStateTransitions(
 				.filter((ref) => !ref.remove)
 				.map((ref) => ref.item);
 			if (items.length > 0) {
-				result.push({ type: "operation", name: entry.name, items });
+				result.push({
+					type: "operation",
+					name: entry.name,
+					items,
+					...(entry.walletBalanceTokens?.length
+						? { walletBalanceTokens: [...entry.walletBalanceTokens] }
+						: {}),
+				});
 			}
 			return;
 		}
