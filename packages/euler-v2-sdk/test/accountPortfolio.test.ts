@@ -1268,9 +1268,9 @@ test("portfolio applies intrinsic APY", () => {
 	});
 });
 
-test("portfolio uses EulerEarn supplyApy1h for yield metrics", () => {
+test("portfolio uses EulerEarn supplyApy for yield metrics", () => {
 	const eulerEarn = vault(savingsVault, {
-		supplyApy1h: 7.5,
+		supplyApy: 7.5,
 		rewards: {
 			campaigns: [
 				{

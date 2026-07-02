@@ -440,12 +440,12 @@ function compareEarnVault(liteVault, sdkVault) {
   const shareDecimals = sdkVault?.shares?.decimals ?? toNumber(liteVault.vaultDecimals) ?? 18;
 
   // Indexer v1/earn/vaults returns APY as percentages (0.175 = 0.175%).
-  // V3 adapter's supplyApy1h is also in percentages → compare directly.
-  // Onchain adapter's supplyApy1h is a raw fraction (0.00175 = 0.175%) → multiply by 100.
+  // V3 adapter's supplyApy is also in percentages → compare directly.
+  // Onchain adapter's supplyApy is a raw fraction (0.00175 = 0.175%) → multiply by 100.
   const sdkSupplyApyForComparison =
-    sdkVault?.supplyApy1h != null
-      ? ADAPTER_MODE === "onchain" ? sdkVault.supplyApy1h * 100 : sdkVault.supplyApy1h
-      : sdkVault?.supplyApy1h;
+    sdkVault?.supplyApy != null
+      ? ADAPTER_MODE === "onchain" ? sdkVault.supplyApy * 100 : sdkVault.supplyApy
+      : sdkVault?.supplyApy;
   // Indexer performanceFee is WAD string, SDK is 0–1 decimal
   const sdkPerformanceFee = sdkVault?.performanceFee !== undefined ? sdkVault.performanceFee * 1e18 : undefined;
 
@@ -473,11 +473,11 @@ function compareEarnVault(liteVault, sdkVault) {
   compareNumberAllowZeroLiteMissingSdk(issues, "availableAssetsUsd", liteVault.availableAssetsUSD, sdkAvailableAssetsUsd);
   // Indexer returns apyCurrent=0 for vaults without APY data; SDK returns undefined/null.
   // Treat indexer 0 with SDK null/undefined as matching.
-  // Use 5% tolerance for earn APY — the 1h aggregation window causes natural drift.
+  // Use 5% tolerance for earn APY — the short sampling window causes natural drift.
   {
     const liteApy = toNumber(liteVault.apyCurrent);
     const liteBaseApy = toNumber(liteVault.supplyApy?.baseApy);
-    // Use == null to catch both null and undefined (SDK sets supplyApy1h to null, not undefined)
+    // Use == null to catch both null and undefined (SDK sets supplyApy to null, not undefined)
     if (!(liteApy === 0 && sdkSupplyApyForComparison == null)) {
       compareNumberWithTolerance(issues, "apyCurrent", liteVault.apyCurrent, sdkSupplyApyForComparison, 0.05);
     }

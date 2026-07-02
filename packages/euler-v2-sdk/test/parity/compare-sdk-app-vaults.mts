@@ -434,7 +434,7 @@ function compareEarnVault(appVault, sdkVault) {
   const issues = [];
   const assetDecimals = sdkVault?.asset?.decimals ?? appVault.assetDecimals ?? 18;
   const shareDecimals = sdkVault?.shares?.decimals ?? appVault.vaultDecimals ?? 18;
-  const sdkSupplyApyPercent = sdkVault?.supplyApy1h !== undefined ? sdkVault.supplyApy1h * 100 : undefined;
+  const sdkSupplyApyPercent = sdkVault?.supplyApy !== undefined ? sdkVault.supplyApy * 100 : undefined;
   const sdkPerformanceFee = sdkVault?.performanceFee !== undefined ? sdkVault.performanceFee * 1e18 : undefined;
 
   compareText(issues, "name", appVault.vaultName, sdkVault?.shares?.name);

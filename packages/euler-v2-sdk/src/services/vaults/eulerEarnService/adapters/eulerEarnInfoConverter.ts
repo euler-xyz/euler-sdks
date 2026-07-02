@@ -201,6 +201,7 @@ export function convertEulerEarnVaultInfoFullToIEulerEarn(
 			});
 			return 0;
 		})(),
+		supplyApy: undefined,
 		supplyApy1h: undefined,
 		governance,
 		supplyQueue: vaultInfo.supplyQueue,

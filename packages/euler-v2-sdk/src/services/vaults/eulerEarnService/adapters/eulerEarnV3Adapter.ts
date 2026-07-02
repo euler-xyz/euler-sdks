@@ -416,6 +416,14 @@ function convertEulerEarn(
 		source: "eulerEarnV3",
 	});
 	const owner = vaultDiagnosticOwner(detail.chainId, vaultAddress);
+	const supplyApy = normalizeEulerEarnApy(
+		parseOptionalNumberField(detail.supplyApy, {
+			path: "$.supplyApy",
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
+	);
 
 	return {
 		type: VaultType.EulerEarn,
@@ -452,14 +460,8 @@ function convertEulerEarn(
 			detail.asset.name ?? "Unknown Asset",
 			detail.asset.symbol ?? "UNKNOWN",
 		),
-		supplyApy1h: normalizeEulerEarnApy(
-			parseOptionalNumberField(detail.supplyApy, {
-				path: "$.supplyApy1h",
-				owner,
-				errors,
-				source: "eulerEarnV3",
-			}),
-		),
+		supplyApy,
+		supplyApy1h: supplyApy,
 		totalShares: parseBigIntField(detail.totalShares ?? "0", {
 			path: "$.totalShares",
 			owner,

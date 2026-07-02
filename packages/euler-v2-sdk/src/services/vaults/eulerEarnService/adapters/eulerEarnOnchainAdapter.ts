@@ -21,8 +21,7 @@ import {
 } from "../../../../utils/entityDiagnostics.js";
 
 const SECONDS_IN_YEAR = 365 * 24 * 60 * 60;
-const TARGET_TIME_AGO_SECONDS = 60 * 60;
-const SAMPLE_DISTANCE_BLOCKS = 10_000;
+const DEFAULT_SUPPLY_APY_WINDOW_SECONDS = 60;
 const EULER_EARN_FETCH_BATCH_SIZE = 4;
 
 // Blocks to step back from the latest head when picking the "current" sample
@@ -31,15 +30,15 @@ const EULER_EARN_FETCH_BATCH_SIZE = 4;
 // blocks; pinning convertToAssets to `latest.number` would then fail on lagging
 // nodes. Backing off by a few blocks puts the measurement at a height that
 // every plausibly-synced backend has seen, while the resulting staleness
-// (~60s on Ethereum, sub-second on most L2s) is negligible against the 3600s
-// measurement window.
+// (~60s on Ethereum, sub-second on most L2s) is acceptable for this
+// short-window APY sample.
 const MEASUREMENT_BLOCK_BACKOFF = 5n;
 
 // Extra digits of precision added on top of share decimals when probing the
 // vault exchange rate. The probe is linear in `convertToAssets`, so scaling it
 // up costs nothing other than headroom against uint256 overflow. With 1e12 on
 // top of asset decimals, even low-decimal assets (USDC/cbBTC) keep tens of
-// significant digits of resolution in the 1h rate change.
+// significant digits of resolution in the short-window rate change.
 const PROBE_PRECISION_BOOST = 12n;
 
 const verifiedArrayAbi = [
@@ -172,70 +171,73 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 		provider: ReturnType<ProviderService["getProvider"]>,
 	): Promise<{
 		measurementBlockNumber: bigint;
-		oneHourAgoBlockNumber: bigint;
+		referenceBlockNumber: bigint;
 		elapsedSeconds: number;
 	}> {
 		const latestBlockNumber = await this.queryBlockNumber(provider);
 		if (latestBlockNumber <= MEASUREMENT_BLOCK_BACKOFF) {
-			throw new Error("Failed to estimate 1h EulerEarn APY block window.");
+			throw new Error("Failed to estimate EulerEarn APY block window.");
 		}
 		const measurementBlockNumber = latestBlockNumber - MEASUREMENT_BLOCK_BACKOFF;
-		const sampleDistanceBlocks =
-			measurementBlockNumber > BigInt(SAMPLE_DISTANCE_BLOCKS)
-				? BigInt(SAMPLE_DISTANCE_BLOCKS)
-				: measurementBlockNumber;
-		const sampleBlockNumber = measurementBlockNumber - sampleDistanceBlocks;
-
-		const [measurementBlockData, sampleBlockData] = await Promise.all([
-			this.queryBlock(provider, measurementBlockNumber),
-			this.queryBlock(provider, sampleBlockNumber),
-		]);
-
-		const elapsedForSample =
-			Number(measurementBlockData.timestamp) -
-			Number(sampleBlockData.timestamp);
-		if (elapsedForSample <= 0) {
-			throw new Error("Failed to estimate 1h EulerEarn APY block window.");
-		}
-
-		const averageBlockTimeSeconds =
-			elapsedForSample / Number(sampleDistanceBlocks);
-		const oneHourAgoBlockOffset = Math.round(
-			TARGET_TIME_AGO_SECONDS / averageBlockTimeSeconds,
-		);
-
-		// Bail if the chain has less than ~1h of history rather than silently
-		// clamping to genesis — the latter would normalise the rate change against
-		// a too-short window and explode the displayed APY.
-		if (measurementBlockNumber <= BigInt(oneHourAgoBlockOffset)) {
-			throw new Error("Failed to determine 1h EulerEarn APY time delta.");
-		}
-		const oneHourAgoBlockNumber =
-			measurementBlockNumber - BigInt(oneHourAgoBlockOffset);
-
-		// Read the actual timestamp at the prior block instead of trusting the
-		// 10K-block average. Block-rate variance over the last hour (sequencer
-		// hiccups, MEV bursts, late-block stretches) would otherwise scale the
-		// displayed APY by the inverse of the rate skew.
-		const priorBlockData = await this.queryBlock(
+		const measurementBlockData = await this.queryBlock(
 			provider,
-			oneHourAgoBlockNumber,
+			measurementBlockNumber,
 		);
-		const elapsedSeconds =
-			Number(measurementBlockData.timestamp) -
-			Number(priorBlockData.timestamp);
-		if (elapsedSeconds <= 0) {
-			throw new Error("Failed to determine 1h EulerEarn APY time delta.");
+		const measurementTimestamp = Number(measurementBlockData.timestamp);
+		const targetTimestamp =
+			measurementTimestamp - DEFAULT_SUPPLY_APY_WINDOW_SECONDS;
+		const referenceBlock = await this.findBlockAtOrBeforeTimestamp(
+			provider,
+			measurementBlockNumber - 1n,
+			targetTimestamp,
+		);
+		if (!referenceBlock) {
+			throw new Error("Failed to determine EulerEarn APY time delta.");
 		}
 
-		return { measurementBlockNumber, oneHourAgoBlockNumber, elapsedSeconds };
+		const elapsedSeconds = measurementTimestamp - referenceBlock.timestamp;
+		if (elapsedSeconds <= 0) {
+			throw new Error("Failed to determine EulerEarn APY time delta.");
+		}
+
+		return {
+			measurementBlockNumber,
+			referenceBlockNumber: referenceBlock.blockNumber,
+			elapsedSeconds,
+		};
+	}
+
+	private async findBlockAtOrBeforeTimestamp(
+		provider: ReturnType<ProviderService["getProvider"]>,
+		highestBlockNumber: bigint,
+		targetTimestamp: number,
+	): Promise<{ blockNumber: bigint; timestamp: number } | undefined> {
+		let low = 0n;
+		let high = highestBlockNumber;
+		let candidate: { blockNumber: bigint; timestamp: number } | undefined;
+
+		while (low <= high) {
+			const mid = (low + high) / 2n;
+			const block = await this.queryBlock(provider, mid);
+			const timestamp = Number(block.timestamp);
+
+			if (timestamp <= targetTimestamp) {
+				candidate = { blockNumber: mid, timestamp };
+				low = mid + 1n;
+			} else {
+				if (mid === 0n) break;
+				high = mid - 1n;
+			}
+		}
+
+		return candidate;
 	}
 
 	// Compound a measured rate change observed over `elapsedSeconds` into an APY,
 	// using continuous-per-second compounding to match the EVK/Lens convention.
 	// Equivalent to `(1 + spy) ** SECONDS_IN_YEAR - 1` where
 	// `spy = rateChange / elapsedSeconds`.
-	private computeSupplyApy1h(
+	private computeSupplyApy(
 		currentRate: bigint,
 		oldRate: bigint,
 		elapsedSeconds: number,
@@ -298,11 +300,11 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 								code: "SOURCE_UNAVAILABLE",
 								severity: "warning",
 								message:
-									"Failed to populate 1h EulerEarn APY from onchain exchange rates.",
+									"Failed to populate EulerEarn APY from onchain exchange rates.",
 								locations: [
 									dataIssueLocation(
 										vaultDiagnosticOwner(chainId, getAddress(vault)),
-										"$.supplyApy1h",
+										"$.supplyApy",
 									),
 								],
 								source: "eulerEarnOnchainAdapter",
@@ -328,7 +330,7 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 										provider,
 										vault,
 										probeShares,
-										supplyApyWindow.value.oneHourAgoBlockNumber,
+										supplyApyWindow.value.referenceBlockNumber,
 									),
 								]);
 
@@ -336,11 +338,13 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 								currentRateResult.status === "fulfilled" &&
 								oldRateResult.status === "fulfilled"
 							) {
-								parsed.supplyApy1h = this.computeSupplyApy1h(
+								const supplyApy = this.computeSupplyApy(
 									currentRateResult.value,
 									oldRateResult.value,
 									supplyApyWindow.value.elapsedSeconds,
 								);
+								parsed.supplyApy = supplyApy;
+								parsed.supplyApy1h = supplyApy;
 							} else {
 								const apyReadErrors = [currentRateResult, oldRateResult]
 									.filter((result) => result.status === "rejected")
@@ -353,11 +357,11 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 									code: "SOURCE_UNAVAILABLE",
 									severity: "warning",
 									message:
-										"Failed to populate 1h EulerEarn APY from onchain exchange rates.",
+										"Failed to populate EulerEarn APY from onchain exchange rates.",
 									locations: [
 										dataIssueLocation(
 											vaultDiagnosticOwner(chainId, getAddress(vault)),
-											"$.supplyApy1h",
+											"$.supplyApy",
 										),
 									],
 									source: "eulerEarnOnchainAdapter",

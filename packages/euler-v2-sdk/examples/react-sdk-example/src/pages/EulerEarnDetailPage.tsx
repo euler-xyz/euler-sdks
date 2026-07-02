@@ -38,7 +38,7 @@ export function EulerEarnDetailPage() {
     return <div className="error-message">Error: {String(error)}</div>;
   if (!vault) return <div className="status-message">Vault not found</div>;
 
-  const supplyApy = vault.supplyApy1h;
+  const supplyApy = vault.supplyApy;
 
   return (
     <>
