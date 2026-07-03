@@ -73,7 +73,6 @@ test("EulerEarn onchain adapter samples the latest block at least 60 seconds bac
 
 	assert.deepEqual(fetched.errors, []);
 	assert.deepEqual(rateReadBlocks, [101n, 95n]);
-	assert.equal(vault?.supplyApy, vault?.supplyApy1h);
 	assert.equal(typeof vault?.supplyApy, "number");
 	assert.ok((vault?.supplyApy ?? 0) > 0);
 });

@@ -461,7 +461,6 @@ function convertEulerEarn(
 			detail.asset.symbol ?? "UNKNOWN",
 		),
 		supplyApy,
-		supplyApy1h: supplyApy,
 		totalShares: parseBigIntField(detail.totalShares ?? "0", {
 			path: "$.totalShares",
 			owner,

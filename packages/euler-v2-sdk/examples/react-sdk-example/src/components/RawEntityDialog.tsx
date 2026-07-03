@@ -6,8 +6,6 @@ type RawEntityDialogProps = {
   entity: unknown;
 };
 
-const HIDDEN_RAW_KEYS = new Set(["supplyApy1h"]);
-
 function getGetterNames(value: object): string[] {
   const names = new Set<string>();
   let prototype = Object.getPrototypeOf(value);
@@ -41,7 +39,6 @@ function toPrintableEntity(entity: unknown, stack: WeakSet<object>): unknown {
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(entity)) {
-    if (HIDDEN_RAW_KEYS.has(key)) continue;
     result[key] = toPrintableEntity(value, stack);
   }
 

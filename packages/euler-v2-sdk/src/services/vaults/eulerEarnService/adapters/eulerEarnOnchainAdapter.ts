@@ -344,7 +344,6 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 									supplyApyWindow.value.elapsedSeconds,
 								);
 								parsed.supplyApy = supplyApy;
-								parsed.supplyApy1h = supplyApy;
 							} else {
 								const apyReadErrors = [currentRateResult, oldRateResult]
 									.filter((result) => result.status === "rejected")

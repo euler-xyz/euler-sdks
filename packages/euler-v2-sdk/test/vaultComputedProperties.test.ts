@@ -119,5 +119,4 @@ test("EulerEarn computed properties expose available liquidity", () => {
 
 	assert.equal(vault.availableLiquidity, 600n);
 	assert.equal(vault.supplyApy, 0.04);
-	assert.equal(vault.supplyApy1h, 0.04);
 });
