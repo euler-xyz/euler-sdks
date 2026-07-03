@@ -200,8 +200,7 @@ if (isEVault(vault)) {
   console.log(vault.interestRates.supplyAPY) // percentage points, e.g. 5 = 5%
   console.log(vault.collaterals.length)
 } else if (isEulerEarn(vault)) {
-  console.log(vault.supplyApy)   // alias of vault.supplyApy1h, also percentage points
-  console.log(vault.supplyApy1h)
+  console.log(vault.supplyApy)   // percentage points, e.g. 5 = 5%
   console.log(vault.strategies.length)
 }
 ```

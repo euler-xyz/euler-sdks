@@ -28,7 +28,7 @@ Entities are the SDK's domain objects. Each entity has two parts:
 ```
 ERC4626Vault (base — address, shares, asset, totals)
   ├── EVault              (+ oracle, collaterals, interest rates, caps, hooks)
-  ├── EulerEarn           (+ strategies, performance fee, adapter-provided 1h supply APY)
+  ├── EulerEarn           (+ strategies, performance fee, adapter-provided supply APY)
   └── SecuritizeCollateralVault  (+ governor, supply cap)
 
 Account<TVaultEntity>    (owner, sub-accounts, positions, liquidity)

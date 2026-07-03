@@ -55,7 +55,7 @@ export interface IEulerEarn extends IERC4626Vault {
 	availableAssets: bigint;
 	performanceFee: number;
 	/** Percentage points, e.g. 5 = 5%. */
-	supplyApy1h: number | undefined;
+	supplyApy?: number | undefined;
 
 	governance: EulerEarnGovernance;
 
@@ -79,7 +79,7 @@ export class EulerEarn
 	availableAssets: bigint;
 	performanceFee: number;
 	/** Percentage points, e.g. 5 = 5%. */
-	supplyApy1h: number | undefined;
+	supplyApy: number | undefined;
 
 	governance: EulerEarnGovernance;
 
@@ -95,7 +95,7 @@ export class EulerEarn
 		this.lostAssets = args.lostAssets;
 		this.availableAssets = args.availableAssets;
 		this.performanceFee = args.performanceFee;
-		this.supplyApy1h = args.supplyApy1h;
+		this.supplyApy = args.supplyApy;
 
 		this.governance = args.governance;
 

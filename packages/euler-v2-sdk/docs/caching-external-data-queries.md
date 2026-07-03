@@ -212,10 +212,10 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 | `queryV3EVaultCollaterals` | url | `EVaultV3Adapter` | `(endpoint, chainId, vault)` | Fetch EVault collateral rows via V3 |
 | `queryV3EVaultList` | url | `EVaultV3Adapter` | `(endpoint, chainId, offset, limit)` | Fetch paginated EVault list via V3 |
 | `queryEulerEarnVaultInfoFull` | rpc | `EulerEarnOnchainAdapter` | `(provider, lensAddress, vault)` | Read EulerEarn vault state via EulerEarnVaultLens |
-| `queryEulerEarnConvertToAssets` | rpc | `EulerEarnOnchainAdapter` | `(provider, vault, shares, blockNumber?)` | Read `convertToAssets` for current or historical 1h APY sampling |
+| `queryEulerEarnConvertToAssets` | rpc | `EulerEarnOnchainAdapter` | `(provider, vault, shares, blockNumber?)` | Read `convertToAssets` for current or historical APY sampling |
 | `queryEulerEarnVerifiedArray` | rpc | `EulerEarnOnchainAdapter` | `(provider, perspective)` | Read verified EulerEarn vault list |
-| `queryBlockNumber` | rpc | `EulerEarnOnchainAdapter` | `(provider)` | Read current block number for 1h APY sampling |
-| `queryBlock` | rpc | `EulerEarnOnchainAdapter` | `(provider, blockNumber)` | Read block timestamp for 1h APY sampling |
+| `queryBlockNumber` | rpc | `EulerEarnOnchainAdapter` | `(provider)` | Read current block number for APY sampling |
+| `queryBlock` | rpc | `EulerEarnOnchainAdapter` | `(provider, blockNumber)` | Read block timestamp for APY sampling |
 | `queryV3EulerEarnDetail` | url | `EulerEarnV3Adapter` | `(endpoint, chainId, vault)` | Fetch EulerEarn detail via V3 |
 | `queryV3EulerEarnList` | url | `EulerEarnV3Adapter` | `(endpoint, chainId, offset, limit)` | Fetch paginated EulerEarn vault list via V3 |
 | `queryVaultInfoERC4626` | rpc | `SecuritizeVaultOnchainAdapter` | `(provider, utilsLensAddress, vault)` | Read ERC4626 vault info |

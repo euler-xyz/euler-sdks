@@ -1575,6 +1575,72 @@ test("direct rewards adapter maps Fuul lend and looping incentives", async () =>
 	assert.equal(info?.campaigns[1]?.maxMultiplier, 5);
 });
 
+test("direct rewards adapter maps Turtle stream APY campaigns", async () => {
+	const adapter = new RewardsDirectAdapter({
+		enableMerkl: false,
+		enableBrevis: false,
+		enableFuul: false,
+	});
+	let requestUrl = "";
+	adapter.setQueryTurtleStreams(async (url) => {
+		requestUrl = url;
+		return [
+			{
+				id: "turtle-stream-1",
+				chainId: 1,
+				startTimestamp: "2026-01-01T00:00:00Z",
+				endTimestamp: "2100-01-01T00:00:00Z",
+				customArgs: {
+					targetToken: {
+						address: vaultAddress.toLowerCase(),
+						symbol: "eUSDC",
+					},
+				},
+				lastSnapshot: {
+					apr: "0.09",
+				},
+				rewardToken: {
+					address: rewardToken.toLowerCase(),
+					symbol: "AUSD",
+					logoUrl: "https://example.invalid/ausd.svg",
+				},
+			},
+			{
+				id: "future-stream",
+				chainId: 1,
+				startTimestamp: "2100-01-01T00:00:00Z",
+				customArgs: {
+					targetToken: {
+						address: secondVaultAddress,
+						symbol: "future",
+					},
+					apr: "0.05",
+				},
+				rewardToken: {
+					address: rewardToken,
+					symbol: "AUSD",
+				},
+			},
+		];
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+	const params = new URL(requestUrl).searchParams;
+
+	assert.equal(requestUrl.startsWith("https://earn.turtle.xyz/v1/streams"), true);
+	assert.equal(params.get("chainId"), "1");
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "turtle");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.equal(info?.campaigns[0]?.campaignId, "turtle-stream-1");
+	assert.equal(info?.campaigns[0]?.apr, 0.09);
+	assert.equal(info?.campaigns[0]?.rewardTokenAddress, rewardToken);
+	assert.equal(info?.campaigns[0]?.rewardTokenSymbol, "AUSD");
+	assert.equal(info?.campaigns[0]?.rewardTokenIcon, "https://example.invalid/ausd.svg");
+	assert.equal(rewards.has(secondVaultAddress.toLowerCase()), false);
+});
+
 test("rewards service derives Merkl claim target from trusted distributor", async () => {
 	const service = new RewardsService(emptyAdapter, {
 		merklDistributorAddress,
