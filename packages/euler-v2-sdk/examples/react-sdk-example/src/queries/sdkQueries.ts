@@ -121,6 +121,7 @@ const STALE_TIMES: Record<string, number> = {
   queryBrevisUserProofs: MINUTE,
   queryFuulTotals: MINUTE,
   queryFuulClaimChecks: MINUTE,
+  queryTurtleStreams: 5 * MINUTE,
   queryV3RewardsBreakdown: MINUTE,
 
   // Intrinsic APY — external API data
