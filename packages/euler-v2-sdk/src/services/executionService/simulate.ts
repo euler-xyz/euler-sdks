@@ -89,6 +89,13 @@ const REWARD_STREAM_CLAIM_SELECTOR = toFunctionSelector(
 const REUL_UNLOCK_SELECTOR = toFunctionSelector(
 	"function withdrawToByLockTimestamp(address,uint256,bool)",
 );
+// Swap verifier call used by wallet-receiving swaps (withdraw/redeem/wallet
+// swaps): the swapped-in `asset` is transferred to the wallet. Its balance must
+// be snapshotted so the swap output is visible to the wallet-balance display and
+// to later wallet-sourced operations.
+const SWAP_VERIFY_TRANSFER_SELECTOR = toFunctionSelector(
+	"function verifyAmountMinAndTransfer(address,address,uint256,uint256)",
+);
 import {
 	Account,
 	type IAccount,
@@ -149,6 +156,7 @@ import type {
 } from "../vaults/vaultMetaService/index.js";
 import type { IWalletService } from "../walletService/index.js";
 import { ethereumVaultConnectorAbi } from "./abis/ethereumVaultConnectorAbi.js";
+import { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
 import type {
 	BatchItemDescription,
 	EVCBatchItem,
@@ -703,6 +711,31 @@ function collectClaimWalletBalanceTokens(batch: EVCBatchItem[]): Address[] {
 	return [...tokens];
 }
 
+// Tokens a swap deposits straight into the wallet. A wallet-receiving swap
+// (withdraw/redeem/wallet swap) ends with `verifyAmountMinAndTransfer(asset, …)`,
+// transferring the swapped-in `asset` to the owner. That token is otherwise
+// invisible to balance discovery — it is neither a touched vault's underlying nor
+// a debited (requiredApproval) token — so its balance never gets snapshotted.
+function collectSwapWalletBalanceTokens(batch: EVCBatchItem[]): Address[] {
+	const tokens = new Set<Address>();
+
+	for (const item of batch) {
+		if (getSelector(item.data) !== SWAP_VERIFY_TRANSFER_SELECTOR) continue;
+		try {
+			const decoded = decodeFunctionData({
+				abi: swapVerifierAbi,
+				data: item.data,
+			});
+			if (decoded.functionName !== "verifyAmountMinAndTransfer") continue;
+			addWalletToken(tokens, decoded.args[0] as Address);
+		} catch {
+			// Unknown or malformed verifier calldata should not block simulation.
+		}
+	}
+
+	return [...tokens];
+}
+
 // Decode the lens-read block for a single layer into a populated Account plus
 // the EVault/EulerEarn entities observed at that point in the batch.
 async function decodeAccountSnapshot<
@@ -1230,6 +1263,9 @@ async function buildSimulationBatch(
 			}
 		}
 		for (const token of collectClaimWalletBalanceTokens(batch)) {
+			addWalletToken(assetTokens, token);
+		}
+		for (const token of collectSwapWalletBalanceTokens(batch)) {
 			addWalletToken(assetTokens, token);
 		}
 
