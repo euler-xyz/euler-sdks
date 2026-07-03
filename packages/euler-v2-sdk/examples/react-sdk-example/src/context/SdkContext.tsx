@@ -27,7 +27,6 @@ import { resetQueryProfile } from "../queries/queryProfileStore.ts";
 import {
   CHAIN_NAMES,
   DEFAULT_CHAIN,
-  RPC_URLS,
 } from "../config/chains.ts";
 import { getV3ApiEndpoint } from "../config/endpoints.ts";
 
@@ -92,7 +91,6 @@ export function SdkProvider({ children }: { children: ReactNode }) {
       config: {
         v3ApiUrl: v3ApiEndpoint,
         v3ApiKey: import.meta.env.EULER_SDK_V3_API_KEY,
-        rpcUrls: RPC_URLS,
         swapApiUrl: SWAP_PROXY_ENDPOINT,
         vaultTypeAdapter,
       },
