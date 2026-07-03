@@ -11,7 +11,7 @@
  * Key normalization issues handled:
  *   - Indexer field "totalBorrows" → SDK field "totalBorrowed"
  *   - Indexer field "cash" → SDK field "totalCash"
- *   - Indexer APY values are in percentage (5.0 = 5%), SDK uses decimal (0.05 = 5%)
+ *   - Indexer APY values are in percentage points (5.0 = 5%)
  *   - Indexer "assetPrice" is a USD number, SDK "marketPriceUsd" is a WAD bigint (18 dec)
  *   - Indexer earn "performanceFee" is a WAD string, SDK is 0–1 decimal
  *   - Indexer caps: null/undefined = uncapped, SDK: MAX_UINT256 or 0n = uncapped
@@ -439,13 +439,8 @@ function compareEarnVault(liteVault, sdkVault) {
   const assetDecimals = sdkVault?.asset?.decimals ?? toNumber(liteVault.assetDecimals) ?? 18;
   const shareDecimals = sdkVault?.shares?.decimals ?? toNumber(liteVault.vaultDecimals) ?? 18;
 
-  // Indexer v1/earn/vaults returns APY as percentages (0.175 = 0.175%).
-  // V3 adapter's supplyApy is also in percentages → compare directly.
-  // Onchain adapter's supplyApy is a raw fraction (0.00175 = 0.175%) → multiply by 100.
-  const sdkSupplyApyForComparison =
-    sdkVault?.supplyApy != null
-      ? ADAPTER_MODE === "onchain" ? sdkVault.supplyApy * 100 : sdkVault.supplyApy
-      : sdkVault?.supplyApy;
+  // Earn supplyApy uses percentage points for both V3 and onchain adapters.
+  const sdkSupplyApyForComparison = sdkVault?.supplyApy;
   // Indexer performanceFee is WAD string, SDK is 0–1 decimal
   const sdkPerformanceFee = sdkVault?.performanceFee !== undefined ? sdkVault.performanceFee * 1e18 : undefined;
 
