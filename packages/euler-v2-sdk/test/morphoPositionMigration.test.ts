@@ -573,6 +573,39 @@ test("Morpho inbound no-swap migration deposits through SwapVerifier with the so
 	);
 });
 
+test("Morpho inbound no-swap migration does not use target minimum as the withdrawal amount", async () => {
+	const connector = createConnector();
+	const position = createMorphoPosition();
+	const minCollateralAssets = 1_500n;
+
+	const items = await connector.buildMigrationBatch({
+		direction: "external-to-euler",
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+			minCollateralAssets,
+		},
+		deadline: 123n,
+	});
+
+	const withdraw = items
+		.map((item) => getMorphoWithdraw(item))
+		.find((value) => value !== undefined);
+	const verifyDepositAmount = items
+		.map((item) => getVerifyDepositAmount(item))
+		.find((amount) => amount !== undefined);
+
+	assert.deepEqual(withdraw, {
+		amount: position.raw.collateral,
+		receiver: getAddress(SWAP_VERIFIER),
+	});
+	assert.equal(verifyDepositAmount, minCollateralAssets);
+});
+
 test("Morpho outgoing migration verifies the Euler source debt is fully repaid", async () => {
 	const connector = createConnector();
 	const account = createSourceAccount({

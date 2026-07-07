@@ -16,11 +16,8 @@ import {
 	swapVerifierAbi,
 } from "../../../executionService/index.js";
 import type { IProviderService } from "../../../providerService/index.js";
-import {
-	SwapVerificationType,
-	type SwapQuote,
-} from "../../../swapService/index.js";
-import { validateSwapQuoteVerifierData } from "../../../swapService/swapVerification.js";
+import type { SwapQuote } from "../../../swapService/index.js";
+import { encodeSwapQuoteVerificationItem } from "../shared.js";
 import type {
 	BuildConnectorMigrationBatchArgs,
 	EulerMigrationSource,
@@ -468,8 +465,8 @@ export class MorphoPositionMigrationConnector
 		const borrowShares = args.position.raw.borrowShares;
 		const hasDebt = borrowShares > 0n;
 		const collateralAmount = args.position.raw.collateral;
-		const collateralDepositAmount =
-			target.minCollateralAssets ?? collateralAmount;
+		const collateralWithdrawAmount = collateralAmount;
+		const collateralMinAmount = target.minCollateralAssets ?? collateralAmount;
 		const verifierDeadline =
 			args.deadline ?? BigInt(Math.floor(Date.now() / 1000) + 60 * 60);
 		const collateralSwapQuote = args.collateralSwapQuote;
@@ -613,7 +610,7 @@ export class MorphoPositionMigrationConnector
 				args: [
 					morpho,
 					marketParams,
-					collateralDepositAmount,
+					collateralWithdrawAmount,
 					collateralSwapQuote ? swapper : swapVerifier,
 				],
 			}),
@@ -664,6 +661,7 @@ export class MorphoPositionMigrationConnector
 					account: eulerAccount,
 					deadline:
 						args.deadline ?? BigInt(collateralSwapQuote.verify.deadline ?? 0),
+					label: "Morpho collateral migration",
 				}),
 			);
 		} else {
@@ -673,7 +671,7 @@ export class MorphoPositionMigrationConnector
 					onBehalfOfAccount: owner,
 					vault: targetCollateralVault,
 					receiver: eulerAccount,
-					amountMin: collateralDepositAmount,
+					amountMin: collateralMinAmount,
 					deadline: verifierDeadline,
 				}),
 			);
@@ -1127,40 +1125,6 @@ function assertSwapQuoteUsesSwapper(
 		swapper,
 		`Morpho ${leg} migration swap quote must use the Euler Swapper`,
 	);
-}
-
-function encodeSwapQuoteVerificationItem(args: {
-	quote: SwapQuote;
-	swapVerifier: Address;
-	vault: Address;
-	account: Address;
-	deadline: bigint;
-}): EVCBatchItem {
-	validateSwapQuoteVerifierData({
-		quote: args.quote,
-		expectedVerifierAddress: args.swapVerifier,
-		verification: {
-			type: SwapVerificationType.SkimMin,
-			vault: args.vault,
-			account: args.account,
-			deadline: args.deadline,
-		},
-	});
-	const onBehalfOfAccount = getAddress(
-		args.quote.verify.account || args.quote.accountOut,
-	);
-	assertSameAddress(
-		onBehalfOfAccount,
-		args.account,
-		"Morpho collateral migration verifier account must match the Euler account",
-	);
-
-	return {
-		targetContract: getAddress(args.quote.verify.verifierAddress),
-		onBehalfOfAccount,
-		value: 0n,
-		data: args.quote.verify.verifierData,
-	};
 }
 
 function encodeVerifyAmountMinAndDepositItem(args: {

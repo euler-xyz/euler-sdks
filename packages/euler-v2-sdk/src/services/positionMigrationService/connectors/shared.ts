@@ -230,6 +230,11 @@ export function encodeDepositVerifiedSwapQuoteItem(args: {
 			`${args.label} swap quote must be requested with transferOutputToReceiver`,
 		);
 	}
+	assertSameAddress(
+		getAddress(args.quote.receiver),
+		args.swapVerifier,
+		`${args.label} swap quote receiver must be the Euler SwapVerifier`,
+	);
 	validateSwapQuoteVerifierData({
 		quote: args.quote,
 		expectedVerifierAddress: args.swapVerifier,

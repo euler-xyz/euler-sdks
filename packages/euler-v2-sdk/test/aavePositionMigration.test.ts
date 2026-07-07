@@ -984,21 +984,24 @@ function createAaveSupplyOnlyPosition(): AaveMigrationPosition {
 	};
 }
 
-function createTransferMinCollateralSwapQuote(): SwapQuote {
+function createTransferMinCollateralSwapQuote(
+	args: { receiver?: Address } = {},
+): SwapQuote {
 	const base = createCollateralSwapQuote({ deadline: 123n });
+	const receiver = getAddress(args.receiver ?? SWAP_VERIFIER);
 	return {
 		...base,
-		receiver: getAddress(OWNER),
+		receiver,
 		transferOutputToReceiver: true,
 		verify: {
 			...base.verify,
 			verifierData: encodeFunctionData({
 				abi: swapVerifierAbi,
 				functionName: "verifyAmountMinAndTransfer",
-				args: [TARGET_DEBT_ASSET, OWNER, 1990n, 123n],
+				args: [TARGET_DEBT_ASSET, receiver, 1990n, 123n],
 			}),
 			type: SwapVerificationType.TransferMin,
-			vault: getAddress(OWNER),
+			vault: receiver,
 		},
 	} as SwapQuote;
 }
@@ -1049,5 +1052,28 @@ test("Aave deposit-verified collateral swap rejects positions with debt", async 
 			deadline: 123n,
 		}),
 		/only supported for supply-only migrations/,
+	);
+});
+
+test("Aave deposit-verified collateral swap requires the SwapVerifier receiver", async () => {
+	const connector = createConnector();
+
+	await assert.rejects(
+		connector.buildMigrationBatch({
+			direction: "external-to-euler",
+			chainId: CHAIN_ID,
+			owner: OWNER,
+			position: createAaveSupplyOnlyPosition(),
+			target: {
+				eulerAccount: EULER_ACCOUNT,
+				collateralVault: COLLATERAL_VAULT,
+				collateralSwapVerification: "deposit",
+			},
+			collateralSwapQuote: createTransferMinCollateralSwapQuote({
+				receiver: OWNER,
+			}),
+			deadline: 123n,
+		}),
+		/swap quote receiver must be the Euler SwapVerifier/,
 	);
 });

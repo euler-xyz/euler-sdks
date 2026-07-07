@@ -157,7 +157,8 @@ function createCollateralSwapQuote(
 	const amountOutMin = "1990";
 	const transferOutputToReceiver = args.transferOutputToReceiver ?? false;
 	const receiver =
-		args.receiver ?? (transferOutputToReceiver ? OWNER : COLLATERAL_VAULT);
+		args.receiver ??
+		(transferOutputToReceiver ? SWAP_VERIFIER : COLLATERAL_VAULT);
 	const swapCall = encodeFunctionData({
 		abi: swapperAbi,
 		functionName: "swap",
@@ -657,5 +658,30 @@ test("Metamorpho deposit-verified collateral swap requires transferOutputToRecei
 			deadline: 123n,
 		}),
 		/must be requested with transferOutputToReceiver/,
+	);
+});
+
+test("Metamorpho deposit-verified collateral swap requires the SwapVerifier receiver", async () => {
+	const connector = createConnector();
+
+	await assert.rejects(
+		connector.buildMigrationBatch({
+			direction: "external-to-euler",
+			chainId: CHAIN_ID,
+			owner: OWNER,
+			position: createMetamorphoPosition(),
+			target: {
+				eulerAccount: EULER_ACCOUNT,
+				collateralVault: EARN_VAULT,
+				collateralSwapVerification: "deposit",
+			},
+			collateralSwapQuote: createCollateralSwapQuote({
+				transferOutputToReceiver: true,
+				receiver: OWNER,
+				deadline: 123n,
+			}),
+			deadline: 123n,
+		}),
+		/swap quote receiver must be the Euler SwapVerifier/,
 	);
 });
