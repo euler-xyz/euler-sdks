@@ -7,6 +7,7 @@ This SDK exposes multiple services. The main entry points are:
 - `vaultMetaService`
 - `executionService`
 - `swapService`
+- `positionMigrationService`
 
 Some services below are lower-level building blocks and usually do not need to be called directly, because they are already used by top-level services.
 
@@ -18,6 +19,10 @@ Some services below are lower-level building blocks and usually do not need to b
 - `executionService`: Builds, simulates, estimates gas for, and executes transaction plans for core actions (deposit, withdraw, borrow, repay, swap-based operations, liquidation, debt operations).
 - `swapService`: Fetches swap quotes and routes for asset exchange flows,
   including CoW provider metadata for supported CoW position flows.
+- `positionMigrationService`: Discovers supported external positions and
+  migration targets, builds required protocol authorizations, and returns
+  transaction plans for supported external-to-Euler and Euler-to-external
+  position migration flows.
 
 ## Vault-Specific Services
 
@@ -61,6 +66,7 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 | `executionService` | Simulates plans | Can populate simulated results | Can populate simulated results | Can populate simulated results | Can populate simulated results | Produces transaction plans/EVC batch payloads, resolves approvals, executes plans, and estimates gas |
 | `walletService` | Wallet assets only | No | No | No | No | Fetches requested native/ERC20 balances and direct/Permit2 allowances; `spenders` are optional when only balances are needed |
 | `swapService` | No (quotes only) | No | No | No | No | Returns swap quotes/providers for execution plans; CoW flows use regular quote methods with `cowSwap` metadata |
+| `positionMigrationService` | External/Euler migration positions | No | No | No | No | Lists migration connectors, positions, and targets; builds migration authorizations, EVC batch payloads, transaction plans, and simulation-ready state overrides for supported Aave V3, Morpho Blue, and MetaMorpho flows |
 | `oracleAdapterService` | No | No | No | No | No | Oracle adapter metadata API (`fetchOracleAdapters`, `fetchOracleAdapterMap`, `enrichAdapters`); maps are keyed by `adapter.oracle.toLowerCase()` |
 
 See also: [`execution-service.md`](./execution-service.md), [`swaps.md`](./swaps.md), and [`cow-swaps.md`](./cow-swaps.md).

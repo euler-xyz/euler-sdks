@@ -5,6 +5,7 @@ import {
 	encodeFunctionData,
 	encodeFunctionResult,
 	getAddress,
+	type Address,
 	type Abi,
 } from "viem";
 import { estimateContractGas } from "viem/actions";
@@ -923,6 +924,30 @@ test("simulateTransactionPlan reads EVC account-mode candidates", async () => {
 
 	assert.ok(vaultAccountReads.has(`${subAccount}:${getAddress(TARGET)}`));
 	assert.ok(vaultAccountReads.has(`${subAccount}:${getAddress(TOKEN)}`));
+});
+
+test("simulateTransactionPlan reads vault account info for EVC enabled collateral", async () => {
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: EVC,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: ethereumVaultConnectorAbi,
+						functionName: "enableCollateral",
+						args: [ACCOUNT, TARGET],
+					}),
+				},
+			],
+		},
+	];
+
+	const vaultAccountReads = await simulateAndCollectVaultAccountReads(plan);
+
+	assert.ok(vaultAccountReads.has(`${CHECKSUM_ACCOUNT}:${getAddress(TARGET)}`));
 });
 
 test("simulateTransactionPlan reads Securitize vault info on behalf of the owner", async () => {
