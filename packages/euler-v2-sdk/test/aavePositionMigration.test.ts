@@ -50,8 +50,18 @@ const GENERIC_HANDLER_DATA_ABI = [
 	{ name: "payload", type: "bytes" },
 ] as const;
 
-function createConnector(args: { allowance?: bigint } = {}) {
+function createConnector(
+	args: {
+		allowance?: bigint;
+		aTokenBalance?: bigint;
+		variableDebt?: bigint;
+		stableDebt?: bigint;
+	} = {},
+) {
 	const allowance = args.allowance ?? 10_000n;
+	const aTokenBalance = args.aTokenBalance ?? 2_000n;
+	const variableDebt = args.variableDebt ?? 1_000n;
+	const stableDebt = args.stableDebt ?? 0n;
 	return new AavePositionMigrationConnector(
 		{
 			getDeployment: () => ({
@@ -73,7 +83,38 @@ function createConnector(args: { allowance?: bigint } = {}) {
 					if (functionName === "convertToAssets") return 2_000n;
 					return allowance;
 				},
-				multicall: async () => ["Aave Test Token", 0n],
+				multicall: async ({
+					contracts,
+				}: {
+					contracts: readonly {
+						address?: Address;
+						functionName?: string;
+						args?: readonly unknown[];
+					}[];
+				}) =>
+					contracts.map((contract) => {
+						if (contract.functionName === "name") return "Aave Test Token";
+						if (contract.functionName === "nonces") return 0n;
+						if (contract.functionName === "getReserveData") {
+							const asset = getAddress(contract.args?.[0] as Address);
+							return {
+								aTokenAddress:
+									asset === getAddress(COLLATERAL_ASSET)
+										? getAddress(A_TOKEN)
+										: getAddress(DEBT_ASSET),
+								stableDebtTokenAddress: getAddress(STABLE_DEBT_TOKEN),
+								variableDebtTokenAddress: getAddress(VARIABLE_DEBT_TOKEN),
+							};
+						}
+						if (contract.functionName === "balanceOf") {
+							const address = getAddress(contract.address as Address);
+							if (address === getAddress(A_TOKEN)) return aTokenBalance;
+							if (address === getAddress(VARIABLE_DEBT_TOKEN))
+								return variableDebt;
+							if (address === getAddress(STABLE_DEBT_TOKEN)) return stableDebt;
+						}
+						return allowance;
+					}),
 			}),
 		} as never,
 		{
@@ -553,6 +594,29 @@ function getVerifyDebtMax(item: EVCBatchItem):
 		deadline,
 	};
 }
+
+test("Aave listPositions excludes positions with unsupported stable debt", async () => {
+	const connector = createConnector({
+		aTokenBalance: 2_000n,
+		variableDebt: 1_000n,
+		stableDebt: 500n,
+	});
+
+	const positions = await connector.listPositions({
+		connectorId: AAVE_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		positionRefs: [
+			{
+				pool: AAVE_POOL,
+				collateralAsset: COLLATERAL_ASSET,
+				debtAsset: DEBT_ASSET,
+			},
+		],
+	});
+
+	assert.deepEqual(positions, []);
+});
 
 test("Aave inbound migration repays Aave debt before transferring aToken collateral", async () => {
 	const connector = createConnector();

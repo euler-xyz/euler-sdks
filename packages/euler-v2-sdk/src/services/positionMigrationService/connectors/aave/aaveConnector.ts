@@ -279,7 +279,8 @@ export class AavePositionMigrationConnector
 		).then((positions) =>
 			positions.filter(
 				(position) =>
-					position.debt.amount > 0n || position.collateral.amount > 0n,
+					position.raw.stableDebt === 0n &&
+					(position.debt.amount > 0n || position.collateral.amount > 0n),
 			),
 		);
 	}
@@ -1973,4 +1974,3 @@ function toAaveDelegationMessage(
 		deadline: BigInt(message.deadline),
 	};
 }
-

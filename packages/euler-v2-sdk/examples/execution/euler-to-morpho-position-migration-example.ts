@@ -132,6 +132,7 @@ async function eulerToMorphoPositionMigrationExample({
 		borrowVault: EULER_PRIME_USDC_VAULT,
 		collateralVault: EULER_PRIME_WETH_VAULT,
 		debtAmount: sourceAmountsBefore.debtAmount,
+		collateralAmount: sourceAmountsBefore.collateralAmount,
 		collateralShares: sourceAmountsBefore.collateralShares,
 	};
 	const externalTarget = {

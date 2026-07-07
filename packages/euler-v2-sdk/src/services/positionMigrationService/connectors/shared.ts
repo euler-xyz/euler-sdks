@@ -15,6 +15,10 @@ import {
 	type SwapQuote,
 } from "../../swapService/index.js";
 import { validateSwapQuoteVerifierData } from "../../swapService/swapVerification.js";
+import type {
+	EulerMigrationSource,
+	EulerMigrationTarget,
+} from "../positionMigrationServiceTypes.js";
 
 export const BPS_SCALE = 10_000n;
 export const SWAPPER_MODE_EXACT_IN = 0n;
@@ -46,6 +50,24 @@ export function assertSameAddress(
 			`${message}: ${getAddress(actual)} != ${getAddress(expected)}`,
 		);
 	}
+}
+
+export function assertEulerTarget(
+	target: EulerMigrationTarget | undefined,
+): EulerMigrationTarget {
+	if (!target) {
+		throw new Error("Euler migration target is required");
+	}
+	return target;
+}
+
+export function assertEulerSource(
+	source: EulerMigrationSource | undefined,
+): EulerMigrationSource {
+	if (!source) {
+		throw new Error("Euler migration source is required");
+	}
+	return source;
 }
 
 export function splitPermitSignature(signature: Hex): PermitSignature {

@@ -16,12 +16,23 @@ import {
 	swapVerifierAbi,
 } from "../../../executionService/index.js";
 import type { IProviderService } from "../../../providerService/index.js";
-import type { SwapQuote } from "../../../swapService/index.js";
-import { encodeSwapQuoteVerificationItem } from "../shared.js";
+import {
+	applyBuffer,
+	assertEulerSource,
+	assertEulerTarget,
+	assertSameAddress,
+	assertSwapQuoteUsesSwapper,
+	encodeGenericSwap,
+	encodeSwapQuoteVerificationItem,
+	encodeVerifyAmountMinAndDepositItem,
+	encodeVerifyDebtMaxItem,
+	getSwapQuoteInputAmount,
+	getSwapQuoteSwapCalls,
+	splitPermitSignature,
+} from "../shared.js";
 import type {
 	BuildConnectorMigrationBatchArgs,
 	EulerMigrationSource,
-	EulerMigrationTarget,
 	GetMigrationAuthorizationArgs,
 	GetMigrationPositionArgs,
 	ListMigrationPositionsArgs,
@@ -67,11 +78,7 @@ const DEFAULT_MORPHO_GRAPHQL_URL = "https://api.morpho.org/graphql";
 const DEFAULT_INTEREST_BUFFER_BPS = 100n;
 const DEFAULT_MIN_LIQUIDITY = 0n;
 const DEFAULT_OUTBOUND_INTEREST_BUFFER_BPS = 1n;
-const BPS_SCALE = 10_000n;
 const ZERO_BYTES = "0x" as const;
-const SWAPPER_MODE_EXACT_IN = 0n;
-const SWAPPER_HANDLER_GENERIC =
-	"0x47656e6572696300000000000000000000000000000000000000000000000000" as const;
 
 const MORPHO_MARKET_PARAMS_ABI = [
 	{
@@ -84,11 +91,6 @@ const MORPHO_MARKET_PARAMS_ABI = [
 			{ name: "lltv", type: "uint256" },
 		],
 	},
-] as const;
-
-const GENERIC_HANDLER_DATA_ABI = [
-	{ name: "target", type: "address" },
-	{ name: "payload", type: "bytes" },
 ] as const;
 
 const MORPHO_MARKETS_QUERY = `#graphql
@@ -175,14 +177,7 @@ export function splitMorphoAuthorizationSignature(
 		throw new Error("Morpho authorization signature must be 65 bytes");
 	}
 
-	let v = Number.parseInt(signature.slice(130, 132), 16);
-	if (v < 27) v += 27;
-
-	return {
-		r: signature.slice(0, 66) as Hex,
-		s: `0x${signature.slice(66, 130)}` as Hex,
-		v,
-	};
+	return splitPermitSignature(signature);
 }
 
 export class MorphoPositionMigrationConnector
@@ -494,10 +489,18 @@ export class MorphoPositionMigrationConnector
 			throw new Error("Euler borrow amount must be greater than zero");
 		}
 		if (debtSwapQuote) {
-			assertSwapQuoteUsesSwapper(debtSwapQuote, swapper, "debt");
+			assertSwapQuoteUsesSwapper(
+				debtSwapQuote,
+				swapper,
+				"Morpho debt migration",
+			);
 		}
 		if (collateralSwapQuote) {
-			assertSwapQuoteUsesSwapper(collateralSwapQuote, swapper, "collateral");
+			assertSwapQuoteUsesSwapper(
+				collateralSwapQuote,
+				swapper,
+				"Morpho collateral migration",
+			);
 		}
 
 		const items: EVCBatchItem[] = [];
@@ -560,7 +563,9 @@ export class MorphoPositionMigrationConnector
 		if (hasDebt) {
 			const preWithdrawCalls: Hex[] = [];
 			if (debtSwapQuote) {
-				preWithdrawCalls.push(...getSwapQuoteSwapCalls(debtSwapQuote, "debt"));
+				preWithdrawCalls.push(
+					...getSwapQuoteSwapCalls(debtSwapQuote, "Morpho debt migration"),
+				);
 			}
 			preWithdrawCalls.push(
 				encodeGenericSwap({
@@ -1093,109 +1098,6 @@ export class MorphoPositionMigrationConnector
 	}
 }
 
-function getSwapQuoteInputAmount(quote: SwapQuote): bigint {
-	const amountInMax = BigInt(quote.amountInMax || 0);
-	return amountInMax > 0n ? amountInMax : BigInt(quote.amountIn);
-}
-
-function getSwapQuoteSwapCalls(
-	quote: SwapQuote,
-	leg: "collateral" | "debt",
-): Hex[] {
-	const calls = quote.swap.multicallItems
-		.filter((item) => item.functionName === "swap")
-		.map((item) => item.data);
-
-	if (calls.length === 0) {
-		throw new Error(
-			`Morpho ${leg} migration swap quote must contain Swapper swap calldata`,
-		);
-	}
-
-	return calls;
-}
-
-function assertSwapQuoteUsesSwapper(
-	quote: SwapQuote,
-	swapper: Address,
-	leg: "collateral" | "debt",
-): void {
-	assertSameAddress(
-		quote.swap.swapperAddress,
-		swapper,
-		`Morpho ${leg} migration swap quote must use the Euler Swapper`,
-	);
-}
-
-function encodeVerifyAmountMinAndDepositItem(args: {
-	swapVerifier: Address;
-	onBehalfOfAccount: Address;
-	vault: Address;
-	receiver: Address;
-	amountMin: bigint;
-	deadline: bigint;
-}): EVCBatchItem {
-	return {
-		targetContract: args.swapVerifier,
-		onBehalfOfAccount: args.onBehalfOfAccount,
-		value: 0n,
-		data: encodeFunctionData({
-			abi: swapVerifierAbi,
-			functionName: "verifyAmountMinAndDeposit",
-			args: [args.vault, args.receiver, args.amountMin, args.deadline],
-		}),
-	};
-}
-
-function encodeVerifyDebtMaxItem(args: {
-	swapVerifier: Address;
-	onBehalfOfAccount: Address;
-	vault: Address;
-	account: Address;
-	amountMax: bigint;
-	deadline: bigint;
-}): EVCBatchItem {
-	return {
-		targetContract: args.swapVerifier,
-		onBehalfOfAccount: args.onBehalfOfAccount,
-		value: 0n,
-		data: encodeFunctionData({
-			abi: swapVerifierAbi,
-			functionName: "verifyDebtMax",
-			args: [args.vault, args.account, args.amountMax, args.deadline],
-		}),
-	};
-}
-
-function encodeGenericSwap(args: {
-	target: Address;
-	tokenIn: Address;
-	tokenOut: Address;
-	payload: Hex;
-}): Hex {
-	return encodeFunctionData({
-		abi: swapperAbi,
-		functionName: "swap",
-		args: [
-			{
-				handler: SWAPPER_HANDLER_GENERIC,
-				mode: SWAPPER_MODE_EXACT_IN,
-				account: args.target,
-				tokenIn: args.tokenIn,
-				tokenOut: args.tokenOut,
-				vaultIn: args.target,
-				accountIn: args.target,
-				receiver: args.target,
-				amountOut: 0n,
-				data: encodeAbiParameters(GENERIC_HANDLER_DATA_ABI, [
-					args.target,
-					args.payload,
-				]),
-			},
-		],
-	});
-}
-
 function assertMorphoAuthorizationRequest(
 	request: MigrationAuthorizationRequest,
 ): MorphoAuthorizationTypedDataRequest {
@@ -1206,24 +1108,6 @@ function assertMorphoAuthorizationRequest(
 		throw new Error("Expected a Morpho typed-data authorization request");
 	}
 	return request as MorphoAuthorizationTypedDataRequest;
-}
-
-function assertEulerTarget(
-	target: EulerMigrationTarget | undefined,
-): EulerMigrationTarget {
-	if (!target) {
-		throw new Error("Euler migration target is required");
-	}
-	return target;
-}
-
-function assertEulerSource(
-	source: EulerMigrationSource | undefined,
-): EulerMigrationSource {
-	if (!source) {
-		throw new Error("Euler migration source is required");
-	}
-	return source;
 }
 
 function toMorphoAuthorization(
@@ -1355,20 +1239,4 @@ function toAssetsUp(
 ): bigint {
 	if (shares === 0n || totalAssets === 0n || totalShares === 0n) return 0n;
 	return (shares * totalAssets + totalShares - 1n) / totalShares;
-}
-
-function applyBuffer(amount: bigint, bufferBps: bigint): bigint {
-	return (amount * (BPS_SCALE + bufferBps) + BPS_SCALE - 1n) / BPS_SCALE;
-}
-
-function assertSameAddress(
-	actual: Address,
-	expected: Address,
-	message: string,
-) {
-	if (getAddress(actual) !== getAddress(expected)) {
-		throw new Error(
-			`${message}: ${getAddress(actual)} != ${getAddress(expected)}`,
-		);
-	}
 }
