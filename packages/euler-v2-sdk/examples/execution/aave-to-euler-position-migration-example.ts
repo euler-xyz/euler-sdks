@@ -34,9 +34,12 @@ import {
 	buildEulerSDK,
 	getSubAccountAddress,
 	type AavePositionRef,
-	type MigrationAuthorizationRequest,
 } from "@eulerxyz/euler-v2-sdk";
 import { logOperationResult, printHeader } from "../utils/helpers.js";
+import {
+	sendAndWait,
+	signTypedDataAuthorization,
+} from "../utils/migrationHelpers.js";
 import {
 	createTransactionPlanLogger,
 	walletAccountAddress,
@@ -235,38 +238,6 @@ async function aaveToEulerPositionMigrationExample({
 		[eulerSubAccount],
 		sdk,
 	);
-}
-
-async function sendAndWait(
-	publicClient: Awaited<ReturnType<typeof initExample>>["publicClient"],
-	hashPromise: Promise<Hex>,
-	label: string,
-) {
-	const hash = await hashPromise;
-	await publicClient.waitForTransactionReceipt({ hash });
-	console.log(`  ✓ ${label}`);
-}
-
-async function signTypedDataAuthorization(
-	walletClient: Awaited<ReturnType<typeof initExample>>["walletClient"],
-	walletAccount: Exclude<
-		Awaited<ReturnType<typeof initExample>>["walletClient"]["account"],
-		string | undefined
-	>,
-	authorizationRequest: MigrationAuthorizationRequest | undefined,
-) {
-	if (!authorizationRequest || authorizationRequest.kind !== "typedData") {
-		throw new Error("Expected a typed-data migration authorization request");
-	}
-
-	const typedData = authorizationRequest.typedData;
-	return walletClient.signTypedData({
-		account: walletAccount,
-		domain: typedData.domain,
-		types: typedData.types,
-		primaryType: typedData.primaryType,
-		message: typedData.message,
-	} as never);
 }
 
 printHeader("AAVE -> EULER POSITION MIGRATION EXAMPLE");

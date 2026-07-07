@@ -79,6 +79,7 @@ const DEFAULT_MORPHO_GRAPHQL_URL = "https://api.morpho.org/graphql";
 const DEFAULT_INTEREST_BUFFER_BPS = 100n;
 const DEFAULT_MIN_LIQUIDITY = 0n;
 const DEFAULT_OUTBOUND_INTEREST_BUFFER_BPS = 1n;
+const DEFAULT_MORPHO_GRAPHQL_TIMEOUT_MS = 10_000;
 const ZERO_BYTES = "0x" as const;
 
 const MORPHO_MARKET_PARAMS_ABI = [
@@ -192,6 +193,7 @@ export class MorphoPositionMigrationConnector
 	private readonly morphoAddresses: Record<number, Address>;
 	private readonly defaultInterestBufferBps: bigint;
 	private readonly morphoGraphqlUrl: string;
+	private readonly morphoGraphqlTimeoutMs: number;
 	private readonly fetchFn: typeof fetch;
 	private readonly defaultMinLiquidity: bigint;
 
@@ -209,6 +211,8 @@ export class MorphoPositionMigrationConnector
 			config.defaultInterestBufferBps ?? DEFAULT_INTEREST_BUFFER_BPS;
 		this.morphoGraphqlUrl =
 			config.morphoGraphqlUrl ?? DEFAULT_MORPHO_GRAPHQL_URL;
+		this.morphoGraphqlTimeoutMs =
+			config.morphoGraphqlTimeoutMs ?? DEFAULT_MORPHO_GRAPHQL_TIMEOUT_MS;
 		const configuredFetch = config.fetchFn ?? globalThis.fetch;
 		this.fetchFn = ((input, init) =>
 			configuredFetch.call(globalThis, input, init)) as typeof fetch;
@@ -245,21 +249,32 @@ export class MorphoPositionMigrationConnector
 
 		const debtAsset = getAddress(args.debtAsset);
 		const collateralAsset = getAddress(args.collateralAsset);
-		const res = await this.fetchFn(this.morphoGraphqlUrl, {
-			method: "POST",
-			headers: {
-				accept: "application/json",
-				"content-type": "application/json",
-			},
-			body: JSON.stringify({
-				query: MORPHO_MARKETS_QUERY,
-				variables: {
-					chainIds: [args.chainId],
-					loanAssets: [debtAsset],
-					collateralAssets: [collateralAsset],
+		const controller = new AbortController();
+		const timeout = setTimeout(
+			() => controller.abort(),
+			this.morphoGraphqlTimeoutMs,
+		);
+		let res: Response;
+		try {
+			res = await this.fetchFn(this.morphoGraphqlUrl, {
+				method: "POST",
+				headers: {
+					accept: "application/json",
+					"content-type": "application/json",
 				},
-			}),
-		});
+				body: JSON.stringify({
+					query: MORPHO_MARKETS_QUERY,
+					variables: {
+						chainIds: [args.chainId],
+						loanAssets: [debtAsset],
+						collateralAssets: [collateralAsset],
+					},
+				}),
+				signal: controller.signal,
+			});
+		} finally {
+			clearTimeout(timeout);
+		}
 		if (!res.ok) {
 			throw new Error(`Morpho markets request failed: ${res.status}`);
 		}

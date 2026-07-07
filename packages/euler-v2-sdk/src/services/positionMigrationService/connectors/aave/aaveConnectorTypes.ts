@@ -26,25 +26,21 @@ export type AaveReserveData = AaveReserveTokens & {
 	configurationData: bigint;
 };
 
-export type AaveMigrationTargetRaw = {
+export type AaveMigrationTargetMetadata = {
 	pool: Address;
 	marketName?: string;
-	collateralReserve: AaveReserveData;
-	debtReserve: AaveReserveData;
 	availableLiquidity?: bigint;
 	totalSupplied?: bigint;
 	totalMarketSizeUsd?: string;
 	totalAvailableLiquidityUsd?: string;
 };
 
-export type AaveMigrationTargetExtraData = {
-	marketName?: string;
-	pool: Address;
-	availableLiquidity?: bigint;
-	totalSupplied?: bigint;
-	totalMarketSizeUsd?: string;
-	totalAvailableLiquidityUsd?: string;
+export type AaveMigrationTargetRaw = AaveMigrationTargetMetadata & {
+	collateralReserve: AaveReserveData;
+	debtReserve: AaveReserveData;
 };
+
+export type AaveMigrationTargetExtraData = AaveMigrationTargetMetadata;
 
 export type AavePositionRaw = {
 	id: string;

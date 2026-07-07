@@ -25,10 +25,10 @@ import {
 	getMorphoMarketId,
 	getSubAccountAddress,
 	MORPHO_CONNECTOR_ID,
-	type MigrationAuthorizationRequest,
 	type MorphoMarketParams,
 } from "@eulerxyz/euler-v2-sdk";
 import { logOperationResult, printHeader } from "../utils/helpers.js";
+import { signTypedDataAuthorization } from "../utils/migrationHelpers.js";
 import {
 	createTransactionPlanLogger,
 	walletAccountAddress,
@@ -263,28 +263,6 @@ async function fetchEulerSourceAmounts(
 	})) as bigint;
 
 	return { debtAmount, collateralShares, collateralAmount };
-}
-
-async function signTypedDataAuthorization(
-	walletClient: Awaited<ReturnType<typeof initExample>>["walletClient"],
-	walletAccount: Exclude<
-		Awaited<ReturnType<typeof initExample>>["walletClient"]["account"],
-		string | undefined
-	>,
-	authorizationRequest: MigrationAuthorizationRequest | undefined,
-) {
-	if (!authorizationRequest || authorizationRequest.kind !== "typedData") {
-		throw new Error("Expected a typed-data migration authorization request");
-	}
-
-	const typedData = authorizationRequest.typedData;
-	return walletClient.signTypedData({
-		account: walletAccount,
-		domain: typedData.domain,
-		types: typedData.types,
-		primaryType: typedData.primaryType,
-		message: typedData.message,
-	} as never);
 }
 
 printHeader("EULER -> MORPHO POSITION MIGRATION EXAMPLE");

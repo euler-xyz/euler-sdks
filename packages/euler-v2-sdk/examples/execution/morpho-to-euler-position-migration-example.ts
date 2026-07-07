@@ -17,7 +17,15 @@
  */
 
 import "dotenv/config";
-import { erc20Abi, formatUnits, getAddress, maxUint256, parseAbi, parseUnits, type Hex } from "viem";
+import {
+	erc20Abi,
+	formatUnits,
+	getAddress,
+	maxUint256,
+	parseAbi,
+	parseUnits,
+	type Hex,
+} from "viem";
 import { mainnet } from "viem/chains";
 import {
 	buildEulerSDK,
@@ -28,6 +36,10 @@ import {
 	type MorphoMarketParams,
 } from "@eulerxyz/euler-v2-sdk";
 import { logOperationResult, printHeader } from "../utils/helpers.js";
+import {
+	sendAndWait,
+	signTypedDataAuthorization,
+} from "../utils/migrationHelpers.js";
 import {
 	createTransactionPlanLogger,
 	walletAccountAddress,
@@ -249,44 +261,6 @@ async function morphoToEulerPositionMigrationExample({
 		[eulerSubAccount],
 		sdk,
 	);
-}
-
-async function sendAndWait(
-	publicClient: Awaited<ReturnType<typeof initExample>>["publicClient"],
-	hashPromise: Promise<Hex>,
-	label: string,
-) {
-	const hash = await hashPromise;
-	await publicClient.waitForTransactionReceipt({ hash });
-	console.log(`  ✓ ${label}`);
-}
-
-async function signTypedDataAuthorization(
-	walletClient: Awaited<ReturnType<typeof initExample>>["walletClient"],
-	walletAccount: Exclude<
-		Awaited<ReturnType<typeof initExample>>["walletClient"]["account"],
-		string | undefined
-	>,
-	authorizationRequest: Awaited<
-		ReturnType<
-			Awaited<
-				ReturnType<typeof buildEulerSDK>
-			>["positionMigrationService"]["getAuthorization"]
-		>
-	>,
-) {
-	if (!authorizationRequest || authorizationRequest.kind !== "typedData") {
-		throw new Error("Expected a typed-data migration authorization request");
-	}
-
-	const typedData = authorizationRequest.typedData;
-	return walletClient.signTypedData({
-		account: walletAccount,
-		domain: typedData.domain,
-		types: typedData.types,
-		primaryType: typedData.primaryType,
-		message: typedData.message,
-	} as never);
 }
 
 printHeader("MORPHO -> EULER POSITION MIGRATION EXAMPLE");

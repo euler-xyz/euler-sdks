@@ -8,7 +8,6 @@ import {
 	type Hex,
 } from "viem";
 import { test } from "vitest";
-import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
 import { swapperAbi } from "../src/services/executionService/abis/swapperAbi.js";
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
 import type { EVCBatchItem } from "../src/services/executionService/index.js";
@@ -27,8 +26,13 @@ import {
 	type SwapQuote,
 } from "../src/services/swapService/index.js";
 import {
+	GENERIC_HANDLER_DATA_ABI,
+	SWAPPER_HANDLER_GENERIC,
 	createEulerSourceAccount,
 	decodeSwapperMulticall,
+	getEulerCollateralSourceCall,
+	getVerifyAmountMinAndDepositAmount,
+	getVerifyDebtMaxCall,
 } from "./helpers/positionMigration.js";
 
 const CHAIN_ID = 8453;
@@ -45,12 +49,6 @@ const ORACLE = "0x0000000000000000000000000000000000000b0a" as const;
 const IRM = "0x0000000000000000000000000000000000000b0b" as const;
 const QUOTE_ASSET = "0x0000000000000000000000000000000000000b0c" as const;
 const MARKET_ID = `0x${"11".repeat(32)}` as Hex;
-const SWAPPER_HANDLER_GENERIC =
-	"0x47656e6572696300000000000000000000000000000000000000000000000000" as const;
-const GENERIC_HANDLER_DATA_ABI = [
-	{ name: "target", type: "address" },
-	{ name: "payload", type: "bytes" },
-] as const;
 
 const marketParams: MorphoMarketParams = {
 	loanToken: getAddress(DEBT_ASSET),
@@ -64,6 +62,8 @@ function createConnector(
 	args: {
 		isAuthorized?: boolean;
 		onReadContract?: (functionName?: string) => void;
+		morphoGraphqlTimeoutMs?: number;
+		fetchFn?: typeof fetch;
 	} = {},
 ) {
 	return new MorphoPositionMigrationConnector(
@@ -112,7 +112,11 @@ function createConnector(
 				data: "0x22222222",
 			}),
 		} as never,
-		{ morphoAddresses: { [CHAIN_ID]: MORPHO } },
+		{
+			morphoAddresses: { [CHAIN_ID]: MORPHO },
+			morphoGraphqlTimeoutMs: args.morphoGraphqlTimeoutMs,
+			fetchFn: args.fetchFn,
+		},
 	);
 }
 
@@ -411,75 +415,37 @@ function getMorphoBorrowAmount(item: EVCBatchItem): bigint | undefined {
 	return amount;
 }
 
-function getEulerCollateralSourceCall(item: EVCBatchItem):
-	| { functionName: "withdraw"; amount: bigint; receiver: Address; owner: Address }
-	| { functionName: "redeem"; shares: bigint; receiver: Address; owner: Address }
-	| undefined {
-	if (getAddress(item.targetContract) !== getAddress(COLLATERAL_VAULT)) return undefined;
-	const decoded = decodeFunctionData({ abi: eVaultAbi, data: item.data });
-	if (decoded.functionName === "withdraw") {
-		const [amount, receiver, owner] = decoded.args as [
-			bigint,
-			Address,
-			Address,
-		];
-		return {
-			functionName: "withdraw",
-			amount,
-			receiver: getAddress(receiver),
-			owner: getAddress(owner),
-		};
-	}
-	if (decoded.functionName === "redeem") {
-		const [shares, receiver, owner] = decoded.args as [
-			bigint,
-			Address,
-			Address,
-		];
-		return {
-			functionName: "redeem",
-			shares,
-			receiver: getAddress(receiver),
-			owner: getAddress(owner),
-		};
-	}
-	return undefined;
-}
+test("Morpho target lookup aborts an unresponsive GraphQL request", async () => {
+	let receivedSignal = false;
+	const fetchFn = ((_input, init) =>
+		new Promise<Response>((_resolve, reject) => {
+			const signal = init?.signal;
+			receivedSignal = !!signal;
+			if (!signal) {
+				reject(new Error("missing abort signal"));
+				return;
+			}
+			signal.addEventListener(
+				"abort",
+				() => reject(new Error("morpho graphql request aborted")),
+				{ once: true },
+			);
+		})) as typeof fetch;
+	const connector = createConnector({
+		fetchFn,
+		morphoGraphqlTimeoutMs: 1,
+	});
 
-function getVerifyDepositAmount(item: EVCBatchItem): bigint | undefined {
-	if (getAddress(item.targetContract) !== getAddress(SWAP_VERIFIER)) return undefined;
-	const decoded = decodeFunctionData({ abi: swapVerifierAbi, data: item.data });
-	if (decoded.functionName !== "verifyAmountMinAndDeposit") return undefined;
-	const [vault, receiver, amountMin] = decoded.args as [
-		Address,
-		Address,
-		bigint,
-		bigint,
-	];
-	if (getAddress(vault) !== getAddress(COLLATERAL_VAULT)) return undefined;
-	if (getAddress(receiver) !== getAddress(EULER_ACCOUNT)) return undefined;
-	return amountMin;
-}
-
-function getVerifyDebtMax(item: EVCBatchItem):
-	| { vault: Address; account: Address; amountMax: bigint; deadline: bigint }
-	| undefined {
-	if (getAddress(item.targetContract) !== getAddress(SWAP_VERIFIER)) return undefined;
-	const decoded = decodeFunctionData({ abi: swapVerifierAbi, data: item.data });
-	if (decoded.functionName !== "verifyDebtMax") return undefined;
-	const [vault, account, amountMax, deadline] = decoded.args as [
-		Address,
-		Address,
-		bigint,
-		bigint,
-	];
-	return {
-		vault: getAddress(vault),
-		account: getAddress(account),
-		amountMax,
-		deadline,
-	};
-}
+	await assert.rejects(
+		connector.listTargets({
+			chainId: CHAIN_ID,
+			debtAsset: DEBT_ASSET,
+			collateralAsset: COLLATERAL_ASSET,
+		}),
+		/morpho graphql request aborted/,
+	);
+	assert.equal(receivedSignal, true);
+});
 
 test("Morpho inbound no-swap migration deposits through SwapVerifier with the source collateral amount", async () => {
 	const connector = createConnector();
@@ -502,7 +468,13 @@ test("Morpho inbound no-swap migration deposits through SwapVerifier with the so
 		.map((item) => getMorphoWithdraw(item))
 		.find((value) => value !== undefined);
 	const verifyDepositAmount = items
-		.map((item) => getVerifyDepositAmount(item))
+		.map((item) =>
+			getVerifyAmountMinAndDepositAmount(item, {
+				swapVerifier: SWAP_VERIFIER,
+				vault: COLLATERAL_VAULT,
+				receiver: EULER_ACCOUNT,
+			}),
+		)
 		.find((amount) => amount !== undefined);
 
 	assert.deepEqual(withdraw, {
@@ -549,7 +521,13 @@ test("Morpho inbound no-swap migration does not use target minimum as the withdr
 		.map((item) => getMorphoWithdraw(item))
 		.find((value) => value !== undefined);
 	const verifyDepositAmount = items
-		.map((item) => getVerifyDepositAmount(item))
+		.map((item) =>
+			getVerifyAmountMinAndDepositAmount(item, {
+				swapVerifier: SWAP_VERIFIER,
+				vault: COLLATERAL_VAULT,
+				receiver: EULER_ACCOUNT,
+			}),
+		)
 		.find((amount) => amount !== undefined);
 
 	assert.deepEqual(withdraw, {
@@ -636,7 +614,7 @@ test("Morpho outgoing migration verifies the Euler source debt is fully repaid",
 	});
 
 	const verifyDebtMax = items
-		.map((item) => getVerifyDebtMax(item))
+		.map((item) => getVerifyDebtMaxCall(item, SWAP_VERIFIER))
 		.find((value) => value !== undefined);
 
 	assert.deepEqual(verifyDebtMax, {
@@ -682,7 +660,7 @@ test("Morpho outgoing migration reads source amounts from the supplied account s
 		.map((item) => getMorphoBorrowAmount(item))
 		.find((amount) => amount !== undefined);
 	const sourceCall = items
-		.map((item) => getEulerCollateralSourceCall(item))
+		.map((item) => getEulerCollateralSourceCall(item, COLLATERAL_VAULT))
 		.find((call) => call !== undefined);
 
 	assert.equal(supplyAmount, 4_000n);

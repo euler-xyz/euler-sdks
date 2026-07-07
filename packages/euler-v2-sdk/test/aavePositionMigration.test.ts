@@ -9,7 +9,6 @@ import {
 	type Hex,
 } from "viem";
 import { test } from "vitest";
-import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
 import { swapperAbi } from "../src/services/executionService/abis/swapperAbi.js";
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
 import {
@@ -25,8 +24,13 @@ import {
 	type SwapQuote,
 } from "../src/services/swapService/index.js";
 import {
+	GENERIC_HANDLER_DATA_ABI,
+	SWAPPER_HANDLER_GENERIC,
 	createEulerSourceAccount,
 	decodeSwapperMulticall,
+	getEulerCollateralSourceCall,
+	getVerifyAmountMinAndDepositAmount,
+	getVerifyDebtMaxCall,
 } from "./helpers/positionMigration.js";
 
 const CHAIN_ID = 8453;
@@ -45,13 +49,6 @@ const VARIABLE_DEBT_TOKEN = "0x0000000000000000000000000000000000000a0c" as cons
 const TARGET_DEBT_ASSET = "0x0000000000000000000000000000000000000a0d" as const;
 const BPS_SCALE = 10_000n;
 const A_TOKEN_TRANSFER_BUFFER_BPS = 1n;
-const SWAPPER_HANDLER_GENERIC =
-	"0x47656e6572696300000000000000000000000000000000000000000000000000" as const;
-
-const GENERIC_HANDLER_DATA_ABI = [
-	{ name: "target", type: "address" },
-	{ name: "payload", type: "bytes" },
-] as const;
 
 function createConnector(
 	args: {
@@ -439,41 +436,6 @@ function getAaveBorrowAmount(item: EVCBatchItem): bigint | undefined {
 	return amount;
 }
 
-function getEulerCollateralSourceCall(item: EVCBatchItem):
-	| { functionName: "withdraw"; amount: bigint; receiver: Address; owner: Address }
-	| { functionName: "redeem"; shares: bigint; receiver: Address; owner: Address }
-	| undefined {
-	if (getAddress(item.targetContract) !== getAddress(COLLATERAL_VAULT)) return undefined;
-	const decoded = decodeFunctionData({ abi: eVaultAbi, data: item.data });
-	if (decoded.functionName === "withdraw") {
-		const [amount, receiver, owner] = decoded.args as [
-			bigint,
-			Address,
-			Address,
-		];
-		return {
-			functionName: "withdraw",
-			amount,
-			receiver: getAddress(receiver),
-			owner: getAddress(owner),
-		};
-	}
-	if (decoded.functionName === "redeem") {
-		const [shares, receiver, owner] = decoded.args as [
-			bigint,
-			Address,
-			Address,
-		];
-		return {
-			functionName: "redeem",
-			shares,
-			receiver: getAddress(receiver),
-			owner: getAddress(owner),
-		};
-	}
-	return undefined;
-}
-
 function isATokenTransferFromSender(item: EVCBatchItem) {
 	if (getAddress(item.targetContract) !== getAddress(SWAP_VERIFIER)) return false;
 	const decoded = decodeFunctionData({ abi: swapVerifierAbi, data: item.data });
@@ -506,41 +468,6 @@ function getAaveWithdrawReceiver(item: EVCBatchItem): Address | undefined {
 		return getAddress(receiver);
 	}
 	return undefined;
-}
-
-function getVerifyDepositAmount(item: EVCBatchItem): bigint | undefined {
-	if (getAddress(item.targetContract) !== getAddress(SWAP_VERIFIER)) return undefined;
-	const decoded = decodeFunctionData({ abi: swapVerifierAbi, data: item.data });
-	if (decoded.functionName !== "verifyAmountMinAndDeposit") return undefined;
-	const [vault, receiver, amountMin] = decoded.args as [
-		Address,
-		Address,
-		bigint,
-		bigint,
-	];
-	if (getAddress(vault) !== getAddress(COLLATERAL_VAULT)) return undefined;
-	if (getAddress(receiver) !== getAddress(EULER_ACCOUNT)) return undefined;
-	return amountMin;
-}
-
-function getVerifyDebtMax(item: EVCBatchItem):
-	| { vault: Address; account: Address; amountMax: bigint; deadline: bigint }
-	| undefined {
-	if (getAddress(item.targetContract) !== getAddress(SWAP_VERIFIER)) return undefined;
-	const decoded = decodeFunctionData({ abi: swapVerifierAbi, data: item.data });
-	if (decoded.functionName !== "verifyDebtMax") return undefined;
-	const [vault, account, amountMax, deadline] = decoded.args as [
-		Address,
-		Address,
-		bigint,
-		bigint,
-	];
-	return {
-		vault: getAddress(vault),
-		account: getAddress(account),
-		amountMax,
-		deadline,
-	};
 }
 
 test("Aave listPositions excludes positions with unsupported stable debt", async () => {
@@ -645,7 +572,13 @@ test("Aave inbound no-swap migration buffers the aToken transfer cap without rai
 		.map((item) => getAaveWithdrawReceiver(item))
 		.find((receiver) => receiver !== undefined);
 	const verifyDepositAmount = items
-		.map((item) => getVerifyDepositAmount(item))
+		.map((item) =>
+			getVerifyAmountMinAndDepositAmount(item, {
+				swapVerifier: SWAP_VERIFIER,
+				vault: COLLATERAL_VAULT,
+				receiver: EULER_ACCOUNT,
+			}),
+		)
 		.find((amount) => amount !== undefined);
 
 	assert.equal(transferAmount, bufferedCollateralAmount);
@@ -700,7 +633,13 @@ test("Aave inbound migration does not use target minimum as the aToken transfer 
 		.map((item) => getATokenTransferAmount(item))
 		.find((amount) => amount !== undefined);
 	const verifyDepositAmount = items
-		.map((item) => getVerifyDepositAmount(item))
+		.map((item) =>
+			getVerifyAmountMinAndDepositAmount(item, {
+				swapVerifier: SWAP_VERIFIER,
+				vault: COLLATERAL_VAULT,
+				receiver: EULER_ACCOUNT,
+			}),
+		)
 		.find((amount) => amount !== undefined);
 
 	assert.equal(transferAmount, bufferedCollateralAmount);
@@ -784,7 +723,7 @@ test("Aave outgoing migration verifies the Euler source debt is fully repaid", a
 	});
 
 	const verifyDebtMax = items
-		.map((item) => getVerifyDebtMax(item))
+		.map((item) => getVerifyDebtMaxCall(item, SWAP_VERIFIER))
 		.find((value) => value !== undefined);
 
 	assert.deepEqual(verifyDebtMax, {
@@ -830,7 +769,7 @@ test("Aave outgoing migration reads source amounts from the supplied account sna
 		.map((item) => getAaveBorrowAmount(item))
 		.find((amount) => amount !== undefined);
 	const sourceCall = items
-		.map((item) => getEulerCollateralSourceCall(item))
+		.map((item) => getEulerCollateralSourceCall(item, COLLATERAL_VAULT))
 		.find((call) => call !== undefined);
 
 	assert.equal(supplyAmount, 4_000n);
@@ -1109,7 +1048,11 @@ test("Aave supply-only deposit-verified collateral swap deposits into the ERC-46
 		.map((item) => getAaveWithdrawReceiver(item))
 		.find((receiver) => receiver !== undefined);
 	assert.equal(withdrawReceiver, getAddress(SWAPPER));
-	const verifyDepositAmount = getVerifyDepositAmount(items.at(-1)!);
+	const verifyDepositAmount = getVerifyAmountMinAndDepositAmount(items.at(-1)!, {
+		swapVerifier: SWAP_VERIFIER,
+		vault: COLLATERAL_VAULT,
+		receiver: EULER_ACCOUNT,
+	});
 	assert.equal(verifyDepositAmount, 1990n);
 });
 

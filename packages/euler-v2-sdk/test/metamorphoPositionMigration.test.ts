@@ -27,7 +27,11 @@ import {
 	SwapVerificationType,
 	type SwapQuote,
 } from "../src/services/swapService/index.js";
-import { decodeSwapperMulticall } from "./helpers/positionMigration.js";
+import {
+	GENERIC_HANDLER_DATA_ABI,
+	SWAPPER_HANDLER_GENERIC,
+	decodeSwapperMulticall,
+} from "./helpers/positionMigration.js";
 
 const CHAIN_ID = 8453;
 const OWNER = "0x0000000000000000000000000000000000000b01" as const;
@@ -43,13 +47,6 @@ const SHARE_BALANCE = 2_000n;
 const ASSETS = 2_100n;
 const NONCE = 7n;
 const ZERO_HASH = `0x${"00".repeat(32)}` as const;
-const SWAPPER_HANDLER_GENERIC =
-	"0x47656e6572696300000000000000000000000000000000000000000000000000" as const;
-
-const GENERIC_HANDLER_DATA_ABI = [
-	{ name: "target", type: "address" },
-	{ name: "payload", type: "bytes" },
-] as const;
 
 function createConnector(
 	args: {

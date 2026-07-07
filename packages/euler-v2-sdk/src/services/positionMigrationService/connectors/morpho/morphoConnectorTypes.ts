@@ -72,6 +72,7 @@ export type MorphoMigrationConnectorConfig = {
 	morphoAddresses?: Record<number, Address>;
 	defaultInterestBufferBps?: bigint;
 	morphoGraphqlUrl?: string;
+	morphoGraphqlTimeoutMs?: number;
 	fetchFn?: typeof fetch;
 	defaultMinLiquidity?: bigint;
 };
