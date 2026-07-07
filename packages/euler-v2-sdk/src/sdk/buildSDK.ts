@@ -116,10 +116,12 @@ import {
 } from "../services/reulLockService/index.js";
 import {
 	AavePositionMigrationConnector,
+	MetamorphoPositionMigrationConnector,
 	MorphoPositionMigrationConnector,
 	PositionMigrationService,
 	type AaveMigrationConnectorConfig,
 	type IPositionMigrationService,
+	type MetamorphoMigrationConnectorConfig,
 	type MorphoMigrationConnectorConfig,
 	type PositionMigrationServiceConfig,
 } from "../services/positionMigrationService/index.js";
@@ -222,6 +224,7 @@ export interface BuildSDKOptions<
 	positionMigrationConnectorConfig?: {
 		morpho?: MorphoMigrationConnectorConfig;
 		aave?: AaveMigrationConnectorConfig;
+		metamorpho?: MetamorphoMigrationConnectorConfig;
 	};
 	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with a 5s TTL. */
 	queryCacheConfig?: QueryCacheConfig;
@@ -1351,6 +1354,12 @@ export async function buildEulerSDK<
 								providerService,
 								executionService,
 								positionMigrationConnectorConfig?.aave,
+							),
+							new MetamorphoPositionMigrationConnector(
+								deploymentService,
+								providerService,
+								executionService,
+								positionMigrationConnectorConfig?.metamorpho,
 							),
 						]),
 				...(positionMigrationServiceConfig?.connectors ?? []),

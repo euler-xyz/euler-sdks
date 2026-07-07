@@ -964,3 +964,90 @@ test("Aave inbound collateral swap validates verifier calldata against the migra
 		/SwapVerifier data mismatch/,
 	);
 });
+
+function createAaveSupplyOnlyPosition(): AaveMigrationPosition {
+	const position = createAavePosition();
+	return {
+		...position,
+		ref: {
+			pool: getAddress(AAVE_POOL),
+			collateralAsset: getAddress(COLLATERAL_ASSET),
+		},
+		debt: { asset: getAddress(COLLATERAL_ASSET), amount: 0n },
+		raw: {
+			...position.raw,
+			debtAsset: undefined,
+			debtReserve: undefined,
+			variableDebt: 0n,
+			stableDebt: 0n,
+		},
+	};
+}
+
+function createTransferMinCollateralSwapQuote(): SwapQuote {
+	const base = createCollateralSwapQuote({ deadline: 123n });
+	return {
+		...base,
+		receiver: getAddress(OWNER),
+		transferOutputToReceiver: true,
+		verify: {
+			...base.verify,
+			verifierData: encodeFunctionData({
+				abi: swapVerifierAbi,
+				functionName: "verifyAmountMinAndTransfer",
+				args: [TARGET_DEBT_ASSET, OWNER, 1990n, 123n],
+			}),
+			type: SwapVerificationType.TransferMin,
+			vault: getAddress(OWNER),
+		},
+	} as SwapQuote;
+}
+
+test("Aave supply-only deposit-verified collateral swap deposits into the ERC-4626 target", async () => {
+	const connector = createConnector();
+	const quote = createTransferMinCollateralSwapQuote();
+
+	const items = await connector.buildMigrationBatch({
+		direction: "external-to-euler",
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createAaveSupplyOnlyPosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			collateralVault: COLLATERAL_VAULT,
+			collateralSwapVerification: "deposit",
+		},
+		collateralSwapQuote: quote,
+		deadline: 123n,
+	});
+
+	assert.ok(items.every((item) => item.data !== quote.verify.verifierData));
+	const withdrawReceiver = items
+		.map((item) => getAaveWithdrawReceiver(item))
+		.find((receiver) => receiver !== undefined);
+	assert.equal(withdrawReceiver, getAddress(SWAPPER));
+	const verifyDepositAmount = getVerifyDepositAmount(items.at(-1)!);
+	assert.equal(verifyDepositAmount, 1990n);
+});
+
+test("Aave deposit-verified collateral swap rejects positions with debt", async () => {
+	const connector = createConnector();
+
+	await assert.rejects(
+		connector.buildMigrationBatch({
+			direction: "external-to-euler",
+			chainId: CHAIN_ID,
+			owner: OWNER,
+			position: createAavePosition(),
+			target: {
+				eulerAccount: EULER_ACCOUNT,
+				borrowVault: DEBT_VAULT,
+				collateralVault: COLLATERAL_VAULT,
+				collateralSwapVerification: "deposit",
+			},
+			collateralSwapQuote: createTransferMinCollateralSwapQuote(),
+			deadline: 123n,
+		}),
+		/only supported for supply-only migrations/,
+	);
+});

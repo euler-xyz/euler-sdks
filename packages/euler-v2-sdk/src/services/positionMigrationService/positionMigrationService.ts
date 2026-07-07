@@ -41,15 +41,19 @@ const ENABLED_MIGRATIONS = new Set([
 	"aave:euler-to-external",
 	"morpho:external-to-euler",
 	"morpho:euler-to-external",
+	"metamorpho:external-to-euler",
 ]);
 const AAVE_CONNECTOR_ID = "aave";
 const MORPHO_CONNECTOR_ID = "morpho";
+const METAMORPHO_CONNECTOR_ID = "metamorpho";
 const AAVE_ATOKEN_ALLOWANCE_SLOT_INDEX = 53n;
 const AAVE_VARIABLE_DEBT_ALLOWANCE_SLOT_INDEX = 54n;
 const MORPHO_AUTHORIZATION_SLOT_INDEX = 6n;
+const METAMORPHO_DEFAULT_ALLOWANCE_SLOT_INDEX = 1n;
 const AAVE_PERMIT_SELECTOR = "0xd505accf";
 const AAVE_DELEGATION_SELECTOR = "0x0b52d558";
 const MORPHO_SET_AUTHORIZATION_SELECTOR = "0x8069218f";
+const ERC2612_PERMIT_SELECTOR = "0xd505accf";
 const STUB_SIGNATURE = `0x${"00".repeat(65)}` as Hex;
 
 function assertPositionMigrationEnabled(args: {
@@ -468,6 +472,34 @@ export class PositionMigrationService implements IPositionMigrationService {
 					},
 				],
 				skippedCall: { target: token, selector: AAVE_DELEGATION_SELECTOR },
+			};
+		}
+
+		if (
+			request.connectorId === METAMORPHO_CONNECTOR_ID &&
+			(request as { authorizationType?: string }).authorizationType ===
+				"metamorphoPermit" &&
+			"token" in request &&
+			"owner" in message &&
+			"spender" in message
+		) {
+			const token = getAddress((request as { token: Address }).token);
+			const owner = getAddress(message.owner as Address);
+			const spender = getAddress(message.spender as Address);
+			const slotIndex =
+				(request as { allowanceSlotIndex?: bigint }).allowanceSlotIndex ??
+				METAMORPHO_DEFAULT_ALLOWANCE_SLOT_INDEX;
+			const slot = computeAllowanceSlot(owner, spender, slotIndex);
+
+			return {
+				authorization: this.getStubAuthorization(request),
+				stateOverrides: [
+					{
+						address: token,
+						stateDiff: [{ slot, value: toHex(maxUint256, { size: 32 }) }],
+					},
+				],
+				skippedCall: { target: token, selector: ERC2612_PERMIT_SELECTOR },
 			};
 		}
 

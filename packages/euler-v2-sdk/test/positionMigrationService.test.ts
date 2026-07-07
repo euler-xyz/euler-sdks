@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { getAddress } from "viem";
+import { getAddress, maxUint256, toHex } from "viem";
 import { test } from "vitest";
 import { PositionMigrationService } from "../src/services/positionMigrationService/positionMigrationService.js";
 import type { EVCBatchItem } from "../src/services/executionService/index.js";
@@ -12,6 +12,8 @@ import type {
 	PositionMigrationConnector,
 	SignedMigrationAuthorization,
 } from "../src/services/positionMigrationService/index.js";
+import type { MetamorphoPermitTypedDataRequest } from "../src/services/positionMigrationService/connectors/metamorpho/metamorphoConnectorTypes.js";
+import { computeAllowanceSlot } from "../src/utils/stateOverrides/index.js";
 
 const CHAIN_ID = 8453;
 const OWNER = "0x0000000000000000000000000000000000001001" as const;
@@ -327,4 +329,150 @@ test("planMigrationSimulation returns a stub-signed preview plan and the resolve
 	]);
 	assert.deepEqual(result.plan as unknown as EVCBatchItem[], [otherItem]);
 	assert.equal(result.stateOverrides.length, 1);
+});
+
+const METAMORPHO_VAULT = getAddress(
+	"0x0000000000000000000000000000000000005001",
+);
+const METAMORPHO_SPENDER = getAddress(
+	"0x0000000000000000000000000000000000005002",
+);
+
+const metamorphoMigrationPosition: MigrationPosition = {
+	connectorId: "metamorpho",
+	protocol: "Morpho Vaults",
+	id: `metamorpho:${METAMORPHO_VAULT}:supply`,
+	chainId: CHAIN_ID,
+	owner: getAddress(OWNER),
+	ref: { vault: METAMORPHO_VAULT, version: "v2" },
+	debt: { asset: getAddress(COLLATERAL_ASSET), amount: 0n },
+	collateral: { asset: getAddress(COLLATERAL_ASSET), amount: 2n },
+	raw: {},
+};
+
+const metamorphoPermitRequest: MetamorphoPermitTypedDataRequest = {
+	kind: "typedData",
+	authorizationType: "metamorphoPermit",
+	connectorId: "metamorpho",
+	protocol: "Morpho Vaults",
+	chainId: CHAIN_ID,
+	owner: getAddress(OWNER),
+	token: METAMORPHO_VAULT,
+	allowanceSlotIndex: 13n,
+	typedData: {
+		domain: { chainId: CHAIN_ID, verifyingContract: METAMORPHO_VAULT },
+		types: {
+			Permit: [
+				{ name: "owner", type: "address" },
+				{ name: "spender", type: "address" },
+				{ name: "value", type: "uint256" },
+				{ name: "nonce", type: "uint256" },
+				{ name: "deadline", type: "uint256" },
+			],
+		},
+		primaryType: "Permit",
+		message: {
+			owner: getAddress(OWNER),
+			spender: METAMORPHO_SPENDER,
+			value: 2n,
+			nonce: 0n,
+			deadline: 1n,
+		},
+	},
+};
+
+test("planMigrationSimulation stubs metamorpho permits with an allowance slot override", async () => {
+	const permitItem = {
+		targetContract: METAMORPHO_VAULT,
+		data: "0xd505accf00",
+	} as unknown as EVCBatchItem;
+	const otherItem = {
+		targetContract: getAddress("0x0000000000000000000000000000000000004001"),
+		data: "0xdeadbeef",
+	} as unknown as EVCBatchItem;
+	const connector: PositionMigrationConnector = {
+		id: "metamorpho",
+		protocol: "Morpho Vaults",
+		name: "Morpho Vaults",
+		getPosition: async () => metamorphoMigrationPosition,
+		getAuthorization: async () => metamorphoPermitRequest,
+		buildMigrationBatch: () => [permitItem, otherItem],
+	};
+	const service = new PositionMigrationService(
+		{} as never,
+		{
+			convertBatchItemsToPlan: (items: EVCBatchItem[]) => items,
+		} as never,
+		{ includeDefaultConnectors: false, connectors: [connector] },
+	);
+
+	const result = await service.planMigrationSimulation({
+		direction: "external-to-euler",
+		connectorId: "metamorpho",
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		position: metamorphoMigrationPosition,
+		target: {
+			eulerAccount: getAddress(OWNER),
+			collateralVault: "0x0000000000000000000000000000000000003001",
+		},
+		validateEulerVaults: false,
+	});
+
+	assert.equal(result.stateOverrides.length, 1);
+	const override = result.stateOverrides[0]!;
+	assert.equal(getAddress(override.address), METAMORPHO_VAULT);
+	assert.equal(
+		override.stateDiff?.[0]?.slot,
+		computeAllowanceSlot(getAddress(OWNER), METAMORPHO_SPENDER, 13n),
+	);
+	assert.equal(
+		override.stateDiff?.[0]?.value,
+		toHex(maxUint256, { size: 32 }),
+	);
+	// Simulation plan drops the permit item (state override replaces it);
+	// the preview plan keeps the stub-signed permit call.
+	assert.deepEqual(result.plan as unknown as EVCBatchItem[], [otherItem]);
+	assert.deepEqual(result.previewPlan as unknown as EVCBatchItem[], [
+		permitItem,
+		otherItem,
+	]);
+	assert.equal(result.authorizationRequest, metamorphoPermitRequest);
+});
+
+test("metamorpho migrations are gated to the external-to-euler direction", async () => {
+	const connector: PositionMigrationConnector = {
+		id: "metamorpho",
+		protocol: "Morpho Vaults",
+		name: "Morpho Vaults",
+		getPosition: async () => metamorphoMigrationPosition,
+		buildMigrationBatch: () => [],
+	};
+	const service = createService([connector]);
+
+	await assert.rejects(
+		service.buildMigrationBatch({
+			direction: "euler-to-external",
+			connectorId: "metamorpho",
+			chainId: CHAIN_ID,
+			owner: getAddress(OWNER),
+			position: metamorphoMigrationPosition,
+			validateEulerVaults: false,
+		}),
+		/temporarily disabled/,
+	);
+
+	const items = await service.buildMigrationBatch({
+		direction: "external-to-euler",
+		connectorId: "metamorpho",
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		position: metamorphoMigrationPosition,
+		target: {
+			eulerAccount: getAddress(OWNER),
+			collateralVault: "0x0000000000000000000000000000000000003001",
+		},
+		validateEulerVaults: false,
+	});
+	assert.deepEqual(items, []);
 });

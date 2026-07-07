@@ -117,6 +117,15 @@ export type EulerMigrationTarget = {
 	minCollateralAssets?: bigint;
 	enableController?: boolean;
 	enableCollateral?: boolean;
+	/**
+	 * How swapped collateral is verified and credited to the target vault:
+	 * `skim` (default) routes the swap output to the vault and skims it —
+	 * EVault targets only. `deposit` routes the output to the SwapVerifier and
+	 * deposits it via `verifyAmountMinAndDeposit`, which works for any ERC-4626
+	 * target (e.g. EulerEarn); it requires a supply-only migration and a quote
+	 * requested with `transferOutputToReceiver`.
+	 */
+	collateralSwapVerification?: "skim" | "deposit";
 };
 
 export type EulerMigrationSource = {

@@ -1,5 +1,4 @@
 import {
-	encodeAbiParameters,
 	encodeFunctionData,
 	getAddress,
 	maxUint256,
@@ -16,10 +15,18 @@ import {
 } from "../../../executionService/index.js";
 import type { IProviderService } from "../../../providerService/index.js";
 import {
-	SwapVerificationType,
-	type SwapQuote,
-} from "../../../swapService/index.js";
-import { validateSwapQuoteVerifierData } from "../../../swapService/swapVerification.js";
+	applyBuffer,
+	assertSameAddress,
+	assertSwapQuoteUsesSwapper,
+	encodeDepositVerifiedSwapQuoteItem,
+	encodeGenericSwap,
+	encodeSwapQuoteVerificationItem,
+	encodeVerifyAmountMinAndDepositItem,
+	encodeVerifyDebtMaxItem,
+	getSwapQuoteInputAmount,
+	getSwapQuoteSwapCalls,
+	splitPermitSignature,
+} from "../shared.js";
 import type {
 	BuildConnectorMigrationBatchArgs,
 	EulerMigrationSource,
@@ -78,7 +85,6 @@ const DEFAULT_AAVE_POOL_ADDRESSES: Record<number, Address> = {
 const DEFAULT_INTEREST_BUFFER_BPS = 100n;
 const DEFAULT_ATOKEN_TRANSFER_BUFFER_BPS = 1n;
 const DEFAULT_OUTBOUND_INTEREST_BUFFER_BPS = 1n;
-const BPS_SCALE = 10_000n;
 const AAVE_VARIABLE_INTEREST_RATE_MODE = 2n;
 const AAVE_ACTIVE_BIT = 56n;
 const AAVE_FROZEN_BIT = 57n;
@@ -86,14 +92,6 @@ const AAVE_BORROWING_BIT = 58n;
 const AAVE_PAUSED_BIT = 60n;
 const AAVE_LTV_MASK = (1n << 16n) - 1n;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
-const SWAPPER_MODE_EXACT_IN = 0n;
-const SWAPPER_HANDLER_GENERIC =
-	"0x47656e6572696300000000000000000000000000000000000000000000000000" as const;
-
-const GENERIC_HANDLER_DATA_ABI = [
-	{ name: "target", type: "address" },
-	{ name: "payload", type: "bytes" },
-] as const;
 
 type ResolvedAavePositionRef = AavePositionRef & { pool: Address };
 type AaveProvider = ReturnType<IProviderService["getProvider"]>;
@@ -218,18 +216,7 @@ export function getAavePositionId(positionRef: AavePositionRef): string {
 }
 
 export function splitAaveSignature(signature: Hex): AaveSignature {
-	if (signature.length !== 132) {
-		throw new Error("Aave authorization signature must be 65 bytes");
-	}
-
-	let v = Number.parseInt(signature.slice(130, 132), 16);
-	if (v < 27) v += 27;
-
-	return {
-		r: signature.slice(0, 66) as Hex,
-		s: `0x${signature.slice(66, 130)}` as Hex,
-		v,
-	};
+	return splitPermitSignature(signature);
 }
 
 export class AavePositionMigrationConnector
@@ -868,10 +855,26 @@ export class AavePositionMigrationConnector
 			throw new Error("Aave repay amount must be greater than zero");
 		}
 		if (debtSwapQuote) {
-			assertSwapQuoteUsesSwapper(debtSwapQuote, swapper, "debt");
+			assertSwapQuoteUsesSwapper(debtSwapQuote, swapper, "Aave debt migration");
 		}
 		if (collateralSwapQuote) {
-			assertSwapQuoteUsesSwapper(collateralSwapQuote, swapper, "collateral");
+			assertSwapQuoteUsesSwapper(
+				collateralSwapQuote,
+				swapper,
+				"Aave collateral migration",
+			);
+		}
+		const useDepositSwapVerification =
+			target.collateralSwapVerification === "deposit";
+		if (useDepositSwapVerification && hasDebt) {
+			throw new Error(
+				"Deposit-verified collateral swaps are only supported for supply-only migrations",
+			);
+		}
+		if (useDepositSwapVerification && !collateralSwapQuote) {
+			throw new Error(
+				"Deposit-verified collateral swaps require a collateral swap quote",
+			);
 		}
 
 		const items: EVCBatchItem[] = [];
@@ -935,7 +938,7 @@ export class AavePositionMigrationConnector
 		const preTransferSwapperCalls: Hex[] = [];
 		if (hasDebt && debtSwapQuote) {
 			preTransferSwapperCalls.push(
-				...getSwapQuoteSwapCalls(debtSwapQuote, "debt"),
+				...getSwapQuoteSwapCalls(debtSwapQuote, "Aave debt migration"),
 			);
 		}
 		if (hasDebt) {
@@ -1045,7 +1048,19 @@ export class AavePositionMigrationConnector
 			}),
 		});
 
-		if (collateralSwapQuote) {
+		if (collateralSwapQuote && useDepositSwapVerification) {
+			items.push(
+				encodeDepositVerifiedSwapQuoteItem({
+					quote: collateralSwapQuote,
+					swapVerifier,
+					vault: targetCollateralVault,
+					account: eulerAccount,
+					onBehalfOfAccount: owner,
+					deadline: verifierDeadline,
+					label: "Aave collateral migration",
+				}),
+			);
+		} else if (collateralSwapQuote) {
 			items.push(
 				encodeSwapQuoteVerificationItem({
 					quote: collateralSwapQuote,
@@ -1054,6 +1069,7 @@ export class AavePositionMigrationConnector
 					account: eulerAccount,
 					deadline:
 						args.deadline ?? BigInt(collateralSwapQuote.verify.deadline ?? 0),
+					label: "Aave collateral migration",
 				}),
 			);
 		} else {
@@ -1595,143 +1611,6 @@ export class AavePositionMigrationConnector
 	}
 }
 
-function getSwapQuoteInputAmount(quote: SwapQuote): bigint {
-	const amountInMax = BigInt(quote.amountInMax || 0);
-	return amountInMax > 0n ? amountInMax : BigInt(quote.amountIn);
-}
-
-function assertSwapQuoteUsesSwapper(
-	quote: SwapQuote,
-	swapper: Address,
-	leg: "collateral" | "debt",
-): void {
-	assertSameAddress(
-		quote.swap.swapperAddress,
-		swapper,
-		`Aave ${leg} migration swap quote must use the Euler Swapper`,
-	);
-}
-
-function encodeSwapQuoteVerificationItem(args: {
-	quote: SwapQuote;
-	swapVerifier: Address;
-	vault: Address;
-	account: Address;
-	deadline: bigint;
-}): EVCBatchItem {
-	validateSwapQuoteVerifierData({
-		quote: args.quote,
-		expectedVerifierAddress: args.swapVerifier,
-		verification: {
-			type: SwapVerificationType.SkimMin,
-			vault: args.vault,
-			account: args.account,
-			deadline: args.deadline,
-		},
-	});
-	const onBehalfOfAccount = getAddress(
-		args.quote.verify.account || args.quote.accountOut,
-	);
-	assertSameAddress(
-		onBehalfOfAccount,
-		args.account,
-		"Aave collateral migration verifier account must match the Euler account",
-	);
-
-	return {
-		targetContract: getAddress(args.quote.verify.verifierAddress),
-		onBehalfOfAccount,
-		value: 0n,
-		data: args.quote.verify.verifierData,
-	};
-}
-
-function encodeVerifyAmountMinAndDepositItem(args: {
-	swapVerifier: Address;
-	onBehalfOfAccount: Address;
-	vault: Address;
-	receiver: Address;
-	amountMin: bigint;
-	deadline: bigint;
-}): EVCBatchItem {
-	return {
-		targetContract: args.swapVerifier,
-		onBehalfOfAccount: args.onBehalfOfAccount,
-		value: 0n,
-		data: encodeFunctionData({
-			abi: swapVerifierAbi,
-			functionName: "verifyAmountMinAndDeposit",
-			args: [args.vault, args.receiver, args.amountMin, args.deadline],
-		}),
-	};
-}
-
-function encodeVerifyDebtMaxItem(args: {
-	swapVerifier: Address;
-	onBehalfOfAccount: Address;
-	vault: Address;
-	account: Address;
-	amountMax: bigint;
-	deadline: bigint;
-}): EVCBatchItem {
-	return {
-		targetContract: args.swapVerifier,
-		onBehalfOfAccount: args.onBehalfOfAccount,
-		value: 0n,
-		data: encodeFunctionData({
-			abi: swapVerifierAbi,
-			functionName: "verifyDebtMax",
-			args: [args.vault, args.account, args.amountMax, args.deadline],
-		}),
-	};
-}
-
-function getSwapQuoteSwapCalls(
-	quote: SwapQuote,
-	leg: "collateral" | "debt",
-): Hex[] {
-	const calls = quote.swap.multicallItems
-		.filter((item) => item.functionName === "swap")
-		.map((item) => item.data);
-
-	if (calls.length === 0) {
-		throw new Error(
-			`Aave ${leg} migration swap quote must contain Swapper swap calldata`,
-		);
-	}
-
-	return calls;
-}
-
-function encodeGenericSwap(args: {
-	target: Address;
-	tokenIn: Address;
-	tokenOut: Address;
-	payload: Hex;
-}): Hex {
-	return encodeFunctionData({
-		abi: swapperAbi,
-		functionName: "swap",
-		args: [
-			{
-				handler: SWAPPER_HANDLER_GENERIC,
-				mode: SWAPPER_MODE_EXACT_IN,
-				account: args.target,
-				tokenIn: args.tokenIn,
-				tokenOut: args.tokenOut,
-				vaultIn: args.target,
-				accountIn: args.target,
-				receiver: args.target,
-				amountOut: 0n,
-				data: encodeAbiParameters(GENERIC_HANDLER_DATA_ABI, [
-					args.target,
-					args.payload,
-				]),
-			},
-		],
-	});
-}
-
 function normalizeAavePositionRef(
 	positionRef: AavePositionRef,
 	pool: Address,
@@ -2095,18 +1974,3 @@ function toAaveDelegationMessage(
 	};
 }
 
-function applyBuffer(amount: bigint, bufferBps: bigint): bigint {
-	return (amount * (BPS_SCALE + bufferBps) + BPS_SCALE - 1n) / BPS_SCALE;
-}
-
-function assertSameAddress(
-	actual: Address,
-	expected: Address,
-	message: string,
-) {
-	if (getAddress(actual) !== getAddress(expected)) {
-		throw new Error(
-			`${message}: ${getAddress(actual)} != ${getAddress(expected)}`,
-		);
-	}
-}
