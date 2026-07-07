@@ -120,6 +120,72 @@ function encodePythOracleInfo({
 	);
 }
 
+function encodeCrossAdapterInfo({
+	base,
+	cross,
+	quote,
+	oracleBaseCrossInfo,
+	oracleCrossQuoteInfo,
+}: {
+	base: `0x${string}`;
+	cross: `0x${string}`;
+	quote: `0x${string}`;
+	oracleBaseCrossInfo: {
+		oracle: `0x${string}`;
+		name: string;
+		oracleInfo: `0x${string}`;
+	};
+	oracleCrossQuoteInfo: {
+		oracle: `0x${string}`;
+		name: string;
+		oracleInfo: `0x${string}`;
+	};
+}) {
+	return encodeAbiParameters(
+		[
+			{
+				type: "tuple",
+				components: [
+					{ name: "base", type: "address" },
+					{ name: "cross", type: "address" },
+					{ name: "quote", type: "address" },
+					{ name: "oracleBaseCross", type: "address" },
+					{ name: "oracleCrossQuote", type: "address" },
+					{
+						name: "oracleBaseCrossInfo",
+						type: "tuple",
+						components: [
+							{ name: "oracle", type: "address" },
+							{ name: "name", type: "string" },
+							{ name: "oracleInfo", type: "bytes" },
+						],
+					},
+					{
+						name: "oracleCrossQuoteInfo",
+						type: "tuple",
+						components: [
+							{ name: "oracle", type: "address" },
+							{ name: "name", type: "string" },
+							{ name: "oracleInfo", type: "bytes" },
+						],
+					},
+				],
+			},
+		],
+		[
+			{
+				base,
+				cross,
+				quote,
+				oracleBaseCross: oracleBaseCrossInfo.oracle,
+				oracleCrossQuote: oracleCrossQuoteInfo.oracle,
+				oracleBaseCrossInfo,
+				oracleCrossQuoteInfo,
+			},
+		],
+	);
+}
+
 function makeVaultInfo(oracleInfo: {
 	oracle: `0x${string}`;
 	name: string;
@@ -360,6 +426,72 @@ test("oracle routes preserve vault unwrap steps and exact configured leaves", ()
 		),
 		[chainlinkOracle],
 	);
+});
+
+test("decodeOracleRouteForPair keeps inverted Pyth legs inside cross adapters", () => {
+	const usdc = getAddress("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
+	const usd = QUOTE;
+	const eul = getAddress("0xd9fcd98c322942075a5c3860693e9f4f03aae07b");
+	const crossAdapter = getAddress("0x336D821459db40bA9bfb8a1a89457D689AfbA6E8");
+	const chainlinkOracle = getAddress(
+		"0x6213f24332D35519039f2afa7e3BffE105a37d3F",
+	);
+	const pythOracle = getAddress("0xfa9880c197bb245d055ee864653EeECF8619de65");
+	const pythContract = getAddress("0x0000000000000000000000000000000000000c13");
+	const chainlinkInfo = {
+		oracle: chainlinkOracle,
+		name: "ChainlinkOracle",
+		oracleInfo: "0x",
+	} as const;
+	const pythInfo = {
+		oracle: pythOracle,
+		name: "PythOracle",
+		oracleInfo: encodePythOracleInfo({
+			pyth: pythContract,
+			base: eul,
+			quote: usd,
+		}),
+	} as const;
+	const oracleInfo = {
+		oracle: "0x1FC53457F04fdd8C73B28934C0ee77f1a41F8BC7",
+		name: "EulerRouter",
+		oracleInfo: encodeRouterInfo({
+			fallbackOracleInfo: {
+				oracle: zeroAddress,
+				name: "",
+				oracleInfo: "0x",
+			},
+			resolvedOraclesInfo: [
+				{
+					oracle: crossAdapter,
+					name: "CrossAdapter",
+					oracleInfo: encodeCrossAdapterInfo({
+						base: usdc,
+						cross: usd,
+						quote: eul,
+						oracleBaseCrossInfo: chainlinkInfo,
+						oracleCrossQuoteInfo: pythInfo,
+					}),
+				},
+			],
+			bases: [usdc],
+			quotes: [eul],
+		}),
+	} as const;
+
+	const route = decodeOracleRouteForPair(oracleInfo, usdc, eul);
+
+	assert.equal(route?.source, "configured");
+	assert.deepEqual(
+		route?.steps.map((step) => step.name),
+		["ChainlinkOracle", "PythOracle"],
+	);
+	assert.equal(route?.steps[0]?.oracle, chainlinkOracle);
+	assert.equal(route?.steps[0]?.base, usdc);
+	assert.equal(route?.steps[0]?.quote, usd);
+	assert.equal(route?.steps[1]?.oracle, pythOracle);
+	assert.equal(route?.steps[1]?.base, eul);
+	assert.equal(route?.steps[1]?.quote, usd);
 });
 
 test("convertVault maps V3 oracle resolved vault routes", () => {

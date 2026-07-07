@@ -920,7 +920,7 @@ function sortSavingsPositions(
 
 function isManagedSavings(position: PortfolioSavingsPosition<VaultEntity>): boolean {
   const vault = position.vault ?? position.position.vault;
-  return Boolean(vault && ("strategies" in vault || "supplyApy1h" in vault));
+  return Boolean(vault && ("strategies" in vault || "supplyApy" in vault));
 }
 
 function vaultName(vault: VaultEntity | undefined): string {

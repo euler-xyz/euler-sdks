@@ -91,7 +91,7 @@ function makeDeployment(chainId = 1) {
   } as const;
 }
 
-test("buildQuery cache dedupes, clears rejected promises, and decorate query methods", async () => {
+test("buildQuery cache dedupes, short-caches failures, and decorate query methods", async () => {
   let runs = 0;
   const cached = createQueryCacheBuildQuery({ ttlMs: 60_000 })(
     "queryExample",
@@ -114,7 +114,48 @@ test("buildQuery cache dedupes, clears rejected promises, and decorate query met
 
   await assert.rejects(() => cached("boom"), /boom/);
   await assert.rejects(() => cached("boom"), /boom/);
-  assert.equal(runs, 6);
+  assert.equal(runs, 5);
+
+  const retryableFailures = createQueryCacheBuildQuery({
+    failureTtlMs: 0,
+    ttlMs: 60_000,
+  })(
+    "queryRetryableFailures",
+    async () => {
+      runs += 1;
+      throw new Error("retryable");
+    },
+    {},
+  );
+  await assert.rejects(() => retryableFailures(), /retryable/);
+  await assert.rejects(() => retryableFailures(), /retryable/);
+  assert.equal(runs, 7);
+
+  const originalNow = Date.now;
+  try {
+    let now = 1_000;
+    Date.now = () => now;
+    let cooledRuns = 0;
+    const cooledFailures = createQueryCacheBuildQuery({
+      failureTtlMs: 10,
+      ttlMs: 60_000,
+    })(
+      "queryCooledFailures",
+      async () => {
+        cooledRuns += 1;
+        throw new Error("cooled");
+      },
+      {},
+    );
+    await assert.rejects(() => cooledFailures(), /cooled/);
+    await assert.rejects(() => cooledFailures(), /cooled/);
+    assert.equal(cooledRuns, 1);
+    now += 11;
+    await assert.rejects(() => cooledFailures(), /cooled/);
+    assert.equal(cooledRuns, 2);
+  } finally {
+    Date.now = originalNow;
+  }
 
   const passthrough = createQueryCacheBuildQuery({ enabled: false })(
     "queryDisabled",

@@ -188,14 +188,15 @@ function serializeVault(vault: any): JsonValue | undefined {
 				}
 			: undefined,
 		supplyApy:
-			vault.interestRates?.supplyAPY !== undefined
-				? Number(vault.interestRates.supplyAPY)
-				: undefined,
+			vault.supplyApy !== undefined
+				? vault.supplyApy
+				: vault.interestRates?.supplyAPY !== undefined
+					? Number(vault.interestRates.supplyAPY)
+					: undefined,
 		borrowApy:
 			vault.interestRates?.borrowAPY !== undefined
 				? Number(vault.interestRates.borrowAPY)
 				: undefined,
-		supplyApy1h: vault.supplyApy1h,
 		strategyCount: Array.isArray(vault.strategies)
 			? vault.strategies.length
 			: undefined,
@@ -394,8 +395,8 @@ function normalizeSdkPortfolioKnownUnits(portfolio: any): void {
 				}
 			}
 		}
-		if (typeof vault.supplyApy1h === "number") {
-			vault.supplyApy1h /= 100;
+		if (typeof vault.supplyApy === "number") {
+			vault.supplyApy /= 100;
 		}
 	}
 }

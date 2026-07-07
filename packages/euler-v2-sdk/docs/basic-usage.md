@@ -7,7 +7,7 @@ import { buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 
 // Set EULER_SDK_RPC_URL_1=https://... in the environment for on-chain reads.
 const sdk = await buildEulerSDK({
-  queryCacheConfig: { ttlMs: 10_000 },     // Optional: default cache is 5s
+  queryCacheConfig: { ttlMs: 10_000 },     // Optional: default success/failure cache is 5s
 })
 ```
 
@@ -200,8 +200,7 @@ if (isEVault(vault)) {
   console.log(vault.interestRates.supplyAPY) // percentage points, e.g. 5 = 5%
   console.log(vault.collaterals.length)
 } else if (isEulerEarn(vault)) {
-  console.log(vault.supplyApy)   // alias of vault.supplyApy1h, also percentage points
-  console.log(vault.supplyApy1h)
+  console.log(vault.supplyApy)   // percentage points, e.g. 5 = 5%
   console.log(vault.strategies.length)
 }
 ```

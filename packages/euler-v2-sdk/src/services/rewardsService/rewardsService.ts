@@ -26,6 +26,7 @@ import type {
 	FuulTotals,
 	IRewardsAdapter,
 	IRewardsService,
+	TurtleMerkleProof,
 	UserReward,
 	VaultRewardInfo,
 } from "./rewardsServiceTypes.js";
@@ -135,6 +136,32 @@ const FUUL_FACTORY_ABI = [
 	},
 ] as const;
 
+const TURTLE_STREAM_ABI = [
+	{
+		type: "function",
+		name: "canClaim",
+		inputs: [
+			{ name: "user", type: "address", internalType: "address" },
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+			{ name: "timestamp", type: "uint40", internalType: "uint40" },
+			{ name: "merkleProof", type: "bytes32[]", internalType: "bytes32[]" },
+		],
+		outputs: [{ name: "claimable", type: "uint256", internalType: "uint256" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "claim",
+		inputs: [
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+			{ name: "timestamp", type: "uint40", internalType: "uint40" },
+			{ name: "merkleProof", type: "bytes32[]", internalType: "bytes32[]" },
+		],
+		outputs: [{ name: "claimed", type: "uint256", internalType: "uint256" }],
+		stateMutability: "nonpayable",
+	},
+] as const;
+
 const REWARD_STREAMS_ABI = [
 	{
 		type: "function",
@@ -171,6 +198,13 @@ type BrevisFallbackAdapter = IRewardsAdapter & {
 	) => Promise<UserReward[]>;
 };
 
+type TurtleProofAdapter = IRewardsAdapter & {
+	fetchTurtleProofs?: (
+		address: Address,
+		streamIds: string[],
+	) => Promise<TurtleMerkleProof[]>;
+};
+
 const hasBrevisClaimData = (reward: UserReward): boolean =>
 	reward.provider !== "brevis" ||
 	!!(
@@ -184,6 +218,218 @@ const hasBrevisClaimData = (reward: UserReward): boolean =>
 const fuulRewardKey = (currency: string, currencyType?: number): string =>
 	`${getAddress(currency).toLowerCase()}:${currencyType ?? "*"}`;
 
+const userRewardClaimKey = (reward: UserReward): string =>
+	[
+		reward.provider,
+		reward.chainId,
+		reward.token.address.toLowerCase(),
+		reward.claimAddress?.toLowerCase() ?? "",
+		reward.campaignId ?? "",
+		reward.streamId ?? "",
+		reward.streamAddress?.toLowerCase() ?? "",
+		reward.epoch ?? "",
+		reward.accumulated,
+		reward.unclaimed,
+		reward.proof?.join(",") ?? "",
+		reward.cumulativeAmounts?.join(",") ?? "",
+		reward.timestamp ?? "",
+	].join(":");
+
+const dedupeUserRewards = (rewards: UserReward[]): UserReward[] => {
+	const seen = new Set<string>();
+	const deduped: UserReward[] = [];
+
+	for (const reward of rewards) {
+		const key = userRewardClaimKey(reward);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		deduped.push(reward);
+	}
+
+	return deduped;
+};
+
+const turtleRewardStreamKey = (reward: UserReward): string | undefined => {
+	if (reward.provider !== "turtle") return undefined;
+	const streamId = reward.streamId ?? reward.campaignId;
+	if (!streamId) return undefined;
+	return [
+		reward.chainId,
+		streamId,
+		reward.token.address.toLowerCase(),
+		reward.streamAddress?.toLowerCase() ?? reward.claimAddress?.toLowerCase() ?? "",
+	].join(":");
+};
+
+const mergeTurtleReward = (
+	base: UserReward,
+	candidate: UserReward,
+): UserReward => {
+	const baseUnclaimed = BigInt(base.unclaimed);
+	const candidateUnclaimed = BigInt(candidate.unclaimed);
+	const selected =
+		candidateUnclaimed > baseUnclaimed ||
+		(candidateUnclaimed === baseUnclaimed &&
+			BigInt(candidate.accumulated) > BigInt(base.accumulated))
+			? candidate
+			: base;
+	const supplement = selected === base ? candidate : base;
+
+	return {
+		...selected,
+		proof: selected.proof?.length ? selected.proof : supplement.proof,
+		claimAddress: selected.claimAddress ?? supplement.claimAddress,
+		streamId: selected.streamId ?? supplement.streamId,
+		streamAddress: selected.streamAddress ?? supplement.streamAddress,
+		timestamp: selected.timestamp ?? supplement.timestamp,
+	};
+};
+
+const collapseTurtleStreamRewards = (rewards: UserReward[]): UserReward[] => {
+	const collapsed: UserReward[] = [];
+	const indexes = new Map<string, number>();
+
+	for (const reward of rewards) {
+		const key = turtleRewardStreamKey(reward);
+		if (!key) {
+			collapsed.push(reward);
+			continue;
+		}
+
+		const existingIndex = indexes.get(key);
+		if (existingIndex === undefined) {
+			indexes.set(key, collapsed.length);
+			collapsed.push(reward);
+			continue;
+		}
+
+		collapsed[existingIndex] = mergeTurtleReward(
+			collapsed[existingIndex]!,
+			reward,
+		);
+	}
+
+	return collapsed;
+};
+
+const collapseMerklCumulativeRewards = (rewards: UserReward[]): UserReward[] => {
+	const collapsed: UserReward[] = [];
+	const indexes = new Map<string, number>();
+
+	for (const reward of rewards) {
+		if (reward.provider !== "merkl") {
+			collapsed.push(reward);
+			continue;
+		}
+
+		const key = [
+			reward.chainId,
+			reward.token.address.toLowerCase(),
+			reward.claimAddress?.toLowerCase() ?? "",
+		].join(":");
+		const existingIndex = indexes.get(key);
+		if (existingIndex === undefined) {
+			indexes.set(key, collapsed.length);
+			collapsed.push(reward);
+			continue;
+		}
+
+		const existing = collapsed[existingIndex]!;
+		if (BigInt(reward.accumulated) > BigInt(existing.accumulated)) {
+			collapsed[existingIndex] = reward;
+		}
+	}
+
+	return collapsed;
+};
+
+const normalizeUserRewards = (rewards: UserReward[]): UserReward[] =>
+	dedupeUserRewards(
+		collapseTurtleStreamRewards(collapseMerklCumulativeRewards(rewards)),
+	);
+
+const parseTurtleAmount = (value: unknown): bigint | undefined => {
+	if (typeof value === "bigint") return value;
+	if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+		return BigInt(value);
+	}
+	if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
+	return undefined;
+};
+
+const parseTurtleTimestamp = (value: unknown): number | undefined => {
+	if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
+		return value;
+	}
+	if (typeof value === "string" && /^\d+$/.test(value)) {
+		const numeric = Number(value);
+		return Number.isSafeInteger(numeric) && numeric >= 0 ? numeric : undefined;
+	}
+	if (typeof value === "string" && value.trim()) {
+		const parsed = Date.parse(value);
+		if (Number.isFinite(parsed)) return Math.floor(parsed / 1000);
+	}
+	return undefined;
+};
+
+const turtleProofStreamId = (proof: TurtleMerkleProof): string | undefined =>
+	proof.streamId ?? proof.stream_id ?? proof.id;
+
+const turtleProofChainId = (proof?: TurtleMerkleProof): number | undefined => {
+	if (typeof proof?.chainId === "number" && Number.isSafeInteger(proof.chainId)) {
+		return proof.chainId;
+	}
+	if (typeof proof?.chainId === "string" && /^\d+$/.test(proof.chainId)) {
+		const chainId = Number(proof.chainId);
+		return Number.isSafeInteger(chainId) ? chainId : undefined;
+	}
+	return undefined;
+};
+
+const turtleProofAmount = (
+	reward: UserReward,
+	proof?: TurtleMerkleProof,
+): bigint | undefined =>
+	parseTurtleAmount(
+		proof?.amount ??
+			proof?.cumulativeAmount ??
+			proof?.cumulative_amount ??
+			reward.accumulated,
+	);
+
+const turtleProofTimestamp = (
+	reward: UserReward,
+	proof?: TurtleMerkleProof,
+): number | undefined =>
+	parseTurtleTimestamp(proof?.timestamp ?? reward.timestamp);
+
+const turtleProofStreamAddress = (
+	reward: UserReward,
+	proof?: TurtleMerkleProof,
+): Address | undefined => {
+	const value =
+		proof?.streamAddress ??
+		proof?.stream_address ??
+		proof?.contractAddress ??
+		proof?.contract_address ??
+		proof?.claimAddress;
+	try {
+		return value
+			? (getAddress(value) as Address)
+			: (reward.streamAddress ?? reward.claimAddress);
+	} catch {
+		return reward.streamAddress ?? reward.claimAddress;
+	}
+};
+
+const turtleProofArray = (
+	reward: UserReward,
+	proof?: TurtleMerkleProof,
+): Hex[] | undefined =>
+	(proof?.proof ?? proof?.merkleProof ?? proof?.merkle_proof ?? reward.proof) as
+		| Hex[]
+		| undefined;
+
 const uniqueAddresses = (
 	addresses: Iterable<string | Address | undefined>,
 ): Address[] => {
@@ -196,7 +442,6 @@ const uniqueAddresses = (
 	}
 	return [...out.values()];
 };
-
 export class RewardsService implements IRewardsService {
 	private providerService?: ProviderService;
 	private deploymentService?: DeploymentService;
@@ -280,10 +525,16 @@ export class RewardsService implements IRewardsService {
 		chainId: number,
 		address: Address,
 	): Promise<UserReward[]> {
-		return this.adapter.fetchUserRewards(chainId, address);
+		const rewards = await this.adapter.fetchUserRewards(chainId, address);
+		return normalizeUserRewards(
+			await this.hydrateTurtleClaimableRewards(rewards, address),
+		);
 	}
 
-	async fetchFuulTotals(address: Address, chainId?: number): Promise<FuulTotals> {
+	async fetchFuulTotals(
+		address: Address,
+		chainId?: number,
+	): Promise<FuulTotals> {
 		return this.adapter.fetchFuulTotals(address, chainId);
 	}
 
@@ -367,7 +618,7 @@ export class RewardsService implements IRewardsService {
 		args: BuildRewardClaimsPlanArgs,
 	): Promise<TransactionPlan> {
 		const account = getAddress(args.account) as Address;
-		const rewards = args.rewards.filter(
+		const rewards = normalizeUserRewards(args.rewards).filter(
 			(reward) => BigInt(reward.unclaimed) > 0n,
 		);
 		if (rewards.length === 0) return [];
@@ -438,7 +689,16 @@ export class RewardsService implements IRewardsService {
 			);
 		}
 
-		return this.buildContractCallBatchPlan(plan, account, "Claim rewards");
+		const turtlePlan: TransactionPlan = [];
+		for (const reward of rewards) {
+			if (reward.provider !== "turtle") continue;
+			turtlePlan.push(await this.buildTurtleContractCall(reward, account));
+		}
+
+		return [
+			...this.buildContractCallBatchPlan(plan, account, "Claim rewards"),
+			...turtlePlan,
+		];
 	}
 
 	async buildClaimAllPlan(
@@ -868,6 +1128,148 @@ export class RewardsService implements IRewardsService {
 		});
 
 		return feesInfo.nativeUserClaimFee;
+	}
+
+	private async hydrateTurtleClaimableRewards(
+		rewards: UserReward[],
+		account: Address,
+	): Promise<UserReward[]> {
+		if (!this.providerService) return rewards;
+
+		const hydratedRewards = await Promise.all(
+			rewards.map(async (reward): Promise<UserReward | undefined> => {
+				if (reward.provider !== "turtle") return reward;
+
+				try {
+					const proof = await this.fetchTurtleProof(reward, account);
+					const claimChainId = turtleProofChainId(proof) ?? reward.chainId;
+					const streamAddress = turtleProofStreamAddress(reward, proof);
+					const amount = turtleProofAmount(reward, proof);
+					const timestamp = turtleProofTimestamp(reward, proof);
+					const proofArray = turtleProofArray(reward, proof);
+					if (
+						!streamAddress ||
+						amount === undefined ||
+						timestamp === undefined ||
+						!proofArray?.length
+					) {
+						return { ...reward, chainId: claimChainId };
+					}
+					const rewardWithProofChain: UserReward = {
+						...reward,
+						chainId: claimChainId,
+						streamAddress,
+						claimAddress: reward.claimAddress ?? streamAddress,
+						proof: proofArray,
+						timestamp,
+					};
+
+					const claimable = await this.readTurtleCanClaim(
+						claimChainId,
+						streamAddress,
+						account,
+						amount,
+						timestamp,
+						proofArray,
+					).catch(() => undefined);
+					const claimableAmount = parseTurtleAmount(claimable);
+					if (claimableAmount === undefined) return rewardWithProofChain;
+					if (claimableAmount <= 0n) return undefined;
+					return {
+						...rewardWithProofChain,
+						unclaimed: claimableAmount.toString(),
+					};
+				} catch {
+					return reward;
+				}
+			}),
+		);
+
+		return hydratedRewards.filter((reward): reward is UserReward => !!reward);
+	}
+
+	private async buildTurtleContractCall(
+		reward: UserReward,
+		account: Address,
+	): Promise<ContractCall> {
+		const proof = await this.fetchTurtleProof(reward, account);
+		const claimChainId = turtleProofChainId(proof) ?? reward.chainId;
+		const streamAddress = turtleProofStreamAddress(reward, proof);
+		const amount = turtleProofAmount(reward, proof);
+		const timestamp = turtleProofTimestamp(reward, proof);
+		const proofArray = turtleProofArray(reward, proof);
+
+		if (!streamAddress) throw new Error("Missing Turtle stream contract");
+		if (amount === undefined) {
+			throw new Error("Missing Turtle cumulative reward amount");
+		}
+		if (timestamp === undefined)
+			throw new Error("Missing Turtle proof timestamp");
+		if (!proofArray?.length) throw new Error("Missing Turtle merkle proof");
+
+		const claimable = await this.readTurtleCanClaim(
+			claimChainId,
+			streamAddress,
+			account,
+			amount,
+			timestamp,
+			proofArray,
+		);
+		if (typeof claimable === "boolean" && !claimable) {
+			throw new Error("No claimable Turtle rewards found");
+		}
+		if (typeof claimable === "bigint" && claimable <= 0n) {
+			throw new Error("No claimable Turtle rewards found");
+		}
+
+		return {
+			type: "contractCall",
+			chainId: claimChainId,
+			to: streamAddress,
+			abi: TURTLE_STREAM_ABI,
+			functionName: "claim",
+			args: [amount, timestamp, proofArray],
+			value: 0n,
+		};
+	}
+
+	private async fetchTurtleProof(
+		reward: UserReward,
+		account: Address,
+	): Promise<TurtleMerkleProof | undefined> {
+		const streamId = reward.streamId ?? reward.campaignId;
+		if (!streamId) return undefined;
+
+		const adapter = this.adapter as TurtleProofAdapter;
+		if (!adapter.fetchTurtleProofs) return undefined;
+
+		const proofs = await adapter
+			.fetchTurtleProofs(account, [streamId])
+			.catch(() => []);
+		return (
+			proofs.find((proof) => turtleProofStreamId(proof) === streamId) ??
+			proofs.find((proof) => !turtleProofStreamId(proof))
+		);
+	}
+
+	private async readTurtleCanClaim(
+		chainId: number,
+		streamAddress: Address,
+		account: Address,
+		amount: bigint,
+		timestamp: number,
+		proof: Hex[],
+	): Promise<unknown> {
+		if (!this.providerService) {
+			throw new Error("RewardsService providerService not configured");
+		}
+		const provider = this.providerService.getProvider(chainId);
+		return provider.readContract({
+			address: streamAddress,
+			abi: TURTLE_STREAM_ABI,
+			functionName: "canClaim",
+			args: [account, amount, timestamp, proof],
+		});
 	}
 
 	getMerklDistributorAddress(): Address {

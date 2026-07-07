@@ -9,6 +9,8 @@ const VAULT = "0x0000000000000000000000000000000000000abc" as Address;
 const ASSET = "0x0000000000000000000000000000000000000def" as Address;
 const QUOTE = "0x0000000000000000000000000000000000000348" as Address;
 const STRATEGY = "0x0000000000000000000000000000000000000123" as Address;
+const NON_WITHDRAW_QUEUE_STRATEGY =
+	"0x0000000000000000000000000000000000000456" as Address;
 
 function defaultAppliedPaths(errors: DataIssue[]): string[] {
 	return errors
@@ -115,13 +117,30 @@ test("EulerEarn V3 converter does not warn for optional absent APY and pending f
 						pending: "0",
 					},
 				},
+				{
+					address: NON_WITHDRAW_QUEUE_STRATEGY,
+					inWithdrawQueue: false,
+					allocatedAssets: "1",
+					availableAssets: "1",
+					allocationCap: {
+						current: "1",
+						pending: "0",
+					},
+				},
 			],
 			snapshotTimestamp: "1970-01-01T00:00:01.000Z",
 		},
 	}));
 
 	const fetched = await adapter.fetchVaults(1, [VAULT]);
+	const [vault] = fetched.result;
 
 	assert.equal(fetched.result.length, 1);
+	assert.ok(vault);
+	assert.deepEqual(
+		vault.strategies.map((strategy) => strategy.address),
+		[STRATEGY, NON_WITHDRAW_QUEUE_STRATEGY],
+	);
+	assert.deepEqual(vault.withdrawQueue, [STRATEGY]);
 	assert.deepEqual(defaultAppliedPaths(fetched.errors), []);
 });

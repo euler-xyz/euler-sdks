@@ -337,80 +337,72 @@ function convertStrategies(
 		}
 	}
 
-	return getWithdrawQueueStrategies(detail.strategies ?? []).map(
-		(strategy, index) => {
-			const strategyAddress = parseAddressField(strategy.address, {
-				path: `$.strategies[${index}].address`,
-				owner,
+	return (detail.strategies ?? []).map((strategy, index) => {
+		const strategyAddress = parseAddressField(strategy.address, {
+			path: `$.strategies[${index}].address`,
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		});
+		const strategyOwner = vaultStrategyDiagnosticOwner(
+			detail.chainId,
+			vaultAddress,
+			strategyAddress,
+		);
+		const allocatedAssets = parseBigIntField(strategy.allocatedAssets ?? "0", {
+			path: "$.allocatedAssets",
+			owner: strategyOwner,
+			errors,
+			source: "eulerEarnV3",
+		});
+		const availableAssets = parseBigIntField(strategy.availableAssets ?? "0", {
+			path: "$.availableAssets",
+			owner: strategyOwner,
+			errors,
+			source: "eulerEarnV3",
+		});
+
+		const allocationCap: EulerEarnAllocationCap = {
+			current: parseBigIntField(strategy.allocationCap?.current ?? "0", {
+				path: "$.allocationCap.current",
+				owner: strategyOwner,
 				errors,
 				source: "eulerEarnV3",
-			});
-			const strategyOwner = vaultStrategyDiagnosticOwner(
-				detail.chainId,
-				vaultAddress,
+			}),
+			pending: parseBigIntField(strategy.allocationCap?.pending ?? "0", {
+				path: "$.allocationCap.pending",
+				owner: strategyOwner,
+				errors,
+				source: "eulerEarnV3",
+			}),
+			pendingValidAt: parseOptionalTimestampField(
+				strategy.allocationCap?.pendingValidAt,
+				{
+					path: "$.allocationCap.pendingValidAt",
+					owner: strategyOwner,
+					errors,
+					source: "eulerEarnV3",
+				},
+			),
+		};
+
+		return {
+			address: strategyAddress,
+			vaultType: normalizeStrategyVaultType(
+				strategy.vaultType,
 				strategyAddress,
-			);
-			const allocatedAssets = parseBigIntField(
-				strategy.allocatedAssets ?? "0",
-				{
-					path: "$.allocatedAssets",
-					owner: strategyOwner,
-					errors,
-					source: "eulerEarnV3",
-				},
-			);
-			const availableAssets = parseBigIntField(
-				strategy.availableAssets ?? "0",
-				{
-					path: "$.availableAssets",
-					owner: strategyOwner,
-					errors,
-					source: "eulerEarnV3",
-				},
-			);
-
-			const allocationCap: EulerEarnAllocationCap = {
-				current: parseBigIntField(strategy.allocationCap?.current ?? "0", {
-					path: "$.allocationCap.current",
-					owner: strategyOwner,
-					errors,
-					source: "eulerEarnV3",
-				}),
-				pending: parseBigIntField(strategy.allocationCap?.pending ?? "0", {
-					path: "$.allocationCap.pending",
-					owner: strategyOwner,
-					errors,
-					source: "eulerEarnV3",
-				}),
-				pendingValidAt: parseOptionalTimestampField(
-					strategy.allocationCap?.pendingValidAt,
-					{
-						path: "$.allocationCap.pendingValidAt",
-						owner: strategyOwner,
-						errors,
-						source: "eulerEarnV3",
-					},
-				),
-			};
-
-			return {
-				address: strategyAddress,
-				vaultType: normalizeStrategyVaultType(
-					strategy.vaultType,
-					strategyAddress,
-				),
-				allocatedAssets,
-				availableAssets,
-				allocationCap,
-				removableAt: parseOptionalTimestampField(strategy.removableAt, {
-					path: "$.removableAt",
-					owner: strategyOwner,
-					errors,
-					source: "eulerEarnV3",
-				}),
-			};
-		},
-	);
+			),
+			allocatedAssets,
+			availableAssets,
+			allocationCap,
+			removableAt: parseOptionalTimestampField(strategy.removableAt, {
+				path: "$.removableAt",
+				owner: strategyOwner,
+				errors,
+				source: "eulerEarnV3",
+			}),
+		};
+	});
 }
 
 function convertEulerEarn(
@@ -424,6 +416,14 @@ function convertEulerEarn(
 		source: "eulerEarnV3",
 	});
 	const owner = vaultDiagnosticOwner(detail.chainId, vaultAddress);
+	const supplyApy = normalizeEulerEarnApy(
+		parseOptionalNumberField(detail.supplyApy, {
+			path: "$.supplyApy",
+			owner,
+			errors,
+			source: "eulerEarnV3",
+		}),
+	);
 
 	return {
 		type: VaultType.EulerEarn,
@@ -460,14 +460,7 @@ function convertEulerEarn(
 			detail.asset.name ?? "Unknown Asset",
 			detail.asset.symbol ?? "UNKNOWN",
 		),
-		supplyApy1h: normalizeEulerEarnApy(
-			parseOptionalNumberField(detail.supplyApy, {
-				path: "$.supplyApy1h",
-				owner,
-				errors,
-				source: "eulerEarnV3",
-			}),
-		),
+		supplyApy,
 		totalShares: parseBigIntField(detail.totalShares ?? "0", {
 			path: "$.totalShares",
 			owner,

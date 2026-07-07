@@ -28,7 +28,7 @@ Entities are the SDK's domain objects. Each entity has two parts:
 ```
 ERC4626Vault (base — address, shares, asset, totals)
   ├── EVault              (+ oracle, collaterals, interest rates, caps, hooks)
-  ├── EulerEarn           (+ strategies, performance fee, adapter-provided 1h supply APY)
+  ├── EulerEarn           (+ strategies, performance fee, adapter-provided supply APY)
   └── SecuritizeCollateralVault  (+ governor, supply cap)
 
 Account<TVaultEntity>    (owner, sub-accounts, positions, liquidity)
@@ -180,7 +180,7 @@ See [Cross-Service Data Population](./cross-service-data-population.md) for the 
 The resolved query decorator is selected as:
 
 1. Consumer-provided `buildQuery`, if present
-2. Otherwise the built-in in-memory cache from `queryCacheConfig` (enabled by default with `ttlMs: 5000`)
+2. Otherwise the built-in in-memory cache from `queryCacheConfig` (enabled by default with `ttlMs: 5000` and `failureTtlMs: 5000`)
 
 This means custom query decorators replace the SDK's default cache rather than layering on top of it automatically.
 

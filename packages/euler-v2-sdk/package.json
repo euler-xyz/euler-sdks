@@ -1,6 +1,5 @@
 {
   "name": "@eulerxyz/euler-v2-sdk",
-  "version": "1.0.7",
   "description": "SDK for interacting with Euler V2 Lending Platform",
   "repository": {
     "type": "git",
@@ -37,9 +36,9 @@
     "lint:fix": "biome lint --write src",
     "prepare": "cd ../.. && if command -v husky >/dev/null 2>&1; then husky packages/euler-v2-sdk/.husky; fi",
     "clean": "rm -rf dist",
-    "release:check": "pnpm run clean && pnpm run build && pnpm run typecheck && npm pack --dry-run",
+    "release:check": "pnpm run clean && pnpm run build && pnpm run typecheck",
     "prepublishOnly": "pnpm run release:check",
-    "publish:public": "npm publish --access public --provenance"
+    "publish:public": "npm publish --access public --provenance=false"
   },
   "keywords": [
     "euler",
@@ -56,8 +55,7 @@
     "node": ">=18"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "dependencies": {
     "viem": "2.48.8"
