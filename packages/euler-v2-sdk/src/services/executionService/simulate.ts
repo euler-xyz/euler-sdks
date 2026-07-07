@@ -1419,15 +1419,6 @@ function collectCandidateVaults(
 			continue;
 		}
 
-		if (fn === "enablecollateral") {
-			const account = item.args.account as Address | undefined;
-			const vault = item.args.vault as Address | undefined;
-			if (account && vault) {
-				addSubAccountVault(account, vault);
-				addCandidateVault(vault);
-			}
-		}
-
 		// repay(amount, receiver) / repayWithShares(amount, receiver): the *receiver*
 		// is the account whose debt is reduced, and it can differ from the batch
 		// item's onBehalfOfAccount (e.g. a repay-from-wallet runs on behalf of the

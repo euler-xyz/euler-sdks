@@ -26,13 +26,15 @@ import {
 	encodeSwapQuoteVerificationItem,
 	encodeVerifyAmountMinAndDepositItem,
 	encodeVerifyDebtMaxItem,
+	getSwapperAddress,
 	getSwapQuoteInputAmount,
 	getSwapQuoteSwapCalls,
+	getSwapVerifierAddress,
+	resolveEulerSourceAmounts,
 	splitPermitSignature,
 } from "../shared.js";
 import type {
 	BuildConnectorMigrationBatchArgs,
-	EulerMigrationSource,
 	GetMigrationAuthorizationArgs,
 	GetMigrationPositionArgs,
 	ListMigrationPositionsArgs,
@@ -42,7 +44,6 @@ import type {
 	PositionMigrationConnector,
 	SignedMigrationAuthorization,
 } from "../../positionMigrationServiceTypes.js";
-import type { Account, IHasVaultAddress } from "../../../../entities/Account.js";
 import { morphoBlueAbi } from "./abis/morphoBlueAbi.js";
 import type {
 	MorphoAuthorization,
@@ -374,7 +375,10 @@ export class MorphoPositionMigrationConnector
 		// runs the privileged borrow / withdrawCollateral legs as top-level EVC
 		// items), not the Swapper. Pinning onBehalf to the caller prevents replay
 		// abuse by a front-runner.
-		const swapVerifier = this.getSwapVerifierAddress(args.chainId);
+		const swapVerifier = getSwapVerifierAddress(
+			this.deploymentService,
+			args.chainId,
+		);
 		const alreadyAuthorized = await this.isAuthorized(
 			args.chainId,
 			owner,
@@ -455,8 +459,15 @@ export class MorphoPositionMigrationConnector
 		const targetCollateralVault = getAddress(target.collateralVault);
 		const marketParams = normalizeMarketParams(args.position.raw.marketParams);
 		const morpho = this.getMorphoAddress(args.chainId);
-		const swapper = this.getSwapperAddress(args.chainId, target.swapper);
-		const swapVerifier = this.getSwapVerifierAddress(args.chainId);
+		const swapper = getSwapperAddress(
+			this.deploymentService,
+			args.chainId,
+			target.swapper,
+		);
+		const swapVerifier = getSwapVerifierAddress(
+			this.deploymentService,
+			args.chainId,
+		);
 		const borrowShares = args.position.raw.borrowShares;
 		const hasDebt = borrowShares > 0n;
 		const collateralAmount = args.position.raw.collateral;
@@ -504,11 +515,10 @@ export class MorphoPositionMigrationConnector
 		}
 
 		const items: EVCBatchItem[] = [];
-		const alreadyAuthorized = await this.isAuthorized(
-			args.chainId,
-			owner,
-			swapVerifier,
-		);
+		const alreadyAuthorized =
+			args.skipAuthorizationCheck && args.authorization
+				? false
+				: await this.isAuthorized(args.chainId, owner, swapVerifier);
 		if (!alreadyAuthorized) {
 			if (!args.authorization) {
 				throw new Error(
@@ -718,14 +728,18 @@ export class MorphoPositionMigrationConnector
 		const sourceCollateralVault = getAddress(source.collateralVault);
 		const marketParams = normalizeMarketParams(args.position.raw.marketParams);
 		const morpho = this.getMorphoAddress(args.chainId);
-		const swapper = this.getSwapperAddress(args.chainId, source.swapper);
-		const swapVerifier = this.getSwapVerifierAddress(args.chainId);
+		const swapper = getSwapperAddress(
+			this.deploymentService,
+			args.chainId,
+			source.swapper,
+		);
+		const swapVerifier = getSwapVerifierAddress(
+			this.deploymentService,
+			args.chainId,
+		);
 		const verifierDeadline =
 			args.deadline ?? BigInt(Math.floor(Date.now() / 1000) + 60 * 60);
-		const sourceAmounts = await this.resolveEulerSourceAmounts(
-			source,
-			args.account,
-		);
+		const sourceAmounts = await resolveEulerSourceAmounts(source, args.account);
 		const externalTarget = args.externalTarget ?? {};
 		const collateralAmount =
 			externalTarget.collateralAmount ?? sourceAmounts.collateralAmount;
@@ -920,77 +934,6 @@ export class MorphoPositionMigrationConnector
 			functionName: "isAuthorized",
 			args: [getAddress(authorizer), getAddress(authorized)],
 		});
-	}
-
-	private getSwapperAddress(chainId: number, override?: Address): Address {
-		if (override) return getAddress(override);
-		const swapper =
-			this.deploymentService.getDeployment(chainId).addresses.peripheryAddrs
-				?.swapper;
-		if (!swapper) {
-			throw new Error(`Euler Swapper is not configured for chainId ${chainId}`);
-		}
-		return getAddress(swapper);
-	}
-
-	private getSwapVerifierAddress(chainId: number): Address {
-		const swapVerifier =
-			this.deploymentService.getDeployment(chainId).addresses.peripheryAddrs
-				?.swapVerifier;
-		if (!swapVerifier) {
-			throw new Error(
-				`Euler SwapVerifier is not configured for chainId ${chainId}`,
-			);
-		}
-		return getAddress(swapVerifier);
-	}
-
-	private resolveEulerSourceAmounts(
-		source: EulerMigrationSource,
-		account?: Account<IHasVaultAddress>,
-	): {
-		debtAmount: bigint;
-		collateralAmount: bigint;
-		collateralShares?: bigint;
-	} {
-		const eulerAccount = getAddress(source.eulerAccount);
-		const borrowVault = getAddress(source.borrowVault);
-		const collateralVault = getAddress(source.collateralVault);
-		const subAccount = account?.getSubAccount(eulerAccount);
-		const borrowPosition = subAccount?.positions.find(
-			(position) => getAddress(position.vaultAddress) === borrowVault,
-		);
-		const collateralPosition = subAccount?.positions.find(
-			(position) => getAddress(position.vaultAddress) === collateralVault,
-		);
-		const debtAmount =
-			source.debtAmount ??
-			borrowPosition?.borrowed;
-		if (debtAmount === undefined) {
-			throw new Error(
-				"Euler source debt amount requires source.debtAmount or an account snapshot with the source borrow position",
-			);
-		}
-
-		if (source.collateralAmount !== undefined) {
-			return {
-				debtAmount,
-				collateralAmount: source.collateralAmount,
-				collateralShares: source.collateralShares,
-			};
-		}
-
-		if (!collateralPosition) {
-			throw new Error(
-				"Euler source collateral amount requires source.collateralAmount or an account snapshot with the source collateral position",
-			);
-		}
-
-		return {
-			debtAmount,
-			collateralAmount: collateralPosition.assets,
-			collateralShares: collateralPosition.shares,
-		};
 	}
 
 	private encodeSetAuthorizationWithSigItem(args: {

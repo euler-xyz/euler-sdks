@@ -8,7 +8,6 @@ import {
 	type Hex,
 } from "viem";
 import { test } from "vitest";
-import { Account } from "../src/entities/Account.js";
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
 import { swapperAbi } from "../src/services/executionService/abis/swapperAbi.js";
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
@@ -27,6 +26,10 @@ import {
 	SwapVerificationType,
 	type SwapQuote,
 } from "../src/services/swapService/index.js";
+import {
+	createEulerSourceAccount,
+	decodeSwapperMulticall,
+} from "./helpers/positionMigration.js";
 
 const CHAIN_ID = 8453;
 const OWNER = "0x0000000000000000000000000000000000000b01" as const;
@@ -57,7 +60,12 @@ const marketParams: MorphoMarketParams = {
 	lltv: 860000000000000000n,
 };
 
-function createConnector() {
+function createConnector(
+	args: {
+		isAuthorized?: boolean;
+		onReadContract?: (functionName?: string) => void;
+	} = {},
+) {
 	return new MorphoPositionMigrationConnector(
 		{
 			getDeployment: () => ({
@@ -72,7 +80,9 @@ function createConnector() {
 		{
 			getProvider: () => ({
 				readContract: async ({ functionName }: { functionName?: string }) => {
-					if (functionName === "isAuthorized") return true;
+					args.onReadContract?.(functionName);
+					if (functionName === "isAuthorized") return args.isAuthorized ?? true;
+					if (functionName === "nonce") return 0n;
 					if (functionName === "debtOf") return 1_000n;
 					if (functionName === "balanceOf") return 2_000n;
 					if (functionName === "convertToAssets") return 2_000n;
@@ -140,51 +150,6 @@ function createMorphoPosition(): MorphoMigrationPosition {
 			marketParams,
 		},
 	};
-}
-
-function createSourceAccount(args: {
-	debtAmount: bigint;
-	collateralAssets: bigint;
-	collateralShares: bigint;
-}) {
-	return new Account({
-		chainId: CHAIN_ID,
-		owner: getAddress(OWNER),
-		subAccounts: {
-			[getAddress(EULER_ACCOUNT)]: {
-				timestamp: 0,
-				account: getAddress(EULER_ACCOUNT),
-				owner: getAddress(OWNER),
-				lastAccountStatusCheckTimestamp: 0,
-				enabledControllers: [getAddress(DEBT_VAULT)],
-				enabledCollaterals: [getAddress(COLLATERAL_VAULT)],
-				positions: [
-					{
-						account: getAddress(EULER_ACCOUNT),
-						vaultAddress: getAddress(DEBT_VAULT),
-						asset: getAddress(DEBT_ASSET),
-						shares: 0n,
-						assets: 0n,
-						borrowed: args.debtAmount,
-						isController: true,
-						isCollateral: false,
-						balanceForwarderEnabled: false,
-					},
-					{
-						account: getAddress(EULER_ACCOUNT),
-						vaultAddress: getAddress(COLLATERAL_VAULT),
-						asset: getAddress(COLLATERAL_ASSET),
-						shares: args.collateralShares,
-						assets: args.collateralAssets,
-						borrowed: 0n,
-						isController: false,
-						isCollateral: true,
-						balanceForwarderEnabled: false,
-					},
-				],
-			},
-		},
-	});
 }
 
 function createSwapQuote(): SwapQuote {
@@ -391,18 +356,6 @@ function createCollateralSwapQuote(
 	} as SwapQuote;
 }
 
-function decodeSwapperMulticall(item: EVCBatchItem): Hex[] {
-	if (getAddress(item.targetContract) !== getAddress(SWAPPER)) return [];
-	try {
-		const decoded = decodeFunctionData({ abi: swapperAbi, data: item.data });
-		if (decoded.functionName !== "multicall") return [];
-		const [calls] = decoded.args as [readonly Hex[]];
-		return [...calls];
-	} catch {
-		return [];
-	}
-}
-
 function decodeSwapperFunctionName(data: Hex): string {
 	return decodeFunctionData({ abi: swapperAbi, data }).functionName;
 }
@@ -423,7 +376,7 @@ function getMorphoWithdraw(item: EVCBatchItem):
 }
 
 function getMorphoSupplyCollateralAmount(item: EVCBatchItem): bigint | undefined {
-	for (const call of decodeSwapperMulticall(item)) {
+	for (const call of decodeSwapperMulticall(item, SWAPPER)) {
 		const decoded = decodeFunctionData({ abi: swapperAbi, data: call });
 		if (decoded.functionName !== "swap") continue;
 		const [params] = decoded.args;
@@ -606,9 +559,63 @@ test("Morpho inbound no-swap migration does not use target minimum as the withdr
 	assert.equal(verifyDepositAmount, minCollateralAssets);
 });
 
+test("Morpho simulation authorization skips duplicate authorization read", async () => {
+	let authorizationReads = 0;
+	const connector = createConnector({
+		isAuthorized: false,
+		onReadContract: (functionName) => {
+			if (functionName === "isAuthorized") authorizationReads++;
+		},
+	});
+	const position = createMorphoPosition();
+
+	const authorizationRequest = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: MORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		deadline: 123n,
+	});
+	assert.ok(authorizationRequest);
+	assert.equal(authorizationReads, 1);
+
+	await connector.buildMigrationBatch({
+		direction: "external-to-euler",
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorization: {
+			request: authorizationRequest,
+			signature: `0x${"11".repeat(65)}`,
+		},
+		skipAuthorizationCheck: true,
+		deadline: 123n,
+	});
+
+	assert.equal(authorizationReads, 1);
+});
+
 test("Morpho outgoing migration verifies the Euler source debt is fully repaid", async () => {
 	const connector = createConnector();
-	const account = createSourceAccount({
+	const account = createEulerSourceAccount({
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		eulerAccount: EULER_ACCOUNT,
+		debtVault: DEBT_VAULT,
+		collateralVault: COLLATERAL_VAULT,
+		debtAsset: DEBT_ASSET,
+		collateralAsset: COLLATERAL_ASSET,
 		debtAmount: 1_000n,
 		collateralAssets: 2_000n,
 		collateralShares: 2_000n,
@@ -642,7 +649,14 @@ test("Morpho outgoing migration verifies the Euler source debt is fully repaid",
 
 test("Morpho outgoing migration reads source amounts from the supplied account snapshot", async () => {
 	const connector = createConnector();
-	const account = createSourceAccount({
+	const account = createEulerSourceAccount({
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		eulerAccount: EULER_ACCOUNT,
+		debtVault: DEBT_VAULT,
+		collateralVault: COLLATERAL_VAULT,
+		debtAsset: DEBT_ASSET,
+		collateralAsset: COLLATERAL_ASSET,
 		debtAmount: 1_500n,
 		collateralAssets: 4_000n,
 		collateralShares: 3_900n,
@@ -740,7 +754,7 @@ test("Morpho inbound debt swap sweeps output token and repays leftover input tok
 		collateralSwapQuote: createCollateralSwapQuote(),
 	});
 
-	const calls = items.flatMap(decodeSwapperMulticall);
+	const calls = items.flatMap((item) => decodeSwapperMulticall(item, SWAPPER));
 	assert.deepEqual(calls.map(decodeSwapperFunctionName), [
 		"swap",
 		"swap",

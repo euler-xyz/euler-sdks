@@ -201,13 +201,15 @@ function createMorphoSimulationConnector(args: {
 test("planMigrationSimulation reuses a provided authorization request", async () => {
 	let getAuthorizationCalls = 0;
 	let builtAuthorization: SignedMigrationAuthorization | undefined;
+	let builtSkipAuthorizationCheck: boolean | undefined;
 	const service = createService([
 		createMorphoSimulationConnector({
 			onGetAuthorization: () => {
 				getAuthorizationCalls++;
 			},
-			onBuild: args => {
+			onBuild: (args) => {
 				builtAuthorization = args.authorization;
+				builtSkipAuthorizationCheck = args.skipAuthorizationCheck;
 			},
 		}),
 	]);
@@ -229,6 +231,7 @@ test("planMigrationSimulation reuses a provided authorization request", async ()
 
 	assert.equal(getAuthorizationCalls, 0);
 	assert.equal(builtAuthorization?.request, morphoAuthorizationRequest);
+	assert.equal(builtSkipAuthorizationCheck, true);
 	assert.equal(result.stateOverrides.length, 1);
 	assert.equal(result.authorizationRequest, morphoAuthorizationRequest);
 });
@@ -236,13 +239,15 @@ test("planMigrationSimulation reuses a provided authorization request", async ()
 test("planMigrationSimulation reuses a provided signed authorization request", async () => {
 	let getAuthorizationCalls = 0;
 	let builtAuthorization: SignedMigrationAuthorization | undefined;
+	let builtSkipAuthorizationCheck: boolean | undefined;
 	const service = createService([
 		createMorphoSimulationConnector({
 			onGetAuthorization: () => {
 				getAuthorizationCalls++;
 			},
-			onBuild: args => {
+			onBuild: (args) => {
 				builtAuthorization = args.authorization;
+				builtSkipAuthorizationCheck = args.skipAuthorizationCheck;
 			},
 		}),
 	]);
@@ -268,6 +273,7 @@ test("planMigrationSimulation reuses a provided signed authorization request", a
 
 	assert.equal(getAuthorizationCalls, 0);
 	assert.equal(builtAuthorization?.request, morphoAuthorizationRequest);
+	assert.equal(builtSkipAuthorizationCheck, true);
 	assert.equal(result.stateOverrides.length, 1);
 });
 
@@ -284,6 +290,7 @@ test("planMigrationSimulation returns a stub-signed preview plan and the resolve
 		data: "0xdeadbeef",
 	} as unknown as EVCBatchItem;
 	let builtAuthorization: SignedMigrationAuthorization | undefined;
+	let builtSkipAuthorizationCheck: boolean | undefined;
 	const connector: PositionMigrationConnector = {
 		id: "morpho",
 		protocol: "Morpho",
@@ -292,6 +299,7 @@ test("planMigrationSimulation returns a stub-signed preview plan and the resolve
 		getAuthorization: async () => morphoAuthorizationRequest,
 		buildMigrationBatch: (buildArgs) => {
 			builtAuthorization = buildArgs.authorization;
+			builtSkipAuthorizationCheck = buildArgs.skipAuthorizationCheck;
 			return [authItem, otherItem];
 		},
 	};
@@ -321,6 +329,7 @@ test("planMigrationSimulation returns a stub-signed preview plan and the resolve
 	// The single batch build ran with a stub-signed authorization.
 	assert.equal(builtAuthorization?.request, morphoAuthorizationRequest);
 	assert.equal(builtAuthorization?.signature, `0x${"00".repeat(65)}`);
+	assert.equal(builtSkipAuthorizationCheck, true);
 	// Preview plan keeps the authorization item; simulation plan filters it
 	// and relies on the state override instead.
 	assert.deepEqual(result.previewPlan as unknown as EVCBatchItem[], [

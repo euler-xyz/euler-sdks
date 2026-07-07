@@ -16,6 +16,7 @@ import type { IProviderService } from "../providerService/index.js";
 import { isEVault } from "../vaults/vaultMetaService/index.js";
 import { applyBuildQuery, type BuildQueryFn } from "../../utils/buildQuery.js";
 import { computeAllowanceSlot } from "../../utils/stateOverrides/index.js";
+import { assertSameAddress } from "./connectors/shared.js";
 import type {
 	BuildMigrationBatchArgs,
 	GetMigrationAuthorizationArgs,
@@ -239,6 +240,7 @@ export class PositionMigrationService implements IPositionMigrationService {
 					(authorizationRequest
 						? this.getStubAuthorization(authorizationRequest)
 						: undefined),
+				...(simulationAuthorization ? { skipAuthorizationCheck: true } : {}),
 			},
 			connector,
 			position,
@@ -658,18 +660,6 @@ export class PositionMigrationService implements IPositionMigrationService {
 			collateralVaultAsset,
 			position.collateral.asset,
 			"Source Euler collateral vault asset must match target collateral asset",
-		);
-	}
-}
-
-function assertSameAddress(
-	actual: Address,
-	expected: Address,
-	message: string,
-) {
-	if (getAddress(actual) !== getAddress(expected)) {
-		throw new Error(
-			`${message}: ${getAddress(actual)} != ${getAddress(expected)}`,
 		);
 	}
 }

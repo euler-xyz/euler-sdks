@@ -30,6 +30,8 @@ import {
 	encodeGenericSwap,
 	encodeSwapQuoteVerificationItem,
 	encodeVerifyAmountMinAndDepositItem,
+	getSwapperAddress,
+	getSwapVerifierAddress,
 	splitPermitSignature,
 } from "../shared.js";
 import { metamorphoAbi } from "./abis/metamorphoAbi.js";
@@ -210,7 +212,10 @@ export class MetamorphoPositionMigrationConnector
 
 		const position = assertMetamorphoPosition(args.position);
 		const owner = getAddress(args.owner);
-		const swapVerifier = this.getSwapVerifierAddress(args.chainId);
+		const swapVerifier = getSwapVerifierAddress(
+			this.deploymentService,
+			args.chainId,
+		);
 		const vault = position.raw.vault;
 		const shareBalance = position.raw.shareBalance;
 		if (shareBalance <= 0n) return undefined;
@@ -256,8 +261,15 @@ export class MetamorphoPositionMigrationConnector
 		const owner = getAddress(args.owner);
 		const eulerAccount = getAddress(target.eulerAccount);
 		const targetCollateralVault = getAddress(target.collateralVault);
-		const swapper = this.getSwapperAddress(args.chainId, target.swapper);
-		const swapVerifier = this.getSwapVerifierAddress(args.chainId);
+		const swapper = getSwapperAddress(
+			this.deploymentService,
+			args.chainId,
+			target.swapper,
+		);
+		const swapVerifier = getSwapVerifierAddress(
+			this.deploymentService,
+			args.chainId,
+		);
 		const vault = args.position.raw.vault;
 		const underlying = args.position.raw.underlying;
 		const shareBalance = args.position.raw.shareBalance;
@@ -291,15 +303,17 @@ export class MetamorphoPositionMigrationConnector
 		}
 
 		const items: EVCBatchItem[] = [];
-		if (
-			!(await this.hasShareAllowance(
-				args.chainId,
-				vault,
-				owner,
-				swapVerifier,
-				shareBalance,
-			))
-		) {
+		const needsSharePermit =
+			args.skipAuthorizationCheck && args.authorization
+				? true
+				: !(await this.hasShareAllowance(
+						args.chainId,
+						vault,
+						owner,
+						swapVerifier,
+						shareBalance,
+					));
+		if (needsSharePermit) {
 			if (!args.authorization) {
 				throw new Error(
 					"Metamorpho share permit for the Euler SwapVerifier is required",
@@ -561,29 +575,6 @@ export class MetamorphoPositionMigrationConnector
 			args: [owner, spender],
 		})) as bigint;
 		return allowance >= amount;
-	}
-
-	private getSwapperAddress(chainId: number, override?: Address): Address {
-		if (override) return getAddress(override);
-		const swapper =
-			this.deploymentService.getDeployment(chainId).addresses.peripheryAddrs
-				?.swapper;
-		if (!swapper) {
-			throw new Error(`Euler Swapper is not configured for chainId ${chainId}`);
-		}
-		return getAddress(swapper);
-	}
-
-	private getSwapVerifierAddress(chainId: number): Address {
-		const swapVerifier =
-			this.deploymentService.getDeployment(chainId).addresses.peripheryAddrs
-				?.swapVerifier;
-		if (!swapVerifier) {
-			throw new Error(
-				`Euler SwapVerifier is not configured for chainId ${chainId}`,
-			);
-		}
-		return getAddress(swapVerifier);
 	}
 }
 

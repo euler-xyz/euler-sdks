@@ -27,6 +27,7 @@ import {
 	SwapVerificationType,
 	type SwapQuote,
 } from "../src/services/swapService/index.js";
+import { decodeSwapperMulticall } from "./helpers/positionMigration.js";
 
 const CHAIN_ID = 8453;
 const OWNER = "0x0000000000000000000000000000000000000b01" as const;
@@ -50,7 +51,12 @@ const GENERIC_HANDLER_DATA_ABI = [
 	{ name: "payload", type: "bytes" },
 ] as const;
 
-function createConnector(args: { allowance?: bigint } = {}) {
+function createConnector(
+	args: {
+		allowance?: bigint;
+		onReadContract?: (functionName?: string) => void;
+	} = {},
+) {
 	const allowance = args.allowance ?? 10_000n;
 	return new MetamorphoPositionMigrationConnector(
 		{
@@ -66,6 +72,7 @@ function createConnector(args: { allowance?: bigint } = {}) {
 		{
 			getProvider: () => ({
 				readContract: async ({ functionName }: { functionName?: string }) => {
+					args.onReadContract?.(functionName);
 					if (functionName === "allowance") return allowance;
 					if (functionName === "nonces") return NONCE;
 					if (functionName === "eip712Domain") {
@@ -246,22 +253,10 @@ function createCollateralSwapQuote(
 	} as SwapQuote;
 }
 
-function decodeSwapperMulticall(item: EVCBatchItem): Hex[] {
-	if (getAddress(item.targetContract) !== getAddress(SWAPPER)) return [];
-	try {
-		const decoded = decodeFunctionData({ abi: swapperAbi, data: item.data });
-		if (decoded.functionName !== "multicall") return [];
-		const [calls] = decoded.args as [readonly Hex[]];
-		return [...calls];
-	} catch {
-		return [];
-	}
-}
-
 function getRedeemCall(item: EVCBatchItem):
 	| { shares: bigint; receiver: Address; owner: Address }
 	| undefined {
-	for (const call of decodeSwapperMulticall(item)) {
+	for (const call of decodeSwapperMulticall(item, SWAPPER)) {
 		const decoded = decodeFunctionData({ abi: swapperAbi, data: call });
 		if (decoded.functionName !== "swap") continue;
 		const [params] = decoded.args;
@@ -420,6 +415,47 @@ test("Metamorpho inbound migration orders permit, share transfer, redeem and dep
 	});
 });
 
+test("Metamorpho simulation authorization skips duplicate allowance read", async () => {
+	let allowanceReads = 0;
+	const connector = createConnector({
+		allowance: 0n,
+		onReadContract: (functionName) => {
+			if (functionName === "allowance") allowanceReads++;
+		},
+	});
+	const position = createMetamorphoPosition();
+
+	const authorizationRequest = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: METAMORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		deadline: 123n,
+	});
+	assert.ok(authorizationRequest);
+	assert.equal(allowanceReads, 1);
+
+	await connector.buildMigrationBatch({
+		direction: "external-to-euler",
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorization: {
+			request: authorizationRequest,
+			signature: `0x${"11".repeat(65)}`,
+		},
+		skipAuthorizationCheck: true,
+		deadline: 123n,
+	});
+
+	assert.equal(allowanceReads, 1);
+});
+
 test("Metamorpho inbound migration skips the permit when allowance is sufficient", async () => {
 	const connector = createConnector();
 	const position = createMetamorphoPosition();
@@ -570,7 +606,7 @@ test("Metamorpho collateral swap (skim) redeems to the Swapper and emits the quo
 
 	const redeem = getRedeemCall(items[1]!);
 	assert.equal(redeem?.receiver, getAddress(SWAPPER));
-	const swapperCalls = decodeSwapperMulticall(items[1]!);
+	const swapperCalls = decodeSwapperMulticall(items[1]!, SWAPPER);
 	assert.equal(swapperCalls.length, 2);
 	assert.equal(swapperCalls[1], quote.swap.swapperData);
 	const verifyItem = items.at(-1)!;

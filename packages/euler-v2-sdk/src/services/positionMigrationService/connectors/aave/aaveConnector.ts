@@ -16,6 +16,8 @@ import {
 import type { IProviderService } from "../../../providerService/index.js";
 import {
 	applyBuffer,
+	assertEulerSource,
+	assertEulerTarget,
 	assertSameAddress,
 	assertSwapQuoteUsesSwapper,
 	encodeDepositVerifiedSwapQuoteItem,
@@ -23,14 +25,15 @@ import {
 	encodeSwapQuoteVerificationItem,
 	encodeVerifyAmountMinAndDepositItem,
 	encodeVerifyDebtMaxItem,
+	getSwapperAddress,
 	getSwapQuoteInputAmount,
 	getSwapQuoteSwapCalls,
+	getSwapVerifierAddress,
+	resolveEulerSourceAmounts,
 	splitPermitSignature,
 } from "../shared.js";
 import type {
 	BuildConnectorMigrationBatchArgs,
-	EulerMigrationSource,
-	EulerMigrationTarget,
 	GetMigrationAuthorizationArgs,
 	GetMigrationPositionArgs,
 	ListMigrationPositionsArgs,
@@ -40,7 +43,6 @@ import type {
 	PositionMigrationConnector,
 	SignedMigrationAuthorization,
 } from "../../positionMigrationServiceTypes.js";
-import type { Account, IHasVaultAddress } from "../../../../entities/Account.js";
 import {
 	aaveATokenAbi,
 	aaveDebtTokenAbi,
@@ -443,7 +445,10 @@ export class AavePositionMigrationConnector
 		const position = assertAavePosition(args.position);
 		const owner = getAddress(args.owner);
 		if (args.direction === "external-to-euler") {
-			const swapVerifier = this.getSwapVerifierAddress(args.chainId);
+			const swapVerifier = getSwapVerifierAddress(
+				this.deploymentService,
+				args.chainId,
+			);
 			const token = position.raw.collateralReserve.aTokenAddress;
 			const collateralAmount = position.raw.aTokenBalance;
 			if (collateralAmount <= 0n) return undefined;
@@ -475,11 +480,11 @@ export class AavePositionMigrationConnector
 		}
 
 		const source = assertEulerSource(args.source);
-		const swapVerifier = this.getSwapVerifierAddress(args.chainId);
-		const sourceAmounts = await this.resolveEulerSourceAmounts(
-			source,
-			args.account,
+		const swapVerifier = getSwapVerifierAddress(
+			this.deploymentService,
+			args.chainId,
 		);
+		const sourceAmounts = await resolveEulerSourceAmounts(source, args.account);
 		const value =
 			args.externalTarget?.borrowAmount ??
 			applyBuffer(
@@ -802,8 +807,15 @@ export class AavePositionMigrationConnector
 			: undefined;
 		const targetCollateralVault = getAddress(target.collateralVault);
 		const pool = args.position.raw.pool;
-		const swapper = this.getSwapperAddress(args.chainId, target.swapper);
-		const swapVerifier = this.getSwapVerifierAddress(args.chainId);
+		const swapper = getSwapperAddress(
+			this.deploymentService,
+			args.chainId,
+			target.swapper,
+		);
+		const swapVerifier = getSwapVerifierAddress(
+			this.deploymentService,
+			args.chainId,
+		);
 		const aToken = args.position.raw.collateralReserve.aTokenAddress;
 		const collateralAmount = args.position.raw.aTokenBalance;
 		const collateralMinAmount = target.minCollateralAssets ?? collateralAmount;
@@ -879,15 +891,17 @@ export class AavePositionMigrationConnector
 		}
 
 		const items: EVCBatchItem[] = [];
-		if (
-			!(await this.hasATokenAllowance(
-				args.chainId,
-				aToken,
-				owner,
-				swapVerifier,
-				collateralTransferMaxAmount,
-			))
-		) {
+		const needsATokenPermit =
+			args.skipAuthorizationCheck && args.authorization
+				? true
+				: !(await this.hasATokenAllowance(
+						args.chainId,
+						aToken,
+						owner,
+						swapVerifier,
+						collateralTransferMaxAmount,
+					));
+		if (needsATokenPermit) {
 			if (!args.authorization) {
 				throw new Error(
 					"Aave aToken permit for the Euler SwapVerifier is required",
@@ -1109,11 +1123,12 @@ export class AavePositionMigrationConnector
 		const sourceBorrowVault = getAddress(source.borrowVault);
 		const sourceCollateralVault = getAddress(source.collateralVault);
 		const pool = args.position.raw.pool;
-		const swapper = this.getSwapperAddress(args.chainId, source.swapper);
-		const sourceAmounts = await this.resolveEulerSourceAmounts(
-			source,
-			args.account,
+		const swapper = getSwapperAddress(
+			this.deploymentService,
+			args.chainId,
+			source.swapper,
 		);
+		const sourceAmounts = await resolveEulerSourceAmounts(source, args.account);
 		const externalTarget = args.externalTarget ?? {};
 		const collateralAmount =
 			externalTarget.collateralAmount ?? sourceAmounts.collateralAmount;
@@ -1149,20 +1164,25 @@ export class AavePositionMigrationConnector
 			throw new Error("Aave borrow amount must be greater than zero");
 		}
 
-		const swapVerifier = this.getSwapVerifierAddress(args.chainId);
+		const swapVerifier = getSwapVerifierAddress(
+			this.deploymentService,
+			args.chainId,
+		);
 		const verifierDeadline =
 			args.deadline ?? BigInt(Math.floor(Date.now() / 1000) + 60 * 60);
 
 		const items: EVCBatchItem[] = [];
-		if (
-			!(await this.hasBorrowAllowance(
-				args.chainId,
-				variableDebtToken,
-				owner,
-				swapVerifier,
-				aaveBorrowAmount,
-			))
-		) {
+		const needsDebtDelegation =
+			args.skipAuthorizationCheck && args.authorization
+				? true
+				: !(await this.hasBorrowAllowance(
+						args.chainId,
+						variableDebtToken,
+						owner,
+						swapVerifier,
+						aaveBorrowAmount,
+					));
+		if (needsDebtDelegation) {
 			if (!args.authorization) {
 				throw new Error(
 					"Aave variable debt delegation for the Euler SwapVerifier is required",
@@ -1539,77 +1559,6 @@ export class AavePositionMigrationConnector
 		})) as bigint;
 		return allowance >= amount;
 	}
-
-	private getSwapperAddress(chainId: number, override?: Address): Address {
-		if (override) return getAddress(override);
-		const swapper =
-			this.deploymentService.getDeployment(chainId).addresses.peripheryAddrs
-				?.swapper;
-		if (!swapper) {
-			throw new Error(`Euler Swapper is not configured for chainId ${chainId}`);
-		}
-		return getAddress(swapper);
-	}
-
-	private getSwapVerifierAddress(chainId: number): Address {
-		const swapVerifier =
-			this.deploymentService.getDeployment(chainId).addresses.peripheryAddrs
-				?.swapVerifier;
-		if (!swapVerifier) {
-			throw new Error(
-				`Euler SwapVerifier is not configured for chainId ${chainId}`,
-			);
-		}
-		return getAddress(swapVerifier);
-	}
-
-	private resolveEulerSourceAmounts(
-		source: EulerMigrationSource,
-		account?: Account<IHasVaultAddress>,
-	): {
-		debtAmount: bigint;
-		collateralAmount: bigint;
-		collateralShares?: bigint;
-	} {
-		const eulerAccount = getAddress(source.eulerAccount);
-		const borrowVault = getAddress(source.borrowVault);
-		const collateralVault = getAddress(source.collateralVault);
-		const subAccount = account?.getSubAccount(eulerAccount);
-		const borrowPosition = subAccount?.positions.find(
-			(position) => getAddress(position.vaultAddress) === borrowVault,
-		);
-		const collateralPosition = subAccount?.positions.find(
-			(position) => getAddress(position.vaultAddress) === collateralVault,
-		);
-		const debtAmount =
-			source.debtAmount ??
-			borrowPosition?.borrowed;
-		if (debtAmount === undefined) {
-			throw new Error(
-				"Euler source debt amount requires source.debtAmount or an account snapshot with the source borrow position",
-			);
-		}
-
-		if (source.collateralAmount !== undefined) {
-			return {
-				debtAmount,
-				collateralAmount: source.collateralAmount,
-				collateralShares: source.collateralShares,
-			};
-		}
-
-		if (!collateralPosition) {
-			throw new Error(
-				"Euler source collateral amount requires source.collateralAmount or an account snapshot with the source collateral position",
-			);
-		}
-
-		return {
-			debtAmount,
-			collateralAmount: collateralPosition.assets,
-			collateralShares: collateralPosition.shares,
-		};
-	}
 }
 
 function normalizeAavePositionRef(
@@ -1932,24 +1881,6 @@ function assertAaveAuthorizationRequest<
 		AaveMigrationAuthorizationRequest,
 		{ authorizationType: TType }
 	>;
-}
-
-function assertEulerTarget(
-	target: EulerMigrationTarget | undefined,
-): EulerMigrationTarget {
-	if (!target) {
-		throw new Error("Euler migration target is required");
-	}
-	return target;
-}
-
-function assertEulerSource(
-	source: EulerMigrationSource | undefined,
-): EulerMigrationSource {
-	if (!source) {
-		throw new Error("Euler migration source is required");
-	}
-	return source;
 }
 
 function toAavePermitMessage(

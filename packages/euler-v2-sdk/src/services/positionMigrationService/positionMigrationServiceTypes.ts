@@ -201,6 +201,12 @@ export type BuildMigrationBatchArgs<
 	externalTarget?: ExternalMigrationTarget;
 	authorizationRequest?: MigrationAuthorizationRequest;
 	authorization?: SignedMigrationAuthorization;
+	/**
+	 * Internal simulation hint: when a caller already resolved that an
+	 * authorization is required and supplied `authorization`, connectors can add
+	 * the authorization item without re-reading the live authorization state.
+	 */
+	skipAuthorizationCheck?: boolean;
 	collateralSwapQuote?: SwapQuote;
 	debtSwapQuote?: SwapQuote;
 	deadline?: bigint;

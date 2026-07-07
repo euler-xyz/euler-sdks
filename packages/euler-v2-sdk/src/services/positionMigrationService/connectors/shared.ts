@@ -10,6 +10,7 @@ import {
 	swapVerifierAbi,
 	type EVCBatchItem,
 } from "../../executionService/index.js";
+import type { IDeploymentService } from "../../deploymentService/index.js";
 import {
 	SwapVerificationType,
 	type SwapQuote,
@@ -19,6 +20,7 @@ import type {
 	EulerMigrationSource,
 	EulerMigrationTarget,
 } from "../positionMigrationServiceTypes.js";
+import type { Account, IHasVaultAddress } from "../../../entities/Account.js";
 
 export const BPS_SCALE = 10_000n;
 export const SWAPPER_MODE_EXACT_IN = 0n;
@@ -68,6 +70,81 @@ export function assertEulerSource(
 		throw new Error("Euler migration source is required");
 	}
 	return source;
+}
+
+export function getSwapperAddress(
+	deploymentService: IDeploymentService,
+	chainId: number,
+	override?: Address,
+): Address {
+	if (override) return getAddress(override);
+	const swapper =
+		deploymentService.getDeployment(chainId).addresses.peripheryAddrs?.swapper;
+	if (!swapper) {
+		throw new Error(`Euler Swapper is not configured for chainId ${chainId}`);
+	}
+	return getAddress(swapper);
+}
+
+export function getSwapVerifierAddress(
+	deploymentService: IDeploymentService,
+	chainId: number,
+): Address {
+	const swapVerifier =
+		deploymentService.getDeployment(chainId).addresses.peripheryAddrs
+			?.swapVerifier;
+	if (!swapVerifier) {
+		throw new Error(
+			`Euler SwapVerifier is not configured for chainId ${chainId}`,
+		);
+	}
+	return getAddress(swapVerifier);
+}
+
+export function resolveEulerSourceAmounts(
+	source: EulerMigrationSource,
+	account?: Account<IHasVaultAddress>,
+): {
+	debtAmount: bigint;
+	collateralAmount: bigint;
+	collateralShares?: bigint;
+} {
+	const eulerAccount = getAddress(source.eulerAccount);
+	const borrowVault = getAddress(source.borrowVault);
+	const collateralVault = getAddress(source.collateralVault);
+	const subAccount = account?.getSubAccount(eulerAccount);
+	const borrowPosition = subAccount?.positions.find(
+		(position) => getAddress(position.vaultAddress) === borrowVault,
+	);
+	const collateralPosition = subAccount?.positions.find(
+		(position) => getAddress(position.vaultAddress) === collateralVault,
+	);
+	const debtAmount = source.debtAmount ?? borrowPosition?.borrowed;
+	if (debtAmount === undefined) {
+		throw new Error(
+			"Euler source debt amount requires source.debtAmount or an account snapshot with the source borrow position",
+		);
+	}
+
+	if (source.collateralAmount !== undefined) {
+		return {
+			debtAmount,
+			collateralAmount: source.collateralAmount,
+			collateralShares: source.collateralShares,
+		};
+	}
+
+	if (!collateralPosition) {
+		throw new Error(
+			"Euler source collateral amount requires source.collateralAmount or an account snapshot with the source collateral position",
+		);
+	}
+
+	return {
+		debtAmount,
+		collateralAmount: collateralPosition.assets,
+		collateralShares: collateralPosition.shares,
+	};
 }
 
 export function splitPermitSignature(signature: Hex): PermitSignature {
