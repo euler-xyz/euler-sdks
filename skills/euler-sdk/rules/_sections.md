@@ -26,4 +26,4 @@ This file defines sections for the euler-sdk skill.
 
 **Impact:** HIGH
 
-**Description:** Swap flows and script templates for production integrations, bots, and operational tooling.
+**Description:** Swap flows, cross-protocol position migration, and script templates for production integrations, bots, and operational tooling.

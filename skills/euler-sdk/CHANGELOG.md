@@ -2,6 +2,12 @@
 
 All notable changes to the `euler-sdk` skill are documented in this file.
 
+## 1.3.0 - 2026-07-08
+- Added `sdk-migrations` rule covering `positionMigrationService`: cross-protocol position migration (Aave V3, Morpho Blue, MetaMorpho) into/out of Euler, connector/direction selection, authorization signing, collateral/debt swaps, and `planMigrationSimulation`.
+- Expanded `AGENTS.md` section 4 (Integration Patterns) with `4.2 Cross-Protocol Position Migration`.
+- Added `portfolioService` (position-first savings/borrows views) and `priceService` (display-only market prices vs oracle risk prices) coverage to `sdk-ui-data-layer` and the entry-point lists.
+- New reference doc: `packages/euler-v2-sdk/docs/position-migration-service.md`.
+
 ## 1.2.0 - 2026-05-19
 - Added `sdk-fallback-adapter` rule covering V3 → onchain/subgraph/direct fallback chains, default trigger semantics, `onFallback` telemetry (`FallbackInfo.trigger`, `missingIndices`), and custom `createFallbackAdapter` composition.
 - Expanded `AGENTS.md` section 3 (Runtime Performance) with `3.3 Fallback Adapter for V3 / Onchain Routing`.

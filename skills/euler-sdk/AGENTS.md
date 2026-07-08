@@ -1,14 +1,14 @@
 # Euler SDK Agent Skill
 
-**Version 1.2.0**
+**Version 1.3.0**
 Euler Labs
-May 2026
+July 2026
 
 ---
 
 ## Abstract
 
-Integration guide for `euler-v2-sdk` focused on building production UIs, automation scripts, and developer tools. Covers service boundaries, entity population, transaction planning, approvals, simulation safety, caching via `buildQuery`, plugin integration, V3 → onchain/subgraph/direct fallback chains, swap flows, and script templates.
+Integration guide for `euler-v2-sdk` focused on building production UIs, automation scripts, and developer tools. Covers service boundaries, entity population, transaction planning, approvals, simulation safety, caching via `buildQuery`, plugin integration, V3 → onchain/subgraph/direct fallback chains, swap flows, cross-protocol position migration, and script templates.
 
 ---
 
@@ -28,6 +28,7 @@ Integration guide for `euler-v2-sdk` focused on building production UIs, automat
 Use `buildEulerSDK` as the composition root and route reads through top-level services:
 
 - `accountService` for account/sub-account state
+- `portfolioService` for a position-first savings/borrows view over a fully populated account (`fetchPortfolio` forces `populateAll`; `buildPortfolio` wraps an existing account)
 - `vaultMetaService` for mixed or unknown vault types
 - `walletService` for native/ERC20 wallet balances and direct/Permit2 allowance state
 - `executionService` for planning/encoding tx batches
@@ -37,6 +38,7 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 - `rewardsService` for reward reads and provider-specific reward claim planning; the default V3 path normalizes Incentra rows as Brevis and returns direct proof-backed Brevis rows when V3 lacks claim metadata
 - `reulLockService` for rEUL lock reads and unlock transaction plans
 - `oracleAdapterService` for oracle adapter metadata keyed by normalized `adapter.oracle` address
+- `priceService` for display-only USD market prices (V3 → on-chain oracle fallback); prefer the `populateMarketPrices` fetch option and use oracle risk prices for risk math
 - `eulerLabelsService` plus exported label helpers for normalized products, Earn entries, notices, restrictions, and product/vault flags
 
 Built-in scalar config resolves as `config` prop, explicit SDK option, `EULER_SDK_*` env var, then default. Prefer `EULER_SDK_RPC_URL_<chainId>` for examples and `buildEulerSDK({ config: { rpcUrls, v3ApiUrl, v3ApiKey } })` for app-level runtime wiring that cannot rely on env.
@@ -191,7 +193,28 @@ Pattern:
 Re-quote near submission time and compare providers for advanced routing UIs.
 For CoW open-position, close-position, and collateral-swap routes, pass `cowSwap` to the regular quote method, use the matching CoW planner, and execute the plan with `executionService.executeCowSwapTransactionPlan(...)`. CoW plans return `orderUids`, settle asynchronously through CoW Protocol, and are not simulation or gas-estimation inputs. Track orders with `fetchCowSwapOrderStatus` / `pollCowSwapOrderStatus`; cancel open/collateral orders with `cancelCowSwapOrder` and close-position orders with `planCancelClosePositionWithCow`.
 
-### 4.2 Scripts and Automation
+### 4.2 Cross-Protocol Position Migration
+
+Use `positionMigrationService` to migrate a position between an external protocol
+(Aave V3 `aave`, Morpho Blue `morpho`, MetaMorpho `metamorpho`) and Euler in a
+single EVC batch, without closing the borrow. (Same-asset intra-Euler migration
+is `executionService.planMigrateSameAssetCollateral` / `planMigrateSameAssetDebt`.)
+
+Pattern:
+
+1. `getPosition(...)` (or `listPositions` / `listTargets`) for the source/target
+2. `getAuthorization({ direction, connectorId, owner, position, target | source, deadline })` — returns `undefined` when already authorized; otherwise sign `request.typedData` and pass `{ request, signature }`
+3. `planMigration({ ...args, authorization })` → `TransactionPlan` → `executionService.executeTransactionPlan(...)`
+
+`direction` is `"external-to-euler"` (with an `EulerMigrationTarget`) or
+`"euler-to-external"` (with an `EulerMigrationSource`). MetaMorpho is supply-only
+and inbound only; Aave/Morpho outbound flows reject swap quotes. Change assets on
+inbound flows with `collateralSwapQuote` / `debtSwapQuote` from `swapService`. For
+a pre-trade dry run use `planMigrationSimulation(...)` and simulate its `plan`
+with the returned `stateOverrides` (no signature required), then gate on
+`canExecute`. Reference: [`docs/position-migration-service.md`](../../packages/euler-v2-sdk/docs/position-migration-service.md).
+
+### 4.3 Scripts and Automation
 
 Use SDK examples as templates:
 
@@ -220,6 +243,7 @@ Promote constants to config/env and add explicit chain/account flags in CLI tool
 - `packages/euler-v2-sdk/docs/plugins.md`
 - `packages/euler-v2-sdk/docs/swaps.md`
 - `packages/euler-v2-sdk/docs/cow-swaps.md`
+- `packages/euler-v2-sdk/docs/position-migration-service.md`
 - `packages/euler-v2-sdk/docs/reul-lock-service.md`
 - `packages/euler-v2-sdk/examples/react-sdk-example/src/context/SdkContext.tsx`
 - `packages/euler-v2-sdk/examples/react-sdk-example/src/queries/sdkQueries.ts`

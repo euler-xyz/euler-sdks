@@ -52,6 +52,24 @@ Vault rewards are exposed as a `VaultRewardInfo` whose `getTotalRewardsApr({ vie
 
 USD market price and value fields (`marketPriceUsd`, `suppliedValueUsd`, `borrowedValueUsd`, `totalRewardsValueUsd`, portfolio USD totals) are plain `number` values. Direct oracle/risk fields such as `oraclePriceRaw`, `assetRiskPrice`, `healthFactor`, and LTV ratios remain `bigint`.
 
+### Portfolio Views and Prices
+
+For position-first UIs (savings/borrows lists, net-worth headers), use
+`portfolioService` instead of hand-rolling over sub-accounts. `fetchPortfolio(chainId, owner)`
+fetches the backing account with `populateAll: true` and returns a `Portfolio`;
+`buildPortfolio(account)` wraps an already-populated account. It exposes `.savings`,
+`.borrows`, and computed totals (`netAssetValueUsd`, `netApy`, `roe`,
+`totalRewardsValueUsd`), plus `positionFilter` and `getNextSubAccount(...)`. Use
+`Account` for contract-shaped data; use `Portfolio` for the opinionated view. The
+portfolio holds an account reference, so re-populating the account updates its reads.
+
+For prices, prefer the `populateMarketPrices` fetch option to auto-populate
+`marketPriceUsd` on entities. Reach for `priceService` directly only for on-demand
+lookups (`fetchAssetUsdPrice`, `fetchAssetUsdPriceByAddress`, `fetchCollateralUsdPrice`;
+V3 with on-chain oracle fallback). `marketPriceUsd` is **display-only** — for risk
+math use oracle risk prices (`assetRiskPrice`, `getCollateralRiskPrice`), which can
+intentionally differ from market prices.
+
 For React UIs:
 
 1. Build SDK in a provider/context once.
@@ -60,4 +78,4 @@ For React UIs:
 4. Re-fetch account/vault data after successful execution receipts.
 5. For batch vault calls, handle sparse arrays (`undefined` entries) and map diagnostics by `locations[].owner` to show per-address failures.
 
-Reference: `packages/euler-v2-sdk/docs/basic-usage.md`, `docs/cross-service-data-population.md`, `docs/account-computed-properties.md`, `docs/entity-diagnostics.md`, `examples/react-sdk-example/src/queries/sdkQueries.ts`
+Reference: `packages/euler-v2-sdk/docs/basic-usage.md`, `docs/cross-service-data-population.md`, `docs/account-computed-properties.md`, `docs/portfolio.md`, `docs/pricing-system.md`, `docs/entity-diagnostics.md`, `examples/react-sdk-example/src/queries/sdkQueries.ts`

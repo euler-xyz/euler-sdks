@@ -88,18 +88,22 @@ All docs are in [`./docs`](./docs).
 8. [Simulations and State Overrides](./docs/simulations-and-state-overrides.md) - Plan simulation flow, validation output, and state override utilities.
 9. [Swaps](./docs/swaps.md) - Swap quote APIs and how swap payloads fit into plans.
 10. [CoW Swaps](./docs/cow-swaps.md) - CoW quote metadata, CoW-specific planners, order submission, status polling, and cancellation.
-11. [rEUL Lock Service](./docs/reul-lock-service.md) - rEUL lock reads and unlock transaction planning.
-12. [Pricing System](./docs/pricing-system.md) - Price data pipeline, fallback behavior, and pricing integration points.
-13. [Data Architecture](./docs/data-architecture.md) - Entities/adapters/services layering, population model, and data flow.
-14. [Cross-Service Data Population](./docs/cross-service-data-population.md) - How services enrich entities with prices, rewards, labels, and nested vaults.
-15. [Portfolio](./docs/portfolio.md) - High-level savings/borrows abstraction built from populated accounts.
-16. [Entity Reference](./docs/entities/index.md) - Property-level reference for exported entity shapes.
-17. [Account Computed Properties](./docs/account-computed-properties.md) - Health factor/LTV/net-value computed fields and data prerequisites.
-18. [Caching External Data Queries](./docs/caching-external-data-queries.md) - `query*` decoration pattern for caching/logging/profiling.
-19. [Plugins](./docs/plugins.md) - Plugin system for read-path and plan-path extensions.
-20. [Labels](./docs/labels.md) - Label metadata model and usage.
-21. [Decoding Smart Contract Errors](./docs/decode-smart-contract-errors.md) - Revert decoding utilities for better error handling.
-22. [Entity Diagnostics](./docs/entity-diagnostics.md) - Sidecar metadata for data normalization, fallbacks, and per-field warnings.
+11. [Position Migration Service](./docs/position-migration-service.md) - Cross-protocol position migration (Aave V3, Morpho Blue, MetaMorpho) into and out of Euler, with authorizations and swaps.
+12. [Rewards Service](./docs/rewards-service.md) - Reward reads, viewer-aware eligibility, and provider-specific claim planning.
+13. [rEUL Lock Service](./docs/reul-lock-service.md) - rEUL lock reads and unlock transaction planning.
+14. [Fee Flow Service](./docs/fee-flow-service.md) - FeeFlow state reads, eligible-vault filtering, and buy-plan construction.
+15. [Pricing System](./docs/pricing-system.md) - Price data pipeline, fallback behavior, and pricing integration points.
+16. [Fallback System](./docs/fallback-system.md) - V3 → onchain/subgraph/direct fallback chains, trigger semantics, and `onFallback` telemetry.
+17. [Data Architecture](./docs/data-architecture.md) - Entities/adapters/services layering, population model, and data flow.
+18. [Cross-Service Data Population](./docs/cross-service-data-population.md) - How services enrich entities with prices, rewards, labels, and nested vaults.
+19. [Portfolio](./docs/portfolio.md) - High-level savings/borrows abstraction built from populated accounts.
+20. [Entity Reference](./docs/entities/index.md) - Property-level reference for exported entity shapes.
+21. [Account Computed Properties](./docs/account-computed-properties.md) - Health factor/LTV/net-value computed fields and data prerequisites.
+22. [Caching External Data Queries](./docs/caching-external-data-queries.md) - `query*` decoration pattern for caching/logging/profiling.
+23. [Plugins](./docs/plugins.md) - Plugin system for read-path and plan-path extensions.
+24. [Labels](./docs/labels.md) - Label metadata model and usage.
+25. [Decoding Smart Contract Errors](./docs/decode-smart-contract-errors.md) - Revert decoding utilities for better error handling.
+26. [Entity Diagnostics](./docs/entity-diagnostics.md) - Sidecar metadata for data normalization, fallbacks, and per-field warnings.
 
 ## Examples
 

@@ -4,7 +4,7 @@ description: Euler V2 SDK integration guide for building production UIs, bots, s
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # Euler SDK Agent Skill
@@ -33,6 +33,7 @@ Reference these guidelines when:
 | `sdk-plugins` | HIGH | Use plugins for oracle/keyring preconditions on read and write paths |
 | `sdk-fallback-adapter` | HIGH | Configure V3 → onchain/subgraph/direct fallback chains and observe `onFallback` telemetry |
 | `sdk-swaps` | HIGH | Quote, select, and execute swap-driven operations safely |
+| `sdk-migrations` | MEDIUM | Migrate positions across protocols with the right connector, direction, and authorization |
 | `sdk-scripts` | MEDIUM | Use SDK examples as templates for scripts, bots, and CI checks |
 
 ## Quick Reference
@@ -42,15 +43,18 @@ Reference these guidelines when:
 - `buildEulerSDK({...})` as composition root
 - `buildEulerSDK({ config: {...} })` for SDK-owned runtime config; `config` overrides explicit options, `EULER_SDK_*` env vars, and defaults
 - `accountService` for account/sub-account positions
+- `portfolioService` for a position-first savings/borrows view over a fully populated account (`fetchPortfolio`, `buildPortfolio`)
 - `vaultMetaService` when vault type is unknown or mixed
 - `walletService` for native/ERC20 wallet balances and direct/Permit2 allowance state
 - `executionService` for `planX`/`encodeX` and approvals
 - `executionService` for plugin-aware plan simulation, gas estimation, execution, and pre-execution validation; CoW plans execute through `executeCowSwapTransactionPlan`, expose order status/cancellation helpers, and are not simulation/gas-estimation inputs
 - `swapService` for provider quotes and route payloads, including `cowSwap` metadata for CoW-supported position flows
+- `positionMigrationService` for cross-protocol position migration (Aave V3, Morpho Blue, MetaMorpho) into/out of Euler, with connector-specific authorizations
 - `rewardsService` for reward reads and provider-specific claim plans; the default V3 path normalizes Incentra rows as Brevis and returns direct proof-backed Brevis rows when V3 lacks claim metadata
 - `reulLockService` for rEUL vesting lock reads and unlock transaction plans
 - `eulerLabelsService` plus exported `utils/eulerLabels` helpers for normalized labels metadata, notices, restrictions, and product/vault flags
 - `oracleAdapterService.fetchOracleAdapterMap(chainId)` returns metadata keyed by normalized `adapter.oracle` address
+- `priceService` for display-only USD market prices (V3 → on-chain oracle fallback); prefer the `populateMarketPrices` fetch option and use oracle risk prices for risk math
 
 Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and map `errors[].locations[]` by owner reference for UI diagnostics.
 
@@ -87,6 +91,7 @@ rules/sdk-caching-buildquery.md
 rules/sdk-plugins.md
 rules/sdk-fallback-adapter.md
 rules/sdk-swaps.md
+rules/sdk-migrations.md
 rules/sdk-scripts.md
 ```
 
