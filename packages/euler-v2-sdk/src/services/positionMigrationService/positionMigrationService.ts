@@ -72,6 +72,17 @@ type EulerMigrationTargetWithQuotes = NonNullable<
 > &
 	Pick<BuildMigrationBatchArgs, "collateralSwapQuote" | "debtSwapQuote">;
 
+type EulerTargetVaultData = {
+	collateralVaultAsset: Address;
+	borrowVaultAsset?: Address;
+	borrowLtv: number;
+};
+
+type EulerSourceVaultAssets = {
+	borrowVaultAsset: Address;
+	collateralVaultAsset: Address;
+};
+
 export class PositionMigrationService implements IPositionMigrationService {
 	private readonly connectors = new Map<string, PositionMigrationConnector>();
 
@@ -119,9 +130,9 @@ export class PositionMigrationService implements IPositionMigrationService {
 		return this.getConnector(connectorId).getProtocolAddress?.(chainId);
 	}
 
-	async listPositions(
+	queryListPositions = async (
 		args: ListMigrationPositionsArgs,
-	): Promise<MigrationPosition[]> {
+	): Promise<MigrationPosition[]> => {
 		const connectors = args.connectorId
 			? [this.getConnector(args.connectorId)]
 			: Array.from(this.connectors.values());
@@ -134,11 +145,17 @@ export class PositionMigrationService implements IPositionMigrationService {
 			),
 		);
 		return results.flat();
+	};
+
+	async listPositions(
+		args: ListMigrationPositionsArgs,
+	): Promise<MigrationPosition[]> {
+		return this.queryListPositions(args);
 	}
 
-	async listTargets(
+	queryListTargets = async (
 		args: ListMigrationTargetsArgs,
-	): Promise<MigrationTarget[]> {
+	): Promise<MigrationTarget[]> => {
 		const direction = args.direction ?? "euler-to-external";
 
 		if (args.connectorId) {
@@ -152,8 +169,8 @@ export class PositionMigrationService implements IPositionMigrationService {
 				: [];
 		}
 
-		const connectors = Array.from(this.connectors.values()).filter((connector) =>
-			ENABLED_MIGRATIONS.has(`${connector.id}:${direction}`),
+		const connectors = Array.from(this.connectors.values()).filter(
+			(connector) => ENABLED_MIGRATIONS.has(`${connector.id}:${direction}`),
 		);
 		const results = await Promise.allSettled(
 			connectors.map((connector) =>
@@ -168,25 +185,36 @@ export class PositionMigrationService implements IPositionMigrationService {
 		if (targets.length > 0) return targets;
 
 		const failures = results.filter(
-			(result): result is PromiseRejectedResult =>
-				result.status === "rejected",
+			(result): result is PromiseRejectedResult => result.status === "rejected",
 		);
 		const firstFailure = failures[0];
 		if (firstFailure && failures.length === results.length) {
 			throw firstFailure.reason;
 		}
 		return targets;
+	};
+
+	async listTargets(
+		args: ListMigrationTargetsArgs,
+	): Promise<MigrationTarget[]> {
+		return this.queryListTargets(args);
 	}
+
+	queryGetPosition = async (
+		args: GetMigrationPositionArgs,
+	): Promise<MigrationPosition> => {
+		return this.getConnector(args.connectorId).getPosition(args);
+	};
 
 	async getPosition(
 		args: GetMigrationPositionArgs,
 	): Promise<MigrationPosition> {
-		return this.getConnector(args.connectorId).getPosition(args);
+		return this.queryGetPosition(args);
 	}
 
-	async getAuthorization(
+	queryGetAuthorization = async (
 		args: GetMigrationAuthorizationArgs,
-	): Promise<MigrationAuthorizationRequest | undefined> {
+	): Promise<MigrationAuthorizationRequest | undefined> => {
 		assertPositionMigrationEnabled(args);
 
 		const connector = this.getConnector(args.connectorId);
@@ -194,6 +222,12 @@ export class PositionMigrationService implements IPositionMigrationService {
 
 		const position = await this.resolvePosition(args);
 		return connector.getAuthorization({ ...args, position });
+	};
+
+	async getAuthorization(
+		args: GetMigrationAuthorizationArgs,
+	): Promise<MigrationAuthorizationRequest | undefined> {
+		return this.queryGetAuthorization(args);
 	}
 
 	async buildMigrationBatch(
@@ -225,9 +259,7 @@ export class PositionMigrationService implements IPositionMigrationService {
 		const authorizationRequest =
 			args.authorization?.request ??
 			args.authorizationRequest ??
-			(connector.getAuthorization
-				? await connector.getAuthorization({ ...args, position })
-				: undefined);
+			(await this.queryGetAuthorization({ ...args, position }));
 		const simulationAuthorization = authorizationRequest
 			? this.getSimulationAuthorization(authorizationRequest)
 			: undefined;
@@ -383,7 +415,7 @@ export class PositionMigrationService implements IPositionMigrationService {
 			);
 		}
 
-		return this.getPosition({
+		return this.queryGetPosition({
 			connectorId: args.connectorId,
 			chainId: args.chainId,
 			owner: args.owner,
@@ -544,44 +576,25 @@ export class PositionMigrationService implements IPositionMigrationService {
 		position: MigrationPosition,
 		target: EulerMigrationTargetWithQuotes,
 	): Promise<void> {
-		const provider = this.providerService.getProvider(position.chainId);
 		const hasDebt = position.debt.amount > 0n;
 		const targetBorrowVault = target.borrowVault
 			? getAddress(target.borrowVault)
 			: undefined;
 		const targetCollateralVault = getAddress(target.collateralVault);
-
-		const collateralVaultAsset = (await provider.readContract({
-			address: targetCollateralVault,
-			abi: eVaultAbi,
-			functionName: "asset",
-		})) as Address;
-
-		let borrowVaultAsset: Address | undefined;
-		let borrowLtv = 0;
-		if (hasDebt) {
-			if (!targetBorrowVault) {
-				throw new Error("Target Euler borrow vault is required");
-			}
-			[borrowVaultAsset, borrowLtv] = (await provider.multicall({
-				contracts: [
-					{
-						address: targetBorrowVault,
-						abi: eVaultAbi,
-						functionName: "asset",
-					},
-					{
-						address: targetBorrowVault,
-						abi: eVaultAbi,
-						functionName: "LTVBorrow",
-						args: [targetCollateralVault],
-					},
-				],
-				allowFailure: false,
-			})) as [Address, number];
-		} else if (target.debtSwapQuote) {
+		if (hasDebt && !targetBorrowVault) {
+			throw new Error("Target Euler borrow vault is required");
+		}
+		if (!hasDebt && target.debtSwapQuote) {
 			throw new Error("Debt swap quote requires source debt");
 		}
+
+		const { collateralVaultAsset, borrowVaultAsset, borrowLtv } =
+			await this.queryEulerTargetVaultData({
+				chainId: position.chainId,
+				hasDebt,
+				borrowVault: targetBorrowVault,
+				collateralVault: targetCollateralVault,
+			});
 
 		if (target.debtSwapQuote && borrowVaultAsset) {
 			assertSameAddress(
@@ -631,25 +644,15 @@ export class PositionMigrationService implements IPositionMigrationService {
 		position: MigrationPosition,
 		source: NonNullable<BuildMigrationBatchArgs["source"]>,
 	): Promise<void> {
-		const provider = this.providerService.getProvider(position.chainId);
 		const sourceBorrowVault = getAddress(source.borrowVault);
 		const sourceCollateralVault = getAddress(source.collateralVault);
 
-		const [borrowVaultAsset, collateralVaultAsset] = (await provider.multicall({
-			contracts: [
-				{
-					address: sourceBorrowVault,
-					abi: eVaultAbi,
-					functionName: "asset",
-				},
-				{
-					address: sourceCollateralVault,
-					abi: eVaultAbi,
-					functionName: "asset",
-				},
-			],
-			allowFailure: false,
-		})) as [Address, Address];
+		const { borrowVaultAsset, collateralVaultAsset } =
+			await this.queryEulerSourceVaultAssets({
+				chainId: position.chainId,
+				borrowVault: sourceBorrowVault,
+				collateralVault: sourceCollateralVault,
+			});
 
 		assertSameAddress(
 			borrowVaultAsset,
@@ -662,6 +665,71 @@ export class PositionMigrationService implements IPositionMigrationService {
 			"Source Euler collateral vault asset must match target collateral asset",
 		);
 	}
+
+	queryEulerTargetVaultData = async (args: {
+		chainId: number;
+		hasDebt: boolean;
+		borrowVault?: Address;
+		collateralVault: Address;
+	}): Promise<EulerTargetVaultData> => {
+		const provider = this.providerService.getProvider(args.chainId);
+		const collateralVaultAsset = (await provider.readContract({
+			address: args.collateralVault,
+			abi: eVaultAbi,
+			functionName: "asset",
+		})) as Address;
+
+		if (!args.hasDebt) {
+			return { collateralVaultAsset, borrowLtv: 0 };
+		}
+		if (!args.borrowVault) {
+			throw new Error("Target Euler borrow vault is required");
+		}
+
+		const [borrowVaultAsset, borrowLtv] = (await provider.multicall({
+			contracts: [
+				{
+					address: args.borrowVault,
+					abi: eVaultAbi,
+					functionName: "asset",
+				},
+				{
+					address: args.borrowVault,
+					abi: eVaultAbi,
+					functionName: "LTVBorrow",
+					args: [args.collateralVault],
+				},
+			],
+			allowFailure: false,
+		})) as [Address, number];
+
+		return { collateralVaultAsset, borrowVaultAsset, borrowLtv };
+	};
+
+	queryEulerSourceVaultAssets = async (args: {
+		chainId: number;
+		borrowVault: Address;
+		collateralVault: Address;
+	}): Promise<EulerSourceVaultAssets> => {
+		const provider = this.providerService.getProvider(args.chainId);
+		const [borrowVaultAsset, collateralVaultAsset] = (await provider.multicall({
+			contracts: [
+				{
+					address: args.borrowVault,
+					abi: eVaultAbi,
+					functionName: "asset",
+				},
+				{
+					address: args.collateralVault,
+					abi: eVaultAbi,
+					functionName: "asset",
+				},
+			],
+			allowFailure: false,
+		})) as [Address, Address];
+
+		return { borrowVaultAsset, collateralVaultAsset };
+	};
 }
 
 function isAuthorizationItem(
