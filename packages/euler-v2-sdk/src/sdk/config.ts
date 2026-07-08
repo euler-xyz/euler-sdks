@@ -1,5 +1,8 @@
 import { getAddress, type Address } from "viem";
-import type { AccountServiceAdapter } from "../services/accountService/accountServiceConfig.js";
+import type {
+	AccountServiceAdapter,
+	AccountPositionDiscovery,
+} from "../services/accountService/accountServiceConfig.js";
 import type { EVaultServiceAdapter } from "../services/vaults/eVaultService/eVaultServiceConfig.js";
 import type { EulerEarnServiceAdapter } from "../services/vaults/eulerEarnService/eulerEarnServiceConfig.js";
 
@@ -18,6 +21,8 @@ export interface EulerSDKConfig {
 	disableV3?: boolean;
 
 	accountServiceAdapter?: AccountServiceAdapter;
+	/** Discovery backend for the on-chain account adapter (`subgraph` default, or pure-RPC `onchain`). */
+	accountPositionDiscovery?: AccountPositionDiscovery;
 	accountV3ApiUrl?: string;
 	accountV3ApiKey?: string;
 	accountV3ForceFresh?: boolean;
@@ -388,6 +393,11 @@ export function readEulerSDKEnvConfig(
 			"onchain",
 			"fallback",
 		] as const),
+		accountPositionDiscovery: readEnum(
+			env,
+			"EULER_SDK_ACCOUNT_POSITION_DISCOVERY",
+			["subgraph", "onchain"] as const,
+		),
 		accountV3ApiUrl: readString(env, "EULER_SDK_ACCOUNT_V3_API_URL"),
 		accountV3ApiKey: readString(env, "EULER_SDK_ACCOUNT_V3_API_KEY"),
 		accountV3ForceFresh: readBoolean(env, "EULER_SDK_ACCOUNT_V3_FORCE_FRESH"),

@@ -23,6 +23,8 @@ import {
 	AccountVaultsSubgraphAdapter,
 	type AccountVaultsSubgraphAdapterConfig,
 } from "../services/accountService/adapters/accountOnchainAdapter/accountVaultsSubgraphAdapter.js";
+import { AccountVaultsOnchainAdapter } from "../services/accountService/adapters/accountVaultsOnchainAdapter/index.js";
+import type { IAccountVaultsAdapter } from "../services/accountService/adapters/accountOnchainAdapter/accountOnchainAdapter.js";
 import type { AccountServiceConfig } from "../services/accountService/accountServiceConfig.js";
 import {
 	WalletService,
@@ -622,22 +624,41 @@ export async function buildEulerSDK<
 		accountVaultsAdapterConfig?.subgraphURLs,
 		config?.accountVaultsSubgraphUrls,
 	);
+	// Position discovery backend for the on-chain account adapter: `subgraph`
+	// (default) or a pure-RPC brute-force scan (`onchain`).
+	const positionDiscovery =
+		pickConfigValue(
+			config?.accountPositionDiscovery,
+			resolvedAccountServiceConfig.positionDiscovery,
+			envConfig.accountPositionDiscovery,
+		) ?? "subgraph";
 	const canBuildAccountV3 = !!accountV3Config.endpoint;
+	// The onchain account adapter is buildable when its discovery source is: a
+	// subgraph (needs URLs) or the pure-RPC scan (needs neither).
 	const canBuildAccountOnchain =
+		positionDiscovery === "onchain" ||
 		Object.keys(accountVaultsSubgraphUrls).length > 0;
 
 	let accountOnchainAdapter: AccountOnchainAdapter | undefined;
 	const buildAccountV3 = () =>
 		new AccountV3Adapter(accountV3Config, resolvedBuildQuery);
 	const buildAccountOnchain = () => {
-		const accountVaultsAdapter = new AccountVaultsSubgraphAdapter(
-			{ subgraphURLs: accountVaultsSubgraphUrls },
-			resolvedBuildQuery,
-		);
+		const positionsAdapter: IAccountVaultsAdapter =
+			positionDiscovery === "onchain"
+				? new AccountVaultsOnchainAdapter(
+						providerService as ProviderService,
+						deploymentService as DeploymentService,
+						resolvedAccountServiceConfig.onchainDiscoveryConfig ?? {},
+						resolvedBuildQuery,
+					)
+				: new AccountVaultsSubgraphAdapter(
+						{ subgraphURLs: accountVaultsSubgraphUrls },
+						resolvedBuildQuery,
+					);
 		accountOnchainAdapter = new AccountOnchainAdapter(
 			providerService as ProviderService,
 			deploymentService as DeploymentService,
-			accountVaultsAdapter,
+			positionsAdapter,
 			resolvedBuildQuery,
 		);
 		return accountOnchainAdapter;

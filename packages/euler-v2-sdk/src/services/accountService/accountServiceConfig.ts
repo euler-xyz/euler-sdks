@@ -1,4 +1,16 @@
+import type { AccountVaultsOnchainAdapterConfig } from "./adapters/accountVaultsOnchainAdapter/index.js";
+
 export type AccountServiceAdapter = "v3" | "onchain" | "fallback";
+
+/**
+ * How the on-chain account adapter discovers which sub-accounts and vaults an
+ * owner touches:
+ *  - `subgraph` (default): the historical path — a subgraph lookup returns the
+ *    position map, which is then read on-chain via AccountLens.
+ *  - `onchain`: a pure-RPC brute-force scan (deployless discovery lens) with no
+ *    subgraph dependency. See {@link AccountVaultsOnchainAdapter}.
+ */
+export type AccountPositionDiscovery = "subgraph" | "onchain";
 
 export interface AccountV3AdapterConfig {
 	/** Base HTTP endpoint, for example `https://v3.euler.finance`. */
@@ -14,4 +26,8 @@ export interface AccountServiceConfig {
 	adapter?: AccountServiceAdapter;
 	/** Configuration used when the `v3` account adapter is selected. */
 	v3AdapterConfig?: AccountV3AdapterConfig;
+	/** Discovery backend used by the on-chain account adapter. Defaults to `subgraph`. */
+	positionDiscovery?: AccountPositionDiscovery;
+	/** Configuration for the pure-RPC discovery adapter (used when `positionDiscovery` is `onchain`). */
+	onchainDiscoveryConfig?: AccountVaultsOnchainAdapterConfig;
 }
