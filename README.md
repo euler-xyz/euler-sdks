@@ -15,4 +15,4 @@ A monorepo for Euler SDKs and tools.
 
 Skills are at [`skills/`](./skills/) and discoverable via the root [`AGENTS.md`](./AGENTS.md).
 
-- `euler-sdk` (v1.1.0) - SDK integration guide. Install via `npx skills add euler-sdk` or see [`skills/euler-sdk/SKILL.md`](./skills/euler-sdk/SKILL.md).
+- `euler-sdk` (v1.3.0) - SDK integration guide. Install via `npx skills add euler-sdk` or see [`skills/euler-sdk/SKILL.md`](./skills/euler-sdk/SKILL.md).
