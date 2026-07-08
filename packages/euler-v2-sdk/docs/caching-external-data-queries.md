@@ -157,6 +157,14 @@ const STALE_TIMES: Record<string, number> = {
   // Account / subgraph lookups
   queryAccountVaults: 30_000,
 
+  // Position migration — connector state and Euler vault validation
+  queryListPositions: 30_000,
+  queryListTargets: 30_000,
+  queryGetPosition: 15_000,
+  queryGetAuthorization: 15_000,
+  queryEulerTargetVaultData: 20_000,
+  queryEulerSourceVaultAssets: 20_000,
+
   // Per-user on-chain state — changes on every tx
   queryEVCAccountInfo: 15_000,
   queryVaultAccountInfo: 15_000,
@@ -233,6 +241,19 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 | `queryEVaultInfoFull` | rpc | `AccountOnchainAdapter` | `(provider, vaultLensAddress, vault)` | Read vault info for account context |
 | `queryV3AccountPositions` | url | `AccountV3Adapter` | `(endpoint, chainId, address, forceFresh?)` | Fetch account positions via V3 |
 | `queryAccountVaults` | gql | `AccountVaultsSubgraphAdapter` | `({ chainId, account })` | Query account vault history from subgraph (auto-bundled) |
+
+### Position Migration Service
+
+| Query | Type | Class | Args | Description |
+|-------|------|-------|------|-------------|
+| `queryListPositions` | mixed | `PositionMigrationService` | `(args: ListMigrationPositionsArgs)` | List migration positions across registered connectors or one selected connector |
+| `queryListTargets` | mixed | `PositionMigrationService` | `(args: ListMigrationTargetsArgs)` | List available migration targets for a direction and source asset pair |
+| `queryGetPosition` | mixed | `PositionMigrationService` | `(args: GetMigrationPositionArgs)` | Resolve a connector position snapshot by position reference |
+| `queryGetAuthorization` | mixed | `PositionMigrationService` | `(args: GetMigrationAuthorizationArgs)` | Resolve the connector authorization request required before migration, if any |
+| `queryEulerTargetVaultData` | rpc | `PositionMigrationService` | `({ chainId, hasDebt, borrowVault?, collateralVault })` | Read target Euler vault assets and borrow LTV for inbound migration validation |
+| `queryEulerSourceVaultAssets` | rpc | `PositionMigrationService` | `({ chainId, borrowVault, collateralVault })` | Read source Euler borrow and collateral vault assets for outbound migration validation |
+
+`mixed` position-migration queries delegate to the registered connectors. The built-in connectors use RPC reads for position and authorization state, and use connector-owned external data sources for target discovery where configured.
 
 ### Wallet Adapter
 
