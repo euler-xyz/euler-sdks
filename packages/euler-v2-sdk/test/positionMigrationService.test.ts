@@ -14,6 +14,7 @@ import type {
 } from "../src/services/positionMigrationService/index.js";
 import type { MetamorphoPermitTypedDataRequest } from "../src/services/positionMigrationService/connectors/metamorpho/metamorphoConnectorTypes.js";
 import { computeAllowanceSlot } from "../src/utils/stateOverrides/index.js";
+import type { BuildQueryFn } from "../src/utils/buildQuery.js";
 
 const CHAIN_ID = 8453;
 const OWNER = "0x0000000000000000000000000000000000001001" as const;
@@ -58,12 +59,27 @@ function createConnector(args: {
 	};
 }
 
-function createService(connectors: PositionMigrationConnector[]) {
+function createService(
+	connectors: PositionMigrationConnector[],
+	buildQuery?: BuildQueryFn,
+) {
 	return new PositionMigrationService(
 		{} as never,
 		{ convertBatchItemsToPlan: () => [] } as never,
 		{ includeDefaultConnectors: false, connectors },
+		buildQuery,
 	);
+}
+
+function createBuildQueryRecorder() {
+	const calls: Array<{ queryName: string; args: unknown[] }> = [];
+	const buildQuery: BuildQueryFn = (queryName, fn) =>
+		(async (...args: unknown[]) => {
+			calls.push({ queryName, args });
+			return fn(...args);
+		}) as typeof fn;
+
+	return { buildQuery, calls };
 }
 
 const listTargetArgs = {
@@ -177,6 +193,110 @@ const morphoAuthorizationRequest: MigrationAuthorizationRequest = {
 		},
 	},
 };
+
+test("position migration read APIs are routed through buildQuery", async () => {
+	const target = createTarget("morpho:target");
+	const connector: PositionMigrationConnector = {
+		id: "morpho",
+		protocol: "Morpho",
+		name: "Morpho",
+		listTargets: async () => [target],
+		getPosition: async () => migrationPosition,
+		getAuthorization: async () => morphoAuthorizationRequest,
+		buildMigrationBatch: () => [],
+	};
+	const { buildQuery, calls } = createBuildQueryRecorder();
+	const service = createService([connector], buildQuery);
+
+	await service.listTargets(listTargetArgs);
+	await service.getPosition({
+		connectorId: "morpho",
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		positionRef: migrationPosition.ref,
+	});
+	await service.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: "morpho",
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		position: migrationPosition,
+	});
+
+	assert.deepEqual(
+		calls.map((call) => call.queryName),
+		["queryListTargets", "queryGetPosition", "queryGetAuthorization"],
+	);
+});
+
+test("position migration Euler validation reads are routed through buildQuery", async () => {
+	const borrowVault = getAddress("0x0000000000000000000000000000000000003001");
+	const collateralVault = getAddress(
+		"0x0000000000000000000000000000000000003002",
+	);
+	const multicallResponses = [
+		[getAddress(DEBT_ASSET), 1],
+		[getAddress(DEBT_ASSET), getAddress(COLLATERAL_ASSET)],
+	];
+	let multicallIndex = 0;
+	const providerService = {
+		getProvider: () => ({
+			readContract: async () => getAddress(COLLATERAL_ASSET),
+			multicall: async () => multicallResponses[multicallIndex++],
+		}),
+	};
+	const connector: PositionMigrationConnector = {
+		id: "morpho",
+		protocol: "Morpho",
+		name: "Morpho",
+		getPosition: async () => migrationPosition,
+		buildMigrationBatch: () => [],
+	};
+	const { buildQuery, calls } = createBuildQueryRecorder();
+	const service = new PositionMigrationService(
+		providerService as never,
+		{
+			convertBatchItemsToPlan: () => [],
+			encodeDisableController: () =>
+				({
+					targetContract: borrowVault,
+					data: "0x",
+				}) as unknown as EVCBatchItem,
+		} as never,
+		{ includeDefaultConnectors: false, connectors: [connector] },
+		buildQuery,
+	);
+
+	await service.buildMigrationBatch({
+		direction: "external-to-euler",
+		connectorId: "morpho",
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		position: migrationPosition,
+		target: {
+			eulerAccount: getAddress(OWNER),
+			borrowVault,
+			collateralVault,
+		},
+	});
+	await service.buildMigrationBatch({
+		direction: "euler-to-external",
+		connectorId: "morpho",
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		position: migrationPosition,
+		source: {
+			eulerAccount: getAddress(OWNER),
+			borrowVault,
+			collateralVault,
+		},
+	});
+
+	assert.deepEqual(
+		calls.map((call) => call.queryName),
+		["queryEulerTargetVaultData", "queryEulerSourceVaultAssets"],
+	);
+});
 
 function createMorphoSimulationConnector(args: {
 	onBuild?: (args: BuildConnectorMigrationBatchArgs) => void;
