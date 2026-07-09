@@ -90,6 +90,39 @@ function makeAdapter(maxProbesPerCall: number) {
 	return adapter;
 }
 
+test("caps sub-account chunks independently from probe count", async () => {
+	const providerService = {
+		getProvider: () => ({ transport: { url: undefined } }),
+	} as unknown as ProviderService;
+	const deploymentService = {
+		getDeployment: () => ({ addresses: { coreAddrs: { evc: EVC } } }),
+	} as unknown as DeploymentService;
+
+	const adapter = new AccountVaultsOnchainAdapter(
+		providerService,
+		deploymentService,
+		{
+			resolveVaults: async () => [VAULT_A],
+			subAccountRange: { start: 0, end: 129 },
+			maxProbesPerCall: 10_000,
+			concurrency: 4,
+		},
+	);
+	const chunkSizes: number[] = [];
+	adapter.setQueryDiscoveryChunk(async (_client, deployData) => {
+		const argsHex = (`0x${deployData.slice(
+			ACCOUNT_DISCOVERY_LENS_BYTECODE.length,
+		)}`) as Hex;
+		const [, subAccountIds] = decodeAbiParameters(CTOR_PARAMS, argsHex);
+		chunkSizes.push(subAccountIds.length);
+		return mockLens(deployData);
+	});
+
+	await adapter.fetchAccountVaults(1, OWNER);
+
+	assert.deepEqual(chunkSizes, [64, 64, 2]);
+});
+
 test("discovers deposits and borrows in a single chunk", async () => {
 	const adapter = makeAdapter(1_000);
 	const result = await adapter.fetchAccountVaults(1, OWNER);

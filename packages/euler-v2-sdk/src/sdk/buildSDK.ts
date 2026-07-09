@@ -1,4 +1,4 @@
-import type { Address } from "viem";
+import { getAddress, type Address } from "viem";
 import { EulerSDK } from "./sdk.js";
 import { ABIService, type IABIService } from "../services/abiService/index.js";
 import {
@@ -23,7 +23,10 @@ import {
 	AccountVaultsSubgraphAdapter,
 	type AccountVaultsSubgraphAdapterConfig,
 } from "../services/accountService/adapters/accountOnchainAdapter/accountVaultsSubgraphAdapter.js";
-import { AccountVaultsOnchainAdapter } from "../services/accountService/adapters/accountVaultsOnchainAdapter/index.js";
+import {
+	AccountVaultsOnchainAdapter,
+	type AccountVaultsOnchainAdapterConfig,
+} from "../services/accountService/adapters/accountVaultsOnchainAdapter/index.js";
 import type { IAccountVaultsAdapter } from "../services/accountService/adapters/accountOnchainAdapter/accountOnchainAdapter.js";
 import type { AccountServiceConfig } from "../services/accountService/accountServiceConfig.js";
 import {
@@ -444,6 +447,32 @@ function makeTokenlistConfig(
 	};
 }
 
+function makeLabelsAccountVaultResolver(
+	eulerLabelsService: IEulerLabelsService,
+): AccountVaultsOnchainAdapterConfig["resolveVaults"] {
+	return async (chainId: number) => {
+		const labels = await eulerLabelsService.fetchEulerLabelsData(chainId);
+		// Include deprecated vaults in the scan set: deprecated vaults still hold
+		// real user positions (deposits/collateral), so discovery must cover them.
+		const productVaults = Object.values(labels.products).flatMap((product) => [
+			...(product.vaults ?? []),
+			...(product.deprecatedVaults ?? []),
+		]);
+		const vaults = [...productVaults, ...labels.earnVaults];
+
+		const seen = new Set<string>();
+		const resolved: Address[] = [];
+		for (const vault of vaults) {
+			const address = getAddress(vault);
+			const key = address.toLowerCase();
+			if (seen.has(key)) continue;
+			seen.add(key);
+			resolved.push(address);
+		}
+		return resolved;
+	};
+}
+
 function resolveRewardsDirectAdapterConfig(
 	explicitConfig: RewardsServiceConfig | undefined,
 	envConfig: EulerSDKConfig,
@@ -576,6 +605,27 @@ export async function buildEulerSDK<
 	const providerService =
 		servicesOverrides?.providerService ?? new ProviderService(resolvedRpcUrls);
 
+	// Build eulerLabels service early so onchain account discovery can use the
+	// verified, non-deprecated label vault set as its brute-force scan boundary.
+	const eulerLabelsConfig = {
+		...defaultEulerLabelsURLAdapterConfig,
+		...makeEulerLabelsConfig(envConfig),
+		...(eulerLabelsAdapterConfig ?? {}),
+		...makeEulerLabelsConfig(config),
+	};
+	const eulerLabelsService =
+		servicesOverrides?.eulerLabelsService ??
+		(() => {
+			const eulerLabelsAdapter = new EulerLabelsURLAdapter(
+				eulerLabelsConfig,
+				resolvedBuildQuery,
+			);
+			return new EulerLabelsService(
+				eulerLabelsAdapter,
+				eulerLabelsConfig.getEulerLabelsLogoUrl,
+			);
+		})();
+
 	const disableV3 =
 		pickConfigValue(config?.disableV3, undefined, envConfig.disableV3) ?? false;
 
@@ -643,12 +693,19 @@ export async function buildEulerSDK<
 	const buildAccountV3 = () =>
 		new AccountV3Adapter(accountV3Config, resolvedBuildQuery);
 	const buildAccountOnchain = () => {
+		const onchainDiscoveryConfig =
+			resolvedAccountServiceConfig.onchainDiscoveryConfig ?? {};
 		const positionsAdapter: IAccountVaultsAdapter =
 			positionDiscovery === "onchain"
 				? new AccountVaultsOnchainAdapter(
 						providerService as ProviderService,
 						deploymentService as DeploymentService,
-						resolvedAccountServiceConfig.onchainDiscoveryConfig ?? {},
+						{
+							...onchainDiscoveryConfig,
+							resolveVaults:
+								onchainDiscoveryConfig.resolveVaults ??
+								makeLabelsAccountVaultResolver(eulerLabelsService),
+						},
 						resolvedBuildQuery,
 					)
 				: new AccountVaultsSubgraphAdapter(
@@ -1099,26 +1156,6 @@ export async function buildEulerSDK<
 	const portfolioService =
 		servicesOverrides?.portfolioService ??
 		new PortfolioService<TVaultEntity>(accountService);
-
-	// Build eulerLabels service if not overridden
-	const eulerLabelsConfig = {
-		...defaultEulerLabelsURLAdapterConfig,
-		...makeEulerLabelsConfig(envConfig),
-		...(eulerLabelsAdapterConfig ?? {}),
-		...makeEulerLabelsConfig(config),
-	};
-	const eulerLabelsService =
-		servicesOverrides?.eulerLabelsService ??
-		(() => {
-			const eulerLabelsAdapter = new EulerLabelsURLAdapter(
-				eulerLabelsConfig,
-				resolvedBuildQuery,
-			);
-			return new EulerLabelsService(
-				eulerLabelsAdapter,
-				eulerLabelsConfig.getEulerLabelsLogoUrl,
-			);
-		})();
 
 	// Build tokenlist service if not overridden
 	const tokenlistService =

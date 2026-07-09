@@ -22,22 +22,32 @@ import { ACCOUNT_DISCOVERY_LENS_BYTECODE } from "./generated/accountDiscoveryLen
 
 /**
  * Resolves the set of vaults whose `balanceOf` is brute-forced for deposit
- * discovery on a chain. Consumers (e.g. an app that already knows its verified,
- * non-deprecated vault list) should inject this to bound the scan; otherwise the
- * adapter falls back to reading the on-chain governed + escrow perspectives.
+ * discovery on a chain. Consumers (e.g. an app that already knows its verified
+ * vault list) can inject this to bound the scan; otherwise the adapter reads the
+ * on-chain governed + escrow (+ factory, when `includeDeprecated`) perspectives.
  */
 export type ResolveVaultsFn = (chainId: number) => Promise<Address[]>;
 
 export interface AccountVaultsOnchainAdapterConfig {
 	/** Bounds the deposit scan to a known vault set. Defaults to the on-chain
-	 *  governed + escrowed-collateral perspectives. */
+	 *  perspectives (see {@link includeDeprecated}). */
 	resolveVaults?: ResolveVaultsFn;
+	/** When using the built-in perspective resolver, also scan the factory
+	 *  perspective so positions in deprecated vaults are discovered (deprecated
+	 *  vaults are de-listed from the governed perspective but remain in the
+	 *  factory perspective). Defaults to `true`. Ignored when `resolveVaults` is
+	 *  provided. */
+	includeDeprecated?: boolean;
 	/** Inclusive EVC sub-account id range to scan. Defaults to the full 0..255. */
 	subAccountRange?: { start: number; end: number };
 	/** Upper bound on `balanceOf` probes (sub-accounts × vaults) per eth_call.
 	 *  The workload is split into chunks under this size and fired in parallel so
 	 *  no single call approaches the provider's eth_call gas ceiling. */
 	maxProbesPerCall?: number;
+	/** Upper bound on sub-accounts per deployless call. The constructor returns
+	 *  two address[][] arrays, so even empty results grow with the sub-account
+	 *  count and can hit EVM create return-size limits before gas limits. */
+	maxSubAccountsPerCall?: number;
 	/** Max concurrent discovery eth_calls per fetch. */
 	concurrency?: number;
 }
@@ -47,6 +57,7 @@ const DEFAULT_SUB_ACCOUNT_RANGE = { start: 0, end: 255 } as const;
 // balanceOf probes in a single call; 8k leaves a wide safety margin across
 // chains while keeping the chunk count (and thus request fan-out) small.
 const DEFAULT_MAX_PROBES_PER_CALL = 8_000;
+const DEFAULT_MAX_SUB_ACCOUNTS_PER_CALL = 64;
 const DEFAULT_CONCURRENCY = 12;
 
 const DISCOVERY_CTOR_PARAMS = parseAbiParameters(
@@ -114,8 +125,10 @@ async function mapWithConcurrency<T, R>(
 export class AccountVaultsOnchainAdapter implements IAccountVaultsAdapter {
 	private readonly subAccountRange: { start: number; end: number };
 	private readonly maxProbesPerCall: number;
+	private readonly maxSubAccountsPerCall: number;
 	private readonly concurrency: number;
 	private readonly resolveVaultsFn?: ResolveVaultsFn;
+	private readonly includeDeprecated: boolean;
 
 	private readonly discoveryClients = new Map<number, PublicClient>();
 	private readonly vaultCache = new Map<number, Promise<Address[]>>();
@@ -129,8 +142,11 @@ export class AccountVaultsOnchainAdapter implements IAccountVaultsAdapter {
 		this.subAccountRange = config.subAccountRange ?? DEFAULT_SUB_ACCOUNT_RANGE;
 		this.maxProbesPerCall =
 			config.maxProbesPerCall ?? DEFAULT_MAX_PROBES_PER_CALL;
+		this.maxSubAccountsPerCall =
+			config.maxSubAccountsPerCall ?? DEFAULT_MAX_SUB_ACCOUNTS_PER_CALL;
 		this.concurrency = config.concurrency ?? DEFAULT_CONCURRENCY;
 		this.resolveVaultsFn = config.resolveVaults;
+		this.includeDeprecated = config.includeDeprecated ?? true;
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
 
@@ -229,9 +245,9 @@ export class AccountVaultsOnchainAdapter implements IAccountVaultsAdapter {
 			vaults.length,
 			Math.max(1, this.maxProbesPerCall),
 		);
-		const subChunkSize = Math.max(
-			1,
-			Math.floor(this.maxProbesPerCall / vaultChunkSize),
+		const subChunkSize = Math.min(
+			this.maxSubAccountsPerCall,
+			Math.max(1, Math.floor(this.maxProbesPerCall / vaultChunkSize)),
 		);
 		const idGroups = chunkArray(subAccountIds, subChunkSize);
 		const vaultGroups = chunkArray(vaults, vaultChunkSize);
@@ -318,6 +334,10 @@ export class AccountVaultsOnchainAdapter implements IAccountVaultsAdapter {
 		const perspectives = [
 			periphery?.governedPerspective,
 			periphery?.escrowedCollateralPerspective,
+			// The factory perspective lists every factory-deployed vault, including
+			// deprecated ones that the governed perspective drops. Scanning it is
+			// how deprecated-vault deposits get discovered.
+			this.includeDeprecated ? periphery?.evkFactoryPerspective : undefined,
 		].filter((address): address is Address => !!address);
 
 		if (perspectives.length === 0) {
