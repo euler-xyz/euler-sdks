@@ -1460,7 +1460,7 @@ export function encodeMigrateSameAssetCollateral(
 			data: encodeFunctionData({
 				abi: eVaultAbi,
 				functionName: "skim",
-				args: [amount, account],
+				args: [isMax ? maxUint256 : amount, account],
 			}),
 		},
 	];

@@ -2921,7 +2921,7 @@ test("repay-with-swap main-account full cleanup disables collateral without tran
 	]);
 });
 
-test("same-asset collateral migration withdraws, skims, and rotates collateral flags", () => {
+test("max same-asset collateral migration redeems and skims the full unaccounted balance", () => {
 	const service = createExecutionService();
 	const plan = service.planMigrateSameAssetCollateral({
 		account: createSameAssetMigrationAccount(),
@@ -2962,7 +2962,7 @@ test("same-asset collateral migration withdraws, skims, and rotates collateral f
 	assert.equal(items[1]?.targetContract, DESTINATION_VAULT);
 	assert.equal(items[1]?.onBehalfOfAccount, RECEIVER);
 	assert.equal(skim.functionName, "skim");
-	assert.deepEqual(skim.args, [AMOUNT, getAddress(RECEIVER)]);
+	assert.deepEqual(skim.args, [maxUint256, getAddress(RECEIVER)]);
 
 	const enableCollateral = decodeFunctionData({
 		abi: ethereumVaultConnectorAbi,
@@ -2983,6 +2983,45 @@ test("same-asset collateral migration withdraws, skims, and rotates collateral f
 		getAddress(RECEIVER),
 		getAddress(SOURCE_VAULT),
 	]);
+});
+
+test("partial same-asset collateral migration withdraws and skims the requested amount", () => {
+	const service = createExecutionService();
+	const plan = service.planMigrateSameAssetCollateral({
+		account: createSameAssetMigrationAccount(),
+		fromVault: SOURCE_VAULT,
+		toVault: DESTINATION_VAULT,
+		amount: AMOUNT,
+		positionAccount: RECEIVER,
+		toAsset: SAME_ASSET,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
+	}
+
+	const items = flattenBatchEntries(plan[0].items);
+	assert.equal(items.length, 3);
+
+	const withdraw = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	assert.equal(withdraw.functionName, "withdraw");
+	assert.deepEqual(withdraw.args, [
+		AMOUNT,
+		getAddress(DESTINATION_VAULT),
+		getAddress(RECEIVER),
+	]);
+
+	const skim = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[1]?.data ?? "0x",
+	});
+	assert.equal(skim.functionName, "skim");
+	assert.deepEqual(skim.args, [AMOUNT, getAddress(RECEIVER)]);
 });
 
 test("same-asset debt migration borrows with cushion, repays old debt, and sweeps excess", () => {
