@@ -1477,15 +1477,16 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	/**
 	 * Encodes EVC batch items for migrating a supplied/collateral position between two same-asset vaults.
 	 * Partial migration uses withdraw(amount, toVault, account) then skim(amount, account).
-	 * Max migration uses redeem(maxShares || maxUint256, toVault, account) then skim(amount, account).
+	 * Max migration uses redeem(maxShares || maxUint256, toVault, account) then skim(maxUint256, account)
+	 * so the destination credits the full unaccounted asset balance returned by redeem.
 	 *
 	 * @param args - Same-asset collateral migration encoding arguments
 	 * @param args.chainId - Chain ID (used for EVC enable/disable collateral)
 	 * @param args.fromVault - Source vault holding the supplied shares
 	 * @param args.toVault - Destination vault with the same underlying asset
-	 * @param args.amount - Asset amount expected to arrive at the destination vault and be skimmed
+	 * @param args.amount - Asset amount withdrawn and skimmed for a partial migration
 	 * @param args.account - Sub-account that owns the source shares and receives destination shares
-	 * @param args.isMax - If true, redeems shares instead of withdrawing assets
+	 * @param args.isMax - If true, redeems shares and skims the full unaccounted destination balance
 	 * @param args.maxShares - Optional exact share amount for max migration; defaults to maxUint256
 	 * @param args.enableCollateralTo - If true, enables the destination vault as collateral after skim
 	 * @param args.disableCollateralFrom - If true, disables the source vault as collateral after enabling the destination
@@ -3411,11 +3412,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args - Same-asset collateral migration plan arguments
 	 * @param args.fromVault - Source vault holding the supplied shares
 	 * @param args.toVault - Destination vault with the same underlying asset
-	 * @param args.amount - Asset amount to withdraw/redeem and skim into the destination vault
+	 * @param args.amount - Asset amount to withdraw and skim for a partial migration
 	 * @param args.positionAccount - Sub-account that owns the source shares and receives destination shares
 	 * @param args.fromAsset - Optional source underlying asset; defaults to the account position asset
 	 * @param args.toAsset - Destination underlying asset, used to verify this is a same-asset migration
-	 * @param args.isMax - If true, redeems shares instead of withdrawing assets
+	 * @param args.isMax - If true, redeems shares and skims the full unaccounted destination balance
 	 * @param args.maxShares - Optional exact share amount for max migration
 	 * @param args.enableCollateralTo - Optional override for enabling destination collateral
 	 * @param args.disableCollateralFrom - Optional override for disabling source collateral
