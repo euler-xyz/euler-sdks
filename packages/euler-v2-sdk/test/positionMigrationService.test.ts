@@ -15,6 +15,7 @@ import type {
 import type { MetamorphoPermitTypedDataRequest } from "../src/services/positionMigrationService/connectors/metamorpho/metamorphoConnectorTypes.js";
 import { computeAllowanceSlot } from "../src/utils/stateOverrides/index.js";
 import type { BuildQueryFn } from "../src/utils/buildQuery.js";
+import type { EulerSDKQueryName } from "../src/utils/queryNames.js";
 
 const CHAIN_ID = 8453;
 const OWNER = "0x0000000000000000000000000000000000001001" as const;
@@ -227,6 +228,29 @@ test("position migration read APIs are routed through buildQuery", async () => {
 		calls.map((call) => call.queryName),
 		["queryListTargets", "queryGetPosition", "queryGetAuthorization"],
 	);
+});
+
+test("every PositionMigrationService query field is declared in EulerSDKQueryName", () => {
+	const service = createService([]);
+	const queryFields = Object.getOwnPropertyNames(service)
+		.filter((name) => name.startsWith("query"))
+		.sort();
+
+	// The annotation ties each name to the EulerSDKQueryName union; consumers
+	// key per-query cache policy off that union, so a query field missing from
+	// it silently falls back to the consumer's default caching. If this
+	// assertion fails, a query field was added or removed without updating
+	// queryNames.ts — change the union together with this list.
+	const declared: EulerSDKQueryName[] = [
+		"queryEulerSourceVaultAssets",
+		"queryEulerTargetVaultData",
+		"queryGetAuthorization",
+		"queryGetPosition",
+		"queryListPositions",
+		"queryListTargets",
+	];
+
+	assert.deepEqual(queryFields, [...declared].sort());
 });
 
 test("position migration Euler validation reads are routed through buildQuery", async () => {

@@ -6,6 +6,7 @@ import type { DeploymentService } from "../services/deploymentService/deployment
 import type { EulerLabelsURLAdapter } from "../services/eulerLabelsService/eulerLabelsService.js";
 import type { IntrinsicApyV3Adapter } from "../services/intrinsicApyService/adapters/intrinsicApyV3Adapter/index.js";
 import type { OracleAdapterService } from "../services/oracleAdapterService/oracleAdapterService.js";
+import type { PositionMigrationService } from "../services/positionMigrationService/positionMigrationService.js";
 import type { PricingBackendClient } from "../services/priceService/backendClient.js";
 import type { PriceService } from "../services/priceService/priceService.js";
 import type { RewardsDirectAdapter } from "../services/rewardsService/adapters/rewardsDirectAdapter/index.js";
@@ -36,6 +37,7 @@ export type EulerSDKQueryName =
 	| QueryMethodName<EulerLabelsURLAdapter>
 	| QueryMethodName<IntrinsicApyV3Adapter>
 	| QueryMethodName<OracleAdapterService>
+	| QueryMethodName<PositionMigrationService>
 	| QueryMethodName<PricingBackendClient>
 	| QueryMethodName<PriceService>
 	| QueryMethodName<RewardsDirectAdapter>
