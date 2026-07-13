@@ -1557,12 +1557,16 @@ export async function buildEulerSDK<
 			configApiKey: config?.activityV3ApiKey,
 		},
 	);
+	const canBuildActivityV3 =
+		resolvedActivityV3Config.endpoint.trim().length > 0;
 	const activityService =
 		servicesOverrides?.activityService ??
 		new ActivityService(
 			disableV3
 				? new UnavailableActivityAdapter("v3-disabled")
-				: new ActivityV3Adapter(resolvedActivityV3Config),
+				: canBuildActivityV3
+					? new ActivityV3Adapter(resolvedActivityV3Config)
+					: new UnavailableActivityAdapter("source-not-configured"),
 			resolvedBuildQuery,
 		);
 

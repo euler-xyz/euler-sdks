@@ -518,6 +518,9 @@ const readMeta = (value: unknown, path: string): ActivityEventsMeta => {
 		record.nextCursor === null
 			? null
 			: readString(record.nextCursor, `${path}.nextCursor`);
+	if (nextCursor !== null && nextCursor.length > 2_048) {
+		fail(`${path}.nextCursor`, "expected at most 2048 characters");
+	}
 	if (hasMore && nextCursor === null) {
 		fail(`${path}.nextCursor`, "expected a cursor when hasMore is true");
 	}

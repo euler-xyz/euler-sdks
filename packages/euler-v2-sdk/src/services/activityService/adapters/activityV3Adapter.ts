@@ -23,6 +23,7 @@ const ACTIVITY_V3_SOURCE = "v3-ponder";
 const MAX_ACTIVITY_CHAIN_IDS = 20;
 const MAX_ACTIVITY_CURSOR_LENGTH = 2_048;
 const MAX_ACTIVITY_LIMIT = 100;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 const uniqueSorted = <T extends string | number>(values: readonly T[]): T[] =>
 	[...new Set(values)].sort((left, right) =>
@@ -189,7 +190,7 @@ export class ActivityV3Adapter implements IActivityAdapter {
 	}
 
 	private async fetchEvents(url: string): Promise<ActivityEventsPage> {
-		const response = await fetch(url, {
+		const response = await this.fetchWithTimeout(url, {
 			method: "GET",
 			headers: this.getHeaders(),
 		});
@@ -208,6 +209,26 @@ export class ActivityV3Adapter implements IActivityAdapter {
 			);
 		}
 		return page;
+	}
+
+	private async fetchWithTimeout(
+		url: string,
+		init: RequestInit,
+	): Promise<Response> {
+		const controller = new AbortController();
+		const timeout = setTimeout(
+			() => controller.abort(),
+			DEFAULT_REQUEST_TIMEOUT_MS,
+		);
+
+		try {
+			return await fetch(url, {
+				...init,
+				signal: controller.signal,
+			});
+		} finally {
+			clearTimeout(timeout);
+		}
 	}
 
 	private getHeaders(): Record<string, string> {

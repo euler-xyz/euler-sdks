@@ -123,6 +123,7 @@ const stubActivityResponse = (body: unknown) => {
 afterEach(() => {
 	vi.unstubAllGlobals();
 	vi.unstubAllEnvs();
+	vi.useRealTimers();
 });
 
 describe("ActivityService", () => {
@@ -281,6 +282,11 @@ describe("ActivityService", () => {
 				page([], { hasMore: false, nextCursor: "unexpected-cursor" }),
 			),
 		).toThrow("expected null when hasMore is false");
+		expect(() =>
+			normalizeActivityEventsResponse(
+				page([], { hasMore: true, nextCursor: "x".repeat(2_049) }),
+			),
+		).toThrow("expected at most 2048 characters");
 		expect(() =>
 			normalizeActivityEventsResponse(page([event(), event()])),
 		).toThrow("contains duplicate event id");
@@ -922,6 +928,58 @@ describe("ActivityService", () => {
 		expect(requests[0]?.headers).toMatchObject({
 			"X-API-Key": "activity-key",
 		});
+	});
+
+	it("reports Activity unavailable when its resolved V3 endpoint is empty", async () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		const sdk = await buildEulerSDK({
+			activityServiceConfig: { endpoint: "   " },
+			servicesOverrides: { deploymentService },
+		});
+
+		expect(sdk.activityService.getCapabilities()).toEqual({
+			configured: false,
+			adapter: null,
+			canQueryAccount: false,
+			requestableVaultTypes: [],
+			reason: "source-not-configured",
+		});
+		await expect(
+			sdk.activityService.fetchAccountActivityEvents({
+				owner: OWNER,
+				chainId: 1,
+			}),
+		).rejects.toBeInstanceOf(ActivityUnavailableError);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("aborts stalled V3 activity requests after ten seconds", async () => {
+		vi.useFakeTimers();
+		const fetchMock = vi.fn(
+			async (_url: string, init?: RequestInit): Promise<Response> =>
+				new Promise((_resolve, reject) => {
+					init?.signal?.addEventListener(
+						"abort",
+						() => reject(new DOMException("The operation was aborted", "AbortError")),
+						{ once: true },
+					);
+				}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const service = new ActivityService({ endpoint: "/api/internal" });
+
+		const result = service
+			.fetchAccountActivityEvents({ owner: OWNER, chainId: 1 })
+			.catch((error: unknown) => error);
+		await vi.advanceTimersByTimeAsync(10_000);
+
+		expect(await result).toMatchObject({ name: "AbortError" });
+		expect(fetchMock).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({ signal: expect.any(AbortSignal) }),
+		);
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("uses activity-specific V3 environment overrides", async () => {
