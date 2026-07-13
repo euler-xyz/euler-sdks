@@ -64,7 +64,7 @@ Use `zeroAddress` for the native token balance. Omit `spenders` when only balanc
 
 ## Fetching Accounts
 
-An account represents an Ethereum address and its Euler sub-accounts (up to 256 per owner). Each sub-account has positions, enabled controllers/collaterals, and liquidity info. This is the lower-level, contract-shaped view of the data.
+An account family contains 256 EVC account addresses: the primary account at ID 0 and sub-accounts at IDs 1–255. Each sub-account has positions, enabled controllers/collaterals, and liquidity info. This is the lower-level, contract-shaped view of the data.
 
 ### Basic fetch
 
