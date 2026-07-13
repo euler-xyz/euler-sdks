@@ -30,7 +30,10 @@ const subAccount = getAddress("0x1000000000000000000000000000000000000001");
 const secondSubAccount = getAddress("0x1000000000000000000000000000000000000002");
 const thirdSubAccount = getAddress("0x1000000000000000000000000000000000000003");
 const fourthSubAccount = getAddress("0x1000000000000000000000000000000000000004");
-const maxSubAccount = getAddress("0x1000000000000000000000000000000000000100");
+const maxSubAccount = getAddress("0x10000000000000000000000000000000000000ff");
+const outsideAccountFamily = getAddress(
+	"0x1000000000000000000000000000000000000100",
+);
 const borrowVault = getAddress("0x2000000000000000000000000000000000000000");
 const collateralVault = getAddress("0x3000000000000000000000000000000000000000");
 const savingsVault = getAddress("0x4000000000000000000000000000000000000000");
@@ -128,10 +131,32 @@ test("Account constructor normalizes sub-account map keys", () => {
 	assert.equal(account.getSubAccount(lowerSubAccount)?.account, checksumSubAccount);
 });
 
-test("sub-account helpers find free and borrow-compatible addresses", () => {
-	assert.equal(getSubAccountAddress(owner, 256), maxSubAccount);
-	assert.equal(getSubAccountId(owner, maxSubAccount), 256);
+test("sub-account helpers enforce the 8-bit account family boundary", () => {
+	assert.equal(getSubAccountAddress(owner, 255), maxSubAccount);
+	assert.equal(getSubAccountId(owner, maxSubAccount), 255);
 	assert.equal(isSubAccount(owner, maxSubAccount), true);
+	assert.deepEqual(
+		getFreeSubAccounts(owner, [], { startId: 255, endId: 255 }),
+		[maxSubAccount],
+	);
+
+	assert.throws(() => getSubAccountAddress(owner, 256), /too large/);
+	assert.throws(
+		() => getSubAccountId(owner, outsideAccountFamily),
+		/not related/,
+	);
+	assert.equal(isSubAccount(owner, outsideAccountFamily), false);
+	assert.throws(
+		() =>
+			getFreeSubAccounts(owner, [], {
+				startId: 256,
+				endId: 256,
+			}),
+		/too large/,
+	);
+});
+
+test("sub-account helpers find free and borrow-compatible addresses", () => {
 	assert.deepEqual(getFreeSubAccounts(owner, [subAccount], { endId: 2 }), [
 		secondSubAccount,
 	]);
