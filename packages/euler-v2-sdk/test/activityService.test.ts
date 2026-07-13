@@ -1056,20 +1056,63 @@ describe("ActivityService", () => {
 	});
 
 	it("rejects a V3 activity response body larger than two MiB", async () => {
+		let requestSignal: AbortSignal | undefined;
+		let bodyCancelled = false;
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(
-				async () =>
-					new Response(new Uint8Array(2 * 1_024 * 1_024 + 1), {
-						status: 200,
+			vi.fn(async (_url: string, init?: RequestInit) => {
+				requestSignal = init?.signal ?? undefined;
+				return new Response(
+					new ReadableStream<Uint8Array>({
+						start(controller) {
+							controller.enqueue(new Uint8Array(2 * 1_024 * 1_024 + 1));
+						},
+						cancel() {
+							bodyCancelled = true;
+						},
 					}),
-			),
+					{ status: 200 },
+				);
+			}),
 		);
 		const service = new ActivityService({ endpoint: "/api/internal" });
 
 		await expect(
 			service.fetchAccountActivityEvents({ owner: OWNER, chainId: 1 }),
 		).rejects.toThrow("response body must not exceed 2097152 bytes");
+		expect(requestSignal?.aborted).toBe(true);
+		expect(bodyCancelled).toBe(true);
+	});
+
+	it("cancels an oversized content-length response before clearing its timeout", async () => {
+		vi.useFakeTimers();
+		let requestSignal: AbortSignal | undefined;
+		let bodyCancelled = false;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (_url: string, init?: RequestInit) => {
+				requestSignal = init?.signal ?? undefined;
+				return new Response(
+					new ReadableStream<Uint8Array>({
+						cancel() {
+							bodyCancelled = true;
+						},
+					}),
+					{
+						status: 200,
+						headers: { "Content-Length": String(2 * 1_024 * 1_024 + 1) },
+					},
+				);
+			}),
+		);
+		const service = new ActivityService({ endpoint: "/api/internal" });
+
+		await expect(
+			service.fetchAccountActivityEvents({ owner: OWNER, chainId: 1 }),
+		).rejects.toThrow("response body must not exceed 2097152 bytes");
+		expect(requestSignal?.aborted).toBe(true);
+		expect(bodyCancelled).toBe(true);
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("uses activity-specific V3 environment overrides", async () => {

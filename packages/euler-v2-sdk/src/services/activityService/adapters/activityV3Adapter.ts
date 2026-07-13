@@ -40,6 +40,9 @@ const readActivityResponseBody = async (
 		Number.isFinite(Number(contentLength)) &&
 		Number(contentLength) > MAX_ACTIVITY_RESPONSE_BYTES
 	) {
+		if (response.body) {
+			await response.body.cancel().catch(() => undefined);
+		}
 		throw responseSizeError();
 	}
 
@@ -57,13 +60,15 @@ const readActivityResponseBody = async (
 
 			receivedBytes += value.byteLength;
 			if (receivedBytes > MAX_ACTIVITY_RESPONSE_BYTES) {
-				await reader.cancel().catch(() => undefined);
 				throw responseSizeError();
 			}
 			body += decoder.decode(value, { stream: true });
 		}
 		body += decoder.decode();
 		return body;
+	} catch (error) {
+		await reader.cancel(error).catch(() => undefined);
+		throw error;
 	} finally {
 		reader.releaseLock();
 	}
@@ -269,7 +274,13 @@ export class ActivityV3Adapter implements IActivityAdapter {
 				...init,
 				signal: controller.signal,
 			});
-			const body = await readActivityResponseBody(response);
+			let body: string;
+			try {
+				body = await readActivityResponseBody(response);
+			} catch (error) {
+				controller.abort();
+				throw error;
+			}
 			return { response, body };
 		} finally {
 			clearTimeout(timeout);
