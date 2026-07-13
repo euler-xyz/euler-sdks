@@ -25,12 +25,12 @@ import type { IREULLockService } from "../services/reulLockService/index.js";
 import type { IPositionMigrationService } from "../services/positionMigrationService/index.js";
 import {
 	ActivityService,
+	UnavailableActivityAdapter,
 	type IActivityService,
 } from "../services/activityService/index.js";
 import type { EulerPlugin, PluginPrefetchData } from "../plugins/types.js";
 import type { TransactionPlan } from "../services/executionService/executionServiceTypes.js";
 import type { AddressOrAccount } from "../entities/Account.js";
-import { defaultActivityServiceConfig } from "./defaultConfig.js";
 
 export interface EulerSDKOptions<
 	TVaultEntity extends IVaultEntity = VaultEntity,
@@ -108,7 +108,10 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 		this.reulLockService = options.reulLockService;
 		this.positionMigrationService = options.positionMigrationService;
 		this.activityService =
-			options.activityService ?? new ActivityService(defaultActivityServiceConfig);
+			options.activityService ??
+			new ActivityService(
+				new UnavailableActivityAdapter("source-not-configured"),
+			);
 		this.plugins = options.plugins ?? [];
 	}
 

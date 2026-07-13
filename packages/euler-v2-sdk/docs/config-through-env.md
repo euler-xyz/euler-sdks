@@ -21,6 +21,16 @@ RPC URLs use `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`.
 | `queryCacheEnabled` | `EULER_SDK_QUERY_CACHE_ENABLED` | `true` |
 | `queryCacheTtlMs` | `EULER_SDK_QUERY_CACHE_TTL_MS` | `5000` |
 
+## Activity
+
+| Config field | Environment variable | Default |
+|---|---|---|
+| `activityV3ApiUrl` | `EULER_SDK_ACTIVITY_V3_API_URL` | `v3ApiUrl` |
+| `activityV3ApiKey` | `EULER_SDK_ACTIVITY_V3_API_KEY` | `v3ApiKey` |
+
+The activity-specific values configure the normalized account and vault event
+endpoints without changing the V3 configuration used by other SDK services.
+
 ## Account Service
 
 | Config field | Environment variable | Default |

@@ -100,7 +100,7 @@ import {
 	defaultEulerEarnV3AdapterConfig,
 	defaultEulerLabelsURLAdapterConfig,
 	defaultIntrinsicApyV3AdapterConfig,
-	defaultActivityServiceConfig,
+	defaultActivityV3AdapterConfig,
 	defaultPricingServiceConfig,
 	defaultRewardsV3AdapterConfig,
 	defaultSwapServiceConfig,
@@ -130,6 +130,8 @@ import {
 } from "../services/positionMigrationService/index.js";
 import {
 	ActivityService,
+	ActivityV3Adapter,
+	UnavailableActivityAdapter,
 	type ActivityServiceConfig,
 	type IActivityService,
 } from "../services/activityService/index.js";
@@ -235,6 +237,7 @@ export interface BuildSDKOptions<
 		aave?: AaveMigrationConnectorConfig;
 		metamorpho?: MetamorphoMigrationConnectorConfig;
 	};
+	/** Configuration for the built-in V3 activity adapter. */
 	activityServiceConfig?: ActivityServiceConfig;
 	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with 5s success and failure TTLs. */
 	queryCacheConfig?: QueryCacheConfig;
@@ -1541,19 +1544,25 @@ export async function buildEulerSDK<
 				resolvedBuildQuery,
 			);
 		})();
+	const resolvedActivityV3Config = resolveV3AdapterConfig(
+		defaultActivityV3AdapterConfig,
+		{
+			explicitConfig: activityServiceConfig,
+			explicitV3ApiKey: v3ApiKey,
+			envConfig,
+			config,
+			envEndpoint: envConfig.activityV3ApiUrl,
+			configEndpoint: config?.activityV3ApiUrl,
+			envApiKey: envConfig.activityV3ApiKey,
+			configApiKey: config?.activityV3ApiKey,
+		},
+	);
 	const activityService =
 		servicesOverrides?.activityService ??
 		new ActivityService(
-			resolveV3AdapterConfig(defaultActivityServiceConfig, {
-				explicitConfig: activityServiceConfig,
-				explicitV3ApiKey: v3ApiKey,
-				envConfig,
-				config,
-				envEndpoint: envConfig.activityV3ApiUrl,
-				configEndpoint: config?.activityV3ApiUrl,
-				envApiKey: envConfig.activityV3ApiKey,
-				configApiKey: config?.activityV3ApiKey,
-			}),
+			disableV3
+				? new UnavailableActivityAdapter("v3-disabled")
+				: new ActivityV3Adapter(resolvedActivityV3Config),
 			resolvedBuildQuery,
 		);
 

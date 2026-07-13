@@ -1,0 +1,794 @@
+import { type Address, getAddress, type Hex, isAddress } from "viem";
+import type {
+	ActivityAssetAmount,
+	ActivityAssetKind,
+	ActivityCategory,
+	ActivityCategoryOption,
+	ActivityChainCoverage,
+	ActivityChangeValue,
+	ActivityCoverage,
+	ActivityCoverageStatus,
+	ActivityEvent,
+	ActivityEventsMeta,
+	ActivityEventsPage,
+	ActivityValuation,
+	ActivityValueChange,
+	ActivityVaultType,
+	FetchAccountActivityEventsArgs,
+	FetchVaultActivityEventsArgs,
+} from "./activityServiceTypes.js";
+
+export const ACTIVITY_CATEGORY_VALUES = [
+	"lending",
+	"borrowing",
+	"swaps",
+	"liquidations",
+	"account",
+	"rewards",
+	"governance",
+] as const satisfies readonly ActivityCategory[];
+
+const ACTIVITY_COVERAGE_STATUSES = [
+	"complete",
+	"partial",
+	"unsupported",
+	"syncing",
+] as const satisfies readonly ActivityCoverageStatus[];
+
+export const ACTIVITY_VAULT_TYPES = [
+	"evk",
+	"earn",
+	"securitize",
+] as const satisfies readonly ActivityVaultType[];
+
+const VALUATION_STATUSES = [
+	"available",
+	"unavailable",
+	"partial",
+] as const satisfies readonly ActivityValuation["status"][];
+
+const ASSET_KINDS = [
+	"assets",
+	"shares",
+	"value",
+	"collateral",
+	"yield",
+] as const satisfies readonly ActivityAssetKind[];
+
+const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
+const DECIMAL_INTEGER_PATTERN = /^\d+$/;
+const RFC3339_TIMESTAMP_PATTERN =
+	/^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[Zz]|[+-](\d{2}):(\d{2}))$/;
+
+export const ACTIVITY_CATEGORIES = [
+	{ value: "lending", label: "Lending" },
+	{ value: "borrowing", label: "Borrowing" },
+	{ value: "swaps", label: "Swaps" },
+	{ value: "liquidations", label: "Liquidations" },
+	{ value: "account", label: "Account" },
+	{ value: "rewards", label: "Rewards" },
+	{ value: "governance", label: "Governance" },
+] as const satisfies readonly ActivityCategoryOption[];
+
+export class ActivityResponseValidationError extends Error {
+	readonly code = "INVALID_ACTIVITY_RESPONSE";
+
+	constructor(
+		message: string,
+		readonly path: string,
+	) {
+		super(`Invalid activity response at ${path}: ${message}`);
+		this.name = "ActivityResponseValidationError";
+	}
+}
+
+const fail = (path: string, message: string): never => {
+	throw new ActivityResponseValidationError(message, path);
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
+
+const readRecord = (value: unknown, path: string): Record<string, unknown> => {
+	if (!isRecord(value)) fail(path, "expected an object");
+	return value as Record<string, unknown>;
+};
+
+const readString = (value: unknown, path: string): string => {
+	if (typeof value !== "string" || value.trim().length === 0) {
+		fail(path, "expected a non-empty string");
+	}
+	return value as string;
+};
+
+const readOptionalString = (
+	value: unknown,
+	path: string,
+): string | undefined =>
+	value === undefined ? undefined : readString(value, path);
+
+const readTimestamp = (value: unknown, path: string): string => {
+	const timestamp = readString(value, path);
+	const match =
+		RFC3339_TIMESTAMP_PATTERN.exec(timestamp) ??
+		fail(path, "expected an RFC 3339 timestamp");
+
+	const [
+		,
+		yearText,
+		monthText,
+		dayText,
+		hourText,
+		minuteText,
+		secondText,
+		offsetHourText,
+		offsetMinuteText,
+	] = match;
+	const year = Number(yearText);
+	const month = Number(monthText);
+	const day = Number(dayText);
+	const hour = Number(hourText);
+	const minute = Number(minuteText);
+	const second = Number(secondText);
+	const offsetHour = offsetHourText === undefined ? 0 : Number(offsetHourText);
+	const offsetMinute =
+		offsetMinuteText === undefined ? 0 : Number(offsetMinuteText);
+	const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+	const daysInMonth = [
+		31,
+		leapYear ? 29 : 28,
+		31,
+		30,
+		31,
+		30,
+		31,
+		31,
+		30,
+		31,
+		30,
+		31,
+	][month - 1];
+	if (
+		daysInMonth === undefined ||
+		day < 1 ||
+		day > daysInMonth ||
+		hour > 23 ||
+		minute > 59 ||
+		second > 59 ||
+		offsetHour > 23 ||
+		offsetMinute > 59 ||
+		!Number.isFinite(Date.parse(timestamp))
+	) {
+		fail(path, "expected an RFC 3339 timestamp");
+	}
+	return timestamp;
+};
+
+const readDecimalString = (value: unknown, path: string): string => {
+	const decimal = readString(value, path);
+	if (!DECIMAL_INTEGER_PATTERN.test(decimal)) {
+		fail(path, "expected a non-negative decimal integer string");
+	}
+	return decimal;
+};
+
+const readPositiveInteger = (value: unknown, path: string): number => {
+	if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+		fail(path, "expected a positive safe integer");
+	}
+	return value as number;
+};
+
+const readNonNegativeInteger = (value: unknown, path: string): number => {
+	if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+		fail(path, "expected a non-negative safe integer");
+	}
+	return value as number;
+};
+
+const readAddress = (value: unknown, path: string): Address => {
+	const address = readString(value, path);
+	if (!isAddress(address)) fail(path, "expected an EVM address");
+	return getAddress(address) as Address;
+};
+
+const readOptionalAddress = (
+	value: unknown,
+	path: string,
+): Address | undefined =>
+	value === undefined ? undefined : readAddress(value, path);
+
+const readTxHash = (value: unknown, path: string): Hex => {
+	const txHash = readString(value, path);
+	if (!TX_HASH_PATTERN.test(txHash)) {
+		fail(path, "expected a 32-byte transaction hash");
+	}
+	return txHash.toLowerCase() as Hex;
+};
+
+const readEnum = <T extends string>(
+	value: unknown,
+	allowed: readonly T[],
+	path: string,
+): T => {
+	if (typeof value !== "string" || !allowed.includes(value as T)) {
+		fail(path, `expected one of: ${allowed.join(", ")}`);
+	}
+	return value as T;
+};
+
+const readCategoryList = (value: unknown, path: string): ActivityCategory[] => {
+	if (!Array.isArray(value)) fail(path, "expected an array");
+	const categories = (value as unknown[]).map((entry, index) =>
+		readEnum(entry, ACTIVITY_CATEGORY_VALUES, `${path}[${index}]`),
+	);
+	const seen = new Set<ActivityCategory>();
+	for (const [index, category] of categories.entries()) {
+		if (seen.has(category)) {
+			fail(`${path}[${index}]`, `contains duplicate category ${category}`);
+		}
+		seen.add(category);
+	}
+	return categories;
+};
+
+const readAsset = (value: unknown, path: string): ActivityAssetAmount => {
+	const record = readRecord(value, path);
+	const address = readOptionalAddress(record.address, `${path}.address`);
+	const symbol = readOptionalString(record.symbol, `${path}.symbol`);
+	const decimals =
+		record.decimals === undefined
+			? undefined
+			: readNonNegativeInteger(record.decimals, `${path}.decimals`);
+	if (decimals !== undefined && decimals > 255) {
+		fail(`${path}.decimals`, "expected an integer no greater than 255");
+	}
+	const amountRaw = readString(record.amountRaw, `${path}.amountRaw`);
+	if (!DECIMAL_INTEGER_PATTERN.test(amountRaw)) {
+		fail(`${path}.amountRaw`, "expected a non-negative decimal integer string");
+	}
+	const amount = readOptionalString(record.amount, `${path}.amount`);
+	const amountUsd = readOptionalString(record.amountUsd, `${path}.amountUsd`);
+
+	return {
+		kind: readEnum(record.kind, ASSET_KINDS, `${path}.kind`),
+		amountRaw,
+		...(address !== undefined ? { address } : {}),
+		...(symbol !== undefined ? { symbol } : {}),
+		...(decimals !== undefined ? { decimals } : {}),
+		...(amount !== undefined ? { amount } : {}),
+		...(amountUsd !== undefined ? { amountUsd } : {}),
+	};
+};
+
+const readChangeValue = (value: unknown, path: string): ActivityChangeValue => {
+	if (value === null) return value;
+	if (Array.isArray(value)) {
+		if (!value.every((entry) => typeof entry === "string")) {
+			fail(path, "expected an array of strings");
+		}
+		return [...value] as string[];
+	}
+	if (
+		typeof value !== "string" &&
+		typeof value !== "number" &&
+		typeof value !== "boolean"
+	) {
+		fail(path, "expected a scalar, string array, or null");
+	}
+	if (typeof value === "number" && !Number.isFinite(value)) {
+		fail(path, "expected a finite number");
+	}
+	return value as string | number | boolean;
+};
+
+const readChange = (value: unknown, path: string): ActivityValueChange => {
+	const record = readRecord(value, path);
+	const fieldsRecord = readRecord(record.fields, `${path}.fields`);
+	const fields = Object.fromEntries(
+		Object.entries(fieldsRecord).map(([field, entry]) => [
+			field,
+			readChangeValue(entry, `${path}.fields.${field}`),
+		]),
+	);
+	return { fields };
+};
+
+const readValuation = (value: unknown, path: string): ActivityValuation => {
+	const record = readRecord(value, path);
+	const amountUsd = readOptionalString(record.amountUsd, `${path}.amountUsd`);
+	const priceTimestamp =
+		record.priceTimestamp === undefined
+			? undefined
+			: readTimestamp(record.priceTimestamp, `${path}.priceTimestamp`);
+	const source = readOptionalString(record.source, `${path}.source`);
+	const reason = readOptionalString(record.reason, `${path}.reason`);
+	return {
+		status: readEnum(record.status, VALUATION_STATUSES, `${path}.status`),
+		...(amountUsd !== undefined ? { amountUsd } : {}),
+		...(priceTimestamp !== undefined ? { priceTimestamp } : {}),
+		...(source !== undefined ? { source } : {}),
+		...(reason !== undefined ? { reason } : {}),
+	};
+};
+
+const readChainCoverage = (
+	value: unknown,
+	path: string,
+): ActivityChainCoverage => {
+	const record = readRecord(value, path);
+	const indexedFromBlock =
+		record.indexedFromBlock === undefined
+			? undefined
+			: readDecimalString(record.indexedFromBlock, `${path}.indexedFromBlock`);
+	const indexedToBlock =
+		record.indexedToBlock === undefined
+			? undefined
+			: readDecimalString(record.indexedToBlock, `${path}.indexedToBlock`);
+	const missingCategories = readCategoryList(
+		record.missingCategories,
+		`${path}.missingCategories`,
+	);
+	const reason = readOptionalString(record.reason, `${path}.reason`);
+	const status = readEnum(
+		record.status,
+		ACTIVITY_COVERAGE_STATUSES,
+		`${path}.status`,
+	);
+	if (
+		indexedFromBlock !== undefined &&
+		indexedToBlock !== undefined &&
+		BigInt(indexedFromBlock) > BigInt(indexedToBlock)
+	) {
+		fail(
+			`${path}.indexedToBlock`,
+			"expected indexedToBlock to be at or after indexedFromBlock",
+		);
+	}
+	if (status === "complete" && missingCategories.length > 0) {
+		fail(
+			`${path}.missingCategories`,
+			"expected no missing categories when chain coverage is complete",
+		);
+	}
+
+	return {
+		chainId: readPositiveInteger(record.chainId, `${path}.chainId`),
+		status,
+		...(indexedFromBlock !== undefined ? { indexedFromBlock } : {}),
+		...(indexedToBlock !== undefined ? { indexedToBlock } : {}),
+		missingCategories,
+		...(reason !== undefined ? { reason } : {}),
+	};
+};
+
+const readCoverage = (value: unknown, path: string): ActivityCoverage => {
+	const record = readRecord(value, path);
+	if (!Array.isArray(record.chains))
+		fail(`${path}.chains`, "expected an array");
+	const chains = (record.chains as unknown[]).map((entry, index) =>
+		readChainCoverage(entry, `${path}.chains[${index}]`),
+	);
+	const seenChainIds = new Set<number>();
+	for (const chain of chains) {
+		if (seenChainIds.has(chain.chainId)) {
+			fail(`${path}.chains`, `contains duplicate chain ${chain.chainId}`);
+		}
+		seenChainIds.add(chain.chainId);
+	}
+	const missingCategories = readCategoryList(
+		record.missingCategories,
+		`${path}.missingCategories`,
+	);
+	const reason = readOptionalString(record.reason, `${path}.reason`);
+	const status = readEnum(
+		record.status,
+		ACTIVITY_COVERAGE_STATUSES,
+		`${path}.status`,
+	);
+	const expectedStatus: ActivityCoverageStatus =
+		chains.length === 0 ||
+		chains.every((chain) => chain.status === "unsupported")
+			? "unsupported"
+			: chains.some(
+						(chain) =>
+							chain.status === "partial" || chain.status === "unsupported",
+					)
+				? "partial"
+				: chains.some((chain) => chain.status === "syncing")
+					? "syncing"
+					: "complete";
+	if (status !== expectedStatus) {
+		fail(
+			`${path}.status`,
+			`expected ${expectedStatus} for the reported chain coverage`,
+		);
+	}
+	if (status === "complete" && missingCategories.length > 0) {
+		fail(
+			`${path}.missingCategories`,
+			"expected no missing categories when aggregate coverage is complete",
+		);
+	}
+
+	return {
+		status,
+		chains,
+		missingCategories,
+		...(reason !== undefined ? { reason } : {}),
+	};
+};
+
+export const normalizeActivityEvent = (
+	raw: unknown,
+	path = "$.data[]",
+): ActivityEvent => {
+	const record = readRecord(raw, path);
+	const type = readString(record.type, `${path}.type`);
+	const rawType =
+		record.rawType === undefined
+			? type
+			: readString(record.rawType, `${path}.rawType`);
+	const label = readOptionalString(record.label, `${path}.label`);
+	const owner = readOptionalAddress(record.owner, `${path}.owner`);
+	const account = readOptionalAddress(record.account, `${path}.account`);
+	const subAccountIndex =
+		record.subAccountIndex === undefined
+			? undefined
+			: readNonNegativeInteger(
+					record.subAccountIndex,
+					`${path}.subAccountIndex`,
+				);
+	if (subAccountIndex !== undefined && subAccountIndex > 255) {
+		fail(`${path}.subAccountIndex`, "expected an integer no greater than 255");
+	}
+	const vault = readOptionalAddress(record.vault, `${path}.vault`);
+	const vaultType =
+		record.vaultType === undefined
+			? undefined
+			: readEnum(record.vaultType, ACTIVITY_VAULT_TYPES, `${path}.vaultType`);
+	const actor = readOptionalAddress(record.actor, `${path}.actor`);
+	const counterparty = readOptionalAddress(
+		record.counterparty,
+		`${path}.counterparty`,
+	);
+	const assets =
+		record.assets === undefined
+			? undefined
+			: Array.isArray(record.assets)
+				? record.assets.map((entry, index) =>
+						readAsset(entry, `${path}.assets[${index}]`),
+					)
+				: fail(`${path}.assets`, "expected an array");
+	const change =
+		record.change === undefined
+			? undefined
+			: readChange(record.change, `${path}.change`);
+	const valuation =
+		record.valuation === undefined
+			? undefined
+			: readValuation(record.valuation, `${path}.valuation`);
+	const groupId = readOptionalString(record.groupId, `${path}.groupId`);
+	const payload =
+		record.payload === undefined
+			? {}
+			: readRecord(record.payload, `${path}.payload`);
+
+	return {
+		id: readString(record.id, `${path}.id`),
+		chainId: readPositiveInteger(record.chainId, `${path}.chainId`),
+		type,
+		rawType,
+		category: readEnum(
+			record.category,
+			ACTIVITY_CATEGORY_VALUES,
+			`${path}.category`,
+		),
+		timestamp: readTimestamp(record.timestamp, `${path}.timestamp`),
+		blockNumber: readDecimalString(record.blockNumber, `${path}.blockNumber`),
+		logIndex: readNonNegativeInteger(record.logIndex, `${path}.logIndex`),
+		txHash: readTxHash(record.txHash, `${path}.txHash`),
+		source: readString(record.source, `${path}.source`),
+		payload,
+		...(label !== undefined ? { label } : {}),
+		...(owner !== undefined ? { owner } : {}),
+		...(account !== undefined ? { account } : {}),
+		...(subAccountIndex !== undefined ? { subAccountIndex } : {}),
+		...(vault !== undefined ? { vault } : {}),
+		...(vaultType !== undefined ? { vaultType } : {}),
+		...(actor !== undefined ? { actor } : {}),
+		...(counterparty !== undefined ? { counterparty } : {}),
+		...(assets !== undefined ? { assets } : {}),
+		...(change !== undefined ? { change } : {}),
+		...(valuation !== undefined ? { valuation } : {}),
+		...(groupId !== undefined ? { groupId } : {}),
+	};
+};
+
+const readMeta = (value: unknown, path: string): ActivityEventsMeta => {
+	const record = readRecord(value, path);
+	if (typeof record.hasMore !== "boolean") {
+		fail(`${path}.hasMore`, "expected a boolean");
+	}
+	const hasMore = record.hasMore as boolean;
+	if (!("nextCursor" in record)) {
+		fail(`${path}.nextCursor`, "expected a string or null");
+	}
+	const nextCursor =
+		record.nextCursor === null
+			? null
+			: readString(record.nextCursor, `${path}.nextCursor`);
+	if (hasMore && nextCursor === null) {
+		fail(`${path}.nextCursor`, "expected a cursor when hasMore is true");
+	}
+	if (!hasMore && nextCursor !== null) {
+		fail(`${path}.nextCursor`, "expected null when hasMore is false");
+	}
+	const limit =
+		record.limit === undefined
+			? undefined
+			: readPositiveInteger(record.limit, `${path}.limit`);
+	const timestamp = readTimestamp(record.timestamp, `${path}.timestamp`);
+
+	return {
+		hasMore,
+		nextCursor,
+		source: readString(record.source, `${path}.source`),
+		coverage: readCoverage(record.coverage, `${path}.coverage`),
+		...(limit !== undefined ? { limit } : {}),
+		timestamp,
+	};
+};
+
+export const normalizeActivityEventsResponse = (
+	raw: unknown,
+): ActivityEventsPage => {
+	let parsed = raw;
+	if (typeof raw === "string") {
+		try {
+			parsed = JSON.parse(raw) as unknown;
+		} catch {
+			fail("$", "expected valid JSON");
+		}
+	}
+	const response = readRecord(parsed, "$");
+	if (!Array.isArray(response.data)) fail("$.data", "expected an array");
+	const data = (response.data as unknown[]).map((event, index) =>
+		normalizeActivityEvent(event, `$.data[${index}]`),
+	);
+	const seenIds = new Set<string>();
+	for (const [index, event] of data.entries()) {
+		if (seenIds.has(event.id)) {
+			fail(`$.data[${index}].id`, `contains duplicate event id ${event.id}`);
+		}
+		seenIds.add(event.id);
+	}
+	const meta = readMeta(response.meta, "$.meta");
+	for (const [index, event] of data.entries()) {
+		if (event.source !== meta.source) {
+			fail(
+				`$.data[${index}].source`,
+				`expected the response source ${meta.source}`,
+			);
+		}
+	}
+	if (meta.coverage.status === "unsupported" && data.length > 0) {
+		fail("$.data", "expected no events when coverage is unsupported");
+	}
+	return { data, meta };
+};
+
+type ActivityResponseRequest =
+	| {
+			kind: "account";
+			chainIds: readonly number[];
+			owner: Address;
+			categories?: readonly ActivityCategory[];
+			eventTypes?: readonly string[];
+	  }
+	| {
+			kind: "vault";
+			chainIds: readonly [number];
+			vault: Address;
+			vaultType: ActivityVaultType;
+			categories?: readonly ActivityCategory[];
+			eventTypes?: readonly string[];
+	  };
+
+const sortedUniqueNumbers = (values: readonly number[]): number[] =>
+	[...new Set(values)].sort((left, right) => left - right);
+
+const sameNumberList = (left: readonly number[], right: readonly number[]) =>
+	left.length === right.length &&
+	left.every((value, index) => value === right[index]);
+
+const validateMissingCategoriesForRequest = (
+	categories: readonly ActivityCategory[] | undefined,
+	path: string,
+	requestedCategories: ReadonlySet<ActivityCategory> | undefined,
+): void => {
+	if (!categories || !requestedCategories) return;
+	for (const [index, category] of categories.entries()) {
+		if (!requestedCategories.has(category)) {
+			fail(
+				`${path}[${index}]`,
+				`category ${category} was not included in the request filter`,
+			);
+		}
+	}
+};
+
+const validateActivityEventsPageForRequest = (
+	page: ActivityEventsPage,
+	request: ActivityResponseRequest,
+): ActivityEventsPage => {
+	const requestedChainIds = sortedUniqueNumbers(request.chainIds);
+	const coveredChainIds = sortedUniqueNumbers(
+		page.meta.coverage.chains.map((chain) => chain.chainId),
+	);
+	if (!sameNumberList(requestedChainIds, coveredChainIds)) {
+		fail(
+			"$.meta.coverage.chains",
+			`expected exactly the requested chain ids: ${requestedChainIds.join(", ")}`,
+		);
+	}
+
+	const requestedCategories = request.categories
+		? new Set(request.categories)
+		: undefined;
+	const requestedEventTypes = request.eventTypes
+		? new Set(
+				request.eventTypes.map((eventType) => eventType.trim().toLowerCase()),
+			)
+		: undefined;
+	validateMissingCategoriesForRequest(
+		page.meta.coverage.missingCategories,
+		"$.meta.coverage.missingCategories",
+		requestedCategories,
+	);
+	const coverageByChain = new Map(
+		page.meta.coverage.chains.map((chain, index) => {
+			validateMissingCategoriesForRequest(
+				chain.missingCategories,
+				`$.meta.coverage.chains[${index}].missingCategories`,
+				requestedCategories,
+			);
+			return [chain.chainId, chain] as const;
+		}),
+	);
+
+	for (const [index, event] of page.data.entries()) {
+		const path = `$.data[${index}]`;
+		if (!requestedChainIds.includes(event.chainId)) {
+			fail(`${path}.chainId`, `chain ${event.chainId} was not requested`);
+		}
+		if (coverageByChain.get(event.chainId)?.status === "unsupported") {
+			fail(
+				`${path}.chainId`,
+				`chain ${event.chainId} is reported as unsupported`,
+			);
+		}
+		if (requestedCategories && !requestedCategories.has(event.category)) {
+			fail(
+				`${path}.category`,
+				`category ${event.category} was not included in the request filter`,
+			);
+		}
+		if (requestedEventTypes && !requestedEventTypes.has(event.type)) {
+			fail(
+				`${path}.type`,
+				`event type ${event.type} was not included in the request filter`,
+			);
+		}
+
+		if (request.kind === "account") {
+			if (event.owner !== request.owner) {
+				fail(`${path}.owner`, "expected the requested owner");
+			}
+			if (event.account !== undefined) {
+				const owner = request.owner.toLowerCase();
+				const account = event.account.toLowerCase();
+				if (!account.startsWith(owner.slice(0, 40))) {
+					fail(`${path}.account`, "expected an account in the owner's family");
+				}
+				const derivedSubAccountIndex =
+					Number.parseInt(owner.slice(-2), 16) ^
+					Number.parseInt(account.slice(-2), 16);
+				if (event.subAccountIndex !== derivedSubAccountIndex) {
+					fail(
+						`${path}.subAccountIndex`,
+						`expected ${derivedSubAccountIndex} for the reported account`,
+					);
+				}
+			}
+			continue;
+		}
+
+		if (event.vault !== request.vault) {
+			fail(`${path}.vault`, "expected the requested vault");
+		}
+		if (event.vaultType !== request.vaultType) {
+			fail(`${path}.vaultType`, "expected the requested vault type");
+		}
+	}
+
+	return page;
+};
+
+export const validateAccountActivityEventsPage = (
+	page: ActivityEventsPage,
+	args: FetchAccountActivityEventsArgs,
+): ActivityEventsPage =>
+	validateActivityEventsPageForRequest(page, {
+		kind: "account",
+		chainIds: Array.isArray(args.chainId) ? args.chainId : [args.chainId],
+		owner: getAddress(args.owner) as Address,
+		...(args.categories !== undefined ? { categories: args.categories } : {}),
+		...(args.eventTypes !== undefined ? { eventTypes: args.eventTypes } : {}),
+	});
+
+export const validateVaultActivityEventsPage = (
+	page: ActivityEventsPage,
+	args: FetchVaultActivityEventsArgs,
+): ActivityEventsPage =>
+	validateActivityEventsPageForRequest(page, {
+		kind: "vault",
+		chainIds: [args.chainId],
+		vault: getAddress(args.vault) as Address,
+		vaultType: args.vaultType,
+		...(args.categories !== undefined ? { categories: args.categories } : {}),
+		...(args.eventTypes !== undefined ? { eventTypes: args.eventTypes } : {}),
+	});
+
+const readPayloadAddress = (
+	event: Pick<ActivityEvent, "payload">,
+	keys: string[],
+): Address | undefined => {
+	for (const key of keys) {
+		const value = event.payload[key];
+		if (typeof value === "string" && isAddress(value)) {
+			return getAddress(value) as Address;
+		}
+	}
+	return undefined;
+};
+
+export const getActivityPayloadString = (
+	event: Pick<ActivityEvent, "payload">,
+	keys: string[],
+): string | undefined => {
+	for (const key of keys) {
+		const value = event.payload[key];
+		if (typeof value === "string" && value.trim().length > 0) return value;
+	}
+	return undefined;
+};
+
+export const getActivityTargetContract = (
+	event: Pick<ActivityEvent, "payload" | "vault">,
+): Address | undefined =>
+	event.vault ??
+	readPayloadAddress(event, [
+		"target_contract",
+		"targetContract",
+		"vault",
+		"vault_address",
+		"vaultAddress",
+	]);
+
+export const getActivityAccount = (
+	event: Pick<ActivityEvent, "payload" | "account">,
+): Address | undefined =>
+	event.account ??
+	readPayloadAddress(event, [
+		"on_behalf_of_account",
+		"onBehalfOfAccount",
+		"account",
+		"sub_account",
+		"subAccount",
+	]);
+
+export const getActivityCaller = (
+	event: Pick<ActivityEvent, "payload" | "actor">,
+): Address | undefined =>
+	event.actor ?? readPayloadAddress(event, ["caller", "sender", "owner"]);

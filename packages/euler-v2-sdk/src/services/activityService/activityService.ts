@@ -1,227 +1,154 @@
-import { getAddress, isAddress, type Address } from "viem";
-import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
+import { getAddress } from "viem";
+import {
+	applyBuildQuery,
+	type BuildQueryFn,
+	normalizeQueryKeySet,
+	serializeQueryArgs,
+} from "../../utils/buildQuery.js";
 import type {
-	ActivityCategory,
-	ActivityCategoryOption,
-	ActivityEvent,
-	ActivityEventsMeta,
+	ActivityCapabilities,
+	ActivityCapabilityUnavailableReason,
 	ActivityEventsPage,
-	ActivityEventsQuery,
+	ActivityScope,
+	ActivityScopeSupport,
 	ActivityServiceConfig,
 	FetchAccountActivityEventsArgs,
 	FetchVaultActivityEventsArgs,
+	IActivityAdapter,
 	IActivityService,
 } from "./activityServiceTypes.js";
+import { ActivityV3Adapter } from "./adapters/activityV3Adapter.js";
 
-type RawActivityResponse = {
-	data?: unknown[];
-	meta?: ActivityEventsMeta;
-};
+const isActivityAdapter = (
+	value: IActivityAdapter | ActivityServiceConfig,
+): value is IActivityAdapter =>
+	"getCapabilities" in value &&
+	typeof value.getCapabilities === "function" &&
+	"getScopeSupport" in value &&
+	typeof value.getScopeSupport === "function" &&
+	"fetchAccountActivityEvents" in value &&
+	typeof value.fetchAccountActivityEvents === "function" &&
+	"fetchVaultActivityEvents" in value &&
+	typeof value.fetchVaultActivityEvents === "function";
 
-const SELECTOR_INFO: Record<
-	string,
-	{ label: string; category: ActivityCategory }
-> = {
-	// ERC4626 share operations used by EVK and Earn vaults.
-	"0x6e553f65": { label: "Deposit", category: "lending" },
-	"0x94bf804d": { label: "Mint shares", category: "lending" },
-	"0xb460af94": { label: "Withdraw", category: "lending" },
-	"0xba087652": { label: "Redeem shares", category: "lending" },
-	// Common EVC/account operations.
-	"0x2b67b570": { label: "Permit approval", category: "account" },
-	"0x3f8a17e2": { label: "Enable collateral", category: "account" },
-	"0x1d5a6eb6": { label: "Disable collateral", category: "account" },
-	"0x92b7d2bb": { label: "Enable controller", category: "account" },
-	"0xa789fe84": { label: "Disable controller", category: "account" },
-};
+export class ActivityUnavailableError extends Error {
+	readonly code = "ACTIVITY_UNAVAILABLE";
 
-export const ACTIVITY_CATEGORIES: ActivityCategoryOption[] = [
-	{ value: "lending", label: "Lending" },
-	{ value: "borrowing", label: "Borrowing" },
-	{ value: "swaps", label: "Swaps" },
-	{ value: "liquidations", label: "Liquidations" },
-	{ value: "account", label: "Account" },
-	{ value: "rewards", label: "Rewards" },
-];
-
-const getString = (value: unknown): string | undefined =>
-	typeof value === "string" && value.trim() ? value : undefined;
-
-export const getActivityPayloadString = (
-	event: Pick<ActivityEvent, "payload">,
-	keys: string[],
-): string | undefined => {
-	for (const key of keys) {
-		const value = getString(event.payload[key]);
-		if (value) return value;
+	constructor(readonly reason: ActivityCapabilityUnavailableReason) {
+		super(`Activity is unavailable: ${reason}`);
+		this.name = "ActivityUnavailableError";
 	}
-	return undefined;
-};
+}
 
-const normalizeSelector = (
-	payload: Record<string, unknown>,
-): string | undefined => getString(payload.selector)?.toLowerCase();
+export class UnavailableActivityAdapter implements IActivityAdapter {
+	constructor(private readonly reason: ActivityCapabilityUnavailableReason) {}
 
-const titleize = (value: string): string => {
-	const cleaned = value
-		.replace(/[_-]+/g, " ")
-		.replace(/([a-z])([A-Z])/g, "$1 $2")
-		.trim();
-	if (!cleaned) return "Activity";
-	return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-};
-
-const inferCategory = (
-	type: string,
-	payload: Record<string, unknown>,
-): ActivityCategory => {
-	const selector = normalizeSelector(payload);
-	const selectorInfo = selector ? SELECTOR_INFO[selector] : undefined;
-	if (selectorInfo) return selectorInfo.category;
-
-	const haystack = [
-		type,
-		getString(payload.event),
-		getString(payload.kind),
-		getString(payload.action),
-		getString(payload.operation),
-		getString(payload.selector_name),
-		getString(payload.method),
-	]
-		.filter(Boolean)
-		.join(" ")
-		.toLowerCase();
-
-	if (/reward|claim|merkl|reul|lock|unlock/.test(haystack)) return "rewards";
-	if (/liquidat|violator|liquidator/.test(haystack)) return "liquidations";
-	if (/swap|multiply|cow/.test(haystack)) return "swaps";
-	if (/borrow|repay|debt/.test(haystack)) return "borrowing";
-	if (/deposit|withdraw|mint|redeem|supply|share/.test(haystack)) {
-		return "lending";
+	getCapabilities(): ActivityCapabilities {
+		return {
+			configured: false,
+			adapter: null,
+			canQueryAccount: false,
+			requestableVaultTypes: [],
+			reason: this.reason,
+		};
 	}
-	return "account";
-};
 
-const inferLabel = (type: string, payload: Record<string, unknown>): string => {
-	const selector = normalizeSelector(payload);
-	const selectorInfo = selector ? SELECTOR_INFO[selector] : undefined;
-	if (selectorInfo) return selectorInfo.label;
+	getScopeSupport(_scope: ActivityScope): ActivityScopeSupport {
+		return "unsupported";
+	}
 
-	return (
-		getString(payload.label) ??
-		getString(payload.event) ??
-		getString(payload.action) ??
-		getString(payload.operation) ??
-		titleize(type)
-	);
-};
+	async fetchAccountActivityEvents(
+		_args: FetchAccountActivityEventsArgs,
+	): Promise<ActivityEventsPage> {
+		throw new ActivityUnavailableError(this.reason);
+	}
 
-const normalizeAddressValue = (value: unknown): Address | undefined => {
-	const maybeAddress = getString(value);
-	if (!maybeAddress || !isAddress(maybeAddress)) return undefined;
-	return getAddress(maybeAddress) as Address;
-};
-
-export const getActivityTargetContract = (
-	event: Pick<ActivityEvent, "payload">,
-): Address | undefined =>
-	normalizeAddressValue(
-		event.payload.target_contract ??
-			event.payload.targetContract ??
-			event.payload.vault ??
-			event.payload.vault_address ??
-			event.payload.vaultAddress,
-	);
-
-export const getActivityAccount = (
-	event: Pick<ActivityEvent, "payload">,
-): Address | undefined =>
-	normalizeAddressValue(
-		event.payload.on_behalf_of_account ??
-			event.payload.onBehalfOfAccount ??
-			event.payload.account ??
-			event.payload.sub_account ??
-			event.payload.subAccount,
-	);
-
-export const getActivityCaller = (
-	event: Pick<ActivityEvent, "payload">,
-): Address | undefined =>
-	normalizeAddressValue(
-		event.payload.caller ?? event.payload.sender ?? event.payload.owner,
-	);
-
-export const normalizeActivityEvent = (raw: unknown): ActivityEvent | null => {
-	if (!raw || typeof raw !== "object") return null;
-	const record = raw as Record<string, unknown>;
-	const type = getString(record.type) ?? "activity";
-	const payload =
-		record.payload && typeof record.payload === "object"
-			? (record.payload as Record<string, unknown>)
-			: {};
-
-	const chainId = Number(record.chainId);
-	const timestamp = getString(record.timestamp) ?? getString(record.createdAt);
-	if (!Number.isFinite(chainId) || !timestamp) return null;
-
-	const blockNumber = getString(record.blockNumber) ?? getString(record.block);
-	const txHash = getString(record.txHash) ?? getString(record.transactionHash);
-
-	return {
-		chainId,
-		type,
-		timestamp,
-		...(blockNumber ? { blockNumber } : {}),
-		...(txHash ? { txHash } : {}),
-		payload,
-		category: inferCategory(type, payload),
-		label: inferLabel(type, payload),
-	};
-};
-
-export const normalizeActivityEventsResponse = (
-	raw: unknown,
-): ActivityEventsPage => {
-	const parsed =
-		typeof raw === "string" ? (JSON.parse(raw) as RawActivityResponse) : raw;
-	const response = (parsed ?? {}) as RawActivityResponse;
-	return {
-		data: (response.data ?? [])
-			.map(normalizeActivityEvent)
-			.filter((event): event is ActivityEvent => Boolean(event)),
-		...(response.meta ? { meta: response.meta } : {}),
-	};
-};
+	async fetchVaultActivityEvents(
+		_args: FetchVaultActivityEventsArgs,
+	): Promise<ActivityEventsPage> {
+		throw new ActivityUnavailableError(this.reason);
+	}
+}
 
 export class ActivityService implements IActivityService {
-	private readonly endpoint: string;
-	private readonly apiKey?: string;
+	private adapter: IActivityAdapter;
 
-	constructor(config: ActivityServiceConfig, buildQuery?: BuildQueryFn) {
-		this.endpoint = config.endpoint;
-		this.apiKey = config.apiKey;
+	constructor(
+		adapterOrConfig: IActivityAdapter | ActivityServiceConfig,
+		buildQuery?: BuildQueryFn,
+	) {
+		this.adapter = isActivityAdapter(adapterOrConfig)
+			? adapterOrConfig
+			: new ActivityV3Adapter(adapterOrConfig);
 		if (buildQuery) applyBuildQuery(this, buildQuery);
+	}
+
+	getCapabilities(): ActivityCapabilities {
+		return this.adapter.getCapabilities();
+	}
+
+	getScopeSupport(scope: ActivityScope): ActivityScopeSupport {
+		return this.adapter.getScopeSupport(scope);
 	}
 
 	queryAccountActivityEvents = async (
 		args: FetchAccountActivityEventsArgs,
-	): Promise<ActivityEventsPage> => {
-		const url = this.buildEventsUrl(
-			`/v3/evc/accounts/${getAddress(args.account)}/events`,
-			args,
-		);
-		return this.fetchEvents(url);
-	};
+	): Promise<ActivityEventsPage> =>
+		this.adapter.fetchAccountActivityEvents(args);
+
+	getQueryKeyAccountActivityEvents(
+		args: FetchAccountActivityEventsArgs,
+	): string | null {
+		const chainIds = Array.isArray(args.chainId)
+			? [...args.chainId]
+			: [args.chainId];
+		return serializeQueryArgs([
+			{
+				...args,
+				owner: getAddress(args.owner),
+				chainId: normalizeQueryKeySet(chainIds),
+				categories:
+					args.categories === undefined
+						? undefined
+						: normalizeQueryKeySet([...args.categories]),
+				eventTypes:
+					args.eventTypes === undefined
+						? undefined
+						: normalizeQueryKeySet(
+								args.eventTypes.map((eventType) =>
+									eventType.trim().toLowerCase(),
+								),
+							),
+			},
+		]);
+	}
 
 	queryVaultActivityEvents = async (
 		args: FetchVaultActivityEventsArgs,
-	): Promise<ActivityEventsPage> => {
-		const url = this.buildEventsUrl(
-			`/v3/evk/vaults/${args.chainId}/${getAddress(args.vault)}/events`,
-			args,
-		);
-		return this.fetchEvents(url);
-	};
+	): Promise<ActivityEventsPage> => this.adapter.fetchVaultActivityEvents(args);
+
+	getQueryKeyVaultActivityEvents(
+		args: FetchVaultActivityEventsArgs,
+	): string | null {
+		return serializeQueryArgs([
+			{
+				...args,
+				vault: getAddress(args.vault),
+				categories:
+					args.categories === undefined
+						? undefined
+						: normalizeQueryKeySet([...args.categories]),
+				eventTypes:
+					args.eventTypes === undefined
+						? undefined
+						: normalizeQueryKeySet(
+								args.eventTypes.map((eventType) =>
+									eventType.trim().toLowerCase(),
+								),
+							),
+			},
+		]);
+	}
 
 	async fetchAccountActivityEvents(
 		args: FetchAccountActivityEventsArgs,
@@ -233,45 +160,5 @@ export class ActivityService implements IActivityService {
 		args: FetchVaultActivityEventsArgs,
 	): Promise<ActivityEventsPage> {
 		return this.queryVaultActivityEvents(args);
-	}
-
-	private async fetchEvents(url: string): Promise<ActivityEventsPage> {
-		const response = await fetch(url, {
-			method: "GET",
-			headers: this.getHeaders(),
-		});
-		if (!response.ok) {
-			const body = await response.text().catch(() => "");
-			throw new Error(
-				`ActivityService request failed (${response.status} ${response.statusText}): ${body.slice(0, 200)}`,
-			);
-		}
-		return normalizeActivityEventsResponse(await response.json());
-	}
-
-	private getHeaders(): Record<string, string> {
-		return {
-			Accept: "application/json",
-			...(this.apiKey ? { "X-API-Key": this.apiKey } : {}),
-		};
-	}
-
-	private buildEventsUrl(path: string, args: ActivityEventsQuery): string {
-		const params = new URLSearchParams({
-			chainId: String(args.chainId),
-			from: String(args.from),
-			to: String(args.to),
-		});
-		if (args.type !== undefined) params.set("type", args.type);
-		if (args.offset !== undefined) params.set("offset", String(args.offset));
-		if (args.limit !== undefined) params.set("limit", String(args.limit));
-
-		const normalizedEndpoint = this.endpoint.replace(/\/+$/, "");
-		const url =
-			normalizedEndpoint.startsWith("http://") ||
-			normalizedEndpoint.startsWith("https://")
-				? new URL(path, `${normalizedEndpoint}/`).toString()
-				: `${normalizedEndpoint}${path}`;
-		return `${url}?${params.toString()}`;
 	}
 }

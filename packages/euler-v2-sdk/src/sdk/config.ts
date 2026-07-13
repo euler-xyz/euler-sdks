@@ -11,9 +11,8 @@ export interface EulerSDKConfig {
 	v3ApiUrl?: string;
 	v3ApiKey?: string;
 	/**
-	 * Globally disables the V3 HTTP adapter as the primary in all fallback chains.
-	 * When true, services configured for `fallback` use the secondary adapter only
-	 * (onchain / direct / subgraph). Per-service `adapter` overrides still apply.
+	 * Disables built-in V3 HTTP adapters. Services with secondary adapters use
+	 * those sources; V3-only services report an unavailable capability.
 	 */
 	disableV3?: boolean;
 

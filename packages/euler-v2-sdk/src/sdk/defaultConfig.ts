@@ -69,7 +69,7 @@ export const defaultRewardsV3AdapterConfig: RewardsV3AdapterConfig = {
 	endpoint: DEFAULT_V3_API_URL,
 };
 
-export const defaultActivityServiceConfig: ActivityServiceConfig = {
+export const defaultActivityV3AdapterConfig: ActivityServiceConfig = {
 	endpoint: DEFAULT_V3_API_URL,
 };
 
