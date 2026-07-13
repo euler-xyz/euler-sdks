@@ -1,3 +1,4 @@
+import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getAddress, type Address } from "viem";
 import { buildEulerSDK } from "../src/sdk/buildSDK.js";
@@ -122,6 +123,29 @@ const stubActivityResponse = (body: unknown) => {
 	);
 	vi.stubGlobal("fetch", fetchMock);
 	return fetchMock;
+};
+
+const listenOnLoopback = async (server: Server): Promise<string> => {
+	await new Promise<void>((resolve, reject) => {
+		const onError = (error: Error) => reject(error);
+		server.once("error", onError);
+		server.listen(0, "127.0.0.1", () => {
+			server.off("error", onError);
+			resolve();
+		});
+	});
+	const address = server.address();
+	if (!address || typeof address === "string") {
+		throw new Error("Expected a TCP address for the Activity test server");
+	}
+	return `http://127.0.0.1:${address.port}`;
+};
+
+const closeServer = async (server: Server): Promise<void> => {
+	if (!server.listening) return;
+	await new Promise<void>((resolve, reject) => {
+		server.close((error) => (error ? reject(error) : resolve()));
+	});
 };
 
 afterEach(() => {
@@ -1113,6 +1137,43 @@ describe("ActivityService", () => {
 		expect(requestSignal?.aborted).toBe(true);
 		expect(bodyCancelled).toBe(true);
 		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("rejects cross-origin redirects without forwarding the API key", async () => {
+		const targetRequests: Array<string | undefined> = [];
+		const redirectRequests: Array<string | undefined> = [];
+		const targetServer = createServer((request, response) => {
+			targetRequests.push(request.headers["x-api-key"]);
+			response.writeHead(200, { "Content-Type": "application/json" });
+			response.end(JSON.stringify(page()));
+		});
+		const targetOrigin = await listenOnLoopback(targetServer);
+		const redirectServer = createServer((request, response) => {
+			redirectRequests.push(request.headers["x-api-key"]);
+			response.writeHead(302, {
+				Location: `${targetOrigin}/captured-activity-request`,
+			});
+			response.end();
+		});
+
+		try {
+			const redirectOrigin = await listenOnLoopback(redirectServer);
+			const service = new ActivityService({
+				endpoint: redirectOrigin,
+				apiKey: "activity-secret",
+			});
+
+			await expect(
+				service.fetchAccountActivityEvents({ owner: OWNER, chainId: 1 }),
+			).rejects.toThrow();
+			expect(redirectRequests).toEqual(["activity-secret"]);
+			expect(targetRequests).toEqual([]);
+		} finally {
+			await Promise.all([
+				closeServer(redirectServer),
+				closeServer(targetServer),
+			]);
+		}
 	});
 
 	it("uses activity-specific V3 environment overrides", async () => {

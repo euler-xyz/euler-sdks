@@ -272,6 +272,7 @@ export class ActivityV3Adapter implements IActivityAdapter {
 		try {
 			const response = await fetch(url, {
 				...init,
+				redirect: "error",
 				signal: controller.signal,
 			});
 			let body: string;
