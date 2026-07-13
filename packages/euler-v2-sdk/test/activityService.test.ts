@@ -18,6 +18,10 @@ import {
 	type IActivityAdapter,
 } from "../src/services/activityService/index.js";
 import { createQueryCacheBuildQuery } from "../src/utils/buildQuery.js";
+import {
+	getSubAccountAddress,
+	SUB_ACCOUNT_MAX_ID,
+} from "../src/utils/subAccounts.js";
 
 const OWNER = getAddress(
 	"0xee5b5c82a365d75e9f8a1e982687fb5b6ceb606c",
@@ -599,6 +603,35 @@ describe("ActivityService", () => {
 		).rejects.toMatchObject({ path: "$.data[0].subAccountIndex" });
 	});
 
+	it("accepts the exported maximum sub-account ID", async () => {
+		const maxSubAccount = getSubAccountAddress(OWNER, SUB_ACCOUNT_MAX_ID);
+		stubActivityResponse(
+			page([
+				event({
+					account: maxSubAccount,
+					subAccountIndex: SUB_ACCOUNT_MAX_ID,
+				}),
+			]),
+		);
+		const service = new ActivityService({ endpoint: "/api/internal" });
+
+		await expect(
+			service.fetchAccountActivityEvents({ owner: OWNER, chainId: 1 }),
+		).resolves.toMatchObject({
+			data: [
+				{
+					account: maxSubAccount,
+					subAccountIndex: SUB_ACCOUNT_MAX_ID,
+				},
+			],
+		});
+		expect(() =>
+			normalizeActivityEvent(
+				event({ subAccountIndex: SUB_ACCOUNT_MAX_ID + 1 }),
+			),
+		).toThrow(`no greater than ${SUB_ACCOUNT_MAX_ID}`);
+	});
+
 	it("requires rows to satisfy supplied category and event type filters", async () => {
 		const service = new ActivityService({ endpoint: "/api/internal" });
 
@@ -980,6 +1013,63 @@ describe("ActivityService", () => {
 			expect.objectContaining({ signal: expect.any(AbortSignal) }),
 		);
 		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("keeps the V3 timeout active while consuming a stalled response body", async () => {
+		vi.useFakeTimers();
+		let requestSignal: AbortSignal | undefined;
+		let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (_url: string, init?: RequestInit) => {
+				requestSignal = init?.signal ?? undefined;
+				const body = new ReadableStream<Uint8Array>({
+					start(controller) {
+						bodyController = controller;
+						controller.enqueue(new TextEncoder().encode('{"data":'));
+						requestSignal?.addEventListener(
+							"abort",
+							() =>
+								controller.error(
+									new DOMException("The operation was aborted", "AbortError"),
+								),
+							{ once: true },
+						);
+					},
+				});
+				return new Response(body, { status: 200 });
+			}),
+		);
+		const service = new ActivityService({ endpoint: "/api/internal" });
+
+		const result = service
+			.fetchAccountActivityEvents({ owner: OWNER, chainId: 1 })
+			.catch((error: unknown) => error);
+		await vi.advanceTimersByTimeAsync(10_000);
+		if (!requestSignal?.aborted) {
+			bodyController?.error(new Error("test cleanup: request was not aborted"));
+		}
+
+		expect(requestSignal?.aborted).toBe(true);
+		expect(await result).toMatchObject({ name: "AbortError" });
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("rejects a V3 activity response body larger than two MiB", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(new Uint8Array(2 * 1_024 * 1_024 + 1), {
+						status: 200,
+					}),
+			),
+		);
+		const service = new ActivityService({ endpoint: "/api/internal" });
+
+		await expect(
+			service.fetchAccountActivityEvents({ owner: OWNER, chainId: 1 }),
+		).rejects.toThrow("response body must not exceed 2097152 bytes");
 	});
 
 	it("uses activity-specific V3 environment overrides", async () => {

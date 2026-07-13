@@ -1,4 +1,8 @@
 import { type Address, getAddress, type Hex, isAddress } from "viem";
+import {
+	getSubAccountId,
+	SUB_ACCOUNT_MAX_ID,
+} from "../../utils/subAccounts.js";
 import type {
 	ActivityAssetAmount,
 	ActivityAssetKind,
@@ -439,8 +443,11 @@ export const normalizeActivityEvent = (
 					record.subAccountIndex,
 					`${path}.subAccountIndex`,
 				);
-	if (subAccountIndex !== undefined && subAccountIndex > 255) {
-		fail(`${path}.subAccountIndex`, "expected an integer no greater than 255");
+	if (subAccountIndex !== undefined && subAccountIndex > SUB_ACCOUNT_MAX_ID) {
+		fail(
+			`${path}.subAccountIndex`,
+			`expected an integer no greater than ${SUB_ACCOUNT_MAX_ID}`,
+		);
 	}
 	const vault = readOptionalAddress(record.vault, `${path}.vault`);
 	const vaultType =
@@ -605,6 +612,18 @@ const sameNumberList = (left: readonly number[], right: readonly number[]) =>
 	left.length === right.length &&
 	left.every((value, index) => value === right[index]);
 
+const readActivitySubAccountIndex = (
+	owner: Address,
+	account: Address,
+	path: string,
+): number => {
+	try {
+		return getSubAccountId(owner, account);
+	} catch {
+		return fail(path, "expected an account in the owner's family");
+	}
+};
+
 const validateMissingCategoriesForRequest = (
 	categories: readonly ActivityCategory[] | undefined,
 	path: string,
@@ -689,14 +708,11 @@ const validateActivityEventsPageForRequest = (
 				fail(`${path}.owner`, "expected the requested owner");
 			}
 			if (event.account !== undefined) {
-				const owner = request.owner.toLowerCase();
-				const account = event.account.toLowerCase();
-				if (!account.startsWith(owner.slice(0, 40))) {
-					fail(`${path}.account`, "expected an account in the owner's family");
-				}
-				const derivedSubAccountIndex =
-					Number.parseInt(owner.slice(-2), 16) ^
-					Number.parseInt(account.slice(-2), 16);
+				const derivedSubAccountIndex = readActivitySubAccountIndex(
+					request.owner,
+					event.account,
+					`${path}.account`,
+				);
 				if (event.subAccountIndex !== derivedSubAccountIndex) {
 					fail(
 						`${path}.subAccountIndex`,

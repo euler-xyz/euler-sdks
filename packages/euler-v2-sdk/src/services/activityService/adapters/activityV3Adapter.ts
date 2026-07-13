@@ -23,7 +23,51 @@ const ACTIVITY_V3_SOURCE = "v3-ponder";
 const MAX_ACTIVITY_CHAIN_IDS = 20;
 const MAX_ACTIVITY_CURSOR_LENGTH = 2_048;
 const MAX_ACTIVITY_LIMIT = 100;
+const MAX_ACTIVITY_RESPONSE_BYTES = 2 * 1_024 * 1_024;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+
+const responseSizeError = (): Error =>
+	new Error(
+		`Activity V3 response body must not exceed ${MAX_ACTIVITY_RESPONSE_BYTES} bytes`,
+	);
+
+const readActivityResponseBody = async (
+	response: Response,
+): Promise<string> => {
+	const contentLength = response.headers.get("content-length");
+	if (
+		contentLength !== null &&
+		Number.isFinite(Number(contentLength)) &&
+		Number(contentLength) > MAX_ACTIVITY_RESPONSE_BYTES
+	) {
+		throw responseSizeError();
+	}
+
+	if (!response.body) return "";
+
+	const reader = response.body.getReader();
+	const decoder = new TextDecoder();
+	let body = "";
+	let receivedBytes = 0;
+
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+
+			receivedBytes += value.byteLength;
+			if (receivedBytes > MAX_ACTIVITY_RESPONSE_BYTES) {
+				await reader.cancel().catch(() => undefined);
+				throw responseSizeError();
+			}
+			body += decoder.decode(value, { stream: true });
+		}
+		body += decoder.decode();
+		return body;
+	} finally {
+		reader.releaseLock();
+	}
+};
 
 const uniqueSorted = <T extends string | number>(values: readonly T[]): T[] =>
 	[...new Set(values)].sort((left, right) =>
@@ -190,11 +234,10 @@ export class ActivityV3Adapter implements IActivityAdapter {
 	}
 
 	private async fetchEvents(url: string): Promise<ActivityEventsPage> {
-		const response = await this.fetchWithTimeout(url, {
+		const { response, body } = await this.fetchResponseBodyWithTimeout(url, {
 			method: "GET",
 			headers: this.getHeaders(),
 		});
-		const body = await response.text();
 		if (!response.ok) {
 			throw new Error(
 				`Activity V3 request failed (${response.status} ${response.statusText}): ${body.slice(0, 200)}`,
@@ -211,10 +254,10 @@ export class ActivityV3Adapter implements IActivityAdapter {
 		return page;
 	}
 
-	private async fetchWithTimeout(
+	private async fetchResponseBodyWithTimeout(
 		url: string,
 		init: RequestInit,
-	): Promise<Response> {
+	): Promise<{ response: Response; body: string }> {
 		const controller = new AbortController();
 		const timeout = setTimeout(
 			() => controller.abort(),
@@ -222,10 +265,12 @@ export class ActivityV3Adapter implements IActivityAdapter {
 		);
 
 		try {
-			return await fetch(url, {
+			const response = await fetch(url, {
 				...init,
 				signal: controller.signal,
 			});
+			const body = await readActivityResponseBody(response);
+			return { response, body };
 		} finally {
 			clearTimeout(timeout);
 		}
