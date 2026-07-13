@@ -135,6 +135,9 @@ test("sub-account helpers enforce the 8-bit account family boundary", () => {
 	assert.equal(getSubAccountAddress(owner, 255), maxSubAccount);
 	assert.equal(getSubAccountId(owner, maxSubAccount), 255);
 	assert.equal(isSubAccount(owner, maxSubAccount), true);
+	const freeSubAccounts = getFreeSubAccounts(owner, []);
+	assert.equal(freeSubAccounts.length, 255);
+	assert.equal(freeSubAccounts.at(-1), maxSubAccount);
 	assert.deepEqual(
 		getFreeSubAccounts(owner, [], { startId: 255, endId: 255 }),
 		[maxSubAccount],
