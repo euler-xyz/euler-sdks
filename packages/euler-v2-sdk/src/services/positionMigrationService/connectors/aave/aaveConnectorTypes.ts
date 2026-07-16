@@ -1,7 +1,7 @@
 import type { Address, Hex } from "viem";
 import type {
-	MigrationPosition,
 	MigrationAuthorizationCall,
+	MigrationPosition,
 	TransactionMigrationAuthorizationRequest,
 	TypedDataMigrationAuthorizationRequest,
 } from "../../positionMigrationServiceTypes.js";
@@ -110,7 +110,10 @@ export type AaveDebtDelegationTransactionRequest =
 
 export type AaveMigrationAuthorizationRequest =
 	| AavePermitTypedDataRequest
-	| AaveDelegationTypedDataRequest
+	| AaveDelegationTypedDataRequest;
+
+export type AaveConnectorMigrationAuthorizationRequest =
+	| AaveMigrationAuthorizationRequest
 	| AaveATokenApprovalTransactionRequest
 	| AaveDebtDelegationTransactionRequest;
 

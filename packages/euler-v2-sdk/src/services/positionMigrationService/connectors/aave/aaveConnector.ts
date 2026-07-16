@@ -51,12 +51,13 @@ import {
 } from "./abis/aaveV3Abi.js";
 import type {
 	AaveATokenApprovalTransactionRequest,
+	AaveConnectorMigrationAuthorizationRequest,
 	AaveDebtDelegationTransactionRequest,
 	AaveDelegationTypedDataMessage,
 	AaveDelegationTypedDataRequest,
+	AaveMarketDeploymentConfig,
 	AaveMigrationAuthorizationRequest,
 	AaveMigrationConnectorConfig,
-	AaveMarketDeploymentConfig,
 	AaveMigrationPosition,
 	AaveMigrationTargetExtraData,
 	AaveMigrationTargetRaw,
@@ -440,7 +441,10 @@ export class AavePositionMigrationConnector
 			authorizationKind: "transaction";
 		},
 	): Promise<
-		| Extract<AaveMigrationAuthorizationRequest, { kind: "transaction" }>
+		| Extract<
+				AaveConnectorMigrationAuthorizationRequest,
+				{ kind: "transaction" }
+			>
 		| undefined
 	>;
 	async getAuthorization(
@@ -453,10 +457,10 @@ export class AavePositionMigrationConnector
 	>;
 	async getAuthorization(
 		args: GetMigrationAuthorizationArgs<AaveMigrationPosition>,
-	): Promise<AaveMigrationAuthorizationRequest | undefined>;
+	): Promise<AaveConnectorMigrationAuthorizationRequest | undefined>;
 	async getAuthorization(
 		args: GetMigrationAuthorizationArgs<AaveMigrationPosition>,
-	): Promise<AaveMigrationAuthorizationRequest | undefined> {
+	): Promise<AaveConnectorMigrationAuthorizationRequest | undefined> {
 		if (
 			args.direction !== "external-to-euler" &&
 			args.direction !== "euler-to-external"
@@ -2095,17 +2099,17 @@ function assertAaveAuthorizationRequest<
 
 function assertAaveTransactionAuthorizationRequest<
 	TType extends Extract<
-		AaveMigrationAuthorizationRequest,
+		AaveConnectorMigrationAuthorizationRequest,
 		{ kind: "transaction" }
 	>["authorizationType"],
 >(
 	request: MigrationAuthorizationRequest,
 	authorizationType: TType,
 ): Extract<
-	AaveMigrationAuthorizationRequest,
+	AaveConnectorMigrationAuthorizationRequest,
 	{ kind: "transaction"; authorizationType: TType }
 > {
-	const aaveRequest = request as AaveMigrationAuthorizationRequest;
+	const aaveRequest = request as AaveConnectorMigrationAuthorizationRequest;
 	if (
 		request.kind !== "transaction" ||
 		request.connectorId !== AAVE_CONNECTOR_ID ||
@@ -2116,7 +2120,7 @@ function assertAaveTransactionAuthorizationRequest<
 		);
 	}
 	return aaveRequest as Extract<
-		AaveMigrationAuthorizationRequest,
+		AaveConnectorMigrationAuthorizationRequest,
 		{ kind: "transaction"; authorizationType: TType }
 	>;
 }

@@ -1,7 +1,7 @@
 import type { Address } from "viem";
 import type {
-	MigrationPosition,
 	MigrationAuthorizationCall,
+	MigrationPosition,
 	TransactionMigrationAuthorizationRequest,
 	TypedDataMigrationAuthorizationRequest,
 } from "../../positionMigrationServiceTypes.js";
@@ -68,7 +68,10 @@ export type MetamorphoShareApprovalTransactionRequest =
 	};
 
 export type MetamorphoMigrationAuthorizationRequest =
-	| MetamorphoPermitTypedDataRequest
+	MetamorphoPermitTypedDataRequest;
+
+export type MetamorphoConnectorMigrationAuthorizationRequest =
+	| MetamorphoMigrationAuthorizationRequest
 	| MetamorphoShareApprovalTransactionRequest;
 
 export type MetamorphoMigrationConnectorConfig = Record<string, never>;

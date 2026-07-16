@@ -10,6 +10,7 @@ export {
 	MetamorphoPositionMigrationConnector,
 } from "./metamorphoConnector.js";
 export type {
+	MetamorphoConnectorMigrationAuthorizationRequest,
 	MetamorphoMigrationAuthorizationRequest,
 	MetamorphoMigrationConnectorConfig,
 	MetamorphoMigrationPosition,

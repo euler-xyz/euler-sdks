@@ -37,14 +37,15 @@ import {
 } from "../shared.js";
 import { metamorphoAbi } from "./abis/metamorphoAbi.js";
 import type {
+	MetamorphoConnectorMigrationAuthorizationRequest,
 	MetamorphoMigrationAuthorizationRequest,
 	MetamorphoMigrationConnectorConfig,
 	MetamorphoMigrationPosition,
 	MetamorphoPermitTypedDataMessage,
 	MetamorphoPermitTypedDataRequest,
+	MetamorphoPositionRef,
 	MetamorphoPositionRaw,
 	MetamorphoShareApprovalTransactionRequest,
-	MetamorphoPositionRef,
 	MetamorphoVaultVersion,
 } from "./metamorphoConnectorTypes.js";
 
@@ -213,13 +214,13 @@ export class MetamorphoPositionMigrationConnector
 		args: GetMigrationAuthorizationArgs<MetamorphoMigrationPosition> & {
 			authorizationKind?: "typedData";
 		},
-	): Promise<MetamorphoPermitTypedDataRequest | undefined>;
-	async getAuthorization(
-		args: GetMigrationAuthorizationArgs<MetamorphoMigrationPosition>,
 	): Promise<MetamorphoMigrationAuthorizationRequest | undefined>;
 	async getAuthorization(
 		args: GetMigrationAuthorizationArgs<MetamorphoMigrationPosition>,
-	): Promise<MetamorphoMigrationAuthorizationRequest | undefined> {
+	): Promise<MetamorphoConnectorMigrationAuthorizationRequest | undefined>;
+	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<MetamorphoMigrationPosition>,
+	): Promise<MetamorphoConnectorMigrationAuthorizationRequest | undefined> {
 		if (args.direction !== "external-to-euler") {
 			throw new Error(
 				`Metamorpho migration does not support direction: ${args.direction}`,
@@ -658,7 +659,8 @@ export class MetamorphoPositionMigrationConnector
 		vault: Address;
 		minimumAmount: bigint;
 	}): true {
-		const request = args.request as MetamorphoMigrationAuthorizationRequest;
+		const request =
+			args.request as MetamorphoConnectorMigrationAuthorizationRequest;
 		if (
 			request.kind !== "transaction" ||
 			request.connectorId !== METAMORPHO_CONNECTOR_ID ||
