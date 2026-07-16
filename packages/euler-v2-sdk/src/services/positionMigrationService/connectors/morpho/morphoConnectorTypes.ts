@@ -1,6 +1,7 @@
 import type { Address, Hex } from "viem";
 import type {
 	MigrationPosition,
+	MigrationAuthorizationCall,
 	TransactionMigrationAuthorizationRequest,
 	TypedDataMigrationAuthorizationRequest,
 } from "../../positionMigrationServiceTypes.js";
@@ -67,6 +68,7 @@ export type MorphoAuthorizationTypedDataRequest =
 export type MorphoAuthorizationTransactionRequest =
 	TransactionMigrationAuthorizationRequest & {
 		authorizationType: "morphoAuthorization";
+		revocation: MigrationAuthorizationCall;
 	};
 
 export type MorphoMigrationAuthorizationRequest =

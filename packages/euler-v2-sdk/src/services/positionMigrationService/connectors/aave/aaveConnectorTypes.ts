@@ -1,6 +1,7 @@
 import type { Address, Hex } from "viem";
 import type {
 	MigrationPosition,
+	MigrationAuthorizationCall,
 	TransactionMigrationAuthorizationRequest,
 	TypedDataMigrationAuthorizationRequest,
 } from "../../positionMigrationServiceTypes.js";
@@ -95,6 +96,7 @@ export type AaveATokenApprovalTransactionRequest =
 	TransactionMigrationAuthorizationRequest & {
 		authorizationType: "aTokenApproval";
 		token: Address;
+		revocation: MigrationAuthorizationCall;
 	};
 
 /** `variableDebtToken.approveDelegation` — counterpart of the debt delegation. */
@@ -103,6 +105,7 @@ export type AaveDebtDelegationTransactionRequest =
 		authorizationType: "variableDebtDelegationApproval";
 		token: Address;
 		delegator: Address;
+		revocation: MigrationAuthorizationCall;
 	};
 
 export type AaveMigrationAuthorizationRequest =

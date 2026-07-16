@@ -1,6 +1,7 @@
 import type { Address } from "viem";
 import type {
 	MigrationPosition,
+	MigrationAuthorizationCall,
 	TransactionMigrationAuthorizationRequest,
 	TypedDataMigrationAuthorizationRequest,
 } from "../../positionMigrationServiceTypes.js";
@@ -63,6 +64,7 @@ export type MetamorphoShareApprovalTransactionRequest =
 		/** The vault address — Metamorpho shares are the vault token itself. */
 		token: Address;
 		allowanceSlotIndex: bigint;
+		revocation: MigrationAuthorizationCall;
 	};
 
 export type MetamorphoMigrationAuthorizationRequest =

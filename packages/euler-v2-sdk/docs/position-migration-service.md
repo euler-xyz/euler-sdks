@@ -74,13 +74,15 @@ address (e.g. the Aave pool or Morpho singleton).
   `{ positionRef?, borrowAmount?, collateralAmount?, repayAmount?, interestBufferBps? }`.
 - `MigrationAuthorizationRequest` — a discriminated union of
   `{ kind: "typedData", typedData: { domain, types, primaryType, message } }` and
-  `{ kind: "transaction", call, revocation }`, where each is a
+  `{ kind: "transaction", call, revocation? }`, where each call is a
   `MigrationAuthorizationCall` (`{ to, abi, functionName, args, value? }`).
   Connectors emit `typedData` by default and `transaction` when
   `authorizationKind: "transaction"` is requested — see
-  [Contract wallets](#contract-wallets-authorizationkind-transaction). A request
-  may carry a nested `postMigrationAuthorization` (used when a typed-data
-  authorization is revoked in-batch after the migration).
+  [Contract wallets](#contract-wallets-authorizationkind-transaction). Built-in
+  transaction requests always include `revocation`; the shared field remains
+  optional for custom-connector compatibility. A request may carry a nested
+  `postMigrationAuthorization` (used when a typed-data authorization is revoked
+  in-batch after the migration).
 - `SignedMigrationAuthorization` — `{ request, signature?, data?, postMigrationAuthorization? }`;
   this is what you pass back into `planMigration` after signing.
 

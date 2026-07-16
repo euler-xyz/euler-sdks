@@ -110,11 +110,13 @@ export type TransactionMigrationAuthorizationRequest = {
 	 */
 	call: MigrationAuthorizationCall;
 	/**
-	 * Undoes {@link call}. Send it once the migration has settled — the grant is
-	 * a standing allowance until then, exercisable by any EVC operator the owner
-	 * has authorized.
+	 * Undoes {@link call}, when the connector provides one. Built-in connectors
+	 * always return a revocation; custom connectors may omit it for backward
+	 * compatibility. Send it once the migration has settled — the grant is a
+	 * standing allowance until then, exercisable by any EVC operator the owner has
+	 * authorized.
 	 */
-	revocation: MigrationAuthorizationCall;
+	revocation?: MigrationAuthorizationCall;
 	postMigrationAuthorization?: MigrationAuthorizationRequest;
 };
 
@@ -211,12 +213,12 @@ export type GetMigrationAuthorizationArgs<
 	 * Form to return the authorization in. Defaults to `"typedData"`.
 	 *
 	 * Use `"transaction"` for wallets that cannot produce an ECDSA signature:
-	 * Aave and Morpho verify their permit / delegation / authorization
-	 * signatures with `ecrecover` alone and have no ERC-1271 fallback, so a
-	 * contract wallet can never satisfy the typed-data form.
+	 * Aave, Morpho, and MetaMorpho verify their permit / delegation /
+	 * authorization signatures without an ERC-1271 fallback, so a contract
+	 * wallet can never satisfy the typed-data form.
 	 *
-	 * The returned request carries a `call` to send before building the batch
-	 * and a `revocation` to send after it settles. `deadline` and
+	 * Built-in transaction requests carry a `call` to send before building the
+	 * batch and a `revocation` to send after it settles. `deadline` and
 	 * `removeAuthorizationAfterMigration` do not apply: a `msg.sender` grant
 	 * carries no expiry, and the revocation is always returned. Pass
 	 * `removeAuthorizationAfterMigration: false` to `buildMigrationBatch`,
