@@ -4,6 +4,7 @@ import {
 	getAddress,
 	keccak256,
 	maxUint256,
+	type Abi,
 	type Address,
 	type Hex,
 } from "viem";
@@ -47,8 +48,10 @@ import type {
 import { morphoBlueAbi } from "./abis/morphoBlueAbi.js";
 import type {
 	MorphoAuthorization,
+	MorphoAuthorizationTransactionRequest,
 	MorphoAuthorizationTypedDataMessage,
 	MorphoAuthorizationTypedDataRequest,
+	MorphoMigrationAuthorizationRequest,
 	MorphoMarketParams,
 	MorphoMarketState,
 	MorphoMigrationConnectorConfig,
@@ -377,7 +380,7 @@ export class MorphoPositionMigrationConnector
 
 	async getAuthorization(
 		args: GetMigrationAuthorizationArgs<MorphoMigrationPosition>,
-	): Promise<MorphoAuthorizationTypedDataRequest | undefined> {
+	): Promise<MorphoMigrationAuthorizationRequest | undefined> {
 		if (
 			args.direction !== "external-to-euler" &&
 			args.direction !== "euler-to-external"
@@ -399,6 +402,21 @@ export class MorphoPositionMigrationConnector
 			owner,
 			swapVerifier,
 		);
+
+		if (args.authorizationKind === "transaction") {
+			// An authorization already standing is not ours to grant, and so not
+			// ours to revoke either. `removeAuthorizationAfterMigration` does not
+			// apply: the returned request always carries its own revocation.
+			if (alreadyAuthorized) return undefined;
+			return this.buildAuthorizationTransactionRequest({
+				chainId: args.chainId,
+				owner,
+				morpho: this.getMorphoAddress(args.chainId),
+				swapVerifier,
+				positionId: args.position?.id,
+			});
+		}
+
 		if (alreadyAuthorized && !args.removeAuthorizationAfterMigration)
 			return undefined;
 
@@ -1016,6 +1034,38 @@ export class MorphoPositionMigrationConnector
 			authorization,
 			isAuthorized: false,
 		});
+	}
+
+	/**
+	 * `morpho.setAuthorization` — the signature-free form.
+	 *
+	 * Synchronous: unlike `setAuthorizationWithSig` there is no nonce to read,
+	 * so the grant needs no RPC round-trip.
+	 */
+	private buildAuthorizationTransactionRequest(args: {
+		chainId: number;
+		owner: Address;
+		morpho: Address;
+		swapVerifier: Address;
+		positionId?: string;
+	}): MorphoAuthorizationTransactionRequest {
+		const setAuthorization = (isAuthorized: boolean) => ({
+			to: args.morpho,
+			abi: morphoBlueAbi as Abi,
+			functionName: "setAuthorization",
+			args: [args.swapVerifier, isAuthorized] as const,
+		});
+		return {
+			kind: "transaction",
+			authorizationType: "morphoAuthorization",
+			connectorId: MORPHO_CONNECTOR_ID,
+			protocol: MORPHO_PROTOCOL,
+			chainId: args.chainId,
+			owner: args.owner,
+			positionId: args.positionId,
+			call: setAuthorization(true),
+			revocation: setAuthorization(false),
+		};
 	}
 
 	private buildAuthorizationRequest(args: {

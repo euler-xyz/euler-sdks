@@ -2,6 +2,7 @@ import {
 	encodeFunctionData,
 	getAddress,
 	maxUint256,
+	type Abi,
 	type Address,
 	type Hex,
 } from "viem";
@@ -49,6 +50,8 @@ import {
 	aaveV3PoolAbi,
 } from "./abis/aaveV3Abi.js";
 import type {
+	AaveATokenApprovalTransactionRequest,
+	AaveDebtDelegationTransactionRequest,
 	AaveDelegationTypedDataMessage,
 	AaveDelegationTypedDataRequest,
 	AaveMigrationAuthorizationRequest,
@@ -468,6 +471,17 @@ export class AavePositionMigrationConnector
 				return undefined;
 			}
 
+			if (args.authorizationKind === "transaction") {
+				return this.buildATokenApprovalRequest({
+					chainId: args.chainId,
+					owner,
+					spender: swapVerifier,
+					token,
+					value: collateralTransferMaxAmount,
+					positionId: position.id,
+				});
+			}
+
 			return this.buildATokenPermitRequest({
 				chainId: args.chainId,
 				owner,
@@ -509,6 +523,17 @@ export class AavePositionMigrationConnector
 			)
 		) {
 			return undefined;
+		}
+
+		if (args.authorizationKind === "transaction") {
+			return this.buildDebtDelegationApprovalRequest({
+				chainId: args.chainId,
+				delegator: owner,
+				delegatee: swapVerifier,
+				token,
+				value,
+				positionId: position.id,
+			});
 		}
 
 		return this.buildDebtDelegationRequest({
@@ -1302,6 +1327,70 @@ export class AavePositionMigrationConnector
 		);
 
 		return items;
+	}
+
+	/**
+	 * `aToken.approve` — the signature-free form of the aToken permit.
+	 *
+	 * Synchronous: unlike the permit there is no nonce or EIP-712 domain to
+	 * read, so the grant needs no RPC round-trip.
+	 */
+	private buildATokenApprovalRequest(args: {
+		chainId: number;
+		owner: Address;
+		spender: Address;
+		token: Address;
+		value: bigint;
+		positionId: string;
+	}): AaveATokenApprovalTransactionRequest {
+		const approve = (amount: bigint) => ({
+			to: args.token,
+			abi: aaveATokenAbi as Abi,
+			functionName: "approve",
+			args: [args.spender, amount] as const,
+		});
+		return {
+			kind: "transaction",
+			authorizationType: "aTokenApproval",
+			connectorId: AAVE_CONNECTOR_ID,
+			protocol: AAVE_PROTOCOL,
+			chainId: args.chainId,
+			owner: args.owner,
+			positionId: args.positionId,
+			token: args.token,
+			call: approve(args.value),
+			revocation: approve(0n),
+		};
+	}
+
+	/** `variableDebtToken.approveDelegation` — signature-free debt delegation. */
+	private buildDebtDelegationApprovalRequest(args: {
+		chainId: number;
+		delegator: Address;
+		delegatee: Address;
+		token: Address;
+		value: bigint;
+		positionId: string;
+	}): AaveDebtDelegationTransactionRequest {
+		const approveDelegation = (amount: bigint) => ({
+			to: args.token,
+			abi: aaveDebtTokenAbi as Abi,
+			functionName: "approveDelegation",
+			args: [args.delegatee, amount] as const,
+		});
+		return {
+			kind: "transaction",
+			authorizationType: "variableDebtDelegationApproval",
+			connectorId: AAVE_CONNECTOR_ID,
+			protocol: AAVE_PROTOCOL,
+			chainId: args.chainId,
+			owner: args.delegator,
+			positionId: args.positionId,
+			token: args.token,
+			delegator: args.delegator,
+			call: approveDelegation(args.value),
+			revocation: approveDelegation(0n),
+		};
 	}
 
 	private async buildATokenPermitRequest(args: {

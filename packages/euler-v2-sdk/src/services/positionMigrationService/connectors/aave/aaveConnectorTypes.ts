@@ -1,6 +1,7 @@
 import type { Address, Hex } from "viem";
 import type {
 	MigrationPosition,
+	TransactionMigrationAuthorizationRequest,
 	TypedDataMigrationAuthorizationRequest,
 } from "../../positionMigrationServiceTypes.js";
 
@@ -89,9 +90,26 @@ export type AaveDelegationTypedDataRequest =
 		delegator: Address;
 	};
 
+/** `aToken.approve` — the signature-free counterpart of the aToken permit. */
+export type AaveATokenApprovalTransactionRequest =
+	TransactionMigrationAuthorizationRequest & {
+		authorizationType: "aTokenApproval";
+		token: Address;
+	};
+
+/** `variableDebtToken.approveDelegation` — counterpart of the debt delegation. */
+export type AaveDebtDelegationTransactionRequest =
+	TransactionMigrationAuthorizationRequest & {
+		authorizationType: "variableDebtDelegationApproval";
+		token: Address;
+		delegator: Address;
+	};
+
 export type AaveMigrationAuthorizationRequest =
 	| AavePermitTypedDataRequest
-	| AaveDelegationTypedDataRequest;
+	| AaveDelegationTypedDataRequest
+	| AaveATokenApprovalTransactionRequest
+	| AaveDebtDelegationTransactionRequest;
 
 export type AaveSignature = {
 	v: number;

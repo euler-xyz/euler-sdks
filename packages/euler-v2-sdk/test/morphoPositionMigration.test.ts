@@ -789,3 +789,103 @@ test("Morpho inbound collateral swap validates verifier calldata against the mig
 		/SwapVerifier data mismatch/,
 	);
 });
+
+test("Morpho authorization can be requested as a plain setAuthorization transaction", async () => {
+	const connector = createConnector({ isAuthorized: false });
+
+	const authorization = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: MORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createMorphoPosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+
+	assert.ok(authorization);
+	assert.equal(authorization.kind, "transaction");
+	assert.equal(authorization.authorizationType, "morphoAuthorization");
+	assert.equal(getAddress(authorization.call.to), getAddress(MORPHO));
+	assert.equal(authorization.call.functionName, "setAuthorization");
+	assert.deepEqual(authorization.call.args, [SWAP_VERIFIER, true]);
+	assert.equal(authorization.revocation?.functionName, "setAuthorization");
+	assert.deepEqual(authorization.revocation?.args, [SWAP_VERIFIER, false]);
+});
+
+test("Morpho transaction authorization reads no nonce", async () => {
+	const readFunctions: (string | undefined)[] = [];
+	const connector = createConnector({
+		isAuthorized: false,
+		onReadContract: (functionName) => readFunctions.push(functionName),
+	});
+
+	await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: MORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createMorphoPosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+
+	// setAuthorization is msg.sender-authenticated, so it consumes no nonce.
+	assert.ok(!readFunctions.includes("nonce"));
+});
+
+test("Morpho transaction authorization is skipped when already authorized", async () => {
+	// An authorization we did not grant is not ours to revoke, so
+	// removeAuthorizationAfterMigration must not conjure a disable request.
+	const connector = createConnector({ isAuthorized: true });
+
+	const authorization = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: MORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createMorphoPosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		removeAuthorizationAfterMigration: true,
+		authorizationKind: "transaction",
+	});
+
+	assert.equal(authorization, undefined);
+});
+
+test("Morpho transaction authorization carries its revocation without postMigrationAuthorization", async () => {
+	const connector = createConnector({ isAuthorized: false });
+
+	const authorization = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: MORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createMorphoPosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		removeAuthorizationAfterMigration: true,
+		authorizationKind: "transaction",
+	});
+
+	assert.ok(authorization);
+	// The in-batch disable needs a signature this form cannot supply; the
+	// revocation is sent as its own transaction instead.
+	assert.equal(authorization.postMigrationAuthorization, undefined);
+	assert.deepEqual(authorization.revocation?.args, [SWAP_VERIFIER, false]);
+});

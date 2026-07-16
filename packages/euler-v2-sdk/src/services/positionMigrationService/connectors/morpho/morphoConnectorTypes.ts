@@ -1,6 +1,7 @@
 import type { Address, Hex } from "viem";
 import type {
 	MigrationPosition,
+	TransactionMigrationAuthorizationRequest,
 	TypedDataMigrationAuthorizationRequest,
 } from "../../positionMigrationServiceTypes.js";
 
@@ -61,6 +62,16 @@ export type MorphoAuthorizationTypedDataMessage = MorphoAuthorization &
 
 export type MorphoAuthorizationTypedDataRequest =
 	TypedDataMigrationAuthorizationRequest<MorphoAuthorizationTypedDataMessage>;
+
+/** `morpho.setAuthorization` — the signature-free counterpart. */
+export type MorphoAuthorizationTransactionRequest =
+	TransactionMigrationAuthorizationRequest & {
+		authorizationType: "morphoAuthorization";
+	};
+
+export type MorphoMigrationAuthorizationRequest =
+	| MorphoAuthorizationTypedDataRequest
+	| MorphoAuthorizationTransactionRequest;
 
 export type MorphoSignature = {
 	v: number;

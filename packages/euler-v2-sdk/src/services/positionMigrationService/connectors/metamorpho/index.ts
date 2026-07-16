@@ -17,5 +17,6 @@ export type {
 	MetamorphoPermitTypedDataRequest,
 	MetamorphoPositionRaw,
 	MetamorphoPositionRef,
+	MetamorphoShareApprovalTransactionRequest,
 	MetamorphoVaultVersion,
 } from "./metamorphoConnectorTypes.js";

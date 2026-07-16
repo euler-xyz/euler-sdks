@@ -1,6 +1,7 @@
 import {
 	encodeFunctionData,
 	getAddress,
+	type Abi,
 	type Address,
 	type Hex,
 	type TypedDataDomain,
@@ -36,11 +37,13 @@ import {
 } from "../shared.js";
 import { metamorphoAbi } from "./abis/metamorphoAbi.js";
 import type {
+	MetamorphoMigrationAuthorizationRequest,
 	MetamorphoMigrationConnectorConfig,
 	MetamorphoMigrationPosition,
 	MetamorphoPermitTypedDataMessage,
 	MetamorphoPermitTypedDataRequest,
 	MetamorphoPositionRaw,
+	MetamorphoShareApprovalTransactionRequest,
 	MetamorphoPositionRef,
 	MetamorphoVaultVersion,
 } from "./metamorphoConnectorTypes.js";
@@ -203,7 +206,7 @@ export class MetamorphoPositionMigrationConnector
 
 	async getAuthorization(
 		args: GetMigrationAuthorizationArgs<MetamorphoMigrationPosition>,
-	): Promise<MetamorphoPermitTypedDataRequest | undefined> {
+	): Promise<MetamorphoMigrationAuthorizationRequest | undefined> {
 		if (args.direction !== "external-to-euler") {
 			throw new Error(
 				`Metamorpho migration does not support direction: ${args.direction}`,
@@ -231,6 +234,17 @@ export class MetamorphoPositionMigrationConnector
 			return undefined;
 		}
 
+		if (args.authorizationKind === "transaction") {
+			return this.buildShareApprovalRequest({
+				chainId: args.chainId,
+				owner,
+				spender: swapVerifier,
+				vault,
+				value: shareBalance,
+				positionId: position.id,
+			});
+		}
+
 		return this.buildSharePermitRequest({
 			chainId: args.chainId,
 			owner,
@@ -241,6 +255,40 @@ export class MetamorphoPositionMigrationConnector
 			positionId: position.id,
 			deadline: args.deadline,
 		});
+	}
+
+	/**
+	 * `vault.approve` — the signature-free form of the share permit.
+	 *
+	 * Synchronous: unlike the permit there is no nonce to read and no EIP-5267
+	 * domain to resolve, so the grant needs no RPC round-trip.
+	 */
+	private buildShareApprovalRequest(args: {
+		chainId: number;
+		owner: Address;
+		spender: Address;
+		vault: Address;
+		value: bigint;
+		positionId: string;
+	}): MetamorphoShareApprovalTransactionRequest {
+		const approve = (amount: bigint) => ({
+			to: args.vault,
+			abi: metamorphoAbi as Abi,
+			functionName: "approve",
+			args: [args.spender, amount] as const,
+		});
+		return {
+			kind: "transaction",
+			authorizationType: "metamorphoApproval",
+			connectorId: METAMORPHO_CONNECTOR_ID,
+			protocol: METAMORPHO_PROTOCOL,
+			chainId: args.chainId,
+			owner: args.owner,
+			positionId: args.positionId,
+			token: args.vault,
+			call: approve(args.value),
+			revocation: approve(0n),
+		};
 	}
 
 	async buildMigrationBatch(

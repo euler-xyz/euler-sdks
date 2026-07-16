@@ -1100,3 +1100,140 @@ test("Aave deposit-verified collateral swap requires the SwapVerifier receiver",
 		/swap quote receiver must be the Euler SwapVerifier/,
 	);
 });
+
+test("Aave inbound authorization can be requested as a plain approve transaction", async () => {
+	const position = createAavePosition();
+	const bufferedCollateralAmount = applyBuffer(
+		position.raw.aTokenBalance,
+		A_TOKEN_TRANSFER_BUFFER_BPS,
+	);
+	const connector = createConnector({ allowance: 0n });
+
+	const authorization = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: AAVE_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+
+	assert.ok(authorization);
+	assert.equal(authorization.kind, "transaction");
+	assert.equal(authorization.authorizationType, "aTokenApproval");
+	assert.equal(authorization.owner, OWNER);
+	assert.equal(authorization.connectorId, AAVE_CONNECTOR_ID);
+	assert.equal(authorization.call.to, A_TOKEN);
+	assert.equal(authorization.call.functionName, "approve");
+	// Same spender and buffered amount the permit would carry, so the connector's
+	// own allowance pre-check passes once this lands.
+	assert.deepEqual(authorization.call.args, [
+		SWAP_VERIFIER,
+		bufferedCollateralAmount,
+	]);
+	assert.deepEqual(authorization.revocation?.args, [SWAP_VERIFIER, 0n]);
+	assert.equal(authorization.revocation?.to, A_TOKEN);
+	assert.equal(authorization.revocation?.functionName, "approve");
+});
+
+test("Aave transaction authorization reads no nonce or token name", async () => {
+	const readFunctions: (string | undefined)[] = [];
+	const connector = createConnector({
+		allowance: 0n,
+		onReadContract: (functionName) => readFunctions.push(functionName),
+	});
+
+	await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: AAVE_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createAavePosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+
+	// A msg.sender grant has no nonce and no EIP-712 domain to resolve.
+	assert.ok(!readFunctions.includes("nonces"));
+	assert.ok(!readFunctions.includes("name"));
+});
+
+test("Aave outbound authorization can be requested as approveDelegation", async () => {
+	const connector = createConnector({ allowance: 0n });
+
+	const authorization = await connector.getAuthorization({
+		direction: "euler-to-external",
+		connectorId: AAVE_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createAavePosition(),
+		source: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+			debtAmount: 1_000n,
+			collateralAmount: 2_000n,
+		},
+		authorizationKind: "transaction",
+	});
+
+	assert.ok(authorization);
+	assert.equal(authorization.kind, "transaction");
+	assert.equal(authorization.authorizationType, "variableDebtDelegationApproval");
+	assert.equal(getAddress(authorization.call.to), getAddress(VARIABLE_DEBT_TOKEN));
+	assert.equal(authorization.call.functionName, "approveDelegation");
+	assert.equal((authorization.call.args as readonly unknown[])[0], SWAP_VERIFIER);
+	assert.deepEqual(authorization.revocation?.args, [SWAP_VERIFIER, 0n]);
+	assert.equal(authorization.revocation?.functionName, "approveDelegation");
+});
+
+test("Aave transaction authorization is skipped when the grant already stands", async () => {
+	// A standing allowance we did not create is not ours to grant or revoke.
+	const connector = createConnector({ allowance: 10_000n });
+
+	const authorization = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: AAVE_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createAavePosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+
+	assert.equal(authorization, undefined);
+});
+
+test("Aave authorization still defaults to the typed-data permit", async () => {
+	const connector = createConnector({ allowance: 0n });
+
+	const authorization = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: AAVE_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createAavePosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		deadline: 123n,
+	});
+
+	assert.ok(authorization);
+	assert.equal(authorization.kind, "typedData");
+});

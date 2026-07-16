@@ -9,8 +9,10 @@ export {
 } from "./morphoConnector.js";
 export type {
 	MorphoAuthorization,
+	MorphoAuthorizationTransactionRequest,
 	MorphoAuthorizationTypedDataMessage,
 	MorphoAuthorizationTypedDataRequest,
+	MorphoMigrationAuthorizationRequest,
 	MorphoMarketParams,
 	MorphoMarketState,
 	MorphoMigrationConnectorConfig,

@@ -19,6 +19,7 @@ Flow:
 2. Resolve the authorization: `getAuthorization({ direction, connectorId, owner, position, target | source, deadline })`.
    It returns `undefined` when already authorized — guard for it, otherwise sign
    `request.typedData` and pass `{ request, signature }` as `authorization`.
+   For wallets that cannot sign, request the transaction form instead (rule 5).
 3. Build and execute: `planMigration({ ...args, authorization })` → `TransactionPlan`
    → `executionService.executeTransactionPlan(...)`.
 
@@ -37,6 +38,18 @@ Rules:
    stateOverrides, previewPlan, authorizationRequest }`; simulate `plan` with
    `stateOverrides` (the permit is replaced by a storage override, so no
    signature is needed), then gate on `canExecute`.
+5. Contract wallets cannot sign the typed-data form — Aave and Morpho verify
+   permits/delegations/authorizations with `ecrecover` and have no ERC-1271
+   fallback. Pass `authorizationKind: "transaction"` to `getAuthorization` for a
+   `msg.sender` grant instead: `{ kind: "transaction", call, revocation }`.
+   Send `call` and **wait for it to be mined** before `planMigration` — the
+   connectors read the live allowance to decide whether the batch still needs an
+   authorization item, so a grant that has not landed yet makes the build throw
+   "… is required". Then omit `authorization` and pass
+   `removeAuthorizationAfterMigration: false` (its in-batch disable needs a
+   signature), and send `revocation` once the batch settles. The grant cannot be
+   a batch item: the EVC forwards batch items as itself, so it would grant from
+   the EVC.
 
 Reference: `packages/euler-v2-sdk/docs/position-migration-service.md`,
 `examples/execution/aave-to-euler-position-migration-example.ts`,
