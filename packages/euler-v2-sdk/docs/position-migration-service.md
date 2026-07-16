@@ -304,7 +304,9 @@ if (request?.kind === "transaction") {
   } finally {
     // 3. Restore the authorization state that existed before the grant, even
     //    when planning or execution fails after the grant was mined.
-    if (grantMined) await sendAndConfirm(request.revocation);
+    if (grantMined && request.revocation) {
+      await sendAndConfirm(request.revocation);
+    }
   }
 }
 ```
