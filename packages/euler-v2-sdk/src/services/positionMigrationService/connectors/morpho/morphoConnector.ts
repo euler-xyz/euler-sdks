@@ -379,6 +379,19 @@ export class MorphoPositionMigrationConnector
 	}
 
 	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<MorphoMigrationPosition> & {
+			authorizationKind: "transaction";
+		},
+	): Promise<MorphoAuthorizationTransactionRequest | undefined>;
+	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<MorphoMigrationPosition> & {
+			authorizationKind?: "typedData";
+		},
+	): Promise<MorphoAuthorizationTypedDataRequest | undefined>;
+	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<MorphoMigrationPosition>,
+	): Promise<MorphoMigrationAuthorizationRequest | undefined>;
+	async getAuthorization(
 		args: GetMigrationAuthorizationArgs<MorphoMigrationPosition>,
 	): Promise<MorphoMigrationAuthorizationRequest | undefined> {
 		if (
@@ -548,8 +561,19 @@ export class MorphoPositionMigrationConnector
 		}
 
 		const items: EVCBatchItem[] = [];
-		const alreadyAuthorized =
-			args.skipAuthorizationCheck && args.authorization
+		const hasSimulatedTransactionGrant =
+			args.skipAuthorizationCheck &&
+			args.authorizationRequest?.kind === "transaction"
+				? this.validateSimulatedAuthorization({
+						request: args.authorizationRequest,
+						owner,
+						swapVerifier,
+						morpho,
+					})
+				: false;
+		const alreadyAuthorized = hasSimulatedTransactionGrant
+			? true
+			: args.skipAuthorizationCheck && args.authorization
 				? false
 				: await this.isAuthorized(args.chainId, owner, swapVerifier);
 		if (!alreadyAuthorized) {
@@ -801,11 +825,21 @@ export class MorphoPositionMigrationConnector
 		}
 
 		const items: EVCBatchItem[] = [];
-		const alreadyAuthorized = await this.isAuthorized(
-			args.chainId,
-			owner,
-			swapVerifier,
-		);
+		const hasSimulatedTransactionGrant =
+			args.skipAuthorizationCheck &&
+			args.authorizationRequest?.kind === "transaction"
+				? this.validateSimulatedAuthorization({
+						request: args.authorizationRequest,
+						owner,
+						swapVerifier,
+						morpho,
+					})
+				: false;
+		const alreadyAuthorized = hasSimulatedTransactionGrant
+			? true
+			: args.skipAuthorizationCheck && args.authorization
+				? false
+				: await this.isAuthorized(args.chainId, owner, swapVerifier);
 		if (!alreadyAuthorized) {
 			if (!args.authorization) {
 				throw new Error(
@@ -967,6 +1001,50 @@ export class MorphoPositionMigrationConnector
 			functionName: "isAuthorized",
 			args: [getAddress(authorizer), getAddress(authorized)],
 		});
+	}
+
+	private validateSimulatedAuthorization(args: {
+		request: MigrationAuthorizationRequest;
+		owner: Address;
+		swapVerifier: Address;
+		morpho: Address;
+	}): true {
+		const request = args.request as MorphoMigrationAuthorizationRequest;
+		if (
+			request.kind !== "transaction" ||
+			request.connectorId !== MORPHO_CONNECTOR_ID ||
+			request.authorizationType !== "morphoAuthorization"
+		) {
+			throw new Error("Expected a Morpho transaction authorization request");
+		}
+		assertSameAddress(
+			request.owner,
+			args.owner,
+			"Morpho authorization owner mismatch",
+		);
+		assertSameAddress(
+			request.call.to,
+			args.morpho,
+			"Morpho authorization call target mismatch",
+		);
+		if (request.call.functionName !== "setAuthorization") {
+			throw new Error(
+				"Morpho transaction authorization must call setAuthorization",
+			);
+		}
+		const [authorized, isAuthorized] = request.call.args;
+		if (typeof authorized !== "string") {
+			throw new Error("Morpho transaction authorization target is required");
+		}
+		assertSameAddress(
+			authorized as Address,
+			args.swapVerifier,
+			"Morpho authorization target must be the Euler SwapVerifier",
+		);
+		if (isAuthorized !== true) {
+			throw new Error("Morpho transaction authorization must enable access");
+		}
+		return true;
 	}
 
 	private encodeSetAuthorizationWithSigItem(args: {

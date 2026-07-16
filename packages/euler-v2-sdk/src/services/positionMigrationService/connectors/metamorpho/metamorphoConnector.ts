@@ -205,6 +205,19 @@ export class MetamorphoPositionMigrationConnector
 	}
 
 	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<MetamorphoMigrationPosition> & {
+			authorizationKind: "transaction";
+		},
+	): Promise<MetamorphoShareApprovalTransactionRequest | undefined>;
+	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<MetamorphoMigrationPosition> & {
+			authorizationKind?: "typedData";
+		},
+	): Promise<MetamorphoPermitTypedDataRequest | undefined>;
+	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<MetamorphoMigrationPosition>,
+	): Promise<MetamorphoMigrationAuthorizationRequest | undefined>;
+	async getAuthorization(
 		args: GetMigrationAuthorizationArgs<MetamorphoMigrationPosition>,
 	): Promise<MetamorphoMigrationAuthorizationRequest | undefined> {
 		if (args.direction !== "external-to-euler") {
@@ -222,15 +235,13 @@ export class MetamorphoPositionMigrationConnector
 		const vault = position.raw.vault;
 		const shareBalance = position.raw.shareBalance;
 		if (shareBalance <= 0n) return undefined;
-		if (
-			await this.hasShareAllowance(
-				args.chainId,
-				vault,
-				owner,
-				swapVerifier,
-				shareBalance,
-			)
-		) {
+		const currentAllowance = await this.getShareAllowance(
+			args.chainId,
+			vault,
+			owner,
+			swapVerifier,
+		);
+		if (currentAllowance >= shareBalance) {
 			return undefined;
 		}
 
@@ -240,7 +251,9 @@ export class MetamorphoPositionMigrationConnector
 				owner,
 				spender: swapVerifier,
 				vault,
+				version: position.raw.version,
 				value: shareBalance,
+				previousValue: currentAllowance,
 				positionId: position.id,
 			});
 		}
@@ -268,7 +281,9 @@ export class MetamorphoPositionMigrationConnector
 		owner: Address;
 		spender: Address;
 		vault: Address;
+		version: MetamorphoVaultVersion;
 		value: bigint;
+		previousValue: bigint;
 		positionId: string;
 	}): MetamorphoShareApprovalTransactionRequest {
 		const approve = (amount: bigint) => ({
@@ -286,8 +301,9 @@ export class MetamorphoPositionMigrationConnector
 			owner: args.owner,
 			positionId: args.positionId,
 			token: args.vault,
+			allowanceSlotIndex: getMetamorphoAllowanceSlotIndex(args.version),
 			call: approve(args.value),
-			revocation: approve(0n),
+			revocation: approve(args.previousValue),
 		};
 	}
 
@@ -351,16 +367,27 @@ export class MetamorphoPositionMigrationConnector
 		}
 
 		const items: EVCBatchItem[] = [];
-		const needsSharePermit =
-			args.skipAuthorizationCheck && args.authorization
+		const hasSimulatedTransactionGrant =
+			args.skipAuthorizationCheck &&
+			args.authorizationRequest?.kind === "transaction"
+				? this.validateSimulatedShareApproval({
+						request: args.authorizationRequest,
+						owner,
+						swapVerifier,
+						vault,
+						minimumAmount: shareBalance,
+					})
+				: false;
+		const needsSharePermit = hasSimulatedTransactionGrant
+			? false
+			: args.skipAuthorizationCheck && args.authorization
 				? true
-				: !(await this.hasShareAllowance(
+				: (await this.getShareAllowance(
 						args.chainId,
 						vault,
 						owner,
 						swapVerifier,
-						shareBalance,
-					));
+					)) < shareBalance;
 		if (needsSharePermit) {
 			if (!args.authorization) {
 				throw new Error(
@@ -608,13 +635,12 @@ export class MetamorphoPositionMigrationConnector
 		};
 	}
 
-	private async hasShareAllowance(
+	private async getShareAllowance(
 		chainId: number,
 		vault: Address,
 		owner: Address,
 		spender: Address,
-		amount: bigint,
-	): Promise<boolean> {
+	): Promise<bigint> {
 		const provider = this.providerService.getProvider(chainId);
 		const allowance = (await provider.readContract({
 			address: vault,
@@ -622,7 +648,57 @@ export class MetamorphoPositionMigrationConnector
 			functionName: "allowance",
 			args: [owner, spender],
 		})) as bigint;
-		return allowance >= amount;
+		return allowance;
+	}
+
+	private validateSimulatedShareApproval(args: {
+		request: MigrationAuthorizationRequest;
+		owner: Address;
+		swapVerifier: Address;
+		vault: Address;
+		minimumAmount: bigint;
+	}): true {
+		const request = args.request as MetamorphoMigrationAuthorizationRequest;
+		if (
+			request.kind !== "transaction" ||
+			request.connectorId !== METAMORPHO_CONNECTOR_ID ||
+			request.authorizationType !== "metamorphoApproval"
+		) {
+			throw new Error(
+				"Expected a Metamorpho share approval transaction request",
+			);
+		}
+		assertSameAddress(
+			request.owner,
+			args.owner,
+			"Metamorpho approval owner mismatch",
+		);
+		assertSameAddress(
+			request.token,
+			args.vault,
+			"Metamorpho approval token mismatch",
+		);
+		assertSameAddress(
+			request.call.to,
+			args.vault,
+			"Metamorpho approval call target mismatch",
+		);
+		if (request.call.functionName !== "approve") {
+			throw new Error("Metamorpho transaction authorization must call approve");
+		}
+		const [spender, amount] = request.call.args;
+		if (typeof spender !== "string") {
+			throw new Error("Metamorpho transaction authorization spender is required");
+		}
+		assertSameAddress(
+			spender as Address,
+			args.swapVerifier,
+			"Metamorpho approval spender must be the Euler SwapVerifier",
+		);
+		if (typeof amount !== "bigint" || amount < args.minimumAmount) {
+			throw new Error("Metamorpho approval amount is below the share balance");
+		}
+		return true;
 	}
 }
 

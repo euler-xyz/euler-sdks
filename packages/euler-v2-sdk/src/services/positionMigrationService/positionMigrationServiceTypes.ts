@@ -114,7 +114,7 @@ export type TransactionMigrationAuthorizationRequest = {
 	 * a standing allowance until then, exercisable by any EVC operator the owner
 	 * has authorized.
 	 */
-	revocation?: MigrationAuthorizationCall;
+	revocation: MigrationAuthorizationCall;
 	postMigrationAuthorization?: MigrationAuthorizationRequest;
 };
 
@@ -268,6 +268,8 @@ export type PlanMigrationArgs<
 	TPosition extends MigrationPosition = MigrationPosition,
 > = BuildMigrationBatchArgs<TPosition> & {
 	operationName?: string;
+	/** Authorization form to resolve when planning a simulation. */
+	authorizationKind?: MigrationAuthorizationKind;
 };
 
 export type PlanMigrationSimulationResult = {

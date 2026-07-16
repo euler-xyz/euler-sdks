@@ -771,6 +771,39 @@ test("Metamorpho transaction authorization resolves no EIP-5267 domain", async (
 	assert.ok(!readFunctions.includes("nonces"));
 });
 
+test("Metamorpho migration simulation accepts an unmined transaction grant", async () => {
+	const connector = createConnector({ allowance: 0n });
+	const position = createMetamorphoPosition();
+	const authorizationRequest = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: METAMORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+	assert.ok(authorizationRequest);
+
+	const items = await connector.buildMigrationBatch({
+		direction: "external-to-euler",
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationRequest,
+		skipAuthorizationCheck: true,
+	});
+
+	assert.ok(items.length > 0);
+});
+
 test("Metamorpho transaction authorization is skipped when the allowance already stands", async () => {
 	const connector = createConnector({ allowance: SHARE_BALANCE });
 
@@ -788,4 +821,28 @@ test("Metamorpho transaction authorization is skipped when the allowance already
 	});
 
 	assert.equal(authorization, undefined);
+});
+
+test("Metamorpho transaction authorization restores a pre-existing partial allowance", async () => {
+	const previousAllowance = 3n;
+	const connector = createConnector({ allowance: previousAllowance });
+
+	const authorization = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: METAMORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createMetamorphoPosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+
+	assert.equal(authorization?.kind, "transaction");
+	assert.deepEqual(authorization?.revocation.args, [
+		SWAP_VERIFIER,
+		previousAllowance,
+	]);
 });

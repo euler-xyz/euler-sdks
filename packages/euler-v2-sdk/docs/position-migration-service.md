@@ -74,7 +74,7 @@ address (e.g. the Aave pool or Morpho singleton).
   `{ positionRef?, borrowAmount?, collateralAmount?, repayAmount?, interestBufferBps? }`.
 - `MigrationAuthorizationRequest` — a discriminated union of
   `{ kind: "typedData", typedData: { domain, types, primaryType, message } }` and
-  `{ kind: "transaction", call, revocation? }`, where each is a
+  `{ kind: "transaction", call, revocation }`, where each is a
   `MigrationAuthorizationCall` (`{ to, abi, functionName, args, value? }`).
   Connectors emit `typedData` by default and `transaction` when
   `authorizationKind: "transaction"` is requested — see
@@ -277,26 +277,38 @@ const request = await sdk.positionMigrationService.getAuthorization({
 });
 
 if (request?.kind === "transaction") {
-  // 1. Send the grant and WAIT for it to be mined.
-  await wallet.writeContract(request.call);
+  // Use the owner-controlled client (for example, the Safe execution path),
+  // adapt the SDK's `to` field to viem's `address`, and wait for confirmation.
+  const sendAndConfirm = async ({ to, ...call }: MigrationAuthorizationCall) => {
+    const hash = await ownerWalletClient.writeContract({ address: to, ...call });
+    await publicClient.waitForTransactionReceipt({ hash });
+  };
 
-  // 2. Build without an `authorization` — the connector reads the live
-  //    allowance and omits the authorization item from the batch.
-  const plan = await sdk.positionMigrationService.planMigration({
-    ...args,
-    removeAuthorizationAfterMigration: false,
-  });
-  // ... execute the plan ...
+  let grantMined = false;
+  try {
+    // 1. Send the grant and wait for it to be mined.
+    await sendAndConfirm(request.call);
+    grantMined = true;
 
-  // 3. Undo the standing grant.
-  if (request.revocation) await wallet.writeContract(request.revocation);
+    // 2. Build without an `authorization` — the connector reads the live
+    //    allowance and omits the authorization item from the batch.
+    const plan = await sdk.positionMigrationService.planMigration({
+      ...args,
+      removeAuthorizationAfterMigration: false,
+    });
+    await sdk.executionService.executeTransactionPlan({ ...execution, plan });
+  } finally {
+    // 3. Restore the authorization state that existed before the grant, even
+    //    when planning or execution fails after the grant was mined.
+    if (grantMined) await sendAndConfirm(request.revocation);
+  }
 }
 ```
 
 Per connector the grant is `aToken.approve` (inbound Aave),
 `variableDebtToken.approveDelegation` (outbound Aave),
-`morpho.setAuthorization` and `vault.approve` (MetaMorpho shares); each
-`revocation` is the same call zeroed / set to `false`.
+`morpho.setAuthorization` and `vault.approve` (MetaMorpho shares). Each
+`revocation` restores the authorization state that existed before the grant.
 
 Constraints:
 
@@ -318,15 +330,18 @@ Constraints:
 `planMigrationSimulation(args)` builds the migration batch exactly once and
 returns:
 
-- `plan` — an execution-ready plan with the permit/authorization call **removed**
-  and replaced by `stateOverrides` that force the allowance/authorization storage
-  slot. This lets you dry-run the migration without a real signature.
+- `plan` — an execution-ready plan with the required authorization represented
+  by `stateOverrides` that force the allowance/authorization storage slot. This
+  lets you dry-run the migration without a real signature or mined grant.
 - `stateOverrides` — the `StateOverride[]` to pass to the simulator alongside
   `plan`.
-- `previewPlan` — the full plan **including** the authorization call (stub-signed,
-  or your signature if supplied). Use it for calldata preview/display.
-- `authorizationRequest?` — the request the user must sign at execution time,
-  resolved internally so you don't need a separate `getAuthorization` call.
+- `previewPlan` — the calldata preview. Typed-data requests include their
+  stub-signed authorization call (or your signature if supplied); transaction
+  grants stay outside the EVC batch, so they are not included.
+- `authorizationRequest?` — the request the user must sign or send at execution
+  time, resolved internally so you don't need a separate `getAuthorization`
+  call. Pass `authorizationKind: "transaction"` to simulate the contract-wallet
+  flow before mining its grant.
 
 Feed `plan` + `stateOverrides` into
 `executionService.simulateTransactionPlan(...)` for a pre-trade safety check, and

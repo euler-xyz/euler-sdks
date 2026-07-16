@@ -95,6 +95,7 @@ function createConnector(
 					}[];
 				}) =>
 					contracts.map((contract) => {
+						args.onReadContract?.(contract.functionName);
 						if (contract.functionName === "name") return "Aave Test Token";
 						if (contract.functionName === "nonces") return 0n;
 						if (contract.functionName === "getReserveData") {
@@ -1167,6 +1168,41 @@ test("Aave transaction authorization reads no nonce or token name", async () => 
 	assert.ok(!readFunctions.includes("name"));
 });
 
+test("Aave migration simulation accepts an unmined transaction grant", async () => {
+	const connector = createConnector({ allowance: 0n });
+	const position = createAavePosition();
+	const authorizationRequest = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: AAVE_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+	assert.ok(authorizationRequest);
+
+	const items = await connector.buildMigrationBatch({
+		direction: "external-to-euler",
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationRequest,
+		skipAuthorizationCheck: true,
+	});
+
+	assert.ok(items.length > 0);
+});
+
 test("Aave outbound authorization can be requested as approveDelegation", async () => {
 	const connector = createConnector({ allowance: 0n });
 
@@ -1215,6 +1251,51 @@ test("Aave transaction authorization is skipped when the grant already stands", 
 	});
 
 	assert.equal(authorization, undefined);
+});
+
+test("Aave transaction authorizations restore pre-existing partial grants", async () => {
+	const previousAllowance = 7n;
+	const connector = createConnector({ allowance: previousAllowance });
+
+	const inbound = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: AAVE_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createAavePosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+	const outbound = await connector.getAuthorization({
+		direction: "euler-to-external",
+		connectorId: AAVE_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createAavePosition(),
+		source: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+			debtAmount: 1_000n,
+			collateralAmount: 2_000n,
+		},
+		authorizationKind: "transaction",
+	});
+
+	assert.equal(inbound?.kind, "transaction");
+	assert.deepEqual(inbound?.revocation.args, [
+		SWAP_VERIFIER,
+		previousAllowance,
+	]);
+	assert.equal(outbound?.kind, "transaction");
+	assert.deepEqual(outbound?.revocation.args, [
+		SWAP_VERIFIER,
+		previousAllowance,
+	]);
 });
 
 test("Aave authorization still defaults to the typed-data permit", async () => {

@@ -842,6 +842,41 @@ test("Morpho transaction authorization reads no nonce", async () => {
 	assert.ok(!readFunctions.includes("nonce"));
 });
 
+test("Morpho migration simulation accepts an unmined transaction grant", async () => {
+	const connector = createConnector({ isAuthorized: false });
+	const position = createMorphoPosition();
+	const authorizationRequest = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: MORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+	assert.ok(authorizationRequest);
+
+	const items = await connector.buildMigrationBatch({
+		direction: "external-to-euler",
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			borrowVault: DEBT_VAULT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationRequest,
+		skipAuthorizationCheck: true,
+	});
+
+	assert.ok(items.length > 0);
+});
+
 test("Morpho transaction authorization is skipped when already authorized", async () => {
 	// An authorization we did not grant is not ours to revoke, so
 	// removeAuthorizationAfterMigration must not conjure a disable request.

@@ -436,6 +436,25 @@ export class AavePositionMigrationConnector
 	}
 
 	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<AaveMigrationPosition> & {
+			authorizationKind: "transaction";
+		},
+	): Promise<
+		| Extract<AaveMigrationAuthorizationRequest, { kind: "transaction" }>
+		| undefined
+	>;
+	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<AaveMigrationPosition> & {
+			authorizationKind?: "typedData";
+		},
+	): Promise<
+		| Extract<AaveMigrationAuthorizationRequest, { kind: "typedData" }>
+		| undefined
+	>;
+	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<AaveMigrationPosition>,
+	): Promise<AaveMigrationAuthorizationRequest | undefined>;
+	async getAuthorization(
 		args: GetMigrationAuthorizationArgs<AaveMigrationPosition>,
 	): Promise<AaveMigrationAuthorizationRequest | undefined> {
 		if (
@@ -459,15 +478,13 @@ export class AavePositionMigrationConnector
 				collateralAmount,
 				DEFAULT_ATOKEN_TRANSFER_BUFFER_BPS,
 			);
-			if (
-				await this.hasATokenAllowance(
-					args.chainId,
-					token,
-					owner,
-					swapVerifier,
-					collateralTransferMaxAmount,
-				)
-			) {
+			const currentAllowance = await this.getATokenAllowance(
+				args.chainId,
+				token,
+				owner,
+				swapVerifier,
+			);
+			if (currentAllowance >= collateralTransferMaxAmount) {
 				return undefined;
 			}
 
@@ -478,6 +495,7 @@ export class AavePositionMigrationConnector
 					spender: swapVerifier,
 					token,
 					value: collateralTransferMaxAmount,
+					previousValue: currentAllowance,
 					positionId: position.id,
 				});
 			}
@@ -513,15 +531,13 @@ export class AavePositionMigrationConnector
 		}
 		const token = position.raw.debtReserve.variableDebtTokenAddress;
 		if (value <= 0n) return undefined;
-		if (
-			await this.hasBorrowAllowance(
-				args.chainId,
-				token,
-				owner,
-				swapVerifier,
-				value,
-			)
-		) {
+		const currentAllowance = await this.getBorrowAllowance(
+			args.chainId,
+			token,
+			owner,
+			swapVerifier,
+		);
+		if (currentAllowance >= value) {
 			return undefined;
 		}
 
@@ -532,6 +548,7 @@ export class AavePositionMigrationConnector
 				delegatee: swapVerifier,
 				token,
 				value,
+				previousValue: currentAllowance,
 				positionId: position.id,
 			});
 		}
@@ -916,16 +933,27 @@ export class AavePositionMigrationConnector
 		}
 
 		const items: EVCBatchItem[] = [];
-		const needsATokenPermit =
-			args.skipAuthorizationCheck && args.authorization
+		const hasSimulatedTransactionGrant =
+			args.skipAuthorizationCheck &&
+			args.authorizationRequest?.kind === "transaction"
+				? this.validateSimulatedATokenApproval({
+						request: args.authorizationRequest,
+						owner,
+						swapVerifier,
+						aToken,
+						minimumAmount: collateralTransferMaxAmount,
+					})
+				: false;
+		const needsATokenPermit = hasSimulatedTransactionGrant
+			? false
+			: args.skipAuthorizationCheck && args.authorization
 				? true
-				: !(await this.hasATokenAllowance(
+				: (await this.getATokenAllowance(
 						args.chainId,
 						aToken,
 						owner,
 						swapVerifier,
-						collateralTransferMaxAmount,
-					));
+					)) < collateralTransferMaxAmount;
 		if (needsATokenPermit) {
 			if (!args.authorization) {
 				throw new Error(
@@ -1197,16 +1225,27 @@ export class AavePositionMigrationConnector
 			args.deadline ?? BigInt(Math.floor(Date.now() / 1000) + 60 * 60);
 
 		const items: EVCBatchItem[] = [];
-		const needsDebtDelegation =
-			args.skipAuthorizationCheck && args.authorization
+		const hasSimulatedTransactionGrant =
+			args.skipAuthorizationCheck &&
+			args.authorizationRequest?.kind === "transaction"
+				? this.validateSimulatedDebtDelegation({
+						request: args.authorizationRequest,
+						owner,
+						swapVerifier,
+						variableDebtToken,
+						minimumAmount: aaveBorrowAmount,
+					})
+				: false;
+		const needsDebtDelegation = hasSimulatedTransactionGrant
+			? false
+			: args.skipAuthorizationCheck && args.authorization
 				? true
-				: !(await this.hasBorrowAllowance(
+				: (await this.getBorrowAllowance(
 						args.chainId,
 						variableDebtToken,
 						owner,
 						swapVerifier,
-						aaveBorrowAmount,
-					));
+					)) < aaveBorrowAmount;
 		if (needsDebtDelegation) {
 			if (!args.authorization) {
 				throw new Error(
@@ -1341,6 +1380,7 @@ export class AavePositionMigrationConnector
 		spender: Address;
 		token: Address;
 		value: bigint;
+		previousValue: bigint;
 		positionId: string;
 	}): AaveATokenApprovalTransactionRequest {
 		const approve = (amount: bigint) => ({
@@ -1359,7 +1399,7 @@ export class AavePositionMigrationConnector
 			positionId: args.positionId,
 			token: args.token,
 			call: approve(args.value),
-			revocation: approve(0n),
+			revocation: approve(args.previousValue),
 		};
 	}
 
@@ -1370,6 +1410,7 @@ export class AavePositionMigrationConnector
 		delegatee: Address;
 		token: Address;
 		value: bigint;
+		previousValue: bigint;
 		positionId: string;
 	}): AaveDebtDelegationTransactionRequest {
 		const approveDelegation = (amount: bigint) => ({
@@ -1389,7 +1430,7 @@ export class AavePositionMigrationConnector
 			token: args.token,
 			delegator: args.delegator,
 			call: approveDelegation(args.value),
-			revocation: approveDelegation(0n),
+			revocation: approveDelegation(args.previousValue),
 		};
 	}
 
@@ -1615,13 +1656,12 @@ export class AavePositionMigrationConnector
 		};
 	}
 
-	private async hasATokenAllowance(
+	private async getATokenAllowance(
 		chainId: number,
 		aToken: Address,
 		owner: Address,
 		spender: Address,
-		amount: bigint,
-	): Promise<boolean> {
+	): Promise<bigint> {
 		const provider = this.providerService.getProvider(chainId);
 		const allowance = (await provider.readContract({
 			address: aToken,
@@ -1629,16 +1669,15 @@ export class AavePositionMigrationConnector
 			functionName: "allowance",
 			args: [owner, spender],
 		})) as bigint;
-		return allowance >= amount;
+		return allowance;
 	}
 
-	private async hasBorrowAllowance(
+	private async getBorrowAllowance(
 		chainId: number,
 		debtToken: Address,
 		owner: Address,
 		delegatee: Address,
-		amount: bigint,
-	): Promise<boolean> {
+	): Promise<bigint> {
 		const provider = this.providerService.getProvider(chainId);
 		const allowance = (await provider.readContract({
 			address: debtToken,
@@ -1646,7 +1685,89 @@ export class AavePositionMigrationConnector
 			functionName: "borrowAllowance",
 			args: [owner, delegatee],
 		})) as bigint;
-		return allowance >= amount;
+		return allowance;
+	}
+
+	private validateSimulatedATokenApproval(args: {
+		request: MigrationAuthorizationRequest;
+		owner: Address;
+		swapVerifier: Address;
+		aToken: Address;
+		minimumAmount: bigint;
+	}): true {
+		const request = assertAaveTransactionAuthorizationRequest(
+			args.request,
+			"aTokenApproval",
+		);
+		assertSameAddress(request.owner, args.owner, "Aave approval owner mismatch");
+		assertSameAddress(request.token, args.aToken, "Aave approval token mismatch");
+		assertSameAddress(
+			request.call.to,
+			args.aToken,
+			"Aave approval call target mismatch",
+		);
+		if (request.call.functionName !== "approve") {
+			throw new Error("Aave transaction authorization must call approve");
+		}
+		const [spender, amount] = request.call.args;
+		if (typeof spender !== "string") {
+			throw new Error("Aave transaction authorization spender is required");
+		}
+		assertSameAddress(
+			spender as Address,
+			args.swapVerifier,
+			"Aave approval spender must be the Euler SwapVerifier",
+		);
+		if (typeof amount !== "bigint" || amount < args.minimumAmount) {
+			throw new Error("Aave approval amount is below the capped transfer amount");
+		}
+		return true;
+	}
+
+	private validateSimulatedDebtDelegation(args: {
+		request: MigrationAuthorizationRequest;
+		owner: Address;
+		swapVerifier: Address;
+		variableDebtToken: Address;
+		minimumAmount: bigint;
+	}): true {
+		const request = assertAaveTransactionAuthorizationRequest(
+			args.request,
+			"variableDebtDelegationApproval",
+		);
+		assertSameAddress(
+			request.owner,
+			args.owner,
+			"Aave delegation owner mismatch",
+		);
+		assertSameAddress(
+			request.token,
+			args.variableDebtToken,
+			"Aave delegation token mismatch",
+		);
+		assertSameAddress(
+			request.call.to,
+			args.variableDebtToken,
+			"Aave delegation call target mismatch",
+		);
+		if (request.call.functionName !== "approveDelegation") {
+			throw new Error(
+				"Aave transaction authorization must call approveDelegation",
+			);
+		}
+		const [delegatee, amount] = request.call.args;
+		if (typeof delegatee !== "string") {
+			throw new Error("Aave transaction authorization delegatee is required");
+		}
+		assertSameAddress(
+			delegatee as Address,
+			args.swapVerifier,
+			"Aave delegation delegatee must be the Euler SwapVerifier",
+		);
+		if (typeof amount !== "bigint" || amount < args.minimumAmount) {
+			throw new Error("Aave delegation amount is below the borrow amount");
+		}
+		return true;
 	}
 }
 
@@ -1969,6 +2090,34 @@ function assertAaveAuthorizationRequest<
 	return aaveRequest as Extract<
 		AaveMigrationAuthorizationRequest,
 		{ authorizationType: TType }
+	>;
+}
+
+function assertAaveTransactionAuthorizationRequest<
+	TType extends Extract<
+		AaveMigrationAuthorizationRequest,
+		{ kind: "transaction" }
+	>["authorizationType"],
+>(
+	request: MigrationAuthorizationRequest,
+	authorizationType: TType,
+): Extract<
+	AaveMigrationAuthorizationRequest,
+	{ kind: "transaction"; authorizationType: TType }
+> {
+	const aaveRequest = request as AaveMigrationAuthorizationRequest;
+	if (
+		request.kind !== "transaction" ||
+		request.connectorId !== AAVE_CONNECTOR_ID ||
+		aaveRequest.authorizationType !== authorizationType
+	) {
+		throw new Error(
+			`Expected an Aave ${authorizationType} transaction authorization request`,
+		);
+	}
+	return aaveRequest as Extract<
+		AaveMigrationAuthorizationRequest,
+		{ kind: "transaction"; authorizationType: TType }
 	>;
 }
 
