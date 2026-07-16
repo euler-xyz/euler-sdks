@@ -250,8 +250,10 @@ Per-connector authorizations:
 - **Morpho** — a single `Authorization` message consumed via
   `setAuthorizationWithSig`, granting the SwapVerifier a standing authorization.
   With `removeAuthorizationAfterMigration: true` the connector attaches a paired
-  revocation as `postMigrationAuthorization`. (Morpho requests do not carry an
-  `authorizationType` discriminator — key off `connectorId` / primary type.)
+  revocation as `postMigrationAuthorization`. Morpho typed-data requests do not
+  carry an `authorizationType` discriminator, so identify them by `connectorId`
+  and primary type; transaction requests use
+  `authorizationType: "morphoAuthorization"`.
 - **MetaMorpho** — EIP-2612 `Permit` on the vault-share token
   (`authorizationType: "metamorphoPermit"`). `version: "v1"` covers v1/v1.1
   (domain resolved via `eip712Domain()`); `version: "v2"` uses the minimal
@@ -259,9 +261,9 @@ Per-connector authorizations:
 
 ### Contract wallets: `authorizationKind: "transaction"`
 
-Aave and Morpho verify their permit / delegation / authorization signatures with
-`ecrecover` alone and implement no ERC-1271 fallback, so a contract wallet (e.g.
-a Safe) can never satisfy the typed-data form. Pass
+Aave, Morpho, and MetaMorpho verify their permit / delegation / authorization
+signatures without an ERC-1271 fallback, so a contract wallet (e.g. a Safe)
+cannot satisfy the typed-data form. Pass
 `authorizationKind: "transaction"` to `getAuthorization` and the connector
 returns a `msg.sender`-authenticated grant instead:
 
