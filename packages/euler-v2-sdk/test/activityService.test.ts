@@ -20,7 +20,11 @@ import {
 	type ActivityEventType,
 	type IActivityAdapter,
 } from "../src/services/activityService/index.js";
-import { createQueryCacheBuildQuery } from "../src/utils/buildQuery.js";
+import {
+	createQueryCacheBuildQuery,
+	serializeQueryArgs,
+	type BuildQueryFn,
+} from "../src/utils/buildQuery.js";
 import {
 	getSubAccountAddress,
 	SUB_ACCOUNT_MAX_ID,
@@ -1076,6 +1080,82 @@ describe("ActivityService", () => {
 
 		expect(accountRuns).toBe(cursorCount * 2 + 1);
 		expect(vaultRuns).toBe(cursorCount * 2 + 1);
+	});
+
+	it("preserves cursor cache bypass in custom buildQuery integrations", async () => {
+		const result = normalizeActivityEventsResponse(page());
+		let accountRuns = 0;
+		let vaultRuns = 0;
+		const adapter: IActivityAdapter = {
+			getCapabilities: () => ({
+				configured: true,
+				adapter: "custom",
+				canQueryAccount: true,
+				requestableVaultTypes: ["evk"],
+			}),
+			getScopeSupport: () => "supported",
+			fetchAccountActivityEvents: async () => {
+				accountRuns += 1;
+				return result;
+			},
+			fetchVaultActivityEvents: async () => {
+				vaultRuns += 1;
+				return result;
+			},
+		};
+		const cache = new Map<string, Promise<unknown>>();
+		const customBuildQuery: BuildQueryFn = (
+			queryName,
+			fn,
+			_target,
+			context,
+		) =>
+			(async (...args: unknown[]) => {
+				const cacheKey = context
+					? context.getCacheKey(args)
+					: serializeQueryArgs(args);
+				if (cacheKey === null) return fn(...args);
+
+				const key = `${queryName}:${cacheKey}`;
+				const cached = cache.get(key);
+				if (cached) return cached;
+
+				const pending = fn(...args);
+				cache.set(key, pending);
+				return pending;
+			}) as typeof fn;
+		const service = new ActivityService(adapter, customBuildQuery);
+
+		for (let repeat = 0; repeat < 2; repeat += 1) {
+			await service.fetchAccountActivityEvents({
+				owner: OWNER,
+				chainId: 1,
+				cursor: "account:cursor",
+			});
+			await service.fetchVaultActivityEvents({
+				vault: VAULT,
+				vaultType: "evk",
+				chainId: 1,
+				cursor: "vault:cursor",
+			});
+		}
+
+		await service.fetchAccountActivityEvents({ owner: OWNER, chainId: 1 });
+		await service.fetchAccountActivityEvents({ owner: OWNER, chainId: 1 });
+		await service.fetchVaultActivityEvents({
+			vault: VAULT,
+			vaultType: "evk",
+			chainId: 1,
+		});
+		await service.fetchVaultActivityEvents({
+			vault: VAULT,
+			vaultType: "evk",
+			chainId: 1,
+		});
+
+		expect(accountRuns).toBe(3);
+		expect(vaultRuns).toBe(3);
+		expect(cache.size).toBe(2);
 	});
 
 	it("supports a custom activity adapter", async () => {

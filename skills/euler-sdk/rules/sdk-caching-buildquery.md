@@ -14,20 +14,30 @@ When adding a new RPC/API dependency, expose it as a `query*` method on the adap
 
 ```typescript
 import { QueryClient } from "@tanstack/react-query";
-import type { BuildQueryFn } from "euler-v2-sdk";
+import { serializeQueryArgs, type BuildQueryFn } from "euler-v2-sdk";
 
 const queryClient = new QueryClient();
 
-const buildQuery: BuildQueryFn = (queryName, fn, _target) => {
+const buildQuery: BuildQueryFn = (queryName, fn, _target, context) => {
   const staleTime = queryName.startsWith("querySwap") ? 10_000 : 60_000;
-  return ((...args: unknown[]) =>
-    queryClient.fetchQuery({
-      queryKey: ["sdk", queryName, ...args],
+  return ((...args: unknown[]) => {
+    const cacheKey = context
+      ? context.getCacheKey(args)
+      : serializeQueryArgs(args);
+    if (cacheKey === null) return fn(...args);
+
+    return queryClient.fetchQuery({
+      queryKey: ["sdk", queryName, cacheKey],
       queryFn: () => fn(...args),
       staleTime,
-    })) as typeof fn;
+    });
+  }) as typeof fn;
 };
 ```
+
+Treat `context.getCacheKey(args) === null` as an explicit no-cache signal and
+call the underlying fetcher directly. Do not replace it with a generic key;
+cursor-based pagination uses this contract to avoid retaining every page.
 
 Recommended stale-time strategy:
 
