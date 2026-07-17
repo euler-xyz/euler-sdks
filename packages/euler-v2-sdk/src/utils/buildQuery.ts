@@ -131,8 +131,9 @@ export function createQueryCacheBuildQuery(
 		>();
 
 		const wrapped = (async (...args: Parameters<T>) => {
-			const cacheKey =
-				context?.getCacheKey(args) ?? getEulerSdkQueryKey(queryName, args);
+			const cacheKey = context
+				? context.getCacheKey(args)
+				: getEulerSdkQueryKey(queryName, args);
 			if (cacheKey === null) {
 				return fn(...args);
 			}

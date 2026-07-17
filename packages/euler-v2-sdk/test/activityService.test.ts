@@ -48,6 +48,7 @@ const TX_HASH =
 	"0x2162b1e4c31ccb11d1d84a08e517f3509d4ee74022f0a4670e4502b461b191f6";
 const EVENT_ID = "v3-ponder:1:deposit:1:tx:7";
 const RESPONSE_TIMESTAMP = "2026-07-13T10:00:01.000Z";
+const EVENT_TIMESTAMP_SECONDS = Date.parse("2026-07-13T10:00:00.000Z") / 1_000;
 
 const deploymentService: IDeploymentService = {
 	getDeploymentChainIds: () => [],
@@ -477,6 +478,70 @@ describe("ActivityService", () => {
 
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
+
+	it.each(["account", "vault"] as const)(
+		"rejects %s activity responses outside requested time and page bounds",
+		async (scope) => {
+			const fetchScopedPage = (responsePage: unknown) => {
+				stubActivityResponse(responsePage);
+				const service = new ActivityService({ endpoint: "/api/internal" });
+				const bounds = {
+					from: EVENT_TIMESTAMP_SECONDS,
+					to: EVENT_TIMESTAMP_SECONDS,
+					limit: 1,
+				};
+				return scope === "account"
+					? service.fetchAccountActivityEvents({
+							owner: OWNER,
+							chainId: 1,
+							...bounds,
+						})
+					: service.fetchVaultActivityEvents({
+							vault: VAULT,
+							vaultType: "evk",
+							chainId: 1,
+							...bounds,
+						});
+			};
+
+			await expect(fetchScopedPage(page([event()]))).resolves.toMatchObject({
+				data: [expect.objectContaining({ id: EVENT_ID })],
+			});
+			await expect(
+				fetchScopedPage(
+					page([
+						event({
+							timestamp: new Date(
+								(EVENT_TIMESTAMP_SECONDS - 1) * 1_000,
+							).toISOString(),
+						}),
+					]),
+				),
+			).rejects.toThrow("timestamp is before the requested from value");
+			await expect(
+				fetchScopedPage(
+					page([
+						event({
+							timestamp: new Date(
+								(EVENT_TIMESTAMP_SECONDS + 1) * 1_000,
+							).toISOString(),
+						}),
+					]),
+				),
+			).rejects.toThrow("timestamp is after the requested to value");
+			await expect(
+				fetchScopedPage(
+					page([
+						event(),
+						event({
+							id: "v3-ponder:1:deposit:1:tx:8",
+							logIndex: 8,
+						}),
+					]),
+				),
+			).rejects.toThrow("expected at most the requested limit of 1 rows");
+		},
+	);
 
 	it.each([
 		{
@@ -951,6 +1016,66 @@ describe("ActivityService", () => {
 		});
 
 		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("bypasses the default cache for cursor pages while retaining first-page dedupe", async () => {
+		const result = normalizeActivityEventsResponse(page());
+		let accountRuns = 0;
+		let vaultRuns = 0;
+		const adapter: IActivityAdapter = {
+			getCapabilities: () => ({
+				configured: true,
+				adapter: "custom",
+				canQueryAccount: true,
+				requestableVaultTypes: ["evk"],
+			}),
+			getScopeSupport: () => "supported",
+			fetchAccountActivityEvents: async () => {
+				accountRuns += 1;
+				return result;
+			},
+			fetchVaultActivityEvents: async () => {
+				vaultRuns += 1;
+				return result;
+			},
+		};
+		const service = new ActivityService(
+			adapter,
+			createQueryCacheBuildQuery({ ttlMs: 60_000 }),
+		);
+		const cursorCount = 25;
+
+		for (let index = 0; index < cursorCount; index += 1) {
+			for (let repeat = 0; repeat < 2; repeat += 1) {
+				await service.fetchAccountActivityEvents({
+					owner: OWNER,
+					chainId: 1,
+					cursor: `account:${index}`,
+				});
+				await service.fetchVaultActivityEvents({
+					vault: VAULT,
+					vaultType: "evk",
+					chainId: 1,
+					cursor: `vault:${index}`,
+				});
+			}
+		}
+
+		await service.fetchAccountActivityEvents({ owner: OWNER, chainId: 1 });
+		await service.fetchAccountActivityEvents({ owner: OWNER, chainId: 1 });
+		await service.fetchVaultActivityEvents({
+			vault: VAULT,
+			vaultType: "evk",
+			chainId: 1,
+		});
+		await service.fetchVaultActivityEvents({
+			vault: VAULT,
+			vaultType: "evk",
+			chainId: 1,
+		});
+
+		expect(accountRuns).toBe(cursorCount * 2 + 1);
+		expect(vaultRuns).toBe(cursorCount * 2 + 1);
 	});
 
 	it("supports a custom activity adapter", async () => {

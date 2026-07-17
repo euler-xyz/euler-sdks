@@ -99,6 +99,7 @@ export class ActivityService implements IActivityService {
 	getQueryKeyAccountActivityEvents(
 		args: FetchAccountActivityEventsArgs,
 	): string | null {
+		if (args.cursor !== undefined) return null;
 		const chainIds = Array.isArray(args.chainId)
 			? [...args.chainId]
 			: [args.chainId];
@@ -130,6 +131,7 @@ export class ActivityService implements IActivityService {
 	getQueryKeyVaultActivityEvents(
 		args: FetchVaultActivityEventsArgs,
 	): string | null {
+		if (args.cursor !== undefined) return null;
 		return serializeQueryArgs([
 			{
 				...args,

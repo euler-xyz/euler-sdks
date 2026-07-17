@@ -590,22 +590,30 @@ export const normalizeActivityEventsResponse = (
 	return { data, meta };
 };
 
-type ActivityResponseRequest =
-	| {
-			kind: "account";
-			chainIds: readonly number[];
-			owner: Address;
-			categories?: readonly ActivityCategory[];
-			eventTypes?: readonly ActivityEventType[];
-	  }
-	| {
-			kind: "vault";
-			chainIds: readonly [number];
-			vault: Address;
-			vaultType: ActivityVaultType;
-			categories?: readonly ActivityCategory[];
-			eventTypes?: readonly ActivityEventType[];
-	  };
+type ActivityResponseBounds = {
+	from?: number;
+	to?: number;
+	limit?: number;
+};
+
+type ActivityResponseRequest = ActivityResponseBounds &
+	(
+		| {
+				kind: "account";
+				chainIds: readonly number[];
+				owner: Address;
+				categories?: readonly ActivityCategory[];
+				eventTypes?: readonly ActivityEventType[];
+		  }
+		| {
+				kind: "vault";
+				chainIds: readonly [number];
+				vault: Address;
+				vaultType: ActivityVaultType;
+				categories?: readonly ActivityCategory[];
+				eventTypes?: readonly ActivityEventType[];
+		  }
+	);
 
 const sortedUniqueNumbers = (values: readonly number[]): number[] =>
 	[...new Set(values)].sort((left, right) => left - right);
@@ -646,6 +654,13 @@ const validateActivityEventsPageForRequest = (
 	page: ActivityEventsPage,
 	request: ActivityResponseRequest,
 ): ActivityEventsPage => {
+	if (request.limit !== undefined && page.data.length > request.limit) {
+		fail(
+			"$.data",
+			`expected at most the requested limit of ${request.limit} rows`,
+		);
+	}
+
 	const requestedChainIds = sortedUniqueNumbers(request.chainIds);
 	const coveredChainIds = sortedUniqueNumbers(
 		page.meta.coverage.chains.map((chain) => chain.chainId),
@@ -683,6 +698,19 @@ const validateActivityEventsPageForRequest = (
 
 	for (const [index, event] of page.data.entries()) {
 		const path = `$.data[${index}]`;
+		const eventTimestamp = Math.floor(Date.parse(event.timestamp) / 1_000);
+		if (request.from !== undefined && eventTimestamp < request.from) {
+			fail(
+				`${path}.timestamp`,
+				`timestamp is before the requested from value ${request.from}`,
+			);
+		}
+		if (request.to !== undefined && eventTimestamp > request.to) {
+			fail(
+				`${path}.timestamp`,
+				`timestamp is after the requested to value ${request.to}`,
+			);
+		}
 		if (!requestedChainIds.includes(event.chainId)) {
 			fail(`${path}.chainId`, `chain ${event.chainId} was not requested`);
 		}
@@ -744,6 +772,9 @@ export const validateAccountActivityEventsPage = (
 		kind: "account",
 		chainIds: Array.isArray(args.chainId) ? args.chainId : [args.chainId],
 		owner: getAddress(args.owner) as Address,
+		...(args.from !== undefined ? { from: args.from } : {}),
+		...(args.to !== undefined ? { to: args.to } : {}),
+		...(args.limit !== undefined ? { limit: args.limit } : {}),
 		...(args.categories !== undefined ? { categories: args.categories } : {}),
 		...(args.eventTypes !== undefined ? { eventTypes: args.eventTypes } : {}),
 	});
@@ -757,6 +788,9 @@ export const validateVaultActivityEventsPage = (
 		chainIds: [args.chainId],
 		vault: getAddress(args.vault) as Address,
 		vaultType: args.vaultType,
+		...(args.from !== undefined ? { from: args.from } : {}),
+		...(args.to !== undefined ? { to: args.to } : {}),
+		...(args.limit !== undefined ? { limit: args.limit } : {}),
 		...(args.categories !== undefined ? { categories: args.categories } : {}),
 		...(args.eventTypes !== undefined ? { eventTypes: args.eventTypes } : {}),
 	});
