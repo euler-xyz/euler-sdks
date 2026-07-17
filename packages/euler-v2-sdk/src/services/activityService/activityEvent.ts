@@ -15,12 +15,14 @@ import type {
 	ActivityEvent,
 	ActivityEventsMeta,
 	ActivityEventsPage,
+	ActivityEventType,
 	ActivityValuation,
 	ActivityValueChange,
 	ActivityVaultType,
 	FetchAccountActivityEventsArgs,
 	FetchVaultActivityEventsArgs,
 } from "./activityServiceTypes.js";
+import { ACTIVITY_EVENT_TYPES } from "./activityServiceTypes.js";
 
 export const ACTIVITY_CATEGORY_VALUES = [
 	"lending",
@@ -428,7 +430,7 @@ export const normalizeActivityEvent = (
 	path = "$.data[]",
 ): ActivityEvent => {
 	const record = readRecord(raw, path);
-	const type = readString(record.type, `${path}.type`);
+	const type = readEnum(record.type, ACTIVITY_EVENT_TYPES, `${path}.type`);
 	const rawType =
 		record.rawType === undefined
 			? type
@@ -594,7 +596,7 @@ type ActivityResponseRequest =
 			chainIds: readonly number[];
 			owner: Address;
 			categories?: readonly ActivityCategory[];
-			eventTypes?: readonly string[];
+			eventTypes?: readonly ActivityEventType[];
 	  }
 	| {
 			kind: "vault";
@@ -602,7 +604,7 @@ type ActivityResponseRequest =
 			vault: Address;
 			vaultType: ActivityVaultType;
 			categories?: readonly ActivityCategory[];
-			eventTypes?: readonly string[];
+			eventTypes?: readonly ActivityEventType[];
 	  };
 
 const sortedUniqueNumbers = (values: readonly number[]): number[] =>

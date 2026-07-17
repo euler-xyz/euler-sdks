@@ -11,6 +11,89 @@ export type ActivityCategory =
 
 export type ActivityVaultType = "evk" | "earn" | "securitize";
 
+export const ACTIVITY_EVENT_TYPES = [
+	"deposit",
+	"withdraw",
+	"transfer",
+	"mint",
+	"burn",
+	"borrow",
+	"repay",
+	"swap",
+	"interest_accrued",
+	"debt_socialized",
+	"pull_debt",
+	"liquidation",
+	"approval",
+	"balance_forwarder_status",
+	"convert_fees",
+	"set_caps",
+	"set_ltv",
+	"set_governor_admin",
+	"set_config_flags",
+	"set_fee_receiver",
+	"set_hook_config",
+	"set_interest_fee",
+	"set_interest_rate_model",
+	"set_liquidation_cool_off_time",
+	"set_max_liquidation_discount",
+	"accrue_interest",
+	"update_last_total_assets",
+	"update_lost_assets",
+	"reallocate_supply",
+	"reallocate_withdraw",
+	"set_name",
+	"set_symbol",
+	"set_fee",
+	"set_fee_recipient",
+	"set_curator",
+	"set_guardian",
+	"set_timelock",
+	"set_cap",
+	"set_is_allocator",
+	"set_supply_queue",
+	"set_withdraw_queue",
+	"submit_cap",
+	"submit_guardian",
+	"submit_timelock",
+	"submit_market_removal",
+	"revoke_pending_cap",
+	"revoke_pending_guardian",
+	"revoke_pending_timelock",
+	"revoke_pending_market_removal",
+	"ownership_transfer_started",
+	"ownership_transferred",
+	"frozen",
+	"unfrozen",
+	"paused",
+	"unpaused",
+	"seized",
+	"set_controller_perspective",
+	"set_supply_cap",
+	"owner_registered",
+	"collateral_status",
+	"operator_status",
+	"controller_status",
+	"lockdown_mode_status",
+	"nonce_status",
+	"nonce_used",
+	"permit_disabled_mode_status",
+	"reward_lock_created",
+	"reward_lock_removed",
+	"reward_transfer",
+	"reward_whitelist_status",
+	"public_reallocate_to",
+	"public_withdrawal",
+	"set_admin",
+	"set_allocation_fee",
+	"set_flow_caps",
+	"transfer_allocation_fee",
+	"buy",
+	"terms_of_use_signed",
+] as const;
+
+export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[number];
+
 export type ActivityCoverageStatus =
 	| "complete"
 	| "partial"
@@ -59,8 +142,8 @@ export interface ActivityEvent {
 	/** Stable identifier supplied by the activity source. */
 	id: string;
 	chainId: number;
-	/** Event type supplied by the activity source. */
-	type: string;
+	/** Normalized event type supplied by the activity source. */
+	type: ActivityEventType;
 	/** Original indexed type when it differs from `type`; otherwise equal to `type`. */
 	rawType: string;
 	category: ActivityCategory;
@@ -121,7 +204,7 @@ export interface ActivityEventsQuery {
 	/** Normalized UI categories sent through the `category` server filter. */
 	categories?: readonly ActivityCategory[];
 	/** Normalized event `type` values sent through the `eventType` server filter. */
-	eventTypes?: readonly string[];
+	eventTypes?: readonly ActivityEventType[];
 	/** Opaque cursor returned by the backend. Maximum length is 2,048 characters. */
 	cursor?: string;
 	/** Page size accepted by the backend, from 1 through 100. */

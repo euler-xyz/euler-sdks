@@ -31,6 +31,7 @@ export type {
 	ActivityEventsMeta,
 	ActivityEventsPage,
 	ActivityEventsQuery,
+	ActivityEventType,
 	ActivityScope,
 	ActivityScopeSupport,
 	ActivityServiceConfig,
@@ -42,6 +43,7 @@ export type {
 	IActivityAdapter,
 	IActivityService,
 } from "./activityServiceTypes.js";
+export { ACTIVITY_EVENT_TYPES } from "./activityServiceTypes.js";
 export {
 	ActivityV3Adapter,
 	joinActivityEndpointPath,

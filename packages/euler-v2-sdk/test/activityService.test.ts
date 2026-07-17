@@ -6,6 +6,7 @@ import { EulerSDK } from "../src/sdk/sdk.js";
 import type { IDeploymentService } from "../src/services/deploymentService/index.js";
 import {
 	ACTIVITY_CATEGORIES,
+	ACTIVITY_EVENT_TYPES,
 	ActivityResponseValidationError,
 	ActivityService,
 	ActivityUnavailableError,
@@ -16,6 +17,7 @@ import {
 	normalizeActivityEvent,
 	normalizeActivityEventsResponse,
 	type ActivityEventsPage,
+	type ActivityEventType,
 	type IActivityAdapter,
 } from "../src/services/activityService/index.js";
 import { createQueryCacheBuildQuery } from "../src/utils/buildQuery.js";
@@ -199,7 +201,7 @@ describe("ActivityService", () => {
 			from: 1782864000,
 			to: 1783987200,
 			categories: ["lending", "account", "lending"],
-				eventTypes: [" Deposit ", "BORROW", "deposit"],
+			eventTypes: ["deposit", "borrow", "deposit"],
 			cursor: "opaque:cursor",
 			limit: 25,
 		});
@@ -678,6 +680,28 @@ describe("ActivityService", () => {
 		).rejects.toMatchObject({ path: "$.data[0].type" });
 	});
 
+	it("rejects event types outside the normalized V3 contract", async () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		const service = new ActivityService({ endpoint: "/api/internal" });
+
+		await expect(
+			service.fetchAccountActivityEvents({
+				owner: OWNER,
+				chainId: 1,
+				eventTypes: ["not_real"] as unknown as readonly ActivityEventType[],
+			}),
+		).rejects.toThrow("eventTypes must contain supported event type values");
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(ACTIVITY_EVENT_TYPES).toContain("terms_of_use_signed");
+	});
+
+	it("rejects response event types outside the normalized contract", () => {
+		expect(() => normalizeActivityEvent(event({ type: "not_real" }))).toThrow(
+			"Invalid activity response at $.data[].type",
+		);
+	});
+
 	it("requires missing categories to be compatible with the category filter", async () => {
 		stubActivityResponse(
 			page([event()], {
@@ -903,7 +927,7 @@ describe("ActivityService", () => {
 			owner: OWNER.toLowerCase() as Address,
 			chainId: [10, 1, 10],
 			categories: ["lending", "account", "lending"],
-			eventTypes: [" Deposit ", "BORROW", "deposit"],
+			eventTypes: ["deposit", "borrow", "deposit"],
 		});
 		await service.fetchAccountActivityEvents({
 			owner: OWNER,
@@ -916,7 +940,7 @@ describe("ActivityService", () => {
 			chainId: 1,
 			vaultType: "earn",
 			categories: ["governance", "governance"],
-			eventTypes: [" SET_FEE ", "set_fee"],
+			eventTypes: ["set_fee", "set_fee"],
 		});
 		await service.fetchVaultActivityEvents({
 			vault: VAULT,

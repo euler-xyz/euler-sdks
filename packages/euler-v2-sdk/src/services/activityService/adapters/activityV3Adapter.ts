@@ -18,8 +18,12 @@ import type {
 	FetchVaultActivityEventsArgs,
 	IActivityAdapter,
 } from "../activityServiceTypes.js";
+import { ACTIVITY_EVENT_TYPES } from "../activityServiceTypes.js";
 
 const ACTIVITY_V3_SOURCE = "v3-ponder";
+const ACTIVITY_EVENT_TYPE_SET: ReadonlySet<string> = new Set(
+	ACTIVITY_EVENT_TYPES,
+);
 const MAX_ACTIVITY_CHAIN_IDS = 20;
 const MAX_ACTIVITY_CURSOR_LENGTH = 2_048;
 const MAX_ACTIVITY_LIMIT = 100;
@@ -128,9 +132,9 @@ const appendCommonQuery = (
 		);
 		if (
 			eventTypes.length === 0 ||
-			eventTypes.some((eventType) => !eventType || eventType.includes(","))
+			eventTypes.some((eventType) => !ACTIVITY_EVENT_TYPE_SET.has(eventType))
 		) {
-			throw new Error("eventTypes must contain non-empty, comma-free values");
+			throw new Error("eventTypes must contain supported event type values");
 		}
 		params.set("eventType", eventTypes.join(","));
 	}
