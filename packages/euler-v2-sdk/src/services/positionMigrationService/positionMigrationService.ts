@@ -266,10 +266,11 @@ export class PositionMigrationService implements IPositionMigrationService {
 		const items = await this.buildMigrationBatchForConnector(
 			{
 				...args,
+				...(authorizationRequest ? { authorizationRequest } : {}),
 				authorization:
 					simulationAuthorization?.authorization ??
 					args.authorization ??
-					(authorizationRequest
+					(!simulationAuthorization && authorizationRequest
 						? this.getStubAuthorization(authorizationRequest)
 						: undefined),
 				...(simulationAuthorization ? { skipAuthorizationCheck: true } : {}),
@@ -440,14 +441,116 @@ export class PositionMigrationService implements IPositionMigrationService {
 		request: SignedMigrationAuthorization["request"],
 	):
 		| {
-				authorization: SignedMigrationAuthorization;
+				authorization?: SignedMigrationAuthorization;
 				stateOverrides: StateOverride;
-				skippedCall: { target: Address; selector: Hex };
+				skippedCall?: { target: Address; selector: Hex };
 		  }
 		| undefined {
+		if (request.kind === "transaction") {
+			const authorizationType = (request as { authorizationType?: string })
+				.authorizationType;
+			const authorized = request.call.args[0];
+			const grantedValue = request.call.args[1];
+
+			if (
+				request.connectorId === AAVE_CONNECTOR_ID &&
+				authorizationType === "aTokenApproval" &&
+				"token" in request &&
+				typeof authorized === "string" &&
+				typeof grantedValue === "bigint"
+			) {
+				const token = getAddress((request as { token: Address }).token);
+				const slot = computeAllowanceSlot(
+					getAddress(request.owner),
+					getAddress(authorized),
+					AAVE_ATOKEN_ALLOWANCE_SLOT_INDEX,
+				);
+				return {
+					stateOverrides: [
+						{
+							address: token,
+							stateDiff: [{ slot, value: toHex(grantedValue, { size: 32 }) }],
+						},
+					],
+				};
+			}
+
+			if (
+				request.connectorId === AAVE_CONNECTOR_ID &&
+				authorizationType === "variableDebtDelegationApproval" &&
+				"token" in request &&
+				typeof authorized === "string" &&
+				typeof grantedValue === "bigint"
+			) {
+				const token = getAddress((request as { token: Address }).token);
+				const slot = computeAllowanceSlot(
+					getAddress(request.owner),
+					getAddress(authorized),
+					AAVE_VARIABLE_DEBT_ALLOWANCE_SLOT_INDEX,
+				);
+				return {
+					stateOverrides: [
+						{
+							address: token,
+							stateDiff: [{ slot, value: toHex(grantedValue, { size: 32 }) }],
+						},
+					],
+				};
+			}
+
+			if (
+				request.connectorId === METAMORPHO_CONNECTOR_ID &&
+				authorizationType === "metamorphoApproval" &&
+				"token" in request &&
+				typeof authorized === "string" &&
+				typeof grantedValue === "bigint"
+			) {
+				const token = getAddress((request as { token: Address }).token);
+				const slotIndex =
+					(request as { allowanceSlotIndex?: bigint }).allowanceSlotIndex ??
+					METAMORPHO_DEFAULT_ALLOWANCE_SLOT_INDEX;
+				const slot = computeAllowanceSlot(
+					getAddress(request.owner),
+					getAddress(authorized),
+					slotIndex,
+				);
+				return {
+					stateOverrides: [
+						{
+							address: token,
+							stateDiff: [{ slot, value: toHex(grantedValue, { size: 32 }) }],
+						},
+					],
+				};
+			}
+
+			if (
+				request.connectorId === MORPHO_CONNECTOR_ID &&
+				authorizationType === "morphoAuthorization" &&
+				typeof authorized === "string" &&
+				grantedValue === true
+			) {
+				const morpho = getAddress(request.call.to);
+				const slot = computeAllowanceSlot(
+					getAddress(request.owner),
+					getAddress(authorized),
+					MORPHO_AUTHORIZATION_SLOT_INDEX,
+				);
+				return {
+					stateOverrides: [
+						{
+							address: morpho,
+							stateDiff: [{ slot, value: toHex(1n, { size: 32 }) }],
+						},
+					],
+				};
+			}
+
+			return undefined;
+		}
+
 		const message =
 			request.kind === "typedData" ? request.typedData.message : {};
-		if (request.kind !== "typedData") return undefined;
 
 		if (
 			request.connectorId === AAVE_CONNECTOR_ID &&

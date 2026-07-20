@@ -1,6 +1,7 @@
 import {
 	encodeFunctionData,
 	getAddress,
+	type Abi,
 	type Address,
 	type Hex,
 	type TypedDataDomain,
@@ -36,12 +37,15 @@ import {
 } from "../shared.js";
 import { metamorphoAbi } from "./abis/metamorphoAbi.js";
 import type {
+	MetamorphoConnectorMigrationAuthorizationRequest,
+	MetamorphoMigrationAuthorizationRequest,
 	MetamorphoMigrationConnectorConfig,
 	MetamorphoMigrationPosition,
 	MetamorphoPermitTypedDataMessage,
 	MetamorphoPermitTypedDataRequest,
-	MetamorphoPositionRaw,
 	MetamorphoPositionRef,
+	MetamorphoPositionRaw,
+	MetamorphoShareApprovalTransactionRequest,
 	MetamorphoVaultVersion,
 } from "./metamorphoConnectorTypes.js";
 
@@ -202,8 +206,21 @@ export class MetamorphoPositionMigrationConnector
 	}
 
 	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<MetamorphoMigrationPosition> & {
+			authorizationKind: "transaction";
+		},
+	): Promise<MetamorphoShareApprovalTransactionRequest | undefined>;
+	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<MetamorphoMigrationPosition> & {
+			authorizationKind?: "typedData";
+		},
+	): Promise<MetamorphoMigrationAuthorizationRequest | undefined>;
+	async getAuthorization(
 		args: GetMigrationAuthorizationArgs<MetamorphoMigrationPosition>,
-	): Promise<MetamorphoPermitTypedDataRequest | undefined> {
+	): Promise<MetamorphoConnectorMigrationAuthorizationRequest | undefined>;
+	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<MetamorphoMigrationPosition>,
+	): Promise<MetamorphoConnectorMigrationAuthorizationRequest | undefined> {
 		if (args.direction !== "external-to-euler") {
 			throw new Error(
 				`Metamorpho migration does not support direction: ${args.direction}`,
@@ -219,16 +236,27 @@ export class MetamorphoPositionMigrationConnector
 		const vault = position.raw.vault;
 		const shareBalance = position.raw.shareBalance;
 		if (shareBalance <= 0n) return undefined;
-		if (
-			await this.hasShareAllowance(
-				args.chainId,
-				vault,
-				owner,
-				swapVerifier,
-				shareBalance,
-			)
-		) {
+		const currentAllowance = await this.getShareAllowance(
+			args.chainId,
+			vault,
+			owner,
+			swapVerifier,
+		);
+		if (currentAllowance >= shareBalance) {
 			return undefined;
+		}
+
+		if (args.authorizationKind === "transaction") {
+			return this.buildShareApprovalRequest({
+				chainId: args.chainId,
+				owner,
+				spender: swapVerifier,
+				vault,
+				version: position.raw.version,
+				value: shareBalance,
+				previousValue: currentAllowance,
+				positionId: position.id,
+			});
 		}
 
 		return this.buildSharePermitRequest({
@@ -241,6 +269,43 @@ export class MetamorphoPositionMigrationConnector
 			positionId: position.id,
 			deadline: args.deadline,
 		});
+	}
+
+	/**
+	 * `vault.approve` — the signature-free form of the share permit.
+	 *
+	 * Synchronous: unlike the permit there is no nonce to read and no EIP-5267
+	 * domain to resolve, so the grant needs no RPC round-trip.
+	 */
+	private buildShareApprovalRequest(args: {
+		chainId: number;
+		owner: Address;
+		spender: Address;
+		vault: Address;
+		version: MetamorphoVaultVersion;
+		value: bigint;
+		previousValue: bigint;
+		positionId: string;
+	}): MetamorphoShareApprovalTransactionRequest {
+		const approve = (amount: bigint) => ({
+			to: args.vault,
+			abi: metamorphoAbi as Abi,
+			functionName: "approve",
+			args: [args.spender, amount] as const,
+		});
+		return {
+			kind: "transaction",
+			authorizationType: "metamorphoApproval",
+			connectorId: METAMORPHO_CONNECTOR_ID,
+			protocol: METAMORPHO_PROTOCOL,
+			chainId: args.chainId,
+			owner: args.owner,
+			positionId: args.positionId,
+			token: args.vault,
+			allowanceSlotIndex: getMetamorphoAllowanceSlotIndex(args.version),
+			call: approve(args.value),
+			revocation: approve(args.previousValue),
+		};
 	}
 
 	async buildMigrationBatch(
@@ -303,16 +368,27 @@ export class MetamorphoPositionMigrationConnector
 		}
 
 		const items: EVCBatchItem[] = [];
-		const needsSharePermit =
-			args.skipAuthorizationCheck && args.authorization
+		const hasSimulatedTransactionGrant =
+			args.skipAuthorizationCheck &&
+			args.authorizationRequest?.kind === "transaction"
+				? this.validateSimulatedShareApproval({
+						request: args.authorizationRequest,
+						owner,
+						swapVerifier,
+						vault,
+						minimumAmount: shareBalance,
+					})
+				: false;
+		const needsSharePermit = hasSimulatedTransactionGrant
+			? false
+			: args.skipAuthorizationCheck && args.authorization
 				? true
-				: !(await this.hasShareAllowance(
+				: (await this.getShareAllowance(
 						args.chainId,
 						vault,
 						owner,
 						swapVerifier,
-						shareBalance,
-					));
+					)) < shareBalance;
 		if (needsSharePermit) {
 			if (!args.authorization) {
 				throw new Error(
@@ -560,13 +636,12 @@ export class MetamorphoPositionMigrationConnector
 		};
 	}
 
-	private async hasShareAllowance(
+	private async getShareAllowance(
 		chainId: number,
 		vault: Address,
 		owner: Address,
 		spender: Address,
-		amount: bigint,
-	): Promise<boolean> {
+	): Promise<bigint> {
 		const provider = this.providerService.getProvider(chainId);
 		const allowance = (await provider.readContract({
 			address: vault,
@@ -574,7 +649,58 @@ export class MetamorphoPositionMigrationConnector
 			functionName: "allowance",
 			args: [owner, spender],
 		})) as bigint;
-		return allowance >= amount;
+		return allowance;
+	}
+
+	private validateSimulatedShareApproval(args: {
+		request: MigrationAuthorizationRequest;
+		owner: Address;
+		swapVerifier: Address;
+		vault: Address;
+		minimumAmount: bigint;
+	}): true {
+		const request =
+			args.request as MetamorphoConnectorMigrationAuthorizationRequest;
+		if (
+			request.kind !== "transaction" ||
+			request.connectorId !== METAMORPHO_CONNECTOR_ID ||
+			request.authorizationType !== "metamorphoApproval"
+		) {
+			throw new Error(
+				"Expected a Metamorpho share approval transaction request",
+			);
+		}
+		assertSameAddress(
+			request.owner,
+			args.owner,
+			"Metamorpho approval owner mismatch",
+		);
+		assertSameAddress(
+			request.token,
+			args.vault,
+			"Metamorpho approval token mismatch",
+		);
+		assertSameAddress(
+			request.call.to,
+			args.vault,
+			"Metamorpho approval call target mismatch",
+		);
+		if (request.call.functionName !== "approve") {
+			throw new Error("Metamorpho transaction authorization must call approve");
+		}
+		const [spender, amount] = request.call.args;
+		if (typeof spender !== "string") {
+			throw new Error("Metamorpho transaction authorization spender is required");
+		}
+		assertSameAddress(
+			spender as Address,
+			args.swapVerifier,
+			"Metamorpho approval spender must be the Euler SwapVerifier",
+		);
+		if (typeof amount !== "bigint" || amount < args.minimumAmount) {
+			throw new Error("Metamorpho approval amount is below the share balance");
+		}
+		return true;
 	}
 }
 

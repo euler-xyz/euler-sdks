@@ -718,3 +718,131 @@ test("Metamorpho deposit-verified collateral swap requires the SwapVerifier rece
 		/swap quote receiver must be the Euler SwapVerifier/,
 	);
 });
+
+test("Metamorpho authorization can be requested as a plain approve transaction", async () => {
+	const connector = createConnector({ allowance: 0n });
+
+	const authorization = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: METAMORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createMetamorphoPosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+
+	assert.ok(authorization);
+	assert.equal(authorization.kind, "transaction");
+	assert.equal(authorization.authorizationType, "metamorphoApproval");
+	// Shares are the vault token itself, so the grant targets the vault.
+	assert.equal(getAddress(authorization.call.to), getAddress(METAMORPHO_VAULT));
+	assert.equal(authorization.call.functionName, "approve");
+	assert.deepEqual(authorization.call.args, [SWAP_VERIFIER, SHARE_BALANCE]);
+	assert.deepEqual(authorization.revocation?.args, [SWAP_VERIFIER, 0n]);
+});
+
+test("Metamorpho transaction authorization resolves no EIP-5267 domain", async () => {
+	const readFunctions: (string | undefined)[] = [];
+	const connector = createConnector({
+		allowance: 0n,
+		onReadContract: (functionName) => readFunctions.push(functionName),
+	});
+
+	await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: METAMORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createMetamorphoPosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+
+	// v1 vaults resolve the permit domain via eip712Domain(), which can omit
+	// verifyingContract. A plain approve needs neither that nor a nonce.
+	assert.ok(!readFunctions.includes("eip712Domain"));
+	assert.ok(!readFunctions.includes("nonces"));
+});
+
+test("Metamorpho migration simulation accepts an unmined transaction grant", async () => {
+	const connector = createConnector({ allowance: 0n });
+	const position = createMetamorphoPosition();
+	const authorizationRequest = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: METAMORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+	assert.ok(authorizationRequest);
+
+	const items = await connector.buildMigrationBatch({
+		direction: "external-to-euler",
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position,
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationRequest,
+		skipAuthorizationCheck: true,
+	});
+
+	assert.ok(items.length > 0);
+});
+
+test("Metamorpho transaction authorization is skipped when the allowance already stands", async () => {
+	const connector = createConnector({ allowance: SHARE_BALANCE });
+
+	const authorization = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: METAMORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createMetamorphoPosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+
+	assert.equal(authorization, undefined);
+});
+
+test("Metamorpho transaction authorization restores a pre-existing partial allowance", async () => {
+	const previousAllowance = 3n;
+	const connector = createConnector({ allowance: previousAllowance });
+
+	const authorization = await connector.getAuthorization({
+		direction: "external-to-euler",
+		connectorId: METAMORPHO_CONNECTOR_ID,
+		chainId: CHAIN_ID,
+		owner: OWNER,
+		position: createMetamorphoPosition(),
+		target: {
+			eulerAccount: EULER_ACCOUNT,
+			collateralVault: COLLATERAL_VAULT,
+		},
+		authorizationKind: "transaction",
+	});
+
+	assert.equal(authorization?.kind, "transaction");
+	assert.deepEqual(authorization?.revocation.args, [
+		SWAP_VERIFIER,
+		previousAllowance,
+	]);
+});

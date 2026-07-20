@@ -98,6 +98,16 @@ export const morphoBlueAbi = [
 	},
 	{
 		type: "function",
+		name: "setAuthorization",
+		inputs: [
+			{ name: "authorized", type: "address" },
+			{ name: "newIsAuthorized", type: "bool" },
+		],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+	{
+		type: "function",
 		name: "setAuthorizationWithSig",
 		inputs: [
 			{

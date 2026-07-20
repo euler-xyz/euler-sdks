@@ -11,6 +11,8 @@ export type {
 	ListMigrationPositionsArgs,
 	ListMigrationTargetsArgs,
 	MigrationAssetAmount,
+	MigrationAuthorizationCall,
+	MigrationAuthorizationKind,
 	MigrationAuthorizationRequest,
 	MigrationPosition,
 	MigrationTarget,

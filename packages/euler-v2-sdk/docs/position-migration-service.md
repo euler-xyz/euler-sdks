@@ -38,11 +38,11 @@ Every operation is parameterized by a `direction`:
 Connectors are registered by `id`. `buildEulerSDK` wires the three built-in
 connectors by default.
 
-| Connector `id` | Protocol | `external-to-euler` | `euler-to-external` | Authorization |
+| Connector `id` | Protocol | `external-to-euler` | `euler-to-external` | Authorization (typed-data / transaction) |
 |---|---|---|---|---|
-| `aave` | Aave V3 | Yes | Yes | `aTokenPermit` (in) / `variableDebtDelegation` (out), both typed-data |
-| `morpho` | Morpho Blue | Yes | Yes | Morpho `Authorization` typed-data (`setAuthorizationWithSig`) |
-| `metamorpho` | Morpho Vaults | Yes | — | `metamorphoPermit` (vault-share EIP-2612), typed-data |
+| `aave` | Aave V3 | Yes | Yes | in: `aTokenPermit` / `aToken.approve`; out: `variableDebtDelegation` / `variableDebtToken.approveDelegation` |
+| `morpho` | Morpho Blue | Yes | Yes | `Authorization` via `setAuthorizationWithSig` / `morpho.setAuthorization` |
+| `metamorpho` | Morpho Vaults | Yes | — | `metamorphoPermit` (vault-share EIP-2612) / `vault.approve` |
 
 Notes:
 
@@ -74,10 +74,15 @@ address (e.g. the Aave pool or Morpho singleton).
   `{ positionRef?, borrowAmount?, collateralAmount?, repayAmount?, interestBufferBps? }`.
 - `MigrationAuthorizationRequest` — a discriminated union of
   `{ kind: "typedData", typedData: { domain, types, primaryType, message } }` and
-  `{ kind: "transaction", call: { to, abi, functionName, args, value? } }`. All
-  three built-in connectors emit `typedData`. A request may carry a nested
-  `postMigrationAuthorization` (used when an authorization is revoked after the
-  migration).
+  `{ kind: "transaction", call, revocation? }`, where each call is a
+  `MigrationAuthorizationCall` (`{ to, abi, functionName, args, value? }`).
+  Connectors emit `typedData` by default and `transaction` when
+  `authorizationKind: "transaction"` is requested — see
+  [Contract wallets](#contract-wallets-authorizationkind-transaction). Built-in
+  transaction requests always include `revocation`; the shared field remains
+  optional for custom-connector compatibility. A request may carry a nested
+  `postMigrationAuthorization` (used when a typed-data authorization is revoked
+  in-batch after the migration).
 - `SignedMigrationAuthorization` — `{ request, signature?, data?, postMigrationAuthorization? }`;
   this is what you pass back into `planMigration` after signing.
 
@@ -103,9 +108,10 @@ Discovery and reads:
 
 Authorization and plan building:
 
-- `getAuthorization({ direction, connectorId, chainId, owner, position | positionRef, target | source, externalTarget?, deadline?, removeAuthorizationAfterMigration?, account? })`
-  — returns the request to sign, or `undefined` when the required
-  allowance/authorization is already in place.
+- `getAuthorization({ direction, connectorId, chainId, owner, position | positionRef, target | source, externalTarget?, deadline?, authorizationKind?, removeAuthorizationAfterMigration?, account? })`
+  — returns the request to sign (or, with `authorizationKind: "transaction"`, the
+  grant to send), or `undefined` when the required allowance/authorization is
+  already in place.
 - `buildMigrationBatch(args)` — the raw `EVCBatchItem[]`.
 - `planMigration(args)` — `buildMigrationBatch` + `convertBatchItemsToPlan`,
   returning a `TransactionPlan` (operation name defaults to `"positionMigration"`).
@@ -234,8 +240,8 @@ collaterals back to the owner.
 
 `getAuthorization` returns `undefined` when the on-chain allowance/authorization
 already covers the migration, so always guard for it before signing. Otherwise
-sign `request.typedData` (all built-in connectors use typed data) and pass
-`{ request, signature }` as `authorization`.
+sign `request.typedData` (the default form) and pass `{ request, signature }` as
+`authorization`.
 
 Per-connector authorizations:
 
@@ -246,27 +252,102 @@ Per-connector authorizations:
 - **Morpho** — a single `Authorization` message consumed via
   `setAuthorizationWithSig`, granting the SwapVerifier a standing authorization.
   With `removeAuthorizationAfterMigration: true` the connector attaches a paired
-  revocation as `postMigrationAuthorization`. (Morpho requests do not carry an
-  `authorizationType` discriminator — key off `connectorId` / primary type.)
+  revocation as `postMigrationAuthorization`. Morpho typed-data requests do not
+  carry an `authorizationType` discriminator, so identify them by `connectorId`
+  and primary type; transaction requests use
+  `authorizationType: "morphoAuthorization"`.
 - **MetaMorpho** — EIP-2612 `Permit` on the vault-share token
   (`authorizationType: "metamorphoPermit"`). `version: "v1"` covers v1/v1.1
   (domain resolved via `eip712Domain()`); `version: "v2"` uses the minimal
   `{ chainId, verifyingContract }` domain.
+
+### Contract wallets: `authorizationKind: "transaction"`
+
+Aave, Morpho, and MetaMorpho verify their permit / delegation / authorization
+signatures without an ERC-1271 fallback, so a contract wallet (e.g. a Safe)
+cannot satisfy the typed-data form. Pass
+`authorizationKind: "transaction"` to `getAuthorization` and the connector
+returns a `msg.sender`-authenticated grant instead:
+
+```ts
+const request = await sdk.positionMigrationService.getAuthorization({
+  direction: "external-to-euler",
+  connectorId: "aave",
+  chainId,
+  owner,
+  position,
+  target,
+  authorizationKind: "transaction",
+});
+
+if (request?.kind === "transaction") {
+  // Use the owner-controlled client (for example, the Safe execution path),
+  // adapt the SDK's `to` field to viem's `address`, and wait for confirmation.
+  const sendAndConfirm = async ({ to, ...call }: MigrationAuthorizationCall) => {
+    const hash = await ownerWalletClient.writeContract({ address: to, ...call });
+    await publicClient.waitForTransactionReceipt({ hash });
+  };
+
+  let grantMined = false;
+  try {
+    // 1. Send the grant and wait for it to be mined.
+    await sendAndConfirm(request.call);
+    grantMined = true;
+
+    // 2. Build without an `authorization` — the connector reads the live
+    //    allowance and omits the authorization item from the batch.
+    const plan = await sdk.positionMigrationService.planMigration({
+      ...args,
+      removeAuthorizationAfterMigration: false,
+    });
+    await sdk.executionService.executeTransactionPlan({ ...execution, plan });
+  } finally {
+    // 3. Restore the authorization state that existed before the grant, even
+    //    when planning or execution fails after the grant was mined.
+    if (grantMined && request.revocation) {
+      await sendAndConfirm(request.revocation);
+    }
+  }
+}
+```
+
+Per connector the grant is `aToken.approve` (inbound Aave),
+`variableDebtToken.approveDelegation` (outbound Aave),
+`morpho.setAuthorization` and `vault.approve` (MetaMorpho shares). Each
+`revocation` restores the authorization state that existed before the grant.
+
+Constraints:
+
+- **Mine the grant before building.** The connectors read the live allowance to
+  decide whether the batch still needs an authorization item; a grant that has
+  not landed makes `planMigration` throw "… is required".
+- **The grant cannot be a batch item.** The EVC forwards batch items with itself
+  as `msg.sender`, so an in-batch `approve` would grant from the EVC.
+- **`deadline` and `removeAuthorizationAfterMigration` do not apply.** A
+  `msg.sender` grant carries no expiry, and the revocation is always returned;
+  the in-batch disable needs a signature this form cannot supply.
+- **Revoke when the migration settles.** Until then the grant is a standing
+  allowance, exercisable by any EVC operator the owner has authorized.
+- `getAuthorization` still returns `undefined` when a grant already stands — one
+  the caller did not create and so should not revoke.
 
 ## Simulation
 
 `planMigrationSimulation(args)` builds the migration batch exactly once and
 returns:
 
-- `plan` — an execution-ready plan with the permit/authorization call **removed**
-  and replaced by `stateOverrides` that force the allowance/authorization storage
-  slot. This lets you dry-run the migration without a real signature.
+- `plan` — an execution-ready plan with the required authorization represented
+  by `stateOverrides` that force the allowance/authorization storage slot. This
+  lets you dry-run the migration without a real signature or mined grant.
 - `stateOverrides` — the `StateOverride[]` to pass to the simulator alongside
   `plan`.
-- `previewPlan` — the full plan **including** the authorization call (stub-signed,
-  or your signature if supplied). Use it for calldata preview/display.
-- `authorizationRequest?` — the request the user must sign at execution time,
-  resolved internally so you don't need a separate `getAuthorization` call.
+- `previewPlan` — the calldata preview. Typed-data requests include their
+  stub-signed authorization call (or your signature if supplied); transaction
+  grants stay outside the EVC batch, so they are not included.
+- `authorizationRequest?` — the request the user must sign or send at execution
+  time, resolved internally so you don't need a separate `getAuthorization`
+  call. Pass `authorizationKind: "transaction"` to simulate the contract-wallet
+  flow before mining its grant.
 
 Feed `plan` + `stateOverrides` into
 `executionService.simulateTransactionPlan(...)` for a pre-trade safety check, and

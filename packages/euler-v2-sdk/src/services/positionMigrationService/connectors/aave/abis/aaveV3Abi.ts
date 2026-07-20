@@ -151,6 +151,16 @@ export const aaveATokenAbi = [
 	},
 	{
 		type: "function",
+		name: "approve",
+		inputs: [
+			{ name: "spender", type: "address", internalType: "address" },
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+		],
+		outputs: [{ name: "", type: "bool", internalType: "bool" }],
+		stateMutability: "nonpayable",
+	},
+	{
+		type: "function",
 		name: "balanceOf",
 		inputs: [{ name: "account", type: "address", internalType: "address" }],
 		outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
@@ -195,6 +205,16 @@ export const aaveATokenAbi = [
 ] as const;
 
 export const aaveDebtTokenAbi = [
+	{
+		type: "function",
+		name: "approveDelegation",
+		inputs: [
+			{ name: "delegatee", type: "address", internalType: "address" },
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+		],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
 	{
 		type: "function",
 		name: "balanceOf",

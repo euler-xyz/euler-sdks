@@ -13,6 +13,8 @@ import type {
 	SignedMigrationAuthorization,
 } from "../src/services/positionMigrationService/index.js";
 import type { MetamorphoPermitTypedDataRequest } from "../src/services/positionMigrationService/connectors/metamorpho/metamorphoConnectorTypes.js";
+import { aaveATokenAbi } from "../src/services/positionMigrationService/connectors/aave/abis/aaveV3Abi.js";
+import type { AaveATokenApprovalTransactionRequest } from "../src/services/positionMigrationService/connectors/aave/aaveConnectorTypes.js";
 import { computeAllowanceSlot } from "../src/utils/stateOverrides/index.js";
 import type { BuildQueryFn } from "../src/utils/buildQuery.js";
 import type { EulerSDKQueryName } from "../src/utils/queryNames.js";
@@ -482,6 +484,95 @@ test("planMigrationSimulation returns a stub-signed preview plan and the resolve
 	]);
 	assert.deepEqual(result.plan as unknown as EVCBatchItem[], [otherItem]);
 	assert.equal(result.stateOverrides.length, 1);
+});
+
+test("planMigrationSimulation applies transaction grants without embedding them in the batch", async () => {
+	const aToken = getAddress(
+		"0x0000000000000000000000000000000000002101",
+	);
+	const swapVerifier = getAddress(
+		"0x0000000000000000000000000000000000002102",
+	);
+	const request: AaveATokenApprovalTransactionRequest = {
+		kind: "transaction",
+		authorizationType: "aTokenApproval",
+		connectorId: "aave",
+		protocol: "Aave V3",
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		token: aToken,
+		call: {
+			to: aToken,
+			abi: aaveATokenAbi,
+			functionName: "approve",
+			args: [swapVerifier, 2n],
+		},
+		revocation: {
+			to: aToken,
+			abi: aaveATokenAbi,
+			functionName: "approve",
+			args: [swapVerifier, 1n],
+		},
+	};
+	const migrationItem = {
+		targetContract: getAddress(
+			"0x0000000000000000000000000000000000004001",
+		),
+		data: "0xdeadbeef",
+	} as unknown as EVCBatchItem;
+	let builtArgs: BuildConnectorMigrationBatchArgs | undefined;
+	const connector: PositionMigrationConnector = {
+		id: "aave",
+		protocol: "Aave V3",
+		name: "Aave V3",
+		getPosition: async () => ({ ...migrationPosition, connectorId: "aave" }),
+		getAuthorization: async () => request,
+		buildMigrationBatch: (args) => {
+			builtArgs = args;
+			return [migrationItem];
+		},
+	};
+	const service = new PositionMigrationService(
+		{} as never,
+		{
+			convertBatchItemsToPlan: (items: EVCBatchItem[]) => items,
+		} as never,
+		{ includeDefaultConnectors: false, connectors: [connector] },
+	);
+
+	const result = await service.planMigrationSimulation({
+		direction: "external-to-euler",
+		connectorId: "aave",
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		position: { ...migrationPosition, connectorId: "aave" },
+		target: {
+			eulerAccount: getAddress(OWNER),
+			collateralVault: "0x0000000000000000000000000000000000003001",
+		},
+		authorizationKind: "transaction",
+		validateEulerVaults: false,
+	});
+
+	assert.equal(builtArgs?.authorization, undefined);
+	assert.equal(builtArgs?.authorizationRequest, request);
+	assert.equal(builtArgs?.skipAuthorizationCheck, true);
+	assert.deepEqual(result.plan as unknown as EVCBatchItem[], [migrationItem]);
+	assert.deepEqual(result.previewPlan as unknown as EVCBatchItem[], [
+		migrationItem,
+	]);
+	assert.equal(result.authorizationRequest, request);
+	assert.equal(result.stateOverrides.length, 1);
+	const override = result.stateOverrides[0]!;
+	assert.equal(getAddress(override.address), aToken);
+	assert.equal(
+		override.stateDiff?.[0]?.slot,
+		computeAllowanceSlot(getAddress(OWNER), swapVerifier, 53n),
+	);
+	assert.equal(
+		override.stateDiff?.[0]?.value,
+		toHex(2n, { size: 32 }),
+	);
 });
 
 const METAMORPHO_VAULT = getAddress(

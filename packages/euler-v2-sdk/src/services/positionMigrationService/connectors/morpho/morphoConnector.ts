@@ -4,6 +4,7 @@ import {
 	getAddress,
 	keccak256,
 	maxUint256,
+	type Abi,
 	type Address,
 	type Hex,
 } from "viem";
@@ -47,8 +48,10 @@ import type {
 import { morphoBlueAbi } from "./abis/morphoBlueAbi.js";
 import type {
 	MorphoAuthorization,
+	MorphoAuthorizationTransactionRequest,
 	MorphoAuthorizationTypedDataMessage,
 	MorphoAuthorizationTypedDataRequest,
+	MorphoMigrationAuthorizationRequest,
 	MorphoMarketParams,
 	MorphoMarketState,
 	MorphoMigrationConnectorConfig,
@@ -376,8 +379,21 @@ export class MorphoPositionMigrationConnector
 	}
 
 	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<MorphoMigrationPosition> & {
+			authorizationKind: "transaction";
+		},
+	): Promise<MorphoAuthorizationTransactionRequest | undefined>;
+	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<MorphoMigrationPosition> & {
+			authorizationKind?: "typedData";
+		},
+	): Promise<MorphoAuthorizationTypedDataRequest | undefined>;
+	async getAuthorization(
 		args: GetMigrationAuthorizationArgs<MorphoMigrationPosition>,
-	): Promise<MorphoAuthorizationTypedDataRequest | undefined> {
+	): Promise<MorphoMigrationAuthorizationRequest | undefined>;
+	async getAuthorization(
+		args: GetMigrationAuthorizationArgs<MorphoMigrationPosition>,
+	): Promise<MorphoMigrationAuthorizationRequest | undefined> {
 		if (
 			args.direction !== "external-to-euler" &&
 			args.direction !== "euler-to-external"
@@ -399,6 +415,21 @@ export class MorphoPositionMigrationConnector
 			owner,
 			swapVerifier,
 		);
+
+		if (args.authorizationKind === "transaction") {
+			// An authorization already standing is not ours to grant, and so not
+			// ours to revoke either. `removeAuthorizationAfterMigration` does not
+			// apply: the returned request always carries its own revocation.
+			if (alreadyAuthorized) return undefined;
+			return this.buildAuthorizationTransactionRequest({
+				chainId: args.chainId,
+				owner,
+				morpho: this.getMorphoAddress(args.chainId),
+				swapVerifier,
+				positionId: args.position?.id,
+			});
+		}
+
 		if (alreadyAuthorized && !args.removeAuthorizationAfterMigration)
 			return undefined;
 
@@ -530,8 +561,19 @@ export class MorphoPositionMigrationConnector
 		}
 
 		const items: EVCBatchItem[] = [];
-		const alreadyAuthorized =
-			args.skipAuthorizationCheck && args.authorization
+		const hasSimulatedTransactionGrant =
+			args.skipAuthorizationCheck &&
+			args.authorizationRequest?.kind === "transaction"
+				? this.validateSimulatedAuthorization({
+						request: args.authorizationRequest,
+						owner,
+						swapVerifier,
+						morpho,
+					})
+				: false;
+		const alreadyAuthorized = hasSimulatedTransactionGrant
+			? true
+			: args.skipAuthorizationCheck && args.authorization
 				? false
 				: await this.isAuthorized(args.chainId, owner, swapVerifier);
 		if (!alreadyAuthorized) {
@@ -783,11 +825,21 @@ export class MorphoPositionMigrationConnector
 		}
 
 		const items: EVCBatchItem[] = [];
-		const alreadyAuthorized = await this.isAuthorized(
-			args.chainId,
-			owner,
-			swapVerifier,
-		);
+		const hasSimulatedTransactionGrant =
+			args.skipAuthorizationCheck &&
+			args.authorizationRequest?.kind === "transaction"
+				? this.validateSimulatedAuthorization({
+						request: args.authorizationRequest,
+						owner,
+						swapVerifier,
+						morpho,
+					})
+				: false;
+		const alreadyAuthorized = hasSimulatedTransactionGrant
+			? true
+			: args.skipAuthorizationCheck && args.authorization
+				? false
+				: await this.isAuthorized(args.chainId, owner, swapVerifier);
 		if (!alreadyAuthorized) {
 			if (!args.authorization) {
 				throw new Error(
@@ -951,6 +1003,50 @@ export class MorphoPositionMigrationConnector
 		});
 	}
 
+	private validateSimulatedAuthorization(args: {
+		request: MigrationAuthorizationRequest;
+		owner: Address;
+		swapVerifier: Address;
+		morpho: Address;
+	}): true {
+		const request = args.request as MorphoMigrationAuthorizationRequest;
+		if (
+			request.kind !== "transaction" ||
+			request.connectorId !== MORPHO_CONNECTOR_ID ||
+			request.authorizationType !== "morphoAuthorization"
+		) {
+			throw new Error("Expected a Morpho transaction authorization request");
+		}
+		assertSameAddress(
+			request.owner,
+			args.owner,
+			"Morpho authorization owner mismatch",
+		);
+		assertSameAddress(
+			request.call.to,
+			args.morpho,
+			"Morpho authorization call target mismatch",
+		);
+		if (request.call.functionName !== "setAuthorization") {
+			throw new Error(
+				"Morpho transaction authorization must call setAuthorization",
+			);
+		}
+		const [authorized, isAuthorized] = request.call.args;
+		if (typeof authorized !== "string") {
+			throw new Error("Morpho transaction authorization target is required");
+		}
+		assertSameAddress(
+			authorized as Address,
+			args.swapVerifier,
+			"Morpho authorization target must be the Euler SwapVerifier",
+		);
+		if (isAuthorized !== true) {
+			throw new Error("Morpho transaction authorization must enable access");
+		}
+		return true;
+	}
+
 	private encodeSetAuthorizationWithSigItem(args: {
 		chainId: number;
 		owner: Address;
@@ -1016,6 +1112,38 @@ export class MorphoPositionMigrationConnector
 			authorization,
 			isAuthorized: false,
 		});
+	}
+
+	/**
+	 * `morpho.setAuthorization` — the signature-free form.
+	 *
+	 * Synchronous: unlike `setAuthorizationWithSig` there is no nonce to read,
+	 * so the grant needs no RPC round-trip.
+	 */
+	private buildAuthorizationTransactionRequest(args: {
+		chainId: number;
+		owner: Address;
+		morpho: Address;
+		swapVerifier: Address;
+		positionId?: string;
+	}): MorphoAuthorizationTransactionRequest {
+		const setAuthorization = (isAuthorized: boolean) => ({
+			to: args.morpho,
+			abi: morphoBlueAbi as Abi,
+			functionName: "setAuthorization",
+			args: [args.swapVerifier, isAuthorized] as const,
+		});
+		return {
+			kind: "transaction",
+			authorizationType: "morphoAuthorization",
+			connectorId: MORPHO_CONNECTOR_ID,
+			protocol: MORPHO_PROTOCOL,
+			chainId: args.chainId,
+			owner: args.owner,
+			positionId: args.positionId,
+			call: setAuthorization(true),
+			revocation: setAuthorization(false),
+		};
 	}
 
 	private buildAuthorizationRequest(args: {

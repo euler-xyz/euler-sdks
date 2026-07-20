@@ -1,6 +1,8 @@
 import type { Address } from "viem";
 import type {
+	MigrationAuthorizationCall,
 	MigrationPosition,
+	TransactionMigrationAuthorizationRequest,
 	TypedDataMigrationAuthorizationRequest,
 } from "../../positionMigrationServiceTypes.js";
 
@@ -55,7 +57,21 @@ export type MetamorphoPermitTypedDataRequest =
 		allowanceSlotIndex: bigint;
 	};
 
+/** `vault.approve` — the signature-free counterpart of the share permit. */
+export type MetamorphoShareApprovalTransactionRequest =
+	TransactionMigrationAuthorizationRequest & {
+		authorizationType: "metamorphoApproval";
+		/** The vault address — Metamorpho shares are the vault token itself. */
+		token: Address;
+		allowanceSlotIndex: bigint;
+		revocation: MigrationAuthorizationCall;
+	};
+
 export type MetamorphoMigrationAuthorizationRequest =
 	MetamorphoPermitTypedDataRequest;
+
+export type MetamorphoConnectorMigrationAuthorizationRequest =
+	| MetamorphoMigrationAuthorizationRequest
+	| MetamorphoShareApprovalTransactionRequest;
 
 export type MetamorphoMigrationConnectorConfig = Record<string, never>;

@@ -10,6 +10,7 @@ export {
 	MetamorphoPositionMigrationConnector,
 } from "./metamorphoConnector.js";
 export type {
+	MetamorphoConnectorMigrationAuthorizationRequest,
 	MetamorphoMigrationAuthorizationRequest,
 	MetamorphoMigrationConnectorConfig,
 	MetamorphoMigrationPosition,
@@ -17,5 +18,6 @@ export type {
 	MetamorphoPermitTypedDataRequest,
 	MetamorphoPositionRaw,
 	MetamorphoPositionRef,
+	MetamorphoShareApprovalTransactionRequest,
 	MetamorphoVaultVersion,
 } from "./metamorphoConnectorTypes.js";
