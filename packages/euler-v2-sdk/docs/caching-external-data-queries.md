@@ -27,9 +27,16 @@ type BuildQueryFn = <T extends (...args: any[]) => Promise<any>>(
   queryName: string,
   fn: T,
   target: object,
+  // null is an explicit instruction to call fn without caching
   context?: { getCacheKey: (args: unknown[]) => string | null },
 ) => T;
 ```
+
+`context.getCacheKey(args)` returns a deterministic string for cacheable calls
+and `null` for calls that must bypass caching. `null` is a semantic no-cache
+signal, not a missing key: custom builders must call `fn` directly instead of
+replacing it with a generic serialized key. Activity cursor pages use this
+contract so pagination does not grow a long-lived cache entry per cursor.
 
 Pass `buildQuery` once when building the SDK and it propagates to every service and adapter:
 
@@ -93,18 +100,27 @@ export const queryClient = new QueryClient({
 export const sdkBuildQuery: BuildQueryFn = (queryName, fn, _target, context) => {
   const staleTime = STALE_TIMES[queryName] ?? DEFAULT_STALE_TIME;
 
-  const wrapped = (...args: unknown[]) =>
-    queryClient.fetchQuery({
-      queryKey: ["sdk", queryName, context?.getCacheKey(args) ?? serializeQueryArgs(args)],
+  const wrapped = (...args: unknown[]) => {
+    const cacheKey = context
+      ? context.getCacheKey(args)
+      : serializeQueryArgs(args);
+    if (cacheKey === null) return fn(...args);
+
+    return queryClient.fetchQuery({
+      queryKey: ["sdk", queryName, cacheKey],
       queryFn: () => fn(...args),
       staleTime,
     });
+  };
 
   return wrapped as typeof fn;
 };
 ```
 
 Each `query*` call becomes a `fetchQuery` with a deterministic cache key derived from the query name and the SDK-provided `context.getCacheKey(args)` helper. Generic keys remove provider-object noise and normalize address casing. Query-owned `getQueryKeyX` methods handle query-specific semantics such as unordered feed sets or asset filters while ordered payloads remain order-sensitive. If the cached value is fresh (within `staleTime`), no network call is made.
+
+Calls whose key helper returns `null` invoke the underlying fetcher directly and
+do not create a react-query cache entry.
 
 ### Central stale time settings
 

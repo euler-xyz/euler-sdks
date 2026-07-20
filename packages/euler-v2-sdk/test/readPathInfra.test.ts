@@ -180,6 +180,19 @@ test("buildQuery cache dedupes, short-caches failures, and decorate query method
   circular.self = circular;
   assert.equal(await uncachedFn(circular), "unserializable");
 
+  let nullKeyRuns = 0;
+  const nullKeyFn = createQueryCacheBuildQuery({ ttlMs: 60_000 })(
+    "queryNullKey",
+    async () => {
+      nullKeyRuns += 1;
+      return nullKeyRuns;
+    },
+    {},
+    { getCacheKey: () => null },
+  );
+  assert.equal(await nullKeyFn("same"), 1);
+  assert.equal(await nullKeyFn("same"), 2);
+
   class QueryContainer {
     queryAlpha = async () => "alpha";
     notAQuery = async () => "skip";

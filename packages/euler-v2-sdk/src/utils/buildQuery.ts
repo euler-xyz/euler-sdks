@@ -7,6 +7,10 @@
  * @returns A wrapped version of the query function
  */
 export interface BuildQueryContext {
+	/**
+	 * Returns a deterministic cache key, or `null` when this invocation must run
+	 * without caching. Custom builders must preserve `null` as a no-cache signal.
+	 */
 	getCacheKey: (args: unknown[]) => string | null;
 }
 
@@ -131,8 +135,9 @@ export function createQueryCacheBuildQuery(
 		>();
 
 		const wrapped = (async (...args: Parameters<T>) => {
-			const cacheKey =
-				context?.getCacheKey(args) ?? getEulerSdkQueryKey(queryName, args);
+			const cacheKey = context
+				? context.getCacheKey(args)
+				: getEulerSdkQueryKey(queryName, args);
 			if (cacheKey === null) {
 				return fn(...args);
 			}

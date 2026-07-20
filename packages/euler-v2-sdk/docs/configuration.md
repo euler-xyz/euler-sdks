@@ -20,6 +20,8 @@ const sdk = await buildEulerSDK({
     },
     v3ApiUrl: "https://your-v3-api",
     v3ApiKey: process.env.EULER_SDK_V3_API_KEY,
+    activityV3ApiUrl: process.env.EULER_SDK_ACTIVITY_V3_API_URL,
+    activityV3ApiKey: process.env.EULER_SDK_ACTIVITY_V3_API_KEY,
     swapApiUrl: "https://swap.euler.finance",
     swapDefaultDeadline: 1800,
   },
@@ -73,6 +75,7 @@ Use explicit nested service config when the option is a function or a custom obj
 | `swapServiceConfig` | Euler swap API | Swap quote fetching |
 | `rewardsServiceConfig` | `v3` adapter with direct Brevis/Fuul helper reads | Reward campaign data, per-user rewards, and reward claim planning |
 | `intrinsicApyServiceConfig` | V3 intrinsic APY API | Underlying yield data for vault assets |
+| `activityServiceConfig` | V3 activity API | Normalized account and vault event timelines with coverage metadata |
 | `buildQuery` | 5s in-memory cache | Wrap all external queries for caching, logging, or profiling |
 | `queryCacheConfig` | `{ enabled: true, ttlMs: 5000, failureTtlMs: 5000 }` | Built-in query cache settings when `buildQuery` is not supplied |
 | `plugins` | `[]` | Extend on-chain reads and transaction plans |
@@ -80,7 +83,12 @@ Use explicit nested service config when the option is a function or a custom obj
 
 ## V3 adapter config
 
-When `accountServiceConfig.adapter`, `eVaultServiceConfig.adapter`, `eulerEarnServiceConfig.adapter`, `vaultTypeAdapterConfig`, `rewardsServiceConfig.adapter`, `intrinsicApyServiceConfig`, or the built-in pricing service use V3, the SDK forwards the resolved API key as an `X-API-Key` request header.
+When `accountServiceConfig.adapter`, `eVaultServiceConfig.adapter`, `eulerEarnServiceConfig.adapter`, `vaultTypeAdapterConfig`, `rewardsServiceConfig.adapter`, `intrinsicApyServiceConfig`, `activityServiceConfig`, or the built-in pricing service use V3, the SDK forwards the resolved API key as an `X-API-Key` request header.
+
+Activity uses the shared `v3ApiUrl` and `v3ApiKey` by default. Set
+`activityV3ApiUrl` and `activityV3ApiKey`, or their
+`EULER_SDK_ACTIVITY_V3_API_URL` and `EULER_SDK_ACTIVITY_V3_API_KEY`
+environment variables, when activity requests use a separate endpoint or key.
 
 Adapter-specific keys override the shared key within the same configuration layer. Layer priority still applies, so `config.pricingApiKey` overrides `pricingServiceConfig.apiKey`, and `pricingServiceConfig.apiKey` overrides `EULER_SDK_PRICING_API_KEY`.
 

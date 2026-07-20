@@ -100,6 +100,7 @@ import {
 	defaultEulerEarnV3AdapterConfig,
 	defaultEulerLabelsURLAdapterConfig,
 	defaultIntrinsicApyV3AdapterConfig,
+	defaultActivityV3AdapterConfig,
 	defaultPricingServiceConfig,
 	defaultRewardsV3AdapterConfig,
 	defaultSwapServiceConfig,
@@ -127,6 +128,13 @@ import {
 	type MorphoMigrationConnectorConfig,
 	type PositionMigrationServiceConfig,
 } from "../services/positionMigrationService/index.js";
+import {
+	ActivityService,
+	ActivityV3Adapter,
+	UnavailableActivityAdapter,
+	type ActivityServiceConfig,
+	type IActivityService,
+} from "../services/activityService/index.js";
 import {
 	type EulerSDKConfig,
 	readEulerSDKEnvConfig,
@@ -191,6 +199,7 @@ export interface BuildSDKOverrides<
 	feeFlowService?: IFeeFlowService;
 	reulLockService?: IREULLockService;
 	positionMigrationService?: IPositionMigrationService;
+	activityService?: IActivityService;
 }
 
 export type { EulerSDKConfig } from "./config.js";
@@ -228,6 +237,8 @@ export interface BuildSDKOptions<
 		aave?: AaveMigrationConnectorConfig;
 		metamorpho?: MetamorphoMigrationConnectorConfig;
 	};
+	/** Configuration for the built-in V3 activity adapter. */
+	activityServiceConfig?: ActivityServiceConfig;
 	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with 5s success and failure TTLs. */
 	queryCacheConfig?: QueryCacheConfig;
 	/** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
@@ -538,6 +549,7 @@ export async function buildEulerSDK<
 		feeFlowServiceConfig,
 		positionMigrationServiceConfig,
 		positionMigrationConnectorConfig,
+		activityServiceConfig,
 	} = options;
 
 	const envConfig = readEulerSDKEnvConfig();
@@ -1532,6 +1544,31 @@ export async function buildEulerSDK<
 				resolvedBuildQuery,
 			);
 		})();
+	const resolvedActivityV3Config = resolveV3AdapterConfig(
+		defaultActivityV3AdapterConfig,
+		{
+			explicitConfig: activityServiceConfig,
+			explicitV3ApiKey: v3ApiKey,
+			envConfig,
+			config,
+			envEndpoint: envConfig.activityV3ApiUrl,
+			configEndpoint: config?.activityV3ApiUrl,
+			envApiKey: envConfig.activityV3ApiKey,
+			configApiKey: config?.activityV3ApiKey,
+		},
+	);
+	const canBuildActivityV3 =
+		resolvedActivityV3Config.endpoint.trim().length > 0;
+	const activityService =
+		servicesOverrides?.activityService ??
+		new ActivityService(
+			disableV3
+				? new UnavailableActivityAdapter("v3-disabled")
+				: canBuildActivityV3
+					? new ActivityV3Adapter(resolvedActivityV3Config)
+					: new UnavailableActivityAdapter("source-not-configured"),
+			resolvedBuildQuery,
+		);
 
 	if (executionService instanceof ExecutionService) {
 		executionService.setProviderService(providerService as ProviderService);
@@ -1626,6 +1663,7 @@ export async function buildEulerSDK<
 		feeFlowService,
 		reulLockService,
 		positionMigrationService,
+		activityService,
 		plugins,
 	});
 

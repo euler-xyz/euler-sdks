@@ -179,11 +179,19 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn, _target, context) => 
 
   const wrapped = async (...args: unknown[]) => {
     recordExecution(queryName);
-    const queryKey = [
-      "sdk",
-      queryName,
-      context?.getCacheKey(args) ?? serializeQueryArgs(args),
-    ] as QueryKey;
+    const cacheKey = context
+      ? context.getCacheKey(args)
+      : serializeQueryArgs(args);
+    if (cacheKey === null) {
+      try {
+        return await interceptedFetcher(...args);
+      } catch (error) {
+        recordFailure(queryName);
+        throw error;
+      }
+    }
+
+    const queryKey = ["sdk", queryName, cacheKey] as QueryKey;
     const { disableCache, fetchQueryOptions: overrides } = getQueryBuildOverrides();
 
     const fetchOptions: FetchQueryOptions<unknown, Error, unknown, QueryKey> = {

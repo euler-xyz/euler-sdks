@@ -15,6 +15,7 @@ import type { RewardsService } from "../services/rewardsService/rewardsService.j
 import type { SwapService } from "../services/swapService/swapService.js";
 import type { TokenlistService } from "../services/tokenlistService/tokenlistService.js";
 import type { WalletOnchainAdapter } from "../services/walletService/adapters/walletOnchainAdapter.js";
+import type { ActivityService } from "../services/activityService/activityService.js";
 import type { EVaultOnchainAdapter } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultOnchainAdapter.js";
 import type { EVaultV3Adapter } from "../services/vaults/eVaultService/adapters/eVaultV3Adapter/eVaultV3Adapter.js";
 import type { EulerEarnOnchainAdapter } from "../services/vaults/eulerEarnService/adapters/eulerEarnOnchainAdapter.js";
@@ -43,6 +44,7 @@ export type EulerSDKQueryName =
 	| QueryMethodName<RewardsDirectAdapter>
 	| QueryMethodName<RewardsV3Adapter>
 	| QueryMethodName<RewardsService>
+	| QueryMethodName<ActivityService>
 	| QueryMethodName<SwapService>
 	| QueryMethodName<TokenlistService>
 	| QueryMethodName<WalletOnchainAdapter>
