@@ -72,6 +72,24 @@ const HOOK_TARGET_ABI = [
 		outputs: [{ name: "", type: "address" }],
 		stateMutability: "view",
 	},
+	// Integrator-supplied hook targets (e.g. HookTargetAccessControlKeyringUnwind)
+	// expose the same values behind `get`-prefixed getters instead of the public
+	// immutables above. Declared uint256 as a safe superset — the value is coerced
+	// to a Number by queryKeyringPolicyId.
+	{
+		type: "function",
+		name: "getPolicyId",
+		inputs: [],
+		outputs: [{ name: "", type: "uint256" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "getKeyring",
+		inputs: [],
+		outputs: [{ name: "", type: "address" }],
+		stateMutability: "view",
+	},
 ] as const;
 
 // ── Credential data type (matches Keyring Connect SDK output) ──
@@ -85,6 +103,33 @@ export interface KeyringCredentialData {
 	key: Hex;
 	signature: Hex;
 	backdoor: Hex;
+}
+
+// Euler's native HookTargetAccessControlKeyring exposes the policy id and
+// keyring credentials contract as public immutables (`policyId()`, `keyring()`).
+// Integrator-supplied hook targets (e.g. HookTargetAccessControlKeyringUnwind)
+// expose the same values behind `get`-prefixed getters. Try each name in order
+// so both conventions resolve; rethrow the last error only if none succeed.
+async function readHookTargetGetter<T>(
+	provider: PublicClient,
+	hookTarget: Address,
+	functionNames: ReadonlyArray<
+		"policyId" | "getPolicyId" | "keyring" | "getKeyring"
+	>,
+): Promise<T> {
+	let lastError: unknown;
+	for (const functionName of functionNames) {
+		try {
+			return (await provider.readContract({
+				address: hookTarget,
+				abi: HOOK_TARGET_ABI,
+				functionName,
+			})) as T;
+		} catch (error) {
+			lastError = error;
+		}
+	}
+	throw lastError;
 }
 
 // ── Adapter (injectable query pattern) ──
@@ -111,31 +156,34 @@ export class KeyringPluginAdapter {
 	};
 
 	/**
-	 * Read the policyId from a hook target contract.
+	 * Read the policyId from a hook target contract. Falls back to `getPolicyId()`
+	 * for integrator hook targets (e.g. HookTargetAccessControlKeyringUnwind) that
+	 * expose `get`-prefixed getters instead of Euler's public immutables.
 	 */
 	queryKeyringPolicyId = async (
 		provider: PublicClient,
 		hookTarget: Address,
 	): Promise<number> => {
-		return provider.readContract({
-			address: hookTarget,
-			abi: HOOK_TARGET_ABI,
-			functionName: "policyId",
-		});
+		const policyId = await readHookTargetGetter<number | bigint>(
+			provider,
+			hookTarget,
+			["policyId", "getPolicyId"],
+		);
+		return Number(policyId);
 	};
 
 	/**
-	 * Read the keyring credentials contract address from a hook target.
+	 * Read the keyring credentials contract address from a hook target. Falls back
+	 * to `getKeyring()` for integrator hook targets that use `get`-prefixed getters.
 	 */
 	queryKeyringAddress = async (
 		provider: PublicClient,
 		hookTarget: Address,
 	): Promise<Address> => {
-		return provider.readContract({
-			address: hookTarget,
-			abi: HOOK_TARGET_ABI,
-			functionName: "keyring",
-		});
+		return readHookTargetGetter<Address>(provider, hookTarget, [
+			"keyring",
+			"getKeyring",
+		]);
 	};
 }
 

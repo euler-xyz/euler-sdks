@@ -200,3 +200,74 @@ test("Keyring plugin uses Account vaults without fetching vaults", async () => {
 	assert.equal(items[0]?.targetContract, KEYRING);
 	assert.deepEqual(items[1], batchItem);
 });
+
+test("Keyring plugin resolves integrator hook targets via getPolicyId/getKeyring", async () => {
+	const plugin = createKeyringPlugin({
+		hookTargets: { 1: [HOOK_TARGET] },
+		getCredentialData: async ({ policyId }) => {
+			// The plugin must resolve the policy id via getPolicyId() (coerced from
+			// a uint256/bigint to a Number) and pass it through here.
+			assert.equal(policyId, 7);
+			return {
+				trader: ACCOUNT,
+				policyId,
+				chainId: 1,
+				validUntil: 123,
+				cost: 456,
+				key: "0x01",
+				signature: "0x02",
+				backdoor: "0x03",
+			};
+		},
+	});
+
+	// Integrator hook target (HookTargetAccessControlKeyringUnwind): the native
+	// policyId()/keyring() getters revert; only the get-prefixed ones resolve.
+	const provider = {
+		readContract: async ({ functionName }: { functionName: string }) => {
+			if (functionName === "checkKeyringCredentialOrWildCard") return false;
+			if (functionName === "policyId" || functionName === "keyring") {
+				throw new Error("execution reverted");
+			}
+			if (functionName === "getPolicyId") return 7n;
+			if (functionName === "getKeyring") return KEYRING;
+			throw new Error(`unexpected readContract: ${functionName}`);
+		},
+	} as unknown as PublicClient;
+	const sdk = {
+		providerService: {
+			getProvider: () => provider,
+		},
+		vaultMetaService: {
+			fetchVaults: async () => ({
+				result: [createVault(HOOK_TARGET)],
+				errors: [],
+			}),
+		},
+	} as never;
+
+	const batchItem: EVCBatchItem = {
+		targetContract: TARGET_A,
+		onBehalfOfAccount: ACCOUNT,
+		value: 0n,
+		data: "0xaaaa",
+	};
+
+	const processed = await plugin.processPlan?.(
+		[{ type: "evcBatch", items: [batchItem] }],
+		ACCOUNT,
+		1,
+		sdk,
+	);
+
+	assert.ok(processed);
+	const [entry] = processed;
+	assert.equal(entry.type, "evcBatch");
+	if (entry.type !== "evcBatch") throw new Error("expected evcBatch");
+	const items = flattenBatchEntries(entry.items);
+	assert.equal(items.length, 2);
+	// createCredential injected, targeting the keyring contract from getKeyring().
+	assert.equal(items[0]?.targetContract, KEYRING);
+	assert.equal(items[0]?.value, 456n);
+	assert.deepEqual(items[1], batchItem);
+});
