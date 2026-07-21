@@ -205,8 +205,8 @@ test("Keyring plugin resolves integrator hook targets via getPolicyId/getKeyring
 	const plugin = createKeyringPlugin({
 		hookTargets: { 1: [HOOK_TARGET] },
 		getCredentialData: async ({ policyId }) => {
-			// The plugin must resolve the policy id via getPolicyId() (coerced from
-			// a uint256/bigint to a Number) and pass it through here.
+			// The plugin must resolve the policy id via getPolicyId() (uint32 on the
+			// verified integrator ABI) and pass it through here.
 			assert.equal(policyId, 7);
 			return {
 				trader: ACCOUNT,
@@ -229,7 +229,7 @@ test("Keyring plugin resolves integrator hook targets via getPolicyId/getKeyring
 			if (functionName === "policyId" || functionName === "keyring") {
 				throw new Error("execution reverted");
 			}
-			if (functionName === "getPolicyId") return 7n;
+			if (functionName === "getPolicyId") return 7;
 			if (functionName === "getKeyring") return KEYRING;
 			throw new Error(`unexpected readContract: ${functionName}`);
 		},

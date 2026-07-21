@@ -74,13 +74,13 @@ const HOOK_TARGET_ABI = [
 	},
 	// Integrator-supplied hook targets (e.g. HookTargetAccessControlKeyringUnwind)
 	// expose the same values behind `get`-prefixed getters instead of the public
-	// immutables above. Declared uint256 as a safe superset — the value is coerced
-	// to a Number by queryKeyringPolicyId.
+	// immutables above. getPolicyId() is uint32 on the verified integrator ABI,
+	// matching the native policyId() getter and the SDK's `policyId: number` surface.
 	{
 		type: "function",
 		name: "getPolicyId",
 		inputs: [],
-		outputs: [{ name: "", type: "uint256" }],
+		outputs: [{ name: "", type: "uint32" }],
 		stateMutability: "view",
 	},
 	{
@@ -164,12 +164,12 @@ export class KeyringPluginAdapter {
 		provider: PublicClient,
 		hookTarget: Address,
 	): Promise<number> => {
-		const policyId = await readHookTargetGetter<number | bigint>(
-			provider,
-			hookTarget,
-			["policyId", "getPolicyId"],
-		);
-		return Number(policyId);
+		// Both policyId() and getPolicyId() are uint32, so viem returns a number
+		// directly — no bigint coercion (and no unsafe-integer rounding) needed.
+		return readHookTargetGetter<number>(provider, hookTarget, [
+			"policyId",
+			"getPolicyId",
+		]);
 	};
 
 	/**
