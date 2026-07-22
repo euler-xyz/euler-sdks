@@ -393,40 +393,41 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 				if (!anyGated) return plan;
 			}
 
-			// Resolve the keyring vaults to act on: prefer the prefetch's already-
-			// classified set, fall back to plan-walk + live isKeyringHook check.
-			let keyringEntries: Array<{ vault: EVault; gate: GateInfo }> = [];
+			// Resolve the keyring gates to act on. A supplied prefetch is complete
+			// for this plan, so consume it directly without repeating metadata I/O.
+			const keyringEntries = new Map<string, GateInfo>();
+			const addGate = (gate: GateInfo) => {
+				const key = [
+					getAddress(gate.keyring),
+					getAddress(gate.hookTarget),
+					gate.policyId,
+				].join(":");
+				keyringEntries.set(key, gate);
+			};
 			if (keyringPrefetch) {
-				const targetVaults = await resolveTargetVaults(
-					plan,
-					account,
-					chainId,
-					sdk,
-				);
-				for (const vault of targetVaults) {
-					const address = getAddress(vault.address);
+				for (const address of collectPlanTargetAddresses(plan)) {
 					const gate = keyringPrefetch.gatedVaults.get(address);
-					if (gate) keyringEntries.push({ vault, gate });
+					if (gate) addGate(gate);
 				}
 			} else {
 				const candidates = (
 					await resolveTargetVaults(plan, account, chainId, sdk)
 				).filter((v) => isKeyringHook(v, chainHookTargets));
-				keyringEntries = await Promise.all(
-					candidates.map(async (vault) => ({
-						vault,
-						gate: await resolveGateInfo(
-							provider,
-							getAddress(vault.hooks.hookTarget),
-						),
-					})),
+				const hookTargets = new Set(
+					candidates.map((vault) => getAddress(vault.hooks.hookTarget)),
 				);
+				const gates = await Promise.all(
+					[...hookTargets].map((hookTarget) =>
+						resolveGateInfo(provider, hookTarget),
+					),
+				);
+				for (const gate of gates) addGate(gate);
 			}
-			if (!keyringEntries.length) return plan;
+			if (!keyringEntries.size) return plan;
 
-			const items: EVCBatchItem[] = [];
+			const items = new Map<string, EVCBatchItem>();
 
-			for (const { gate } of keyringEntries) {
+			for (const gate of keyringEntries.values()) {
 				try {
 					// Credential validity is intentionally re-checked here even if
 					// prefetched: it can flip between prefetch and submit if the
@@ -446,7 +447,14 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 					});
 					if (!credentialData) continue;
 
-					items.push({
+					const credentialKey = [
+						getAddress(gate.keyring),
+						getAddress(credentialData.trader),
+						credentialData.policyId,
+					].join(":");
+					if (items.has(credentialKey)) continue;
+
+					items.set(credentialKey, {
 						targetContract: gate.keyring,
 						onBehalfOfAccount: sender,
 						value: BigInt(credentialData.cost),
@@ -468,8 +476,8 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 				} catch {}
 			}
 
-			if (!items.length) return plan;
-			return prependToEveryBatch(plan, items);
+			if (!items.size) return plan;
+			return prependToEveryBatch(plan, [...items.values()]);
 		},
 
 		decodeBatchItem(item: EVCBatchItem): BatchItemDescription | null {
