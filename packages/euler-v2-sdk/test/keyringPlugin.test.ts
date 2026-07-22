@@ -271,3 +271,79 @@ test("Keyring plugin resolves integrator hook targets via getPolicyId/getKeyring
 	assert.equal(items[0]?.value, 456n);
 	assert.deepEqual(items[1], batchItem);
 });
+
+test("Keyring plugin fetches a planned vault missing from Account positions", async () => {
+	const plugin = createKeyringPlugin({
+		hookTargets: { 1: [HOOK_TARGET] },
+		getCredentialData: async ({ policyId }) => ({
+			trader: ACCOUNT,
+			policyId,
+			chainId: 1,
+			validUntil: 123,
+			cost: 456,
+			key: "0x01",
+			signature: "0x02",
+			backdoor: "0x03",
+		}),
+	});
+	const provider = {
+		readContract: async ({ functionName }: { functionName: string }) => {
+			if (functionName === "checkKeyringCredentialOrWildCard") return false;
+			if (functionName === "policyId" || functionName === "keyring") {
+				throw new Error("execution reverted");
+			}
+			if (functionName === "getPolicyId") return 7;
+			if (functionName === "getKeyring") return KEYRING;
+			throw new Error(`unexpected readContract: ${functionName}`);
+		},
+	} as unknown as PublicClient;
+	let fetchCount = 0;
+	const sdk = {
+		providerService: { getProvider: () => provider },
+		vaultMetaService: {
+			fetchVaults: async () => {
+				fetchCount += 1;
+				return { result: [createVault(HOOK_TARGET)], errors: [] };
+			},
+		},
+	} as never;
+	const account = new Account({
+		chainId: 1,
+		owner: ACCOUNT,
+		populated: { vaults: true },
+		subAccounts: {
+			[ACCOUNT]: {
+				timestamp: 0,
+				account: ACCOUNT,
+				owner: ACCOUNT,
+				lastAccountStatusCheckTimestamp: 0,
+				enabledControllers: [],
+				enabledCollaterals: [],
+				positions: [],
+			},
+		},
+	});
+	const batchItem: EVCBatchItem = {
+		targetContract: TARGET_A,
+		onBehalfOfAccount: ACCOUNT,
+		value: 0n,
+		data: "0xaaaa",
+	};
+
+	const processed = await plugin.processPlan?.(
+		[{ type: "evcBatch", items: [batchItem] }],
+		account,
+		1,
+		sdk,
+	);
+
+	assert.ok(processed);
+	assert.equal(fetchCount, 1);
+	const [entry] = processed;
+	assert.equal(entry.type, "evcBatch");
+	if (entry.type !== "evcBatch") throw new Error("expected evcBatch");
+	const items = flattenBatchEntries(entry.items);
+	assert.equal(items.length, 2);
+	assert.equal(items[0]?.targetContract, KEYRING);
+	assert.deepEqual(items[1], batchItem);
+});

@@ -278,22 +278,31 @@ async function resolveTargetVaults(
 	const targetAddresses = collectPlanTargetAddresses(plan);
 	if (!targetAddresses.length) return [];
 
-	if (typeof account !== "string") {
-		return collectAccountVaults(account, targetAddresses);
-	}
+	const accountVaults =
+		typeof account === "string"
+			? []
+			: collectAccountVaults(account, targetAddresses);
+	const accountVaultAddresses = new Set(
+		accountVaults.map((vault) => getAddress(vault.address)),
+	);
+	const missingTargetAddresses = targetAddresses.filter(
+		(address) => !accountVaultAddresses.has(getAddress(address)),
+	);
+	if (!missingTargetAddresses.length) return accountVaults;
 
 	const fetched = await sdk.vaultMetaService.fetchVaults(
 		chainId,
-		targetAddresses,
+		missingTargetAddresses,
 	);
-	return fetched.result.filter(
+	const fetchedVaults = fetched.result.filter(
 		(v): v is EVault =>
 			!!v &&
 			"hooks" in v &&
-			targetAddresses.some(
+			missingTargetAddresses.some(
 				(target) => getAddress(target) === getAddress(v.address),
 			),
 	);
+	return [...accountVaults, ...fetchedVaults];
 }
 
 export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
