@@ -46,6 +46,8 @@ export type PythPluginPrefetch = {
 };
 
 export type KeyringPluginPrefetch = {
+	/** Plan targets already classified by this payload, including non-vaults. */
+	targetAddresses?: Set<Address>;
 	gatedVaults: Map<
 		Address,
 		{
