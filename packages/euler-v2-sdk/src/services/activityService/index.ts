@@ -9,6 +9,7 @@ export {
 	getActivityTargetContract,
 	normalizeActivityEvent,
 	normalizeActivityEventsResponse,
+	normalizeLiquidationsResponse,
 } from "./activityEvent.js";
 export {
 	ActivityService,
@@ -39,9 +40,13 @@ export type {
 	ActivityValueChange,
 	ActivityVaultType,
 	FetchAccountActivityEventsArgs,
+	FetchLiquidationsArgs,
 	FetchVaultActivityEventsArgs,
 	IActivityAdapter,
 	IActivityService,
+	LiquidationRecord,
+	LiquidationsMeta,
+	LiquidationsPage,
 } from "./activityServiceTypes.js";
 export { ACTIVITY_EVENT_TYPES } from "./activityServiceTypes.js";
 export {

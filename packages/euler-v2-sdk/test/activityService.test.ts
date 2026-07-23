@@ -16,6 +16,7 @@ import {
 	joinActivityEndpointPath,
 	normalizeActivityEvent,
 	normalizeActivityEventsResponse,
+	UnavailableActivityAdapter,
 	type ActivityEventsPage,
 	type ActivityEventType,
 	type IActivityAdapter,
@@ -881,7 +882,20 @@ describe("ActivityService", () => {
 						amount: "1",
 						amountUsd: "1.25",
 					},
-					{ kind: "shares", amountRaw: "500000000000000000" },
+					{
+						kind: "collateral",
+						amountRaw: "500000000000000000",
+						amountUnderlyingRaw: "495000",
+						underlyingAddress: OTHER_VAULT,
+						underlyingDecimals: 6,
+						amountUsd: 0.5,
+					},
+					{
+						kind: "collateral",
+						amountRaw: "1",
+						amountUnderlyingRaw: null,
+						amountUsd: null,
+					},
 				],
 				change: {
 					fields: {
@@ -909,7 +923,19 @@ describe("ActivityService", () => {
 					amount: "1",
 					amountUsd: "1.25",
 				},
-				{ kind: "shares", amountRaw: "500000000000000000" },
+				{
+					kind: "collateral",
+					amountRaw: "500000000000000000",
+					amountUnderlyingRaw: "495000",
+					underlyingAddress: OTHER_VAULT,
+					underlyingDecimals: 6,
+					amountUsd: 0.5,
+				},
+				{
+					kind: "collateral",
+					amountRaw: "1",
+					amountUnderlyingRaw: null,
+				},
 			],
 			change: {
 				fields: {
@@ -923,6 +949,7 @@ describe("ActivityService", () => {
 				reason: "Historical price is unavailable",
 			},
 		});
+		expect(result.assets?.[2]).not.toHaveProperty("amountUsd");
 	});
 
 	it("rejects malformed canonical enrichment", () => {
@@ -935,11 +962,24 @@ describe("ActivityService", () => {
 			normalizeActivityEvent(
 				event({
 					assets: [
-						{ kind: "assets", amountRaw: "1", amountUsd: 1.25 },
+						{ kind: "assets", amountRaw: "1", amountUsd: -1 },
 					],
 				}),
 			),
 		).toThrow(".assets[0].amountUsd");
+		expect(() =>
+			normalizeActivityEvent(
+				event({
+					assets: [
+						{
+							kind: "collateral",
+							amountRaw: "1",
+							amountUnderlyingRaw: "1.5",
+						},
+					],
+				}),
+			),
+		).toThrow(".assets[0].amountUnderlyingRaw");
 		expect(() =>
 			normalizeActivityEvent(
 				event({ change: { fields: { queue: [VAULT, 1] } } }),
@@ -1545,6 +1585,213 @@ describe("ActivityService", () => {
 			),
 		).toBe(
 			"https://lite.example/api/internal/v3/activity/accounts/test/events",
+		);
+	});
+});
+
+describe("ActivityService liquidations", () => {
+	const LIQUIDATION_TX = `0x${"ab".repeat(32)}` as const;
+
+	const liquidationRow = (overrides: Record<string, unknown> = {}) => ({
+		chainId: 1,
+		vault: VAULT,
+		violator: ACCOUNT,
+		liquidator: OWNER,
+		collateral: OTHER_VAULT,
+		repayAssets: "451076",
+		yieldBalance: "486058",
+		debtAsset: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+		debtAssetDecimals: 6,
+		debtAssetPriceUsd: 0.9997843,
+		repayAssetsUsd: 0.4509787029068,
+		collateralAsset: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+		collateralAssetDecimals: 6,
+		collateralAssetPriceUsd: 0.9997843,
+		collateralAssets: "530677",
+		collateralAssetsUsd: 0.5305625329711,
+		bonusUsd: 0.0795838300643,
+		valuation: { status: "available", source: "historical-price-snapshots" },
+		blockNumber: "25181865",
+		txHash: LIQUIDATION_TX,
+		timestamp: "2026-05-26T20:24:23.000Z",
+		...overrides,
+	});
+
+	const liquidationsPage = (
+		rows: unknown[],
+		meta: Record<string, unknown> = {},
+	) => ({
+		data: rows,
+		meta: {
+			total: rows.length,
+			offset: 0,
+			limit: 100,
+			timestamp: "2026-07-23T10:10:10.649Z",
+			...meta,
+		},
+	});
+
+	it("fetches normalized liquidations with filters and offset pagination", async () => {
+		const requests: Array<{ url: string; headers: HeadersInit | undefined }> =
+			[];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init?: RequestInit) => {
+				requests.push({ url, headers: init?.headers });
+				return new Response(
+					JSON.stringify(liquidationsPage([liquidationRow()], { total: 42 })),
+					{ status: 200 },
+				);
+			}),
+		);
+
+		const service = new ActivityService({
+			endpoint: "/api/internal",
+			apiKey: "secret",
+		});
+		const result = await service.fetchLiquidations({
+			chainId: 1,
+			vault: VAULT,
+			violator: ACCOUNT,
+			liquidator: OWNER,
+			from: 1782864000,
+			to: 1783987200,
+			limit: 25,
+			offset: 50,
+		});
+
+		expect(requests[0]?.url).toBe(
+			`/api/internal/v3/liquidations?chainId=1&vault=${VAULT}&violator=${ACCOUNT}&liquidator=${OWNER}&from=1782864000&to=1783987200&limit=25&offset=50`,
+		);
+		expect(requests[0]?.headers).toMatchObject({
+			Accept: "application/json",
+			"X-API-Key": "secret",
+		});
+		expect(result.data[0]).toMatchObject({
+			vault: VAULT,
+			violator: ACCOUNT,
+			liquidator: OWNER,
+			repayAssets: "451076",
+			collateralAssets: "530677",
+			bonusUsd: 0.0795838300643,
+			valuation: { status: "available" },
+		});
+		expect(result.meta).toMatchObject({ total: 42, offset: 0, limit: 100 });
+	});
+
+	it("accepts negative bonuses and omitted valuations, rejects malformed rows", async () => {
+		const respond = (rows: unknown[]) => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(
+					async () =>
+						new Response(JSON.stringify(liquidationsPage(rows)), {
+							status: 200,
+						}),
+				),
+			);
+		};
+		const service = new ActivityService({ endpoint: "/api/internal" });
+
+		// Unprofitable liquidation and missing historical prices are valid.
+		respond([
+			liquidationRow({
+				bonusUsd: -0.25,
+				debtAssetPriceUsd: null,
+				repayAssetsUsd: null,
+				collateralAssetPriceUsd: null,
+				collateralAssets: null,
+				collateralAssetsUsd: null,
+				valuation: { status: "unavailable", reason: "no snapshot" },
+			}),
+		]);
+		const tolerant = await service.fetchLiquidations({ chainId: 1 });
+		expect(tolerant.data[0]).toMatchObject({ bonusUsd: -0.25 });
+		expect(tolerant.data[0]?.collateralAssets).toBeUndefined();
+		expect(tolerant.data[0]?.repayAssetsUsd).toBeUndefined();
+
+		respond([liquidationRow({ violator: "not-an-address" })]);
+		await expect(service.fetchLiquidations({ chainId: 1 })).rejects.toThrow(
+			ActivityResponseValidationError,
+		);
+
+		respond([liquidationRow({ repayAssetsUsd: -1 })]);
+		await expect(service.fetchLiquidations({ chainId: 1 })).rejects.toThrow(
+			ActivityResponseValidationError,
+		);
+
+		respond([liquidationRow({ repayAssets: "1.5" })]);
+		await expect(service.fetchLiquidations({ chainId: 1 })).rejects.toThrow(
+			ActivityResponseValidationError,
+		);
+	});
+
+	it("validates liquidation query arguments before requesting", async () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		const service = new ActivityService({ endpoint: "/api/internal" });
+
+		await expect(service.fetchLiquidations({ chainId: 0 })).rejects.toThrow(
+			"chainId must be a positive safe integer",
+		);
+		await expect(
+			service.fetchLiquidations({ chainId: 1, limit: 101 }),
+		).rejects.toThrow("limit must not exceed 100");
+		await expect(
+			service.fetchLiquidations({ chainId: 1, offset: -1 }),
+		).rejects.toThrow("offset must be a non-negative safe integer");
+		await expect(
+			service.fetchLiquidations({ chainId: 1, from: 10, to: 5 }),
+		).rejects.toThrow("from must be less than or equal to to");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("reports liquidations unavailable without adapter support", async () => {
+		const unavailable = new ActivityService(
+			new UnavailableActivityAdapter("v3-disabled"),
+		);
+		await expect(unavailable.fetchLiquidations({ chainId: 1 })).rejects.toThrow(
+			ActivityUnavailableError,
+		);
+
+		const legacyAdapter: IActivityAdapter = {
+			getCapabilities: () => ({
+				configured: true,
+				adapter: "custom",
+				canQueryAccount: true,
+				requestableVaultTypes: ["evk"],
+			}),
+			getScopeSupport: () => "unknown",
+			fetchAccountActivityEvents: async () => {
+				throw new Error("unused");
+			},
+			fetchVaultActivityEvents: async () => {
+				throw new Error("unused");
+			},
+		};
+		const service = new ActivityService(legacyAdapter);
+		await expect(service.fetchLiquidations({ chainId: 1 })).rejects.toThrow(
+			ActivityUnavailableError,
+		);
+	});
+
+	it("builds a stable liquidations query key with checksummed addresses", () => {
+		const service = new ActivityService({ endpoint: "/api/internal" });
+		const key = service.getQueryKeyLiquidations({
+			chainId: 1,
+			vault: VAULT.toLowerCase() as Address,
+			violator: ACCOUNT.toLowerCase() as Address,
+		});
+		// The serializer lowercases values; stability across input casing is
+		// the invariant that matters.
+		expect(key).toContain(VAULT.toLowerCase());
+		expect(key).toContain(ACCOUNT.toLowerCase());
+		expect(key).toBe(
+			service.getQueryKeyLiquidations({
+				chainId: 1,
+				vault: VAULT,
+				violator: ACCOUNT,
+			}),
 		);
 	});
 });

@@ -4,6 +4,7 @@ import {
 	ACTIVITY_VAULT_TYPES,
 	ActivityResponseValidationError,
 	normalizeActivityEventsResponse,
+	normalizeLiquidationsResponse,
 	validateAccountActivityEventsPage,
 	validateVaultActivityEventsPage,
 } from "../activityEvent.js";
@@ -15,8 +16,10 @@ import type {
 	ActivityScopeSupport,
 	ActivityServiceConfig,
 	FetchAccountActivityEventsArgs,
+	FetchLiquidationsArgs,
 	FetchVaultActivityEventsArgs,
 	IActivityAdapter,
+	LiquidationsPage,
 } from "../activityServiceTypes.js";
 import { ACTIVITY_EVENT_TYPES } from "../activityServiceTypes.js";
 
@@ -240,6 +243,56 @@ export class ActivityV3Adapter implements IActivityAdapter {
 		const path = `/v3/activity/vaults/${args.chainId}/${getAddress(args.vault)}/events`;
 		const page = await this.fetchEvents(this.buildUrl(path, params));
 		return validateVaultActivityEventsPage(page, args);
+	}
+
+	async fetchLiquidations(
+		args: FetchLiquidationsArgs,
+	): Promise<LiquidationsPage> {
+		assertPositiveInteger(args.chainId, "chainId");
+		assertOptionalTimestamp(args.from, "from");
+		assertOptionalTimestamp(args.to, "to");
+		if (
+			args.from !== undefined &&
+			args.to !== undefined &&
+			args.from > args.to
+		) {
+			throw new Error("from must be less than or equal to to");
+		}
+
+		const params = new URLSearchParams({ chainId: String(args.chainId) });
+		if (args.vault !== undefined) params.set("vault", getAddress(args.vault));
+		if (args.violator !== undefined) {
+			params.set("violator", getAddress(args.violator));
+		}
+		if (args.liquidator !== undefined) {
+			params.set("liquidator", getAddress(args.liquidator));
+		}
+		if (args.from !== undefined) params.set("from", String(args.from));
+		if (args.to !== undefined) params.set("to", String(args.to));
+		if (args.limit !== undefined) {
+			assertPositiveInteger(args.limit, "limit");
+			if (args.limit > MAX_ACTIVITY_LIMIT) {
+				throw new Error(`limit must not exceed ${MAX_ACTIVITY_LIMIT}`);
+			}
+			params.set("limit", String(args.limit));
+		}
+		if (args.offset !== undefined) {
+			if (!Number.isSafeInteger(args.offset) || args.offset < 0) {
+				throw new Error("offset must be a non-negative safe integer");
+			}
+			params.set("offset", String(args.offset));
+		}
+
+		const { response, body } = await this.fetchResponseBodyWithTimeout(
+			this.buildUrl("/v3/liquidations", params),
+			{ method: "GET", headers: this.getHeaders() },
+		);
+		if (!response.ok) {
+			throw new Error(
+				`Liquidations V3 request failed (${response.status} ${response.statusText}): ${body.slice(0, 200)}`,
+			);
+		}
+		return normalizeLiquidationsResponse(body);
 	}
 
 	private async fetchEvents(url: string): Promise<ActivityEventsPage> {

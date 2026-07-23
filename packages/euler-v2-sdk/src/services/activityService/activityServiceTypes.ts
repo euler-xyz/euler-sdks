@@ -119,7 +119,12 @@ export interface ActivityAssetAmount {
 	symbol?: string;
 	decimals?: number;
 	amount?: string;
-	amountUsd?: string;
+	/** Underlying-asset native units. Null means the historical conversion is unavailable. */
+	amountUnderlyingRaw?: string | null;
+	underlyingAddress?: Address;
+	underlyingDecimals?: number;
+	/** Event-time USD value. The field is omitted when valuation is unavailable. */
+	amountUsd?: string | number;
 }
 
 export type ActivityChangeValue = string | number | boolean | string[] | null;
@@ -255,6 +260,62 @@ export interface ActivityCapabilities {
 	reason?: ActivityCapabilityUnavailableReason;
 }
 
+export interface FetchLiquidationsArgs {
+	chainId: number;
+	vault?: Address;
+	/** Matches the violator account exactly — sub-account addresses included. */
+	violator?: Address;
+	liquidator?: Address;
+	/** Unix timestamp bounds. The backend applies its supported maximum window. */
+	from?: number;
+	to?: number;
+	/** Page size accepted by the backend, from 1 through 100. */
+	limit?: number;
+	offset?: number;
+}
+
+export interface LiquidationRecord {
+	chainId: number;
+	vault: Address;
+	violator: Address;
+	liquidator: Address;
+	/** Collateral vault seized from. */
+	collateral: Address;
+	/** Debt repaid, in debt-asset native units. */
+	repayAssets: string;
+	/** Collateral seized, in collateral vault share units. */
+	yieldBalance: string;
+	debtAsset: Address;
+	debtAssetDecimals: number;
+	/** Event-time USD price. Omitted when the historical valuation is unavailable. */
+	debtAssetPriceUsd?: number;
+	repayAssetsUsd?: number;
+	collateralAsset: Address;
+	collateralAssetDecimals: number;
+	collateralAssetPriceUsd?: number;
+	/** Collateral seized converted to underlying-asset native units. */
+	collateralAssets?: string;
+	collateralAssetsUsd?: number;
+	/** Liquidator bonus (collateral seized minus debt repaid) in event-time USD. */
+	bonusUsd?: number;
+	valuation: ActivityValuation;
+	blockNumber: string;
+	txHash: Hex;
+	timestamp: string;
+}
+
+export interface LiquidationsMeta {
+	total: number;
+	offset: number;
+	limit: number;
+	timestamp: string;
+}
+
+export interface LiquidationsPage {
+	data: LiquidationRecord[];
+	meta: LiquidationsMeta;
+}
+
 export interface IActivityAdapter {
 	getCapabilities(): ActivityCapabilities;
 	/**
@@ -268,6 +329,12 @@ export interface IActivityAdapter {
 	fetchVaultActivityEvents(
 		args: FetchVaultActivityEventsArgs,
 	): Promise<ActivityEventsPage>;
+	/**
+	 * Historical liquidation records with event-time valuations. Optional so
+	 * existing custom adapters keep satisfying the interface; the service
+	 * reports activity-unavailable when the adapter omits it.
+	 */
+	fetchLiquidations?(args: FetchLiquidationsArgs): Promise<LiquidationsPage>;
 }
 
 export interface IActivityService extends IActivityAdapter {}

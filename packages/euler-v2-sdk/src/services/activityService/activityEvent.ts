@@ -21,6 +21,9 @@ import type {
 	ActivityVaultType,
 	FetchAccountActivityEventsArgs,
 	FetchVaultActivityEventsArgs,
+	LiquidationRecord,
+	LiquidationsMeta,
+	LiquidationsPage,
 } from "./activityServiceTypes.js";
 import { ACTIVITY_EVENT_TYPES } from "./activityServiceTypes.js";
 
@@ -204,6 +207,44 @@ const readOptionalAddress = (
 ): Address | undefined =>
 	value === undefined ? undefined : readAddress(value, path);
 
+const readOptionalNullableDecimalString = (
+	value: unknown,
+	path: string,
+): string | null | undefined =>
+	value === undefined || value === null
+		? value
+		: readDecimalString(value, path);
+
+const readOptionalUsdValue = (
+	value: unknown,
+	path: string,
+): string | number | undefined => {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value === "string") return readString(value, path);
+	if (typeof value !== "number") {
+		return fail(path, "expected a non-negative finite number, string, or null");
+	}
+	if (!Number.isFinite(value) || value < 0) {
+		return fail(path, "expected a non-negative finite number, string, or null");
+	}
+	return value;
+};
+
+const readOptionalFiniteNumber = (
+	value: unknown,
+	path: string,
+	options: { allowNegative?: boolean } = {},
+): number | undefined => {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== "number" || !Number.isFinite(value)) {
+		return fail(path, "expected a finite number or null");
+	}
+	if (!options.allowNegative && value < 0) {
+		return fail(path, "expected a non-negative finite number or null");
+	}
+	return value;
+};
+
 const readTxHash = (value: unknown, path: string): Hex => {
 	const txHash = readString(value, path);
 	if (!TX_HASH_PATTERN.test(txHash)) {
@@ -254,7 +295,28 @@ const readAsset = (value: unknown, path: string): ActivityAssetAmount => {
 		fail(`${path}.amountRaw`, "expected a non-negative decimal integer string");
 	}
 	const amount = readOptionalString(record.amount, `${path}.amount`);
-	const amountUsd = readOptionalString(record.amountUsd, `${path}.amountUsd`);
+	const amountUnderlyingRaw = readOptionalNullableDecimalString(
+		record.amountUnderlyingRaw,
+		`${path}.amountUnderlyingRaw`,
+	);
+	const underlyingAddress = readOptionalAddress(
+		record.underlyingAddress,
+		`${path}.underlyingAddress`,
+	);
+	const underlyingDecimals =
+		record.underlyingDecimals === undefined
+			? undefined
+			: readNonNegativeInteger(
+					record.underlyingDecimals,
+					`${path}.underlyingDecimals`,
+				);
+	if (underlyingDecimals !== undefined && underlyingDecimals > 255) {
+		fail(
+			`${path}.underlyingDecimals`,
+			"expected an integer no greater than 255",
+		);
+	}
+	const amountUsd = readOptionalUsdValue(record.amountUsd, `${path}.amountUsd`);
 
 	return {
 		kind: readEnum(record.kind, ASSET_KINDS, `${path}.kind`),
@@ -263,6 +325,9 @@ const readAsset = (value: unknown, path: string): ActivityAssetAmount => {
 		...(symbol !== undefined ? { symbol } : {}),
 		...(decimals !== undefined ? { decimals } : {}),
 		...(amount !== undefined ? { amount } : {}),
+		...(amountUnderlyingRaw !== undefined ? { amountUnderlyingRaw } : {}),
+		...(underlyingAddress !== undefined ? { underlyingAddress } : {}),
+		...(underlyingDecimals !== undefined ? { underlyingDecimals } : {}),
 		...(amountUsd !== undefined ? { amountUsd } : {}),
 	};
 };
@@ -847,3 +912,108 @@ export const getActivityCaller = (
 	event: Pick<ActivityEvent, "payload" | "actor">,
 ): Address | undefined =>
 	event.actor ?? readPayloadAddress(event, ["caller", "sender", "owner"]);
+
+const readLiquidationRecord = (
+	value: unknown,
+	path: string,
+): LiquidationRecord => {
+	const record = readRecord(value, path);
+	const debtAssetPriceUsd = readOptionalFiniteNumber(
+		record.debtAssetPriceUsd,
+		`${path}.debtAssetPriceUsd`,
+	);
+	const repayAssetsUsd = readOptionalFiniteNumber(
+		record.repayAssetsUsd,
+		`${path}.repayAssetsUsd`,
+	);
+	const collateralAssetPriceUsd = readOptionalFiniteNumber(
+		record.collateralAssetPriceUsd,
+		`${path}.collateralAssetPriceUsd`,
+	);
+	const collateralAssets = readOptionalNullableDecimalString(
+		record.collateralAssets,
+		`${path}.collateralAssets`,
+	);
+	const collateralAssetsUsd = readOptionalFiniteNumber(
+		record.collateralAssetsUsd,
+		`${path}.collateralAssetsUsd`,
+	);
+	// A liquidation can be unprofitable, so the bonus may be negative.
+	const bonusUsd = readOptionalFiniteNumber(
+		record.bonusUsd,
+		`${path}.bonusUsd`,
+		{
+			allowNegative: true,
+		},
+	);
+
+	return {
+		chainId: readPositiveInteger(record.chainId, `${path}.chainId`),
+		vault: readAddress(record.vault, `${path}.vault`),
+		violator: readAddress(record.violator, `${path}.violator`),
+		liquidator: readAddress(record.liquidator, `${path}.liquidator`),
+		collateral: readAddress(record.collateral, `${path}.collateral`),
+		repayAssets: readDecimalString(record.repayAssets, `${path}.repayAssets`),
+		yieldBalance: readDecimalString(
+			record.yieldBalance,
+			`${path}.yieldBalance`,
+		),
+		debtAsset: readAddress(record.debtAsset, `${path}.debtAsset`),
+		debtAssetDecimals: readNonNegativeInteger(
+			record.debtAssetDecimals,
+			`${path}.debtAssetDecimals`,
+		),
+		...(debtAssetPriceUsd !== undefined ? { debtAssetPriceUsd } : {}),
+		...(repayAssetsUsd !== undefined ? { repayAssetsUsd } : {}),
+		collateralAsset: readAddress(
+			record.collateralAsset,
+			`${path}.collateralAsset`,
+		),
+		collateralAssetDecimals: readNonNegativeInteger(
+			record.collateralAssetDecimals,
+			`${path}.collateralAssetDecimals`,
+		),
+		...(collateralAssetPriceUsd !== undefined
+			? { collateralAssetPriceUsd }
+			: {}),
+		...(collateralAssets != null ? { collateralAssets } : {}),
+		...(collateralAssetsUsd !== undefined ? { collateralAssetsUsd } : {}),
+		...(bonusUsd !== undefined ? { bonusUsd } : {}),
+		valuation: readValuation(record.valuation, `${path}.valuation`),
+		blockNumber: readDecimalString(record.blockNumber, `${path}.blockNumber`),
+		txHash: readTxHash(record.txHash, `${path}.txHash`),
+		timestamp: readTimestamp(record.timestamp, `${path}.timestamp`),
+	};
+};
+
+const readLiquidationsMeta = (
+	value: unknown,
+	path: string,
+): LiquidationsMeta => {
+	const record = readRecord(value, path);
+	return {
+		total: readNonNegativeInteger(record.total, `${path}.total`),
+		offset: readNonNegativeInteger(record.offset, `${path}.offset`),
+		limit: readNonNegativeInteger(record.limit, `${path}.limit`),
+		timestamp: readTimestamp(record.timestamp, `${path}.timestamp`),
+	};
+};
+
+export const normalizeLiquidationsResponse = (
+	raw: unknown,
+): LiquidationsPage => {
+	let parsed = raw;
+	if (typeof raw === "string") {
+		try {
+			parsed = JSON.parse(raw) as unknown;
+		} catch {
+			fail("$", "expected valid JSON");
+		}
+	}
+	const response = readRecord(parsed, "$");
+	if (!Array.isArray(response.data)) fail("$.data", "expected an array");
+	const data = (response.data as unknown[]).map((row, index) =>
+		readLiquidationRecord(row, `$.data[${index}]`),
+	);
+	return { data, meta: readLiquidationsMeta(response.meta, "$.meta") };
+};

@@ -13,9 +13,11 @@ import type {
 	ActivityScopeSupport,
 	ActivityServiceConfig,
 	FetchAccountActivityEventsArgs,
+	FetchLiquidationsArgs,
 	FetchVaultActivityEventsArgs,
 	IActivityAdapter,
 	IActivityService,
+	LiquidationsPage,
 } from "./activityServiceTypes.js";
 import { ActivityV3Adapter } from "./adapters/activityV3Adapter.js";
 
@@ -66,6 +68,12 @@ export class UnavailableActivityAdapter implements IActivityAdapter {
 	async fetchVaultActivityEvents(
 		_args: FetchVaultActivityEventsArgs,
 	): Promise<ActivityEventsPage> {
+		throw new ActivityUnavailableError(this.reason);
+	}
+
+	async fetchLiquidations(
+		_args: FetchLiquidationsArgs,
+	): Promise<LiquidationsPage> {
 		throw new ActivityUnavailableError(this.reason);
 	}
 }
@@ -162,5 +170,35 @@ export class ActivityService implements IActivityService {
 		args: FetchVaultActivityEventsArgs,
 	): Promise<ActivityEventsPage> {
 		return this.queryVaultActivityEvents(args);
+	}
+
+	queryLiquidations = async (
+		args: FetchLiquidationsArgs,
+	): Promise<LiquidationsPage> => {
+		if (!this.adapter.fetchLiquidations) {
+			throw new ActivityUnavailableError("source-not-configured");
+		}
+		return this.adapter.fetchLiquidations(args);
+	};
+
+	getQueryKeyLiquidations(args: FetchLiquidationsArgs): string | null {
+		return serializeQueryArgs([
+			{
+				...args,
+				vault: args.vault === undefined ? undefined : getAddress(args.vault),
+				violator:
+					args.violator === undefined ? undefined : getAddress(args.violator),
+				liquidator:
+					args.liquidator === undefined
+						? undefined
+						: getAddress(args.liquidator),
+			},
+		]);
+	}
+
+	async fetchLiquidations(
+		args: FetchLiquidationsArgs,
+	): Promise<LiquidationsPage> {
+		return this.queryLiquidations(args);
 	}
 }
