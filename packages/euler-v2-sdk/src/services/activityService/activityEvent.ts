@@ -942,6 +942,39 @@ export const getActivityCaller = (
 ): Address | undefined =>
 	event.actor ?? readPayloadAddress(event, ["caller", "sender", "owner"]);
 
+const LIQUIDATION_VALUATION_SOURCE = "historical-price-snapshots";
+
+/**
+ * The v3 liquidations contract couples the valuation discriminant to the two
+ * USD legs — available: both `repayAssetsUsd` and `collateralAssetsUsd`
+ * present, partial: exactly one, unavailable: neither — and requires the
+ * historical-price-snapshots source. A contradictory row would let consumers
+ * trust `available` while receiving no historical valuation.
+ */
+const readLiquidationValuation = (
+	value: unknown,
+	path: string,
+	presentUsdLegs: number,
+): ActivityValuation => {
+	const valuation = readValuation(value, path);
+	if (valuation.source !== LIQUIDATION_VALUATION_SOURCE) {
+		fail(`${path}.source`, `expected ${LIQUIDATION_VALUATION_SOURCE}`);
+	}
+	const expectedStatus =
+		presentUsdLegs === 2
+			? "available"
+			: presentUsdLegs === 1
+				? "partial"
+				: "unavailable";
+	if (valuation.status !== expectedStatus) {
+		fail(
+			`${path}.status`,
+			`expected ${expectedStatus} with ${presentUsdLegs} valued liquidation leg(s)`,
+		);
+	}
+	return valuation;
+};
+
 /** Historical token metadata can be null when unavailable at the event. */
 const readNullableMetadataAddress = (
 	value: unknown,
@@ -1032,7 +1065,12 @@ const readLiquidationRecord = (
 		...(collateralAssets != null ? { collateralAssets } : {}),
 		...(collateralAssetsUsd !== undefined ? { collateralAssetsUsd } : {}),
 		...(bonusUsd !== undefined ? { bonusUsd } : {}),
-		valuation: readValuation(record.valuation, `${path}.valuation`),
+		valuation: readLiquidationValuation(
+			record.valuation,
+			`${path}.valuation`,
+			(repayAssetsUsd !== undefined ? 1 : 0) +
+				(collateralAssetsUsd !== undefined ? 1 : 0),
+		),
 		blockNumber: readDecimalString(record.blockNumber, `${path}.blockNumber`),
 		txHash: readTxHash(record.txHash, `${path}.txHash`),
 		timestamp: readTimestamp(record.timestamp, `${path}.timestamp`),

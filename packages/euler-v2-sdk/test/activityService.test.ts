@@ -1663,6 +1663,11 @@ describe("ActivityService", () => {
 			...baseOptions,
 			activityService: legacyService,
 		});
+		// Documented boundary: wrapping replaces the override's identity, so
+		// only the declared IActivityService surface carries through — any
+		// undeclared custom extensions on a legacy override are not reachable
+		// via sdk.activityService.
+		expect(sdkWithLegacyOverride.activityService).not.toBe(legacyService);
 		expect(sdkWithLegacyOverride.activityService.getCapabilities().adapter).toBe(
 			"legacy-custom",
 		);
@@ -1812,7 +1817,11 @@ describe("ActivityService liquidations", () => {
 				collateralAssetPriceUsd: null,
 				collateralAssets: null,
 				collateralAssetsUsd: null,
-				valuation: { status: "unavailable", reason: "no snapshot" },
+				valuation: {
+					status: "unavailable",
+					source: "historical-price-snapshots",
+					reason: "no snapshot",
+				},
 			}),
 		]);
 		const tolerant = await service.fetchLiquidations({ chainId: 1 });
@@ -1885,6 +1894,100 @@ describe("ActivityService liquidations", () => {
 		]) {
 			expect(page.data[0]).not.toHaveProperty(field);
 		}
+	});
+
+	it("enforces the valuation discriminant against the USD legs", async () => {
+		const respond = (rows: unknown[]) => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(
+					async () =>
+						new Response(JSON.stringify(liquidationsPage(rows)), {
+							status: 200,
+						}),
+				),
+			);
+		};
+		const service = new ActivityService({ endpoint: "/api/internal" });
+		const legs = (
+			repayAssetsUsd: number | null,
+			collateralAssetsUsd: number | null,
+		) => ({
+			repayAssetsUsd,
+			collateralAssetsUsd,
+			// Keep dependent fields consistent with the missing legs.
+			...(repayAssetsUsd === null ? { debtAssetPriceUsd: null } : {}),
+			...(collateralAssetsUsd === null
+				? { collateralAssetPriceUsd: null, bonusUsd: null }
+				: {}),
+		});
+
+		// The v3 contract: available = both legs, partial = exactly one,
+		// unavailable = neither, always from historical-price-snapshots.
+		const contradictions: Array<Record<string, unknown>> = [
+			// available with no or one valued leg.
+			liquidationRow({
+				...legs(null, null),
+				valuation: { status: "available", source: "historical-price-snapshots" },
+			}),
+			liquidationRow({
+				...legs(0.5, null),
+				valuation: { status: "available", source: "historical-price-snapshots" },
+			}),
+			// partial with neither or both legs.
+			liquidationRow({
+				...legs(null, null),
+				valuation: { status: "partial", source: "historical-price-snapshots" },
+			}),
+			liquidationRow({
+				valuation: { status: "partial", source: "historical-price-snapshots" },
+			}),
+			// unavailable with one or both legs.
+			liquidationRow({
+				...legs(0.5, null),
+				valuation: {
+					status: "unavailable",
+					source: "historical-price-snapshots",
+				},
+			}),
+			liquidationRow({
+				valuation: {
+					status: "unavailable",
+					source: "historical-price-snapshots",
+				},
+			}),
+			// Missing or foreign valuation source.
+			liquidationRow({ valuation: { status: "available" } }),
+			liquidationRow({
+				valuation: { status: "available", source: "v3-prices" },
+			}),
+		];
+		for (const row of contradictions) {
+			respond([row]);
+			await expect(service.fetchLiquidations({ chainId: 1 })).rejects.toThrow(
+				ActivityResponseValidationError,
+			);
+		}
+
+		// The live partial shape — one valued leg — is accepted.
+		respond([
+			liquidationRow({
+				...legs(10.29, null),
+				collateralAssets: null,
+				valuation: {
+					status: "partial",
+					source: "historical-price-snapshots",
+					reason:
+						"Historical USD price or token metadata is unavailable for one liquidation leg",
+				},
+			}),
+		]);
+		const partial = await service.fetchLiquidations({ chainId: 1 });
+		expect(partial.data[0]).toMatchObject({
+			repayAssetsUsd: 10.29,
+			valuation: { status: "partial" },
+		});
+		expect(partial.data[0]?.collateralAssetsUsd).toBeUndefined();
 	});
 
 	it("rejects structurally valid pages that do not answer the request", async () => {
