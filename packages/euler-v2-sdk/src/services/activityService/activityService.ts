@@ -16,6 +16,7 @@ import type {
 	FetchLiquidationsArgs,
 	FetchVaultActivityEventsArgs,
 	IActivityAdapter,
+	IActivityService,
 	IActivityServiceWithLiquidations,
 	LiquidationsPage,
 } from "./activityServiceTypes.js";
@@ -202,3 +203,18 @@ export class ActivityService implements IActivityServiceWithLiquidations {
 		return this.queryLiquidations(args);
 	}
 }
+
+/**
+ * Carries the built-in liquidations guarantee through the SDK boundary.
+ * Services that already expose `fetchLiquidations` pass through unchanged
+ * (including their identity); a legacy override without it is wrapped in an
+ * `ActivityService` delegating every call to the override, so the method is
+ * always callable and reports activity-unavailable at runtime instead of
+ * surfacing as a possibly-undefined property to strict consumers.
+ */
+export const ensureActivityLiquidationsSupport = (
+	service: IActivityService,
+): IActivityServiceWithLiquidations =>
+	typeof service.fetchLiquidations === "function"
+		? (service as IActivityServiceWithLiquidations)
+		: new ActivityService(service);

@@ -14,6 +14,7 @@ export {
 export {
 	ActivityService,
 	ActivityUnavailableError,
+	ensureActivityLiquidationsSupport,
 	UnavailableActivityAdapter,
 } from "./activityService.js";
 export type {

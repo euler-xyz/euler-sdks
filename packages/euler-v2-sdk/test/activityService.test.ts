@@ -1608,6 +1608,77 @@ describe("ActivityService", () => {
 		).rejects.toBeInstanceOf(ActivityUnavailableError);
 	});
 
+	it("exposes callable liquidations on the built SDK for default and legacy override services", async () => {
+		const baseOptions = {
+			accountService: {} as never,
+			portfolioService: {} as never,
+			walletService: {} as never,
+			eVaultService: {} as never,
+			eulerEarnService: {} as never,
+			securitizeVaultService: {} as never,
+			vaultMetaService: {} as never,
+			deploymentService,
+			providerService: {} as never,
+			abiService: {} as never,
+			eulerLabelsService: {} as never,
+			tokenlistService: {} as never,
+			swapService: {} as never,
+			executionService: {} as never,
+			priceService: {} as never,
+			rewardsService: {} as never,
+			intrinsicApyService: {} as never,
+			oracleAdapterService: {} as never,
+			feeFlowService: {} as never,
+			reulLockService: {} as never,
+			positionMigrationService: {} as never,
+		};
+
+		// Strict downstream fixture: the normal built SDK exposes
+		// fetchLiquidations directly — no narrowing, no optional call.
+		const sdk = new EulerSDK(baseOptions);
+		await expect(
+			sdk.activityService.fetchLiquidations({ chainId: 1 }),
+		).rejects.toBeInstanceOf(ActivityUnavailableError);
+
+		// A legacy custom service without liquidations stays assignable and
+		// is wrapped: delegation is preserved and the guaranteed method
+		// reports activity-unavailable at runtime instead of being a type
+		// hole on the public SDK property.
+		const legacyService: IActivityService = {
+			getCapabilities: () => ({
+				configured: true,
+				adapter: "legacy-custom",
+				canQueryAccount: true,
+				requestableVaultTypes: ["evk"],
+			}),
+			getScopeSupport: () => "unknown",
+			fetchAccountActivityEvents: async () => {
+				throw new Error("unused");
+			},
+			fetchVaultActivityEvents: async () => {
+				throw new Error("unused");
+			},
+		};
+		const sdkWithLegacyOverride = new EulerSDK({
+			...baseOptions,
+			activityService: legacyService,
+		});
+		expect(sdkWithLegacyOverride.activityService.getCapabilities().adapter).toBe(
+			"legacy-custom",
+		);
+		await expect(
+			sdkWithLegacyOverride.activityService.fetchLiquidations({ chainId: 1 }),
+		).rejects.toBeInstanceOf(ActivityUnavailableError);
+
+		// An override that already supports liquidations keeps its identity.
+		const modernService = new ActivityService({ endpoint: "/api/internal" });
+		const sdkWithModernOverride = new EulerSDK({
+			...baseOptions,
+			activityService: modernService,
+		});
+		expect(sdkWithModernOverride.activityService).toBe(modernService);
+	});
+
 	it("preserves endpoint path segments when joining URLs", () => {
 		expect(
 			joinActivityEndpointPath(

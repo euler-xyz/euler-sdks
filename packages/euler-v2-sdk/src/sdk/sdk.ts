@@ -25,8 +25,10 @@ import type { IREULLockService } from "../services/reulLockService/index.js";
 import type { IPositionMigrationService } from "../services/positionMigrationService/index.js";
 import {
 	ActivityService,
+	ensureActivityLiquidationsSupport,
 	UnavailableActivityAdapter,
 	type IActivityService,
+	type IActivityServiceWithLiquidations,
 } from "../services/activityService/index.js";
 import type { EulerPlugin, PluginPrefetchData } from "../plugins/types.js";
 import type { TransactionPlan } from "../services/executionService/executionServiceTypes.js";
@@ -82,7 +84,12 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 	public readonly feeFlowService: IFeeFlowService;
 	public readonly reulLockService: IREULLockService;
 	public readonly positionMigrationService: IPositionMigrationService;
-	public readonly activityService: IActivityService;
+	/**
+	 * Always exposes the built-in liquidations guarantee: custom overrides
+	 * without `fetchLiquidations` are wrapped so the method stays callable
+	 * and reports activity-unavailable at runtime.
+	 */
+	public readonly activityService: IActivityServiceWithLiquidations;
 	public readonly plugins: EulerPlugin[];
 
 	constructor(options: EulerSDKOptions<TVaultEntity>) {
@@ -107,11 +114,12 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 		this.feeFlowService = options.feeFlowService;
 		this.reulLockService = options.reulLockService;
 		this.positionMigrationService = options.positionMigrationService;
-		this.activityService =
+		this.activityService = ensureActivityLiquidationsSupport(
 			options.activityService ??
-			new ActivityService(
-				new UnavailableActivityAdapter("source-not-configured"),
-			);
+				new ActivityService(
+					new UnavailableActivityAdapter("source-not-configured"),
+				),
+		);
 		this.plugins = options.plugins ?? [];
 	}
 
