@@ -20,6 +20,7 @@ import {
 	type ActivityEventsPage,
 	type ActivityEventType,
 	type IActivityAdapter,
+	type IActivityService,
 } from "../src/services/activityService/index.js";
 import {
 	createQueryCacheBuildQuery,
@@ -929,7 +930,8 @@ describe("ActivityService", () => {
 					amountUnderlyingRaw: "495000",
 					underlyingAddress: OTHER_VAULT,
 					underlyingDecimals: 6,
-					amountUsd: 0.5,
+					// Numeric wire values normalize to the established string type.
+					amountUsd: "0.5",
 				},
 				{
 					kind: "collateral",
@@ -967,6 +969,17 @@ describe("ActivityService", () => {
 				}),
 			),
 		).toThrow(".assets[0].amountUsd");
+		for (const malformedUsd of ["-1", "abc", "1e3", "0x12", ""]) {
+			expect(() =>
+				normalizeActivityEvent(
+					event({
+						assets: [
+							{ kind: "assets", amountRaw: "1", amountUsd: malformedUsd },
+						],
+					}),
+				),
+			).toThrow(".assets[0].amountUsd");
+		}
 		expect(() =>
 			normalizeActivityEvent(
 				event({
@@ -1639,7 +1652,15 @@ describe("ActivityService liquidations", () => {
 			vi.fn(async (url: string, init?: RequestInit) => {
 				requests.push({ url, headers: init?.headers });
 				return new Response(
-					JSON.stringify(liquidationsPage([liquidationRow()], { total: 42 })),
+					JSON.stringify(
+						// The endpoint echoes the requested page window and clamps
+						// only downwards; the response must answer the request.
+						liquidationsPage([liquidationRow()], {
+							total: 142,
+							offset: 50,
+							limit: 25,
+						}),
+					),
 					{ status: 200 },
 				);
 			}),
@@ -1654,14 +1675,14 @@ describe("ActivityService liquidations", () => {
 			vault: VAULT,
 			violator: ACCOUNT,
 			liquidator: OWNER,
-			from: 1782864000,
-			to: 1783987200,
+			from: 1779000000,
+			to: 1780000000,
 			limit: 25,
 			offset: 50,
 		});
 
 		expect(requests[0]?.url).toBe(
-			`/api/internal/v3/liquidations?chainId=1&vault=${VAULT}&violator=${ACCOUNT}&liquidator=${OWNER}&from=1782864000&to=1783987200&limit=25&offset=50`,
+			`/api/internal/v3/liquidations?chainId=1&vault=${VAULT}&violator=${ACCOUNT}&liquidator=${OWNER}&from=1779000000&to=1780000000&limit=25&offset=50`,
 		);
 		expect(requests[0]?.headers).toMatchObject({
 			Accept: "application/json",
@@ -1676,7 +1697,7 @@ describe("ActivityService liquidations", () => {
 			bonusUsd: 0.0795838300643,
 			valuation: { status: "available" },
 		});
-		expect(result.meta).toMatchObject({ total: 42, offset: 0, limit: 100 });
+		expect(result.meta).toMatchObject({ total: 142, offset: 50, limit: 25 });
 	});
 
 	it("accepts negative bonuses and omitted valuations, rejects malformed rows", async () => {
@@ -1726,6 +1747,120 @@ describe("ActivityService liquidations", () => {
 		);
 	});
 
+	it("accepts live rows with null historical token metadata", async () => {
+		// Mirrors production pages where the conversion is unavailable at the
+		// event (e.g. mainnet tx 0xef7d…200d): every metadata and USD field
+		// is null while the raw amounts remain present.
+		const row = liquidationRow({
+			debtAsset: null,
+			debtAssetDecimals: null,
+			debtAssetPriceUsd: null,
+			repayAssetsUsd: null,
+			collateralAsset: null,
+			collateralAssetDecimals: null,
+			collateralAssetPriceUsd: null,
+			collateralAssets: null,
+			collateralAssetsUsd: null,
+			bonusUsd: null,
+			valuation: {
+				status: "unavailable",
+				source: "historical-price-snapshots",
+				reason:
+					"Collateral share conversion is unavailable at the liquidation event",
+			},
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(JSON.stringify(liquidationsPage([row])), {
+						status: 200,
+					}),
+			),
+		);
+
+		const service = new ActivityService({ endpoint: "/api/internal" });
+		const page = await service.fetchLiquidations({ chainId: 1 });
+		expect(page.data[0]).toMatchObject({
+			repayAssets: "451076",
+			yieldBalance: "486058",
+			valuation: { status: "unavailable" },
+		});
+		for (const field of [
+			"debtAsset",
+			"debtAssetDecimals",
+			"collateralAsset",
+			"collateralAssetDecimals",
+			"collateralAssets",
+			"bonusUsd",
+		]) {
+			expect(page.data[0]).not.toHaveProperty(field);
+		}
+	});
+
+	it("rejects structurally valid pages that do not answer the request", async () => {
+		const respond = (rows: unknown[], meta: Record<string, unknown> = {}) => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(
+					async () =>
+						new Response(JSON.stringify(liquidationsPage(rows, meta)), {
+							status: 200,
+						}),
+				),
+			);
+		};
+		const service = new ActivityService({ endpoint: "/api/internal" });
+
+		// Wrong chain.
+		respond([liquidationRow({ chainId: 8453 })]);
+		await expect(service.fetchLiquidations({ chainId: 1 })).rejects.toThrow(
+			"chain 8453 was not requested",
+		);
+
+		// Wrong vault for the supplied filter.
+		respond([liquidationRow({ vault: OTHER_VAULT })]);
+		await expect(
+			service.fetchLiquidations({ chainId: 1, vault: VAULT }),
+		).rejects.toThrow("expected the requested vault");
+
+		// Wrong violator for the supplied filter.
+		respond([liquidationRow({ violator: OWNER })]);
+		await expect(
+			service.fetchLiquidations({ chainId: 1, violator: ACCOUNT }),
+		).rejects.toThrow("expected the requested violator");
+
+		// Pagination metadata that ignores the request.
+		respond([liquidationRow()], { offset: 0, limit: 100 });
+		await expect(
+			service.fetchLiquidations({ chainId: 1, limit: 1, offset: 50 }),
+		).rejects.toThrow("expected the requested offset 50");
+
+		// The endpoint clamps page sizes down, never up.
+		respond([liquidationRow()], { limit: 100 });
+		await expect(
+			service.fetchLiquidations({ chainId: 1, limit: 1 }),
+		).rejects.toThrow("expected at most the requested limit of 1");
+
+		// More rows than the echoed page size allows.
+		respond([liquidationRow(), liquidationRow()], { limit: 1, total: 2 });
+		await expect(service.fetchLiquidations({ chainId: 1 })).rejects.toThrow(
+			"expected at most 1 rows",
+		);
+
+		// Rows beyond the reported total.
+		respond([liquidationRow()], { total: 0 });
+		await expect(service.fetchLiquidations({ chainId: 1 })).rejects.toThrow(
+			"expected row count consistent with the reported total",
+		);
+
+		// Rows outside the requested time window.
+		respond([liquidationRow({ timestamp: "2026-01-01T00:00:00.000Z" })]);
+		await expect(
+			service.fetchLiquidations({ chainId: 1, from: 1779000000 }),
+		).rejects.toThrow("before the requested from value");
+	});
+
 	it("validates liquidation query arguments before requesting", async () => {
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
@@ -1770,9 +1905,13 @@ describe("ActivityService liquidations", () => {
 			},
 		};
 		const service = new ActivityService(legacyAdapter);
-		await expect(service.fetchLiquidations({ chainId: 1 })).rejects.toThrow(
-			ActivityUnavailableError,
-		);
+		// The method is required on the public service type, so strict
+		// consumers can call it without narrowing; legacy adapters surface as
+		// a runtime unavailable error instead of a type hole.
+		const publicService: IActivityService = service;
+		await expect(
+			publicService.fetchLiquidations({ chainId: 1 }),
+		).rejects.toThrow(ActivityUnavailableError);
 	});
 
 	it("builds a stable liquidations query key with checksummed addresses", () => {

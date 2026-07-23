@@ -6,6 +6,7 @@ import {
 	normalizeActivityEventsResponse,
 	normalizeLiquidationsResponse,
 	validateAccountActivityEventsPage,
+	validateLiquidationsPage,
 	validateVaultActivityEventsPage,
 } from "../activityEvent.js";
 import type {
@@ -292,7 +293,7 @@ export class ActivityV3Adapter implements IActivityAdapter {
 				`Liquidations V3 request failed (${response.status} ${response.statusText}): ${body.slice(0, 200)}`,
 			);
 		}
-		return normalizeLiquidationsResponse(body);
+		return validateLiquidationsPage(normalizeLiquidationsResponse(body), args);
 	}
 
 	private async fetchEvents(url: string): Promise<ActivityEventsPage> {

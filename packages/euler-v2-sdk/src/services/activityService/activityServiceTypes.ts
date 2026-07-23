@@ -123,8 +123,12 @@ export interface ActivityAssetAmount {
 	amountUnderlyingRaw?: string | null;
 	underlyingAddress?: Address;
 	underlyingDecimals?: number;
-	/** Event-time USD value. The field is omitted when valuation is unavailable. */
-	amountUsd?: string | number;
+	/**
+	 * Event-time USD value as a decimal string; numeric wire values are
+	 * normalized during parsing. The field is omitted when valuation is
+	 * unavailable.
+	 */
+	amountUsd?: string;
 }
 
 export type ActivityChangeValue = string | number | boolean | string[] | null;
@@ -285,13 +289,15 @@ export interface LiquidationRecord {
 	repayAssets: string;
 	/** Collateral seized, in collateral vault share units. */
 	yieldBalance: string;
-	debtAsset: Address;
-	debtAssetDecimals: number;
+	/** Omitted when historical token metadata is unavailable for the vault. */
+	debtAsset?: Address;
+	debtAssetDecimals?: number;
 	/** Event-time USD price. Omitted when the historical valuation is unavailable. */
 	debtAssetPriceUsd?: number;
 	repayAssetsUsd?: number;
-	collateralAsset: Address;
-	collateralAssetDecimals: number;
+	/** Omitted when historical token metadata is unavailable for the collateral vault. */
+	collateralAsset?: Address;
+	collateralAssetDecimals?: number;
 	collateralAssetPriceUsd?: number;
 	/** Collateral seized converted to underlying-asset native units. */
 	collateralAssets?: string;
@@ -337,4 +343,11 @@ export interface IActivityAdapter {
 	fetchLiquidations?(args: FetchLiquidationsArgs): Promise<LiquidationsPage>;
 }
 
-export interface IActivityService extends IActivityAdapter {}
+export interface IActivityService extends IActivityAdapter {
+	/**
+	 * Required on the service even though adapters may omit it: the service
+	 * always exposes the method and reports activity-unavailable for adapters
+	 * without liquidations support.
+	 */
+	fetchLiquidations(args: FetchLiquidationsArgs): Promise<LiquidationsPage>;
+}
