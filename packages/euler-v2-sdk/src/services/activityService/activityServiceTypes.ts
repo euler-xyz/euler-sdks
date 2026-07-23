@@ -343,11 +343,20 @@ export interface IActivityAdapter {
 	fetchLiquidations?(args: FetchLiquidationsArgs): Promise<LiquidationsPage>;
 }
 
-export interface IActivityService extends IActivityAdapter {
-	/**
-	 * Required on the service even though adapters may omit it: the service
-	 * always exposes the method and reports activity-unavailable for adapters
-	 * without liquidations support.
-	 */
+/**
+ * Override-facing service contract: custom services supplied through SDK
+ * build options may omit liquidations support, exactly like adapters, so
+ * adding capabilities here would break existing overrides.
+ */
+export interface IActivityService extends IActivityAdapter {}
+
+/**
+ * Guarantee of the built-in `ActivityService`: `fetchLiquidations` is always
+ * callable and reports activity-unavailable at runtime for adapters without
+ * liquidations support. Consumers constructing the service directly (rather
+ * than receiving an arbitrary `IActivityService` override) can rely on this
+ * contract without narrowing.
+ */
+export interface IActivityServiceWithLiquidations extends IActivityService {
 	fetchLiquidations(args: FetchLiquidationsArgs): Promise<LiquidationsPage>;
 }

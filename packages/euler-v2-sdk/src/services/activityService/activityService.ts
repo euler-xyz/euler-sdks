@@ -16,7 +16,7 @@ import type {
 	FetchLiquidationsArgs,
 	FetchVaultActivityEventsArgs,
 	IActivityAdapter,
-	IActivityService,
+	IActivityServiceWithLiquidations,
 	LiquidationsPage,
 } from "./activityServiceTypes.js";
 import { ActivityV3Adapter } from "./adapters/activityV3Adapter.js";
@@ -78,7 +78,7 @@ export class UnavailableActivityAdapter implements IActivityAdapter {
 	}
 }
 
-export class ActivityService implements IActivityService {
+export class ActivityService implements IActivityServiceWithLiquidations {
 	private adapter: IActivityAdapter;
 
 	constructor(

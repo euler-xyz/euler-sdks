@@ -216,18 +216,30 @@ const readOptionalNullableDecimalString = (
 		? value
 		: readDecimalString(value, path);
 
-/** Expands exponent notation so USD amounts stay plain decimal strings. */
+/**
+ * Expands exponent notation textually — shifting the decimal point through
+ * the serialized mantissa digits — so USD amounts become plain decimal
+ * strings without re-rounding the underlying number.
+ */
 const usdNumberToDecimalString = (value: number, path: string): string => {
 	const text = String(value);
-	if (!text.includes("e") && !text.includes("E")) return text;
-	const expanded = value
-		.toFixed(100)
-		.replace(/(\.\d*?)0+$/, "$1")
-		.replace(/\.$/, "");
-	if (expanded.includes("e") || expanded.includes("E")) {
-		return fail(path, "expected a USD value expressible as a decimal string");
+	const match = /^(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(text);
+	if (!match) {
+		if (!/^\d+(?:\.\d+)?$/.test(text)) {
+			return fail(path, "expected a USD value expressible as a decimal string");
+		}
+		return text;
 	}
-	return expanded;
+	const [, integerPart = "", fractionPart = "", exponentPart = "0"] = match;
+	const digits = `${integerPart}${fractionPart}`;
+	const pointIndex = integerPart.length + Number(exponentPart);
+	if (pointIndex <= 0) {
+		return `0.${"0".repeat(-pointIndex)}${digits}`;
+	}
+	if (pointIndex >= digits.length) {
+		return `${digits}${"0".repeat(pointIndex - digits.length)}`;
+	}
+	return `${digits.slice(0, pointIndex)}.${digits.slice(pointIndex)}`;
 };
 
 const readOptionalUsdValue = (
@@ -1088,7 +1100,9 @@ export const validateLiquidationsPage = (
 	if (page.data.length > page.meta.limit) {
 		fail("$.data", `expected at most ${page.meta.limit} rows`);
 	}
-	if (page.meta.offset + page.data.length > page.meta.total) {
+	// An offset beyond the total is a valid request that returns an empty
+	// page; only positive rows past the remaining count are inconsistent.
+	if (page.data.length > Math.max(0, page.meta.total - page.meta.offset)) {
 		fail("$.data", "expected row count consistent with the reported total");
 	}
 

@@ -44,6 +44,7 @@ export type {
 	FetchVaultActivityEventsArgs,
 	IActivityAdapter,
 	IActivityService,
+	IActivityServiceWithLiquidations,
 	LiquidationRecord,
 	LiquidationsMeta,
 	LiquidationsPage,

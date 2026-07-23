@@ -21,6 +21,7 @@ import {
 	type ActivityEventType,
 	type IActivityAdapter,
 	type IActivityService,
+	type IActivityServiceWithLiquidations,
 } from "../src/services/activityService/index.js";
 import {
 	createQueryCacheBuildQuery,
@@ -1000,6 +1001,23 @@ describe("ActivityService", () => {
 		).toThrow("expected an array of strings");
 	});
 
+	it("expands exponent-form USD numbers exactly, without re-rounding", () => {
+		const read = (amountUsd: number) =>
+			normalizeActivityEvent(
+				event({ assets: [{ kind: "assets", amountRaw: "1", amountUsd }] }),
+			).assets?.[0]?.amountUsd;
+
+		expect(read(0.5)).toBe("0.5");
+		expect(read(1e-7)).toBe("0.0000001");
+		expect(read(1.25e-9)).toBe("0.00000000125");
+		// Extreme exponents keep the serialized mantissa verbatim — the
+		// smallest denormal must not underflow to "0".
+		expect(read(1e-101)).toBe(`0.${"0".repeat(100)}1`);
+		expect(read(5e-324)).toBe(`0.${"0".repeat(323)}5`);
+		expect(read(1e21)).toBe(`1${"0".repeat(21)}`);
+		expect(read(1.25e22)).toBe(`125${"0".repeat(20)}`);
+	});
+
 	it("keeps activity categories machine-stable", () => {
 		expect(ACTIVITY_CATEGORIES.map(({ value }) => value)).toEqual([
 			"lending",
@@ -1854,11 +1872,43 @@ describe("ActivityService liquidations", () => {
 			"expected row count consistent with the reported total",
 		);
 
+		// A row returned past the remaining count is inconsistent even when
+		// the empty-overshoot case is allowed.
+		respond([liquidationRow()], { total: 2374, offset: 999999, limit: 1 });
+		await expect(
+			service.fetchLiquidations({ chainId: 1, limit: 1, offset: 999999 }),
+		).rejects.toThrow("expected row count consistent with the reported total");
+
 		// Rows outside the requested time window.
 		respond([liquidationRow({ timestamp: "2026-01-01T00:00:00.000Z" })]);
 		await expect(
 			service.fetchLiquidations({ chainId: 1, from: 1779000000 }),
 		).rejects.toThrow("before the requested from value");
+	});
+
+	it("accepts a valid empty page for an offset beyond the total", async () => {
+		// Live shape: the endpoint answers an overshooting offset with an
+		// empty page while still reporting the overall total.
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify(
+							liquidationsPage([], { total: 2374, offset: 999999, limit: 1 }),
+						),
+						{ status: 200 },
+					),
+			),
+		);
+		const service = new ActivityService({ endpoint: "/api/internal" });
+		const page = await service.fetchLiquidations({
+			chainId: 1,
+			limit: 1,
+			offset: 999999,
+		});
+		expect(page.data).toEqual([]);
+		expect(page.meta).toMatchObject({ total: 2374, offset: 999999 });
 	});
 
 	it("validates liquidation query arguments before requesting", async () => {
@@ -1905,12 +1955,15 @@ describe("ActivityService liquidations", () => {
 			},
 		};
 		const service = new ActivityService(legacyAdapter);
-		// The method is required on the public service type, so strict
-		// consumers can call it without narrowing; legacy adapters surface as
-		// a runtime unavailable error instead of a type hole.
-		const publicService: IActivityService = service;
+		// Downstream compile fixtures. A legacy custom service override that
+		// predates liquidations must stay assignable to the override-facing
+		// contract, while the built-in service carries the stronger guarantee
+		// so its consumers can call fetchLiquidations without narrowing.
+		const legacyServiceOverride: IActivityService = legacyAdapter;
+		expect(legacyServiceOverride.fetchLiquidations).toBeUndefined();
+		const builtInService: IActivityServiceWithLiquidations = service;
 		await expect(
-			publicService.fetchLiquidations({ chainId: 1 }),
+			builtInService.fetchLiquidations({ chainId: 1 }),
 		).rejects.toThrow(ActivityUnavailableError);
 	});
 
