@@ -1808,10 +1808,16 @@ describe("ActivityService liquidations", () => {
 		};
 		const service = new ActivityService({ endpoint: "/api/internal" });
 
-		// Unprofitable liquidation and missing historical prices are valid.
+		// Unprofitable liquidation (negative bonus with both valued legs) and
+		// missing historical prices (no bonus, no legs) are both valid.
 		respond([
 			liquidationRow({
+				repayAssetsUsd: 1.0,
+				collateralAssetsUsd: 0.75,
 				bonusUsd: -0.25,
+			}),
+			liquidationRow({
+				bonusUsd: null,
 				debtAssetPriceUsd: null,
 				repayAssetsUsd: null,
 				collateralAssetPriceUsd: null,
@@ -1826,8 +1832,9 @@ describe("ActivityService liquidations", () => {
 		]);
 		const tolerant = await service.fetchLiquidations({ chainId: 1 });
 		expect(tolerant.data[0]).toMatchObject({ bonusUsd: -0.25 });
-		expect(tolerant.data[0]?.collateralAssets).toBeUndefined();
-		expect(tolerant.data[0]?.repayAssetsUsd).toBeUndefined();
+		expect(tolerant.data[1]?.collateralAssets).toBeUndefined();
+		expect(tolerant.data[1]?.repayAssetsUsd).toBeUndefined();
+		expect(tolerant.data[1]?.bonusUsd).toBeUndefined();
 
 		respond([liquidationRow({ violator: "not-an-address" })]);
 		await expect(service.fetchLiquidations({ chainId: 1 })).rejects.toThrow(
@@ -1961,6 +1968,27 @@ describe("ActivityService liquidations", () => {
 			liquidationRow({
 				valuation: { status: "available", source: "v3-prices" },
 			}),
+			// The derived bonus must exist exactly when both legs are valued:
+			// a P&L figure without its valuation inputs (or valued legs
+			// without their derived bonus) contradicts the producer.
+			liquidationRow({
+				...legs(0.5, null),
+				bonusUsd: 0.1,
+				valuation: { status: "partial", source: "historical-price-snapshots" },
+			}),
+			liquidationRow({
+				...legs(null, null),
+				bonusUsd: -0.25,
+				valuation: {
+					status: "unavailable",
+					source: "historical-price-snapshots",
+				},
+			}),
+			liquidationRow({ bonusUsd: null }),
+			// Historical token decimals share the uint8 bound the producer
+			// and the sibling asset parser enforce.
+			liquidationRow({ debtAssetDecimals: 256 }),
+			liquidationRow({ collateralAssetDecimals: 256 }),
 		];
 		for (const row of contradictions) {
 			respond([row]);
@@ -1988,6 +2016,16 @@ describe("ActivityService liquidations", () => {
 			valuation: { status: "partial" },
 		});
 		expect(partial.data[0]?.collateralAssetsUsd).toBeUndefined();
+
+		// The uint8 boundary itself is valid.
+		respond([
+			liquidationRow({ debtAssetDecimals: 255, collateralAssetDecimals: 255 }),
+		]);
+		const boundary = await service.fetchLiquidations({ chainId: 1 });
+		expect(boundary.data[0]).toMatchObject({
+			debtAssetDecimals: 255,
+			collateralAssetDecimals: 255,
+		});
 	});
 
 	it("rejects structurally valid pages that do not answer the request", async () => {

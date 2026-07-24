@@ -985,10 +985,16 @@ const readNullableMetadataAddress = (
 const readNullableMetadataDecimals = (
 	value: unknown,
 	path: string,
-): number | undefined =>
-	value === undefined || value === null
-		? undefined
-		: readNonNegativeInteger(value, path);
+): number | undefined => {
+	if (value === undefined || value === null) return undefined;
+	const decimals = readNonNegativeInteger(value, path);
+	// Same uint8 bound the sibling asset parser enforces; the producer nulls
+	// historical decimals outside 0..255 rather than emitting them.
+	if (decimals > 255) {
+		fail(path, "expected an integer no greater than 255");
+	}
+	return decimals;
+};
 
 const readLiquidationRecord = (
 	value: unknown,
@@ -1039,6 +1045,24 @@ const readLiquidationRecord = (
 			allowNegative: true,
 		},
 	);
+	// The producer derives the bonus as collateralAssetsUsd - repayAssetsUsd
+	// and emits it exactly when both legs are valued. A bonus without its
+	// inputs (or valued legs without their derived bonus) is contradictory.
+	const presentUsdLegs =
+		(repayAssetsUsd !== undefined ? 1 : 0) +
+		(collateralAssetsUsd !== undefined ? 1 : 0);
+	if (presentUsdLegs === 2 && bonusUsd === undefined) {
+		fail(
+			`${path}.bonusUsd`,
+			"expected a bonus when both liquidation legs are valued",
+		);
+	}
+	if (presentUsdLegs < 2 && bonusUsd !== undefined) {
+		fail(
+			`${path}.bonusUsd`,
+			"expected no bonus without both valued liquidation legs",
+		);
+	}
 
 	return {
 		chainId: readPositiveInteger(record.chainId, `${path}.chainId`),
@@ -1068,8 +1092,7 @@ const readLiquidationRecord = (
 		valuation: readLiquidationValuation(
 			record.valuation,
 			`${path}.valuation`,
-			(repayAssetsUsd !== undefined ? 1 : 0) +
-				(collateralAssetsUsd !== undefined ? 1 : 0),
+			presentUsdLegs,
 		),
 		blockNumber: readDecimalString(record.blockNumber, `${path}.blockNumber`),
 		txHash: readTxHash(record.txHash, `${path}.txHash`),
