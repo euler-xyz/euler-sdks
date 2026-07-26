@@ -27,7 +27,7 @@ const VAULT = "0x0000000000000000000000000000000000000abc" as Address;
 const ASSET = "0x0000000000000000000000000000000000000def" as Address;
 const LENS = "0x0000000000000000000000000000000000000123" as Address;
 const BLOCK_NUMBER = 123n;
-const BLOCK_HASH = `0x${"11".repeat(32)}` as Hash;
+const BLOCK_HASH = `0x${"ab".repeat(32)}` as Hash;
 const OTHER_BLOCK_HASH = `0x${"22".repeat(32)}` as Hash;
 
 const exactContext = (
@@ -243,6 +243,44 @@ test("onchain exact reads use the injected provider and return raw evidence", as
 	});
 });
 
+test("exact cap evidence uses the overridable query path", async () => {
+	const { provider } = makeProvider();
+	const adapter = new EVaultOnchainAdapter(
+		{ getProvider: () => provider } as never,
+		{
+			getDeployment: () => ({
+				addresses: { lensAddrs: { vaultLens: LENS } },
+			}),
+		} as never,
+	);
+	let capQuery:
+		| {
+				chainId: number | undefined;
+				context: EVaultExactReadContext;
+				vault: Address;
+		  }
+		| undefined;
+	adapter.setQueryEVaultInfoFull(async () => makeVaultInfo());
+	adapter.setQueryEVaultCaps(async (_provider, vault, context, chainId) => {
+		capQuery = { chainId, context, vault };
+		return [111n, 222n];
+	});
+
+	const fetched = await adapter.fetchVaults(
+		CHAIN_ID,
+		[VAULT],
+		exactContext(provider),
+	);
+
+	assert.equal(capQuery?.chainId, CHAIN_ID);
+	assert.equal(capQuery?.context.blockHash, BLOCK_HASH);
+	assert.equal(capQuery?.vault, VAULT);
+	assert.deepEqual(fetched.result[0]?.rawConfig?.caps, {
+		borrowCap: 222n,
+		supplyCap: 111n,
+	});
+});
+
 test("exact reads fail closed when the canonical hash changes", async () => {
 	const { provider } = makeProvider([BLOCK_HASH, OTHER_BLOCK_HASH]);
 	const adapter = new EVaultOnchainAdapter(
@@ -313,7 +351,7 @@ test("fallback preserves exact provenance from the onchain adapter", async () =>
 	assert.equal(fetched.errors[0]?.code, "FALLBACK_USED");
 });
 
-test("exact query cache keys include block identity and disable signal sharing", () => {
+test("exact query cache keys normalize block identity and disable signal sharing", () => {
 	const { provider } = makeProvider();
 	const adapter = new EVaultOnchainAdapter(
 		{ getProvider: () => provider } as never,
@@ -340,14 +378,41 @@ test("exact query cache keys include block identity and disable signal sharing",
 		exactContext(),
 		8453,
 	);
+	const upperCaseHash = adapter.getQueryKeyEVaultInfoFull(
+		provider as never,
+		LENS,
+		VAULT,
+		{
+			...exactContext(),
+			blockHash: `0x${BLOCK_HASH.slice(2).toUpperCase()}` as Hash,
+		},
+		CHAIN_ID,
+	);
+	const caps = adapter.getQueryKeyEVaultCaps(
+		provider as never,
+		VAULT,
+		exactContext(),
+		CHAIN_ID,
+	);
 
 	assert.notEqual(first, second);
 	assert.notEqual(first, otherChain);
+	assert.equal(first, upperCaseHash);
 	assert.match(first ?? "", /123/);
+	assert.match(caps ?? "", /123/);
 	assert.equal(
 		adapter.getQueryKeyEVaultInfoFull(
 			provider as never,
 			LENS,
+			VAULT,
+			exactContext(undefined, new AbortController().signal),
+			CHAIN_ID,
+		),
+		null,
+	);
+	assert.equal(
+		adapter.getQueryKeyEVaultCaps(
+			provider as never,
 			VAULT,
 			exactContext(undefined, new AbortController().signal),
 			CHAIN_ID,

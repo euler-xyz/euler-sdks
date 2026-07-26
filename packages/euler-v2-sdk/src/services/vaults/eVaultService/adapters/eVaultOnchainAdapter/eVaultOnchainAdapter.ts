@@ -132,6 +132,26 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 		this.queryEVaultInfoFull = fn;
 	}
 
+	queryEVaultCaps = async (
+		provider: ReturnType<ProviderService["getProvider"]>,
+		vault: Address,
+		readContext: EVaultExactReadContext,
+		_chainId?: number,
+	): Promise<readonly [number | bigint, number | bigint]> =>
+		readEVaultContractAtExactBlock<readonly [number | bigint, number | bigint]>(
+			provider,
+			readContext,
+			{
+				address: vault,
+				abi: exactVaultConfigAbi,
+				functionName: "caps",
+			},
+		);
+
+	setQueryEVaultCaps(fn: typeof this.queryEVaultCaps): void {
+		this.queryEVaultCaps = fn;
+	}
+
 	getQueryKeyEVaultInfoFull(
 		provider: ReturnType<ProviderService["getProvider"]>,
 		vaultLensAddress: Address,
@@ -146,12 +166,31 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 			getAddress(vault),
 			readContext
 				? {
-						blockHash: readContext.blockHash,
+						blockHash: readContext.blockHash.toLowerCase(),
 						blockNumber: readContext.blockNumber,
 						mode: readContext.mode,
 						requireCanonical: readContext.requireCanonical,
 					}
 				: { mode: "current" },
+		]);
+	}
+
+	getQueryKeyEVaultCaps(
+		provider: ReturnType<ProviderService["getProvider"]>,
+		vault: Address,
+		readContext: EVaultExactReadContext,
+		chainId?: number,
+	): string | null {
+		if (readContext.signal) return null;
+		return serializeQueryArgs([
+			{ chainId: chainId ?? provider.chain?.id ?? "unknown" },
+			getAddress(vault),
+			{
+				blockHash: readContext.blockHash.toLowerCase(),
+				blockNumber: readContext.blockNumber,
+				mode: readContext.mode,
+				requireCanonical: readContext.requireCanonical,
+			},
 		]);
 	}
 
@@ -217,13 +256,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 							chainId,
 						),
 						queryContext
-							? readEVaultContractAtExactBlock<
-									readonly [number | bigint, number | bigint]
-								>(provider, queryContext, {
-									address: vault,
-									abi: exactVaultConfigAbi,
-									functionName: "caps",
-								})
+							? this.queryEVaultCaps(provider, vault, queryContext, chainId)
 							: undefined,
 					]);
 					const vaultInfo = result as unknown as VaultInfoFull;

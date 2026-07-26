@@ -1,19 +1,5 @@
-import { getAddress, type Address } from "viem";
+import { type Address, getAddress } from "viem";
 import { EVault, type IEVault } from "../../../entities/EVault.js";
-import type { DeploymentService } from "../../deploymentService/index.js";
-import type {
-	FetchAllVaultsArgs,
-	IVaultService,
-	VaultFilter,
-} from "../index.js";
-import type {
-	IVaultMetaService,
-	VaultEntity,
-} from "../vaultMetaService/index.js";
-import type { IPriceService } from "../../priceService/index.js";
-import type { IRewardsService } from "../../rewardsService/index.js";
-import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
-import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
 import type {
 	DataIssue,
 	ServiceResult,
@@ -26,6 +12,20 @@ import {
 	vaultDiagnosticOwner,
 	withPathPrefix,
 } from "../../../utils/entityDiagnostics.js";
+import type { DeploymentService } from "../../deploymentService/index.js";
+import type { IEulerLabelsService } from "../../eulerLabelsService/index.js";
+import type { IIntrinsicApyService } from "../../intrinsicApyService/index.js";
+import type { IPriceService } from "../../priceService/index.js";
+import type { IRewardsService } from "../../rewardsService/index.js";
+import type {
+	FetchAllVaultsArgs,
+	IVaultService,
+	VaultFilter,
+} from "../index.js";
+import type {
+	IVaultMetaService,
+	VaultEntity,
+} from "../vaultMetaService/index.js";
 import type {
 	EVaultReadContext,
 	EVaultReadProvenance,
@@ -188,10 +188,7 @@ export class EVaultService implements IEVaultService {
 			vaults,
 			resolvedOptions.readContext,
 		);
-		return this.hydrateFetchedVaults(
-			fetched,
-			resolvedOptions,
-		);
+		return this.hydrateFetchedVaults(fetched, resolvedOptions);
 	}
 
 	async fetchAllVaults(
@@ -570,7 +567,7 @@ export class EVaultService implements IEVaultService {
 		chainId: number,
 		perspectives: (StandardEVaultPerspectives | Address)[],
 		options?: EVaultFetchOptions,
-	): Promise<ServiceResult<(EVault | undefined)[]>> {
+	): Promise<EVaultServiceResult<(EVault | undefined)[]>> {
 		if (options?.readContext) {
 			throw new Error(
 				"Exact EVault reads require explicit vault addresses; fetchVerifiedVaults is current-only.",
