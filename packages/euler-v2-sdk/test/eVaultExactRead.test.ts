@@ -24,6 +24,8 @@ import { createFallbackAdapter } from "../src/utils/fallbackAdapter.js";
 
 const CHAIN_ID = 1;
 const VAULT = "0x0000000000000000000000000000000000000abc" as Address;
+const OTHER_VAULT =
+	"0x0000000000000000000000000000000000000aaa" as Address;
 const ASSET = "0x0000000000000000000000000000000000000def" as Address;
 const LENS = "0x0000000000000000000000000000000000000123" as Address;
 const BLOCK_NUMBER = 123n;
@@ -279,6 +281,62 @@ test("exact cap evidence uses the overridable query path", async () => {
 		borrowCap: 222n,
 		supplyCap: 111n,
 	});
+});
+
+test("exact reads bound vault concurrency while preserving input order", async () => {
+	const { provider } = makeProvider();
+	const adapter = new EVaultOnchainAdapter(
+		{ getProvider: () => provider } as never,
+		{
+			getDeployment: () => ({
+				addresses: { lensAddrs: { vaultLens: LENS } },
+			}),
+		} as never,
+	);
+	const calls: string[] = [];
+	let releaseFirstPair = () => {};
+	const firstPair = new Promise<void>((resolve) => {
+		releaseFirstPair = resolve;
+	});
+	let reportFirstPairStarted = () => {};
+	const firstPairStarted = new Promise<void>((resolve) => {
+		reportFirstPairStarted = resolve;
+	});
+	const recordCall = (call: string) => {
+		calls.push(call);
+		if (calls.length === 2) reportFirstPairStarted();
+	};
+	adapter.setQueryEVaultInfoFull(async (_provider, _lens, vault) => {
+		recordCall(`info:${vault}`);
+		if (vault === VAULT) await firstPair;
+		return { ...makeVaultInfo(), vault };
+	});
+	adapter.setQueryEVaultCaps(async (_provider, vault) => {
+		recordCall(`caps:${vault}`);
+		if (vault === VAULT) await firstPair;
+		return [111n, 222n];
+	});
+
+	const pending = adapter.fetchVaults(
+		CHAIN_ID,
+		[VAULT, OTHER_VAULT],
+		exactContext(provider),
+	);
+	await firstPairStarted;
+	assert.deepEqual(calls, [`info:${VAULT}`, `caps:${VAULT}`]);
+
+	releaseFirstPair();
+	const fetched = await pending;
+	assert.deepEqual(calls, [
+		`info:${VAULT}`,
+		`caps:${VAULT}`,
+		`info:${OTHER_VAULT}`,
+		`caps:${OTHER_VAULT}`,
+	]);
+	assert.deepEqual(
+		fetched.result.map((vault) => vault?.address),
+		[VAULT, OTHER_VAULT],
+	);
 });
 
 test("exact reads fail closed when the canonical hash changes", async () => {

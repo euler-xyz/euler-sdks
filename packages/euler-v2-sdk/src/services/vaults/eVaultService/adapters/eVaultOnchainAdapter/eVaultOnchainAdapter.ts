@@ -244,56 +244,70 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 		const finalPassErrorsByIndex = new Map<number, DataIssue[]>();
 		const secondPassIndices = new Set<number>();
 
-		const eVaults = await Promise.all(
-			vaults.map(async (vault, index) => {
-				try {
-					const [result, encodedCaps] = await Promise.all([
-						this.queryEVaultInfoFull(
-							provider,
-							vaultLensAddress,
-							vault,
-							queryContext,
-							chainId,
-						),
-						queryContext
-							? this.queryEVaultCaps(provider, vault, queryContext, chainId)
-							: undefined,
-					]);
-					const vaultInfo = result as unknown as VaultInfoFull;
-					const conversionErrors: DataIssue[] = [];
-					const parsed = convertVaultInfoFullToIEVault(
-						vaultInfo,
+		const fetchVault = async (vault: Address, index: number) => {
+			try {
+				const [result, encodedCaps] = await Promise.all([
+					this.queryEVaultInfoFull(
+						provider,
+						vaultLensAddress,
+						vault,
+						queryContext,
 						chainId,
-						conversionErrors,
-						encodedCaps
-							? {
-									borrowCap: BigInt(encodedCaps[1]),
-									supplyCap: BigInt(encodedCaps[0]),
-								}
-							: undefined,
-					);
-					firstPassErrorsByIndex.set(index, conversionErrors);
-					return new EVault(parsed);
-				} catch (error) {
-					firstPassErrorsByIndex.set(index, [
-						{
-							code: "SOURCE_UNAVAILABLE",
-							severity: "error",
-							message: `Failed to fetch eVault ${getAddress(vault)}.`,
-							locations: [
-								dataIssueLocation(
-									vaultDiagnosticOwner(chainId, getAddress(vault)),
-								),
-							],
-							source: "vaultLens",
-							originalValue:
-								error instanceof Error ? error.message : String(error),
-						},
-					]);
-					return undefined;
-				}
-			}),
-		);
+					),
+					queryContext
+						? this.queryEVaultCaps(provider, vault, queryContext, chainId)
+						: undefined,
+				]);
+				const vaultInfo = result as unknown as VaultInfoFull;
+				const conversionErrors: DataIssue[] = [];
+				const parsed = convertVaultInfoFullToIEVault(
+					vaultInfo,
+					chainId,
+					conversionErrors,
+					encodedCaps
+						? {
+								borrowCap: BigInt(encodedCaps[1]),
+								supplyCap: BigInt(encodedCaps[0]),
+							}
+						: undefined,
+				);
+				firstPassErrorsByIndex.set(index, conversionErrors);
+				return new EVault(parsed);
+			} catch (error) {
+				firstPassErrorsByIndex.set(index, [
+					{
+						code: "SOURCE_UNAVAILABLE",
+						severity: "error",
+						message: `Failed to fetch eVault ${getAddress(vault)}.`,
+						locations: [
+							dataIssueLocation(
+								vaultDiagnosticOwner(chainId, getAddress(vault)),
+							),
+						],
+						source: "vaultLens",
+						originalValue:
+							error instanceof Error ? error.message : String(error),
+					},
+				]);
+				return undefined;
+			}
+		};
+
+		const eVaults: (EVault | undefined)[] = [];
+		if (queryContext) {
+			// Exact review reads issue a full lens call plus a raw caps call per
+			// vault. Keep vaults sequential so bounded server RPC proxies only
+			// need to admit that pair while preserving input order.
+			for (const [index, vault] of vaults.entries()) {
+				eVaults.push(await fetchVault(vault, index));
+			}
+		} else {
+			eVaults.push(
+				...(await Promise.all(
+					vaults.map((vault, index) => fetchVault(vault, index)),
+				)),
+			);
+		}
 
 		if (queryContext) {
 			await assertEVaultCanonicalBlock(provider, queryContext);
