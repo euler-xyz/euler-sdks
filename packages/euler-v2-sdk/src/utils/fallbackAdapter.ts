@@ -230,6 +230,7 @@ export function createFallbackAdapter<
 				);
 
 				return {
+					...secondaryOut,
 					result: secondaryOut.result,
 					errors: [fallbackIssue, ...secondaryOut.errors],
 				};

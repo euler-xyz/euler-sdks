@@ -104,6 +104,7 @@ All docs are in [`./docs`](./docs).
 24. [Labels](./docs/labels.md) - Label metadata model and usage.
 25. [Decoding Smart Contract Errors](./docs/decode-smart-contract-errors.md) - Revert decoding utilities for better error handling.
 26. [Entity Diagnostics](./docs/entity-diagnostics.md) - Sidecar metadata for data normalization, fallbacks, and per-field warnings.
+27. [Exact Read Contract](./docs/exact-read-contract.md) - Canonical block-hash-bound service reads, EVault implementation, and unsupported boundaries.
 
 ## Examples
 

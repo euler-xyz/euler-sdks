@@ -26,15 +26,36 @@ import {
 	vaultDiagnosticOwner,
 	withPathPrefix,
 } from "../../../utils/entityDiagnostics.js";
+import type {
+	EVaultReadContext,
+	EVaultReadProvenance,
+} from "./eVaultReadContext.js";
+import {
+	currentEVaultReadProvenance,
+	exactEVaultReadProvenance,
+} from "./eVaultReadContext.js";
+
+export type EVaultServiceResult<T> = ServiceResult<T> & {
+	read: EVaultReadProvenance;
+};
+
+export type EVaultAdapterResult<T> = ServiceResult<T> & {
+	/**
+	 * Optional for source compatibility with custom adapters. Exact reads fail
+	 * closed unless the adapter supplies matching canonical provenance.
+	 */
+	read?: EVaultReadProvenance;
+};
 
 export interface IEVaultAdapter {
 	fetchVaults(
 		chainId: number,
 		vault: Address[],
-	): Promise<ServiceResult<(IEVault | undefined)[]>>;
+		readContext?: EVaultReadContext,
+	): Promise<EVaultAdapterResult<(IEVault | undefined)[]>>;
 	fetchAllVaults(
 		chainId: number,
-	): Promise<ServiceResult<(IEVault | undefined)[]>>;
+	): Promise<EVaultAdapterResult<(IEVault | undefined)[]>>;
 	fetchVerifiedVaultsAddresses(
 		chainId: number,
 		perspectives: Address[],
@@ -56,6 +77,11 @@ export interface EVaultFetchOptions {
 	populateRewards?: boolean;
 	populateIntrinsicApy?: boolean;
 	populateLabels?: boolean;
+	/**
+	 * Requests a canonical block-hash-bound onchain read. Exact reads reject
+	 * V3 and all populate/enrichment work.
+	 */
+	readContext?: EVaultReadContext;
 }
 
 export interface IEVaultService
@@ -64,12 +90,12 @@ export interface IEVaultService
 		chainId: number,
 		vault: Address,
 		options?: EVaultFetchOptions,
-	): Promise<ServiceResult<EVault | undefined>>;
+	): Promise<EVaultServiceResult<EVault | undefined>>;
 	fetchVaults(
 		chainId: number,
 		vaults: Address[],
 		options?: EVaultFetchOptions,
-	): Promise<ServiceResult<(EVault | undefined)[]>>;
+	): Promise<EVaultServiceResult<(EVault | undefined)[]>>;
 	/**
 	 * Fetches all discoverable EVaults.
 	 * The optional async `filter` runs after the first fetch and before populate/enrichment work,
@@ -78,7 +104,7 @@ export interface IEVaultService
 	fetchAllVaults(
 		chainId: number,
 		args?: FetchAllVaultsArgs<EVault, EVaultFetchOptions>,
-	): Promise<ServiceResult<(EVault | undefined)[]>>;
+	): Promise<EVaultServiceResult<(EVault | undefined)[]>>;
 	populateCollaterals(eVaults: EVault[]): Promise<DataIssue[]>;
 	populateMarketPrices(eVaults: EVault[]): Promise<DataIssue[]>;
 	populateRewards(eVaults: EVault[]): Promise<DataIssue[]>;
@@ -131,7 +157,7 @@ export class EVaultService implements IEVaultService {
 		chainId: number,
 		vault: Address,
 		options?: EVaultFetchOptions,
-	): Promise<ServiceResult<EVault | undefined>> {
+	): Promise<EVaultServiceResult<EVault | undefined>> {
 		const fetched = await this.fetchVaults(chainId, [vault], options);
 		const result = fetched.result[0];
 		const errors = [...fetched.errors];
@@ -147,25 +173,36 @@ export class EVaultService implements IEVaultService {
 				originalValue: getAddress(vault),
 			});
 		}
-		return { result, errors: compressDataIssues(errors) };
+		return { ...fetched, result, errors: compressDataIssues(errors) };
 	}
 
 	async fetchVaults(
 		chainId: number,
 		vaults: Address[],
 		options?: EVaultFetchOptions,
-	): Promise<ServiceResult<(EVault | undefined)[]>> {
-		const fetched = await this.adapter.fetchVaults(chainId, vaults);
+	): Promise<EVaultServiceResult<(EVault | undefined)[]>> {
+		const resolvedOptions = this.resolveFetchOptions(options);
+		this.assertExactOptions(resolvedOptions);
+		const fetched = await this.adapter.fetchVaults(
+			chainId,
+			vaults,
+			resolvedOptions.readContext,
+		);
 		return this.hydrateFetchedVaults(
 			fetched,
-			this.resolveFetchOptions(options),
+			resolvedOptions,
 		);
 	}
 
 	async fetchAllVaults(
 		chainId: number,
 		args?: FetchAllVaultsArgs<EVault, EVaultFetchOptions>,
-	): Promise<ServiceResult<(EVault | undefined)[]>> {
+	): Promise<EVaultServiceResult<(EVault | undefined)[]>> {
+		if (args?.options?.readContext) {
+			throw new Error(
+				"Exact EVault reads require explicit vault addresses; fetchAllVaults is current-only.",
+			);
+		}
 		const fetched = await this.adapter.fetchAllVaults(chainId);
 		return this.hydrateFetchedVaults(
 			fetched,
@@ -175,10 +212,14 @@ export class EVaultService implements IEVaultService {
 	}
 
 	private async hydrateFetchedVaults(
-		fetched: ServiceResult<(IEVault | undefined)[]>,
+		fetched: EVaultAdapterResult<(IEVault | undefined)[]>,
 		resolvedOptions: EVaultFetchOptions,
 		filter?: VaultFilter<EVault>,
-	): Promise<ServiceResult<(EVault | undefined)[]>> {
+	): Promise<EVaultServiceResult<(EVault | undefined)[]>> {
+		const read = this.resolveReadProvenance(
+			fetched.read,
+			resolvedOptions.readContext,
+		);
 		const errors: DataIssue[] = [...fetched.errors];
 		const eVaults = fetched.result.map((vault) =>
 			vault ? new EVault(vault) : undefined,
@@ -220,7 +261,7 @@ export class EVaultService implements IEVaultService {
 				}
 			})(),
 		]);
-		return { result, errors: compressDataIssues(errors) };
+		return { ...fetched, result, errors: compressDataIssues(errors), read };
 	}
 
 	async populateCollaterals(eVaults: EVault[]): Promise<DataIssue[]> {
@@ -530,6 +571,11 @@ export class EVaultService implements IEVaultService {
 		perspectives: (StandardEVaultPerspectives | Address)[],
 		options?: EVaultFetchOptions,
 	): Promise<ServiceResult<(EVault | undefined)[]>> {
+		if (options?.readContext) {
+			throw new Error(
+				"Exact EVault reads require explicit vault addresses; fetchVerifiedVaults is current-only.",
+			);
+		}
 		const addresses = await this.fetchVerifiedVaultAddresses(
 			chainId,
 			perspectives,
@@ -553,5 +599,40 @@ export class EVaultService implements IEVaultService {
 			populateIntrinsicApy: true,
 			populateLabels: true,
 		};
+	}
+
+	private assertExactOptions(options: EVaultFetchOptions): void {
+		if (!options.readContext) return;
+		if (
+			options.populateAll ||
+			options.populateCollaterals ||
+			options.populateMarketPrices ||
+			options.populateRewards ||
+			options.populateIntrinsicApy ||
+			options.populateLabels
+		) {
+			throw new Error(
+				"Exact EVault reads cannot run current-head populate or enrichment steps.",
+			);
+		}
+	}
+
+	private resolveReadProvenance(
+		read: EVaultReadProvenance | undefined,
+		context: EVaultReadContext | undefined,
+	): EVaultReadProvenance {
+		if (!context) return read ?? currentEVaultReadProvenance("custom");
+		const expected = exactEVaultReadProvenance(context);
+		if (
+			read?.mode !== "exact" ||
+			read.blockNumber !== expected.blockNumber ||
+			read.blockHash.toLowerCase() !== expected.blockHash.toLowerCase() ||
+			read.canonical !== true
+		) {
+			throw new Error(
+				"Exact EVault adapter result is missing matching canonical read provenance.",
+			);
+		}
+		return read;
 	}
 }

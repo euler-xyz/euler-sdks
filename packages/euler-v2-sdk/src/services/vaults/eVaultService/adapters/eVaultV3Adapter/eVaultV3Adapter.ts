@@ -9,12 +9,19 @@ import {
 	type DataIssue,
 	compressDataIssues,
 	dataIssueLocation,
-	type ServiceResult,
 	vaultDiagnosticOwner,
 } from "../../../../../utils/entityDiagnostics.js";
 import type { IEVault } from "../../../../../entities/EVault.js";
 import type { EVaultV3AdapterConfig } from "../../eVaultServiceConfig.js";
-import type { IEVaultAdapter } from "../../eVaultService.js";
+import type {
+	EVaultServiceResult,
+	IEVaultAdapter,
+} from "../../eVaultService.js";
+import {
+	EVaultExactReadUnsupportedError,
+	currentEVaultReadProvenance,
+	type EVaultReadContext,
+} from "../../eVaultReadContext.js";
 import { convertVault } from "./eVaultV3AdapterConversions.js";
 import type {
 	V3ListEnvelope,
@@ -241,7 +248,13 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 	async fetchVaults(
 		chainId: number,
 		vaults: Address[],
-	): Promise<ServiceResult<(IEVault | undefined)[]>> {
+		readContext?: EVaultReadContext,
+	): Promise<EVaultServiceResult<(IEVault | undefined)[]>> {
+		if (readContext) {
+			throw new EVaultExactReadUnsupportedError(
+				"V3 is indexed current state and cannot satisfy an exact EVault read.",
+			);
+		}
 		const results: Array<{ result: IEVault | undefined; errors: DataIssue[] }> =
 			await Promise.all(
 				vaults.map(async (vault) => {
@@ -329,6 +342,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		return {
 			result: results.map((entry) => entry.result),
 			errors: compressDataIssues(results.flatMap((entry) => entry.errors)),
+			read: currentEVaultReadProvenance("v3"),
 		};
 	}
 
@@ -358,7 +372,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 
 	async fetchAllVaults(
 		chainId: number,
-	): Promise<ServiceResult<(IEVault | undefined)[]>> {
+	): Promise<EVaultServiceResult<(IEVault | undefined)[]>> {
 		const limit = 100;
 		let offset = 0;
 		const addresses: Address[] = [];

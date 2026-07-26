@@ -3,6 +3,7 @@
 
 import { type Address, maxUint256 } from "viem";
 import type {
+	OracleDetailedInfo,
 	OracleInfo,
 	OraclePrice,
 	OracleRoute,
@@ -82,6 +83,21 @@ export interface EVaultHooks {
 export interface EVaultCaps {
 	supplyCap: bigint;
 	borrowCap: bigint;
+}
+
+export interface EVaultRawConfig {
+	/** EVK AmountCap values returned by `caps()`, before semantic expansion. */
+	caps: {
+		borrowCap: bigint;
+		supplyCap: bigint;
+	};
+	configFlags: bigint;
+	hookConfig: {
+		hookedOperations: bigint;
+		hookTarget: Address;
+	};
+	/** Root oracle detail returned by VaultLens, including encoded router facts. */
+	oracleInfo: OracleDetailedInfo;
 }
 
 export interface EVaultCapsComputed extends EVaultCaps {
@@ -194,6 +210,7 @@ export interface IEVault extends IERC4626Vault {
 	evcCompatibleAsset: boolean;
 
 	oraclePriceRaw: OraclePrice; // shouldn't be used directly, use EVault price getters instead
+	rawConfig?: EVaultRawConfig;
 	timestamp: number;
 	populated?: Partial<EVaultPopulated>;
 }
@@ -288,6 +305,7 @@ export class EVault
 	collaterals: EVaultCollateral[];
 	evcCompatibleAsset: boolean;
 	oraclePriceRaw: OraclePrice;
+	rawConfig?: EVaultRawConfig;
 	timestamp: number;
 	declare populated: EVaultPopulated;
 
@@ -318,6 +336,7 @@ export class EVault
 			this.unitOfAccount ? args.debtPricingOracleRoute : undefined;
 		this.evcCompatibleAsset = args.evcCompatibleAsset;
 		this.oraclePriceRaw = args.oraclePriceRaw;
+		this.rawConfig = args.rawConfig;
 		this.populated = {
 			...this.populated,
 			collaterals: args.populated?.collaterals ?? false,

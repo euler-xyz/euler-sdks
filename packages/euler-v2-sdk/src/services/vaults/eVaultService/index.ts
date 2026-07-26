@@ -12,5 +12,19 @@ export type {
 export type {
 	IEVaultService,
 	IEVaultAdapter,
+	EVaultAdapterResult,
 	EVaultFetchOptions,
+	EVaultServiceResult,
 } from "./eVaultService.js";
+export {
+	EVaultExactReadUnsupportedError,
+	assertEVaultCanonicalBlock,
+	assertEVaultExactReadContext,
+	readEVaultContractAtExactBlock,
+	waitForEVaultRead,
+} from "./eVaultReadContext.js";
+export type {
+	EVaultExactReadContext,
+	EVaultReadContext,
+	EVaultReadProvenance,
+} from "./eVaultReadContext.js";

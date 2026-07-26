@@ -1,4 +1,7 @@
-import type { IEVaultAdapter } from "../../eVaultService.js";
+import type {
+	EVaultServiceResult,
+	IEVaultAdapter,
+} from "../../eVaultService.js";
 import type { ProviderService } from "../../../../providerService/index.js";
 import type { DeploymentService } from "../../../../deploymentService/index.js";
 import { getAddress, type Address, type Abi, encodeFunctionData } from "viem";
@@ -9,6 +12,7 @@ import { vaultLensAbi } from "./abis/vaultLensAbi.js";
 import {
 	type BuildQueryFn,
 	applyBuildQuery,
+	serializeQueryArgs,
 } from "../../../../../utils/buildQuery.js";
 import type {
 	EulerPlugin,
@@ -22,9 +26,18 @@ import type { EVCBatchItem } from "../../../../executionService/executionService
 import {
 	dataIssueLocation,
 	type DataIssue,
-	type ServiceResult,
 	vaultDiagnosticOwner,
 } from "../../../../../utils/entityDiagnostics.js";
+import {
+	assertEVaultCanonicalBlock,
+	assertEVaultExactReadContext,
+	currentEVaultReadProvenance,
+	exactEVaultReadProvenance,
+	readEVaultContractAtExactBlock,
+	waitForEVaultRead,
+	type EVaultExactReadContext,
+	type EVaultReadContext,
+} from "../../eVaultReadContext.js";
 
 const verifiedArrayAbi = [
 	{
@@ -79,7 +92,21 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 		provider: ReturnType<ProviderService["getProvider"]>,
 		vaultLensAddress: Address,
 		vault: Address,
+		readContext?: EVaultExactReadContext,
+		_chainId?: number,
 	) => {
+		if (readContext) {
+			return readEVaultContractAtExactBlock<VaultInfoFull>(
+				provider,
+				readContext,
+				{
+					address: vaultLensAddress,
+					abi: vaultLensAbi,
+					functionName: "getVaultInfoFull",
+					args: [vault],
+				},
+			);
+		}
 		return provider.readContract({
 			address: vaultLensAddress,
 			abi: vaultLensAbi,
@@ -90,6 +117,29 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 
 	setQueryEVaultInfoFull(fn: typeof this.queryEVaultInfoFull): void {
 		this.queryEVaultInfoFull = fn;
+	}
+
+	getQueryKeyEVaultInfoFull(
+		provider: ReturnType<ProviderService["getProvider"]>,
+		vaultLensAddress: Address,
+		vault: Address,
+		readContext?: EVaultExactReadContext,
+		chainId?: number,
+	): string | null {
+		if (readContext?.signal) return null;
+		return serializeQueryArgs([
+			{ chainId: chainId ?? provider.chain?.id ?? "unknown" },
+			getAddress(vaultLensAddress),
+			getAddress(vault),
+			readContext
+				? {
+						blockHash: readContext.blockHash,
+						blockNumber: readContext.blockNumber,
+						mode: readContext.mode,
+						requireCanonical: readContext.requireCanonical,
+					}
+				: { mode: "current" },
+		]);
 	}
 
 	queryEVaultVerifiedArray = async (
@@ -110,8 +160,32 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 	async fetchVaults(
 		chainId: number,
 		vaults: Address[],
-	): Promise<ServiceResult<(IEVault | undefined)[]>> {
-		const provider = this.providerService.getProvider(chainId);
+		readContext?: EVaultReadContext,
+	): Promise<EVaultServiceResult<(IEVault | undefined)[]>> {
+		if (readContext) assertEVaultExactReadContext(readContext);
+		const provider =
+			readContext?.provider ?? this.providerService.getProvider(chainId);
+		const queryContext = readContext
+			? {
+					blockHash: readContext.blockHash,
+					blockNumber: readContext.blockNumber,
+					mode: "exact" as const,
+					requireCanonical: true as const,
+					signal: readContext.signal,
+				}
+			: undefined;
+		if (queryContext) {
+			const actualChainId = await waitForEVaultRead(
+				provider.getChainId(),
+				queryContext.signal,
+			);
+			if (actualChainId !== chainId) {
+				throw new Error(
+					`Exact EVault provider chain mismatch: requested ${chainId}, received ${actualChainId}.`,
+				);
+			}
+			await assertEVaultCanonicalBlock(provider, queryContext);
+		}
 		const deployment = this.deploymentService.getDeployment(chainId);
 		const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
 		const firstPassErrorsByIndex = new Map<number, DataIssue[]>();
@@ -125,6 +199,8 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 						provider,
 						vaultLensAddress,
 						vault,
+						queryContext,
+						chainId,
 					);
 					const vaultInfo = result as unknown as VaultInfoFull;
 					const conversionErrors: DataIssue[] = [];
@@ -156,6 +232,17 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 			}),
 		);
 
+		if (queryContext) {
+			await assertEVaultCanonicalBlock(provider, queryContext);
+			return {
+				result: eVaults,
+				errors: vaults.flatMap(
+					(_, index) => firstPassErrorsByIndex.get(index) ?? [],
+				),
+				read: exactEVaultReadProvenance(queryContext),
+			};
+		}
+
 		// Plugin enrichment: re-fetch vaults via batchSimulation when plugins provide prepend items
 		if (this.plugins.length === 0) {
 			return {
@@ -163,6 +250,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 				errors: vaults.flatMap(
 					(_, index) => firstPassErrorsByIndex.get(index) ?? [],
 				),
+				read: currentEVaultReadProvenance("onchain"),
 			};
 		}
 
@@ -209,7 +297,11 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 				: (firstPassErrorsByIndex.get(index) ?? []),
 		);
 
-		return { result: enriched, errors };
+		return {
+			result: enriched,
+			errors,
+			read: currentEVaultReadProvenance("onchain"),
+		};
 	}
 
 	private async collectReadPrepend(
@@ -260,7 +352,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 
 	async fetchAllVaults(
 		chainId: number,
-	): Promise<ServiceResult<(IEVault | undefined)[]>> {
+	): Promise<EVaultServiceResult<(IEVault | undefined)[]>> {
 		const deployment = this.deploymentService.getDeployment(chainId);
 		const perspective =
 			deployment.addresses.peripheryAddrs?.evkFactoryPerspective;

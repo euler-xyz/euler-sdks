@@ -424,6 +424,38 @@ test("preserves secondary errors and prepends FALLBACK_USED", async () => {
 	assert.equal(out.errors[1]!.code, "COERCED_TYPE");
 });
 
+test("preserves secondary result envelope metadata", async () => {
+	const primary = makeAdapter({
+		tag: "primary",
+		fetchThing: async () => {
+			throw new Error("boom");
+		},
+	});
+	const secondary = makeAdapter({
+		tag: "secondary",
+		fetchThing: async () =>
+			({
+				result: "recovered",
+				errors: [],
+				read: { mode: "exact", blockNumber: 123n },
+			}) as never,
+	});
+	const wrapped = createFallbackAdapter<SampleAdapter, "fetchThing">(
+		primary,
+		secondary,
+		{
+			methods: ["fetchThing"],
+			adapterNames: { primary: "v3", secondary: "onchain" },
+		},
+	);
+
+	const out = (await wrapped.fetchThing(1)) as ServiceResult<string> & {
+		read: { mode: string; blockNumber: bigint };
+	};
+	assert.deepEqual(out.read, { mode: "exact", blockNumber: 123n });
+	assert.equal(out.errors[0]?.code, "FALLBACK_USED");
+});
+
 test("circuit breaker skips primary while open", async () => {
 	let primaryCalls = 0;
 	let secondaryCalls = 0;

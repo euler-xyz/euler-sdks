@@ -422,6 +422,18 @@ export function convertVaultInfoFullToIEVault(
 		debtPricingOracleRoute,
 		isBorrowable,
 		oraclePriceRaw,
+		rawConfig: {
+			caps: {
+				borrowCap: vaultInfo.borrowCap,
+				supplyCap: vaultInfo.supplyCap,
+			},
+			configFlags: vaultInfo.configFlags,
+			hookConfig: {
+				hookedOperations: vaultInfo.hookedOperations,
+				hookTarget: vaultInfo.hookTarget,
+			},
+			oracleInfo: vaultInfo.oracleInfo,
+		},
 		timestamp: vaultTimestamp,
 	};
 	return result;
