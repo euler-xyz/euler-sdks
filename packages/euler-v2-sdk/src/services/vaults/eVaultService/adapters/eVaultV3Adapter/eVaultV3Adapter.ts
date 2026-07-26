@@ -1,27 +1,27 @@
 import { type Address, getAddress } from "viem";
+import type { IEVault } from "../../../../../entities/EVault.js";
 import {
-	type BuildQueryFn,
 	applyBuildQuery,
+	type BuildQueryFn,
 } from "../../../../../utils/buildQuery.js";
-import type { ProviderService } from "../../../../providerService/index.js";
 import { createCallBundler } from "../../../../../utils/callBundler.js";
 import {
-	type DataIssue,
 	compressDataIssues,
+	type DataIssue,
 	dataIssueLocation,
 	vaultDiagnosticOwner,
 } from "../../../../../utils/entityDiagnostics.js";
-import type { IEVault } from "../../../../../entities/EVault.js";
-import type { EVaultV3AdapterConfig } from "../../eVaultServiceConfig.js";
-import type {
-	EVaultServiceResult,
-	IEVaultAdapter,
-} from "../../eVaultService.js";
+import type { ProviderService } from "../../../../providerService/index.js";
 import {
-	EVaultExactReadUnsupportedError,
 	currentEVaultReadProvenance,
+	EVaultExactReadUnsupportedError,
 	type EVaultReadContext,
 } from "../../eVaultReadContext.js";
+import type {
+	EVaultServiceResolvedResult,
+	IEVaultAdapter,
+} from "../../eVaultService.js";
+import type { EVaultV3AdapterConfig } from "../../eVaultServiceConfig.js";
 import { convertVault } from "./eVaultV3AdapterConversions.js";
 import type {
 	V3ListEnvelope,
@@ -249,7 +249,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		chainId: number,
 		vaults: Address[],
 		readContext?: EVaultReadContext,
-	): Promise<EVaultServiceResult<(IEVault | undefined)[]>> {
+	): Promise<EVaultServiceResolvedResult<(IEVault | undefined)[]>> {
 		if (readContext) {
 			throw new EVaultExactReadUnsupportedError(
 				"V3 is indexed current state and cannot satisfy an exact EVault read.",
@@ -372,7 +372,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 
 	async fetchAllVaults(
 		chainId: number,
-	): Promise<EVaultServiceResult<(IEVault | undefined)[]>> {
+	): Promise<EVaultServiceResolvedResult<(IEVault | undefined)[]>> {
 		const limit = 100;
 		let offset = 0;
 		const addresses: Address[] = [];

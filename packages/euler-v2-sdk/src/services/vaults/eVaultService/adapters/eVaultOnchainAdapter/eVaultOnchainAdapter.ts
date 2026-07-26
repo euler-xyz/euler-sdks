@@ -32,7 +32,7 @@ import {
 	waitForEVaultRead,
 } from "../../eVaultReadContext.js";
 import type {
-	EVaultServiceResult,
+	EVaultServiceResolvedResult,
 	IEVaultAdapter,
 } from "../../eVaultService.js";
 import { vaultLensAbi } from "./abis/vaultLensAbi.js";
@@ -213,7 +213,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 		chainId: number,
 		vaults: Address[],
 		readContext?: EVaultReadContext,
-	): Promise<EVaultServiceResult<(IEVault | undefined)[]>> {
+	): Promise<EVaultServiceResolvedResult<(IEVault | undefined)[]>> {
 		if (readContext) assertEVaultExactReadContext(readContext);
 		const provider =
 			readContext?.provider ?? this.providerService.getProvider(chainId);
@@ -246,7 +246,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 
 		const fetchVault = async (vault: Address, index: number) => {
 			try {
-				const [result, encodedCaps] = await Promise.all([
+				const [infoRead, capsRead] = await Promise.allSettled([
 					this.queryEVaultInfoFull(
 						provider,
 						vaultLensAddress,
@@ -258,6 +258,10 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 						? this.queryEVaultCaps(provider, vault, queryContext, chainId)
 						: undefined,
 				]);
+				if (infoRead.status === "rejected") throw infoRead.reason;
+				if (capsRead.status === "rejected") throw capsRead.reason;
+				const result = infoRead.value;
+				const encodedCaps = capsRead.value;
 				const vaultInfo = result as unknown as VaultInfoFull;
 				const conversionErrors: DataIssue[] = [];
 				const parsed = convertVaultInfoFullToIEVault(
@@ -429,7 +433,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 
 	async fetchAllVaults(
 		chainId: number,
-	): Promise<EVaultServiceResult<(IEVault | undefined)[]>> {
+	): Promise<EVaultServiceResolvedResult<(IEVault | undefined)[]>> {
 		const deployment = this.deploymentService.getDeployment(chainId);
 		const perspective =
 			deployment.addresses.peripheryAddrs?.evkFactoryPerspective;

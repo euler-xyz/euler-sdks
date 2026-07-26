@@ -66,6 +66,10 @@ hash. It retains that encoded EVK evidence under `vault.rawConfig`, alongside
 configuration flags, hook configuration, and root oracle information. Current
 reads do not claim this exact raw-evidence envelope.
 
+The two exact calls for one vault settle as a pair before the next vault starts.
+This keeps the exact path within a two-request upstream bound even when one
+member of the pair fails before the other completes.
+
 ## Intentional EVault Boundaries
 
 V3 is an indexed current-state source and rejects exact reads. In the default
@@ -85,3 +89,9 @@ underlying transport may still complete its request.
 Existing custom EVault adapters may omit the new `read` field for current
 reads; the service marks those results as `source: "custom"`. A custom adapter
 must return matching canonical provenance to satisfy an exact request.
+
+Existing custom `IEVaultService` overrides may also omit `read`. The public
+service result keeps provenance optional for source compatibility, while the
+built-in `EVaultService` and its built-in adapters return a required provenance
+field. Exact-read consumers must treat missing provenance from a custom service
+as unsupported rather than inferring exactness from the request.

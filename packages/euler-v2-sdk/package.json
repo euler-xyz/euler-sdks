@@ -27,7 +27,7 @@
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "build:watch": "tsc --project tsconfig.json --watch",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.type-tests.json",
     "test": "vitest run",
     "test:reads": "vitest run --config vitest.reads.config.ts",
     "test:coverage:reads": "vitest run --config vitest.reads.config.ts --coverage",

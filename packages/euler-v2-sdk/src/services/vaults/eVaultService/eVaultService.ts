@@ -36,6 +36,14 @@ import {
 } from "./eVaultReadContext.js";
 
 export type EVaultServiceResult<T> = ServiceResult<T> & {
+	/**
+	 * Optional at the public service-override boundary so existing custom
+	 * IEVaultService implementations remain source-compatible.
+	 */
+	read?: EVaultReadProvenance;
+};
+
+export type EVaultServiceResolvedResult<T> = ServiceResult<T> & {
 	read: EVaultReadProvenance;
 };
 
@@ -157,7 +165,7 @@ export class EVaultService implements IEVaultService {
 		chainId: number,
 		vault: Address,
 		options?: EVaultFetchOptions,
-	): Promise<EVaultServiceResult<EVault | undefined>> {
+	): Promise<EVaultServiceResolvedResult<EVault | undefined>> {
 		const fetched = await this.fetchVaults(chainId, [vault], options);
 		const result = fetched.result[0];
 		const errors = [...fetched.errors];
@@ -180,7 +188,7 @@ export class EVaultService implements IEVaultService {
 		chainId: number,
 		vaults: Address[],
 		options?: EVaultFetchOptions,
-	): Promise<EVaultServiceResult<(EVault | undefined)[]>> {
+	): Promise<EVaultServiceResolvedResult<(EVault | undefined)[]>> {
 		const resolvedOptions = this.resolveFetchOptions(options);
 		this.assertExactOptions(resolvedOptions);
 		const fetched = await this.adapter.fetchVaults(
@@ -194,7 +202,7 @@ export class EVaultService implements IEVaultService {
 	async fetchAllVaults(
 		chainId: number,
 		args?: FetchAllVaultsArgs<EVault, EVaultFetchOptions>,
-	): Promise<EVaultServiceResult<(EVault | undefined)[]>> {
+	): Promise<EVaultServiceResolvedResult<(EVault | undefined)[]>> {
 		if (args?.options?.readContext) {
 			throw new Error(
 				"Exact EVault reads require explicit vault addresses; fetchAllVaults is current-only.",
@@ -212,7 +220,7 @@ export class EVaultService implements IEVaultService {
 		fetched: EVaultAdapterResult<(IEVault | undefined)[]>,
 		resolvedOptions: EVaultFetchOptions,
 		filter?: VaultFilter<EVault>,
-	): Promise<EVaultServiceResult<(EVault | undefined)[]>> {
+	): Promise<EVaultServiceResolvedResult<(EVault | undefined)[]>> {
 		const read = this.resolveReadProvenance(
 			fetched.read,
 			resolvedOptions.readContext,
@@ -567,7 +575,7 @@ export class EVaultService implements IEVaultService {
 		chainId: number,
 		perspectives: (StandardEVaultPerspectives | Address)[],
 		options?: EVaultFetchOptions,
-	): Promise<EVaultServiceResult<(EVault | undefined)[]>> {
+	): Promise<EVaultServiceResolvedResult<(EVault | undefined)[]>> {
 		if (options?.readContext) {
 			throw new Error(
 				"Exact EVault reads require explicit vault addresses; fetchVerifiedVaults is current-only.",

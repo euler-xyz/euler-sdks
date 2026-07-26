@@ -339,6 +339,62 @@ test("exact reads bound vault concurrency while preserving input order", async (
 	);
 });
 
+test("exact reads wait for a failed vault pair before starting the next vault", async () => {
+	const { provider } = makeProvider();
+	const adapter = new EVaultOnchainAdapter(
+		{ getProvider: () => provider } as never,
+		{
+			getDeployment: () => ({
+				addresses: { lensAddrs: { vaultLens: LENS } },
+			}),
+		} as never,
+	);
+	const calls: string[] = [];
+	let releaseFirstCaps = () => {};
+	const firstCaps = new Promise<readonly [bigint, bigint]>((resolve) => {
+		releaseFirstCaps = () => resolve([111n, 222n]);
+	});
+	let reportFirstPairStarted = () => {};
+	const firstPairStarted = new Promise<void>((resolve) => {
+		reportFirstPairStarted = resolve;
+	});
+	const recordCall = (call: string) => {
+		calls.push(call);
+		if (calls.length === 2) reportFirstPairStarted();
+	};
+	adapter.setQueryEVaultInfoFull(async (_provider, _lens, vault) => {
+		recordCall(`info:${vault}`);
+		if (vault === VAULT) throw new Error("lens unavailable");
+		return { ...makeVaultInfo(), vault };
+	});
+	adapter.setQueryEVaultCaps(async (_provider, vault) => {
+		recordCall(`caps:${vault}`);
+		if (vault === VAULT) return firstCaps;
+		return [111n, 222n];
+	});
+
+	const pending = adapter.fetchVaults(
+		CHAIN_ID,
+		[VAULT, OTHER_VAULT],
+		exactContext(provider),
+	);
+	await firstPairStarted;
+	for (let index = 0; index < 10; index += 1) await Promise.resolve();
+	assert.deepEqual(calls, [`info:${VAULT}`, `caps:${VAULT}`]);
+
+	releaseFirstCaps();
+	const fetched = await pending;
+	assert.deepEqual(calls, [
+		`info:${VAULT}`,
+		`caps:${VAULT}`,
+		`info:${OTHER_VAULT}`,
+		`caps:${OTHER_VAULT}`,
+	]);
+	assert.equal(fetched.result[0], undefined);
+	assert.equal(fetched.result[1]?.address, OTHER_VAULT);
+	assert.match(fetched.errors[0]?.originalValue?.toString() ?? "", /lens unavailable/);
+});
+
 test("exact reads fail closed when the canonical hash changes", async () => {
 	const { provider } = makeProvider([BLOCK_HASH, OTHER_BLOCK_HASH]);
 	const adapter = new EVaultOnchainAdapter(
