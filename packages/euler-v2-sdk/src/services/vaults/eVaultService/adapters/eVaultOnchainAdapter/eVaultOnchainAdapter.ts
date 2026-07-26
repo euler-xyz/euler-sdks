@@ -1,43 +1,43 @@
-import type {
-	EVaultServiceResult,
-	IEVaultAdapter,
-} from "../../eVaultService.js";
-import type { ProviderService } from "../../../../providerService/index.js";
-import type { DeploymentService } from "../../../../deploymentService/index.js";
-import { getAddress, type Address, type Abi, encodeFunctionData } from "viem";
+import { type Abi, type Address, encodeFunctionData, getAddress } from "viem";
 import { EVault, type IEVault } from "../../../../../entities/EVault.js";
-import type { VaultInfoFull } from "./eVaultLensTypes.js";
-import { convertVaultInfoFullToIEVault } from "./vaultInfoConverter.js";
-import { vaultLensAbi } from "./abis/vaultLensAbi.js";
 import {
-	type BuildQueryFn,
-	applyBuildQuery,
-	serializeQueryArgs,
-} from "../../../../../utils/buildQuery.js";
+	type BatchSimulationAdapter,
+	executeBatchSimulation,
+} from "../../../../../plugins/batchSimulation.js";
 import type {
 	EulerPlugin,
 	PluginBatchItems,
 } from "../../../../../plugins/types.js";
 import {
-	executeBatchSimulation,
-	type BatchSimulationAdapter,
-} from "../../../../../plugins/batchSimulation.js";
-import type { EVCBatchItem } from "../../../../executionService/executionServiceTypes.js";
+	applyBuildQuery,
+	type BuildQueryFn,
+	serializeQueryArgs,
+} from "../../../../../utils/buildQuery.js";
 import {
-	dataIssueLocation,
 	type DataIssue,
+	dataIssueLocation,
 	vaultDiagnosticOwner,
 } from "../../../../../utils/entityDiagnostics.js";
+import type { DeploymentService } from "../../../../deploymentService/index.js";
+import type { EVCBatchItem } from "../../../../executionService/executionServiceTypes.js";
+import type { ProviderService } from "../../../../providerService/index.js";
 import {
 	assertEVaultCanonicalBlock,
 	assertEVaultExactReadContext,
 	currentEVaultReadProvenance,
+	type EVaultExactReadContext,
+	type EVaultReadContext,
 	exactEVaultReadProvenance,
 	readEVaultContractAtExactBlock,
 	waitForEVaultRead,
-	type EVaultExactReadContext,
-	type EVaultReadContext,
 } from "../../eVaultReadContext.js";
+import type {
+	EVaultServiceResult,
+	IEVaultAdapter,
+} from "../../eVaultService.js";
+import { vaultLensAbi } from "./abis/vaultLensAbi.js";
+import type { VaultInfoFull } from "./eVaultLensTypes.js";
+import { convertVaultInfoFullToIEVault } from "./vaultInfoConverter.js";
 
 const verifiedArrayAbi = [
 	{
@@ -45,6 +45,19 @@ const verifiedArrayAbi = [
 		name: "verifiedArray",
 		inputs: [],
 		outputs: [{ name: "", type: "address[]", internalType: "address[]" }],
+		stateMutability: "view",
+	},
+] as const;
+
+const exactVaultConfigAbi = [
+	{
+		type: "function",
+		name: "caps",
+		inputs: [],
+		outputs: [
+			{ name: "supplyCap", type: "uint16", internalType: "uint16" },
+			{ name: "borrowCap", type: "uint16", internalType: "uint16" },
+		],
 		stateMutability: "view",
 	},
 ] as const;
@@ -195,19 +208,36 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 		const eVaults = await Promise.all(
 			vaults.map(async (vault, index) => {
 				try {
-					const result = await this.queryEVaultInfoFull(
-						provider,
-						vaultLensAddress,
-						vault,
-						queryContext,
-						chainId,
-					);
+					const [result, encodedCaps] = await Promise.all([
+						this.queryEVaultInfoFull(
+							provider,
+							vaultLensAddress,
+							vault,
+							queryContext,
+							chainId,
+						),
+						queryContext
+							? readEVaultContractAtExactBlock<
+									readonly [number | bigint, number | bigint]
+								>(provider, queryContext, {
+									address: vault,
+									abi: exactVaultConfigAbi,
+									functionName: "caps",
+								})
+							: undefined,
+					]);
 					const vaultInfo = result as unknown as VaultInfoFull;
 					const conversionErrors: DataIssue[] = [];
 					const parsed = convertVaultInfoFullToIEVault(
 						vaultInfo,
 						chainId,
 						conversionErrors,
+						encodedCaps
+							? {
+									borrowCap: BigInt(encodedCaps[1]),
+									supplyCap: BigInt(encodedCaps[0]),
+								}
+							: undefined,
 					);
 					firstPassErrorsByIndex.set(index, conversionErrors);
 					return new EVault(parsed);

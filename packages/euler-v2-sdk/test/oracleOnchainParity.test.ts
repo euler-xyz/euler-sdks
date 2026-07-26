@@ -334,7 +334,7 @@ test("convertVaultInfoFullToIEVault suppresses blank root oracle tuples like V3"
 	assert.equal(vault.debtPricingOracleRoute, undefined);
 });
 
-test("VaultLens conversion retains encoded EVK configuration evidence", () => {
+test("VaultLens conversion keeps resolved caps separate from encoded EVK evidence", () => {
 	const oracleInfo = {
 		oracle: "0x00000000000000000000000000000000000000d3",
 		name: "UnknownOracle",
@@ -343,15 +343,20 @@ test("VaultLens conversion retains encoded EVK configuration evidence", () => {
 	const vault = convertVaultInfoFullToIEVault(
 		{
 			...makeVaultInfo(oracleInfo),
-			borrowCap: 321n,
+			borrowCap: 2_000_000n,
 			configFlags: 7n,
 			hookedOperations: 9n,
-			supplyCap: 123n,
+			supplyCap: 1_000_000n,
 		},
 		1,
 		[],
+		{ borrowCap: 321n, supplyCap: 123n },
 	);
 
+	assert.deepEqual(vault.caps, {
+		borrowCap: 2_000_000n,
+		supplyCap: 1_000_000n,
+	});
 	assert.deepEqual(vault.rawConfig, {
 		caps: { borrowCap: 321n, supplyCap: 123n },
 		configFlags: 7n,

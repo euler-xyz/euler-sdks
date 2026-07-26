@@ -1,50 +1,50 @@
+import { formatUnits, type Hex, zeroAddress } from "viem";
+import type {
+	EVaultCaps,
+	EVaultFees,
+	EVaultHookedOperations,
+	EVaultHooks,
+	EVaultLiquidation,
+	IEVault,
+	IEVaultCollateral,
+	InterestRateModel,
+	InterestRates,
+} from "../../../../../entities/EVault.js";
+import { hasActiveBorrowableLtv } from "../../../../../entities/EVault.js";
+import {
+	type DataIssue,
+	type DataIssueOwnerRef,
+	dataIssueLocation,
+	vaultCollateralDiagnosticOwner,
+	vaultDiagnosticOwner,
+} from "../../../../../utils/entityDiagnostics.js";
+import {
+	type AdaptiveCurveIRMInfo,
+	decodeIRMParams,
+	decorateIRMParams,
+	type FixedCyclicalBinaryIRMInfo,
+	type FixedCyclicalBinaryMonthlyIRMInfo,
+	type KinkIRMInfo,
+	type KinkyIRMInfo,
+} from "../../../../../utils/irm.js";
+import {
+	bigintToSafeNumber,
+	bigintToScaledNumber,
+} from "../../../../../utils/normalization.js";
 import {
 	decodeOracleRouteForPair,
 	type OracleInfo,
 	type OraclePrice,
 } from "../../../../../utils/oracle.js";
-import type {
-	IEVault,
-	EVaultFees,
-	EVaultHooks,
-	EVaultCaps,
-	EVaultLiquidation,
-	InterestRates,
-	InterestRateModel,
-	IEVaultCollateral,
-	EVaultHookedOperations,
-} from "../../../../../entities/EVault.js";
-import { hasActiveBorrowableLtv } from "../../../../../entities/EVault.js";
-import { type Token, VaultType } from "../../../../../utils/types.js";
-import {
-	type VaultInfoFull,
-	type AssetPriceInfo,
-	InterestRateModelType,
-	type InterestRateModelDetailedInfo,
-} from "./eVaultLensTypes.js";
-import { formatUnits, type Hex, zeroAddress } from "viem";
-import {
-	decodeIRMParams,
-	decorateIRMParams,
-	type KinkIRMInfo,
-	type AdaptiveCurveIRMInfo,
-	type KinkyIRMInfo,
-	type FixedCyclicalBinaryIRMInfo,
-	type FixedCyclicalBinaryMonthlyIRMInfo,
-} from "../../../../../utils/irm.js";
-import {
-	dataIssueLocation,
-	type DataIssue,
-	type DataIssueOwnerRef,
-	vaultCollateralDiagnosticOwner,
-	vaultDiagnosticOwner,
-} from "../../../../../utils/entityDiagnostics.js";
-import {
-	bigintToSafeNumber,
-	bigintToScaledNumber,
-} from "../../../../../utils/normalization.js";
-import { USD_ADDRESS } from "../../../../priceService/priceService.js";
 import { ZERO_ADDRESS } from "../../../../../utils/parsing.js";
+import { type Token, VaultType } from "../../../../../utils/types.js";
+import { USD_ADDRESS } from "../../../../priceService/priceService.js";
+import {
+	type AssetPriceInfo,
+	type InterestRateModelDetailedInfo,
+	InterestRateModelType,
+	type VaultInfoFull,
+} from "./eVaultLensTypes.js";
 
 const BTC_PLACEHOLDER_ADDRESS =
 	"0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB".toLowerCase();
@@ -133,6 +133,10 @@ export function convertVaultInfoFullToIEVault(
 	vaultInfo: VaultInfoFull,
 	chainId: number,
 	errors: DataIssue[],
+	encodedCaps?: {
+		borrowCap: bigint;
+		supplyCap: bigint;
+	},
 ): IEVault {
 	const vaultEntityId = vaultInfo.vault;
 	const owner = vaultDiagnosticOwner(chainId, vaultEntityId);
@@ -422,18 +426,17 @@ export function convertVaultInfoFullToIEVault(
 		debtPricingOracleRoute,
 		isBorrowable,
 		oraclePriceRaw,
-		rawConfig: {
-			caps: {
-				borrowCap: vaultInfo.borrowCap,
-				supplyCap: vaultInfo.supplyCap,
-			},
-			configFlags: vaultInfo.configFlags,
-			hookConfig: {
-				hookedOperations: vaultInfo.hookedOperations,
-				hookTarget: vaultInfo.hookTarget,
-			},
-			oracleInfo: vaultInfo.oracleInfo,
-		},
+		rawConfig: encodedCaps
+			? {
+					caps: encodedCaps,
+					configFlags: vaultInfo.configFlags,
+					hookConfig: {
+						hookedOperations: vaultInfo.hookedOperations,
+						hookTarget: vaultInfo.hookTarget,
+					},
+					oracleInfo: vaultInfo.oracleInfo,
+				}
+			: undefined,
 		timestamp: vaultTimestamp,
 	};
 	return result;

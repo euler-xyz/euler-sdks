@@ -6,6 +6,7 @@ import {
 	type Address,
 	type Hash,
 	type PublicClient,
+	toFunctionSelector,
 	zeroAddress,
 } from "viem";
 import { EVaultService } from "../src/services/vaults/eVaultService/eVaultService.js";
@@ -130,7 +131,12 @@ function makeVaultInfo(): VaultInfoFull {
 
 function makeProvider(
 	blockHashes = [BLOCK_HASH, BLOCK_HASH],
-	requestResult = encodeAbiParameters([{ type: "uint256" }], [42n]),
+	requestResult:
+		| `0x${string}`
+		| ((request: unknown) => `0x${string}`) = encodeAbiParameters(
+		[{ type: "uint256" }],
+		[42n],
+	),
 ) {
 	const calls: unknown[] = [];
 	let header = 0;
@@ -144,7 +150,9 @@ function makeProvider(
 		readContract: async () => makeVaultInfo(),
 		request: async (request: unknown) => {
 			calls.push(request);
-			return requestResult;
+			return typeof requestResult === "function"
+				? requestResult(request)
+				: requestResult;
 		},
 		transport: {},
 	} as unknown as PublicClient;
@@ -182,11 +190,20 @@ test("exact contract reads use a canonical EIP-1898 block selector", async () =>
 test("onchain exact reads use the injected provider and return raw evidence", async () => {
 	const { calls, provider } = makeProvider(
 		[BLOCK_HASH, BLOCK_HASH],
-		encodeFunctionResult({
-			abi: vaultLensAbi,
-			functionName: "getVaultInfoFull",
-			result: makeVaultInfo(),
-		}),
+		(request) => {
+			const data = (request as { params: [{ data: string }] }).params[0].data;
+			if (data.startsWith(toFunctionSelector("caps()"))) {
+				return encodeAbiParameters(
+					[{ type: "uint16" }, { type: "uint16" }],
+					[123, 321],
+				);
+			}
+			return encodeFunctionResult({
+				abi: vaultLensAbi,
+				functionName: "getVaultInfoFull",
+				result: makeVaultInfo(),
+			});
+		},
 	);
 	const configuredProvider = {
 		getChainId: async () => {
@@ -204,11 +221,13 @@ test("onchain exact reads use the injected provider and return raw evidence", as
 
 	const fetched = await adapter.fetchVaults(CHAIN_ID, [VAULT], exactContext(provider));
 
-	assert.equal(calls.length, 1);
-	assert.deepEqual(
-		(calls[0] as { params: unknown[] }).params[1],
-		{ blockHash: BLOCK_HASH, requireCanonical: true },
-	);
+	assert.equal(calls.length, 2);
+	for (const call of calls) {
+		assert.deepEqual(
+			(call as { params: unknown[] }).params[1],
+			{ blockHash: BLOCK_HASH, requireCanonical: true },
+		);
+	}
 	assert.deepEqual(fetched.read, {
 		blockHash: BLOCK_HASH,
 		blockNumber: BLOCK_NUMBER,

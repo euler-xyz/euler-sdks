@@ -60,9 +60,11 @@ Injecting it lets applications use their own RPC transport without changing the
 SDK's global provider registry.
 
 The EVault onchain adapter calls `VaultLens.getVaultInfoFull` with EIP-1898
-`{ blockHash, requireCanonical: true }`. It retains encoded EVK evidence under
-`vault.rawConfig`, including caps, configuration flags, hook configuration, and
-root oracle information.
+`{ blockHash, requireCanonical: true }`. Because VaultLens expands AmountCap
+values, the adapter also calls the vault's `caps()` function at the same block
+hash. It retains that encoded EVK evidence under `vault.rawConfig`, alongside
+configuration flags, hook configuration, and root oracle information. Current
+reads do not claim this exact raw-evidence envelope.
 
 ## Intentional EVault Boundaries
 
