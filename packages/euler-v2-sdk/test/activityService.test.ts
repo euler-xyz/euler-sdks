@@ -1717,6 +1717,7 @@ describe("ActivityService liquidations", () => {
 		collateralAssets: "530677",
 		collateralAssetsUsd: 0.5305625329711,
 		bonusUsd: 0.0795838300643,
+		unitOfAccountValuation: null,
 		valuation: { status: "available", source: "historical-price-snapshots" },
 		blockNumber: "25181865",
 		txHash: LIQUIDATION_TX,
@@ -1850,6 +1851,77 @@ describe("ActivityService liquidations", () => {
 		await expect(service.fetchLiquidations({ chainId: 1 })).rejects.toThrow(
 			ActivityResponseValidationError,
 		);
+	});
+
+	it("normalizes nullable historical protocol-oracle valuations", async () => {
+		const respond = (rows: unknown[]) => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(
+					async () =>
+						new Response(JSON.stringify(liquidationsPage(rows)), {
+							status: 200,
+						}),
+				),
+			);
+		};
+		const service = new ActivityService({ endpoint: "/api/internal" });
+		const fallback = {
+			source: "historical-protocol-oracle",
+			unitOfAccount: "0x0000000000000000000000000000000000000348",
+			unitOfAccountDecimals: 18,
+			repayValue: "1000000000000000000",
+			collateralValue: "2140000000000000000",
+			bonusValue: "1140000000000000000",
+			blockNumber: "25181865",
+		};
+
+		respond([
+			liquidationRow({ unitOfAccountValuation: fallback }),
+			liquidationRow({ unitOfAccountValuation: null }),
+		]);
+		const page = await service.fetchLiquidations({ chainId: 1 });
+		expect(page.data[0]?.unitOfAccountValuation).toEqual({
+			...fallback,
+			unitOfAccount: "0x0000000000000000000000000000000000000348",
+		});
+		expect(page.data[1]?.unitOfAccountValuation).toBeNull();
+
+		const malformed = [
+			undefined,
+			{ ...fallback, source: "historical-price-snapshots" },
+			{ ...fallback, unitOfAccount: "not-an-address" },
+			{ ...fallback, unitOfAccountDecimals: 256 },
+			{ ...fallback, unitOfAccountDecimals: undefined },
+			{ ...fallback, repayValue: "-1" },
+			{ ...fallback, collateralValue: "1.5" },
+			{ ...fallback, bonusValue: "+1140000000000000000" },
+			{ ...fallback, bonusValue: "1139999999999999999" },
+			{ ...fallback, blockNumber: "25181866" },
+		];
+		for (const unitOfAccountValuation of malformed) {
+			respond([liquidationRow({ unitOfAccountValuation })]);
+			await expect(service.fetchLiquidations({ chainId: 1 })).rejects.toThrow(
+				ActivityResponseValidationError,
+			);
+		}
+
+		respond([
+			liquidationRow({
+				unitOfAccountValuation: {
+					...fallback,
+					unitOfAccountDecimals: null,
+					repayValue: "2",
+					collateralValue: "1",
+					bonusValue: "-1",
+				},
+			}),
+		]);
+		const negative = await service.fetchLiquidations({ chainId: 1 });
+		expect(negative.data[0]?.unitOfAccountValuation).toMatchObject({
+			unitOfAccountDecimals: null,
+			bonusValue: "-1",
+		});
 	});
 
 	it("accepts live rows with null historical token metadata", async () => {

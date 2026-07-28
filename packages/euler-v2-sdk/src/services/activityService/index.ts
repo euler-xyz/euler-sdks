@@ -49,6 +49,7 @@ export type {
 	LiquidationRecord,
 	LiquidationsMeta,
 	LiquidationsPage,
+	LiquidationUnitOfAccountValuation,
 } from "./activityServiceTypes.js";
 export { ACTIVITY_EVENT_TYPES } from "./activityServiceTypes.js";
 export {

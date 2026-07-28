@@ -278,6 +278,20 @@ export interface FetchLiquidationsArgs {
 	offset?: number;
 }
 
+export interface LiquidationUnitOfAccountValuation {
+	source: "historical-protocol-oracle";
+	unitOfAccount: Address;
+	unitOfAccountDecimals: number | null;
+	/** Debt repaid, denominated in the protocol oracle's unit of account. */
+	repayValue: string;
+	/** Collateral seized, denominated in the protocol oracle's unit of account. */
+	collateralValue: string;
+	/** Signed collateral value minus repay value. */
+	bonusValue: string;
+	/** Liquidation block used for the historical protocol-oracle quote. */
+	blockNumber: string;
+}
+
 export interface LiquidationRecord {
 	chainId: number;
 	vault: Address;
@@ -304,6 +318,11 @@ export interface LiquidationRecord {
 	collateralAssetsUsd?: number;
 	/** Liquidator bonus (collateral seized minus debt repaid) in event-time USD. */
 	bonusUsd?: number;
+	/**
+	 * Historical protocol-oracle fallback when a USD snapshot cannot value both
+	 * legs. Null when the producer cannot reconstruct a trustworthy quote.
+	 */
+	unitOfAccountValuation: LiquidationUnitOfAccountValuation | null;
 	valuation: ActivityValuation;
 	blockNumber: string;
 	txHash: Hex;

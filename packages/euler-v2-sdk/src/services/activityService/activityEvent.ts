@@ -20,11 +20,12 @@ import type {
 	ActivityValueChange,
 	ActivityVaultType,
 	FetchAccountActivityEventsArgs,
-	FetchVaultActivityEventsArgs,
 	FetchLiquidationsArgs,
+	FetchVaultActivityEventsArgs,
 	LiquidationRecord,
 	LiquidationsMeta,
 	LiquidationsPage,
+	LiquidationUnitOfAccountValuation,
 } from "./activityServiceTypes.js";
 import { ACTIVITY_EVENT_TYPES } from "./activityServiceTypes.js";
 
@@ -67,6 +68,7 @@ const ASSET_KINDS = [
 
 const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const DECIMAL_INTEGER_PATTERN = /^\d+$/;
+const SIGNED_DECIMAL_INTEGER_PATTERN = /^-?\d+$/;
 const RFC3339_TIMESTAMP_PATTERN =
 	/^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[Zz]|[+-](\d{2}):(\d{2}))$/;
 
@@ -178,6 +180,14 @@ const readDecimalString = (value: unknown, path: string): string => {
 	const decimal = readString(value, path);
 	if (!DECIMAL_INTEGER_PATTERN.test(decimal)) {
 		fail(path, "expected a non-negative decimal integer string");
+	}
+	return decimal;
+};
+
+const readSignedDecimalString = (value: unknown, path: string): string => {
+	const decimal = readString(value, path);
+	if (!SIGNED_DECIMAL_INTEGER_PATTERN.test(decimal)) {
+		fail(path, "expected a signed decimal integer string");
 	}
 	return decimal;
 };
@@ -996,11 +1006,69 @@ const readNullableMetadataDecimals = (
 	return decimals;
 };
 
+const LIQUIDATION_UNIT_OF_ACCOUNT_SOURCE = "historical-protocol-oracle";
+
+const readLiquidationUnitOfAccountValuation = (
+	value: unknown,
+	path: string,
+	liquidationBlockNumber: string,
+): LiquidationUnitOfAccountValuation | null => {
+	if (value === null) return null;
+	const record = readRecord(value, path);
+	if (record.source !== LIQUIDATION_UNIT_OF_ACCOUNT_SOURCE) {
+		fail(`${path}.source`, `expected ${LIQUIDATION_UNIT_OF_ACCOUNT_SOURCE}`);
+	}
+	let unitOfAccountDecimals: number | null;
+	if (record.unitOfAccountDecimals === null) {
+		unitOfAccountDecimals = null;
+	} else {
+		const parsedDecimals = readNullableMetadataDecimals(
+			record.unitOfAccountDecimals,
+			`${path}.unitOfAccountDecimals`,
+		);
+		unitOfAccountDecimals =
+			parsedDecimals ??
+			fail(`${path}.unitOfAccountDecimals`, "expected an integer or null");
+	}
+	const repayValue = readDecimalString(record.repayValue, `${path}.repayValue`);
+	const collateralValue = readDecimalString(
+		record.collateralValue,
+		`${path}.collateralValue`,
+	);
+	const bonusValue = readSignedDecimalString(
+		record.bonusValue,
+		`${path}.bonusValue`,
+	);
+	const blockNumber = readDecimalString(
+		record.blockNumber,
+		`${path}.blockNumber`,
+	);
+	if (blockNumber !== liquidationBlockNumber) {
+		fail(`${path}.blockNumber`, "expected the liquidation block number");
+	}
+	if (BigInt(bonusValue) !== BigInt(collateralValue) - BigInt(repayValue)) {
+		fail(`${path}.bonusValue`, "expected collateralValue minus repayValue");
+	}
+	return {
+		source: LIQUIDATION_UNIT_OF_ACCOUNT_SOURCE,
+		unitOfAccount: readAddress(record.unitOfAccount, `${path}.unitOfAccount`),
+		unitOfAccountDecimals,
+		repayValue,
+		collateralValue,
+		bonusValue,
+		blockNumber,
+	};
+};
+
 const readLiquidationRecord = (
 	value: unknown,
 	path: string,
 ): LiquidationRecord => {
 	const record = readRecord(value, path);
+	const blockNumber = readDecimalString(
+		record.blockNumber,
+		`${path}.blockNumber`,
+	);
 	const debtAsset = readNullableMetadataAddress(
 		record.debtAsset,
 		`${path}.debtAsset`,
@@ -1063,6 +1131,11 @@ const readLiquidationRecord = (
 			"expected no bonus without both valued liquidation legs",
 		);
 	}
+	const unitOfAccountValuation = readLiquidationUnitOfAccountValuation(
+		record.unitOfAccountValuation,
+		`${path}.unitOfAccountValuation`,
+		blockNumber,
+	);
 
 	return {
 		chainId: readPositiveInteger(record.chainId, `${path}.chainId`),
@@ -1089,12 +1162,13 @@ const readLiquidationRecord = (
 		...(collateralAssets != null ? { collateralAssets } : {}),
 		...(collateralAssetsUsd !== undefined ? { collateralAssetsUsd } : {}),
 		...(bonusUsd !== undefined ? { bonusUsd } : {}),
+		unitOfAccountValuation,
 		valuation: readLiquidationValuation(
 			record.valuation,
 			`${path}.valuation`,
 			presentUsdLegs,
 		),
-		blockNumber: readDecimalString(record.blockNumber, `${path}.blockNumber`),
+		blockNumber,
 		txHash: readTxHash(record.txHash, `${path}.txHash`),
 		timestamp: readTimestamp(record.timestamp, `${path}.timestamp`),
 	};
