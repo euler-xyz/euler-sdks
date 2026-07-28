@@ -861,6 +861,7 @@ async function decodeAccountSnapshot<
 				functionName: "getVaultAccountInfo",
 				data: resultItem.result,
 			}) as unknown as VaultAccountInfo;
+			if (decodedVaultInfo.queryFailure) continue;
 			const key = getAddress(meta.subAccount);
 			const list = vaultInfosBySub.get(key) ?? [];
 			list.push(decodedVaultInfo);

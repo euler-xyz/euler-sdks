@@ -18,7 +18,18 @@ export class ABIService implements IABIService {
 
 	queryABI = async (url: string): Promise<Abi> => {
 		const response = await fetch(url);
-		return response.json() as Promise<Abi>;
+		if (!response.ok) {
+			throw new Error(
+				`Failed to fetch ABI (${response.status} ${response.statusText})`,
+			);
+		}
+
+		const abi: unknown = await response.json();
+		if (!Array.isArray(abi)) {
+			throw new Error("Invalid ABI response");
+		}
+
+		return abi as Abi;
 	};
 
 	setQueryABI(fn: typeof this.queryABI): void {

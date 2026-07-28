@@ -610,15 +610,17 @@ export class RewardsService implements IRewardsService {
 		);
 
 		return vaultAccountInfos.flatMap((vaultAccountInfo) =>
-			(vaultAccountInfo.enabledRewardsInfo ?? [])
-				.filter((rewardInfo) => rewardInfo.earnedReward > 0n)
-				.map((rewardInfo) => ({
-					account: getAddress(vaultAccountInfo.account) as Address,
-					vault: getAddress(vaultAccountInfo.vault) as Address,
-					reward: getAddress(rewardInfo.reward) as Address,
-					earnedReward: rewardInfo.earnedReward,
-					earnedRewardRecentIgnored: rewardInfo.earnedRewardRecentIgnored,
-				})),
+			vaultAccountInfo.queryFailure
+				? []
+				: (vaultAccountInfo.enabledRewardsInfo ?? [])
+						.filter((rewardInfo) => rewardInfo.earnedReward > 0n)
+						.map((rewardInfo) => ({
+							account: getAddress(vaultAccountInfo.account) as Address,
+							vault: getAddress(vaultAccountInfo.vault) as Address,
+							reward: getAddress(rewardInfo.reward) as Address,
+							earnedReward: rewardInfo.earnedReward,
+							earnedRewardRecentIgnored: rewardInfo.earnedRewardRecentIgnored,
+						})),
 		);
 	}
 

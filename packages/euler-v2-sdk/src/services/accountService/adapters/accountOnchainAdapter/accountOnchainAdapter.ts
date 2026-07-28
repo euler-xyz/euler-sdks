@@ -500,7 +500,25 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 			if (!vault) return;
 
 			if (result.status === "fulfilled") {
-				vaultAccountInfos.push(result.value as VaultAccountInfo);
+				const vaultAccountInfo = result.value as VaultAccountInfo;
+				if (vaultAccountInfo.queryFailure) {
+					errors.push({
+						code: "SOURCE_UNAVAILABLE",
+						severity: "warning",
+						message: `Failed to fetch vault account info for ${getAddress(vault)}.`,
+						locations: [
+							dataIssueLocation(
+								subAccountDiagnosticOwner(chainId, subAccount),
+								"$.positions",
+							),
+						],
+						source: "accountLens",
+						originalValue: vaultAccountInfo.queryFailureReason,
+					});
+					return;
+				}
+
+				vaultAccountInfos.push(vaultAccountInfo);
 				return;
 			}
 
