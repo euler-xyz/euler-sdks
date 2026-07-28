@@ -1,4 +1,5 @@
 import {
+	type Abi,
 	type Address,
 	encodeFunctionData,
 	getAddress,
@@ -14,6 +15,7 @@ import type {
 } from "../executionService/index.js";
 import type { ProviderService } from "../providerService/index.js";
 import type { DeploymentService } from "../deploymentService/index.js";
+import type { IABIService } from "../abiService/index.js";
 import { accountLensAbi } from "../accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
 import type { VaultAccountInfo } from "../accountService/adapters/accountOnchainAdapter/accountLensTypes.js";
 import type {
@@ -445,6 +447,7 @@ const uniqueAddresses = (
 export class RewardsService implements IRewardsService {
 	private providerService?: ProviderService;
 	private deploymentService?: DeploymentService;
+	private abiService?: IABIService;
 	private isActiveForViewer: IsActiveForViewerFn;
 
 	constructor(
@@ -455,8 +458,12 @@ export class RewardsService implements IRewardsService {
 			fuulFactoryAddress: Address;
 			rewardStreamsAddress?: Address;
 		},
-		options?: { isActiveForViewer?: IsActiveForViewerFn },
+		options?: {
+			isActiveForViewer?: IsActiveForViewerFn;
+			abiService?: IABIService;
+		},
 	) {
+		this.abiService = options?.abiService;
 		this.isActiveForViewer =
 			options?.isActiveForViewer ?? defaultIsActiveForViewer;
 	}
@@ -471,6 +478,10 @@ export class RewardsService implements IRewardsService {
 
 	setDeploymentService(deploymentService: DeploymentService): void {
 		this.deploymentService = deploymentService;
+	}
+
+	setABIService(abiService: IABIService): void {
+		this.abiService = abiService;
 	}
 
 	setIsActiveForViewer(fn: IsActiveForViewerFn): void {
@@ -550,10 +561,11 @@ export class RewardsService implements IRewardsService {
 		accountLensAddress: Address,
 		account: Address,
 		vault: Address,
+		abi: Abi = accountLensAbi,
 	): Promise<VaultAccountInfo> => {
 		return provider.readContract({
 			address: accountLensAddress,
-			abi: accountLensAbi,
+			abi,
 			functionName: "getVaultAccountInfo",
 			args: [account, vault],
 		}) as Promise<VaultAccountInfo>;
@@ -580,6 +592,10 @@ export class RewardsService implements IRewardsService {
 				}),
 			).values(),
 		);
+		if (uniquePositions.length === 0) return [];
+		const resolvedAccountLensAbi =
+			(await this.abiService?.fetchABI(args.chainId, "AccountLens")) ??
+			accountLensAbi;
 
 		const vaultAccountInfos = await Promise.all(
 			uniquePositions.map((position) =>
@@ -588,6 +604,7 @@ export class RewardsService implements IRewardsService {
 					accountLensAddress,
 					position.account,
 					position.vault,
+					resolvedAccountLensAbi,
 				),
 			),
 		);

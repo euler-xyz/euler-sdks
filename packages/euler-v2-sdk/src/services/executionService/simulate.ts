@@ -1,4 +1,5 @@
 import {
+	type Abi,
 	type Address,
 	decodeFunctionData,
 	decodeFunctionResult,
@@ -124,6 +125,7 @@ import {
 	getEVCAccountInfoLensBatchItem,
 	getVaultAccountInfoLensBatchItem,
 } from "../accountService/adapters/accountOnchainAdapter/accountOnchainAdapter.js";
+import type { IABIService } from "../abiService/index.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
 import type { IEulerLabelsService } from "../eulerLabelsService/index.js";
 import type { IIntrinsicApyService } from "../intrinsicApyService/index.js";
@@ -309,6 +311,7 @@ export type ExecutionSimulationContext<
 	rewardsService?: IRewardsService;
 	intrinsicApyService?: IIntrinsicApyService;
 	eulerLabelsService?: IEulerLabelsService;
+	abiService?: IABIService;
 	describeBatch: (batch: readonly EVCBatchItem[]) => BatchItemDescription[];
 };
 
@@ -461,6 +464,8 @@ export async function simulateTransactionPlan<
 			canExecute: false,
 		};
 	}
+	const resolvedAccountLensAbi =
+		(await ctx.abiService?.fetchABI(chainId, "AccountLens")) ?? accountLensAbi;
 	const diagnostics = await fetchSimulationDiagnostics(
 		ctx,
 		chainId,
@@ -472,6 +477,7 @@ export async function simulateTransactionPlan<
 		chainId,
 		owner,
 		operations,
+		resolvedAccountLensAbi,
 		extractBalanceRequirements(transactionPlan, owner).map(([token]) => token),
 	);
 
@@ -579,6 +585,7 @@ export async function simulateTransactionPlan<
 				chainId,
 				owner,
 				lensMeta,
+				resolvedAccountLensAbi,
 				(i) => batchResults[slice.lensStart + i],
 				options,
 			),
@@ -754,6 +761,7 @@ async function decodeAccountSnapshot<
 	chainId: number,
 	owner: Address,
 	lensMeta: LensMeta[],
+	resolvedAccountLensAbi: Abi,
 	resultAt: (index: number) => BatchItemResult | undefined,
 	options?: SimulateBatchOptions,
 ): Promise<{
@@ -840,7 +848,7 @@ async function decodeAccountSnapshot<
 
 		if (meta.kind === "evcAccount") {
 			const decodedAccount = decodeFunctionResult({
-				abi: accountLensAbi,
+				abi: resolvedAccountLensAbi,
 				functionName: "getEVCAccountInfo",
 				data: resultItem.result,
 			}) as unknown as EVCAccountInfo;
@@ -849,7 +857,7 @@ async function decodeAccountSnapshot<
 
 		if (meta.kind === "vaultAccount") {
 			const decodedVaultInfo = decodeFunctionResult({
-				abi: accountLensAbi,
+				abi: resolvedAccountLensAbi,
 				functionName: "getVaultAccountInfo",
 				data: resultItem.result,
 			}) as unknown as VaultAccountInfo;
@@ -1075,6 +1083,7 @@ async function buildSimulationBatch(
 	chainId: number,
 	owner: Address,
 	operations: SimulationOperation[],
+	resolvedAccountLensAbi: Abi,
 	requiredWalletBalanceTokens: Address[] = [],
 ): Promise<{
 	lensItems: EVCBatchItem[];
@@ -1216,6 +1225,7 @@ async function buildSimulationBatch(
 				evcAddress,
 				subAccount,
 				owner,
+				resolvedAccountLensAbi,
 			),
 			{
 				kind: "evcAccount",
@@ -1231,6 +1241,7 @@ async function buildSimulationBatch(
 					subAccount,
 					vault,
 					owner,
+					resolvedAccountLensAbi,
 				),
 				{
 					kind: "vaultAccount",

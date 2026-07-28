@@ -651,6 +651,7 @@ export async function buildEulerSDK<
 			deploymentService as DeploymentService,
 			accountVaultsAdapter,
 			resolvedBuildQuery,
+			abiService,
 		);
 		return accountOnchainAdapter;
 	};
@@ -1419,7 +1420,10 @@ export async function buildEulerSDK<
 					fuulManagerAddress: directAdapter.getFuulManagerAddress(),
 					fuulFactoryAddress: directAdapter.getFuulFactoryAddress(),
 				},
-				{ isActiveForViewer: rewardsServiceConfig?.isActiveForViewer },
+				{
+					isActiveForViewer: rewardsServiceConfig?.isActiveForViewer,
+					abiService,
+				},
 			);
 		})();
 
@@ -1571,6 +1575,7 @@ export async function buildEulerSDK<
 		);
 
 	if (executionService instanceof ExecutionService) {
+		executionService.setABIService(abiService);
 		executionService.setProviderService(providerService as ProviderService);
 		executionService.setVaultMetaService(
 			vaultMetaService as IVaultMetaService<TVaultEntity>,
@@ -1611,6 +1616,7 @@ export async function buildEulerSDK<
 	}
 
 	if (rewardsService instanceof RewardsService) {
+		rewardsService.setABIService(abiService);
 		rewardsService.setProviderService(providerService as ProviderService);
 		rewardsService.setDeploymentService(deploymentService as DeploymentService);
 	}

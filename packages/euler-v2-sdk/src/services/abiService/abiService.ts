@@ -6,7 +6,7 @@ export interface IABIService {
 }
 
 export class ABIService implements IABIService {
-	private readonly abis: Record<string, Abi> = {};
+	private readonly abiRequests: Record<string, Promise<Abi>> = {};
 
 	constructor(buildQuery?: BuildQueryFn) {
 		if (buildQuery) applyBuildQuery(this, buildQuery);
@@ -26,10 +26,16 @@ export class ABIService implements IABIService {
 	}
 
 	async fetchABI(_: number, contract: string): Promise<Abi> {
-		if (!this.abis[contract]) {
-			this.abis[contract] = await this.queryABI(this.getABIURL(_, contract));
+		if (!this.abiRequests[contract]) {
+			const request = this.queryABI(this.getABIURL(_, contract)).catch((error) => {
+				if (this.abiRequests[contract] === request) {
+					delete this.abiRequests[contract];
+				}
+				throw error;
+			});
+			this.abiRequests[contract] = request;
 		}
 
-		return this.abis[contract];
+		return this.abiRequests[contract];
 	}
 }

@@ -10,6 +10,7 @@ import {
 } from "viem";
 import { estimateContractGas } from "viem/actions";
 import { Account } from "../src/entities/Account.js";
+import type { IABIService } from "../src/services/abiService/index.js";
 import { accountLensAbi } from "../src/services/accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
 import { ethereumVaultConnectorAbi } from "../src/services/executionService/abis/ethereumVaultConnectorAbi.js";
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
@@ -126,6 +127,7 @@ async function simulateAndCollectVaultAccountReads(
 	vaultTypes: Record<string, VaultType> = {
 		[getAddress(TARGET)]: VaultType.EVault,
 	},
+	abiService?: IABIService,
 ): Promise<Set<string>> {
 	const simulateContract = vi.fn(
 		async ({ args }: { args: readonly [EVCBatchItem[]] }) => {
@@ -174,6 +176,7 @@ async function simulateAndCollectVaultAccountReads(
 			fetchVaultTypes: async () => vaultTypes,
 		} as never,
 	);
+	if (abiService) service.setABIService(abiService);
 
 	await service.simulateTransactionPlan(1, CHECKSUM_ACCOUNT, plan, {
 		stateOverrides: false,
@@ -885,6 +888,31 @@ test("simulateTransactionPlan reads both sides of transferFromMax cleanup", asyn
 	assert.ok(
 		vaultAccountReads.has(`${CHECKSUM_ACCOUNT}:${getAddress(TARGET)}`),
 	);
+});
+
+test("simulateTransactionPlan loads the AccountLens ABI through ABIService", async () => {
+	const fetchABI = vi.fn(async () => accountLensAbi);
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: EVC,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: ethereumVaultConnectorAbi,
+						functionName: "enableCollateral",
+						args: [ACCOUNT, TARGET],
+					}),
+				},
+			],
+		},
+	];
+
+	await simulateAndCollectVaultAccountReads(plan, undefined, { fetchABI });
+
+	assert.deepEqual(fetchABI.mock.calls, [[1, "AccountLens"]]);
 });
 
 test("simulateTransactionPlan reads EVC account-mode candidates", async () => {

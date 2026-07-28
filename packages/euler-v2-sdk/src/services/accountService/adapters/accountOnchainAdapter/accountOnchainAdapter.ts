@@ -1,6 +1,7 @@
 import type { IAccountAdapter } from "../../accountService.js";
 import type { ProviderService } from "../../../providerService/index.js";
 import type { DeploymentService } from "../../../deploymentService/index.js";
+import type { IABIService } from "../../../abiService/index.js";
 import { type Address, type Abi, encodeFunctionData, getAddress } from "viem";
 import type { IAccount, ISubAccount } from "../../../../entities/Account.js";
 import { EVault } from "../../../../entities/EVault.js";
@@ -38,12 +39,13 @@ export const getEVCAccountInfoLensBatchItem = (
 	evc: Address,
 	subAccount: Address,
 	onBehalfOfAccount: Address,
+	abi: Abi = accountLensAbi,
 ): EVCBatchItem => ({
 	targetContract: accountLensAddress,
 	onBehalfOfAccount,
 	value: 0n,
 	data: encodeFunctionData({
-		abi: accountLensAbi,
+		abi,
 		functionName: "getEVCAccountInfo",
 		args: [evc, subAccount],
 	}),
@@ -54,12 +56,13 @@ export const getVaultAccountInfoLensBatchItem = (
 	subAccount: Address,
 	vault: Address,
 	onBehalfOfAccount: Address,
+	abi: Abi = accountLensAbi,
 ): EVCBatchItem => ({
 	targetContract: accountLensAddress,
 	onBehalfOfAccount,
 	value: 0n,
 	data: encodeFunctionData({
-		abi: accountLensAbi,
+		abi,
 		functionName: "getVaultAccountInfo",
 		args: [subAccount, vault],
 	}),
@@ -78,6 +81,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		private deploymentService: DeploymentService,
 		private positionsAdapter: IAccountVaultsAdapter,
 		buildQuery?: BuildQueryFn,
+		private abiService?: IABIService,
 	) {
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
@@ -103,10 +107,11 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		accountLensAddress: Address,
 		evc: Address,
 		subAccount: Address,
+		abi: Abi = accountLensAbi,
 	) => {
 		return provider.readContract({
 			address: accountLensAddress,
-			abi: accountLensAbi,
+			abi,
 			functionName: "getEVCAccountInfo",
 			args: [evc, subAccount],
 		});
@@ -121,10 +126,11 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		accountLensAddress: Address,
 		subAccount: Address,
 		vault: Address,
+		abi: Abi = accountLensAbi,
 	) => {
 		return provider.readContract({
 			address: accountLensAddress,
-			abi: accountLensAbi,
+			abi,
 			functionName: "getVaultAccountInfo",
 			args: [subAccount, vault],
 		});
@@ -243,6 +249,9 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		const deployment = this.deploymentService.getDeployment(chainId);
 		const accountLensAddress = deployment.addresses.lensAddrs.accountLens;
 		const evc = deployment.addresses.coreAddrs.evc;
+		const resolvedAccountLensAbi =
+			(await this.abiService?.fetchABI(chainId, "AccountLens")) ??
+			accountLensAbi;
 
 		// Get EVC account info
 		const evcAccountInfoResult = await this.queryEVCAccountInfo(
@@ -250,6 +259,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 			accountLensAddress,
 			evc,
 			subAccount,
+			resolvedAccountLensAbi,
 		);
 
 		if (!evcAccountInfoResult) return { result: undefined, errors };
@@ -274,6 +284,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 				subAccount,
 				vaults,
 				errors,
+				resolvedAccountLensAbi,
 			);
 		} else {
 			vaultAccountInfos = await this.queryVaultAccountInfosGracefully(
@@ -283,6 +294,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 				subAccount,
 				vaults,
 				errors,
+				resolvedAccountLensAbi,
 			);
 		}
 
@@ -357,6 +369,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		subAccount: Address,
 		vaults: Address[],
 		errors: DataIssue[],
+		resolvedAccountLensAbi: Abi,
 	): Promise<VaultAccountInfo[]> {
 		const deployment = this.deploymentService.getDeployment(chainId);
 		const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
@@ -397,6 +410,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 				subAccount,
 				vaults,
 				errors,
+				resolvedAccountLensAbi,
 			);
 		}
 
@@ -411,7 +425,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 							prependItems: prepend.items,
 							totalValue: prepend.totalValue,
 							lensAddress: accountLensAddress,
-							lensAbi: accountLensAbi as unknown as Abi,
+							lensAbi: resolvedAccountLensAbi,
 							lensFunctionName: "getVaultAccountInfo",
 							lensArgs: [subAccount, vault],
 						},
@@ -428,6 +442,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 					accountLensAddress,
 					subAccount,
 					vault,
+					resolvedAccountLensAbi,
 				) as Promise<VaultAccountInfo>;
 			}),
 		);
@@ -448,6 +463,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		subAccount: Address,
 		vaults: Address[],
 		errors: DataIssue[],
+		resolvedAccountLensAbi: Abi,
 	): Promise<VaultAccountInfo[]> {
 		const results = await Promise.allSettled(
 			vaults.map((vault) =>
@@ -456,6 +472,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 					accountLensAddress,
 					subAccount,
 					vault,
+					resolvedAccountLensAbi,
 				),
 			),
 		);
