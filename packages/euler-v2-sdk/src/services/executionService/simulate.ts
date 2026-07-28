@@ -115,7 +115,7 @@ import type { SlotHints } from "../../utils/stateOverrides/slotHints.js";
 import { isSubAccount } from "../../utils/subAccounts.js";
 import { VaultType } from "../../utils/types.js";
 import type { AccountFetchOptions } from "../accountService/accountService.js";
-import { accountLensAbi } from "../accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
+import { resolveAccountLensAbi } from "../accountService/adapters/accountOnchainAdapter/resolveAccountLensAbi.js";
 import type {
 	EVCAccountInfo,
 	VaultAccountInfo,
@@ -464,8 +464,13 @@ export async function simulateTransactionPlan<
 			canExecute: false,
 		};
 	}
-	const resolvedAccountLensAbi =
-		(await ctx.abiService?.fetchABI(chainId, "AccountLens")) ?? accountLensAbi;
+	// No diagnostics channel on SimulateBatchResult for read-metadata problems, so
+	// a fallback is logged rather than failing the whole simulation.
+	const { abi: resolvedAccountLensAbi, fallbackReason } =
+		await resolveAccountLensAbi(ctx.abiService, chainId);
+	if (fallbackReason) {
+		console.warn(`[simulateTransactionPlan] ${fallbackReason}`);
+	}
 	const diagnostics = await fetchSimulationDiagnostics(
 		ctx,
 		chainId,
@@ -861,6 +866,10 @@ async function decodeAccountSnapshot<
 				functionName: "getVaultAccountInfo",
 				data: resultItem.result,
 			}) as unknown as VaultAccountInfo;
+			// The lens reports a whole-vault query failure in-band, so the EVC batch
+			// item itself succeeded and this will not appear in `failedBatchItems`.
+			// Drop the position, matching how a failed batch item is skipped above:
+			// a partial snapshot degrades to "position absent" rather than throwing.
 			if (decodedVaultInfo.queryFailure) continue;
 			const key = getAddress(meta.subAccount);
 			const list = vaultInfosBySub.get(key) ?? [];

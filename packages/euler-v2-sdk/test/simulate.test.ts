@@ -915,6 +915,46 @@ test("simulateTransactionPlan loads the AccountLens ABI through ABIService", asy
 	assert.deepEqual(fetchABI.mock.calls, [[1, "AccountLens"]]);
 });
 
+test("simulateTransactionPlan still simulates when the AccountLens ABI fetch fails", async () => {
+	const fetchABI = vi.fn(async () => {
+		throw new Error("Failed to fetch ABI (503 Service Unavailable)");
+	});
+	const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: EVC,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: ethereumVaultConnectorAbi,
+						functionName: "enableCollateral",
+						args: [ACCOUNT, TARGET],
+					}),
+				},
+			],
+		},
+	];
+
+	try {
+		// The lens reads are still encoded, using the bundled ABI.
+		const vaultAccountReads = await simulateAndCollectVaultAccountReads(
+			plan,
+			undefined,
+			{ fetchABI } as never,
+		);
+
+		assert.ok(
+			vaultAccountReads.has(`${CHECKSUM_ACCOUNT}:${getAddress(TARGET)}`),
+		);
+		assert.equal(warn.mock.calls.length, 1);
+	} finally {
+		warn.mockRestore();
+	}
+});
+
 test("simulateTransactionPlan reads EVC account-mode candidates", async () => {
 	const subAccount = getSubAccountAddress(CHECKSUM_ACCOUNT, 1);
 	const plan: TransactionPlan = [

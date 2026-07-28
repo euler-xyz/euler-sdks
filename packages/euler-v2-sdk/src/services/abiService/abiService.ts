@@ -36,17 +36,24 @@ export class ABIService implements IABIService {
 		this.queryABI = fn;
 	}
 
-	async fetchABI(_: number, contract: string): Promise<Abi> {
-		if (!this.abiRequests[contract]) {
-			const request = this.queryABI(this.getABIURL(_, contract)).catch((error) => {
-				if (this.abiRequests[contract] === request) {
-					delete this.abiRequests[contract];
-				}
-				throw error;
-			});
-			this.abiRequests[contract] = request;
-		}
+	async fetchABI(chainId: number, contract: string): Promise<Abi> {
+		// Keyed by resolved URL rather than contract name, so the cache follows
+		// whatever `getABIURL` keys on (today the URL is chain-agnostic, so all
+		// chains share one request).
+		const url = this.getABIURL(chainId, contract);
+		const pending = this.abiRequests[url];
+		if (pending) return pending;
 
-		return this.abiRequests[contract];
+		// Evict failed requests so a later call retries instead of replaying the
+		// rejection for the lifetime of the service.
+		const request = this.queryABI(url).catch((error) => {
+			if (this.abiRequests[url] === request) {
+				delete this.abiRequests[url];
+			}
+			throw error;
+		});
+		this.abiRequests[url] = request;
+
+		return request;
 	}
 }

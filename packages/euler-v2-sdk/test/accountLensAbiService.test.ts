@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Abi, Address } from "viem";
 import { AccountOnchainAdapter } from "../src/services/accountService/adapters/accountOnchainAdapter/accountOnchainAdapter.js";
-import { ABIService, type IABIService } from "../src/services/abiService/index.js";
+import {
+	ABIService,
+	type IABIService,
+} from "../src/services/abiService/index.js";
 import { RewardsService } from "../src/services/rewardsService/rewardsService.js";
+import {
+	type BuildQueryFn,
+	createQueryCacheBuildQuery,
+} from "../src/utils/buildQuery.js";
 
 const ACCOUNT = "0x0000000000000000000000000000000000000001" as Address;
 const EVC = "0x0000000000000000000000000000000000000002" as Address;
@@ -67,19 +74,46 @@ describe("AccountLens ABI service consumers", () => {
 
 		const first = abiService.fetchABI(1, "AccountLens");
 		const second = abiService.fetchABI(1, "AccountLens");
+		// The ABI document is chain-agnostic, so another chain shares the request.
+		const third = abiService.fetchABI(42161, "AccountLens");
 		expect(queryABI).toHaveBeenCalledOnce();
 		resolveRequest?.(runtimeAccountLensAbi);
-		await expect(Promise.all([first, second])).resolves.toEqual([
+		await expect(Promise.all([first, second, third])).resolves.toEqual([
+			runtimeAccountLensAbi,
 			runtimeAccountLensAbi,
 			runtimeAccountLensAbi,
 		]);
 
-		await expect(abiService.fetchABI(1, "VaultLens")).rejects.toThrow(
+		// A failed request is evicted, so the next call for that document retries
+		// instead of replaying the rejection (stubbed queryABI returns the same ABI
+		// for any document).
+		await expect(abiService.fetchABI(1, "OtherLens")).rejects.toThrow(
 			"temporary failure",
 		);
-		await expect(abiService.fetchABI(1, "VaultLens")).resolves.toBe(
+		await expect(abiService.fetchABI(1, "OtherLens")).resolves.toBe(
 			runtimeAccountLensAbi,
 		);
+	});
+
+	it("retries a failed request once the buildQuery failure cache expires", async () => {
+		const queryABI = vi
+			.fn<() => Promise<Abi>>()
+			.mockRejectedValueOnce(new Error("temporary failure"))
+			.mockResolvedValue(runtimeAccountLensAbi);
+		// Failure caching in the buildQuery layer sits in front of fetchABI's own
+		// eviction; with failureTtlMs disabled the retry reaches queryABI.
+		const abiService = new ABIService(
+			createQueryCacheBuildQuery({ failureTtlMs: 0 }),
+		);
+		abiService.setQueryABI(queryABI);
+
+		await expect(abiService.fetchABI(1, "AccountLens")).rejects.toThrow(
+			"temporary failure",
+		);
+		await expect(abiService.fetchABI(1, "AccountLens")).resolves.toBe(
+			runtimeAccountLensAbi,
+		);
+		expect(queryABI).toHaveBeenCalledTimes(2);
 	});
 
 	it("rejects unsuccessful and malformed ABI responses", async () => {
@@ -199,7 +233,9 @@ describe("AccountLens ABI service consumers", () => {
 			},
 			{ abiService },
 		);
-		rewards.setProviderService({ getProvider: () => ({ readContract }) } as never);
+		rewards.setProviderService({
+			getProvider: () => ({ readContract }),
+		} as never);
 		rewards.setDeploymentService(deploymentService as never);
 
 		await rewards.fetchRewardStreams({
@@ -236,7 +272,9 @@ describe("AccountLens ABI service consumers", () => {
 			},
 			{ abiService },
 		);
-		rewards.setProviderService({ getProvider: () => ({ readContract }) } as never);
+		rewards.setProviderService({
+			getProvider: () => ({ readContract }),
+		} as never);
 		rewards.setDeploymentService(deploymentService as never);
 
 		await expect(
@@ -246,5 +284,197 @@ describe("AccountLens ABI service consumers", () => {
 				positions: [{ account: ACCOUNT, vault: VAULT }],
 			}),
 		).resolves.toEqual([]);
+	});
+});
+
+describe("AccountLens ABI resolution fallback", () => {
+	const evcAccountInfo = {
+		timestamp: 1n,
+		evc: EVC,
+		account: ACCOUNT,
+		addressPrefix: "0x00000000000000000000000000000000000000",
+		owner: ACCOUNT,
+		isLockdownMode: false,
+		isPermitDisabledMode: false,
+		lastAccountStatusCheckTimestamp: 0n,
+		enabledControllers: [],
+		enabledCollaterals: [],
+	};
+
+	const failingAbiService = (
+		reason = "Failed to fetch ABI (503 Service Unavailable)",
+	) =>
+		({
+			fetchABI: vi.fn(async () => {
+				throw new Error(reason);
+			}),
+		}) as unknown as IABIService;
+
+	const incompleteAbiService = () =>
+		({
+			fetchABI: vi.fn(async () => [
+				{
+					type: "function",
+					name: "getEVCAccountInfo",
+					stateMutability: "view",
+					inputs: [],
+					outputs: [{ name: "marker", type: "bytes32" }],
+				},
+			]),
+		}) as unknown as IABIService;
+
+	const makeAdapter = (abiService: IABIService, readContract: unknown) =>
+		new AccountOnchainAdapter(
+			{ getProvider: () => ({ readContract }) } as never,
+			deploymentService as never,
+			{ fetchAccountVaults: vi.fn() } as never,
+			undefined,
+			abiService,
+		);
+
+	it("falls back to the bundled ABI when the ABI fetch fails", async () => {
+		const readContract = vi.fn(async ({ abi }: { abi: Abi }) => {
+			// The bundled ABI, not the stubbed runtime one.
+			expect(abi).not.toBe(runtimeAccountLensAbi);
+			expect(
+				abi.some(
+					(item) =>
+						item.type === "function" && item.name === "getEVCAccountInfo",
+				),
+			).toBe(true);
+			return evcAccountInfo;
+		});
+		const adapter = makeAdapter(failingAbiService(), readContract);
+
+		const { result, errors } = await adapter.fetchSubAccount(1, ACCOUNT);
+
+		// The read still happens: an unreachable ABI document must not take down
+		// account reads while a usable bundled ABI is available.
+		expect(readContract).toHaveBeenCalledOnce();
+		expect(result?.account).toBe(ACCOUNT);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toMatchObject({
+			code: "FALLBACK_USED",
+			severity: "warning",
+			source: "accountLens",
+		});
+		expect(errors[0]?.message).toContain(
+			"Failed to fetch ABI (503 Service Unavailable)",
+		);
+	});
+
+	it("falls back when the runtime ABI is missing functions the SDK calls", async () => {
+		const readContract = vi.fn(async () => evcAccountInfo);
+		const adapter = makeAdapter(incompleteAbiService(), readContract);
+
+		const { errors } = await adapter.fetchSubAccount(1, ACCOUNT);
+
+		expect(readContract).toHaveBeenCalledOnce();
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toMatchObject({ code: "FALLBACK_USED" });
+		expect(errors[0]?.message).toContain("getVaultAccountInfo");
+	});
+
+	it("keeps reward streams working when the ABI fetch fails", async () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const readContract = vi.fn(async ({ abi }: { abi: Abi }) => {
+			expect(abi).not.toBe(runtimeAccountLensAbi);
+			return {
+				account: ACCOUNT,
+				vault: VAULT,
+				enabledRewardsInfo: [
+					{ reward: EVC, earnedReward: 5n, earnedRewardRecentIgnored: 0n },
+				],
+			};
+		});
+		const rewards = new RewardsService(
+			{ fetchVaultRewards: vi.fn(), fetchChainRewards: vi.fn() } as never,
+			{
+				merklDistributorAddress: ACCOUNT,
+				fuulManagerAddress: ACCOUNT,
+				fuulFactoryAddress: ACCOUNT,
+			},
+			{ abiService: failingAbiService() },
+		);
+		rewards.setProviderService({
+			getProvider: () => ({ readContract }),
+		} as never);
+		rewards.setDeploymentService(deploymentService as never);
+
+		try {
+			await expect(
+				rewards.fetchRewardStreams({
+					chainId: 1,
+					account: ACCOUNT,
+					positions: [{ account: ACCOUNT, vault: VAULT }],
+				}),
+			).resolves.toEqual([
+				{
+					account: ACCOUNT,
+					vault: VAULT,
+					reward: EVC,
+					earnedReward: 5n,
+					earnedRewardRecentIgnored: 0n,
+				},
+			]);
+			expect(warn).toHaveBeenCalledOnce();
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it("keeps the resolved ABI out of the keys buildQuery derives", async () => {
+		const keys: (string | null)[] = [];
+		const buildQuery = ((_name, fn, _target, context) => {
+			return ((...args: unknown[]) => {
+				if (context) keys.push(context.getCacheKey(args));
+				return fn(...args);
+			}) as typeof fn;
+		}) as BuildQueryFn;
+		const readContract = vi.fn(async () => evcAccountInfo);
+		const adapter = new AccountOnchainAdapter(
+			{ getProvider: () => ({ readContract }) } as never,
+			deploymentService as never,
+			{ fetchAccountVaults: vi.fn() } as never,
+			buildQuery,
+			makeAbiService().service,
+		);
+
+		await adapter.fetchSubAccount(1, ACCOUNT);
+
+		// Otherwise the 33KB runtime ABI is serialized into every AccountLens key.
+		expect(keys).toHaveLength(1);
+		expect(keys[0]).not.toBeNull();
+		expect(keys[0]?.length).toBeLessThan(300);
+	});
+
+	it("derives the same query key regardless of the ABI argument", async () => {
+		const adapter = makeAdapter(failingAbiService(), vi.fn());
+		const provider = { chain: { id: 1 }, transport: {} } as never;
+
+		const withoutAbi = adapter.getQueryKeyVaultAccountInfo(
+			provider,
+			ACCOUNT_LENS,
+			ACCOUNT,
+			VAULT,
+		);
+
+		expect(withoutAbi).not.toBeNull();
+		// A fetched ABI is memoized for the lifetime of the ABIService, so it is
+		// constant for every read keyed here and never varies the key.
+		for (const abi of [
+			runtimeAccountLensAbi as unknown as Abi,
+			[...runtimeAccountLensAbi] as unknown as Abi,
+		]) {
+			expect(
+				adapter.getQueryKeyVaultAccountInfo(
+					provider,
+					ACCOUNT_LENS,
+					ACCOUNT,
+					VAULT,
+					abi,
+				),
+			).toEqual(withoutAbi);
+		}
 	});
 });

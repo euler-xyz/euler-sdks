@@ -17,6 +17,7 @@ import type { ProviderService } from "../providerService/index.js";
 import type { DeploymentService } from "../deploymentService/index.js";
 import type { IABIService } from "../abiService/index.js";
 import { accountLensAbi } from "../accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
+import { resolveAccountLensAbi } from "../accountService/adapters/accountOnchainAdapter/resolveAccountLensAbi.js";
 import type { VaultAccountInfo } from "../accountService/adapters/accountOnchainAdapter/accountLensTypes.js";
 import type {
 	BuildRewardClaimAllPlanArgs,
@@ -593,9 +594,12 @@ export class RewardsService implements IRewardsService {
 			).values(),
 		);
 		if (uniquePositions.length === 0) return [];
-		const resolvedAccountLensAbi =
-			(await this.abiService?.fetchABI(args.chainId, "AccountLens")) ??
-			accountLensAbi;
+		// This result shape has no diagnostics channel, so a fallback is logged.
+		const { abi: resolvedAccountLensAbi, fallbackReason } =
+			await resolveAccountLensAbi(this.abiService, args.chainId);
+		if (fallbackReason) {
+			console.warn(`[rewardsService] ${fallbackReason}`);
+		}
 
 		const vaultAccountInfos = await Promise.all(
 			uniquePositions.map((position) =>
