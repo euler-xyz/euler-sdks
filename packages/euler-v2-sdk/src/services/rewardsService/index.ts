@@ -18,6 +18,7 @@ export type {
 	FetchRewardStreamsArgs,
 	BuildRewardStreamClaimPlanArgs,
 	RewardStreamPosition,
+	AccountLensOverride,
 	UserReward,
 	UserRewardToken,
 	TurtleMerkleProof,

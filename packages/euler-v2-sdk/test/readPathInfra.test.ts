@@ -372,15 +372,36 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
 
   const abiService = new ABIService(buildQuery);
   let abiFetches = 0;
+  let releaseABI: (() => void) | undefined;
+  const abiReady = new Promise<void>((resolve) => {
+    releaseABI = resolve;
+  });
   abiService.setQueryABI(async (url) => {
     abiFetches += 1;
     assert.match(url, /MockContract\.json$/);
+    await abiReady;
     return [{ type: "function", name: "mock", inputs: [], outputs: [] }] as any;
   });
-  const abiA = await abiService.fetchABI(1, "MockContract");
-  const abiB = await abiService.fetchABI(1, "MockContract");
+  const abiAPromise = abiService.fetchABI(1, "MockContract");
+  const abiBPromise = abiService.fetchABI(1, "MockContract");
+  releaseABI?.();
+  const [abiA, abiB] = await Promise.all([abiAPromise, abiBPromise]);
   assert.equal(abiFetches, 1);
   assert.deepEqual(abiA, abiB);
+
+  const retryingABIService = new ABIService();
+  let retryFetches = 0;
+  retryingABIService.setQueryABI(async () => {
+    retryFetches += 1;
+    if (retryFetches === 1) throw new Error("temporary ABI failure");
+    return [{ type: "function", name: "retry", inputs: [], outputs: [] }] as any;
+  });
+  await assert.rejects(
+    retryingABIService.fetchABI(1, "RetryContract"),
+    /temporary ABI failure/,
+  );
+  await retryingABIService.fetchABI(1, "RetryContract");
+  assert.equal(retryFetches, 2);
 
   const tokenlistService = new TokenlistService(
     { getTokenListUrl: (chainId) => `https://tokens/${chainId}` },

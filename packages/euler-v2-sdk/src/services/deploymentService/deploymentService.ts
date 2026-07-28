@@ -8,6 +8,9 @@ export interface Deployment {
 	safeBaseUrl?: string;
 	safeAddressPrefix?: string;
 	status: string;
+	abiRefs?: {
+		accountLens?: string;
+	};
 	addresses: {
 		bridgeAddrs?: {
 			eulOFTAdapter?: Address;

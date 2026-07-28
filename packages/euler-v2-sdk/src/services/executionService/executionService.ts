@@ -18,6 +18,7 @@ import type {
 } from "../../entities/Account.js";
 import type { EulerPlugin, PluginPrefetchData } from "../../plugins/types.js";
 import { resolveBorrowCollateralPositions } from "../../utils/accountPositionClassification.js";
+import type { IABIService } from "../abiService/index.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
 import type { IEulerLabelsService } from "../eulerLabelsService/index.js";
 import type { IIntrinsicApyService } from "../intrinsicApyService/index.js";
@@ -764,6 +765,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	private rewardsService?: IRewardsService;
 	private intrinsicApyService?: IIntrinsicApyService;
 	private eulerLabelsService?: IEulerLabelsService;
+	private abiService?: IABIService;
 	private processPlugins?: ProcessPlanPlugins;
 	private prefetchPlugins?: PrefetchPlanPlugins;
 
@@ -812,6 +814,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 	setEulerLabelsService(eulerLabelsService: IEulerLabelsService): void {
 		this.eulerLabelsService = eulerLabelsService;
+	}
+
+	setABIService(abiService: IABIService): void {
+		this.abiService = abiService;
 	}
 
 	setPlugins(plugins: EulerPlugin[]): void {
@@ -1077,6 +1083,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	private getSimulationContext(): ExecutionSimulationContext<TVaultEntity> {
 		return {
 			deploymentService: this.deploymentService,
+			abiService: this.abiService,
 			walletService: this.walletService,
 			providerService: this.providerService,
 			vaultMetaService: this.vaultMetaService,

@@ -1,13 +1,15 @@
 import type { IAccountAdapter } from "../../accountService.js";
+import type { IABIService } from "../../../abiService/index.js";
 import type { ProviderService } from "../../../providerService/index.js";
 import type { DeploymentService } from "../../../deploymentService/index.js";
-import { type Address, type Abi, encodeFunctionData, getAddress } from "viem";
+import { type Address, encodeFunctionData, getAddress } from "viem";
 import type { IAccount, ISubAccount } from "../../../../entities/Account.js";
 import { EVault } from "../../../../entities/EVault.js";
 import type { VaultAccountInfo, EVCAccountInfo } from "./accountLensTypes.js";
 import { convertToSubAccount } from "./accountInfoConverter.js";
 import type { AccountVaults } from "./accountVaultsSubgraphAdapter.js";
 import { accountLensAbi } from "./abis/accountLensAbi.js";
+import { resolveAccountLensAbi } from "./accountLensAbiResolver.js";
 import { vaultLensAbi } from "../../../vaults/eVaultService/adapters/eVaultOnchainAdapter/abis/vaultLensAbi.js";
 import type { VaultInfoFull } from "../../../vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
 import { convertVaultInfoFullToIEVault } from "../../../vaults/eVaultService/adapters/eVaultOnchainAdapter/vaultInfoConverter.js";
@@ -78,6 +80,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		private deploymentService: DeploymentService,
 		private positionsAdapter: IAccountVaultsAdapter,
 		buildQuery?: BuildQueryFn,
+		private abiService?: IABIService,
 	) {
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
@@ -121,10 +124,17 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		accountLensAddress: Address,
 		subAccount: Address,
 		vault: Address,
+		chainId: number,
 	) => {
+		const deployment = this.deploymentService.getDeployment(chainId);
+		const abi = await resolveAccountLensAbi(
+			this.abiService,
+			deployment,
+			accountLensAddress,
+		);
 		return provider.readContract({
 			address: accountLensAddress,
-			abi: accountLensAbi,
+			abi,
 			functionName: "getVaultAccountInfo",
 			args: [subAccount, vault],
 		});
@@ -404,6 +414,11 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		const results = await Promise.allSettled(
 			vaults.map(async (vault) => {
 				try {
+					const lensAbi = await resolveAccountLensAbi(
+						this.abiService,
+						deployment,
+						accountLensAddress,
+					);
 					const result = await executeBatchSimulation<VaultAccountInfo>(
 						{
 							provider,
@@ -411,7 +426,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 							prependItems: prepend.items,
 							totalValue: prepend.totalValue,
 							lensAddress: accountLensAddress,
-							lensAbi: accountLensAbi as unknown as Abi,
+							lensAbi,
 							lensFunctionName: "getVaultAccountInfo",
 							lensArgs: [subAccount, vault],
 						},
@@ -428,6 +443,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 					accountLensAddress,
 					subAccount,
 					vault,
+					chainId,
 				) as Promise<VaultAccountInfo>;
 			}),
 		);
@@ -456,6 +472,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 					accountLensAddress,
 					subAccount,
 					vault,
+					chainId,
 				),
 			),
 		);
@@ -483,7 +500,24 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 			if (!vault) return;
 
 			if (result.status === "fulfilled") {
-				vaultAccountInfos.push(result.value as VaultAccountInfo);
+				const vaultAccountInfo = result.value as VaultAccountInfo;
+				if (vaultAccountInfo.queryFailure) {
+					errors.push({
+						code: "SOURCE_UNAVAILABLE",
+						severity: "warning",
+						message: `Failed to fetch vault account info for ${getAddress(vault)}.`,
+						locations: [
+							dataIssueLocation(
+								subAccountDiagnosticOwner(chainId, subAccount),
+								"$.positions",
+							),
+						],
+						source: "accountLens",
+						originalValue: vaultAccountInfo.queryFailureReason,
+					});
+					return;
+				}
+				vaultAccountInfos.push(vaultAccountInfo);
 				return;
 			}
 

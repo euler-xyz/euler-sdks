@@ -651,6 +651,7 @@ export async function buildEulerSDK<
 			deploymentService as DeploymentService,
 			accountVaultsAdapter,
 			resolvedBuildQuery,
+			abiService,
 		);
 		return accountOnchainAdapter;
 	};
@@ -1580,6 +1581,7 @@ export async function buildEulerSDK<
 		executionService.setRewardsService(rewardsService);
 		executionService.setIntrinsicApyService(intrinsicApyService);
 		executionService.setEulerLabelsService(eulerLabelsService);
+		executionService.setABIService(abiService);
 	}
 
 	// Wire priceService and rewardsService into account service
@@ -1613,6 +1615,7 @@ export async function buildEulerSDK<
 	if (rewardsService instanceof RewardsService) {
 		rewardsService.setProviderService(providerService as ProviderService);
 		rewardsService.setDeploymentService(deploymentService as DeploymentService);
+		rewardsService.setABIService(abiService);
 	}
 	if (feeFlowService instanceof FeeFlowService) {
 		feeFlowService.setProviderService(providerService as ProviderService);

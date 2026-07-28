@@ -5,23 +5,28 @@ import {
 	type Hex,
 	zeroAddress,
 } from "viem";
-import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
 import type { AccountRewardStream } from "../../entities/Account.js";
+import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
+import type { IABIService } from "../abiService/index.js";
+import { resolveAccountLensAbi } from "../accountService/adapters/accountOnchainAdapter/accountLensAbiResolver.js";
+import type { VaultAccountInfo } from "../accountService/adapters/accountOnchainAdapter/accountLensTypes.js";
+import type { DeploymentService } from "../deploymentService/index.js";
 import type {
 	ContractCall,
 	EVCBatchItem,
 	TransactionPlan,
 } from "../executionService/index.js";
 import type { ProviderService } from "../providerService/index.js";
-import type { DeploymentService } from "../deploymentService/index.js";
-import { accountLensAbi } from "../accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
-import type { VaultAccountInfo } from "../accountService/adapters/accountOnchainAdapter/accountLensTypes.js";
+import {
+	defaultIsActiveForViewer,
+	type IsActiveForViewerFn,
+} from "./rewardCampaignEligibility.js";
 import type {
 	BuildRewardClaimAllPlanArgs,
 	BuildRewardClaimPlanArgs,
 	BuildRewardClaimsPlanArgs,
-	FetchRewardStreamsArgs,
 	BuildRewardStreamClaimPlanArgs,
+	FetchRewardStreamsArgs,
 	FuulClaimCheck,
 	FuulTotals,
 	IRewardsAdapter,
@@ -30,10 +35,6 @@ import type {
 	UserReward,
 	VaultRewardInfo,
 } from "./rewardsServiceTypes.js";
-import {
-	defaultIsActiveForViewer,
-	type IsActiveForViewerFn,
-} from "./rewardCampaignEligibility.js";
 
 const MERKL_DISTRIBUTOR_ABI = [
 	{
@@ -445,6 +446,7 @@ const uniqueAddresses = (
 export class RewardsService implements IRewardsService {
 	private providerService?: ProviderService;
 	private deploymentService?: DeploymentService;
+	private abiService?: IABIService;
 	private isActiveForViewer: IsActiveForViewerFn;
 
 	constructor(
@@ -471,6 +473,10 @@ export class RewardsService implements IRewardsService {
 
 	setDeploymentService(deploymentService: DeploymentService): void {
 		this.deploymentService = deploymentService;
+	}
+
+	setABIService(abiService: IABIService): void {
+		this.abiService = abiService;
 	}
 
 	setIsActiveForViewer(fn: IsActiveForViewerFn): void {
@@ -550,10 +556,19 @@ export class RewardsService implements IRewardsService {
 		accountLensAddress: Address,
 		account: Address,
 		vault: Address,
+		chainId: number,
+		accountLensAbiRef?: string,
 	): Promise<VaultAccountInfo> => {
+		const deployment = this.getDeployment(chainId);
+		const abi = await resolveAccountLensAbi(
+			this.abiService,
+			deployment,
+			accountLensAddress,
+			accountLensAbiRef,
+		);
 		return provider.readContract({
 			address: accountLensAddress,
-			abi: accountLensAbi,
+			abi,
 			functionName: "getVaultAccountInfo",
 			args: [account, vault],
 		}) as Promise<VaultAccountInfo>;
@@ -569,8 +584,10 @@ export class RewardsService implements IRewardsService {
 		const provider = this.getProvider(args.chainId);
 		const accountLensAddress = this.resolveAccountLensAddress(
 			args.chainId,
+			args.accountLens?.address,
 			args.accountLensAddress,
 		);
+		const accountLensAbiRef = args.accountLens?.abiRef;
 		const uniquePositions = Array.from(
 			new Map(
 				args.positions.map((position) => {
@@ -588,20 +605,24 @@ export class RewardsService implements IRewardsService {
 					accountLensAddress,
 					position.account,
 					position.vault,
+					args.chainId,
+					accountLensAbiRef,
 				),
 			),
 		);
 
 		return vaultAccountInfos.flatMap((vaultAccountInfo) =>
-			(vaultAccountInfo.enabledRewardsInfo ?? [])
-				.filter((rewardInfo) => rewardInfo.earnedReward > 0n)
-				.map((rewardInfo) => ({
-					account: getAddress(vaultAccountInfo.account) as Address,
-					vault: getAddress(vaultAccountInfo.vault) as Address,
-					reward: getAddress(rewardInfo.reward) as Address,
-					earnedReward: rewardInfo.earnedReward,
-					earnedRewardRecentIgnored: rewardInfo.earnedRewardRecentIgnored,
-				})),
+			vaultAccountInfo.queryFailure
+				? []
+				: (vaultAccountInfo.enabledRewardsInfo ?? [])
+						.filter((rewardInfo) => rewardInfo.earnedReward > 0n)
+						.map((rewardInfo) => ({
+							account: getAddress(vaultAccountInfo.account) as Address,
+							vault: getAddress(vaultAccountInfo.vault) as Address,
+							reward: getAddress(rewardInfo.reward) as Address,
+							earnedReward: rewardInfo.earnedReward,
+							earnedRewardRecentIgnored: rewardInfo.earnedRewardRecentIgnored,
+						})),
 		);
 	}
 
@@ -789,9 +810,12 @@ export class RewardsService implements IRewardsService {
 	private resolveAccountLensAddress(
 		chainId: number,
 		override?: Address,
+		legacyOverride?: Address,
 	): Address {
 		return (
-			override ?? this.getDeployment(chainId).addresses.lensAddrs.accountLens
+			override ??
+			legacyOverride ??
+			this.getDeployment(chainId).addresses.lensAddrs.accountLens
 		);
 	}
 

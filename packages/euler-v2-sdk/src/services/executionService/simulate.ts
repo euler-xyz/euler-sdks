@@ -115,6 +115,7 @@ import { isSubAccount } from "../../utils/subAccounts.js";
 import { VaultType } from "../../utils/types.js";
 import type { AccountFetchOptions } from "../accountService/accountService.js";
 import { accountLensAbi } from "../accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
+import { resolveAccountLensAbi } from "../accountService/adapters/accountOnchainAdapter/accountLensAbiResolver.js";
 import type {
 	EVCAccountInfo,
 	VaultAccountInfo,
@@ -124,6 +125,7 @@ import {
 	getEVCAccountInfoLensBatchItem,
 	getVaultAccountInfoLensBatchItem,
 } from "../accountService/adapters/accountOnchainAdapter/accountOnchainAdapter.js";
+import type { IABIService } from "../abiService/index.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
 import type { IEulerLabelsService } from "../eulerLabelsService/index.js";
 import type { IIntrinsicApyService } from "../intrinsicApyService/index.js";
@@ -302,6 +304,7 @@ export type ExecutionSimulationContext<
 	TVaultEntity extends VaultEntity = VaultEntity,
 > = {
 	deploymentService: IDeploymentService;
+	abiService?: IABIService;
 	walletService?: IWalletService;
 	providerService?: ProviderService;
 	vaultMetaService?: IVaultMetaService<TVaultEntity>;
@@ -771,6 +774,13 @@ async function decodeAccountSnapshot<
 	const securitizeInfos = new Map<Address, VaultInfoERC4626>();
 	const securitizeGovernors = new Map<Address, Address>();
 	const securitizeSupplyCaps = new Map<Address, bigint>();
+	const deployment = ctx.deploymentService.getDeployment(chainId);
+	const accountLensAddress = deployment.addresses.lensAddrs.accountLens;
+	const resolvedAccountLensAbi = await resolveAccountLensAbi(
+		ctx.abiService,
+		deployment,
+		accountLensAddress,
+	);
 
 	for (let i = 0; i < lensMeta.length; i++) {
 		const meta = lensMeta[i]!;
@@ -849,10 +859,11 @@ async function decodeAccountSnapshot<
 
 		if (meta.kind === "vaultAccount") {
 			const decodedVaultInfo = decodeFunctionResult({
-				abi: accountLensAbi,
+				abi: resolvedAccountLensAbi,
 				functionName: "getVaultAccountInfo",
 				data: resultItem.result,
 			}) as unknown as VaultAccountInfo;
+			if (decodedVaultInfo.queryFailure) continue;
 			const key = getAddress(meta.subAccount);
 			const list = vaultInfosBySub.get(key) ?? [];
 			list.push(decodedVaultInfo);
@@ -1067,6 +1078,8 @@ function getAccountAdapter(
 		ctx.providerService,
 		ctx.deploymentService as never,
 		emptyPositionsAdapter,
+		undefined,
+		ctx.abiService,
 	);
 }
 

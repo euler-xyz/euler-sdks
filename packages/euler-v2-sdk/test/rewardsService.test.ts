@@ -1950,10 +1950,23 @@ test("rewards service fetches claimable reward streams from account lens", async
 		accountLensAddress: Address;
 		account: Address;
 		vault: Address;
+		accountLensAbiRef?: string;
 	}> = [];
 	service.setQueryVaultAccountInfo(
-		async (_provider, queriedAccountLensAddress, account, vault) => {
-			calls.push({ accountLensAddress: queriedAccountLensAddress, account, vault });
+		async (
+			_provider,
+			queriedAccountLensAddress,
+			account,
+			vault,
+			_chainId,
+			accountLensAbiRef,
+		) => {
+			calls.push({
+				accountLensAddress: queriedAccountLensAddress,
+				account,
+				vault,
+				accountLensAbiRef,
+			});
 			return {
 				account,
 				vault,
@@ -1975,6 +1988,10 @@ test("rewards service fetches claimable reward streams from account lens", async
 
 	const rewardStreams = await service.fetchRewardStreams({
 		chainId: 1,
+		accountLens: {
+			address: claimAddress,
+			abiRef: "CustomAccountLensV2",
+		},
 		positions: [
 			{ account: accountAddress, vault: vaultAddress },
 			{ account: accountAddress, vault: vaultAddress },
@@ -1983,9 +2000,10 @@ test("rewards service fetches claimable reward streams from account lens", async
 
 	assert.equal(calls.length, 1);
 	assert.deepEqual(calls[0], {
-		accountLensAddress,
+		accountLensAddress: claimAddress,
 		account: accountAddress,
 		vault: vaultAddress,
+		accountLensAbiRef: "CustomAccountLensV2",
 	});
 	assert.deepEqual(rewardStreams, [
 		{

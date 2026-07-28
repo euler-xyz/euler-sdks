@@ -1,10 +1,11 @@
 import type { Address, Hex } from "viem";
-import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
 import type { AccountRewardStream } from "../../entities/Account.js";
+import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
 import type { TransactionPlan } from "../executionService/index.js";
 import type { IsActiveForViewerFn } from "./rewardCampaignEligibility.js";
 
 export { VaultRewardInfo } from "./vaultRewardInfo.js";
+
 import type { VaultRewardInfo } from "./vaultRewardInfo.js";
 
 // ---------------------------------------------------------------------------
@@ -211,9 +212,17 @@ export interface RewardStreamPosition {
 	vault: Address;
 }
 
+export interface AccountLensOverride {
+	address: Address;
+	abiRef: string;
+}
+
 export interface FetchRewardStreamsArgs {
 	chainId: number;
 	positions: RewardStreamPosition[];
+	/** Account Lens deployment override, including the ABI bound to its address. */
+	accountLens?: AccountLensOverride;
+	/** @deprecated Use accountLens so a non-default address carries its ABI reference. */
 	accountLensAddress?: Address;
 }
 

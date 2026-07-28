@@ -35,6 +35,9 @@ export interface AccountLiquidityInfo {
 }
 
 export interface VaultAccountInfo {
+	/** Present on Account Lens deployments that report per-vault read failures. */
+	queryFailure?: boolean;
+	queryFailureReason?: Hex;
 	timestamp: bigint;
 	account: Address;
 	vault: Address;
