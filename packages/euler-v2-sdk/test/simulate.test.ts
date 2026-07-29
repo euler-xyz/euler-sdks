@@ -10,6 +10,7 @@ import {
 } from "viem";
 import { estimateContractGas } from "viem/actions";
 import { Account } from "../src/entities/Account.js";
+import type { IABIService } from "../src/services/abiService/index.js";
 import { accountLensAbi } from "../src/services/accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
 import { ethereumVaultConnectorAbi } from "../src/services/executionService/abis/ethereumVaultConnectorAbi.js";
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
@@ -126,6 +127,7 @@ async function simulateAndCollectVaultAccountReads(
 	vaultTypes: Record<string, VaultType> = {
 		[getAddress(TARGET)]: VaultType.EVault,
 	},
+	abiService?: IABIService,
 ): Promise<Set<string>> {
 	const simulateContract = vi.fn(
 		async ({ args }: { args: readonly [EVCBatchItem[]] }) => {
@@ -174,6 +176,7 @@ async function simulateAndCollectVaultAccountReads(
 			fetchVaultTypes: async () => vaultTypes,
 		} as never,
 	);
+	if (abiService) service.setABIService(abiService);
 
 	await service.simulateTransactionPlan(1, CHECKSUM_ACCOUNT, plan, {
 		stateOverrides: false,
@@ -887,6 +890,71 @@ test("simulateTransactionPlan reads both sides of transferFromMax cleanup", asyn
 	);
 });
 
+test("simulateTransactionPlan loads the AccountLens ABI through ABIService", async () => {
+	const fetchABI = vi.fn(async () => accountLensAbi);
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: EVC,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: ethereumVaultConnectorAbi,
+						functionName: "enableCollateral",
+						args: [ACCOUNT, TARGET],
+					}),
+				},
+			],
+		},
+	];
+
+	await simulateAndCollectVaultAccountReads(plan, undefined, { fetchABI });
+
+	assert.deepEqual(fetchABI.mock.calls, [[1, "AccountLens"]]);
+});
+
+test("simulateTransactionPlan still simulates when the AccountLens ABI fetch fails", async () => {
+	const fetchABI = vi.fn(async () => {
+		throw new Error("Failed to fetch ABI (503 Service Unavailable)");
+	});
+	const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: EVC,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: ethereumVaultConnectorAbi,
+						functionName: "enableCollateral",
+						args: [ACCOUNT, TARGET],
+					}),
+				},
+			],
+		},
+	];
+
+	try {
+		// The lens reads are still encoded, using the bundled ABI.
+		const vaultAccountReads = await simulateAndCollectVaultAccountReads(
+			plan,
+			undefined,
+			{ fetchABI } as never,
+		);
+
+		assert.ok(
+			vaultAccountReads.has(`${CHECKSUM_ACCOUNT}:${getAddress(TARGET)}`),
+		);
+		assert.equal(warn.mock.calls.length, 1);
+	} finally {
+		warn.mockRestore();
+	}
+});
+
 test("simulateTransactionPlan reads EVC account-mode candidates", async () => {
 	const subAccount = getSubAccountAddress(CHECKSUM_ACCOUNT, 1);
 	const plan: TransactionPlan = [
@@ -1120,6 +1188,298 @@ test("simulateTransactionPlan reads swap-verifier account candidates", async () 
 
 	assert.ok(vaultAccountReads.has(`${subAccount}:${getAddress(TARGET)}`));
 	assert.ok(vaultAccountReads.has(`${subAccount}:${getAddress(TOKEN)}`));
+});
+
+const emptyLiquidityInfo = {
+	queryFailure: false,
+	queryFailureReason: "0x" as const,
+	account: CHECKSUM_ACCOUNT,
+	vault: getAddress(TARGET),
+	unitOfAccount: getAddress(TOKEN),
+	timeToLiquidation: 0n,
+	liabilityValueBorrowing: 0n,
+	liabilityValueLiquidation: 0n,
+	collateralValueBorrowing: 0n,
+	collateralValueLiquidation: 0n,
+	collateralValueRaw: 0n,
+	collaterals: [],
+	collateralValuesBorrowing: [],
+	collateralValuesLiquidation: [],
+	collateralValuesRaw: [],
+};
+
+/** A `VaultAccountInfo` whose whole-vault read the lens reports as failed. */
+const failedVaultAccountInfo = (reason: `0x${string}`) => ({
+	queryFailure: true,
+	queryFailureReason: reason,
+	timestamp: 0n,
+	account: CHECKSUM_ACCOUNT,
+	vault: getAddress(TARGET),
+	asset: getAddress(TOKEN),
+	assetsAccount: 0n,
+	shares: 0n,
+	assets: 0n,
+	borrowed: 0n,
+	assetAllowanceVault: 0n,
+	assetAllowanceVaultPermit2: 0n,
+	assetAllowanceExpirationVaultPermit2: 0n,
+	assetAllowancePermit2: 0n,
+	balanceForwarderEnabled: false,
+	isController: false,
+	isCollateral: false,
+	liquidityInfo: emptyLiquidityInfo,
+});
+
+const evcAccountInfo = () => ({
+	timestamp: 0n,
+	evc: getAddress(EVC),
+	account: CHECKSUM_ACCOUNT,
+	addressPrefix: `0x${"11".repeat(19)}` as const,
+	owner: CHECKSUM_ACCOUNT,
+	isLockdownMode: false,
+	isPermitDisabledMode: false,
+	lastAccountStatusCheckTimestamp: 0n,
+	enabledControllers: [],
+	enabledCollaterals: [getAddress(TARGET)],
+});
+
+/**
+ * Simulates a plan whose action items all succeed, while every AccountLens
+ * `getVaultAccountInfo` read returns in-band `queryFailure`.
+ */
+async function simulateWithFailedVaultAccountReads(reason: `0x${string}`) {
+	const provider = {
+		simulateContract: vi.fn(
+			async ({ args }: { args: readonly [EVCBatchItem[]] }) => ({
+				result: [
+					args[0].map((item) => {
+						if (getAddress(item.targetContract) !== getAddress(ACCOUNT_LENS)) {
+							// Action items succeed, so nothing but the lens failure can
+							// hold `canExecute` down. Other lens reads are left failing,
+							// as elsewhere in this file — they degrade to "no entity".
+							const isAction =
+								getAddress(item.targetContract) === getAddress(TARGET) ||
+								getAddress(item.targetContract) === getAddress(VERIFIER);
+							return { success: isAction, result: "0x" };
+						}
+						const decoded = decodeFunctionData({
+							abi: accountLensAbi,
+							data: item.data,
+						});
+						if (decoded.functionName === "getEVCAccountInfo") {
+							return {
+								success: true,
+								result: encodeFunctionResult({
+									abi: accountLensAbi,
+									functionName: "getEVCAccountInfo",
+									result: evcAccountInfo() as never,
+								}),
+							};
+						}
+						if (decoded.functionName === "getVaultAccountInfo") {
+							return {
+								success: true,
+								result: encodeFunctionResult({
+									abi: accountLensAbi,
+									functionName: "getVaultAccountInfo",
+									result: failedVaultAccountInfo(reason) as never,
+								}),
+							};
+						}
+						return { success: true, result: "0x" };
+					}),
+					[],
+					[],
+				],
+			}),
+		),
+		multicall: vi.fn(async () => []),
+		readContract: vi.fn(async () => {
+			throw new Error("asset unavailable");
+		}),
+	};
+	const service = new ExecutionService(
+		{
+			getDeployment: () => ({
+				addresses: {
+					coreAddrs: {
+						evc: EVC,
+						permit2: "0x0000000000000000000000000000000000000012",
+					},
+					lensAddrs: {
+						accountLens: ACCOUNT_LENS,
+						vaultLens: VAULT_LENS,
+						eulerEarnVaultLens: EULER_EARN_LENS,
+						utilsLens: UTILS_LENS,
+					},
+				},
+			}),
+		} as never,
+		undefined,
+		{ getProvider: () => provider } as never,
+		{
+			fetchVaultTypes: async () => ({ [getAddress(TARGET)]: VaultType.EVault }),
+		} as never,
+	);
+
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: TARGET,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: eVaultAbi,
+						functionName: "deposit",
+						args: [100n, ACCOUNT],
+					}),
+				},
+			],
+		},
+	];
+
+	return service.simulateTransactionPlan(1, CHECKSUM_ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+}
+
+test("simulateTransactionPlan exposes an in-band lens vault-read failure", async () => {
+	// The lens reports whole-vault failure in-band, so the EVC batch item
+	// succeeds and nothing lands in `failedBatchItems`. Without
+	// `snapshotReadFailures` the dropped position is indistinguishable from a
+	// position the account does not hold.
+	const reason = "0xdeadbeef" as const;
+
+	const result = await simulateWithFailedVaultAccountReads(reason);
+
+	assert.equal(result.failedBatchItems, undefined);
+	assert.equal(result.accountStatusErrors, undefined);
+	assert.equal(result.vaultStatusErrors, undefined);
+	assert.equal(result.canExecute, true);
+
+	const failures = result.snapshotReadFailures ?? [];
+	assert.ok(failures.length > 0, "expected the lens failure to be reported");
+	const inBand = failures.filter((failure) => failure.cause === "inBand");
+	assert.ok(inBand.length > 0, "expected an in-band failure");
+	for (const failure of inBand) {
+		assert.equal(failure.kind, "vaultAccount");
+		assert.equal(failure.subAccount, CHECKSUM_ACCOUNT);
+		assert.equal(failure.vault, getAddress(TARGET));
+		assert.equal(failure.reason, reason);
+		assert.ok(typeof failure.layerIndex === "number");
+	}
+
+	// Incompleteness is visible precisely because the position is absent: the
+	// final layer holds no position for the vault the lens could not report.
+	const finalAccount = result.simulatedAccounts.at(-1);
+	const positions = Object.values(finalAccount?.subAccounts ?? {}).flatMap(
+		(subAccount) => subAccount?.positions ?? [],
+	);
+	assert.equal(
+		positions.some(
+			(position) => getAddress(position.vaultAddress) === getAddress(TARGET),
+		),
+		false,
+	);
+	// Every layer that read the vault reported the failure, so a consumer cannot
+	// trust any layer's position set without checking.
+	assert.ok(
+		new Set(inBand.map((failure) => failure.layerIndex)).size >= 1,
+		"expected per-layer attribution",
+	);
+});
+
+/** Simulates a plan where every AccountLens read reverts. */
+async function simulateTransactionPlanWithFailingLensReads(
+	plan: TransactionPlan,
+) {
+	const provider = {
+		simulateContract: vi.fn(
+			async ({ args }: { args: readonly [EVCBatchItem[]] }) => ({
+				result: [
+					args[0].map((item) => ({
+						success:
+							getAddress(item.targetContract) === getAddress(TARGET) ||
+							getAddress(item.targetContract) === getAddress(VERIFIER),
+						result: "0x",
+					})),
+					[],
+					[],
+				],
+			}),
+		),
+		multicall: vi.fn(async () => []),
+		readContract: vi.fn(async () => {
+			throw new Error("asset unavailable");
+		}),
+	};
+	const service = new ExecutionService(
+		{
+			getDeployment: () => ({
+				addresses: {
+					coreAddrs: {
+						evc: EVC,
+						permit2: "0x0000000000000000000000000000000000000012",
+					},
+					lensAddrs: {
+						accountLens: ACCOUNT_LENS,
+						vaultLens: VAULT_LENS,
+						eulerEarnVaultLens: EULER_EARN_LENS,
+						utilsLens: UTILS_LENS,
+					},
+				},
+			}),
+		} as never,
+		undefined,
+		{ getProvider: () => provider } as never,
+		{
+			fetchVaultTypes: async () => ({ [getAddress(TARGET)]: VaultType.EVault }),
+		} as never,
+	);
+
+	return service.simulateTransactionPlan(1, CHECKSUM_ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+}
+
+test("simulateTransactionPlan exposes a reverted lens vault-read", async () => {
+	// `rawBatchResults` covers only the action positions, so a reverted lens read
+	// cannot reach `failedBatchItems` either. It drops a position just as the
+	// in-band failure does and must be just as visible.
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: EVC,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: encodeFunctionData({
+						abi: ethereumVaultConnectorAbi,
+						functionName: "enableCollateral",
+						args: [ACCOUNT, TARGET],
+					}),
+				},
+			],
+		},
+	];
+
+	const result = await simulateTransactionPlanWithFailingLensReads(plan);
+
+	const failures = result.snapshotReadFailures ?? [];
+	const reverted = failures.filter(
+		(failure) => failure.kind === "vaultAccount" && failure.cause === "revert",
+	);
+	assert.ok(reverted.length > 0, "expected a reverted vault read to be reported");
+	assert.ok(
+		reverted.some(
+			(failure) =>
+				failure.subAccount === CHECKSUM_ACCOUNT &&
+				failure.vault === getAddress(TARGET),
+		),
+	);
 });
 
 test("extractBalanceRequirements sums a token's approvals across spenders", () => {

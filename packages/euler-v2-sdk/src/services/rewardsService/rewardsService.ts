@@ -1,4 +1,5 @@
 import {
+	type Abi,
 	type Address,
 	encodeFunctionData,
 	getAddress,
@@ -14,8 +15,13 @@ import type {
 } from "../executionService/index.js";
 import type { ProviderService } from "../providerService/index.js";
 import type { DeploymentService } from "../deploymentService/index.js";
+import type { IABIService } from "../abiService/index.js";
 import { accountLensAbi } from "../accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
-import type { VaultAccountInfo } from "../accountService/adapters/accountOnchainAdapter/accountLensTypes.js";
+import { resolveAccountLensAbi } from "../accountService/adapters/accountOnchainAdapter/resolveAccountLensAbi.js";
+import type {
+	AccountRewardInfo,
+	VaultAccountInfo,
+} from "../accountService/adapters/accountOnchainAdapter/accountLensTypes.js";
 import type {
 	BuildRewardClaimAllPlanArgs,
 	BuildRewardClaimPlanArgs,
@@ -442,9 +448,55 @@ const uniqueAddresses = (
 	}
 	return [...out.values()];
 };
+
+/**
+ * Return shape accepted from a legacy `setQueryVaultAccountInfo` callback.
+ *
+ * Everything `AccountRewardInfo` requires beyond the old `VaultAccountInfo` is
+ * optional here, so a callback written against the old declared return type still
+ * compiles. `account`, `vault`, and `enabledRewardsInfo` are the only fields
+ * `fetchRewardStreams` reads.
+ */
+export interface LegacyRewardAccountInfo {
+	account: Address;
+	vault: Address;
+	enabledRewardsInfo?: AccountRewardInfo["enabledRewardsInfo"];
+	timestamp?: bigint;
+	balanceTracker?: Address;
+	balanceForwarderEnabled?: boolean;
+	balance?: bigint;
+}
+
+/** Callback signature the deprecated `setQueryVaultAccountInfo` still accepts. */
+export type LegacyQueryRewardAccountInfoFn = (
+	provider: ReturnType<ProviderService["getProvider"]>,
+	accountLensAddress: Address,
+	account: Address,
+	vault: Address,
+	abi?: Abi,
+) => Promise<LegacyRewardAccountInfo>;
+
+/**
+ * Widens a legacy callback's result to `AccountRewardInfo`, defaulting the fields
+ * an old callback had no way to supply. Only `enabledRewardsInfo` reaches
+ * `fetchRewardStreams`; the rest are inert placeholders.
+ */
+const projectLegacyRewardAccountInfo = (
+	info: LegacyRewardAccountInfo,
+): AccountRewardInfo => ({
+	timestamp: info.timestamp ?? 0n,
+	account: info.account,
+	vault: info.vault,
+	balanceTracker: info.balanceTracker ?? zeroAddress,
+	balanceForwarderEnabled: info.balanceForwarderEnabled ?? false,
+	balance: info.balance ?? 0n,
+	enabledRewardsInfo: info.enabledRewardsInfo ?? [],
+});
+
 export class RewardsService implements IRewardsService {
 	private providerService?: ProviderService;
 	private deploymentService?: DeploymentService;
+	private abiService?: IABIService;
 	private isActiveForViewer: IsActiveForViewerFn;
 
 	constructor(
@@ -455,8 +507,12 @@ export class RewardsService implements IRewardsService {
 			fuulFactoryAddress: Address;
 			rewardStreamsAddress?: Address;
 		},
-		options?: { isActiveForViewer?: IsActiveForViewerFn },
+		options?: {
+			isActiveForViewer?: IsActiveForViewerFn;
+			abiService?: IABIService;
+		},
 	) {
+		this.abiService = options?.abiService;
 		this.isActiveForViewer =
 			options?.isActiveForViewer ?? defaultIsActiveForViewer;
 	}
@@ -471,6 +527,10 @@ export class RewardsService implements IRewardsService {
 
 	setDeploymentService(deploymentService: DeploymentService): void {
 		this.deploymentService = deploymentService;
+	}
+
+	setABIService(abiService: IABIService): void {
+		this.abiService = abiService;
 	}
 
 	setIsActiveForViewer(fn: IsActiveForViewerFn): void {
@@ -545,6 +605,30 @@ export class RewardsService implements IRewardsService {
 		return this.adapter.fetchFuulClaimChecks(address, chainId);
 	}
 
+	queryRewardAccountInfo = async (
+		provider: ReturnType<ProviderService["getProvider"]>,
+		accountLensAddress: Address,
+		account: Address,
+		vault: Address,
+		abi: Abi = accountLensAbi,
+	): Promise<AccountRewardInfo> => {
+		return provider.readContract({
+			address: accountLensAddress,
+			abi,
+			functionName: "getRewardAccountInfo",
+			args: [account, vault],
+		}) as Promise<AccountRewardInfo>;
+	};
+
+	setQueryRewardAccountInfo(fn: typeof this.queryRewardAccountInfo): void {
+		this.queryRewardAccountInfo = fn;
+	}
+
+	/**
+	 * @deprecated Reads `getVaultAccountInfo`, which carries no reward data, so
+	 * `fetchRewardStreams` never used the result it returns. Kept for source
+	 * compatibility and unused internally; use `queryRewardAccountInfo`.
+	 */
 	queryVaultAccountInfo = async (
 		provider: ReturnType<ProviderService["getProvider"]>,
 		accountLensAddress: Address,
@@ -559,8 +643,20 @@ export class RewardsService implements IRewardsService {
 		}) as Promise<VaultAccountInfo>;
 	};
 
-	setQueryVaultAccountInfo(fn: typeof this.queryVaultAccountInfo): void {
-		this.queryVaultAccountInfo = fn;
+	/**
+	 * @deprecated Use `setQueryRewardAccountInfo`.
+	 *
+	 * Retargets the same reader `fetchRewardStreams` uses, as it always did —
+	 * pointing this at the unused `queryVaultAccountInfo` property instead would
+	 * silently discard the override. The callback's return value is projected onto
+	 * `AccountRewardInfo`, so a callback written against the old declared
+	 * `VaultAccountInfo` return type still compiles: only the fields
+	 * `fetchRewardStreams` reads are required.
+	 */
+	setQueryVaultAccountInfo(fn: LegacyQueryRewardAccountInfoFn): void {
+		this.setQueryRewardAccountInfo(async (...args) =>
+			projectLegacyRewardAccountInfo(await fn(...args)),
+		);
 	}
 
 	async fetchRewardStreams(
@@ -580,29 +676,41 @@ export class RewardsService implements IRewardsService {
 				}),
 			).values(),
 		);
+		if (uniquePositions.length === 0) return [];
+		// This result shape has no diagnostics channel, so a fallback is logged.
+		const { abi: resolvedAccountLensAbi, fallbackReason } =
+			await resolveAccountLensAbi(this.abiService, args.chainId, [
+				"getRewardAccountInfo",
+			]);
+		if (fallbackReason) {
+			console.warn(`[rewardsService] ${fallbackReason}`);
+		}
 
-		const vaultAccountInfos = await Promise.all(
+		const rewardAccountInfoResults = await Promise.allSettled(
 			uniquePositions.map((position) =>
-				this.queryVaultAccountInfo(
+				this.queryRewardAccountInfo(
 					provider,
 					accountLensAddress,
 					position.account,
 					position.vault,
+					resolvedAccountLensAbi,
 				),
 			),
 		);
 
-		return vaultAccountInfos.flatMap((vaultAccountInfo) =>
-			(vaultAccountInfo.enabledRewardsInfo ?? [])
+		return rewardAccountInfoResults.flatMap((result) => {
+			if (result.status === "rejected") return [];
+
+			return result.value.enabledRewardsInfo
 				.filter((rewardInfo) => rewardInfo.earnedReward > 0n)
 				.map((rewardInfo) => ({
-					account: getAddress(vaultAccountInfo.account) as Address,
-					vault: getAddress(vaultAccountInfo.vault) as Address,
+					account: getAddress(result.value.account) as Address,
+					vault: getAddress(result.value.vault) as Address,
 					reward: getAddress(rewardInfo.reward) as Address,
 					earnedReward: rewardInfo.earnedReward,
 					earnedRewardRecentIgnored: rewardInfo.earnedRewardRecentIgnored,
-				})),
-		);
+				}));
+		});
 	}
 
 	async buildClaimPlan(

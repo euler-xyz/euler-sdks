@@ -145,5 +145,6 @@ export type {
 	SimulateBatchOptions,
 	SimulateBatchResult,
 	SimulationInsufficientRequirement,
+	SimulationSnapshotReadFailure,
 	SimulationStateOverrideOptions,
 } from "./simulate.js";

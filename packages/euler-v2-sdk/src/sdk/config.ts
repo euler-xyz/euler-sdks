@@ -80,6 +80,7 @@ export interface EulerSDKConfig {
 	swapApiUrl?: string;
 	swapDefaultDeadline?: number;
 
+	eulerInterfacesBranch?: string;
 	deploymentsUrl?: string;
 
 	eulerLabelsBaseUrl?: string;
@@ -497,6 +498,10 @@ export function readEulerSDKEnvConfig(
 		swapApiUrl: readString(env, "EULER_SDK_SWAP_API_URL"),
 		swapDefaultDeadline: readNumber(env, "EULER_SDK_SWAP_DEFAULT_DEADLINE"),
 
+		eulerInterfacesBranch: readString(
+			env,
+			"EULER_SDK_EULER_INTERFACES_BRANCH",
+		),
 		deploymentsUrl: readString(env, "EULER_SDK_DEPLOYMENTS_URL"),
 
 		eulerLabelsBaseUrl: readString(env, "EULER_SDK_EULER_LABELS_BASE_URL"),

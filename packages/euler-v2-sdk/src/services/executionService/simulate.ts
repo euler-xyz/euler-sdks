@@ -1,4 +1,5 @@
 import {
+	type Abi,
 	type Address,
 	decodeFunctionData,
 	decodeFunctionResult,
@@ -114,7 +115,7 @@ import type { SlotHints } from "../../utils/stateOverrides/slotHints.js";
 import { isSubAccount } from "../../utils/subAccounts.js";
 import { VaultType } from "../../utils/types.js";
 import type { AccountFetchOptions } from "../accountService/accountService.js";
-import { accountLensAbi } from "../accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
+import { resolveAccountLensAbi } from "../accountService/adapters/accountOnchainAdapter/resolveAccountLensAbi.js";
 import type {
 	EVCAccountInfo,
 	VaultAccountInfo,
@@ -124,6 +125,7 @@ import {
 	getEVCAccountInfoLensBatchItem,
 	getVaultAccountInfoLensBatchItem,
 } from "../accountService/adapters/accountOnchainAdapter/accountOnchainAdapter.js";
+import type { IABIService } from "../abiService/index.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
 import type { IEulerLabelsService } from "../eulerLabelsService/index.js";
 import type { IIntrinsicApyService } from "../intrinsicApyService/index.js";
@@ -185,6 +187,38 @@ export type SimulationInsufficientRequirement = {
 	amount: bigint;
 };
 
+/**
+ * An AccountLens read that produced no position, leaving a snapshot layer
+ * incomplete.
+ *
+ * These never appear in `failedBatchItems`: `rawBatchResults` covers only the
+ * action positions of the batch, so lens reads are outside it, and a whole-vault
+ * failure is reported in-band by the lens with the batch item itself succeeding.
+ */
+export type SimulationSnapshotReadFailure = {
+	/**
+	 * Index into `simulatedAccounts`: 0 = pre-batch (real) state, i = state after
+	 * operation i. The highest index is the final post-batch state.
+	 */
+	layerIndex: number;
+	/** Sub-account whose decoded position set is incomplete. */
+	subAccount: Address;
+	/** Vault the lens could not report on. Absent for account-scoped reads. */
+	vault?: Address;
+	/** Which lens read failed. */
+	kind: "vaultAccount" | "evcAccount";
+	/**
+	 * `inBand`: the read succeeded and the lens set `queryFailure`.
+	 * `revert`: the lens read itself reverted.
+	 */
+	cause: "inBand" | "revert";
+	/** The lens `queryFailureReason`, or the reverted read's return data. */
+	reason?: Hex;
+};
+
+/** Layer-agnostic form; `decodeAccountSnapshot` does not know its own layer. */
+type SnapshotReadFailure = Omit<SimulationSnapshotReadFailure, "layerIndex">;
+
 export interface SimulateBatchResult<
 	TVaultEntity extends VaultEntity = VaultEntity,
 > {
@@ -204,7 +238,19 @@ export interface SimulateBatchResult<
 	 * delta vs layer 0.
 	 */
 	simulatedWalletBalances?: Record<string, bigint>[];
+	/**
+	 * Whether the batch itself is expected to execute. A failed AccountLens read
+	 * does not stop the batch, so this stays `true` when one occurs — check
+	 * `snapshotReadFailures` before treating `simulatedAccounts` as a complete
+	 * post-state (e.g. before deriving a health factor from it).
+	 */
 	canExecute: boolean;
+	/**
+	 * Lens reads that yielded no position, so the corresponding layer of
+	 * `simulatedAccounts` is missing a collateral or debt position it may
+	 * actually hold. Absent when every lens read reported cleanly.
+	 */
+	snapshotReadFailures?: SimulationSnapshotReadFailure[];
 	rawBatchResults?: BatchItemResult[];
 	failedBatchItems?: Array<{
 		index: number;
@@ -309,6 +355,7 @@ export type ExecutionSimulationContext<
 	rewardsService?: IRewardsService;
 	intrinsicApyService?: IIntrinsicApyService;
 	eulerLabelsService?: IEulerLabelsService;
+	abiService?: IABIService;
 	describeBatch: (batch: readonly EVCBatchItem[]) => BatchItemDescription[];
 };
 
@@ -461,6 +508,13 @@ export async function simulateTransactionPlan<
 			canExecute: false,
 		};
 	}
+	// No diagnostics channel on SimulateBatchResult for read-metadata problems, so
+	// a fallback is logged rather than failing the whole simulation.
+	const { abi: resolvedAccountLensAbi, fallbackReason } =
+		await resolveAccountLensAbi(ctx.abiService, chainId);
+	if (fallbackReason) {
+		console.warn(`[simulateTransactionPlan] ${fallbackReason}`);
+	}
 	const diagnostics = await fetchSimulationDiagnostics(
 		ctx,
 		chainId,
@@ -472,6 +526,7 @@ export async function simulateTransactionPlan<
 		chainId,
 		owner,
 		operations,
+		resolvedAccountLensAbi,
 		extractBalanceRequirements(transactionPlan, owner).map(([token]) => token),
 	);
 
@@ -571,6 +626,7 @@ export async function simulateTransactionPlan<
 		account: Account<TVaultEntity>;
 		vaults: TVaultEntity[];
 		walletBalances: Record<string, bigint>;
+		readFailures: SnapshotReadFailure[];
 	}> = [];
 	for (const slice of layerSlices) {
 		snapshots.push(
@@ -579,6 +635,7 @@ export async function simulateTransactionPlan<
 				chainId,
 				owner,
 				lensMeta,
+				resolvedAccountLensAbi,
 				(i) => batchResults[slice.lensStart + i],
 				options,
 			),
@@ -589,6 +646,11 @@ export async function simulateTransactionPlan<
 	const simulatedVaults =
 		simulatedVaultsLayers[simulatedVaultsLayers.length - 1] ?? [];
 	const simulatedWalletBalances = snapshots.map((s) => s.walletBalances);
+	// Stamped with the layer index here: `decodeAccountSnapshot` is called per
+	// layer and cannot know which one it produced.
+	const snapshotReadFailures = snapshots.flatMap((s, layerIndex) =>
+		s.readFailures.map((failure) => ({ layerIndex, ...failure })),
+	);
 
 	// Accurate wallet shortfall from the per-layer balances (running-min over the
 	// real-anchored balance), which nets out intra-batch funding. Prefer it when
@@ -621,6 +683,8 @@ export async function simulateTransactionPlan<
 		simulatedVaultsLayers,
 		simulatedWalletBalances,
 		canExecute,
+		snapshotReadFailures:
+			snapshotReadFailures.length > 0 ? snapshotReadFailures : undefined,
 		rawBatchResults,
 		failedBatchItems:
 			failedBatchItems.length > 0 ? failedBatchItems : undefined,
@@ -754,17 +818,20 @@ async function decodeAccountSnapshot<
 	chainId: number,
 	owner: Address,
 	lensMeta: LensMeta[],
+	resolvedAccountLensAbi: Abi,
 	resultAt: (index: number) => BatchItemResult | undefined,
 	options?: SimulateBatchOptions,
 ): Promise<{
 	account: Account<TVaultEntity>;
 	vaults: TVaultEntity[];
 	walletBalances: Record<string, bigint>;
+	readFailures: SnapshotReadFailure[];
 }> {
 	const vaultsByAddress = new Map<Address, VaultEntity>();
 	const evcInfos = new Map<Address, EVCAccountInfo>();
 	const vaultInfosBySub = new Map<Address, VaultAccountInfo[]>();
 	const walletBalances: Record<string, bigint> = {};
+	const readFailures: SnapshotReadFailure[] = [];
 	// Securitize collateral vaults are assembled from three separate reads
 	// (ERC4626 info via UtilsLens, plus governorAdmin and supplyCapResolved read
 	// directly off the vault), keyed by vault address and stitched after the loop.
@@ -775,7 +842,22 @@ async function decodeAccountSnapshot<
 	for (let i = 0; i < lensMeta.length; i++) {
 		const meta = lensMeta[i]!;
 		const resultItem = resultAt(i);
-		if (!resultItem?.success) continue;
+		if (!resultItem?.success) {
+			// Lens reads are not action positions, so a reverted one never reaches
+			// `failedBatchItems`. Record the reads that shape the account or the
+			// position it drops is indistinguishable from one the account lacks.
+			if (meta.kind === "vaultAccount" || meta.kind === "evcAccount") {
+				readFailures.push({
+					kind: meta.kind,
+					subAccount: getAddress(meta.subAccount),
+					vault:
+						meta.kind === "vaultAccount" ? getAddress(meta.vault) : undefined,
+					cause: "revert",
+					reason: resultItem?.result,
+				});
+			}
+			continue;
+		}
 
 		if (meta.kind === "walletBalance") {
 			const bal = decodeFunctionResult({
@@ -840,7 +922,7 @@ async function decodeAccountSnapshot<
 
 		if (meta.kind === "evcAccount") {
 			const decodedAccount = decodeFunctionResult({
-				abi: accountLensAbi,
+				abi: resolvedAccountLensAbi,
 				functionName: "getEVCAccountInfo",
 				data: resultItem.result,
 			}) as unknown as EVCAccountInfo;
@@ -849,10 +931,25 @@ async function decodeAccountSnapshot<
 
 		if (meta.kind === "vaultAccount") {
 			const decodedVaultInfo = decodeFunctionResult({
-				abi: accountLensAbi,
+				abi: resolvedAccountLensAbi,
 				functionName: "getVaultAccountInfo",
 				data: resultItem.result,
 			}) as unknown as VaultAccountInfo;
+			// The lens reports a whole-vault query failure in-band, so the EVC batch
+			// item itself succeeded and this will not appear in `failedBatchItems`.
+			// Drop the position, matching how a failed batch item is skipped above:
+			// a partial snapshot degrades to "position absent" rather than throwing —
+			// but record it, so the gap is visible to preflight consumers.
+			if (decodedVaultInfo.queryFailure) {
+				readFailures.push({
+					kind: "vaultAccount",
+					subAccount: getAddress(meta.subAccount),
+					vault: getAddress(meta.vault),
+					cause: "inBand",
+					reason: decodedVaultInfo.queryFailureReason,
+				});
+				continue;
+			}
 			const key = getAddress(meta.subAccount);
 			const list = vaultInfosBySub.get(key) ?? [];
 			list.push(decodedVaultInfo);
@@ -972,7 +1069,12 @@ async function decodeAccountSnapshot<
 		await populatedAccount.populateUserRewards(ctx.rewardsService);
 	}
 
-	return { account: populatedAccount, vaults: simulatedVaults, walletBalances };
+	return {
+		account: populatedAccount,
+		vaults: simulatedVaults,
+		walletBalances,
+		readFailures,
+	};
 }
 
 export async function estimateGasForTransactionPlan(
@@ -1075,6 +1177,7 @@ async function buildSimulationBatch(
 	chainId: number,
 	owner: Address,
 	operations: SimulationOperation[],
+	resolvedAccountLensAbi: Abi,
 	requiredWalletBalanceTokens: Address[] = [],
 ): Promise<{
 	lensItems: EVCBatchItem[];
@@ -1216,6 +1319,7 @@ async function buildSimulationBatch(
 				evcAddress,
 				subAccount,
 				owner,
+				resolvedAccountLensAbi,
 			),
 			{
 				kind: "evcAccount",
@@ -1231,6 +1335,7 @@ async function buildSimulationBatch(
 					subAccount,
 					vault,
 					owner,
+					resolvedAccountLensAbi,
 				),
 				{
 					kind: "vaultAccount",

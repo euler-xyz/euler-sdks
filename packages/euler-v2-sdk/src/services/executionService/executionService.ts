@@ -19,6 +19,7 @@ import type {
 import type { EulerPlugin, PluginPrefetchData } from "../../plugins/types.js";
 import { resolveBorrowCollateralPositions } from "../../utils/accountPositionClassification.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
+import type { IABIService } from "../abiService/index.js";
 import type { IEulerLabelsService } from "../eulerLabelsService/index.js";
 import type { IIntrinsicApyService } from "../intrinsicApyService/index.js";
 import type { IPriceService } from "../priceService/index.js";
@@ -764,6 +765,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	private rewardsService?: IRewardsService;
 	private intrinsicApyService?: IIntrinsicApyService;
 	private eulerLabelsService?: IEulerLabelsService;
+	private abiService?: IABIService;
 	private processPlugins?: ProcessPlanPlugins;
 	private prefetchPlugins?: PrefetchPlanPlugins;
 
@@ -812,6 +814,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 	setEulerLabelsService(eulerLabelsService: IEulerLabelsService): void {
 		this.eulerLabelsService = eulerLabelsService;
+	}
+
+	setABIService(abiService: IABIService): void {
+		this.abiService = abiService;
 	}
 
 	setPlugins(plugins: EulerPlugin[]): void {
@@ -1084,6 +1090,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			rewardsService: this.rewardsService,
 			intrinsicApyService: this.intrinsicApyService,
 			eulerLabelsService: this.eulerLabelsService,
+			abiService: this.abiService,
 			describeBatch: (batch) => this.describeBatch(batch),
 		};
 	}
