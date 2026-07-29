@@ -9,10 +9,12 @@ export {
 	getActivityTargetContract,
 	normalizeActivityEvent,
 	normalizeActivityEventsResponse,
+	normalizeLiquidationsResponse,
 } from "./activityEvent.js";
 export {
 	ActivityService,
 	ActivityUnavailableError,
+	ensureActivityLiquidationsSupport,
 	UnavailableActivityAdapter,
 } from "./activityService.js";
 export type {
@@ -39,9 +41,15 @@ export type {
 	ActivityValueChange,
 	ActivityVaultType,
 	FetchAccountActivityEventsArgs,
+	FetchLiquidationsArgs,
 	FetchVaultActivityEventsArgs,
 	IActivityAdapter,
 	IActivityService,
+	IActivityServiceWithLiquidations,
+	LiquidationRecord,
+	LiquidationsMeta,
+	LiquidationsPage,
+	LiquidationUnitOfAccountValuation,
 } from "./activityServiceTypes.js";
 export { ACTIVITY_EVENT_TYPES } from "./activityServiceTypes.js";
 export {

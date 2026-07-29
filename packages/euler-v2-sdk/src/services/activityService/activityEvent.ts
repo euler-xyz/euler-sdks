@@ -20,7 +20,12 @@ import type {
 	ActivityValueChange,
 	ActivityVaultType,
 	FetchAccountActivityEventsArgs,
+	FetchLiquidationsArgs,
 	FetchVaultActivityEventsArgs,
+	LiquidationRecord,
+	LiquidationsMeta,
+	LiquidationsPage,
+	LiquidationUnitOfAccountValuation,
 } from "./activityServiceTypes.js";
 import { ACTIVITY_EVENT_TYPES } from "./activityServiceTypes.js";
 
@@ -63,6 +68,7 @@ const ASSET_KINDS = [
 
 const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const DECIMAL_INTEGER_PATTERN = /^\d+$/;
+const SIGNED_DECIMAL_INTEGER_PATTERN = /^-?\d+$/;
 const RFC3339_TIMESTAMP_PATTERN =
 	/^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[Zz]|[+-](\d{2}):(\d{2}))$/;
 
@@ -178,6 +184,14 @@ const readDecimalString = (value: unknown, path: string): string => {
 	return decimal;
 };
 
+const readSignedDecimalString = (value: unknown, path: string): string => {
+	const decimal = readString(value, path);
+	if (!SIGNED_DECIMAL_INTEGER_PATTERN.test(decimal)) {
+		fail(path, "expected a signed decimal integer string");
+	}
+	return decimal;
+};
+
 const readPositiveInteger = (value: unknown, path: string): number => {
 	if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
 		fail(path, "expected a positive safe integer");
@@ -203,6 +217,72 @@ const readOptionalAddress = (
 	path: string,
 ): Address | undefined =>
 	value === undefined ? undefined : readAddress(value, path);
+
+const readOptionalNullableDecimalString = (
+	value: unknown,
+	path: string,
+): string | null | undefined =>
+	value === undefined || value === null
+		? value
+		: readDecimalString(value, path);
+
+/**
+ * Expands exponent notation textually — shifting the decimal point through
+ * the serialized mantissa digits — so USD amounts become plain decimal
+ * strings without re-rounding the underlying number.
+ */
+const usdNumberToDecimalString = (value: number, path: string): string => {
+	const text = String(value);
+	const match = /^(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(text);
+	if (!match) {
+		if (!/^\d+(?:\.\d+)?$/.test(text)) {
+			return fail(path, "expected a USD value expressible as a decimal string");
+		}
+		return text;
+	}
+	const [, integerPart = "", fractionPart = "", exponentPart = "0"] = match;
+	const digits = `${integerPart}${fractionPart}`;
+	const pointIndex = integerPart.length + Number(exponentPart);
+	if (pointIndex <= 0) {
+		return `0.${"0".repeat(-pointIndex)}${digits}`;
+	}
+	if (pointIndex >= digits.length) {
+		return `${digits}${"0".repeat(pointIndex - digits.length)}`;
+	}
+	return `${digits.slice(0, pointIndex)}.${digits.slice(pointIndex)}`;
+};
+
+const readOptionalUsdValue = (
+	value: unknown,
+	path: string,
+): string | undefined => {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value === "string") {
+		if (!/^\d+(?:\.\d+)?$/.test(value)) {
+			return fail(path, "expected a non-negative decimal USD string");
+		}
+		return value;
+	}
+	if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+		return fail(path, "expected a non-negative finite number, string, or null");
+	}
+	return usdNumberToDecimalString(value, path);
+};
+
+const readOptionalFiniteNumber = (
+	value: unknown,
+	path: string,
+	options: { allowNegative?: boolean } = {},
+): number | undefined => {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== "number" || !Number.isFinite(value)) {
+		return fail(path, "expected a finite number or null");
+	}
+	if (!options.allowNegative && value < 0) {
+		return fail(path, "expected a non-negative finite number or null");
+	}
+	return value;
+};
 
 const readTxHash = (value: unknown, path: string): Hex => {
 	const txHash = readString(value, path);
@@ -254,7 +334,28 @@ const readAsset = (value: unknown, path: string): ActivityAssetAmount => {
 		fail(`${path}.amountRaw`, "expected a non-negative decimal integer string");
 	}
 	const amount = readOptionalString(record.amount, `${path}.amount`);
-	const amountUsd = readOptionalString(record.amountUsd, `${path}.amountUsd`);
+	const amountUnderlyingRaw = readOptionalNullableDecimalString(
+		record.amountUnderlyingRaw,
+		`${path}.amountUnderlyingRaw`,
+	);
+	const underlyingAddress = readOptionalAddress(
+		record.underlyingAddress,
+		`${path}.underlyingAddress`,
+	);
+	const underlyingDecimals =
+		record.underlyingDecimals === undefined
+			? undefined
+			: readNonNegativeInteger(
+					record.underlyingDecimals,
+					`${path}.underlyingDecimals`,
+				);
+	if (underlyingDecimals !== undefined && underlyingDecimals > 255) {
+		fail(
+			`${path}.underlyingDecimals`,
+			"expected an integer no greater than 255",
+		);
+	}
+	const amountUsd = readOptionalUsdValue(record.amountUsd, `${path}.amountUsd`);
 
 	return {
 		kind: readEnum(record.kind, ASSET_KINDS, `${path}.kind`),
@@ -263,6 +364,9 @@ const readAsset = (value: unknown, path: string): ActivityAssetAmount => {
 		...(symbol !== undefined ? { symbol } : {}),
 		...(decimals !== undefined ? { decimals } : {}),
 		...(amount !== undefined ? { amount } : {}),
+		...(amountUnderlyingRaw !== undefined ? { amountUnderlyingRaw } : {}),
+		...(underlyingAddress !== undefined ? { underlyingAddress } : {}),
+		...(underlyingDecimals !== undefined ? { underlyingDecimals } : {}),
 		...(amountUsd !== undefined ? { amountUsd } : {}),
 	};
 };
@@ -847,3 +951,327 @@ export const getActivityCaller = (
 	event: Pick<ActivityEvent, "payload" | "actor">,
 ): Address | undefined =>
 	event.actor ?? readPayloadAddress(event, ["caller", "sender", "owner"]);
+
+const LIQUIDATION_VALUATION_SOURCE = "historical-price-snapshots";
+
+/**
+ * The v3 liquidations contract couples the valuation discriminant to the two
+ * USD legs — available: both `repayAssetsUsd` and `collateralAssetsUsd`
+ * present, partial: exactly one, unavailable: neither — and requires the
+ * historical-price-snapshots source. A contradictory row would let consumers
+ * trust `available` while receiving no historical valuation.
+ */
+const readLiquidationValuation = (
+	value: unknown,
+	path: string,
+	presentUsdLegs: number,
+): ActivityValuation => {
+	const valuation = readValuation(value, path);
+	if (valuation.source !== LIQUIDATION_VALUATION_SOURCE) {
+		fail(`${path}.source`, `expected ${LIQUIDATION_VALUATION_SOURCE}`);
+	}
+	const expectedStatus =
+		presentUsdLegs === 2
+			? "available"
+			: presentUsdLegs === 1
+				? "partial"
+				: "unavailable";
+	if (valuation.status !== expectedStatus) {
+		fail(
+			`${path}.status`,
+			`expected ${expectedStatus} with ${presentUsdLegs} valued liquidation leg(s)`,
+		);
+	}
+	return valuation;
+};
+
+/** Historical token metadata can be null when unavailable at the event. */
+const readNullableMetadataAddress = (
+	value: unknown,
+	path: string,
+): Address | undefined =>
+	value === undefined || value === null ? undefined : readAddress(value, path);
+
+const readNullableMetadataDecimals = (
+	value: unknown,
+	path: string,
+): number | undefined => {
+	if (value === undefined || value === null) return undefined;
+	const decimals = readNonNegativeInteger(value, path);
+	// Same uint8 bound the sibling asset parser enforces; the producer nulls
+	// historical decimals outside 0..255 rather than emitting them.
+	if (decimals > 255) {
+		fail(path, "expected an integer no greater than 255");
+	}
+	return decimals;
+};
+
+const LIQUIDATION_UNIT_OF_ACCOUNT_SOURCE = "historical-protocol-oracle";
+
+const readLiquidationUnitOfAccountValuation = (
+	value: unknown,
+	path: string,
+	liquidationBlockNumber: string,
+): LiquidationUnitOfAccountValuation | null => {
+	if (value === null) return null;
+	const record = readRecord(value, path);
+	if (record.source !== LIQUIDATION_UNIT_OF_ACCOUNT_SOURCE) {
+		fail(`${path}.source`, `expected ${LIQUIDATION_UNIT_OF_ACCOUNT_SOURCE}`);
+	}
+	let unitOfAccountDecimals: number | null;
+	if (record.unitOfAccountDecimals === null) {
+		unitOfAccountDecimals = null;
+	} else {
+		const parsedDecimals = readNullableMetadataDecimals(
+			record.unitOfAccountDecimals,
+			`${path}.unitOfAccountDecimals`,
+		);
+		unitOfAccountDecimals =
+			parsedDecimals ??
+			fail(`${path}.unitOfAccountDecimals`, "expected an integer or null");
+	}
+	const repayValue = readDecimalString(record.repayValue, `${path}.repayValue`);
+	const collateralValue = readDecimalString(
+		record.collateralValue,
+		`${path}.collateralValue`,
+	);
+	const bonusValue = readSignedDecimalString(
+		record.bonusValue,
+		`${path}.bonusValue`,
+	);
+	const blockNumber = readDecimalString(
+		record.blockNumber,
+		`${path}.blockNumber`,
+	);
+	if (blockNumber !== liquidationBlockNumber) {
+		fail(`${path}.blockNumber`, "expected the liquidation block number");
+	}
+	if (BigInt(bonusValue) !== BigInt(collateralValue) - BigInt(repayValue)) {
+		fail(`${path}.bonusValue`, "expected collateralValue minus repayValue");
+	}
+	return {
+		source: LIQUIDATION_UNIT_OF_ACCOUNT_SOURCE,
+		unitOfAccount: readAddress(record.unitOfAccount, `${path}.unitOfAccount`),
+		unitOfAccountDecimals,
+		repayValue,
+		collateralValue,
+		bonusValue,
+		blockNumber,
+	};
+};
+
+const readLiquidationRecord = (
+	value: unknown,
+	path: string,
+): LiquidationRecord => {
+	const record = readRecord(value, path);
+	const blockNumber = readDecimalString(
+		record.blockNumber,
+		`${path}.blockNumber`,
+	);
+	const debtAsset = readNullableMetadataAddress(
+		record.debtAsset,
+		`${path}.debtAsset`,
+	);
+	const debtAssetDecimals = readNullableMetadataDecimals(
+		record.debtAssetDecimals,
+		`${path}.debtAssetDecimals`,
+	);
+	const collateralAsset = readNullableMetadataAddress(
+		record.collateralAsset,
+		`${path}.collateralAsset`,
+	);
+	const collateralAssetDecimals = readNullableMetadataDecimals(
+		record.collateralAssetDecimals,
+		`${path}.collateralAssetDecimals`,
+	);
+	const debtAssetPriceUsd = readOptionalFiniteNumber(
+		record.debtAssetPriceUsd,
+		`${path}.debtAssetPriceUsd`,
+	);
+	const repayAssetsUsd = readOptionalFiniteNumber(
+		record.repayAssetsUsd,
+		`${path}.repayAssetsUsd`,
+	);
+	const collateralAssetPriceUsd = readOptionalFiniteNumber(
+		record.collateralAssetPriceUsd,
+		`${path}.collateralAssetPriceUsd`,
+	);
+	const collateralAssets = readOptionalNullableDecimalString(
+		record.collateralAssets,
+		`${path}.collateralAssets`,
+	);
+	const collateralAssetsUsd = readOptionalFiniteNumber(
+		record.collateralAssetsUsd,
+		`${path}.collateralAssetsUsd`,
+	);
+	// A liquidation can be unprofitable, so the bonus may be negative.
+	const bonusUsd = readOptionalFiniteNumber(
+		record.bonusUsd,
+		`${path}.bonusUsd`,
+		{
+			allowNegative: true,
+		},
+	);
+	// The producer derives the bonus as collateralAssetsUsd - repayAssetsUsd
+	// and emits it exactly when both legs are valued. A bonus without its
+	// inputs (or valued legs without their derived bonus) is contradictory.
+	const presentUsdLegs =
+		(repayAssetsUsd !== undefined ? 1 : 0) +
+		(collateralAssetsUsd !== undefined ? 1 : 0);
+	if (presentUsdLegs === 2 && bonusUsd === undefined) {
+		fail(
+			`${path}.bonusUsd`,
+			"expected a bonus when both liquidation legs are valued",
+		);
+	}
+	if (presentUsdLegs < 2 && bonusUsd !== undefined) {
+		fail(
+			`${path}.bonusUsd`,
+			"expected no bonus without both valued liquidation legs",
+		);
+	}
+	const unitOfAccountValuation = readLiquidationUnitOfAccountValuation(
+		record.unitOfAccountValuation,
+		`${path}.unitOfAccountValuation`,
+		blockNumber,
+	);
+
+	return {
+		chainId: readPositiveInteger(record.chainId, `${path}.chainId`),
+		vault: readAddress(record.vault, `${path}.vault`),
+		violator: readAddress(record.violator, `${path}.violator`),
+		liquidator: readAddress(record.liquidator, `${path}.liquidator`),
+		collateral: readAddress(record.collateral, `${path}.collateral`),
+		repayAssets: readDecimalString(record.repayAssets, `${path}.repayAssets`),
+		yieldBalance: readDecimalString(
+			record.yieldBalance,
+			`${path}.yieldBalance`,
+		),
+		...(debtAsset !== undefined ? { debtAsset } : {}),
+		...(debtAssetDecimals !== undefined ? { debtAssetDecimals } : {}),
+		...(debtAssetPriceUsd !== undefined ? { debtAssetPriceUsd } : {}),
+		...(repayAssetsUsd !== undefined ? { repayAssetsUsd } : {}),
+		...(collateralAsset !== undefined ? { collateralAsset } : {}),
+		...(collateralAssetDecimals !== undefined
+			? { collateralAssetDecimals }
+			: {}),
+		...(collateralAssetPriceUsd !== undefined
+			? { collateralAssetPriceUsd }
+			: {}),
+		...(collateralAssets != null ? { collateralAssets } : {}),
+		...(collateralAssetsUsd !== undefined ? { collateralAssetsUsd } : {}),
+		...(bonusUsd !== undefined ? { bonusUsd } : {}),
+		unitOfAccountValuation,
+		valuation: readLiquidationValuation(
+			record.valuation,
+			`${path}.valuation`,
+			presentUsdLegs,
+		),
+		blockNumber,
+		txHash: readTxHash(record.txHash, `${path}.txHash`),
+		timestamp: readTimestamp(record.timestamp, `${path}.timestamp`),
+	};
+};
+
+const readLiquidationsMeta = (
+	value: unknown,
+	path: string,
+): LiquidationsMeta => {
+	const record = readRecord(value, path);
+	return {
+		total: readNonNegativeInteger(record.total, `${path}.total`),
+		offset: readNonNegativeInteger(record.offset, `${path}.offset`),
+		limit: readNonNegativeInteger(record.limit, `${path}.limit`),
+		timestamp: readTimestamp(record.timestamp, `${path}.timestamp`),
+	};
+};
+
+export const normalizeLiquidationsResponse = (
+	raw: unknown,
+): LiquidationsPage => {
+	let parsed = raw;
+	if (typeof raw === "string") {
+		try {
+			parsed = JSON.parse(raw) as unknown;
+		} catch {
+			fail("$", "expected valid JSON");
+		}
+	}
+	const response = readRecord(parsed, "$");
+	if (!Array.isArray(response.data)) fail("$.data", "expected an array");
+	const data = (response.data as unknown[]).map((row, index) =>
+		readLiquidationRecord(row, `$.data[${index}]`),
+	);
+	return { data, meta: readLiquidationsMeta(response.meta, "$.meta") };
+};
+
+/**
+ * Rejects structurally valid pages that do not answer the request, mirroring
+ * the request-aware validation on the account/vault activity routes.
+ */
+export const validateLiquidationsPage = (
+	page: LiquidationsPage,
+	args: FetchLiquidationsArgs,
+): LiquidationsPage => {
+	const requestedVault =
+		args.vault === undefined ? undefined : getAddress(args.vault);
+	const requestedViolator =
+		args.violator === undefined ? undefined : getAddress(args.violator);
+	const requestedLiquidator =
+		args.liquidator === undefined ? undefined : getAddress(args.liquidator);
+	const requestedOffset = args.offset ?? 0;
+
+	if (page.meta.offset !== requestedOffset) {
+		fail("$.meta.offset", `expected the requested offset ${requestedOffset}`);
+	}
+	// The endpoint clamps oversized page sizes; it never grows them.
+	if (args.limit !== undefined && page.meta.limit > args.limit) {
+		fail(
+			"$.meta.limit",
+			`expected at most the requested limit of ${args.limit}`,
+		);
+	}
+	if (page.data.length > page.meta.limit) {
+		fail("$.data", `expected at most ${page.meta.limit} rows`);
+	}
+	// An offset beyond the total is a valid request that returns an empty
+	// page; only positive rows past the remaining count are inconsistent.
+	if (page.data.length > Math.max(0, page.meta.total - page.meta.offset)) {
+		fail("$.data", "expected row count consistent with the reported total");
+	}
+
+	for (const [index, row] of page.data.entries()) {
+		const path = `$.data[${index}]`;
+		if (row.chainId !== args.chainId) {
+			fail(`${path}.chainId`, `chain ${row.chainId} was not requested`);
+		}
+		if (requestedVault !== undefined && row.vault !== requestedVault) {
+			fail(`${path}.vault`, "expected the requested vault");
+		}
+		if (requestedViolator !== undefined && row.violator !== requestedViolator) {
+			fail(`${path}.violator`, "expected the requested violator");
+		}
+		if (
+			requestedLiquidator !== undefined &&
+			row.liquidator !== requestedLiquidator
+		) {
+			fail(`${path}.liquidator`, "expected the requested liquidator");
+		}
+		const rowTimestamp = Math.floor(Date.parse(row.timestamp) / 1_000);
+		if (args.from !== undefined && rowTimestamp < args.from) {
+			fail(
+				`${path}.timestamp`,
+				`timestamp is before the requested from value ${args.from}`,
+			);
+		}
+		if (args.to !== undefined && rowTimestamp > args.to) {
+			fail(
+				`${path}.timestamp`,
+				`timestamp is after the requested to value ${args.to}`,
+			);
+		}
+	}
+
+	return page;
+};

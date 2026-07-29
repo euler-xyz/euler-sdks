@@ -13,9 +13,12 @@ import type {
 	ActivityScopeSupport,
 	ActivityServiceConfig,
 	FetchAccountActivityEventsArgs,
+	FetchLiquidationsArgs,
 	FetchVaultActivityEventsArgs,
 	IActivityAdapter,
 	IActivityService,
+	IActivityServiceWithLiquidations,
+	LiquidationsPage,
 } from "./activityServiceTypes.js";
 import { ActivityV3Adapter } from "./adapters/activityV3Adapter.js";
 
@@ -68,9 +71,15 @@ export class UnavailableActivityAdapter implements IActivityAdapter {
 	): Promise<ActivityEventsPage> {
 		throw new ActivityUnavailableError(this.reason);
 	}
+
+	async fetchLiquidations(
+		_args: FetchLiquidationsArgs,
+	): Promise<LiquidationsPage> {
+		throw new ActivityUnavailableError(this.reason);
+	}
 }
 
-export class ActivityService implements IActivityService {
+export class ActivityService implements IActivityServiceWithLiquidations {
 	private adapter: IActivityAdapter;
 
 	constructor(
@@ -163,4 +172,49 @@ export class ActivityService implements IActivityService {
 	): Promise<ActivityEventsPage> {
 		return this.queryVaultActivityEvents(args);
 	}
+
+	queryLiquidations = async (
+		args: FetchLiquidationsArgs,
+	): Promise<LiquidationsPage> => {
+		if (!this.adapter.fetchLiquidations) {
+			throw new ActivityUnavailableError("source-not-configured");
+		}
+		return this.adapter.fetchLiquidations(args);
+	};
+
+	getQueryKeyLiquidations(args: FetchLiquidationsArgs): string | null {
+		return serializeQueryArgs([
+			{
+				...args,
+				vault: args.vault === undefined ? undefined : getAddress(args.vault),
+				violator:
+					args.violator === undefined ? undefined : getAddress(args.violator),
+				liquidator:
+					args.liquidator === undefined
+						? undefined
+						: getAddress(args.liquidator),
+			},
+		]);
+	}
+
+	async fetchLiquidations(
+		args: FetchLiquidationsArgs,
+	): Promise<LiquidationsPage> {
+		return this.queryLiquidations(args);
+	}
 }
+
+/**
+ * Carries the built-in liquidations guarantee through the SDK boundary.
+ * Services that already expose `fetchLiquidations` pass through unchanged
+ * (including their identity); a legacy override without it is wrapped in an
+ * `ActivityService` delegating every call to the override, so the method is
+ * always callable and reports activity-unavailable at runtime instead of
+ * surfacing as a possibly-undefined property to strict consumers.
+ */
+export const ensureActivityLiquidationsSupport = (
+	service: IActivityService,
+): IActivityServiceWithLiquidations =>
+	typeof service.fetchLiquidations === "function"
+		? (service as IActivityServiceWithLiquidations)
+		: new ActivityService(service);
