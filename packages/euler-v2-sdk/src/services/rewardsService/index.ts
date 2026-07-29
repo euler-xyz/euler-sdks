@@ -1,4 +1,8 @@
 export { RewardsService } from "./rewardsService.js";
+export type {
+	LegacyQueryRewardAccountInfoFn,
+	LegacyRewardAccountInfo,
+} from "./rewardsService.js";
 export { RewardsDirectAdapter } from "./adapters/rewardsDirectAdapter/index.js";
 export { RewardsV3Adapter } from "./adapters/rewardsV3Adapter/index.js";
 export { VaultRewardInfo } from "./vaultRewardInfo.js";

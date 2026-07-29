@@ -1998,6 +1998,111 @@ test("rewards service fetches claimable reward streams from account lens", async
 	]);
 });
 
+test("deprecated setQueryVaultAccountInfo still drives reward stream reads", async () => {
+	// The old callback was declared as returning `VaultAccountInfo`, so it supplies
+	// neither `balanceTracker` nor `balance`. It must keep compiling and keep
+	// overriding the reader `fetchRewardStreams` uses — retargeting the unused
+	// legacy property instead would silently discard the override.
+	const service = makeRewardsService();
+	const calls: Array<{ account: Address; vault: Address }> = [];
+
+	service.setQueryVaultAccountInfo(async (_provider, _lens, account, vault) => {
+		calls.push({ account, vault });
+		return {
+			account,
+			vault,
+			enabledRewardsInfo: [
+				{
+					reward: rewardToken,
+					earnedReward: 100n,
+					earnedRewardRecentIgnored: 75n,
+				},
+			],
+		};
+	});
+
+	const rewardStreams = await service.fetchRewardStreams({
+		chainId: 1,
+		positions: [{ account: accountAddress, vault: vaultAddress }],
+	});
+
+	assert.deepEqual(calls, [{ account: accountAddress, vault: vaultAddress }]);
+	assert.deepEqual(rewardStreams, [
+		{
+			account: accountAddress,
+			vault: vaultAddress,
+			reward: rewardToken,
+			earnedReward: 100n,
+			earnedRewardRecentIgnored: 75n,
+		},
+	]);
+});
+
+test("deprecated setQueryVaultAccountInfo accepts a full AccountRewardInfo", async () => {
+	// A caller who already migrated the return shape but not the setter name must
+	// not be broken by the legacy projection.
+	const service = makeRewardsService();
+
+	service.setQueryVaultAccountInfo(async (_provider, _lens, account, vault) => ({
+		timestamp: 7n,
+		account,
+		vault,
+		balanceTracker: rewardStreamsAddress,
+		balanceForwarderEnabled: true,
+		balance: 5n,
+		enabledRewardsInfo: [
+			{ reward: rewardToken, earnedReward: 1n, earnedRewardRecentIgnored: 0n },
+		],
+	}));
+
+	const rewardStreams = await service.fetchRewardStreams({
+		chainId: 1,
+		positions: [{ account: accountAddress, vault: vaultAddress }],
+	});
+
+	assert.deepEqual(rewardStreams, [
+		{
+			account: accountAddress,
+			vault: vaultAddress,
+			reward: rewardToken,
+			earnedReward: 1n,
+			earnedRewardRecentIgnored: 0n,
+		},
+	]);
+});
+
+test("deprecated queryVaultAccountInfo still reads getVaultAccountInfo", async () => {
+	// Direct property access is part of the exported surface, so it stays callable
+	// and keeps its original contract.
+	const service = makeRewardsService();
+	const readCalls: Array<{
+		address: Address;
+		functionName: string;
+		args: readonly unknown[];
+	}> = [];
+	const readContract = async (call: {
+		address: Address;
+		functionName: string;
+		args: readonly unknown[];
+	}) => {
+		readCalls.push(call);
+		return { account: accountAddress };
+	};
+
+	const info = await service.queryVaultAccountInfo(
+		{ readContract } as never,
+		accountLensAddress,
+		accountAddress,
+		vaultAddress,
+	);
+
+	assert.equal(readCalls.length, 1);
+	assert.equal(readCalls[0]?.address, accountLensAddress);
+	assert.equal(readCalls[0]?.functionName, "getVaultAccountInfo");
+	assert.deepEqual(readCalls[0]?.args, [accountAddress, vaultAddress]);
+	assert.equal(info.account, accountAddress);
+});
+
 test("rewards service builds reward stream claims as an EVC batch", () => {
 	const service = makeRewardsService();
 

@@ -18,7 +18,10 @@ import type { DeploymentService } from "../deploymentService/index.js";
 import type { IABIService } from "../abiService/index.js";
 import { accountLensAbi } from "../accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
 import { resolveAccountLensAbi } from "../accountService/adapters/accountOnchainAdapter/resolveAccountLensAbi.js";
-import type { AccountRewardInfo } from "../accountService/adapters/accountOnchainAdapter/accountLensTypes.js";
+import type {
+	AccountRewardInfo,
+	VaultAccountInfo,
+} from "../accountService/adapters/accountOnchainAdapter/accountLensTypes.js";
 import type {
 	BuildRewardClaimAllPlanArgs,
 	BuildRewardClaimPlanArgs,
@@ -445,6 +448,51 @@ const uniqueAddresses = (
 	}
 	return [...out.values()];
 };
+
+/**
+ * Return shape accepted from a legacy `setQueryVaultAccountInfo` callback.
+ *
+ * Everything `AccountRewardInfo` requires beyond the old `VaultAccountInfo` is
+ * optional here, so a callback written against the old declared return type still
+ * compiles. `account`, `vault`, and `enabledRewardsInfo` are the only fields
+ * `fetchRewardStreams` reads.
+ */
+export interface LegacyRewardAccountInfo {
+	account: Address;
+	vault: Address;
+	enabledRewardsInfo?: AccountRewardInfo["enabledRewardsInfo"];
+	timestamp?: bigint;
+	balanceTracker?: Address;
+	balanceForwarderEnabled?: boolean;
+	balance?: bigint;
+}
+
+/** Callback signature the deprecated `setQueryVaultAccountInfo` still accepts. */
+export type LegacyQueryRewardAccountInfoFn = (
+	provider: ReturnType<ProviderService["getProvider"]>,
+	accountLensAddress: Address,
+	account: Address,
+	vault: Address,
+	abi?: Abi,
+) => Promise<LegacyRewardAccountInfo>;
+
+/**
+ * Widens a legacy callback's result to `AccountRewardInfo`, defaulting the fields
+ * an old callback had no way to supply. Only `enabledRewardsInfo` reaches
+ * `fetchRewardStreams`; the rest are inert placeholders.
+ */
+const projectLegacyRewardAccountInfo = (
+	info: LegacyRewardAccountInfo,
+): AccountRewardInfo => ({
+	timestamp: info.timestamp ?? 0n,
+	account: info.account,
+	vault: info.vault,
+	balanceTracker: info.balanceTracker ?? zeroAddress,
+	balanceForwarderEnabled: info.balanceForwarderEnabled ?? false,
+	balance: info.balance ?? 0n,
+	enabledRewardsInfo: info.enabledRewardsInfo ?? [],
+});
+
 export class RewardsService implements IRewardsService {
 	private providerService?: ProviderService;
 	private deploymentService?: DeploymentService;
@@ -576,9 +624,39 @@ export class RewardsService implements IRewardsService {
 		this.queryRewardAccountInfo = fn;
 	}
 
-	/** @deprecated Use `setQueryRewardAccountInfo`. */
-	setQueryVaultAccountInfo(fn: typeof this.queryRewardAccountInfo): void {
-		this.setQueryRewardAccountInfo(fn);
+	/**
+	 * @deprecated Reads `getVaultAccountInfo`, which carries no reward data, so
+	 * `fetchRewardStreams` never used the result it returns. Kept for source
+	 * compatibility and unused internally; use `queryRewardAccountInfo`.
+	 */
+	queryVaultAccountInfo = async (
+		provider: ReturnType<ProviderService["getProvider"]>,
+		accountLensAddress: Address,
+		account: Address,
+		vault: Address,
+	): Promise<VaultAccountInfo> => {
+		return provider.readContract({
+			address: accountLensAddress,
+			abi: accountLensAbi,
+			functionName: "getVaultAccountInfo",
+			args: [account, vault],
+		}) as Promise<VaultAccountInfo>;
+	};
+
+	/**
+	 * @deprecated Use `setQueryRewardAccountInfo`.
+	 *
+	 * Retargets the same reader `fetchRewardStreams` uses, as it always did —
+	 * pointing this at the unused `queryVaultAccountInfo` property instead would
+	 * silently discard the override. The callback's return value is projected onto
+	 * `AccountRewardInfo`, so a callback written against the old declared
+	 * `VaultAccountInfo` return type still compiles: only the fields
+	 * `fetchRewardStreams` reads are required.
+	 */
+	setQueryVaultAccountInfo(fn: LegacyQueryRewardAccountInfoFn): void {
+		this.setQueryRewardAccountInfo(async (...args) =>
+			projectLegacyRewardAccountInfo(await fn(...args)),
+		);
 	}
 
 	async fetchRewardStreams(
