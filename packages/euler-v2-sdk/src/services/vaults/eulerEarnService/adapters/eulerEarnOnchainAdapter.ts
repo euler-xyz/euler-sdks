@@ -1,16 +1,9 @@
-import type { IEulerEarnAdapter } from "../eulerEarnService.js";
-import type { ProviderService } from "../../../providerService/index.js";
-import type { DeploymentService } from "../../../deploymentService/index.js";
 import { type Address, encodeFunctionData, getAddress } from "viem";
 import { EulerEarn, type IEulerEarn } from "../../../../entities/EulerEarn.js";
-import type { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
-import { convertEulerEarnVaultInfoFullToIEulerEarn } from "./eulerEarnInfoConverter.js";
-import { eulerEarnVaultLensAbi } from "./abis/eulerEarnVaultLensAbi.js";
 import {
-	type BuildQueryFn,
 	applyBuildQuery,
+	type BuildQueryFn,
 } from "../../../../utils/buildQuery.js";
-import type { EVCBatchItem } from "../../../executionService/executionServiceTypes.js";
 import type {
 	DataIssue,
 	ServiceResult,
@@ -19,6 +12,13 @@ import {
 	dataIssueLocation,
 	vaultDiagnosticOwner,
 } from "../../../../utils/entityDiagnostics.js";
+import type { DeploymentService } from "../../../deploymentService/index.js";
+import type { EVCBatchItem } from "../../../executionService/executionServiceTypes.js";
+import type { ProviderService } from "../../../providerService/index.js";
+import type { IEulerEarnAdapter } from "../eulerEarnService.js";
+import { eulerEarnVaultLensAbi } from "./abis/eulerEarnVaultLensAbi.js";
+import { convertEulerEarnVaultInfoFullToIEulerEarn } from "./eulerEarnInfoConverter.js";
+import type { EulerEarnVaultInfoFull } from "./eulerEarnLensTypes.js";
 
 const SECONDS_IN_YEAR = 365 * 24 * 60 * 60;
 const DEFAULT_SUPPLY_APY_WINDOW_SECONDS = 60;
@@ -178,7 +178,8 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 		if (latestBlockNumber <= MEASUREMENT_BLOCK_BACKOFF) {
 			throw new Error("Failed to estimate EulerEarn APY block window.");
 		}
-		const measurementBlockNumber = latestBlockNumber - MEASUREMENT_BLOCK_BACKOFF;
+		const measurementBlockNumber =
+			latestBlockNumber - MEASUREMENT_BLOCK_BACKOFF;
 		const measurementBlockData = await this.queryBlock(
 			provider,
 			measurementBlockNumber,
@@ -212,25 +213,59 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 		highestBlockNumber: bigint,
 		targetTimestamp: number,
 	): Promise<{ blockNumber: bigint; timestamp: number } | undefined> {
-		let low = 0n;
-		let high = highestBlockNumber;
-		let candidate: { blockNumber: bigint; timestamp: number } | undefined;
-
-		while (low <= high) {
-			const mid = (low + high) / 2n;
-			const block = await this.queryBlock(provider, mid);
-			const timestamp = Number(block.timestamp);
-
-			if (timestamp <= targetTimestamp) {
-				candidate = { blockNumber: mid, timestamp };
-				low = mid + 1n;
-			} else {
-				if (mid === 0n) break;
-				high = mid - 1n;
-			}
+		const highestBlock = await this.queryBlock(provider, highestBlockNumber);
+		const highestTimestamp = Number(highestBlock.timestamp);
+		if (highestTimestamp <= targetTimestamp) {
+			return {
+				blockNumber: highestBlockNumber,
+				timestamp: highestTimestamp,
+			};
 		}
 
-		return candidate;
+		// The APY window is only one minute, so first bracket the target by
+		// walking back exponentially from the measurement block. A binary search
+		// from genesis performs ~25 serial RPC calls on mainnet for every Earn
+		// account fetch even though the answer is normally just a few blocks back.
+		let upperBlockNumber = highestBlockNumber;
+		let step = 1n;
+
+		while (upperBlockNumber > 0n) {
+			const lowerBlockNumber =
+				highestBlockNumber > step ? highestBlockNumber - step : 0n;
+			const lowerBlock = await this.queryBlock(provider, lowerBlockNumber);
+			const lowerTimestamp = Number(lowerBlock.timestamp);
+
+			if (lowerTimestamp <= targetTimestamp) {
+				let low = lowerBlockNumber + 1n;
+				let high = upperBlockNumber - 1n;
+				let candidate = {
+					blockNumber: lowerBlockNumber,
+					timestamp: lowerTimestamp,
+				};
+
+				while (low <= high) {
+					const mid = (low + high) / 2n;
+					const block = await this.queryBlock(provider, mid);
+					const timestamp = Number(block.timestamp);
+
+					if (timestamp <= targetTimestamp) {
+						candidate = { blockNumber: mid, timestamp };
+						low = mid + 1n;
+					} else {
+						if (mid === 0n) break;
+						high = mid - 1n;
+					}
+				}
+
+				return candidate;
+			}
+
+			if (lowerBlockNumber === 0n) return undefined;
+			upperBlockNumber = lowerBlockNumber;
+			step *= 2n;
+		}
+
+		return undefined;
 	}
 
 	// Compound a measured rate change observed over `elapsedSeconds` into an APY,

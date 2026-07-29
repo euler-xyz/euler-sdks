@@ -54,17 +54,26 @@ test("EulerEarn onchain adapter samples the latest block at least 60 seconds bac
 		} as never,
 	);
 	const rateReadBlocks: bigint[] = [];
+	const blockReadBlocks: bigint[] = [];
+	const latestBlockNumber = 20_000_006n;
+	const measurementBlockNumber = latestBlockNumber - 5n;
+	const referenceBlockNumber = measurementBlockNumber - 5n;
 
-	adapter.setQueryBlockNumber(async () => 106n);
-	adapter.setQueryBlock(async (_provider, blockNumber) => ({
-		timestamp: BigInt(Number(blockNumber) * 10),
-	}));
+	adapter.setQueryBlockNumber(async () => latestBlockNumber);
+	adapter.setQueryBlock(async (_provider, blockNumber) => {
+		blockReadBlocks.push(blockNumber);
+		return {
+			timestamp: BigInt(Number(blockNumber) * 12),
+		};
+	});
 	adapter.setQueryEulerEarnVaultInfoFull(async () => makeVaultInfo());
 	adapter.setQueryEulerEarnConvertToAssets(
 		async (_provider, _vault, _shares, blockNumber) => {
 			assert.ok(blockNumber !== undefined);
 			rateReadBlocks.push(blockNumber);
-			return blockNumber === 101n ? 1_000_001n : 1_000_000n;
+			return blockNumber === measurementBlockNumber
+				? 1_000_001n
+				: 1_000_000n;
 		},
 	);
 
@@ -72,7 +81,20 @@ test("EulerEarn onchain adapter samples the latest block at least 60 seconds bac
 	const vault = fetched.result[0];
 
 	assert.deepEqual(fetched.errors, []);
-	assert.deepEqual(rateReadBlocks, [101n, 95n]);
+	assert.deepEqual(rateReadBlocks, [
+		measurementBlockNumber,
+		referenceBlockNumber,
+	]);
+	assert.ok(
+		blockReadBlocks.every(
+			(blockNumber) => blockNumber >= measurementBlockNumber - 8n,
+		),
+		`expected a recent-block search, got ${blockReadBlocks.join(", ")}`,
+	);
+	assert.ok(
+		blockReadBlocks.length <= 8,
+		`expected at most 8 block reads, got ${blockReadBlocks.length}`,
+	);
 	assert.equal(typeof vault?.supplyApy, "number");
 	assert.ok((vault?.supplyApy ?? 0) > 0);
 });
