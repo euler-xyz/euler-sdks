@@ -34,6 +34,20 @@ export interface AccountLiquidityInfo {
 	collateralValuesRaw: bigint[];
 }
 
+export interface AccountRewardInfo {
+	timestamp: bigint;
+	account: Address;
+	vault: Address;
+	balanceTracker: Address;
+	balanceForwarderEnabled: boolean;
+	balance: bigint;
+	enabledRewardsInfo: {
+		reward: Address;
+		earnedReward: bigint;
+		earnedRewardRecentIgnored: bigint;
+	}[];
+}
+
 export interface VaultAccountInfo {
 	/** Present on Account Lens deployments that report whole-vault query failures. */
 	queryFailure?: boolean;

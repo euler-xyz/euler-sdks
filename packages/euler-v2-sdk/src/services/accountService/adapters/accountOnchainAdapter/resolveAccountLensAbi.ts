@@ -3,7 +3,7 @@ import type { IABIService } from "../../../abiService/index.js";
 import { accountLensAbi } from "./abis/accountLensAbi.js";
 
 /** The AccountLens functions the SDK encodes and decodes. */
-const REQUIRED_FUNCTIONS = [
+const DEFAULT_REQUIRED_FUNCTIONS = [
 	"getEVCAccountInfo",
 	"getVaultAccountInfo",
 ] as const;
@@ -20,8 +20,11 @@ export interface ResolvedAccountLensAbi {
 	fallbackReason?: string;
 }
 
-const missingFunctions = (abi: Abi): string[] =>
-	REQUIRED_FUNCTIONS.filter(
+const missingFunctions = (
+	abi: Abi,
+	requiredFunctions: readonly string[],
+): string[] =>
+	requiredFunctions.filter(
 		(name) =>
 			!abi.some((item) => item.type === "function" && item.name === name),
 	);
@@ -42,12 +45,13 @@ const missingFunctions = (abi: Abi): string[] =>
 export async function resolveAccountLensAbi(
 	abiService: IABIService | undefined,
 	chainId: number,
+	requiredFunctions: readonly string[] = DEFAULT_REQUIRED_FUNCTIONS,
 ): Promise<ResolvedAccountLensAbi> {
 	if (!abiService) return { abi: bundledAccountLensAbi };
 
 	try {
 		const abi = await abiService.fetchABI(chainId, "AccountLens");
-		const missing = missingFunctions(abi);
+		const missing = missingFunctions(abi, requiredFunctions);
 		if (missing.length > 0) {
 			return {
 				abi: bundledAccountLensAbi,

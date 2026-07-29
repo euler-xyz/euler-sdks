@@ -15,6 +15,8 @@ const ACCOUNT = "0x0000000000000000000000000000000000000001" as Address;
 const EVC = "0x0000000000000000000000000000000000000002" as Address;
 const ACCOUNT_LENS = "0x0000000000000000000000000000000000000003" as Address;
 const VAULT = "0x0000000000000000000000000000000000000004" as Address;
+const SECOND_VAULT =
+	"0x0000000000000000000000000000000000000005" as Address;
 
 const runtimeAccountLensAbi = [
 	{
@@ -30,6 +32,16 @@ const runtimeAccountLensAbi = [
 	{
 		type: "function",
 		name: "getVaultAccountInfo",
+		stateMutability: "view",
+		inputs: [
+			{ name: "account", type: "address" },
+			{ name: "vault", type: "address" },
+		],
+		outputs: [{ name: "marker", type: "bytes32" }],
+	},
+	{
+		type: "function",
+		name: "getRewardAccountInfo",
 		stateMutability: "view",
 		inputs: [
 			{ name: "account", type: "address" },
@@ -114,6 +126,20 @@ describe("AccountLens ABI service consumers", () => {
 			runtimeAccountLensAbi,
 		);
 		expect(queryABI).toHaveBeenCalledTimes(2);
+	});
+
+	it("resolves ABI documents from the configured euler-interfaces branch", async () => {
+		const abiService = new ABIService(undefined, {
+			eulerInterfacesBranch: "account-lens-update",
+		});
+		const queryABI = vi.fn(async () => runtimeAccountLensAbi);
+		abiService.setQueryABI(queryABI);
+
+		await abiService.fetchABI(1, "AccountLens");
+
+		expect(queryABI).toHaveBeenCalledWith(
+			"https://raw.githubusercontent.com/euler-xyz/euler-interfaces/refs/heads/account-lens-update/abis/AccountLens.json",
+		);
 	});
 
 	it("rejects unsuccessful and malformed ABI responses", async () => {
@@ -216,14 +242,27 @@ describe("AccountLens ABI service consumers", () => {
 
 	it("uses the ABI service for reward-stream account reads", async () => {
 		const { service: abiService, fetchABI } = makeAbiService();
-		const readContract = vi.fn(async ({ abi }: { abi: Abi }) => {
+		const readContract = vi.fn(
+			async ({
+				abi,
+				functionName,
+			}: {
+				abi: Abi;
+				functionName: string;
+			}) => {
 			expect(abi).toBe(runtimeAccountLensAbi);
+			expect(functionName).toBe("getRewardAccountInfo");
 			return {
+				timestamp: 1n,
 				account: ACCOUNT,
 				vault: VAULT,
+				balanceTracker: EVC,
+				balanceForwarderEnabled: true,
+				balance: 1n,
 				enabledRewardsInfo: [],
 			};
-		});
+			},
+		);
 		const rewards = new RewardsService(
 			{ fetchVaultRewards: vi.fn(), fetchChainRewards: vi.fn() } as never,
 			{
@@ -248,21 +287,26 @@ describe("AccountLens ABI service consumers", () => {
 		expect(readContract).toHaveBeenCalledOnce();
 	});
 
-	it("omits reward streams from whole-vault query failures", async () => {
+	it("isolates failed reward-account reads by position", async () => {
 		const { service: abiService } = makeAbiService();
-		const readContract = vi.fn(async () => ({
-			queryFailure: true,
-			queryFailureReason: "0x1234",
-			account: ACCOUNT,
-			vault: VAULT,
-			enabledRewardsInfo: [
-				{
-					reward: EVC,
-					earnedReward: 1n,
-					earnedRewardRecentIgnored: 0n,
-				},
-			],
-		}));
+		const readContract = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("hostile reward source"))
+			.mockResolvedValueOnce({
+				timestamp: 1n,
+				account: ACCOUNT,
+				vault: SECOND_VAULT,
+				balanceTracker: EVC,
+				balanceForwarderEnabled: true,
+				balance: 1n,
+				enabledRewardsInfo: [
+					{
+						reward: EVC,
+						earnedReward: 1n,
+						earnedRewardRecentIgnored: 0n,
+					},
+				],
+			});
 		const rewards = new RewardsService(
 			{ fetchVaultRewards: vi.fn(), fetchChainRewards: vi.fn() } as never,
 			{
@@ -281,9 +325,20 @@ describe("AccountLens ABI service consumers", () => {
 			rewards.fetchRewardStreams({
 				chainId: 1,
 				account: ACCOUNT,
-				positions: [{ account: ACCOUNT, vault: VAULT }],
+				positions: [
+					{ account: ACCOUNT, vault: VAULT },
+					{ account: ACCOUNT, vault: SECOND_VAULT },
+				],
 			}),
-		).resolves.toEqual([]);
+		).resolves.toEqual([
+			{
+				account: ACCOUNT,
+				vault: SECOND_VAULT,
+				reward: EVC,
+				earnedReward: 1n,
+				earnedRewardRecentIgnored: 0n,
+			},
+		]);
 	});
 });
 

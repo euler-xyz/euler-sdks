@@ -1951,7 +1951,7 @@ test("rewards service fetches claimable reward streams from account lens", async
 		account: Address;
 		vault: Address;
 	}> = [];
-	service.setQueryVaultAccountInfo(
+	service.setQueryRewardAccountInfo(
 		async (_provider, queriedAccountLensAddress, account, vault) => {
 			calls.push({ accountLensAddress: queriedAccountLensAddress, account, vault });
 			return {

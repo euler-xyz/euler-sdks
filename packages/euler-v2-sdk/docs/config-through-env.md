@@ -60,7 +60,7 @@ endpoints without changing the V3 configuration used by other SDK services.
 
 `EULER_SDK_VAULT_TYPE_V3_TYPE_MAP_JSON` is a JSON object with string values, for example `{"custom":"EVault"}`.
 
-## Pricing, Swaps, And Deployments
+## Pricing, Swaps, And Euler Interfaces
 
 | Config field | Environment variable | Default |
 |---|---|---|
@@ -68,7 +68,13 @@ endpoints without changing the V3 configuration used by other SDK services.
 | `pricingApiKey` | `EULER_SDK_PRICING_API_KEY` | `v3ApiKey` |
 | `swapApiUrl` | `EULER_SDK_SWAP_API_URL` | `https://swap.euler.finance` |
 | `swapDefaultDeadline` | `EULER_SDK_SWAP_DEFAULT_DEADLINE` | `1800` |
-| `deploymentsUrl` | `EULER_SDK_DEPLOYMENTS_URL` | Euler interfaces `EulerChains.json` |
+| `eulerInterfacesBranch` | `EULER_SDK_EULER_INTERFACES_BRANCH` | `master` |
+| `deploymentsUrl` | `EULER_SDK_DEPLOYMENTS_URL` | `EulerChains.json` from `eulerInterfacesBranch` |
+
+`eulerInterfacesBranch` keeps the runtime ABI service and the default
+deployments document on the same `euler-interfaces` branch. A direct
+`deploymentsUrl` remains available for custom mirrors and takes precedence for
+the deployment service without changing the ABI branch.
 
 ## Rewards
 

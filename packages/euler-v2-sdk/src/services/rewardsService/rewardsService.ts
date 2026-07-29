@@ -18,7 +18,7 @@ import type { DeploymentService } from "../deploymentService/index.js";
 import type { IABIService } from "../abiService/index.js";
 import { accountLensAbi } from "../accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.js";
 import { resolveAccountLensAbi } from "../accountService/adapters/accountOnchainAdapter/resolveAccountLensAbi.js";
-import type { VaultAccountInfo } from "../accountService/adapters/accountOnchainAdapter/accountLensTypes.js";
+import type { AccountRewardInfo } from "../accountService/adapters/accountOnchainAdapter/accountLensTypes.js";
 import type {
 	BuildRewardClaimAllPlanArgs,
 	BuildRewardClaimPlanArgs,
@@ -557,23 +557,28 @@ export class RewardsService implements IRewardsService {
 		return this.adapter.fetchFuulClaimChecks(address, chainId);
 	}
 
-	queryVaultAccountInfo = async (
+	queryRewardAccountInfo = async (
 		provider: ReturnType<ProviderService["getProvider"]>,
 		accountLensAddress: Address,
 		account: Address,
 		vault: Address,
 		abi: Abi = accountLensAbi,
-	): Promise<VaultAccountInfo> => {
+	): Promise<AccountRewardInfo> => {
 		return provider.readContract({
 			address: accountLensAddress,
 			abi,
-			functionName: "getVaultAccountInfo",
+			functionName: "getRewardAccountInfo",
 			args: [account, vault],
-		}) as Promise<VaultAccountInfo>;
+		}) as Promise<AccountRewardInfo>;
 	};
 
-	setQueryVaultAccountInfo(fn: typeof this.queryVaultAccountInfo): void {
-		this.queryVaultAccountInfo = fn;
+	setQueryRewardAccountInfo(fn: typeof this.queryRewardAccountInfo): void {
+		this.queryRewardAccountInfo = fn;
+	}
+
+	/** @deprecated Use `setQueryRewardAccountInfo`. */
+	setQueryVaultAccountInfo(fn: typeof this.queryRewardAccountInfo): void {
+		this.setQueryRewardAccountInfo(fn);
 	}
 
 	async fetchRewardStreams(
@@ -596,14 +601,16 @@ export class RewardsService implements IRewardsService {
 		if (uniquePositions.length === 0) return [];
 		// This result shape has no diagnostics channel, so a fallback is logged.
 		const { abi: resolvedAccountLensAbi, fallbackReason } =
-			await resolveAccountLensAbi(this.abiService, args.chainId);
+			await resolveAccountLensAbi(this.abiService, args.chainId, [
+				"getRewardAccountInfo",
+			]);
 		if (fallbackReason) {
 			console.warn(`[rewardsService] ${fallbackReason}`);
 		}
 
-		const vaultAccountInfos = await Promise.all(
+		const rewardAccountInfoResults = await Promise.allSettled(
 			uniquePositions.map((position) =>
-				this.queryVaultAccountInfo(
+				this.queryRewardAccountInfo(
 					provider,
 					accountLensAddress,
 					position.account,
@@ -613,19 +620,19 @@ export class RewardsService implements IRewardsService {
 			),
 		);
 
-		return vaultAccountInfos.flatMap((vaultAccountInfo) =>
-			vaultAccountInfo.queryFailure
-				? []
-				: (vaultAccountInfo.enabledRewardsInfo ?? [])
-						.filter((rewardInfo) => rewardInfo.earnedReward > 0n)
-						.map((rewardInfo) => ({
-							account: getAddress(vaultAccountInfo.account) as Address,
-							vault: getAddress(vaultAccountInfo.vault) as Address,
-							reward: getAddress(rewardInfo.reward) as Address,
-							earnedReward: rewardInfo.earnedReward,
-							earnedRewardRecentIgnored: rewardInfo.earnedRewardRecentIgnored,
-						})),
-		);
+		return rewardAccountInfoResults.flatMap((result) => {
+			if (result.status === "rejected") return [];
+
+			return result.value.enabledRewardsInfo
+				.filter((rewardInfo) => rewardInfo.earnedReward > 0n)
+				.map((rewardInfo) => ({
+					account: getAddress(result.value.account) as Address,
+					vault: getAddress(result.value.vault) as Address,
+					reward: getAddress(rewardInfo.reward) as Address,
+					earnedReward: rewardInfo.earnedReward,
+					earnedRewardRecentIgnored: rewardInfo.earnedRewardRecentIgnored,
+				}));
+		});
 	}
 
 	async buildClaimPlan(

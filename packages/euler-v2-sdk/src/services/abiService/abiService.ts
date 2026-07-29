@@ -5,15 +5,27 @@ export interface IABIService {
 	fetchABI(chainId: number, contract: string): Promise<Abi>;
 }
 
+export interface ABIServiceConfig {
+	eulerInterfacesBranch?: string;
+}
+
+export const DEFAULT_EULER_INTERFACES_BRANCH = "master";
+
 export class ABIService implements IABIService {
 	private readonly abiRequests: Record<string, Promise<Abi>> = {};
 
-	constructor(buildQuery?: BuildQueryFn) {
+	constructor(
+		buildQuery?: BuildQueryFn,
+		private readonly config: ABIServiceConfig = {},
+	) {
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
 
 	private getABIURL(_: number, contract: string): string {
-		return `https://raw.githubusercontent.com/euler-xyz/euler-interfaces/refs/heads/master/abis/${contract}.json`;
+		const branch =
+			this.config.eulerInterfacesBranch?.trim() ||
+			DEFAULT_EULER_INTERFACES_BRANCH;
+		return `https://raw.githubusercontent.com/euler-xyz/euler-interfaces/refs/heads/${branch}/abis/${contract}.json`;
 	}
 
 	queryABI = async (url: string): Promise<Abi> => {

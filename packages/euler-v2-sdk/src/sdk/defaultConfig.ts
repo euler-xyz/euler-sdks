@@ -14,6 +14,7 @@ import type { PricingServiceConfig } from "../services/priceService/index.js";
 import type { IntrinsicApyV3AdapterConfig } from "../services/intrinsicApyService/index.js";
 import type { RewardsV3AdapterConfig } from "../services/rewardsService/index.js";
 import type { ActivityServiceConfig } from "../services/activityService/index.js";
+import { DEFAULT_EULER_INTERFACES_BRANCH } from "../services/abiService/index.js";
 
 const SUBGRAPH_BASE_URL =
 	"https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs";
@@ -106,9 +107,13 @@ export const defaultSwapServiceConfig: SwapServiceConfig = {
 	defaultDeadline: 1800, // 30 minutes
 };
 
+export const getEulerInterfacesDeploymentsUrl = (
+	branch = DEFAULT_EULER_INTERFACES_BRANCH,
+): string =>
+	`https://raw.githubusercontent.com/euler-xyz/euler-interfaces/refs/heads/${branch}/EulerChains.json`;
+
 export const defaultDeploymentServiceConfig: DeploymentServiceConfig = {
-	deploymentsUrl:
-		"https://raw.githubusercontent.com/euler-xyz/euler-interfaces/refs/heads/master/EulerChains.json",
+	deploymentsUrl: getEulerInterfacesDeploymentsUrl(),
 };
 
 export const DEFAULT_TOKENLIST_API_BASE_URL = DEFAULT_V3_API_URL;

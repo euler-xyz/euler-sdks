@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildEulerSDK } from "../src/sdk/buildSDK.js";
 import { readEulerSDKEnvConfig } from "../src/sdk/config.js";
 import {
@@ -6,6 +6,7 @@ import {
 	defaultTokenlistServiceConfig,
 } from "../src/sdk/defaultConfig.js";
 import type { IDeploymentService } from "../src/services/deploymentService/index.js";
+import { DeploymentService } from "../src/services/deploymentService/index.js";
 
 const deploymentService: IDeploymentService = {
 	getDeploymentChainIds: () => [],
@@ -33,6 +34,8 @@ describe("SDK env config", () => {
 			EULER_SDK_REWARDS_TURTLE_STREAMS_JSON:
 				'[{"streamId":"stream-1","chainId":1,"streamAddress":"0x0000000000000000000000000000000000000001","rewardToken":{"address":"0x0000000000000000000000000000000000000002","symbol":"EUL","decimals":18},"tokenPrice":1.5}]',
 			EULER_SDK_VAULT_TYPE_V3_TYPE_MAP_JSON: '{"custom":"EVault"}',
+			EULER_SDK_EULER_INTERFACES_BRANCH: "account-lens-update",
+			EULER_SDK_DEPLOYMENTS_URL: "https://deployments.example/EulerChains.json",
 		});
 
 		expect(config).toMatchObject({
@@ -64,6 +67,8 @@ describe("SDK env config", () => {
 				},
 			],
 			vaultTypeV3TypeMap: { custom: "EVault" },
+			eulerInterfacesBranch: "account-lens-update",
+			deploymentsUrl: "https://deployments.example/EulerChains.json",
 		});
 	});
 
@@ -82,6 +87,52 @@ describe("SDK env config", () => {
 		expect(defaultTokenlistServiceConfig.getTokenListUrl(1)).toBe(
 			"https://v3.euler.finance/v3/tokens?chainId=1&limit=500&type=base",
 		);
+	});
+
+	it("uses the euler-interfaces branch for default deployments", async () => {
+		const build = vi
+			.spyOn(DeploymentService, "build")
+			.mockResolvedValue(deploymentService as DeploymentService);
+
+		try {
+			await buildEulerSDK({
+				config: { eulerInterfacesBranch: "account-lens-update" },
+			});
+
+			expect(build).toHaveBeenCalledWith(
+				{
+					deploymentsUrl:
+						"https://raw.githubusercontent.com/euler-xyz/euler-interfaces/refs/heads/account-lens-update/EulerChains.json",
+				},
+				expect.any(Function),
+			);
+		} finally {
+			build.mockRestore();
+		}
+	});
+
+	it("prefers an explicit deployments URL over the interfaces branch", async () => {
+		const build = vi
+			.spyOn(DeploymentService, "build")
+			.mockResolvedValue(deploymentService as DeploymentService);
+
+		try {
+			await buildEulerSDK({
+				config: {
+					eulerInterfacesBranch: "account-lens-update",
+					deploymentsUrl: "https://deployments.example/EulerChains.json",
+				},
+			});
+
+			expect(build).toHaveBeenCalledWith(
+				{
+					deploymentsUrl: "https://deployments.example/EulerChains.json",
+				},
+				expect.any(Function),
+			);
+		} finally {
+			build.mockRestore();
+		}
 	});
 
 	it("throws for invalid scalar values", () => {

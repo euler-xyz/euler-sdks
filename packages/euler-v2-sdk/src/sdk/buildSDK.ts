@@ -1,6 +1,10 @@
 import type { Address } from "viem";
 import { EulerSDK } from "./sdk.js";
-import { ABIService, type IABIService } from "../services/abiService/index.js";
+import {
+	ABIService,
+	DEFAULT_EULER_INTERFACES_BRANCH,
+	type IABIService,
+} from "../services/abiService/index.js";
 import {
 	DeploymentService,
 	type IDeploymentService,
@@ -106,6 +110,7 @@ import {
 	defaultSwapServiceConfig,
 	defaultTokenlistServiceConfig,
 	defaultVaultTypeAdapterConfig,
+	getEulerInterfacesDeploymentsUrl,
 } from "./defaultConfig.js";
 import { defaultEVaultV3AdapterConfig } from "./defaultConfig.js";
 import {
@@ -568,15 +573,27 @@ export async function buildEulerSDK<
 	};
 	const resolvedBuildQuery =
 		buildQuery ?? createQueryCacheBuildQuery(resolvedQueryCacheConfig);
+	const resolvedEulerInterfacesBranch =
+		pickConfigValue(
+			config?.eulerInterfacesBranch,
+			undefined,
+			envConfig.eulerInterfacesBranch,
+		) ?? DEFAULT_EULER_INTERFACES_BRANCH;
 	const resolvedDeploymentServiceConfig = {
 		...defaultDeploymentServiceConfig,
+		deploymentsUrl: getEulerInterfacesDeploymentsUrl(
+			resolvedEulerInterfacesBranch,
+		),
 		...maybeField("deploymentsUrl", envConfig.deploymentsUrl),
 		...maybeField("deploymentsUrl", config?.deploymentsUrl),
 	};
 
 	// Build core services (these may be needed for adapters even if overridden)
 	const abiService =
-		servicesOverrides?.abiService ?? new ABIService(resolvedBuildQuery);
+		servicesOverrides?.abiService ??
+		new ABIService(resolvedBuildQuery, {
+			eulerInterfacesBranch: resolvedEulerInterfacesBranch,
+		});
 	const deploymentService =
 		servicesOverrides?.deploymentService ??
 		(await DeploymentService.build(
