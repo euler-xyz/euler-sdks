@@ -768,6 +768,27 @@ describe("ActivityService", () => {
 		expect(ACTIVITY_EVENT_TYPES).toContain("terms_of_use_signed");
 	});
 
+	it("accepts EulerRouter governance event types from V3", () => {
+		const routerEventTypes = [
+			"set_oracle_config",
+			"set_fallback_oracle",
+			"set_resolved_vault",
+			"set_oracle_governor",
+		] as const satisfies readonly ActivityEventType[];
+
+		for (const type of routerEventTypes) {
+			expect(
+				normalizeActivityEvent(
+					event({
+						type,
+						category: "governance",
+					}),
+				).type,
+			).toBe(type);
+			expect(ACTIVITY_EVENT_TYPES).toContain(type);
+		}
+	});
+
 	it("rejects response event types outside the normalized contract", () => {
 		expect(() => normalizeActivityEvent(event({ type: "not_real" }))).toThrow(
 			"Invalid activity response at $.data[].type",
