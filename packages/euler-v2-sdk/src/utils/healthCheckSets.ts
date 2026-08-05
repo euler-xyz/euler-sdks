@@ -22,12 +22,20 @@ import { resolveBorrowCollateralVaults } from "./accountPositionClassification.j
 type HealthCheckState = {
 	controllers: Set<Address>;
 	collaterals: Set<Address>;
+	requireCompleteMetadata: boolean;
 };
 
 export type HealthCheckAccountSet = {
 	account: Address;
 	controllers: Address[];
 	collaterals: Address[];
+	requireCompleteMetadata?: true;
+};
+
+export type PlanLiquidationHealthCheck = {
+	planIndex: number;
+	violator: Address;
+	controller: Address;
 };
 
 export type PlanHealthCheckSet = {
@@ -53,6 +61,7 @@ function ensureState(
 	const created = {
 		controllers: new Set<Address>(),
 		collaterals: new Set<Address>(),
+		requireCompleteMetadata: false,
 	};
 	states.set(normalized, created);
 	return created;
@@ -85,9 +94,13 @@ function collectInitialCollateralVaults(
 
 function buildInitialStates(
 	account: Account<IHasVaultAddress>,
+	additionalSubAccounts: readonly SubAccount<IHasVaultAddress>[] = [],
 ): Map<Address, HealthCheckState> {
 	const states = new Map<Address, HealthCheckState>();
-	for (const subAccount of Object.values(account.subAccounts)) {
+	for (const subAccount of [
+		...Object.values(account.subAccounts),
+		...additionalSubAccounts,
+	]) {
 		if (!subAccount) continue;
 		const state = ensureState(states, subAccount.account);
 		for (const controller of subAccount.enabledControllers) {
@@ -154,26 +167,30 @@ function applyEvcStateMutation(
 	}
 }
 
-function getCheckedAccountFromEVaultCall(item: EVCBatchItem): Address | null {
+function getCheckedAccountsFromEVaultCall(item: EVCBatchItem): Address[] {
 	const decoded = decodeEVaultFunction(item);
-	if (!decoded) return null;
+	if (!decoded) return [];
 	const args = (decoded.args ?? []) as readonly unknown[];
+	const onBehalfOfAccount = getAddress(item.onBehalfOfAccount);
+
+	if (decoded.functionName === "liquidate") {
+		return [onBehalfOfAccount, getAddress(args[0] as Address)];
+	}
 
 	if (
 		decoded.functionName === "borrow" ||
 		decoded.functionName === "pullDebt" ||
-		decoded.functionName === "liquidate" ||
 		decoded.functionName === "repayWithShares" ||
 		decoded.functionName === "transfer"
 	) {
-		return getAddress(item.onBehalfOfAccount);
+		return [onBehalfOfAccount];
 	}
 
 	if (
 		decoded.functionName === "withdraw" ||
 		decoded.functionName === "redeem"
 	) {
-		return getAddress(args[2] as Address);
+		return [getAddress(args[2] as Address)];
 	}
 
 	if (
@@ -181,10 +198,30 @@ function getCheckedAccountFromEVaultCall(item: EVCBatchItem): Address | null {
 		decoded.functionName === "transferFromMax"
 	) {
 		const from = getAddress(args[0] as Address);
-		return from === zeroAddress ? getAddress(item.onBehalfOfAccount) : from;
+		return [from === zeroAddress ? onBehalfOfAccount : from];
 	}
 
-	return null;
+	return [];
+}
+
+export function collectLiquidationHealthChecks(
+	plan: TransactionPlan,
+): PlanLiquidationHealthCheck[] {
+	const checks: PlanLiquidationHealthCheck[] = [];
+	for (const [planIndex, entry] of plan.entries()) {
+		if (entry.type !== "evcBatch") continue;
+		for (const item of flattenBatchEntries(entry.items)) {
+			const decoded = decodeEVaultFunction(item);
+			if (decoded?.functionName !== "liquidate") continue;
+			const args = (decoded.args ?? []) as readonly unknown[];
+			checks.push({
+				planIndex,
+				violator: getAddress(args[0] as Address),
+				controller: getAddress(item.targetContract),
+			});
+		}
+	}
+	return checks;
 }
 
 function applyEVaultStateMutation(
@@ -214,6 +251,9 @@ function snapshotCheckedAccounts(
 				account: getAddress(account),
 				controllers: [...state.controllers],
 				collaterals: [...state.collaterals],
+				...(state.requireCompleteMetadata
+					? { requireCompleteMetadata: true as const }
+					: {}),
 			},
 		];
 	});
@@ -222,10 +262,11 @@ function snapshotCheckedAccounts(
 export function calculateHealthCheckSets(
 	plan: TransactionPlan,
 	account: Account<IHasVaultAddress>,
+	additionalSubAccounts: readonly SubAccount<IHasVaultAddress>[] = [],
 ): PlanHealthCheckSet[] {
 	ensurePopulatedAccount(account);
 
-	const states = buildInitialStates(account);
+	const states = buildInitialStates(account, additionalSubAccounts);
 	const healthCheckSets: PlanHealthCheckSet[] = [];
 
 	for (const [planIndex, entry] of plan.entries()) {
@@ -236,10 +277,16 @@ export function calculateHealthCheckSets(
 			applyEvcStateMutation(item, states);
 			applyEVaultStateMutation(item, states);
 
-			const checkedAccount = getCheckedAccountFromEVaultCall(item);
-			if (checkedAccount) {
+			const checkedAccountsForItem = getCheckedAccountsFromEVaultCall(item);
+			for (const checkedAccount of checkedAccountsForItem) {
 				checkedAccounts.add(checkedAccount);
 				ensureState(states, checkedAccount);
+			}
+
+			const decoded = decodeEVaultFunction(item);
+			if (decoded?.functionName === "liquidate") {
+				const args = (decoded.args ?? []) as readonly unknown[];
+				ensureState(states, args[0] as Address).requireCompleteMetadata = true;
 			}
 		}
 
