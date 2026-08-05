@@ -10,7 +10,7 @@ import {
 	type Address,
 	type PublicClient,
 } from "viem";
-import { Account } from "../src/entities/Account.js";
+import { Account, SubAccount } from "../src/entities/Account.js";
 import { ethereumVaultConnectorAbi } from "../src/services/executionService/abis/ethereumVaultConnectorAbi.js";
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
 import type {
@@ -24,16 +24,24 @@ const GOOD_FEED =
 	"0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43" as const;
 const MISSING_FEED =
 	"0x70cd05521e3bdeaee2cadc1360f0d95397f03275f273199be35a029114f53a3b" as const;
+const OTHER_FEED =
+	"0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace" as const;
+const DEBT_FEED =
+	"0xca80ba6dc32e08d43fdb83e2b05dbc5bc907c7dd3f5d1266f998e92fbff3503f" as const;
 const PYTH = getAddress("0x4305FB66699C3B2702D4d05CF36551390A4c69C6");
 const UNTRUSTED_PYTH = getAddress("0x00000000000000000000000000000000000000AA");
 const OWNER = getAddress("0x00000000000000000000000000000000000000BB");
 const EVC = getAddress("0x00000000000000000000000000000000000000CC");
 const CONTROLLER = getAddress("0x00000000000000000000000000000000000000DD");
 const COLLATERAL = getAddress("0x00000000000000000000000000000000000000EE");
+const OTHER_COLLATERAL = getAddress(
+	"0x00000000000000000000000000000000000000EF",
+);
+const VIOLATOR = getAddress("0x00000000000000000000000000000000000000F0");
 const ASSET = getAddress("0x00000000000000000000000000000000000000A1");
 const UNIT = getAddress("0x00000000000000000000000000000000000000A2");
 
-const makePythRoute = (oracle = PYTH) => ({
+const makePythRoute = (oracle = PYTH, feedId = GOOD_FEED) => ({
 	base: ASSET,
 	quote: UNIT,
 	source: "direct" as const,
@@ -48,7 +56,7 @@ const makePythRoute = (oracle = PYTH) => ({
 				pyth: oracle,
 				base: ASSET,
 				quote: UNIT,
-				feedId: GOOD_FEED,
+				feedId,
 				maxStaleness: 60n,
 				maxConfWidth: 1n,
 			},
@@ -59,6 +67,104 @@ const makePythRoute = (oracle = PYTH) => ({
 function getRequestedIds(url: string): string[] {
 	return new URL(url).searchParams.getAll("ids[]");
 }
+
+const makeLiquidationPlan = (): TransactionPlan => [
+	{
+		type: "evcBatch",
+		items: [
+			{
+				targetContract: CONTROLLER,
+				onBehalfOfAccount: OWNER,
+				value: 0n,
+				data: encodeFunctionData({
+					abi: eVaultAbi,
+					functionName: "liquidate",
+					args: [VIOLATOR, COLLATERAL, 1n, 0n],
+				}),
+			},
+		],
+	},
+];
+
+const makeViolatorSubAccount = () =>
+	new SubAccount({
+		timestamp: 0,
+		account: VIOLATOR,
+		owner: VIOLATOR,
+		lastAccountStatusCheckTimestamp: 0,
+		enabledControllers: [CONTROLLER],
+		enabledCollaterals: [COLLATERAL, OTHER_COLLATERAL],
+		positions: [
+			{
+				account: VIOLATOR,
+				vaultAddress: CONTROLLER,
+				vault: { address: CONTROLLER },
+				asset: ASSET,
+				shares: 0n,
+				assets: 0n,
+				borrowed: 1n,
+				isController: true,
+				isCollateral: false,
+				balanceForwarderEnabled: false,
+			},
+			...([COLLATERAL, OTHER_COLLATERAL] as const).map((vaultAddress) => ({
+				account: VIOLATOR,
+				vaultAddress,
+				vault: { address: vaultAddress },
+				asset: ASSET,
+				shares: 1n,
+				assets: 1n,
+				borrowed: 0n,
+				isController: false,
+				isCollateral: true,
+				balanceForwarderEnabled: false,
+			})),
+		],
+	});
+
+const makeLiquidationSdk = (
+	fetchSubAccount: () => Promise<{
+		result: ReturnType<typeof makeViolatorSubAccount> | undefined;
+		errors: Array<{ message: string }>;
+	}>,
+) => ({
+	accountService: {
+		fetchAccount: async () => ({
+			result: new Account({
+				chainId: 1,
+				owner: OWNER,
+				populated: { vaults: true },
+				isLockdownMode: false,
+				isPermitDisabledMode: false,
+				subAccounts: {},
+			}),
+			errors: [],
+		}),
+		fetchSubAccount,
+	},
+	providerService: {
+		getProvider: () =>
+			({ readContract: async () => 11n }) as unknown as PublicClient,
+	},
+	vaultMetaService: {
+		fetchVaults: async () => ({
+			result: [
+				{
+					address: CONTROLLER,
+					debtPricingOracleRoute: makePythRoute(PYTH, DEBT_FEED),
+					collaterals: [
+						{ address: COLLATERAL, oracleRoute: makePythRoute() },
+						{
+							address: OTHER_COLLATERAL,
+							oracleRoute: makePythRoute(PYTH, OTHER_FEED),
+						},
+					],
+				},
+			],
+			errors: [],
+		}),
+	},
+});
 
 test("PythPluginAdapter retries Hermes 404s without missing price ids", async () => {
 	const requestedIds: string[][] = [];
@@ -119,6 +225,66 @@ test("PythPluginAdapter returns no update data when all Hermes ids are missing",
 	assert.deepEqual(updateData, []);
 	assert.deepEqual(requestedIds, [[MISSING_FEED]]);
 });
+
+test.each(["processPlan", "prefetch"] as const)(
+	"Pyth plugin %s includes every violator collateral feed for liquidation",
+	async (path) => {
+		const requestedIds = new Set<string>();
+		const fetchFn = (async (input: RequestInfo | URL) => {
+			for (const id of getRequestedIds(input.toString())) requestedIds.add(id);
+			return Response.json({
+				binary: { encoding: "hex", data: ["feedface"] },
+			});
+		}) as typeof fetch;
+		const fetchSubAccount = async () => ({
+			result: makeViolatorSubAccount(),
+			errors: [],
+		});
+		const sdk = makeLiquidationSdk(fetchSubAccount) as never;
+		const plugin = createPythPlugin({ fetchFn });
+		const plan = makeLiquidationPlan();
+
+		if (path === "processPlan") {
+			const processed = await plugin.processPlan?.(plan, OWNER, 1, sdk);
+			assert.equal(processed?.[0]?.type, "evcBatch");
+			if (processed?.[0]?.type !== "evcBatch") {
+				throw new Error("expected evcBatch");
+			}
+			assert.equal(flattenBatchEntries(processed[0].items)[0]?.targetContract, PYTH);
+		} else {
+			const prefetch = await plugin.prefetch?.(plan, OWNER, 1, sdk);
+			assert.equal(prefetch?.entries.length, 1);
+			assert.deepEqual(
+				new Set(prefetch?.entries[0]?.feedIds),
+				new Set([DEBT_FEED, GOOD_FEED, OTHER_FEED]),
+			);
+		}
+
+		assert.deepEqual(
+			requestedIds,
+			new Set([DEBT_FEED, GOOD_FEED, OTHER_FEED]),
+		);
+	},
+);
+
+test.each(["processPlan", "prefetch"] as const)(
+	"Pyth plugin %s fails closed when violator metadata is incomplete",
+	async (path) => {
+		const sdk = makeLiquidationSdk(async () => ({
+			result: undefined,
+			errors: [{ message: "violator snapshot incomplete" }],
+		})) as never;
+		const plugin = createPythPlugin();
+		const call = path === "processPlan"
+			? plugin.processPlan?.(makeLiquidationPlan(), OWNER, 1, sdk)
+			: plugin.prefetch?.(makeLiquidationPlan(), OWNER, 1, sdk);
+
+		await assert.rejects(
+			call,
+			/Pyth liquidation enrichment could not load complete violator metadata.*violator snapshot incomplete/,
+		);
+	},
+);
 
 test("Pyth plugin uses final batch controller and collateral state for health checks", async () => {
 	const originalFetch = globalThis.fetch;

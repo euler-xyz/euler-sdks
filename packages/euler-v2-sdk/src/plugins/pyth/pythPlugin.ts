@@ -12,6 +12,7 @@ import {
 	Account,
 	type AddressOrAccount,
 	type IHasVaultAddress,
+	type SubAccount,
 } from "../../entities/Account.js";
 import type { EVault, EVaultCollateral } from "../../entities/EVault.js";
 import type {
@@ -29,7 +30,9 @@ import {
 import { createBundledCall } from "../../utils/callBundler.js";
 import {
 	calculateHealthCheckSets,
+	collectLiquidationHealthChecks,
 	type HealthCheckAccountSet,
+	type PlanHealthCheckSet,
 } from "../../utils/healthCheckSets.js";
 import {
 	collectPythFeedsFromRouteSteps,
@@ -380,6 +383,67 @@ async function resolveAccount(
 	return fetched.result;
 }
 
+async function resolvePlanHealthCheckSets(
+	plan: TransactionPlan,
+	account: Account<IHasVaultAddress>,
+	chainId: number,
+	sdk: PluginSDK,
+): Promise<PlanHealthCheckSet[]> {
+	const checksByViolator = new Map<Address, Set<Address>>();
+	for (const check of collectLiquidationHealthChecks(plan)) {
+		const controllers =
+			checksByViolator.get(check.violator) ?? new Set<Address>();
+		controllers.add(check.controller);
+		checksByViolator.set(check.violator, controllers);
+	}
+	if (!checksByViolator.size) return calculateHealthCheckSets(plan, account);
+
+	const additionalSubAccounts: SubAccount<IHasVaultAddress>[] = [];
+	for (const [violator, requiredControllers] of checksByViolator) {
+		let subAccount = account.getSubAccount(violator);
+		if (!subAccount) {
+			const fetched = await sdk.accountService.fetchSubAccount(
+				chainId,
+				violator,
+				undefined,
+				MINIMAL_ACCOUNT_FETCH_OPTIONS,
+			);
+			if (fetched.errors.length) {
+				throw new Error(
+					`Pyth liquidation enrichment could not load complete violator metadata for ${violator}: ${fetched.errors.map((issue) => issue.message).join("; ")}`,
+				);
+			}
+			subAccount = fetched.result;
+		}
+
+		if (!subAccount) {
+			throw new Error(
+				`Pyth liquidation enrichment could not load violator sub-account ${violator}.`,
+			);
+		}
+
+		for (const controller of requiredControllers) {
+			const controllerEnabled = subAccount.enabledControllers.some(
+				(enabled) => getAddress(enabled) === getAddress(controller),
+			);
+			const debtPosition = subAccount.positions.find(
+				(position) =>
+					getAddress(position.vaultAddress) === getAddress(controller) &&
+					position.borrowed > 0n,
+			);
+			if (!controllerEnabled || !debtPosition) {
+				throw new Error(
+					`Pyth liquidation enrichment received incomplete violator metadata for ${violator}: controller ${controller} is not present as enabled debt.`,
+				);
+			}
+		}
+
+		additionalSubAccounts.push(subAccount);
+	}
+
+	return calculateHealthCheckSets(plan, account, additionalSubAccounts);
+}
+
 async function collectHealthCheckFeeds(
 	checkedAccounts: readonly HealthCheckAccountSet[],
 	chainId: number,
@@ -393,10 +457,17 @@ async function collectHealthCheckFeeds(
 	}
 	if (!controllerAddresses.size) return [];
 
-	const fetched = await sdk.vaultMetaService.fetchVaults(
-		chainId,
-		[...controllerAddresses],
+	const fetched = await sdk.vaultMetaService.fetchVaults(chainId, [
+		...controllerAddresses,
+	]);
+	const requiresCompleteMetadata = checkedAccounts.some(
+		(account) => account.requireCompleteMetadata,
 	);
+	if (requiresCompleteMetadata && fetched.errors.length) {
+		throw new Error(
+			`Pyth liquidation enrichment could not load complete controller metadata: ${fetched.errors.map((issue) => issue.message).join("; ")}`,
+		);
+	}
 
 	const controllers = new Map<Address, PythControllerVault>();
 	for (const vault of fetched.result) {
@@ -410,7 +481,14 @@ async function collectHealthCheckFeeds(
 	for (const account of checkedAccounts) {
 		for (const controllerAddress of account.controllers) {
 			const controller = controllers.get(getAddress(controllerAddress));
-			if (!controller) continue;
+			if (!controller) {
+				if (account.requireCompleteMetadata) {
+					throw new Error(
+						`Pyth liquidation enrichment could not resolve controller ${controllerAddress} for violator ${account.account}.`,
+					);
+				}
+				continue;
+			}
 
 			const selfKey = `${getAddress(controllerAddress).toLowerCase()}:${CONTROLLER_SELF}`;
 			if (!seenPairs.has(selfKey)) {
@@ -428,7 +506,14 @@ async function collectHealthCheckFeeds(
 				const collateral = controller.collaterals.find(
 					(c) => getAddress(c.address) === getAddress(collateralAddress),
 				);
-				if (!collateral) continue;
+				if (!collateral) {
+					if (account.requireCompleteMetadata) {
+						throw new Error(
+							`Pyth liquidation enrichment could not resolve collateral ${collateralAddress} in controller ${controllerAddress} metadata.`,
+						);
+					}
+					continue;
+				}
 				feeds.push(...collectPythFeedsFromRouteSteps(collateral.oracleRoute));
 			}
 		}
@@ -511,7 +596,12 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 			sdk: PluginSDK,
 		): Promise<PythPluginPrefetch | undefined> {
 			const resolvedAccount = await resolveAccount(account, chainId, sdk);
-			const planSets = calculateHealthCheckSets(plan, resolvedAccount);
+			const planSets = await resolvePlanHealthCheckSets(
+				plan,
+				resolvedAccount,
+				chainId,
+				sdk,
+			);
 			const allAccounts: HealthCheckAccountSet[] = [];
 			for (const set of planSets) allAccounts.push(...set.accounts);
 			if (!allAccounts.length) return { entries: [] };
@@ -621,10 +711,9 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 
 			const resolvedAccount = await resolveAccount(account, chainId, sdk);
 			const healthCheckSets = new Map(
-				calculateHealthCheckSets(plan, resolvedAccount).map((set) => [
-					set.planIndex,
-					set.accounts,
-				]),
+				(
+					await resolvePlanHealthCheckSets(plan, resolvedAccount, chainId, sdk)
+				).map((set) => [set.planIndex, set.accounts]),
 			);
 			const provider = sdk.providerService.getProvider(chainId);
 			const processed: TransactionPlanItem[] = [];
