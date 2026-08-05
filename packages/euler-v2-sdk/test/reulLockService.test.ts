@@ -6,6 +6,7 @@ import {
 	REULLockService,
 	reulLockAbi,
 } from "../src/services/reulLockService/index.js";
+import type { BuildUnlockREULPlanArgs } from "../src/services/reulLockService/index.js";
 import { buildEulerSDK } from "../src/sdk/buildSDK.js";
 
 const ACCOUNT = getAddress("0x00000000000000000000000000000000000000aa");
@@ -94,6 +95,7 @@ test("buildUnlockPlan creates an rEUL unlock EVC batch item", () => {
 		chainId: 1,
 		account: ACCOUNT,
 		lockTimestamp: 123n,
+		allowRemainderLoss: true,
 	});
 
 	assert.equal(plan.length, 1);
@@ -152,6 +154,23 @@ test("buildUnlockPlan supports explicit rEUL address and remainder-loss override
 	assert.deepEqual(decoded.args, [ACCOUNT, 456n, false]);
 });
 
+test("buildUnlockPlan rejects an omitted remainder-loss policy", () => {
+	const service = new REULLockService(
+		{ getProvider: () => undefined } as never,
+		createDeploymentService() as never,
+	);
+	const missingLossPolicy = {
+		chainId: 1,
+		account: ACCOUNT,
+		lockTimestamp: 123n,
+	} as BuildUnlockREULPlanArgs;
+
+	assert.throws(
+		() => service.buildUnlockPlan(missingLossPolicy),
+		/allowRemainderLoss must be explicitly set/,
+	);
+});
+
 test("rEUL address is required when deployment metadata does not provide it", () => {
 	const service = new REULLockService(
 		{ getProvider: () => undefined } as never,
@@ -164,6 +183,7 @@ test("rEUL address is required when deployment metadata does not provide it", ()
 				chainId: 1,
 				account: ACCOUNT,
 				lockTimestamp: 123n,
+				allowRemainderLoss: true,
 			}),
 		/rEUL token address not configured/,
 	);
