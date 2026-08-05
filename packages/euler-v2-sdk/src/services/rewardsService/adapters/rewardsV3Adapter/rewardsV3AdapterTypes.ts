@@ -100,6 +100,8 @@ export type V3RewardsBreakdownRow = {
 	recipient?: string;
 	source?: string;
 	provider?: string;
+	currencyType?: number | string;
+	currency_type?: number | string;
 	token?: {
 		address?: string;
 		chainId?: number;

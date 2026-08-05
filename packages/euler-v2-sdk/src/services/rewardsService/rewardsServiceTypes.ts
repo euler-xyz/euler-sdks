@@ -56,6 +56,8 @@ export interface UserReward {
 	tokenPrice: number;
 	/** Reward provider. */
 	provider: RewardSource;
+	/** Fuul currency type used to bind selected rewards to claim checks. */
+	fuulCurrencyType?: number;
 	/** Optional provider campaign identifier, when the upstream exposes one. */
 	campaignId?: string;
 	/** Total accumulated reward amount (raw, unscaled bigint as string). */

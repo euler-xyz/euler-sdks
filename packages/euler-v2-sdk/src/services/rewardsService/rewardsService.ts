@@ -229,6 +229,7 @@ const userRewardClaimKey = (reward: UserReward): string =>
 		reward.provider,
 		reward.chainId,
 		reward.token.address.toLowerCase(),
+		reward.fuulCurrencyType ?? "",
 		reward.claimAddress?.toLowerCase() ?? "",
 		reward.campaignId ?? "",
 		reward.streamId ?? "",
@@ -1102,10 +1103,51 @@ export class RewardsService implements IRewardsService {
 		if (claimChecks.length === 0) {
 			throw new Error("No claimable Fuul rewards found");
 		}
-		await this.validateFuulClaimChecks(chainId, account, rewards, claimChecks);
+
+		const selectedTypedCurrencies = new Set(
+			rewards
+				.filter(
+					(reward) =>
+						reward.provider === "fuul" &&
+						reward.chainId === chainId &&
+						reward.fuulCurrencyType !== undefined,
+				)
+				.map((reward) =>
+					fuulRewardKey(reward.token.address, reward.fuulCurrencyType),
+				),
+		);
+		const selectedUntypedCurrencies = new Set(
+			rewards
+				.filter(
+					(reward) =>
+						reward.provider === "fuul" &&
+						reward.chainId === chainId &&
+						reward.fuulCurrencyType === undefined,
+				)
+				.map((reward) => getAddress(reward.token.address).toLowerCase()),
+		);
+		const selectedClaimChecks = claimChecks.filter((check) => {
+			const currency = getAddress(check.currency).toLowerCase();
+			return (
+				selectedTypedCurrencies.has(
+					fuulRewardKey(currency, check.currency_type),
+				) || selectedUntypedCurrencies.has(currency)
+			);
+		});
+		if (selectedClaimChecks.length === 0) {
+			throw new Error("No selected Fuul claim checks found");
+		}
+		await this.validateFuulClaimChecks(
+			chainId,
+			account,
+			rewards,
+			selectedClaimChecks,
+		);
 
 		const uniqueProjects = [
-			...new Set(claimChecks.map((check) => getAddress(check.project_address))),
+			...new Set(
+				selectedClaimChecks.map((check) => getAddress(check.project_address)),
+			),
 		];
 		const feePairs = await Promise.all(
 			uniqueProjects.map(
@@ -1117,7 +1159,7 @@ export class RewardsService implements IRewardsService {
 			),
 		);
 		const feeMap = new Map(feePairs);
-		const totalFee = claimChecks.reduce(
+		const totalFee = selectedClaimChecks.reduce(
 			(sum, check) =>
 				sum + (feeMap.get(getAddress(check.project_address)) ?? 0n),
 			0n,
@@ -1130,7 +1172,7 @@ export class RewardsService implements IRewardsService {
 			abi: FUUL_MANAGER_ABI,
 			functionName: "claim",
 			args: [
-				claimChecks.map((check) => ({
+				selectedClaimChecks.map((check) => ({
 					projectAddress: getAddress(check.project_address) as Address,
 					to: getAddress(check.to) as Address,
 					currency: getAddress(check.currency) as Address,
@@ -1145,7 +1187,7 @@ export class RewardsService implements IRewardsService {
 			],
 			value: totalFee,
 			walletBalanceTokens: uniqueAddresses(
-				claimChecks.map((check) => check.currency),
+				selectedClaimChecks.map((check) => check.currency),
 			),
 		};
 	}
