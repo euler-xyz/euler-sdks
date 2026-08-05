@@ -652,6 +652,10 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 					row.rewardTokenPriceUsd ?? row.tokenPriceUsd ?? row.tokenPrice,
 				) ?? 0,
 			provider,
+			fuulCurrencyType:
+				provider === "fuul"
+					? normalizeNonNegativeInteger(row.currencyType ?? row.currency_type)
+					: undefined,
 			campaignId,
 			accumulated,
 			unclaimed,
