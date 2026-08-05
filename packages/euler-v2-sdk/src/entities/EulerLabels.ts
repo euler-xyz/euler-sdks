@@ -1,8 +1,15 @@
 export type EulerLabelEntity = {
+	id?: string;
 	name: string;
 	logo: string;
 	description: string;
 	url: string;
+	legalEntityName?: string;
+	riskMethodology?: string;
+	security?: string;
+	termsOfService?: string;
+	licenses?: string;
+	disclaimers?: string;
 	addresses: Record<string, string>;
 	social: {
 		twitter: string;
@@ -10,14 +17,22 @@ export type EulerLabelEntity = {
 		discord: string;
 		telegram: string;
 		github: string;
+		[key: string]: string | undefined;
 	};
 };
 export type EulerLabelProduct = {
+	id?: string;
+	chainId?: number;
 	name: string;
 	description: string;
 	/** Entity slug(s) of the curator(s). The labels JSON uses a bare string for
 	 * single-curator products and an array for multi-curator ones. */
 	entity?: string | string[];
+	/** Display-only brand partners. They do not participate in manager verification. */
+	coBrandEntityIds?: string[];
+	isDeprecated?: boolean;
+	/** Compatibility wrapper for a published vault without a product assignment. */
+	isStandalone?: boolean;
 	url: string;
 	logo?: string;
 	vaults: string[];
@@ -53,6 +68,7 @@ export type EulerLabelVaultOverride = {
 export type EulerLabelPoint = {
 	name: string;
 	logo: string;
+	type?: "deposit" | "borrow";
 	description?: string;
 	url?: string;
 	entity?: string | string[];

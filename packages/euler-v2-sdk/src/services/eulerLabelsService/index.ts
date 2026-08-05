@@ -7,3 +7,14 @@ export type {
 	IEulerLabelsAdapter,
 	EulerLabelsURLAdapterConfig,
 } from "./eulerLabelsService.js";
+export {
+	PublicLabelsV3Adapter,
+	fetchAllPublicLabelPages,
+	fetchPublicLabelsSource,
+	resolvePublicLabelsVersion,
+} from "./publicLabelsV3Adapter.js";
+export {
+	hasPublishedVaultLabelContent,
+	normalizePublicLabelsData,
+} from "./publicLabelsV3Normalize.js";
+export * from "./publicLabelsV3Types.js";
