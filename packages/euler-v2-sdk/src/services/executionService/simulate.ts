@@ -477,6 +477,14 @@ export async function simulateTransactionPlan<
 	options?: SimulateBatchOptions,
 ): Promise<SimulateBatchResult<TVaultEntity>> {
 	assertNoCowSwapPlanItems(transactionPlan, "simulateTransactionPlan");
+	const directCallIndex = transactionPlan.findIndex(
+		(item) => item.type === "contractCall",
+	);
+	if (directCallIndex !== -1) {
+		throw new Error(
+			`ExecutionService.simulateTransactionPlan cannot simulate transaction plan item ${directCallIndex} (contractCall). Direct contract calls are executable but are not covered by the EVC batch simulation; refusing to return a partial result.`,
+		);
+	}
 	const owner = getAddress(account);
 	const useStateOverrides = options?.stateOverrides ?? true;
 	let effectiveStateOverrides: StateOverride | undefined;

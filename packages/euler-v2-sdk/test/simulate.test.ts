@@ -90,8 +90,7 @@ const reulLockAbi = [
 	},
 ] as const satisfies Abi;
 
-function createExecutionService() {
-	const provider = { id: "provider" };
+function createExecutionService(provider: object = { id: "provider" }) {
 	return new ExecutionService(
 		{
 			getDeployment: () => ({
@@ -366,6 +365,65 @@ test("simulateTransactionPlan rejects CoW swap plans", async () => {
 		service.simulateTransactionPlan(1, ACCOUNT, plan),
 		/does not support CoW swap plans/,
 	);
+});
+
+test("simulateTransactionPlan rejects a direct contract call instead of returning an empty simulation", async () => {
+	const simulateContract = vi.fn();
+	const service = createExecutionService({ simulateContract });
+	const plan: TransactionPlan = [
+		{
+			type: "contractCall",
+			chainId: 1,
+			to: TARGET,
+			abi: testAbi,
+			functionName: "doThing",
+			args: [7n],
+			value: 3n,
+		},
+	];
+
+	await assert.rejects(
+		service.simulateTransactionPlan(1, ACCOUNT, plan, {
+			stateOverrides: false,
+		}),
+		/transaction plan item 0 \(contractCall\).*refusing to return a partial result/,
+	);
+	assert.equal(simulateContract.mock.calls.length, 0);
+});
+
+test("simulateTransactionPlan rejects a mixed plan before simulating only its EVC batch", async () => {
+	const simulateContract = vi.fn();
+	const service = createExecutionService({ simulateContract });
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: TARGET,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: "0x1234",
+				},
+			],
+		},
+		{
+			type: "contractCall",
+			chainId: 1,
+			to: TARGET,
+			abi: testAbi,
+			functionName: "doThing",
+			args: [7n],
+			value: 3n,
+		},
+	];
+
+	await assert.rejects(
+		service.simulateTransactionPlan(1, ACCOUNT, plan, {
+			stateOverrides: false,
+		}),
+		/transaction plan item 1 \(contractCall\).*refusing to return a partial result/,
+	);
+	assert.equal(simulateContract.mock.calls.length, 0);
 });
 
 test("simulateTransactionPlan tracks operation wallet balance tokens", async () => {
