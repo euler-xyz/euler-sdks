@@ -81,7 +81,7 @@ import {
   PublicLabelsV3Adapter,
   getEulerLabelProductBrandEntities,
   normalizePublicLabelsData,
-} from '@eulerxyz/euler-v2-sdk'
+} from '@eulerxyz/euler-v2-sdk/public-labels'
 
 const labels = new PublicLabelsV3Adapter({
   endpoint: 'https://v3.euler.finance/v3',
