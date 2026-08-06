@@ -103,6 +103,7 @@ export function FeeFlowPage() {
         account: walletAddress as Address,
         recipient: walletAddress as Address,
         vaults: selectedVaults,
+        expectedEpochId: data.state.slot0.epochId,
       });
 
       setProgress({ completed: 0, total: plan.length });
@@ -126,6 +127,8 @@ export function FeeFlowPage() {
       setBuySuccess(`Bought ${selectedVaults.length} FeeFlow vault tokens.`);
     } catch (err) {
       setBuyError(String(await formatTransactionPlanError(err)));
+      setSelected({});
+      await queryClient.invalidateQueries({ queryKey: ["feeFlowPageData", chainId] });
     } finally {
       setProgress(null);
     }

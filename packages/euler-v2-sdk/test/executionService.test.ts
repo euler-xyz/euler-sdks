@@ -22,6 +22,7 @@ import { VaultType } from "../src/utils/types.js";
 
 const ACCOUNT = "0x00000000000000000000000000000000000000aa" as const;
 const TOKEN_IN = "0x00000000000000000000000000000000000000bb" as const;
+const OTHER_TOKEN = "0x00000000000000000000000000000000000000bc" as const;
 const SWAPPER = "0x00000000000000000000000000000000000000cc" as const;
 const VERIFIER = "0x00000000000000000000000000000000000000dd" as const;
 const RECEIVER = "0x00000000000000000000000000000000000000ee" as const;
@@ -285,9 +286,13 @@ function createRepayFromDepositAccount({
 function createSameAssetMigrationAccount({
 	oldLiabilityAssets = 0n,
 	oldLiabilityShares = 0n,
+	newLiabilityAssets = 0n,
+	newLiabilityShares = 0n,
 }: {
 	oldLiabilityAssets?: bigint;
 	oldLiabilityShares?: bigint;
+	newLiabilityAssets?: bigint;
+	newLiabilityShares?: bigint;
 } = {}) {
 	return {
 		owner: ACCOUNT,
@@ -307,6 +312,13 @@ function createSameAssetMigrationAccount({
 					assets: oldLiabilityAssets,
 					shares: oldLiabilityShares,
 					borrowed: AMOUNT,
+				};
+			}
+			if (vault === NEW_LIABILITY_VAULT) {
+				return {
+					asset: SAME_ASSET,
+					assets: newLiabilityAssets,
+					shares: newLiabilityShares,
 				};
 			}
 			return undefined;
@@ -892,6 +904,79 @@ test("deposit-with-swap-from-wallet emits explicit required approval", () => {
 	});
 });
 
+test("wallet swap planners reject an approval token that differs from the quote", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+	} as never;
+	const calls = [
+		() =>
+			service.planDepositWithSwapFromWallet({
+				account,
+				swapQuote: createSwapQuote(),
+				amount: AMOUNT,
+				tokenIn: OTHER_TOKEN,
+			}),
+		() =>
+			service.planSwapFromWallet({
+				account,
+				swapQuote: createTransferSwapQuote(),
+				amount: AMOUNT,
+				tokenIn: OTHER_TOKEN,
+			}),
+		() =>
+			service.planSwapAndBorrowFromWallet({
+				account,
+				swapQuote: createSwapQuote() as never,
+				amount: AMOUNT,
+				tokenIn: OTHER_TOKEN,
+				borrowVault: LIABILITY_VAULT,
+				borrowAmount: AMOUNT,
+			}),
+		() =>
+			service.planSwapAndRepayFromWallet({
+				account,
+				swapQuote: createWalletRepaySwapQuote() as never,
+				amount: AMOUNT,
+				tokenIn: OTHER_TOKEN,
+			}),
+	];
+
+	for (const plan of calls) {
+		assert.throws(plan, /tokenIn must match swapQuote\.tokenIn\.address/);
+	}
+});
+
+test("liquidation plans do not request a wallet-token approval", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		isControllerEnabled: () => false,
+		isCollateralEnabled: () => false,
+	} as never;
+
+	const plan = service.planLiquidation({
+		account,
+		liquidatorSubAccountAddress: RECEIVER,
+		vault: LIABILITY_VAULT,
+		violator: SOURCE_ACCOUNT,
+		collateral: COLLATERAL_VAULT,
+		repayAssets: AMOUNT,
+		minYieldBalance: 0n,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	const items = getOnlyEvcBatchItems(plan);
+	assert.deepEqual(items.map(decodeBatchFunctionName), [
+		"enableController",
+		"liquidate",
+		"enableCollateral",
+	]);
+});
+
 test("swap-from-wallet emits explicit required approval and wallet-swap batch", () => {
 	const service = createExecutionService();
 	const account = {
@@ -1323,6 +1408,24 @@ test("swap-debt disables the old liability controller when the swap fully repays
 	assert.equal(disableController.functionName, "disableController");
 	assert.equal(items.at(-1)?.targetContract, LIABILITY_VAULT);
 	assert.equal(items.at(-1)?.onBehalfOfAccount, RECEIVER);
+});
+
+test("debt swaps reject cross-account quotes at planning and encoding", () => {
+	const service = createExecutionService();
+	const quote = createRepaySwapQuote();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+	} as never;
+
+	assert.throws(
+		() => service.planSwapDebt({ account, swapQuote: quote as never }),
+		/Debt swaps must use the same account on both sides/,
+	);
+	assert.throws(
+		() => service.encodeSwapDebt({ chainId: 1, swapQuote: quote as never }),
+		/Debt swaps must use the same account on both sides/,
+	);
 });
 
 test("debt swap disables the old liability controller when verifier targets zero debt", () => {
@@ -3143,4 +3246,45 @@ test("same-asset debt migration preserves pre-existing old-vault deposit", () =>
 		getAddress(RECEIVER),
 		getAddress(ACCOUNT),
 	]);
+});
+
+test("same-asset debt migration preserves pre-existing target-vault shares by default", () => {
+	const service = createExecutionService();
+	const plan = service.planMigrateSameAssetDebt({
+		account: createSameAssetMigrationAccount({
+			newLiabilityAssets: 77n,
+			newLiabilityShares: 88n,
+		}),
+		oldLiabilityVault: LIABILITY_VAULT,
+		newLiabilityVault: NEW_LIABILITY_VAULT,
+		liabilityAccount: RECEIVER,
+		newLiabilityAsset: SAME_ASSET,
+	});
+
+	const items = getOnlyEvcBatchItems(plan);
+	assert.equal(
+		items.some((item) => decodeBatchFunctionName(item) === "transferFromMax"),
+		false,
+	);
+});
+
+test("same-asset debt migration transfers target shares only with explicit opt-in", () => {
+	const service = createExecutionService();
+	const plan = service.planMigrateSameAssetDebt({
+		account: createSameAssetMigrationAccount({
+			newLiabilityAssets: 77n,
+			newLiabilityShares: 88n,
+		}),
+		oldLiabilityVault: LIABILITY_VAULT,
+		newLiabilityVault: NEW_LIABILITY_VAULT,
+		liabilityAccount: RECEIVER,
+		newLiabilityAsset: SAME_ASSET,
+		transferRemainingSharesToOwner: true,
+	});
+
+	const items = getOnlyEvcBatchItems(plan);
+	assert.equal(
+		items.some((item) => decodeBatchFunctionName(item) === "transferFromMax"),
+		true,
+	);
 });
