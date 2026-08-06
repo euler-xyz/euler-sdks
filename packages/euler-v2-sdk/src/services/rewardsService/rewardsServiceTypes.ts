@@ -199,6 +199,8 @@ export interface BuildRewardClaimPlanArgs {
 export interface BuildRewardClaimsPlanArgs {
 	rewards: UserReward[];
 	account: Address;
+	/** Expected execution chain. Defaults to the first reward's chain. */
+	chainId?: number;
 }
 
 export interface BuildRewardClaimAllPlanArgs {

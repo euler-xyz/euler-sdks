@@ -1269,6 +1269,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 
 			for (const reward of claimableRewards) {
 				const claimChainId = Number(reward.currency_chain_id);
+				if (claimChainId !== chainId) continue;
 				const tokenAddress = getAddress(reward.currency_address) as Address;
 				const key = `${claimChainId}:${tokenAddress.toLowerCase()}`;
 				const existing = totals.get(key);

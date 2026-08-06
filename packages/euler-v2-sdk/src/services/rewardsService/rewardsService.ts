@@ -719,6 +719,7 @@ export class RewardsService implements IRewardsService {
 		return this.buildClaimPlans({
 			rewards: [args.reward],
 			account: args.account,
+			chainId: args.reward.chainId,
 		});
 	}
 
@@ -730,6 +731,12 @@ export class RewardsService implements IRewardsService {
 			(reward) => BigInt(reward.unclaimed) > 0n,
 		);
 		if (rewards.length === 0) return [];
+		const chainId = args.chainId ?? rewards[0]!.chainId;
+		if (rewards.some((reward) => reward.chainId !== chainId)) {
+			throw new Error(
+				`Reward claim planning requires rewards from chain ${chainId}`,
+			);
+		}
 
 		const plan: TransactionPlan = [];
 
@@ -816,6 +823,7 @@ export class RewardsService implements IRewardsService {
 		return this.buildClaimPlans({
 			rewards,
 			account: args.account,
+			chainId: args.chainId,
 		});
 	}
 
