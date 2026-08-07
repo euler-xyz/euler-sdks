@@ -168,6 +168,7 @@ async function feeFlowExample({
     account: account.address,
     recipient: account.address,
     vaults: selectedVaultAddresses,
+    expectedEpochId: feeFlowState.slot0.epochId,
   });
 
   console.log(`Plan items:             ${plan.length}`);
@@ -219,8 +220,8 @@ async function feeFlowExample({
     `Epoch advanced:         ${feeFlowState.slot0.epochId} -> ${feeFlowStateAfter.slot0.epochId}`
   );
 
-  if (!epochAdvanced && paymentSpent <= 0n && positiveReceipts === 0) {
-    throw new Error("FeeFlow buy succeeded but no state change was detected.");
+  if (positiveReceipts === 0) {
+    throw new Error("FeeFlow buy spent no selected vault inventory.");
   }
 
   console.log();

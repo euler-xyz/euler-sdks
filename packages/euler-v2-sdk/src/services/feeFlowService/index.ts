@@ -4,5 +4,6 @@ export type {
 	FeeFlowServiceConfig,
 	FeeFlowSlot0,
 	FeeFlowState,
+	FeeFlowVaultInventory,
 	BuildFeeFlowBuyPlanArgs,
 } from "./feeFlowServiceTypes.js";
