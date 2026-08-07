@@ -31,24 +31,11 @@ export interface FeeFlowState {
 	timeRemaining: number;
 }
 
-export interface FeeFlowVaultInventory {
-	vault: Address;
-	protocolFeeReceiver: Address;
-	protocolFeeShare: bigint;
-	accumulatedFeesAssets: bigint;
-	claimableProtocolFeeAssets: bigint;
-	heldShares: bigint;
-	eligible: boolean;
-	hasInventory: boolean;
-}
-
 export interface BuildFeeFlowBuyPlanArgs {
 	chainId: number;
 	account: Address;
 	vaults: Address[] | EVault[];
 	recipient?: Address;
-	/** Epoch shown when the selected vault inventory was reviewed. */
-	expectedEpochId?: number;
 	deadline?: bigint;
 	maxPaymentTokenAmount?: bigint;
 }
@@ -56,9 +43,5 @@ export interface BuildFeeFlowBuyPlanArgs {
 export interface IFeeFlowService {
 	fetchState(chainId: number): Promise<FeeFlowState>;
 	getEligibleVaults(vaults: EVault[], chainId?: number): EVault[];
-	fetchBuyInventory(
-		chainId: number,
-		vaults: Address[] | EVault[],
-	): Promise<FeeFlowVaultInventory[]>;
 	buildBuyPlan(args: BuildFeeFlowBuyPlanArgs): Promise<TransactionPlan>;
 }
