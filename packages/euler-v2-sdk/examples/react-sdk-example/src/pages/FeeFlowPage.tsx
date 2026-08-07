@@ -5,7 +5,7 @@ import {
   useSwitchChain,
   useWalletClient,
 } from "wagmi";
-import { getAddress, type Address } from "viem";
+import { erc20Abi, getAddress, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
 import { queryClient, useFeeFlowPageData } from "../queries/sdkQueries.ts";
 import {
@@ -103,7 +103,26 @@ export function FeeFlowPage() {
         account: walletAddress as Address,
         recipient: walletAddress as Address,
         vaults: selectedVaults,
+        expectedEpochId: data.state.slot0.epochId,
       });
+
+      const publicClient = sdk.providerService.getProvider(chainId);
+      const [paymentBalanceBefore, ...balancesBefore] = await Promise.all([
+        publicClient.readContract({
+          address: data.state.paymentToken,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [walletAddress],
+        }),
+        ...selectedVaults.map((vault) =>
+          publicClient.readContract({
+            address: vault,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [walletAddress],
+          })
+        ),
+      ]);
 
       setProgress({ completed: 0, total: plan.length });
 
@@ -117,15 +136,45 @@ export function FeeFlowPage() {
         onProgress: (progress) => setProgress(toPlanProgress(progress)),
       });
 
+      const [paymentBalanceAfter, ...balancesAfter] = await Promise.all([
+        publicClient.readContract({
+          address: data.state.paymentToken,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [walletAddress],
+        }),
+        ...selectedVaults.map((vault) =>
+          publicClient.readContract({
+            address: vault,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [walletAddress],
+          })
+        ),
+      ]);
+      const receivedCount = balancesAfter.filter(
+        (balance, index) => balance > balancesBefore[index]
+      ).length;
+      if (receivedCount === 0) {
+        const paymentSpent = paymentBalanceBefore > paymentBalanceAfter;
+        throw new Error(
+          paymentSpent
+            ? "FeeFlow buy spent payment without receiving selected vault tokens."
+            : "FeeFlow buy completed without receiving selected vault tokens."
+        );
+      }
+
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["feeFlowPageData", chainId] }),
         queryClient.invalidateQueries({ queryKey: ["account", chainId, getAddress(walletAddress)] }),
         queryClient.invalidateQueries({ queryKey: ["accountWithDiagnostics", chainId, getAddress(walletAddress)] }),
       ]);
 
-      setBuySuccess(`Bought ${selectedVaults.length} FeeFlow vault tokens.`);
+      setBuySuccess(`Received FeeFlow tokens from ${receivedCount} selected vaults.`);
     } catch (err) {
       setBuyError(String(await formatTransactionPlanError(err)));
+      setSelected({});
+      await queryClient.invalidateQueries({ queryKey: ["feeFlowPageData", chainId] });
     } finally {
       setProgress(null);
     }
