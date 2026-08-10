@@ -4,7 +4,7 @@ description: Euler V2 SDK integration guide for building production UIs, bots, s
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.3.0"
+  version: "1.3.1"
 ---
 
 # Euler SDK Agent Skill
