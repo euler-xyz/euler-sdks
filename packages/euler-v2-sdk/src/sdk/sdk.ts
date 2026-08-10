@@ -22,7 +22,10 @@ import type { IIntrinsicApyService } from "../services/intrinsicApyService/index
 import type { IOracleAdapterService } from "../services/oracleAdapterService/index.js";
 import type { IFeeFlowService } from "../services/feeFlowService/index.js";
 import type { IREULLockService } from "../services/reulLockService/index.js";
-import type { ISafeAccountService } from "../services/safeAccountService/index.js";
+import {
+	SafeAccountService,
+	type ISafeAccountService,
+} from "../services/safeAccountService/index.js";
 import type { IPositionMigrationService } from "../services/positionMigrationService/index.js";
 import {
 	ActivityService,
@@ -58,7 +61,8 @@ export interface EulerSDKOptions<
 	oracleAdapterService: IOracleAdapterService;
 	feeFlowService: IFeeFlowService;
 	reulLockService: IREULLockService;
-	safeAccountService: ISafeAccountService;
+	/** Defaults to a `SafeAccountService` built on `providerService` when omitted. */
+	safeAccountService?: ISafeAccountService;
 	positionMigrationService: IPositionMigrationService;
 	activityService?: IActivityService;
 	plugins?: EulerPlugin[];
@@ -116,7 +120,9 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 		this.oracleAdapterService = options.oracleAdapterService;
 		this.feeFlowService = options.feeFlowService;
 		this.reulLockService = options.reulLockService;
-		this.safeAccountService = options.safeAccountService;
+		this.safeAccountService =
+			options.safeAccountService ??
+			new SafeAccountService(options.providerService);
 		this.positionMigrationService = options.positionMigrationService;
 		this.activityService = ensureActivityLiquidationsSupport(
 			options.activityService ??

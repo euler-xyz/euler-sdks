@@ -30,6 +30,12 @@ export interface ISafeAccountService {
 	 * Detect whether an address is a Safe smart account. Resolves to the
 	 * Safe's signer configuration, or null when the address is an EOA, a
 	 * non-Safe contract, or a proxy pointing at an unrecognized singleton.
+	 * Rejects on RPC transport failures rather than misreporting them as
+	 * null; failed probes are not cached, so a later call retries.
+	 *
+	 * Detection is a display/UX heuristic — a purpose-built contract can
+	 * mimic the probed functions. Never use the result for authorization
+	 * decisions.
 	 */
 	fetchSafeAccount(args: FetchSafeAccountArgs): Promise<SafeAccountInfo | null>;
 }

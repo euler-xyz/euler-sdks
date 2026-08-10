@@ -86,13 +86,63 @@ test("fetchSafeAccount returns null for proxies of unknown singletons", async ()
 });
 
 test("fetchSafeAccount returns null for EOAs and non-Safe contracts", async () => {
-	const { providerService } = createProviderService({});
+	const zeroData = async (): Promise<never> => {
+		throw new Error('The contract function returned no data ("0x").');
+	};
+	const { providerService } = createProviderService({
+		masterCopy: zeroData,
+		getThreshold: zeroData,
+		getOwners: zeroData,
+	});
 	const service = new SafeAccountService(providerService as never);
 
 	assert.equal(
 		await service.fetchSafeAccount({ chainId: 1, account: SAFE }),
 		null,
 	);
+});
+
+test("fetchSafeAccount rethrows transport failures and does not cache them", async () => {
+	let failFirstProbe = true;
+	const { providerService, calls } = createProviderService({
+		masterCopy: async () => {
+			if (failFirstProbe) throw new Error("HTTP request failed.");
+			return SAFE_141_SINGLETON;
+		},
+		getThreshold: async () => 2n,
+		getOwners: async () => OWNERS,
+	});
+	const service = new SafeAccountService(providerService as never);
+
+	await assert.rejects(
+		service.fetchSafeAccount({ chainId: 1, account: SAFE }),
+		/HTTP request failed/,
+	);
+
+	failFirstProbe = false;
+	const info = await service.fetchSafeAccount({ chainId: 1, account: SAFE });
+	assert.equal(info?.threshold, 2);
+	assert.equal(calls.length, 6);
+});
+
+test("fetchSafeAccount rejects owner lists a Safe cannot have", async () => {
+	const cases: Address[][] = [
+		[...OWNERS, "0x0000000000000000000000000000000000000000" as Address],
+		[...OWNERS, "0x0000000000000000000000000000000000000001" as Address],
+		[OWNERS[0] as Address, OWNERS[0] as Address],
+	];
+	for (const owners of cases) {
+		const { providerService } = createSafeProviderService(
+			SAFE_141_SINGLETON,
+			1n,
+			owners,
+		);
+		const service = new SafeAccountService(providerService as never);
+		assert.equal(
+			await service.fetchSafeAccount({ chainId: 1, account: SAFE }),
+			null,
+		);
+	}
 });
 
 test("fetchSafeAccount rejects lookalikes violating Safe invariants", async () => {

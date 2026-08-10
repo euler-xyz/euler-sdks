@@ -78,6 +78,37 @@ export function getSafeSingletonVersion(
 
 const DEFAULT_CACHE_MS = 5 * 60 * 1000;
 
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+/** Safe's OwnerManager linked-list sentinel — never a legitimate owner. */
+const SENTINEL_OWNER = "0x0000000000000000000000000000000000000001";
+
+const CONTRACT_FAILURE_NAMES = new Set([
+	"ContractFunctionZeroDataError",
+	"ContractFunctionRevertedError",
+	"AbiDecodingZeroDataError",
+	"ExecutionRevertedError",
+	"RawContractError",
+]);
+const CONTRACT_FAILURE_MESSAGE = /reverted|returned no data/i;
+
+/**
+ * True when a rejected read failed at the contract level (empty call data
+ * from an EOA, revert from a non-Safe contract) — a definitive "not a Safe".
+ * Anything else (HTTP failure, timeout, rate limit) is a transport problem
+ * and must not be recorded as a negative detection. Matches by error name
+ * and message rather than instanceof so wrapped and cross-package viem
+ * errors classify correctly.
+ */
+function isDefinitiveContractFailure(error: unknown): boolean {
+	let current: unknown = error;
+	for (let depth = 0; current instanceof Error && depth < 8; depth++) {
+		if (CONTRACT_FAILURE_NAMES.has(current.name)) return true;
+		if (CONTRACT_FAILURE_MESSAGE.test(current.message)) return true;
+		current = current.cause;
+	}
+	return false;
+}
+
 export class SafeAccountService implements ISafeAccountService {
 	private readonly cache = new Map<
 		string,
@@ -134,7 +165,9 @@ export class SafeAccountService implements ISafeAccountService {
 	 * Fire the three probe reads concurrently — the provider's multicall
 	 * batching coalesces them into a single RPC request. EOAs return empty
 	 * call data and non-Safe contracts revert on the unknown selectors, so
-	 * rejected reads mean "not a Safe" rather than an error.
+	 * those failures mean "not a Safe". Transport-level failures are
+	 * rethrown instead, so they surface to the caller and are never cached
+	 * as negative detections.
 	 */
 	private async probeSafeAccount(
 		args: FetchSafeAccountArgs,
@@ -160,6 +193,15 @@ export class SafeAccountService implements ISafeAccountService {
 			}) as Promise<readonly Address[]>,
 		]);
 
+		for (const result of [singleton, threshold, owners]) {
+			if (
+				result.status === "rejected" &&
+				!isDefinitiveContractFailure(result.reason)
+			) {
+				throw result.reason;
+			}
+		}
+
 		if (singleton.status !== "fulfilled") return null;
 		const version = getSafeSingletonVersion(singleton.value);
 		if (!version) return null;
@@ -168,12 +210,27 @@ export class SafeAccountService implements ISafeAccountService {
 		}
 
 		// Threshold/owner invariants mirror what the Safe contracts themselves
-		// enforce; anything violating them is a lookalike.
+		// enforce (OwnerManager forbids zero/sentinel/duplicate owners);
+		// anything violating them is a lookalike.
 		const thresholdCount = Number(threshold.value);
 		if (!Number.isSafeInteger(thresholdCount) || thresholdCount < 1) {
 			return null;
 		}
 		if (owners.value.length < thresholdCount) return null;
+
+		const normalizedOwners = owners.value.map((owner) =>
+			owner.toLowerCase(),
+		);
+		if (
+			normalizedOwners.some(
+				(owner) => owner === ZERO_ADDRESS || owner === SENTINEL_OWNER,
+			)
+		) {
+			return null;
+		}
+		if (new Set(normalizedOwners).size !== normalizedOwners.length) {
+			return null;
+		}
 
 		return {
 			address: account,

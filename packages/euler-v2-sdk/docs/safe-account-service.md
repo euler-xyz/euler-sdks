@@ -31,8 +31,14 @@ Safe proxies (v1.1.1+) special-case the `masterCopy()` selector in their fallbac
 
 Because canonical singletons are deployed deterministically at identical addresses on every chain, detection works on any configured chain without external APIs. v1.0.0 proxies predate the `masterCopy()` special case and read as non-Safes.
 
+Owner invariants mirror what Safe's `OwnerManager` enforces: a threshold below 1 or above the owner count, zero or sentinel (`0x…01`) owners, and duplicate owners are all rejected as lookalikes.
+
 `getSafeSingletonVersion(address)` is exported for callers that already have a singleton address and only need version recognition.
 
-## Caching
+**Detection is a display/UX heuristic.** A purpose-built contract can mimic `masterCopy()`, `getThreshold()`, and `getOwners()` and pass these checks without being a real Safe proxy (that would require validating the proxy runtime bytecode). Use the result for badges, labels, and flow selection — never for authorization decisions.
 
-Results are cached per `${chainId}:${account}` for `cacheMs` (default 5 minutes — threshold and owners can change), and concurrent probes for the same key share one RPC round-trip. RPC failures are not cached, so a later call retries.
+## Caching and failure semantics
+
+Results are cached per `${chainId}:${account}` for `cacheMs` (default 5 minutes — threshold and owners can change), and concurrent probes for the same key share one RPC round-trip.
+
+Contract-level failures (empty call data from an EOA, revert from a non-Safe contract) resolve to `null` and are cached like any other result. Transport-level failures (HTTP errors, timeouts, rate limits) make `fetchSafeAccount` reject instead — they are never cached as negative detections, so a later call retries.
