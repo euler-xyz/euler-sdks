@@ -248,10 +248,17 @@ const { result: vaults } = await sdk.eVaultService.fetchPerspectiveVaults(1, [
 ])
 
 // Trusted subset: label-verified (listed in a euler-labels product) or escrow
+const escrowAddresses = await sdk.eVaultService.fetchPerspectiveVaultAddresses(1, [
+  StandardEVaultPerspectives.ESCROW,
+])
+const escrowSet = new Set(escrowAddresses.map(a => a.toLowerCase()))
 const { result: universe } = await sdk.eVaultService.fetchPerspectiveVaults(1, [
   StandardEVaultPerspectives.FACTORY,
+  StandardEVaultPerspectives.ESCROW,
 ], { populateAll: true })
-const trusted = universe.filter(v => v && (v.eulerLabel?.products.length ?? 0) > 0 && !v.eulerLabel?.deprecated)
+const trusted = universe.filter(v => v
+  && !v.eulerLabel?.deprecated
+  && ((v.eulerLabel?.products.length ?? 0) > 0 || escrowSet.has(v.address.toLowerCase())))
 ```
 
 Available EVault perspectives:
@@ -301,14 +308,17 @@ const addresses = await sdk.eVaultService.fetchPerspectiveVaultAddresses(1, [
 
 ### Across all vault types
 
-`vaultMetaService` queries all registered services and merges results:
+`vaultMetaService` queries all registered services and merges results. Include each
+vault type's perspective in the list — the meta service can only discover addresses
+the given perspectives return:
 
 ```typescript
-import { StandardEVaultPerspectives } from '@eulerxyz/euler-v2-sdk'
+import { StandardEVaultPerspectives, StandardEulerEarnPerspectives } from '@eulerxyz/euler-v2-sdk'
 
 const { result: allVaults } = await sdk.vaultMetaService.fetchPerspectiveVaults(1, [
   StandardEVaultPerspectives.FACTORY,
   StandardEVaultPerspectives.ESCROW,
+  StandardEulerEarnPerspectives.FACTORY,
 ])
 // Returns (EVault | EulerEarn | SecuritizeCollateralVault | undefined)[]
 ```
