@@ -30,7 +30,7 @@ async function fetchApysExample() {
   // trust signal - anyone can deploy through the factory), then keep only vaults that
   // are label-verified, i.e. listed in a euler-labels product.
   console.log("Fetching EVaults...");
-  const { result: eVaultResults } = await sdk.eVaultService.fetchVerifiedVaults(mainnet.id, [
+  const { result: eVaultResults } = await sdk.eVaultService.fetchPerspectiveVaults(mainnet.id, [
     StandardEVaultPerspectives.FACTORY,
   ], {
     populateAll: true,
@@ -68,7 +68,7 @@ async function fetchApysExample() {
   // Same for EulerEarn: enumerate via the factory, keep only label-verified earn vaults
   console.log("\nFetching EulerEarn vaults...");
   const { result: eulerEarnVaultResults } =
-    await sdk.eulerEarnService.fetchVerifiedVaults(mainnet.id, [
+    await sdk.eulerEarnService.fetchPerspectiveVaults(mainnet.id, [
       StandardEulerEarnPerspectives.FACTORY,
     ], {
       populateAll: true,

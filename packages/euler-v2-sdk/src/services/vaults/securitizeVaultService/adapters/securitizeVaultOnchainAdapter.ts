@@ -193,7 +193,7 @@ export class SecuritizeVaultOnchainAdapter
 		};
 	}
 
-	async fetchVerifiedVaultsAddresses(
+	async fetchPerspectiveVaultsAddresses(
 		_chainId: number,
 		_perspectives: Address[],
 	): Promise<Address[]> {

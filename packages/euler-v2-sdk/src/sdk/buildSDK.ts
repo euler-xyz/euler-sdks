@@ -795,12 +795,12 @@ export async function buildEulerSDK<
 		} else if (canBuildEVaultV3 && canBuildEVaultOnchain) {
 			selectedEVaultAdapter = createFallbackAdapter<
 				IEVaultAdapter,
-				"fetchVaults" | "fetchAllVaults" | "fetchVerifiedVaultsAddresses"
+				"fetchVaults" | "fetchAllVaults" | "fetchPerspectiveVaultsAddresses"
 			>(buildEVaultV3(), buildEVaultOnchain(), {
 				methods: [
 					"fetchVaults",
 					"fetchAllVaults",
-					"fetchVerifiedVaultsAddresses",
+					"fetchPerspectiveVaultsAddresses",
 				],
 				adapterNames: { primary: "eVaultV3", secondary: "eVaultOnchain" },
 				onFallback,
@@ -883,12 +883,12 @@ export async function buildEulerSDK<
 		} else if (canBuildEulerEarnV3) {
 			eulerEarnAdapter = createFallbackAdapter<
 				IEulerEarnAdapter,
-				"fetchVaults" | "fetchAllVaults" | "fetchVerifiedVaultsAddresses"
+				"fetchVaults" | "fetchAllVaults" | "fetchPerspectiveVaultsAddresses"
 			>(buildEulerEarnV3(), buildEulerEarnOnchain(), {
 				methods: [
 					"fetchVaults",
 					"fetchAllVaults",
-					"fetchVerifiedVaultsAddresses",
+					"fetchPerspectiveVaultsAddresses",
 				],
 				adapterNames: {
 					primary: "eulerEarnV3",

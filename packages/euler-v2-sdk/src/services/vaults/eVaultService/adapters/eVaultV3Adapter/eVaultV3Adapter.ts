@@ -332,7 +332,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		};
 	}
 
-	async fetchVerifiedVaultsAddresses(
+	async fetchPerspectiveVaultsAddresses(
 		chainId: number,
 		perspectives: Address[],
 	): Promise<Address[]> {

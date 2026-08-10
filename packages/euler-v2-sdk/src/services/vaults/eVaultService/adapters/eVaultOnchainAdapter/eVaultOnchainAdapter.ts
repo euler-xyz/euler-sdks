@@ -239,7 +239,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 		return allItems.items.length > 0 ? allItems : null;
 	}
 
-	async fetchVerifiedVaultsAddresses(
+	async fetchPerspectiveVaultsAddresses(
 		chainId: number,
 		perspectives: Address[],
 	): Promise<Address[]> {
@@ -270,7 +270,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 			);
 		}
 
-		const addresses = await this.fetchVerifiedVaultsAddresses(chainId, [
+		const addresses = await this.fetchPerspectiveVaultsAddresses(chainId, [
 			perspective,
 		]);
 		return this.fetchVaults(chainId, addresses);

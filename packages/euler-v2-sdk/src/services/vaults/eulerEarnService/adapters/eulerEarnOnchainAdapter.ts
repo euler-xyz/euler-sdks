@@ -428,7 +428,7 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 		return { result: parsedVaults, errors };
 	}
 
-	async fetchVerifiedVaultsAddresses(
+	async fetchPerspectiveVaultsAddresses(
 		chainId: number,
 		perspectives: Address[],
 	): Promise<Address[]> {
@@ -459,7 +459,7 @@ export class EulerEarnOnchainAdapter implements IEulerEarnAdapter {
 			);
 		}
 
-		const addresses = await this.fetchVerifiedVaultsAddresses(chainId, [
+		const addresses = await this.fetchPerspectiveVaultsAddresses(chainId, [
 			perspective,
 		]);
 		return this.fetchVaults(chainId, addresses);

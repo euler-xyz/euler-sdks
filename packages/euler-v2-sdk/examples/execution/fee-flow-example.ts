@@ -111,11 +111,11 @@ async function feeFlowExample({
   // The factory perspective is provenance only, NOT a trust signal (anyone can deploy
   // through the factory). Since the buy plan interacts with the selected vaults
   // (convertFees), restrict the universe to label-verified and escrow vaults.
-  const universeAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(chainId, [
+  const universeAddresses = await sdk.eVaultService.fetchPerspectiveVaultAddresses(chainId, [
     StandardEVaultPerspectives.FACTORY,
     StandardEVaultPerspectives.ESCROW,
   ]);
-  const escrowAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(chainId, [
+  const escrowAddresses = await sdk.eVaultService.fetchPerspectiveVaultAddresses(chainId, [
     StandardEVaultPerspectives.ESCROW,
   ]);
   const escrowSet = new Set(escrowAddresses.map((address) => address.toLowerCase()));

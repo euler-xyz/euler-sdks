@@ -219,7 +219,7 @@ const { result: vaults, errors } = await sdk.vaultMetaService.fetchVaults(1, inp
 // a location whose owner is `{ kind: "vault", address: inputAddresses[i], ... }`.
 ```
 
-## Fetching Verified Vaults (Perspectives)
+## Fetching Vaults by Perspective
 
 Perspectives are on-chain contracts that verify vaults meet certain criteria. Each vault service has standard perspectives.
 
@@ -237,18 +237,18 @@ Perspectives are on-chain contracts that verify vaults meet certain criteria. Ea
 import { StandardEVaultPerspectives } from '@eulerxyz/euler-v2-sdk'
 
 // FACTORY — every vault deployed via the EVK factory (discovery only, untrusted)
-const { result: all } = await sdk.eVaultService.fetchVerifiedVaults(1, [
+const { result: all } = await sdk.eVaultService.fetchPerspectiveVaults(1, [
   StandardEVaultPerspectives.FACTORY,
 ])
 
 // Multiple perspectives (results are merged and deduplicated)
-const { result: vaults } = await sdk.eVaultService.fetchVerifiedVaults(1, [
+const { result: vaults } = await sdk.eVaultService.fetchPerspectiveVaults(1, [
   StandardEVaultPerspectives.FACTORY,
   StandardEVaultPerspectives.ESCROW,
 ])
 
 // Trusted subset: label-verified (listed in a euler-labels product) or escrow
-const { result: universe } = await sdk.eVaultService.fetchVerifiedVaults(1, [
+const { result: universe } = await sdk.eVaultService.fetchPerspectiveVaults(1, [
   StandardEVaultPerspectives.FACTORY,
 ], { populateAll: true })
 const trusted = universe.filter(v => v && (v.eulerLabel?.products.length ?? 0) > 0 && !v.eulerLabel?.deprecated)
@@ -266,7 +266,7 @@ Available EVault perspectives:
 ```typescript
 import { StandardEulerEarnPerspectives } from '@eulerxyz/euler-v2-sdk'
 
-const { result: vaults } = await sdk.eulerEarnService.fetchVerifiedVaults(1, [
+const { result: vaults } = await sdk.eulerEarnService.fetchPerspectiveVaults(1, [
   StandardEulerEarnPerspectives.FACTORY,
 ], { populateAll: true })
 ```
@@ -284,7 +284,7 @@ For trusted EulerEarn vaults, filter to the label-verified set: `vault.eulerLabe
 You can pass raw perspective contract addresses instead of enum values:
 
 ```typescript
-const { result: vaults } = await sdk.eVaultService.fetchVerifiedVaults(1, [
+const { result: vaults } = await sdk.eVaultService.fetchPerspectiveVaults(1, [
   '0xCustomPerspective...',
 ])
 ```
@@ -294,7 +294,7 @@ const { result: vaults } = await sdk.eVaultService.fetchVerifiedVaults(1, [
 If you only need addresses (not full entities):
 
 ```typescript
-const addresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(1, [
+const addresses = await sdk.eVaultService.fetchPerspectiveVaultAddresses(1, [
   StandardEVaultPerspectives.FACTORY,
 ])
 ```
@@ -306,7 +306,7 @@ const addresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(1, [
 ```typescript
 import { StandardEVaultPerspectives } from '@eulerxyz/euler-v2-sdk'
 
-const { result: allVaults } = await sdk.vaultMetaService.fetchVerifiedVaults(1, [
+const { result: allVaults } = await sdk.vaultMetaService.fetchPerspectiveVaults(1, [
   StandardEVaultPerspectives.FACTORY,
   StandardEVaultPerspectives.ESCROW,
 ])

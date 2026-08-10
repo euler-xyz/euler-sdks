@@ -237,7 +237,7 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn, _target, context) => 
 // Layer 3 – UI-level reactive hooks
 //
 // These provide the reactive boundary only. The SDK service methods
-// (fetchVerifiedVaults, fetchVault, …) act as Layer 2 "mappers" that
+// (fetchPerspectiveVaults, fetchVault, …) act as Layer 2 "mappers" that
 // orchestrate already-cached fetchers. Re-running a mapper is cheap — it
 // only triggers real network calls when a fetcher's own staleTime expires.
 // ---------------------------------------------------------------------------
@@ -990,7 +990,7 @@ async function buildLabeledPortfolioPositionFilter(
     fetchVaultAddressesFromLabelProducts(sdk, chainId).catch(() => [] as Address[]),
     fetchEarnVaultAddressesFromLabels(chainId).catch(() => [] as Address[]),
     sdk.eVaultService
-      .fetchVerifiedVaultAddresses(chainId, [StandardEVaultPerspectives.ESCROW])
+      .fetchPerspectiveVaultAddresses(chainId, [StandardEVaultPerspectives.ESCROW])
       .catch(() => [] as Address[]),
   ]);
   const labeledVaults = new Set(

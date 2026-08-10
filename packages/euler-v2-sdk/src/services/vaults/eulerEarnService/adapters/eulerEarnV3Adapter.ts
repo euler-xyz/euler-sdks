@@ -655,7 +655,7 @@ export class EulerEarnV3Adapter implements IEulerEarnAdapter {
 		};
 	}
 
-	async fetchVerifiedVaultsAddresses(
+	async fetchPerspectiveVaultsAddresses(
 		_chainId: number,
 		_perspectives: Address[],
 	): Promise<Address[]> {
