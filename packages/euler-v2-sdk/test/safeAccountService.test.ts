@@ -2,14 +2,18 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import {
 	AbiDecodingDataSizeTooSmallError,
+	type BaseError,
 	ContractFunctionExecutionError,
+	decodeFunctionResult,
 	getAddress,
 	type Address,
+	type Hex,
 } from "viem";
 
 import {
 	getSafeSingletonVersion,
 	SafeAccountService,
+	safeAccountAbi,
 } from "../src/services/safeAccountService/index.js";
 import { buildEulerSDK } from "../src/sdk/buildSDK.js";
 
@@ -141,6 +145,55 @@ test("fetchSafeAccount resolves null for malformed non-Safe fallback data", asyn
 		null,
 	);
 	assert.equal(calls.length, 3);
+});
+
+test("fetchSafeAccount resolves null for dynamic ABI boundary failures", async () => {
+	// Produce the REAL errors viem raises for hostile getOwners() output, so
+	// the classifier is tested against viem's actual class names.
+	const word = (value: bigint) => value.toString(16).padStart(64, "0");
+	// Offset 0x20, claimed length 2, but only one element present.
+	const truncatedArray = `0x${word(0x20n)}${word(2n)}${word(0xa1n)}` as Hex;
+	// Dynamic offset far outside addressable data.
+	const hugeOffset = `0x${word(2n ** 200n)}` as Hex;
+
+	for (const raw of [truncatedArray, hugeOffset]) {
+		let decodeError: unknown;
+		try {
+			decodeFunctionResult({
+				abi: safeAccountAbi,
+				functionName: "getOwners",
+				data: raw,
+			});
+			assert.fail("expected decoding to fail");
+		} catch (error) {
+			decodeError = error;
+		}
+
+		const { providerService, calls } = createProviderService({
+			masterCopy: async () => SAFE_141_SINGLETON,
+			getThreshold: async () => 2n,
+			getOwners: async () => {
+				throw new ContractFunctionExecutionError(decodeError as BaseError, {
+					abi: safeAccountAbi,
+					args: [],
+					contractAddress: SAFE,
+					functionName: "getOwners",
+				});
+			},
+		});
+		const service = new SafeAccountService(providerService as never);
+
+		assert.equal(
+			await service.fetchSafeAccount({ chainId: 1, account: SAFE }),
+			null,
+		);
+		// The definitive negative is cached: one three-read probe total.
+		assert.equal(
+			await service.fetchSafeAccount({ chainId: 1, account: SAFE }),
+			null,
+		);
+		assert.equal(calls.length, 3);
+	}
 });
 
 test("fetchSafeAccount rethrows transport failures and does not cache them", async () => {

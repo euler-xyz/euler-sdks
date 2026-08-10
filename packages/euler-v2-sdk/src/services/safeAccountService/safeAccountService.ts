@@ -85,28 +85,42 @@ const SENTINEL_OWNER = "0x0000000000000000000000000000000000000001";
 const CONTRACT_FAILURE_NAMES = new Set([
 	"ContractFunctionZeroDataError",
 	"ContractFunctionRevertedError",
-	"AbiDecodingZeroDataError",
-	"AbiDecodingDataSizeTooSmallError",
-	"AbiDecodingDataSizeInvalidError",
 	"ExecutionRevertedError",
 	"RawContractError",
+	// Response-data decoding failures from viem's cursor/encoding layers,
+	// e.g. a truncated dynamic array or an out-of-range dynamic offset.
+	"PositionOutOfBoundsError",
+	"NegativeOffsetError",
+	"RecursiveReadLimitExceededError",
+	"IntegerOutOfRangeError",
+	"InvalidBytesBooleanError",
+	"InvalidAddressError",
+	"SizeOverflowError",
+	"SliceOffsetOutOfBoundsError",
+	"SizeExceedsPaddingSizeError",
 ]);
+// Every `AbiDecoding*` class (zero data, wrong size, malformed offsets, …)
+// is a response-decoding failure; match the family instead of enumerating.
+const CONTRACT_FAILURE_NAME_PATTERN = /^AbiDecoding/;
 const CONTRACT_FAILURE_MESSAGE =
-	/reverted|returned no data|data size of \d+ bytes is too small|invalid.*data size/i;
+	/reverted|returned no data|data size of \d+ bytes is too small|invalid.*data size|out of bounds|not in safe integer range/i;
 
 /**
  * True when a rejected read failed at the contract level — a definitive
  * "not a Safe". That covers empty call data from an EOA, a revert from a
  * non-Safe contract, and malformed non-empty fallback data that fails ABI
- * response decoding. Anything else (HTTP failure, timeout, rate limit) is a
- * transport problem and must not be recorded as a negative detection.
- * Matches by error name and message rather than instanceof so wrapped and
- * cross-package viem errors classify correctly.
+ * response decoding (including dynamic-array boundary failures like
+ * truncated `getOwners()` output or absurd dynamic offsets). Anything else
+ * (HTTP failure, timeout, rate limit) is a transport problem and must not
+ * be recorded as a negative detection. Matches by error name and message
+ * rather than instanceof so wrapped and cross-package viem errors classify
+ * correctly.
  */
 function isDefinitiveContractFailure(error: unknown): boolean {
 	let current: unknown = error;
 	for (let depth = 0; current instanceof Error && depth < 8; depth++) {
 		if (CONTRACT_FAILURE_NAMES.has(current.name)) return true;
+		if (CONTRACT_FAILURE_NAME_PATTERN.test(current.name)) return true;
 		if (CONTRACT_FAILURE_MESSAGE.test(current.message)) return true;
 		current = current.cause;
 	}
