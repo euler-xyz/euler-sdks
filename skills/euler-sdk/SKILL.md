@@ -52,6 +52,7 @@ Reference these guidelines when:
 - `positionMigrationService` for cross-protocol position migration (Aave V3, Morpho Blue, MetaMorpho) into/out of Euler, with connector-specific authorizations
 - `rewardsService` for reward reads and provider-specific claim plans; the default V3 path normalizes Incentra rows as Brevis and returns direct proof-backed Brevis rows when V3 lacks claim metadata
 - `reulLockService` for rEUL vesting lock reads and unlock transaction plans
+- `safeAccountService` for Safe smart-account detection and signer configuration (threshold/owners) reads
 - `eulerLabelsService` plus exported `utils/eulerLabels` helpers for normalized labels metadata, notices, restrictions, and product/vault flags
 - `oracleAdapterService.fetchOracleAdapterMap(chainId)` returns metadata keyed by normalized `adapter.oracle` address
 - `priceService` for display-only USD market prices (V3 → on-chain oracle fallback); prefer the `populateMarketPrices` fetch option and use oracle risk prices for risk math

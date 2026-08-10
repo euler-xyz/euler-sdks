@@ -123,6 +123,10 @@ import {
 	type IREULLockService,
 } from "../services/reulLockService/index.js";
 import {
+	SafeAccountService,
+	type ISafeAccountService,
+} from "../services/safeAccountService/index.js";
+import {
 	AavePositionMigrationConnector,
 	MetamorphoPositionMigrationConnector,
 	MorphoPositionMigrationConnector,
@@ -203,6 +207,7 @@ export interface BuildSDKOverrides<
 	oracleAdapterService?: IOracleAdapterService;
 	feeFlowService?: IFeeFlowService;
 	reulLockService?: IREULLockService;
+	safeAccountService?: ISafeAccountService;
 	positionMigrationService?: IPositionMigrationService;
 	activityService?: IActivityService;
 }
@@ -1526,6 +1531,9 @@ export async function buildEulerSDK<
 	const reulLockService =
 		servicesOverrides?.reulLockService ??
 		new REULLockService(providerService, deploymentService);
+	const safeAccountService =
+		servicesOverrides?.safeAccountService ??
+		new SafeAccountService(providerService);
 	const positionMigrationService =
 		servicesOverrides?.positionMigrationService ??
 		(() => {
@@ -1685,6 +1693,7 @@ export async function buildEulerSDK<
 		oracleAdapterService,
 		feeFlowService,
 		reulLockService,
+		safeAccountService,
 		positionMigrationService,
 		activityService,
 		plugins,

@@ -44,6 +44,8 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
   See: [`rewards-service.md`](./rewards-service.md)
 - `reulLockService`: Fetches rEUL vesting locks and builds rEUL unlock `contractCall` transaction plans.
   See: [`reul-lock-service.md`](./reul-lock-service.md)
+- `safeAccountService`: Detects whether an address is a Safe smart account and reads its signer configuration (threshold/owners).
+  See: [`safe-account-service.md`](./safe-account-service.md)
 - `feeFlowService`: Fetches FeeFlow state, filters eligible vaults, and builds FeeFlow buy plans.
   See: [`fee-flow-service.md`](./fee-flow-service.md)
 - `intrinsicApyService`: Fetches intrinsic APY data used by vault enrichments.

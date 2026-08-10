@@ -37,6 +37,7 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 - `swapService` for quotes and providers, including `cowSwap` metadata for CoW-supported position flows
 - `rewardsService` for reward reads and provider-specific reward claim planning; the default V3 path normalizes Incentra rows as Brevis and returns direct proof-backed Brevis rows when V3 lacks claim metadata
 - `reulLockService` for rEUL lock reads and unlock transaction plans
+- `safeAccountService` for Safe smart-account detection and signer configuration reads
 - `oracleAdapterService` for oracle adapter metadata keyed by normalized `adapter.oracle` address
 - `priceService` for display-only USD market prices (V3 → on-chain oracle fallback); prefer the `populateMarketPrices` fetch option and use oracle risk prices for risk math
 - `eulerLabelsService` plus exported label helpers for normalized products, Earn entries, notices, restrictions, and product/vault flags

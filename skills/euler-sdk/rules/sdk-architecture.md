@@ -55,6 +55,7 @@ Use these default boundaries:
 - `swapService`: quotes and providers
 - `rewardsService`: reward reads and provider-specific claim planning
 - `reulLockService`: rEUL vesting lock reads and unlock transaction plans
+- `safeAccountService`: Safe smart-account detection and signer configuration (threshold/owners) reads
 - `eulerLabelsService`: normalized off-chain labels metadata; use exported helpers from `utils/eulerLabels` for product/vault flags, notices, and restrictions
 - `oracleAdapterService`: oracle adapter metadata keyed by normalized `adapter.oracle` address
 
