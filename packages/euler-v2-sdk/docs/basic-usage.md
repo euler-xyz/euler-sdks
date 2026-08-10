@@ -225,10 +225,18 @@ Perspectives are on-chain contracts that verify vaults meet certain criteria. Ea
 
 ### EVault perspectives
 
+> **"Verified" is not "trusted".** A perspective marks a vault as verified when it passes the
+> perspective's on-chain checks. For `FACTORY` that check is only *provenance* — the vault was
+> deployed through the EVK factory, which anyone can use. The curated on-chain whitelist
+> (`governedPerspective`) is retired, so there is no on-chain source of trusted vaults anymore
+> (escrow vaults excepted — they satisfy the escrow criteria by construction). Derive trusted
+> vault lists from euler-labels (`populateAll` / `populateLabels` fills `vault.eulerLabel`;
+> vaults listed in a product are the curated set) or maintain your own allowlist.
+
 ```typescript
 import { StandardEVaultPerspectives } from '@eulerxyz/euler-v2-sdk'
 
-// FACTORY — all vaults deployed via the EVK factory
+// FACTORY — every vault deployed via the EVK factory (discovery only, untrusted)
 const { result: all } = await sdk.eVaultService.fetchVerifiedVaults(1, [
   StandardEVaultPerspectives.FACTORY,
 ])
@@ -238,14 +246,20 @@ const { result: vaults } = await sdk.eVaultService.fetchVerifiedVaults(1, [
   StandardEVaultPerspectives.FACTORY,
   StandardEVaultPerspectives.ESCROW,
 ])
+
+// Trusted subset: label-verified (listed in a euler-labels product) or escrow
+const { result: universe } = await sdk.eVaultService.fetchVerifiedVaults(1, [
+  StandardEVaultPerspectives.FACTORY,
+], { populateAll: true })
+const trusted = universe.filter(v => v && (v.eulerLabel?.products.length ?? 0) > 0 && !v.eulerLabel?.deprecated)
 ```
 
 Available EVault perspectives:
 
 | Perspective | Description |
 |-------------|-------------|
-| `FACTORY` | All vaults from the EVK factory |
-| `ESCROW` | Escrowed collateral vaults |
+| `FACTORY` | All vaults from the EVK factory (provenance only, untrusted) |
+| `ESCROW` | Escrowed collateral vaults (verified by construction) |
 
 ### EulerEarn perspectives
 
@@ -261,7 +275,9 @@ Available EulerEarn perspectives:
 
 | Perspective | Description |
 |-------------|-------------|
-| `FACTORY` | All EulerEarn vaults from factory |
+| `FACTORY` | All EulerEarn vaults from factory (provenance only, untrusted) |
+
+For trusted EulerEarn vaults, filter to the label-verified set: `vault.eulerLabel?.earnVault !== undefined && !vault.eulerLabel?.deprecated`.
 
 ### Custom perspective addresses
 

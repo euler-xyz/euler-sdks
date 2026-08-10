@@ -16,6 +16,7 @@ import { mainnet } from "viem/chains";
 import {
   buildEulerSDK,
   StandardEVaultPerspectives,
+  StandardEulerEarnPerspectives,
 } from "@eulerxyz/euler-v2-sdk";
 
 async function fetchApysExample() {
@@ -25,18 +26,22 @@ async function fetchApysExample() {
     eulerEarnServiceConfig: { adapter: "onchain" },
   });
 
-  // Fetch all factory EVaults with rewards and intrinsic APY
-  console.log("Fetching factory EVaults...");
+  // Enumerate the EVault universe via the factory perspective (provenance only, NOT a
+  // trust signal - anyone can deploy through the factory), then keep only vaults that
+  // are label-verified, i.e. listed in a euler-labels product.
+  console.log("Fetching EVaults...");
   const { result: eVaultResults } = await sdk.eVaultService.fetchVerifiedVaults(mainnet.id, [
     StandardEVaultPerspectives.FACTORY,
   ], {
     populateAll: true,
   });
-  const eVaults = eVaultResults.filter((vault) => vault !== undefined);
+  const eVaults = eVaultResults
+    .filter((vault) => vault !== undefined)
+    .filter((vault) => (vault.eulerLabel?.products.length ?? 0) > 0 && !vault.eulerLabel?.deprecated);
 
   eVaults.sort((a, b) => Number(b.interestRates.supplyAPY) - Number(a.interestRates.supplyAPY));
 
-  console.log(`\nFound ${eVaults.length} factory EVaults:\n`);
+  console.log(`\nFound ${eVaults.length} label-verified EVaults:\n`);
   console.log(
     "Vault".padEnd(50),
     "Address".padEnd(44),
@@ -60,19 +65,21 @@ async function fetchApysExample() {
     );
   }
 
-  // Fetch all EulerEarn vaults with rewards and intrinsic APY
+  // Same for EulerEarn: enumerate via the factory, keep only label-verified earn vaults
   console.log("\nFetching EulerEarn vaults...");
   const { result: eulerEarnVaultResults } =
-    await sdk.eulerEarnService.fetchAllVaults(mainnet.id, {
-      options: { populateAll: true },
+    await sdk.eulerEarnService.fetchVerifiedVaults(mainnet.id, [
+      StandardEulerEarnPerspectives.FACTORY,
+    ], {
+      populateAll: true,
     });
-  const eulerEarnVaults = eulerEarnVaultResults.filter(
-    (vault) => vault !== undefined,
-  );
+  const eulerEarnVaults = eulerEarnVaultResults
+    .filter((vault) => vault !== undefined)
+    .filter((vault) => vault.eulerLabel?.earnVault !== undefined && !vault.eulerLabel?.deprecated);
 
   eulerEarnVaults.sort((a, b) => (b.supplyApy ?? 0) - (a.supplyApy ?? 0));
 
-  console.log(`\nFound ${eulerEarnVaults.length} EulerEarn vaults:\n`);
+  console.log(`\nFound ${eulerEarnVaults.length} label-verified EulerEarn vaults:\n`);
   console.log(
     "Vault".padEnd(50),
     "Address".padEnd(44),
