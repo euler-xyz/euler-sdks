@@ -1,4 +1,4 @@
-import { getAddress, type Abi, type Address } from "viem";
+import { type Abi, type Address, getAddress } from "viem";
 import type { IProviderService } from "../providerService/index.js";
 import type {
 	FetchSafeAccountArgs,
@@ -114,10 +114,8 @@ export class SafeAccountService implements ISafeAccountService {
 		string,
 		{ expiresAt: number; value: SafeAccountInfo | null }
 	>();
-	private readonly inFlight: Record<
-		string,
-		Promise<SafeAccountInfo | null>
-	> = {};
+	private readonly inFlight: Record<string, Promise<SafeAccountInfo | null>> =
+		{};
 
 	constructor(
 		private readonly providerService: IProviderService,
@@ -218,9 +216,7 @@ export class SafeAccountService implements ISafeAccountService {
 		}
 		if (owners.value.length < thresholdCount) return null;
 
-		const normalizedOwners = owners.value.map((owner) =>
-			owner.toLowerCase(),
-		);
+		const normalizedOwners = owners.value.map((owner) => owner.toLowerCase());
 		if (
 			normalizedOwners.some(
 				(owner) => owner === ZERO_ADDRESS || owner === SENTINEL_OWNER,
