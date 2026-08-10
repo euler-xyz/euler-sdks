@@ -7,7 +7,12 @@ export interface SafeAccountInfo {
 	singleton: Address;
 	/** Safe contract version of the singleton, e.g. "1.4.1". */
 	version: string;
-	/** Number of owner signatures required to execute a transaction. */
+	/**
+	 * Configured owner-signature threshold for owner-authorized Safe
+	 * transactions. Enabled Safe modules can execute without owner
+	 * confirmations (`execTransactionFromModule`), and this probe does not
+	 * inspect modules or guards.
+	 */
 	threshold: number;
 	/** Current Safe owners. */
 	owners: Address[];

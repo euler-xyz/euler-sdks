@@ -86,18 +86,22 @@ const CONTRACT_FAILURE_NAMES = new Set([
 	"ContractFunctionZeroDataError",
 	"ContractFunctionRevertedError",
 	"AbiDecodingZeroDataError",
+	"AbiDecodingDataSizeTooSmallError",
+	"AbiDecodingDataSizeInvalidError",
 	"ExecutionRevertedError",
 	"RawContractError",
 ]);
-const CONTRACT_FAILURE_MESSAGE = /reverted|returned no data/i;
+const CONTRACT_FAILURE_MESSAGE =
+	/reverted|returned no data|data size of \d+ bytes is too small|invalid.*data size/i;
 
 /**
- * True when a rejected read failed at the contract level (empty call data
- * from an EOA, revert from a non-Safe contract) — a definitive "not a Safe".
- * Anything else (HTTP failure, timeout, rate limit) is a transport problem
- * and must not be recorded as a negative detection. Matches by error name
- * and message rather than instanceof so wrapped and cross-package viem
- * errors classify correctly.
+ * True when a rejected read failed at the contract level — a definitive
+ * "not a Safe". That covers empty call data from an EOA, a revert from a
+ * non-Safe contract, and malformed non-empty fallback data that fails ABI
+ * response decoding. Anything else (HTTP failure, timeout, rate limit) is a
+ * transport problem and must not be recorded as a negative detection.
+ * Matches by error name and message rather than instanceof so wrapped and
+ * cross-package viem errors classify correctly.
  */
 function isDefinitiveContractFailure(error: unknown): boolean {
 	let current: unknown = error;
@@ -160,12 +164,13 @@ export class SafeAccountService implements ISafeAccountService {
 	}
 
 	/**
-	 * Fire the three probe reads concurrently — the provider's multicall
-	 * batching coalesces them into a single RPC request. EOAs return empty
-	 * call data and non-Safe contracts revert on the unknown selectors, so
-	 * those failures mean "not a Safe". Transport-level failures are
-	 * rethrown instead, so they surface to the caller and are never cached
-	 * as negative detections.
+	 * Fire the three probe reads concurrently — providers built by the SDK's
+	 * ProviderService batch them into a single multicall RPC request (custom
+	 * IProviderService implementations without batching issue three). EOAs
+	 * return empty call data and non-Safe contracts revert on the unknown
+	 * selectors, so those failures mean "not a Safe". Transport-level
+	 * failures are rethrown instead, so they surface to the caller and are
+	 * never cached as negative detections.
 	 */
 	private async probeSafeAccount(
 		args: FetchSafeAccountArgs,
@@ -208,18 +213,22 @@ export class SafeAccountService implements ISafeAccountService {
 		}
 
 		// Threshold/owner invariants mirror what the Safe contracts themselves
-		// enforce (OwnerManager forbids zero/sentinel/duplicate owners);
-		// anything violating them is a lookalike.
+		// enforce (OwnerManager forbids zero/sentinel/duplicate/self owners,
+		// GS203); anything violating them is a lookalike.
 		const thresholdCount = Number(threshold.value);
 		if (!Number.isSafeInteger(thresholdCount) || thresholdCount < 1) {
 			return null;
 		}
 		if (owners.value.length < thresholdCount) return null;
 
+		const normalizedAccount = account.toLowerCase();
 		const normalizedOwners = owners.value.map((owner) => owner.toLowerCase());
 		if (
 			normalizedOwners.some(
-				(owner) => owner === ZERO_ADDRESS || owner === SENTINEL_OWNER,
+				(owner) =>
+					owner === ZERO_ADDRESS ||
+					owner === SENTINEL_OWNER ||
+					owner === normalizedAccount,
 			)
 		) {
 			return null;

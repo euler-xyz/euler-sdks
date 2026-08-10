@@ -22,16 +22,16 @@ Use `fetchSafeAccount({ chainId, account })` to probe an address. It resolves to
 - `address` - the probed Safe proxy address (checksummed)
 - `singleton` - the canonical Safe implementation the proxy points at
 - `version` - Safe contract version of the singleton, e.g. `"1.4.1"`
-- `threshold` - owner signatures required to execute a transaction
+- `threshold` - configured owner-signature threshold for owner-authorized Safe transactions (enabled Safe modules can execute via `execTransactionFromModule` without owner confirmations; the probe does not inspect modules or guards)
 - `owners` - current Safe owners (checksummed)
 
 ## Detection model
 
-Safe proxies (v1.1.1+) special-case the `masterCopy()` selector in their fallback and return the singleton address stored at slot 0. The probe fires `masterCopy()`, `getThreshold()`, and `getOwners()` concurrently — the provider's multicall batching coalesces them into one RPC request — and accepts the address as a Safe only when the singleton matches a known canonical deployment from [`safe-deployments`](https://github.com/safe-global/safe-deployments) and the threshold/owner invariants hold.
+Safe proxies (v1.1.1+) special-case the `masterCopy()` selector in their fallback and return the singleton address stored at slot 0. The probe fires `masterCopy()`, `getThreshold()`, and `getOwners()` concurrently — providers built by the SDK's `ProviderService` batch them into one multicall RPC request (custom `IProviderService` implementations without batching issue three) — and accepts the address as a Safe only when the singleton matches a known canonical deployment from [`safe-deployments`](https://github.com/safe-global/safe-deployments) and the threshold/owner invariants hold.
 
 Because canonical singletons are deployed deterministically at identical addresses on every chain, detection works on any configured chain without external APIs. v1.0.0 proxies predate the `masterCopy()` special case and read as non-Safes.
 
-Owner invariants mirror what Safe's `OwnerManager` enforces: a threshold below 1 or above the owner count, zero or sentinel (`0x…01`) owners, and duplicate owners are all rejected as lookalikes.
+Owner invariants mirror what Safe's `OwnerManager` enforces: a threshold below 1 or above the owner count, zero or sentinel (`0x…01`) owners, duplicate owners, and self-ownership (the Safe listed as its own owner, GS203) are all rejected as lookalikes.
 
 `getSafeSingletonVersion(address)` is exported for callers that already have a singleton address and only need version recognition.
 
@@ -41,4 +41,4 @@ Owner invariants mirror what Safe's `OwnerManager` enforces: a threshold below 1
 
 Results are cached per `${chainId}:${account}` for `cacheMs` (default 5 minutes — threshold and owners can change), and concurrent probes for the same key share one RPC round-trip.
 
-Contract-level failures (empty call data from an EOA, revert from a non-Safe contract) resolve to `null` and are cached like any other result. Transport-level failures (HTTP errors, timeouts, rate limits) make `fetchSafeAccount` reject instead — they are never cached as negative detections, so a later call retries.
+Contract-level failures (empty call data from an EOA, revert from a non-Safe contract, malformed non-empty response data that fails ABI decoding) resolve to `null` and are cached like any other result. Transport-level failures (HTTP errors, timeouts, rate limits) make `fetchSafeAccount` reject instead — they are never cached as negative detections, so a later call retries.

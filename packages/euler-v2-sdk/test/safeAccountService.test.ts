@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { getAddress, type Address } from "viem";
+import {
+	AbiDecodingDataSizeTooSmallError,
+	ContractFunctionExecutionError,
+	getAddress,
+	type Address,
+} from "viem";
 
 import {
 	getSafeSingletonVersion,
@@ -102,6 +107,42 @@ test("fetchSafeAccount returns null for EOAs and non-Safe contracts", async () =
 	);
 });
 
+test("fetchSafeAccount resolves null for malformed non-Safe fallback data", async () => {
+	// A contract whose fallback returns `0x01` makes viem reject with an
+	// ABI-decoding error wrapped in ContractFunctionExecutionError — a
+	// definitive contract-level negative, not a transport outage.
+	const malformedData = async (): Promise<never> => {
+		const cause = new AbiDecodingDataSizeTooSmallError({
+			data: "0x01",
+			params: [{ name: "masterCopy", type: "address" }],
+			size: 1,
+		});
+		throw new ContractFunctionExecutionError(cause as never, {
+			abi: [],
+			args: [],
+			contractAddress: SAFE,
+			functionName: "masterCopy",
+		});
+	};
+	const { providerService, calls } = createProviderService({
+		masterCopy: malformedData,
+		getThreshold: malformedData,
+		getOwners: malformedData,
+	});
+	const service = new SafeAccountService(providerService as never);
+
+	assert.equal(
+		await service.fetchSafeAccount({ chainId: 1, account: SAFE }),
+		null,
+	);
+	// The definitive negative is cached: a second call performs no reads.
+	assert.equal(
+		await service.fetchSafeAccount({ chainId: 1, account: SAFE }),
+		null,
+	);
+	assert.equal(calls.length, 3);
+});
+
 test("fetchSafeAccount rethrows transport failures and does not cache them", async () => {
 	let failFirstProbe = true;
 	const { providerService, calls } = createProviderService({
@@ -130,6 +171,9 @@ test("fetchSafeAccount rejects owner lists a Safe cannot have", async () => {
 		[...OWNERS, "0x0000000000000000000000000000000000000000" as Address],
 		[...OWNERS, "0x0000000000000000000000000000000000000001" as Address],
 		[OWNERS[0] as Address, OWNERS[0] as Address],
+		// Self-ownership: OwnerManager enforces owner != address(this) (GS203).
+		[SAFE],
+		[...OWNERS, SAFE],
 	];
 	for (const owners of cases) {
 		const { providerService } = createSafeProviderService(
