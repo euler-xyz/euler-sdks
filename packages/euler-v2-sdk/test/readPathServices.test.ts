@@ -1216,7 +1216,7 @@ test("evault service setters and empty branches are exercised", async () => {
 					addresses: {
 						coreAddrs: { eVaultFactory: zeroAddress },
 						peripheryAddrs: {
-							governedPerspective: "0x00000000000000000000000000000000000000bb",
+							escrowedCollateralPerspective: "0x00000000000000000000000000000000000000bb",
 						},
 					},
 				};
@@ -1226,7 +1226,7 @@ test("evault service setters and empty branches are exercised", async () => {
 	assert.deepEqual(
 		await directPerspectiveService.fetchVerifiedVaultAddresses(1, [
 			"0x00000000000000000000000000000000000000aa",
-			"governedPerspective",
+			"escrowedCollateralPerspective",
 		]),
 		[
 			"0x00000000000000000000000000000000000000aa",
@@ -1234,7 +1234,7 @@ test("evault service setters and empty branches are exercised", async () => {
 		],
 	);
 	await assert.rejects(
-		() => directPerspectiveService.fetchVerifiedVaultAddresses(1, ["edgeFactoryPerspective"]),
+		() => directPerspectiveService.fetchVerifiedVaultAddresses(1, ["evkFactoryPerspective"]),
 		/Perspective address not found/,
 	);
 	const verified = await directPerspectiveService.fetchVerifiedVaults(1, []);

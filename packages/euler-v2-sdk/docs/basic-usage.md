@@ -228,11 +228,6 @@ Perspectives are on-chain contracts that verify vaults meet certain criteria. Ea
 ```typescript
 import { StandardEVaultPerspectives } from '@eulerxyz/euler-v2-sdk'
 
-// GOVERNED — vaults with active governance
-const { result: governed } = await sdk.eVaultService.fetchVerifiedVaults(1, [
-  StandardEVaultPerspectives.GOVERNED,
-])
-
 // FACTORY — all vaults deployed via the EVK factory
 const { result: all } = await sdk.eVaultService.fetchVerifiedVaults(1, [
   StandardEVaultPerspectives.FACTORY,
@@ -240,7 +235,7 @@ const { result: all } = await sdk.eVaultService.fetchVerifiedVaults(1, [
 
 // Multiple perspectives (results are merged and deduplicated)
 const { result: vaults } = await sdk.eVaultService.fetchVerifiedVaults(1, [
-  StandardEVaultPerspectives.GOVERNED,
+  StandardEVaultPerspectives.FACTORY,
   StandardEVaultPerspectives.ESCROW,
 ])
 ```
@@ -249,9 +244,7 @@ Available EVault perspectives:
 
 | Perspective | Description |
 |-------------|-------------|
-| `GOVERNED` | Vaults with active governance oversight |
 | `FACTORY` | All vaults from the EVK factory |
-| `EDGE` | Vaults from the edge factory |
 | `ESCROW` | Escrowed collateral vaults |
 
 ### EulerEarn perspectives
@@ -259,8 +252,8 @@ Available EVault perspectives:
 ```typescript
 import { StandardEulerEarnPerspectives } from '@eulerxyz/euler-v2-sdk'
 
-const { result: governed } = await sdk.eulerEarnService.fetchVerifiedVaults(1, [
-  StandardEulerEarnPerspectives.GOVERNED,
+const { result: vaults } = await sdk.eulerEarnService.fetchVerifiedVaults(1, [
+  StandardEulerEarnPerspectives.FACTORY,
 ], { populateAll: true })
 ```
 
@@ -268,7 +261,6 @@ Available EulerEarn perspectives:
 
 | Perspective | Description |
 |-------------|-------------|
-| `GOVERNED` | EulerEarn vaults with governance |
 | `FACTORY` | All EulerEarn vaults from factory |
 
 ### Custom perspective addresses
@@ -287,7 +279,7 @@ If you only need addresses (not full entities):
 
 ```typescript
 const addresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(1, [
-  StandardEVaultPerspectives.GOVERNED,
+  StandardEVaultPerspectives.FACTORY,
 ])
 ```
 
@@ -296,11 +288,11 @@ const addresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(1, [
 `vaultMetaService` queries all registered services and merges results:
 
 ```typescript
-import { StandardEVaultPerspectives, StandardEulerEarnPerspectives } from '@eulerxyz/euler-v2-sdk'
+import { StandardEVaultPerspectives } from '@eulerxyz/euler-v2-sdk'
 
 const { result: allVaults } = await sdk.vaultMetaService.fetchVerifiedVaults(1, [
-  StandardEVaultPerspectives.GOVERNED,
-  StandardEulerEarnPerspectives.GOVERNED,
+  StandardEVaultPerspectives.FACTORY,
+  StandardEVaultPerspectives.ESCROW,
 ])
 // Returns (EVault | EulerEarn | SecuritizeCollateralVault | undefined)[]
 ```

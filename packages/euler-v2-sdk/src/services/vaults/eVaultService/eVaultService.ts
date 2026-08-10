@@ -42,9 +42,7 @@ export interface IEVaultAdapter {
 }
 
 export enum StandardEVaultPerspectives {
-	GOVERNED = "governedPerspective",
 	FACTORY = "evkFactoryPerspective",
-	EDGE = "edgeFactoryPerspective",
 	ESCROW = "escrowedCollateralPerspective",
 }
 

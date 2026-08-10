@@ -47,7 +47,6 @@ export interface IEulerEarnAdapter {
 }
 
 export enum StandardEulerEarnPerspectives {
-	GOVERNED = "eulerEarnGovernedPerspective",
 	FACTORY = "eulerEarnFactoryPerspective",
 }
 

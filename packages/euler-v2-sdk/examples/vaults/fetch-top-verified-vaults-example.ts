@@ -18,7 +18,6 @@ import { mainnet } from "viem/chains";
 import {
   buildEulerSDK,
   StandardEVaultPerspectives,
-  StandardEulerEarnPerspectives,
   isEVault,
   isEulerEarn,
   type EVault,
@@ -34,9 +33,8 @@ async function fetchTopVerifiedVaultsExample() {
 
   console.log("Fetching verified vault addresses from mainnet via vaultMetaService...");
   const verifiedAddresses = await sdk.vaultMetaService.fetchVerifiedVaultAddresses(mainnet.id, [
-    StandardEVaultPerspectives.GOVERNED,
+    StandardEVaultPerspectives.FACTORY,
     StandardEVaultPerspectives.ESCROW,
-    StandardEulerEarnPerspectives.GOVERNED,
   ]);
   console.log(`Found ${verifiedAddresses.length} verified vault addresses.`);
 

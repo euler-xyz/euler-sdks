@@ -109,7 +109,7 @@ async function feeFlowExample({
   printHeader("Fetching vault universe");
 
   const verifiedAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(chainId, [
-    StandardEVaultPerspectives.GOVERNED,
+    StandardEVaultPerspectives.FACTORY,
     StandardEVaultPerspectives.ESCROW,
   ]);
 

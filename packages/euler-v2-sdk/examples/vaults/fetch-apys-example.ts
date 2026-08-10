@@ -2,7 +2,7 @@
  * FETCH APYs EXAMPLE
  *
  * This example fetches all EVaults and EulerEarn vaults from
- * governed perspectives and logs their supply and borrow APYs,
+ * standard perspectives and logs their supply and borrow APYs,
  * reward APRs, and intrinsic asset APYs.
  *
  * USAGE:
@@ -16,7 +16,6 @@ import { mainnet } from "viem/chains";
 import {
   buildEulerSDK,
   StandardEVaultPerspectives,
-  StandardEulerEarnPerspectives,
 } from "@eulerxyz/euler-v2-sdk";
 
 async function fetchApysExample() {
@@ -26,10 +25,10 @@ async function fetchApysExample() {
     eulerEarnServiceConfig: { adapter: "onchain" },
   });
 
-  // Fetch all governed EVaults with rewards and intrinsic APY
-  console.log("Fetching governed EVaults...");
+  // Fetch all factory EVaults with rewards and intrinsic APY
+  console.log("Fetching factory EVaults...");
   const { result: eVaultResults } = await sdk.eVaultService.fetchVerifiedVaults(mainnet.id, [
-    StandardEVaultPerspectives.GOVERNED,
+    StandardEVaultPerspectives.FACTORY,
   ], {
     populateAll: true,
   });
@@ -37,7 +36,7 @@ async function fetchApysExample() {
 
   eVaults.sort((a, b) => Number(b.interestRates.supplyAPY) - Number(a.interestRates.supplyAPY));
 
-  console.log(`\nFound ${eVaults.length} governed EVaults:\n`);
+  console.log(`\nFound ${eVaults.length} factory EVaults:\n`);
   console.log(
     "Vault".padEnd(50),
     "Address".padEnd(44),
@@ -61,13 +60,11 @@ async function fetchApysExample() {
     );
   }
 
-  // Fetch all governed EulerEarn vaults with rewards and intrinsic APY
-  console.log("\nFetching governed EulerEarn vaults...");
+  // Fetch all EulerEarn vaults with rewards and intrinsic APY
+  console.log("\nFetching EulerEarn vaults...");
   const { result: eulerEarnVaultResults } =
-    await sdk.eulerEarnService.fetchVerifiedVaults(mainnet.id, [
-      StandardEulerEarnPerspectives.GOVERNED,
-    ], {
-      populateAll: true,
+    await sdk.eulerEarnService.fetchAllVaults(mainnet.id, {
+      options: { populateAll: true },
     });
   const eulerEarnVaults = eulerEarnVaultResults.filter(
     (vault) => vault !== undefined,
@@ -75,7 +72,7 @@ async function fetchApysExample() {
 
   eulerEarnVaults.sort((a, b) => (b.supplyApy ?? 0) - (a.supplyApy ?? 0));
 
-  console.log(`\nFound ${eulerEarnVaults.length} governed EulerEarn vaults:\n`);
+  console.log(`\nFound ${eulerEarnVaults.length} EulerEarn vaults:\n`);
   console.log(
     "Vault".padEnd(50),
     "Address".padEnd(44),
