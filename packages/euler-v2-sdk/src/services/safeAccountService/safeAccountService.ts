@@ -144,8 +144,9 @@ export class SafeAccountService implements ISafeAccountService {
 	 * Detect whether an address is a Safe smart account.
 	 *
 	 * Results are cached per `${chainId}:${account}` (threshold/owners can
-	 * change, hence the TTL) and concurrent probes for the same key share one
-	 * RPC round-trip. RPC failures are not cached so a later call retries.
+	 * change, hence the TTL) and concurrent callers for the same key share
+	 * one in-flight three-read probe. RPC failures are not cached so a later
+	 * call retries.
 	 *
 	 * @param args.chainId - Chain to probe on.
 	 * @param args.account - Address to probe.

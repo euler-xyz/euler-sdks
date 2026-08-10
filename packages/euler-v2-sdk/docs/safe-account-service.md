@@ -39,6 +39,6 @@ Owner invariants mirror what Safe's `OwnerManager` enforces: a threshold below 1
 
 ## Caching and failure semantics
 
-Results are cached per `${chainId}:${account}` for `cacheMs` (default 5 minutes — threshold and owners can change), and concurrent probes for the same key share one RPC round-trip.
+Results are cached per `${chainId}:${account}` for `cacheMs` (default 5 minutes — threshold and owners can change), and concurrent callers for the same key share one in-flight three-read probe.
 
 Contract-level failures (empty call data from an EOA, revert from a non-Safe contract, malformed non-empty response data that fails ABI decoding) resolve to `null` and are cached like any other result. Transport-level failures (HTTP errors, timeouts, rate limits) make `fetchSafeAccount` reject instead — they are never cached as negative detections, so a later call retries.
