@@ -108,21 +108,32 @@ async function feeFlowExample({
 
   printHeader("Fetching vault universe");
 
-  const verifiedAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(chainId, [
-    StandardEVaultPerspectives.GOVERNED,
+  // The factory perspective is provenance only, NOT a trust signal (anyone can deploy
+  // through the factory). Since the buy plan interacts with the selected vaults
+  // (convertFees), restrict the universe to label-verified and escrow vaults.
+  const universeAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(chainId, [
+    StandardEVaultPerspectives.FACTORY,
     StandardEVaultPerspectives.ESCROW,
   ]);
+  const escrowAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(chainId, [
+    StandardEVaultPerspectives.ESCROW,
+  ]);
+  const escrowSet = new Set(escrowAddresses.map((address) => address.toLowerCase()));
 
   const { result: allVaultResults, errors } = await sdk.eVaultService.fetchVaults(
     chainId,
-    verifiedAddresses,
+    universeAddresses,
     { populateAll: true }
   );
   if (errors.length > 0) {
     console.log(`Vault diagnostics:      ${errors.length}`);
   }
 
-  const allEVaults = allVaultResults.filter(Boolean) as EVault[];
+  const allEVaults = (allVaultResults.filter(Boolean) as EVault[]).filter(
+    (vault) =>
+      !vault.eulerLabel?.deprecated
+      && ((vault.eulerLabel?.products.length ?? 0) > 0 || escrowSet.has(vault.address.toLowerCase())),
+  );
 
   const eligibleVaults = sdk.feeFlowService.getEligibleVaults(allEVaults, chainId);
 

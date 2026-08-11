@@ -219,48 +219,62 @@ const { result: vaults, errors } = await sdk.vaultMetaService.fetchVaults(1, inp
 // a location whose owner is `{ kind: "vault", address: inputAddresses[i], ... }`.
 ```
 
-## Fetching Verified Vaults (Perspectives)
+## Fetching Vaults by Perspective
 
 Perspectives are on-chain contracts that verify vaults meet certain criteria. Each vault service has standard perspectives.
 
 ### EVault perspectives
 
+> **"Verified" is not "trusted".** A perspective marks a vault as verified when it passes the
+> perspective's on-chain checks. For `FACTORY` that check is only *provenance* — the vault was
+> deployed through the EVK factory, which anyone can use. The curated on-chain whitelist
+> (`governedPerspective`) is retired, so there is no on-chain source of trusted vaults anymore
+> (escrow vaults excepted — they satisfy the escrow criteria by construction). Derive trusted
+> vault lists from euler-labels (`populateAll` / `populateLabels` fills `vault.eulerLabel`;
+> vaults listed in a product are the curated set) or maintain your own allowlist.
+
 ```typescript
 import { StandardEVaultPerspectives } from '@eulerxyz/euler-v2-sdk'
 
-// GOVERNED — vaults with active governance
-const { result: governed } = await sdk.eVaultService.fetchVerifiedVaults(1, [
-  StandardEVaultPerspectives.GOVERNED,
-])
-
-// FACTORY — all vaults deployed via the EVK factory
+// FACTORY — every vault deployed via the EVK factory (discovery only, untrusted)
 const { result: all } = await sdk.eVaultService.fetchVerifiedVaults(1, [
   StandardEVaultPerspectives.FACTORY,
 ])
 
 // Multiple perspectives (results are merged and deduplicated)
 const { result: vaults } = await sdk.eVaultService.fetchVerifiedVaults(1, [
-  StandardEVaultPerspectives.GOVERNED,
+  StandardEVaultPerspectives.FACTORY,
   StandardEVaultPerspectives.ESCROW,
 ])
+
+// Trusted subset: label-verified (listed in a euler-labels product) or escrow
+const escrowAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(1, [
+  StandardEVaultPerspectives.ESCROW,
+])
+const escrowSet = new Set(escrowAddresses.map(a => a.toLowerCase()))
+const { result: universe } = await sdk.eVaultService.fetchVerifiedVaults(1, [
+  StandardEVaultPerspectives.FACTORY,
+  StandardEVaultPerspectives.ESCROW,
+], { populateAll: true })
+const trusted = universe.filter(v => v
+  && !v.eulerLabel?.deprecated
+  && ((v.eulerLabel?.products.length ?? 0) > 0 || escrowSet.has(v.address.toLowerCase())))
 ```
 
 Available EVault perspectives:
 
 | Perspective | Description |
 |-------------|-------------|
-| `GOVERNED` | Vaults with active governance oversight |
-| `FACTORY` | All vaults from the EVK factory |
-| `EDGE` | Vaults from the edge factory |
-| `ESCROW` | Escrowed collateral vaults |
+| `FACTORY` | All vaults from the EVK factory (provenance only, untrusted) |
+| `ESCROW` | Escrowed collateral vaults (verified by construction) |
 
 ### EulerEarn perspectives
 
 ```typescript
 import { StandardEulerEarnPerspectives } from '@eulerxyz/euler-v2-sdk'
 
-const { result: governed } = await sdk.eulerEarnService.fetchVerifiedVaults(1, [
-  StandardEulerEarnPerspectives.GOVERNED,
+const { result: vaults } = await sdk.eulerEarnService.fetchVerifiedVaults(1, [
+  StandardEulerEarnPerspectives.FACTORY,
 ], { populateAll: true })
 ```
 
@@ -268,8 +282,9 @@ Available EulerEarn perspectives:
 
 | Perspective | Description |
 |-------------|-------------|
-| `GOVERNED` | EulerEarn vaults with governance |
-| `FACTORY` | All EulerEarn vaults from factory |
+| `FACTORY` | All EulerEarn vaults from factory (provenance only, untrusted) |
+
+For trusted EulerEarn vaults, filter to the label-verified set: `vault.eulerLabel?.earnVault !== undefined && !vault.eulerLabel?.deprecated`.
 
 ### Custom perspective addresses
 
@@ -287,20 +302,23 @@ If you only need addresses (not full entities):
 
 ```typescript
 const addresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(1, [
-  StandardEVaultPerspectives.GOVERNED,
+  StandardEVaultPerspectives.FACTORY,
 ])
 ```
 
 ### Across all vault types
 
-`vaultMetaService` queries all registered services and merges results:
+`vaultMetaService` queries all registered services and merges results. Include each
+vault type's perspective in the list — the meta service can only discover addresses
+the given perspectives return:
 
 ```typescript
 import { StandardEVaultPerspectives, StandardEulerEarnPerspectives } from '@eulerxyz/euler-v2-sdk'
 
 const { result: allVaults } = await sdk.vaultMetaService.fetchVerifiedVaults(1, [
-  StandardEVaultPerspectives.GOVERNED,
-  StandardEulerEarnPerspectives.GOVERNED,
+  StandardEVaultPerspectives.FACTORY,
+  StandardEVaultPerspectives.ESCROW,
+  StandardEulerEarnPerspectives.FACTORY,
 ])
 // Returns (EVault | EulerEarn | SecuritizeCollateralVault | undefined)[]
 ```
