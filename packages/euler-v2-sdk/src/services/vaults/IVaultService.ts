@@ -56,11 +56,11 @@ export interface IVaultService<TVault, TPerspective> {
 		chainId: number,
 		args?: FetchAllVaultsArgs<TVault, VaultFetchOptions>,
 	): Promise<ServiceResult<(TVault | undefined)[]>>;
-	fetchPerspectiveVaultAddresses(
+	fetchVerifiedVaultAddresses(
 		chainId: number,
 		perspectives: (TPerspective | Address)[],
 	): Promise<Address[]>;
-	fetchPerspectiveVaults(
+	fetchVerifiedVaults(
 		chainId: number,
 		perspectives: (TPerspective | Address)[],
 		options?: VaultFetchOptions,

@@ -677,7 +677,7 @@ test("vault meta service routes by type, remaps diagnostics, dedupes verified ad
 				],
 			};
 		},
-		async fetchPerspectiveVaultAddresses() {
+		async fetchVerifiedVaultAddresses() {
 			return [plain.address, collateralized.address];
 		},
 		async fetchAllVaults() {
@@ -692,7 +692,7 @@ test("vault meta service routes by type, remaps diagnostics, dedupes verified ad
 		async fetchVaults() {
 			throw new Error("custom-failure");
 		},
-		async fetchPerspectiveVaultAddresses() {
+		async fetchVerifiedVaultAddresses() {
 			return [plain.address];
 		},
 		async fetchAllVaults() {
@@ -705,7 +705,7 @@ test("vault meta service routes by type, remaps diagnostics, dedupes verified ad
 		vaultServices: [{ type: VaultType.EVault, service: evaultService as any }, customService as any],
 	});
 	meta.registerVaultService({ type: "CustomVault", service: customService as any });
-	assert.deepEqual(await meta.fetchPerspectiveVaultAddresses(1, []), []);
+	assert.deepEqual(await meta.fetchVerifiedVaultAddresses(1, []), []);
 
 	assert.equal(meta.getFactoryByType(1, VaultType.EVault), "0x00000000000000000000000000000000000000e1");
 	assert.equal(meta.getFactoryByType(1, "CustomVault"), "0x00000000000000000000000000000000000000f1");
@@ -743,9 +743,9 @@ test("vault meta service routes by type, remaps diagnostics, dedupes verified ad
 	assert.equal(fetchedSingle.result, undefined);
 	assert.ok(fetchedSingle.errors.some((issue) => issue.source === "vaultMetaService"));
 
-	const verifiedAddresses = await meta.fetchPerspectiveVaultAddresses(1, [VaultType.EVault]);
+	const verifiedAddresses = await meta.fetchVerifiedVaultAddresses(1, [VaultType.EVault]);
 	assert.deepEqual(verifiedAddresses, [plain.address, collateralized.address]);
-	const verifiedVaults = await meta.fetchPerspectiveVaults(1, [VaultType.EVault]);
+	const verifiedVaults = await meta.fetchVerifiedVaults(1, [VaultType.EVault]);
 	assert.equal(verifiedVaults.result.length, 2);
 
 	const allVaults = await meta.fetchAllVaults(1);
@@ -757,7 +757,7 @@ test("vault meta service routes by type, remaps diagnostics, dedupes verified ad
 	});
 	assert.deepEqual(await emptyMeta.fetchVaults(1, []), { result: [], errors: [] });
 	assert.equal(await emptyMeta.fetchVaultType(1, zeroAddress), undefined);
-	assert.deepEqual(await emptyMeta.fetchPerspectiveVaultAddresses(1, []), []);
+	assert.deepEqual(await emptyMeta.fetchVerifiedVaultAddresses(1, []), []);
 });
 
 test("vault meta helpers cover type guards, untyped services, adapter replacement, and service-label fallbacks", async () => {
@@ -786,7 +786,7 @@ test("vault meta helpers cover type guards, untyped services, adapter replacemen
 				],
 			};
 		}
-		async fetchPerspectiveVaultAddresses() {
+		async fetchVerifiedVaultAddresses() {
 			return [zeroAddress];
 		}
 		async fetchAllVaults() {
@@ -801,7 +801,7 @@ test("vault meta helpers cover type guards, untyped services, adapter replacemen
 		async fetchVaults() {
 			return { result: [undefined], errors: [] };
 		},
-		async fetchPerspectiveVaultAddresses() {
+		async fetchVerifiedVaultAddresses() {
 			return [];
 		},
 		async fetchAllVaults() {
@@ -877,7 +877,7 @@ test("vault meta helpers cover type guards, untyped services, adapter replacemen
 							],
 						};
 					},
-					async fetchPerspectiveVaultAddresses() {
+					async fetchVerifiedVaultAddresses() {
 						return [];
 					},
 					async fetchAllVaults() {
@@ -907,7 +907,7 @@ test("vault meta helpers cover type guards, untyped services, adapter replacemen
 					async fetchVaults() {
 						throw "vault-string";
 					},
-					async fetchPerspectiveVaultAddresses() {
+					async fetchVerifiedVaultAddresses() {
 						return [];
 					},
 					async fetchAllVaults() {
@@ -947,7 +947,7 @@ test("vault meta helpers cover type guards, untyped services, adapter replacemen
 					async fetchVaults() {
 						return { result: [plain], errors: [] };
 					},
-					async fetchPerspectiveVaultAddresses() {
+					async fetchVerifiedVaultAddresses() {
 						return [];
 					},
 					async fetchAllVaults() {
@@ -996,7 +996,7 @@ test("evault service hydrates, filters, populates collateral and price data, and
 				errors: [],
 			};
 		},
-		async fetchPerspectiveVaultsAddresses() {
+		async fetchVerifiedVaultsAddresses() {
 			return [plain.address];
 		},
 	};
@@ -1089,7 +1089,7 @@ test("evault service hydrates, filters, populates collateral and price data, and
 			async fetchAllVaults() {
 				return { result: [], errors: [] };
 			},
-			async fetchPerspectiveVaultsAddresses() {
+			async fetchVerifiedVaultsAddresses() {
 				return [];
 			},
 		} as any,
@@ -1158,7 +1158,7 @@ test("evault service hydrates, filters, populates collateral and price data, and
 	assert.ok(failed.errors.some((issue) => issue.source === "rewardsService"));
 	assert.ok(failed.errors.some((issue) => issue.source === "intrinsicApyService"));
 	assert.ok(failed.errors.some((issue) => issue.source === "eulerLabelsService"));
-	assert.deepEqual(await service.fetchPerspectiveVaultAddresses(1, []), []);
+	assert.deepEqual(await service.fetchVerifiedVaultAddresses(1, []), []);
 });
 
 test("evault service setters and empty branches are exercised", async () => {
@@ -1170,7 +1170,7 @@ test("evault service setters and empty branches are exercised", async () => {
 		async fetchAllVaults() {
 			return { result: [{ ...plain }], errors: [] };
 		},
-		async fetchPerspectiveVaultsAddresses() {
+		async fetchVerifiedVaultsAddresses() {
 			return [];
 		},
 	};
@@ -1181,7 +1181,7 @@ test("evault service setters and empty branches are exercised", async () => {
 		async fetchAllVaults() {
 			return { result: [], errors: [] };
 		},
-		async fetchPerspectiveVaultsAddresses() {
+		async fetchVerifiedVaultsAddresses() {
 			return [];
 		},
 	};
@@ -1206,7 +1206,7 @@ test("evault service setters and empty branches are exercised", async () => {
 			async fetchAllVaults() {
 				return { result: [], errors: [] };
 			},
-			async fetchPerspectiveVaultsAddresses(_chainId, perspectives) {
+			async fetchVerifiedVaultsAddresses(_chainId, perspectives) {
 				return perspectives;
 			},
 		} as any,
@@ -1225,7 +1225,7 @@ test("evault service setters and empty branches are exercised", async () => {
 		} as any,
 	);
 	assert.deepEqual(
-		await directPerspectiveService.fetchPerspectiveVaultAddresses(1, [
+		await directPerspectiveService.fetchVerifiedVaultAddresses(1, [
 			"0x00000000000000000000000000000000000000aa",
 			"escrowedCollateralPerspective",
 			"evkFactoryPerspective",
@@ -1237,10 +1237,10 @@ test("evault service setters and empty branches are exercised", async () => {
 		],
 	);
 	await assert.rejects(
-		() => directPerspectiveService.fetchPerspectiveVaultAddresses(1, ["unknownPerspective"]),
+		() => directPerspectiveService.fetchVerifiedVaultAddresses(1, ["unknownPerspective"]),
 		/Perspective address not found/,
 	);
-	const verified = await directPerspectiveService.fetchPerspectiveVaults(1, []);
+	const verified = await directPerspectiveService.fetchVerifiedVaults(1, []);
 	assert.deepEqual(verified.result, []);
 
 	const plainOnly = new EVault(getPlainEVaultFixture());
@@ -1317,13 +1317,13 @@ test("evault service setters and empty branches are exercised", async () => {
 			async fetchAllVaults() {
 				return { result: [], errors: [] };
 			},
-			async fetchPerspectiveVaultsAddresses() {
+			async fetchVerifiedVaultsAddresses() {
 				return [zeroAddress];
 			},
 		} as any,
 		makeDeploymentService(),
 	);
-	const verifiedErrors = await verifiedErrorService.fetchPerspectiveVaults(1, [zeroAddress]);
+	const verifiedErrors = await verifiedErrorService.fetchVerifiedVaults(1, [zeroAddress]);
 	assert.ok(verifiedErrors.errors.some((issue) => hasLocationPath(issue, "$.detail")));
 
 	const filteredUndefinedService = new EVaultService(
@@ -1334,7 +1334,7 @@ test("evault service setters and empty branches are exercised", async () => {
 			async fetchAllVaults() {
 				return { result: [undefined, { ...getPlainEVaultFixture() }], errors: [] };
 			},
-			async fetchPerspectiveVaultsAddresses() {
+			async fetchVerifiedVaultsAddresses() {
 				return [];
 			},
 		} as any,

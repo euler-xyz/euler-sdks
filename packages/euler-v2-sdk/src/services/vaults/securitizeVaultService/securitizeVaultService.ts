@@ -31,7 +31,7 @@ export interface ISecuritizeCollateralAdapter {
 	fetchAllVaults(
 		chainId: number,
 	): Promise<ServiceResult<(ISecuritizeCollateralVault | undefined)[]>>;
-	fetchPerspectiveVaultsAddresses(
+	fetchVerifiedVaultsAddresses(
 		chainId: number,
 		perspectives: Address[],
 	): Promise<Address[]>;
@@ -282,7 +282,7 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 		}
 	}
 
-	async fetchPerspectiveVaultAddresses(
+	async fetchVerifiedVaultAddresses(
 		_chainId: number,
 		_perspectives: (StandardSecuritizeCollateralPerspectives | Address)[],
 	): Promise<Address[]> {
@@ -290,12 +290,12 @@ export class SecuritizeVaultService implements ISecuritizeVaultService {
 		return [];
 	}
 
-	async fetchPerspectiveVaults(
+	async fetchVerifiedVaults(
 		chainId: number,
 		perspectives: (StandardSecuritizeCollateralPerspectives | Address)[],
 		options?: VaultFetchOptions,
 	): Promise<ServiceResult<(SecuritizeCollateralVault | undefined)[]>> {
-		const addresses = await this.fetchPerspectiveVaultAddresses(
+		const addresses = await this.fetchVerifiedVaultAddresses(
 			chainId,
 			perspectives,
 		);

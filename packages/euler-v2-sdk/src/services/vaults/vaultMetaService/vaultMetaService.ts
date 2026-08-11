@@ -350,14 +350,14 @@ export class VaultMetaService<TEntity = VaultEntity>
 		return { result, errors: compressDataIssues(errors) };
 	}
 
-	async fetchPerspectiveVaultAddresses(
+	async fetchVerifiedVaultAddresses(
 		chainId: number,
 		perspectives: VaultMetaPerspective[],
 	): Promise<Address[]> {
 		if (perspectives.length === 0) return [];
 		const allAddrs = await Promise.all(
 			this.vaultServices.map((service) =>
-				service.fetchPerspectiveVaultAddresses(
+				service.fetchVerifiedVaultAddresses(
 					chainId,
 					perspectives as (string | Address)[],
 				),
@@ -376,12 +376,12 @@ export class VaultMetaService<TEntity = VaultEntity>
 		return merged;
 	}
 
-	async fetchPerspectiveVaults(
+	async fetchVerifiedVaults(
 		chainId: number,
 		perspectives: VaultMetaPerspective[],
 		options?: VaultFetchOptions,
 	): Promise<ServiceResult<(TEntity | undefined)[]>> {
-		const addresses = await this.fetchPerspectiveVaultAddresses(
+		const addresses = await this.fetchVerifiedVaultAddresses(
 			chainId,
 			perspectives,
 		);

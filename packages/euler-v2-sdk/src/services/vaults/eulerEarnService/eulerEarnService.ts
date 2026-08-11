@@ -40,14 +40,14 @@ export interface IEulerEarnAdapter {
 	fetchAllVaults(
 		chainId: number,
 	): Promise<ServiceResult<(IEulerEarn | undefined)[]>>;
-	fetchPerspectiveVaultsAddresses(
+	fetchVerifiedVaultsAddresses(
 		chainId: number,
 		perspectives: Address[],
 	): Promise<Address[]>;
 }
 
 /**
- * On-chain perspectives that can be passed to fetchPerspectiveVaultAddresses / fetchPerspectiveVaults.
+ * On-chain perspectives that can be passed to fetchVerifiedVaultAddresses / fetchVerifiedVaults.
  *
  * NOTE: FACTORY only proves the vault was deployed through the EulerEarn factory - a
  * discovery/provenance signal, not a trust signal. The curated on-chain whitelist
@@ -446,7 +446,7 @@ export class EulerEarnService implements IEulerEarnService {
 		}
 	}
 
-	async fetchPerspectiveVaultAddresses(
+	async fetchVerifiedVaultAddresses(
 		chainId: number,
 		perspectives: (StandardEulerEarnPerspectives | Address)[],
 	): Promise<Address[]> {
@@ -472,18 +472,18 @@ export class EulerEarnService implements IEulerEarnService {
 				perspective as StandardEulerEarnPerspectives
 			] as Address;
 		});
-		return this.adapter.fetchPerspectiveVaultsAddresses(
+		return this.adapter.fetchVerifiedVaultsAddresses(
 			chainId,
 			perspectiveAddresses,
 		);
 	}
 
-	async fetchPerspectiveVaults(
+	async fetchVerifiedVaults(
 		chainId: number,
 		perspectives: (StandardEulerEarnPerspectives | Address)[],
 		options?: EulerEarnFetchOptions,
 	): Promise<ServiceResult<(EulerEarn | undefined)[]>> {
-		const addresses = await this.fetchPerspectiveVaultAddresses(
+		const addresses = await this.fetchVerifiedVaultAddresses(
 			chainId,
 			perspectives,
 		);

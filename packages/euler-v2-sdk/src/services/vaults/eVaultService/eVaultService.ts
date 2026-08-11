@@ -35,14 +35,14 @@ export interface IEVaultAdapter {
 	fetchAllVaults(
 		chainId: number,
 	): Promise<ServiceResult<(IEVault | undefined)[]>>;
-	fetchPerspectiveVaultsAddresses(
+	fetchVerifiedVaultsAddresses(
 		chainId: number,
 		perspectives: Address[],
 	): Promise<Address[]>;
 }
 
 /**
- * On-chain perspectives that can be passed to fetchPerspectiveVaultAddresses / fetchPerspectiveVaults.
+ * On-chain perspectives that can be passed to fetchVerifiedVaultAddresses / fetchVerifiedVaults.
  *
  * NOTE: "verified" here means "passed the perspective's on-chain checks", NOT "trusted":
  * - FACTORY only proves the vault was deployed through the EVK factory. Anyone can deploy
@@ -502,7 +502,7 @@ export class EVaultService implements IEVaultService {
 		}
 	}
 
-	async fetchPerspectiveVaultAddresses(
+	async fetchVerifiedVaultAddresses(
 		chainId: number,
 		perspectives: (StandardEVaultPerspectives | Address)[],
 	): Promise<Address[]> {
@@ -528,18 +528,18 @@ export class EVaultService implements IEVaultService {
 				perspective as StandardEVaultPerspectives
 			] as Address;
 		});
-		return this.adapter.fetchPerspectiveVaultsAddresses(
+		return this.adapter.fetchVerifiedVaultsAddresses(
 			chainId,
 			perspectiveAddresses,
 		);
 	}
 
-	async fetchPerspectiveVaults(
+	async fetchVerifiedVaults(
 		chainId: number,
 		perspectives: (StandardEVaultPerspectives | Address)[],
 		options?: EVaultFetchOptions,
 	): Promise<ServiceResult<(EVault | undefined)[]>> {
-		const addresses = await this.fetchPerspectiveVaultAddresses(
+		const addresses = await this.fetchVerifiedVaultAddresses(
 			chainId,
 			perspectives,
 		);

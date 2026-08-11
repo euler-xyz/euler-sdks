@@ -37,14 +37,14 @@ async function fetchTopVerifiedVaultsExample() {
   // Trust is established below via euler-labels (populateAll populates vault.eulerLabel),
   // plus the escrowed collateral perspective, whose vaults are verified by construction.
   console.log("Fetching the vault universe from mainnet via vaultMetaService...");
-  const universeAddresses = await sdk.vaultMetaService.fetchPerspectiveVaultAddresses(mainnet.id, [
+  const universeAddresses = await sdk.vaultMetaService.fetchVerifiedVaultAddresses(mainnet.id, [
     StandardEVaultPerspectives.FACTORY,
     StandardEVaultPerspectives.ESCROW,
     StandardEulerEarnPerspectives.FACTORY,
   ]);
   console.log(`Found ${universeAddresses.length} vault addresses.`);
 
-  const escrowAddresses = await sdk.eVaultService.fetchPerspectiveVaultAddresses(mainnet.id, [
+  const escrowAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(mainnet.id, [
     StandardEVaultPerspectives.ESCROW,
   ]);
   const escrowSet = new Set(escrowAddresses.map((address) => address.toLowerCase()));
