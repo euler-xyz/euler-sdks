@@ -13,6 +13,8 @@ import { convertVault } from "../src/services/vaults/eVaultService/adapters/eVau
 
 const BASE = "0x00000000000000000000000000000000000000f1" as const;
 const QUOTE = "0x0000000000000000000000000000000000000348" as const;
+const BTC_REFERENCE_ASSET =
+	"0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB" as const;
 const PYTH_FEED_ID =
 	"0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20" as const;
 
@@ -332,6 +334,32 @@ test("convertVaultInfoFullToIEVault suppresses blank root oracle tuples like V3"
 		name: "",
 	});
 	assert.equal(vault.debtPricingOracleRoute, undefined);
+});
+
+test("convertVaultInfoFullToIEVault uses oracle precision for the BTC reference asset", () => {
+	const errors: unknown[] = [];
+	const vault = convertVaultInfoFullToIEVault(
+		{
+			...makeVaultInfo({
+				oracle: zeroAddress,
+				name: "",
+				oracleInfo: "0x",
+			}),
+			unitOfAccount: BTC_REFERENCE_ASSET,
+			unitOfAccountName: "",
+			unitOfAccountSymbol: "",
+			unitOfAccountDecimals: 8n,
+		},
+		1,
+		errors as never[],
+	);
+
+	assert.deepEqual(vault.unitOfAccount, {
+		address: BTC_REFERENCE_ASSET,
+		name: "Bitcoin",
+		symbol: "BTC",
+		decimals: 18,
+	});
 });
 
 test("oracle routes preserve vault unwrap steps and exact configured leaves", () => {
