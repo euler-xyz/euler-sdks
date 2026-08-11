@@ -1,8 +1,8 @@
 # Euler SDK Agent Skill
 
-**Version 1.3.0**
+**Version 1.4.0**
 Euler Labs
-July 2026
+August 2026
 
 ---
 
