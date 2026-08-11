@@ -1,8 +1,8 @@
 # Euler SDK Agent Skill
 
-**Version 1.3.1**
+**Version 1.3.0**
 Euler Labs
-August 2026
+July 2026
 
 ---
 
@@ -59,7 +59,7 @@ Without these flags, metrics like `healthFactor`, `netValueUsd`, and `roe` may b
 APY/ROE fields exposed by vault and portfolio entities are percentage points (`5` = `5%`); raw reward campaign APRs remain decimal fractions until converted by computed breakdowns or UI helpers. Vault rewards come back as `VaultRewardInfo`; its `getTotalRewardsApr({ viewer })`/`getActiveCampaigns({ viewer })` (and the viewer-aware `getNetApy/getRoe/getApyBreakdown/getRoeBreakdown({ viewer })` on portfolio/position/sub-account) apply Merkl-style whitelist/blacklist eligibility, while the plain getters stay headline. Breakdowns also attribute `BORROW_COLLATERAL` and `LOOPING` campaigns.
 Numerical Account and Portfolio fields whose names include `Usd` are market-priced USD values; oracle and risk-unit values stay in explicit oracle/liquidity fields such as `oraclePriceRaw`, `assetRiskPrice`, `liabilityValue`, and `totalCollateralValue`.
 
-For batch vault reads (`fetchVaults`, `fetchPerspectiveVaults`), results preserve input order and can include `undefined` entries for per-vault failures; use diagnostics locations with `owner.kind === "vault"` to map failures to addresses.
+For batch vault reads (`fetchVaults`, `fetchVerifiedVaults`), results preserve input order and can include `undefined` entries for per-vault failures; use diagnostics locations with `owner.kind === "vault"` to map failures to addresses.
 
 Use entity `populated` flags to verify enrichment state in UI logic:
 

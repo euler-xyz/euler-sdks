@@ -2,9 +2,6 @@
 
 All notable changes to the `euler-sdk` skill are documented in this file.
 
-## 1.3.1 - 2026-08-10
-- Renamed `fetchVerifiedVaults` to `fetchPerspectiveVaults` in the batch-read guidance, tracking the SDK's breaking rename (perspective methods establish provenance, not trust; the curated on-chain `governedPerspective` whitelist is retired).
-
 ## 1.3.0 - 2026-07-08
 - Added `sdk-migrations` rule covering `positionMigrationService`: cross-protocol position migration (Aave V3, Morpho Blue, MetaMorpho) into/out of Euler, connector/direction selection, authorization signing, collateral/debt swaps, and `planMigrationSimulation`.
 - Expanded `AGENTS.md` section 4 (Integration Patterns) with `4.2 Cross-Protocol Position Migration`.
