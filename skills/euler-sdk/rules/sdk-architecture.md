@@ -59,6 +59,6 @@ Use these default boundaries:
 - `eulerLabelsService`: normalized off-chain labels metadata; use exported helpers from `utils/eulerLabels` for product/vault flags, notices, and restrictions
 - `oracleAdapterService`: oracle adapter metadata keyed by normalized `adapter.oracle` address
 
-All service `fetch*` methods return `{ result, errors }`; keep diagnostics with the fetched entity when rendering warnings or enforcing data-quality policy.
+All service `fetch*` methods return `{ result, errors }`, except `safeAccountService.fetchSafeAccount()`, which returns `SafeAccountInfo | null` directly; keep diagnostics with the fetched entity when rendering warnings or enforcing data-quality policy.
 
 Reference: `packages/euler-v2-sdk/docs/services.md`, `packages/euler-v2-sdk/docs/config-through-env.md`, `packages/euler-v2-sdk/docs/wallet-service.md`, `packages/euler-v2-sdk/docs/reul-lock-service.md`, `packages/euler-v2-sdk/docs/entity-diagnostics.md`, `docs/data-architecture.md`, `src/sdk/buildSDK.ts`

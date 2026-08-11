@@ -21,6 +21,9 @@ const SAFE = getAddress("0x00000000000000000000000000000000000000aa");
 const SAFE_141_SINGLETON = getAddress(
 	"0x41675C099F32341bf84BFc5382aF534df5C7461a",
 );
+const SAFE_111_SINGLETON = getAddress(
+	"0x34CfAC646f301356fAa8B21e94227e3583Fe3F5F",
+);
 const UNKNOWN_SINGLETON = getAddress(
 	"0x1111111111111111111111111111111111111111",
 );
@@ -261,6 +264,33 @@ test("fetchSafeAccount rejects lookalikes violating Safe invariants", async () =
 		).fetchSafeAccount({ chainId: 1, account: SAFE }),
 		null,
 	);
+});
+
+test("fetchSafeAccount rejects self-ownership on legacy singletons too (documented limitation)", async () => {
+	// Safe v1.1.1/v1.2.0 permitted a Safe to list itself as an owner (the
+	// GS203 restriction arrived in v1.3.0), but the probe applies the strict
+	// rule to every allowlisted version — a canonical legacy Safe configured
+	// with self-ownership deliberately reads as null.
+	const legacySelfOwned = createSafeProviderService(SAFE_111_SINGLETON, 1n, [
+		OWNERS[0],
+		SAFE,
+	]);
+	assert.equal(
+		await new SafeAccountService(
+			legacySelfOwned.providerService as never,
+		).fetchSafeAccount({ chainId: 1, account: SAFE }),
+		null,
+	);
+
+	// Positive control: the same legacy singleton without self-ownership
+	// resolves, so the null above comes from the owner set, not the version.
+	const legacyProper = createSafeProviderService(SAFE_111_SINGLETON, 1n, [
+		OWNERS[0],
+	]);
+	const info = await new SafeAccountService(
+		legacyProper.providerService as never,
+	).fetchSafeAccount({ chainId: 1, account: SAFE });
+	assert.equal(info?.version, "1.1.1");
 });
 
 test("fetchSafeAccount caches per chain and account within the TTL", async () => {

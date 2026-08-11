@@ -227,9 +227,13 @@ export class SafeAccountService implements ISafeAccountService {
 			return null;
 		}
 
-		// Threshold/owner invariants mirror what the Safe contracts themselves
-		// enforce (OwnerManager forbids zero/sentinel/duplicate/self owners,
-		// GS203); anything violating them is a lookalike.
+		// Threshold/owner invariants mirror what Safe's OwnerManager enforces
+		// since v1.3.0 (zero/sentinel/duplicate/self owners are forbidden,
+		// GS203); anything violating them is treated as a lookalike. The
+		// self-ownership rule is applied to every allowlisted version even
+		// though v1.1.1/v1.2.0 permitted it, so a legacy Safe listing itself
+		// as an owner reads as null — a documented trade-off, see
+		// docs/safe-account-service.md.
 		const thresholdCount = Number(threshold.value);
 		if (!Number.isSafeInteger(thresholdCount) || thresholdCount < 1) {
 			return null;

@@ -4,6 +4,7 @@ All notable changes to the `euler-sdk` skill are documented in this file.
 
 ## 1.4.0 - 2026-08-11
 - Added `safeAccountService` coverage: on-chain Safe smart-account detection (`fetchSafeAccount` → singleton/version/threshold/owners), the masterCopy-probe detection model, owner-invariant validation, contract-vs-transport failure semantics, and the heuristic-only (never authorization) guidance.
+- Documented the return-shape exception in the diagnostics-envelope guidance: `safeAccountService.fetchSafeAccount()` returns `SafeAccountInfo | null` directly, not `{ result, errors }`.
 - New reference doc: `packages/euler-v2-sdk/docs/safe-account-service.md`; service entries added to `SKILL.md`, `AGENTS.md`, and `rules/sdk-architecture.md`.
 
 ## 1.3.0 - 2026-07-08

@@ -31,7 +31,9 @@ Safe proxies (v1.1.1+) special-case the `masterCopy()` selector in their fallbac
 
 Because canonical singletons are deployed deterministically at identical addresses on every chain, detection works on any configured chain without external APIs. v1.0.0 proxies predate the `masterCopy()` special case and read as non-Safes.
 
-Owner invariants mirror what Safe's `OwnerManager` enforces: a threshold below 1 or above the owner count, zero or sentinel (`0x…01`) owners, duplicate owners, and self-ownership (the Safe listed as its own owner, GS203) are all rejected as lookalikes.
+Owner invariants mirror what Safe's `OwnerManager` enforces since v1.3.0: a threshold below 1 or above the owner count, zero or sentinel (`0x…01`) owners, duplicate owners, and self-ownership (the Safe listed as its own owner, GS203) are all rejected as lookalikes.
+
+**Known limitation:** the self-ownership rule is deliberately applied to every allowlisted version, although Safe v1.1.1/v1.2.0 permitted a Safe to list itself as an owner (the restriction arrived in v1.3.0). A canonical legacy Safe configured that way therefore reads as a non-Safe — `null`, cached like any other negative result until the TTL expires. Such configurations are vanishingly rare, and self-ownership is otherwise a strong lookalike signal, so the strict check is preferred over version-aware validation.
 
 `getSafeSingletonVersion(address)` is exported for callers that already have a singleton address and only need version recognition.
 

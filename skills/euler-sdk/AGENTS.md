@@ -45,7 +45,7 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 Built-in scalar config resolves as `config` prop, explicit SDK option, `EULER_SDK_*` env var, then default. Prefer `EULER_SDK_RPC_URL_<chainId>` for examples and `buildEulerSDK({ config: { rpcUrls, v3ApiUrl, v3ApiKey } })` for app-level runtime wiring that cannot rely on env.
 
 Do not assume all vaults are `EVault`. Use `vaultMetaService` for polymorphic routing.
-Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and map `errors[].locations[]` by owner reference for UI diagnostics.
+Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and map `errors[].locations[]` by owner reference for UI diagnostics. Exception: `safeAccountService.fetchSafeAccount()` returns `SafeAccountInfo | null` directly — no envelope, nothing to destructure.
 
 ### 1.2 UI Data Population Contract
 
