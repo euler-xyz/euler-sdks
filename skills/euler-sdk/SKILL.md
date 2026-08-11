@@ -4,7 +4,7 @@ description: Euler V2 SDK integration guide for building production UIs, bots, s
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.3.0"
+  version: "1.4.0"
 ---
 
 # Euler SDK Agent Skill
@@ -52,11 +52,12 @@ Reference these guidelines when:
 - `positionMigrationService` for cross-protocol position migration (Aave V3, Morpho Blue, MetaMorpho) into/out of Euler, with connector-specific authorizations
 - `rewardsService` for reward reads and provider-specific claim plans; the default V3 path normalizes Incentra rows as Brevis and returns direct proof-backed Brevis rows when V3 lacks claim metadata
 - `reulLockService` for rEUL vesting lock reads and unlock transaction plans
+- `safeAccountService` for Safe smart-account detection and signer configuration (threshold/owners) reads
 - `eulerLabelsService` plus exported `utils/eulerLabels` helpers for normalized labels metadata, notices, restrictions, and product/vault flags
 - `oracleAdapterService.fetchOracleAdapterMap(chainId)` returns metadata keyed by normalized `adapter.oracle` address
 - `priceService` for display-only USD market prices (V3 → on-chain oracle fallback); prefer the `populateMarketPrices` fetch option and use oracle risk prices for risk math
 
-Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and map `errors[].locations[]` by owner reference for UI diagnostics.
+Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and map `errors[].locations[]` by owner reference for UI diagnostics. Exception: `safeAccountService.fetchSafeAccount()` returns `SafeAccountInfo | null` directly — no envelope, nothing to destructure.
 
 Built-in scalar config resolves as `config` prop, explicit SDK option, `EULER_SDK_*` env var, then default. RPC URLs can come from `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`. Reference `packages/euler-v2-sdk/docs/config-through-env.md` for the env/config field list.
 

@@ -1,8 +1,8 @@
 # Euler SDK Agent Skill
 
-**Version 1.3.0**
+**Version 1.4.0**
 Euler Labs
-July 2026
+August 2026
 
 ---
 
@@ -37,6 +37,7 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 - `swapService` for quotes and providers, including `cowSwap` metadata for CoW-supported position flows
 - `rewardsService` for reward reads and provider-specific reward claim planning; the default V3 path normalizes Incentra rows as Brevis and returns direct proof-backed Brevis rows when V3 lacks claim metadata
 - `reulLockService` for rEUL lock reads and unlock transaction plans
+- `safeAccountService` for Safe smart-account detection and signer configuration reads
 - `oracleAdapterService` for oracle adapter metadata keyed by normalized `adapter.oracle` address
 - `priceService` for display-only USD market prices (V3 → on-chain oracle fallback); prefer the `populateMarketPrices` fetch option and use oracle risk prices for risk math
 - `eulerLabelsService` plus exported label helpers for normalized products, Earn entries, notices, restrictions, and product/vault flags
@@ -44,7 +45,7 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 Built-in scalar config resolves as `config` prop, explicit SDK option, `EULER_SDK_*` env var, then default. Prefer `EULER_SDK_RPC_URL_<chainId>` for examples and `buildEulerSDK({ config: { rpcUrls, v3ApiUrl, v3ApiKey } })` for app-level runtime wiring that cannot rely on env.
 
 Do not assume all vaults are `EVault`. Use `vaultMetaService` for polymorphic routing.
-Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and map `errors[].locations[]` by owner reference for UI diagnostics.
+Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and map `errors[].locations[]` by owner reference for UI diagnostics. Exception: `safeAccountService.fetchSafeAccount()` returns `SafeAccountInfo | null` directly — no envelope, nothing to destructure.
 
 ### 1.2 UI Data Population Contract
 
