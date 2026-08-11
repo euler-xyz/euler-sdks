@@ -106,6 +106,8 @@ export type {
 	PlanClosePositionWithCowArgs,
 	PlanDepositArgs,
 	PlanDepositWithSwapFromWalletArgs,
+	PlanLiquidationArgs,
+	PlanLiquidationWithMarginCollateralArgs,
 	PlanMigrateSameAssetCollateralArgs,
 	PlanMigrateSameAssetDebtArgs,
 	PlanMintArgs,

@@ -811,6 +811,57 @@ test("deposit supports native wrapping before the vault deposit", () => {
 	assert.deepEqual(deposit.args, [AMOUNT, getAddress(ACCOUNT)]);
 });
 
+test("liquidation with margin collateral supplies collateral before liquidating without duplicate collateral enable", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		isCollateralEnabled: () => false,
+		isControllerEnabled: () => false,
+	} as never;
+
+	const plan = service.planLiquidationWithMarginCollateral({
+		account,
+		liquidatorSubAccountAddress: RECEIVER,
+		vault: LIABILITY_VAULT,
+		asset: TOKEN_IN,
+		violator: SOURCE_ACCOUNT,
+		collateral: COLLATERAL_VAULT,
+		repayAssets: AMOUNT,
+		minYieldBalance: 0n,
+		marginCollateral: {
+			vault: COLLATERAL_VAULT,
+			asset: SAME_ASSET,
+			amount: 999n,
+		},
+	});
+
+	assert.equal(plan[0]?.type, "requiredApproval");
+	assert.equal(plan[0]?.type === "requiredApproval" && plan[0].token, SAME_ASSET);
+	assert.equal(plan[0]?.type === "requiredApproval" && plan[0].owner, ACCOUNT);
+	assert.equal(
+		plan[0]?.type === "requiredApproval" && plan[0].spender,
+		COLLATERAL_VAULT,
+	);
+	assert.equal(plan[0]?.type === "requiredApproval" && plan[0].amount, 999n);
+	assert.equal(plan[1]?.type, "requiredApproval");
+	assert.equal(plan[1]?.type === "requiredApproval" && plan[1].token, TOKEN_IN);
+	assert.equal(plan[1]?.type === "requiredApproval" && plan[1].owner, ACCOUNT);
+	assert.equal(
+		plan[1]?.type === "requiredApproval" && plan[1].spender,
+		LIABILITY_VAULT,
+	);
+	assert.equal(plan[1]?.type === "requiredApproval" && plan[1].amount, AMOUNT);
+
+	const functionNames = getOnlyEvcBatchItems(plan).map(decodeBatchFunctionName);
+	assert.deepEqual(functionNames, [
+		"enableCollateral",
+		"deposit",
+		"enableController",
+		"liquidate",
+	]);
+});
+
 test("redeem accepts assets and converts to shares from account vault state", () => {
 	const service = createExecutionService();
 	const assets = 123_456n;

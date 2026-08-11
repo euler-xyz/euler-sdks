@@ -687,6 +687,15 @@ export type PlanLiquidationArgs = {
 	minYieldBalance: bigint;
 };
 
+export type PlanLiquidationWithMarginCollateralArgs = PlanLiquidationArgs & {
+	marginCollateral: {
+		vault: Address;
+		amount: bigint;
+		asset: Address;
+		wrappedNativeInfo?: WrappedNativeInfo;
+	};
+};
+
 export type PlanRepayFromWalletArgs = {
 	account: Account<IHasVaultAddress>;
 	liabilityVault: Address;
