@@ -3530,7 +3530,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.liabilityAmount - Current debt amount; defaults to the old-vault borrowed amount in account data
 	 * @param args.oldLiabilityAsset - Optional old liability asset; defaults to the old-vault account position asset
 	 * @param args.newLiabilityAsset - New liability underlying asset, used to verify this is a same-asset migration
-	 * @param args.sweepExcess - Whether to redeem and skim the migration cushion back into the new vault when the old vault has no pre-existing supplied shares (default true)
+	 * @param args.sweepExcess - Whether to redeem and skim the migration cushion back into the new vault when the old vault has no pre-existing supplied shares; defaults to true only when the loaded old position exists and has no supplied shares
 	 * @param args.transferRemainingSharesToOwner - Whether to transfer all new-vault shares to the owner when liabilityAccount differs from owner; defaults to true only when the loaded target position exists and has no supplied shares
 	 * @returns Array of transaction plan items (EVC batch; no token approvals)
 	 */
@@ -3545,7 +3545,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			liabilityAmount,
 			oldLiabilityAsset,
 			newLiabilityAsset,
-			sweepExcess = true,
+			sweepExcess,
 			transferRemainingSharesToOwner,
 		} = args;
 		const plan: TransactionPlanItem[] = [];
@@ -3589,8 +3589,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			getAddress(liabilityAccount) !== getAddress(account.owner)
 				? account.owner
 				: undefined;
-		const shouldSweepExcess =
-			sweepExcess && !(oldPosition && hasSuppliedPosition(oldPosition));
+		const shouldSweepExcess = oldPosition === undefined
+			? sweepExcess === true
+			: (sweepExcess ?? true) && !hasSuppliedPosition(oldPosition);
 
 		const batchItems = this.encodeMigrateSameAssetDebt({
 			chainId: account.chainId,

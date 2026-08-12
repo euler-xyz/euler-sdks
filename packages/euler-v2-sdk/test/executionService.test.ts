@@ -288,12 +288,14 @@ function createSameAssetMigrationAccount({
 	oldLiabilityShares = 0n,
 	newLiabilityAssets = 0n,
 	newLiabilityShares = 0n,
+	includeOldLiabilityPosition = true,
 	includeNewLiabilityPosition = true,
 }: {
 	oldLiabilityAssets?: bigint;
 	oldLiabilityShares?: bigint;
 	newLiabilityAssets?: bigint;
 	newLiabilityShares?: bigint;
+	includeOldLiabilityPosition?: boolean;
 	includeNewLiabilityPosition?: boolean;
 } = {}) {
 	return {
@@ -309,6 +311,7 @@ function createSameAssetMigrationAccount({
 				};
 			}
 			if (vault === LIABILITY_VAULT) {
+				if (!includeOldLiabilityPosition) return undefined;
 				return {
 					asset: SAME_ASSET,
 					assets: oldLiabilityAssets,
@@ -3249,6 +3252,49 @@ test("same-asset debt migration preserves pre-existing old-vault deposit", () =>
 		getAddress(RECEIVER),
 		getAddress(ACCOUNT),
 	]);
+});
+
+test("same-asset debt migration does not sweep an unresolved old-vault position by default", () => {
+	const service = createExecutionService();
+	const plan = service.planMigrateSameAssetDebt({
+		account: createSameAssetMigrationAccount({
+			includeOldLiabilityPosition: false,
+		}),
+		oldLiabilityVault: LIABILITY_VAULT,
+		newLiabilityVault: NEW_LIABILITY_VAULT,
+		liabilityAccount: RECEIVER,
+		liabilityAmount: AMOUNT,
+		oldLiabilityAsset: SAME_ASSET,
+		newLiabilityAsset: SAME_ASSET,
+	});
+
+	const items = getOnlyEvcBatchItems(plan);
+	assert.equal(
+		items.some((item) => decodeBatchFunctionName(item) === "redeem"),
+		false,
+	);
+});
+
+test("same-asset debt migration sweeps an unresolved old-vault position only with explicit opt-in", () => {
+	const service = createExecutionService();
+	const plan = service.planMigrateSameAssetDebt({
+		account: createSameAssetMigrationAccount({
+			includeOldLiabilityPosition: false,
+		}),
+		oldLiabilityVault: LIABILITY_VAULT,
+		newLiabilityVault: NEW_LIABILITY_VAULT,
+		liabilityAccount: RECEIVER,
+		liabilityAmount: AMOUNT,
+		oldLiabilityAsset: SAME_ASSET,
+		newLiabilityAsset: SAME_ASSET,
+		sweepExcess: true,
+	});
+
+	const items = getOnlyEvcBatchItems(plan);
+	assert.equal(
+		items.some((item) => decodeBatchFunctionName(item) === "redeem"),
+		true,
+	);
 });
 
 test("same-asset debt migration preserves pre-existing target-vault shares by default", () => {
