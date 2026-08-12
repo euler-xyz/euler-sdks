@@ -130,20 +130,38 @@ test("FeeFlow buy planning rejects empty selected-vault inventory", async () => 
 	);
 });
 
-test("FeeFlow buy planning rejects vaults whose protocol receiver changed", async () => {
+test("FeeFlow buy planning accepts held shares after the protocol receiver changed", async () => {
 	const { service } = createService({
 		protocolFeeReceiver: OTHER_RECEIVER,
 		heldShares: 100n,
 	});
 
-	await assert.rejects(
-		() =>
-			service.buildBuyPlan({
-				chainId: 1,
-				account: ACCOUNT,
-				vaults: [VAULT],
-				expectedEpochId: 7,
-			}),
+	const inventory = await service.fetchBuyInventory(1, [VAULT]);
+	assert.equal(inventory[0]?.eligible, false);
+	assert.equal(inventory[0]?.hasInventory, true);
+	await assert.doesNotReject(() =>
+		service.buildBuyPlan({
+			chainId: 1,
+			account: ACCOUNT,
+			vaults: [VAULT],
+			expectedEpochId: 7,
+		}),
+	);
+});
+
+test("FeeFlow buy planning rejects unconverted fees after the protocol receiver changed", async () => {
+	const { service } = createService({
+		protocolFeeReceiver: OTHER_RECEIVER,
+		heldShares: 0n,
+	});
+
+	await assert.rejects(() =>
+		service.buildBuyPlan({
+			chainId: 1,
+			account: ACCOUNT,
+			vaults: [VAULT],
+			expectedEpochId: 7,
+		}),
 		/FeeFlow inventory is stale or empty/,
 	);
 });

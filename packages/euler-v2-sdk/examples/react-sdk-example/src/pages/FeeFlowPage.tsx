@@ -174,7 +174,11 @@ export function FeeFlowPage() {
     } catch (err) {
       setBuyError(String(await formatTransactionPlanError(err)));
       setSelected({});
-      await queryClient.invalidateQueries({ queryKey: ["feeFlowPageData", chainId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["feeFlowPageData", chainId] }),
+        queryClient.invalidateQueries({ queryKey: ["account", chainId, getAddress(walletAddress)] }),
+        queryClient.invalidateQueries({ queryKey: ["accountWithDiagnostics", chainId, getAddress(walletAddress)] }),
+      ]);
     } finally {
       setProgress(null);
     }

@@ -312,7 +312,7 @@ export class FeeFlowService implements IFeeFlowService {
 				heldShares,
 				eligible,
 				hasInventory:
-					eligible && (heldShares > 0n || claimableProtocolFeeAssets > 0n),
+					heldShares > 0n || (eligible && claimableProtocolFeeAssets > 0n),
 			};
 		});
 	}
