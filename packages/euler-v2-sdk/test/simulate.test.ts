@@ -367,7 +367,7 @@ test("simulateTransactionPlan rejects CoW swap plans", async () => {
 	);
 });
 
-test("simulateTransactionPlan rejects a direct contract call instead of returning an empty simulation", async () => {
+test("simulateTransactionPlan returns a non-simulatable result for a direct contract call", async () => {
 	const simulateContract = vi.fn();
 	const service = createExecutionService({ simulateContract });
 	const plan: TransactionPlan = [
@@ -382,12 +382,14 @@ test("simulateTransactionPlan rejects a direct contract call instead of returnin
 		},
 	];
 
-	await assert.rejects(
-		service.simulateTransactionPlan(1, ACCOUNT, plan, {
+	const result = await service.simulateTransactionPlan(1, ACCOUNT, plan, {
 			stateOverrides: false,
-		}),
-		/transaction plan item 0 \(contractCall\).*refusing to return a partial result/,
-	);
+		});
+	assert.deepEqual(result, {
+		simulatedAccounts: [],
+		simulatedVaults: [],
+		canExecute: false,
+	});
 	assert.equal(simulateContract.mock.calls.length, 0);
 });
 

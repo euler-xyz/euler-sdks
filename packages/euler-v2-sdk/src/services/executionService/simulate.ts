@@ -480,7 +480,8 @@ export async function simulateTransactionPlan<
 	const directCallIndex = transactionPlan.findIndex(
 		(item) => item.type === "contractCall",
 	);
-	if (directCallIndex !== -1) {
+	const hasEvcBatch = transactionPlan.some((item) => item.type === "evcBatch");
+	if (directCallIndex !== -1 && hasEvcBatch) {
 		throw new Error(
 			`ExecutionService.simulateTransactionPlan cannot simulate transaction plan item ${directCallIndex} (contractCall). Direct contract calls are executable but are not covered by the EVC batch simulation; refusing to return a partial result.`,
 		);
