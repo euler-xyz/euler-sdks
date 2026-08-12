@@ -4,6 +4,7 @@ import {
 	encodeFunctionData,
 	getAddress,
 	type Address,
+	zeroAddress,
 } from "viem";
 import { Account, SubAccount } from "../src/entities/Account.js";
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
@@ -174,6 +175,19 @@ test("calculateHealthCheckSets includes the liquidator and complete violator sta
 				isController: true,
 				isCollateral: false,
 				balanceForwarderEnabled: false,
+				liquidity: {
+					vaultAddress: CONTROLLER,
+					unitOfAccount: zeroAddress,
+					daysToLiquidation: "Infinity",
+					liabilityValue: { borrowing: 1n, liquidation: 1n, oracleMid: 1n },
+					totalCollateralValue: { borrowing: 1n, liquidation: 1n, oracleMid: 1n },
+					// Deliberately incomplete: liquidation enrichment must use the
+					// full enabled set, not this active/liquidity subset.
+					collaterals: [{
+						address: COLLATERAL,
+						value: { borrowing: 1n, liquidation: 1n, oracleMid: 1n },
+					}],
+				},
 			},
 			...([COLLATERAL, OTHER_COLLATERAL] as const).map((vaultAddress) => ({
 				account: VIOLATOR,

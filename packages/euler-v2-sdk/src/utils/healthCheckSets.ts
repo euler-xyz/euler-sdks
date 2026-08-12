@@ -97,6 +97,11 @@ function buildInitialStates(
 	additionalSubAccounts: readonly SubAccount<IHasVaultAddress>[] = [],
 ): Map<Address, HealthCheckState> {
 	const states = new Map<Address, HealthCheckState>();
+	const completeMetadataAccounts = new Set(
+		additionalSubAccounts.map((subAccount) =>
+			getAddress(subAccount.account).toLowerCase(),
+		),
+	);
 	for (const subAccount of [
 		...Object.values(account.subAccounts),
 		...additionalSubAccounts,
@@ -106,7 +111,12 @@ function buildInitialStates(
 		for (const controller of subAccount.enabledControllers) {
 			addAddress(state.controllers, controller);
 		}
-		for (const collateral of collectInitialCollateralVaults(subAccount)) {
+		const initialCollaterals = completeMetadataAccounts.has(
+			getAddress(subAccount.account).toLowerCase(),
+		)
+			? subAccount.enabledCollaterals
+			: collectInitialCollateralVaults(subAccount);
+		for (const collateral of initialCollaterals) {
 			addAddress(state.collaterals, collateral);
 		}
 	}
