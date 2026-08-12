@@ -29,10 +29,10 @@ function formatDuration(seconds: number): string {
 export function FeeFlowPage() {
   const { sdk, chainId, loading: sdkLoading, error: sdkError } = useSDK();
   const { data, isLoading, error } = useFeeFlowPageData();
-  const { address: walletAddress, isConnected } = useWagmiAccount();
+  const { address: walletAddress } = useWagmiAccount();
   const walletChainId = useChainId();
   const { data: walletClient } = useWalletClient({ chainId });
-  const { switchChain, isPending: isSwitching } = useSwitchChain();
+  const { switchChain } = useSwitchChain();
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [buyError, setBuyError] = useState<string | null>(null);
   const [buySuccess, setBuySuccess] = useState<string | null>(null);
@@ -69,6 +69,20 @@ export function FeeFlowPage() {
   const selectedCount = selectedCandidates.length;
   const paymentTokenSymbol = data?.paymentTokenMeta?.symbol ?? "TOKEN";
   const paymentTokenDecimals = data?.paymentTokenMeta?.decimals ?? 18;
+
+  const invalidateFeeFlowQueries = async (account?: Address) => {
+    const invalidations = [
+      queryClient.invalidateQueries({ queryKey: ["feeFlowPageData", chainId] }),
+    ];
+    if (account) {
+      const normalizedAccount = getAddress(account);
+      invalidations.push(
+        queryClient.invalidateQueries({ queryKey: ["account", chainId, normalizedAccount] }),
+        queryClient.invalidateQueries({ queryKey: ["accountWithDiagnostics", chainId, normalizedAccount] }),
+      );
+    }
+    await Promise.all(invalidations);
+  };
 
   const ensureWalletReady = async (): Promise<boolean> => {
     if (!walletAddress) {
@@ -164,21 +178,13 @@ export function FeeFlowPage() {
         );
       }
 
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["feeFlowPageData", chainId] }),
-        queryClient.invalidateQueries({ queryKey: ["account", chainId, getAddress(walletAddress)] }),
-        queryClient.invalidateQueries({ queryKey: ["accountWithDiagnostics", chainId, getAddress(walletAddress)] }),
-      ]);
+      await invalidateFeeFlowQueries(walletAddress);
 
       setBuySuccess(`Received FeeFlow tokens from ${receivedCount} selected vaults.`);
     } catch (err) {
       setBuyError(String(await formatTransactionPlanError(err)));
       setSelected({});
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["feeFlowPageData", chainId] }),
-        queryClient.invalidateQueries({ queryKey: ["account", chainId, getAddress(walletAddress)] }),
-        queryClient.invalidateQueries({ queryKey: ["accountWithDiagnostics", chainId, getAddress(walletAddress)] }),
-      ]);
+      await invalidateFeeFlowQueries(walletAddress);
     } finally {
       setProgress(null);
     }
@@ -256,12 +262,11 @@ export function FeeFlowPage() {
           </button>
           <button
             className="action-button"
-            disabled={!isConnected || isSwitching || selectedCount === 0 || !!progress}
+            disabled
+            title="Buying is disabled until FeeFlow enforces a minimum output atomically."
             onClick={handleBuy}
           >
-            {progress
-              ? `Buying ${progress.completed}/${progress.total}`
-              : `Buy ${selectedCount || ""}`.trim()}
+            Buy disabled
           </button>
         </div>
       </div>
@@ -275,6 +280,9 @@ export function FeeFlowPage() {
       {buyError && <div className="error-message">{buyError}</div>}
       {buySuccess && <div className="status-message">{buySuccess}</div>}
       {progress && <ExecutionProgress progress={progress} label="Buying fees" />}
+      <div className="wallet-chain-warning">
+        FeeFlow buying is disabled until the deployed transaction path enforces a nonzero or minimum selected-vault payout atomically.
+      </div>
 
       {candidates.length === 0 ? (
         <div className="status-message">No claimable FeeFlow vaults found.</div>

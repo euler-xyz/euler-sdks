@@ -2,10 +2,7 @@ import { getAddress, type Address } from "viem";
 import type { EVault } from "../../entities/EVault.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
 import type { ProviderService } from "../providerService/index.js";
-import type {
-	ContractCall,
-	TransactionPlan,
-} from "../executionService/index.js";
+import type { TransactionPlan } from "../executionService/index.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 import type {
 	BuildFeeFlowBuyPlanArgs,
@@ -18,6 +15,9 @@ import type {
 
 const DEFAULT_BUY_DEADLINE_SECONDS = 15 * 60;
 const FEE_SHARE_SCALE = 10_000n;
+
+export const FEE_FLOW_BUY_UNAVAILABLE_ERROR =
+	"FeeFlow buy planning is disabled because the deployed transaction path does not enforce a nonzero or minimum selected-vault payout atomically";
 
 const FEE_FLOW_CONTROLLER_ABI = [
 	{
@@ -318,73 +318,13 @@ export class FeeFlowService implements IFeeFlowService {
 	}
 
 	async buildBuyPlan(args: BuildFeeFlowBuyPlanArgs): Promise<TransactionPlan> {
-		const account = getAddress(args.account) as Address;
-		const recipient = getAddress(args.recipient ?? args.account) as Address;
-		const state = await this.fetchState(args.chainId);
-		if (
-			args.expectedEpochId !== undefined &&
-			args.expectedEpochId !== state.slot0.epochId
-		) {
-			throw new Error(
-				`FeeFlow epoch changed from ${args.expectedEpochId} to ${state.slot0.epochId}; refresh the selected inventory`,
-			);
-		}
-		const buyTarget = state.feeFlowControllerUtilAddress;
-		if (!buyTarget) {
-			throw new Error(
-				`FeeFlow controller util address not configured for chainId ${args.chainId}`,
-			);
-		}
-		const spender = buyTarget;
-		const vaults = this.normalizeVaultAddresses(args.vaults);
-
-		if (vaults.length === 0) {
-			throw new Error(
-				"At least one vault is required to build a FeeFlow buy plan",
-			);
-		}
-
-		const inventory = await this.fetchBuyInventory(args.chainId, vaults);
-		const unavailableVaults = inventory.filter((item) => !item.hasInventory);
-		if (unavailableVaults.length > 0) {
-			throw new Error(
-				`FeeFlow inventory is stale or empty for: ${unavailableVaults
-					.map((item) => item.vault)
-					.join(", ")}`,
-			);
-		}
-
-		const deadline =
-			args.deadline ??
-			BigInt(Math.floor(Date.now() / 1000) + this.defaultBuyDeadlineSeconds);
-		const maxPaymentTokenAmount =
-			args.maxPaymentTokenAmount ?? state.currentPrice;
-
-		const approval = {
-			type: "requiredApproval" as const,
-			token: state.paymentToken,
-			owner: account,
-			spender,
-			amount: maxPaymentTokenAmount,
-		};
-
-		const contractCall: ContractCall = {
-			type: "contractCall",
-			chainId: args.chainId,
-			to: buyTarget,
-			abi: FEE_FLOW_CONTROLLER_ABI,
-			functionName: "buy",
-			args: [
-				vaults,
-				recipient,
-				BigInt(state.slot0.epochId),
-				deadline,
-				maxPaymentTokenAmount,
-			],
-			value: 0n,
-		};
-
-		return [approval, contractCall];
+		// The current util can pull the full payment after another same-epoch buy
+		// drains the selected inventory, while still returning zero selected output.
+		// Client-side inventory reads and post-send balance checks cannot protect
+		// that race. Keep the write path unavailable until a deployed helper accepts
+		// and enforces an atomic minimum output.
+		void args;
+		throw new Error(FEE_FLOW_BUY_UNAVAILABLE_ERROR);
 	}
 
 	private normalizeVaultAddresses(vaults: Address[] | EVault[]): Address[] {

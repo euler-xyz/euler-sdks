@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test, vi } from "vitest";
 import { getAddress } from "viem";
-import { FeeFlowService } from "../src/services/feeFlowService/feeFlowService.js";
+import {
+	FeeFlowService,
+	FEE_FLOW_BUY_UNAVAILABLE_ERROR,
+} from "../src/services/feeFlowService/feeFlowService.js";
 
 const CONTROLLER = getAddress("0x0000000000000000000000000000000000000011");
 const UTIL = getAddress("0x0000000000000000000000000000000000000012");
@@ -72,32 +75,8 @@ function createService(options: {
 	return { service, multicall };
 }
 
-test("FeeFlow buy planning binds the displayed epoch and fresh inventory", async () => {
+test("FeeFlow buy planning fails closed without atomic minimum-output enforcement", async () => {
 	const { service } = createService();
-	const plan = await service.buildBuyPlan({
-		chainId: 1,
-		account: ACCOUNT,
-		vaults: [VAULT, VAULT],
-		expectedEpochId: 7,
-	});
-
-	assert.equal(plan.length, 2);
-	assert.deepEqual(plan[0], {
-		type: "requiredApproval",
-		token: PAYMENT_TOKEN,
-		owner: ACCOUNT,
-		spender: UTIL,
-		amount: 500n,
-	});
-	assert.equal(plan[1]?.type, "contractCall");
-	if (plan[1]?.type !== "contractCall") throw new Error("expected contractCall");
-	assert.equal(plan[1].functionName, "buy");
-	assert.deepEqual(plan[1].args.slice(0, 3), [[VAULT], ACCOUNT, 7n]);
-});
-
-test("FeeFlow buy planning rejects a changed epoch before using stale selections", async () => {
-	const { service, multicall } = createService({ epochId: 8 });
-
 	await assert.rejects(
 		() =>
 			service.buildBuyPlan({
@@ -106,27 +85,7 @@ test("FeeFlow buy planning rejects a changed epoch before using stale selections
 				vaults: [VAULT],
 				expectedEpochId: 7,
 			}),
-		/FeeFlow epoch changed from 7 to 8/,
-	);
-	assert.equal(multicall.mock.calls.length, 1);
-});
-
-test("FeeFlow buy planning rejects empty selected-vault inventory", async () => {
-	const { service } = createService({
-		protocolFeeShare: 0n,
-		accumulatedFeesAssets: 0n,
-		heldShares: 0n,
-	});
-
-	await assert.rejects(
-		() =>
-			service.buildBuyPlan({
-				chainId: 1,
-				account: ACCOUNT,
-				vaults: [VAULT],
-				expectedEpochId: 7,
-			}),
-		new RegExp(`FeeFlow inventory is stale or empty for: ${VAULT}`),
+		new RegExp(FEE_FLOW_BUY_UNAVAILABLE_ERROR),
 	);
 });
 
@@ -139,14 +98,6 @@ test("FeeFlow buy planning accepts held shares after the protocol receiver chang
 	const inventory = await service.fetchBuyInventory(1, [VAULT]);
 	assert.equal(inventory[0]?.eligible, false);
 	assert.equal(inventory[0]?.hasInventory, true);
-	await assert.doesNotReject(() =>
-		service.buildBuyPlan({
-			chainId: 1,
-			account: ACCOUNT,
-			vaults: [VAULT],
-			expectedEpochId: 7,
-		}),
-	);
 });
 
 test("FeeFlow buy planning rejects unconverted fees after the protocol receiver changed", async () => {
@@ -155,13 +106,6 @@ test("FeeFlow buy planning rejects unconverted fees after the protocol receiver 
 		heldShares: 0n,
 	});
 
-	await assert.rejects(() =>
-		service.buildBuyPlan({
-			chainId: 1,
-			account: ACCOUNT,
-			vaults: [VAULT],
-			expectedEpochId: 7,
-		}),
-		/FeeFlow inventory is stale or empty/,
-	);
+	const inventory = await service.fetchBuyInventory(1, [VAULT]);
+	assert.equal(inventory[0]?.hasInventory, false);
 });

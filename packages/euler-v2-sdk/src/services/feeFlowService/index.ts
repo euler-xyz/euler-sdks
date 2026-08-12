@@ -1,4 +1,7 @@
-export { FeeFlowService } from "./feeFlowService.js";
+export {
+	FeeFlowService,
+	FEE_FLOW_BUY_UNAVAILABLE_ERROR,
+} from "./feeFlowService.js";
 export type {
 	IFeeFlowService,
 	FeeFlowServiceConfig,
