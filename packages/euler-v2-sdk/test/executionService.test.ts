@@ -288,11 +288,13 @@ function createSameAssetMigrationAccount({
 	oldLiabilityShares = 0n,
 	newLiabilityAssets = 0n,
 	newLiabilityShares = 0n,
+	includeNewLiabilityPosition = true,
 }: {
 	oldLiabilityAssets?: bigint;
 	oldLiabilityShares?: bigint;
 	newLiabilityAssets?: bigint;
 	newLiabilityShares?: bigint;
+	includeNewLiabilityPosition?: boolean;
 } = {}) {
 	return {
 		owner: ACCOUNT,
@@ -315,6 +317,7 @@ function createSameAssetMigrationAccount({
 				};
 			}
 			if (vault === NEW_LIABILITY_VAULT) {
+				if (!includeNewLiabilityPosition) return undefined;
 				return {
 					asset: SAME_ASSET,
 					assets: newLiabilityAssets,
@@ -3254,6 +3257,25 @@ test("same-asset debt migration preserves pre-existing target-vault shares by de
 		account: createSameAssetMigrationAccount({
 			newLiabilityAssets: 77n,
 			newLiabilityShares: 88n,
+		}),
+		oldLiabilityVault: LIABILITY_VAULT,
+		newLiabilityVault: NEW_LIABILITY_VAULT,
+		liabilityAccount: RECEIVER,
+		newLiabilityAsset: SAME_ASSET,
+	});
+
+	const items = getOnlyEvcBatchItems(plan);
+	assert.equal(
+		items.some((item) => decodeBatchFunctionName(item) === "transferFromMax"),
+		false,
+	);
+});
+
+test("same-asset debt migration does not sweep an unresolved target position", () => {
+	const service = createExecutionService();
+	const plan = service.planMigrateSameAssetDebt({
+		account: createSameAssetMigrationAccount({
+			includeNewLiabilityPosition: false,
 		}),
 		oldLiabilityVault: LIABILITY_VAULT,
 		newLiabilityVault: NEW_LIABILITY_VAULT,

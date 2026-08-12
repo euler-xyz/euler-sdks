@@ -3531,7 +3531,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.oldLiabilityAsset - Optional old liability asset; defaults to the old-vault account position asset
 	 * @param args.newLiabilityAsset - New liability underlying asset, used to verify this is a same-asset migration
 	 * @param args.sweepExcess - Whether to redeem and skim the migration cushion back into the new vault when the old vault has no pre-existing supplied shares (default true)
-	 * @param args.transferRemainingSharesToOwner - Whether to transfer all new-vault shares to the owner when liabilityAccount differs from owner; defaults to true only when the target position has no supplied shares
+	 * @param args.transferRemainingSharesToOwner - Whether to transfer all new-vault shares to the owner when liabilityAccount differs from owner; defaults to true only when the loaded target position exists and has no supplied shares
 	 * @returns Array of transaction plan items (EVC batch; no token approvals)
 	 */
 	planMigrateSameAssetDebt(
@@ -3585,7 +3585,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		);
 		const transferRemainingSharesTo =
 			(transferRemainingSharesToOwner ??
-				!(newPosition && hasSuppliedPosition(newPosition))) &&
+				(newPosition !== undefined && !hasSuppliedPosition(newPosition))) &&
 			getAddress(liabilityAccount) !== getAddress(account.owner)
 				? account.owner
 				: undefined;
