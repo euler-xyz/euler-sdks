@@ -313,9 +313,12 @@ function deduplicateFeeds(feeds: PythFeed[]): PythFeed[] {
 
 type PythControllerVault = Pick<
 	EVault,
-	"address" | "debtPricingOracleRoute"
+	"address" | "asset" | "unitOfAccount" | "debtPricingOracleRoute"
 > & {
-	collaterals: Pick<EVaultCollateral, "address" | "oracleRoute">[];
+	collaterals: Pick<
+		EVaultCollateral,
+		"address" | "currentLiquidationLTV" | "oracleRoute"
+	>[];
 };
 
 const MINIMAL_ACCOUNT_FETCH_OPTIONS = {
@@ -494,6 +497,19 @@ async function collectHealthCheckFeeds(
 				}
 				continue;
 			}
+			const unitOfAccount = controller.unitOfAccount?.address;
+			const liabilityNeedsRoute = unitOfAccount
+				? getAddress(controller.asset.address) !== getAddress(unitOfAccount)
+				: false;
+			if (
+				account.requireCompleteMetadata &&
+				liabilityNeedsRoute &&
+				!controller.debtPricingOracleRoute?.steps.length
+			) {
+				throw new PluginExecutionFatalError(
+					`Pyth liquidation enrichment could not resolve the liability oracle route for controller ${controllerAddress}.`,
+				);
+			}
 
 			const selfKey = `${getAddress(controllerAddress).toLowerCase()}:${CONTROLLER_SELF}`;
 			if (!seenPairs.has(selfKey)) {
@@ -509,12 +525,23 @@ async function collectHealthCheckFeeds(
 					(c) => getAddress(c.address) === getAddress(collateralAddress),
 				);
 				if (!collateral) {
-					if (account.requireCompleteMetadata) {
-						throw new PluginExecutionFatalError(
-							`Pyth liquidation enrichment could not resolve collateral ${collateralAddress} in controller ${controllerAddress} metadata.`,
-						);
-					}
+					// EVC collateral enablement is permissionless. A vault absent from
+					// the controller's LTV list has an effective zero LTV, so EVK skips
+					// its oracle read and no update feed is required.
 					continue;
+				}
+				const collateralNeedsRoute = unitOfAccount
+					? getAddress(collateralAddress) !== getAddress(unitOfAccount) &&
+						collateral.currentLiquidationLTV > 0
+					: false;
+				if (
+					account.requireCompleteMetadata &&
+					collateralNeedsRoute &&
+					!collateral.oracleRoute?.steps.length
+				) {
+					throw new PluginExecutionFatalError(
+						`Pyth liquidation enrichment could not resolve the oracle route for collateral ${collateralAddress} in controller ${controllerAddress}.`,
+					);
 				}
 				if (seenPairs.has(pairKey)) continue;
 				seenPairs.add(pairKey);

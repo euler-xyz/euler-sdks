@@ -330,7 +330,7 @@ test("Pyth liquidation enrichment ignores non-blocking controller diagnostics", 
 	assert.equal(prefetched?.entries.length, 1);
 });
 
-test("Pyth strict liquidation checks a shared pair before deduplicating it", async () => {
+test("Pyth strict liquidation rejects a missing active-collateral route before deduplicating it", async () => {
 	const liquidator = new Account({
 		chainId: 1,
 		owner: OWNER,
@@ -354,8 +354,14 @@ test("Pyth strict liquidation checks a shared pair before deduplicating it", asy
 	sdk.vaultMetaService.fetchVaults = async () => ({
 		result: [{
 			address: CONTROLLER,
-			debtPricingOracleRoute: makePythRoute(PYTH, DEBT_FEED),
-			collaterals: [],
+			asset: { address: UNIT },
+			unitOfAccount: { address: UNIT },
+			debtPricingOracleRoute: undefined,
+			collaterals: [{
+				address: COLLATERAL,
+				currentLiquidationLTV: 0.8,
+				oracleRoute: undefined,
+			}],
 		}],
 		errors: [],
 	});
@@ -367,7 +373,74 @@ test("Pyth strict liquidation checks a shared pair before deduplicating it", asy
 			1,
 			sdk as never,
 		),
-		/Pyth liquidation enrichment could not resolve collateral/,
+		/Pyth liquidation enrichment could not resolve the oracle route for collateral/,
+	);
+});
+
+test("Pyth strict liquidation ignores enabled vaults with no controller LTV", async () => {
+	const sdk = makeLiquidationSdk(async () => ({
+		result: makeViolatorSubAccount(),
+		errors: [],
+	}));
+	sdk.vaultMetaService.fetchVaults = async () => ({
+		result: [{
+			address: CONTROLLER,
+			asset: { address: UNIT },
+			unitOfAccount: { address: UNIT },
+			debtPricingOracleRoute: undefined,
+			collaterals: [],
+		}],
+		errors: [],
+	});
+
+	await assert.doesNotReject(
+		createPythPlugin().processPlan?.(
+			makeLiquidationPlan(),
+			new Account({
+				chainId: 1,
+				owner: OWNER,
+				populated: { vaults: true },
+				subAccounts: {},
+			}),
+			1,
+			sdk as never,
+		),
+	);
+});
+
+test("Pyth strict liquidation rejects a missing liability route when pricing is required", async () => {
+	const sdk = makeLiquidationSdk(async () => ({
+		result: makeViolatorSubAccount(),
+		errors: [],
+	}));
+	sdk.vaultMetaService.fetchVaults = async () => ({
+		result: [{
+			address: CONTROLLER,
+			asset: { address: ASSET },
+			unitOfAccount: { address: UNIT },
+			debtPricingOracleRoute: undefined,
+			collaterals: [{
+				address: COLLATERAL,
+				currentLiquidationLTV: 0.8,
+				oracleRoute: makePythRoute(),
+			}],
+		}],
+		errors: [],
+	});
+
+	await assert.rejects(
+		createPythPlugin().processPlan?.(
+			makeLiquidationPlan(),
+			new Account({
+				chainId: 1,
+				owner: OWNER,
+				populated: { vaults: true },
+				subAccounts: {},
+			}),
+			1,
+			sdk as never,
+		),
+		/Pyth liquidation enrichment could not resolve the liability oracle route/,
 	);
 });
 
