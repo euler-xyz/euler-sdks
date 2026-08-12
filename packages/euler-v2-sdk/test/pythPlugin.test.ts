@@ -197,33 +197,39 @@ test("Pyth plugin uses final batch controller and collateral state for health ch
 			{
 				type: "evcBatch",
 				items: [
-					batchItem(
-						EVC,
-						OWNER,
-						encodeFunctionData({
-							abi: ethereumVaultConnectorAbi,
-							functionName: "enableController",
-							args: [OWNER, CONTROLLER],
-						}),
-					),
-					batchItem(
-						EVC,
-						OWNER,
-						encodeFunctionData({
-							abi: ethereumVaultConnectorAbi,
-							functionName: "enableCollateral",
-							args: [OWNER, COLLATERAL],
-						}),
-					),
-					batchItem(
-						CONTROLLER,
-						OWNER,
-						encodeFunctionData({
-							abi: eVaultAbi,
-							functionName: "borrow",
-							args: [1n, OWNER],
-						}),
-					),
+					{
+						type: "operation",
+						name: "borrow",
+						items: [
+							batchItem(
+								EVC,
+								OWNER,
+								encodeFunctionData({
+									abi: ethereumVaultConnectorAbi,
+									functionName: "enableController",
+									args: [OWNER, CONTROLLER],
+								}),
+							),
+							batchItem(
+								EVC,
+								OWNER,
+								encodeFunctionData({
+									abi: ethereumVaultConnectorAbi,
+									functionName: "enableCollateral",
+									args: [OWNER, COLLATERAL],
+								}),
+							),
+							batchItem(
+								CONTROLLER,
+								OWNER,
+								encodeFunctionData({
+									abi: eVaultAbi,
+									functionName: "borrow",
+									args: [1n, OWNER],
+								}),
+							),
+						],
+					},
 				],
 			},
 		];
@@ -235,6 +241,8 @@ test("Pyth plugin uses final batch controller and collateral state for health ch
 		const [entry] = processed;
 		assert.equal(entry.type, "evcBatch");
 		if (entry.type !== "evcBatch") throw new Error("expected evcBatch");
+		assert.equal(entry.items.length, 1);
+		assert.equal(entry.items[0]?.type, "operation");
 		const items = flattenBatchEntries(entry.items);
 		assert.equal(items.length, 4);
 		assert.equal(items[0]?.targetContract, PYTH);

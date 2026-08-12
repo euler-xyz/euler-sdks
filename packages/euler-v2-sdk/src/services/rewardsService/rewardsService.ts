@@ -821,7 +821,7 @@ export class RewardsService implements IRewardsService {
 	): Promise<TransactionPlan> {
 		const rewards = await this.fetchUserRewards(args.chainId, args.account);
 		return this.buildClaimPlans({
-			rewards,
+			rewards: rewards.filter((reward) => reward.chainId === args.chainId),
 			account: args.account,
 			chainId: args.chainId,
 		});
@@ -1310,6 +1310,11 @@ export class RewardsService implements IRewardsService {
 	): Promise<ContractCall> {
 		const proof = await this.fetchTurtleProof(reward, account);
 		const claimChainId = turtleProofChainId(proof) ?? reward.chainId;
+		if (claimChainId !== reward.chainId) {
+			throw new Error(
+				`Turtle proof chain ${claimChainId} does not match reward chain ${reward.chainId}`,
+			);
+		}
 		const streamAddress = turtleProofStreamAddress(reward, proof);
 		const amount = turtleProofAmount(reward, proof);
 		const timestamp = turtleProofTimestamp(reward, proof);

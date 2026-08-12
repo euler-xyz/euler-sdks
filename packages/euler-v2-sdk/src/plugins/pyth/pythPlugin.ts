@@ -662,7 +662,7 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 				);
 				processed.push(
 					result.items.length
-						? { ...entry, items: [...result.items, ...entry.items] }
+						? prependToBatch([entry], result.items)[0]!
 						: entry,
 				);
 			}
