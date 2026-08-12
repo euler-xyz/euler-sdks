@@ -14,6 +14,14 @@ export interface PluginBatchItems {
 	totalValue: bigint;
 }
 
+/** A plugin failure that makes continuing with the unmodified plan unsafe. */
+export class PluginExecutionFatalError extends Error {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options);
+		this.name = "PluginExecutionFatalError";
+	}
+}
+
 export interface ReadPluginContext {
 	chainId: number;
 	vaults: EVault[];

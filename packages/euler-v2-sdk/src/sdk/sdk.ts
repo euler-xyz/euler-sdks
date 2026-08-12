@@ -30,7 +30,11 @@ import {
 	type IActivityService,
 	type IActivityServiceWithLiquidations,
 } from "../services/activityService/index.js";
-import type { EulerPlugin, PluginPrefetchData } from "../plugins/types.js";
+import {
+	PluginExecutionFatalError,
+	type EulerPlugin,
+	type PluginPrefetchData,
+} from "../plugins/types.js";
 import type { TransactionPlan } from "../services/executionService/executionServiceTypes.js";
 import type { AddressOrAccount } from "../entities/Account.js";
 
@@ -144,6 +148,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 			try {
 				plan = await plugin.processPlan(plan, account, chainId, this, prefetch);
 			} catch (err) {
+				if (err instanceof PluginExecutionFatalError) throw err;
 				if (typeof console !== "undefined") {
 					console.warn(
 						`[euler-v2-sdk] plugin "${plugin.name}" processPlan failed`,
@@ -178,6 +183,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 					const data = await plugin.prefetch(plan, account, chainId, this);
 					return data === undefined ? null : ([plugin.name, data] as const);
 				} catch (err) {
+					if (err instanceof PluginExecutionFatalError) throw err;
 					if (typeof console !== "undefined") {
 						console.warn(
 							`[euler-v2-sdk] plugin "${plugin.name}" prefetch failed`,

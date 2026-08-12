@@ -43,6 +43,7 @@ import {
 	type PluginBatchItems,
 	type PluginPrefetchData,
 	type PluginSDK,
+	PluginExecutionFatalError,
 	prependToBatch,
 	type PythPluginPrefetch,
 	type ReadPluginContext,
@@ -408,16 +409,19 @@ async function resolvePlanHealthCheckSets(
 				undefined,
 				MINIMAL_ACCOUNT_FETCH_OPTIONS,
 			);
-			if (fetched.errors.length) {
-				throw new Error(
-					`Pyth liquidation enrichment could not load complete violator metadata for ${violator}: ${fetched.errors.map((issue) => issue.message).join("; ")}`,
+			const blockingIssues = fetched.errors.filter(
+				(issue) => issue.severity === "error",
+			);
+			if (blockingIssues.length) {
+				throw new PluginExecutionFatalError(
+					`Pyth liquidation enrichment could not load complete violator metadata for ${violator}: ${blockingIssues.map((issue) => issue.message).join("; ")}`,
 				);
 			}
 			subAccount = fetched.result;
 		}
 
 		if (!subAccount) {
-			throw new Error(
+			throw new PluginExecutionFatalError(
 				`Pyth liquidation enrichment could not load violator sub-account ${violator}.`,
 			);
 		}
@@ -432,7 +436,7 @@ async function resolvePlanHealthCheckSets(
 					position.borrowed > 0n,
 			);
 			if (!controllerEnabled || !debtPosition) {
-				throw new Error(
+				throw new PluginExecutionFatalError(
 					`Pyth liquidation enrichment received incomplete violator metadata for ${violator}: controller ${controller} is not present as enabled debt.`,
 				);
 			}
@@ -463,9 +467,10 @@ async function collectHealthCheckFeeds(
 	const requiresCompleteMetadata = checkedAccounts.some(
 		(account) => account.requireCompleteMetadata,
 	);
-	if (requiresCompleteMetadata && fetched.errors.length) {
-		throw new Error(
-			`Pyth liquidation enrichment could not load complete controller metadata: ${fetched.errors.map((issue) => issue.message).join("; ")}`,
+	const blockingIssues = fetched.errors.filter((issue) => issue.severity === "error");
+	if (requiresCompleteMetadata && blockingIssues.length) {
+		throw new PluginExecutionFatalError(
+			`Pyth liquidation enrichment could not load complete controller metadata: ${blockingIssues.map((issue) => issue.message).join("; ")}`,
 		);
 	}
 
@@ -483,7 +488,7 @@ async function collectHealthCheckFeeds(
 			const controller = controllers.get(getAddress(controllerAddress));
 			if (!controller) {
 				if (account.requireCompleteMetadata) {
-					throw new Error(
+					throw new PluginExecutionFatalError(
 						`Pyth liquidation enrichment could not resolve controller ${controllerAddress} for violator ${account.account}.`,
 					);
 				}
@@ -500,20 +505,19 @@ async function collectHealthCheckFeeds(
 
 			for (const collateralAddress of account.collaterals) {
 				const pairKey = `${getAddress(controllerAddress).toLowerCase()}:${getAddress(collateralAddress).toLowerCase()}`;
-				if (seenPairs.has(pairKey)) continue;
-				seenPairs.add(pairKey);
-
 				const collateral = controller.collaterals.find(
 					(c) => getAddress(c.address) === getAddress(collateralAddress),
 				);
 				if (!collateral) {
 					if (account.requireCompleteMetadata) {
-						throw new Error(
+						throw new PluginExecutionFatalError(
 							`Pyth liquidation enrichment could not resolve collateral ${collateralAddress} in controller ${controllerAddress} metadata.`,
 						);
 					}
 					continue;
 				}
+				if (seenPairs.has(pairKey)) continue;
+				seenPairs.add(pairKey);
 				feeds.push(...collectPythFeedsFromRouteSteps(collateral.oracleRoute));
 			}
 		}

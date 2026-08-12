@@ -11,6 +11,7 @@ import {
 	type PublicClient,
 } from "viem";
 import { Account, SubAccount } from "../src/entities/Account.js";
+import { EulerSDK } from "../src/sdk/sdk.js";
 import { ethereumVaultConnectorAbi } from "../src/services/executionService/abis/ethereumVaultConnectorAbi.js";
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
 import type {
@@ -125,7 +126,7 @@ const makeViolatorSubAccount = () =>
 const makeLiquidationSdk = (
 	fetchSubAccount: () => Promise<{
 		result: ReturnType<typeof makeViolatorSubAccount> | undefined;
-		errors: Array<{ message: string }>;
+		errors: Array<{ message: string; severity: "info" | "warning" | "error" }>;
 	}>,
 ) => ({
 	accountService: {
@@ -272,7 +273,7 @@ test.each(["processPlan", "prefetch"] as const)(
 	async (path) => {
 		const sdk = makeLiquidationSdk(async () => ({
 			result: undefined,
-			errors: [{ message: "violator snapshot incomplete" }],
+			errors: [{ message: "violator snapshot incomplete", severity: "error" }],
 		})) as never;
 		const plugin = createPythPlugin();
 		const call = path === "processPlan"
@@ -285,6 +286,90 @@ test.each(["processPlan", "prefetch"] as const)(
 		);
 	},
 );
+
+test.each(["processPlugins", "prefetchPluginData"] as const)(
+	"SDK %s propagates fatal Pyth liquidation metadata failures",
+	async (path) => {
+		const base = makeLiquidationSdk(async () => ({
+			result: undefined,
+			errors: [{ message: "violator snapshot incomplete", severity: "error" }],
+		}));
+		const sdk = Object.assign(Object.create(EulerSDK.prototype), base, {
+			plugins: [createPythPlugin()],
+		}) as EulerSDK;
+
+		const call = path === "processPlugins"
+			? sdk.processPlugins(makeLiquidationPlan(), OWNER, 1)
+			: sdk.prefetchPluginData(makeLiquidationPlan(), OWNER, 1);
+
+		await assert.rejects(
+			call,
+			/Pyth liquidation enrichment could not load complete violator metadata/,
+		);
+	},
+);
+
+test("Pyth liquidation enrichment ignores non-blocking controller diagnostics", async () => {
+	const fetchSubAccount = async () => ({
+		result: makeViolatorSubAccount(),
+		errors: [],
+	});
+	const sdk = makeLiquidationSdk(fetchSubAccount);
+	const originalFetchVaults = sdk.vaultMetaService.fetchVaults;
+	sdk.vaultMetaService.fetchVaults = async () => ({
+		...(await originalFetchVaults()),
+		errors: [{ message: "labels unavailable", severity: "warning" }],
+	});
+
+	const prefetched = await createPythPlugin({
+		fetchFn: (async () => Response.json({
+			binary: { encoding: "hex", data: ["feedface"] },
+		})) as typeof fetch,
+	}).prefetch?.(makeLiquidationPlan(), OWNER, 1, sdk as never);
+
+	assert.equal(prefetched?.entries.length, 1);
+});
+
+test("Pyth strict liquidation checks a shared pair before deduplicating it", async () => {
+	const liquidator = new Account({
+		chainId: 1,
+		owner: OWNER,
+		populated: { vaults: true },
+		subAccounts: {
+			[OWNER]: {
+				timestamp: 0,
+				account: OWNER,
+				owner: OWNER,
+				lastAccountStatusCheckTimestamp: 0,
+				enabledControllers: [CONTROLLER],
+				enabledCollaterals: [COLLATERAL],
+				positions: [],
+			},
+		},
+	});
+	const sdk = makeLiquidationSdk(async () => ({
+		result: makeViolatorSubAccount(),
+		errors: [],
+	}));
+	sdk.vaultMetaService.fetchVaults = async () => ({
+		result: [{
+			address: CONTROLLER,
+			debtPricingOracleRoute: makePythRoute(PYTH, DEBT_FEED),
+			collaterals: [],
+		}],
+		errors: [],
+	});
+
+	await assert.rejects(
+		createPythPlugin().processPlan?.(
+			makeLiquidationPlan(),
+			liquidator,
+			1,
+			sdk as never,
+		),
+		/Pyth liquidation enrichment could not resolve collateral/,
+	);
+});
 
 test("Pyth plugin uses final batch controller and collateral state for health checks", async () => {
 	const originalFetch = globalThis.fetch;
