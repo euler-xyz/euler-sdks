@@ -498,6 +498,11 @@ async function collectHealthCheckFeeds(
 				continue;
 			}
 			const unitOfAccount = controller.unitOfAccount?.address;
+			if (account.requireCompleteMetadata && !unitOfAccount) {
+				throw new PluginExecutionFatalError(
+					`Pyth liquidation enrichment could not resolve the unit of account for controller ${controllerAddress}.`,
+				);
+			}
 			const liabilityNeedsRoute = unitOfAccount
 				? getAddress(controller.asset.address) !== getAddress(unitOfAccount)
 				: false;

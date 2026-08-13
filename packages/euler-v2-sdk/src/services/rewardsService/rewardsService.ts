@@ -1380,6 +1380,10 @@ export class RewardsService implements IRewardsService {
 			functionName: "claim",
 			args: [amount, timestamp, proofArray],
 			value: 0n,
+			// Turtle claims bind the beneficiary through msg.sender, so they cannot
+			// be wrapped by EVC. They are independent of the other reward claims and
+			// can be simulated directly from the wallet against the pre-plan state.
+			simulationMode: "independent",
 		};
 	}
 

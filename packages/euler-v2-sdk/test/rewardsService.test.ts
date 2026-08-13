@@ -2611,6 +2611,7 @@ test("rewards service builds Turtle claim plan from stream proof data", async ()
 	assert.equal(plan[0].to, turtleStreamAddress);
 	assert.equal(plan[0].value, 0n);
 	assert.equal(plan[0].functionName, "claim");
+	assert.equal(plan[0].simulationMode, "independent");
 	assert.deepEqual(canClaimArgs, [
 		accountAddress,
 		1000n,

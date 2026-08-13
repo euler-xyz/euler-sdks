@@ -130,7 +130,8 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 	/**
 	 * Run all plugins' processPlan methods on a transaction plan.
 	 * Plugins execute in array order; each receives the plan as modified by previous plugins.
-	 * Errors in individual plugins are caught gracefully — the plan continues without that plugin.
+	 * Recoverable plugin errors are caught and skipped. PluginExecutionFatalError
+	 * is propagated because continuing without that plugin would be unsafe.
 	 *
 	 * `prefetch` carries per-plugin form-level data (Pyth Hermes updates,
 	 * keyring vault gating, …) so the plugin can skip its own network I/O.
@@ -167,7 +168,8 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 	 * record keyed by plugin name; known SDK slots (`pyth`, `keyring`) are
 	 * typed. Run once per form-load so per-quote prepare/estimate/simulate can
 	 * pass the result back via `processPlugins(plan, account, chainId, prefetch)`
-	 * without re-doing the expensive lookups.
+	 * without re-doing the expensive lookups. Recoverable plugin errors omit that
+	 * plugin's payload; PluginExecutionFatalError is propagated to the caller.
 	 */
 	async prefetchPluginData(
 		plan: TransactionPlan,
