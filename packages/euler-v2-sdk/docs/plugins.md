@@ -39,7 +39,7 @@ Each plugin implements the `EulerPlugin` interface and can hook into two points:
 
 `processPlan` receives `(plan, account, chainId, sdk, prefetch?)`, where `account` is `AddressOrAccount` (`Address | Account`), `sdk` is the full SDK instance, and `prefetch` is an optional per-plugin payload that lets the plugin skip its own network I/O. This lets plugins use any SDK service without a plugin-specific context object.
 
-Plugins execute in array order. Each receives the plan as modified by the previous plugin. Errors in individual plugins are caught gracefully &mdash; the operation proceeds without that plugin's enrichment.
+Plugins execute in array order. Each receives the plan as modified by the previous plugin. Recoverable errors are caught and the operation proceeds without that plugin's enrichment. A plugin must throw `PluginExecutionFatalError` when continuing with the unmodified plan would be unsafe; `processPlugins`, `prefetchPluginData`, and the execution-service methods that use them propagate that rejection to the caller.
 
 ### Prefetch for fan-out flows
 

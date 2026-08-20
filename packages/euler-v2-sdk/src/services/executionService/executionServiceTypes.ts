@@ -451,6 +451,12 @@ export type ContractCall = {
 	functionName: string;
 	args: readonly unknown[];
 	value: bigint;
+	/**
+	 * Opt in only when this call can be simulated against the pre-plan state and
+	 * does not depend on effects from earlier plan items. This lets a direct call
+	 * coexist with an EVC batch without accepting a partial simulation.
+	 */
+	simulationMode?: "independent";
 	/** Metadata consumed when this call is converted into an EVC batch operation. */
 	walletBalanceTokens?: Address[];
 };

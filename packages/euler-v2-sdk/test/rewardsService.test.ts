@@ -2392,6 +2392,79 @@ test("rewards service builds Fuul claim plan from public claimable rewards", asy
 	assert.equal(claimCheck?.amount, 1000n);
 });
 
+test("rewards service limits a Fuul claim plan to the selected reward", async () => {
+	const secondProjectAddress = otherAccountAddress;
+	const adapter: IRewardsAdapter = {
+		...emptyAdapter,
+		async fetchFuulClaimChecks() {
+			return [
+				makeFuulClaimCheck(),
+				makeFuulClaimCheck({
+					project_address: secondProjectAddress,
+					currency: otherRewardToken,
+					amount: "2000",
+				}),
+			];
+		},
+		async fetchFuulTotals() {
+			return {
+				claimed: [],
+				unclaimed: [
+					{
+						currency: rewardToken,
+						currency_type: 0,
+						amount: "1000",
+						chain_id: 1,
+					},
+					{
+						currency: otherRewardToken,
+						currency_type: 0,
+						amount: "2000",
+						chain_id: 1,
+					},
+				],
+			};
+		},
+	};
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: claimAddress,
+		fuulFactoryAddress: fuulProjectAddress,
+	});
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					return { nativeUserClaimFee: 123n };
+				},
+			};
+		},
+	} as any);
+
+	const plan = await service.buildClaimPlan({
+		reward: makeFuulReward({ fuulCurrencyType: 0 }),
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.equal(operation.items[0]?.value, 123n);
+	const decoded = decodeFunctionData({
+		abi: FUUL_MANAGER_ABI,
+		data: operation.items[0]!.data,
+	});
+	const claimChecks = decoded.args[0] as Array<{
+		currency: Address;
+		amount: bigint;
+	}>;
+	assert.equal(claimChecks.length, 1);
+	assert.equal(claimChecks[0]?.currency, rewardToken);
+	assert.equal(claimChecks[0]?.amount, 1000n);
+});
+
 test("rewards service hydrates Turtle claimable amount with canClaim", async () => {
 	const adapter = new RewardsDirectAdapter({
 		turtleStreams: [
@@ -2538,6 +2611,7 @@ test("rewards service builds Turtle claim plan from stream proof data", async ()
 	assert.equal(plan[0].to, turtleStreamAddress);
 	assert.equal(plan[0].value, 0n);
 	assert.equal(plan[0].functionName, "claim");
+	assert.equal(plan[0].simulationMode, "independent");
 	assert.deepEqual(canClaimArgs, [
 		accountAddress,
 		1000n,
@@ -2867,6 +2941,6 @@ test("rewards service rejects Fuul claim checks outside chain unclaimed metadata
 				rewards: [makeFuulReward()],
 				account: accountAddress,
 			}),
-		/Fuul claim check currency does not match unclaimed rewards/,
+		/No selected Fuul claim checks found/,
 	);
 });
