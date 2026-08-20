@@ -69,6 +69,28 @@ export const getEulerLabelProductByVault = (
 	);
 };
 
+export const getEulerLabelProductBrandEntityKeys = (
+	product: EulerLabelProduct,
+): string[] => {
+	const ownerKeys = Array.isArray(product.entity)
+		? product.entity
+		: [product.entity];
+	return [
+		...new Set([
+			...ownerKeys.filter((key): key is string => Boolean(key)),
+			...(product.coBrandEntityIds ?? []),
+		]),
+	];
+};
+
+export const getEulerLabelProductBrandEntities = (
+	product: EulerLabelProduct,
+	entities: Record<string, EulerLabelEntity>,
+): EulerLabelEntity[] =>
+	getEulerLabelProductBrandEntityKeys(product)
+		.map((key) => entities[key])
+		.filter((entity): entity is EulerLabelEntity => Boolean(entity));
+
 export const getEulerLabelProductKeyByVault = (
 	data: EulerLabelsData,
 	vaultAddress: string,
@@ -142,7 +164,11 @@ export const isEulerLabelVaultRecentlyAdded = (
 				product.vaults.includes(normalized) &&
 				(productHasTag(product, "recently added") ||
 					vaultOverrideHasTag(product, normalized, "recently added")),
-		) || earnVaultEntryHasTag(data.earnVaultEntries[normalized.toLowerCase()], "recently added")
+		) ||
+		earnVaultEntryHasTag(
+			data.earnVaultEntries[normalized.toLowerCase()],
+			"recently added",
+		)
 	);
 };
 

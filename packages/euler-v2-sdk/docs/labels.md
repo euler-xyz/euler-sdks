@@ -1,6 +1,8 @@
 # Labels
 
-Labels are purely off-chain metadata sourced from [`euler-labels`](https://github.com/euler-xyz/euler-labels). They have no effect on any on-chain calculations, pricing, or risk parameters. The labels provided by the SDK are the same data used by the official Euler UI.
+Labels are purely off-chain metadata. They have no effect on any on-chain calculations, pricing, or risk parameters.
+
+The default `EulerLabelsService` configuration reads the file-based [`euler-labels`](https://github.com/euler-xyz/euler-labels) dataset. The SDK also exposes `PublicLabelsV3Adapter` for the versioned Public Labels API.
 
 ## What labels provide
 
@@ -69,3 +71,53 @@ isEulerLabelProductKeyring(labelsData, productKey)
 ```
 
 `isEulerLabelVaultRecentlyAdded(labelsData, vaultAddress)` resolves the `recently added` tag from product, vault override, or Earn-entry tags. To check any other tag, read `tags` directly off the resolved product, vault override, or Earn entry.
+
+## Public Labels V3
+
+Use `PublicLabelsV3Adapter` when an application consumes the versioned Public Labels dataset directly:
+
+```typescript
+import {
+  PublicLabelsV3Adapter,
+  getEulerLabelProductBrandEntities,
+  normalizePublicLabelsData,
+} from '@eulerxyz/euler-v2-sdk/public-labels'
+
+const labels = new PublicLabelsV3Adapter({
+  endpoint: 'https://v3.euler.finance/v3',
+})
+
+const snapshot = await labels.fetchPublicLabelsSnapshot(1)
+const labelsData = normalizePublicLabelsData(1, snapshot.publicLabels)
+
+console.log(snapshot.version)
+
+const product = labelsData.products['kpk-securitize']
+const brands = product
+  ? getEulerLabelProductBrandEntities(product, labelsData.entities)
+  : []
+```
+
+Normal runtime reads use `latest`. The adapter resolves that alias once, then pins every request in the snapshot to the returned immutable version. Pass a concrete publication key to create deterministic fixtures:
+
+```typescript
+const snapshot = await labels.fetchPublicLabelsSnapshot(
+  1,
+  'v20260804151305236',
+)
+```
+
+The adapter follows `meta.total` for all list endpoints with `limit=100` and `offset`, fetches managing and co-brand entity profiles, and normalizes the result into `EulerLabelsData`. Product ownership stays in `product.entity`; display-only partners are exposed through `product.coBrandEntityIds`.
+
+Applications can inject `request` to route reads through their own proxy, authentication, caching, and stale-response policy:
+
+```typescript
+const labels = new PublicLabelsV3Adapter({
+  endpoint: 'https://app.example/api/internal/v3',
+  request: async (path, query) => {
+    return appOwnedPublicLabelsRequest(path, query)
+  },
+})
+```
+
+`rawGeoPolicies` contains the published, versioned policy records for inspection. The adapter does not turn raw geo policies or operational assessment responses into an effective eligibility or visibility decision. That decision requires an explicit precedence and fallback policy from the consuming application or a derived backend endpoint.
