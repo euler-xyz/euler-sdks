@@ -4,6 +4,7 @@ import { getAddress, type Address, type PublicClient } from "viem";
 import { Account } from "../src/entities/Account.js";
 import type { EVault } from "../src/entities/EVault.js";
 import { createKeyringPlugin } from "../src/plugins/keyring/keyringPlugin.js";
+import { prependToBatch } from "../src/plugins/types.js";
 import { EulerSDK } from "../src/sdk/sdk.js";
 import type {
 	EVCBatchItem,
@@ -23,6 +24,40 @@ const CONTRACT_CALL_TARGET = getAddress(
 	"0x00000000000000000000000000000000000000Ff",
 );
 const ASSET = getAddress("0x0000000000000000000000000000000000000011");
+
+test("plugin prepends stay inside the first named operation", () => {
+	const setupItem: EVCBatchItem = {
+		targetContract: KEYRING,
+		onBehalfOfAccount: ACCOUNT,
+		value: 1n,
+		data: "0xaaaa",
+	};
+	const operationItem: EVCBatchItem = {
+		targetContract: TARGET_A,
+		onBehalfOfAccount: ACCOUNT,
+		value: 0n,
+		data: "0xbbbb",
+	};
+	const processed = prependToBatch(
+		[
+			{
+				type: "evcBatch",
+				items: [
+					{ type: "operation", name: "deposit", items: [operationItem] },
+				],
+			},
+		],
+		[setupItem],
+	);
+
+	assert.equal(processed[0]?.type, "evcBatch");
+	if (processed[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	assert.equal(processed[0].items.length, 1);
+	const operation = processed[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.deepEqual(operation.items, [setupItem, operationItem]);
+});
 
 function createVault(hookTarget: Address, address: Address = TARGET_A): EVault {
 	return {

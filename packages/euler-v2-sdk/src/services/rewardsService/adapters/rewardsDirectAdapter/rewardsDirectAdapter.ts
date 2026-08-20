@@ -677,7 +677,9 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				chainId,
 				address,
 			).catch(() => []);
-			return rewards.map(fuulClaimableRewardToClaimCheck);
+			return rewards
+				.filter((reward) => Number(reward.currency_chain_id) === chainId)
+				.map(fuulClaimableRewardToClaimCheck);
 		}
 		const claimChecks = await this.queryFuulClaimChecks(
 			this.fuulClaimChecksUrl,
@@ -1269,6 +1271,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 
 			for (const reward of claimableRewards) {
 				const claimChainId = Number(reward.currency_chain_id);
+				if (claimChainId !== chainId) continue;
 				const tokenAddress = getAddress(reward.currency_address) as Address;
 				const key = `${claimChainId}:${tokenAddress.toLowerCase()}`;
 				const existing = totals.get(key);

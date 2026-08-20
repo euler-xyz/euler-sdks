@@ -2,11 +2,12 @@ import type { Address, Hex, PublicClient } from "viem";
 import type { AddressOrAccount } from "../entities/Account.js";
 import type { EVault } from "../entities/EVault.js";
 import type { EulerSDK } from "../sdk/sdk.js";
-import type {
-	BatchItemDescription,
-	EVCBatchItem,
-	TransactionPlan,
-	TransactionPlanItem,
+import {
+	isEVCBatchOperation,
+	type BatchItemDescription,
+	type EVCBatchItem,
+	type TransactionPlan,
+	type TransactionPlanItem,
 } from "../services/executionService/executionServiceTypes.js";
 
 export interface PluginBatchItems {
@@ -119,6 +120,19 @@ export function prependToBatch(
 	return plan.map((entry: TransactionPlanItem) => {
 		if (entry.type === "evcBatch" && !prepended) {
 			prepended = true;
+			const [firstEntry, ...remainingEntries] = entry.items;
+			if (firstEntry && isEVCBatchOperation(firstEntry)) {
+				return {
+					...entry,
+					items: [
+						{
+							...firstEntry,
+							items: [...items, ...firstEntry.items],
+						},
+						...remainingEntries,
+					],
+				};
+			}
 			return { ...entry, items: [...items, ...entry.items] };
 		}
 		return entry;

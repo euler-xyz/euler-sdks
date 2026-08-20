@@ -2264,14 +2264,15 @@ test("direct rewards adapter fetches Fuul user rewards from public claimable rew
 		requestUrl = url;
 		return [
 			makeFuulClaimableReward({
-				currency_chain_id: 8453,
+				currency_chain_id: 1,
 				currency_name: "USDC",
 				currency_decimals: 6,
 			}),
 			makeFuulClaimableReward({
-				currency_chain_id: 8453,
+				currency_chain_id: 1,
 				amount: "500",
 			}),
+			makeFuulClaimableReward({ currency_chain_id: 8453, amount: "2000" }),
 			makeFuulClaimableReward({ user_address: otherAccountAddress }),
 		];
 	});
@@ -2285,12 +2286,78 @@ test("direct rewards adapter fetches Fuul user rewards from public claimable rew
 	assert.equal(params.get("chain_id"), "1");
 	assert.equal(rewards.length, 1);
 	assert.equal(rewards[0]?.provider, "fuul");
-	assert.equal(rewards[0]?.chainId, 8453);
+	assert.equal(rewards[0]?.chainId, 1);
 	assert.equal(rewards[0]?.token.address, rewardToken);
-	assert.equal(rewards[0]?.token.chainId, 8453);
+	assert.equal(rewards[0]?.token.chainId, 1);
 	assert.equal(rewards[0]?.token.symbol, "USDC");
 	assert.equal(rewards[0]?.token.decimals, 6);
 	assert.equal(rewards[0]?.unclaimed, "1500");
+});
+
+test("rewards service excludes foreign-chain rows from claim-all", async () => {
+	const adapter: IRewardsAdapter = {
+		...emptyAdapter,
+		fetchUserRewards: async () => [
+			makeFuulReward({
+				chainId: 8453,
+				token: {
+					...makeFuulReward().token,
+					chainId: 8453,
+				},
+			}),
+		],
+	};
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	const plan = await service.buildClaimAllPlan({
+		chainId: 1,
+		account: accountAddress,
+	});
+
+	assert.deepEqual(plan, []);
+});
+
+test("direct rewards adapter filters fallback Fuul claim checks by chain", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryFuulClaimableRewards(async () => [
+		makeFuulClaimableReward({ currency_chain_id: 1, amount: "1000" }),
+		makeFuulClaimableReward({ currency_chain_id: 8453, amount: "2000" }),
+	]);
+
+	const claimChecks = await adapter.fetchFuulClaimChecks(accountAddress, 1);
+
+	assert.equal(claimChecks.length, 1);
+	assert.equal(claimChecks[0]?.amount, "1000");
+});
+
+test("rewards service rejects mixed-chain reward plans", async () => {
+	const service = new RewardsService(emptyAdapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	await assert.rejects(
+		() =>
+			service.buildClaimPlans({
+				rewards: [
+					makeFuulReward(),
+					makeFuulReward({
+						chainId: 8453,
+						token: {
+							...makeFuulReward().token,
+							chainId: 8453,
+						},
+					}),
+				],
+				account: accountAddress,
+			}),
+		/Reward claim planning requires rewards from chain 1/,
+	);
 });
 
 test("direct rewards adapter fetches Turtle user rewards from configured streams", async () => {
@@ -2625,7 +2692,7 @@ test("rewards service builds Turtle claim plan from stream proof data", async ()
 	]);
 });
 
-test("rewards service builds Turtle claim plan on proof chain", async () => {
+test("rewards service rejects a Turtle proof from another chain", async () => {
 	const adapter = new RewardsDirectAdapter();
 	adapter.setQueryTurtleMerkleProofs(async () => [
 		makeTurtleMerkleProof({ chainId: 11155111 }),
@@ -2647,20 +2714,20 @@ test("rewards service builds Turtle claim plan on proof chain", async () => {
 		},
 	} as any);
 
-	const plan = await service.buildClaimPlans({
-		rewards: [
-			makeTurtleReward({
-				proof: undefined,
-				streamAddress: undefined,
-				timestamp: undefined,
-			}),
-		],
-		account: accountAddress,
-	});
-
-	assert.equal(providerChainId, 11155111);
-	assert.equal(plan[0]?.type, "contractCall");
-	assert.equal(plan[0]?.chainId, 11155111);
+	await assert.rejects(
+		() => service.buildClaimPlans({
+			rewards: [
+				makeTurtleReward({
+					proof: undefined,
+					streamAddress: undefined,
+					timestamp: undefined,
+				}),
+			],
+			account: accountAddress,
+		}),
+		/Turtle proof chain 11155111 does not match reward chain 1/,
+	);
+	assert.equal(providerChainId, undefined);
 });
 
 test("rewards service ignores Turtle proofs for another stream", async () => {
