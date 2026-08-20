@@ -65,6 +65,17 @@ import {
 	executeTransactionPlan,
 	type TransactionPlanExecutionResult,
 } from "./execute.js";
+import {
+	type ExecuteMaterializedOptions,
+	executeMaterialized,
+	type FinalizedMaterializedExecution,
+	finalizeMaterializedExecution,
+	type MaterializedExecution,
+	type MaterializedExecutionResult,
+	type MaterializedSignatureValue,
+	type MaterializeExecutionArgs,
+	materializeExecution,
+} from "./materializedExecution.js";
 import type {
 	ApproveCall,
 	BatchEntryDescription,
@@ -79,6 +90,7 @@ import type {
 	EncodeLiquidationArgs,
 	EncodeMigrateSameAssetCollateralArgs,
 	EncodeMigrateSameAssetDebtArgs,
+	EncodeMigrationAuthorizationCallArgs,
 	EncodeMintArgs,
 	EncodeMultiplySameAssetArgs,
 	EncodeMultiplyWithSwapArgs,
@@ -153,6 +165,7 @@ import {
 	simulateTransactionPlan,
 } from "./simulate.js";
 import { requiresZeroApprovalReset } from "./tokenApprovalReset.js";
+import { encodeMigrationAuthorizationCall } from "./migrationAuthorization.js";
 
 type CowSwapQuoteOrderAmounts = {
 	sellAmount: bigint;
@@ -562,6 +575,11 @@ export interface IExecutionService<
 		transactionPlan: TransactionPlan,
 		options?: SimulateBatchOptions & { prefetch?: PluginPrefetchData },
 	): Promise<SimulateBatchResult<TVaultEntity>>;
+	/**
+	 * Simulate an already prepared envelope without rerunning plugins or approval
+	 * resolution.
+	 * @see docs/simulations-and-state-overrides.md
+	 */
 	simulatePreparedTransactionPlan(
 		prepared: TransactionPlanPrepared,
 		options?: SimulateBatchOptions,
@@ -597,6 +615,7 @@ export interface IExecutionService<
 	 * Run plugins and resolve required approvals up front, packaging the result
 	 * with its execution context so simulate/execute can be called repeatedly
 	 * without re-running plugins or refetching wallet allowances.
+	 * @see docs/simulations-and-state-overrides.md
 	 */
 	prepareTransactionPlan(args: {
 		plan: TransactionPlan;
@@ -628,12 +647,37 @@ export interface IExecutionService<
 		account: AddressOrAccount,
 		chainId: number,
 	): Promise<PluginPrefetchData>;
+	/**
+	 * Prepare and execute a raw plan. Callers that expose a review boundary
+	 * should prefer the materialized execution APIs.
+	 * @see docs/execution-service.md
+	 */
 	executeTransactionPlan(
 		args: ExecuteTransactionPlanArgs,
 	): Promise<TransactionPlanExecutionResult>;
+	/**
+	 * Execute an already prepared envelope without rerunning plugins or approval
+	 * resolution. This still performs execution-time Permit2 composition.
+	 * @see docs/execution-service.md
+	 */
 	executePreparedTransactionPlan(
 		args: ExecutePreparedTransactionPlanArgs,
 	): Promise<TransactionPlanExecutionResult>;
+	/** Deterministically compose a prepared plan using only explicit live inputs. */
+	materializeExecution(args: MaterializeExecutionArgs): MaterializedExecution;
+	/** Purely insert the declared signatures into a new immutable request vector. */
+	finalizeMaterializedExecution(
+		materialized: MaterializedExecution,
+		signatures: readonly MaterializedSignatureValue[],
+	): FinalizedMaterializedExecution;
+	/**
+	 * Sign, finalize, and dispatch the exact materialized request vector.
+	 * @see docs/execution-service.md
+	 */
+	executeMaterialized(
+		materialized: MaterializedExecution | FinalizedMaterializedExecution,
+		options: ExecuteMaterializedOptions,
+	): Promise<MaterializedExecutionResult>;
 	executeCowSwapTransactionPlan(
 		args: ExecuteCowSwapTransactionPlanArgs,
 	): Promise<CowSwapTransactionPlanExecutionResult>;
@@ -673,6 +717,9 @@ export interface IExecutionService<
 	encodeMultiplyWithSwap(args: EncodeMultiplyWithSwapArgs): EVCBatchItem[];
 	encodeMultiplySameAsset(args: EncodeMultiplySameAssetArgs): EVCBatchItem[];
 	encodePermit2Call(args: EncodePermit2CallArgs): EVCBatchItem;
+	encodeMigrationAuthorizationCall(
+		args: EncodeMigrationAuthorizationCallArgs,
+	): EVCBatchItem;
 	encodeEnableCollateral(
 		chainId: number,
 		account: Address,
@@ -866,7 +913,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		);
 	}
 
-	/** Simulate the full transaction plan, including approval resolution and plugin-aware batch execution. */
+	/**
+	 * Simulate the full transaction plan, including approval resolution and
+	 * plugin-aware batch execution.
+	 * @see docs/simulations-and-state-overrides.md
+	 */
 	async simulateTransactionPlan(
 		chainId: number,
 		account: AddressOrAccount,
@@ -895,6 +946,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * resolution have already run via {@link prepareTransactionPlan}, so this
 	 * skips the plugin pipeline and uses the envelope's chainId/account context
 	 * directly — no re-fetches of plugin-side data on each click.
+	 * @see docs/simulations-and-state-overrides.md
 	 */
 	async simulatePreparedTransactionPlan(
 		prepared: TransactionPlanPrepared,
@@ -916,6 +968,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * with its execution context. Simulate and execute can be called against the
 	 * returned envelope repeatedly without re-running plugins or refetching
 	 * wallet allowances.
+	 * @see docs/simulations-and-state-overrides.md
 	 */
 	async prepareTransactionPlan(args: {
 		plan: TransactionPlan;
@@ -1011,7 +1064,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		);
 	}
 
-	/** Execute a transaction plan using caller-provided signing and send callbacks. */
+	/**
+	 * Execute a transaction plan using caller-provided signing and send callbacks.
+	 * @see docs/execution-service.md
+	 */
 	async executeTransactionPlan(
 		args: ExecuteTransactionPlanArgs,
 	): Promise<TransactionPlanExecutionResult> {
@@ -1046,6 +1102,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * Execute a {@link TransactionPlanPrepared} envelope. Plugins and approval
 	 * resolution were already applied by {@link prepareTransactionPlan}, so
 	 * this skips both — no per-execute plugin re-runs or wallet re-fetch.
+	 * @see docs/execution-service.md
 	 */
 	async executePreparedTransactionPlan(
 		args: ExecutePreparedTransactionPlanArgs,
@@ -1073,6 +1130,38 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			providerService,
 		};
 		return executeTransactionPlan(helperArgs);
+	}
+
+	/**
+	 * Compose a prepared plan without reads, clocks, or wallet prompts. Permit2
+	 * nonces and deadlines and the reviewed EVC address are explicit inputs.
+	 */
+	materializeExecution(args: MaterializeExecutionArgs): MaterializedExecution {
+		return materializeExecution(this, args);
+	}
+
+	/** Insert signatures into declared slots without mutating the reviewed template. */
+	finalizeMaterializedExecution(
+		materialized: MaterializedExecution,
+		signatures: readonly MaterializedSignatureValue[],
+	): FinalizedMaterializedExecution {
+		return finalizeMaterializedExecution(this, materialized, signatures);
+	}
+
+	/**
+	 * Collect declared signatures and dispatch the finalized bytes. Every hook is
+	 * awaited at its documented boundary; dispatch never re-encodes a request.
+	 */
+	async executeMaterialized(
+		materialized: MaterializedExecution | FinalizedMaterializedExecution,
+		options: ExecuteMaterializedOptions,
+	): Promise<MaterializedExecutionResult> {
+		if (!this.providerService) {
+			throw new Error(
+				"ExecutionService.executeMaterialized requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
+			);
+		}
+		return executeMaterialized(this, this.providerService, materialized, options);
 	}
 
 	async executeCowSwapTransactionPlan(
@@ -1114,8 +1203,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 	/**
 	 * Run each plugin's processPlan in registration order. Plugins receive the
-	 * plan as modified by previous plugins; errors are caught per-plugin so a
-	 * single failing plugin can't poison the pipeline.
+	 * plan as modified by previous plugins. Any plugin failure rejects the
+	 * pipeline so a required safety operation can never be silently omitted.
 	 *
 	 * `prefetch` carries form-level data each plugin pre-resolved via
 	 * {@link prefetchPluginDataForPlan} — passing it lets the plugin skip its
@@ -1579,6 +1668,16 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	encodePermit2Call(args: EncodePermit2CallArgs): EVCBatchItem {
 		const { permit2 } = this.getCoreAddresses(args.chainId);
 		return encodeHelpers.encodePermit2Call(permit2, args);
+	}
+
+	/**
+	 * Insert an EIP-712 signature only at the versioned ABI path returned by
+	 * PositionMigrationService.prepareMigrationAuthorizationSlots.
+	 */
+	encodeMigrationAuthorizationCall(
+		args: EncodeMigrationAuthorizationCallArgs,
+	): EVCBatchItem {
+		return encodeMigrationAuthorizationCall(args);
 	}
 
 	encodeEnableCollateral(

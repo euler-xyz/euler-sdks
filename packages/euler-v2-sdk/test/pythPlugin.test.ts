@@ -229,14 +229,44 @@ test("PythPluginAdapter returns no update data when all Hermes ids are missing",
 	assert.deepEqual(requestedIds, [[MISSING_FEED]]);
 });
 
+test("PythPluginAdapter returns feed-aligned publish-time evidence", async () => {
+	const adapter = new PythPluginAdapter(
+		"https://hermes.pyth.network",
+		undefined,
+		(async (input: RequestInfo | URL) => {
+			const url = new URL(input.toString());
+			assert.equal(url.searchParams.get("parsed"), "true");
+			return Response.json({
+				binary: { encoding: "hex", data: ["feedface"] },
+				parsed: [
+					{ id: OTHER_FEED, price: { publish_time: 1_900_000_002 } },
+					{ id: GOOD_FEED, price: { publish_time: 1_900_000_001 } },
+				],
+			});
+		}) as typeof fetch,
+	);
+
+	const bundle = await adapter.queryPythUpdateBundle([OTHER_FEED, GOOD_FEED]);
+	assert.deepEqual(bundle, {
+		feedIds: [GOOD_FEED, OTHER_FEED],
+		publishTimes: [1_900_000_001, 1_900_000_002],
+		updates: ["0xfeedface"],
+	});
+});
+
 test.each(["processPlan", "prefetch"] as const)(
 	"Pyth plugin %s includes every violator collateral feed for liquidation",
 	async (path) => {
 		const requestedIds = new Set<string>();
 		const fetchFn = (async (input: RequestInfo | URL) => {
-			for (const id of getRequestedIds(input.toString())) requestedIds.add(id);
+			const ids = getRequestedIds(input.toString());
+			for (const id of ids) requestedIds.add(id);
 			return Response.json({
 				binary: { encoding: "hex", data: ["feedface"] },
+				parsed: ids.map((id, index) => ({
+					id,
+					price: { publish_time: 1_900_000_000 + index },
+				})),
 			});
 		}) as typeof fetch;
 		const fetchSubAccount = async () => ({
@@ -261,6 +291,7 @@ test.each(["processPlan", "prefetch"] as const)(
 				new Set(prefetch?.entries[0]?.feedIds),
 				new Set([DEBT_FEED, GOOD_FEED, OTHER_FEED]),
 			);
+			assert.equal(prefetch?.entries[0]?.publishTimes.length, 3);
 		}
 
 		assert.deepEqual(
@@ -311,6 +342,35 @@ test.each(["processPlugins", "prefetchPluginData"] as const)(
 	},
 );
 
+test.each(["processPlugins", "prefetchPluginData"] as const)(
+	"SDK %s fails closed for every plugin error",
+	async (path) => {
+		const failure = new Error("required plugin unavailable");
+		const plugin = path === "processPlugins"
+			? {
+					name: "required",
+					processPlan: async () => {
+						throw failure;
+					},
+				}
+			: {
+					name: "required",
+					prefetch: async () => {
+						throw failure;
+					},
+				};
+		const sdk = Object.assign(Object.create(EulerSDK.prototype), {
+			plugins: [plugin],
+		}) as EulerSDK;
+
+		const call = path === "processPlugins"
+			? sdk.processPlugins([], OWNER, 1)
+			: sdk.prefetchPluginData([], OWNER, 1);
+
+		await assert.rejects(call, failure);
+	},
+);
+
 test("Pyth liquidation enrichment ignores non-blocking controller diagnostics", async () => {
 	const fetchSubAccount = async () => ({
 		result: makeViolatorSubAccount(),
@@ -324,12 +384,36 @@ test("Pyth liquidation enrichment ignores non-blocking controller diagnostics", 
 	});
 
 	const prefetched = await createPythPlugin({
-		fetchFn: (async () => Response.json({
-			binary: { encoding: "hex", data: ["feedface"] },
-		})) as typeof fetch,
+		fetchFn: (async (input: RequestInfo | URL) => {
+			const ids = getRequestedIds(input.toString());
+			return Response.json({
+				binary: { encoding: "hex", data: ["feedface"] },
+				parsed: ids.map((id, index) => ({
+					id,
+					price: { publish_time: 1_900_000_000 + index },
+				})),
+			});
+		}) as typeof fetch,
 	}).prefetch?.(makeLiquidationPlan(), OWNER, 1, sdk as never);
 
 	assert.equal(prefetched?.entries.length, 1);
+});
+
+test("Pyth prefetch fails closed when Hermes omits publish-time evidence", async () => {
+	const sdk = makeLiquidationSdk(async () => ({
+		result: makeViolatorSubAccount(),
+		errors: [],
+	}));
+	const plugin = createPythPlugin({
+		fetchFn: (async () => Response.json({
+			binary: { encoding: "hex", data: ["feedface"] },
+		})) as typeof fetch,
+	});
+
+	await assert.rejects(
+		plugin.prefetch?.(makeLiquidationPlan(), OWNER, 1, sdk as never),
+		/Pyth Hermes response is missing publish-time evidence/,
+	);
 });
 
 test("Pyth strict liquidation rejects a missing active-collateral route before deduplicating it", async () => {

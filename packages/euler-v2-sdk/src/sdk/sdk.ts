@@ -34,11 +34,7 @@ import {
 	type IActivityService,
 	type IActivityServiceWithLiquidations,
 } from "../services/activityService/index.js";
-import {
-	PluginExecutionFatalError,
-	type EulerPlugin,
-	type PluginPrefetchData,
-} from "../plugins/types.js";
+import type { EulerPlugin, PluginPrefetchData } from "../plugins/types.js";
 import type { TransactionPlan } from "../services/executionService/executionServiceTypes.js";
 import type { AddressOrAccount } from "../entities/Account.js";
 
@@ -140,8 +136,8 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 	/**
 	 * Run all plugins' processPlan methods on a transaction plan.
 	 * Plugins execute in array order; each receives the plan as modified by previous plugins.
-	 * Recoverable plugin errors are caught and skipped. PluginExecutionFatalError
-	 * is propagated because continuing without that plugin would be unsafe.
+	 * Every plugin failure is propagated. A write plan must never continue after
+	 * silently omitting plugin effects such as oracle updates or access gates.
 	 *
 	 * `prefetch` carries per-plugin form-level data (Pyth Hermes updates,
 	 * keyring vault gating, …) so the plugin can skip its own network I/O.
@@ -156,18 +152,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 
 		for (const plugin of this.plugins) {
 			if (!plugin.processPlan) continue;
-			try {
-				plan = await plugin.processPlan(plan, account, chainId, this, prefetch);
-			} catch (err) {
-				if (err instanceof PluginExecutionFatalError) throw err;
-				if (typeof console !== "undefined") {
-					console.warn(
-						`[euler-v2-sdk] plugin "${plugin.name}" processPlan failed`,
-						err,
-					);
-				}
-				// Plugin failed — skip it gracefully, operation proceeds without this plugin's enrichment
-			}
+			plan = await plugin.processPlan(plan, account, chainId, this, prefetch);
 		}
 
 		return plan;
@@ -178,8 +163,8 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 	 * record keyed by plugin name; known SDK slots (`pyth`, `keyring`) are
 	 * typed. Run once per form-load so per-quote prepare/estimate/simulate can
 	 * pass the result back via `processPlugins(plan, account, chainId, prefetch)`
-	 * without re-doing the expensive lookups. Recoverable plugin errors omit that
-	 * plugin's payload; PluginExecutionFatalError is propagated to the caller.
+	 * without re-doing the expensive lookups. Every plugin failure is propagated;
+	 * callers must not mistake missing safety evidence for an empty payload.
 	 */
 	async prefetchPluginData(
 		plan: TransactionPlan,
@@ -191,19 +176,8 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 		const entries = await Promise.all(
 			this.plugins.map(async (plugin) => {
 				if (!plugin.prefetch) return null;
-				try {
-					const data = await plugin.prefetch(plan, account, chainId, this);
-					return data === undefined ? null : ([plugin.name, data] as const);
-				} catch (err) {
-					if (err instanceof PluginExecutionFatalError) throw err;
-					if (typeof console !== "undefined") {
-						console.warn(
-							`[euler-v2-sdk] plugin "${plugin.name}" prefetch failed`,
-							err,
-						);
-					}
-					return null;
-				}
+				const data = await plugin.prefetch(plan, account, chainId, this);
+				return data === undefined ? null : ([plugin.name, data] as const);
 			}),
 		);
 

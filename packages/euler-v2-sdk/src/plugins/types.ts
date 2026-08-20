@@ -16,8 +16,8 @@ export interface PluginBatchItems {
 }
 
 /**
- * A plugin failure that makes continuing with the unmodified plan unsafe.
- * SDK plan processing and prefetch APIs propagate this error to their caller.
+ * A plugin failure with an explicitly safety-critical classification. SDK plan
+ * processing and prefetch APIs propagate this and every other plugin error.
  */
 export class PluginExecutionFatalError extends Error {
 	constructor(message: string, options?: ErrorOptions) {
@@ -52,6 +52,8 @@ export type PythPluginPrefetch = {
 	entries: Array<{
 		pythAddress: Address;
 		feedIds: Hex[];
+		/** Publish time for each feedIds entry, in the same order. */
+		publishTimes: number[];
 		updates: Hex[];
 		fee: bigint;
 	}>;

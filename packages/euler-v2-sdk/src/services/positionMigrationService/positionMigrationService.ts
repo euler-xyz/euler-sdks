@@ -1,5 +1,7 @@
 import {
+	decodeFunctionData,
 	getAddress,
+	hashTypedData,
 	maxUint256,
 	toHex,
 	type Address,
@@ -9,6 +11,7 @@ import {
 import {
 	eVaultAbi,
 	type EVCBatchItem,
+	flattenBatchEntries,
 	type IExecutionService,
 	type TransactionPlan,
 } from "../executionService/index.js";
@@ -17,6 +20,12 @@ import { isEVault } from "../vaults/vaultMetaService/index.js";
 import { applyBuildQuery, type BuildQueryFn } from "../../utils/buildQuery.js";
 import { computeAllowanceSlot } from "../../utils/stateOverrides/index.js";
 import { assertSameAddress } from "./connectors/shared.js";
+import {
+	aaveATokenAbi,
+	aaveDebtTokenAbi,
+} from "./connectors/aave/abis/aaveV3Abi.js";
+import { metamorphoAbi } from "./connectors/metamorpho/abis/metamorphoAbi.js";
+import { morphoBlueAbi } from "./connectors/morpho/abis/morphoBlueAbi.js";
 import type {
 	BuildMigrationBatchArgs,
 	GetMigrationAuthorizationArgs,
@@ -25,10 +34,12 @@ import type {
 	ListMigrationPositionsArgs,
 	ListMigrationTargetsArgs,
 	MigrationAuthorizationRequest,
+	MigrationAuthorizationSlot,
 	MigrationPosition,
 	MigrationTarget,
 	PlanMigrationArgs,
 	PlanMigrationSimulationResult,
+	PrepareMigrationAuthorizationSlotsArgs,
 	PositionMigrationDirection,
 	PositionMigrationConnector,
 	PositionMigrationConnectorMetadata,
@@ -56,6 +67,183 @@ const AAVE_DELEGATION_SELECTOR = "0x0b52d558";
 const MORPHO_SET_AUTHORIZATION_SELECTOR = "0x8069218f";
 const ERC2612_PERMIT_SELECTOR = "0xd505accf";
 const STUB_SIGNATURE = `0x${"00".repeat(65)}` as Hex;
+const ZERO_BYTES32 = `0x${"00".repeat(32)}` as Hex;
+
+type BuiltInMigrationSignatureKind =
+	| "aave-permit"
+	| "aave-delegation"
+	| "metamorpho-permit"
+	| "morpho-authorization";
+
+type IndexedAuthorizationRequest = {
+	authorizationRequestIndex: number;
+	request: Extract<MigrationAuthorizationRequest, { kind: "typedData" }>;
+};
+
+function flattenTypedAuthorizationRequests(
+	root: MigrationAuthorizationRequest,
+): IndexedAuthorizationRequest[] {
+	const typed: IndexedAuthorizationRequest[] = [];
+	let current: MigrationAuthorizationRequest | undefined = root;
+	let authorizationRequestIndex = 0;
+	while (current) {
+		if (current.kind === "typedData") {
+			typed.push({ authorizationRequestIndex, request: current });
+		}
+		current = current.postMigrationAuthorization;
+		authorizationRequestIndex += 1;
+	}
+	return typed;
+}
+
+function migrationSignatureKind(
+	request: Extract<MigrationAuthorizationRequest, { kind: "typedData" }>,
+): BuiltInMigrationSignatureKind {
+	const authorizationType = (request as { authorizationType?: string })
+		.authorizationType;
+	if (request.connectorId === AAVE_CONNECTOR_ID) {
+		if (authorizationType === "aTokenPermit") return "aave-permit";
+		if (authorizationType === "variableDebtDelegation") {
+			return "aave-delegation";
+		}
+	}
+	if (request.connectorId === METAMORPHO_CONNECTOR_ID) {
+		if (authorizationType === "metamorphoPermit") {
+			return "metamorpho-permit";
+		}
+	}
+	if (request.connectorId === MORPHO_CONNECTOR_ID) {
+		return "morpho-authorization";
+	}
+	throw new Error(
+		`Unsupported typed migration authorization ${request.connectorId}:${authorizationType ?? request.typedData.primaryType}`,
+	);
+}
+
+function sameScalar(actual: unknown, expected: unknown): boolean {
+	if (typeof actual === "string" && typeof expected === "string") {
+		if (/^0x[0-9a-fA-F]{40}$/.test(actual) && /^0x[0-9a-fA-F]{40}$/.test(expected)) {
+			return getAddress(actual) === getAddress(expected);
+		}
+	}
+	if (
+		(typeof actual === "bigint" || typeof actual === "number") &&
+		(typeof expected === "bigint" || typeof expected === "number")
+	) {
+		return BigInt(actual) === BigInt(expected);
+	}
+	return actual === expected;
+}
+
+function verifyingContractOf(
+	request: Extract<MigrationAuthorizationRequest, { kind: "typedData" }>,
+): Address {
+	const verifyingContract = request.typedData.domain.verifyingContract;
+	if (typeof verifyingContract !== "string") {
+		throw new Error("Migration authorization has no verifying contract");
+	}
+	return getAddress(verifyingContract);
+}
+
+function matchesPermitItem(
+	item: EVCBatchItem,
+	request: Extract<MigrationAuthorizationRequest, { kind: "typedData" }>,
+	abi: typeof aaveATokenAbi | typeof metamorphoAbi,
+): boolean {
+	try {
+		const decoded = decodeFunctionData({ abi, data: item.data });
+		if (decoded.functionName !== "permit") return false;
+		const message = request.typedData.message;
+		return (
+			sameScalar(message.owner, request.owner) &&
+			sameScalar(decoded.args[0], message.owner) &&
+			sameScalar(decoded.args[1], message.spender) &&
+			sameScalar(decoded.args[2], message.value) &&
+			sameScalar(decoded.args[3], message.deadline) &&
+			decoded.args[4] === 27 &&
+			decoded.args[5] === ZERO_BYTES32 &&
+			decoded.args[6] === ZERO_BYTES32
+		);
+	} catch {
+		return false;
+	}
+}
+
+function matchesMigrationAuthorizationItem(
+	item: EVCBatchItem,
+	request: Extract<MigrationAuthorizationRequest, { kind: "typedData" }>,
+	kind: BuiltInMigrationSignatureKind,
+): boolean {
+	if (
+		getAddress(item.targetContract) !== verifyingContractOf(request) ||
+		getAddress(item.onBehalfOfAccount) !== getAddress(request.owner) ||
+		item.value !== 0n
+	) {
+		return false;
+	}
+	if (kind === "aave-permit") {
+		return matchesPermitItem(item, request, aaveATokenAbi);
+	}
+	if (kind === "metamorpho-permit") {
+		return matchesPermitItem(item, request, metamorphoAbi);
+	}
+	if (kind === "aave-delegation") {
+		try {
+			const decoded = decodeFunctionData({
+				abi: aaveDebtTokenAbi,
+				data: item.data,
+			});
+			if (decoded.functionName !== "delegationWithSig") return false;
+			const message = request.typedData.message;
+			return (
+				sameScalar(decoded.args[0], request.owner) &&
+				sameScalar(decoded.args[1], message.delegatee) &&
+				sameScalar(decoded.args[2], message.value) &&
+				sameScalar(decoded.args[3], message.deadline) &&
+				decoded.args[4] === 27 &&
+				decoded.args[5] === ZERO_BYTES32 &&
+				decoded.args[6] === ZERO_BYTES32
+			);
+		} catch {
+			return false;
+		}
+	}
+	try {
+		const decoded = decodeFunctionData({
+			abi: morphoBlueAbi,
+			data: item.data,
+		});
+		if (decoded.functionName !== "setAuthorizationWithSig") return false;
+		const message = request.typedData.message;
+		const authorization = decoded.args[0];
+		const signature = decoded.args[1];
+		return (
+			sameScalar(message.authorizer, request.owner) &&
+			sameScalar(authorization.authorizer, message.authorizer) &&
+			sameScalar(authorization.authorized, message.authorized) &&
+			sameScalar(authorization.isAuthorized, message.isAuthorized) &&
+			sameScalar(authorization.nonce, message.nonce) &&
+			sameScalar(authorization.deadline, message.deadline) &&
+			signature.v === 27 &&
+			signature.r === ZERO_BYTES32 &&
+			signature.s === ZERO_BYTES32
+		);
+	} catch {
+		return false;
+	}
+}
+
+function abiArgumentPath(
+	kind: BuiltInMigrationSignatureKind,
+	typedDataHash: Hex,
+): readonly (string | number)[] {
+	return [
+		"migration-signature-v1",
+		kind,
+		typedDataHash,
+		...(kind === "morpho-authorization" ? [1, 0, 1, 2] : [4, 5, 6]),
+	];
+}
 
 function assertPositionMigrationEnabled(args: {
 	connectorId: string;
@@ -302,6 +490,56 @@ export class PositionMigrationService implements IPositionMigrationService {
 			),
 			...(authorizationRequest ? { authorizationRequest } : {}),
 		};
+	}
+
+	/**
+	 * Locate each built-in typed migration authorization in a preview plan and
+	 * return a versioned ABI path. Matching validates the target, signer, all
+	 * non-signature arguments, and the SDK's exact stub signature.
+	 */
+	async prepareMigrationAuthorizationSlots(
+		args: PrepareMigrationAuthorizationSlotsArgs,
+	): Promise<MigrationAuthorizationSlot[]> {
+		const candidates = args.previewPlan.flatMap((planItem, planItemIndex) => {
+			if (planItem.type !== "evcBatch") return [];
+			return flattenBatchEntries(planItem.items).map(
+				(item, batchItemIndex) => ({ planItemIndex, batchItemIndex, item }),
+			);
+		});
+		const used = new Set<string>();
+		const slots: MigrationAuthorizationSlot[] = [];
+		for (const indexed of flattenTypedAuthorizationRequests(
+			args.authorizationRequest,
+		)) {
+			const kind = migrationSignatureKind(indexed.request);
+			const matches = candidates.filter((candidate) => {
+				const key = `${candidate.planItemIndex}:${candidate.batchItemIndex}`;
+				return (
+					!used.has(key) &&
+					matchesMigrationAuthorizationItem(
+						candidate.item,
+						indexed.request,
+						kind,
+					)
+				);
+			});
+			if (matches.length !== 1) {
+				throw new Error(
+					`Migration authorization ${indexed.authorizationRequestIndex} has ${matches.length} matching preview slots`,
+				);
+			}
+			const match = matches[0]!;
+			used.add(`${match.planItemIndex}:${match.batchItemIndex}`);
+			const typedDataHash = hashTypedData(indexed.request.typedData);
+			slots.push({
+				authorizationRequestIndex: indexed.authorizationRequestIndex,
+				planItemIndex: match.planItemIndex,
+				batchItemIndex: match.batchItemIndex,
+				typedDataHash,
+				abiArgumentPath: abiArgumentPath(kind, typedDataHash),
+			});
+		}
+		return slots;
 	}
 
 	private async buildMigrationBatchForConnector(

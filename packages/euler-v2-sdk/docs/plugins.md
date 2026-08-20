@@ -39,7 +39,7 @@ Each plugin implements the `EulerPlugin` interface and can hook into two points:
 
 `processPlan` receives `(plan, account, chainId, sdk, prefetch?)`, where `account` is `AddressOrAccount` (`Address | Account`), `sdk` is the full SDK instance, and `prefetch` is an optional per-plugin payload that lets the plugin skip its own network I/O. This lets plugins use any SDK service without a plugin-specific context object.
 
-Plugins execute in array order. Each receives the plan as modified by the previous plugin. Recoverable errors are caught and the operation proceeds without that plugin's enrichment. A plugin must throw `PluginExecutionFatalError` when continuing with the unmodified plan would be unsafe; `processPlugins`, `prefetchPluginData`, and the execution-service methods that use them propagate that rejection to the caller.
+Plugins execute in array order. Each receives the plan as modified by the previous plugin. `processPlugins`, `prefetchPluginData`, and the execution-service methods that use them propagate every plugin error. Write-plan construction never continues with silently omitted oracle, access-control, or other plugin effects. `PluginExecutionFatalError` remains available when callers need to distinguish an explicitly safety-critical failure from another propagated plugin failure.
 
 ### Prefetch for fan-out flows
 
@@ -57,6 +57,13 @@ If `processPlan` receives an address, the plugin fetches the account with minima
 
 - **Read path** &mdash; injects price updates into `batchSimulation` so lens reads return values based on fresh prices.
 - **Write path** &mdash; prepends price updates to the EVC batch so the transaction executes with up-to-date oracle data.
+
+Pyth prefetch entries expose the requested `feedIds`, a feed-aligned
+`publishTimes` array parsed from Hermes, the binary `updates`, and the on-chain
+`fee`. Missing publish-time evidence, Hermes failures, and over-cap update fees
+fail write-plan construction instead of silently producing a plan without the
+required oracle update. Read-path enrichment may still return no prepend when a
+route is irrelevant or untrusted.
 
 Hermes requests are automatically batched (50 ms window) and cached (15 s TTL) to minimize external calls.
 

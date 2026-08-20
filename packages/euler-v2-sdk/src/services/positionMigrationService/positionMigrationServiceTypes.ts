@@ -1,6 +1,7 @@
 import type {
 	Abi,
 	Address,
+	Hash,
 	Hex,
 	StateOverride,
 	TypedDataDomain,
@@ -293,6 +294,22 @@ export type PlanMigrationSimulationResult = {
 	authorizationRequest?: MigrationAuthorizationRequest;
 };
 
+export type PrepareMigrationAuthorizationSlotsArgs = {
+	previewPlan: TransactionPlan;
+	authorizationRequest: MigrationAuthorizationRequest;
+};
+
+export type MigrationAuthorizationSlot = {
+	/** Index in the complete grant/post-migration authorization chain. */
+	authorizationRequestIndex: number;
+	planItemIndex: number;
+	/** Index in the flattened EVC batch entry list. */
+	batchItemIndex: number;
+	typedDataHash: Hash;
+	/** Versioned ABI path consumed by ExecutionService only. */
+	abiArgumentPath: readonly (string | number)[];
+};
+
 export type BuildConnectorMigrationBatchArgs<
 	TPosition extends MigrationPosition = MigrationPosition,
 > = Omit<
@@ -352,4 +369,7 @@ export interface IPositionMigrationService {
 	planMigrationSimulation(
 		args: PlanMigrationArgs,
 	): Promise<PlanMigrationSimulationResult>;
+	prepareMigrationAuthorizationSlots(
+		args: PrepareMigrationAuthorizationSlotsArgs,
+	): Promise<MigrationAuthorizationSlot[]>;
 }

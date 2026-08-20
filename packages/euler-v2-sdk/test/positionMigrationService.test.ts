@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
-import { getAddress, maxUint256, toHex } from "viem";
+import {
+	decodeFunctionData,
+	encodeFunctionData,
+	getAddress,
+	hashTypedData,
+	maxUint256,
+	toHex,
+} from "viem";
 import { test } from "vitest";
 import { PositionMigrationService } from "../src/services/positionMigrationService/positionMigrationService.js";
+import { ExecutionService } from "../src/services/executionService/executionService.js";
 import type { EVCBatchItem } from "../src/services/executionService/index.js";
 import type {
 	BuildConnectorMigrationBatchArgs,
@@ -14,6 +22,7 @@ import type {
 } from "../src/services/positionMigrationService/index.js";
 import type { MetamorphoPermitTypedDataRequest } from "../src/services/positionMigrationService/connectors/metamorpho/metamorphoConnectorTypes.js";
 import { aaveATokenAbi } from "../src/services/positionMigrationService/connectors/aave/abis/aaveV3Abi.js";
+import { morphoBlueAbi } from "../src/services/positionMigrationService/connectors/morpho/abis/morphoBlueAbi.js";
 import type { AaveATokenApprovalTransactionRequest } from "../src/services/positionMigrationService/connectors/aave/aaveConnectorTypes.js";
 import { computeAllowanceSlot } from "../src/utils/stateOverrides/index.js";
 import type { BuildQueryFn } from "../src/utils/buildQuery.js";
@@ -196,6 +205,120 @@ const morphoAuthorizationRequest: MigrationAuthorizationRequest = {
 		},
 	},
 };
+
+test("migration authorization slots bind reviewed calldata to the typed-data hash", async () => {
+	const message = morphoAuthorizationRequest.kind === "typedData"
+		? morphoAuthorizationRequest.typedData.message
+		: undefined;
+	assert.ok(message);
+	const stubItem: EVCBatchItem = {
+		targetContract: getAddress(
+			String(morphoAuthorizationRequest.kind === "typedData"
+				? morphoAuthorizationRequest.typedData.domain.verifyingContract
+				: ""),
+		),
+		onBehalfOfAccount: getAddress(OWNER),
+		value: 0n,
+		data: encodeFunctionData({
+			abi: morphoBlueAbi,
+			functionName: "setAuthorizationWithSig",
+			args: [
+				{
+					authorizer: getAddress(String(message.authorizer)),
+					authorized: getAddress(String(message.authorized)),
+					isAuthorized: Boolean(message.isAuthorized),
+					nonce: BigInt(message.nonce as bigint),
+					deadline: BigInt(message.deadline as bigint),
+				},
+				{
+					v: 27,
+					r: `0x${"00".repeat(32)}`,
+					s: `0x${"00".repeat(32)}`,
+				},
+			],
+		}),
+	};
+	const service = createService([]);
+	const slots = await service.prepareMigrationAuthorizationSlots({
+		previewPlan: [{ type: "evcBatch", items: [stubItem] }],
+		authorizationRequest: morphoAuthorizationRequest,
+	});
+
+	assert.equal(slots.length, 1);
+	assert.deepEqual(slots[0], {
+		authorizationRequestIndex: 0,
+		planItemIndex: 0,
+		batchItemIndex: 0,
+		typedDataHash:
+			morphoAuthorizationRequest.kind === "typedData"
+				? hashTypedData(morphoAuthorizationRequest.typedData)
+				: undefined,
+		abiArgumentPath: [
+			"migration-signature-v1",
+			"morpho-authorization",
+			morphoAuthorizationRequest.kind === "typedData"
+				? hashTypedData(morphoAuthorizationRequest.typedData)
+				: undefined,
+			1,
+			0,
+			1,
+			2,
+		],
+	});
+
+	const executionService = new ExecutionService({} as never);
+	const signature = `0x${"11".repeat(64)}1b` as const;
+	const finalized = executionService.encodeMigrationAuthorizationCall({
+		chainId: CHAIN_ID,
+		signer: getAddress(OWNER),
+		typedDataHash: slots[0]!.typedDataHash,
+		abiArgumentPath: slots[0]!.abiArgumentPath,
+		reviewedItem: stubItem,
+		signature,
+	});
+	const decoded = decodeFunctionData({
+		abi: morphoBlueAbi,
+		data: finalized.data,
+	});
+	assert.equal(decoded.functionName, "setAuthorizationWithSig");
+	assert.equal(decoded.args[1].v, 27);
+	assert.equal(decoded.args[1].r, `0x${"11".repeat(32)}`);
+	assert.equal(decoded.args[1].s, `0x${"11".repeat(32)}`);
+	assert.throws(
+		() =>
+			executionService.encodeMigrationAuthorizationCall({
+				chainId: CHAIN_ID,
+				signer: getAddress(OWNER),
+				typedDataHash: `0x${"ff".repeat(32)}`,
+				abiArgumentPath: slots[0]!.abiArgumentPath,
+				reviewedItem: stubItem,
+				signature,
+			}),
+		/typed-data hash changed/,
+	);
+	assert.throws(
+		() =>
+			executionService.encodeMigrationAuthorizationCall({
+				chainId: CHAIN_ID,
+				signer: getAddress(OWNER),
+				typedDataHash: slots[0]!.typedDataHash,
+				abiArgumentPath: slots[0]!.abiArgumentPath,
+				reviewedItem: stubItem,
+				signature: `0x${"11".repeat(64)}02`,
+			}),
+		/recovery ID is invalid/,
+	);
+	await assert.rejects(
+		service.prepareMigrationAuthorizationSlots({
+			previewPlan: [{ type: "evcBatch", items: [stubItem] }],
+			authorizationRequest: {
+				...morphoAuthorizationRequest,
+				owner: "0x00000000000000000000000000000000000020ff",
+			},
+		}),
+		/has 0 matching preview slots/,
+	);
+});
 
 test("position migration read APIs are routed through buildQuery", async () => {
 	const target = createTarget("morpho:target");

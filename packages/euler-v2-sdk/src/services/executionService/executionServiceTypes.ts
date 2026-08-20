@@ -363,6 +363,16 @@ export type EncodePermit2CallArgs = {
 	owner: Address;
 };
 
+export type EncodeMigrationAuthorizationCallArgs = {
+	chainId: number;
+	signer: Address;
+	typedDataHash: Hex;
+	/** Versioned, ABI-aware path returned by PositionMigrationService. */
+	abiArgumentPath: readonly (string | number)[];
+	reviewedItem: EVCBatchItem;
+	signature: Hex;
+};
+
 export type GetPermit2TypedDataArgs = {
 	chainId: number;
 	token: Address;
@@ -455,6 +465,7 @@ export type ContractCall = {
 	 * Opt in only when this call can be simulated against the pre-plan state and
 	 * does not depend on effects from earlier plan items. This lets a direct call
 	 * coexist with an EVC batch without accepting a partial simulation.
+	 * @see docs/simulations-and-state-overrides.md
 	 */
 	simulationMode?: "independent";
 	/** Metadata consumed when this call is converted into an EVC batch operation. */
