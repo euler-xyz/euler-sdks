@@ -686,7 +686,8 @@ export type PlanLiquidationArgs = {
 	account: Account<IHasVaultAddress>;
 	liquidatorSubAccountAddress: Address;
 	vault: Address;
-	asset: Address;
+	/** @deprecated Liquidation does not pull this asset from the wallet. */
+	asset?: Address;
 	violator: Address;
 	collateral: Address;
 	repayAssets: bigint;

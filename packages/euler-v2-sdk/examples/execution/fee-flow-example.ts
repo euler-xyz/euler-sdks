@@ -3,11 +3,10 @@
  * FEE FLOW EXAMPLE
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * This example demonstrates how to buy protocol fees from FeeFlow by:
- * 1. Funding the buyer with the FeeFlow payment token
- * 2. Fetching verified FeeFlow-eligible vaults
- * 3. Selecting the highest-value FeeFlow candidates
- * 4. Executing a FeeFlow buy through the configured FeeFlow util
+ * This example demonstrates the currently supported read-only FeeFlow flow:
+ * 1. Fetching verified FeeFlow-eligible vaults
+ * 2. Selecting the highest-value FeeFlow candidates
+ * 3. Reporting why buy execution is disabled
  *
  * USAGE:
  *   1. Set FORK_RPC_URL in examples/.env
@@ -21,23 +20,17 @@
 import "dotenv/config";
 import {
   buildEulerSDK,
-  getBalanceOverrides,
   StandardEVaultPerspectives,
   type EVault,
   } from "@eulerxyz/euler-v2-sdk";
   import {
-  erc20Abi,
   formatUnits,
   getAddress,
-  parseUnits,
   type Address,
   } from "viem";
   import { mainnet } from "viem/chains";
-  import { account, initExample,
-  exampleExecutionCallbacks,
-} from "../utils/config.js";
+  import { initExample } from "../utils/config.js";
 import { printHeader } from "../utils/helpers.js";
-import { createTransactionPlanLogger, walletAccountAddress } from "../utils/transactionPlanLogging.js";
 
 type FeeFlowCandidate = {
   vault: EVault;
@@ -63,11 +56,7 @@ function formatUsd(value: number): string {
   })}`;
 }
 
-async function feeFlowExample({
-  walletClient,
-  publicClient,
-  testClient,
-}: Awaited<ReturnType<typeof initExample>>) {
+async function feeFlowExample() {
   const chainId = mainnet.id;
   const sdk = await buildEulerSDK({
     eVaultServiceConfig: { adapter: "onchain" },
@@ -90,21 +79,6 @@ async function feeFlowExample({
   console.log(`Payment token:          ${paymentTokenSymbol} (${feeFlowState.paymentToken})`);
   console.log(`Current price:          ${formatUnits(feeFlowState.currentPrice, paymentTokenDecimals)} ${paymentTokenSymbol}`);
   console.log(`Time remaining:         ${formatDuration(feeFlowState.timeRemaining)}`);
-
-  const minimumFundingAmount = parseUnits("100000", paymentTokenDecimals);
-  const buyerFundingAmount =
-    feeFlowState.currentPrice > minimumFundingAmount
-      ? feeFlowState.currentPrice
-      : minimumFundingAmount;
-  await fundBuyerWithPaymentToken({
-    publicClient,
-    testClient,
-    token: feeFlowState.paymentToken,
-    symbol: paymentTokenSymbol,
-    decimals: paymentTokenDecimals,
-    amount: buyerFundingAmount,
-    recipient: account.address,
-  });
 
   printHeader("Fetching vault universe");
 
@@ -159,83 +133,8 @@ async function feeFlowExample({
     );
   });
 
-  printHeader("Executing FeeFlow buy");
-
-  const selectedVaultAddresses = selected.map((candidate) => candidate.vault.address);
-  const buyerPaymentTokenBalanceBefore = await publicClient.readContract({
-    address: feeFlowState.paymentToken,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: [account.address],
-  });
-  const beforeBalances = await fetchVaultTokenBalances(
-    publicClient,
-    selectedVaultAddresses,
-    account.address,
-  );
-
-  let plan = await sdk.feeFlowService.buildBuyPlan({
-    chainId,
-    account: account.address,
-    recipient: account.address,
-    vaults: selectedVaultAddresses,
-  });
-
-  console.log(`Plan items:             ${plan.length}`);
-  await sdk.executionService.executeTransactionPlan({
-    plan,
-    chainId,
-    account: walletAccountAddress(walletClient),
-    ...exampleExecutionCallbacks(walletClient),
-    onProgress: createTransactionPlanLogger(sdk),
-  });
-
-  printHeader("Verifying received vault tokens");
-
-  const feeFlowStateAfter = await sdk.feeFlowService.fetchState(chainId);
-  const buyerPaymentTokenBalanceAfter = await publicClient.readContract({
-    address: feeFlowState.paymentToken,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: [account.address],
-  });
-  const afterBalances = await fetchVaultTokenBalances(
-    publicClient,
-    selectedVaultAddresses,
-    account.address,
-  );
-  let positiveReceipts = 0;
-
-  selected.forEach((candidate) => {
-    const before = beforeBalances.get(candidate.vault.address) ?? 0n;
-    const after = afterBalances.get(candidate.vault.address) ?? 0n;
-    const delta = after - before;
-    const received = delta > 0n;
-    if (received) positiveReceipts += 1;
-
-    console.log(
-      `${received ? "✓" : "✗"} ${candidate.vault.asset.symbol.padEnd(8)} ` +
-      `${formatUnits(delta >= 0n ? delta : 0n, candidate.vault.shares.decimals)} ${candidate.vault.shares.symbol}`
-    );
-  });
-
-  const paymentSpent = buyerPaymentTokenBalanceBefore - buyerPaymentTokenBalanceAfter;
-  const epochAdvanced = feeFlowStateAfter.slot0.epochId !== feeFlowState.slot0.epochId;
-
   console.log();
-  console.log(
-    `Payment spent:          ${formatUnits(paymentSpent >= 0n ? paymentSpent : 0n, paymentTokenDecimals)} ${paymentTokenSymbol}`
-  );
-  console.log(
-    `Epoch advanced:         ${feeFlowState.slot0.epochId} -> ${feeFlowStateAfter.slot0.epochId}`
-  );
-
-  if (!epochAdvanced && paymentSpent <= 0n && positiveReceipts === 0) {
-    throw new Error("FeeFlow buy succeeded but no state change was detected.");
-  }
-
-  console.log();
-  console.log("FeeFlow example completed successfully.");
+  console.log("FeeFlow buy execution is disabled until the deployed path enforces a minimum selected-vault payout atomically.");
 }
 
 async function buildFeeFlowCandidates(
@@ -293,86 +192,6 @@ async function buildFeeFlowCandidates(
     );
 
   return candidates;
-}
-
-async function fetchVaultTokenBalances(
-  publicClient: Awaited<ReturnType<typeof initExample>>["publicClient"],
-  vaults: Address[],
-  owner: Address,
-): Promise<Map<Address, bigint>> {
-  const balances = await Promise.all(
-    vaults.map((vault) =>
-      publicClient.readContract({
-        address: vault,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [owner],
-      })
-    )
-  );
-
-  return new Map(vaults.map((vault, index) => [vault, balances[index] ?? 0n]));
-}
-
-async function fundBuyerWithPaymentToken(args: {
-  publicClient: Awaited<ReturnType<typeof initExample>>["publicClient"];
-  testClient: Awaited<ReturnType<typeof initExample>>["testClient"];
-  token: Address;
-  symbol: string;
-  decimals: number;
-  amount: bigint;
-  recipient: Address;
-}) {
-  const { publicClient, testClient, token, symbol, decimals, amount, recipient } = args;
-  const currentBalance = await publicClient.readContract({
-    address: token,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: [recipient],
-  });
-
-  if (currentBalance >= amount) {
-    console.log(
-      `Buyer funded:           ${formatUnits(amount, decimals)} ${symbol} ` +
-      `(wallet balance ${formatUnits(currentBalance, decimals)} ${symbol}, already sufficient)`
-    );
-    return;
-  }
-
-  const balanceOverrides = await getBalanceOverrides(
-    publicClient as Parameters<typeof getBalanceOverrides>[0],
-    recipient,
-    [[token, amount]],
-  );
-  const tokenOverride = balanceOverrides.find(
-    (override) => override.address.toLowerCase() === token.toLowerCase()
-  );
-
-  if (!tokenOverride?.stateDiff?.length) {
-    throw new Error(`Unable to discover balance slot for ${symbol} (${token})`);
-  }
-
-  for (const diff of tokenOverride.stateDiff) {
-    await testClient.request({
-      method: "anvil_setStorageAt",
-      params: [tokenOverride.address, diff.slot, diff.value],
-    });
-  }
-
-  await testClient.mine({ blocks: 1 });
-
-  const recipientBalance = await publicClient.readContract({
-    address: token,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: [recipient],
-  });
-
-  console.log(
-    `Buyer funded:           ${formatUnits(amount, decimals)} ${symbol} ` +
-    `(wallet balance ${formatUnits(recipientBalance, decimals)} ${symbol}, ` +
-    `slot ${tokenOverride.stateDiff[0]!.slot})`
-  );
 }
 
 function formatDuration(seconds: number): string {

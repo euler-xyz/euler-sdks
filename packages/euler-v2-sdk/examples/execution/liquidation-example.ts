@@ -35,7 +35,6 @@ import {
   USDC_ADDRESS,
   EULER_PRIME_USDC_VAULT,
   EULER_PRIME_USDT_VAULT,
-  USDT_ADDRESS,
   exampleExecutionCallbacks,
 } from "../utils/config.js";
 import { Account, buildEulerSDK, eVaultAbi, getSubAccountAddress } from "@eulerxyz/euler-v2-sdk";
@@ -155,7 +154,6 @@ async function liquidationExample({
   const liquidationPlan = sdk.executionService.planLiquidation({
     account: liquidatorAccountData,
     vault: EULER_PRIME_USDT_VAULT,
-    asset: USDT_ADDRESS,
     violator: VIOLATOR_SUB_ACCOUNT_ADDRESS,
     collateral: EULER_PRIME_USDC_VAULT,
     repayAssets: maxRepayAmount * 99n / 100n, // reduce 1% to account for slippage

@@ -25,7 +25,10 @@ import type { IIntrinsicApyService } from "../intrinsicApyService/index.js";
 import type { IPriceService } from "../priceService/index.js";
 import type { ProviderService } from "../providerService/index.js";
 import type { IRewardsService } from "../rewardsService/index.js";
-import { SwapperMode } from "../swapService/swapServiceTypes.js";
+import {
+	type SwapQuote,
+	SwapperMode,
+} from "../swapService/swapServiceTypes.js";
 import {
 	adjustForInterest,
 	getSwapInputAmount,
@@ -178,6 +181,20 @@ function assertNonCowSwapQuote(
 	throw new Error(
 		`ExecutionService.${planFunctionName} does not support CoW swap quotes.${suffix}`,
 	);
+}
+
+function getWalletSwapApprovalToken(
+	swapQuote: Pick<SwapQuote, "tokenIn">,
+	tokenIn: Address,
+	planFunctionName: string,
+): Address {
+	const quoteToken = getAddress(swapQuote.tokenIn.address) as Address;
+	if (getAddress(tokenIn) !== quoteToken) {
+		throw new Error(
+			`ExecutionService.${planFunctionName} tokenIn must match swapQuote.tokenIn.address`,
+		);
+	}
+	return quoteToken;
 }
 
 function assertCowSwapQuote(
@@ -2596,19 +2613,18 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.account - Liquidator's account entity; used for chainId, owner, and controller/collateral state on liquidator sub-account
 	 * @param args.liquidatorSubAccountAddress - Sub-account address that will repay debt and receive seized collateral
 	 * @param args.vault - Address of the liability vault (debt is repaid to this vault)
-	 * @param args.asset - Address of the liability vault's underlying asset (used for approval of repay amount)
+	 * @param args.asset - Deprecated compatibility field; liquidation does not pull the liability asset from the wallet
 	 * @param args.violator - Sub-account address of the undercollateralized account being liquidated
 	 * @param args.collateral - Address of the collateral vault from which collateral is seized
 	 * @param args.repayAssets - Amount of liability asset the liquidator will repay (and receive collateral up to the liquidation incentive)
 	 * @param args.minYieldBalance - Minimum yield balance the liquidator requires; liquidation may revert if not met
-	 * @returns Array of transaction plan items (approval for repay asset + EVC batch)
+	 * @returns Array of transaction plan items (EVC batch only; liquidation does not require a wallet-token approval)
 	 */
 	planLiquidation(args: PlanLiquidationArgs): TransactionPlan {
 		const {
 			account,
 			liquidatorSubAccountAddress,
 			vault,
-			asset,
 			violator,
 			collateral,
 			repayAssets,
@@ -2616,15 +2632,6 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		} = args;
 
 		const plan: TransactionPlanItem[] = [];
-
-		// Add approval requirement for the liability asset the liquidator will repay
-		plan.push({
-			type: "requiredApproval",
-			token: asset,
-			owner: account.owner,
-			spender: vault,
-			amount: repayAssets,
-		});
 
 		// Check if controller needs to be enabled for the liquidator account on the liability vault
 		const enableController = !(
@@ -3026,12 +3033,17 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			wrappedNativeInfo,
 		} = args;
 		assertNonCowSwapQuote(swapQuote, "planDepositWithSwapFromWallet");
+		const approvalToken = getWalletSwapApprovalToken(
+			swapQuote,
+			tokenIn,
+			"planDepositWithSwapFromWallet",
+		);
 		const plan: TransactionPlanItem[] = [];
 
 		// Approval goes to the transferFromSender contract (which uses permit2 transferFrom internally)
 		plan.push({
 			type: "requiredApproval",
-			token: tokenIn,
+			token: approvalToken,
 			owner: account.owner,
 			spender: swapQuote.verify.verifierAddress,
 			amount,
@@ -3078,11 +3090,16 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	planSwapFromWallet(args: PlanSwapFromWalletArgs): TransactionPlan {
 		const { swapQuote, amount, tokenIn, account, wrappedNativeInfo } = args;
 		assertNonCowSwapQuote(swapQuote, "planSwapFromWallet");
+		const approvalToken = getWalletSwapApprovalToken(
+			swapQuote,
+			tokenIn,
+			"planSwapFromWallet",
+		);
 		const plan: TransactionPlanItem[] = [];
 
 		plan.push({
 			type: "requiredApproval",
-			token: tokenIn,
+			token: approvalToken,
 			owner: account.owner,
 			spender: swapQuote.verify.verifierAddress,
 			amount,
@@ -3118,6 +3135,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			skipCleanup = false,
 		} = args;
 		assertNonCowSwapQuote(swapQuote, "planSwapAndBorrowFromWallet");
+		const approvalToken = getWalletSwapApprovalToken(
+			swapQuote,
+			tokenIn,
+			"planSwapAndBorrowFromWallet",
+		);
 		const plan: TransactionPlanItem[] = [];
 		const cleanup = skipCleanup
 			? {
@@ -3129,7 +3151,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 		plan.push({
 			type: "requiredApproval",
-			token: tokenIn,
+			token: approvalToken,
 			owner: account.owner,
 			spender: swapQuote.verify.verifierAddress,
 			amount,
@@ -3190,11 +3212,16 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			wrappedNativeInfo,
 		} = args;
 		assertNonCowSwapQuote(swapQuote, "planSwapAndRepayFromWallet");
+		const approvalToken = getWalletSwapApprovalToken(
+			swapQuote,
+			tokenIn,
+			"planSwapAndRepayFromWallet",
+		);
 		const plan: TransactionPlanItem[] = [];
 
 		plan.push({
 			type: "requiredApproval",
-			token: tokenIn,
+			token: approvalToken,
 			owner: account.owner,
 			spender: swapQuote.verify.verifierAddress,
 			amount,
@@ -3379,6 +3406,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	planSwapDebt(args: PlanSwapDebtArgs): TransactionPlan {
 		const { swapQuote, account, swapperMode } = args;
 		assertNonCowSwapQuote(swapQuote, "planSwapDebt");
+		if (getAddress(swapQuote.accountIn) !== getAddress(swapQuote.accountOut)) {
+			throw new Error("Debt swaps must use the same account on both sides");
+		}
 		const plan: TransactionPlanItem[] = [];
 
 		const liabilityPosition = account?.getPosition(
@@ -3500,8 +3530,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.liabilityAmount - Current debt amount; defaults to the old-vault borrowed amount in account data
 	 * @param args.oldLiabilityAsset - Optional old liability asset; defaults to the old-vault account position asset
 	 * @param args.newLiabilityAsset - New liability underlying asset, used to verify this is a same-asset migration
-	 * @param args.sweepExcess - Whether to redeem and skim the migration cushion back into the new vault when the old vault has no pre-existing supplied shares (default true)
-	 * @param args.transferRemainingSharesToOwner - Whether to transfer new-vault shares to the owner when liabilityAccount differs from owner (default true)
+	 * @param args.sweepExcess - Whether to redeem and skim the migration cushion back into the new vault when the old vault has no pre-existing supplied shares; defaults to true only when the loaded old position exists and has no supplied shares
+	 * @param args.transferRemainingSharesToOwner - Whether to transfer all new-vault shares to the owner when liabilityAccount differs from owner; defaults to true only when the loaded target position exists and has no supplied shares
 	 * @returns Array of transaction plan items (EVC batch; no token approvals)
 	 */
 	planMigrateSameAssetDebt(
@@ -3515,14 +3545,18 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			liabilityAmount,
 			oldLiabilityAsset,
 			newLiabilityAsset,
-			sweepExcess = true,
-			transferRemainingSharesToOwner = true,
+			sweepExcess,
+			transferRemainingSharesToOwner,
 		} = args;
 		const plan: TransactionPlanItem[] = [];
 
 		const oldPosition = account?.getPosition(
 			liabilityAccount,
 			oldLiabilityVault,
+		);
+		const newPosition = account?.getPosition(
+			liabilityAccount,
+			newLiabilityVault,
 		);
 		const resolvedOldAsset = oldLiabilityAsset ?? oldPosition?.asset;
 
@@ -3550,12 +3584,14 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			newLiabilityVault,
 		);
 		const transferRemainingSharesTo =
-			transferRemainingSharesToOwner &&
+			(transferRemainingSharesToOwner ??
+				(newPosition !== undefined && !hasSuppliedPosition(newPosition))) &&
 			getAddress(liabilityAccount) !== getAddress(account.owner)
 				? account.owner
 				: undefined;
-		const shouldSweepExcess =
-			sweepExcess && !(oldPosition && hasSuppliedPosition(oldPosition));
+		const shouldSweepExcess = oldPosition === undefined
+			? sweepExcess === true
+			: (sweepExcess ?? true) && !hasSuppliedPosition(oldPosition);
 
 		const batchItems = this.encodeMigrateSameAssetDebt({
 			chainId: account.chainId,
