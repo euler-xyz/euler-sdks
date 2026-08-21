@@ -65,7 +65,10 @@ fail write-plan construction instead of silently producing a plan without the
 required oracle update. Read-path enrichment may still return no prepend when a
 route is irrelevant or untrusted.
 
-Hermes requests are automatically batched (50 ms window) and cached (15 s TTL) to minimize external calls.
+Concurrent Hermes requests are coalesced only when their normalized feed sets
+are identical. Distinct feed sets are fetched separately so their update bytes,
+publish-time evidence, and on-chain fees remain request-specific. Results may
+also be cached by the configured `buildQuery` wrapper.
 
 ```typescript
 createPythPlugin({

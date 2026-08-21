@@ -27,7 +27,6 @@ import {
 	serializeQueryArgs,
 	type BuildQueryFn,
 } from "../../utils/buildQuery.js";
-import { createBundledCall } from "../../utils/callBundler.js";
 import {
 	calculateHealthCheckSets,
 	collectLiquidationHealthChecks,
@@ -129,6 +128,7 @@ export type PythUpdateBundle = {
 export class PythPluginAdapter {
 	private hermesUrl: string;
 	private fetchFn: typeof fetch;
+	private inFlightUpdateBundles = new Map<string, Promise<PythUpdateBundle>>();
 
 	constructor(
 		hermesUrl: string,
@@ -145,20 +145,31 @@ export class PythPluginAdapter {
 
 	/**
 	 * Fetch latest price update data from Pyth Hermes API.
-	 * FeedIds are automatically bundled across concurrent calls within the same tick.
+	 * Concurrent calls coalesce only when their normalized feed sets are
+	 * identical.
 	 */
-	queryPythUpdateBundle = createBundledCall(
-		async (feedIds: Hex[]): Promise<PythUpdateBundle> => {
-			const normalizedIds = [...new Set(feedIds.map(normalizeFeedId))].sort(
-				(left, right) => left.localeCompare(right),
-			);
-			if (!normalizedIds.length) {
-				return { feedIds: [], publishTimes: [], updates: [] };
-			}
+	queryPythUpdateBundle = async (feedIds: Hex[]): Promise<PythUpdateBundle> => {
+		const normalizedIds = [...new Set(feedIds.map(normalizeFeedId))].sort(
+			(left, right) => left.localeCompare(right),
+		);
+		if (!normalizedIds.length) {
+			return { feedIds: [], publishTimes: [], updates: [] };
+		}
 
-			return this.fetchPythUpdateBundle(normalizedIds);
-		},
-	);
+		const key = normalizedIds.join(",");
+		const existing = this.inFlightUpdateBundles.get(key);
+		if (existing) return existing;
+
+		const pending = this.fetchPythUpdateBundle(normalizedIds);
+		this.inFlightUpdateBundles.set(key, pending);
+		try {
+			return await pending;
+		} finally {
+			if (this.inFlightUpdateBundles.get(key) === pending) {
+				this.inFlightUpdateBundles.delete(key);
+			}
+		}
+	};
 
 	queryPythUpdateData = async (feedIds: Hex[]): Promise<Hex[]> =>
 		(await this.queryPythUpdateBundle(feedIds)).updates;

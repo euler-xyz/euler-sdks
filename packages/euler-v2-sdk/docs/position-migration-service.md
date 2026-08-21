@@ -424,6 +424,11 @@ signature to `executionService.encodeMigrationAuthorizationCall(...)`. That
 encoder changes only the declared signature fields and rejects target, signer,
 native value, non-signature calldata, typed-data hash, or path drift.
 
+The returned `abiArgumentPath` is opaque application-authenticated metadata, not
+an independently trusted SDK capability. The application must cover the complete
+migration slot metadata with its accepted review digest before returning it to
+the SDK.
+
 ## References
 
 - [`services.md`](./services.md) — service map and capability matrix

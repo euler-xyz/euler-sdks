@@ -367,7 +367,10 @@ export type EncodeMigrationAuthorizationCallArgs = {
 	chainId: number;
 	signer: Address;
 	typedDataHash: Hex;
-	/** Versioned, ABI-aware path returned by PositionMigrationService. */
+	/**
+	 * Opaque application-authenticated metadata returned by
+	 * PositionMigrationService. The SDK does not establish its provenance.
+	 */
 	abiArgumentPath: readonly (string | number)[];
 	reviewedItem: EVCBatchItem;
 	signature: Hex;

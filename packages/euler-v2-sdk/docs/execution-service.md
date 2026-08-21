@@ -172,6 +172,14 @@ also accepts a `FinalizedMaterializedExecution` when an application coordinator
 owns signature collection and bounded dynamic-slot insertion. The application
 owns the accepted review digest: `executeMaterialized` dispatches the supplied
 finalized vector and does not infer or reconstruct that application commitment.
+
+`FinalizedMaterializedExecution` is trusted application input, not an
+SDK-authenticated artifact. Its `__finalized` field is a structural discriminator,
+not a security seal. Before calling `executeMaterialized`, the application must
+authenticate the complete finalized artifact against its accepted review digest.
+This requirement also applies to any persisted artifact and migration-slot
+metadata supplied back to the SDK.
+
 Use `onFinalized` and `onBeforeStep` to compare the supplied vector with the
 accepted request set and to reassert current wallet context:
 

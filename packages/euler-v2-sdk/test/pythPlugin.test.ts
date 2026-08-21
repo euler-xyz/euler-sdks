@@ -8,6 +8,7 @@ import {
 	encodeFunctionData,
 	getAddress,
 	type Address,
+	type Hex,
 	type PublicClient,
 } from "viem";
 import { Account, SubAccount } from "../src/entities/Account.js";
@@ -217,6 +218,92 @@ test("PythPluginAdapter returns feed-aligned publish-time evidence", async () =>
 		publishTimes: [1_900_000_001, 1_900_000_002],
 		updates: ["0xfeedface"],
 	});
+});
+
+test("PythPluginAdapter isolates concurrent feed sets and their update fees", async () => {
+	const requestedIds: string[][] = [];
+	const feePayloads: Hex[][] = [];
+	const adapter = new PythPluginAdapter(
+		"https://hermes.pyth.network",
+		undefined,
+		(async (input: RequestInfo | URL) => {
+			const ids = getRequestedIds(input.toString());
+			requestedIds.push(ids);
+			const data = ids.length === 1
+				? new Map<string, string>([
+						[GOOD_FEED, "aaaa"],
+						[OTHER_FEED, "bbbb"],
+					]).get(ids[0]!) ?? "cccc"
+				: "cccc";
+			return Response.json({
+				binary: { encoding: "hex", data: [data] },
+				parsed: ids.map((id) => ({
+					id,
+					price: {
+						publish_time: id === GOOD_FEED ? 1_900_000_001 : 1_900_000_002,
+					},
+				})),
+			});
+		}) as typeof fetch,
+	);
+	const provider = {
+		readContract: async ({ args }: { args: readonly [Hex[]] }) => {
+			feePayloads.push(args[0]);
+			return args[0][0] === "0xaaaa" ? 11n : 22n;
+		},
+	} as unknown as PublicClient;
+
+	const [goodBundle, otherBundle] = await Promise.all([
+		adapter.queryPythUpdateBundle([GOOD_FEED]),
+		adapter.queryPythUpdateBundle([OTHER_FEED]),
+	]);
+	const [goodFee, otherFee] = await Promise.all([
+		adapter.queryPythUpdateFee(provider, PYTH, goodBundle.updates),
+		adapter.queryPythUpdateFee(provider, PYTH, otherBundle.updates),
+	]);
+
+	assert.deepEqual(requestedIds, [[GOOD_FEED], [OTHER_FEED]]);
+	assert.deepEqual(goodBundle, {
+		feedIds: [GOOD_FEED],
+		publishTimes: [1_900_000_001],
+		updates: ["0xaaaa"],
+	});
+	assert.deepEqual(otherBundle, {
+		feedIds: [OTHER_FEED],
+		publishTimes: [1_900_000_002],
+		updates: ["0xbbbb"],
+	});
+	assert.deepEqual(feePayloads, [["0xaaaa"], ["0xbbbb"]]);
+	assert.equal(goodFee, 11n);
+	assert.equal(otherFee, 22n);
+});
+
+test("PythPluginAdapter coalesces equivalent normalized feed sets", async () => {
+	let requests = 0;
+	const adapter = new PythPluginAdapter(
+		"https://hermes.pyth.network",
+		undefined,
+		(async (input: RequestInfo | URL) => {
+			requests += 1;
+			const ids = getRequestedIds(input.toString());
+			return Response.json({
+				binary: { encoding: "hex", data: ["feedface"] },
+				parsed: ids.map((id, index) => ({
+					id,
+					price: { publish_time: 1_900_000_001 + index },
+				})),
+			});
+		}) as typeof fetch,
+	);
+
+	const [first, second] = await Promise.all([
+		adapter.queryPythUpdateBundle([OTHER_FEED, GOOD_FEED]),
+		adapter.queryPythUpdateBundle([GOOD_FEED, OTHER_FEED, GOOD_FEED]),
+	]);
+
+	assert.equal(requests, 1);
+	assert.deepEqual(first, second);
+	assert.deepEqual(first.feedIds, [GOOD_FEED, OTHER_FEED]);
 });
 
 test.each(["processPlan", "prefetch"] as const)(

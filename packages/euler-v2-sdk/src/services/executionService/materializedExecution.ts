@@ -118,8 +118,15 @@ export type MaterializedSignatureValue = {
 	signature: Hex;
 };
 
+/**
+ * A finalized request vector supplied as trusted application input. The SDK
+ * does not authenticate this artifact. The application must cover the complete
+ * artifact with its accepted review digest before passing it to
+ * `executeMaterialized`.
+ */
 export type FinalizedMaterializedExecution = {
 	readonly __materialized: true;
+	/** Structural discriminator only; this is not a security seal. */
 	readonly __finalized: true;
 	readonly chainId: number;
 	readonly from: Address;
@@ -624,7 +631,9 @@ async function assertPinnedPermit2Nonce(
  * Dispatch static prerequisites that precede the first signed batch, collect
  * the declared signatures, finalize a new immutable request vector, then
  * dispatch its remaining exact requests. No transaction is recomposed during
- * dispatch.
+ * dispatch. A supplied FinalizedMaterializedExecution is not authenticated by
+ * the SDK; this function assumes the application already authenticated the
+ * complete finalized input against its accepted review digest.
  */
 export async function executeMaterialized(
 	encoder: MaterializedExecutionEncoder,

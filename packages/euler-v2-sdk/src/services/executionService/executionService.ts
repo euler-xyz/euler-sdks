@@ -671,7 +671,10 @@ export interface IExecutionService<
 		signatures: readonly MaterializedSignatureValue[],
 	): FinalizedMaterializedExecution;
 	/**
-	 * Sign, finalize, and dispatch the exact materialized request vector.
+	 * Sign, finalize, and dispatch the exact materialized request vector. A
+	 * supplied FinalizedMaterializedExecution is trusted application input and
+	 * must already be authenticated against the application's accepted review
+	 * digest; the SDK does not authenticate it.
 	 * @see docs/execution-service.md
 	 */
 	executeMaterialized(
@@ -1150,7 +1153,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 	/**
 	 * Collect declared signatures and dispatch the finalized bytes. Every hook is
-	 * awaited at its documented boundary; dispatch never re-encodes a request.
+	 * awaited at its documented boundary; dispatch never re-encodes a request. A
+	 * supplied FinalizedMaterializedExecution is assumed to have been
+	 * authenticated by the application before this call.
 	 */
 	async executeMaterialized(
 		materialized: MaterializedExecution | FinalizedMaterializedExecution,
@@ -1672,7 +1677,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 	/**
 	 * Insert an EIP-712 signature only at the versioned ABI path returned by
-	 * PositionMigrationService.prepareMigrationAuthorizationSlots.
+	 * PositionMigrationService.prepareMigrationAuthorizationSlots. The path is
+	 * opaque application-authenticated metadata, not an independently trusted
+	 * SDK capability.
 	 */
 	encodeMigrationAuthorizationCall(
 		args: EncodeMigrationAuthorizationCallArgs,

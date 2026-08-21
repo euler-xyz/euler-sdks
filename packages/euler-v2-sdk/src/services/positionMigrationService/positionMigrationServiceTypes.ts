@@ -299,6 +299,11 @@ export type PrepareMigrationAuthorizationSlotsArgs = {
 	authorizationRequest: MigrationAuthorizationRequest;
 };
 
+/**
+ * Migration insertion metadata that the application must cover with its
+ * accepted review digest before passing it back to the SDK. The SDK validates
+ * its structure but does not authenticate its provenance.
+ */
 export type MigrationAuthorizationSlot = {
 	/** Index in the complete grant/post-migration authorization chain. */
 	authorizationRequestIndex: number;
@@ -308,7 +313,10 @@ export type MigrationAuthorizationSlot = {
 	typedDataHash: Hash;
 	/** Hash of the complete reviewed batch item with its stub signature. */
 	reviewedItemHash: Hash;
-	/** Versioned ABI path consumed by ExecutionService only. */
+	/**
+	 * Opaque application-authenticated metadata, not an independently trusted
+	 * SDK capability.
+	 */
 	abiArgumentPath: readonly (string | number)[];
 };
 
