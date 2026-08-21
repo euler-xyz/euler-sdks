@@ -146,7 +146,7 @@ test("finalizeMaterializedExecution changes only the declared signature slot", (
 	assert.equal(Object.isFrozen(finalized), true);
 });
 
-test("executeMaterialized awaits the durable hook before every wallet prompt", async () => {
+test("executeMaterialized awaits the boundary hook before every wallet prompt", async () => {
 	const events: string[] = [];
 	const provider = {
 		readContract: async () => [0n, 0n, 7n] as const,
@@ -162,7 +162,7 @@ test("executeMaterialized awaits the durable hook before every wallet prompt", a
 		revalidate: { permit2NonceMustEqualPinned: true },
 		onBeforeSignature: async () => {
 			await Promise.resolve();
-			events.push("signature-persisted");
+			events.push("signature-checked");
 		},
 		signTypedData: async () => {
 			events.push("signature-wallet");
@@ -170,11 +170,11 @@ test("executeMaterialized awaits the durable hook before every wallet prompt", a
 		},
 		onFinalized: async () => {
 			await Promise.resolve();
-			events.push("finalized-persisted");
+			events.push("finalized-checked");
 		},
 		onBeforeStep: async (_request, index) => {
 			await Promise.resolve();
-			events.push(`dispatch-${index}-persisted`);
+			events.push(`dispatch-${index}-checked`);
 		},
 		sendTransaction: async (request) => {
 			events.push(`wallet-${request.requestIndex}`);
@@ -183,16 +183,60 @@ test("executeMaterialized awaits the durable hook before every wallet prompt", a
 	});
 
 	assert.deepEqual(events, [
-		"signature-persisted",
+		"signature-checked",
 		"signature-wallet",
-		"finalized-persisted",
-		"dispatch-0-persisted",
+		"finalized-checked",
+		"dispatch-0-checked",
 		"wallet-0",
-		"dispatch-1-persisted",
+		"dispatch-1-checked",
 		"wallet-1",
 	]);
 	assert.deepEqual(result.hashes, [TX_HASH, TX_HASH]);
 	assert.equal(result.receipts.length, 2);
+});
+
+test("executeMaterialized runs onBeforeSignature after nonce revalidation", async () => {
+	let releaseNonceRead: (
+		value: readonly [bigint, bigint, bigint],
+	) => void = () => {};
+	let markNonceReadStarted: () => void = () => {};
+	const nonceReadStarted = new Promise<void>((resolve) => {
+		markNonceReadStarted = resolve;
+	});
+	let walletBindingIsCurrent = true;
+	let signaturePrompts = 0;
+	const provider = {
+		readContract: async () => {
+			markNonceReadStarted();
+			return new Promise<readonly [bigint, bigint, bigint]>((resolve) => {
+				releaseNonceRead = resolve;
+			});
+		},
+		waitForTransactionReceipt: async () => ({ status: "success" as const }),
+	};
+	const service = createService({ getProvider: () => provider });
+	const materialized = service.materializeExecution({
+		prepared: createPrepared(),
+		inputs,
+	});
+
+	const pending = service.executeMaterialized(materialized, {
+		revalidate: { permit2NonceMustEqualPinned: true },
+		onBeforeSignature: () => {
+			if (!walletBindingIsCurrent) throw new Error("Wallet binding changed");
+		},
+		signTypedData: async () => {
+			signaturePrompts += 1;
+			return SIGNATURE;
+		},
+		sendTransaction: async () => TX_HASH,
+	});
+
+	await nonceReadStarted;
+	walletBindingIsCurrent = false;
+	releaseNonceRead([0n, 0n, 7n]);
+	await assert.rejects(pending, /Wallet binding changed/);
+	assert.equal(signaturePrompts, 0);
 });
 
 test("executeMaterialized preserves prerequisite then signature then batch sequencing", async () => {
@@ -231,7 +275,7 @@ test("executeMaterialized preserves prerequisite then signature then batch seque
 
 	await service.executeMaterialized(materialized, {
 		onBeforeSignature: () => {
-			events.push("signature-persisted");
+			events.push("signature-checked");
 		},
 		signTypedData: async () => {
 			events.push("signature-wallet");
@@ -256,7 +300,7 @@ test("executeMaterialized preserves prerequisite then signature then batch seque
 		"before-0",
 		"wallet-0",
 		"after-0",
-		"signature-persisted",
+		"signature-checked",
 		"signature-wallet",
 		"finalized",
 		"before-1",
@@ -344,6 +388,64 @@ test("executeMaterialized dispatches an already-finalized vector byte-identicall
 		"wallet-1",
 		"after-1",
 	]);
+});
+
+test("executeMaterialized revalidates an already-finalized vector before prerequisites", async () => {
+	let transactionPrompts = 0;
+	let nonceReads = 0;
+	const prepared = createPrepared();
+	const approval = prepared.plan[0];
+	assert.equal(approval?.type, "requiredApproval");
+	if (approval?.type !== "requiredApproval") return;
+	approval.resolved = [
+		{
+			type: "approve",
+			token: TOKEN,
+			owner: ACCOUNT,
+			spender: PERMIT2,
+			amount: 123n,
+			data: encodeFunctionData({
+				abi: erc20Abi,
+				functionName: "approve",
+				args: [PERMIT2, 123n],
+			}),
+		},
+		approval.resolved?.[0]!,
+	];
+	const service = createService({
+		getProvider: () => ({
+			readContract: async () => {
+				nonceReads += 1;
+				return [0n, 0n, 8n] as const;
+			},
+			waitForTransactionReceipt: async () => ({ status: "success" as const }),
+		}),
+	});
+	const materialized = service.materializeExecution({
+		prepared,
+		inputs: {
+			...inputs,
+			permit2: [{ ...inputs.permit2[0], resolvedIndex: 1 }],
+		},
+	});
+	const slot = materialized.signatureSlots[0];
+	assert.ok(slot);
+	const finalized = service.finalizeMaterializedExecution(materialized, [
+		{ slotId: slot.slotId, signature: SIGNATURE },
+	]);
+
+	await assert.rejects(
+		service.executeMaterialized(finalized, {
+			revalidate: { permit2NonceMustEqualPinned: true },
+			sendTransaction: async () => {
+				transactionPrompts += 1;
+				return TX_HASH;
+			},
+		}),
+		/Permit2 nonce changed after materialization/,
+	);
+	assert.equal(nonceReads, 1);
+	assert.equal(transactionPrompts, 0);
 });
 
 test("materializeExecution rejects missing, extra, and unconsumed Permit2 slots", () => {

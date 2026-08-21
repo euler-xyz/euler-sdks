@@ -15,6 +15,7 @@ import {
 	type IExecutionService,
 	type TransactionPlan,
 } from "../executionService/index.js";
+import { hashMigrationAuthorizationItem } from "../executionService/migrationAuthorization.js";
 import type { IProviderService } from "../providerService/index.js";
 import { isEVault } from "../vaults/vaultMetaService/index.js";
 import { applyBuildQuery, type BuildQueryFn } from "../../utils/buildQuery.js";
@@ -236,11 +237,13 @@ function matchesMigrationAuthorizationItem(
 function abiArgumentPath(
 	kind: BuiltInMigrationSignatureKind,
 	typedDataHash: Hex,
+	reviewedItemHash: Hex,
 ): readonly (string | number)[] {
 	return [
-		"migration-signature-v1",
+		"migration-signature-v2",
 		kind,
 		typedDataHash,
+		reviewedItemHash,
 		...(kind === "morpho-authorization" ? [1, 0, 1, 2] : [4, 5, 6]),
 	];
 }
@@ -531,12 +534,14 @@ export class PositionMigrationService implements IPositionMigrationService {
 			const match = matches[0]!;
 			used.add(`${match.planItemIndex}:${match.batchItemIndex}`);
 			const typedDataHash = hashTypedData(indexed.request.typedData);
+			const reviewedItemHash = hashMigrationAuthorizationItem(match.item);
 			slots.push({
 				authorizationRequestIndex: indexed.authorizationRequestIndex,
 				planItemIndex: match.planItemIndex,
 				batchItemIndex: match.batchItemIndex,
 				typedDataHash,
-				abiArgumentPath: abiArgumentPath(kind, typedDataHash),
+				reviewedItemHash,
+				abiArgumentPath: abiArgumentPath(kind, typedDataHash, reviewedItemHash),
 			});
 		}
 		return slots;

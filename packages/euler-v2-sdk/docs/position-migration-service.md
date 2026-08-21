@@ -418,11 +418,11 @@ For a review-integrity flow, use the `previewPlan` and `authorizationRequest`
 returned by `planMigrationSimulation`, then call
 `prepareMigrationAuthorizationSlots({ previewPlan, authorizationRequest })`.
 For every built-in typed authorization it returns exactly one flattened EVC batch
-coordinate and a versioned ABI path sealed to the EIP-712 hash. After signing,
-pass the reviewed item, path, hash, and signature to
-`executionService.encodeMigrationAuthorizationCall(...)`. That encoder changes
-only the declared signature fields and rejects target, signer, hash, path, or
-calldata-shape drift.
+coordinate and a versioned ABI path sealed to the EIP-712 hash and the complete
+stub-signed batch item. After signing, pass the reviewed item, path, hash, and
+signature to `executionService.encodeMigrationAuthorizationCall(...)`. That
+encoder changes only the declared signature fields and rejects target, signer,
+native value, non-signature calldata, typed-data hash, or path drift.
 
 ## References
 

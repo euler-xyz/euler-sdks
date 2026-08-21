@@ -1,14 +1,20 @@
 import {
 	decodeFunctionData,
+	encodeAbiParameters,
 	encodeFunctionData,
 	getAddress,
+	keccak256,
+	type Hash,
 	type Hex,
 } from "viem";
 import type {
 	EncodeMigrationAuthorizationCallArgs,
 	EVCBatchItem,
 } from "./executionServiceTypes.js";
-import { aaveATokenAbi, aaveDebtTokenAbi } from "../positionMigrationService/connectors/aave/abis/aaveV3Abi.js";
+import {
+	aaveATokenAbi,
+	aaveDebtTokenAbi,
+} from "../positionMigrationService/connectors/aave/abis/aaveV3Abi.js";
 import { metamorphoAbi } from "../positionMigrationService/connectors/metamorpho/abis/metamorphoAbi.js";
 import { morphoBlueAbi } from "../positionMigrationService/connectors/morpho/abis/morphoBlueAbi.js";
 
@@ -18,12 +24,34 @@ type MigrationSignatureKind =
 	| "metamorpho-permit"
 	| "morpho-authorization";
 
-const EXPECTED_ARGUMENT_PATHS: Record<MigrationSignatureKind, readonly number[]> = {
+const EXPECTED_ARGUMENT_PATHS: Record<
+	MigrationSignatureKind,
+	readonly number[]
+> = {
 	"aave-permit": [4, 5, 6],
 	"aave-delegation": [4, 5, 6],
 	"metamorpho-permit": [4, 5, 6],
 	"morpho-authorization": [1, 0, 1, 2],
 };
+
+export function hashMigrationAuthorizationItem(item: EVCBatchItem): Hash {
+	return keccak256(
+		encodeAbiParameters(
+			[
+				{ type: "address" },
+				{ type: "address" },
+				{ type: "uint256" },
+				{ type: "bytes" },
+			],
+			[
+				getAddress(item.targetContract),
+				getAddress(item.onBehalfOfAccount),
+				item.value,
+				item.data,
+			],
+		),
+	);
+}
 
 function splitSignature(signature: Hex): { v: number; r: Hex; s: Hex } {
 	if (signature.length !== 132) {
@@ -41,10 +69,17 @@ function splitSignature(signature: Hex): { v: number; r: Hex; s: Hex } {
 	};
 }
 
-function parsePath(args: EncodeMigrationAuthorizationCallArgs): MigrationSignatureKind {
-	const [version, rawKind, sealedTypedDataHash, ...argumentPath] =
-		args.abiArgumentPath;
-	if (version !== "migration-signature-v1") {
+function parsePath(
+	args: EncodeMigrationAuthorizationCallArgs,
+): MigrationSignatureKind {
+	const [
+		version,
+		rawKind,
+		sealedTypedDataHash,
+		sealedReviewedItemHash,
+		...argumentPath
+	] = args.abiArgumentPath;
+	if (version !== "migration-signature-v2") {
 		throw new Error("Unsupported migration authorization insertion version");
 	}
 	if (
@@ -58,6 +93,11 @@ function parsePath(args: EncodeMigrationAuthorizationCallArgs): MigrationSignatu
 	if (sealedTypedDataHash !== args.typedDataHash) {
 		throw new Error("Migration authorization typed-data hash changed");
 	}
+	if (
+		sealedReviewedItemHash !== hashMigrationAuthorizationItem(args.reviewedItem)
+	) {
+		throw new Error("Migration authorization reviewed item changed");
+	}
 	const expected = EXPECTED_ARGUMENT_PATHS[rawKind];
 	if (
 		argumentPath.length !== expected.length ||
@@ -68,7 +108,9 @@ function parsePath(args: EncodeMigrationAuthorizationCallArgs): MigrationSignatu
 	return rawKind;
 }
 
-function assertReviewedBinding(args: EncodeMigrationAuthorizationCallArgs): void {
+function assertReviewedBinding(
+	args: EncodeMigrationAuthorizationCallArgs,
+): void {
 	if (args.chainId <= 0 || !Number.isSafeInteger(args.chainId)) {
 		throw new Error("Migration authorization chain ID is invalid");
 	}
@@ -78,13 +120,16 @@ function assertReviewedBinding(args: EncodeMigrationAuthorizationCallArgs): void
 		throw new Error("Migration authorization signer changed");
 	}
 	if (args.reviewedItem.value !== 0n) {
-		throw new Error("Migration authorization item must not transfer native value");
+		throw new Error(
+			"Migration authorization item must not transfer native value",
+		);
 	}
 }
 
 /**
  * Replace only the declared signature fields in a reviewed built-in migration
- * authorization item. The versioned path also seals the EIP-712 hash.
+ * authorization item. The versioned path seals the EIP-712 hash and the
+ * complete stub-signed batch item.
  */
 export function encodeMigrationAuthorizationCall(
 	args: EncodeMigrationAuthorizationCallArgs,

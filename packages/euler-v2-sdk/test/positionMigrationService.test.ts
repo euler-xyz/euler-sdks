@@ -10,6 +10,7 @@ import {
 import { test } from "vitest";
 import { PositionMigrationService } from "../src/services/positionMigrationService/positionMigrationService.js";
 import { ExecutionService } from "../src/services/executionService/executionService.js";
+import { hashMigrationAuthorizationItem } from "../src/services/executionService/migrationAuthorization.js";
 import type { EVCBatchItem } from "../src/services/executionService/index.js";
 import type {
 	BuildConnectorMigrationBatchArgs,
@@ -206,7 +207,7 @@ const morphoAuthorizationRequest: MigrationAuthorizationRequest = {
 	},
 };
 
-test("migration authorization slots bind reviewed calldata to the typed-data hash", async () => {
+test("migration authorization slots bind the reviewed item and typed-data hash", async () => {
 	const message = morphoAuthorizationRequest.kind === "typedData"
 		? morphoAuthorizationRequest.typedData.message
 		: undefined;
@@ -253,12 +254,14 @@ test("migration authorization slots bind reviewed calldata to the typed-data has
 			morphoAuthorizationRequest.kind === "typedData"
 				? hashTypedData(morphoAuthorizationRequest.typedData)
 				: undefined,
+		reviewedItemHash: hashMigrationAuthorizationItem(stubItem),
 		abiArgumentPath: [
-			"migration-signature-v1",
+			"migration-signature-v2",
 			"morpho-authorization",
 			morphoAuthorizationRequest.kind === "typedData"
 				? hashTypedData(morphoAuthorizationRequest.typedData)
 				: undefined,
+			hashMigrationAuthorizationItem(stubItem),
 			1,
 			0,
 			1,
@@ -295,6 +298,54 @@ test("migration authorization slots bind reviewed calldata to the typed-data has
 				signature,
 			}),
 		/typed-data hash changed/,
+	);
+	assert.throws(
+		() =>
+			executionService.encodeMigrationAuthorizationCall({
+				chainId: CHAIN_ID,
+				signer: getAddress(OWNER),
+				typedDataHash: slots[0]!.typedDataHash,
+				abiArgumentPath: slots[0]!.abiArgumentPath,
+				reviewedItem: {
+					...stubItem,
+					targetContract: "0x00000000000000000000000000000000000020ff",
+				},
+				signature,
+			}),
+		/reviewed item changed/,
+	);
+	assert.throws(
+		() =>
+			executionService.encodeMigrationAuthorizationCall({
+				chainId: CHAIN_ID,
+				signer: getAddress(OWNER),
+				typedDataHash: slots[0]!.typedDataHash,
+				abiArgumentPath: slots[0]!.abiArgumentPath,
+				reviewedItem: {
+					...stubItem,
+					data: encodeFunctionData({
+						abi: morphoBlueAbi,
+						functionName: "setAuthorizationWithSig",
+						args: [
+							{
+								authorizer: getAddress(String(message.authorizer)),
+								authorized:
+									"0x00000000000000000000000000000000000020ff",
+								isAuthorized: Boolean(message.isAuthorized),
+								nonce: BigInt(message.nonce as bigint),
+								deadline: BigInt(message.deadline as bigint),
+							},
+							{
+								v: 27,
+								r: `0x${"00".repeat(32)}`,
+								s: `0x${"00".repeat(32)}`,
+							},
+						],
+					}),
+				},
+				signature,
+			}),
+		/reviewed item changed/,
 	);
 	assert.throws(
 		() =>

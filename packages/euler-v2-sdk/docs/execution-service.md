@@ -132,11 +132,11 @@ const result = await sdk.executionService.executePreparedTransactionPlan({
 
 The original `simulateTransactionPlan` / `executeTransactionPlan` entry points are unchanged — the prepared variants are additive. Do not pass CoW plans to `prepareTransactionPlan`.
 
-### Review-integrity materialization
+### Reviewed-execution materialization
 
-Use the materialized path when an application must durably bind review to the
-wallet requests it will dispatch. First prepare and simulate the plan as above.
-Then pin every live composition input and materialize it:
+Use the materialized path when an application binds an accepted review to the
+wallet requests it dispatches. First prepare and simulate the plan as above,
+then pin every live composition input and materialize it:
 
 ```typescript
 const materialized = sdk.executionService.materializeExecution({
@@ -167,9 +167,13 @@ It verifies the typed-data hashes, slot set, placeholder calldata, and canonical
 EVC encoding, and does not mutate `materialized`. The returned `requests` and
 `safeCalls` are the exact wire bytes.
 
-For an EOA, the SDK can own signing, receipt sequencing, and error decoding. It
+For an EOA, the SDK owns signing, receipt sequencing, and error decoding. It
 also accepts a `FinalizedMaterializedExecution` when an application coordinator
-owns signature collection and bounded dynamic-slot insertion:
+owns signature collection and bounded dynamic-slot insertion. The application
+owns the accepted review digest: `executeMaterialized` dispatches the supplied
+finalized vector and does not infer or reconstruct that application commitment.
+Use `onFinalized` and `onBeforeStep` to compare the supplied vector with the
+accepted request set and to reassert current wallet context:
 
 ```typescript
 await sdk.executionService.executeMaterialized(materialized, {
@@ -177,31 +181,38 @@ await sdk.executionService.executeMaterialized(materialized, {
   sendTransaction: request => walletClient.sendTransaction(request),
   revalidate: { permit2NonceMustEqualPinned: true },
   onBeforeSignature: async (slot, index) => {
-    await journal.persistSigning(slot.slotId, index)
+    await assertActiveReviewedExecution()
+    await assertWalletBinding(slot.signer, slot.chainId)
   },
   onFinalized: async execution => {
-    await journal.persistFinalized(execution.requests)
+    assertFinalizedMatchesAcceptedRequestSet(execution)
   },
   onBeforeStep: async (request, index) => {
-    await journal.persistDispatching(request, index)
+    await assertActiveReviewedExecution()
+    await assertWalletBinding(request.from, request.chainId)
+    assertRequestMatchesAcceptedStep(request, index)
   },
   onTransactionHash: async (request, index, hash) => {
-    await journal.persistBroadcast(request, index, hash)
+    recordCurrentInvocationHash(request, index, hash)
   },
   onAfterStep: async (request, index, hash, receipt) => {
-    await journal.persistConfirmed(request, index, hash, receipt)
+    markCurrentInvocationStepConfirmed(request, index, hash, receipt)
   },
 })
 ```
 
 All five hooks are awaited. Reviewed static prerequisite requests that precede
-the first signed batch retain their original prerequisite -> signature -> batch
-order. Nonce revalidation happens before the Permit2 wallet prompt;
-`onFinalized` happens after signature insertion and before that signed batch,
-`onBeforeStep` happens before every transaction prompt, and `onAfterStep`
-settles before the next one. Dispatch sends the already-finalized `to`, `data`,
-and `value`; it never re-runs plan composition. Throwing from a hook or from
-nonce revalidation aborts before that wallet prompt.
+the first signed batch retain their prerequisite -> signature -> batch order.
+Requested nonce revalidation checks retained Permit2 slots before any finalized
+vector request, immediately before each signature boundary, and again before
+the request containing that signature. `onBeforeSignature` is the terminal
+application callback before its wallet prompt. `onFinalized` runs after
+signature insertion and before the signed batch; for an already-finalized input
+it runs before the first request. `onBeforeStep` runs after SDK nonce reads and
+immediately before every transaction prompt, while `onAfterStep` settles before
+the next one. Dispatch sends the supplied `to`, `data`, and `value`; it never
+re-runs plan composition. Throwing from a hook or nonce revalidation aborts
+before that wallet prompt.
 
 The materialized executor is for transaction-plan EOA transport. CoW plans remain
 on their dedicated executor. Contract-wallet applications can submit the

@@ -306,6 +306,8 @@ export type MigrationAuthorizationSlot = {
 	/** Index in the flattened EVC batch entry list. */
 	batchItemIndex: number;
 	typedDataHash: Hash;
+	/** Hash of the complete reviewed batch item with its stub signature. */
+	reviewedItemHash: Hash;
 	/** Versioned ABI path consumed by ExecutionService only. */
 	abiArgumentPath: readonly (string | number)[];
 };

@@ -76,7 +76,6 @@ const normalizeHex = (value: string): Hex =>
 const normalizeFeedId = (value: string): Hex =>
 	normalizeHex(value).toLowerCase() as Hex;
 
-const PYTH_PRICE_ID_PATTERN = /0x[0-9a-fA-F]{64}/g;
 const DEFAULT_MAX_PYTH_UPDATE_FEE = 10n ** 16n;
 const OFFICIAL_PYTH_ADDRESSES_BY_CHAIN_ID = new Map<number, Address>([
 	[1, "0x4305FB66699C3B2702D4d05CF36551390A4c69C6"],
@@ -116,11 +115,6 @@ const OFFICIAL_PYTH_ADDRESSES_BY_CHAIN_ID = new Map<number, Address>([
 	[534352, "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729"],
 	[167000, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
 ]);
-
-const parseMissingPriceIds = (body: string): Set<Hex> => {
-	const matches = body.match(PYTH_PRICE_ID_PATTERN) ?? [];
-	return new Set(matches.map((id) => normalizeFeedId(id)));
-};
 
 export type PythUpdateBundle = {
 	feedIds: Hex[];
@@ -194,13 +188,6 @@ export class PythPluginAdapter {
 		const response = await this.fetchFn(url.toString());
 		if (!response.ok) {
 			const body = await response.text().catch(() => "");
-			if (response.status === 404) {
-				const missingIds = parseMissingPriceIds(body);
-				if (missingIds.size > 0) {
-					const retryIds = feedIds.filter((id) => !missingIds.has(id));
-					return this.fetchPythUpdateBundle(retryIds);
-				}
-			}
 			throw new Error(
 				`Failed to fetch Pyth update data: ${response.status}${
 					body ? ` ${body}` : ""

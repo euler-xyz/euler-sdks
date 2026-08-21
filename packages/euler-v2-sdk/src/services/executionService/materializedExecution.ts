@@ -635,6 +635,13 @@ export async function executeMaterialized(
 	const publicClient = providerService.getProvider(materialized.chainId);
 	const alreadyFinalized =
 		"__finalized" in materialized && materialized.__finalized === true;
+	const firstSignedRequestIndex = materialized.signatureSlots.length
+		? Math.min(
+				...materialized.signatureSlots.map(
+					(slot) => slot.insertion.requestIndex,
+				),
+			)
+		: 0;
 	let execution: FinalizedMaterializedExecution | undefined = alreadyFinalized
 		? materialized
 		: undefined;
@@ -644,6 +651,13 @@ export async function executeMaterialized(
 		request: MaterializedExecutionRequest,
 		index: number,
 	): Promise<void> => {
+		if (options.revalidate?.permit2NonceMustEqualPinned) {
+			for (const slot of materialized.signatureSlots) {
+				if (slot.insertion.requestIndex === index) {
+					await assertPinnedPermit2Nonce(providerService, slot);
+				}
+			}
+		}
 		await options.onBeforeStep?.(request, index);
 		options.onProgress?.({
 			completed: hashes.length,
@@ -671,14 +685,16 @@ export async function executeMaterialized(
 
 	await executeWithDecodedErrors(async () => {
 		let nextRequestIndex = 0;
+		if (
+			options.revalidate?.permit2NonceMustEqualPinned &&
+			materialized.signatureSlots.length > 0 &&
+			(alreadyFinalized || firstSignedRequestIndex > 0)
+		) {
+			for (const slot of materialized.signatureSlots) {
+				await assertPinnedPermit2Nonce(providerService, slot);
+			}
+		}
 		if (!alreadyFinalized) {
-			const firstSignedRequestIndex = materialized.signatureSlots.length
-				? Math.min(
-						...materialized.signatureSlots.map(
-							(slot) => slot.insertion.requestIndex,
-						),
-					)
-				: 0;
 			for (; nextRequestIndex < firstSignedRequestIndex; nextRequestIndex++) {
 				await dispatchRequest(
 					materialized.requests[nextRequestIndex]!,
@@ -698,10 +714,10 @@ export async function executeMaterialized(
 						"ExecutionService.executeMaterialized requires signTypedData when Permit2 approval is needed",
 					);
 				}
-				await options.onBeforeSignature?.(slot, index);
 				if (options.revalidate?.permit2NonceMustEqualPinned) {
 					await assertPinnedPermit2Nonce(providerService, slot);
 				}
+				await options.onBeforeSignature?.(slot, index);
 				const signature = await options.signTypedData(slot.typedData);
 				signatures.push({ slotId: slot.slotId, signature });
 			}

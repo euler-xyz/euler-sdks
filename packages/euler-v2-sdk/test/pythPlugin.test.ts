@@ -169,7 +169,7 @@ const makeLiquidationSdk = (
 	},
 });
 
-test("PythPluginAdapter retries Hermes 404s without missing price ids", async () => {
+test("PythPluginAdapter rejects Hermes 404s when any requested feed is missing", async () => {
 	const requestedIds: string[][] = [];
 
 	const fetchFn = (async (input: RequestInfo | URL) => {
@@ -177,43 +177,7 @@ test("PythPluginAdapter retries Hermes 404s without missing price ids", async ()
 		const ids = getRequestedIds(url);
 		requestedIds.push(ids);
 
-		if (ids.includes(MISSING_FEED)) {
-			return new Response(`Price ids not found: ${MISSING_FEED}`, {
-				status: 404,
-			});
-		}
-
-		return Response.json({
-			binary: {
-				encoding: "hex",
-				data: ["abc123"],
-			},
-		});
-	}) as typeof fetch;
-
-	const adapter = new PythPluginAdapter(
-		"https://hermes.pyth.network",
-		undefined,
-		fetchFn,
-	);
-	const updateData = await adapter.queryPythUpdateData([
-		GOOD_FEED,
-		MISSING_FEED,
-	]);
-
-	assert.deepEqual(updateData, ["0xabc123"]);
-	assert.deepEqual(requestedIds, [[MISSING_FEED, GOOD_FEED], [GOOD_FEED]]);
-});
-
-test("PythPluginAdapter returns no update data when all Hermes ids are missing", async () => {
-	const requestedIds: string[][] = [];
-
-	const fetchFn = (async (input: RequestInfo | URL) => {
-		const url = typeof input === "string" ? input : input.toString();
-		const ids = getRequestedIds(url);
-		requestedIds.push(ids);
-
-		return new Response(`Price ids not found: ${ids.join(", ")}`, {
+		return new Response(`Price ids not found: ${MISSING_FEED}`, {
 			status: 404,
 		});
 	}) as typeof fetch;
@@ -223,10 +187,11 @@ test("PythPluginAdapter returns no update data when all Hermes ids are missing",
 		undefined,
 		fetchFn,
 	);
-	const updateData = await adapter.queryPythUpdateData([MISSING_FEED]);
-
-	assert.deepEqual(updateData, []);
-	assert.deepEqual(requestedIds, [[MISSING_FEED]]);
+	await assert.rejects(
+		adapter.queryPythUpdateBundle([GOOD_FEED, MISSING_FEED]),
+		/Failed to fetch Pyth update data: 404.*Price ids not found/,
+	);
+	assert.deepEqual(requestedIds, [[MISSING_FEED, GOOD_FEED]]);
 });
 
 test("PythPluginAdapter returns feed-aligned publish-time evidence", async () => {
@@ -413,6 +378,36 @@ test("Pyth prefetch fails closed when Hermes omits publish-time evidence", async
 	await assert.rejects(
 		plugin.prefetch?.(makeLiquidationPlan(), OWNER, 1, sdk as never),
 		/Pyth Hermes response is missing publish-time evidence/,
+	);
+});
+
+test("Pyth prefetch rejects a partial-feed Hermes 404 without retrying a subset", async () => {
+	const requestedIds: string[][] = [];
+	const sdk = makeLiquidationSdk(async () => ({
+		result: makeViolatorSubAccount(),
+		errors: [],
+	}));
+	const plugin = createPythPlugin({
+		fetchFn: (async (input: RequestInfo | URL) => {
+			const ids = getRequestedIds(input.toString());
+			requestedIds.push(ids);
+			if (ids.includes(MISSING_FEED)) {
+				throw new Error("test setup requested an unexpected feed");
+			}
+			return new Response(`Price ids not found: ${OTHER_FEED}`, {
+				status: 404,
+			});
+		}) as typeof fetch,
+	});
+
+	await assert.rejects(
+		plugin.prefetch?.(makeLiquidationPlan(), OWNER, 1, sdk as never),
+		/Failed to fetch Pyth update data: 404.*Price ids not found/,
+	);
+	assert.equal(requestedIds.length, 1);
+	assert.deepEqual(
+		new Set(requestedIds[0]),
+		new Set([DEBT_FEED, GOOD_FEED, OTHER_FEED]),
 	);
 });
 
