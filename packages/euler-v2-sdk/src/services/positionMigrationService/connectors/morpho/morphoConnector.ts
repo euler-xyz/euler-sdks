@@ -382,7 +382,7 @@ export class MorphoPositionMigrationConnector
 		args: GetMigrationAuthorizationArgs<MorphoMigrationPosition> & {
 			authorizationKind: "transaction";
 		},
-	): Promise<MorphoAuthorizationTransactionRequest | undefined>;
+	): Promise<MorphoAuthorizationTransactionRequest>;
 	async getAuthorization(
 		args: GetMigrationAuthorizationArgs<MorphoMigrationPosition> & {
 			authorizationKind?: "typedData";
@@ -417,16 +417,13 @@ export class MorphoPositionMigrationConnector
 		);
 
 		if (args.authorizationKind === "transaction") {
-			// An authorization already standing is not ours to grant, and so not
-			// ours to revoke either. `removeAuthorizationAfterMigration` does not
-			// apply: the returned request always carries its own revocation.
-			if (alreadyAuthorized) return undefined;
 			return this.buildAuthorizationTransactionRequest({
 				chainId: args.chainId,
 				owner,
 				morpho: this.getMorphoAddress(args.chainId),
 				swapVerifier,
 				positionId: args.position?.id,
+				includeGrant: !alreadyAuthorized,
 			});
 		}
 
@@ -1013,7 +1010,8 @@ export class MorphoPositionMigrationConnector
 		if (
 			request.kind !== "transaction" ||
 			request.connectorId !== MORPHO_CONNECTOR_ID ||
-			request.authorizationType !== "morphoAuthorization"
+			request.authorizationType !== "morphoAuthorization" ||
+			!request.call
 		) {
 			throw new Error("Expected a Morpho transaction authorization request");
 		}
@@ -1115,10 +1113,10 @@ export class MorphoPositionMigrationConnector
 	}
 
 	/**
-	 * `morpho.setAuthorization` — the signature-free form.
+	 * `morpho.setAuthorization` calls for the signature-free form.
 	 *
-	 * Synchronous: unlike `setAuthorizationWithSig` there is no nonce to read,
-	 * so the grant needs no RPC round-trip.
+	 * Synchronous: unlike `setAuthorizationWithSig` there is no nonce to read.
+	 * An existing grant is not repeated, but the cleanup call is always returned.
 	 */
 	private buildAuthorizationTransactionRequest(args: {
 		chainId: number;
@@ -1126,6 +1124,7 @@ export class MorphoPositionMigrationConnector
 		morpho: Address;
 		swapVerifier: Address;
 		positionId?: string;
+		includeGrant: boolean;
 	}): MorphoAuthorizationTransactionRequest {
 		const setAuthorization = (isAuthorized: boolean) => ({
 			to: args.morpho,
@@ -1141,7 +1140,7 @@ export class MorphoPositionMigrationConnector
 			chainId: args.chainId,
 			owner: args.owner,
 			positionId: args.positionId,
-			call: setAuthorization(true),
+			...(args.includeGrant ? { call: setAuthorization(true) } : {}),
 			revocation: setAuthorization(false),
 		};
 	}

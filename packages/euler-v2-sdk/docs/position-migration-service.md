@@ -74,13 +74,14 @@ address (e.g. the Aave pool or Morpho singleton).
   `{ positionRef?, borrowAmount?, collateralAmount?, repayAmount?, interestBufferBps? }`.
 - `MigrationAuthorizationRequest` — a discriminated union of
   `{ kind: "typedData", typedData: { domain, types, primaryType, message } }` and
-  `{ kind: "transaction", call, revocation? }`, where each call is a
+  `{ kind: "transaction", call?, revocation? }`, where each call is a
   `MigrationAuthorizationCall` (`{ to, abi, functionName, args, value? }`).
   Connectors emit `typedData` by default and `transaction` when
   `authorizationKind: "transaction"` is requested — see
   [Contract wallets](#contract-wallets-authorizationkind-transaction). Built-in
-  transaction requests always include `revocation`; the shared field remains
-  optional for custom-connector compatibility. A request may carry a nested
+  transaction requests always include `revocation`; `call` is omitted when no
+  prerequisite grant is needed, and the shared fields remain optional for
+  custom-connector compatibility. A request may carry a nested
   `postMigrationAuthorization` (used when a typed-data authorization is revoked
   in-batch after the migration).
 - `SignedMigrationAuthorization` — `{ request, signature?, data?, postMigrationAuthorization? }`;
@@ -109,9 +110,9 @@ Discovery and reads:
 Authorization and plan building:
 
 - `getAuthorization({ direction, connectorId, chainId, owner, position | positionRef, target | source, externalTarget?, deadline?, authorizationKind?, removeAuthorizationAfterMigration?, account? })`
-  — returns the request to sign (or, with `authorizationKind: "transaction"`, the
-  grant to send), or `undefined` when the required allowance/authorization is
-  already in place.
+  — returns the request to sign or, with `authorizationKind: "transaction"`,
+  the prerequisite and cleanup calls. It returns `undefined` when the connector
+  requires neither action.
 - `buildMigrationBatch(args)` — the raw `EVCBatchItem[]`.
 - `planMigration(args)` — `buildMigrationBatch` + `convertBatchItemsToPlan`,
   returning a `TransactionPlan` (operation name defaults to `"positionMigration"`).
@@ -238,10 +239,10 @@ collaterals back to the owner.
 
 ## Authorization and signing
 
-`getAuthorization` returns `undefined` when the on-chain allowance/authorization
-already covers the migration, so always guard for it before signing. Otherwise
-sign `request.typedData` (the default form) and pass `{ request, signature }` as
-`authorization`.
+In the default typed-data form, `getAuthorization` may return `undefined` when
+the on-chain allowance/authorization already covers the migration, so always
+guard for it before signing. Otherwise sign `request.typedData` and pass
+`{ request, signature }` as `authorization`.
 
 Per-connector authorizations:
 
@@ -288,11 +289,13 @@ if (request?.kind === "transaction") {
     await publicClient.waitForTransactionReceipt({ hash });
   };
 
-  let grantMined = false;
+  let authorizationActive = !request.call;
   try {
-    // 1. Send the grant and wait for it to be mined.
-    await sendAndConfirm(request.call);
-    grantMined = true;
+    // 1. Send the grant when one is required and wait for it to be mined.
+    if (request.call) {
+      await sendAndConfirm(request.call);
+      authorizationActive = true;
+    }
 
     // 2. Build without an `authorization` — the connector reads the live
     //    allowance and omits the authorization item from the batch.
@@ -302,9 +305,9 @@ if (request?.kind === "transaction") {
     });
     await sdk.executionService.executeTransactionPlan({ ...execution, plan });
   } finally {
-    // 3. Restore the authorization state that existed before the grant, even
-    //    when planning or execution fails after the grant was mined.
-    if (grantMined && request.revocation) {
+    // 3. Remove or restore the active authorization even when planning or
+    //    execution fails.
+    if (authorizationActive && request.revocation) {
       await sendAndConfirm(request.revocation);
     }
   }
@@ -314,7 +317,9 @@ if (request?.kind === "transaction") {
 Per connector the grant is `aToken.approve` (inbound Aave),
 `variableDebtToken.approveDelegation` (outbound Aave),
 `morpho.setAuthorization` and `vault.approve` (MetaMorpho shares). Each
-`revocation` restores the authorization state that existed before the grant.
+`revocation` restores the prior allowance, except Morpho cleanup always disables
+the SwapVerifier authorization because that standing authorization is owned by
+the migration flow.
 
 Constraints:
 
@@ -326,10 +331,11 @@ Constraints:
 - **`deadline` and `removeAuthorizationAfterMigration` do not apply.** A
   `msg.sender` grant carries no expiry, and the revocation is always returned;
   the in-batch disable needs a signature this form cannot supply.
-- **Revoke when the migration settles.** Until then the grant is a standing
+- **Revoke after the migration attempt.** Until then the grant is a standing
   allowance, exercisable by any EVC operator the owner has authorized.
-- `getAuthorization` still returns `undefined` when a grant already stands — one
-  the caller did not create and so should not revoke.
+- Morpho transaction authorization always returns cleanup while authorization
+  stands. Its `call` is omitted when already authorized, so callers do not send
+  a redundant grant but still revoke after the migration attempt.
 
 ## Simulation
 
@@ -340,7 +346,8 @@ returns:
   by `stateOverrides` that force the allowance/authorization storage slot. This
   lets you dry-run the migration without a real signature or mined grant.
 - `stateOverrides` — the `StateOverride[]` to pass to the simulator alongside
-  `plan`.
+  `plan`. Cleanup-only requests rely on the already-active on-chain state and
+  need no grant override.
 - `previewPlan` — the calldata preview. Typed-data requests include their
   stub-signed authorization call (or your signature if supplied); transaction
   grants stay outside the EVC batch, so they are not included.
@@ -409,7 +416,7 @@ implementing the `PositionMigrationConnector` interface.
 Migration plans run through the same execution service as core Euler plans:
 
 1. read the source position (and, for outbound, the destination market)
-2. resolve + sign the authorization (or skip if `undefined`)
+2. resolve the authorization, then sign or send any prerequisite it contains
 3. build the plan with `planMigration` (or simulate with `planMigrationSimulation`)
 4. pass the `TransactionPlan` to `executionService.executeTransactionPlan(...)`
 5. refetch positions after confirmation to confirm the source is closed

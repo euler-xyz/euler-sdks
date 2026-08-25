@@ -461,7 +461,12 @@ export class PositionMigrationService implements IPositionMigrationService {
 				authorization:
 					simulationAuthorization?.authorization ??
 					args.authorization ??
-					(!simulationAuthorization && authorizationRequest
+					(!simulationAuthorization &&
+					authorizationRequest &&
+					!(
+						authorizationRequest.kind === "transaction" &&
+						!authorizationRequest.call
+					)
 						? this.getStubAuthorization(authorizationRequest)
 						: undefined),
 				...(simulationAuthorization ? { skipAuthorizationCheck: true } : {}),
@@ -690,6 +695,7 @@ export class PositionMigrationService implements IPositionMigrationService {
 		  }
 		| undefined {
 		if (request.kind === "transaction") {
+			if (!request.call) return undefined;
 			const authorizationType = (request as { authorizationType?: string })
 				.authorizationType;
 			const authorized = request.call.args[0];

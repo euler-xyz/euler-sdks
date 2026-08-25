@@ -556,6 +556,58 @@ test("planMigrationSimulation reuses a provided authorization request", async ()
 	assert.equal(result.authorizationRequest, morphoAuthorizationRequest);
 });
 
+test("planMigrationSimulation preserves a cleanup-only transaction authorization", async () => {
+	const morpho = getAddress(
+		"0x0000000000000000000000000000000000002001",
+	);
+	const swapVerifier = getAddress(
+		"0x0000000000000000000000000000000000002002",
+	);
+	const cleanupRequest: MigrationAuthorizationRequest = {
+		kind: "transaction",
+		connectorId: "morpho",
+		protocol: "Morpho",
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		revocation: {
+			to: morpho,
+			abi: morphoBlueAbi,
+			functionName: "setAuthorization",
+			args: [swapVerifier, false],
+		},
+	};
+	let builtAuthorization: SignedMigrationAuthorization | undefined;
+	let builtSkipAuthorizationCheck: boolean | undefined;
+	const service = createService([
+		createMorphoSimulationConnector({
+			onBuild: (args) => {
+				builtAuthorization = args.authorization;
+				builtSkipAuthorizationCheck = args.skipAuthorizationCheck;
+			},
+		}),
+	]);
+
+	const result = await service.planMigrationSimulation({
+		direction: "external-to-euler",
+		connectorId: "morpho",
+		chainId: CHAIN_ID,
+		owner: getAddress(OWNER),
+		position: migrationPosition,
+		positionRef: migrationPosition.ref,
+		target: {
+			eulerAccount: getAddress(OWNER),
+			collateralVault: "0x0000000000000000000000000000000000003001",
+		},
+		authorizationRequest: cleanupRequest,
+		validateEulerVaults: false,
+	});
+
+	assert.equal(builtAuthorization, undefined);
+	assert.equal(builtSkipAuthorizationCheck, undefined);
+	assert.deepEqual(result.stateOverrides, []);
+	assert.equal(result.authorizationRequest, cleanupRequest);
+});
+
 test("planMigrationSimulation reuses a provided signed authorization request", async () => {
 	let getAuthorizationCalls = 0;
 	let builtAuthorization: SignedMigrationAuthorization | undefined;

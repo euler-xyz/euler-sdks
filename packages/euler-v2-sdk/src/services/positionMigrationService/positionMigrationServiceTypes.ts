@@ -94,32 +94,41 @@ export type MigrationAuthorizationCall = {
 	value?: bigint;
 };
 
-export type TransactionMigrationAuthorizationRequest = {
+type TransactionMigrationAuthorizationRequestBase = {
 	kind: "transaction";
 	connectorId: string;
 	protocol: string;
 	chainId: number;
 	owner: Address;
 	positionId?: string;
-	/**
-	 * The grant. Must be mined before {@link IPositionMigrationService.buildMigrationBatch}
-	 * runs — connectors read the live allowance to decide whether the batch
-	 * still needs an authorization item.
-	 *
-	 * Cannot be an EVC batch item: the EVC forwards batch items with itself as
-	 * `msg.sender`, so the grant would come from the EVC rather than the owner.
-	 */
-	call: MigrationAuthorizationCall;
-	/**
-	 * Undoes {@link call}, when the connector provides one. Built-in connectors
-	 * always return a revocation; custom connectors may omit it for backward
-	 * compatibility. Send it once the migration has settled — the grant is a
-	 * standing allowance until then, exercisable by any EVC operator the owner has
-	 * authorized.
-	 */
-	revocation?: MigrationAuthorizationCall;
 	postMigrationAuthorization?: MigrationAuthorizationRequest;
 };
+
+export type TransactionMigrationAuthorizationRequest =
+	TransactionMigrationAuthorizationRequestBase &
+		(
+			| {
+					/**
+					 * The grant. It must be mined before
+					 * {@link IPositionMigrationService.buildMigrationBatch} runs —
+					 * connectors read the live allowance to decide whether the batch
+					 * still needs an authorization item.
+					 *
+					 * Cannot be an EVC batch item: the EVC forwards batch items with
+					 * itself as `msg.sender`, so the grant would come from the EVC rather
+					 * than the owner.
+					 */
+					call: MigrationAuthorizationCall;
+					/** Restores or removes the authorization after the migration attempt. */
+					revocation?: MigrationAuthorizationCall;
+			  }
+			| {
+					/** Omitted because the required authorization is already active. */
+					call?: undefined;
+					/** Removes or restores the already-active authorization. */
+					revocation: MigrationAuthorizationCall;
+			  }
+		);
 
 export type MigrationAuthorizationRequest =
 	| TypedDataMigrationAuthorizationRequest
@@ -218,10 +227,11 @@ export type GetMigrationAuthorizationArgs<
 	 * authorization signatures without an ERC-1271 fallback, so a contract
 	 * wallet can never satisfy the typed-data form.
 	 *
-	 * Built-in transaction requests carry a `call` to send before building the
-	 * batch and a `revocation` to send after it settles. `deadline` and
-	 * `removeAuthorizationAfterMigration` do not apply: a `msg.sender` grant
-	 * carries no expiry, and the revocation is always returned. Pass
+	 * Built-in transaction requests carry a `revocation` to send after the
+	 * migration attempt and, when a grant is required, a `call` to send before
+	 * building the batch. `deadline` and `removeAuthorizationAfterMigration` do
+	 * not apply: a `msg.sender` grant carries no expiry, and the revocation is
+	 * always returned. Pass
 	 * `removeAuthorizationAfterMigration: false` to `buildMigrationBatch`,
 	 * whose in-batch disable needs a signature this form cannot supply.
 	 */
