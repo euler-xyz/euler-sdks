@@ -119,7 +119,10 @@ export type TransactionMigrationAuthorizationRequest =
 					 * than the owner.
 					 */
 					call: MigrationAuthorizationCall;
-					/** Restores or removes the authorization after the migration attempt. */
+					/**
+					 * Restores or removes the authorization after the migration has a known
+					 * terminal outcome or is known not to have been dispatched.
+					 */
 					revocation?: MigrationAuthorizationCall;
 			  }
 			| {
@@ -228,10 +231,11 @@ export type GetMigrationAuthorizationArgs<
 	 * wallet can never satisfy the typed-data form.
 	 *
 	 * Built-in transaction requests carry a `revocation` to send after the
-	 * migration attempt and, when a grant is required, a `call` to send before
-	 * building the batch. `deadline` and `removeAuthorizationAfterMigration` do
-	 * not apply: a `msg.sender` grant carries no expiry, and the revocation is
-	 * always returned. Pass
+	 * migration has a known terminal or no-dispatch outcome and, when a grant is
+	 * required, a `call` to send before building the batch. If core dispatch or
+	 * receipt status is unknown, reconcile it before revoking. `deadline` and
+	 * `removeAuthorizationAfterMigration` do not apply: a `msg.sender` grant
+	 * carries no expiry, and the revocation is always returned. Pass
 	 * `removeAuthorizationAfterMigration: false` to `buildMigrationBatch`,
 	 * whose in-batch disable needs a signature this form cannot supply.
 	 */

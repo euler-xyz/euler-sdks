@@ -286,10 +286,27 @@ if (request?.kind === "transaction") {
   // adapt the SDK's `to` field to viem's `address`, and wait for confirmation.
   const sendAndConfirm = async ({ to, ...call }: MigrationAuthorizationCall) => {
     const hash = await ownerWalletClient.writeContract({ address: to, ...call });
-    await publicClient.waitForTransactionReceipt({ hash });
+    let receipt;
+    try {
+      receipt = await publicClient.waitForTransactionReceipt({ hash });
+    } catch (error) {
+      throw new AggregateError(
+        [error],
+        `Authorization transaction ${hash} is not confirmed; reconcile it before continuing`,
+      );
+    }
+    if (receipt.status !== "success") {
+      throw new Error(`Authorization transaction ${hash} reverted`);
+    }
+    return receipt;
   };
 
   let authorizationActive = !request.call;
+  let coreDispatchAttempted = false;
+  let coreSettled = false;
+  let coreHash: `0x${string}` | undefined;
+  let migrationFailed = false;
+  let primaryError: unknown;
   try {
     // 1. Send the grant when one is required and wait for it to be mined.
     if (request.call) {
@@ -303,14 +320,72 @@ if (request?.kind === "transaction") {
       ...args,
       removeAuthorizationAfterMigration: false,
     });
-    await sdk.executionService.executeTransactionPlan({ ...execution, plan });
-  } finally {
-    // 3. Remove or restore the active authorization even when planning or
-    //    execution fails.
-    if (authorizationActive && request.revocation) {
-      await sendAndConfirm(request.revocation);
+    let nextSendIsCore = false;
+    await sdk.executionService.executeTransactionPlan({
+      ...execution,
+      plan,
+      onProgress(progress) {
+        if (progress.item?.type === "evcBatch") {
+          if (progress.status === "evcBatch") nextSendIsCore = true;
+          if (progress.status === "completed") coreSettled = true;
+        }
+        execution.onProgress?.(progress);
+      },
+      async sendTransaction(transaction) {
+        const isCore = nextSendIsCore;
+        nextSendIsCore = false;
+        if (isCore) coreDispatchAttempted = true;
+        const hash = await execution.sendTransaction(transaction);
+        if (isCore) coreHash = hash;
+        return hash;
+      },
+    });
+    coreSettled = true;
+  } catch (error) {
+    migrationFailed = true;
+    primaryError = error;
+
+    // A receipt proves that a submitted core transaction is terminal, whether
+    // it succeeded or reverted. A missing receipt leaves the outcome unknown.
+    if (coreHash && !coreSettled) {
+      try {
+        await publicClient.getTransactionReceipt({ hash: coreHash });
+        coreSettled = true;
+      } catch {
+        // Reconcile the hash later; the migration may still be pending.
+      }
     }
   }
+
+  const cleanupDeferred = coreDispatchAttempted && !coreSettled;
+  let cleanupError: unknown;
+  if (authorizationActive && request.revocation && !cleanupDeferred) {
+    try {
+      await sendAndConfirm(request.revocation);
+      authorizationActive = false;
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+
+  // Keep migration and cleanup outcomes distinct. Persist a deferred cleanup
+  // and reconcile `coreHash` before revoking; the migration may still need it.
+  if (migrationFailed && cleanupDeferred) {
+    throw new AggregateError(
+      [primaryError],
+      `Migration outcome is unknown; authorization cleanup is deferred${
+        coreHash ? ` until ${coreHash} is reconciled` : ""
+      }`,
+    );
+  }
+  if (migrationFailed && cleanupError) {
+    throw new AggregateError(
+      [primaryError, cleanupError],
+      "Migration failed and authorization cleanup also failed",
+    );
+  }
+  if (migrationFailed) throw primaryError;
+  if (cleanupError) throw cleanupError;
 }
 ```
 
@@ -331,11 +406,18 @@ Constraints:
 - **`deadline` and `removeAuthorizationAfterMigration` do not apply.** A
   `msg.sender` grant carries no expiry, and the revocation is always returned;
   the in-batch disable needs a signature this form cannot supply.
-- **Revoke after the migration attempt.** Until then the grant is a standing
-  allowance, exercisable by any EVC operator the owner has authorized.
+- **Revoke only after a known terminal or no-dispatch outcome.** A successful or
+  reverted core receipt is terminal, and a planning failure before core dispatch
+  is a known no-dispatch outcome. If dispatch or receipt status is unknown, keep
+  the authorization active, persist the pending cleanup, and reconcile the core
+  transaction before revoking it.
+- **Report cleanup separately.** A reverted or unconfirmed revocation is a
+  cleanup failure. Preserve the primary migration error and surface both, for
+  example with `AggregateError`; a cleanup error must not replace the primary.
 - Morpho transaction authorization always returns cleanup while authorization
   stands. Its `call` is omitted when already authorized, so callers do not send
-  a redundant grant but still revoke after the migration attempt.
+  a redundant grant but still revoke after the migration reaches a known safe
+  cleanup point.
 
 ## Simulation
 
