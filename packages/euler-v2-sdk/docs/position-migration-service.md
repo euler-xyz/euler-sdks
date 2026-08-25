@@ -286,108 +286,49 @@ if (request?.kind === "transaction") {
   // adapt the SDK's `to` field to viem's `address`, and wait for confirmation.
   const sendAndConfirm = async ({ to, ...call }: MigrationAuthorizationCall) => {
     const hash = await ownerWalletClient.writeContract({ address: to, ...call });
-    let receipt;
-    try {
-      receipt = await publicClient.waitForTransactionReceipt({ hash });
-    } catch (error) {
-      throw new AggregateError(
-        [error],
-        `Authorization transaction ${hash} is not confirmed; reconcile it before continuing`,
-      );
-    }
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
     if (receipt.status !== "success") {
       throw new Error(`Authorization transaction ${hash} reverted`);
     }
     return receipt;
   };
 
-  let authorizationActive = !request.call;
-  let coreDispatchAttempted = false;
-  let coreSettled = false;
-  let coreHash: `0x${string}` | undefined;
-  let migrationFailed = false;
-  let primaryError: unknown;
-  try {
-    // 1. Send the grant when one is required and wait for it to be mined.
-    if (request.call) {
-      await sendAndConfirm(request.call);
-      authorizationActive = true;
-    }
-
-    // 2. Build without an `authorization` — the connector reads the live
-    //    allowance and omits the authorization item from the batch.
-    const plan = await sdk.positionMigrationService.planMigration({
-      ...args,
-      removeAuthorizationAfterMigration: false,
-    });
-    let nextSendIsCore = false;
-    await sdk.executionService.executeTransactionPlan({
-      ...execution,
-      plan,
-      onProgress(progress) {
-        if (progress.item?.type === "evcBatch") {
-          if (progress.status === "evcBatch") nextSendIsCore = true;
-          if (progress.status === "completed") coreSettled = true;
-        }
-        execution.onProgress?.(progress);
-      },
-      async sendTransaction(transaction) {
-        const isCore = nextSendIsCore;
-        nextSendIsCore = false;
-        if (isCore) coreDispatchAttempted = true;
-        const hash = await execution.sendTransaction(transaction);
-        if (isCore) coreHash = hash;
-        return hash;
-      },
-    });
-    coreSettled = true;
-  } catch (error) {
-    migrationFailed = true;
-    primaryError = error;
-
-    // A receipt proves that a submitted core transaction is terminal, whether
-    // it succeeded or reverted. A missing receipt leaves the outcome unknown.
-    if (coreHash && !coreSettled) {
-      try {
-        await publicClient.getTransactionReceipt({ hash: coreHash });
-        coreSettled = true;
-      } catch {
-        // Reconcile the hash later; the migration may still be pending.
-      }
-    }
+  // 1. Confirm the grant when one is required.
+  if (request.call) {
+    await sendAndConfirm(request.call);
   }
 
-  const cleanupDeferred = coreDispatchAttempted && !coreSettled;
-  let cleanupError: unknown;
-  if (authorizationActive && request.revocation && !cleanupDeferred) {
-    try {
-      await sendAndConfirm(request.revocation);
-      authorizationActive = false;
-    } catch (error) {
-      cleanupError = error;
-    }
-  }
+  // 2. Build without an `authorization` — the connector reads the live
+  //    allowance and omits the authorization item from the batch.
+  const plan = await sdk.positionMigrationService.planMigration({
+    ...args,
+    removeAuthorizationAfterMigration: false,
+  });
+  const result = await sdk.executionService.executeTransactionPlan({
+    ...execution,
+    plan,
+  });
+  // Retain any core hash from `result.hashes` in application state.
 
-  // Keep migration and cleanup outcomes distinct. Persist a deferred cleanup
-  // and reconcile `coreHash` before revoking; the migration may still need it.
-  if (migrationFailed && cleanupDeferred) {
-    throw new AggregateError(
-      [primaryError],
-      `Migration outcome is unknown; authorization cleanup is deferred${
-        coreHash ? ` until ${coreHash} is reconciled` : ""
-      }`,
-    );
+  // 3. The returned result contains terminal receipts, so cleanup is safe.
+  if (request.revocation) {
+    await sendAndConfirm(request.revocation);
   }
-  if (migrationFailed && cleanupError) {
-    throw new AggregateError(
-      [primaryError, cleanupError],
-      "Migration failed and authorization cleanup also failed",
-    );
-  }
-  if (migrationFailed) throw primaryError;
-  if (cleanupError) throw cleanupError;
 }
 ```
+
+The snippet shows the confirmed happy path. The consuming application owns
+failure classification and durable cleanup:
+
+1. Confirm the grant before building the migration.
+2. Execute the migration and retain any returned core hash.
+3. Revoke after a known no-dispatch outcome or a terminal core receipt.
+4. If submission status is unknown, persist the cleanup and reconcile the core
+   transaction before revoking.
+
+A missing hash alone does not prove that nothing was dispatched. Wallet- and
+provider-specific prompt-rejection classification belongs in the consuming
+application.
 
 Per connector the grant is `aToken.approve` (inbound Aave),
 `variableDebtToken.approveDelegation` (outbound Aave),
