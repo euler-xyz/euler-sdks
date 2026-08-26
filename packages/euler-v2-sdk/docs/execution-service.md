@@ -5,6 +5,7 @@
 - `encodeX(...)` functions: low-level calldata/batch encoders
 - `planX(...)` functions: higher-level planners that use account context and include approval requirements
 - `executeTransactionPlan(...)`: service-owned execution for plugin processing, approval resolution, Permit2 signing, direct calls, and EVC batches
+- `materializeExecution(...)` / `executeMaterialized(...)`: deterministic review-time composition followed by byte-stable dispatch
 
 This separation lets you either work with raw payloads directly or use opinionated planning helpers and the bundled executor.
 
@@ -131,6 +132,101 @@ const result = await sdk.executionService.executePreparedTransactionPlan({
 
 The original `simulateTransactionPlan` / `executeTransactionPlan` entry points are unchanged — the prepared variants are additive. Do not pass CoW plans to `prepareTransactionPlan`.
 
+### Reviewed-execution materialization
+
+Use the materialized path when an application binds an accepted review to the
+wallet requests it dispatches. First prepare and simulate the plan as above,
+then pin every live composition input and materialize it:
+
+```typescript
+const materialized = sdk.executionService.materializeExecution({
+  prepared,
+  inputs: {
+    evcAddress: reviewedEvcAddress,
+    permit2: [{
+      planItemIndex: 0,
+      resolvedIndex: 0,
+      nonce: reviewedNonce,
+      sigDeadline: reviewedSignatureDeadline,
+      expiration: reviewedPermitExpiration,
+    }],
+  },
+})
+```
+
+`materializeExecution` performs no reads, clock access, signing, or sending.
+The same prepared plan and explicit inputs produce the same immutable request
+templates, signature slots, and Safe calls. Permit2 signatures do not exist yet,
+so the template contains a fixed 65-byte placeholder plus the EIP-712 typed data,
+hash, and exact insertion coordinate. A review commitment must cover both the
+request templates and those signature slots.
+
+`finalizeMaterializedExecution(materialized, signatures)` is the pure boundary
+that inserts exactly the declared signatures into a new immutable request vector.
+It verifies the typed-data hashes, slot set, placeholder calldata, and canonical
+EVC encoding, and does not mutate `materialized`. The returned `requests` and
+`safeCalls` are the exact wire bytes.
+
+For an EOA, the SDK owns signing, receipt sequencing, and error decoding. It
+also accepts a `FinalizedMaterializedExecution` when an application coordinator
+owns signature collection and bounded dynamic-slot insertion. The application
+owns the accepted review digest: `executeMaterialized` dispatches the supplied
+finalized vector and does not infer or reconstruct that application commitment.
+
+`FinalizedMaterializedExecution` is trusted application input, not an
+SDK-authenticated artifact. Its `__finalized` field is a structural discriminator,
+not a security seal. Before calling `executeMaterialized`, the application must
+authenticate the complete finalized artifact against its accepted review digest.
+This requirement also applies to any persisted artifact and migration-slot
+metadata supplied back to the SDK.
+
+Use `onFinalized` and `onBeforeStep` to compare the supplied vector with the
+accepted request set and to reassert current wallet context:
+
+```typescript
+await sdk.executionService.executeMaterialized(materialized, {
+  signTypedData: walletClient.signTypedData,
+  sendTransaction: request => walletClient.sendTransaction(request),
+  revalidate: { permit2NonceMustEqualPinned: true },
+  onBeforeSignature: async (slot, index) => {
+    await assertActiveReviewedExecution()
+    await assertWalletBinding(slot.signer, slot.chainId)
+  },
+  onFinalized: async execution => {
+    assertFinalizedMatchesAcceptedRequestSet(execution)
+  },
+  onBeforeStep: async (request, index) => {
+    await assertActiveReviewedExecution()
+    await assertWalletBinding(request.from, request.chainId)
+    assertRequestMatchesAcceptedStep(request, index)
+  },
+  onTransactionHash: async (request, index, hash) => {
+    recordCurrentInvocationHash(request, index, hash)
+  },
+  onAfterStep: async (request, index, hash, receipt) => {
+    markCurrentInvocationStepConfirmed(request, index, hash, receipt)
+  },
+})
+```
+
+All five hooks are awaited. Reviewed static prerequisite requests that precede
+the first signed batch retain their prerequisite -> signature -> batch order.
+Requested nonce revalidation checks retained Permit2 slots before any finalized
+vector request, immediately before each signature boundary, and again before
+the request containing that signature. `onBeforeSignature` is the terminal
+application callback before its wallet prompt. `onFinalized` runs after
+signature insertion and before the signed batch; for an already-finalized input
+it runs before the first request. `onBeforeStep` runs after SDK nonce reads and
+immediately before every transaction prompt, while `onAfterStep` settles before
+the next one. Dispatch sends the supplied `to`, `data`, and `value`; it never
+re-runs plan composition. Throwing from a hook or nonce revalidation aborts
+before that wallet prompt.
+
+The materialized executor is for transaction-plan EOA transport. CoW plans remain
+on their dedicated executor. Contract-wallet applications can submit the
+finalized `safeCalls` through their Safe transport while keeping the same review
+commitment and pure finalization boundary.
+
 ### Prefetching plugin data
 
 For flows that build N plans per user interaction — typical for swap-quote sweeps where each provider produces a different swap calldata — the per-plan plugin pass (Pyth Hermes pull, Keyring credential check, etc.) is the dominant cost. `prefetchPluginDataForPlan` resolves each plugin's prefetch payload from one representative plan; subsequent `prepare*` / `simulate*` / `estimateGas*` / `execute*` calls accept that payload via the `prefetch` option and skip plugins' own network I/O.
@@ -155,7 +251,7 @@ for (const quote of quotes) {
 }
 ```
 
-A single Hermes pull + Keyring read per sweep instead of one per quote. The payload is plan-shape-agnostic — any plan whose effective controllers/collaterals match the sweep is a valid representative.
+A single Hermes pull + Keyring read per sweep instead of one per quote. The payload is plan-shape-agnostic — any plan whose effective controllers/collaterals match the sweep is a valid representative. Pyth entries include `feedIds`, feed-aligned `publishTimes`, `updates`, and `fee`; write-plan prefetch fails closed if Hermes cannot provide complete publish-time evidence.
 
 `processPlanPlugins(plan, account, chainId, prefetch?)` is the lower-level building block (used inside `prepareTransactionPlan` / simulate / estimate / execute) when you want to materialise the plugin-processed plan once and feed it into multiple downstream calls.
 

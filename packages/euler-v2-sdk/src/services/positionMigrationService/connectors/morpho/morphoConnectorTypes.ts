@@ -64,7 +64,11 @@ export type MorphoAuthorizationTypedDataMessage = MorphoAuthorization &
 export type MorphoAuthorizationTypedDataRequest =
 	TypedDataMigrationAuthorizationRequest<MorphoAuthorizationTypedDataMessage>;
 
-/** `morpho.setAuthorization` — the signature-free counterpart. */
+/**
+ * `morpho.setAuthorization` calls for the signature-free flow. `call` is
+ * omitted when the SwapVerifier is already authorized; `revocation` is always
+ * returned so the migration flow removes the standing authorization.
+ */
 export type MorphoAuthorizationTransactionRequest =
 	TransactionMigrationAuthorizationRequest & {
 		authorizationType: "morphoAuthorization";

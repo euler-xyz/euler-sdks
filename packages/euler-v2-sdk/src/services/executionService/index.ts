@@ -58,6 +58,23 @@ export {
 	ExecutionService,
 	type IExecutionService,
 } from "./executionService.js";
+export {
+	type ExecuteMaterializedOptions,
+	type FinalizedMaterializedExecution,
+	finalizeMaterializedExecution,
+	type MaterializedExecution,
+	MaterializedExecutionError,
+	MaterializedTransactionRevertedError,
+	type MaterializedExecutionProgress,
+	type MaterializedExecutionRequest,
+	type MaterializedExecutionRequestKind,
+	type MaterializedExecutionResult,
+	type MaterializedPermit2SignatureSlot,
+	type MaterializedSafeCall,
+	type MaterializedSignatureValue,
+	type MaterializeExecutionArgs,
+	type Permit2MaterializationInput,
+} from "./materializedExecution.js";
 export { requiresZeroApprovalReset } from "./tokenApprovalReset.js";
 export type {
 	ApproveCall,
@@ -77,6 +94,7 @@ export type {
 	EncodeDepositWithSwapFromWalletArgs,
 	EncodeMigrateSameAssetCollateralArgs,
 	EncodeMigrateSameAssetDebtArgs,
+	EncodeMigrationAuthorizationCallArgs,
 	EncodeMintArgs,
 	EncodeMultiplySameAssetArgs,
 	EncodeMultiplyWithSwapArgs,

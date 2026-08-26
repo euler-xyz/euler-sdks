@@ -96,6 +96,7 @@ export type AaveATokenApprovalTransactionRequest =
 	TransactionMigrationAuthorizationRequest & {
 		authorizationType: "aTokenApproval";
 		token: Address;
+		call: MigrationAuthorizationCall;
 		revocation: MigrationAuthorizationCall;
 	};
 
@@ -105,6 +106,7 @@ export type AaveDebtDelegationTransactionRequest =
 		authorizationType: "variableDebtDelegationApproval";
 		token: Address;
 		delegator: Address;
+		call: MigrationAuthorizationCall;
 		revocation: MigrationAuthorizationCall;
 	};
 

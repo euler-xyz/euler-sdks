@@ -27,7 +27,6 @@ import {
 	serializeQueryArgs,
 	type BuildQueryFn,
 } from "../../utils/buildQuery.js";
-import { createBundledCall } from "../../utils/callBundler.js";
 import {
 	calculateHealthCheckSets,
 	collectLiquidationHealthChecks,
@@ -76,7 +75,6 @@ const normalizeHex = (value: string): Hex =>
 const normalizeFeedId = (value: string): Hex =>
 	normalizeHex(value).toLowerCase() as Hex;
 
-const PYTH_PRICE_ID_PATTERN = /0x[0-9a-fA-F]{64}/g;
 const DEFAULT_MAX_PYTH_UPDATE_FEE = 10n ** 16n;
 const OFFICIAL_PYTH_ADDRESSES_BY_CHAIN_ID = new Map<number, Address>([
 	[1, "0x4305FB66699C3B2702D4d05CF36551390A4c69C6"],
@@ -117,9 +115,10 @@ const OFFICIAL_PYTH_ADDRESSES_BY_CHAIN_ID = new Map<number, Address>([
 	[167000, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
 ]);
 
-const parseMissingPriceIds = (body: string): Set<Hex> => {
-	const matches = body.match(PYTH_PRICE_ID_PATTERN) ?? [];
-	return new Set(matches.map((id) => normalizeFeedId(id)));
+export type PythUpdateBundle = {
+	feedIds: Hex[];
+	publishTimes: number[];
+	updates: Hex[];
 };
 
 /**
@@ -129,6 +128,7 @@ const parseMissingPriceIds = (body: string): Set<Hex> => {
 export class PythPluginAdapter {
 	private hermesUrl: string;
 	private fetchFn: typeof fetch;
+	private inFlightUpdateBundles = new Map<string, Promise<PythUpdateBundle>>();
 
 	constructor(
 		hermesUrl: string,
@@ -145,18 +145,38 @@ export class PythPluginAdapter {
 
 	/**
 	 * Fetch latest price update data from Pyth Hermes API.
-	 * FeedIds are automatically bundled across concurrent calls within the same tick.
+	 * Concurrent calls coalesce only when their normalized feed sets are
+	 * identical.
 	 */
-	queryPythUpdateData = createBundledCall(
-		async (feedIds: Hex[]): Promise<Hex[]> => {
-			const normalizedIds = [...new Set(feedIds.map(normalizeFeedId))].sort(
-				(left, right) => left.localeCompare(right),
-			);
-			if (!normalizedIds.length) return [];
+	queryPythUpdateBundle = async (feedIds: Hex[]): Promise<PythUpdateBundle> => {
+		const normalizedIds = [...new Set(feedIds.map(normalizeFeedId))].sort(
+			(left, right) => left.localeCompare(right),
+		);
+		if (!normalizedIds.length) {
+			return { feedIds: [], publishTimes: [], updates: [] };
+		}
 
-			return this.fetchPythUpdateData(normalizedIds);
-		},
-	);
+		const key = normalizedIds.join(",");
+		const existing = this.inFlightUpdateBundles.get(key);
+		if (existing) return existing;
+
+		const pending = this.fetchPythUpdateBundle(normalizedIds);
+		this.inFlightUpdateBundles.set(key, pending);
+		try {
+			return await pending;
+		} finally {
+			if (this.inFlightUpdateBundles.get(key) === pending) {
+				this.inFlightUpdateBundles.delete(key);
+			}
+		}
+	};
+
+	queryPythUpdateData = async (feedIds: Hex[]): Promise<Hex[]> =>
+		(await this.queryPythUpdateBundle(feedIds)).updates;
+
+	getQueryKeyPythUpdateBundle(feedIds: Hex[]): string | null {
+		return this.getQueryKeyPythUpdateData(feedIds);
+	}
 
 	getQueryKeyPythUpdateData(feedIds: Hex[]): string | null {
 		return serializeQueryArgs([
@@ -164,23 +184,21 @@ export class PythPluginAdapter {
 		]);
 	}
 
-	private fetchPythUpdateData = async (feedIds: Hex[]): Promise<Hex[]> => {
-		if (!feedIds.length) return [];
+	private fetchPythUpdateBundle = async (
+		feedIds: Hex[],
+	): Promise<PythUpdateBundle> => {
+		if (!feedIds.length) {
+			return { feedIds: [], publishTimes: [], updates: [] };
+		}
 
 		const url = new URL("/v2/updates/price/latest", this.hermesUrl);
 		feedIds.forEach((id) => url.searchParams.append("ids[]", id));
 		url.searchParams.set("encoding", "hex");
+		url.searchParams.set("parsed", "true");
 
 		const response = await this.fetchFn(url.toString());
 		if (!response.ok) {
 			const body = await response.text().catch(() => "");
-			if (response.status === 404) {
-				const missingIds = parseMissingPriceIds(body);
-				if (missingIds.size > 0) {
-					const retryIds = feedIds.filter((id) => !missingIds.has(id));
-					return this.fetchPythUpdateData(retryIds);
-				}
-			}
 			throw new Error(
 				`Failed to fetch Pyth update data: ${response.status}${
 					body ? ` ${body}` : ""
@@ -188,11 +206,40 @@ export class PythPluginAdapter {
 			);
 		}
 
-		const body = (await response.json()) as { binary?: { data?: unknown[] } };
+		const body = (await response.json()) as {
+			binary?: { data?: unknown[] };
+			parsed?: Array<{
+				id?: unknown;
+				price?: { publish_time?: unknown };
+			}>;
+		};
 		const binaryData = body?.binary?.data;
-		if (!Array.isArray(binaryData)) return [];
-
-		return binaryData.map((item) => normalizeHex(String(item)));
+		const updates = Array.isArray(binaryData)
+			? binaryData.map((item) => normalizeHex(String(item)))
+			: [];
+		const publishTimeByFeed = new Map<Hex, number>();
+		for (const parsed of body.parsed ?? []) {
+			if (typeof parsed.id !== "string") continue;
+			const publishTime = parsed.price?.publish_time;
+			if (
+				typeof publishTime !== "number" ||
+				!Number.isSafeInteger(publishTime) ||
+				publishTime < 0
+			) {
+				continue;
+			}
+			publishTimeByFeed.set(normalizeFeedId(parsed.id), publishTime);
+		}
+		const hasCompletePublishTimes = feedIds.every((id) =>
+			publishTimeByFeed.has(id),
+		);
+		return {
+			feedIds,
+			publishTimes: hasCompletePublishTimes
+				? feedIds.map((id) => publishTimeByFeed.get(id)!)
+				: [],
+			updates,
+		};
 	};
 
 	/**
@@ -227,6 +274,10 @@ export class PythPluginAdapter {
 		this.queryPythUpdateData = fn;
 	}
 
+	setQueryPythUpdateBundle(fn: typeof this.queryPythUpdateBundle): void {
+		this.queryPythUpdateBundle = fn;
+	}
+
 	setQueryPythUpdateFee(fn: typeof this.queryPythUpdateFee): void {
 		this.queryPythUpdateFee = fn;
 	}
@@ -242,6 +293,7 @@ async function buildPythBatchItems(
 	trustedPythAddresses: ReadonlySet<string>,
 	maxUpdateFee: bigint,
 	sender: Address = zeroAddress,
+	failClosed = false,
 ): Promise<PluginBatchItems> {
 	if (!feeds.length) return { items: [], totalValue: 0n };
 
@@ -250,11 +302,15 @@ async function buildPythBatchItems(
 	for (const feed of feeds) {
 		const pythAddress = getAddress(feed.pythAddress) as Address;
 		if (!trustedPythAddresses.has(pythAddress.toLowerCase())) {
+			const error = new Error(`Untrusted Pyth contract for chainId ${chainId}`);
 			logPythPluginError(
 				pythAddress,
 				[feed.feedId],
-				new Error(`Untrusted Pyth contract for chainId ${chainId}`),
+				error,
 			);
+			if (failClosed) {
+				throw new PluginExecutionFatalError(error.message, { cause: error });
+			}
 			continue;
 		}
 		const set = grouped.get(pythAddress) || new Set();
@@ -268,7 +324,12 @@ async function buildPythBatchItems(
 	for (const [pythAddress, feedSet] of grouped.entries()) {
 		try {
 			const updateData = await adapter.queryPythUpdateData([...feedSet]);
-			if (!updateData.length) continue;
+			if (!updateData.length) {
+				if (failClosed) {
+					throw new Error("Pyth Hermes returned no update data");
+				}
+				continue;
+			}
 
 			const fee = await adapter.queryPythUpdateFee(
 				provider,
@@ -294,6 +355,12 @@ async function buildPythBatchItems(
 			totalValue += fee;
 		} catch (error) {
 			logPythPluginError(pythAddress, [...feedSet], error);
+			if (failClosed) {
+				throw new PluginExecutionFatalError(
+					`Pyth update materialization failed for ${pythAddress}`,
+					{ cause: error },
+				);
+			}
 		}
 	}
 
@@ -596,12 +663,38 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 	const buildBatchItemsFromPrefetch = (
 		entries: PythPluginPrefetch["entries"],
 		sender: Address,
+		failClosed = false,
 	): { items: EVCBatchItem[]; totalValue: bigint } => {
 		const items: EVCBatchItem[] = [];
 		let totalValue = 0n;
 		for (const entry of entries) {
-			if (!entry.updates.length) continue;
-			if (entry.fee > maxUpdateFee) continue;
+			if (
+				entry.feedIds.length !== entry.publishTimes.length ||
+				entry.feedIds.length === 0
+			) {
+				if (failClosed) {
+					throw new PluginExecutionFatalError(
+						"Pyth prefetch is missing publish-time evidence",
+					);
+				}
+				continue;
+			}
+			if (!entry.updates.length) {
+				if (failClosed) {
+					throw new PluginExecutionFatalError(
+						"Pyth prefetch has no update data",
+					);
+				}
+				continue;
+			}
+			if (entry.fee > maxUpdateFee) {
+				if (failClosed) {
+					throw new PluginExecutionFatalError(
+						`Pyth update fee ${entry.fee.toString()} exceeds max ${maxUpdateFee.toString()}`,
+					);
+				}
+				continue;
+			}
 			items.push({
 				targetContract: entry.pythAddress,
 				onBehalfOfAccount: sender,
@@ -655,12 +748,15 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 			for (const feed of feeds) {
 				const pythAddress = getAddress(feed.pythAddress);
 				if (!trusted.has(pythAddress.toLowerCase())) {
+					const error = new PluginExecutionFatalError(
+						`Untrusted Pyth contract for chainId ${chainId}`,
+					);
 					logPythPluginError(
 						pythAddress,
 						[feed.feedId],
-						new Error(`Untrusted Pyth contract for chainId ${chainId}`),
+						error,
 					);
-					continue;
+					throw error;
 				}
 				const set = grouped.get(pythAddress) ?? new Set<Hex>();
 				set.add(feed.feedId);
@@ -668,26 +764,47 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 			}
 
 			const entries: PythPluginPrefetch["entries"] = [];
-			let hadError = false;
 			await Promise.all(
 				[...grouped.entries()].map(async ([pythAddress, feedSet]) => {
 					const feedIds = [...feedSet];
-					try {
-						const updates = await adapter.queryPythUpdateData(feedIds);
-						if (!updates.length) return;
-						const fee = await adapter.queryPythUpdateFee(
-							provider,
-							pythAddress,
-							updates,
+					const bundle = await adapter.queryPythUpdateBundle(feedIds);
+					const { updates } = bundle;
+					if (!updates.length) {
+						throw new PluginExecutionFatalError(
+							"Pyth Hermes returned no update data",
 						);
-						entries.push({ pythAddress, feedIds, updates, fee });
-					} catch (err) {
-						hadError = true;
-						logPythPluginError(pythAddress, feedIds, err);
 					}
+					if (
+						bundle.feedIds.length !== bundle.publishTimes.length ||
+						bundle.feedIds.length === 0
+					) {
+						throw new PluginExecutionFatalError(
+							"Pyth Hermes response is missing publish-time evidence",
+						);
+					}
+					const fee = await adapter.queryPythUpdateFee(
+						provider,
+						pythAddress,
+						updates,
+					);
+					if (fee > maxUpdateFee) {
+						throw new PluginExecutionFatalError(
+							`Pyth update fee ${fee.toString()} exceeds max ${maxUpdateFee.toString()}`,
+						);
+					}
+					entries.push({
+						pythAddress,
+						feedIds: bundle.feedIds,
+						publishTimes: bundle.publishTimes,
+						updates,
+						fee,
+					});
 				}),
 			);
-			return entries.length || !hadError ? { entries } : undefined;
+			entries.sort((left, right) =>
+				left.pythAddress.localeCompare(right.pythAddress),
+			);
+			return { entries };
 		},
 
 		async getReadPrepend(
@@ -740,7 +857,11 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 				// Prepend the prefetched Pyth update once. Pyth updates are
 				// multicall-scoped: a single update at the head of the first
 				// evcBatch serves every health-check downstream in that batch.
-				const built = buildBatchItemsFromPrefetch(prefetch.pyth.entries, sender);
+				const built = buildBatchItemsFromPrefetch(
+					prefetch.pyth.entries,
+					sender,
+					true,
+				);
 				if (!built.items.length) return plan;
 				return prependToBatch(plan, built.items);
 			}
@@ -784,6 +905,7 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 					getTrustedPythAddresses(chainId),
 					maxUpdateFee,
 					sender,
+					true,
 				);
 				processed.push(
 					result.items.length

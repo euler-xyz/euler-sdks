@@ -8,6 +8,7 @@ import {
 	encodeFunctionData,
 	getAddress,
 	type Address,
+	type Hex,
 	type PublicClient,
 } from "viem";
 import { Account, SubAccount } from "../src/entities/Account.js";
@@ -169,7 +170,7 @@ const makeLiquidationSdk = (
 	},
 });
 
-test("PythPluginAdapter retries Hermes 404s without missing price ids", async () => {
+test("PythPluginAdapter rejects Hermes 404s when any requested feed is missing", async () => {
 	const requestedIds: string[][] = [];
 
 	const fetchFn = (async (input: RequestInfo | URL) => {
@@ -177,43 +178,7 @@ test("PythPluginAdapter retries Hermes 404s without missing price ids", async ()
 		const ids = getRequestedIds(url);
 		requestedIds.push(ids);
 
-		if (ids.includes(MISSING_FEED)) {
-			return new Response(`Price ids not found: ${MISSING_FEED}`, {
-				status: 404,
-			});
-		}
-
-		return Response.json({
-			binary: {
-				encoding: "hex",
-				data: ["abc123"],
-			},
-		});
-	}) as typeof fetch;
-
-	const adapter = new PythPluginAdapter(
-		"https://hermes.pyth.network",
-		undefined,
-		fetchFn,
-	);
-	const updateData = await adapter.queryPythUpdateData([
-		GOOD_FEED,
-		MISSING_FEED,
-	]);
-
-	assert.deepEqual(updateData, ["0xabc123"]);
-	assert.deepEqual(requestedIds, [[MISSING_FEED, GOOD_FEED], [GOOD_FEED]]);
-});
-
-test("PythPluginAdapter returns no update data when all Hermes ids are missing", async () => {
-	const requestedIds: string[][] = [];
-
-	const fetchFn = (async (input: RequestInfo | URL) => {
-		const url = typeof input === "string" ? input : input.toString();
-		const ids = getRequestedIds(url);
-		requestedIds.push(ids);
-
-		return new Response(`Price ids not found: ${ids.join(", ")}`, {
+		return new Response(`Price ids not found: ${MISSING_FEED}`, {
 			status: 404,
 		});
 	}) as typeof fetch;
@@ -223,10 +188,122 @@ test("PythPluginAdapter returns no update data when all Hermes ids are missing",
 		undefined,
 		fetchFn,
 	);
-	const updateData = await adapter.queryPythUpdateData([MISSING_FEED]);
+	await assert.rejects(
+		adapter.queryPythUpdateBundle([GOOD_FEED, MISSING_FEED]),
+		/Failed to fetch Pyth update data: 404.*Price ids not found/,
+	);
+	assert.deepEqual(requestedIds, [[MISSING_FEED, GOOD_FEED]]);
+});
 
-	assert.deepEqual(updateData, []);
-	assert.deepEqual(requestedIds, [[MISSING_FEED]]);
+test("PythPluginAdapter returns feed-aligned publish-time evidence", async () => {
+	const adapter = new PythPluginAdapter(
+		"https://hermes.pyth.network",
+		undefined,
+		(async (input: RequestInfo | URL) => {
+			const url = new URL(input.toString());
+			assert.equal(url.searchParams.get("parsed"), "true");
+			return Response.json({
+				binary: { encoding: "hex", data: ["feedface"] },
+				parsed: [
+					{ id: OTHER_FEED, price: { publish_time: 1_900_000_002 } },
+					{ id: GOOD_FEED, price: { publish_time: 1_900_000_001 } },
+				],
+			});
+		}) as typeof fetch,
+	);
+
+	const bundle = await adapter.queryPythUpdateBundle([OTHER_FEED, GOOD_FEED]);
+	assert.deepEqual(bundle, {
+		feedIds: [GOOD_FEED, OTHER_FEED],
+		publishTimes: [1_900_000_001, 1_900_000_002],
+		updates: ["0xfeedface"],
+	});
+});
+
+test("PythPluginAdapter isolates concurrent feed sets and their update fees", async () => {
+	const requestedIds: string[][] = [];
+	const feePayloads: Hex[][] = [];
+	const adapter = new PythPluginAdapter(
+		"https://hermes.pyth.network",
+		undefined,
+		(async (input: RequestInfo | URL) => {
+			const ids = getRequestedIds(input.toString());
+			requestedIds.push(ids);
+			const data = ids.length === 1
+				? new Map<string, string>([
+						[GOOD_FEED, "aaaa"],
+						[OTHER_FEED, "bbbb"],
+					]).get(ids[0]!) ?? "cccc"
+				: "cccc";
+			return Response.json({
+				binary: { encoding: "hex", data: [data] },
+				parsed: ids.map((id) => ({
+					id,
+					price: {
+						publish_time: id === GOOD_FEED ? 1_900_000_001 : 1_900_000_002,
+					},
+				})),
+			});
+		}) as typeof fetch,
+	);
+	const provider = {
+		readContract: async ({ args }: { args: readonly [Hex[]] }) => {
+			feePayloads.push(args[0]);
+			return args[0][0] === "0xaaaa" ? 11n : 22n;
+		},
+	} as unknown as PublicClient;
+
+	const [goodBundle, otherBundle] = await Promise.all([
+		adapter.queryPythUpdateBundle([GOOD_FEED]),
+		adapter.queryPythUpdateBundle([OTHER_FEED]),
+	]);
+	const [goodFee, otherFee] = await Promise.all([
+		adapter.queryPythUpdateFee(provider, PYTH, goodBundle.updates),
+		adapter.queryPythUpdateFee(provider, PYTH, otherBundle.updates),
+	]);
+
+	assert.deepEqual(requestedIds, [[GOOD_FEED], [OTHER_FEED]]);
+	assert.deepEqual(goodBundle, {
+		feedIds: [GOOD_FEED],
+		publishTimes: [1_900_000_001],
+		updates: ["0xaaaa"],
+	});
+	assert.deepEqual(otherBundle, {
+		feedIds: [OTHER_FEED],
+		publishTimes: [1_900_000_002],
+		updates: ["0xbbbb"],
+	});
+	assert.deepEqual(feePayloads, [["0xaaaa"], ["0xbbbb"]]);
+	assert.equal(goodFee, 11n);
+	assert.equal(otherFee, 22n);
+});
+
+test("PythPluginAdapter coalesces equivalent normalized feed sets", async () => {
+	let requests = 0;
+	const adapter = new PythPluginAdapter(
+		"https://hermes.pyth.network",
+		undefined,
+		(async (input: RequestInfo | URL) => {
+			requests += 1;
+			const ids = getRequestedIds(input.toString());
+			return Response.json({
+				binary: { encoding: "hex", data: ["feedface"] },
+				parsed: ids.map((id, index) => ({
+					id,
+					price: { publish_time: 1_900_000_001 + index },
+				})),
+			});
+		}) as typeof fetch,
+	);
+
+	const [first, second] = await Promise.all([
+		adapter.queryPythUpdateBundle([OTHER_FEED, GOOD_FEED]),
+		adapter.queryPythUpdateBundle([GOOD_FEED, OTHER_FEED, GOOD_FEED]),
+	]);
+
+	assert.equal(requests, 1);
+	assert.deepEqual(first, second);
+	assert.deepEqual(first.feedIds, [GOOD_FEED, OTHER_FEED]);
 });
 
 test.each(["processPlan", "prefetch"] as const)(
@@ -234,9 +311,14 @@ test.each(["processPlan", "prefetch"] as const)(
 	async (path) => {
 		const requestedIds = new Set<string>();
 		const fetchFn = (async (input: RequestInfo | URL) => {
-			for (const id of getRequestedIds(input.toString())) requestedIds.add(id);
+			const ids = getRequestedIds(input.toString());
+			for (const id of ids) requestedIds.add(id);
 			return Response.json({
 				binary: { encoding: "hex", data: ["feedface"] },
+				parsed: ids.map((id, index) => ({
+					id,
+					price: { publish_time: 1_900_000_000 + index },
+				})),
 			});
 		}) as typeof fetch;
 		const fetchSubAccount = async () => ({
@@ -261,6 +343,7 @@ test.each(["processPlan", "prefetch"] as const)(
 				new Set(prefetch?.entries[0]?.feedIds),
 				new Set([DEBT_FEED, GOOD_FEED, OTHER_FEED]),
 			);
+			assert.equal(prefetch?.entries[0]?.publishTimes.length, 3);
 		}
 
 		assert.deepEqual(
@@ -311,6 +394,35 @@ test.each(["processPlugins", "prefetchPluginData"] as const)(
 	},
 );
 
+test.each(["processPlugins", "prefetchPluginData"] as const)(
+	"SDK %s fails closed for every plugin error",
+	async (path) => {
+		const failure = new Error("required plugin unavailable");
+		const plugin = path === "processPlugins"
+			? {
+					name: "required",
+					processPlan: async () => {
+						throw failure;
+					},
+				}
+			: {
+					name: "required",
+					prefetch: async () => {
+						throw failure;
+					},
+				};
+		const sdk = Object.assign(Object.create(EulerSDK.prototype), {
+			plugins: [plugin],
+		}) as EulerSDK;
+
+		const call = path === "processPlugins"
+			? sdk.processPlugins([], OWNER, 1)
+			: sdk.prefetchPluginData([], OWNER, 1);
+
+		await assert.rejects(call, failure);
+	},
+);
+
 test("Pyth liquidation enrichment ignores non-blocking controller diagnostics", async () => {
 	const fetchSubAccount = async () => ({
 		result: makeViolatorSubAccount(),
@@ -324,12 +436,66 @@ test("Pyth liquidation enrichment ignores non-blocking controller diagnostics", 
 	});
 
 	const prefetched = await createPythPlugin({
-		fetchFn: (async () => Response.json({
-			binary: { encoding: "hex", data: ["feedface"] },
-		})) as typeof fetch,
+		fetchFn: (async (input: RequestInfo | URL) => {
+			const ids = getRequestedIds(input.toString());
+			return Response.json({
+				binary: { encoding: "hex", data: ["feedface"] },
+				parsed: ids.map((id, index) => ({
+					id,
+					price: { publish_time: 1_900_000_000 + index },
+				})),
+			});
+		}) as typeof fetch,
 	}).prefetch?.(makeLiquidationPlan(), OWNER, 1, sdk as never);
 
 	assert.equal(prefetched?.entries.length, 1);
+});
+
+test("Pyth prefetch fails closed when Hermes omits publish-time evidence", async () => {
+	const sdk = makeLiquidationSdk(async () => ({
+		result: makeViolatorSubAccount(),
+		errors: [],
+	}));
+	const plugin = createPythPlugin({
+		fetchFn: (async () => Response.json({
+			binary: { encoding: "hex", data: ["feedface"] },
+		})) as typeof fetch,
+	});
+
+	await assert.rejects(
+		plugin.prefetch?.(makeLiquidationPlan(), OWNER, 1, sdk as never),
+		/Pyth Hermes response is missing publish-time evidence/,
+	);
+});
+
+test("Pyth prefetch rejects a partial-feed Hermes 404 without retrying a subset", async () => {
+	const requestedIds: string[][] = [];
+	const sdk = makeLiquidationSdk(async () => ({
+		result: makeViolatorSubAccount(),
+		errors: [],
+	}));
+	const plugin = createPythPlugin({
+		fetchFn: (async (input: RequestInfo | URL) => {
+			const ids = getRequestedIds(input.toString());
+			requestedIds.push(ids);
+			if (ids.includes(MISSING_FEED)) {
+				throw new Error("test setup requested an unexpected feed");
+			}
+			return new Response(`Price ids not found: ${OTHER_FEED}`, {
+				status: 404,
+			});
+		}) as typeof fetch,
+	});
+
+	await assert.rejects(
+		plugin.prefetch?.(makeLiquidationPlan(), OWNER, 1, sdk as never),
+		/Failed to fetch Pyth update data: 404.*Price ids not found/,
+	);
+	assert.equal(requestedIds.length, 1);
+	assert.deepEqual(
+		new Set(requestedIds[0]),
+		new Set([DEBT_FEED, GOOD_FEED, OTHER_FEED]),
+	);
 });
 
 test("Pyth strict liquidation rejects a missing active-collateral route before deduplicating it", async () => {

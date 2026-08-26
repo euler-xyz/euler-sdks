@@ -4,6 +4,13 @@
 
 Git tags and GitHub Releases are the release-note source of truth. Do not add package-local changelog or release-notes files for new SDK releases.
 
+## PR #96 release classification
+
+PR #96 is an intentional breaking SDK release and must be published under a new
+major version. Its required Pyth `publishTimes` evidence and required
+`IExecutionService` / `IPositionMigrationService` additions are not backward
+compatible. Do not publish these changes under a minor or patch version.
+
 ## Release inputs
 
 The publish skill should use this file as the repo-local playbook for `@eulerxyz/euler-v2-sdk` releases.

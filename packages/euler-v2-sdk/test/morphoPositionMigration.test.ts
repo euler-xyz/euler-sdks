@@ -877,9 +877,7 @@ test("Morpho migration simulation accepts an unmined transaction grant", async (
 	assert.ok(items.length > 0);
 });
 
-test("Morpho transaction authorization is skipped when already authorized", async () => {
-	// An authorization we did not grant is not ours to revoke, so
-	// removeAuthorizationAfterMigration must not conjure a disable request.
+test("Morpho transaction authorization always cleans up an existing authorization", async () => {
 	const connector = createConnector({ isAuthorized: true });
 
 	const authorization = await connector.getAuthorization({
@@ -897,7 +895,9 @@ test("Morpho transaction authorization is skipped when already authorized", asyn
 		authorizationKind: "transaction",
 	});
 
-	assert.equal(authorization, undefined);
+	assert.ok(authorization);
+	assert.equal(authorization.call, undefined);
+	assert.deepEqual(authorization.revocation.args, [SWAP_VERIFIER, false]);
 });
 
 test("Morpho transaction authorization carries its revocation without postMigrationAuthorization", async () => {
@@ -919,6 +919,7 @@ test("Morpho transaction authorization carries its revocation without postMigrat
 	});
 
 	assert.ok(authorization);
+	assert.deepEqual(authorization.call?.args, [SWAP_VERIFIER, true]);
 	// The in-batch disable needs a signature this form cannot supply; the
 	// revocation is sent as its own transaction instead.
 	assert.equal(authorization.postMigrationAuthorization, undefined);
