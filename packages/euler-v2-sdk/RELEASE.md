@@ -6,10 +6,11 @@ Git tags and GitHub Releases are the release-note source of truth. Do not add pa
 
 ## SDK 2.1 compatibility
 
-SDK 2.1 requires feed-aligned Pyth `publishTimes` evidence and includes
-materialized-execution methods on `IExecutionService` and
-`IPositionMigrationService`. Custom interface implementations and custom Pyth
-prefetch payloads must implement the SDK 2.1 contract.
+SDK 2.1 requires feed-aligned Pyth `publishTimes` evidence, includes
+materialized-execution methods on `IExecutionService`, and includes
+`prepareMigrationAuthorizationSlots` on `IPositionMigrationService`. Custom
+interface implementations and custom Pyth prefetch payloads must implement
+their respective SDK 2.1 contracts.
 
 ## Release inputs
 
