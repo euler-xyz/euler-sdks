@@ -4,12 +4,12 @@
 
 Git tags and GitHub Releases are the release-note source of truth. Do not add package-local changelog or release-notes files for new SDK releases.
 
-## PR #96 release classification
+## SDK 2.1 compatibility
 
-PR #96 is an intentional breaking SDK release and must be published under a new
-major version. Its required Pyth `publishTimes` evidence and required
-`IExecutionService` / `IPositionMigrationService` additions are not backward
-compatible. Do not publish these changes under a minor or patch version.
+SDK 2.1 requires feed-aligned Pyth `publishTimes` evidence and includes
+materialized-execution methods on `IExecutionService` and
+`IPositionMigrationService`. Custom interface implementations and custom Pyth
+prefetch payloads must implement the SDK 2.1 contract.
 
 ## Release inputs
 
