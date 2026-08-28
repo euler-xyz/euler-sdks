@@ -13,6 +13,8 @@ export type {
 	RewardCampaign,
 	RewardSource,
 	RewardAction,
+	RewardEligibilityRequirement,
+	TokenHoldingEligibilityRequirement,
 	RewardsServiceConfig,
 	RewardsDirectAdapterConfig,
 	RewardsV3AdapterConfig,

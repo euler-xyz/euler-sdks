@@ -9,6 +9,7 @@ import type {
 	IRewardsAdapter,
 	RewardAction,
 	RewardCampaign,
+	RewardEligibilityRequirement,
 	RewardSource,
 	TurtleMerkleProof,
 	UserReward,
@@ -148,6 +149,56 @@ const normalizeAddressList = (
 ): string[] | undefined => {
 	if (!list?.length) return undefined;
 	return list.map((address) => address.toLowerCase());
+};
+
+const normalizeEligibilityRequirements = (
+	value: unknown,
+): RewardEligibilityRequirement[] | undefined => {
+	if (!Array.isArray(value)) return undefined;
+	const requirements = value.flatMap((item) => {
+		if (!item || typeof item !== "object") return [];
+		const requirement = item as Partial<RewardEligibilityRequirement>;
+		const tokenAddress = normalizeAddress(requirement.tokenAddress);
+		if (
+			requirement.type !== "token-holding" ||
+			!tokenAddress ||
+			!Number.isInteger(requirement.chainId) ||
+			Number(requirement.chainId) <= 0 ||
+			typeof requirement.minimumAmount !== "string" ||
+			!/^\d+$/.test(requirement.minimumAmount) ||
+			!Number.isInteger(requirement.minimumDurationSeconds) ||
+			Number(requirement.minimumDurationSeconds) <= 0
+		) {
+			return [];
+		}
+
+		let minimumAmount: string;
+		try {
+			const amount = BigInt(requirement.minimumAmount);
+			if (amount <= 0n) return [];
+			minimumAmount = amount.toString();
+		} catch {
+			return [];
+		}
+
+		return [
+			{
+				type: "token-holding" as const,
+				chainId: Number(requirement.chainId),
+				tokenAddress,
+				minimumAmount,
+				minimumDurationSeconds: Number(requirement.minimumDurationSeconds),
+				...(typeof requirement.tokenSymbol === "string" && {
+					tokenSymbol: requirement.tokenSymbol,
+				}),
+				...(Number.isInteger(requirement.tokenDecimals) &&
+					Number(requirement.tokenDecimals) >= 0 && {
+						tokenDecimals: Number(requirement.tokenDecimals),
+					}),
+			},
+		];
+	});
+	return requirements.length > 0 ? requirements : undefined;
 };
 
 type RewardsClaimAdapter = Pick<
@@ -522,6 +573,9 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 					),
 					whitelist: normalizeAddressList(campaignRow.whitelist),
 					blacklist: normalizeAddressList(campaignRow.blacklist),
+					eligibilityRequirements: normalizeEligibilityRequirements(
+						campaignRow.eligibilityRequirements,
+					),
 				});
 			}
 
@@ -563,6 +617,9 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			),
 			whitelist: normalizeAddressList(row.whitelist),
 			blacklist: normalizeAddressList(row.blacklist),
+			eligibilityRequirements: normalizeEligibilityRequirements(
+				row.eligibilityRequirements,
+			),
 		});
 	}
 

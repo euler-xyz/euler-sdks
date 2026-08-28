@@ -15,10 +15,12 @@ import type {
 	FuulTotalEntry,
 	FuulTotals,
 	IRewardsAdapter,
+	MerklCampaign,
 	MerklOpportunity,
 	MerklUserChainRewards,
 	RewardAction,
 	RewardCampaign,
+	RewardEligibilityRequirement,
 	RewardsDirectAdapterConfig,
 	TurtleMerkleProof,
 	TurtleStreamConfig,
@@ -90,6 +92,59 @@ const normalizeAddress = (value?: string): Address | undefined => {
 	} catch {
 		return undefined;
 	}
+};
+
+const normalizeMerklEligibilityRequirements = (
+	campaign: MerklCampaign,
+	defaultChainId: number,
+): RewardEligibilityRequirement[] | undefined => {
+	const rewardTokenAddress = normalizeAddress(campaign.rewardToken.address);
+	const requirements = (campaign.params?.hooks ?? []).flatMap((hook) => {
+		const tokenAddress = normalizeAddress(hook.eligibilityTokenAddress);
+		const chainId = hook.eligibilityTokenChainId;
+		const duration = hook.eligibilityDuration;
+		const threshold = hook.eligibilityTokenThreshold;
+		if (
+			hook.hookType !== 2 ||
+			!tokenAddress ||
+			!Number.isInteger(chainId) ||
+			Number(chainId) <= 0 ||
+			!Number.isInteger(duration) ||
+			Number(duration) <= 0 ||
+			typeof threshold !== "string" ||
+			!/^\d+$/.test(threshold)
+		) {
+			return [];
+		}
+
+		let minimumAmount: string;
+		try {
+			const amount = BigInt(threshold);
+			if (amount <= 0n) return [];
+			minimumAmount = amount.toString();
+		} catch {
+			return [];
+		}
+
+		const requirement: RewardEligibilityRequirement = {
+			type: "token-holding",
+			chainId: Number(chainId),
+			tokenAddress,
+			minimumAmount,
+			minimumDurationSeconds: Number(duration),
+		};
+		if (
+			rewardTokenAddress === tokenAddress &&
+			(campaign.rewardToken.chainId ?? defaultChainId) === requirement.chainId
+		) {
+			requirement.tokenSymbol = campaign.rewardToken.symbol;
+			if (Number.isInteger(campaign.rewardToken.decimals)) {
+				requirement.tokenDecimals = campaign.rewardToken.decimals;
+			}
+		}
+		return [requirement];
+	});
+	return requirements.length > 0 ? requirements : undefined;
 };
 
 const sanitizeFuulClaimChecks = (
@@ -787,6 +842,10 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				const aprs = merklAprMap(opp);
 
 				for (const c of opp.campaigns ?? []) {
+					const eligibilityRequirements = normalizeMerklEligibilityRequirements(
+						c,
+						chainId,
+					);
 					if (
 						type === "EULER_BORROW_FROM_COLLATERAL" ||
 						type === "EULER_MULTI_BORROW_FROM_COLLATERAL"
@@ -837,6 +896,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 								sourceUrl: merklOpportunityUrl(opp, type),
 								whitelist: normalizeAddressList(c.params?.whitelist),
 								blacklist: normalizeAddressList(c.params?.blacklist),
+								eligibilityRequirements,
 								_vaultAddress: pair.vault,
 							} as RewardCampaign & { _vaultAddress: string });
 						}
@@ -876,6 +936,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 								sourceUrl: merklOpportunityUrl(opp, type),
 								whitelist: normalizeAddressList(c.params?.whitelist),
 								blacklist: normalizeAddressList(c.params?.blacklist),
+								eligibilityRequirements,
 								_vaultAddress: vaultAddress,
 							} as RewardCampaign & { _vaultAddress: string });
 						}
@@ -913,6 +974,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 						sourceUrl: merklOpportunityUrl(opp, type),
 						whitelist: normalizeAddressList(c.params?.whitelist),
 						blacklist: normalizeAddressList(c.params?.blacklist),
+						eligibilityRequirements,
 						_vaultAddress: vaultAddress,
 					} as RewardCampaign & { _vaultAddress: string });
 				}

@@ -352,7 +352,9 @@ const makeMerklCampaign = (
 		subType: 0,
 		rewardToken: {
 			address: rewardToken,
+			chainId: 1,
 			symbol: "EUL",
+			decimals: 18,
 			icon: "https://example.invalid/eul.png",
 		},
 		apr: 0,
@@ -954,6 +956,17 @@ test("V3 rewards adapter maps campaign whitelist and blacklist (lowercased)", as
 						status: "active",
 						whitelist: [accountAddress],
 						blacklist: [otherAccountAddress],
+						eligibilityRequirements: [
+							{
+								type: "token-holding",
+								chainId: 1,
+								tokenAddress: rewardToken,
+								minimumAmount: "0100000000000000000000000",
+								minimumDurationSeconds: 10,
+								tokenSymbol: "EUL",
+								tokenDecimals: 18,
+							},
+						],
 					},
 				],
 			},
@@ -969,6 +982,17 @@ test("V3 rewards adapter maps campaign whitelist and blacklist (lowercased)", as
 	]);
 	assert.deepEqual(info?.campaigns[0]?.blacklist, [
 		otherAccountAddress.toLowerCase(),
+	]);
+	assert.deepEqual(info?.campaigns[0]?.eligibilityRequirements, [
+		{
+			type: "token-holding",
+			chainId: 1,
+			tokenAddress: rewardToken,
+			minimumAmount: "100000000000000000000000",
+			minimumDurationSeconds: 10,
+			tokenSymbol: "EUL",
+			tokenDecimals: 18,
+		},
 	]);
 	// Eligibility predicate honours the mapped lists.
 	assert.equal(info?.getActiveCampaigns({ viewer: accountAddress }).length, 1);
@@ -994,6 +1018,15 @@ test("V3 rewards adapter maps whitelist and blacklist on flat rows", async () =>
 				},
 				whitelist: [accountAddress],
 				blacklist: [otherAccountAddress],
+				eligibilityRequirements: [
+					{
+						type: "token-holding",
+						chainId: 1,
+						tokenAddress: rewardToken,
+						minimumAmount: "100000000000000000000000",
+						minimumDurationSeconds: 10,
+					},
+				],
 			},
 		],
 	}));
@@ -1008,6 +1041,10 @@ test("V3 rewards adapter maps whitelist and blacklist on flat rows", async () =>
 	assert.deepEqual(info?.campaigns[0]?.blacklist, [
 		otherAccountAddress.toLowerCase(),
 	]);
+	assert.equal(
+		info?.campaigns[0]?.eligibilityRequirements?.[0]?.minimumAmount,
+		"100000000000000000000000",
+	);
 });
 
 test("direct rewards adapter expands Merkl MULTILENDBORROW markets", async () => {
@@ -1166,6 +1203,16 @@ test("direct rewards adapter preserves standard Merkl allowlist metadata", async
 							evkAddress: vaultAddress,
 							whitelist: [accountAddress],
 							blacklist: [otherAccountAddress],
+							hooks: [
+								{
+									hookType: 2,
+									eligibilityDuration: 10,
+									eligibilityTokenAddress: rewardToken,
+									eligibilityTokenChainId: 1,
+									eligibilityTokenThreshold:
+										"100000000000000000000000",
+								},
+							],
 						},
 					}),
 				],
@@ -1185,6 +1232,17 @@ test("direct rewards adapter preserves standard Merkl allowlist metadata", async
 	]);
 	assert.deepEqual(info?.campaigns[0]?.blacklist, [
 		otherAccountAddress.toLowerCase(),
+	]);
+	assert.deepEqual(info?.campaigns[0]?.eligibilityRequirements, [
+		{
+			type: "token-holding",
+			chainId: 1,
+			tokenAddress: rewardToken,
+			minimumAmount: "100000000000000000000000",
+			minimumDurationSeconds: 10,
+			tokenSymbol: "EUL",
+			tokenDecimals: 18,
+		},
 	]);
 });
 

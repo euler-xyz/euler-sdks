@@ -14,6 +14,19 @@ import type { VaultRewardInfo } from "./vaultRewardInfo.js";
 export type RewardSource = "merkl" | "brevis" | "fuul" | "turtle";
 export type RewardAction = "LEND" | "BORROW" | "BORROW_COLLATERAL" | "LOOPING";
 
+export interface TokenHoldingEligibilityRequirement {
+	type: "token-holding";
+	chainId: number;
+	tokenAddress: Address;
+	/** Minimum token amount in base units. */
+	minimumAmount: string;
+	minimumDurationSeconds: number;
+	tokenSymbol?: string;
+	tokenDecimals?: number;
+}
+
+export type RewardEligibilityRequirement = TokenHoldingEligibilityRequirement;
+
 export interface RewardCampaign {
 	campaignId: string;
 	source: RewardSource;
@@ -37,6 +50,8 @@ export interface RewardCampaign {
 	/** Lowercased Merkl recipient allowlist/denylist, when provided by campaign params. */
 	whitelist?: string[];
 	blacklist?: string[];
+	/** Requirements that must be satisfied for campaign rewards to apply. */
+	eligibilityRequirements?: RewardEligibilityRequirement[];
 }
 
 export interface UserRewardToken {
@@ -287,7 +302,9 @@ export interface MerklCampaign {
 	subType?: number | null;
 	rewardToken: {
 		address: string;
+		chainId?: number;
 		symbol: string;
+		decimals?: number;
 		icon?: string;
 	};
 	apr: number;
@@ -300,6 +317,14 @@ export interface MerklCampaign {
 		collateralAddress?: string;
 		whitelist?: string[];
 		blacklist?: string[];
+		hooks?: Array<{
+			hookType?: number;
+			eligibilityDuration?: number;
+			eligibilityTokenAddress?: string;
+			eligibilityTokenChainId?: number;
+			eligibilityTokenThreshold?: string;
+			schemaUid?: string;
+		}>;
 		markets?: Array<{
 			campaignParameters?: {
 				evkAddress?: string;
