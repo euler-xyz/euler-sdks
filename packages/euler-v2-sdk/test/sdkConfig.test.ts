@@ -25,6 +25,9 @@ describe("SDK env config", () => {
 			EULER_SDK_V3_API_KEY: "secret",
 			EULER_SDK_ACTIVITY_V3_API_URL: "https://activity.example",
 			EULER_SDK_ACTIVITY_V3_API_KEY: "activity-secret",
+			EULER_SDK_ORACLE_ADAPTER_V3_API_URL: "https://oracles.example",
+			EULER_SDK_ORACLE_ADAPTER_V3_API_KEY: "oracle-secret",
+			EULER_SDK_ORACLE_ADAPTER_V3_PAGE_SIZE: "75",
 			EULER_SDK_ACCOUNT_SERVICE_ADAPTER: "onchain",
 			EULER_SDK_EVAULT_V3_BATCH_SIZE: "42",
 			EULER_SDK_REWARDS_ENABLE_MERKL: "false",
@@ -47,6 +50,9 @@ describe("SDK env config", () => {
 			v3ApiKey: "secret",
 			activityV3ApiUrl: "https://activity.example",
 			activityV3ApiKey: "activity-secret",
+			oracleAdapterV3ApiUrl: "https://oracles.example",
+			oracleAdapterV3ApiKey: "oracle-secret",
+			oracleAdapterV3PageSize: 75,
 			accountServiceAdapter: "onchain",
 			eVaultV3BatchSize: 42,
 			rewardsEnableMerkl: false,
@@ -190,5 +196,18 @@ describe("SDK env config", () => {
 		});
 
 		expect((sdk.priceService as any).backendClient.apiKey).toBe("pricing-key");
+	});
+
+	it("preserves the deprecated oracle base URL as an explicit V3 endpoint", async () => {
+		const sdk = await buildEulerSDK({
+			oracleAdapterServiceConfig: {
+				baseUrl: "https://oracle-proxy.example",
+			},
+			servicesOverrides: { deploymentService },
+		});
+
+		expect((sdk.oracleAdapterService as any).endpoint).toBe(
+			"https://oracle-proxy.example",
+		);
 	});
 });

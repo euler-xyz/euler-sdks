@@ -24,6 +24,7 @@ import {
   type DataIssue,
   type DataIssueLocation,
   type DataIssueOwnerRef,
+  type OracleAdapterMetadata,
 } from "@eulerxyz/euler-v2-sdk";
 import { getAddress, isAddress, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
@@ -252,21 +253,7 @@ export type DiagnosticIssue = Omit<Partial<DataIssue>, "locations"> & {
   chainId?: number;
 };
 
-export type OracleAdapterMetadataMap = Record<
-  string,
-  {
-    address: string;
-    oracle: string;
-    base?: string;
-    quote?: string;
-    provider?: string;
-    methodology?: string;
-    label?: string;
-    name?: string;
-    checks?: Array<{ id?: string; message?: string; pass?: boolean; severity?: string; [key: string]: unknown }>;
-    [key: string]: unknown;
-  }
->;
+export type OracleAdapterMetadataMap = Record<string, OracleAdapterMetadata>;
 
 type MaybeServiceResult<T> = T | { result: T; errors?: DiagnosticIssue[] };
 

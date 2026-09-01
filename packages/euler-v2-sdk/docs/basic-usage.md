@@ -333,20 +333,26 @@ const { result: eVaultsOnly } = await sdk.vaultMetaService.fetchAllVaults(1, {
 })
 ```
 
-## Oracle Adapter Metadata
+## Oracle Adapter Assessments
 
-Use `oracleAdapterService` to get provider/methodology/check metadata for oracle adapter entries. `fetchOracleAdapterMap()` is keyed by the normalized `adapter.oracle` address and each metadata entry also exposes normalized `oracle`, `base`, and `quote` addresses when present:
+Use `oracleAdapterService` to get Data V3 recognition and health assessments. The service returns the V3 `checksStatus` verdict as-is and preserves four-state finding outcomes; consumers should not recompute the aggregate from individual findings. Display identity is trustworthy only when `recognized` is true.
 
 ```typescript
-import { getOracleRouteAdapters } from '@eulerxyz/euler-v2-sdk';
+const assessment = await sdk.oracleAdapterService.fetchOracleAdapterAssessment(
+  1,
+  adapterAddress,
+);
 
-const adapterMap = await sdk.oracleAdapterService.fetchOracleAdapterMap(1);
-const adapter = getOracleRouteAdapters(vault.debtPricingOracleRoute)[0];
-if (adapter) {
-  const metadata = adapterMap[adapter.oracle.toLowerCase()];
-  console.log(metadata?.provider, metadata?.base, metadata?.quote, metadata?.checks);
+if (assessment?.recognized) {
+  console.log(assessment.provider, assessment.methodology, assessment.checksStatus);
+}
+
+for (const finding of assessment?.findings ?? []) {
+  console.log(finding.key, finding.outcome, finding.severity);
 }
 ```
+
+`fetchOracleAdapterAssessments()` and `fetchOracleRouters()` follow Data V3 pagination internally. The deprecated `fetchOracleAdapters()` and `fetchOracleAdapterMap()` aliases are V3-backed, return recognized assessments only, and remain available for compatibility.
 
 ## How Vault Types Work
 

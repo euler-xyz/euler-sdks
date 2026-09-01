@@ -64,9 +64,12 @@ function symbolForAddress(
 function checksSummary(metadata?: OracleAdapterMetadataMap[string]): string {
   const checks = metadata?.checks;
   if (!checks || checks.length === 0) return "N/A";
-  const failed = checks.filter((check) => check.pass === false);
-  if (failed.length === 0) return `${checks.length} passed`;
-  return `${failed.length} failed`;
+  const failed = checks.filter((check) => check.outcome === "fail");
+  const unknown = checks.filter((check) => check.outcome === "unknown");
+  if (failed.length > 0) return `${failed.length} failed`;
+  if (unknown.length > 0) return `${unknown.length} unknown`;
+  if (metadata?.checksStatus === "positive") return `${checks.length} passed`;
+  return "No verdict";
 }
 
 function resolvedVaultLabel(resolvedVault: OracleResolvedVault): string {
@@ -255,7 +258,7 @@ export function OracleAdaptersInfo({
               {merged.map(({ adapter, metadata }, index) => {
                 const label = providerLabel(adapter, metadata);
                 const failedChecks = (metadata?.checks ?? []).filter(
-                  (check) => check.pass === false
+                  (check) => check.outcome === "fail"
                 );
 
                 return (

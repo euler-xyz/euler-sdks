@@ -98,6 +98,7 @@ import {
 import {
 	DEFAULT_EULER_LABELS_BASE_URL,
 	DEFAULT_TOKENLIST_API_BASE_URL,
+	DEFAULT_V3_API_URL,
 	defaultAccountV3AdapterConfig,
 	defaultAccountVaultsAdapterConfig,
 	defaultDeploymentServiceConfig,
@@ -1487,13 +1488,37 @@ export async function buildEulerSDK<
 	const oracleAdapterService =
 		servicesOverrides?.oracleAdapterService ??
 		new OracleAdapterService(
-			{
-				...maybeField("baseUrl", envConfig.oracleAdaptersBaseUrl),
-				...maybeField("cacheMs", envConfig.oracleAdaptersCacheMs),
-				...(oracleAdapterServiceConfig ?? {}),
-				...maybeField("baseUrl", config?.oracleAdaptersBaseUrl),
-				...maybeField("cacheMs", config?.oracleAdaptersCacheMs),
-			},
+			resolveV3AdapterConfig<OracleAdapterServiceConfig & { endpoint: string }>(
+				{ endpoint: DEFAULT_V3_API_URL },
+				{
+					explicitConfig: oracleAdapterServiceConfig
+						? {
+							...oracleAdapterServiceConfig,
+							...(oracleAdapterServiceConfig.endpoint === undefined &&
+							oracleAdapterServiceConfig.baseUrl !== undefined
+								? { endpoint: oracleAdapterServiceConfig.baseUrl }
+								: {}),
+						}
+						: undefined,
+					explicitV3ApiKey: v3ApiKey,
+					envConfig,
+					config,
+					envEndpoint:
+						envConfig.oracleAdapterV3ApiUrl ?? envConfig.oracleAdaptersBaseUrl,
+					configEndpoint:
+						config?.oracleAdapterV3ApiUrl ?? config?.oracleAdaptersBaseUrl,
+					envApiKey: envConfig.oracleAdapterV3ApiKey,
+					configApiKey: config?.oracleAdapterV3ApiKey,
+					envExtra: {
+						...maybeField("cacheMs", envConfig.oracleAdaptersCacheMs),
+						...maybeField("pageSize", envConfig.oracleAdapterV3PageSize),
+					},
+					configExtra: {
+						...maybeField("cacheMs", config?.oracleAdaptersCacheMs),
+						...maybeField("pageSize", config?.oracleAdapterV3PageSize),
+					},
+				},
+			),
 			resolvedBuildQuery,
 		);
 	const feeFlowService =

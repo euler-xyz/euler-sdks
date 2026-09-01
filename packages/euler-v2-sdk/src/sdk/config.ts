@@ -95,6 +95,10 @@ export interface EulerSDKConfig {
 	tokenlistApiBaseUrl?: string;
 	tokenlistUrlTemplate?: string;
 
+	oracleAdapterV3ApiUrl?: string;
+	oracleAdapterV3ApiKey?: string;
+	oracleAdapterV3PageSize?: number;
+	/** @deprecated Use `oracleAdapterV3ApiUrl`. */
 	oracleAdaptersBaseUrl?: string;
 	oracleAdaptersCacheMs?: number;
 
@@ -498,10 +502,7 @@ export function readEulerSDKEnvConfig(
 		swapApiUrl: readString(env, "EULER_SDK_SWAP_API_URL"),
 		swapDefaultDeadline: readNumber(env, "EULER_SDK_SWAP_DEFAULT_DEADLINE"),
 
-		eulerInterfacesBranch: readString(
-			env,
-			"EULER_SDK_EULER_INTERFACES_BRANCH",
-		),
+		eulerInterfacesBranch: readString(env, "EULER_SDK_EULER_INTERFACES_BRANCH"),
 		deploymentsUrl: readString(env, "EULER_SDK_DEPLOYMENTS_URL"),
 
 		eulerLabelsBaseUrl: readString(env, "EULER_SDK_EULER_LABELS_BASE_URL"),
@@ -540,6 +541,18 @@ export function readEulerSDKEnvConfig(
 		oracleAdaptersBaseUrl: readString(
 			env,
 			"EULER_SDK_ORACLE_ADAPTERS_BASE_URL",
+		),
+		oracleAdapterV3ApiUrl: readString(
+			env,
+			"EULER_SDK_ORACLE_ADAPTER_V3_API_URL",
+		),
+		oracleAdapterV3ApiKey: readString(
+			env,
+			"EULER_SDK_ORACLE_ADAPTER_V3_API_KEY",
+		),
+		oracleAdapterV3PageSize: readNumber(
+			env,
+			"EULER_SDK_ORACLE_ADAPTER_V3_PAGE_SIZE",
 		),
 		oracleAdaptersCacheMs: readNumber(
 			env,

@@ -39,7 +39,7 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 - `walletService`: Fetches native/ERC20 wallet balances and direct/Permit2 allowances for requested assets/spenders.
   See: [`wallet-service.md`](./wallet-service.md)
 - `priceService`: Resolves market prices used for valuation and computed account metrics.
-- `oracleAdapterService`: Fetches oracle adapter metadata/checks (provider, methodology, checks) from the oracle checks dataset and builds maps keyed by normalized `adapter.oracle` address for UI/tooling.
+- `oracleAdapterService`: Fetches Data V3 oracle adapter assessments and indexed Euler router state. Adapter identity (`recognized`) and health (`checksStatus`) are separate signals; finding outcomes remain `pass`, `fail`, `unknown`, or `not_applicable`.
 - `rewardsService`: Fetches reward campaign data used to populate vault/account rewards and builds provider-specific reward claim plans. The default V3 path returns proof-backed direct Brevis/Incentra rewards when claim planning needs metadata that V3 does not include.
   See: [`rewards-service.md`](./rewards-service.md)
 - `reulLockService`: Fetches rEUL vesting locks and builds rEUL unlock `contractCall` transaction plans.
@@ -69,6 +69,6 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 | `walletService` | Wallet assets only | No | No | No | No | Fetches requested native/ERC20 balances and direct/Permit2 allowances; `spenders` are optional when only balances are needed |
 | `swapService` | No (quotes only) | No | No | No | No | Returns swap quotes/providers for execution plans; CoW flows use regular quote methods with `cowSwap` metadata |
 | `positionMigrationService` | External/Euler migration positions | No | No | No | No | Lists migration connectors, positions, and targets; builds migration authorizations, EVC batch payloads, transaction plans, and simulation-ready state overrides for supported Aave V3, Morpho Blue, and MetaMorpho flows |
-| `oracleAdapterService` | No | No | No | No | No | Oracle adapter metadata API (`fetchOracleAdapters`, `fetchOracleAdapterMap`, `enrichAdapters`); maps are keyed by `adapter.oracle.toLowerCase()` |
+| `oracleAdapterService` | No | No | No | No | No | Data V3 assessment API (`fetchOracleAdapterAssessment`, `fetchOracleAdapterAssessments`, `fetchOracleAdapterAssessmentMap`) plus indexed router state (`fetchOracleRouters`, `fetchOracleRouterMap`); maps use lowercase addresses |
 
 See also: [`execution-service.md`](./execution-service.md), [`swaps.md`](./swaps.md), and [`cow-swaps.md`](./cow-swaps.md).
