@@ -24,7 +24,7 @@ import {
   type DataIssue,
   type DataIssueLocation,
   type DataIssueOwnerRef,
-  type OracleAdapterMetadata,
+  type OracleAdapterAssessment,
 } from "@eulerxyz/euler-v2-sdk";
 import { getAddress, isAddress, type Address } from "viem";
 import { useSDK } from "../context/SdkContext.tsx";
@@ -132,8 +132,9 @@ const STALE_TIMES: Record<string, number> = {
   queryV3AccountPositions: 30_000,
   queryAccountVaults: 30_000,
 
-  // Static-ish external metadata
-  queryOracleAdapters: 10 * MINUTE,
+  // Oracle assessments — refreshed by Data V3
+  queryV3OracleAdapterAssessment: 5 * MINUTE,
+  queryV3OracleAdapterAssessmentsPage: 5 * MINUTE,
 
   // Per-user on-chain state — changes on every tx
   queryEVCAccountInfo: 15_000,
@@ -155,7 +156,7 @@ const STALE_TIMES: Record<string, number> = {
   accountWithDiagnostics: 10_000,
   walletBalance: 5_000,
   chainRewards: 60_000,
-  oracleAdapterMetadataMap: 10 * MINUTE,
+  oracleAdapterAssessmentMap: 5 * MINUTE,
   tokenSymbolMap: Infinity,
   feeFlowPageData: 15_000,
 };
@@ -253,7 +254,7 @@ export type DiagnosticIssue = Omit<Partial<DataIssue>, "locations"> & {
   chainId?: number;
 };
 
-export type OracleAdapterMetadataMap = Record<string, OracleAdapterMetadata>;
+export type OracleAdapterAssessmentMap = Record<string, OracleAdapterAssessment>;
 
 type MaybeServiceResult<T> = T | { result: T; errors?: DiagnosticIssue[] };
 
@@ -1052,13 +1053,13 @@ export function useChainRewards() {
   });
 }
 
-export function useOracleAdapterMetadataMap(chainId: number) {
+export function useOracleAdapterAssessmentMap(chainId: number) {
   const { sdk, enabled } = useSdkReady();
-  return useQuery<OracleAdapterMetadataMap>({
-    queryKey: ["oracleAdapterMetadataMap", chainId],
-    queryFn: async () => sdk!.oracleAdapterService.fetchOracleAdapterMap(chainId),
+  return useQuery<OracleAdapterAssessmentMap>({
+    queryKey: ["oracleAdapterAssessmentMap", chainId],
+    queryFn: async () => sdk!.oracleAdapterService.fetchOracleAdapterAssessmentMap(chainId),
     enabled: enabled && Number.isFinite(chainId),
-    staleTime: STALE_TIMES.oracleAdapterMetadataMap,
+    staleTime: STALE_TIMES.oracleAdapterAssessmentMap,
   });
 }
 

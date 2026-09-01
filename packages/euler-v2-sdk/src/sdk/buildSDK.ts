@@ -1491,30 +1491,20 @@ export async function buildEulerSDK<
 			resolveV3AdapterConfig<OracleAdapterServiceConfig & { endpoint: string }>(
 				{ endpoint: DEFAULT_V3_API_URL },
 				{
-					explicitConfig: oracleAdapterServiceConfig
-						? {
-							...oracleAdapterServiceConfig,
-							...(oracleAdapterServiceConfig.endpoint === undefined &&
-							oracleAdapterServiceConfig.baseUrl !== undefined
-								? { endpoint: oracleAdapterServiceConfig.baseUrl }
-								: {}),
-						}
-						: undefined,
+					explicitConfig: oracleAdapterServiceConfig,
 					explicitV3ApiKey: v3ApiKey,
 					envConfig,
 					config,
-					envEndpoint:
-						envConfig.oracleAdapterV3ApiUrl ?? envConfig.oracleAdaptersBaseUrl,
-					configEndpoint:
-						config?.oracleAdapterV3ApiUrl ?? config?.oracleAdaptersBaseUrl,
+					envEndpoint: envConfig.oracleAdapterV3ApiUrl,
+					configEndpoint: config?.oracleAdapterV3ApiUrl,
 					envApiKey: envConfig.oracleAdapterV3ApiKey,
 					configApiKey: config?.oracleAdapterV3ApiKey,
 					envExtra: {
-						...maybeField("cacheMs", envConfig.oracleAdaptersCacheMs),
+						...maybeField("cacheMs", envConfig.oracleAdapterV3CacheMs),
 						...maybeField("pageSize", envConfig.oracleAdapterV3PageSize),
 					},
 					configExtra: {
-						...maybeField("cacheMs", config?.oracleAdaptersCacheMs),
+						...maybeField("cacheMs", config?.oracleAdapterV3CacheMs),
 						...maybeField("pageSize", config?.oracleAdapterV3PageSize),
 					},
 				},

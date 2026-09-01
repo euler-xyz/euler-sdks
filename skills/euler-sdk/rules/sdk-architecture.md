@@ -57,8 +57,8 @@ Use these default boundaries:
 - `reulLockService`: rEUL vesting lock reads and unlock transaction plans
 - `safeAccountService`: Safe smart-account detection and signer configuration (threshold/owners) reads
 - `eulerLabelsService`: normalized off-chain labels metadata; use exported helpers from `utils/eulerLabels` for product/vault flags, notices, and restrictions
-- `oracleAdapterService`: oracle adapter metadata keyed by normalized `adapter.oracle` address
+- `oracleAdapterService`: Data V3 oracle adapter recognition and health assessments plus indexed router state; assessment maps use normalized adapter addresses
 
-All service `fetch*` methods return `{ result, errors }`, except `safeAccountService.fetchSafeAccount()`, which returns `SafeAccountInfo | null` directly; keep diagnostics with the fetched entity when rendering warnings or enforcing data-quality policy.
+Most service `fetch*` methods return `{ result, errors }`; keep diagnostics with the fetched entity when rendering warnings or enforcing data-quality policy. `oracleAdapterService` returns assessments and routers directly, while `safeAccountService.fetchSafeAccount()` returns `SafeAccountInfo | null` directly.
 
 Reference: `packages/euler-v2-sdk/docs/services.md`, `packages/euler-v2-sdk/docs/config-through-env.md`, `packages/euler-v2-sdk/docs/wallet-service.md`, `packages/euler-v2-sdk/docs/reul-lock-service.md`, `packages/euler-v2-sdk/docs/entity-diagnostics.md`, `docs/data-architecture.md`, `src/sdk/buildSDK.ts`

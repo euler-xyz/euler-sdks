@@ -352,7 +352,7 @@ for (const finding of assessment?.findings ?? []) {
 }
 ```
 
-`fetchOracleAdapterAssessments()` and `fetchOracleRouters()` follow Data V3 pagination internally. The deprecated `fetchOracleAdapters()` and `fetchOracleAdapterMap()` aliases are V3-backed, return recognized assessments only, and remain available for compatibility.
+`fetchOracleAdapterAssessments()` and `fetchOracleRouters()` follow Data V3 pagination internally. Use their map variants when consumers need normalized address lookups.
 
 ## How Vault Types Work
 

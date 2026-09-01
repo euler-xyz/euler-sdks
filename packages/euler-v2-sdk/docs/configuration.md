@@ -108,7 +108,7 @@ Environment variables are only used when neither `config` nor the matching expli
 
 ## Defaults
 
-Most services ship with built-in default URLs for V3 APIs, subgraphs, labels, swap API, pricing, token lists, oracle adapter metadata, and deployments. See `src/sdk/defaultConfig.ts` and [Config Through Env](./config-through-env.md) for the concrete values.
+Most services ship with built-in default URLs for V3 APIs, subgraphs, labels, swap API, pricing, token lists, oracle adapter assessments, and deployments. See `src/sdk/defaultConfig.ts` and [Config Through Env](./config-through-env.md) for the concrete values.
 
 ## Service overrides
 

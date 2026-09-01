@@ -154,35 +154,23 @@ describe("OracleAdapterService", () => {
 		expect(routers[ROUTER.toLowerCase()]?.deployer).toBe(DEPLOYER);
 	});
 
-	it("keeps deprecated metadata aliases V3-backed without collapsing unknown", async () => {
-		const service = new OracleAdapterService({ pageSize: 100 });
-		const queryPage = vi.fn(async () => ({
-			data: [
-				assessment(ADAPTER_ONE, {
-					findings: [
-						{
-							key: "quote-liveness",
-							outcome: "unknown",
-							severity: "medium",
-							description: "Quote result is inconclusive",
-						},
-					],
-				}),
-			],
-			meta: { total: 1 },
+	it("enriches decoded routes with native assessments", async () => {
+		const service = new OracleAdapterService();
+		service.setQueryV3OracleAdapterAssessment(async (_chainId, address) => ({
+			data: assessment(address),
 		}));
-		service.setQueryV3OracleAdapterAssessmentsPage(queryPage);
 
-		const [metadata] = await service.fetchOracleAdapters(1);
+		const [enriched] = await service.enrichAdapters(1, [
+			{
+				name: "ChainlinkOracle",
+				oracle: ADAPTER_ONE,
+				base: ADAPTER_ONE,
+				quote: ADAPTER_TWO,
+			},
+		]);
 
-		expect(metadata?.oracle).toBe(ADAPTER_ONE);
-		expect(metadata?.name).toBe("ChainlinkOracle");
-		expect(metadata?.base).toBe(ADAPTER_ONE);
-		expect(metadata?.checks[0]).toMatchObject({
-			id: "quote-liveness",
-			outcome: "unknown",
-		});
-		expect(metadata?.checks[0]).not.toHaveProperty("pass");
-		expect(queryPage).toHaveBeenCalledWith(1, 0, 100, { recognized: true });
+		expect(enriched?.assessment?.address).toBe(ADAPTER_ONE);
+		expect(enriched?.assessment?.findings[0]?.outcome).toBe("pass");
+		expect(enriched).not.toHaveProperty("metadata");
 	});
 });

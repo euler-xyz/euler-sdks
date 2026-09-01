@@ -99,25 +99,8 @@ export type V3ListEnvelope<T> = {
 	meta?: V3ListMeta;
 };
 
-/** @deprecated Use `OracleAdapterFinding` and its four-state `outcome`. */
-export type OracleAdapterCheck = OracleAdapterFinding & {
-	id: string;
-	message: string;
-	pass?: boolean;
-};
-/** @deprecated Use `OracleAdapterAssessment`. */
-export type OracleAdapterMetadata = OracleAdapterAssessment & {
-	oracle: Address;
-	base?: Address;
-	quote?: Address;
-	name?: string;
-	checks: OracleAdapterCheck[];
-};
-
 export type EnrichedOracleAdapterEntry = OracleAdapterEntry & {
 	assessment?: OracleAdapterAssessment;
-	/** @deprecated Use `assessment`. */
-	metadata?: OracleAdapterMetadata;
 };
 
 export interface OracleAdapterServiceConfig {
@@ -125,8 +108,6 @@ export interface OracleAdapterServiceConfig {
 	apiKey?: string;
 	cacheMs?: number;
 	pageSize?: number;
-	/** @deprecated Use `endpoint`. The URL must expose the Data V3 API. */
-	baseUrl?: string;
 }
 
 export interface IOracleAdapterService {
@@ -144,12 +125,6 @@ export interface IOracleAdapterService {
 	): Promise<Record<string, OracleAdapterAssessment>>;
 	fetchOracleRouters(chainId: number): Promise<OracleRouter[]>;
 	fetchOracleRouterMap(chainId: number): Promise<Record<string, OracleRouter>>;
-	/** @deprecated Use `fetchOracleAdapterAssessments`. */
-	fetchOracleAdapters(chainId: number): Promise<OracleAdapterMetadata[]>;
-	/** @deprecated Use `fetchOracleAdapterAssessmentMap`. */
-	fetchOracleAdapterMap(
-		chainId: number,
-	): Promise<Record<string, OracleAdapterMetadata>>;
 	enrichAdapters(
 		chainId: number,
 		adapters: OracleAdapterEntry[],
@@ -192,9 +167,7 @@ export class OracleAdapterService implements IOracleAdapterService {
 	}
 
 	private get endpoint(): string {
-		return normalizeEndpoint(
-			this.config.endpoint ?? this.config.baseUrl ?? DEFAULT_ENDPOINT,
-		);
+		return normalizeEndpoint(this.config.endpoint ?? DEFAULT_ENDPOINT);
 	}
 
 	private getHeaders(): Record<string, string> {
@@ -420,26 +393,6 @@ export class OracleAdapterService implements IOracleAdapterService {
 		);
 	}
 
-	/** @deprecated Use `fetchOracleAdapterAssessments`. */
-	async fetchOracleAdapters(chainId: number): Promise<OracleAdapterMetadata[]> {
-		const assessments = await this.fetchOracleAdapterAssessments(chainId, {
-			recognized: true,
-		});
-		return assessments.map((assessment) =>
-			this.toDeprecatedMetadata(assessment),
-		);
-	}
-
-	/** @deprecated Use `fetchOracleAdapterAssessmentMap`. */
-	async fetchOracleAdapterMap(
-		chainId: number,
-	): Promise<Record<string, OracleAdapterMetadata>> {
-		const adapters = await this.fetchOracleAdapters(chainId);
-		return Object.fromEntries(
-			adapters.map((adapter) => [adapter.address.toLowerCase(), adapter]),
-		);
-	}
-
 	async enrichAdapters(
 		chainId: number,
 		adapters: OracleAdapterEntry[],
@@ -453,34 +406,7 @@ export class OracleAdapterService implements IOracleAdapterService {
 		return adapters.map((adapter, index) => ({
 			...adapter,
 			assessment: assessments[index],
-			metadata: assessments[index]?.recognized
-				? this.toDeprecatedMetadata(assessments[index])
-				: undefined,
 		}));
-	}
-
-	private toDeprecatedMetadata(
-		assessment: OracleAdapterAssessment,
-	): OracleAdapterMetadata {
-		const base = normalizeAddress(assessment.config?.base);
-		const quote = normalizeAddress(assessment.config?.quote);
-		return {
-			...assessment,
-			oracle: assessment.address,
-			name: assessment.adapterClass ?? undefined,
-			...(base ? { base } : {}),
-			...(quote ? { quote } : {}),
-			checks: assessment.findings.map((finding) => ({
-				...finding,
-				id: finding.key,
-				message: finding.description,
-				...(finding.outcome === "pass"
-					? { pass: true }
-					: finding.outcome === "fail"
-						? { pass: false }
-						: {}),
-			})),
-		};
 	}
 
 	private parseAssessment(raw: unknown): OracleAdapterAssessment | undefined {

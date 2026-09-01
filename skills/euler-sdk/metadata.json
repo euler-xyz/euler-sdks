@@ -1,7 +1,7 @@
 {
-  "version": "1.4.0",
+  "version": "1.5.0",
   "organization": "Euler Labs",
-  "date": "August 2026",
+  "date": "September 2026",
   "abstract": "Euler V2 SDK integration guide for building production UIs, automation scripts, and developer tooling on top of euler-v2-sdk.",
   "tldr": "Use buildEulerSDK once, fetch via accountService/vaultMetaService/walletService, plan with executionService, simulate before execute, and apply buildQuery caching, fallback-adapter routing, and plugins for robust UI and bot flows.",
   "triggers": [
@@ -20,6 +20,8 @@
     "position migration",
     "portfolioService",
     "priceService",
+    "oracleAdapterService",
+    "fetchOracleAdapterAssessment",
     "Euler SDK UI",
     "Euler SDK scripts",
     "Euler SDK tooling"

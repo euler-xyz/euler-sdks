@@ -98,9 +98,7 @@ export interface EulerSDKConfig {
 	oracleAdapterV3ApiUrl?: string;
 	oracleAdapterV3ApiKey?: string;
 	oracleAdapterV3PageSize?: number;
-	/** @deprecated Use `oracleAdapterV3ApiUrl`. */
-	oracleAdaptersBaseUrl?: string;
-	oracleAdaptersCacheMs?: number;
+	oracleAdapterV3CacheMs?: number;
 
 	feeFlowControllerAddress?: Address;
 	feeFlowControllerUtilAddress?: Address;
@@ -538,10 +536,6 @@ export function readEulerSDKEnvConfig(
 		tokenlistApiBaseUrl: readString(env, "EULER_SDK_TOKENLIST_API_BASE_URL"),
 		tokenlistUrlTemplate: readString(env, "EULER_SDK_TOKENLIST_URL_TEMPLATE"),
 
-		oracleAdaptersBaseUrl: readString(
-			env,
-			"EULER_SDK_ORACLE_ADAPTERS_BASE_URL",
-		),
 		oracleAdapterV3ApiUrl: readString(
 			env,
 			"EULER_SDK_ORACLE_ADAPTER_V3_API_URL",
@@ -554,9 +548,9 @@ export function readEulerSDKEnvConfig(
 			env,
 			"EULER_SDK_ORACLE_ADAPTER_V3_PAGE_SIZE",
 		),
-		oracleAdaptersCacheMs: readNumber(
+		oracleAdapterV3CacheMs: readNumber(
 			env,
-			"EULER_SDK_ORACLE_ADAPTERS_CACHE_MS",
+			"EULER_SDK_ORACLE_ADAPTER_V3_CACHE_MS",
 		),
 
 		feeFlowControllerAddress: readString(

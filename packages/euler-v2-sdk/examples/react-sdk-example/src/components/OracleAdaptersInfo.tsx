@@ -1,12 +1,12 @@
 import { useMemo, useState, type MouseEvent } from "react";
 import type { OracleAdapterEntry, OracleResolvedVault } from "@eulerxyz/euler-v2-sdk";
-import type { OracleAdapterMetadataMap } from "../queries/sdkQueries.ts";
+import type { OracleAdapterAssessmentMap } from "../queries/sdkQueries.ts";
 
 type OracleAdaptersInfoProps = {
   chainId: number;
   adapters?: OracleAdapterEntry[];
   resolvedVaults?: OracleResolvedVault[];
-  metadataMap?: OracleAdapterMetadataMap;
+  assessmentMap?: OracleAdapterAssessmentMap;
   tokenSymbolMap?: Record<string, string>;
   addressLabels?: Record<string, string | undefined>;
 };
@@ -30,10 +30,10 @@ const DUPLICATED_PROVIDER_ICONS: Record<string, string[]> = {
 };
 
 function providerLabel(
-  adapter: OracleAdapterEntry,
-  metadata?: OracleAdapterMetadataMap[string]
+  assessment?: OracleAdapterAssessmentMap[string]
 ): string {
-  return metadata?.provider ?? metadata?.name ?? adapter.name ?? "Unknown";
+  if (!assessment?.recognized) return "Unknown";
+  return assessment.provider ?? assessment.adapterClass ?? assessment.label ?? "Recognized";
 }
 
 function normalizeProviderName(provider: string): string {
@@ -61,15 +61,19 @@ function symbolForAddress(
   return addressLabels?.[key] ?? tokenSymbolMap?.[key] ?? shortAddress(address);
 }
 
-function checksSummary(metadata?: OracleAdapterMetadataMap[string]): string {
-  const checks = metadata?.checks;
-  if (!checks || checks.length === 0) return "N/A";
-  const failed = checks.filter((check) => check.outcome === "fail");
-  const unknown = checks.filter((check) => check.outcome === "unknown");
-  if (failed.length > 0) return `${failed.length} failed`;
-  if (unknown.length > 0) return `${unknown.length} unknown`;
-  if (metadata?.checksStatus === "positive") return `${checks.length} passed`;
-  return "No verdict";
+function checksSummary(assessment?: OracleAdapterAssessmentMap[string]): string {
+  if (!assessment) return "N/A";
+  if (!assessment.recognized || assessment.checksStatus === null) return "No verdict";
+  if (!assessment.summary) return assessment.checksStatus;
+
+  const { passed, failed, unknown, notApplicable } = assessment.summary;
+  const parts = [
+    passed > 0 ? `${passed} passed` : undefined,
+    failed > 0 ? `${failed} failed` : undefined,
+    unknown > 0 ? `${unknown} unknown` : undefined,
+    notApplicable > 0 ? `${notApplicable} N/A` : undefined,
+  ].filter((part): part is string => part !== undefined);
+  return parts.join(", ") || "No findings";
 }
 
 function resolvedVaultLabel(resolvedVault: OracleResolvedVault): string {
@@ -111,7 +115,7 @@ export function OracleAdaptersInfo({
   chainId,
   adapters,
   resolvedVaults,
-  metadataMap,
+  assessmentMap,
   tokenSymbolMap,
   addressLabels,
 }: OracleAdaptersInfoProps) {
@@ -122,9 +126,9 @@ export function OracleAdaptersInfo({
     () =>
       list.map((adapter) => ({
         adapter,
-        metadata: metadataMap?.[adapter.oracle.toLowerCase()],
+        assessment: assessmentMap?.[adapter.oracle.toLowerCase()],
       })),
-    [list, metadataMap]
+    [list, assessmentMap]
   );
   if (list.length === 0 && resolvedList.length === 0) return null;
 
@@ -164,8 +168,8 @@ export function OracleAdaptersInfo({
             </span>
           );
         })}
-        {merged.map(({ adapter, metadata }, index) => {
-          const label = providerLabel(adapter, metadata);
+        {merged.map(({ adapter, assessment }, index) => {
+          const label = providerLabel(assessment);
           return (
           <span
             key={`${adapter.oracle}-${index}`}
@@ -255,11 +259,11 @@ export function OracleAdaptersInfo({
                   </div>
                 </div>
               ))}
-              {merged.map(({ adapter, metadata }, index) => {
-                const label = providerLabel(adapter, metadata);
-                const failedChecks = (metadata?.checks ?? []).filter(
-                  (check) => check.outcome === "fail"
-                );
+              {merged.map(({ adapter, assessment }, index) => {
+                const label = providerLabel(assessment);
+                const failedFindings = assessment?.recognized
+                  ? assessment.findings.filter((finding) => finding.outcome === "fail")
+                  : [];
 
                 return (
                   <div
@@ -283,25 +287,25 @@ export function OracleAdaptersInfo({
                     <div className="oracle-tooltip-row">
                       <span className="oracle-tooltip-label">Methodology</span>
                       <span className="oracle-tooltip-value">
-                        {metadata?.methodology ?? "Unknown"}
+                        {assessment?.recognized ? assessment.methodology ?? "Unknown" : "Unknown"}
                       </span>
                     </div>
                     <div className="oracle-tooltip-row">
                       <span className="oracle-tooltip-label">Checks</span>
                       <span className="oracle-tooltip-value">
-                        {checksSummary(metadata)}
+                        {checksSummary(assessment)}
                       </span>
                     </div>
-                    {failedChecks.map((check, checkIndex) => (
+                    {failedFindings.map((finding, findingIndex) => (
                       <div
-                        key={`${check.id ?? "check"}-${checkIndex}`}
+                        key={`${finding.key}-${findingIndex}`}
                         className="oracle-tooltip-row oracle-tooltip-row-check"
                       >
                         <span className="oracle-tooltip-label">
-                          {check.id ?? "check"}
+                          {finding.key}
                         </span>
                         <span className="oracle-tooltip-value">
-                          {String(check.message ?? "failed")}
+                          {finding.description}
                         </span>
                       </div>
                     ))}
