@@ -148,6 +148,17 @@ const normalizeAddress = (value: unknown): Address | undefined => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null;
 
+// The server may clamp `limit` below the requested page size. Paginate on the
+// size it actually applied, or a clamped first page would look like the last
+// one and silently truncate the scan.
+const resolveAppliedPageSize = (
+	meta: V3ListMeta | undefined,
+	requestedPageSize: number,
+): number =>
+	typeof meta?.limit === "number" && meta.limit > 0
+		? Math.min(meta.limit, requestedPageSize)
+		: requestedPageSize;
+
 export class OracleAdapterService implements IOracleAdapterService {
 	private assessmentCache = new Map<
 		string,
@@ -321,7 +332,7 @@ export class OracleAdapterService implements IOracleAdapterService {
 				const parsed = this.parseAssessment(row);
 				if (parsed) assessments.push(parsed);
 			}
-			if (rows.length < pageSize) break;
+			if (rows.length < resolveAppliedPageSize(page.meta, pageSize)) break;
 			offset += rows.length;
 			if (typeof page.meta?.total === "number" && offset >= page.meta.total)
 				break;
@@ -371,7 +382,7 @@ export class OracleAdapterService implements IOracleAdapterService {
 				const parsed = this.parseRouter(row);
 				if (parsed) routers.push(parsed);
 			}
-			if (rows.length < pageSize) break;
+			if (rows.length < resolveAppliedPageSize(page.meta, pageSize)) break;
 			offset += rows.length;
 			if (typeof page.meta?.total === "number" && offset >= page.meta.total)
 				break;

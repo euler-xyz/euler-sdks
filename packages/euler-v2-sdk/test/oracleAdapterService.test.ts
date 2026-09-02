@@ -154,6 +154,29 @@ describe("OracleAdapterService", () => {
 		expect(routers[ROUTER.toLowerCase()]?.deployer).toBe(DEPLOYER);
 	});
 
+	it("keeps paginating when the server clamps the requested page size", async () => {
+		const service = new OracleAdapterService({ pageSize: 2 });
+		const assessmentPages = vi.fn(async (_chainId, offset) => ({
+			data:
+				offset === 0
+					? [assessment(ADAPTER_ONE)]
+					: offset === 1
+						? [assessment(ADAPTER_TWO)]
+						: [],
+			// The server applied limit=1 even though the SDK asked for 2.
+			meta: { total: 2, offset, limit: 1 },
+		}));
+		service.setQueryV3OracleAdapterAssessmentsPage(assessmentPages);
+
+		const assessments = await service.fetchOracleAdapterAssessments(1);
+
+		expect(assessments.map((item) => item.address)).toEqual([
+			ADAPTER_ONE,
+			ADAPTER_TWO,
+		]);
+		expect(assessmentPages).toHaveBeenCalledTimes(2);
+	});
+
 	it("enriches decoded routes with native assessments", async () => {
 		const service = new OracleAdapterService();
 		service.setQueryV3OracleAdapterAssessment(async (_chainId, address) => ({
