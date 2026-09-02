@@ -518,10 +518,9 @@ export function VaultDetailPage() {
                 ? getAdapterMismatchDetails({
                     chainId,
                     collateral: {
-                      ...col,
+                      oraclePriceRaw: col.oraclePriceRaw,
                       oracleRoute: col.oracleRoute,
                     },
-                    unitOfAccountAddress: vault.unitOfAccount.address,
                     assessmentMap: oracleAdapterAssessmentMap,
                     tokenSymbolMap,
                   })
