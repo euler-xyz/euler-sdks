@@ -1577,6 +1577,81 @@ test("repay-from-deposit same-vault path preserves source account", () => {
 	assert.deepEqual(decoded.args, [AMOUNT, getAddress(RECEIVER)]);
 });
 
+test("reciprocal same-vault repayments merge without consuming vault liquidity", () => {
+	const service = createExecutionService();
+	const account = {
+		owner: ACCOUNT,
+		chainId: 1,
+		getPosition: (accountAddress: string, vault: string) => {
+			if (accountAddress === RECEIVER && vault === LIABILITY_VAULT) {
+				return { asset: SAME_ASSET, assets: 0n, borrowed: AMOUNT };
+			}
+			if (accountAddress === SOURCE_ACCOUNT && vault === LIABILITY_VAULT) {
+				return { asset: SAME_ASSET, assets: AMOUNT * 2n, borrowed: 0n };
+			}
+			if (accountAddress === SOURCE_ACCOUNT && vault === SOURCE_VAULT) {
+				return { asset: OTHER_TOKEN, assets: 0n, borrowed: AMOUNT };
+			}
+			if (accountAddress === RECEIVER && vault === SOURCE_VAULT) {
+				return { asset: OTHER_TOKEN, assets: AMOUNT * 2n, borrowed: 0n };
+			}
+			return undefined;
+		},
+	} as never;
+
+	const repayFirstAccount = service.planRepayFromDeposit({
+		account,
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: RECEIVER,
+		fromVault: LIABILITY_VAULT,
+		fromAccount: SOURCE_ACCOUNT,
+		cleanupOnMax: false,
+	});
+	const repaySecondAccount = service.planRepayFromDeposit({
+		account,
+		liabilityVault: SOURCE_VAULT,
+		liabilityAmount: maxUint256,
+		receiver: SOURCE_ACCOUNT,
+		fromVault: SOURCE_VAULT,
+		fromAccount: RECEIVER,
+		cleanupOnMax: false,
+	});
+
+	const items = getOnlyEvcBatchItems(
+		service.mergePlans([repayFirstAccount, repaySecondAccount]),
+	);
+	assert.deepEqual(items.map(decodeBatchFunctionName), [
+		"repayWithShares",
+		"disableController",
+		"repayWithShares",
+		"disableController",
+	]);
+	assert.deepEqual(
+		items.map((item) => ({
+			targetContract: item.targetContract,
+			onBehalfOfAccount: item.onBehalfOfAccount,
+		})),
+		[
+			{ targetContract: LIABILITY_VAULT, onBehalfOfAccount: SOURCE_ACCOUNT },
+			{ targetContract: LIABILITY_VAULT, onBehalfOfAccount: RECEIVER },
+			{ targetContract: SOURCE_VAULT, onBehalfOfAccount: RECEIVER },
+			{ targetContract: SOURCE_VAULT, onBehalfOfAccount: SOURCE_ACCOUNT },
+		],
+	);
+
+	const firstRepay = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[0]?.data ?? "0x",
+	});
+	const secondRepay = decodeFunctionData({
+		abi: eVaultAbi,
+		data: items[2]?.data ?? "0x",
+	});
+	assert.deepEqual(firstRepay.args, [maxUint256, getAddress(RECEIVER)]);
+	assert.deepEqual(secondRepay.args, [maxUint256, getAddress(SOURCE_ACCOUNT)]);
+});
+
 test("repay-from-deposit same-asset different-vault path uses skim and repayWithShares", () => {
 	const service = createExecutionService();
 	const plan = service.planRepayFromDeposit({
