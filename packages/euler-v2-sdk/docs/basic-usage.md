@@ -335,7 +335,9 @@ const { result: eVaultsOnly } = await sdk.vaultMetaService.fetchAllVaults(1, {
 
 ## Oracle Adapter Assessments
 
-Use `oracleAdapterService` to get Data V3 recognition and health assessments. The service returns the V3 `checksStatus` verdict as-is and preserves four-state finding outcomes; consumers should not recompute the aggregate from individual findings. Display identity is trustworthy only when `recognized` is true.
+Use `oracleAdapterService` to get Data V3 recognition and health assessments. The public contract is documented in the [V3 Oracles API reference](https://v3.euler.finance/v3/docs#tag/oracles) and [OpenAPI specification](https://v3.euler.finance/v3/openapi.json). Self-hosted consumers can point `oracleAdapterV3ApiUrl` at any compatible implementation.
+
+The service returns the V3 `checksStatus` verdict as-is and preserves four-state finding outcomes; consumers should not recompute the aggregate from individual findings. Display identity is trustworthy only when `recognized` is true.
 
 ```typescript
 const assessment = await sdk.oracleAdapterService.fetchOracleAdapterAssessment(
