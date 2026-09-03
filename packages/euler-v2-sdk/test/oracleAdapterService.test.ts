@@ -49,6 +49,18 @@ function assessment(
 	};
 }
 
+function router(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	return {
+		chainId: 1,
+		router: ROUTER,
+		deployer: DEPLOYER,
+		deployedAt: "2026-09-01T12:00:00.000Z",
+		configs: [],
+		vaults: [],
+		...overrides,
+	};
+}
+
 describe("OracleAdapterService", () => {
 	it("preserves an absolute proxy base path", async () => {
 		const service = new OracleAdapterService({
@@ -235,19 +247,7 @@ describe("OracleAdapterService", () => {
 		}));
 		service.setQueryV3OracleAdapterAssessmentsPage(assessmentPages);
 		service.setQueryV3OracleRoutersPage(async (_chainId, offset) => ({
-			data:
-				offset === 0
-					? [
-							{
-								chainId: 1,
-								router: ROUTER,
-								deployer: DEPLOYER,
-								deployedAt: "2026-09-01T12:00:00.000Z",
-								configs: [],
-								vaults: [],
-							},
-						]
-					: [],
+			data: offset === 0 ? [router()] : [],
 			meta: { total: 1, offset, limit: 1 },
 		}));
 
@@ -267,6 +267,34 @@ describe("OracleAdapterService", () => {
 			active: true,
 		});
 		expect(routers[ROUTER.toLowerCase()]?.deployer).toBe(DEPLOYER);
+	});
+
+	it("rejects a router page whose data is not an array", async () => {
+		const service = new OracleAdapterService();
+		service.setQueryV3OracleRoutersPage(async () => ({
+			data: null as unknown as [],
+		}));
+
+		await expect(service.fetchOracleRouters(1)).rejects.toThrow(
+			"Invalid oracle routers response: data must be an array",
+		);
+	});
+
+	it.each([
+		["row identity", router({ router: "not-an-address" })],
+		["row chain", router({ chainId: 8453 })],
+		["config list", router({ configs: null })],
+		["config entry", router({ configs: [null] })],
+		["vault list", router({ vaults: null })],
+		["vault entry", router({ vaults: [null] })],
+	])("rejects a malformed router %s", async (_case, malformedRouter) => {
+		const service = new OracleAdapterService();
+		service.setQueryV3OracleRoutersPage(async () => ({
+			data: [malformedRouter],
+			meta: { total: 1, offset: 0, limit: 100 },
+		}));
+
+		await expect(service.fetchOracleRouters(1)).rejects.toThrow(/oracle router/i);
 	});
 
 	it("keeps paginating when the server clamps the requested page size", async () => {

@@ -124,7 +124,10 @@ export function VaultDetailPage() {
     error,
     dataUpdatedAt: diagnosticsDataUpdatedAt,
   } = useVaultDetailWithDiagnostics(chainId, address);
-  const { data: oracleAdapterAssessmentMap } = useOracleAdapterAssessmentMap(chainId);
+  const {
+    data: oracleAdapterAssessmentMap,
+    error: oracleAdapterAssessmentError,
+  } = useOracleAdapterAssessmentMap(chainId);
   const { data: tokenSymbolMap } = useTokenSymbolMap(chainId);
   const vault = data?.vault;
   const diagnostics = data?.diagnostics ?? [];
@@ -557,6 +560,7 @@ export function VaultDetailPage() {
                     adapters={displayAdapters}
                     resolvedVaults={resolvedVaults}
                     assessmentMap={oracleAdapterAssessmentMap}
+                    assessmentUnavailable={oracleAdapterAssessmentError !== null}
                     tokenSymbolMap={tokenSymbolMap}
                     addressLabels={addressLabels}
                   />

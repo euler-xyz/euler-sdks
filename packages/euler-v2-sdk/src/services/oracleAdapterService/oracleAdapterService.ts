@@ -445,10 +445,20 @@ export class OracleAdapterService implements IOracleAdapterService {
 				offset,
 				pageSize,
 			);
-			const rows = Array.isArray(page.data) ? page.data : [];
+			if (!Array.isArray(page.data)) {
+				throw new Error(
+					"Invalid oracle routers response: data must be an array",
+				);
+			}
+			const rows = page.data;
 			for (const row of rows) {
 				const parsed = this.parseRouter(row);
-				if (parsed) routers.push(parsed);
+				if (parsed.chainId !== chainId) {
+					throw new Error(
+						`Oracle router chain mismatch: expected ${chainId}, received ${parsed.chainId}`,
+					);
+				}
+				routers.push(parsed);
 			}
 			if (rows.length < resolveAppliedPageSize(page.meta, pageSize)) break;
 			offset += rows.length;
@@ -633,27 +643,35 @@ export class OracleAdapterService implements IOracleAdapterService {
 		return value === "positive" || value === "warning" || value === "negative";
 	}
 
-	private parseRouter(raw: unknown): OracleRouter | undefined {
-		if (!isRecord(raw)) return undefined;
+	private parseRouter(raw: unknown): OracleRouter {
+		if (!isRecord(raw)) {
+			throw new Error("Invalid oracle router response: expected an object");
+		}
 		const router = normalizeAddress(raw.router);
 		const deployer = normalizeAddress(raw.deployer);
-		if (!router || !deployer || typeof raw.chainId !== "number")
-			return undefined;
-		if (typeof raw.deployedAt !== "string") return undefined;
+		if (
+			!router ||
+			!deployer ||
+			!Number.isSafeInteger(raw.chainId) ||
+			Number(raw.chainId) <= 0
+		) {
+			throw new Error("Invalid oracle router response: invalid identity");
+		}
+		if (typeof raw.deployedAt !== "string") {
+			throw new Error("Invalid oracle router response: invalid deployedAt value");
+		}
+		if (!Array.isArray(raw.configs)) {
+			throw new Error("Invalid oracle router response: invalid configs value");
+		}
+		if (!Array.isArray(raw.vaults)) {
+			throw new Error("Invalid oracle router response: invalid vaults value");
+		}
 
-		const configs = Array.isArray(raw.configs)
-			? raw.configs
-					.map((entry) => this.parseRouterConfig(entry))
-					.filter((entry): entry is OracleRouterConfig => entry !== undefined)
-			: [];
-		const vaults = Array.isArray(raw.vaults)
-			? raw.vaults
-					.map((entry) => this.parseRouterVault(entry))
-					.filter((entry): entry is OracleRouterVault => entry !== undefined)
-			: [];
+		const configs = raw.configs.map((entry) => this.parseRouterConfig(entry));
+		const vaults = raw.vaults.map((entry) => this.parseRouterVault(entry));
 
 		return {
-			chainId: raw.chainId,
+			chainId: raw.chainId as number,
 			router,
 			deployer,
 			deployedAt: raw.deployedAt,
@@ -662,18 +680,24 @@ export class OracleAdapterService implements IOracleAdapterService {
 		};
 	}
 
-	private parseRouterConfig(raw: unknown): OracleRouterConfig | undefined {
-		if (!isRecord(raw)) return undefined;
+	private parseRouterConfig(raw: unknown): OracleRouterConfig {
+		if (!isRecord(raw)) {
+			throw new Error(
+				"Invalid oracle router config response: expected an object",
+			);
+		}
 		const asset0 = normalizeAddress(raw.asset0);
 		const asset1 = normalizeAddress(raw.asset1);
 		const oracle = normalizeAddress(raw.oracle);
-		if (!asset0 || !asset1 || !oracle) return undefined;
+		if (!asset0 || !asset1 || !oracle) {
+			throw new Error("Invalid oracle router config response: invalid identity");
+		}
 		if (
 			typeof raw.blockNumber !== "string" ||
 			typeof raw.timestamp !== "string" ||
 			typeof raw.txHash !== "string"
 		) {
-			return undefined;
+			throw new Error("Invalid oracle router config response: invalid metadata");
 		}
 		return {
 			asset0,
@@ -685,17 +709,23 @@ export class OracleAdapterService implements IOracleAdapterService {
 		};
 	}
 
-	private parseRouterVault(raw: unknown): OracleRouterVault | undefined {
-		if (!isRecord(raw)) return undefined;
+	private parseRouterVault(raw: unknown): OracleRouterVault {
+		if (!isRecord(raw)) {
+			throw new Error(
+				"Invalid oracle router vault response: expected an object",
+			);
+		}
 		const vault = normalizeAddress(raw.vault);
 		const asset = normalizeAddress(raw.asset);
-		if (!vault || !asset) return undefined;
+		if (!vault || !asset) {
+			throw new Error("Invalid oracle router vault response: invalid identity");
+		}
 		if (
 			typeof raw.blockNumber !== "string" ||
 			typeof raw.timestamp !== "string" ||
 			typeof raw.txHash !== "string"
 		) {
-			return undefined;
+			throw new Error("Invalid oracle router vault response: invalid metadata");
 		}
 		return {
 			vault,

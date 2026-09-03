@@ -7,6 +7,7 @@ type OracleAdaptersInfoProps = {
   adapters?: OracleAdapterEntry[];
   resolvedVaults?: OracleResolvedVault[];
   assessmentMap?: OracleAdapterAssessmentMap;
+  assessmentUnavailable?: boolean;
   tokenSymbolMap?: Record<string, string>;
   addressLabels?: Record<string, string | undefined>;
 };
@@ -116,6 +117,7 @@ export function OracleAdaptersInfo({
   adapters,
   resolvedVaults,
   assessmentMap,
+  assessmentUnavailable = false,
   tokenSymbolMap,
   addressLabels,
 }: OracleAdaptersInfoProps) {
@@ -131,6 +133,9 @@ export function OracleAdaptersInfo({
     [list, assessmentMap]
   );
   if (list.length === 0 && resolvedList.length === 0) return null;
+  if (assessmentUnavailable) {
+    return <span>Oracle information not available</span>;
+  }
 
   const openModal = (event: MouseEvent) => {
     event.preventDefault();
