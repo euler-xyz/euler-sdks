@@ -8,6 +8,9 @@ export {
 	type OracleAdapterFinding,
 	type OracleAdapterFindingSummary,
 	type OracleAdapterRuleOutcome,
+	isOracleAdapterUnavailableError,
+	OracleAdapterUnavailableError,
+	type OracleAdapterUnavailableReason,
 	OracleAdapterService,
 	type OracleAdapterServiceConfig,
 	type OracleRouter,
@@ -16,4 +19,5 @@ export {
 	type V3Envelope,
 	type V3ListEnvelope,
 	type V3ListMeta,
+	UnavailableOracleAdapterService,
 } from "./oracleAdapterService.js";

@@ -94,6 +94,7 @@ import {
 	OracleAdapterService,
 	type IOracleAdapterService,
 	type OracleAdapterServiceConfig,
+	UnavailableOracleAdapterService,
 } from "../services/oracleAdapterService/index.js";
 import {
 	DEFAULT_EULER_LABELS_BASE_URL,
@@ -1487,30 +1488,34 @@ export async function buildEulerSDK<
 		})();
 	const oracleAdapterService =
 		servicesOverrides?.oracleAdapterService ??
-		new OracleAdapterService(
-			resolveV3AdapterConfig<OracleAdapterServiceConfig & { endpoint: string }>(
-				{ endpoint: DEFAULT_V3_API_URL },
-				{
-					explicitConfig: oracleAdapterServiceConfig,
-					explicitV3ApiKey: v3ApiKey,
-					envConfig,
-					config,
-					envEndpoint: envConfig.oracleAdapterV3ApiUrl,
-					configEndpoint: config?.oracleAdapterV3ApiUrl,
-					envApiKey: envConfig.oracleAdapterV3ApiKey,
-					configApiKey: config?.oracleAdapterV3ApiKey,
-					envExtra: {
-						...maybeField("cacheMs", envConfig.oracleAdapterV3CacheMs),
-						...maybeField("pageSize", envConfig.oracleAdapterV3PageSize),
-					},
-					configExtra: {
-						...maybeField("cacheMs", config?.oracleAdapterV3CacheMs),
-						...maybeField("pageSize", config?.oracleAdapterV3PageSize),
-					},
-				},
-			),
-			resolvedBuildQuery,
-		);
+		(disableV3
+			? new UnavailableOracleAdapterService("v3-disabled")
+			: new OracleAdapterService(
+					resolveV3AdapterConfig<
+						OracleAdapterServiceConfig & { endpoint: string }
+					>(
+						{ endpoint: DEFAULT_V3_API_URL },
+						{
+							explicitConfig: oracleAdapterServiceConfig,
+							explicitV3ApiKey: v3ApiKey,
+							envConfig,
+							config,
+							envEndpoint: envConfig.oracleAdapterV3ApiUrl,
+							configEndpoint: config?.oracleAdapterV3ApiUrl,
+							envApiKey: envConfig.oracleAdapterV3ApiKey,
+							configApiKey: config?.oracleAdapterV3ApiKey,
+							envExtra: {
+								...maybeField("cacheMs", envConfig.oracleAdapterV3CacheMs),
+								...maybeField("pageSize", envConfig.oracleAdapterV3PageSize),
+							},
+							configExtra: {
+								...maybeField("cacheMs", config?.oracleAdapterV3CacheMs),
+								...maybeField("pageSize", config?.oracleAdapterV3PageSize),
+							},
+						},
+					),
+					resolvedBuildQuery,
+				));
 	const feeFlowService =
 		servicesOverrides?.feeFlowService ??
 		new FeeFlowService(

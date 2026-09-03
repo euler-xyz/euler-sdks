@@ -7,6 +7,10 @@ import {
 } from "../src/sdk/defaultConfig.js";
 import type { IDeploymentService } from "../src/services/deploymentService/index.js";
 import { DeploymentService } from "../src/services/deploymentService/index.js";
+import {
+	OracleAdapterService,
+	OracleAdapterUnavailableError,
+} from "../src/services/oracleAdapterService/index.js";
 
 const deploymentService: IDeploymentService = {
 	getDeploymentChainIds: () => [],
@@ -213,5 +217,66 @@ describe("SDK env config", () => {
 			"https://oracle-proxy.example/api/internal",
 		);
 		expect((sdk.oracleAdapterService as any).config.apiKey).toBe("oracle-key");
+	});
+
+	it("makes the built-in oracle service unavailable without HTTP when V3 is disabled", async () => {
+		const fetchSpy = vi.spyOn(globalThis, "fetch");
+		const sdk = await buildEulerSDK({
+			config: { disableV3: true },
+			servicesOverrides: { deploymentService },
+		});
+
+		await expect(
+			sdk.oracleAdapterService.fetchOracleAdapterAssessment(
+				1,
+				"0x0000000000000000000000000000000000000001",
+			),
+		).rejects.toEqual(
+			expect.objectContaining<Partial<OracleAdapterUnavailableError>>({
+				code: "ORACLE_ADAPTER_UNAVAILABLE",
+				reason: "v3-disabled",
+			}),
+		);
+		expect(fetchSpy).not.toHaveBeenCalled();
+		fetchSpy.mockRestore();
+	});
+
+	it("honors an explicit oracle service override when V3 is disabled", async () => {
+		const oracleAdapterService = new OracleAdapterService();
+		oracleAdapterService.setQueryV3OracleAdapterAssessment(async (_chainId, address) => ({
+			data: {
+				chainId: 1,
+				address,
+				recognized: true,
+				checksStatus: "positive",
+				reason: null,
+				inActiveRoute: true,
+				adapterClass: "ChainlinkOracle",
+				label: null,
+				provider: "Chainlink",
+				methodology: "Market Price",
+				model: "Push",
+				config: {},
+				findings: [],
+				summary: null,
+				policyId: "oracle-adapter-policy",
+				policyVersion: 3,
+				blockNumber: "123",
+				evaluatedAt: "2026-09-03T00:00:00.000Z",
+				lastCheckedAt: "2026-09-03T00:00:00.000Z",
+			},
+		}));
+		const sdk = await buildEulerSDK({
+			config: { disableV3: true },
+			servicesOverrides: { deploymentService, oracleAdapterService },
+		});
+
+		expect(sdk.oracleAdapterService).toBe(oracleAdapterService);
+		await expect(
+			sdk.oracleAdapterService.fetchOracleAdapterAssessment(
+				1,
+				"0x0000000000000000000000000000000000000001",
+			),
+		).resolves.toMatchObject({ recognized: true });
 	});
 });

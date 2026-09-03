@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { getAddress, type Address } from "viem";
-import { OracleAdapterService } from "../src/services/oracleAdapterService/index.js";
+import {
+	OracleAdapterService,
+	OracleAdapterUnavailableError,
+} from "../src/services/oracleAdapterService/index.js";
 
 const ADAPTER_ONE = getAddress(
 	"0x0000000000000000000000000000000000000001",
@@ -107,6 +110,118 @@ describe("OracleAdapterService", () => {
 			"unknown",
 			"not_applicable",
 		]);
+	});
+
+	it.each([
+		["chain", { chainId: 8453 }],
+		["address", { address: ADAPTER_TWO }],
+	])("rejects a single assessment with the wrong %s identity", async (_field, overrides) => {
+		const service = new OracleAdapterService();
+		service.setQueryV3OracleAdapterAssessment(async () => ({
+			data: assessment(ADAPTER_ONE, overrides),
+		}));
+
+		await expect(
+			service.fetchOracleAdapterAssessment(1, ADAPTER_ONE),
+		).rejects.toThrow("Oracle adapter assessment identity mismatch");
+	});
+
+	it("rejects malformed single assessments instead of representing them as missing", async () => {
+		const service = new OracleAdapterService();
+		service.setQueryV3OracleAdapterAssessment(async () => ({
+			data: assessment(ADAPTER_ONE, { address: "not-an-address" }),
+		}));
+
+		await expect(
+			service.fetchOracleAdapterAssessment(1, ADAPTER_ONE),
+		).rejects.toThrow("Invalid oracle adapter assessment response");
+	});
+
+	it("rejects an entire assessment page when one row is malformed", async () => {
+		const service = new OracleAdapterService();
+		service.setQueryV3OracleAdapterAssessmentsPage(async () => ({
+			data: [
+				assessment(ADAPTER_ONE),
+				assessment(ADAPTER_TWO, { address: "not-an-address" }),
+			],
+			meta: { total: 2, offset: 0, limit: 100 },
+		}));
+
+		await expect(service.fetchOracleAdapterAssessments(1)).rejects.toThrow(
+			"Invalid oracle adapter assessment response",
+		);
+	});
+
+	it("distinguishes an unsupported chain from a missing assessment", async () => {
+		const service = new OracleAdapterService();
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					error: {
+						code: "CHAIN_NOT_SUPPORTED",
+						message: "Chain 80094 is not supported",
+					},
+				}),
+				{ status: 404, statusText: "Not Found" },
+			),
+		);
+
+		try {
+			await expect(
+				service.fetchOracleAdapterAssessment(80094, ADAPTER_ONE),
+			).rejects.toEqual(
+				expect.objectContaining<Partial<OracleAdapterUnavailableError>>({
+					code: "ORACLE_ADAPTER_UNAVAILABLE",
+					reason: "chain-not-supported",
+				}),
+			);
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
+	it("reserves undefined for a missing adapter response", async () => {
+		const service = new OracleAdapterService();
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(
+				JSON.stringify({ error: { code: "NOT_FOUND", message: "Not found" } }),
+				{ status: 404, statusText: "Not Found" },
+			),
+		);
+
+		try {
+			await expect(
+				service.fetchOracleAdapterAssessment(1, ADAPTER_ONE),
+			).resolves.toBeUndefined();
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
+	it("reports unsupported chains from the assessment list endpoint", async () => {
+		const service = new OracleAdapterService();
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					error: {
+						code: "CHAIN_NOT_SUPPORTED",
+						message: "Chain 80094 is not supported",
+					},
+				}),
+				{ status: 404, statusText: "Not Found" },
+			),
+		);
+
+		try {
+			await expect(service.fetchOracleAdapterAssessments(80094)).rejects.toEqual(
+				expect.objectContaining<Partial<OracleAdapterUnavailableError>>({
+					code: "ORACLE_ADAPTER_UNAVAILABLE",
+					reason: "chain-not-supported",
+				}),
+			);
+		} finally {
+			fetchSpy.mockRestore();
+		}
 	});
 
 	it("paginates assessment and router lists", async () => {

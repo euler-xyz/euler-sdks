@@ -11,6 +11,32 @@ export type OracleAdapterRuleOutcome =
 	| "unknown"
 	| "not_applicable";
 export type OracleAdapterChecksStatus = "positive" | "warning" | "negative";
+export type OracleAdapterUnavailableReason =
+	| "v3-disabled"
+	| "chain-not-supported";
+
+export class OracleAdapterUnavailableError extends Error {
+	readonly code = "ORACLE_ADAPTER_UNAVAILABLE";
+
+	constructor(readonly reason: OracleAdapterUnavailableReason) {
+		super(`Oracle adapter assessments are unavailable: ${reason}`);
+		this.name = "OracleAdapterUnavailableError";
+	}
+}
+
+export const isOracleAdapterUnavailableError = (
+	value: unknown,
+	reason?: OracleAdapterUnavailableReason,
+): value is OracleAdapterUnavailableError => {
+	if (typeof value !== "object" || value === null) return false;
+	const candidate = value as Partial<OracleAdapterUnavailableError>;
+	return (
+		candidate.code === "ORACLE_ADAPTER_UNAVAILABLE" &&
+		(candidate.reason === "v3-disabled" ||
+			candidate.reason === "chain-not-supported") &&
+		(reason === undefined || candidate.reason === reason)
+	);
+};
 
 export type OracleAdapterFinding = {
 	key: string;
@@ -146,7 +172,31 @@ const normalizeAddress = (value: unknown): Address | undefined => {
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null;
+	typeof value === "object" && value !== null && !Array.isArray(value);
+
+const readV3ErrorCode = async (
+	response: Response,
+): Promise<string | undefined> => {
+	try {
+		const body: unknown = await response.json();
+		if (!isRecord(body) || !isRecord(body.error)) return undefined;
+		return typeof body.error.code === "string" ? body.error.code : undefined;
+	} catch {
+		return undefined;
+	}
+};
+
+const throwOracleRequestError = async (
+	response: Response,
+	requestLabel: string,
+): Promise<never> => {
+	if ((await readV3ErrorCode(response)) === "CHAIN_NOT_SUPPORTED") {
+		throw new OracleAdapterUnavailableError("chain-not-supported");
+	}
+	throw new Error(
+		`${requestLabel} request failed: ${response.status} ${response.statusText}`,
+	);
+};
 
 // The server may clamp `limit` below the requested page size. Paginate on the
 // size it actually applied, or a clamped first page would look like the last
@@ -204,11 +254,14 @@ export class OracleAdapterService implements IOracleAdapterService {
 			{ chainId: String(chainId) },
 		);
 		const response = await fetch(url, { headers: this.getHeaders() });
-		if (response.status === 404) return undefined;
+		if (response.status === 404) {
+			if ((await readV3ErrorCode(response)) === "CHAIN_NOT_SUPPORTED") {
+				throw new OracleAdapterUnavailableError("chain-not-supported");
+			}
+			return undefined;
+		}
 		if (!response.ok) {
-			throw new Error(
-				`Oracle adapter assessment request failed: ${response.status} ${response.statusText}`,
-			);
+			return throwOracleRequestError(response, "Oracle adapter assessment");
 		}
 		return response.json() as Promise<V3Envelope<unknown>>;
 	};
@@ -238,9 +291,7 @@ export class OracleAdapterService implements IOracleAdapterService {
 		});
 		const response = await fetch(url, { headers: this.getHeaders() });
 		if (!response.ok) {
-			throw new Error(
-				`Oracle adapter assessments request failed: ${response.status} ${response.statusText}`,
-			);
+			return throwOracleRequestError(response, "Oracle adapter assessments");
 		}
 		return response.json() as Promise<V3ListEnvelope<unknown>>;
 	};
@@ -272,9 +323,7 @@ export class OracleAdapterService implements IOracleAdapterService {
 		});
 		const response = await fetch(url, { headers: this.getHeaders() });
 		if (!response.ok) {
-			throw new Error(
-				`Oracle routers request failed: ${response.status} ${response.statusText}`,
-			);
+			return throwOracleRequestError(response, "Oracle routers");
 		}
 		return response.json() as Promise<V3ListEnvelope<unknown>>;
 	};
@@ -299,6 +348,15 @@ export class OracleAdapterService implements IOracleAdapterService {
 		const assessment = envelope
 			? this.parseAssessment(envelope.data)
 			: undefined;
+		if (
+			assessment &&
+			(assessment.chainId !== chainId ||
+				assessment.address !== normalizedAddress)
+		) {
+			throw new Error(
+				`Oracle adapter assessment identity mismatch for chain ${chainId} and address ${normalizedAddress}`,
+			);
+		}
 		this.assessmentCache.set(cacheKey, {
 			expiresAt: Date.now() + (this.config.cacheMs ?? DEFAULT_CACHE_MS),
 			value: assessment,
@@ -327,10 +385,20 @@ export class OracleAdapterService implements IOracleAdapterService {
 				pageSize,
 				filters,
 			);
-			const rows = Array.isArray(page.data) ? page.data : [];
+			if (!Array.isArray(page.data)) {
+				throw new Error(
+					"Invalid oracle adapter assessments response: data must be an array",
+				);
+			}
+			const rows = page.data;
 			for (const row of rows) {
 				const parsed = this.parseAssessment(row);
-				if (parsed) assessments.push(parsed);
+				if (parsed.chainId !== chainId) {
+					throw new Error(
+						`Oracle adapter assessment chain mismatch: expected ${chainId}, received ${parsed.chainId}`,
+					);
+				}
+				assessments.push(parsed);
 			}
 			if (rows.length < resolveAppliedPageSize(page.meta, pageSize)) break;
 			offset += rows.length;
@@ -420,41 +488,94 @@ export class OracleAdapterService implements IOracleAdapterService {
 		}));
 	}
 
-	private parseAssessment(raw: unknown): OracleAdapterAssessment | undefined {
-		if (!isRecord(raw)) return undefined;
+	private parseAssessment(raw: unknown): OracleAdapterAssessment {
+		if (!isRecord(raw)) {
+			throw new Error(
+				"Invalid oracle adapter assessment response: expected an object",
+			);
+		}
 		const address = normalizeAddress(raw.address);
-		if (!address || typeof raw.chainId !== "number") return undefined;
-		if (typeof raw.recognized !== "boolean") return undefined;
-		if (typeof raw.inActiveRoute !== "boolean") return undefined;
+		if (
+			!address ||
+			!Number.isSafeInteger(raw.chainId) ||
+			Number(raw.chainId) <= 0
+		) {
+			throw new Error(
+				"Invalid oracle adapter assessment response: invalid identity",
+			);
+		}
+		if (typeof raw.recognized !== "boolean") {
+			throw new Error(
+				"Invalid oracle adapter assessment response: invalid recognized value",
+			);
+		}
+		if (typeof raw.inActiveRoute !== "boolean") {
+			throw new Error(
+				"Invalid oracle adapter assessment response: invalid inActiveRoute value",
+			);
+		}
+		if (raw.checksStatus !== null && !this.isChecksStatus(raw.checksStatus)) {
+			throw new Error(
+				"Invalid oracle adapter assessment response: invalid checksStatus value",
+			);
+		}
+		if (!Array.isArray(raw.findings) || !raw.findings.every(this.isFinding)) {
+			throw new Error(
+				"Invalid oracle adapter assessment response: invalid findings",
+			);
+		}
 
-		const findings = Array.isArray(raw.findings)
-			? raw.findings.filter(this.isFinding)
-			: [];
+		const nullableStrings = [
+			"reason",
+			"adapterClass",
+			"label",
+			"provider",
+			"methodology",
+			"model",
+			"policyId",
+			"blockNumber",
+			"evaluatedAt",
+			"lastCheckedAt",
+		] as const;
+		for (const field of nullableStrings) {
+			if (raw[field] !== null && typeof raw[field] !== "string") {
+				throw new Error(
+					`Invalid oracle adapter assessment response: invalid ${field} value`,
+				);
+			}
+		}
+		if (raw.config !== null && !isRecord(raw.config)) {
+			throw new Error(
+				"Invalid oracle adapter assessment response: invalid config value",
+			);
+		}
+		if (raw.policyVersion !== null && typeof raw.policyVersion !== "number") {
+			throw new Error(
+				"Invalid oracle adapter assessment response: invalid policyVersion value",
+			);
+		}
+
+		const findings = raw.findings;
 		return {
-			chainId: raw.chainId,
+			chainId: raw.chainId as number,
 			address,
 			recognized: raw.recognized,
-			checksStatus: this.isChecksStatus(raw.checksStatus)
-				? raw.checksStatus
-				: null,
-			reason: typeof raw.reason === "string" ? raw.reason : null,
+			checksStatus: raw.checksStatus as OracleAdapterChecksStatus | null,
+			reason: raw.reason as string | null,
 			inActiveRoute: raw.inActiveRoute,
-			adapterClass:
-				typeof raw.adapterClass === "string" ? raw.adapterClass : null,
-			label: typeof raw.label === "string" ? raw.label : null,
-			provider: typeof raw.provider === "string" ? raw.provider : null,
-			methodology: typeof raw.methodology === "string" ? raw.methodology : null,
-			model: typeof raw.model === "string" ? raw.model : null,
-			config: isRecord(raw.config) ? raw.config : null,
+			adapterClass: raw.adapterClass as string | null,
+			label: raw.label as string | null,
+			provider: raw.provider as string | null,
+			methodology: raw.methodology as string | null,
+			model: raw.model as string | null,
+			config: raw.config as Record<string, unknown> | null,
 			findings,
 			summary: this.parseSummary(raw.summary),
-			policyId: typeof raw.policyId === "string" ? raw.policyId : null,
-			policyVersion:
-				typeof raw.policyVersion === "number" ? raw.policyVersion : null,
-			blockNumber: typeof raw.blockNumber === "string" ? raw.blockNumber : null,
-			evaluatedAt: typeof raw.evaluatedAt === "string" ? raw.evaluatedAt : null,
-			lastCheckedAt:
-				typeof raw.lastCheckedAt === "string" ? raw.lastCheckedAt : null,
+			policyId: raw.policyId as string | null,
+			policyVersion: raw.policyVersion as number | null,
+			blockNumber: raw.blockNumber as string | null,
+			evaluatedAt: raw.evaluatedAt as string | null,
+			lastCheckedAt: raw.lastCheckedAt as string | null,
 		};
 	}
 
@@ -466,14 +587,21 @@ export class OracleAdapterService implements IOracleAdapterService {
 		typeof raw.description === "string";
 
 	private parseSummary(raw: unknown): OracleAdapterFindingSummary | null {
-		if (!isRecord(raw)) return null;
+		if (raw === null) return null;
+		if (!isRecord(raw)) {
+			throw new Error(
+				"Invalid oracle adapter assessment response: invalid summary",
+			);
+		}
 		if (
 			typeof raw.passed !== "number" ||
 			typeof raw.failed !== "number" ||
 			typeof raw.unknown !== "number" ||
 			typeof raw.notApplicable !== "number"
 		) {
-			return null;
+			throw new Error(
+				"Invalid oracle adapter assessment response: invalid summary",
+			);
 		}
 		return {
 			passed: raw.passed,
@@ -576,5 +704,51 @@ export class OracleAdapterService implements IOracleAdapterService {
 			timestamp: raw.timestamp,
 			txHash: raw.txHash,
 		};
+	}
+}
+
+export class UnavailableOracleAdapterService implements IOracleAdapterService {
+	constructor(private readonly reason: OracleAdapterUnavailableReason) {}
+
+	private unavailable(): never {
+		throw new OracleAdapterUnavailableError(this.reason);
+	}
+
+	async fetchOracleAdapterAssessment(
+		_chainId: number,
+		_address: Address,
+	): Promise<OracleAdapterAssessment | undefined> {
+		return this.unavailable();
+	}
+
+	async fetchOracleAdapterAssessments(
+		_chainId: number,
+		_filters?: OracleAdapterAssessmentFilters,
+	): Promise<OracleAdapterAssessment[]> {
+		return this.unavailable();
+	}
+
+	async fetchOracleAdapterAssessmentMap(
+		_chainId: number,
+		_filters?: OracleAdapterAssessmentFilters,
+	): Promise<Record<string, OracleAdapterAssessment>> {
+		return this.unavailable();
+	}
+
+	async fetchOracleRouters(_chainId: number): Promise<OracleRouter[]> {
+		return this.unavailable();
+	}
+
+	async fetchOracleRouterMap(
+		_chainId: number,
+	): Promise<Record<string, OracleRouter>> {
+		return this.unavailable();
+	}
+
+	async enrichAdapters(
+		_chainId: number,
+		_adapters: OracleAdapterEntry[],
+	): Promise<EnrichedOracleAdapterEntry[]> {
+		return this.unavailable();
 	}
 }
