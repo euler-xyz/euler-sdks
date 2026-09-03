@@ -9,7 +9,7 @@ import {
 import { useSDK } from "../context/SdkContext.tsx";
 import {
   type DiagnosticIssue,
-  useOracleAdapterMetadataMap,
+  useOracleAdapterAssessmentMap,
   useTokenSymbolMap,
   useVaultDetailWithDiagnostics,
 } from "../queries/sdkQueries.ts";
@@ -124,7 +124,10 @@ export function VaultDetailPage() {
     error,
     dataUpdatedAt: diagnosticsDataUpdatedAt,
   } = useVaultDetailWithDiagnostics(chainId, address);
-  const { data: oracleAdapterMetadataMap } = useOracleAdapterMetadataMap(chainId);
+  const {
+    data: oracleAdapterAssessmentMap,
+    error: oracleAdapterAssessmentError,
+  } = useOracleAdapterAssessmentMap(chainId);
   const { data: tokenSymbolMap } = useTokenSymbolMap(chainId);
   const vault = data?.vault;
   const diagnostics = data?.diagnostics ?? [];
@@ -518,14 +521,10 @@ export function VaultDetailPage() {
                 ? getAdapterMismatchDetails({
                     chainId,
                     collateral: {
-                      ...col,
+                      oraclePriceRaw: col.oraclePriceRaw,
                       oracleRoute: col.oracleRoute,
                     },
-                    unitOfAccountAddress: vault.unitOfAccount.address,
-                    metadataMap:
-                      oracleAdapterMetadataMap as
-                        | Record<string, Record<string, unknown>>
-                        | undefined,
+                    assessmentMap: oracleAdapterAssessmentMap,
                     tokenSymbolMap,
                   })
                 : undefined;
@@ -560,7 +559,8 @@ export function VaultDetailPage() {
                     chainId={chainId}
                     adapters={displayAdapters}
                     resolvedVaults={resolvedVaults}
-                    metadataMap={oracleAdapterMetadataMap}
+                    assessmentMap={oracleAdapterAssessmentMap}
+                    assessmentUnavailable={oracleAdapterAssessmentError !== null}
                     tokenSymbolMap={tokenSymbolMap}
                     addressLabels={addressLabels}
                   />

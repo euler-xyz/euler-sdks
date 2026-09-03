@@ -2,6 +2,12 @@
 
 All notable changes to the `euler-sdk` skill are documented in this file.
 
+## 1.5.0 - 2026-09-01
+- Documented the native Data V3 oracle adapter assessment and indexed router APIs.
+- Added recognition-versus-health and oracle assessment query-caching guidance.
+- Updated normalized address-map guidance to `fetchOracleAdapterAssessmentMap`.
+- Documented the oracle service's direct return shape.
+
 ## 1.4.0 - 2026-08-11
 - Added `safeAccountService` coverage: on-chain Safe smart-account detection (`fetchSafeAccount` → singleton/version/threshold/owners), the masterCopy-probe detection model, owner-invariant validation, contract-vs-transport failure semantics, and the heuristic-only (never authorization) guidance.
 - Documented the return-shape exception in the diagnostics-envelope guidance: `safeAccountService.fetchSafeAccount()` returns `SafeAccountInfo | null` directly, not `{ result, errors }`.

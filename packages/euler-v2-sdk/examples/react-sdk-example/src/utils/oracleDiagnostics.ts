@@ -1,15 +1,14 @@
 import { getAddress, isAddress } from "viem";
 import {
   getOracleRouteAdapters,
+  type OracleAdapterAssessment,
   type OracleRoute,
 } from "@eulerxyz/euler-v2-sdk";
 
-export type AdapterMetadataMap = Record<string, Record<string, unknown>>;
+export type AdapterAssessmentMap = Record<string, OracleAdapterAssessment>;
 export type TokenSymbolMap = Record<string, string>;
 
 export type CollateralAdapterContext = {
-  address: string;
-  vault?: { asset: { address: string } };
   oraclePriceRaw?: { amountOutMid?: bigint };
   oracleRoute?: OracleRoute;
 };
@@ -30,40 +29,30 @@ export function addressWithSymbol(
 export function getAdapterMismatchDetails(args: {
   chainId: number;
   collateral: CollateralAdapterContext;
-  unitOfAccountAddress: string;
-  metadataMap: AdapterMetadataMap | undefined;
+  assessmentMap: AdapterAssessmentMap | undefined;
   tokenSymbolMap: TokenSymbolMap | undefined;
 }): string | undefined {
-  const { chainId, collateral, unitOfAccountAddress, metadataMap, tokenSymbolMap } = args;
+  const { chainId, collateral, assessmentMap, tokenSymbolMap } = args;
   const adapterPriceUnavailable = (collateral.oraclePriceRaw?.amountOutMid ?? 0n) <= 0n;
   if (!adapterPriceUnavailable) return undefined;
 
-  const expectedBase = normalizeAddress(collateral.vault?.asset.address ?? collateral.address);
-  const expectedQuote = normalizeAddress(unitOfAccountAddress);
-  if (!expectedBase || !expectedQuote) return undefined;
-
   const mismatches: string[] = [];
   for (const adapter of getOracleRouteAdapters(collateral.oracleRoute)) {
-    const metadata = metadataMap?.[adapter.oracle.toLowerCase()];
-    const actualBase = normalizeAddress(metadata?.base ?? adapter.base);
-    const actualQuote = normalizeAddress(metadata?.quote ?? adapter.quote);
-    if (!actualBase || !actualQuote) continue;
+    const assessment = assessmentMap?.[adapter.oracle.toLowerCase()];
+    const config = assessment?.recognized ? assessment.config : undefined;
+    const assessedBase = normalizeAddress(config?.base);
+    const assessedQuote = normalizeAddress(config?.quote);
+    const routeBase = normalizeAddress(adapter.base);
+    const routeQuote = normalizeAddress(adapter.quote);
+    if (!assessedBase || !assessedQuote || !routeBase || !routeQuote) continue;
 
-    const problems: string[] = [];
-    if (actualBase !== expectedBase) {
-      problems.push(
-        `base ${addressWithSymbol(actualBase, tokenSymbolMap)} (expected ${addressWithSymbol(expectedBase, tokenSymbolMap)})`
-      );
-    }
-    if (actualQuote !== expectedQuote) {
-      problems.push(
-        `quote ${addressWithSymbol(actualQuote, tokenSymbolMap)} (expected ${addressWithSymbol(expectedQuote, tokenSymbolMap)})`
-      );
-    }
-    if (problems.length === 0) continue;
+    const pairMatches =
+      (assessedBase === routeBase && assessedQuote === routeQuote) ||
+      (assessedBase === routeQuote && assessedQuote === routeBase);
+    if (pairMatches) continue;
 
     mismatches.push(
-      `Adapter ${adapter.oracle} pair mismatch on chain ${chainId}: ${problems.join(", ")}`
+      `Adapter ${adapter.oracle} pair mismatch on chain ${chainId}: assessment reports ${addressWithSymbol(assessedBase, tokenSymbolMap)} / ${addressWithSymbol(assessedQuote, tokenSymbolMap)}, but the route step uses ${addressWithSymbol(routeBase, tokenSymbolMap)} / ${addressWithSymbol(routeQuote, tokenSymbolMap)}`
     );
   }
 

@@ -95,8 +95,10 @@ export interface EulerSDKConfig {
 	tokenlistApiBaseUrl?: string;
 	tokenlistUrlTemplate?: string;
 
-	oracleAdaptersBaseUrl?: string;
-	oracleAdaptersCacheMs?: number;
+	oracleAdapterV3ApiUrl?: string;
+	oracleAdapterV3ApiKey?: string;
+	oracleAdapterV3PageSize?: number;
+	oracleAdapterV3CacheMs?: number;
 
 	feeFlowControllerAddress?: Address;
 	feeFlowControllerUtilAddress?: Address;
@@ -498,10 +500,7 @@ export function readEulerSDKEnvConfig(
 		swapApiUrl: readString(env, "EULER_SDK_SWAP_API_URL"),
 		swapDefaultDeadline: readNumber(env, "EULER_SDK_SWAP_DEFAULT_DEADLINE"),
 
-		eulerInterfacesBranch: readString(
-			env,
-			"EULER_SDK_EULER_INTERFACES_BRANCH",
-		),
+		eulerInterfacesBranch: readString(env, "EULER_SDK_EULER_INTERFACES_BRANCH"),
 		deploymentsUrl: readString(env, "EULER_SDK_DEPLOYMENTS_URL"),
 
 		eulerLabelsBaseUrl: readString(env, "EULER_SDK_EULER_LABELS_BASE_URL"),
@@ -537,13 +536,21 @@ export function readEulerSDKEnvConfig(
 		tokenlistApiBaseUrl: readString(env, "EULER_SDK_TOKENLIST_API_BASE_URL"),
 		tokenlistUrlTemplate: readString(env, "EULER_SDK_TOKENLIST_URL_TEMPLATE"),
 
-		oracleAdaptersBaseUrl: readString(
+		oracleAdapterV3ApiUrl: readString(
 			env,
-			"EULER_SDK_ORACLE_ADAPTERS_BASE_URL",
+			"EULER_SDK_ORACLE_ADAPTER_V3_API_URL",
 		),
-		oracleAdaptersCacheMs: readNumber(
+		oracleAdapterV3ApiKey: readString(
 			env,
-			"EULER_SDK_ORACLE_ADAPTERS_CACHE_MS",
+			"EULER_SDK_ORACLE_ADAPTER_V3_API_KEY",
+		),
+		oracleAdapterV3PageSize: readNumber(
+			env,
+			"EULER_SDK_ORACLE_ADAPTER_V3_PAGE_SIZE",
+		),
+		oracleAdapterV3CacheMs: readNumber(
+			env,
+			"EULER_SDK_ORACLE_ADAPTER_V3_CACHE_MS",
 		),
 
 		feeFlowControllerAddress: readString(
