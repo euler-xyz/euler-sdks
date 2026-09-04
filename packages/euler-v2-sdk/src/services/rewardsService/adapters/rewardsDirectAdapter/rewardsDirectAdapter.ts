@@ -1,4 +1,4 @@
-import { type Address, getAddress, type Hex } from "viem";
+import { type Address, getAddress, type Hex, zeroAddress } from "viem";
 import {
 	applyBuildQuery,
 	type BuildQueryFn,
@@ -131,6 +131,7 @@ const normalizeMerklEligibilityRequirements = (
 		if (
 			hook.hookType !== 2 ||
 			!tokenAddress ||
+			tokenAddress === zeroAddress ||
 			!Number.isInteger(chainId) ||
 			Number(chainId) <= 0 ||
 			!Number.isInteger(duration) ||
@@ -166,7 +167,12 @@ const normalizeMerklEligibilityRequirements = (
 			rewardTokenAddress === tokenAddress &&
 			(campaign.rewardToken.chainId ?? defaultChainId) === requirement.chainId
 		) {
-			requirement.tokenSymbol = campaign.rewardToken.symbol;
+			if (
+				typeof campaign.rewardToken.symbol === "string" &&
+				campaign.rewardToken.symbol.length > 0
+			) {
+				requirement.tokenSymbol = campaign.rewardToken.symbol;
+			}
 			if (
 				Number.isInteger(campaign.rewardToken.decimals) &&
 				Number(campaign.rewardToken.decimals) >= 0
@@ -460,7 +466,16 @@ const mapMerklOpportunityTypeAction = (
 const merklOpportunityUrl = (
 	opportunity: MerklOpportunity,
 	type: MerklOpportunityType,
+	campaignId?: string,
 ): string => {
+	if (
+		typeof opportunity.id === "string" &&
+		opportunity.id.length > 0 &&
+		typeof campaignId === "string" &&
+		campaignId.length > 0
+	) {
+		return `https://app.merkl.xyz/opportunities/${encodeURIComponent(opportunity.id)}/campaigns/${encodeURIComponent(campaignId)}`;
+	}
 	if (!opportunity.identifier) return MERKL_EULER_SOURCE_URL;
 
 	const chain = (
@@ -930,7 +945,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 								dailyRewards: c.dailyRewards,
 								endTimestamp: c.endTimestamp,
 								collateralAddress: normalizeAddress(pair.collateral),
-								sourceUrl: merklOpportunityUrl(opp, type),
+								sourceUrl: merklOpportunityUrl(opp, type, c.campaignId),
 								whitelist: normalizeAddressList(c.params?.whitelist),
 								blacklist: normalizeAddressList(c.params?.blacklist),
 								eligibilityRequirements: eligibility.requirements,
@@ -971,7 +986,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 								rewardTokenIcon: c.rewardToken.icon,
 								dailyRewards: c.dailyRewards,
 								endTimestamp: c.endTimestamp,
-								sourceUrl: merklOpportunityUrl(opp, type),
+								sourceUrl: merklOpportunityUrl(opp, type, c.campaignId),
 								whitelist: normalizeAddressList(c.params?.whitelist),
 								blacklist: normalizeAddressList(c.params?.blacklist),
 								eligibilityRequirements: eligibility.requirements,
@@ -1010,7 +1025,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 						dailyRewards: c.dailyRewards,
 						endTimestamp: c.endTimestamp,
 						collateralAddress: normalizeAddress(c.params?.collateralAddress),
-						sourceUrl: merklOpportunityUrl(opp, type),
+						sourceUrl: merklOpportunityUrl(opp, type, c.campaignId),
 						whitelist: normalizeAddressList(c.params?.whitelist),
 						blacklist: normalizeAddressList(c.params?.blacklist),
 						eligibilityRequirements: eligibility.requirements,

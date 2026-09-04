@@ -55,12 +55,13 @@ export interface RewardCampaign {
 	/** Lowercased Merkl recipient allowlist/denylist, when provided by campaign params. */
 	whitelist?: string[];
 	blacklist?: string[];
-	/** Requirements that must be satisfied for campaign rewards to apply. */
+	/** Token-holding eligibility hooks that must be satisfied for campaign rewards to apply. */
 	eligibilityRequirements?: RewardEligibilityRequirement[];
 	/**
-	 * Whether provider eligibility conditions are absent, fully modeled, or
-	 * include conditions the SDK cannot model. Follow `sourceUrl` for exact
-	 * provider requirements whenever this is `incomplete`.
+	 * Whether provider eligibility hooks are absent, fully modeled, or include
+	 * hooks the SDK cannot model. Whitelist and blacklist are separate viewer
+	 * gates. Follow `sourceUrl` for exact provider requirements whenever this is
+	 * `incomplete`.
 	 */
 	eligibilityRequirementsStatus?: RewardEligibilityRequirementsStatus;
 }
@@ -345,6 +346,7 @@ export interface MerklCampaign {
 }
 
 export interface MerklOpportunity {
+	id?: string;
 	chainId: number;
 	type: string;
 	identifier: string;

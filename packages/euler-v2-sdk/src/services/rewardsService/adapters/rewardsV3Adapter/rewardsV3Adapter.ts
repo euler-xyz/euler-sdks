@@ -1,4 +1,4 @@
-import { type Address, getAddress, type Hex } from "viem";
+import { type Address, getAddress, type Hex, zeroAddress } from "viem";
 import {
 	applyBuildQuery,
 	type BuildQueryFn,
@@ -163,6 +163,7 @@ const normalizeEligibilityRequirements = (
 		if (
 			requirement.type !== "token-holding" ||
 			!tokenAddress ||
+			tokenAddress === zeroAddress ||
 			!Number.isInteger(requirement.chainId) ||
 			Number(requirement.chainId) <= 0 ||
 			typeof requirement.minimumAmount !== "string" ||
