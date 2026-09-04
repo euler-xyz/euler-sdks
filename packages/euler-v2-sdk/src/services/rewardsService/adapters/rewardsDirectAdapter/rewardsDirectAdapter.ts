@@ -1,4 +1,4 @@
-import { type Address, getAddress, type Hex } from "viem";
+import { type Address, getAddress, type Hex, zeroAddress } from "viem";
 import {
 	applyBuildQuery,
 	type BuildQueryFn,
@@ -15,10 +15,13 @@ import type {
 	FuulTotalEntry,
 	FuulTotals,
 	IRewardsAdapter,
+	MerklCampaign,
 	MerklOpportunity,
 	MerklUserChainRewards,
 	RewardAction,
 	RewardCampaign,
+	RewardEligibilityRequirement,
+	RewardEligibilityRequirementsStatus,
 	RewardsDirectAdapterConfig,
 	TurtleMerkleProof,
 	TurtleStreamConfig,
@@ -90,6 +93,104 @@ const normalizeAddress = (value?: string): Address | undefined => {
 	} catch {
 		return undefined;
 	}
+};
+
+const normalizeMerklEligibilityRequirements = (
+	campaign: MerklCampaign,
+	defaultChainId: number,
+): {
+	requirements?: RewardEligibilityRequirement[];
+	status: RewardEligibilityRequirementsStatus;
+} => {
+	const hooks = campaign.params?.hooks;
+	if (hooks === undefined) return { status: "none" };
+	if (!Array.isArray(hooks)) return { status: "incomplete" };
+
+	const rewardTokenAddress = normalizeAddress(campaign.rewardToken.address);
+	const requirements: RewardEligibilityRequirement[] = [];
+	let hasUnmodeledCondition = false;
+	for (const value of hooks) {
+		if (!value || typeof value !== "object") {
+			hasUnmodeledCondition = true;
+			continue;
+		}
+		const hook = value as {
+			hookType?: unknown;
+			eligibilityDuration?: unknown;
+			eligibilityTokenAddress?: unknown;
+			eligibilityTokenChainId?: unknown;
+			eligibilityTokenThreshold?: unknown;
+		};
+		const tokenAddress =
+			typeof hook.eligibilityTokenAddress === "string"
+				? normalizeAddress(hook.eligibilityTokenAddress)
+				: undefined;
+		const chainId = hook.eligibilityTokenChainId;
+		const duration = hook.eligibilityDuration;
+		const threshold = hook.eligibilityTokenThreshold;
+		if (
+			hook.hookType !== 2 ||
+			!tokenAddress ||
+			tokenAddress === zeroAddress ||
+			!Number.isInteger(chainId) ||
+			Number(chainId) <= 0 ||
+			!Number.isInteger(duration) ||
+			Number(duration) <= 0 ||
+			typeof threshold !== "string" ||
+			!/^\d+$/.test(threshold)
+		) {
+			hasUnmodeledCondition = true;
+			continue;
+		}
+
+		let minimumAmount: string;
+		try {
+			const amount = BigInt(threshold);
+			if (amount <= 0n) {
+				hasUnmodeledCondition = true;
+				continue;
+			}
+			minimumAmount = amount.toString();
+		} catch {
+			hasUnmodeledCondition = true;
+			continue;
+		}
+
+		const requirement: RewardEligibilityRequirement = {
+			type: "token-holding",
+			chainId: Number(chainId),
+			tokenAddress,
+			minimumAmount,
+			minimumDurationSeconds: Number(duration),
+		};
+		if (
+			rewardTokenAddress === tokenAddress &&
+			(campaign.rewardToken.chainId ?? defaultChainId) === requirement.chainId
+		) {
+			if (
+				typeof campaign.rewardToken.symbol === "string" &&
+				campaign.rewardToken.symbol.length > 0
+			) {
+				requirement.tokenSymbol = campaign.rewardToken.symbol;
+			}
+			if (
+				Number.isInteger(campaign.rewardToken.decimals) &&
+				Number(campaign.rewardToken.decimals) >= 0
+			) {
+				requirement.tokenDecimals = campaign.rewardToken.decimals;
+			}
+		}
+		requirements.push(requirement);
+	}
+
+	return {
+		status: hasUnmodeledCondition
+			? "incomplete"
+			: hooks.length > 0
+				? "complete"
+				: "none",
+		...(requirements.length > 0 ? { requirements } : {}),
+	};
 };
 
 const sanitizeFuulClaimChecks = (
@@ -365,7 +466,16 @@ const mapMerklOpportunityTypeAction = (
 const merklOpportunityUrl = (
 	opportunity: MerklOpportunity,
 	type: MerklOpportunityType,
+	campaignId?: string,
 ): string => {
+	if (
+		typeof opportunity.id === "string" &&
+		opportunity.id.length > 0 &&
+		typeof campaignId === "string" &&
+		campaignId.length > 0
+	) {
+		return `https://app.merkl.xyz/opportunities/${encodeURIComponent(opportunity.id)}/campaigns/${encodeURIComponent(campaignId)}`;
+	}
 	if (!opportunity.identifier) return MERKL_EULER_SOURCE_URL;
 
 	const chain = (
@@ -787,6 +897,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				const aprs = merklAprMap(opp);
 
 				for (const c of opp.campaigns ?? []) {
+					const eligibility = normalizeMerklEligibilityRequirements(c, chainId);
 					if (
 						type === "EULER_BORROW_FROM_COLLATERAL" ||
 						type === "EULER_MULTI_BORROW_FROM_COLLATERAL"
@@ -834,9 +945,11 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 								dailyRewards: c.dailyRewards,
 								endTimestamp: c.endTimestamp,
 								collateralAddress: normalizeAddress(pair.collateral),
-								sourceUrl: merklOpportunityUrl(opp, type),
+								sourceUrl: merklOpportunityUrl(opp, type, c.campaignId),
 								whitelist: normalizeAddressList(c.params?.whitelist),
 								blacklist: normalizeAddressList(c.params?.blacklist),
+								eligibilityRequirements: eligibility.requirements,
+								eligibilityRequirementsStatus: eligibility.status,
 								_vaultAddress: pair.vault,
 							} as RewardCampaign & { _vaultAddress: string });
 						}
@@ -873,9 +986,11 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 								rewardTokenIcon: c.rewardToken.icon,
 								dailyRewards: c.dailyRewards,
 								endTimestamp: c.endTimestamp,
-								sourceUrl: merklOpportunityUrl(opp, type),
+								sourceUrl: merklOpportunityUrl(opp, type, c.campaignId),
 								whitelist: normalizeAddressList(c.params?.whitelist),
 								blacklist: normalizeAddressList(c.params?.blacklist),
+								eligibilityRequirements: eligibility.requirements,
+								eligibilityRequirementsStatus: eligibility.status,
 								_vaultAddress: vaultAddress,
 							} as RewardCampaign & { _vaultAddress: string });
 						}
@@ -910,9 +1025,11 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 						dailyRewards: c.dailyRewards,
 						endTimestamp: c.endTimestamp,
 						collateralAddress: normalizeAddress(c.params?.collateralAddress),
-						sourceUrl: merklOpportunityUrl(opp, type),
+						sourceUrl: merklOpportunityUrl(opp, type, c.campaignId),
 						whitelist: normalizeAddressList(c.params?.whitelist),
 						blacklist: normalizeAddressList(c.params?.blacklist),
+						eligibilityRequirements: eligibility.requirements,
+						eligibilityRequirementsStatus: eligibility.status,
 						_vaultAddress: vaultAddress,
 					} as RewardCampaign & { _vaultAddress: string });
 				}

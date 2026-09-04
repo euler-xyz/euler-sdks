@@ -14,6 +14,24 @@ import type { VaultRewardInfo } from "./vaultRewardInfo.js";
 export type RewardSource = "merkl" | "brevis" | "fuul" | "turtle";
 export type RewardAction = "LEND" | "BORROW" | "BORROW_COLLATERAL" | "LOOPING";
 
+export interface TokenHoldingEligibilityRequirement {
+	type: "token-holding";
+	chainId: number;
+	tokenAddress: Address;
+	/** Minimum token amount in base units. */
+	minimumAmount: string;
+	minimumDurationSeconds: number;
+	tokenSymbol?: string;
+	tokenDecimals?: number;
+}
+
+export type RewardEligibilityRequirement = TokenHoldingEligibilityRequirement;
+
+export type RewardEligibilityRequirementsStatus =
+	| "none"
+	| "complete"
+	| "incomplete";
+
 export interface RewardCampaign {
 	campaignId: string;
 	source: RewardSource;
@@ -37,6 +55,15 @@ export interface RewardCampaign {
 	/** Lowercased Merkl recipient allowlist/denylist, when provided by campaign params. */
 	whitelist?: string[];
 	blacklist?: string[];
+	/** Token-holding eligibility hooks that must be satisfied for campaign rewards to apply. */
+	eligibilityRequirements?: RewardEligibilityRequirement[];
+	/**
+	 * Whether provider eligibility hooks are absent, fully modeled, or include
+	 * hooks the SDK cannot model. Whitelist and blacklist are separate viewer
+	 * gates. Follow `sourceUrl` for exact provider requirements whenever this is
+	 * `incomplete`.
+	 */
+	eligibilityRequirementsStatus?: RewardEligibilityRequirementsStatus;
 }
 
 export interface UserRewardToken {
@@ -287,7 +314,9 @@ export interface MerklCampaign {
 	subType?: number | null;
 	rewardToken: {
 		address: string;
+		chainId?: number;
 		symbol: string;
+		decimals?: number;
 		icon?: string;
 	};
 	apr: number;
@@ -300,6 +329,7 @@ export interface MerklCampaign {
 		collateralAddress?: string;
 		whitelist?: string[];
 		blacklist?: string[];
+		hooks?: unknown;
 		markets?: Array<{
 			campaignParameters?: {
 				evkAddress?: string;
@@ -316,6 +346,7 @@ export interface MerklCampaign {
 }
 
 export interface MerklOpportunity {
+	id?: string;
 	chainId: number;
 	type: string;
 	identifier: string;

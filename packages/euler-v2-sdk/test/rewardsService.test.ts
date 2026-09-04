@@ -352,7 +352,9 @@ const makeMerklCampaign = (
 		subType: 0,
 		rewardToken: {
 			address: rewardToken,
+			chainId: 1,
 			symbol: "EUL",
+			decimals: 18,
 			icon: "https://example.invalid/eul.png",
 		},
 		apr: 0,
@@ -954,6 +956,18 @@ test("V3 rewards adapter maps campaign whitelist and blacklist (lowercased)", as
 						status: "active",
 						whitelist: [accountAddress],
 						blacklist: [otherAccountAddress],
+						eligibilityRequirements: [
+							{
+								type: "token-holding",
+								chainId: 1,
+								tokenAddress: rewardToken,
+								minimumAmount: "0100000000000000000000000",
+								minimumDurationSeconds: 10,
+								tokenSymbol: "EUL",
+								tokenDecimals: 18,
+							},
+						],
+						eligibilityRequirementsStatus: "complete",
 					},
 				],
 			},
@@ -970,6 +984,21 @@ test("V3 rewards adapter maps campaign whitelist and blacklist (lowercased)", as
 	assert.deepEqual(info?.campaigns[0]?.blacklist, [
 		otherAccountAddress.toLowerCase(),
 	]);
+	assert.deepEqual(info?.campaigns[0]?.eligibilityRequirements, [
+		{
+			type: "token-holding",
+			chainId: 1,
+			tokenAddress: rewardToken,
+			minimumAmount: "100000000000000000000000",
+			minimumDurationSeconds: 10,
+			tokenSymbol: "EUL",
+			tokenDecimals: 18,
+		},
+	]);
+	assert.equal(
+		info?.campaigns[0]?.eligibilityRequirementsStatus,
+		"complete",
+	);
 	// Eligibility predicate honours the mapped lists.
 	assert.equal(info?.getActiveCampaigns({ viewer: accountAddress }).length, 1);
 	assert.equal(
@@ -994,6 +1023,16 @@ test("V3 rewards adapter maps whitelist and blacklist on flat rows", async () =>
 				},
 				whitelist: [accountAddress],
 				blacklist: [otherAccountAddress],
+				eligibilityRequirements: [
+					{
+						type: "token-holding",
+						chainId: 1,
+						tokenAddress: rewardToken,
+						minimumAmount: "100000000000000000000000",
+						minimumDurationSeconds: 10,
+					},
+				],
+				eligibilityRequirementsStatus: "complete",
 			},
 		],
 	}));
@@ -1008,6 +1047,131 @@ test("V3 rewards adapter maps whitelist and blacklist on flat rows", async () =>
 	assert.deepEqual(info?.campaigns[0]?.blacklist, [
 		otherAccountAddress.toLowerCase(),
 	]);
+	assert.equal(
+		info?.campaigns[0]?.eligibilityRequirements?.[0]?.minimumAmount,
+		"100000000000000000000000",
+	);
+	assert.equal(
+		info?.campaigns[0]?.eligibilityRequirementsStatus,
+		"complete",
+	);
+});
+
+test("V3 rewards adapter preserves incomplete eligibility disclosure without modeled requirements", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "unknown-eligibility",
+						provider: "merkl",
+						campaignType: "euler_lend",
+						apr: 5,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "EUL",
+						},
+						status: "active",
+						eligibilityRequirementsStatus: "incomplete",
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.equal(campaign?.eligibilityRequirements, undefined);
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
+});
+
+test("V3 rewards adapter fails closed when a complete response contains an unknown requirement", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				provider: "merkl",
+				action: "LEND",
+				id: "future-eligibility",
+				apr: 5,
+				rewardToken: {
+					address: rewardToken,
+					symbol: "EUL",
+				},
+				eligibilityRequirements: [{ type: "future-provider-rule" }],
+				eligibilityRequirementsStatus: "complete",
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.equal(campaign?.eligibilityRequirements, undefined);
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
+});
+
+test("V3 rewards adapter fails closed for a zero-address eligibility token", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				provider: "merkl",
+				action: "LEND",
+				id: "zero-address-eligibility",
+				apr: 5,
+				rewardToken: {
+					address: rewardToken,
+					symbol: "EUL",
+				},
+				eligibilityRequirements: [
+					{
+						type: "token-holding",
+						chainId: 1,
+						tokenAddress: zeroAddress,
+						minimumAmount: "100",
+						minimumDurationSeconds: 10,
+					},
+				],
+				eligibilityRequirementsStatus: "complete",
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.equal(campaign?.eligibilityRequirements, undefined);
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
+});
+
+test("V3 rewards adapter fails closed for legacy Merkl eligibility metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				provider: "merkl",
+				action: "LEND",
+				id: "legacy-eligibility",
+				apr: 5,
+				rewardToken: {
+					address: rewardToken,
+					symbol: "EUL",
+				},
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
 });
 
 test("direct rewards adapter expands Merkl MULTILENDBORROW markets", async () => {
@@ -1149,6 +1313,7 @@ test("direct rewards adapter preserves standard Merkl allowlist metadata", async
 	const adapter = makeDirectRewardsAdapter({
 		EULER: [
 			makeMerklOpportunity({
+				id: "11011917105611148420",
 				aprRecord: {
 					breakdowns: [
 						{
@@ -1166,6 +1331,16 @@ test("direct rewards adapter preserves standard Merkl allowlist metadata", async
 							evkAddress: vaultAddress,
 							whitelist: [accountAddress],
 							blacklist: [otherAccountAddress],
+							hooks: [
+								{
+									hookType: 2,
+									eligibilityDuration: 10,
+									eligibilityTokenAddress: rewardToken,
+									eligibilityTokenChainId: 1,
+									eligibilityTokenThreshold:
+										"100000000000000000000000",
+								},
+							],
 						},
 					}),
 				],
@@ -1178,6 +1353,10 @@ test("direct rewards adapter preserves standard Merkl allowlist metadata", async
 
 	assert.equal(info?.campaigns.length, 1);
 	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.equal(
+		info?.campaigns[0]?.sourceUrl,
+		"https://app.merkl.xyz/opportunities/11011917105611148420/campaigns/standard-1",
+	);
 	assert.equal(info?.campaigns[0]?.apr, 0.042);
 	assert.equal(info?.campaigns[0]?.rewardTokenIcon, "https://example.invalid/eul.png");
 	assert.deepEqual(info?.campaigns[0]?.whitelist, [
@@ -1186,6 +1365,185 @@ test("direct rewards adapter preserves standard Merkl allowlist metadata", async
 	assert.deepEqual(info?.campaigns[0]?.blacklist, [
 		otherAccountAddress.toLowerCase(),
 	]);
+	assert.deepEqual(info?.campaigns[0]?.eligibilityRequirements, [
+		{
+			type: "token-holding",
+			chainId: 1,
+			tokenAddress: rewardToken,
+			minimumAmount: "100000000000000000000000",
+			minimumDurationSeconds: 10,
+			tokenSymbol: "EUL",
+			tokenDecimals: 18,
+		},
+	]);
+	assert.equal(
+		info?.campaigns[0]?.eligibilityRequirementsStatus,
+		"complete",
+	);
+});
+
+test("direct rewards adapter preserves known requirements when Merkl hooks are incomplete", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER: [
+			makeMerklOpportunity({
+				aprRecord: {
+					breakdowns: [{ identifier: "unknown-hook", value: 4.2 }],
+				},
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "unknown-hook",
+						apr: 0,
+						params: {
+							evkAddress: vaultAddress,
+							hooks: [
+								{
+									hookType: 2,
+									eligibilityDuration: 10,
+									eligibilityTokenAddress: rewardToken,
+									eligibilityTokenChainId: 1,
+									eligibilityTokenThreshold: "100",
+								},
+								{ hookType: 99, schemaUid: "0xunknown" },
+							],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.deepEqual(campaign?.eligibilityRequirements, [
+		{
+			type: "token-holding",
+			chainId: 1,
+			tokenAddress: rewardToken,
+			minimumAmount: "100",
+			minimumDurationSeconds: 10,
+			tokenSymbol: "EUL",
+			tokenDecimals: 18,
+		},
+	]);
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
+});
+
+test("direct rewards adapter fails closed for a zero-address eligibility token", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER: [
+			makeMerklOpportunity({
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "zero-address-hook",
+						apr: 4.2,
+						params: {
+							evkAddress: vaultAddress,
+							hooks: [
+								{
+									hookType: 2,
+									eligibilityDuration: 10,
+									eligibilityTokenAddress: zeroAddress,
+									eligibilityTokenChainId: 1,
+									eligibilityTokenThreshold: "100",
+								},
+							],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.equal(campaign?.eligibilityRequirements, undefined);
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
+});
+
+test("direct rewards adapter omits invalid eligibility token symbols", async () => {
+	for (const symbol of ["", 42] as const) {
+		const adapter = makeDirectRewardsAdapter({
+			EULER: [
+				makeMerklOpportunity({
+					campaigns: [
+						makeMerklCampaign({
+							campaignId: `invalid-symbol-${String(symbol)}`,
+							apr: 4.2,
+							rewardToken: {
+								address: rewardToken,
+								chainId: 1,
+								symbol: symbol as unknown as string,
+								decimals: 18,
+							},
+							params: {
+								evkAddress: vaultAddress,
+								hooks: [
+									{
+										hookType: 2,
+										eligibilityDuration: 10,
+										eligibilityTokenAddress: rewardToken,
+										eligibilityTokenChainId: 1,
+										eligibilityTokenThreshold: "100",
+									},
+								],
+							},
+						}),
+					],
+				}),
+			],
+		});
+
+		const rewards = await adapter.fetchChainRewards(1);
+		const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+		assert.equal(campaign?.eligibilityRequirements?.[0]?.tokenSymbol, undefined);
+		assert.equal(campaign?.eligibilityRequirementsStatus, "complete");
+	}
+});
+
+test("direct rewards adapter rejects negative eligibility token decimals", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER: [
+			makeMerklOpportunity({
+				aprRecord: {
+					breakdowns: [{ identifier: "negative-decimals", value: 4.2 }],
+				},
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "negative-decimals",
+						apr: 0,
+						rewardToken: {
+							address: rewardToken,
+							chainId: 1,
+							symbol: "EUL",
+							decimals: -1,
+						},
+						params: {
+							evkAddress: vaultAddress,
+							hooks: [
+								{
+									hookType: 2,
+									eligibilityDuration: 10,
+									eligibilityTokenAddress: rewardToken,
+									eligibilityTokenChainId: 1,
+									eligibilityTokenThreshold: "100",
+								},
+							],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const requirement = rewards.get(vaultAddress.toLowerCase())?.campaigns[0]
+		?.eligibilityRequirements?.[0];
+
+	assert.equal(requirement?.tokenSymbol, "EUL");
+	assert.equal(requirement?.tokenDecimals, undefined);
 });
 
 test("direct rewards adapter maps split Merkl Euler lend and borrow opportunity types", async () => {

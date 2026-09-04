@@ -13,6 +13,16 @@ export type V3ListEnvelope<T> = {
 	};
 };
 
+type V3RewardEligibilityRequirement = {
+	type?: string;
+	chainId?: number;
+	tokenAddress?: string;
+	minimumAmount?: string;
+	minimumDurationSeconds?: number;
+	tokenSymbol?: string;
+	tokenDecimals?: number;
+};
+
 export type V3RewardsApyRow = {
 	chainId?: number;
 	vault?: string;
@@ -54,6 +64,8 @@ export type V3RewardsApyRow = {
 	rewardTokenDecimals?: number | string;
 	whitelist?: string[];
 	blacklist?: string[];
+	eligibilityRequirements?: V3RewardEligibilityRequirement[];
+	eligibilityRequirementsStatus?: string;
 	campaigns?: Array<{
 		id?: string;
 		provider?: string;
@@ -72,6 +84,8 @@ export type V3RewardsApyRow = {
 		maxLeverage?: number | string;
 		whitelist?: string[];
 		blacklist?: string[];
+		eligibilityRequirements?: V3RewardEligibilityRequirement[];
+		eligibilityRequirementsStatus?: string;
 		rewardToken?: {
 			address?: string;
 			chainId?: number;
