@@ -21,6 +21,7 @@ import type {
 	RewardAction,
 	RewardCampaign,
 	RewardEligibilityRequirement,
+	RewardEligibilityRequirementsStatus,
 	RewardsDirectAdapterConfig,
 	TurtleMerkleProof,
 	TurtleStreamConfig,
@@ -97,10 +98,33 @@ const normalizeAddress = (value?: string): Address | undefined => {
 const normalizeMerklEligibilityRequirements = (
 	campaign: MerklCampaign,
 	defaultChainId: number,
-): RewardEligibilityRequirement[] | undefined => {
+): {
+	requirements?: RewardEligibilityRequirement[];
+	status: RewardEligibilityRequirementsStatus;
+} => {
+	const hooks = campaign.params?.hooks;
+	if (hooks === undefined) return { status: "none" };
+	if (!Array.isArray(hooks)) return { status: "incomplete" };
+
 	const rewardTokenAddress = normalizeAddress(campaign.rewardToken.address);
-	const requirements = (campaign.params?.hooks ?? []).flatMap((hook) => {
-		const tokenAddress = normalizeAddress(hook.eligibilityTokenAddress);
+	const requirements: RewardEligibilityRequirement[] = [];
+	let hasUnmodeledCondition = false;
+	for (const value of hooks) {
+		if (!value || typeof value !== "object") {
+			hasUnmodeledCondition = true;
+			continue;
+		}
+		const hook = value as {
+			hookType?: unknown;
+			eligibilityDuration?: unknown;
+			eligibilityTokenAddress?: unknown;
+			eligibilityTokenChainId?: unknown;
+			eligibilityTokenThreshold?: unknown;
+		};
+		const tokenAddress =
+			typeof hook.eligibilityTokenAddress === "string"
+				? normalizeAddress(hook.eligibilityTokenAddress)
+				: undefined;
 		const chainId = hook.eligibilityTokenChainId;
 		const duration = hook.eligibilityDuration;
 		const threshold = hook.eligibilityTokenThreshold;
@@ -114,16 +138,21 @@ const normalizeMerklEligibilityRequirements = (
 			typeof threshold !== "string" ||
 			!/^\d+$/.test(threshold)
 		) {
-			return [];
+			hasUnmodeledCondition = true;
+			continue;
 		}
 
 		let minimumAmount: string;
 		try {
 			const amount = BigInt(threshold);
-			if (amount <= 0n) return [];
+			if (amount <= 0n) {
+				hasUnmodeledCondition = true;
+				continue;
+			}
 			minimumAmount = amount.toString();
 		} catch {
-			return [];
+			hasUnmodeledCondition = true;
+			continue;
 		}
 
 		const requirement: RewardEligibilityRequirement = {
@@ -142,9 +171,17 @@ const normalizeMerklEligibilityRequirements = (
 				requirement.tokenDecimals = campaign.rewardToken.decimals;
 			}
 		}
-		return [requirement];
-	});
-	return requirements.length > 0 ? requirements : undefined;
+		requirements.push(requirement);
+	}
+
+	return {
+		status: hasUnmodeledCondition
+			? "incomplete"
+			: hooks.length > 0
+				? "complete"
+				: "none",
+		...(requirements.length > 0 ? { requirements } : {}),
+	};
 };
 
 const sanitizeFuulClaimChecks = (
@@ -842,10 +879,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				const aprs = merklAprMap(opp);
 
 				for (const c of opp.campaigns ?? []) {
-					const eligibilityRequirements = normalizeMerklEligibilityRequirements(
-						c,
-						chainId,
-					);
+					const eligibility = normalizeMerklEligibilityRequirements(c, chainId);
 					if (
 						type === "EULER_BORROW_FROM_COLLATERAL" ||
 						type === "EULER_MULTI_BORROW_FROM_COLLATERAL"
@@ -896,7 +930,8 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 								sourceUrl: merklOpportunityUrl(opp, type),
 								whitelist: normalizeAddressList(c.params?.whitelist),
 								blacklist: normalizeAddressList(c.params?.blacklist),
-								eligibilityRequirements,
+								eligibilityRequirements: eligibility.requirements,
+								eligibilityRequirementsStatus: eligibility.status,
 								_vaultAddress: pair.vault,
 							} as RewardCampaign & { _vaultAddress: string });
 						}
@@ -936,7 +971,8 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 								sourceUrl: merklOpportunityUrl(opp, type),
 								whitelist: normalizeAddressList(c.params?.whitelist),
 								blacklist: normalizeAddressList(c.params?.blacklist),
-								eligibilityRequirements,
+								eligibilityRequirements: eligibility.requirements,
+								eligibilityRequirementsStatus: eligibility.status,
 								_vaultAddress: vaultAddress,
 							} as RewardCampaign & { _vaultAddress: string });
 						}
@@ -974,7 +1010,8 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 						sourceUrl: merklOpportunityUrl(opp, type),
 						whitelist: normalizeAddressList(c.params?.whitelist),
 						blacklist: normalizeAddressList(c.params?.blacklist),
-						eligibilityRequirements,
+						eligibilityRequirements: eligibility.requirements,
+						eligibilityRequirementsStatus: eligibility.status,
 						_vaultAddress: vaultAddress,
 					} as RewardCampaign & { _vaultAddress: string });
 				}

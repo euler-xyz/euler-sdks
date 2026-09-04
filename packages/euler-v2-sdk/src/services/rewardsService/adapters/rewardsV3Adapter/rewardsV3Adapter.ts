@@ -10,6 +10,7 @@ import type {
 	RewardAction,
 	RewardCampaign,
 	RewardEligibilityRequirement,
+	RewardEligibilityRequirementsStatus,
 	RewardSource,
 	TurtleMerkleProof,
 	UserReward,
@@ -199,6 +200,53 @@ const normalizeEligibilityRequirements = (
 		];
 	});
 	return requirements.length > 0 ? requirements : undefined;
+};
+
+const normalizeEligibilityMetadata = (
+	requirementsValue: unknown,
+	statusValue: unknown,
+	source: RewardSource,
+): {
+	requirements?: RewardEligibilityRequirement[];
+	status?: RewardEligibilityRequirementsStatus;
+} => {
+	const requirements = normalizeEligibilityRequirements(requirementsValue);
+	const status: RewardEligibilityRequirementsStatus | undefined =
+		statusValue === "none" ||
+		statusValue === "complete" ||
+		statusValue === "incomplete"
+			? statusValue
+			: undefined;
+	const rawRequirementCount = Array.isArray(requirementsValue)
+		? requirementsValue.length
+		: 0;
+	const hasMalformedRequirementsValue =
+		requirementsValue !== undefined && !Array.isArray(requirementsValue);
+	const modeledRequirementCount = requirements?.length ?? 0;
+
+	let normalizedStatus = status;
+	if (
+		status === "none" &&
+		(rawRequirementCount > 0 || hasMalformedRequirementsValue)
+	) {
+		normalizedStatus = "incomplete";
+	} else if (
+		status === "complete" &&
+		(hasMalformedRequirementsValue ||
+			rawRequirementCount === 0 ||
+			modeledRequirementCount !== rawRequirementCount)
+	) {
+		normalizedStatus = "incomplete";
+	} else if (!status && source === "merkl") {
+		// Older V3 deployments and cached Merkl rows cannot prove that no
+		// provider condition was omitted, so keep disclosure fail-closed.
+		normalizedStatus = "incomplete";
+	}
+
+	return {
+		...(requirements ? { requirements } : {}),
+		...(normalizedStatus ? { status: normalizedStatus } : {}),
+	};
 };
 
 type RewardsClaimAdapter = Pick<
@@ -552,6 +600,11 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 				const collateralAddress = normalizeAddress(campaignRow.collateralAsset);
 
 				if (!provider || !action || !apr || !rewardTokenSymbol) continue;
+				const eligibility = normalizeEligibilityMetadata(
+					campaignRow.eligibilityRequirements,
+					campaignRow.eligibilityRequirementsStatus,
+					provider,
+				);
 
 				addCampaign({
 					campaignId:
@@ -573,9 +626,8 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 					),
 					whitelist: normalizeAddressList(campaignRow.whitelist),
 					blacklist: normalizeAddressList(campaignRow.blacklist),
-					eligibilityRequirements: normalizeEligibilityRequirements(
-						campaignRow.eligibilityRequirements,
-					),
+					eligibilityRequirements: eligibility.requirements,
+					eligibilityRequirementsStatus: eligibility.status,
 				});
 			}
 
@@ -594,6 +646,11 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 		const collateralAddress = normalizeAddress(row.collateralAsset);
 
 		if (!provider || !action || !apr || !rewardTokenSymbol) return;
+		const eligibility = normalizeEligibilityMetadata(
+			row.eligibilityRequirements,
+			row.eligibilityRequirementsStatus,
+			provider,
+		);
 
 		addCampaign({
 			campaignId:
@@ -617,9 +674,8 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			),
 			whitelist: normalizeAddressList(row.whitelist),
 			blacklist: normalizeAddressList(row.blacklist),
-			eligibilityRequirements: normalizeEligibilityRequirements(
-				row.eligibilityRequirements,
-			),
+			eligibilityRequirements: eligibility.requirements,
+			eligibilityRequirementsStatus: eligibility.status,
 		});
 	}
 

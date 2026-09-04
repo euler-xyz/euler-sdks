@@ -27,6 +27,11 @@ export interface TokenHoldingEligibilityRequirement {
 
 export type RewardEligibilityRequirement = TokenHoldingEligibilityRequirement;
 
+export type RewardEligibilityRequirementsStatus =
+	| "none"
+	| "complete"
+	| "incomplete";
+
 export interface RewardCampaign {
 	campaignId: string;
 	source: RewardSource;
@@ -52,6 +57,12 @@ export interface RewardCampaign {
 	blacklist?: string[];
 	/** Requirements that must be satisfied for campaign rewards to apply. */
 	eligibilityRequirements?: RewardEligibilityRequirement[];
+	/**
+	 * Whether provider eligibility conditions are absent, fully modeled, or
+	 * include conditions the SDK cannot model. Follow `sourceUrl` for exact
+	 * provider requirements whenever this is `incomplete`.
+	 */
+	eligibilityRequirementsStatus?: RewardEligibilityRequirementsStatus;
 }
 
 export interface UserRewardToken {
@@ -317,14 +328,7 @@ export interface MerklCampaign {
 		collateralAddress?: string;
 		whitelist?: string[];
 		blacklist?: string[];
-		hooks?: Array<{
-			hookType?: number;
-			eligibilityDuration?: number;
-			eligibilityTokenAddress?: string;
-			eligibilityTokenChainId?: number;
-			eligibilityTokenThreshold?: string;
-			schemaUid?: string;
-		}>;
+		hooks?: unknown;
 		markets?: Array<{
 			campaignParameters?: {
 				evkAddress?: string;

@@ -967,6 +967,7 @@ test("V3 rewards adapter maps campaign whitelist and blacklist (lowercased)", as
 								tokenDecimals: 18,
 							},
 						],
+						eligibilityRequirementsStatus: "complete",
 					},
 				],
 			},
@@ -994,6 +995,10 @@ test("V3 rewards adapter maps campaign whitelist and blacklist (lowercased)", as
 			tokenDecimals: 18,
 		},
 	]);
+	assert.equal(
+		info?.campaigns[0]?.eligibilityRequirementsStatus,
+		"complete",
+	);
 	// Eligibility predicate honours the mapped lists.
 	assert.equal(info?.getActiveCampaigns({ viewer: accountAddress }).length, 1);
 	assert.equal(
@@ -1027,6 +1032,7 @@ test("V3 rewards adapter maps whitelist and blacklist on flat rows", async () =>
 						minimumDurationSeconds: 10,
 					},
 				],
+				eligibilityRequirementsStatus: "complete",
 			},
 		],
 	}));
@@ -1045,6 +1051,92 @@ test("V3 rewards adapter maps whitelist and blacklist on flat rows", async () =>
 		info?.campaigns[0]?.eligibilityRequirements?.[0]?.minimumAmount,
 		"100000000000000000000000",
 	);
+	assert.equal(
+		info?.campaigns[0]?.eligibilityRequirementsStatus,
+		"complete",
+	);
+});
+
+test("V3 rewards adapter preserves incomplete eligibility disclosure without modeled requirements", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "unknown-eligibility",
+						provider: "merkl",
+						campaignType: "euler_lend",
+						apr: 5,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "EUL",
+						},
+						status: "active",
+						eligibilityRequirementsStatus: "incomplete",
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.equal(campaign?.eligibilityRequirements, undefined);
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
+});
+
+test("V3 rewards adapter fails closed when a complete response contains an unknown requirement", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				provider: "merkl",
+				action: "LEND",
+				id: "future-eligibility",
+				apr: 5,
+				rewardToken: {
+					address: rewardToken,
+					symbol: "EUL",
+				},
+				eligibilityRequirements: [{ type: "future-provider-rule" }],
+				eligibilityRequirementsStatus: "complete",
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.equal(campaign?.eligibilityRequirements, undefined);
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
+});
+
+test("V3 rewards adapter fails closed for legacy Merkl eligibility metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				provider: "merkl",
+				action: "LEND",
+				id: "legacy-eligibility",
+				apr: 5,
+				rewardToken: {
+					address: rewardToken,
+					symbol: "EUL",
+				},
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
 });
 
 test("direct rewards adapter expands Merkl MULTILENDBORROW markets", async () => {
@@ -1244,6 +1336,57 @@ test("direct rewards adapter preserves standard Merkl allowlist metadata", async
 			tokenDecimals: 18,
 		},
 	]);
+	assert.equal(
+		info?.campaigns[0]?.eligibilityRequirementsStatus,
+		"complete",
+	);
+});
+
+test("direct rewards adapter preserves known requirements when Merkl hooks are incomplete", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER: [
+			makeMerklOpportunity({
+				aprRecord: {
+					breakdowns: [{ identifier: "unknown-hook", value: 4.2 }],
+				},
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "unknown-hook",
+						apr: 0,
+						params: {
+							evkAddress: vaultAddress,
+							hooks: [
+								{
+									hookType: 2,
+									eligibilityDuration: 10,
+									eligibilityTokenAddress: rewardToken,
+									eligibilityTokenChainId: 1,
+									eligibilityTokenThreshold: "100",
+								},
+								{ hookType: 99, schemaUid: "0xunknown" },
+							],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.deepEqual(campaign?.eligibilityRequirements, [
+		{
+			type: "token-holding",
+			chainId: 1,
+			tokenAddress: rewardToken,
+			minimumAmount: "100",
+			minimumDurationSeconds: 10,
+			tokenSymbol: "EUL",
+			tokenDecimals: 18,
+		},
+	]);
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
 });
 
 test("direct rewards adapter maps split Merkl Euler lend and borrow opportunity types", async () => {

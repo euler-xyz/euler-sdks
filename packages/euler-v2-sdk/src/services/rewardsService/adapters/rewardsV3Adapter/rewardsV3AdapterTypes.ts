@@ -65,6 +65,7 @@ export type V3RewardsApyRow = {
 	whitelist?: string[];
 	blacklist?: string[];
 	eligibilityRequirements?: V3RewardEligibilityRequirement[];
+	eligibilityRequirementsStatus?: string;
 	campaigns?: Array<{
 		id?: string;
 		provider?: string;
@@ -84,6 +85,7 @@ export type V3RewardsApyRow = {
 		whitelist?: string[];
 		blacklist?: string[];
 		eligibilityRequirements?: V3RewardEligibilityRequirement[];
+		eligibilityRequirementsStatus?: string;
 		rewardToken?: {
 			address?: string;
 			chainId?: number;

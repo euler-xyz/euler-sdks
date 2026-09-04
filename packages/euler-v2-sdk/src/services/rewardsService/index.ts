@@ -14,6 +14,7 @@ export type {
 	RewardSource,
 	RewardAction,
 	RewardEligibilityRequirement,
+	RewardEligibilityRequirementsStatus,
 	TokenHoldingEligibilityRequirement,
 	RewardsServiceConfig,
 	RewardsDirectAdapterConfig,
