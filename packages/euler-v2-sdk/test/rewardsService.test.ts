@@ -1389,6 +1389,49 @@ test("direct rewards adapter preserves known requirements when Merkl hooks are i
 	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
 });
 
+test("direct rewards adapter rejects negative eligibility token decimals", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER: [
+			makeMerklOpportunity({
+				aprRecord: {
+					breakdowns: [{ identifier: "negative-decimals", value: 4.2 }],
+				},
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "negative-decimals",
+						apr: 0,
+						rewardToken: {
+							address: rewardToken,
+							chainId: 1,
+							symbol: "EUL",
+							decimals: -1,
+						},
+						params: {
+							evkAddress: vaultAddress,
+							hooks: [
+								{
+									hookType: 2,
+									eligibilityDuration: 10,
+									eligibilityTokenAddress: rewardToken,
+									eligibilityTokenChainId: 1,
+									eligibilityTokenThreshold: "100",
+								},
+							],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const requirement = rewards.get(vaultAddress.toLowerCase())?.campaigns[0]
+		?.eligibilityRequirements?.[0];
+
+	assert.equal(requirement?.tokenSymbol, "EUL");
+	assert.equal(requirement?.tokenDecimals, undefined);
+});
+
 test("direct rewards adapter maps split Merkl Euler lend and borrow opportunity types", async () => {
 	const adapter = makeDirectRewardsAdapter({
 		EULER_LEND: [

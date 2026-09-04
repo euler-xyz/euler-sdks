@@ -167,7 +167,10 @@ const normalizeMerklEligibilityRequirements = (
 			(campaign.rewardToken.chainId ?? defaultChainId) === requirement.chainId
 		) {
 			requirement.tokenSymbol = campaign.rewardToken.symbol;
-			if (Number.isInteger(campaign.rewardToken.decimals)) {
+			if (
+				Number.isInteger(campaign.rewardToken.decimals) &&
+				Number(campaign.rewardToken.decimals) >= 0
+			) {
 				requirement.tokenDecimals = campaign.rewardToken.decimals;
 			}
 		}
