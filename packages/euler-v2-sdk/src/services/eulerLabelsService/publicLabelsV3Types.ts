@@ -110,6 +110,8 @@ export interface PublicLabelsSource {
 }
 
 export interface PublicLabelsSnapshot {
+	/** Dataset containing the selected metadata publication. */
+	labelSet?: string;
 	/** Immutable metadata publication; visibility, geo, addresses and platform tags are live. */
 	version: string;
 	publicLabels: PublicLabelsSource;
@@ -131,6 +133,10 @@ export type PublicLabelsRequest = <T>(
 
 export interface PublicLabelsV3AdapterConfig {
 	endpoint: string;
+	/** Published metadata dataset. Defaults to public; live verdicts and geo are not isolated. */
+	labelSet?: string;
+	/** Default metadata selector: latest or an immutable published version key. */
+	version?: string;
 	apiKey?: string;
 	/** Optional transport injection for proxies, tests, or application-owned caching. */
 	request?: PublicLabelsRequest;

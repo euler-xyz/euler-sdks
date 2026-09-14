@@ -28,10 +28,10 @@ const response = <T>(data: T, total?: number): PublicLabelsResponse<T> => ({
 	},
 });
 
-const fixtureRequest = (options?: { productEntityId?: string }) => {
+const fixtureRequest = (options?: { productEntityId?: string; labelSet?: string }) => {
 	const request = vi.fn(
 		async (path: string, query: PublicLabelsQuery): Promise<unknown> => {
-			if (path === "/labels/sets/public/versions") {
+			if (path === `/labels/sets/${options?.labelSet ?? "public"}/versions`) {
 				return response([
 					{
 						versionKey: PUBLIC_LABELS_FIXTURE_VERSION,
@@ -124,6 +124,7 @@ describe("PublicLabelsV3Adapter", () => {
 				.every(([, query]) => query.version === PUBLIC_LABELS_FIXTURE_VERSION),
 		).toBe(true);
 		expect(request).toHaveBeenCalledWith("/labels/vaults", {
+			labelSet: "public",
 			chainId: 1,
 			version: PUBLIC_LABELS_FIXTURE_VERSION,
 			view: "resolved",
@@ -131,6 +132,7 @@ describe("PublicLabelsV3Adapter", () => {
 			offset: 0,
 		});
 		expect(request).toHaveBeenCalledWith("/labels/products", {
+			labelSet: "public",
 			chainId: 1,
 			version: PUBLIC_LABELS_FIXTURE_VERSION,
 			view: "resolved",
@@ -152,11 +154,60 @@ describe("PublicLabelsV3Adapter", () => {
 			offset: 0,
 		});
 		expect(request).toHaveBeenCalledWith(`/labels/entities/kpk`, {
+			labelSet: "public",
 			version: PUBLIC_LABELS_FIXTURE_VERSION,
 		});
 		expect(request).toHaveBeenCalledWith(`/labels/entities/securitize`, {
+			labelSet: "public",
 			version: PUBLIC_LABELS_FIXTURE_VERSION,
 		});
+	});
+
+	it("selects alternate-set metadata while leaving live reads unscoped", async () => {
+		const request = fixtureRequest({ labelSet: "test-instance" });
+		const adapter = new PublicLabelsV3Adapter({ endpoint: "https://v3.test", labelSet: "test-instance", request });
+		const snapshot = await adapter.fetchPublicLabelsSnapshot(1);
+		expect(snapshot.labelSet).toBe("test-instance");
+		expect(request).toHaveBeenCalledWith("/labels/sets/test-instance/versions", {});
+		for (const [path, query] of request.mock.calls) {
+			const metadata = path.startsWith("/labels/") && !path.includes("/sets/") && !path.endsWith("/addresses");
+			expect(query.labelSet).toBe(metadata ? "test-instance" : undefined);
+			if (metadata) expect(query.version).toBe(PUBLIC_LABELS_FIXTURE_VERSION);
+		}
+	});
+
+	it.each(["latest", "test-2026-06-30"])("resolves %s to a named published key in the selected set", async (version) => {
+		const base = fixtureRequest({ labelSet: "test-instance" });
+		const request = vi.fn(async (path: string, query: PublicLabelsQuery) => path.endsWith("/versions")
+			? response([{ versionKey: "test-2026-06-30", status: "published", isLatest: true }])
+			: base(path, query));
+		const adapter = new PublicLabelsV3Adapter({ endpoint: "https://v3.test", labelSet: "test-instance", version, request: request as PublicLabelsRequest });
+		expect((await adapter.fetchPublicLabelsSnapshot(1)).version).toBe("test-2026-06-30");
+		expect(request).toHaveBeenCalledWith("/labels/vaults", expect.objectContaining({ labelSet: "test-instance", version: "test-2026-06-30" }));
+	});
+
+	it("uses the configured publication by default and permits an explicit override", async () => {
+		const request = fixtureRequest();
+		const adapter = new PublicLabelsV3Adapter({ endpoint: "https://v3.test", version: PUBLIC_LABELS_FIXTURE_VERSION, request });
+		await adapter.fetchPublicLabelsSnapshot(1);
+		expect(request.mock.calls.some(([path]) => path.includes("/sets/"))).toBe(false);
+		await adapter.fetchPublicLabelsSnapshot(1, "latest");
+		expect(request).toHaveBeenCalledWith("/labels/sets/public/versions", {});
+	});
+
+	it("does not fall back to public when the selected set has no publication", async () => {
+		const request = vi.fn(async () => response([]));
+		const adapter = new PublicLabelsV3Adapter({ endpoint: "https://v3.test", labelSet: "empty", request: request as PublicLabelsRequest });
+		await expect(adapter.fetchPublicLabelsSnapshot(1)).rejects.toThrow("latest alias is unavailable");
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(request).toHaveBeenCalledWith("/labels/sets/empty/versions", {});
+	});
+
+	it.each(["../public", "public?version=draft", "x".repeat(101)])("rejects invalid set %s before requesting", (labelSet) => {
+		expect(() => new PublicLabelsV3Adapter({ endpoint: "https://v3.test", labelSet })).toThrow("Invalid Public Labels set");
+	});
+	it.each(["draft", "current", "bad version"])("rejects unsupported configured version %s", (version) => {
+		expect(() => new PublicLabelsV3Adapter({ endpoint: "https://v3.test", version })).toThrow("Invalid Public Labels version");
 	});
 
 	it("uses deterministic publication keys without resolving latest", async () => {

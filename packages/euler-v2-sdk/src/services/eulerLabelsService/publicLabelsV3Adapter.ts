@@ -22,6 +22,9 @@ import {
 const MAX_PUBLIC_LABEL_RECORDS = 10_000;
 const ENTITY_ADDRESS_CONCURRENCY = 8;
 const VERSION_KEY_RE = /^v[0-9]{17}$/;
+const isPublishedVersionKey = (value: string): boolean =>
+	/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(value) &&
+	!["draft", "current", "latest", "production"].includes(value);
 
 const isNonNegativeInteger = (value: unknown): value is number =>
 	typeof value === "number" && Number.isInteger(value) && value >= 0;
@@ -184,19 +187,28 @@ const mapWithConcurrency = async <T, R>(
 const isSafeEntityId = (value: string): boolean =>
 	/^[A-Za-z0-9_-]{1,100}$/.test(value);
 
+const validateLabelSet = (labelSet: string): string => {
+	if (!/^[A-Za-z0-9_-]{1,100}$/.test(labelSet))
+		throw new Error("Invalid Public Labels set");
+	return labelSet;
+};
+
 export const resolvePublicLabelsVersion = async (
 	request: PublicLabelsRequest,
 	requestedVersion = PUBLIC_LABELS_RUNTIME_VERSION,
+	labelSet = "public",
 ): Promise<string> => {
-	if (requestedVersion !== PUBLIC_LABELS_RUNTIME_VERSION) {
-		if (!VERSION_KEY_RE.test(requestedVersion)) {
-			throw new Error(`Invalid Public Labels version ${requestedVersion}`);
-		}
-		return requestedVersion;
+	validateLabelSet(labelSet);
+	if (
+		requestedVersion !== PUBLIC_LABELS_RUNTIME_VERSION &&
+		!isPublishedVersionKey(requestedVersion)
+	) {
+		throw new Error(`Invalid Public Labels version ${requestedVersion}`);
 	}
+	if (VERSION_KEY_RE.test(requestedVersion)) return requestedVersion;
 
 	const response = await request<PublishedLabelVersion[]>(
-		"/labels/sets/public/versions",
+		`/labels/sets/${labelSet}/versions`,
 		{},
 	);
 	if (!Array.isArray(response.data)) {
@@ -205,11 +217,17 @@ export const resolvePublicLabelsVersion = async (
 	const published = response.data.find(
 		(version) =>
 			version.status === "published" &&
-			(version.isLatest === true ||
-				version.aliases?.includes(PUBLIC_LABELS_RUNTIME_VERSION)),
+			(requestedVersion === PUBLIC_LABELS_RUNTIME_VERSION
+				? version.isLatest === true ||
+					version.aliases?.includes(PUBLIC_LABELS_RUNTIME_VERSION)
+				: version.versionKey === requestedVersion),
 	);
-	if (!published?.versionKey || !VERSION_KEY_RE.test(published.versionKey)) {
-		throw new Error("Public Labels latest alias is unavailable");
+	if (!published?.versionKey || !isPublishedVersionKey(published.versionKey)) {
+		throw new Error(
+			requestedVersion === PUBLIC_LABELS_RUNTIME_VERSION
+				? "Public Labels latest alias is unavailable"
+				: `Public Labels publication ${requestedVersion} is unavailable`,
+		);
 	}
 	return published.versionKey;
 };
@@ -219,10 +237,13 @@ export const fetchPublicLabelsSource = async (
 	chainId: number,
 	version: string,
 	policies?: PublicGeoPolicy[],
+	labelSet = "public",
 ): Promise<PublicLabelsSource> => {
+	validateLabelSet(labelSet);
 	const [vaults, products, entities, geoPolicies, evk, earn] =
 		await Promise.all([
 			fetchAllPublicLabelPages<PublicVaultLabel>(request, "/labels/vaults", {
+				labelSet,
 				version,
 				view: "resolved",
 				chainId,
@@ -231,12 +252,14 @@ export const fetchPublicLabelsSource = async (
 				request,
 				"/labels/products",
 				{
+					labelSet,
 					version,
 					view: "resolved",
 					chainId,
 				},
 			),
 			fetchAllPublicLabelPages<PublicEntityLabel>(request, "/labels/entities", {
+				labelSet,
 				version,
 			}),
 			policies === undefined
@@ -281,7 +304,7 @@ export const fetchPublicLabelsSource = async (
 		async (entityId) => {
 			const profilePath = `/labels/entities/${entityId}`;
 			const [profileResponse, addresses] = await Promise.all([
-				request<PublicEntityLabel>(profilePath, { version }),
+				request<PublicEntityLabel>(profilePath, { labelSet, version }),
 				fetchAllPublicLabelPages<PublicEntityAddress>(
 					request,
 					`/labels/entities/${entityId}/addresses`,
@@ -375,33 +398,44 @@ const buildPublicLabelsRequest =
 
 export class PublicLabelsV3Adapter {
 	queryPublicLabels: PublicLabelsRequest;
+	private readonly labelSet: string;
+	private readonly version: string;
 
 	constructor(config: PublicLabelsV3AdapterConfig, buildQuery?: BuildQueryFn) {
+		this.labelSet = validateLabelSet(config.labelSet?.trim() || "public");
+		this.version = config.version?.trim() || PUBLIC_LABELS_RUNTIME_VERSION;
+		if (
+			this.version !== PUBLIC_LABELS_RUNTIME_VERSION &&
+			!isPublishedVersionKey(this.version)
+		)
+			throw new Error("Invalid Public Labels version");
 		this.queryPublicLabels = config.request ?? buildPublicLabelsRequest(config);
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
 
 	async fetchPublicLabelsSnapshot(
 		chainId: number,
-		version = PUBLIC_LABELS_RUNTIME_VERSION,
+		version = this.version,
 		geoPolicies?: PublicGeoPolicy[],
 	): Promise<PublicLabelsSnapshot> {
 		const resolvedVersion = await resolvePublicLabelsVersion(
 			this.queryPublicLabels,
 			version,
+			this.labelSet,
 		);
 		const publicLabels = await fetchPublicLabelsSource(
 			this.queryPublicLabels,
 			chainId,
 			resolvedVersion,
 			geoPolicies,
+			this.labelSet,
 		);
-		return { version: resolvedVersion, publicLabels };
+		return { labelSet: this.labelSet, version: resolvedVersion, publicLabels };
 	}
 
 	async fetchPublicEulerLabelsData(
 		chainId: number,
-		version = PUBLIC_LABELS_RUNTIME_VERSION,
+		version = this.version,
 	): Promise<PublicEulerLabelsData> {
 		const snapshot = await this.fetchPublicLabelsSnapshot(chainId, version);
 		return normalizePublicLabelsData(chainId, snapshot.publicLabels);

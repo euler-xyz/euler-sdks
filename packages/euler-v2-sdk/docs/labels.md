@@ -84,6 +84,8 @@ import {
 } from '@eulerxyz/euler-v2-sdk/public-labels'
 
 const labels = new PublicLabelsV3Adapter({
+  labelSet: 'public', // defaults to public
+  version: 'latest', // or an immutable publication key
   endpoint: 'https://v3.euler.finance/v3',
 })
 
@@ -98,7 +100,7 @@ const brands = product
   : []
 ```
 
-Normal runtime reads use `latest`. The adapter resolves that alias once, pins resolved vault/product labels and entity profiles to that publication. Geo policies, entity addresses, platform tags and visibility are live overlays. A concrete publication key pins metadata but does not freeze those overlays:
+By default, runtime reads select `public` / `latest`. Configure `labelSet` and `version` on the adapter to select another published dataset or pin metadata. The adapter resolves `latest` within that set once, then includes the set and concrete version on vault/product labels and entity profiles. An explicit method version overrides the configured default. Unsupported selector shapes, draft selectors and unavailable publications fail without falling back to the public dataset. Geo policies, entity addresses, platform tags and visibility are live overlays. A concrete publication key pins metadata but does not freeze those overlays:
 
 ```typescript
 const snapshot = await labels.fetchPublicLabelsSnapshot(
