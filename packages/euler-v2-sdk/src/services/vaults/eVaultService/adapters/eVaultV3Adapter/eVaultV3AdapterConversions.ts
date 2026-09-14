@@ -58,6 +58,7 @@ import {
 	type FixedCyclicalBinaryIRMInfo,
 	type FixedCyclicalBinaryMonthlyIRMInfo,
 } from "../../../../../utils/irm.js";
+import { normalizeOracleReferenceAssetDecimals } from "../oracleReferenceAsset.js";
 
 const DEFAULT_HOOKED_OPERATIONS: EVaultHookedOperations = {
 	deposit: false,
@@ -146,7 +147,10 @@ function normalizeUnitOfAccountToken(token: Token): Token | undefined {
 
 	return {
 		...token,
-		decimals: token.decimals > 0 ? token.decimals : 18,
+		decimals: normalizeOracleReferenceAssetDecimals(
+			token.address,
+			token.decimals > 0 ? token.decimals : 18,
+		),
 	};
 }
 

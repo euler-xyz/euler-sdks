@@ -2,6 +2,17 @@
 
 All notable changes to the `euler-sdk` skill are documented in this file.
 
+## 1.5.0 - 2026-09-01
+- Documented the native Data V3 oracle adapter assessment and indexed router APIs.
+- Added recognition-versus-health and oracle assessment query-caching guidance.
+- Updated normalized address-map guidance to `fetchOracleAdapterAssessmentMap`.
+- Documented the oracle service's direct return shape.
+
+## 1.4.0 - 2026-08-11
+- Added `safeAccountService` coverage: on-chain Safe smart-account detection (`fetchSafeAccount` → singleton/version/threshold/owners), the masterCopy-probe detection model, owner-invariant validation, contract-vs-transport failure semantics, and the heuristic-only (never authorization) guidance.
+- Documented the return-shape exception in the diagnostics-envelope guidance: `safeAccountService.fetchSafeAccount()` returns `SafeAccountInfo | null` directly, not `{ result, errors }`.
+- New reference doc: `packages/euler-v2-sdk/docs/safe-account-service.md`; service entries added to `SKILL.md`, `AGENTS.md`, and `rules/sdk-architecture.md`.
+
 ## 1.3.0 - 2026-07-08
 - Added `sdk-migrations` rule covering `positionMigrationService`: cross-protocol position migration (Aave V3, Morpho Blue, MetaMorpho) into/out of Euler, connector/direction selection, authorization signing, collateral/debt swaps, and `planMigrationSimulation`.
 - Expanded `AGENTS.md` section 4 (Integration Patterns) with `4.2 Cross-Protocol Position Migration`.

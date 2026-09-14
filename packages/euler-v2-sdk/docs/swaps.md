@@ -196,6 +196,9 @@ const plan = sdk.executionService.planSwapDebt({
 })
 ```
 
+Debt swap quotes use one sub-account for both `fromAccount` and `toAccount`.
+The planner and encoder reject cross-account debt swap quotes.
+
 ### Same-Asset Position Migrations
 
 When both vaults use the same underlying asset, use the no-swap migration
@@ -226,6 +229,11 @@ destination debt vault liquid after the migration. If the old and new markets do
 not share a positive-LTV collateral, enable collateral accepted by the destination
 vault before running `planMigrateSameAssetDebt`.
 
+When the destination vault already has supplied shares, the debt migration
+keeps those shares in the position by default. Set
+`transferRemainingSharesToOwner: true` only when transferring all destination
+shares to the owner is intentional.
+
 ### Wallet To Wallet Swap
 
 Pull an input token from the sender wallet, execute the swap, and transfer the output token to a wallet receiver. Used when you want a direct wallet-level swap without involving Euler vault deposits.
@@ -251,6 +259,9 @@ const plan = sdk.executionService.planSwapFromWallet({
   tokenIn: USDC,
 })
 ```
+
+The `tokenIn` approval address must match `swapQuote.tokenIn.address`; every
+wallet-funded swap planner rejects a mismatch before creating the plan.
 
 ### Withdraw or Redeem and Swap to Wallet
 

@@ -908,40 +908,58 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   assert.equal(collateralVault.eulerLabel?.portfolioNotice, "earn notice");
 
   const oracleAdapterService = new OracleAdapterService({}, buildQuery);
-  oracleAdapterService.setQueryOracleAdapters(async (chainId) => {
+  oracleAdapterService.setQueryV3OracleAdapterAssessment(async (chainId, address) => {
     assert.equal(chainId, 1);
-    return [
-      {
-        oracle: plainVault.oracle.oracle.toLowerCase(),
-        baseAsset: plainVault.asset.address.toLowerCase(),
-        quote_asset: zeroAddress,
-        provider: "Provider",
-        checks: [
-          { id: "Adapter whitelist", pass: false, severity: "HIGH" },
+    assert.equal(address, plainVault.oracle.oracle);
+    return {
+      data: {
+        chainId: 1,
+        address: plainVault.oracle.oracle.toLowerCase(),
+        recognized: true,
+        checksStatus: "warning",
+        reason: null,
+        inActiveRoute: true,
+        adapterClass: "ChainlinkOracle",
+        label: "Chainlink WETH / USD",
+        provider: "Chainlink",
+        methodology: "Market Price",
+        model: "Push",
+        config: {
+          base: plainVault.asset.address.toLowerCase(),
+          quote: zeroAddress,
+        },
+        findings: [
           {
-            id: "pricing-valid",
-            message: "Pricing valid",
-            pass: true,
-            severity: "INFO",
+            key: "quote-liveness",
+            outcome: "unknown",
+            severity: "medium",
+            description: "Quote liveness could not be established",
+          },
+          {
+            key: "feed-not-deprecated",
+            outcome: "pass",
+            severity: "medium",
+            description: "Feed is active",
           },
         ],
+        summary: { passed: 1, failed: 0, unknown: 1, notApplicable: 0 },
+        policyId: "oracle-adapter-policy",
+        policyVersion: 3,
+        blockNumber: "123",
+        evaluatedAt: "2026-09-01T12:00:00.000Z",
+        lastCheckedAt: "2026-09-01T12:01:00.000Z",
       },
-      {
-        adapter: "not-an-address",
-      },
-    ];
+    };
   });
-  const oracleAdapters = await oracleAdapterService.fetchOracleAdapters(1);
-  assert.equal(oracleAdapters.length, 1);
-  assert.equal(oracleAdapters[0]?.oracle, plainVault.oracle.oracle);
-  assert.equal(oracleAdapters[0]?.base, plainVault.asset.address);
-  assert.equal(oracleAdapters[0]?.checks?.length, 1);
-  assert.equal(
-    (await oracleAdapterService.fetchOracleAdapterMap(1))[
-      plainVault.oracle.oracle.toLowerCase()
-    ]?.provider,
-    "Provider",
+  const assessment = await oracleAdapterService.fetchOracleAdapterAssessment(
+    1,
+    plainVault.oracle.oracle,
   );
+  assert.equal(assessment?.address, plainVault.oracle.oracle);
+  assert.equal(assessment?.recognized, true);
+  assert.equal(assessment?.checksStatus, "warning");
+  assert.equal(assessment?.findings[0]?.outcome, "unknown");
+  assert.equal(assessment?.policyVersion, 3);
 
   assert.ok(calls.some((entry) => entry.queryName === "queryDeployments"));
 });

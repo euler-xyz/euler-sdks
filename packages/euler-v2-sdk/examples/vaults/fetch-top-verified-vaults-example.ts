@@ -32,31 +32,45 @@ async function fetchTopVerifiedVaultsExample() {
     eulerEarnServiceConfig: { adapter: "onchain" },
   });
 
-  console.log("Fetching verified vault addresses from mainnet via vaultMetaService...");
-  const verifiedAddresses = await sdk.vaultMetaService.fetchVerifiedVaultAddresses(mainnet.id, [
-    StandardEVaultPerspectives.GOVERNED,
+  // The factory perspectives enumerate every vault deployed through the factories.
+  // That is provenance only, NOT a trust signal: anyone can deploy through the factories.
+  // Trust is established below via euler-labels (populateAll populates vault.eulerLabel),
+  // plus the escrowed collateral perspective, whose vaults are verified by construction.
+  console.log("Fetching the vault universe from mainnet via vaultMetaService...");
+  const universeAddresses = await sdk.vaultMetaService.fetchVerifiedVaultAddresses(mainnet.id, [
+    StandardEVaultPerspectives.FACTORY,
     StandardEVaultPerspectives.ESCROW,
-    StandardEulerEarnPerspectives.GOVERNED,
+    StandardEulerEarnPerspectives.FACTORY,
   ]);
-  console.log(`Found ${verifiedAddresses.length} verified vault addresses.`);
+  console.log(`Found ${universeAddresses.length} vault addresses.`);
+
+  const escrowAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(mainnet.id, [
+    StandardEVaultPerspectives.ESCROW,
+  ]);
+  const escrowSet = new Set(escrowAddresses.map((address) => address.toLowerCase()));
 
   console.log("Fetching vaults via vaultMetaService.fetchVaults with populateAll...");
   const { result: vaultResult, errors } = await sdk.vaultMetaService.fetchVaults(
     mainnet.id,
-    verifiedAddresses,
+    universeAddresses,
     { populateAll: true },
   );
   if (errors.length > 0) {
     console.log(`Vault diagnostics: ${errors.length} issues`);
   }
 
+  // Keep only label-verified vaults (listed in a euler-labels product / earn entry)
+  // or escrow vaults; drop deprecated ones.
   const resolvedVaults = vaultResult.filter((vault): vault is NonNullable<typeof vault> => vault !== undefined);
   const eVaults = resolvedVaults
     .filter(isEVault)
-    .filter((vault) => !vault.eulerLabel?.deprecated);
+    .filter((vault) =>
+      !vault.eulerLabel?.deprecated
+      && ((vault.eulerLabel?.products.length ?? 0) > 0 || escrowSet.has(vault.address.toLowerCase())),
+    );
   const eulerEarns = resolvedVaults
     .filter(isEulerEarn)
-    .filter((vault) => !vault.eulerLabel?.deprecated);
+    .filter((vault) => vault.eulerLabel?.earnVault !== undefined && !vault.eulerLabel?.deprecated);
 
   const topEVaults = toTopByUsd(eVaults);
   const topEulerEarns = toTopByUsd(eulerEarns);

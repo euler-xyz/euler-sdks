@@ -115,9 +115,12 @@ export class REULLockService implements IREULLockService {
 	 * @param args.account - Recipient/account argument passed to `withdrawToByLockTimestamp`.
 	 * @param args.lockTimestamp - Lock timestamp to unlock.
 	 * @param args.rEulAddress - Optional rEUL token address override for custom deployment metadata.
-	 * @param args.allowRemainderLoss - Contract `allowRemainderLoss` argument; defaults to true.
+	 * @param args.allowRemainderLoss - Explicit contract `allowRemainderLoss` argument.
 	 */
 	buildUnlockPlan(args: BuildUnlockREULPlanArgs): TransactionPlan {
+		if (typeof args.allowRemainderLoss !== "boolean") {
+			throw new Error("allowRemainderLoss must be explicitly set for rEUL unlocks");
+		}
 		const rEulAddress = this.resolveREULAddress(args.chainId, args.rEulAddress);
 		const eulAddress = this.deploymentService.getDeployment(args.chainId)
 			.addresses.tokenAddrs?.EUL;
@@ -131,7 +134,7 @@ export class REULLockService implements IREULLockService {
 				args: [
 					args.account,
 					args.lockTimestamp,
-					args.allowRemainderLoss ?? true,
+					args.allowRemainderLoss,
 				],
 			}),
 		};

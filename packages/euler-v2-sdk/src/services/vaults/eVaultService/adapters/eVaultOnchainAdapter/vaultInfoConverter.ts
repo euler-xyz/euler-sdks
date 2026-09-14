@@ -45,9 +45,10 @@ import {
 } from "../../../../../utils/normalization.js";
 import { USD_ADDRESS } from "../../../../priceService/priceService.js";
 import { ZERO_ADDRESS } from "../../../../../utils/parsing.js";
-
-const BTC_PLACEHOLDER_ADDRESS =
-	"0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB".toLowerCase();
+import {
+	BTC_REFERENCE_ASSET_ADDRESS,
+	normalizeOracleReferenceAssetDecimals,
+} from "../oracleReferenceAsset.js";
 
 function parseRate(value: string): number {
 	const parsed = Number.parseFloat(value);
@@ -103,12 +104,17 @@ function normalizeUnitOfAccountToken(token: Token): Token | undefined {
 		return undefined;
 	}
 
-	if (token.address.toLowerCase() === BTC_PLACEHOLDER_ADDRESS) {
+	if (
+		token.address.toLowerCase() === BTC_REFERENCE_ASSET_ADDRESS.toLowerCase()
+	) {
 		return {
 			...token,
 			name: "Bitcoin",
 			symbol: "BTC",
-			decimals: 8,
+			decimals: normalizeOracleReferenceAssetDecimals(
+				token.address,
+				token.decimals,
+			),
 		};
 	}
 

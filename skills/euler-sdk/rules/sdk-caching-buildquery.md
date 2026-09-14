@@ -44,6 +44,7 @@ Recommended stale-time strategy:
 - hours (e.g. 12-24h): deployments, ABI, token list, static labels
 - minutes: perspectives, providers, reward campaign catalogs
 - minutes: external intrinsic APY queries such as `queryV3IntrinsicApy`
+- minutes: oracle assessment queries such as `queryV3OracleAdapterAssessment` and `queryV3OracleAdapterAssessmentsPage`
 - 10-30s: vault/account/wallet state
 - ~5s: transaction-sensitive wallet reads such as `queryNativeBalance`, `queryTokenBalances`, `queryAllowance`, and `queryPermit2Allowance`
 - ~10s: swap quotes and Pyth update payloads

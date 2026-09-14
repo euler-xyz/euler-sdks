@@ -64,6 +64,7 @@ export type MetamorphoShareApprovalTransactionRequest =
 		/** The vault address — Metamorpho shares are the vault token itself. */
 		token: Address;
 		allowanceSlotIndex: bigint;
+		call: MigrationAuthorizationCall;
 		revocation: MigrationAuthorizationCall;
 	};
 

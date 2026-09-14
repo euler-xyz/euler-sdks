@@ -14,6 +14,7 @@ const plan = sdk.reulLockService.buildUnlockPlan({
   chainId: 1,
   account: '0xOwner...',
   lockTimestamp: locks[0]!.timestamp,
+  allowRemainderLoss: false,
 })
 ```
 
@@ -32,10 +33,12 @@ The rEUL token address comes from deployment metadata at `addresses.tokenAddrs.r
 
 ## Unlock Planning
 
-Use `buildUnlockPlan({ chainId, account, lockTimestamp })` to create a standard `TransactionPlan` with one `contractCall` item:
+Use `buildUnlockPlan({ chainId, account, lockTimestamp, allowRemainderLoss })` to create a `TransactionPlan` containing one named EVC batch operation:
 
 ```typescript
-withdrawToByLockTimestamp(account, lockTimestamp, true)
+withdrawToByLockTimestamp(account, lockTimestamp, allowRemainderLoss)
 ```
 
-Pass the returned plan to `sdk.executionService.executeTransactionPlan(...)`. The optional `allowRemainderLoss` argument defaults to `true` and maps directly to the contract call.
+`allowRemainderLoss` is required and maps directly to the contract call. Set it to `true` only after the application has shown the current `amountToBeBurned` and the user has explicitly accepted that loss. Set it to `false` when any remainder loss must reject the unlock.
+
+Pass the returned plan to `sdk.executionService.executeTransactionPlan(...)`. Do not place an rEUL claim before an unlock in the same batch unless the review is calculated from the exact post-claim lock state.

@@ -32,8 +32,8 @@ export interface BuildUnlockREULPlanArgs {
 	lockTimestamp: bigint;
 	/** Optional rEUL token address override for custom deployment metadata. */
 	rEulAddress?: Address;
-	/** Contract `allowRemainderLoss` argument; defaults to true. */
-	allowRemainderLoss?: boolean;
+	/** Contract `allowRemainderLoss` argument. Must be chosen explicitly by the caller. */
+	allowRemainderLoss: boolean;
 }
 
 export interface IREULLockService {

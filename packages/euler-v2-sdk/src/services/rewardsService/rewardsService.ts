@@ -229,6 +229,7 @@ const userRewardClaimKey = (reward: UserReward): string =>
 		reward.provider,
 		reward.chainId,
 		reward.token.address.toLowerCase(),
+		reward.fuulCurrencyType ?? "",
 		reward.claimAddress?.toLowerCase() ?? "",
 		reward.campaignId ?? "",
 		reward.streamId ?? "",
@@ -719,6 +720,7 @@ export class RewardsService implements IRewardsService {
 		return this.buildClaimPlans({
 			rewards: [args.reward],
 			account: args.account,
+			chainId: args.reward.chainId,
 		});
 	}
 
@@ -730,6 +732,12 @@ export class RewardsService implements IRewardsService {
 			(reward) => BigInt(reward.unclaimed) > 0n,
 		);
 		if (rewards.length === 0) return [];
+		const chainId = args.chainId ?? rewards[0]!.chainId;
+		if (rewards.some((reward) => reward.chainId !== chainId)) {
+			throw new Error(
+				`Reward claim planning requires rewards from chain ${chainId}`,
+			);
+		}
 
 		const plan: TransactionPlan = [];
 
@@ -814,8 +822,9 @@ export class RewardsService implements IRewardsService {
 	): Promise<TransactionPlan> {
 		const rewards = await this.fetchUserRewards(args.chainId, args.account);
 		return this.buildClaimPlans({
-			rewards,
+			rewards: rewards.filter((reward) => reward.chainId === args.chainId),
 			account: args.account,
+			chainId: args.chainId,
 		});
 	}
 
@@ -1102,10 +1111,51 @@ export class RewardsService implements IRewardsService {
 		if (claimChecks.length === 0) {
 			throw new Error("No claimable Fuul rewards found");
 		}
-		await this.validateFuulClaimChecks(chainId, account, rewards, claimChecks);
+
+		const selectedTypedCurrencies = new Set(
+			rewards
+				.filter(
+					(reward) =>
+						reward.provider === "fuul" &&
+						reward.chainId === chainId &&
+						reward.fuulCurrencyType !== undefined,
+				)
+				.map((reward) =>
+					fuulRewardKey(reward.token.address, reward.fuulCurrencyType),
+				),
+		);
+		const selectedUntypedCurrencies = new Set(
+			rewards
+				.filter(
+					(reward) =>
+						reward.provider === "fuul" &&
+						reward.chainId === chainId &&
+						reward.fuulCurrencyType === undefined,
+				)
+				.map((reward) => getAddress(reward.token.address).toLowerCase()),
+		);
+		const selectedClaimChecks = claimChecks.filter((check) => {
+			const currency = getAddress(check.currency).toLowerCase();
+			return (
+				selectedTypedCurrencies.has(
+					fuulRewardKey(currency, check.currency_type),
+				) || selectedUntypedCurrencies.has(currency)
+			);
+		});
+		if (selectedClaimChecks.length === 0) {
+			throw new Error("No selected Fuul claim checks found");
+		}
+		await this.validateFuulClaimChecks(
+			chainId,
+			account,
+			rewards,
+			selectedClaimChecks,
+		);
 
 		const uniqueProjects = [
-			...new Set(claimChecks.map((check) => getAddress(check.project_address))),
+			...new Set(
+				selectedClaimChecks.map((check) => getAddress(check.project_address)),
+			),
 		];
 		const feePairs = await Promise.all(
 			uniqueProjects.map(
@@ -1117,7 +1167,7 @@ export class RewardsService implements IRewardsService {
 			),
 		);
 		const feeMap = new Map(feePairs);
-		const totalFee = claimChecks.reduce(
+		const totalFee = selectedClaimChecks.reduce(
 			(sum, check) =>
 				sum + (feeMap.get(getAddress(check.project_address)) ?? 0n),
 			0n,
@@ -1130,7 +1180,7 @@ export class RewardsService implements IRewardsService {
 			abi: FUUL_MANAGER_ABI,
 			functionName: "claim",
 			args: [
-				claimChecks.map((check) => ({
+				selectedClaimChecks.map((check) => ({
 					projectAddress: getAddress(check.project_address) as Address,
 					to: getAddress(check.to) as Address,
 					currency: getAddress(check.currency) as Address,
@@ -1145,7 +1195,7 @@ export class RewardsService implements IRewardsService {
 			],
 			value: totalFee,
 			walletBalanceTokens: uniqueAddresses(
-				claimChecks.map((check) => check.currency),
+				selectedClaimChecks.map((check) => check.currency),
 			),
 		};
 	}
@@ -1302,6 +1352,11 @@ export class RewardsService implements IRewardsService {
 	): Promise<ContractCall> {
 		const proof = await this.fetchTurtleProof(reward, account);
 		const claimChainId = turtleProofChainId(proof) ?? reward.chainId;
+		if (claimChainId !== reward.chainId) {
+			throw new Error(
+				`Turtle proof chain ${claimChainId} does not match reward chain ${reward.chainId}`,
+			);
+		}
 		const streamAddress = turtleProofStreamAddress(reward, proof);
 		const amount = turtleProofAmount(reward, proof);
 		const timestamp = turtleProofTimestamp(reward, proof);
@@ -1338,6 +1393,10 @@ export class RewardsService implements IRewardsService {
 			functionName: "claim",
 			args: [amount, timestamp, proofArray],
 			value: 0n,
+			// Turtle claims bind the beneficiary through msg.sender, so they cannot
+			// be wrapped by EVC. They are independent of the other reward claims and
+			// can be simulated directly from the wallet against the pre-plan state.
+			simulationMode: "independent",
 		};
 	}
 

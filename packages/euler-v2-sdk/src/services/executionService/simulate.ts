@@ -161,6 +161,7 @@ import { ethereumVaultConnectorAbi } from "./abis/ethereumVaultConnectorAbi.js";
 import { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
 import type {
 	BatchItemDescription,
+	ContractCall,
 	EVCBatchItem,
 	RequiredApproval,
 	TransactionPlan,
@@ -467,6 +468,57 @@ export async function deriveStateOverrides(
 	return mergeStateOverrides(allOverrides);
 }
 
+async function simulateIndependentContractCalls(
+	ctx: ExecutionSimulationContext,
+	chainId: number,
+	owner: Address,
+	calls: ContractCall[],
+	stateOverrides?: StateOverride,
+): Promise<
+	| { error: unknown; decoded: DecodedSmartContractError[] }
+	| undefined
+> {
+	if (!calls.length) return undefined;
+	if (!ctx.providerService) {
+		throw new Error(
+			"ExecutionService.simulateTransactionPlan requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
+		);
+	}
+
+	const provider = ctx.providerService.getProvider(chainId);
+	for (const call of calls) {
+		let error: unknown;
+		if (call.chainId !== chainId) {
+			error = new Error(
+				`ExecutionService.simulateTransactionPlan cannot simulate a chain ${call.chainId} direct call on chain ${chainId}.`,
+			);
+		} else {
+			try {
+				await provider.simulateContract({
+					address: call.to,
+					abi: call.abi,
+					functionName: call.functionName,
+					args: call.args,
+					value: call.value,
+					account: owner,
+					stateOverride: stateOverrides,
+				});
+			} catch (cause) {
+				error = cause;
+			}
+		}
+
+		if (error !== undefined) {
+			return {
+				error,
+				decoded: await decodeSmartContractErrors(error),
+			};
+		}
+	}
+
+	return undefined;
+}
+
 export async function simulateTransactionPlan<
 	TVaultEntity extends VaultEntity = VaultEntity,
 >(
@@ -477,6 +529,16 @@ export async function simulateTransactionPlan<
 	options?: SimulateBatchOptions,
 ): Promise<SimulateBatchResult<TVaultEntity>> {
 	assertNoCowSwapPlanItems(transactionPlan, "simulateTransactionPlan");
+	const unsupportedDirectCallIndex = transactionPlan.findIndex(
+		(item) =>
+			item.type === "contractCall" && item.simulationMode !== "independent",
+	);
+	const hasEvcBatch = transactionPlan.some((item) => item.type === "evcBatch");
+	if (unsupportedDirectCallIndex !== -1 && hasEvcBatch) {
+		throw new Error(
+			`ExecutionService.simulateTransactionPlan cannot simulate transaction plan item ${unsupportedDirectCallIndex} (contractCall). Direct contract calls are executable but are not covered by the EVC batch simulation; refusing to return a partial result.`,
+		);
+	}
 	const owner = getAddress(account);
 	const useStateOverrides = options?.stateOverrides ?? true;
 	let effectiveStateOverrides: StateOverride | undefined;
@@ -496,6 +558,26 @@ export async function simulateTransactionPlan<
 		effectiveStateOverrides = mergeStateOverrides(options.extraStateOverrides);
 	}
 
+	const independentCalls = transactionPlan.filter(
+		(item): item is ContractCall =>
+			item.type === "contractCall" && item.simulationMode === "independent",
+	);
+	const directCallError = await simulateIndependentContractCalls(
+		ctx,
+		chainId,
+		owner,
+		independentCalls,
+		effectiveStateOverrides,
+	);
+	if (directCallError) {
+		return {
+			simulatedAccounts: [],
+			simulatedVaults: [],
+			canExecute: false,
+			simulationError: directCallError,
+		};
+	}
+
 	// Preserve operation boundaries (EVCBatchOperation entries emitted by the
 	// planners / mergePlans) so reverts can be attributed to the operation that
 	// caused them and so we can snapshot state after each operation.
@@ -505,7 +587,8 @@ export async function simulateTransactionPlan<
 		return {
 			simulatedAccounts: [],
 			simulatedVaults: [],
-			canExecute: false,
+			canExecute:
+				independentCalls.length > 0 && unsupportedDirectCallIndex === -1,
 		};
 	}
 	// No diagnostics channel on SimulateBatchResult for read-metadata problems, so

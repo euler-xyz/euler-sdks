@@ -90,8 +90,10 @@ const reulLockAbi = [
 	},
 ] as const satisfies Abi;
 
-function createExecutionService() {
-	const provider = { id: "provider" };
+function createExecutionService(
+	provider: object = { id: "provider" },
+	vaultMetaService: object = {},
+) {
 	return new ExecutionService(
 		{
 			getDeployment: () => ({
@@ -114,7 +116,7 @@ function createExecutionService() {
 		{
 			getProvider: () => provider,
 		} as never,
-		{} as never,
+		vaultMetaService as never,
 	);
 }
 
@@ -366,6 +368,187 @@ test("simulateTransactionPlan rejects CoW swap plans", async () => {
 		service.simulateTransactionPlan(1, ACCOUNT, plan),
 		/does not support CoW swap plans/,
 	);
+});
+
+test("simulateTransactionPlan returns a non-simulatable result for a direct contract call", async () => {
+	const simulateContract = vi.fn();
+	const service = createExecutionService({ simulateContract });
+	const plan: TransactionPlan = [
+		{
+			type: "contractCall",
+			chainId: 1,
+			to: TARGET,
+			abi: testAbi,
+			functionName: "doThing",
+			args: [7n],
+			value: 3n,
+		},
+	];
+
+	const result = await service.simulateTransactionPlan(1, ACCOUNT, plan, {
+			stateOverrides: false,
+		});
+	assert.deepEqual(result, {
+		simulatedAccounts: [],
+		simulatedVaults: [],
+		canExecute: false,
+	});
+	assert.equal(simulateContract.mock.calls.length, 0);
+});
+
+test("simulateTransactionPlan simulates an independent direct call from the wallet", async () => {
+	const simulateContract = vi.fn(async () => ({ result: undefined }));
+	const service = createExecutionService({ simulateContract });
+	const plan: TransactionPlan = [
+		{
+			type: "contractCall",
+			chainId: 1,
+			to: TARGET,
+			abi: testAbi,
+			functionName: "doThing",
+			args: [7n],
+			value: 3n,
+			simulationMode: "independent",
+		},
+	];
+
+	const result = await service.simulateTransactionPlan(1, ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+	assert.deepEqual(result, {
+		simulatedAccounts: [],
+		simulatedVaults: [],
+		canExecute: true,
+	});
+	assert.equal(simulateContract.mock.calls.length, 1);
+	assert.deepEqual(simulateContract.mock.calls[0]?.[0], {
+		address: TARGET,
+		abi: testAbi,
+		functionName: "doThing",
+		args: [7n],
+		value: 3n,
+		account: CHECKSUM_ACCOUNT,
+		stateOverride: undefined,
+	});
+});
+
+test("simulateTransactionPlan fails closed when an independent direct call reverts", async () => {
+	const simulateContract = vi.fn(async () => {
+		throw new Error("claim reverted");
+	});
+	const service = createExecutionService({ simulateContract });
+	const plan: TransactionPlan = [
+		{
+			type: "contractCall",
+			chainId: 1,
+			to: TARGET,
+			abi: testAbi,
+			functionName: "doThing",
+			args: [7n],
+			value: 3n,
+			simulationMode: "independent",
+		},
+	];
+
+	const result = await service.simulateTransactionPlan(1, ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+	assert.equal(result.canExecute, false);
+	assert.match(String(result.simulationError?.error), /claim reverted/);
+});
+
+test("simulateTransactionPlan rejects a mixed plan before simulating only its EVC batch", async () => {
+	const simulateContract = vi.fn();
+	const service = createExecutionService({ simulateContract });
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: TARGET,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: "0x1234",
+				},
+			],
+		},
+		{
+			type: "contractCall",
+			chainId: 1,
+			to: TARGET,
+			abi: testAbi,
+			functionName: "doThing",
+			args: [7n],
+			value: 3n,
+		},
+	];
+
+	await assert.rejects(
+		service.simulateTransactionPlan(1, ACCOUNT, plan, {
+			stateOverrides: false,
+		}),
+		/transaction plan item 1 \(contractCall\).*refusing to return a partial result/,
+	);
+	assert.equal(simulateContract.mock.calls.length, 0);
+});
+
+test("simulateTransactionPlan covers an independent direct call in a mixed plan", async () => {
+	const simulateContract = vi.fn(async (request: {
+		address: Address;
+		functionName: string;
+		args: readonly unknown[];
+	}) => {
+		if (getAddress(request.address) === getAddress(TARGET)) {
+			return { result: undefined };
+		}
+		const fullBatch = request.args[0] as EVCBatchItem[];
+		return {
+			result: [
+				fullBatch.map((item) => ({
+					success:
+						getAddress(item.targetContract) !== getAddress(ACCOUNT_LENS),
+					result: "0x",
+				})),
+				[],
+				[],
+			],
+		};
+	});
+	const service = createExecutionService(
+		{ simulateContract },
+		{ fetchVaultTypes: async () => ({}) },
+	);
+	const plan: TransactionPlan = [
+		{
+			type: "evcBatch",
+			items: [
+				{
+					targetContract: EVC,
+					onBehalfOfAccount: ACCOUNT,
+					value: 0n,
+					data: "0x1234",
+				},
+			],
+		},
+		{
+			type: "contractCall",
+			chainId: 1,
+			to: TARGET,
+			abi: testAbi,
+			functionName: "doThing",
+			args: [7n],
+			value: 3n,
+			simulationMode: "independent",
+		},
+	];
+
+	const result = await service.simulateTransactionPlan(1, ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+	assert.equal(result.canExecute, true);
+	assert.equal(simulateContract.mock.calls.length, 2);
+	assert.equal(simulateContract.mock.calls[0]?.[0].functionName, "doThing");
+	assert.equal(simulateContract.mock.calls[1]?.[0].functionName, "batchSimulation");
 });
 
 test("simulateTransactionPlan tracks operation wallet balance tokens", async () => {
