@@ -98,7 +98,7 @@ const brands = product
   : []
 ```
 
-Normal runtime reads use `latest`. The adapter resolves that alias once, then pins every request in the snapshot to the returned immutable version. Pass a concrete publication key to create deterministic fixtures:
+Normal runtime reads use `latest`. The adapter resolves that alias once, pins resolved vault/product labels and entity profiles to that publication. Geo policies, entity addresses, platform tags and visibility are live overlays. A concrete publication key pins metadata but does not freeze those overlays:
 
 ```typescript
 const snapshot = await labels.fetchPublicLabelsSnapshot(
@@ -120,4 +120,4 @@ const labels = new PublicLabelsV3Adapter({
 })
 ```
 
-`rawGeoPolicies` contains the published, versioned policy records for inspection. The adapter does not turn raw geo policies or operational assessment responses into an effective eligibility or visibility decision. That decision requires an explicit precedence and fallback policy from the consuming application or a derived backend endpoint.
+`rawGeoPolicies` contains live rules with `countriesResolved`; the application owns country evaluation and enforcement. The adapter reads `/labels/vaults` and `/labels/products` with `view=resolved`, global `/labels/entities` profiles and address lists, and the explicit full visibility inventory from `/evk/vaults` and `/earn/vaults`. `visibility` exposes the backend verdict keyed by lowercase vault address. Trusted membership requires a managing entity and a visible or warning verdict; metadata remains available for hidden and pending records. This membership is not a full governance-verification badge. Applications retain their stronger verification rule and own freshness, caching and outage handling.

@@ -15,6 +15,7 @@ import {
 	type PublicLabelsV3AdapterConfig,
 	type PublicProductLabel,
 	type PublicVaultLabel,
+	type PublicVaultVisibility,
 	type PublishedLabelVersion,
 } from "./publicLabelsV3Types.js";
 
@@ -56,6 +57,7 @@ export const fetchAllPublicLabelPages = async <T>(
 ): Promise<T[]> => {
 	const result: T[] = [];
 	let offset = 0;
+	let expectedTotal: number | undefined;
 
 	while (true) {
 		const response = await request<T[]>(path, {
@@ -64,6 +66,16 @@ export const fetchAllPublicLabelPages = async <T>(
 			offset,
 		});
 		const { items, total } = assertListResponse(response, path);
+		if (expectedTotal !== undefined && total !== expectedTotal)
+			throw new Error(
+				`Public Labels collection changed during pagination for ${path}`,
+			);
+		expectedTotal = total;
+		if (
+			items.length > PUBLIC_LABELS_PAGE_SIZE ||
+			result.length + items.length > total
+		)
+			throw new Error(`Invalid Public Labels page for ${path}`);
 		result.push(...items);
 
 		if (result.length >= total) return result.slice(0, total);
@@ -112,7 +124,7 @@ export const resolvePublicLabelsVersion = async (
 	}
 
 	const response = await request<PublishedLabelVersion[]>(
-		"/label-sets/public/versions",
+		"/labels/sets/public/versions",
 		{},
 	);
 	if (!Array.isArray(response.data)) {
@@ -135,22 +147,43 @@ export const fetchPublicLabelsSource = async (
 	chainId: number,
 	version: string,
 ): Promise<PublicLabelsSource> => {
-	const [vaults, products, entities, geoPolicies] = await Promise.all([
-		fetchAllPublicLabelPages<PublicVaultLabel>(request, "/curation/vaults", {
-			version,
-			chainId,
-		}),
-		fetchAllPublicLabelPages<PublicProductLabel>(request, "/products", {
-			version,
-			chainId,
-		}),
-		fetchAllPublicLabelPages<PublicEntityLabel>(request, "/entities", {
-			version,
-		}),
-		fetchAllPublicLabelPages<PublicGeoPolicy>(request, "/geo-policies", {
-			version,
-		}),
-	]);
+	const [vaults, products, entities, geoPolicies, evk, earn] =
+		await Promise.all([
+			fetchAllPublicLabelPages<PublicVaultLabel>(request, "/labels/vaults", {
+				version,
+				view: "resolved",
+				chainId,
+			}),
+			fetchAllPublicLabelPages<PublicProductLabel>(
+				request,
+				"/labels/products",
+				{
+					version,
+					view: "resolved",
+					chainId,
+				},
+			),
+			fetchAllPublicLabelPages<PublicEntityLabel>(request, "/labels/entities", {
+				version,
+			}),
+			fetchAllPublicLabelPages<PublicGeoPolicy>(request, "/geo-policies", {}),
+			fetchAllPublicLabelPages<{
+				chainId: number;
+				address: string;
+				visibility: PublicVaultVisibility;
+			}>(request, "/evk/vaults", {
+				chainId,
+				visibility: "visible,warning,hidden,pending_review",
+			}),
+			fetchAllPublicLabelPages<{
+				chainId: number;
+				address: string;
+				visibility: PublicVaultVisibility;
+			}>(request, "/earn/vaults", {
+				chainId,
+				visibility: "visible,warning,hidden,pending_review",
+			}),
+		]);
 
 	const entityIds = [
 		...new Set([
@@ -171,13 +204,13 @@ export const fetchPublicLabelsSource = async (
 		entityIds,
 		ENTITY_ADDRESS_CONCURRENCY,
 		async (entityId) => {
-			const profilePath = `/entities/${entityId}`;
+			const profilePath = `/labels/entities/${entityId}`;
 			const [profileResponse, addresses] = await Promise.all([
 				request<PublicEntityLabel>(profilePath, { version }),
 				fetchAllPublicLabelPages<PublicEntityAddress>(
 					request,
-					`/entities/${entityId}/addresses`,
-					{ chainId, version },
+					`/labels/entities/${entityId}/addresses`,
+					{},
 				),
 			]);
 			const profile = assertItemResponse(profileResponse, profilePath);
@@ -200,7 +233,37 @@ export const fetchPublicLabelsSource = async (
 		if (!listedEntityIds.has(profile.id)) mergedEntities.push(profile);
 	}
 
+	const visibility: Record<string, PublicVaultVisibility> = {};
+	for (const row of [...evk, ...earn]) {
+		if (row.chainId !== chainId || !/^0x[0-9a-fA-F]{40}$/.test(row.address))
+			throw new Error("Invalid visibility identity");
+		const verdict = row.visibility;
+		if (
+			!verdict ||
+			!["visible", "warning", "hidden", "pending_review"].includes(
+				verdict.status,
+			) ||
+			typeof verdict.explorableLend !== "boolean" ||
+			typeof verdict.explorableBorrow !== "boolean" ||
+			typeof verdict.decidedBy !== "string"
+		)
+			throw new Error("Invalid visibility summary");
+		visibility[row.address.toLowerCase()] = verdict;
+	}
+	for (const row of vaults) {
+		if (
+			row.chainId !== chainId ||
+			typeof row.deprecated !== "boolean" ||
+			!Array.isArray(row.tags)
+		)
+			throw new Error("Invalid resolved vault labels");
+	}
+	for (const policy of geoPolicies) {
+		if (!Array.isArray(policy.countriesResolved))
+			throw new Error("Geo country resolution unavailable");
+	}
 	return {
+		visibility,
 		vaults,
 		products,
 		entities: mergedEntities,

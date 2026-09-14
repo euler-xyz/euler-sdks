@@ -29,7 +29,7 @@ const response = <T>(data: T, total?: number): PublicLabelsResponse<T> => ({
 const fixtureRequest = (options?: { productEntityId?: string }) => {
 	const request = vi.fn(
 		async (path: string, query: PublicLabelsQuery): Promise<unknown> => {
-			if (path === "/label-sets/public/versions") {
+			if (path === "/labels/sets/public/versions") {
 				return response([
 					{
 						versionKey: PUBLIC_LABELS_FIXTURE_VERSION,
@@ -39,43 +39,54 @@ const fixtureRequest = (options?: { productEntityId?: string }) => {
 					},
 				]);
 			}
-			if (path === "/curation/vaults") {
-				return response(publicLabelsFixture.vaults, publicLabelsFixture.vaults.length);
+			if (path === "/labels/vaults") {
+				return response(
+					publicLabelsFixture.vaults,
+					publicLabelsFixture.vaults.length,
+				);
 			}
-			if (path === "/products") {
+			if (path === "/labels/products") {
 				const products = options?.productEntityId
 					? publicLabelsFixture.products.map((product) => ({
 							...product,
 							entityId: options.productEntityId!,
 						}))
 					: publicLabelsFixture.products;
-				return response(
-					products,
-					products.length,
-				);
+				return response(products, products.length);
 			}
-			if (path === "/entities") {
+			if (path === "/labels/entities") {
 				return response(
 					publicLabelsFixture.entities,
 					publicLabelsFixture.entities.length,
 				);
 			}
+			if (path === "/evk/vaults")
+				return response(
+					Object.entries(publicLabelsFixture.visibility).map(
+						([address, visibility]) => ({ chainId: 1, address, visibility }),
+					),
+					1,
+				);
+			if (path === "/earn/vaults") return response([], 0);
 			if (path === "/geo-policies") {
 				return response(
 					publicLabelsFixture.geoPolicies,
 					publicLabelsFixture.geoPolicies.length,
 				);
 			}
-			if (path.startsWith("/entities/") && !path.endsWith("/addresses")) {
-				const entityId = path.split("/")[2];
+			if (
+				path.startsWith("/labels/entities/") &&
+				!path.endsWith("/addresses")
+			) {
+				const entityId = path.split("/")[3];
 				const entity = publicLabelsFixture.entities.find(
 					(entry) => entry.id === entityId,
 				);
 				if (!entity) throw new Error(`Unknown fixture entity ${entityId}`);
 				return response(entity);
 			}
-			if (path.startsWith("/entities/") && path.endsWith("/addresses")) {
-				const entityId = path.split("/")[2];
+			if (path.startsWith("/labels/entities/") && path.endsWith("/addresses")) {
+				const entityId = path.split("/")[3];
 				const rows = publicLabelsFixture.entityAddresses.filter(
 					(entry) => entry.entityId === entityId,
 				);
@@ -88,7 +99,7 @@ const fixtureRequest = (options?: { productEntityId?: string }) => {
 };
 
 describe("PublicLabelsV3Adapter", () => {
-	it("resolves latest once and pins the complete snapshot", async () => {
+	it("resolves latest once and pins metadata while reading live policies and verdicts", async () => {
 		const request = fixtureRequest();
 		const adapter = new PublicLabelsV3Adapter({
 			endpoint: "https://v3.example.test",
@@ -99,19 +110,49 @@ describe("PublicLabelsV3Adapter", () => {
 
 		expect(snapshot.version).toBe(PUBLIC_LABELS_FIXTURE_VERSION);
 		expect(snapshot.publicLabels).toEqual(publicLabelsFixture);
-		expect(request).toHaveBeenCalledWith(
-			"/label-sets/public/versions",
-			{},
-		);
+		expect(request).toHaveBeenCalledWith("/labels/sets/public/versions", {});
 		expect(
 			request.mock.calls
-				.filter(([path]) => path !== "/label-sets/public/versions")
+				.filter(
+					([path]) =>
+						path.startsWith("/labels/") &&
+						path !== "/labels/sets/public/versions" &&
+						!path.endsWith("/addresses"),
+				)
 				.every(([, query]) => query.version === PUBLIC_LABELS_FIXTURE_VERSION),
 		).toBe(true);
-		expect(request).toHaveBeenCalledWith(`/entities/kpk`, {
+		expect(request).toHaveBeenCalledWith("/labels/vaults", {
+			chainId: 1,
+			version: PUBLIC_LABELS_FIXTURE_VERSION,
+			view: "resolved",
+			limit: 100,
+			offset: 0,
+		});
+		expect(request).toHaveBeenCalledWith("/labels/products", {
+			chainId: 1,
+			version: PUBLIC_LABELS_FIXTURE_VERSION,
+			view: "resolved",
+			limit: 100,
+			offset: 0,
+		});
+		expect(request).toHaveBeenCalledWith("/geo-policies", {
+			limit: 100,
+			offset: 0,
+		});
+		expect(request).toHaveBeenCalledWith("/labels/entities/kpk/addresses", {
+			limit: 100,
+			offset: 0,
+		});
+		expect(request).toHaveBeenCalledWith("/evk/vaults", {
+			chainId: 1,
+			visibility: "visible,warning,hidden,pending_review",
+			limit: 100,
+			offset: 0,
+		});
+		expect(request).toHaveBeenCalledWith(`/labels/entities/kpk`, {
 			version: PUBLIC_LABELS_FIXTURE_VERSION,
 		});
-		expect(request).toHaveBeenCalledWith(`/entities/securitize`, {
+		expect(request).toHaveBeenCalledWith(`/labels/entities/securitize`, {
 			version: PUBLIC_LABELS_FIXTURE_VERSION,
 		});
 	});
@@ -127,7 +168,7 @@ describe("PublicLabelsV3Adapter", () => {
 
 		expect(
 			request.mock.calls.some(
-				([path]) => path === "/label-sets/public/versions",
+				([path]) => path === "/labels/sets/public/versions",
 			),
 		).toBe(false);
 	});
@@ -141,20 +182,41 @@ describe("PublicLabelsV3Adapter", () => {
 		): Promise<PublicLabelsResponse<T>> => {
 			const offset = Number(query.offset);
 			offsets.push(offset);
-			return response(
-				values.slice(offset, offset + 100) as T,
-				values.length,
-			);
+			return response(values.slice(offset, offset + 100) as T, values.length);
 		};
 
 		await expect(
-			fetchAllPublicLabelPages<number>(request, "/products", {
+			fetchAllPublicLabelPages<number>(request, "/labels/products", {
 				version: PUBLIC_LABELS_FIXTURE_VERSION,
 			}),
 		).resolves.toEqual(values);
 		expect(offsets).toEqual([0, 100]);
 	});
 
+	it("rejects totals changing between pages", async () => {
+		const request = vi
+			.fn()
+			.mockResolvedValueOnce(
+				response(
+					Array.from({ length: 100 }, (_, i) => i),
+					101,
+				),
+			)
+			.mockResolvedValueOnce(
+				response([100], 102),
+			) as unknown as PublicLabelsRequest;
+		await expect(
+			fetchAllPublicLabelPages(request, "/labels/products", {}),
+		).rejects.toThrow("changed during pagination");
+	});
+	it("rejects an oversized page instead of silently truncating", async () => {
+		const request = vi
+			.fn()
+			.mockResolvedValue(response([1, 2], 1)) as unknown as PublicLabelsRequest;
+		await expect(
+			fetchAllPublicLabelPages(request, "/labels/products", {}),
+		).rejects.toThrow("Invalid Public Labels page");
+	});
 	it("rejects unsafe entity IDs before constructing profile paths", async () => {
 		const request = fixtureRequest({ productEntityId: "../unsafe" });
 		const adapter = new PublicLabelsV3Adapter({
@@ -169,6 +231,48 @@ describe("PublicLabelsV3Adapter", () => {
 });
 
 describe("normalizePublicLabelsData", () => {
+	it.each([
+		"hidden",
+		"pending_review",
+	] as const)("keeps %s metadata without granting trusted membership", (status) => {
+		const result = normalizePublicLabelsData(1, {
+			...publicLabelsFixture,
+			visibility: {
+				[KPK_VAULT.toLowerCase()]: {
+					status,
+					explorableLend: false,
+					explorableBorrow: false,
+					decidedBy: "unclaimed",
+					reason: null,
+				},
+			},
+		});
+		expect(result.verifiedVaultAddresses).not.toContain(getAddress(KPK_VAULT));
+		expect(
+			result.products["kpk-securitize"]?.vaultOverrides?.[getAddress(KPK_VAULT)]
+				?.name,
+		).toBe("KPK VBILL/USDC Lend");
+	});
+	it("does not infer trusted membership from label content without a verdict", () => {
+		expect(
+			normalizePublicLabelsData(1, { ...publicLabelsFixture, visibility: {} })
+				.verifiedVaultAddresses,
+		).toEqual([]);
+	});
+	it("preserves resolved empty notices instead of inheriting product notices", () => {
+		const result = normalizePublicLabelsData(1, {
+			...publicLabelsFixture,
+			products: publicLabelsFixture.products.map((p) => ({
+				...p,
+				portfolioNotice: "Product notice",
+			})),
+		});
+		expect(
+			result.products["kpk-securitize"]?.vaultOverrides?.[getAddress(KPK_VAULT)]
+				?.portfolioNotice,
+		).toBe("");
+	});
+
 	it("maps published V3 content into canonical SDK labels", () => {
 		const result = normalizePublicLabelsData(1, publicLabelsFixture);
 		const product = result.products["kpk-securitize"]!;

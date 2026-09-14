@@ -4,14 +4,20 @@ export const PUBLIC_LABELS_FIXTURE_VERSION = "v20260804151305236";
 export const KPK = "kpk";
 export const SECURITIZE = "securitize";
 export const KPK_VAULT = "0x2Ff596321782FE034102f55af5ad707A4Ce0d6a7";
-export const ASSESSMENT_ONLY_EVK =
-	"0x00000000000000000000000000000000000000A1";
-export const NEUTRAL_ESCROW =
-	"0x00000000000000000000000000000000000000E5";
-export const KPK_GOVERNOR =
-	"0x1572063377a9a4f8065BD7bA0D7fa135cd13051F";
+export const ASSESSMENT_ONLY_EVK = "0x00000000000000000000000000000000000000A1";
+export const NEUTRAL_ESCROW = "0x00000000000000000000000000000000000000E5";
+export const KPK_GOVERNOR = "0x1572063377a9a4f8065BD7bA0D7fa135cd13051F";
 
 export const publicLabelsFixture: PublicLabelsSource = {
+	visibility: {
+		[KPK_VAULT.toLowerCase()]: {
+			status: "visible",
+			explorableLend: true,
+			explorableBorrow: true,
+			decidedBy: "verified",
+			reason: null,
+		},
+	},
 	products: [
 		{
 			id: "kpk-securitize",
@@ -40,7 +46,7 @@ export const publicLabelsFixture: PublicLabelsSource = {
 			name: "KPK VBILL/USDC Lend",
 			description: "USDC lending vault for the KPK VBILL market.",
 			portfolioNotice: null,
-			isDeprecated: false,
+			deprecated: false,
 			deprecationReason: null,
 			tags: ["recently added", "suppress high utilisation warning"],
 			campaigns: [
@@ -62,7 +68,7 @@ export const publicLabelsFixture: PublicLabelsSource = {
 			name: null,
 			description: null,
 			portfolioNotice: null,
-			isDeprecated: false,
+			deprecated: false,
 			deprecationReason: null,
 			tags: [],
 			campaigns: null,
@@ -78,7 +84,7 @@ export const publicLabelsFixture: PublicLabelsSource = {
 			name: null,
 			description: null,
 			portfolioNotice: null,
-			isDeprecated: false,
+			deprecated: false,
 			deprecationReason: null,
 			tags: [],
 			campaigns: null,
@@ -133,7 +139,6 @@ export const publicLabelsFixture: PublicLabelsSource = {
 	entityAddresses: [
 		{
 			entityId: KPK,
-			chainId: 1,
 			address: KPK_GOVERNOR,
 			label: "KPK Euler RWA Curation Safe",
 		},
@@ -146,6 +151,7 @@ export const publicLabelsFixture: PublicLabelsSource = {
 			vaultAddress: null,
 			assetAddress: null,
 			countries: ["DE"],
+			countriesResolved: ["DE"],
 			policyType: "block",
 			reason: "Raw fixture policy",
 			createdAt: "2026-08-04T13:25:58.430Z",

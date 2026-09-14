@@ -30,7 +30,7 @@ export interface PublicVaultLabel {
 	name: string | null;
 	description: string | null;
 	portfolioNotice: string | null;
-	isDeprecated: boolean;
+	deprecated: boolean;
 	deprecationReason: string | null;
 	tags: string[];
 	campaigns: PublicVaultCampaign[] | null;
@@ -79,7 +79,6 @@ export interface PublicEntityLabel {
 
 export interface PublicEntityAddress {
 	entityId: string;
-	chainId: number;
 	address: string;
 	label: string | null;
 }
@@ -95,6 +94,7 @@ export interface PublicGeoPolicy {
 	assetNames?: string[] | null;
 	assetNameRegex?: string | null;
 	countries: string[];
+	countriesResolved: string[];
 	policyType: "block" | "restrict";
 	reason: string | null;
 	createdAt: string;
@@ -106,17 +106,20 @@ export interface PublicLabelsSource {
 	entities: PublicEntityLabel[];
 	entityAddresses: PublicEntityAddress[];
 	geoPolicies: PublicGeoPolicy[];
+	visibility: Record<string, PublicVaultVisibility>;
 }
 
 export interface PublicLabelsSnapshot {
-	/** Concrete immutable publication used for every request in the snapshot. */
+	/** Immutable metadata publication; visibility, geo, addresses and platform tags are live. */
 	version: string;
 	publicLabels: PublicLabelsSource;
 }
 
 export type PublicEulerLabelsData = EulerLabelsData & {
-	/** Versioned policy records are informational until effective precedence is specified. */
+	/** Live geo rules; the application owns country evaluation and enforcement. */
 	rawGeoPolicies: PublicGeoPolicy[];
+	visibility: Record<string, PublicVaultVisibility>;
+	managingEntityByVault: Record<string, string>;
 };
 
 export type PublicLabelsQuery = Record<string, string | number | undefined>;
@@ -138,4 +141,12 @@ export interface PublishedLabelVersion {
 	status?: string;
 	aliases?: string[];
 	isLatest?: boolean;
+}
+
+export interface PublicVaultVisibility {
+	status: "visible" | "warning" | "hidden" | "pending_review";
+	explorableLend: boolean;
+	explorableBorrow: boolean;
+	decidedBy: string;
+	reason: string | null;
 }

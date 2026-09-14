@@ -36,16 +36,10 @@ const safeHttpUrl = (value: string | null | undefined): string => {
 const makeVaultOverride = (
 	vault: PublicVaultLabel,
 ): EulerLabelVaultOverride => ({
-	...(present(vault.name) !== undefined && { name: vault.name! }),
-	...(present(vault.description) !== undefined && {
-		description: vault.description!,
-	}),
-	...(present(vault.portfolioNotice) !== undefined && {
-		portfolioNotice: vault.portfolioNotice!,
-	}),
-	...(present(vault.deprecationReason) !== undefined && {
-		deprecationReason: vault.deprecationReason!,
-	}),
+	name: vault.name ?? "",
+	description: vault.description ?? "",
+	portfolioNotice: vault.portfolioNotice ?? "",
+	deprecationReason: vault.deprecationReason ?? "",
 	...(vault.tags.length > 0 && { tags: [...vault.tags] }),
 });
 
@@ -107,7 +101,7 @@ const buildProduct = (
 
 	for (const vault of vaults) {
 		const address = getAddress(vault.address);
-		if (vault.isDeprecated) deprecated.push(address);
+		if (vault.deprecated) deprecated.push(address);
 		else active.push(address);
 		vaultOverrides[address] = makeVaultOverride(vault);
 	}
@@ -141,9 +135,8 @@ const standaloneProductKey = (address: string): string =>
 	`__vault_${address.toLowerCase()}`;
 
 /**
- * Empty-content inventory rows are indistinguishable from assessment-only
- * rows. Consumers that have an effective curation decision may add confirmed
- * plain-address rows after this content-only normalization step.
+ * Identifies display content for standalone grouping. This is not a trust
+ * decision: trusted membership also requires a live visibility verdict.
  */
 export const hasPublishedVaultLabelContent = (
 	vault: PublicVaultLabel,
@@ -154,7 +147,7 @@ export const hasPublishedVaultLabelContent = (
 			vault.name ||
 			vault.description ||
 			vault.portfolioNotice ||
-			vault.isDeprecated ||
+			vault.deprecated ||
 			vault.deprecationReason ||
 			vault.tags.length ||
 			vault.campaigns?.length,
@@ -174,8 +167,8 @@ const buildStandaloneProduct = (vault: PublicVaultLabel): EulerLabelProduct => {
 		entity: vault.entityId ?? "",
 		coBrandEntityIds: [],
 		url: "",
-		vaults: vault.isDeprecated ? [] : [address],
-		deprecatedVaults: vault.isDeprecated ? [address] : [],
+		vaults: vault.deprecated ? [] : [address],
+		deprecatedVaults: vault.deprecated ? [address] : [],
 		...(vault.deprecationReason && {
 			deprecationReason: vault.deprecationReason,
 		}),
@@ -189,8 +182,7 @@ export const normalizePublicLabelsData = (
 	source: PublicLabelsSource,
 ): PublicEulerLabelsData => {
 	const chainVaults = source.vaults.filter(
-		(vault) =>
-			vault.chainId === chainId && hasPublishedVaultLabelContent(vault),
+		(vault) => vault.chainId === chainId,
 	);
 	const productRows = source.products.filter(
 		(product) => product.chainId === chainId,
@@ -221,7 +213,11 @@ export const normalizePublicLabelsData = (
 			}
 			continue;
 		}
-		if (vault.vaultType !== "earn" && vault.vaultType !== "escrow") {
+		if (
+			vault.vaultType !== "earn" &&
+			vault.vaultType !== "escrow" &&
+			hasPublishedVaultLabelContent(vault)
+		) {
 			products[standaloneProductKey(vault.address)] =
 				buildStandaloneProduct(vault);
 		}
@@ -229,7 +225,6 @@ export const normalizePublicLabelsData = (
 
 	const addressesByEntity = new Map<string, PublicEntityAddress[]>();
 	for (const address of source.entityAddresses) {
-		if (address.chainId !== chainId) continue;
 		const rows = addressesByEntity.get(address.entityId) ?? [];
 		rows.push(address);
 		addressesByEntity.set(address.entityId, rows);
@@ -249,16 +244,24 @@ export const normalizePublicLabelsData = (
 	const earnVaultDescriptions: Record<string, string> = {};
 	const earnVaultNotices: Record<string, string> = {};
 	const points: Record<string, EulerLabelPoint[]> = {};
+	const managingEntityByVault: Record<string, string> = {};
 
 	for (const vault of chainVaults) {
 		const address = getAddress(vault.address);
 		const lower = address.toLowerCase();
+		if (vault.entityId) managingEntityByVault[lower] = vault.entityId;
+		const verdict = source.visibility[lower];
+		const trusted = Boolean(
+			vault.entityId &&
+				verdict &&
+				(verdict.status === "visible" || verdict.status === "warning"),
+		);
 		if (vault.vaultType === "earn") {
-			earnVaults.push(address);
+			if (trusted) earnVaults.push(address);
 			earnVaultEntries[lower] = {
 				address,
 				...(vault.tags.length > 0 && { tags: [...vault.tags] }),
-				...(vault.isDeprecated && { deprecated: true }),
+				...(vault.deprecated && { deprecated: true }),
 				...(vault.deprecationReason && {
 					deprecationReason: vault.deprecationReason,
 				}),
@@ -267,7 +270,7 @@ export const normalizePublicLabelsData = (
 					portfolioNotice: vault.portfolioNotice,
 				}),
 			};
-			if (vault.isDeprecated) {
+			if (vault.deprecated) {
 				deprecatedEarnVaults[lower] = vault.deprecationReason ?? "";
 			}
 			if (vault.description) {
@@ -277,7 +280,7 @@ export const normalizePublicLabelsData = (
 				earnVaultNotices[lower] = vault.portfolioNotice;
 			}
 		} else if (vault.vaultType !== "escrow") {
-			verifiedVaultAddresses.push(address);
+			if (trusted) verifiedVaultAddresses.push(address);
 		}
 
 		if (vault.campaigns?.length) {
@@ -300,6 +303,8 @@ export const normalizePublicLabelsData = (
 		deprecatedEarnVaults,
 		earnVaultDescriptions,
 		earnVaultNotices,
+		visibility: source.visibility,
+		managingEntityByVault,
 		rawGeoPolicies: source.geoPolicies.filter(
 			(policy) => policy.chainId === null || policy.chainId === chainId,
 		),
