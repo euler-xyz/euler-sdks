@@ -86,6 +86,78 @@ export const fetchAllPublicLabelPages = async <T>(
 	}
 };
 
+/** Validate before caching: unavailable or malformed policy data is never an empty policy. */
+export const validatePublicGeoPolicies = (
+	value: unknown,
+): PublicGeoPolicy[] => {
+	if (!Array.isArray(value)) throw new Error("Invalid geo policies");
+	const ids = new Set<string>();
+	for (const row of value) {
+		if (
+			!row ||
+			typeof row.id !== "string" ||
+			ids.has(row.id) ||
+			!["block", "restrict"].includes(row.policyType) ||
+			!(
+				row.chainId === null ||
+				(Number.isInteger(row.chainId) && row.chainId > 0)
+			) ||
+			!(
+				row.productId === null ||
+				(typeof row.productId === "string" && row.productId.length > 0)
+			) ||
+			!Array.isArray(row.countriesResolved) ||
+			!row.countriesResolved.every(
+				(code: unknown) => typeof code === "string" && /^[A-Z]{2}$/.test(code),
+			)
+		) {
+			throw new Error("Invalid geo policy scope or countriesResolved");
+		}
+		ids.add(row.id);
+		for (const field of ["vaultAddress", "assetAddress"] as const) {
+			if (
+				row[field] !== null &&
+				(typeof row[field] !== "string" ||
+					!/^0x[0-9a-fA-F]{40}$/.test(row[field]))
+			)
+				throw new Error("Invalid geo policy address");
+		}
+		if (
+			row.chainId === null &&
+			(row.productId || row.vaultAddress || row.assetAddress)
+		)
+			throw new Error("Geo policy address/product requires a chain");
+		for (const field of ["assetSymbols", "assetNames"] as const) {
+			if (
+				row[field] != null &&
+				(!Array.isArray(row[field]) ||
+					!row[field].every((item: unknown) => typeof item === "string"))
+			)
+				throw new Error("Invalid geo policy asset selector");
+		}
+		for (const field of ["assetSymbolRegex", "assetNameRegex"] as const) {
+			if (row[field] != null) {
+				if (typeof row[field] !== "string" || row[field].length > 512)
+					throw new Error("Invalid geo policy regex");
+				new RegExp(row[field], "i");
+			}
+		}
+	}
+	return value as PublicGeoPolicy[];
+};
+
+/** Live policies are deliberately independent of metadata publications and chains. */
+export const fetchPublicGeoPolicies = async (
+	request: PublicLabelsRequest,
+): Promise<PublicGeoPolicy[]> =>
+	validatePublicGeoPolicies(
+		await fetchAllPublicLabelPages<PublicGeoPolicy>(
+			request,
+			"/geo-policies",
+			{},
+		),
+	);
+
 const mapWithConcurrency = async <T, R>(
 	values: T[],
 	concurrency: number,
@@ -146,6 +218,7 @@ export const fetchPublicLabelsSource = async (
 	request: PublicLabelsRequest,
 	chainId: number,
 	version: string,
+	policies?: PublicGeoPolicy[],
 ): Promise<PublicLabelsSource> => {
 	const [vaults, products, entities, geoPolicies, evk, earn] =
 		await Promise.all([
@@ -166,7 +239,9 @@ export const fetchPublicLabelsSource = async (
 			fetchAllPublicLabelPages<PublicEntityLabel>(request, "/labels/entities", {
 				version,
 			}),
-			fetchAllPublicLabelPages<PublicGeoPolicy>(request, "/geo-policies", {}),
+			policies === undefined
+				? fetchPublicGeoPolicies(request)
+				: validatePublicGeoPolicies(policies),
 			fetchAllPublicLabelPages<{
 				chainId: number;
 				address: string;
@@ -309,6 +384,7 @@ export class PublicLabelsV3Adapter {
 	async fetchPublicLabelsSnapshot(
 		chainId: number,
 		version = PUBLIC_LABELS_RUNTIME_VERSION,
+		geoPolicies?: PublicGeoPolicy[],
 	): Promise<PublicLabelsSnapshot> {
 		const resolvedVersion = await resolvePublicLabelsVersion(
 			this.queryPublicLabels,
@@ -318,6 +394,7 @@ export class PublicLabelsV3Adapter {
 			this.queryPublicLabels,
 			chainId,
 			resolvedVersion,
+			geoPolicies,
 		);
 		return { version: resolvedVersion, publicLabels };
 	}

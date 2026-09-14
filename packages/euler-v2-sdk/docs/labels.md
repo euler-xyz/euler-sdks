@@ -121,3 +121,8 @@ const labels = new PublicLabelsV3Adapter({
 ```
 
 `rawGeoPolicies` contains live rules with `countriesResolved`; the application owns country evaluation and enforcement. The adapter reads `/labels/vaults` and `/labels/products` with `view=resolved`, global `/labels/entities` profiles and address lists, and the explicit full visibility inventory from `/evk/vaults` and `/earn/vaults`. `visibility` exposes the backend verdict keyed by lowercase vault address. Trusted membership requires a managing entity and a visible or warning verdict; metadata remains available for hidden and pending records. This membership is not a full governance-verification badge. Applications retain their stronger verification rule and own freshness, caching and outage handling.
+
+
+`fetchPublicGeoPolicies(request)` reads and validates the complete live geo collection across all chains. Validation rejects missing resolved countries, invalid scopes/addresses, duplicate IDs and malformed regexes; an authored empty collection is valid. `validatePublicGeoPolicies(value)` applies the same validation to an application-owned checkpoint.
+
+Applications with a durable geo cache can pass its validated policies as the third argument to `fetchPublicLabelsSnapshot(chainId, version, geoPolicies)`. The adapter validates the supplied collection and embeds it atomically with metadata, without a second geo request. Omitting it performs the ordinary live fetch. Persisted timestamps, stale-on-error decisions and country enforcement remain application-owned.

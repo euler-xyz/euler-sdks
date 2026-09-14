@@ -10,6 +10,8 @@ export type {
 export {
 	PublicLabelsV3Adapter,
 	fetchAllPublicLabelPages,
+	fetchPublicGeoPolicies,
+	validatePublicGeoPolicies,
 	fetchPublicLabelsSource,
 	resolvePublicLabelsVersion,
 } from "./publicLabelsV3Adapter.js";

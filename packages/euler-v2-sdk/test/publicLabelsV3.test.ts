@@ -2,6 +2,8 @@ import { getAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import {
 	PublicLabelsV3Adapter,
+	fetchPublicGeoPolicies,
+	validatePublicGeoPolicies,
 	fetchAllPublicLabelPages,
 	getEulerLabelProductBrandEntityKeys,
 	normalizePublicLabelsData,
@@ -368,4 +370,20 @@ describe("normalizePublicLabelsData", () => {
 		expect(result.entities.kpk?.social.twitter).toBe("");
 		expect(result.points[getAddress(KPK_VAULT)]?.[0]?.logo).toBe("");
 	});
+});
+
+
+describe("live geo policy transport", () => {
+  it("distinguishes authored empty from malformed policy data", () => {
+    expect(validatePublicGeoPolicies([])).toEqual([]);
+    expect(() => validatePublicGeoPolicies(undefined)).toThrow();
+    for (const patch of [{ countriesResolved: undefined }, { countriesResolved: ["EEA"] }, { policyType: "allow" }, { assetNameRegex: "[" }, { chainId: null, productId: "p" }]) {
+      expect(() => validatePublicGeoPolicies([{ ...publicLabelsFixture.geoPolicies[0], ...patch }])).toThrow();
+    }
+  });
+  it("reads all chains without a metadata version selector", async () => {
+    const request = vi.fn(async () => response([], 0)) as PublicLabelsRequest;
+    expect(await fetchPublicGeoPolicies(request)).toEqual([]);
+    expect(request).toHaveBeenCalledWith("/geo-policies", { limit: 100, offset: 0 });
+  });
 });

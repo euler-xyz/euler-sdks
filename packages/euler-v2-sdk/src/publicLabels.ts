@@ -11,6 +11,8 @@ export type {
 export {
 	PublicLabelsV3Adapter,
 	fetchAllPublicLabelPages,
+	fetchPublicGeoPolicies,
+	validatePublicGeoPolicies,
 	fetchPublicLabelsSource,
 	resolvePublicLabelsVersion,
 } from "./services/eulerLabelsService/publicLabelsV3Adapter.js";
