@@ -70,6 +70,10 @@ const fixtureRequest = (options?: { productEntityId?: string; labelSet?: string 
 					1,
 				);
 			if (path === "/earn/vaults") return response([], 0);
+			if (path.endsWith("/visibility")) return response({
+				chainId: 1, vaultAddress: path.split("/")[4],
+				status: "pending_review", checks: { evaluated: false },
+			});
 			if (path === "/geo-policies") {
 				return response(
 					publicLabelsFixture.geoPolicies,
@@ -111,7 +115,13 @@ describe("PublicLabelsV3Adapter", () => {
 		const snapshot = await adapter.fetchPublicLabelsSnapshot(1);
 
 		expect(snapshot.version).toBe(PUBLIC_LABELS_FIXTURE_VERSION);
-		expect(snapshot.publicLabels).toEqual(publicLabelsFixture);
+		expect(snapshot.publicLabels).toEqual({ ...publicLabelsFixture, visibility: {
+			...publicLabelsFixture.visibility,
+			...Object.fromEntries([ASSESSMENT_ONLY_EVK, NEUTRAL_ESCROW].map(address => [address.toLowerCase(), {
+				status: "pending_review", decidedBy: "awaiting-verification", reason: null,
+				explorableLend: false, explorableBorrow: false,
+			}])),
+		} });
 		expect(request).toHaveBeenCalledWith("/labels/sets/public/versions", {});
 		expect(
 			request.mock.calls
@@ -437,4 +447,48 @@ describe("live geo policy transport", () => {
     expect(await fetchPublicGeoPolicies(request)).toEqual([]);
     expect(request).toHaveBeenCalledWith("/geo-policies", { limit: 100, offset: 0 });
   });
+});
+
+
+describe("direct visibility coverage", () => {
+	const address = KPK_VAULT.toLowerCase();
+	const direct = (overrides = {}) => ({ chainId: 1, vaultAddress: address,
+		status: "visible", checks: { decidedBy: "verified", notExplorableLend: false,
+			listing: { lend: { hidden: true }, borrow: { hidden: false } } }, ...overrides });
+	const adapter = (verdict: unknown, fail = false) => {
+		const base = fixtureRequest();
+		const request: PublicLabelsRequest = async <T>(path: string, query: PublicLabelsQuery) => {
+			if (path === "/evk/vaults") return response([], 0) as PublicLabelsResponse<T>;
+			if (path === `/evk/vaults/1/${address}/visibility`) {
+				if (fail) throw new Error("upstream unavailable");
+				return response(verdict) as PublicLabelsResponse<T>;
+			}
+			return base<T>(path, query);
+		};
+		return new PublicLabelsV3Adapter({ endpoint: "https://example.com", request });
+	};
+	it("restores missing membership while preserving effective listing over raw flags", async () => {
+		const result = await adapter(direct()).fetchPublicEulerLabelsData(1);
+		expect(result.visibility[address]).toEqual({status: "visible", decidedBy: "verified",
+			reason: null, explorableLend: false, explorableBorrow: true});
+		expect(result.managingEntityByVault[address]).toBe("kpk");
+	});
+	it.each(["hidden", "pending_review"])("keeps %s verdicts out of discovery", async (status) => {
+		const result = await adapter(direct({status})).fetchPublicEulerLabelsData(1);
+		expect(result.visibility[address].explorableBorrow).toBe(false);
+	});
+	it.each([
+		{chainId: 10}, {vaultAddress: NEUTRAL_ESCROW}, {status: "bogus"},
+		{checks: {listing: {lend: {hidden: "false"}}}},
+	])("rejects malformed or mismatched verdicts %j", async (override) => {
+		await expect(adapter(direct(override)).fetchPublicLabelsSnapshot(1)).rejects.toThrow("Invalid direct visibility");
+	});
+	it("propagates upstream failure instead of caching an incomplete snapshot", async () => {
+		await expect(adapter(direct(), true).fetchPublicLabelsSnapshot(1)).rejects.toThrow("upstream unavailable");
+	});
+	it("does not fetch a direct verdict when the inventory already supplies one", async () => {
+		const request = fixtureRequest();
+		await new PublicLabelsV3Adapter({endpoint: "https://example.com", request}).fetchPublicLabelsSnapshot(1);
+		expect(request.mock.calls.some(([path]) => path === `/evk/vaults/1/${address}/visibility`)).toBe(false);
+	});
 });

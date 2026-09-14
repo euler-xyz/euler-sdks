@@ -232,6 +232,64 @@ export const resolvePublicLabelsVersion = async (
 	return published.versionKey;
 };
 
+/** Convert the direct verdict using the same status/listing gates as V3 inventories. */
+const fetchDirectVisibility = async (
+	request: PublicLabelsRequest,
+	chainId: number,
+	vault: PublicVaultLabel,
+): Promise<PublicVaultVisibility> => {
+	const path = `/${vault.vaultType === "earn" ? "earn" : "evk"}/vaults/${chainId}/${vault.address.toLowerCase()}/visibility`;
+	const row = assertItemResponse(
+		await request<{
+			chainId: number;
+			vaultAddress: string;
+			status: PublicVaultVisibility["status"];
+			checks: Record<string, unknown>;
+		}>(path, {}),
+		path,
+	);
+	if (
+		row.chainId !== chainId ||
+		typeof row.vaultAddress !== "string" ||
+		row.vaultAddress.toLowerCase() !== vault.address.toLowerCase() ||
+		!["visible", "warning", "hidden", "pending_review"].includes(row.status) ||
+		!row.checks ||
+		typeof row.checks !== "object" ||
+		Array.isArray(row.checks)
+	)
+		throw new Error("Invalid direct visibility verdict");
+	const checks = row.checks;
+	const listing = checks.listing as
+		| Record<string, { hidden?: unknown }>
+		| undefined;
+	if (
+		listing !== undefined &&
+		(!listing ||
+			typeof listing.lend?.hidden !== "boolean" ||
+			typeof listing.borrow?.hidden !== "boolean")
+	)
+		throw new Error("Invalid direct visibility listing");
+	const eligible = row.status === "visible" || row.status === "warning";
+	return {
+		status: row.status,
+		explorableLend:
+			eligible &&
+			!(listing
+				? listing.lend!.hidden
+				: checks.notExplorable === true || checks.notExplorableLend === true),
+		explorableBorrow:
+			eligible &&
+			!(listing
+				? listing.borrow!.hidden
+				: checks.notExplorable === true || checks.notExplorableBorrow === true),
+		decidedBy:
+			typeof checks.decidedBy === "string"
+				? checks.decidedBy
+				: "awaiting-verification",
+		reason: typeof checks.reason === "string" ? checks.reason : null,
+	};
+};
+
 export const fetchPublicLabelsSource = async (
 	request: PublicLabelsRequest,
 	chainId: number,
@@ -351,11 +409,27 @@ export const fetchPublicLabelsSource = async (
 	for (const row of vaults) {
 		if (
 			row.chainId !== chainId ||
+			!/^0x[0-9a-fA-F]{40}$/.test(row.address) ||
+			!["evk", "earn", "securitize", "escrow"].includes(row.vaultType) ||
 			typeof row.deprecated !== "boolean" ||
 			!Array.isArray(row.tags)
 		)
 			throw new Error("Invalid resolved vault labels");
 	}
+	const missing = [
+		...new Map(
+			vaults
+				.filter((vault) => !visibility[vault.address.toLowerCase()])
+				.map((vault) => [vault.address.toLowerCase(), vault]),
+		).values(),
+	];
+	await mapWithConcurrency(missing, 8, async (vault) => {
+		visibility[vault.address.toLowerCase()] = await fetchDirectVisibility(
+			request,
+			chainId,
+			vault,
+		);
+	});
 	for (const policy of geoPolicies) {
 		if (!Array.isArray(policy.countriesResolved))
 			throw new Error("Geo country resolution unavailable");
