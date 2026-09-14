@@ -25,3 +25,8 @@ export {
 	getEulerLabelProductBrandEntities,
 	getEulerLabelProductBrandEntityKeys,
 } from "./utils/eulerLabels.js";
+
+export {
+	normalizeEulerLabelsFileData,
+	type EulerLabelsFileData,
+} from "./services/eulerLabelsService/eulerLabelsService.js";

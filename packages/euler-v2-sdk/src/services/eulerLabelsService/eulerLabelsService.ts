@@ -338,6 +338,49 @@ const applyVaultOverrides = (
 	};
 };
 
+export interface EulerLabelsFileData {
+	entities: Record<string, EulerLabelEntity>;
+	products: Record<string, EulerLabelProduct>;
+	points: EulerLabelPoint[];
+	earnVaults: Array<string | EulerLabelEarnVaultEntry>;
+	assets: EulerLabelAssetEntry[];
+}
+
+/** Pure derivation for application-owned atomic file snapshots. Fetch failures belong to the caller. */
+export const normalizeEulerLabelsFileData = (
+	files: EulerLabelsFileData,
+): EulerLabelsData => {
+	const {
+		entities: entitiesRaw,
+		products: productsRaw,
+		points: pointsRaw,
+		earnVaults: earnRaw,
+		assets: assetsRaw,
+	} = files;
+	const normalizedProducts = normalizeProducts(productsRaw);
+	const earn = normalizeEarnVaults(earnRaw);
+	const assets = normalizeAssets(assetsRaw);
+
+	return {
+		...EMPTY_LABELS_DATA,
+		products: normalizedProducts.products,
+		verifiedVaultAddresses: normalizedProducts.vaultAddresses,
+		entities: normalizeEntities(entitiesRaw),
+		points: normalizePoints(pointsRaw),
+		earnVaults: earn.earnVaults,
+		earnVaultEntries: earn.earnVaultEntries,
+		earnVaultBlocks: earn.earnVaultBlocks,
+		earnVaultRestrictions: earn.earnVaultRestrictions,
+		deprecatedEarnVaults: earn.deprecatedEarnVaults,
+		earnVaultDescriptions: earn.earnVaultDescriptions,
+		earnVaultNotices: earn.earnVaultNotices,
+		notExplorableEarnVaults: earn.notExplorableEarnVaults,
+		assetBlocks: assets.assetBlocks,
+		assetRestrictions: assets.assetRestrictions,
+		assetPatternRules: assets.assetPatternRules,
+	};
+};
+
 export class EulerLabelsService implements IEulerLabelsService {
 	constructor(
 		private adapter: IEulerLabelsAdapter,
@@ -396,28 +439,13 @@ export class EulerLabelsService implements IEulerLabelsService {
 				),
 			]);
 
-		const normalizedProducts = normalizeProducts(productsRaw);
-		const earn = normalizeEarnVaults(earnRaw);
-		const assets = normalizeAssets(assetsRaw);
-
-		return {
-			...EMPTY_LABELS_DATA,
-			products: normalizedProducts.products,
-			verifiedVaultAddresses: normalizedProducts.vaultAddresses,
-			entities: normalizeEntities(entitiesRaw),
-			points: normalizePoints(pointsRaw),
-			earnVaults: earn.earnVaults,
-			earnVaultEntries: earn.earnVaultEntries,
-			earnVaultBlocks: earn.earnVaultBlocks,
-			earnVaultRestrictions: earn.earnVaultRestrictions,
-			deprecatedEarnVaults: earn.deprecatedEarnVaults,
-			earnVaultDescriptions: earn.earnVaultDescriptions,
-			earnVaultNotices: earn.earnVaultNotices,
-			notExplorableEarnVaults: earn.notExplorableEarnVaults,
-			assetBlocks: assets.assetBlocks,
-			assetRestrictions: assets.assetRestrictions,
-			assetPatternRules: assets.assetPatternRules,
-		};
+		return normalizeEulerLabelsFileData({
+			entities: entitiesRaw,
+			products: productsRaw,
+			points: pointsRaw,
+			earnVaults: earnRaw,
+			assets: assetsRaw,
+		});
 	}
 
 	async populateLabels(vaults: ERC4626Vault[]): Promise<void> {

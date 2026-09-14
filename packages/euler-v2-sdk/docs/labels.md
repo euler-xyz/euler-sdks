@@ -126,3 +126,6 @@ const labels = new PublicLabelsV3Adapter({
 `fetchPublicGeoPolicies(request)` reads and validates the complete live geo collection across all chains. Validation rejects missing resolved countries, invalid scopes/addresses, duplicate IDs and malformed regexes; an authored empty collection is valid. `validatePublicGeoPolicies(value)` applies the same validation to an application-owned checkpoint.
 
 Applications with a durable geo cache can pass its validated policies as the third argument to `fetchPublicLabelsSnapshot(chainId, version, geoPolicies)`. The adapter validates the supplied collection and embeds it atomically with metadata, without a second geo request. Omitting it performs the ordinary live fetch. Persisted timestamps, stale-on-error decisions and country enforcement remain application-owned.
+
+
+`normalizeEulerLabelsFileData(files)` derives the same `EulerLabelsData` shape from an already-fetched `{entities, products, points, earnVaults, assets}` file collection. Application-owned static loaders can require every document to succeed before invoking it and provide their own durable checkpoint. It performs no network reads; V3 adapters remain independent of file authoring.

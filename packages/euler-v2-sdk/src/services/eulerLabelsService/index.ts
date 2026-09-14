@@ -1,9 +1,11 @@
 export {
 	EulerLabelsService,
+	normalizeEulerLabelsFileData,
 	EulerLabelsURLAdapter,
 } from "./eulerLabelsService.js";
 export type {
 	IEulerLabelsService,
+	EulerLabelsFileData,
 	IEulerLabelsAdapter,
 	EulerLabelsURLAdapterConfig,
 } from "./eulerLabelsService.js";
