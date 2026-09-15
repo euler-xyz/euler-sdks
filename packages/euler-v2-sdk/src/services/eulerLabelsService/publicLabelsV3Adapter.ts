@@ -12,6 +12,8 @@ import {
 	type PublicLabelsResponse,
 	type PublicLabelsSnapshot,
 	type PublicLabelsSource,
+	type PublicLabelsMetadata,
+	type PublicLabelsMetadataSnapshot,
 	type PublicLabelsV3AdapterConfig,
 	type PublicProductLabel,
 	type PublicVaultLabel,
@@ -290,56 +292,35 @@ const fetchDirectVisibility = async (
 	};
 };
 
-export const fetchPublicLabelsSource = async (
+export const fetchPublicLabelsMetadata = async (
 	request: PublicLabelsRequest,
 	chainId: number,
 	version: string,
 	policies?: PublicGeoPolicy[],
 	labelSet = "public",
-): Promise<PublicLabelsSource> => {
+): Promise<PublicLabelsMetadata> => {
 	validateLabelSet(labelSet);
-	const [vaults, products, entities, geoPolicies, evk, earn] =
-		await Promise.all([
-			fetchAllPublicLabelPages<PublicVaultLabel>(request, "/labels/vaults", {
-				labelSet,
-				version,
-				view: "resolved",
-				chainId,
-			}),
-			fetchAllPublicLabelPages<PublicProductLabel>(
-				request,
-				"/labels/products",
-				{
-					labelSet,
-					version,
-					view: "resolved",
-					chainId,
-				},
-			),
-			fetchAllPublicLabelPages<PublicEntityLabel>(request, "/labels/entities", {
-				labelSet,
-				version,
-			}),
-			policies === undefined
-				? fetchPublicGeoPolicies(request)
-				: validatePublicGeoPolicies(policies),
-			fetchAllPublicLabelPages<{
-				chainId: number;
-				address: string;
-				visibility: PublicVaultVisibility;
-			}>(request, "/evk/vaults", {
-				chainId,
-				visibility: "visible,warning,hidden,pending_review",
-			}),
-			fetchAllPublicLabelPages<{
-				chainId: number;
-				address: string;
-				visibility: PublicVaultVisibility;
-			}>(request, "/earn/vaults", {
-				chainId,
-				visibility: "visible,warning,hidden,pending_review",
-			}),
-		]);
+	const [vaults, products, entities, geoPolicies] = await Promise.all([
+		fetchAllPublicLabelPages<PublicVaultLabel>(request, "/labels/vaults", {
+			labelSet,
+			version,
+			view: "resolved",
+			chainId,
+		}),
+		fetchAllPublicLabelPages<PublicProductLabel>(request, "/labels/products", {
+			labelSet,
+			version,
+			view: "resolved",
+			chainId,
+		}),
+		fetchAllPublicLabelPages<PublicEntityLabel>(request, "/labels/entities", {
+			labelSet,
+			version,
+		}),
+		policies === undefined
+			? fetchPublicGeoPolicies(request)
+			: validatePublicGeoPolicies(policies),
+	]);
 
 	const entityIds = [
 		...new Set([
@@ -375,6 +356,16 @@ export const fetchPublicLabelsSource = async (
 					`Public Labels entity profile mismatch for ${entityId}`,
 				);
 			}
+			if (
+				addresses.some(
+					(row) =>
+						row.entityId !== entityId ||
+						!/^0x[0-9a-fA-F]{40}$/.test(row.address),
+				)
+			)
+				throw new Error(
+					`Invalid Public Labels entity addresses for ${entityId}`,
+				);
 			return { profile, addresses };
 		},
 	);
@@ -389,8 +380,50 @@ export const fetchPublicLabelsSource = async (
 		if (!listedEntityIds.has(profile.id)) mergedEntities.push(profile);
 	}
 
+	for (const row of vaults) {
+		if (
+			row.chainId !== chainId ||
+			!/^0x[0-9a-fA-F]{40}$/.test(row.address) ||
+			!["evk", "earn", "securitize", "escrow"].includes(row.vaultType) ||
+			typeof row.deprecated !== "boolean" ||
+			!Array.isArray(row.tags)
+		)
+			throw new Error("Invalid resolved vault labels");
+	}
+	return {
+		vaults,
+		products,
+		entities: mergedEntities,
+		entityAddresses: entityDetails.flatMap(({ addresses }) => addresses),
+		geoPolicies,
+	};
+};
+
+export const fetchPublicLabelsSource = async (
+	request: PublicLabelsRequest,
+	chainId: number,
+	version: string,
+	policies?: PublicGeoPolicy[],
+	labelSet = "public",
+): Promise<PublicLabelsSource> => {
+	const [metadata, inventories] = await Promise.all([
+		fetchPublicLabelsMetadata(request, chainId, version, policies, labelSet),
+		Promise.all(
+			(["evk", "earn"] as const).map((kind) =>
+				fetchAllPublicLabelPages<{
+					chainId: number;
+					address: string;
+					visibility: PublicVaultVisibility;
+				}>(request, `/${kind}/vaults`, {
+					chainId,
+					visibility: "visible,warning,hidden,pending_review",
+				}),
+			),
+		),
+	]);
+	const { vaults } = metadata;
 	const visibility: Record<string, PublicVaultVisibility> = {};
-	for (const row of [...evk, ...earn]) {
+	for (const row of inventories.flat()) {
 		if (row.chainId !== chainId || !/^0x[0-9a-fA-F]{40}$/.test(row.address))
 			throw new Error("Invalid visibility identity");
 		const verdict = row.visibility;
@@ -406,16 +439,6 @@ export const fetchPublicLabelsSource = async (
 			throw new Error("Invalid visibility summary");
 		visibility[row.address.toLowerCase()] = verdict;
 	}
-	for (const row of vaults) {
-		if (
-			row.chainId !== chainId ||
-			!/^0x[0-9a-fA-F]{40}$/.test(row.address) ||
-			!["evk", "earn", "securitize", "escrow"].includes(row.vaultType) ||
-			typeof row.deprecated !== "boolean" ||
-			!Array.isArray(row.tags)
-		)
-			throw new Error("Invalid resolved vault labels");
-	}
 	const missing = [
 		...new Map(
 			vaults
@@ -430,18 +453,7 @@ export const fetchPublicLabelsSource = async (
 			vault,
 		);
 	});
-	for (const policy of geoPolicies) {
-		if (!Array.isArray(policy.countriesResolved))
-			throw new Error("Geo country resolution unavailable");
-	}
-	return {
-		visibility,
-		vaults,
-		products,
-		entities: mergedEntities,
-		entityAddresses: entityDetails.flatMap(({ addresses }) => addresses),
-		geoPolicies,
-	};
+	return { ...metadata, visibility };
 };
 
 const buildPublicLabelsRequest =
@@ -470,10 +482,10 @@ const buildPublicLabelsRequest =
 		return (await response.json()) as PublicLabelsResponse<T>;
 	};
 
-export class PublicLabelsV3Adapter {
+class PublicLabelsV3Base {
 	queryPublicLabels: PublicLabelsRequest;
-	private readonly labelSet: string;
-	private readonly version: string;
+	protected readonly labelSet: string;
+	protected readonly version: string;
 
 	constructor(config: PublicLabelsV3AdapterConfig, buildQuery?: BuildQueryFn) {
 		this.labelSet = validateLabelSet(config.labelSet?.trim() || "public");
@@ -486,7 +498,9 @@ export class PublicLabelsV3Adapter {
 		this.queryPublicLabels = config.request ?? buildPublicLabelsRequest(config);
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
+}
 
+export class PublicLabelsV3Adapter extends PublicLabelsV3Base {
 	async fetchPublicLabelsSnapshot(
 		chainId: number,
 		version = this.version,
@@ -513,5 +527,33 @@ export class PublicLabelsV3Adapter {
 	): Promise<PublicEulerLabelsData> {
 		const snapshot = await this.fetchPublicLabelsSnapshot(chainId, version);
 		return normalizePublicLabelsData(chainId, snapshot.publicLabels);
+	}
+}
+
+/** Published metadata only: never calls inventory or assessment endpoints. */
+export class PublicLabelsV3MetadataAdapter extends PublicLabelsV3Base {
+	async fetchPublicLabelsSnapshot(
+		chainId: number,
+		version = this.version,
+		geoPolicies?: PublicGeoPolicy[],
+	): Promise<PublicLabelsMetadataSnapshot> {
+		const resolvedVersion = await resolvePublicLabelsVersion(
+			this.queryPublicLabels,
+			version,
+			this.labelSet,
+		);
+		const publicLabels = await fetchPublicLabelsMetadata(
+			this.queryPublicLabels,
+			chainId,
+			resolvedVersion,
+			geoPolicies,
+			this.labelSet,
+		);
+		return {
+			source: "v3-metadata",
+			labelSet: this.labelSet,
+			version: resolvedVersion,
+			publicLabels,
+		};
 	}
 }

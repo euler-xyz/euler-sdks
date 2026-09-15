@@ -12,6 +12,8 @@ import type {
 	PublicEntityLabel,
 	PublicEulerLabelsData,
 	PublicLabelsSource,
+	PublicLabelsMetadata,
+	PublicLabelsMetadataData,
 	PublicProductLabel,
 	PublicVaultLabel,
 } from "./publicLabelsV3Types.js";
@@ -177,10 +179,10 @@ const buildStandaloneProduct = (vault: PublicVaultLabel): EulerLabelProduct => {
 	};
 };
 
-export const normalizePublicLabelsData = (
+const normalizeMetadata = (
 	chainId: number,
-	source: PublicLabelsSource,
-): PublicEulerLabelsData => {
+	source: PublicLabelsMetadata,
+): PublicLabelsMetadataData => {
 	const chainVaults = source.vaults.filter(
 		(vault) => vault.chainId === chainId,
 	);
@@ -237,8 +239,8 @@ export const normalizePublicLabelsData = (
 		]),
 	) as Record<string, EulerLabelEntity>;
 
-	const verifiedVaultAddresses: string[] = [];
-	const earnVaults: string[] = [];
+	const candidateVaultAddresses: string[] = [];
+	const candidateEarnVaultAddresses: string[] = [];
 	const earnVaultEntries: Record<string, EulerLabelEarnVaultEntry> = {};
 	const deprecatedEarnVaults: Record<string, string> = {};
 	const earnVaultDescriptions: Record<string, string> = {};
@@ -250,14 +252,8 @@ export const normalizePublicLabelsData = (
 		const address = getAddress(vault.address);
 		const lower = address.toLowerCase();
 		if (vault.entityId) managingEntityByVault[lower] = vault.entityId;
-		const verdict = source.visibility[lower];
-		const trusted = Boolean(
-			vault.entityId &&
-				verdict &&
-				(verdict.status === "visible" || verdict.status === "warning"),
-		);
 		if (vault.vaultType === "earn") {
-			if (trusted) earnVaults.push(address);
+			candidateEarnVaultAddresses.push(address);
 			earnVaultEntries[lower] = {
 				address,
 				...(vault.tags.length > 0 && { tags: [...vault.tags] }),
@@ -280,7 +276,7 @@ export const normalizePublicLabelsData = (
 				earnVaultNotices[lower] = vault.portfolioNotice;
 			}
 		} else if (vault.vaultType !== "escrow") {
-			if (trusted) verifiedVaultAddresses.push(address);
+			candidateVaultAddresses.push(address);
 		}
 
 		if (vault.campaigns?.length) {
@@ -297,16 +293,65 @@ export const normalizePublicLabelsData = (
 		products,
 		entities,
 		points,
-		verifiedVaultAddresses: uniqueStrings(verifiedVaultAddresses),
-		earnVaults: uniqueStrings(earnVaults),
+		candidateVaultAddresses: uniqueStrings(candidateVaultAddresses),
+		candidateEarnVaultAddresses: uniqueStrings(candidateEarnVaultAddresses),
 		earnVaultEntries,
 		deprecatedEarnVaults,
 		earnVaultDescriptions,
 		earnVaultNotices,
-		visibility: source.visibility,
 		managingEntityByVault,
 		rawGeoPolicies: source.geoPolicies.filter(
 			(policy) => policy.chainId === null || policy.chainId === chainId,
 		),
+	};
+};
+
+/** Raw published listing flags apply only to the metadata-only path. */
+export const normalizePublicLabelsMetadata = (
+	chainId: number,
+	source: PublicLabelsMetadata,
+): PublicLabelsMetadataData => {
+	const data = normalizeMetadata(chainId, source);
+	for (const product of source.products.filter((row) => row.chainId === chainId)) {
+		data.products[product.id]!.notExplorable = product.notExplorable === true;
+	}
+	for (const vault of source.vaults.filter((row) => row.chainId === chainId)) {
+		const address = getAddress(vault.address);
+		const product = data.products[vault.productId ?? standaloneProductKey(address)];
+		const override = product?.vaultOverrides?.[address];
+		if (override) {
+			override.notExplorableLend = vault.notExplorableLend === true;
+			override.notExplorableBorrow = vault.notExplorableBorrow === true;
+		}
+		if (vault.vaultType === "earn") {
+			const entry = data.earnVaultEntries[address.toLowerCase()]!;
+			entry.notExplorable = product?.notExplorable === true || vault.notExplorableLend === true;
+			if (entry.notExplorable) data.notExplorableEarnVaults.add(address.toLowerCase());
+		}
+	}
+	return data;
+};
+
+/** Assessed membership is separate from shared display metadata. */
+export const normalizePublicLabelsData = (
+	chainId: number,
+	source: PublicLabelsSource,
+): PublicEulerLabelsData => {
+	const { candidateVaultAddresses, candidateEarnVaultAddresses, ...metadata } =
+		normalizeMetadata(chainId, source);
+	const eligible = (address: string): boolean => {
+		const lower = address.toLowerCase();
+		const verdict = source.visibility[lower];
+		return Boolean(
+			metadata.managingEntityByVault[lower] &&
+				verdict &&
+				(verdict.status === "visible" || verdict.status === "warning"),
+		);
+	};
+	return {
+		...metadata,
+		visibility: source.visibility,
+		verifiedVaultAddresses: candidateVaultAddresses.filter(eligible),
+		earnVaults: candidateEarnVaultAddresses.filter(eligible),
 	};
 };

@@ -1,3 +1,4 @@
+import { PublicLabelsV3MetadataAdapter, normalizePublicLabelsMetadata } from "../src/index.js";
 import { getAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -491,4 +492,76 @@ describe("direct visibility coverage", () => {
 		await new PublicLabelsV3Adapter({endpoint: "https://example.com", request}).fetchPublicLabelsSnapshot(1);
 		expect(request.mock.calls.some(([path]) => path === `/evk/vaults/1/${address}/visibility`)).toBe(false);
 	});
+});
+
+ describe("metadata-only V3 adapter", () => {
+  it("pins metadata and keeps live addresses/geo without calling assessments", async () => {
+    const transport = fixtureRequest();
+    const request: PublicLabelsRequest = (path, query) => {
+      if (path.startsWith("/evk/") || path.startsWith("/earn/")) throw new Error("CHAIN_NOT_SUPPORTED");
+      return transport(path, query);
+    };
+    const adapter = new PublicLabelsV3MetadataAdapter({ endpoint: "https://v3.example.test", request });
+    const snapshot = await adapter.fetchPublicLabelsSnapshot(1);
+    expect(snapshot.source).toBe("v3-metadata");
+    expect(snapshot.version).toBe(PUBLIC_LABELS_FIXTURE_VERSION);
+    expect(snapshot.publicLabels).not.toHaveProperty("visibility");
+    expect(snapshot.publicLabels.entityAddresses).toEqual(publicLabelsFixture.entityAddresses);
+    expect(snapshot.publicLabels.geoPolicies).toEqual(publicLabelsFixture.geoPolicies);
+    const data = normalizePublicLabelsMetadata(1, snapshot.publicLabels);
+    expect(data.candidateVaultAddresses).toContain(getAddress(KPK_VAULT));
+    expect(data.candidateVaultAddresses).toContain(getAddress(ASSESSMENT_ONLY_EVK));
+    expect(data.verifiedVaultAddresses).toEqual([]);
+    expect(data.earnVaults).toEqual([]);
+    expect(data).not.toHaveProperty("visibility");
+    expect(data.products["kpk-securitize"].name).toBe(publicLabelsFixture.products[0]!.name);
+    expect(transport.mock.calls.filter(([path]) => path.startsWith("/labels/") && !path.endsWith("/versions") && !path.endsWith("/addresses"))
+      .every(([, query]) => query.version === PUBLIC_LABELS_FIXTURE_VERSION)).toBe(true);
+  });
+  it("does not downgrade the assessed adapter when inventories reject the chain", async () => {
+    const transport = fixtureRequest();
+    const request: PublicLabelsRequest = (path, query) => {
+      if (path.startsWith("/evk/") || path.startsWith("/earn/")) throw new Error("CHAIN_NOT_SUPPORTED");
+      return transport(path, query);
+    };
+    await expect(new PublicLabelsV3Adapter({ endpoint: "https://v3.example.test", request }).fetchPublicLabelsSnapshot(1)).rejects.toThrow("CHAIN_NOT_SUPPORTED");
+  });
+  it("rejects entity address rows belonging to a different entity", async () => {
+    const transport = fixtureRequest();
+    const request: PublicLabelsRequest = async (path, query) => {
+      const result = await transport(path, query);
+      if (path.endsWith("/kpk/addresses")) return response([{ ...publicLabelsFixture.entityAddresses[0], entityId: "other" }], 1) as never;
+      return result;
+    };
+    await expect(new PublicLabelsV3MetadataAdapter({ endpoint: "https://v3.example.test", request }).fetchPublicLabelsSnapshot(1)).rejects.toThrow("Invalid Public Labels entity addresses");
+  });
+ });
+
+
+describe("metadata-only discovery flags", () => {
+  it.each([
+    [true, null, null, true, false, false],
+    [false, true, false, false, true, false],
+    [null, false, true, false, false, true],
+    [null, null, null, false, false, false],
+  ])("maps product=%s lend=%s borrow=%s without creating a verdict", (productHide, lendHide, borrowHide, expectedProduct, expectedLend, expectedBorrow) => {
+    const source = structuredClone(publicLabelsFixture);
+    source.products[0]!.notExplorable = productHide;
+    source.vaults[0]!.notExplorableLend = lendHide;
+    source.vaults[0]!.notExplorableBorrow = borrowHide;
+    const data = normalizePublicLabelsMetadata(1, source);
+    const product = data.products["kpk-securitize"]!;
+    expect(product.notExplorable).toBe(expectedProduct);
+    expect(product.vaultOverrides![getAddress(KPK_VAULT)]).toMatchObject({ notExplorableLend: expectedLend, notExplorableBorrow: expectedBorrow });
+    expect(data.verifiedVaultAddresses).toEqual([]);
+    expect(data).not.toHaveProperty("visibility");
+    expect(normalizePublicLabelsData(1, source).products["kpk-securitize"]!.notExplorable).toBeUndefined();
+  });
+  it.each([true, false])("maps Earn lend hiding=%s separately from deprecation", (hidden) => {
+    const source = structuredClone(publicLabelsFixture);
+    source.vaults = [{ ...source.vaults[0]!, vaultType: "earn", deprecated: true, notExplorableLend: hidden }];
+    const data = normalizePublicLabelsMetadata(1, source);
+    expect(data.notExplorableEarnVaults.has(KPK_VAULT.toLowerCase())).toBe(hidden);
+    expect(data.earnVaults).toEqual([]);
+  });
 });

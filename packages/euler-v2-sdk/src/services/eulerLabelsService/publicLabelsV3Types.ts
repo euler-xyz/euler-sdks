@@ -31,6 +31,8 @@ export interface PublicVaultLabel {
 	description: string | null;
 	portfolioNotice: string | null;
 	deprecated: boolean;
+	notExplorableLend?: boolean | null;
+	notExplorableBorrow?: boolean | null;
 	deprecationReason: string | null;
 	tags: string[];
 	campaigns: PublicVaultCampaign[] | null;
@@ -49,6 +51,7 @@ export interface PublicProductLabel {
 	url: string | null;
 	portfolioNotice: string | null;
 	isDeprecated: boolean;
+	notExplorable?: boolean | null;
 	deprecationReason: string | null;
 	governanceMode: string;
 	createdAt: string;
@@ -100,14 +103,33 @@ export interface PublicGeoPolicy {
 	createdAt: string;
 }
 
-export interface PublicLabelsSource {
+export interface PublicLabelsMetadata {
 	vaults: PublicVaultLabel[];
 	products: PublicProductLabel[];
 	entities: PublicEntityLabel[];
 	entityAddresses: PublicEntityAddress[];
 	geoPolicies: PublicGeoPolicy[];
+}
+
+export interface PublicLabelsSource extends PublicLabelsMetadata {
 	visibility: Record<string, PublicVaultVisibility>;
 }
+
+export interface PublicLabelsMetadataSnapshot {
+	source: "v3-metadata";
+	labelSet: string;
+	version: string;
+	publicLabels: PublicLabelsMetadata;
+}
+
+/** Candidates require independent verification; verified membership remains empty. */
+export type PublicLabelsMetadataData = Omit<
+	PublicEulerLabelsData,
+	"visibility"
+> & {
+	candidateVaultAddresses: string[];
+	candidateEarnVaultAddresses: string[];
+};
 
 export interface PublicLabelsSnapshot {
 	/** Dataset containing the selected metadata publication. */

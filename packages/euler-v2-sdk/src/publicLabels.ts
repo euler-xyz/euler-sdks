@@ -10,6 +10,8 @@ export type {
 } from "./entities/EulerLabels.js";
 export {
 	PublicLabelsV3Adapter,
+	PublicLabelsV3MetadataAdapter,
+	fetchPublicLabelsMetadata,
 	fetchAllPublicLabelPages,
 	fetchPublicGeoPolicies,
 	validatePublicGeoPolicies,
@@ -19,6 +21,7 @@ export {
 export {
 	hasPublishedVaultLabelContent,
 	normalizePublicLabelsData,
+	normalizePublicLabelsMetadata,
 } from "./services/eulerLabelsService/publicLabelsV3Normalize.js";
 export * from "./services/eulerLabelsService/publicLabelsV3Types.js";
 export {
