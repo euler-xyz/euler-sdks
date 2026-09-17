@@ -59,7 +59,6 @@ properties plus:
 
 | Property | Type | Description |
 | --- | --- | --- |
-| `vaultFamily` | `"earn" | undefined` | Vault family. Accepted so entities round-trip; the entity always exposes `"earn"`. See [EVault vault family](./evault.md#vault-family). |
 | `lostAssets` | `bigint` | Assets tracked as lost by the vault. |
 | `availableAssets` | `bigint` | Assets available for withdrawal. |
 | `performanceFee` | `number` | Performance fee. |
@@ -74,8 +73,8 @@ properties plus:
 ## `EulerEarn` Properties
 
 `EulerEarn` has all [ERC4626Vault properties](./erc4626-vault.md#erc4626vault-properties)
-plus the `IEulerEarn` properties above. Its `vaultFamily` is always `"earn"`
-and its `populated` property is `EulerEarnPopulated`.
+plus the `IEulerEarn` properties above. Its `populated` property is
+`EulerEarnPopulated`.
 
 ## Computed Getters
 

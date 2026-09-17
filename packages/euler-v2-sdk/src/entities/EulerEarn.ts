@@ -16,7 +16,6 @@ import {
 	withPathPrefix,
 } from "../utils/entityDiagnostics.js";
 import { VaultType as VaultTypeEnum } from "../utils/types.js";
-import type { VaultFamily } from "../utils/vaultFamily.js";
 
 export interface EulerEarnAllocationCap {
 	current: bigint;
@@ -52,9 +51,6 @@ export interface EulerEarnGovernance {
 }
 
 export interface IEulerEarn extends IERC4626Vault {
-	/** Vault family. Always `earn`; accepted so entities round-trip. */
-	vaultFamily?: Extract<VaultFamily, "earn">;
-
 	lostAssets: bigint;
 	availableAssets: bigint;
 	performanceFee: number;
@@ -79,7 +75,6 @@ export class EulerEarn
 	extends ERC4626Vault
 	implements IEulerEarn, IERC4626VaultConversion
 {
-	vaultFamily: Extract<VaultFamily, "earn"> = "earn";
 	lostAssets: bigint;
 	availableAssets: bigint;
 	performanceFee: number;

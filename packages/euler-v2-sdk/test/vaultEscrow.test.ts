@@ -4,17 +4,11 @@ import { test } from "vitest";
 
 import { convertVault } from "../src/services/vaults/eVaultService/adapters/eVaultV3Adapter/eVaultV3AdapterConversions.js";
 import type { V3VaultDetail } from "../src/services/vaults/eVaultService/adapters/eVaultV3Adapter/eVaultV3AdapterTypes.js";
-import { EVault, type IEVault } from "../src/entities/EVault.js";
-import type { DataIssue } from "../src/utils/entityDiagnostics.js";
-import { EulerEarn, type IEulerEarn } from "../src/entities/EulerEarn.js";
-import { SecuritizeCollateralVault } from "../src/entities/SecuritizeCollateralVault.js";
-import { VaultType } from "../src/utils/types.js";
 import { convertVaultInfoFullToIEVault } from "../src/services/vaults/eVaultService/adapters/eVaultOnchainAdapter/vaultInfoConverter.js";
 import type { VaultInfoFull } from "../src/services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
-import {
-	deriveEVaultFamily,
-	VAULT_FAMILIES,
-} from "../src/utils/vaultFamily.js";
+import { EVault, type IEVault } from "../src/entities/EVault.js";
+import type { DataIssue } from "../src/utils/entityDiagnostics.js";
+import { deriveEVaultEscrow } from "../src/utils/vaultEscrow.js";
 import { makeVaultInfo } from "./helpers/lensFixtures.ts";
 import {
 	getEVaultFixtures,
@@ -82,134 +76,82 @@ function escrowShapedArgs(): IEVault {
 	};
 }
 
-test("derives escrow for an ungoverned vault without oracle or unit of account", () => {
+test("an ungoverned vault without oracle or unit of account is escrow", () => {
 	assert.equal(
-		deriveEVaultFamily({
+		deriveEVaultEscrow({
 			governorAdmin: zeroAddress,
 			oracle: { oracle: zeroAddress },
 			unitOfAccount: undefined,
 		}),
-		"escrow",
+		true,
 	);
 });
 
-test("derives evk for a governed vault without oracle or unit of account", () => {
+test("a governed vault without oracle or unit of account is not escrow", () => {
 	assert.equal(
-		deriveEVaultFamily({
+		deriveEVaultEscrow({
 			governorAdmin: GOVERNOR,
 			oracle: { oracle: zeroAddress },
 			unitOfAccount: undefined,
 		}),
-		"evk",
+		false,
 	);
 });
 
-test("derives evk for an ungoverned vault that prices its assets", () => {
+test("an ungoverned vault that prices its assets is not escrow", () => {
 	assert.equal(
-		deriveEVaultFamily({
+		deriveEVaultEscrow({
 			governorAdmin: zeroAddress,
 			oracle: { oracle: ORACLE },
 			unitOfAccount: undefined,
 		}),
-		"evk",
+		false,
 	);
 
 	assert.equal(
-		deriveEVaultFamily({
+		deriveEVaultEscrow({
 			governorAdmin: zeroAddress,
 			oracle: { oracle: zeroAddress },
 			unitOfAccount: usdToken,
 		}),
-		"evk",
+		false,
 	);
 });
 
-test("treats a zero-address unit of account as no unit of account", () => {
+test("a zero-address unit of account counts as no unit of account", () => {
 	assert.equal(
-		deriveEVaultFamily({
+		deriveEVaultEscrow({
 			governorAdmin: zeroAddress,
 			oracle: { oracle: zeroAddress },
 			unitOfAccount: { ...usdToken, address: zeroAddress },
 		}),
-		"escrow",
+		true,
 	);
 });
 
-test("EVault derives its family from the vault configuration", () => {
-	assert.equal(new EVault(escrowShapedArgs()).vaultFamily, "escrow");
-	assert.equal(new EVault(getPlainEVaultFixture()).vaultFamily, "evk");
+test("EVault answers escrow status from the vault configuration", () => {
+	assert.equal(new EVault(escrowShapedArgs()).isEscrow, true);
+	assert.equal(new EVault(getPlainEVaultFixture()).isEscrow, false);
 });
 
-test("EVault keeps a family supplied by the data source", () => {
-	const vault = new EVault({ ...escrowShapedArgs(), vaultFamily: "evk" });
-
-	assert.equal(vault.vaultFamily, "evk");
+test("EVault keeps a verdict supplied by the data source", () => {
+	assert.equal(new EVault({ ...escrowShapedArgs(), isEscrow: false }).isEscrow, false);
 });
 
-test("EVault family survives a round trip through a plain object", () => {
+test("escrow status survives a round trip through a plain object", () => {
 	const vault = new EVault(escrowShapedArgs());
 	const spread = { ...vault };
 
-	assert.equal(spread.vaultFamily, "escrow");
-	assert.equal(new EVault(spread).vaultFamily, "escrow");
-});
-
-test("EulerEarn and Securitize collateral vaults carry their own family", () => {
-	const source = getPlainEVaultFixture();
-	const earn = new EulerEarn({
-		type: VaultType.EulerEarn,
-		chainId: source.chainId,
-		address: source.address,
-		shares: source.shares,
-		asset: source.asset,
-		totalShares: 0n,
-		totalAssets: 0n,
-		lostAssets: 0n,
-		availableAssets: 0n,
-		performanceFee: 0,
-		governance: {
-			owner: zeroAddress,
-			creator: zeroAddress,
-			curator: zeroAddress,
-			guardian: zeroAddress,
-			feeReceiver: zeroAddress,
-			timelock: 0,
-			pendingTimelock: 0,
-			pendingTimelockValidAt: 0,
-			pendingGuardian: zeroAddress,
-			pendingGuardianValidAt: 0,
-		},
-		supplyQueue: [],
-		withdrawQueue: [],
-		strategies: [],
-		timestamp: source.timestamp,
-	} satisfies IEulerEarn);
-	const securitize = new SecuritizeCollateralVault({
-		type: VaultType.SecuritizeCollateral,
-		chainId: source.chainId,
-		address: source.address,
-		shares: source.shares,
-		asset: source.asset,
-		totalShares: 0n,
-		totalAssets: 0n,
-		governor: source.governorAdmin,
-		supplyCap: 0n,
-	});
-
-	assert.equal(earn.vaultFamily, "earn");
-	assert.equal(securitize.vaultFamily, "securitize");
-});
-
-test("VAULT_FAMILIES stays the vocabulary Euler V3 publishes", () => {
-	assert.deepEqual([...VAULT_FAMILIES], ["evk", "escrow", "earn", "securitize"]);
+	assert.equal(spread.isEscrow, true);
+	assert.equal(new EVault(spread).isEscrow, true);
 });
 
 /**
  * The lens either decodes every field or the read fails and yields no entity,
- * so the on-chain path always classifies. Nothing else pins that the same vault
- * can be `"escrow"` from the lens while a truncated V3 row is `null`.
+ * so the on-chain path always answers. Nothing else pins that the same vault
+ * can be escrow from the lens while a truncated V3 row is `null`.
  */
-test("lens-sourced vaults are always classified", () => {
+test("lens-sourced vaults always get a verdict", () => {
 	const convertLensVault = (overrides: Record<string, unknown>): EVault =>
 		new EVault(
 			convertVaultInfoFullToIEVault(
@@ -232,11 +174,11 @@ test("lens-sourced vaults are always classified", () => {
 	});
 	const governed = convertLensVault({ unitOfAccount: zeroAddress });
 
-	assert.equal(escrow.vaultFamily, "escrow");
-	assert.equal(governed.vaultFamily, "evk");
+	assert.equal(escrow.isEscrow, true);
+	assert.equal(governed.isEscrow, false);
 });
 
-test("V3-sourced vaults are classified from the same configuration", () => {
+test("V3-sourced vaults are answered from the same configuration", () => {
 	const escrow = convertV3Vault({
 		governorAdmin: zeroAddress,
 		// V3 publishes the zero address for a vault that has neither, never null
@@ -254,11 +196,11 @@ test("V3-sourced vaults are classified from the same configuration", () => {
 		unitOfAccount: { address: USD, decimals: 18 },
 	});
 
-	assert.equal(escrow.vaultFamily, "escrow");
-	assert.equal(governed.vaultFamily, "evk");
+	assert.equal(escrow.isEscrow, true);
+	assert.equal(governed.isEscrow, false);
 });
 
-test("V3 rows that omit a classifying field have no family instead of a guess", () => {
+test("V3 rows that omit a classifying field have no verdict instead of a guess", () => {
 	const missingGovernor = convertV3Vault({
 		governorAdmin: undefined as unknown as string,
 		oracle: { oracle: zeroAddress, name: "", adapters: [], resolvedVaults: [] },
@@ -280,16 +222,16 @@ test("V3 rows that omit a classifying field have no family instead of a guess", 
 		unitOfAccount: { address: zeroAddress },
 	});
 
-	assert.equal(missingGovernor.vaultFamily, null);
-	assert.equal(missingOracle.vaultFamily, null);
-	assert.equal(missingUnitOfAccount.vaultFamily, null);
-	assert.equal(unreadableGovernor.vaultFamily, null);
+	assert.equal(missingGovernor.isEscrow, null);
+	assert.equal(missingOracle.isEscrow, null);
+	assert.equal(missingUnitOfAccount.isEscrow, null);
+	assert.equal(unreadableGovernor.isEscrow, null);
 });
 
-test("an unclassifiable V3 row reports the gap as a diagnostic", () => {
+test("an undecided V3 row reports the gap as a diagnostic", () => {
 	const errors: DataIssue[] = [];
 	// A zero oracle address suppresses the unit-of-account block diagnostic, so
-	// without its own issue this row would lose its family silently.
+	// without its own issue this row would lose its verdict silently.
 	const vault = convertV3Vault(
 		{
 			governorAdmin: zeroAddress,
@@ -299,27 +241,27 @@ test("an unclassifiable V3 row reports the gap as a diagnostic", () => {
 		errors,
 	);
 
-	assert.equal(vault.vaultFamily, null);
+	assert.equal(vault.isEscrow, null);
 	const issue = errors.find((error) =>
-		error.locations.some((location) => location.path === "$.vaultFamily"),
+		error.locations.some((location) => location.path === "$.isEscrow"),
 	);
-	assert.ok(issue, "expected a diagnostic for the undecided vault family");
+	assert.ok(issue, "expected a diagnostic for the undecided escrow status");
 	assert.equal(issue.severity, "warning");
 	assert.equal(issue.source, "eVaultV3");
 });
 
-test("an unknown family stays unknown through a round trip", () => {
+test("an undecided verdict stays undecided through a round trip", () => {
 	const unknown = convertV3Vault({
 		governorAdmin: zeroAddress,
 		oracle: null,
 		unitOfAccount: null,
 	});
 
-	assert.equal(new EVault({ ...unknown }).vaultFamily, null);
+	assert.equal(new EVault({ ...unknown }).isEscrow, null);
 });
 
 /**
- * Three signals decide the family, but the perspective also requires escrow
+ * Three signals decide the verdict, but the perspective also requires escrow
  * configuration a governor could have left behind (no caps, hooks, config
  * flags, liquidation parameters, collaterals). This guards that the cheap rule
  * does not over-report on real data: on the mainnet corpus both rules pick the
@@ -347,7 +289,7 @@ test("derived escrow set matches the escrow configuration across the mainnet cor
 		vault.interestRateModel.address === zeroAddress;
 
 	const derived = vaults
-		.filter((vault) => vault.vaultFamily === "escrow")
+		.filter((vault) => vault.isEscrow === true)
 		.map((vault) => vault.address)
 		.sort();
 	const configured = vaults
@@ -358,7 +300,7 @@ test("derived escrow set matches the escrow configuration across the mainnet cor
 	assert.ok(configured.length > 0);
 	assert.deepEqual(derived, configured);
 	assert.ok(
-		vaults.some((vault) => vault.vaultFamily === "evk"),
+		vaults.some((vault) => vault.isEscrow === false),
 		"corpus must also contain governed EVK vaults",
 	);
 });

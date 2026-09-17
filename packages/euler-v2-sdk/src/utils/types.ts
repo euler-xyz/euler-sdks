@@ -16,9 +16,8 @@ export interface Token {
 }
 
 /**
- * Which vault service handles a vault. Not the vault family Euler V3 publishes
- * as `vaultType` — see `VaultFamily` in `utils/vaultFamily.ts`, where both
- * `evk` and `escrow` map to `VaultType.EVault`.
+ * Which vault service handles a vault. An EVault's escrow status is a separate
+ * question — see `EVault.isEscrow`.
  */
 export enum VaultType {
 	EVault = "EVault",

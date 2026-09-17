@@ -147,7 +147,7 @@ properties plus:
 | Property | Type | Description |
 | --- | --- | --- |
 | `unitOfAccount` | `Token | undefined` | Unit-of-account token metadata. |
-| `vaultFamily` | `EVaultFamily | null | undefined` | Vault family. Derived from the vault configuration when absent; pass `null` to report a family the source could not read. See [Vault Family](#vault-family). |
+| `isEscrow` | `boolean \| null \| undefined` | Whether the vault is escrowed collateral. Derived from the vault configuration when absent; pass `null` to report a verdict the source could not read. See [Escrow Status](#escrow-status). |
 | `totalCash` | `bigint` | Cash available in the vault. |
 | `totalBorrowed` | `bigint` | Total borrowed assets. |
 | `creator` | `Address` | Vault creator address. |
@@ -174,41 +174,39 @@ plus the `IEVault` properties above. Constructor normalization also adds:
 
 | Property | Type | Description |
 | --- | --- | --- |
-| `vaultFamily` | `EVaultFamily | null` | `"escrow"`, `"evk"`, or `null` when the source could not read the configuration it is derived from. See [Vault Family](#vault-family). |
+| `isEscrow` | `boolean \| null` | `true`, `false`, or `null` when the source could not read the configuration it is derived from. See [Escrow Status](#escrow-status). |
 | `caps` | `EVaultCapsComputed` | Caps with computed utilization getters. |
 | `collaterals` | `EVaultCollateral[]` | Collaterals with computed ramping fields. |
 | `debtPricingOracleRoute` | `OracleRoute | undefined` | Effective ordered asset-to-unit-of-account route when the vault has a unit of account. |
 | `populated` | `EVaultPopulated` | Base population flags plus `collaterals`. |
 
-## Vault Family
+## Escrow Status
 
-`vaultFamily` separates escrowed collateral vaults from regular credit vaults.
-It is spelled the way Euler V3 data services publish `vaultType`, so a family
-read here and one read from V3 compare directly. It answers a different
-question from `type`, which names the vault service that handles the vault:
-`"evk"` and `"escrow"` vaults are both `VaultType.EVault`.
+`isEscrow` separates escrowed collateral vaults from regular credit vaults. It
+is the one thing `type` cannot express: an escrow vault and a governed credit
+vault are both `VaultType.EVault`.
 
-| Family | Meaning |
+| Value | Meaning |
 | --- | --- |
-| `"escrow"` | Ungoverned and prices nothing: no governor admin, no oracle, no unit of account. |
-| `"evk"` | Every other EVK vault. |
-| `null` | The source did not provide `governorAdmin`, `oracle`, or `unitOfAccount`, so the vault could not be classified. |
+| `true` | Ungoverned and prices nothing: no governor admin, no oracle, no unit of account. |
+| `false` | Every other EVK vault. |
+| `null` | The source did not provide `governorAdmin`, `oracle`, or `unitOfAccount`, so the question could not be answered. |
 
 Setting any of the three takes a governor, so an ungoverned vault's answer
-cannot change under governance, and the family costs no extra call.
+cannot change under governance, and the verdict costs no extra call.
 
 Those three are not every escrow property the perspective checks. Its remaining
 configuration checks (no caps, hooks, config flags, liquidation parameters,
 collaterals) are left out deliberately: V3 omits those blocks from a row when
 they are empty and they default to values a lens-sourced escrow vault does not
-have, so including them would classify the same vault differently depending on
+have, so including them would answer differently for the same vault depending on
 which adapter fetched it. The perspective also checks registry state no vault
 entity carries (factory proxy, upgradeability, asset nesting, one escrow per
 asset).
 
 A vault whose governor renounced after configuring caps or hooks is therefore
-`"escrow"` here and rejected by the perspective. When the registry's own answer
-is what you need, ask it directly:
+escrow here and rejected by the perspective. When the registry's own answer is
+what you need, ask it directly:
 
 ```typescript
 const escrowAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(1, [
@@ -218,20 +216,21 @@ const escrowAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(1, [
 
 The third state is deliberate. A field the source never provided falls back to
 the zero address elsewhere in the entity, and reading that fallback as "no
-governor, no oracle" would turn a failed read into a confident `"escrow"`. The
-family is only decided from values a source actually provided; otherwise it is
-`null`, and `errors` carries a `SOURCE_UNAVAILABLE` issue at `$.vaultFamily`
+governor, no oracle" would turn a failed read into a confident `true`. The
+verdict is only decided from values a source actually provided; otherwise it is
+`null`, and `errors` carries a `SOURCE_UNAVAILABLE` issue at `$.isEscrow`
 naming the fields that were missing. A vault that could not be fetched at all
 has no entity: `fetchVault` returns `undefined` with a diagnostic.
 
 V3 publishes all three fields on every vault — an escrow vault carries the zero
-address rather than a missing field — so a `null` family means the row was
-incomplete, not that the vault is unusual. `EulerEarn` and
-`SecuritizeCollateralVault` families are structural and never `null`.
+address rather than a missing field — so a `null` verdict means the row was
+incomplete, not that the vault is unusual. `if (vault.isEscrow)` therefore never
+treats an unread vault as escrow; a consumer that needs to tell `false` from
+`null` compares explicitly.
 
-Passing `vaultFamily: undefined` asks the entity to derive one, so rebuilding an
-entity whose family is `null` must pass the `null` through — spreading an entity
-(`new EVault({ ...vault })`) does exactly that.
+Passing `isEscrow: undefined` asks the entity to derive a verdict, so rebuilding
+an entity whose verdict is `null` must pass the `null` through — spreading an
+entity (`new EVault({ ...vault })`) does exactly that.
 
 ## Computed Getters
 
@@ -261,4 +260,4 @@ entity whose family is `null` must pass the `null` through — spreading an enti
 | Export | Type | Description |
 | --- | --- | --- |
 | `hasActiveBorrowableLtv(collaterals, vaultTimestamp)` | `boolean` | Returns `true` when any collateral has active LTV or active ramp-down borrowability at `vaultTimestamp`. |
-| `deriveEVaultFamily(signals)` | `EVaultFamily` | Classifies a vault from its `governorAdmin`, `oracle`, and `unitOfAccount`. Exported from `src/utils/vaultFamily.ts` alongside `VAULT_FAMILIES`, `VaultFamily`, and `EVaultFamily`. |
+| `deriveEVaultEscrow(signals)` | `boolean` | Answers escrow status from a vault's `governorAdmin`, `oracle`, and `unitOfAccount`. Exported from `src/utils/vaultEscrow.ts` alongside `EVaultEscrowSignals`. |

@@ -46,7 +46,7 @@ import {
 	bigintPercentage,
 	tokenAmountToUsdValue,
 } from "../utils/normalization.js";
-import { deriveEVaultFamily, type EVaultFamily } from "../utils/vaultFamily.js";
+import { deriveEVaultEscrow } from "../utils/vaultEscrow.js";
 
 export type EVaultHookedOperations = {
 	deposit: boolean;
@@ -175,11 +175,12 @@ export interface IEVault extends IERC4626Vault {
 	unitOfAccount?: Token;
 
 	/**
-	 * Vault family. Derived from the vault configuration when not supplied, and
-	 * `null` when the source could not read the configuration it is derived
-	 * from — the SDK reports no family rather than guessing one.
+	 * Whether the vault is escrowed collateral. Derived from the vault
+	 * configuration when not supplied, and `null` when the source could not
+	 * read the configuration it is derived from — the SDK reports no verdict
+	 * rather than guessing one.
 	 */
-	vaultFamily?: EVaultFamily | null;
+	isEscrow?: boolean | null;
 
 	totalCash: bigint;
 	totalBorrowed: bigint;
@@ -279,7 +280,7 @@ export class EVault
 	implements IEVault, IERC4626VaultConversion
 {
 	unitOfAccount?: Token;
-	vaultFamily: EVaultFamily | null;
+	isEscrow: boolean | null;
 	totalCash: bigint;
 	totalBorrowed: bigint;
 	creator: Address;
@@ -303,10 +304,8 @@ export class EVault
 	constructor(args: IEVault) {
 		super(args);
 		this.unitOfAccount = args.unitOfAccount;
-		this.vaultFamily =
-			args.vaultFamily === undefined
-				? deriveEVaultFamily(args)
-				: args.vaultFamily;
+		this.isEscrow =
+			args.isEscrow === undefined ? deriveEVaultEscrow(args) : args.isEscrow;
 		this.totalCash = args.totalCash;
 		this.totalBorrowed = args.totalBorrowed;
 		this.creator = args.creator;
