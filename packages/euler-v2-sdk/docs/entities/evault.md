@@ -195,7 +195,8 @@ own, so `isEscrow` cannot contradict the system a consumer reads alongside it:
 | On-chain (`EVaultOnchainAdapter`) | Membership of `EscrowedCollateralPerspective`'s verified set — the same answer `fetchVerifiedVaultAddresses(chainId, [StandardEVaultPerspectives.ESCROW])` returns. |
 
 `null` means the source has no answer: V3 published no recognised `vaultType`,
-or the chain has no escrow perspective deployed and the read failed. Either way
+or the chain has no escrow perspective configured, or reading it failed. In each
+case
 `errors` carries a `SOURCE_UNAVAILABLE` issue at `$.isEscrow`, and an entity
 built without a verdict keeps `null` rather than having one inferred from its
 configuration. A vault that could not be fetched at all has no entity:
