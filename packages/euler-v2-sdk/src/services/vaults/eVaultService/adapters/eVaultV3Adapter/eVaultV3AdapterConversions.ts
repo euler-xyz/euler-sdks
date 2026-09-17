@@ -440,9 +440,11 @@ function convertCollaterals(
 
 /**
  * Echoes V3's own escrow answer, so the SDK cannot report a verdict V3
- * contradicts for the same vault. V3 publishes `vaultType` on every EVK row,
- * defaulting to `evk` when nothing has been curated, so an answer it does not
- * recognise means the contract changed rather than that the vault is unusual.
+ * contradicts for the same vault. V3 derives the type in discovery — `escrow`
+ * comes from the escrow perspective's verified events — and serves it from the
+ * stored row, falling back to `evk` while no row exists yet. V3 publishes the
+ * field on every EVK row, so an answer it does not recognise means the contract
+ * changed rather than that the vault is unusual.
  */
 function resolveIsEscrow(
 	detail: V3VaultDetail,

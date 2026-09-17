@@ -204,11 +204,12 @@ configuration. A vault that could not be fetched at all has no entity:
 `if (vault.isEscrow)` therefore never treats an unanswered vault as escrow; a
 consumer that needs to tell `false` from `null` compares explicitly.
 
-The two adapters can still differ, and the difference is informative rather than
-hidden: V3's `vaultType` comes from its curated store and defaults to `evk`, so
-a vault the perspective has verified but V3 has not curated is `true` on the
-on-chain path and `false` on the V3 path. That is a gap in V3's data, visible and
-attributable, rather than an opinion the SDK invented.
+Both adapters answer from the same on-chain registry, so they converge rather
+than holding separate opinions: V3 derives the type during discovery from the
+escrow perspective's verified events, and the on-chain adapter reads that
+perspective directly. V3 serves the derived type from a stored row and falls
+back to `evk` while no row exists yet, so the two can disagree only while V3's
+copy is behind the chain — propagation lag, not a difference of opinion.
 
 The perspective's verified set is itself narrower than the vaults that *would*
 pass its checks: registration is permissionless and permanent, so a vault nobody
