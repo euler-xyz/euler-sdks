@@ -271,31 +271,28 @@ Available EVault perspectives:
 ### Telling escrow vaults apart
 
 An `EVault` carries `isEscrow`, so a single vault can be classified without a
-perspective fetch. `type` already says which kind of vault an entity is, so
-escrow status is the only thing left to ask.
+separate perspective fetch. `type` already says which kind of vault an entity
+is, so escrow status is the only thing left to ask.
 
 ```typescript
 import { isEVault } from '@eulerxyz/euler-v2-sdk'
 
 const { result: vault, errors } = await sdk.vaultMetaService.fetchVault(1, address)
 
-// `null` means the source did not provide the vault configuration the verdict
-// is derived from — `errors` names the missing fields. Truthiness alone never
-// reads an unread vault as escrow.
+// `null` means the data source had no answer — `errors` says why. Truthiness
+// alone never reads an unanswered vault as escrow.
 const label =
   isEVault(vault) && vault.isEscrow ? 'Escrow'
   : isEVault(vault) && vault.isEscrow === null ? 'Unknown'
   : 'Vault'
 ```
 
-`isEscrow` is `true` when the vault is ungoverned with no oracle and no unit of
-account — three of the properties `EscrowedCollateralPerspective` checks.
-Use the `ESCROW` perspective above when you need the on-chain registry's own
-answer. It is stricter: it also requires the configuration a governor could have
-left behind (no caps, hooks, config flags, liquidation parameters, collaterals)
-and registry state no vault entity carries (factory proxy, upgradeability, asset
-nesting, one escrow per asset). See [Escrow Status](./entities/evault.md#escrow-status)
-for why the entity uses the narrower rule.
+The SDK reports what its source says rather than deriving a verdict, so the
+answer cannot contradict the system you read alongside it: V3's `vaultType` on
+the V3 path, and `EscrowedCollateralPerspective` membership on the on-chain
+path — the same answer the `ESCROW` perspective above returns. See
+[Escrow Status](./entities/evault.md#escrow-status) for how the two differ and
+why `null` exists.
 
 ### EulerEarn perspectives
 

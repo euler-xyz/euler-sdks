@@ -46,7 +46,6 @@ import {
 	bigintPercentage,
 	tokenAmountToUsdValue,
 } from "../utils/normalization.js";
-import { deriveEVaultEscrow } from "../utils/vaultEscrow.js";
 
 export type EVaultHookedOperations = {
 	deposit: boolean;
@@ -175,10 +174,11 @@ export interface IEVault extends IERC4626Vault {
 	unitOfAccount?: Token;
 
 	/**
-	 * Whether the vault is escrowed collateral. Derived from the vault
-	 * configuration when not supplied, and `null` when the source could not
-	 * read the configuration it is derived from — the SDK reports no verdict
-	 * rather than guessing one.
+	 * Whether the vault is escrowed collateral, as reported by the data source:
+	 * V3's `vaultType` on the V3 path, `EscrowedCollateralPerspective`
+	 * membership on the on-chain path. `null` when the source has no answer.
+	 * The SDK never derives one of its own, so it cannot contradict the source
+	 * a consumer is reading alongside it.
 	 */
 	isEscrow?: boolean | null;
 
@@ -304,8 +304,7 @@ export class EVault
 	constructor(args: IEVault) {
 		super(args);
 		this.unitOfAccount = args.unitOfAccount;
-		this.isEscrow =
-			args.isEscrow === undefined ? deriveEVaultEscrow(args) : args.isEscrow;
+		this.isEscrow = args.isEscrow ?? null;
 		this.totalCash = args.totalCash;
 		this.totalBorrowed = args.totalBorrowed;
 		this.creator = args.creator;

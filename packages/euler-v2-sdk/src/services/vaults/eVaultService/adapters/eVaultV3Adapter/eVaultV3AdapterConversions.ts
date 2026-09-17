@@ -41,7 +41,6 @@ import {
 	hasActiveBorrowableLtv,
 } from "../../../../../entities/EVault.js";
 import { type Token, VaultType } from "../../../../../utils/types.js";
-import { deriveEVaultEscrow } from "../../../../../utils/vaultEscrow.js";
 import { InterestRateModelType } from "../eVaultOnchainAdapter/eVaultLensTypes.js";
 import type {
 	V3CollateralRow,
@@ -440,59 +439,30 @@ function convertCollaterals(
 }
 
 /**
- * Reads an address a V3 row was expected to carry. Returns `undefined` when the
- * row omitted it or it cannot be parsed, so callers can tell a value that was
- * read from one the converter would otherwise default to the zero address.
- */
-function readRowAddress(value: string | null | undefined): Address | undefined {
-	if (typeof value !== "string" || value.trim() === "") return undefined;
-
-	try {
-		return getAddress(value);
-	} catch {
-		return undefined;
-	}
-}
-
-/**
- * Answers escrow status for a V3 row, or reports no verdict when the row
- * omitted any of the fields it is derived from. V3 publishes all three on every
- * vault — an escrow vault carries the zero address rather than a missing field
- * — so a missing one means the row could not be read, and the zero-address
- * defaults the converter applies elsewhere must not be read as escrow.
+ * Echoes V3's own escrow answer, so the SDK cannot report a verdict V3
+ * contradicts for the same vault. V3 publishes `vaultType` on every EVK row,
+ * defaulting to `evk` when nothing has been curated, so an answer it does not
+ * recognise means the contract changed rather than that the vault is unusual.
  */
 function resolveIsEscrow(
 	detail: V3VaultDetail,
 	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
 ): boolean | null {
-	const governorAdmin = readRowAddress(detail.governorAdmin);
-	const oracle = detail.oracle
-		? readRowAddress(detail.oracle.oracle)
-		: undefined;
-	const unitOfAccount = detail.unitOfAccount
-		? readRowAddress(detail.unitOfAccount.address)
-		: undefined;
+	const vaultType = detail.vaultType?.trim().toLowerCase();
+	if (vaultType === "escrow") return true;
+	if (vaultType === "evk") return false;
 
-	if (governorAdmin && oracle && unitOfAccount) {
-		return deriveEVaultEscrow({
-			governorAdmin,
-			oracle: { oracle },
-			unitOfAccount: { address: unitOfAccount },
-		});
-	}
-
-	const missing = [
-		...(governorAdmin ? [] : ["governorAdmin"]),
-		...(oracle ? [] : ["oracle"]),
-		...(unitOfAccount ? [] : ["unitOfAccount"]),
-	];
 	errors.push({
 		code: "SOURCE_UNAVAILABLE",
 		severity: "warning",
-		message: `Missing or invalid ${missing.join(", ")}; escrow status left undecided rather than defaulted to escrow.`,
+		message:
+			vaultType === undefined || vaultType === ""
+				? "Missing vaultType; escrow status left unanswered rather than assumed."
+				: `Unrecognized vaultType "${detail.vaultType}"; escrow status left unanswered rather than assumed.`,
 		locations: [dataIssueLocation(owner, "$.isEscrow")],
 		source: "eVaultV3",
+		originalValue: detail.vaultType,
 		normalizedValue: null,
 	});
 	return null;
@@ -593,10 +563,6 @@ export function convertVault(
 			normalizedValue: DEFAULT_TOKEN_BLOCK,
 		});
 	}
-	// NOTE: this suppression is about diagnostics only. `resolveIsEscrow` still
-	// treats a missing unitOfAccount block as unreadable, so a V3 deployment
-	// that omits it for oracle-less vaults yields no verdict rather than an
-	// escrow guess.
 	const unitOfAccountData = detail.unitOfAccount ?? DEFAULT_TOKEN_BLOCK;
 	const unitOfAccountErrors = suppressUnitOfAccountDiagnostics ? [] : errors;
 

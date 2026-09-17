@@ -147,7 +147,7 @@ properties plus:
 | Property | Type | Description |
 | --- | --- | --- |
 | `unitOfAccount` | `Token | undefined` | Unit-of-account token metadata. |
-| `isEscrow` | `boolean \| null \| undefined` | Whether the vault is escrowed collateral. Derived from the vault configuration when absent; pass `null` to report a verdict the source could not read. See [Escrow Status](#escrow-status). |
+| `isEscrow` | `boolean \| null \| undefined` | Whether the vault is escrowed collateral, as reported by the data source. Absent is stored as `null`. See [Escrow Status](#escrow-status). |
 | `totalCash` | `bigint` | Cash available in the vault. |
 | `totalBorrowed` | `bigint` | Total borrowed assets. |
 | `creator` | `Address` | Vault creator address. |
@@ -174,7 +174,7 @@ plus the `IEVault` properties above. Constructor normalization also adds:
 
 | Property | Type | Description |
 | --- | --- | --- |
-| `isEscrow` | `boolean \| null` | `true`, `false`, or `null` when the source could not read the configuration it is derived from. See [Escrow Status](#escrow-status). |
+| `isEscrow` | `boolean \| null` | `true`, `false`, or `null` when the source has no answer. See [Escrow Status](#escrow-status). |
 | `caps` | `EVaultCapsComputed` | Caps with computed utilization getters. |
 | `collaterals` | `EVaultCollateral[]` | Collaterals with computed ramping fields. |
 | `debtPricingOracleRoute` | `OracleRoute | undefined` | Effective ordered asset-to-unit-of-account route when the vault has a unit of account. |
@@ -186,51 +186,36 @@ plus the `IEVault` properties above. Constructor normalization also adds:
 is the one thing `type` cannot express: an escrow vault and a governed credit
 vault are both `VaultType.EVault`.
 
-| Value | Meaning |
+The SDK reports the answer its data source gives and never derives one of its
+own, so `isEscrow` cannot contradict the system a consumer reads alongside it:
+
+| Adapter | Source of the answer |
 | --- | --- |
-| `true` | Ungoverned and prices nothing: no governor admin, no oracle, no unit of account. |
-| `false` | Every other EVK vault. |
-| `null` | The source did not provide `governorAdmin`, `oracle`, or `unitOfAccount`, so the question could not be answered. |
+| V3 (`EVaultV3Adapter`) | V3's `vaultType` on the vault row: `escrow` is `true`, `evk` is `false`. |
+| On-chain (`EVaultOnchainAdapter`) | Membership of `EscrowedCollateralPerspective`'s verified set — the same answer `fetchVerifiedVaultAddresses(chainId, [StandardEVaultPerspectives.ESCROW])` returns. |
 
-Setting any of the three takes a governor, so an ungoverned vault's answer
-cannot change under governance, and the verdict costs no extra call.
+`null` means the source has no answer: V3 published no recognised `vaultType`,
+or the chain has no escrow perspective deployed and the read failed. Either way
+`errors` carries a `SOURCE_UNAVAILABLE` issue at `$.isEscrow`, and an entity
+built without a verdict keeps `null` rather than having one inferred from its
+configuration. A vault that could not be fetched at all has no entity:
+`fetchVault` returns `undefined` with a diagnostic.
 
-Those three are not every escrow property the perspective checks. Its remaining
-configuration checks (no caps, hooks, config flags, liquidation parameters,
-collaterals) are left out deliberately: V3 omits those blocks from a row when
-they are empty and they default to values a lens-sourced escrow vault does not
-have, so including them would answer differently for the same vault depending on
-which adapter fetched it. The perspective also checks registry state no vault
-entity carries (factory proxy, upgradeability, asset nesting, one escrow per
-asset).
+`if (vault.isEscrow)` therefore never treats an unanswered vault as escrow; a
+consumer that needs to tell `false` from `null` compares explicitly.
 
-A vault whose governor renounced after configuring caps or hooks is therefore
-escrow here and rejected by the perspective. When the registry's own answer is
-what you need, ask it directly:
+The two adapters can still differ, and the difference is informative rather than
+hidden: V3's `vaultType` comes from its curated store and defaults to `evk`, so
+a vault the perspective has verified but V3 has not curated is `true` on the
+on-chain path and `false` on the V3 path. That is a gap in V3's data, visible and
+attributable, rather than an opinion the SDK invented.
 
-```typescript
-const escrowAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(1, [
-  StandardEVaultPerspectives.ESCROW,
-])
-```
-
-The third state is deliberate. A field the source never provided falls back to
-the zero address elsewhere in the entity, and reading that fallback as "no
-governor, no oracle" would turn a failed read into a confident `true`. The
-verdict is only decided from values a source actually provided; otherwise it is
-`null`, and `errors` carries a `SOURCE_UNAVAILABLE` issue at `$.isEscrow`
-naming the fields that were missing. A vault that could not be fetched at all
-has no entity: `fetchVault` returns `undefined` with a diagnostic.
-
-V3 publishes all three fields on every vault — an escrow vault carries the zero
-address rather than a missing field — so a `null` verdict means the row was
-incomplete, not that the vault is unusual. `if (vault.isEscrow)` therefore never
-treats an unread vault as escrow; a consumer that needs to tell `false` from
-`null` compares explicitly.
-
-Passing `isEscrow: undefined` asks the entity to derive a verdict, so rebuilding
-an entity whose verdict is `null` must pass the `null` through — spreading an
-entity (`new EVault({ ...vault })`) does exactly that.
+The perspective's verified set is itself narrower than the vaults that *would*
+pass its checks: registration is permissionless and permanent, so a vault nobody
+has registered reads as `false`. `perspectiveVerify(vault, false)` simulated per
+vault answers "would verify now" instead, at one `eth_call` per vault; the SDK
+uses the registry so that one read per chain answers a whole batch and agrees
+with the escrow list it already publishes.
 
 ## Computed Getters
 
@@ -260,4 +245,3 @@ entity (`new EVault({ ...vault })`) does exactly that.
 | Export | Type | Description |
 | --- | --- | --- |
 | `hasActiveBorrowableLtv(collaterals, vaultTimestamp)` | `boolean` | Returns `true` when any collateral has active LTV or active ramp-down borrowability at `vaultTimestamp`. |
-| `deriveEVaultEscrow(signals)` | `boolean` | Answers escrow status from a vault's `governorAdmin`, `oracle`, and `unitOfAccount`. Exported from `src/utils/vaultEscrow.ts` alongside `EVaultEscrowSignals`. |

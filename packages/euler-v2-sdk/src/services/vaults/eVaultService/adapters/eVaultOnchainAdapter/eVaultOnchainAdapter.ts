@@ -107,6 +107,57 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 		this.queryEVaultVerifiedArray = fn;
 	}
 
+	/**
+	 * The escrow perspective's verified set, or `undefined` when the chain has
+	 * no perspective deployed or the read failed. Membership is the same answer
+	 * `fetchVerifiedVaultAddresses(chainId, [ESCROW])` returns, so a vault's
+	 * `isEscrow` never disagrees with the SDK's own escrow list. The SDK asks the
+	 * registry rather than deriving a verdict of its own, so it cannot contradict
+	 * another system reading the same registry.
+	 */
+	private async fetchEscrowVerifiedSet(
+		chainId: number,
+		vaults: Address[],
+		errors: DataIssue[],
+	): Promise<Set<string> | undefined> {
+		const deployment = this.deploymentService.getDeployment(chainId);
+		const perspective =
+			deployment.addresses.peripheryAddrs?.escrowedCollateralPerspective;
+		const unanswered = (reason: unknown): undefined => {
+			errors.push({
+				code: "SOURCE_UNAVAILABLE",
+				severity: "warning",
+				message:
+					"Escrowed collateral perspective unavailable; escrow status left unanswered.",
+				locations: vaults.map((vault) =>
+					dataIssueLocation(
+						vaultDiagnosticOwner(chainId, getAddress(vault)),
+						"$.isEscrow",
+					),
+				),
+				source: "escrowedCollateralPerspective",
+				originalValue:
+					reason instanceof Error ? reason.message : String(reason),
+				normalizedValue: null,
+			});
+			return undefined;
+		};
+
+		if (!perspective) return unanswered("perspective address not configured");
+
+		try {
+			const verified = await this.queryEVaultVerifiedArray(
+				this.providerService.getProvider(chainId),
+				perspective,
+			);
+			return new Set(
+				(verified as Address[]).map((address) => address.toLowerCase()),
+			);
+		} catch (error) {
+			return unanswered(error);
+		}
+	}
+
 	async fetchVaults(
 		chainId: number,
 		vaults: Address[],
@@ -117,6 +168,13 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 		const firstPassErrorsByIndex = new Map<number, DataIssue[]>();
 		const finalPassErrorsByIndex = new Map<number, DataIssue[]>();
 		const secondPassIndices = new Set<number>();
+		const escrowErrors: DataIssue[] = [];
+		const escrowVerified =
+			vaults.length > 0
+				? await this.fetchEscrowVerifiedSet(chainId, vaults, escrowErrors)
+				: undefined;
+		const isEscrow = (vault: Address): boolean | null =>
+			escrowVerified ? escrowVerified.has(vault.toLowerCase()) : null;
 
 		const eVaults = await Promise.all(
 			vaults.map(async (vault, index) => {
@@ -134,7 +192,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 						conversionErrors,
 					);
 					firstPassErrorsByIndex.set(index, conversionErrors);
-					return new EVault(parsed);
+					return new EVault({ ...parsed, isEscrow: isEscrow(parsed.address) });
 				} catch (error) {
 					firstPassErrorsByIndex.set(index, [
 						{
@@ -160,9 +218,12 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 		if (this.plugins.length === 0) {
 			return {
 				result: eVaults,
-				errors: vaults.flatMap(
-					(_, index) => firstPassErrorsByIndex.get(index) ?? [],
-				),
+				errors: [
+					...escrowErrors,
+					...vaults.flatMap(
+						(_, index) => firstPassErrorsByIndex.get(index) ?? [],
+					),
+				],
 			};
 		}
 
@@ -196,18 +257,24 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 						conversionErrors,
 					);
 					finalPassErrorsByIndex.set(vaultIndex, conversionErrors);
-					return new EVault(parsed);
+					return new EVault({
+						...parsed,
+						isEscrow: isEscrow(parsed.address),
+					});
 				} catch {
 					return eVault;
 				}
 			}),
 		);
 
-		const errors = vaults.flatMap((_, index) =>
-			secondPassIndices.has(index)
-				? (finalPassErrorsByIndex.get(index) ?? [])
-				: (firstPassErrorsByIndex.get(index) ?? []),
-		);
+		const errors = [
+			...escrowErrors,
+			...vaults.flatMap((_, index) =>
+				secondPassIndices.has(index)
+					? (finalPassErrorsByIndex.get(index) ?? [])
+					: (firstPassErrorsByIndex.get(index) ?? []),
+			),
+		];
 
 		return { result: enriched, errors };
 	}
