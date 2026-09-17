@@ -5,6 +5,10 @@ import { type Address, zeroAddress } from "viem";
  * be a value the source actually read: an absent `unitOfAccount` means the
  * vault has none, not that it could not be read. A caller that cannot read one
  * of them reports no verdict instead of calling this.
+ *
+ * `governorAdmin` and `oracle` are required, so an absent one is a caller
+ * error, not an unknown state, and is left to fail rather than counted as a
+ * zero address — a partial read must not become a confident escrow verdict.
  */
 export interface EVaultEscrowSignals {
 	governorAdmin: Address;
@@ -12,8 +16,8 @@ export interface EVaultEscrowSignals {
 	unitOfAccount?: { address: Address } | undefined;
 }
 
-function isZeroAddress(address: Address | undefined): boolean {
-	return (address ?? zeroAddress).toLowerCase() === zeroAddress;
+function isZeroAddress(address: Address): boolean {
+	return address.toLowerCase() === zeroAddress;
 }
 
 /**
@@ -44,7 +48,8 @@ export function deriveEVaultEscrow(signals: EVaultEscrowSignals): boolean {
 	const isUngoverned = isZeroAddress(signals.governorAdmin);
 	const isUnpriced =
 		isZeroAddress(signals.oracle.oracle) &&
-		isZeroAddress(signals.unitOfAccount?.address);
+		// the one field whose absence is meaningful: no unit of account at all
+		isZeroAddress(signals.unitOfAccount?.address ?? zeroAddress);
 
 	return isUngoverned && isUnpriced;
 }

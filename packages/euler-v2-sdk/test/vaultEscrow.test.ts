@@ -129,6 +129,27 @@ test("a zero-address unit of account counts as no unit of account", () => {
 	);
 });
 
+/**
+ * `governorAdmin` and `oracle` are required, so an absent one is a caller error
+ * rather than an unknown state. It must fail loudly: answering `true` from a
+ * partial object would be a confident escrow verdict derived from nothing,
+ * which is the failure direction the null state exists to prevent.
+ */
+test("a required signal that is missing fails loudly instead of reading as escrow", () => {
+	assert.throws(() =>
+		deriveEVaultEscrow({
+			governorAdmin: undefined as unknown as Address,
+			oracle: { oracle: zeroAddress },
+		}),
+	);
+	assert.throws(() =>
+		deriveEVaultEscrow({
+			governorAdmin: zeroAddress,
+			oracle: { oracle: undefined as unknown as Address },
+		}),
+	);
+});
+
 test("EVault answers escrow status from the vault configuration", () => {
 	assert.equal(new EVault(escrowShapedArgs()).isEscrow, true);
 	assert.equal(new EVault(getPlainEVaultFixture()).isEscrow, false);
