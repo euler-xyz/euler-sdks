@@ -268,6 +268,41 @@ Available EVault perspectives:
 | `FACTORY` | All vaults from the EVK factory (provenance only, untrusted) |
 | `ESCROW` | Escrowed collateral vaults (verified by construction) |
 
+### Telling escrow vaults apart
+
+Every vault entity carries `vaultFamily`, so a single vault can be classified
+without a perspective fetch. It uses the vocabulary Euler V3 publishes in
+`vaultType`: `evk`, `escrow`, `earn`, `securitize`.
+
+```typescript
+const { result: vault, errors } = await sdk.vaultMetaService.fetchVault(1, address)
+
+const chip = (family: VaultFamily | null | undefined): string => {
+  switch (family) {
+    case 'escrow': return 'Escrow'
+    case 'evk': return 'Vault'
+    case 'earn': return 'Earn'
+    case 'securitize': return 'Securitize'
+    // `null` means the source did not provide the vault configuration the
+    // family is derived from — `errors` names the missing fields. Show the gap
+    // rather than a family the SDK cannot stand behind.
+    default: return 'Unknown'
+  }
+}
+const label = chip(vault?.vaultFamily)
+```
+
+For an EVault the family is derived from the vault configuration: `escrow` means
+ungoverned with no oracle and no unit of account — three of the properties
+`EscrowedCollateralPerspective` checks. It is `null` when the source did not
+provide those fields, so a failed read never reads as `escrow`.
+Use the `ESCROW` perspective above when you need the on-chain registry's own
+answer. It is stricter: it also requires the configuration a governor could have
+left behind (no caps, hooks, config flags, liquidation parameters, collaterals)
+and registry state no vault entity carries (factory proxy, upgradeability, asset
+nesting, one escrow per asset). See [Vault Family](./entities/evault.md#vault-family)
+for why the entity uses the narrower rule.
+
 ### EulerEarn perspectives
 
 ```typescript

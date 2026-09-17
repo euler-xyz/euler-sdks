@@ -10,6 +10,7 @@ Securitize collateral vault metadata.
 
 | Property | Type | Description |
 | --- | --- | --- |
+| `vaultFamily` | `"securitize" | undefined` | Vault family. Accepted so entities round-trip; the entity always exposes `"securitize"`. See [EVault vault family](./evault.md#vault-family). |
 | `governor` | `Address` | Vault governor address. |
 | `supplyCap` | `bigint` | Vault supply cap. |
 
@@ -20,6 +21,7 @@ Securitize collateral vault metadata.
 
 | Property | Type | Description |
 | --- | --- | --- |
+| `vaultFamily` | `"securitize"` | Vault family. |
 | `governor` | `Address` | Vault governor address. |
 | `supplyCap` | `bigint` | Vault supply cap. |
 

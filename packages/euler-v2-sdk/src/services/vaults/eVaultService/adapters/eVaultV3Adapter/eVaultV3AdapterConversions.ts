@@ -41,6 +41,10 @@ import {
 	hasActiveBorrowableLtv,
 } from "../../../../../entities/EVault.js";
 import { type Token, VaultType } from "../../../../../utils/types.js";
+import {
+	deriveEVaultFamily,
+	type EVaultFamily,
+} from "../../../../../utils/vaultFamily.js";
 import { InterestRateModelType } from "../eVaultOnchainAdapter/eVaultLensTypes.js";
 import type {
 	V3CollateralRow,
@@ -438,6 +442,65 @@ function convertCollaterals(
 	return collaterals;
 }
 
+/**
+ * Reads an address a V3 row was expected to carry. Returns `undefined` when the
+ * row omitted it or it cannot be parsed, so callers can tell a value that was
+ * read from one the converter would otherwise default to the zero address.
+ */
+function readRowAddress(value: string | null | undefined): Address | undefined {
+	if (typeof value !== "string" || value.trim() === "") return undefined;
+
+	try {
+		return getAddress(value);
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Classifies a V3 row, or reports no family when the row omitted any of the
+ * fields the family is derived from. V3 publishes all three on every vault —
+ * an escrow vault carries the zero address rather than a missing field — so a
+ * missing one means the row could not be read, and the zero-address defaults
+ * the converter applies elsewhere must not be read as "escrow".
+ */
+function resolveVaultFamily(
+	detail: V3VaultDetail,
+	owner: DataIssueOwnerRef,
+	errors: DataIssue[],
+): EVaultFamily | null {
+	const governorAdmin = readRowAddress(detail.governorAdmin);
+	const oracle = detail.oracle
+		? readRowAddress(detail.oracle.oracle)
+		: undefined;
+	const unitOfAccount = detail.unitOfAccount
+		? readRowAddress(detail.unitOfAccount.address)
+		: undefined;
+
+	if (governorAdmin && oracle && unitOfAccount) {
+		return deriveEVaultFamily({
+			governorAdmin,
+			oracle: { oracle },
+			unitOfAccount: { address: unitOfAccount },
+		});
+	}
+
+	const missing = [
+		...(governorAdmin ? [] : ["governorAdmin"]),
+		...(oracle ? [] : ["oracle"]),
+		...(unitOfAccount ? [] : ["unitOfAccount"]),
+	];
+	errors.push({
+		code: "SOURCE_UNAVAILABLE",
+		severity: "warning",
+		message: `Missing or invalid ${missing.join(", ")}; vault family left undecided rather than defaulted to escrow.`,
+		locations: [dataIssueLocation(owner, "$.vaultFamily")],
+		source: "eVaultV3",
+		normalizedValue: null,
+	});
+	return null;
+}
+
 export function convertVault(
 	detail: V3VaultDetail,
 	collateralRows: V3CollateralRow[],
@@ -533,6 +596,10 @@ export function convertVault(
 			normalizedValue: DEFAULT_TOKEN_BLOCK,
 		});
 	}
+	// NOTE: this suppression is about diagnostics only. `resolveVaultFamily`
+	// still treats a missing unitOfAccount block as unreadable, so a V3
+	// deployment that omits it for oracle-less vaults yields no family rather
+	// than an escrow guess.
 	const unitOfAccountData = detail.unitOfAccount ?? DEFAULT_TOKEN_BLOCK;
 	const unitOfAccountErrors = suppressUnitOfAccountDiagnostics ? [] : errors;
 
@@ -839,6 +906,7 @@ export function convertVault(
 		shares,
 		asset,
 		unitOfAccount,
+		vaultFamily: resolveVaultFamily(detail, owner, errors),
 		totalShares: parseBigIntField(detail.totalShares, {
 			path: "$.totalShares",
 			owner,

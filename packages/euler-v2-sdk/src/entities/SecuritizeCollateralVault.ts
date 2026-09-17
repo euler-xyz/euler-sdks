@@ -4,8 +4,12 @@ import {
 	type IERC4626Vault,
 	type IERC4626VaultConversion,
 } from "./ERC4626Vault.js";
+import type { VaultFamily } from "../utils/vaultFamily.js";
 
 export interface ISecuritizeCollateralVault extends IERC4626Vault {
+	/** Vault family. Always `securitize`; accepted so entities round-trip. */
+	vaultFamily?: Extract<VaultFamily, "securitize">;
+
 	governor: Address;
 	supplyCap: bigint;
 }
@@ -14,6 +18,7 @@ export class SecuritizeCollateralVault
 	extends ERC4626Vault
 	implements ISecuritizeCollateralVault, IERC4626VaultConversion
 {
+	vaultFamily: Extract<VaultFamily, "securitize"> = "securitize";
 	governor: Address;
 	supplyCap: bigint;
 

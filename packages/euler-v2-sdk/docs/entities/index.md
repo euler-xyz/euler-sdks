@@ -24,4 +24,9 @@ entity methods for one entity module.
   the matching population method has run.
 - `populated` flags describe which enrichment steps have been applied to a
   mutable entity instance.
+- `vaultFamily` is on every vault entity and uses the vocabulary Euler V3
+  publishes in `vaultType`: `evk`, `escrow`, `earn`, `securitize`. It is
+  narrower than `type`, which names the vault service handling the vault. An
+  EVault family is `null` when the source did not provide the configuration it
+  is derived from.
 

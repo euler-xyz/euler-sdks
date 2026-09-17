@@ -45,6 +45,7 @@ export * from "./plugins/index.js";
 export * from "./utils/subAccounts.js";
 export * from "./utils/accountPositionClassification.js";
 export { VaultType } from "./utils/types.js";
+export * from "./utils/vaultFamily.js";
 export {
 	type BuildQueryFn,
 	type BuildQueryContext,

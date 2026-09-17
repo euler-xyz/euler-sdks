@@ -15,6 +15,11 @@ export interface Token {
 	logoURI?: string;
 }
 
+/**
+ * Which vault service handles a vault. Not the vault family Euler V3 publishes
+ * as `vaultType` — see `VaultFamily` in `utils/vaultFamily.ts`, where both
+ * `evk` and `escrow` map to `VaultType.EVault`.
+ */
 export enum VaultType {
 	EVault = "EVault",
 	EulerEarn = "EulerEarn",

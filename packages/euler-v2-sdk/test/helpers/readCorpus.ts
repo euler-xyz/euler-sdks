@@ -66,15 +66,24 @@ function clone<T>(value: T): T {
 	return structuredClone(value);
 }
 
-function findEVault(predicate: (vault: any) => boolean) {
-	for (const snapshot of vaultReport.snapshots.onchain) {
-		for (const vault of snapshot.vaults) {
-			if (vault.type !== "EVault") continue;
-			const revived = reviveSnapshot(vault.value);
-			if (predicate(revived)) return clone(revived);
-		}
+export function getEVaultFixtures(): any[] {
+	const fixtures = vaultReport.snapshots.onchain.flatMap((snapshot) =>
+		snapshot.vaults
+			.filter((vault) => vault.type === "EVault")
+			.map((vault) => clone(reviveSnapshot(vault.value))),
+	);
+	if (fixtures.length === 0) {
+		throw new Error("Generated corpus contains no EVault fixtures.");
 	}
-	throw new Error("Expected EVault fixture was not found in generated corpus.");
+	return fixtures;
+}
+
+function findEVault(predicate: (vault: any) => boolean) {
+	const found = getEVaultFixtures().find(predicate);
+	if (!found) {
+		throw new Error("Expected EVault fixture was not found in generated corpus.");
+	}
+	return found;
 }
 
 export function getPlainEVaultFixture() {
