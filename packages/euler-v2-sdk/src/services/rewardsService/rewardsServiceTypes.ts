@@ -156,7 +156,9 @@ export interface RewardsDirectAdapterConfig {
 	turtleApiUrl?: string;
 	/**
 	 * Turtle Earn API key, sent as an `X-API-Key` header on direct Turtle
-	 * requests. Treat it as a server-side secret; do not ship it to browser bundles.
+	 * requests. Credentialed requests do not follow redirects, so the key is
+	 * only ever sent to the configured `turtleApiUrl` origin. Treat it as a
+	 * server-side secret; do not ship it to browser bundles.
 	 */
 	turtleApiKey?: string;
 	/** Optional caller-hosted endpoint for Fuul totals. */
@@ -199,7 +201,9 @@ export interface RewardsServiceConfig {
 	turtleApiUrl?: string;
 	/**
 	 * Turtle Earn API key, sent as an `X-API-Key` header on direct Turtle
-	 * requests. Treat it as a server-side secret; do not ship it to browser bundles.
+	 * requests. Credentialed requests do not follow redirects, so the key is
+	 * only ever sent to the configured `turtleApiUrl` origin. Treat it as a
+	 * server-side secret; do not ship it to browser bundles.
 	 */
 	turtleApiKey?: string;
 	/** Optional caller-hosted endpoint for Fuul totals. */

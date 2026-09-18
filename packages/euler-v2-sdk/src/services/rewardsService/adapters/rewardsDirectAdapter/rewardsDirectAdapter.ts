@@ -695,11 +695,17 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	/**
 	 * Request options for the built-in Turtle fetchers. The key is read here
 	 * rather than passed as a query argument so it never becomes part of a
-	 * query cache key.
+	 * query cache key. Credentialed requests refuse redirects: `fetch` would
+	 * otherwise replay the `X-API-Key` header against whatever origin the
+	 * `Location` header names, and the callers already treat a rejected
+	 * fetch as "no Turtle data".
 	 */
 	private turtleRequestInit(): RequestInit | undefined {
 		if (!this.turtleApiKey) return undefined;
-		return { headers: { "X-API-Key": this.turtleApiKey } };
+		return {
+			headers: { "X-API-Key": this.turtleApiKey },
+			redirect: "error",
+		};
 	}
 
 	async fetchVaultRewards(

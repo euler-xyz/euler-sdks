@@ -135,6 +135,8 @@ Relevant `rewardsServiceConfig` fields:
 
 The top-level provider URL fields remain supported for backward compatibility. They are treated as `directAdapterConfig` inputs.
 
-`turtleApiKey` (or `config.rewardsTurtleApiKey` / `EULER_SDK_REWARDS_TURTLE_API_KEY`) is sent as an `X-API-Key` header on direct Turtle requests. The Turtle Earn API rejects unauthenticated requests, so the direct and fallback adapters return no Turtle data without it. Keep the key server-side; browser builds should route Turtle traffic through a proxy via `turtleApiUrl` or disable Turtle with `enableTurtle: false`.
+`turtleApiKey` (or `config.rewardsTurtleApiKey` / `EULER_SDK_REWARDS_TURTLE_API_KEY`) is sent as an `X-API-Key` header on direct Turtle requests. The Turtle Earn API rejects unauthenticated requests, so the direct and fallback adapters return no Turtle data without it. Credentialed Turtle requests are made with `redirect: "error"`, so the key is only ever sent to the configured `turtleApiUrl` origin; a redirecting upstream or proxy yields no Turtle data rather than a replayed key. Keep the key server-side; browser builds should route Turtle traffic through a proxy via `turtleApiUrl` or disable Turtle with `enableTurtle: false`.
+
+Note that `enableTurtle: false` only stops Turtle campaign discovery and user-reward enumeration. `fetchTurtleProofs` still runs when a caller asks for explicit Turtle claim proofs, and the V3 and fallback adapters delegate that call to the direct adapter because V3 does not serve merkle proofs. A browser app that offers Turtle claims therefore still needs `turtleApiUrl` pointed at an authenticating proxy, while V3 and fallback deployments can return Turtle campaign data without a direct key.
 
 For Fuul claim planning, the SDK also needs a configured `providerService` so it can read claim fees from the Fuul factory contract.

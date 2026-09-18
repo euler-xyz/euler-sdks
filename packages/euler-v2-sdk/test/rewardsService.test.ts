@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { test, vi } from "vitest";
 import {
 	decodeFunctionData,
@@ -3415,6 +3417,7 @@ test("direct rewards adapter sends the Turtle API key on stream and proof reques
 		);
 		for (const request of requests) {
 			assert.equal(turtleHeader(request.init), "turtle-secret");
+			assert.equal(request.init?.redirect, "error");
 		}
 	} finally {
 		vi.unstubAllGlobals();
@@ -3437,6 +3440,7 @@ test("direct rewards adapter omits the Turtle API key header when none is config
 		assert.equal(requests.length, 2);
 		for (const request of requests) {
 			assert.equal(turtleHeader(request.init), null);
+			assert.equal(request.init?.redirect, undefined);
 		}
 	} finally {
 		vi.unstubAllGlobals();
@@ -3468,5 +3472,60 @@ test("buildEulerSDK forwards the Turtle API key to the direct rewards adapter", 
 		assert.equal(turtleHeader(turtleRequests[0]?.init), "config-key");
 	} finally {
 		vi.unstubAllGlobals();
+	}
+});
+
+type CapturedHttpRequest = { url: string; apiKey: string | undefined };
+
+const listenLocally = async (
+	handler: http.RequestListener,
+): Promise<{ origin: string; close: () => Promise<void> }> => {
+	const server = http.createServer(handler);
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address() as AddressInfo;
+	return {
+		origin: `http://127.0.0.1:${address.port}`,
+		close: () =>
+			new Promise<void>((resolve, reject) =>
+				server.close((err) => (err ? reject(err) : resolve())),
+			),
+	};
+};
+
+test("direct rewards adapter never replays the Turtle API key across a redirect", async () => {
+	const leaked: CapturedHttpRequest[] = [];
+	const target = await listenLocally((req, res) => {
+		leaked.push({
+			url: req.url ?? "",
+			apiKey: req.headers["x-api-key"] as string | undefined,
+		});
+		res.setHeader("Content-Type", "application/json");
+		res.end(JSON.stringify([{ streamId: "stream-1", chainId: 1 }]));
+	});
+	const redirecting = await listenLocally((req, res) => {
+		res.statusCode = 302;
+		res.setHeader("Location", `${target.origin}${req.url ?? ""}`);
+		res.end();
+	});
+	try {
+		const adapter = new RewardsDirectAdapter({
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			turtleApiUrl: `${redirecting.origin}/v1`,
+			turtleApiKey: "turtle-secret",
+			turtleStreams: [{ streamId: "stream-1", chainId: 1 }],
+		});
+
+		const chainRewards = await adapter.fetchChainRewards(1);
+		const proofs = await adapter.fetchTurtleProofs(accountAddress, [
+			"stream-1",
+		]);
+
+		assert.equal(chainRewards.size, 0);
+		assert.deepEqual(proofs, []);
+		assert.deepEqual(leaked, []);
+	} finally {
+		await Promise.all([redirecting.close(), target.close()]);
 	}
 });
