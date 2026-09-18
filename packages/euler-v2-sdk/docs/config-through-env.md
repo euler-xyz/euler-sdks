@@ -105,7 +105,7 @@ the deployment service without changing the ABI branch.
 
 `EULER_SDK_REWARDS_TURTLE_STREAMS_JSON` is a JSON array of `{ streamId, chainId, streamAddress?, rewardToken?, tokenPrice? }` objects.
 
-The Turtle Earn API requires an API key on every endpoint. The direct rewards adapter sends `rewardsTurtleApiKey` as an `X-API-Key` header on its Turtle stream and proof requests; without it those requests are rejected and resolve to no Turtle campaigns or user rewards. The key is a server-side secret. Do not expose it through `VITE_EULER_SDK_*` or any other browser env injection. Browser builds should either point `rewardsTurtleApiUrl` at a server-side proxy that adds the header, or set `rewardsEnableTurtle` to `false` and rely on the V3 rewards adapter.
+The Turtle Earn API requires an API key on every endpoint. The direct rewards adapter sends `rewardsTurtleApiKey` as an `X-API-Key` header on its Turtle stream and proof requests; without it those requests are rejected and resolve to no Turtle campaigns or user rewards. The key is a server-side secret. Unlike the other variables in this table, `VITE_EULER_SDK_REWARDS_TURTLE_API_KEY` is ignored, so it cannot be injected into browser bundles; do not expose it through any other browser env injection either. Browser builds should either point `rewardsTurtleApiUrl` at a server-side proxy that adds the header, or set `rewardsEnableTurtle` to `false` and rely on the V3 rewards adapter.
 
 ## Intrinsic APY
 

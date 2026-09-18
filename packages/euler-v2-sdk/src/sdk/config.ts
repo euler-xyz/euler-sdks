@@ -150,6 +150,18 @@ function readString(env: EnvRecord, name: string): string | undefined {
 	return vite || undefined;
 }
 
+/**
+ * Reads a server-only secret. Unlike `readString`, the `VITE_` alias is
+ * ignored so the value can never be injected into browser bundles.
+ */
+function readServerOnlyString(
+	env: EnvRecord,
+	name: string,
+): string | undefined {
+	const value = env[name]?.trim();
+	return value || undefined;
+}
+
 function readNumber(env: EnvRecord, name: string): number | undefined {
 	const value = readString(env, name);
 	if (value === undefined) return undefined;
@@ -465,7 +477,10 @@ export function readEulerSDKEnvConfig(
 		),
 		rewardsFuulApiUrl: readString(env, "EULER_SDK_REWARDS_FUUL_API_URL"),
 		rewardsTurtleApiUrl: readString(env, "EULER_SDK_REWARDS_TURTLE_API_URL"),
-		rewardsTurtleApiKey: readString(env, "EULER_SDK_REWARDS_TURTLE_API_KEY"),
+		rewardsTurtleApiKey: readServerOnlyString(
+			env,
+			"EULER_SDK_REWARDS_TURTLE_API_KEY",
+		),
 		rewardsFuulTotalsUrl: readString(env, "EULER_SDK_REWARDS_FUUL_TOTALS_URL"),
 		rewardsFuulClaimChecksUrl: readString(
 			env,

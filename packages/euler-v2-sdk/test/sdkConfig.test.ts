@@ -96,6 +96,20 @@ describe("SDK env config", () => {
 		expect(config.v3ApiKey).toBe("vite-secret");
 	});
 
+	it("ignores the VITE_ alias for the server-only Turtle API key", () => {
+		expect(
+			readEulerSDKEnvConfig({
+				VITE_EULER_SDK_REWARDS_TURTLE_API_KEY: "vite-turtle-secret",
+			}).rewardsTurtleApiKey,
+		).toBeUndefined();
+		expect(
+			readEulerSDKEnvConfig({
+				EULER_SDK_REWARDS_TURTLE_API_KEY: "turtle-secret",
+				VITE_EULER_SDK_REWARDS_TURTLE_API_KEY: "vite-turtle-secret",
+			}).rewardsTurtleApiKey,
+		).toBe("turtle-secret");
+	});
+
 	it("uses the V3 tokenlist endpoint by default", () => {
 		expect(DEFAULT_TOKENLIST_API_BASE_URL).toBe("https://v3.euler.finance");
 		expect(defaultTokenlistServiceConfig.getTokenListUrl(1)).toBe(
