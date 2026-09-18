@@ -501,6 +501,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	private brevisProofsApiUrl: string;
 	private fuulApiUrl: string;
 	private turtleApiUrl: string;
+	private turtleApiKey?: string;
 	private fuulTotalsUrl?: string;
 	private fuulClaimChecksUrl?: string;
 	private brevisChainIds?: number[];
@@ -520,6 +521,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 			config?.brevisProofsApiUrl ?? DEFAULT_BREVIS_PROOFS_API_URL;
 		this.fuulApiUrl = config?.fuulApiUrl ?? DEFAULT_FUUL_API_URL;
 		this.turtleApiUrl = config?.turtleApiUrl ?? DEFAULT_TURTLE_API_URL;
+		this.turtleApiKey = config?.turtleApiKey;
 		this.fuulTotalsUrl = config?.fuulTotalsUrl;
 		this.fuulClaimChecksUrl = config?.fuulClaimChecksUrl;
 		this.brevisChainIds = config?.brevisChainIds;
@@ -671,7 +673,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	queryTurtleMerkleProofs = async (
 		url: string,
 	): Promise<TurtleMerkleProof[]> => {
-		const res = await fetch(url);
+		const res = await fetch(url, this.turtleRequestInit());
 		if (!res.ok) return [];
 		return extractTurtleProofs(await res.json());
 	};
@@ -681,13 +683,29 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	}
 
 	queryTurtleStreams = async (url: string): Promise<TurtleStream[]> => {
-		const res = await fetch(url);
+		const res = await fetch(url, this.turtleRequestInit());
 		if (!res.ok) return [];
 		return extractTurtleStreams(await res.json());
 	};
 
 	setQueryTurtleStreams(fn: typeof this.queryTurtleStreams): void {
 		this.queryTurtleStreams = fn;
+	}
+
+	/**
+	 * Request options for the built-in Turtle fetchers. The key is read here
+	 * rather than passed as a query argument so it never becomes part of a
+	 * query cache key. Credentialed requests refuse redirects: `fetch` would
+	 * otherwise replay the `X-API-Key` header against whatever origin the
+	 * `Location` header names, and the callers already treat a rejected
+	 * fetch as "no Turtle data".
+	 */
+	private turtleRequestInit(): RequestInit | undefined {
+		if (!this.turtleApiKey) return undefined;
+		return {
+			headers: { "X-API-Key": this.turtleApiKey },
+			redirect: "error",
+		};
 	}
 
 	async fetchVaultRewards(

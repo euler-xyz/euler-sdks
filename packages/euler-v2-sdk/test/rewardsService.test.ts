@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
+import { test, vi } from "vitest";
 import {
 	decodeFunctionData,
 	getAddress,
@@ -3368,4 +3370,162 @@ test("rewards service rejects Fuul claim checks outside chain unclaimed metadata
 			}),
 		/No selected Fuul claim checks found/,
 	);
+});
+
+const captureTurtleFetch = () => {
+	const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
+	vi.stubGlobal(
+		"fetch",
+		async (input: RequestInfo | URL, init?: RequestInit) => {
+			requests.push({ url: String(input), init });
+			return new Response(JSON.stringify([]), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		},
+	);
+	return requests;
+};
+
+const turtleHeader = (init: RequestInit | undefined) =>
+	new Headers(init?.headers).get("x-api-key");
+
+test("direct rewards adapter sends the Turtle API key on stream and proof requests", async () => {
+	const requests = captureTurtleFetch();
+	try {
+		const adapter = new RewardsDirectAdapter({
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			turtleApiKey: "turtle-secret",
+			turtleStreams: [{ streamId: "stream-1", chainId: 1 }],
+		});
+
+		await adapter.fetchChainRewards(1);
+		await adapter.fetchUserRewards(1, accountAddress);
+
+		assert.equal(requests.length, 2);
+		assert.equal(
+			requests[0]?.url.startsWith("https://earn.turtle.xyz/v1/streams?"),
+			true,
+		);
+		assert.equal(
+			requests[1]?.url.startsWith(
+				"https://earn.turtle.xyz/v1/streams/merkle_proofs?",
+			),
+			true,
+		);
+		for (const request of requests) {
+			assert.equal(turtleHeader(request.init), "turtle-secret");
+			assert.equal(request.init?.redirect, "error");
+		}
+	} finally {
+		vi.unstubAllGlobals();
+	}
+});
+
+test("direct rewards adapter omits the Turtle API key header when none is configured", async () => {
+	const requests = captureTurtleFetch();
+	try {
+		const adapter = new RewardsDirectAdapter({
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			turtleStreams: [{ streamId: "stream-1", chainId: 1 }],
+		});
+
+		await adapter.fetchChainRewards(1);
+		await adapter.fetchUserRewards(1, accountAddress);
+
+		assert.equal(requests.length, 2);
+		for (const request of requests) {
+			assert.equal(turtleHeader(request.init), null);
+			assert.equal(request.init?.redirect, undefined);
+		}
+	} finally {
+		vi.unstubAllGlobals();
+	}
+});
+
+test("buildEulerSDK forwards the Turtle API key to the direct rewards adapter", async () => {
+	const requests = captureTurtleFetch();
+	try {
+		const sdk = await buildEulerSDK({
+			config: {
+				rewardsServiceAdapter: "direct",
+				rewardsTurtleApiKey: "config-key",
+			},
+			rewardsServiceConfig: {
+				enableMerkl: false,
+				enableBrevis: false,
+				enableFuul: false,
+				turtleApiKey: "explicit-key",
+			},
+		});
+
+		await sdk.rewardsService.fetchChainRewards(1);
+
+		const turtleRequests = requests.filter((request) =>
+			request.url.startsWith("https://earn.turtle.xyz/v1/streams?"),
+		);
+		assert.equal(turtleRequests.length, 1);
+		assert.equal(turtleHeader(turtleRequests[0]?.init), "config-key");
+	} finally {
+		vi.unstubAllGlobals();
+	}
+});
+
+type CapturedHttpRequest = { url: string; apiKey: string | undefined };
+
+const listenLocally = async (
+	handler: http.RequestListener,
+): Promise<{ origin: string; close: () => Promise<void> }> => {
+	const server = http.createServer(handler);
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address() as AddressInfo;
+	return {
+		origin: `http://127.0.0.1:${address.port}`,
+		close: () =>
+			new Promise<void>((resolve, reject) =>
+				server.close((err) => (err ? reject(err) : resolve())),
+			),
+	};
+};
+
+test("direct rewards adapter never replays the Turtle API key across a redirect", async () => {
+	const leaked: CapturedHttpRequest[] = [];
+	const target = await listenLocally((req, res) => {
+		leaked.push({
+			url: req.url ?? "",
+			apiKey: req.headers["x-api-key"] as string | undefined,
+		});
+		res.setHeader("Content-Type", "application/json");
+		res.end(JSON.stringify([{ streamId: "stream-1", chainId: 1 }]));
+	});
+	const redirecting = await listenLocally((req, res) => {
+		res.statusCode = 302;
+		res.setHeader("Location", `${target.origin}${req.url ?? ""}`);
+		res.end();
+	});
+	try {
+		const adapter = new RewardsDirectAdapter({
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			turtleApiUrl: `${redirecting.origin}/v1`,
+			turtleApiKey: "turtle-secret",
+			turtleStreams: [{ streamId: "stream-1", chainId: 1 }],
+		});
+
+		const chainRewards = await adapter.fetchChainRewards(1);
+		const proofs = await adapter.fetchTurtleProofs(accountAddress, [
+			"stream-1",
+		]);
+
+		assert.equal(chainRewards.size, 0);
+		assert.deepEqual(proofs, []);
+		assert.deepEqual(leaked, []);
+	} finally {
+		await Promise.all([redirecting.close(), target.close()]);
+	}
 });
