@@ -50,6 +50,7 @@ export interface EulerSDKConfig {
 	rewardsBrevisProofsApiUrl?: string;
 	rewardsFuulApiUrl?: string;
 	rewardsTurtleApiUrl?: string;
+	rewardsTurtleApiKey?: string;
 	rewardsFuulTotalsUrl?: string;
 	rewardsFuulClaimChecksUrl?: string;
 	rewardsBrevisChainIds?: number[];
@@ -464,6 +465,7 @@ export function readEulerSDKEnvConfig(
 		),
 		rewardsFuulApiUrl: readString(env, "EULER_SDK_REWARDS_FUUL_API_URL"),
 		rewardsTurtleApiUrl: readString(env, "EULER_SDK_REWARDS_TURTLE_API_URL"),
+		rewardsTurtleApiKey: readString(env, "EULER_SDK_REWARDS_TURTLE_API_KEY"),
 		rewardsFuulTotalsUrl: readString(env, "EULER_SDK_REWARDS_FUUL_TOTALS_URL"),
 		rewardsFuulClaimChecksUrl: readString(
 			env,

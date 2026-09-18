@@ -92,6 +92,10 @@ environment variables, when activity requests use a separate endpoint or key.
 
 Adapter-specific keys override the shared key within the same configuration layer. Layer priority still applies, so `config.pricingApiKey` overrides `pricingServiceConfig.apiKey`, and `pricingServiceConfig.apiKey` overrides `EULER_SDK_PRICING_API_KEY`.
 
+## Turtle Earn API key
+
+The direct rewards adapter calls the Turtle Earn API, which requires an `X-API-Key` header on every endpoint. Set `config.rewardsTurtleApiKey`, `rewardsServiceConfig.turtleApiKey`, or `EULER_SDK_REWARDS_TURTLE_API_KEY`; the usual layer priority applies. The key is a server-side secret and must not be shipped to browser bundles. See [`config-through-env.md`](./config-through-env.md#rewards) for the browser guidance.
+
 `vaultTypeAdapterConfig` defaults to the V3 `POST /v3/resolve/vaults` endpoint. Pass subgraph config when vault type resolution should use subgraphs:
 
 ```typescript

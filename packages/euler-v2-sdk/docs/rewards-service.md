@@ -128,7 +128,13 @@ Relevant `rewardsServiceConfig` fields:
 - `merklDistributorAddress`
 - `fuulManagerAddress`
 - `fuulFactoryAddress`
+- `turtleApiUrl`
+- `turtleApiKey`
+- `turtleStreams`
+- `enableMerkl`, `enableBrevis`, `enableFuul`, `enableTurtle`
 
 The top-level provider URL fields remain supported for backward compatibility. They are treated as `directAdapterConfig` inputs.
+
+`turtleApiKey` (or `config.rewardsTurtleApiKey` / `EULER_SDK_REWARDS_TURTLE_API_KEY`) is sent as an `X-API-Key` header on direct Turtle requests. The Turtle Earn API rejects unauthenticated requests, so the direct and fallback adapters return no Turtle data without it. Keep the key server-side; browser builds should route Turtle traffic through a proxy via `turtleApiUrl` or disable Turtle with `enableTurtle: false`.
 
 For Fuul claim planning, the SDK also needs a configured `providerService` so it can read claim fees from the Fuul factory contract.

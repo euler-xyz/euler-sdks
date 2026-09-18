@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { test, vi } from "vitest";
 import {
 	decodeFunctionData,
 	getAddress,
@@ -3368,4 +3368,105 @@ test("rewards service rejects Fuul claim checks outside chain unclaimed metadata
 			}),
 		/No selected Fuul claim checks found/,
 	);
+});
+
+const captureTurtleFetch = () => {
+	const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
+	vi.stubGlobal(
+		"fetch",
+		async (input: RequestInfo | URL, init?: RequestInit) => {
+			requests.push({ url: String(input), init });
+			return new Response(JSON.stringify([]), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		},
+	);
+	return requests;
+};
+
+const turtleHeader = (init: RequestInit | undefined) =>
+	new Headers(init?.headers).get("x-api-key");
+
+test("direct rewards adapter sends the Turtle API key on stream and proof requests", async () => {
+	const requests = captureTurtleFetch();
+	try {
+		const adapter = new RewardsDirectAdapter({
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			turtleApiKey: "turtle-secret",
+			turtleStreams: [{ streamId: "stream-1", chainId: 1 }],
+		});
+
+		await adapter.fetchChainRewards(1);
+		await adapter.fetchUserRewards(1, accountAddress);
+
+		assert.equal(requests.length, 2);
+		assert.equal(
+			requests[0]?.url.startsWith("https://earn.turtle.xyz/v1/streams?"),
+			true,
+		);
+		assert.equal(
+			requests[1]?.url.startsWith(
+				"https://earn.turtle.xyz/v1/streams/merkle_proofs?",
+			),
+			true,
+		);
+		for (const request of requests) {
+			assert.equal(turtleHeader(request.init), "turtle-secret");
+		}
+	} finally {
+		vi.unstubAllGlobals();
+	}
+});
+
+test("direct rewards adapter omits the Turtle API key header when none is configured", async () => {
+	const requests = captureTurtleFetch();
+	try {
+		const adapter = new RewardsDirectAdapter({
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			turtleStreams: [{ streamId: "stream-1", chainId: 1 }],
+		});
+
+		await adapter.fetchChainRewards(1);
+		await adapter.fetchUserRewards(1, accountAddress);
+
+		assert.equal(requests.length, 2);
+		for (const request of requests) {
+			assert.equal(turtleHeader(request.init), null);
+		}
+	} finally {
+		vi.unstubAllGlobals();
+	}
+});
+
+test("buildEulerSDK forwards the Turtle API key to the direct rewards adapter", async () => {
+	const requests = captureTurtleFetch();
+	try {
+		const sdk = await buildEulerSDK({
+			config: {
+				rewardsServiceAdapter: "direct",
+				rewardsTurtleApiKey: "config-key",
+			},
+			rewardsServiceConfig: {
+				enableMerkl: false,
+				enableBrevis: false,
+				enableFuul: false,
+				turtleApiKey: "explicit-key",
+			},
+		});
+
+		await sdk.rewardsService.fetchChainRewards(1);
+
+		const turtleRequests = requests.filter((request) =>
+			request.url.startsWith("https://earn.turtle.xyz/v1/streams?"),
+		);
+		assert.equal(turtleRequests.length, 1);
+		assert.equal(turtleHeader(turtleRequests[0]?.init), "config-key");
+	} finally {
+		vi.unstubAllGlobals();
+	}
 });
