@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
-import { type Address, zeroAddress } from "viem";
-import { test } from "vitest";
+import {
+	type Address,
+	encodeFunctionData,
+	encodeFunctionResult,
+	getAddress,
+	zeroAddress,
+} from "viem";
+import { test, vi } from "vitest";
+
+import { ExecutionService } from "../src/services/executionService/executionService.js";
+import type { EVCBatchItem } from "../src/services/executionService/executionServiceTypes.js";
+import { vaultLensAbi } from "../src/services/vaults/eVaultService/adapters/eVaultOnchainAdapter/abis/vaultLensAbi.js";
+import { perspectiveVerifiedArrayAbi } from "../src/services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultOnchainAdapter.js";
+import { VaultType } from "../src/utils/types.js";
 
 import { EVaultOnchainAdapter } from "../src/services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultOnchainAdapter.js";
 import { convertVault } from "../src/services/vaults/eVaultService/adapters/eVaultV3Adapter/eVaultV3AdapterConversions.js";
@@ -185,4 +197,141 @@ test("a verdict survives a round trip through a plain object", () => {
 		assert.equal(spread.isEscrow, isEscrow);
 		assert.equal(new EVault(spread).isEscrow, isEscrow);
 	}
+});
+
+const ACCOUNT = "0x00000000000000000000000000000000000000c1" as const;
+const ACCOUNT_LENS = "0x00000000000000000000000000000000000000c2" as const;
+const EARN_LENS = "0x00000000000000000000000000000000000000c3" as const;
+const UTILS_LENS = "0x00000000000000000000000000000000000000c4" as const;
+const EVC = "0x00000000000000000000000000000000000000c5" as const;
+const PERMIT2 = "0x00000000000000000000000000000000000000c6" as const;
+const depositAbi = [
+	{
+		type: "function",
+		name: "deposit",
+		inputs: [
+			{ name: "amount", type: "uint256" },
+			{ name: "receiver", type: "address" },
+		],
+		outputs: [{ name: "", type: "uint256" }],
+		stateMutability: "nonpayable",
+	},
+] as const;
+
+/**
+ * Simulates a deposit into the lens fixture vault and returns its simulated
+ * entity. The perspective, when configured, answers `verified`; every other
+ * non-vault read fails, which the snapshot decoder tolerates.
+ */
+async function simulateFixtureVault(options: {
+	perspective?: Address;
+	verified: Address[];
+}): Promise<EVault | undefined> {
+	const lensVault = makeVaultInfo({
+		oracle: zeroAddress,
+		name: "",
+		oracleInfo: "0x",
+	});
+	const vault = getAddress(lensVault.vault);
+	const provider = {
+		simulateContract: vi.fn(
+			async ({ args }: { args: readonly [EVCBatchItem[]] }) => ({
+				result: [
+					args[0].map((item) => {
+						const target = getAddress(item.targetContract);
+						if (options.perspective && target === getAddress(options.perspective)) {
+							return {
+								success: true,
+								result: encodeFunctionResult({
+									abi: perspectiveVerifiedArrayAbi,
+									functionName: "verifiedArray",
+									result: options.verified,
+								}),
+							};
+						}
+						if (target === getAddress(LENS)) {
+							return {
+								success: true,
+								result: encodeFunctionResult({
+									abi: vaultLensAbi,
+									functionName: "getVaultInfoFull",
+									result: lensVault as never,
+								}),
+							};
+						}
+						// the deposit action itself succeeds; account lens reads fail
+						return { success: target === vault, result: "0x" };
+					}),
+					[],
+					[],
+				],
+			}),
+		),
+		multicall: vi.fn(async () => []),
+		readContract: vi.fn(async () => {
+			throw new Error("read unavailable");
+		}),
+	};
+	const service = new ExecutionService(
+		{
+			getDeployment: () => ({
+				addresses: {
+					coreAddrs: { evc: EVC, permit2: PERMIT2 },
+					lensAddrs: {
+						accountLens: ACCOUNT_LENS,
+						vaultLens: LENS,
+						eulerEarnVaultLens: EARN_LENS,
+						utilsLens: UTILS_LENS,
+					},
+					peripheryAddrs: options.perspective
+						? { escrowedCollateralPerspective: options.perspective }
+						: {},
+				},
+			}),
+		} as never,
+		undefined,
+		{ getProvider: () => provider } as never,
+		{ fetchVaultTypes: async () => ({ [vault]: VaultType.EVault }) } as never,
+	);
+	const result = await service.simulateTransactionPlan(
+		1,
+		getAddress(ACCOUNT),
+		[
+			{
+				type: "evcBatch",
+				items: [
+					{
+						targetContract: vault,
+						onBehalfOfAccount: ACCOUNT,
+						value: 0n,
+						data: encodeFunctionData({
+							abi: depositAbi,
+							functionName: "deposit",
+							args: [100n, ACCOUNT],
+						}),
+					},
+				],
+			},
+		] as never,
+		{ stateOverrides: false },
+	);
+	return result.simulatedVaults.find(
+		(entity) => getAddress(entity.address) === vault,
+	) as EVault | undefined;
+}
+
+test("simulated EVault entities report the same perspective verdict as fetched ones", async () => {
+	const verified = await simulateFixtureVault({
+		perspective: PERSPECTIVE,
+		verified: [LENS_VAULT],
+	});
+	const unverified = await simulateFixtureVault({
+		perspective: PERSPECTIVE,
+		verified: [],
+	});
+	const noPerspective = await simulateFixtureVault({ verified: [LENS_VAULT] });
+
+	assert.equal(verified?.isEscrow, true);
+	assert.equal(unverified?.isEscrow, false);
+	assert.equal(noPerspective?.isEscrow, null);
 });

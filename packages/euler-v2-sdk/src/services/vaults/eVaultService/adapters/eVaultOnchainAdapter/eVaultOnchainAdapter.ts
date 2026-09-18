@@ -26,7 +26,7 @@ import {
 	vaultDiagnosticOwner,
 } from "../../../../../utils/entityDiagnostics.js";
 
-const verifiedArrayAbi = [
+export const perspectiveVerifiedArrayAbi = [
 	{
 		type: "function",
 		name: "verifiedArray",
@@ -35,6 +35,20 @@ const verifiedArrayAbi = [
 		stateMutability: "view",
 	},
 ] as const;
+
+/** EVC batch item reading a perspective's verified set, for lens batches. */
+export const getPerspectiveVerifiedArrayBatchItem = (
+	perspective: Address,
+	onBehalfOfAccount: Address,
+): EVCBatchItem => ({
+	targetContract: perspective,
+	onBehalfOfAccount,
+	value: 0n,
+	data: encodeFunctionData({
+		abi: perspectiveVerifiedArrayAbi,
+		functionName: "verifiedArray",
+	}),
+});
 
 export const getVaultInfoFullLensBatchItem = (
 	vaultLensAddress: Address,
@@ -98,7 +112,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 	) => {
 		return provider.readContract({
 			address: perspective,
-			abi: verifiedArrayAbi,
+			abi: perspectiveVerifiedArrayAbi,
 			functionName: "verifiedArray",
 		});
 	};

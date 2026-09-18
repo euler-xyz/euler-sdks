@@ -208,9 +208,18 @@ consumer that needs to tell `false` from `null` compares explicitly.
 Both adapters answer from the same on-chain registry, so they converge rather
 than holding separate opinions: V3 derives the type during discovery from the
 escrow perspective's verified events, and the on-chain adapter reads that
-perspective directly. V3 serves the derived type from a stored row and falls
-back to `evk` while no row exists yet, so the two can disagree only while V3's
-copy is behind the chain — propagation lag, not a difference of opinion.
+perspective directly. V3 serves the derived type from a stored row, falling
+back to `evk` while no row exists yet, and discovery never overwrites a row a
+curator has claimed with an entity or product. So the two paths can differ in
+two narrow cases only: while V3's copy is behind the chain, and for a vault
+curated as an ordinary vault *before* the perspective verified it — V3 refuses
+to curate an already-verified vault as anything but escrow, so only that
+ordering produces the gap.
+
+Simulation snapshots (`simulateTransactionPlan`) read the same perspective
+inside the lens batch, so simulated `EVault` entities carry the same `isEscrow`
+as fetched ones; a chain without a configured perspective, or a failed read,
+leaves them `null`.
 
 The perspective's verified set is itself narrower than the vaults that *would*
 pass its checks: registration is permissionless and permanent, so a vault nobody
