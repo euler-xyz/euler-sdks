@@ -440,17 +440,23 @@ function convertCollaterals(
 
 /**
  * Echoes V3's own escrow answer, so the SDK cannot report a verdict V3
- * contradicts for the same vault. V3 derives the type in discovery — `escrow`
- * comes from the escrow perspective's verified events — and serves it from the
- * stored row, falling back to `evk` while no row exists yet. V3 publishes the
- * field on every EVK row, so an answer it does not recognise means the contract
- * changed rather than that the vault is unusual.
+ * contradicts for the same vault. V3 derives it in discovery from the escrow
+ * perspective's verified events and publishes it as `isEscrow` on every vault
+ * row.
+ *
+ * Before `isEscrow` existed, V3 said the same thing through `vaultType:
+ * "escrow"`. That value is retired: an escrow vault is now `vaultType: "evk"`
+ * with `isEscrow: true`. The string is read only when the flag is absent —
+ * a V3 that predates the field — because once V3 stops publishing `escrow`,
+ * mapping `evk` to `false` would silently call every escrow vault ordinary.
  */
 function resolveIsEscrow(
 	detail: V3VaultDetail,
 	owner: DataIssueOwnerRef,
 	errors: DataIssue[],
 ): boolean | null {
+	if (typeof detail.isEscrow === "boolean") return detail.isEscrow;
+
 	const vaultType = detail.vaultType?.trim().toLowerCase();
 	if (vaultType === "escrow") return true;
 	if (vaultType === "evk") return false;
@@ -460,11 +466,11 @@ function resolveIsEscrow(
 		severity: "warning",
 		message:
 			vaultType === undefined || vaultType === ""
-				? "Missing vaultType; escrow status left unanswered rather than assumed."
-				: `Unrecognized vaultType "${detail.vaultType}"; escrow status left unanswered rather than assumed.`,
+				? "Missing isEscrow and vaultType; escrow status left unanswered rather than assumed."
+				: `Missing isEscrow and unrecognized vaultType "${detail.vaultType}"; escrow status left unanswered rather than assumed.`,
 		locations: [dataIssueLocation(owner, "$.isEscrow")],
 		source: "eVaultV3",
-		originalValue: detail.vaultType,
+		originalValue: detail.isEscrow ?? detail.vaultType,
 		normalizedValue: null,
 	});
 	return null;

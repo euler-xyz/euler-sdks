@@ -103,9 +103,31 @@ function makeOnchainAdapter(options: {
 	return adapter;
 }
 
-test("the V3 path reports the escrow answer V3 published", async () => {
+test("the V3 path reports the isEscrow flag V3 published", async () => {
+	assert.equal(convertV3Vault({ vaultType: "evk", isEscrow: true }).isEscrow, true);
+	assert.equal(convertV3Vault({ vaultType: "evk", isEscrow: false }).isEscrow, false);
+});
+
+/**
+ * The row a current V3 serves for an escrow vault: the family is `evk`, and the
+ * flag carries the answer. Before the flag was read, `evk` mapped to `false`
+ * and every escrow vault would have read as ordinary with no diagnostic.
+ */
+test("an evk row with isEscrow true is escrow, whatever the string says", () => {
+	const errors: DataIssue[] = [];
+	assert.equal(convertV3Vault({ vaultType: "evk", isEscrow: true }, errors).isEscrow, true);
+	// A current V3 row converts with no diagnostic at all.
+	assert.deepEqual(errors, []);
+});
+
+test("the flag wins over a retired escrow vaultType", () => {
+	assert.equal(convertV3Vault({ vaultType: "escrow", isEscrow: false }).isEscrow, false);
+});
+
+test("a V3 that predates isEscrow is read through vaultType", async () => {
 	assert.equal(convertV3Vault({ vaultType: "escrow" }).isEscrow, true);
 	assert.equal(convertV3Vault({ vaultType: "evk" }).isEscrow, false);
+	assert.equal(convertV3Vault({ vaultType: "evk", isEscrow: null }).isEscrow, false);
 });
 
 /**
@@ -123,10 +145,10 @@ test("the V3 path does not second-guess V3 from the vault configuration", () => 
 	assert.equal(vault.isEscrow, false);
 });
 
-test("a V3 row with no usable vaultType is unanswered, with a diagnostic", () => {
+test("a V3 row with neither flag nor a usable vaultType is unanswered, with a diagnostic", () => {
 	for (const vaultType of [undefined, "", "sausage"]) {
 		const errors: DataIssue[] = [];
-		const vault = convertV3Vault({ vaultType }, errors);
+		const vault = convertV3Vault({ vaultType, isEscrow: undefined }, errors);
 
 		assert.equal(vault.isEscrow, null, `vaultType: ${String(vaultType)}`);
 		const issue = errors.find((error) =>

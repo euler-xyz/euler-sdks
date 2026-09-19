@@ -81,8 +81,17 @@ export type V3CollateralRow = {
 export type V3VaultDetail = {
 	chainId: number;
 	address: string;
-	/** Vault family V3 publishes: `evk`, `escrow`, `earn`, `securitize`. */
+	/**
+	 * Vault family V3 publishes: `evk`, `earn`, `securitize`. Older V3
+	 * deployments also published `escrow` here; that value is retired in favour
+	 * of `isEscrow`, and the adapter still reads it as a fallback.
+	 */
 	vaultType?: string | null;
+	/**
+	 * Whether V3's escrow perspective has verified this vault as escrowed
+	 * collateral. Server-derived; absent on a V3 that predates the field.
+	 */
+	isEscrow?: boolean | null;
 	name: string;
 	symbol: string;
 	decimals: number;
