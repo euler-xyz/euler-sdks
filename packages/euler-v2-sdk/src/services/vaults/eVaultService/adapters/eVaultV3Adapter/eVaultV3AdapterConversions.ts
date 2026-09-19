@@ -445,9 +445,10 @@ function convertCollaterals(
  * row.
  *
  * Before `isEscrow` existed, V3 said the same thing through `vaultType:
- * "escrow"`. That value is retired: an escrow vault is now `vaultType: "evk"`
- * with `isEscrow: true`. The string is read only when the flag is absent —
- * a V3 that predates the field — because once V3 stops publishing `escrow`,
+ * "escrow"`. That value is deprecated: V3 still publishes it next to the flag
+ * for now and will stop, leaving an escrow vault as `vaultType: "evk"` with
+ * `isEscrow: true`. The string is read only when the flag is absent — a V3
+ * that predates the field — because once V3 stops publishing `escrow`,
  * mapping `evk` to `false` would silently call every escrow vault ordinary.
  */
 function resolveIsEscrow(

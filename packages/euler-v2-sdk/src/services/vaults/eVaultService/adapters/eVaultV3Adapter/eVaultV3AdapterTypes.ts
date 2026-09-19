@@ -82,9 +82,9 @@ export type V3VaultDetail = {
 	chainId: number;
 	address: string;
 	/**
-	 * Vault family V3 publishes: `evk`, `earn`, `securitize`. Older V3
-	 * deployments also published `escrow` here; that value is retired in favour
-	 * of `isEscrow`, and the adapter still reads it as a fallback.
+	 * Vault family V3 publishes: `evk`, `earn`, `securitize`, and — deprecated
+	 * in favour of `isEscrow`, still published for now — `escrow`. The adapter
+	 * reads it only as a fallback when the flag is absent.
 	 */
 	vaultType?: string | null;
 	/**

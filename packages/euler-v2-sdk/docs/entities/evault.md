@@ -191,7 +191,7 @@ own, so `isEscrow` cannot contradict the system a consumer reads alongside it:
 
 | Adapter | Source of the answer |
 | --- | --- |
-| V3 (`EVaultV3Adapter`) | V3's `isEscrow` on the vault row, derived server-side from the escrow perspective. A V3 that predates the field is read through its retired `vaultType: escrow` value. |
+| V3 (`EVaultV3Adapter`) | V3's `isEscrow` on the vault row, derived server-side from the escrow perspective. A V3 that predates the field is read through its deprecated `vaultType: escrow` value. |
 | On-chain (`EVaultOnchainAdapter`) | Membership of `EscrowedCollateralPerspective`'s verified set — the same answer `fetchVerifiedVaultAddresses(chainId, [StandardEVaultPerspectives.ESCROW])` returns. |
 
 `null` means the source has no answer: V3 published neither `isEscrow` nor a recognised `vaultType`,
