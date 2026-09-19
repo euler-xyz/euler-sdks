@@ -120,7 +120,13 @@ test("an evk row with isEscrow true is escrow, whatever the string says", () => 
 	assert.deepEqual(errors, []);
 });
 
-test("the flag wins over a retired escrow vaultType", () => {
+/**
+ * Robustness only: a V3 running euler-data-v3#651 derives both fields from the
+ * same stored type, so no live row carries `vaultType: "escrow"` with
+ * `isEscrow: false`. This pins the precedence for the deprecating half, where
+ * the flag is the only field that still carries the answer.
+ */
+test("the flag wins over the deprecated escrow string", () => {
 	assert.equal(convertV3Vault({ vaultType: "escrow", isEscrow: false }).isEscrow, false);
 });
 
