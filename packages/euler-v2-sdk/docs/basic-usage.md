@@ -268,6 +268,32 @@ Available EVault perspectives:
 | `FACTORY` | All vaults from the EVK factory (provenance only, untrusted) |
 | `ESCROW` | Escrowed collateral vaults (verified by construction) |
 
+### Telling escrow vaults apart
+
+An `EVault` carries `isEscrow`, so a single vault can be classified without a
+separate perspective fetch. `type` already says which kind of vault an entity
+is, so escrow status is the only thing left to ask.
+
+```typescript
+import { isEVault } from '@eulerxyz/euler-v2-sdk'
+
+const { result: vault, errors } = await sdk.vaultMetaService.fetchVault(1, address)
+
+// `null` means the data source had no answer — `errors` says why. Truthiness
+// alone never reads an unanswered vault as escrow.
+const label =
+  isEVault(vault) && vault.isEscrow ? 'Escrow'
+  : isEVault(vault) && vault.isEscrow === null ? 'Unknown'
+  : 'Vault'
+```
+
+The SDK reports what its source says rather than deriving a verdict, so the
+answer cannot contradict the system you read alongside it: V3's `vaultType` on
+the V3 path, and `EscrowedCollateralPerspective` membership on the on-chain
+path — the same answer the `ESCROW` perspective above returns. See
+[Escrow Status](./entities/evault.md#escrow-status) for how the two differ and
+why `null` exists.
+
 ### EulerEarn perspectives
 
 ```typescript

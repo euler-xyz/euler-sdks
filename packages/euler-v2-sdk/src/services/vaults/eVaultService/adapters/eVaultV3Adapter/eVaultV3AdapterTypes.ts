@@ -81,6 +81,8 @@ export type V3CollateralRow = {
 export type V3VaultDetail = {
 	chainId: number;
 	address: string;
+	/** Vault family V3 publishes: `evk`, `escrow`, `earn`, `securitize`. */
+	vaultType?: string | null;
 	name: string;
 	symbol: string;
 	decimals: number;

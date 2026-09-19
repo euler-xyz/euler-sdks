@@ -438,6 +438,38 @@ function convertCollaterals(
 	return collaterals;
 }
 
+/**
+ * Echoes V3's own escrow answer, so the SDK cannot report a verdict V3
+ * contradicts for the same vault. V3 derives the type in discovery — `escrow`
+ * comes from the escrow perspective's verified events — and serves it from the
+ * stored row, falling back to `evk` while no row exists yet. V3 publishes the
+ * field on every EVK row, so an answer it does not recognise means the contract
+ * changed rather than that the vault is unusual.
+ */
+function resolveIsEscrow(
+	detail: V3VaultDetail,
+	owner: DataIssueOwnerRef,
+	errors: DataIssue[],
+): boolean | null {
+	const vaultType = detail.vaultType?.trim().toLowerCase();
+	if (vaultType === "escrow") return true;
+	if (vaultType === "evk") return false;
+
+	errors.push({
+		code: "SOURCE_UNAVAILABLE",
+		severity: "warning",
+		message:
+			vaultType === undefined || vaultType === ""
+				? "Missing vaultType; escrow status left unanswered rather than assumed."
+				: `Unrecognized vaultType "${detail.vaultType}"; escrow status left unanswered rather than assumed.`,
+		locations: [dataIssueLocation(owner, "$.isEscrow")],
+		source: "eVaultV3",
+		originalValue: detail.vaultType,
+		normalizedValue: null,
+	});
+	return null;
+}
+
 export function convertVault(
 	detail: V3VaultDetail,
 	collateralRows: V3CollateralRow[],
@@ -839,6 +871,7 @@ export function convertVault(
 		shares,
 		asset,
 		unitOfAccount,
+		isEscrow: resolveIsEscrow(detail, owner, errors),
 		totalShares: parseBigIntField(detail.totalShares, {
 			path: "$.totalShares",
 			owner,
