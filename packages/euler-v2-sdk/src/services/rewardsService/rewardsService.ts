@@ -264,7 +264,9 @@ const turtleRewardStreamKey = (reward: UserReward): string | undefined => {
 		reward.chainId,
 		streamId,
 		reward.token.address.toLowerCase(),
-		reward.streamAddress?.toLowerCase() ?? reward.claimAddress?.toLowerCase() ?? "",
+		reward.streamAddress?.toLowerCase() ??
+			reward.claimAddress?.toLowerCase() ??
+			"",
 	].join(":");
 };
 
@@ -284,6 +286,15 @@ const mergeTurtleReward = (
 
 	return {
 		...selected,
+		// The row with the larger amount is not necessarily the row whose token
+		// the upstream managed to resolve. Scaling an amount by the wrong
+		// decimals is worse than taking the other row's token, so an unresolved
+		// token always yields to a resolved one.
+		token:
+			selected.token.decimals === undefined &&
+			supplement.token.decimals !== undefined
+				? supplement.token
+				: selected.token,
 		proof: selected.proof?.length ? selected.proof : supplement.proof,
 		claimAddress: selected.claimAddress ?? supplement.claimAddress,
 		streamId: selected.streamId ?? supplement.streamId,
@@ -319,7 +330,9 @@ const collapseTurtleStreamRewards = (rewards: UserReward[]): UserReward[] => {
 	return collapsed;
 };
 
-const collapseMerklCumulativeRewards = (rewards: UserReward[]): UserReward[] => {
+const collapseMerklCumulativeRewards = (
+	rewards: UserReward[],
+): UserReward[] => {
 	const collapsed: UserReward[] = [];
 	const indexes = new Map<string, number>();
 
@@ -383,7 +396,10 @@ const turtleProofStreamId = (proof: TurtleMerkleProof): string | undefined =>
 	proof.streamId ?? proof.stream_id ?? proof.id;
 
 const turtleProofChainId = (proof?: TurtleMerkleProof): number | undefined => {
-	if (typeof proof?.chainId === "number" && Number.isSafeInteger(proof.chainId)) {
+	if (
+		typeof proof?.chainId === "number" &&
+		Number.isSafeInteger(proof.chainId)
+	) {
 		return proof.chainId;
 	}
 	if (typeof proof?.chainId === "string" && /^\d+$/.test(proof.chainId)) {
@@ -947,12 +963,12 @@ export class RewardsService implements IRewardsService {
 				items: [
 					{
 						type: "operation",
-							name: operationName,
-							items,
-							...(walletBalanceTokens.length ? { walletBalanceTokens } : {}),
-						},
-					],
-				},
+						name: operationName,
+						items,
+						...(walletBalanceTokens.length ? { walletBalanceTokens } : {}),
+					},
+				],
+			},
 		];
 	}
 

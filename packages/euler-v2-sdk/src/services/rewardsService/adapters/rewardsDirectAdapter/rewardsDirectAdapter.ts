@@ -1524,7 +1524,11 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 					chainId: token?.chainId ?? chainId,
 					symbol: token?.symbol ?? tokenAddress,
 					name: token?.name ?? token?.symbol ?? tokenAddress,
-					decimals: token?.decimals ?? 18,
+					// Left undefined when the proof, the stream config and the
+					// campaign all omit it: an 18 guess mis-scales every token that
+					// uses anything else, and the merge in rewardsService prefers a
+					// row whose token did resolve.
+					decimals: token?.decimals,
 				},
 				tokenPrice:
 					normalizeFiniteNumber(

@@ -79,6 +79,8 @@ Brevis/Incentra claim planning requires all four fields: `claimAddress`, `proof`
 
 `UserRewardToken.decimals` is **optional**. When no source resolves it, the SDK omits it rather than assuming 18, because guessing 18 silently misreads every token that uses a different scale. Callers must handle `undefined` explicitly and must not fall back to a truthiness check (`decimals || 18` would also discard a valid `0`). `symbol` and `name` keep the existing convention of falling back to the token address when unresolved.
 
+The direct Turtle path follows the same rule: when the Merkle proof, the configured stream and the campaign all omit `decimals`, the reward is reported unresolved instead of defaulting to 18. Where both paths produce a row for the same stream and token, `RewardsService` collapses them: the larger amount wins, but a resolved token is always preferred over an unresolved one, so the surviving amount is never scaled by nothing.
+
 Raw reward amounts (`accumulated`, `unclaimed`) and all claim/proof data are unaffected by token resolution — they stay unscaled regardless of whether metadata resolved.
 
 ## Claim Planning APIs
