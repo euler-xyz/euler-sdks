@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { test, vi } from "vitest";
 import {
 	decodeFunctionData,
+	formatUnits,
 	getAddress,
 	type Address,
 	type Hex,
@@ -499,6 +500,169 @@ test("V3 rewards adapter enriches Turtle breakdown rows from campaign metadata",
 	assert.equal(rewards[0]?.token.decimals, 6);
 	assert.equal(rewards[0]?.accumulated, "42035");
 	assert.equal(rewards[0]?.unclaimed, "42035");
+});
+
+const usdcAddress = getAddress(
+	"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+) as Address;
+const turtleUsdcVault = getAddress(
+	"0xa45EAc8E33168cefa0b225F500E6d93D43B8f1AF",
+) as Address;
+const turtleUsdcCampaignId = "4242c3ea-b6cc-46d5-8592-d072620b51bc";
+
+/**
+ * Production breakdown row whose campaign has dropped out of
+ * `/v3/apys/rewards`; only `rewardTokenMetadata` can resolve the token.
+ */
+const turtleUsdcBreakdownRow = {
+	chainId: 1,
+	vault: turtleUsdcVault,
+	recipient: accountAddress,
+	rewardToken: usdcAddress as string,
+	rewardTokenMetadata: {
+		address: usdcAddress as string,
+		symbol: "USDC",
+		decimals: 6,
+		name: "USD Coin",
+	},
+	amount: "603375",
+	campaignId: turtleUsdcCampaignId,
+	timestamp: "2026-08-13T12:00:00.000Z",
+};
+
+const buildTurtleUsdcAdapter = (
+	rewardTokenMetadata: unknown,
+): RewardsV3Adapter => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsBreakdown(async () => ({
+		data: [
+			{
+				...turtleUsdcBreakdownRow,
+				rewardTokenMetadata,
+			} as never,
+		],
+	}));
+	// The campaign is absent from the APY feed, exactly as in production.
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [{ chainId: 1, vault: turtleUsdcVault, campaigns: [] }],
+	}));
+	return adapter;
+};
+
+test("V3 rewards adapter resolves breakdown token metadata when the campaign is absent", async () => {
+	const adapter = buildTurtleUsdcAdapter(
+		turtleUsdcBreakdownRow.rewardTokenMetadata,
+	);
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "turtle");
+	assert.equal(rewards[0]?.campaignId, turtleUsdcCampaignId);
+	assert.equal(rewards[0]?.token.address, usdcAddress);
+	assert.equal(rewards[0]?.token.symbol, "USDC");
+	assert.equal(rewards[0]?.token.name, "USD Coin");
+	assert.equal(rewards[0]?.token.decimals, 6);
+	// Raw amounts stay unscaled; 603375 at 6 decimals is 0.603375 USDC.
+	assert.equal(rewards[0]?.accumulated, "603375");
+	assert.equal(rewards[0]?.unclaimed, "603375");
+	assert.equal(
+		formatUnits(BigInt(rewards[0]?.unclaimed ?? "0"), rewards[0]?.token.decimals ?? 18),
+		"0.603375",
+	);
+});
+
+test("V3 rewards adapter preserves zero-decimal breakdown token metadata", async () => {
+	const adapter = buildTurtleUsdcAdapter({
+		address: usdcAddress as string,
+		symbol: "ZERO",
+		name: "Zero Decimals",
+		decimals: 0,
+	});
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.symbol, "ZERO");
+	assert.equal(rewards[0]?.token.decimals, 0);
+	assert.equal(
+		formatUnits(BigInt(rewards[0]?.unclaimed ?? "0"), rewards[0]?.token.decimals ?? 18),
+		"603375",
+	);
+});
+
+for (const [label, metadata] of [
+	["absent", undefined],
+	["null", null],
+	["malformed", { address: "not-an-address", symbol: "", decimals: "nope" }],
+	[
+		"mismatched-address",
+		{
+			address: "0x0000000000000000000000000000000000000009",
+			symbol: "WRONG",
+			name: "Wrong Token",
+			decimals: 2,
+		},
+	],
+] as const) {
+	test(`V3 rewards adapter leaves decimals unresolved for ${label} breakdown token metadata`, async () => {
+		const adapter = buildTurtleUsdcAdapter(metadata);
+
+		const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+		assert.equal(rewards.length, 1);
+		assert.equal(rewards[0]?.token.address, usdcAddress);
+		// No source resolved the token, so the SDK reports it unresolved rather
+		// than guessing 18 decimals or borrowing another token's symbol.
+		assert.equal(rewards[0]?.token.symbol, usdcAddress);
+		assert.equal(rewards[0]?.token.decimals, undefined);
+		assert.equal(rewards[0]?.unclaimed, "603375");
+	});
+}
+
+test("V3 rewards adapter prefers campaign token metadata over breakdown metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsBreakdown(async () => ({
+		data: [
+			{
+				...turtleUsdcBreakdownRow,
+				rewardTokenMetadata: {
+					address: usdcAddress as string,
+					symbol: "STALE",
+					name: "Stale Metadata",
+					decimals: 8,
+				},
+			} as never,
+		],
+	}));
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				chainId: 1,
+				vault: turtleUsdcVault,
+				campaigns: [
+					{
+						id: turtleUsdcCampaignId,
+						provider: "turtle",
+						source: "turtle",
+						campaignType: "turtle_stream",
+						apr: 0.03,
+						status: "active",
+						rewardToken: {
+							address: usdcAddress as string,
+							symbol: "USDC",
+							name: "USD Coin",
+							decimals: 6,
+						},
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.symbol, "USDC");
+	assert.equal(rewards[0]?.token.decimals, 6);
 });
 
 test("fallback rewards service supplements V3 Merkl user rewards with direct claim proof", async () => {

@@ -67,6 +67,20 @@ This split makes V3 the default for both vault reward APR catalogs and per-user 
 
 Brevis/Incentra claim planning requires all four fields: `claimAddress`, `proof`, `cumulativeAmounts`, and `epoch`. The default V3 service path returns proof-backed direct rewards when V3 rows do not contain all claim metadata.
 
+### Reward token resolution (V3)
+
+`UserReward.token` is resolved from, in order:
+
+1. Row-level token fields on the `/v3/rewards/breakdown` row (`token`, `rewardToken`, `rewardToken*`, `token*`).
+2. The campaign's `rewardToken` from `/v3/apys/rewards`, matched by campaign id (and vault, when present).
+3. The breakdown row's `rewardTokenMetadata`, which V3 resolves per row independently of whether the campaign is still listed by `/v3/apys/rewards`.
+
+`rewardTokenMetadata` is only accepted when its `address` normalizes to the same address as the row's reward token, so a mismatched or malformed payload can never relabel a reward. The field is nullable and absent on older V3 responses; both cases are treated as "no metadata".
+
+`UserRewardToken.decimals` is **optional**. When no source resolves it, the SDK omits it rather than assuming 18, because guessing 18 silently misreads every token that uses a different scale. Callers must handle `undefined` explicitly and must not fall back to a truthiness check (`decimals || 18` would also discard a valid `0`). `symbol` and `name` keep the existing convention of falling back to the token address when unresolved.
+
+Raw reward amounts (`accumulated`, `unclaimed`) and all claim/proof data are unaffected by token resolution — they stay unscaled regardless of whether metadata resolved.
+
 ## Claim Planning APIs
 
 Use the claim builders when the user is about to submit a reward claim:
