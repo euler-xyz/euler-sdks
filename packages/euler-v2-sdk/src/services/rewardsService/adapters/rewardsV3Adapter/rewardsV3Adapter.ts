@@ -138,6 +138,19 @@ const normalizeTimestampSeconds = (value: unknown): number | undefined => {
 	return undefined;
 };
 
+/**
+ * Token decimals are an exact scale, not a measurement: `6.5` is a malformed
+ * payload, and truncating it to `6` would invent a scale the upstream never
+ * stated. Anything that is not a non-negative integer stays unresolved.
+ */
+const normalizeTokenDecimals = (value: unknown): number | undefined => {
+	const parsed = normalizeFiniteNumber(value);
+	if (parsed === undefined || !Number.isInteger(parsed) || parsed < 0) {
+		return undefined;
+	}
+	return parsed;
+};
+
 const normalizeNonNegativeInteger = (value: unknown): number | undefined => {
 	const parsed = normalizeFiniteNumber(value);
 	if (parsed === undefined) return undefined;
@@ -264,13 +277,16 @@ type RewardsClaimAdapter = Pick<
 	) => Promise<TurtleMerkleProof[]>;
 };
 
-type RewardTokenLike = {
-	address?: string;
-	chainId?: number;
-	symbol?: string;
-	name?: string;
-	decimals?: number | string;
-} | null | undefined;
+type RewardTokenLike =
+	| {
+			address?: string;
+			chainId?: number;
+			symbol?: string;
+			name?: string;
+			decimals?: number | string;
+	  }
+	| null
+	| undefined;
 
 type CampaignMetadata = {
 	provider?: string;
@@ -443,8 +459,9 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 				const campaignId = row.campaignId ?? row.id;
 				const vaultAddress = normalizeAddress(row.vault ?? row.vaultAddress);
 				const metadata = campaignId
-					? campaignMetadata.get(campaignMetadataKey(campaignId, vaultAddress)) ??
-						campaignMetadata.get(campaignMetadataKey(campaignId))
+					? (campaignMetadata.get(
+							campaignMetadataKey(campaignId, vaultAddress),
+						) ?? campaignMetadata.get(campaignMetadataKey(campaignId)))
 					: undefined;
 
 				return this.convertRow(chainId, row, metadata);
@@ -713,7 +730,9 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 		const campaignId = row.campaignId ?? row.id;
 		const provider =
 			normalizeProvider(row.provider ?? row.source) ??
-			normalizeProvider(campaignMetadata?.provider ?? campaignMetadata?.source) ??
+			normalizeProvider(
+				campaignMetadata?.provider ?? campaignMetadata?.source,
+			) ??
 			(isUuidLike(campaignId) ? "turtle" : undefined);
 		if (!provider) return undefined;
 
@@ -770,12 +789,12 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 			// Left undefined when no source resolves: guessing 18 here silently
 			// misreads every token that does not use 18 decimals.
 			decimals: firstDefined(
-				normalizeNonNegativeInteger(row.token?.decimals),
-				normalizeNonNegativeInteger(rowRewardToken?.decimals),
-				normalizeNonNegativeInteger(row.rewardTokenDecimals),
-				normalizeNonNegativeInteger(row.tokenDecimals),
-				normalizeNonNegativeInteger(metadataRewardToken?.decimals),
-				normalizeNonNegativeInteger(breakdownRewardToken?.decimals),
+				normalizeTokenDecimals(row.token?.decimals),
+				normalizeTokenDecimals(rowRewardToken?.decimals),
+				normalizeTokenDecimals(row.rewardTokenDecimals),
+				normalizeTokenDecimals(row.tokenDecimals),
+				normalizeTokenDecimals(metadataRewardToken?.decimals),
+				normalizeTokenDecimals(breakdownRewardToken?.decimals),
 			),
 		};
 

@@ -270,7 +270,28 @@ const turtleRewardStreamKey = (reward: UserReward): string | undefined => {
 	].join(":");
 };
 
-const mergeTurtleReward = (
+/**
+ * The row with the larger amount is not necessarily the row whose token the
+ * upstream managed to resolve. Scaling an amount by the wrong decimals is
+ * worse than taking the other row's token, so an unresolved token always
+ * yields to a resolved one.
+ */
+export const preferResolvedRewardToken = (
+	selected: UserReward,
+	supplement: UserReward,
+): UserReward["token"] =>
+	selected.token.decimals === undefined &&
+	supplement.token.decimals !== undefined
+		? supplement.token
+		: selected.token;
+
+/**
+ * Collapse two rows of the same turtle stream into one. Exported because the
+ * fallback adapter factory in `buildSDK` merges the V3 and direct rows before
+ * this service ever sees them, and both reductions have to keep the same
+ * token.
+ */
+export const mergeTurtleUserRewards = (
 	base: UserReward,
 	candidate: UserReward,
 ): UserReward => {
@@ -286,15 +307,7 @@ const mergeTurtleReward = (
 
 	return {
 		...selected,
-		// The row with the larger amount is not necessarily the row whose token
-		// the upstream managed to resolve. Scaling an amount by the wrong
-		// decimals is worse than taking the other row's token, so an unresolved
-		// token always yields to a resolved one.
-		token:
-			selected.token.decimals === undefined &&
-			supplement.token.decimals !== undefined
-				? supplement.token
-				: selected.token,
+		token: preferResolvedRewardToken(selected, supplement),
 		proof: selected.proof?.length ? selected.proof : supplement.proof,
 		claimAddress: selected.claimAddress ?? supplement.claimAddress,
 		streamId: selected.streamId ?? supplement.streamId,
@@ -321,7 +334,7 @@ const collapseTurtleStreamRewards = (rewards: UserReward[]): UserReward[] => {
 			continue;
 		}
 
-		collapsed[existingIndex] = mergeTurtleReward(
+		collapsed[existingIndex] = mergeTurtleUserRewards(
 			collapsed[existingIndex]!,
 			reward,
 		);
@@ -356,7 +369,10 @@ const collapseMerklCumulativeRewards = (
 
 		const existing = collapsed[existingIndex]!;
 		if (BigInt(reward.accumulated) > BigInt(existing.accumulated)) {
-			collapsed[existingIndex] = reward;
+			collapsed[existingIndex] = {
+				...reward,
+				token: preferResolvedRewardToken(reward, existing),
+			};
 		}
 	}
 

@@ -691,6 +691,66 @@ test("V3 rewards adapter prefers campaign token metadata over breakdown metadata
 	assert.equal(rewards[0]?.token.decimals, 6);
 });
 
+test("V3 rewards adapter ignores fractional breakdown token decimals", async () => {
+	// 6.5 is not a scale. Truncating it to 6 would invent one, so the token
+	// stays unresolved.
+	const adapter = buildTurtleUsdcAdapter({
+		address: usdcAddress as string,
+		symbol: "USDC",
+		name: "USD Coin",
+		decimals: 6.5,
+	});
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.decimals, undefined);
+	assert.equal(rewards[0]?.unclaimed, "603375");
+});
+
+test("fallback rewards factory keeps the resolved token when collapsing turtle stream rows", async () => {
+	// The factory merges V3 rows before the service-level reduction ever runs,
+	// so the token has to survive that earlier merge too.
+	const sdk = await buildEulerSDK({
+		config: {
+			rewardsServiceAdapter: "fallback",
+			rewardsV3ApiUrl: "https://example.invalid",
+		},
+		rewardsServiceConfig: {
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			enableTurtle: false,
+		},
+		buildQuery(queryName, fn) {
+			if (queryName === "queryV3RewardsBreakdown") {
+				return (async () => ({
+					data: [
+						{ ...turtleUsdcBreakdownRow, amount: "603375" },
+						{
+							...turtleUsdcBreakdownRow,
+							amount: "700000",
+							rewardTokenMetadata: null,
+						},
+					],
+				})) as typeof fn;
+			}
+			if (queryName === "queryV3RewardsApyPage") {
+				return (async () => ({
+					data: [{ chainId: 1, vault: turtleUsdcVault, campaigns: [] }],
+				})) as typeof fn;
+			}
+			return fn;
+		},
+	});
+
+	const rewards = await sdk.rewardsService.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.unclaimed, "700000");
+	assert.equal(rewards[0]?.token.symbol, "USDC");
+	assert.equal(rewards[0]?.token.decimals, 6);
+});
+
 test("rewards service keeps the resolved token when collapsing turtle stream rows", async () => {
 	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
 	adapter.setQueryV3RewardsBreakdown(async () => ({
