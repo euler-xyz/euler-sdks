@@ -138,14 +138,24 @@ const normalizeTimestampSeconds = (value: unknown): number | undefined => {
 	return undefined;
 };
 
+/** ERC-20 declares `decimals` as a `uint8`. */
+const MAX_TOKEN_DECIMALS = 255;
+
 /**
  * Token decimals are an exact scale, not a measurement: `6.5` is a malformed
  * payload, and truncating it to `6` would invent a scale the upstream never
- * stated. Anything that is not a non-negative integer stays unresolved.
+ * stated. Anything outside an integer `[0, 255]` stays unresolved — a wild
+ * count reaches `formatUnits` downstream, where it allocates a string of that
+ * length or throws.
  */
 const normalizeTokenDecimals = (value: unknown): number | undefined => {
 	const parsed = normalizeFiniteNumber(value);
-	if (parsed === undefined || !Number.isInteger(parsed) || parsed < 0) {
+	if (
+		parsed === undefined ||
+		!Number.isInteger(parsed) ||
+		parsed < 0 ||
+		parsed > MAX_TOKEN_DECIMALS
+	) {
 		return undefined;
 	}
 	return parsed;

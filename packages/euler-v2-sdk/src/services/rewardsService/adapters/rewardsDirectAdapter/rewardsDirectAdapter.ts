@@ -1517,6 +1517,14 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 			const tokenAddress = normalizeAddress(token?.address);
 			if (!tokenAddress) continue;
 
+			// A proof token can carry an address but no decimals, and the stream
+			// config is a configured precision rather than a guess. Only trust it
+			// when it describes the same token the proof paid out in.
+			const configuredDecimals =
+				normalizeAddress(stream.rewardToken?.address) === tokenAddress
+					? stream.rewardToken?.decimals
+					: undefined;
+
 			rewards.push({
 				chainId,
 				token: {
@@ -1528,7 +1536,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 					// campaign all omit it: an 18 guess mis-scales every token that
 					// uses anything else, and the merge in rewardsService prefers a
 					// row whose token did resolve.
-					decimals: token?.decimals,
+					decimals: token?.decimals ?? configuredDecimals,
 				},
 				tokenPrice:
 					normalizeFiniteNumber(

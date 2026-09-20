@@ -707,6 +707,22 @@ test("V3 rewards adapter ignores fractional breakdown token decimals", async () 
 	assert.equal(rewards[0]?.unclaimed, "603375");
 });
 
+test("V3 rewards adapter ignores out-of-range breakdown token decimals", async () => {
+	// ERC-20 decimals are a uint8. A wild count would reach `formatUnits`, which
+	// allocates a string of that length, so it stays unresolved.
+	const adapter = buildTurtleUsdcAdapter({
+		address: usdcAddress as string,
+		symbol: "USDC",
+		name: "USD Coin",
+		decimals: 1_000_000_000,
+	});
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.decimals, undefined);
+	assert.equal(rewards[0]?.unclaimed, "603375");
+});
+
 test("fallback rewards factory keeps the resolved token when collapsing turtle stream rows", async () => {
 	// The factory merges V3 rows before the service-level reduction ever runs,
 	// so the token has to survive that earlier merge too.
@@ -3055,6 +3071,56 @@ test("direct rewards adapter does not treat Turtle cumulative allocation as clai
 	assert.equal(rewards.length, 1);
 	assert.equal(rewards[0]?.accumulated, "1000");
 	assert.equal(rewards[0]?.unclaimed, "0");
+});
+
+test("direct rewards adapter falls back to configured Turtle stream decimals", async () => {
+	// The proof names the token but omits its scale. The stream config is a
+	// configured precision for that same address, not a guess, so it is used.
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+				rewardToken: { address: rewardToken, decimals: 6 },
+			},
+		],
+	});
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({
+			rewardToken: { address: rewardToken, chainId: 1, symbol: "USDC" },
+		}),
+	]);
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.address, rewardToken);
+	assert.equal(rewards[0]?.token.decimals, 6);
+});
+
+test("direct rewards adapter ignores configured decimals for another Turtle token", async () => {
+	// A stream reconfigured to pay a different token must not lend its old
+	// scale to the token the proof actually pays out in.
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+				rewardToken: { address: usdcAddress, decimals: 6 },
+			},
+		],
+	});
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({
+			rewardToken: { address: rewardToken, chainId: 1, symbol: "EUL" },
+		}),
+	]);
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.address, rewardToken);
+	assert.equal(rewards[0]?.token.decimals, undefined);
 });
 
 test("rewards service builds Fuul claim plan from public claimable rewards", async () => {
