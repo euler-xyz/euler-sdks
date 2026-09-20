@@ -2398,6 +2398,58 @@ test("rewards service keeps latest cumulative Merkl reward per token", async () 
 	assert.deepEqual(rewards[0]?.proof, [latestProofHash]);
 });
 
+test("rewards service keeps the resolved Merkl token in either row order", async () => {
+	// Which row carries the token is independent of which one carries the
+	// larger cumulative amount, so the reduction has to merge in both
+	// directions rather than only when the incoming row wins.
+	const resolved = makeMerklReward({
+		accumulated: "1000",
+		unclaimed: "1000",
+		token: {
+			address: rewardToken,
+			chainId: 1,
+			symbol: "USDC",
+			name: "USD Coin",
+			decimals: 6,
+		},
+	});
+	const unresolved = makeMerklReward({
+		accumulated: "2000",
+		unclaimed: "2000",
+		token: {
+			address: rewardToken,
+			chainId: 1,
+			symbol: rewardToken,
+			name: rewardToken,
+		},
+	});
+
+	for (const rows of [
+		[resolved, unresolved],
+		[unresolved, resolved],
+	]) {
+		const service = new RewardsService(
+			{
+				...emptyAdapter,
+				async fetchUserRewards() {
+					return rows;
+				},
+			},
+			{
+				merklDistributorAddress,
+				fuulManagerAddress: zeroAddress,
+				fuulFactoryAddress: zeroAddress,
+			},
+		);
+
+		const rewards = await service.fetchUserRewards(1, accountAddress);
+
+		assert.equal(rewards.length, 1);
+		assert.equal(rewards[0]?.accumulated, "2000");
+		assert.equal(rewards[0]?.token.decimals, 6);
+	}
+});
+
 test("direct rewards adapter keeps latest Merkl cumulative reward per token", async () => {
 	const olderProofHash =
 		"0x2222222222222222222222222222222222222222222222222222222222222222" as Hex;

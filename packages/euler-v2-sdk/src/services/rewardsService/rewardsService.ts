@@ -367,13 +367,18 @@ const collapseMerklCumulativeRewards = (
 			continue;
 		}
 
+		// Pick the amount winner first, then merge the token in either direction:
+		// a smaller row can still be the only one that resolved its decimals.
 		const existing = collapsed[existingIndex]!;
-		if (BigInt(reward.accumulated) > BigInt(existing.accumulated)) {
-			collapsed[existingIndex] = {
-				...reward,
-				token: preferResolvedRewardToken(reward, existing),
-			};
-		}
+		const selected =
+			BigInt(reward.accumulated) > BigInt(existing.accumulated)
+				? reward
+				: existing;
+		const supplement = selected === reward ? existing : reward;
+		collapsed[existingIndex] = {
+			...selected,
+			token: preferResolvedRewardToken(selected, supplement),
+		};
 	}
 
 	return collapsed;
