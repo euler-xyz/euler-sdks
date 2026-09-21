@@ -15,6 +15,8 @@ const coverageFiles = [
 	"src/services/vaults/eVaultService/eVaultService.ts",
 	"src/utils/blockPin.ts",
 	"src/utils/readMany.ts",
+	"src/utils/lens/lensRead.ts",
+	"src/utils/lens/index.ts",
 ];
 
 export default defineConfig({
@@ -26,6 +28,7 @@ export default defineConfig({
 			"test/blockPin.test.ts",
 			"test/readMany.test.ts",
 			"test/blockPinnedReadsExports.test.ts",
+			"test/lensReads.test.ts",
 		],
 		coverage: {
 			provider: "v8",
