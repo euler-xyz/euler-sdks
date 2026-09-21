@@ -13,12 +13,19 @@ const coverageFiles = [
 	"src/services/accountService/accountService.ts",
 	"src/services/vaults/vaultMetaService/vaultMetaService.ts",
 	"src/services/vaults/eVaultService/eVaultService.ts",
+	"src/utils/blockPin.ts",
+	"src/utils/readMany.ts",
 ];
 
 export default defineConfig({
 	test: {
 		environment: "node",
-		include: ["test/readPathInfra.test.ts", "test/readPathServices.test.ts"],
+		include: [
+			"test/readPathInfra.test.ts",
+			"test/readPathServices.test.ts",
+			"test/blockPin.test.ts",
+			"test/readMany.test.ts",
+		],
 		coverage: {
 			provider: "v8",
 			reporter: ["text", "json-summary", "lcov"],
