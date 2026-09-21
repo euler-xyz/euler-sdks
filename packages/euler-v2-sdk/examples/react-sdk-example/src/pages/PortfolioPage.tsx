@@ -1237,10 +1237,12 @@ function ChainAccountSection({
                   <tr key={`${reward.token.address}-${reward.provider}-${idx}`}>
                     <td>{reward.token.symbol}</td>
                     <td>
-                      {formatBigInt(
-                        BigInt(reward.unclaimed),
-                        reward.token.decimals
-                      )}
+                      {reward.token.decimals === undefined
+                        ? "Unavailable"
+                        : formatBigInt(
+                            BigInt(reward.unclaimed),
+                            reward.token.decimals
+                          )}
                     </td>
                     <td>
                       {reward.tokenPrice > 0

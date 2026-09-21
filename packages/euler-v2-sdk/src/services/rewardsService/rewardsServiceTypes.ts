@@ -71,7 +71,12 @@ export interface UserRewardToken {
 	chainId: number;
 	symbol: string;
 	name: string;
-	decimals: number;
+	/**
+	 * Token decimals. Omitted when no source resolved them, so that callers can
+	 * tell an unresolved token apart from one that genuinely has 0 decimals.
+	 * Raw reward amounts stay unscaled either way.
+	 */
+	decimals?: number;
 }
 
 export interface UserReward {

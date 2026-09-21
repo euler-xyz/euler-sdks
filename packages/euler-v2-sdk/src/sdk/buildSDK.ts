@@ -182,6 +182,10 @@ import type { IAccountAdapter } from "../services/accountService/accountService.
 import type { IEVaultAdapter } from "../services/vaults/eVaultService/eVaultService.js";
 import type { IEulerEarnAdapter } from "../services/vaults/eulerEarnService/eulerEarnService.js";
 import type { IRewardsAdapter } from "../services/rewardsService/rewardsServiceTypes.js";
+import {
+	mergeTurtleUserRewards,
+	preferResolvedRewardToken,
+} from "../services/rewardsService/rewardsService.js";
 import type { IVaultTypeAdapter } from "../services/vaults/vaultMetaService/adapters/IVaultTypeAdapter.js";
 import type { EulerPlugin } from "../plugins/types.js";
 import { BatchSimulationAdapter } from "../plugins/batchSimulation.js";
@@ -1287,31 +1291,15 @@ export async function buildEulerSDK<
 
 					return {
 						...selected,
+						token: preferResolvedRewardToken(selected, fallback),
 						proof: selected.proof?.length ? selected.proof : fallback.proof,
 						claimAddress: selected.claimAddress ?? fallback.claimAddress,
 					};
 				};
-				const mergeTurtleReward = (
-					base: UserReward,
-					supplement: UserReward,
-				): UserReward => {
-					const selected =
-						BigInt(supplement.unclaimed) > BigInt(base.unclaimed) ||
-						(BigInt(supplement.unclaimed) === BigInt(base.unclaimed) &&
-							BigInt(supplement.accumulated) > BigInt(base.accumulated))
-							? supplement
-							: base;
-					const fallback = selected === base ? supplement : base;
-
-					return {
-						...selected,
-						proof: selected.proof?.length ? selected.proof : fallback.proof,
-						claimAddress: selected.claimAddress ?? fallback.claimAddress,
-						streamId: selected.streamId ?? fallback.streamId,
-						streamAddress: selected.streamAddress ?? fallback.streamAddress,
-						timestamp: selected.timestamp ?? fallback.timestamp,
-					};
-				};
+				// Shared with the service-level reduction: this factory merges the
+				// V3 and direct rows first, so a token resolved by only one of them
+				// has to survive here too.
+				const mergeTurtleReward = mergeTurtleUserRewards;
 				const rewards: UserReward[] = [];
 				const existing = new Map<string, number>();
 				const merklExisting = new Map<string, number>();
