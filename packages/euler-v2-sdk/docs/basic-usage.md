@@ -288,7 +288,7 @@ const label =
 ```
 
 The SDK reports what its source says rather than deriving a verdict, so the
-answer cannot contradict the system you read alongside it: V3's `vaultType` on
+answer cannot contradict the system you read alongside it: V3's `isEscrow` on
 the V3 path, and `EscrowedCollateralPerspective` membership on the on-chain
 path — the same answer the `ESCROW` perspective above returns. See
 [Escrow Status](./entities/evault.md#escrow-status) for how the two differ and
