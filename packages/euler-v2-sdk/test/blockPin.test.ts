@@ -3,12 +3,11 @@ import {
 	type Hex,
 	createPublicClient,
 	custom,
-	encodeAbiParameters,
+	decodeFunctionData,
 	encodeFunctionResult,
 	multicall3Abi,
 	numberToHex,
 	parseAbi,
-	zeroAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
 import { test } from "vitest";
@@ -29,9 +28,10 @@ const totalSupplyAbi = parseAbi(["function totalSupply() view returns (uint256)"
 type Seen = { method: string; params: unknown };
 
 /** A client whose transport records every JSON-RPC request it forwards. */
-function makeClient(seen: Seen[]) {
+function makeClient(seen: Seen[], batch?: { multicall: boolean }) {
 	return createPublicClient({
 		chain: mainnet,
+		...(batch ? { batch } : {}),
 		transport: custom({
 			request: async ({ method, params }: { method: string; params?: unknown }) => {
 				seen.push({ method, params });
@@ -48,13 +48,16 @@ function makeClient(seen: Seen[]) {
 					case "eth_getStorageAt":
 						return WORD;
 					case "eth_call": {
-						const [{ to }] = params as [{ to: string }];
+						const [{ to, data }] = params as [{ to: string; data: Hex }];
 						// viem's multicall batching lands on Multicall3: answer aggregate3
+						// with one word per bundled call
 						if (to.toLowerCase() === mainnet.contracts.multicall3.address.toLowerCase()) {
+							const { args } = decodeFunctionData({ abi: multicall3Abi, data });
+							const calls = args[0] as readonly unknown[];
 							return encodeFunctionResult({
 								abi: multicall3Abi,
 								functionName: "aggregate3",
-								result: [{ success: true, returnData: WORD }],
+								result: calls.map(() => ({ success: true, returnData: WORD })),
 							});
 						}
 						return WORD;
@@ -126,6 +129,31 @@ test("readContract and viem's Multicall3 batching are pinned like a raw call", a
 	assert.deepEqual(block, { blockHash: HASH, requireCanonical: true });
 });
 
+test("viem's batch.multicall coalescing runs through the pin as one aggregate3", async () => {
+	const seen: Seen[] = [];
+	// the SDK's provider clients enable viem's multicall batching: concurrent
+	// readContract calls are coalesced at the action layer into one aggregate3
+	const pinned = pinClientToBlock(makeClient(seen, { multicall: true }), {
+		blockHash: HASH,
+		requireCanonical: true,
+	});
+	const other = "0x00000000000000000000000000000000000000ef" as const;
+
+	const supplies = await Promise.all([
+		pinned.readContract({ address: TARGET, abi: totalSupplyAbi, functionName: "totalSupply" }),
+		pinned.readContract({ address: other, abi: totalSupplyAbi, functionName: "totalSupply" }),
+	]);
+
+	assert.deepEqual(supplies, [42n, 42n]);
+	const calls = seen.filter((entry) => entry.method === "eth_call");
+	assert.equal(calls.length, 1, "two reads must coalesce into one eth_call");
+	const [request, block] = calls[0]!.params as [{ to: string; data: Hex }, unknown];
+	assert.equal(request.to.toLowerCase(), mainnet.contracts.multicall3.address.toLowerCase());
+	const { args } = decodeFunctionData({ abi: multicall3Abi, data: request.data });
+	assert.equal((args[0] as readonly unknown[]).length, 2);
+	assert.deepEqual(block, { blockHash: HASH, requireCanonical: true });
+});
+
 test("state reads with a block argument are pinned at the right position", async () => {
 	const seen: Seen[] = [];
 	const pinned = pinClientToBlock(makeClient(seen), { blockNumber: 7n });
@@ -186,7 +214,3 @@ test("a pinned client leaves the original client unpinned", async () => {
 
 	assert.equal(lastCall(seen)[1], "latest");
 });
-
-// keep viem's encoders referenced so the fixture helpers stay type-checked
-void encodeAbiParameters;
-void zeroAddress;
