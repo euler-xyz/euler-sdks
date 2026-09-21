@@ -15,6 +15,10 @@ export interface Token {
 	logoURI?: string;
 }
 
+/**
+ * Which vault service handles a vault. An EVault's escrow status is a separate
+ * question — see `EVault.isEscrow`.
+ */
 export enum VaultType {
 	EVault = "EVault",
 	EulerEarn = "EulerEarn",

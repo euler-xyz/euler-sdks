@@ -138,7 +138,11 @@ import type { EulerEarnVaultInfoFull } from "../vaults/eulerEarnService/adapters
 import { getEulerEarnVaultInfoFullLensBatchItem } from "../vaults/eulerEarnService/adapters/eulerEarnOnchainAdapter.js";
 import { vaultLensAbi } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/abis/vaultLensAbi.js";
 import type { VaultInfoFull } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
-import { getVaultInfoFullLensBatchItem } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultOnchainAdapter.js";
+import {
+	getPerspectiveVerifiedArrayBatchItem,
+	getVaultInfoFullLensBatchItem,
+	perspectiveVerifiedArrayAbi,
+} from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultOnchainAdapter.js";
 import { convertVaultInfoFullToIEVault } from "../vaults/eVaultService/adapters/eVaultOnchainAdapter/vaultInfoConverter.js";
 import { SecuritizeCollateralVault } from "../../entities/SecuritizeCollateralVault.js";
 import { utilsLensAbi } from "../vaults/securitizeVaultService/adapters/abis/utilsLensAbi.js";
@@ -336,6 +340,7 @@ export type SimulationStateOverrideOptions = {
 };
 
 type LensMeta =
+	| { kind: "escrowPerspective" }
 	| { kind: "eVault"; vault: Address }
 	| { kind: "eulerEarn"; vault: Address }
 	| { kind: "securitizeInfo"; vault: Address }
@@ -921,6 +926,9 @@ async function decodeAccountSnapshot<
 	const securitizeInfos = new Map<Address, VaultInfoERC4626>();
 	const securitizeGovernors = new Map<Address, Address>();
 	const securitizeSupplyCaps = new Map<Address, bigint>();
+	// Escrow perspective membership; undefined when the read was absent or
+	// failed, in which case simulated EVaults report `isEscrow: null`.
+	let escrowVerified: Set<string> | undefined;
 
 	for (let i = 0; i < lensMeta.length; i++) {
 		const meta = lensMeta[i]!;
@@ -942,6 +950,22 @@ async function decodeAccountSnapshot<
 			continue;
 		}
 
+		if (meta.kind === "escrowPerspective") {
+			try {
+				const verified = decodeFunctionResult({
+					abi: perspectiveVerifiedArrayAbi,
+					functionName: "verifiedArray",
+					data: resultItem.result,
+				}) as readonly Address[];
+				escrowVerified = new Set(
+					verified.map((address) => address.toLowerCase()),
+				);
+			} catch {
+				// unreadable set: leave the verdict unanswered rather than guessed
+			}
+			continue;
+		}
+
 		if (meta.kind === "walletBalance") {
 			const bal = decodeFunctionResult({
 				abi: walletBalanceAbi,
@@ -958,9 +982,13 @@ async function decodeAccountSnapshot<
 				functionName: "getVaultInfoFull",
 				data: resultItem.result,
 			}) as unknown as VaultInfoFull;
-			const entity = new EVault(
-				convertVaultInfoFullToIEVault(decodedVault, chainId, []),
-			);
+			const parsed = convertVaultInfoFullToIEVault(decodedVault, chainId, []);
+			const entity = new EVault({
+				...parsed,
+				isEscrow: escrowVerified
+					? escrowVerified.has(parsed.address.toLowerCase())
+					: null,
+			});
 			vaultsByAddress.set(getAddress(meta.vault), entity);
 		}
 
@@ -1355,6 +1383,17 @@ async function buildSimulationBatch(
 		lensItems.push(item);
 		lensMeta.push(meta);
 	};
+
+	// Read the escrow perspective's verified set ahead of the EVault lens reads,
+	// so simulated EVault entities report the same `isEscrow` as fetched ones.
+	const escrowPerspective =
+		deployment.addresses.peripheryAddrs?.escrowedCollateralPerspective;
+	if (eVaults.length > 0 && escrowPerspective) {
+		pushLensItem(
+			getPerspectiveVerifiedArrayBatchItem(escrowPerspective, owner),
+			{ kind: "escrowPerspective" },
+		);
+	}
 
 	for (const vault of eVaults) {
 		pushLensItem(
