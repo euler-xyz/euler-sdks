@@ -147,6 +147,26 @@ test("evc carrier bundles items into one batchSimulation call with the summed va
 	]);
 });
 
+test("evc carrier forwards an explicit sender as the call's from", async () => {
+	const seen: Seen[] = [];
+	const client = makeClient(seen, batchSimulationAnswer);
+
+	await readMany(client, [{ to: A, data: "0x01", value: 5n }], {
+		carrier: "evc",
+		evcAddress: EVC,
+		account: CALLER,
+	});
+
+	const [request] = seen[0]!.params as [{ from?: string }];
+	assert.equal(request.from?.toLowerCase(), CALLER.toLowerCase());
+	const withoutSender: Seen[] = [];
+	await readMany(makeClient(withoutSender, batchSimulationAnswer), [{ to: A, data: "0x01" }], {
+		carrier: "evc",
+		evcAddress: EVC,
+	});
+	assert.equal((withoutSender[0]!.params as [{ from?: string }])[0].from, undefined);
+});
+
 test("evc carrier defaults onBehalfOfAccount to the zero address", async () => {
 	const seen: Seen[] = [];
 	const client = makeClient(seen, batchSimulationAnswer);

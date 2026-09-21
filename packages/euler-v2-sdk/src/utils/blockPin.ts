@@ -39,9 +39,23 @@ export function encodeBlockPin(
 		: { blockHash: pin.blockHash, requireCanonical: pin.requireCanonical };
 }
 
+/** The client each pinned client forwards to, so re-pinning never stacks wrappers. */
+const sourceClients = new WeakMap<object, PublicClient>();
+
 /** The pin a client was created with by `pinClientToBlock`, if any. */
 export function getClientBlockPin(client: PublicClient): BlockPin | undefined {
 	return (client as Partial<BlockPinnedClient>).blockPin;
+}
+
+/** An immutable copy of the pin, so later mutation of the caller's object changes nothing. */
+function snapshotBlockPin(pin: BlockPin): BlockPin {
+	return Object.freeze(
+		"blockNumber" in pin
+			? { blockNumber: pin.blockNumber }
+			: pin.requireCanonical === undefined
+				? { blockHash: pin.blockHash }
+				: { blockHash: pin.blockHash, requireCanonical: pin.requireCanonical },
+	);
 }
 
 /**
@@ -57,13 +71,18 @@ export function getClientBlockPin(client: PublicClient): BlockPin | undefined {
  * and cache settings are carried over; the original client is not modified.
  *
  * `normalizeQueryKeyValue` reads the pin off the client, so a query cache
- * keeps pinned and unpinned answers apart.
+ * keeps pinned and unpinned answers apart. The pin is copied and frozen at
+ * creation and exposed read-only, so the block the RPC sees and the block the
+ * cache key names cannot drift apart. Pinning an already pinned client pins
+ * the client it forwards to, replacing the earlier pin rather than nesting it.
  */
 export function pinClientToBlock(
 	client: PublicClient,
 	pin: BlockPin,
 ): BlockPinnedClient {
-	const block = encodeBlockPin(pin);
+	const source = sourceClients.get(client) ?? client;
+	const snapshot = snapshotBlockPin(pin);
+	const block = encodeBlockPin(snapshot);
 	const request = async ({
 		method,
 		params,
@@ -76,21 +95,28 @@ export function pinClientToBlock(
 		if (index !== undefined && pinnedParams) {
 			pinnedParams[index] = block;
 		}
-		return client.request({
+		return source.request({
 			method,
 			params: pinnedParams ?? params,
 		} as Parameters<PublicClient["request"]>[0]);
 	};
 
 	const pinned = createPublicClient({
-		chain: client.chain,
+		chain: source.chain,
 		transport: custom({ request }),
-		batch: client.batch,
-		cacheTime: client.cacheTime,
-		pollingInterval: client.pollingInterval,
-		key: `${client.key}:pinned`,
-		name: `${client.name} (pinned)`,
-	}).extend(() => ({ blockPin: pin }));
+		batch: source.batch,
+		cacheTime: source.cacheTime,
+		pollingInterval: source.pollingInterval,
+		key: `${source.key}:pinned`,
+		name: `${source.name} (pinned)`,
+	});
+	Object.defineProperty(pinned, "blockPin", {
+		value: snapshot,
+		enumerable: true,
+		writable: false,
+		configurable: false,
+	});
+	sourceClients.set(pinned, source);
 
 	return pinned as unknown as BlockPinnedClient;
 }

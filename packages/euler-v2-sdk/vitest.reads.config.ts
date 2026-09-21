@@ -25,6 +25,7 @@ export default defineConfig({
 			"test/readPathServices.test.ts",
 			"test/blockPin.test.ts",
 			"test/readMany.test.ts",
+			"test/blockPinnedReadsExports.test.ts",
 		],
 		coverage: {
 			provider: "v8",

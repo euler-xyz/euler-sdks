@@ -205,6 +205,49 @@ test("the pin is readable off the client and carried into cache keys", async () 
 	assert.match(serializeQueryArgs([atHash, TARGET]) ?? "", /1111111111/);
 });
 
+test("re-pinning a pinned client replaces the pin instead of nesting it", async () => {
+	const seen: Seen[] = [];
+	const client = makeClient(seen);
+	const first = pinClientToBlock(client, { blockHash: HASH });
+	const second = pinClientToBlock(first, { blockNumber: 8n });
+	const third = pinClientToBlock(second, { blockHash: HASH, requireCanonical: true });
+
+	await second.call({ to: TARGET, data: "0x18160ddd" });
+	assert.equal(lastCall(seen)[1], numberToHex(8n));
+	await third.call({ to: TARGET, data: "0x18160ddd" });
+	assert.deepEqual(lastCall(seen)[1], { blockHash: HASH, requireCanonical: true });
+
+	// metadata and cache identity name the same block the RPC saw
+	assert.deepEqual(getClientBlockPin(second), { blockNumber: 8n });
+	assert.deepEqual(getClientBlockPin(third), { blockHash: HASH, requireCanonical: true });
+	assert.notEqual(serializeQueryArgs([second, TARGET]), serializeQueryArgs([third, TARGET]));
+	// the first pin still works on its own and the source is still unpinned
+	await first.call({ to: TARGET, data: "0x18160ddd" });
+	assert.deepEqual(lastCall(seen)[1], { blockHash: HASH });
+	await client.call({ to: TARGET, data: "0x18160ddd" });
+	assert.equal(lastCall(seen)[1], "latest");
+});
+
+test("the pin is a frozen copy: mutating the input or the client changes nothing", async () => {
+	const seen: Seen[] = [];
+	const input: BlockPin = { blockNumber: 7n };
+	const pinned = pinClientToBlock(makeClient(seen), input);
+	const keyBefore = serializeQueryArgs([pinned, TARGET]);
+
+	(input as { blockNumber: bigint }).blockNumber = 8n;
+	assert.throws(() => {
+		(pinned.blockPin as { blockNumber: bigint }).blockNumber = 9n;
+	});
+	assert.throws(() => {
+		(pinned as { blockPin: BlockPin }).blockPin = { blockNumber: 10n };
+	});
+
+	await pinned.call({ to: TARGET, data: "0x18160ddd" });
+	assert.equal(lastCall(seen)[1], numberToHex(7n));
+	assert.deepEqual(getClientBlockPin(pinned), { blockNumber: 7n });
+	assert.equal(serializeQueryArgs([pinned, TARGET]), keyBefore);
+});
+
 test("a pinned client leaves the original client unpinned", async () => {
 	const seen: Seen[] = [];
 	const client = makeClient(seen);

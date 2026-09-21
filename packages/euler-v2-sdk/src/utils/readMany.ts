@@ -40,6 +40,11 @@ export type ReadManyOptions =
 			evcAddress: Address;
 			/** `onBehalfOfAccount` for every batch item; defaults to the zero address. */
 			onBehalfOfAccount?: Address;
+			/**
+			 * The `from` of the simulated call. Items that carry value need a sender
+			 * whose balance covers it on nodes that enforce balances in `eth_call`.
+			 */
+			account?: Address;
 	  };
 
 interface BatchItemResult {
@@ -120,6 +125,7 @@ async function readManyThroughEvc(
 	}));
 	const value = batchItems.reduce((sum, item) => sum + item.value, 0n);
 	const { data } = await client.call({
+		...(options.account ? { account: options.account } : {}),
 		to: options.evcAddress,
 		data: encodeFunctionData({
 			abi: ethereumVaultConnectorAbi,

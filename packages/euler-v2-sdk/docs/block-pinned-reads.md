@@ -18,9 +18,21 @@ import { pinClientToBlock, buildEulerSDK } from '@eulerxyz/euler-v2-sdk'
 const pinned = pinClientToBlock(client, { blockHash, requireCanonical: true })
 // or: pinClientToBlock(client, { blockNumber: 21_000_000n })
 
+// Pinning governs reads made through the pinned client and nothing else.
+// buildEulerSDK's default adapters answer from Data V3 first and only fall
+// back to the chain, so select the on-chain adapters explicitly (or set
+// `disableV3: true`); V3/API data is never pinned.
 const sdk = await buildEulerSDK({
+  config: {
+    eVaultServiceAdapter: 'onchain',
+    eulerEarnServiceAdapter: 'onchain',
+    accountServiceAdapter: 'onchain',
+  },
   servicesOverrides: {
-    providerService: { getProvider: () => pinned },
+    providerService: {
+      getProvider: () => pinned,
+      getSupportedChainIds: () => [pinned.chain!.id],
+    },
   },
 })
 const { result } = await sdk.eVaultService.fetchVaults(1, addresses) // at the hash
@@ -42,6 +54,12 @@ through untouched, so `getBlockNumber`, `getBlock`, logs and transactions
 behave as on the original client. Chain, batching and cache settings are
 carried over; the original client is not modified.
 
+Only reads that go through the pinned client are pinned. Services whose
+adapter answers from Data V3 or another HTTP source (V3 vault and account
+data, prices, rewards, labels, intrinsic APY) do not consult the provider for
+that answer, so they are unaffected by a pin; on-chain fallbacks and the
+on-chain adapters are.
+
 `requireCanonical: true` makes the node refuse a hash that is no longer on its
 canonical chain instead of answering from a stale fork — use it whenever the
 hash was chosen earlier than the read. When it is not given the block object
@@ -59,7 +77,7 @@ unpinned answers never share a cache entry.
 
 ```typescript
 import { readMany, vaultLensAbi, getVaultInfoFullLensBatchItem, convertVaultInfoFullToIEVault, EVault } from '@eulerxyz/euler-v2-sdk'
-import { decodeFunctionResult } from 'viem'
+import { decodeFunctionResult, zeroAddress } from 'viem'
 
 const items = vaults.map((vault) => {
   const { targetContract, data } = getVaultInfoFullLensBatchItem(vaultLens, vault, zeroAddress)
