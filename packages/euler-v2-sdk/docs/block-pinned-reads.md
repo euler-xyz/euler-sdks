@@ -44,8 +44,12 @@ carried over; the original client is not modified.
 
 `requireCanonical: true` makes the node refuse a hash that is no longer on its
 canonical chain instead of answering from a stale fork — use it whenever the
-hash was chosen earlier than the read. Nodes that do not implement EIP-1898
-reject the hash form with a JSON-RPC error; the number form works everywhere.
+hash was chosen earlier than the read. When it is not given the block object
+carries only `blockHash`, which is EIP-1898's default (`false`); an RPC proxy
+that validates the block argument may require the flag to be present and
+`true`, so set it on the pin explicitly behind such a proxy. Nodes that do not
+implement EIP-1898 reject the hash form with a JSON-RPC error; the number form
+works everywhere.
 
 The pin is readable with `getClientBlockPin(client)`, and
 `normalizeQueryKeyValue` includes it in query cache keys, so pinned and
