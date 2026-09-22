@@ -118,3 +118,44 @@ so map `targetContract` to `to`.
 | `getEVCAccountInfoLensBatchItem`, `getVaultAccountInfoLensBatchItem` | `AccountLens` reads |
 | `getPerspectiveVerifiedArrayBatchItem(perspective, onBehalfOf)` | a perspective's verified set; decode with `perspectiveVerifiedArrayAbi` |
 | `encodeEVCBatch(items)` | calldata for `EVC.batch(items)` when a consumer submits a batch itself |
+
+## Lens reads
+
+Each lens view is packaged as a `LensRead` with three forms that share one ABI
+and never take a block argument — read through a pinned client and all three
+answer at its pin:
+
+| Form | Use |
+| --- | --- |
+| `batchItem(lens, args, onBehalfOf?)` | an `EVCBatchItem` for `readMany` (map `targetContract` to `to`) or an EVC batch |
+| `decode(data)` | decodes the bytes a successful bundled read answered with, typed from the ABI |
+| `read(client, lens, args)` | one `readContract` through `client` |
+
+| Set | Views | Decode further with |
+| --- | --- | --- |
+| `oracleLens` | `getOracleInfo(oracle, bases, quotes)`, `getValidAdapters(base, quote)`, `isStalePullOracle(oracle, failureReason)` | `decodeOracleInfo` / `decodeOracleRoutes` (`utils/oracle.ts`) on the `OracleDetailedInfo` |
+| `irmLens` | `getInterestRateModelInfo(irm)` | `decodeIRMParams(type, params)` (`utils/irm.ts`) on the `InterestRateModelDetailedInfo` |
+| `vaultLens` | `getVaultInfoFull`, `getVaultInfoStatic`, `getVaultInfoDynamic`, `getRecognizedCollateralsLTVInfo`, `getVaultInterestRateModelInfo` | `convertVaultInfoFullToIEVault` on `getVaultInfoFull` |
+
+```typescript
+import { oracleLens, irmLens, readMany, decodeOracleInfo, decodeIRMParams } from '@eulerxyz/euler-v2-sdk'
+
+const items = [
+  oracleLens.getOracleInfo.batchItem(oracleLensAddress, [router, [base], [quote]]),
+  irmLens.getInterestRateModelInfo.batchItem(irmLensAddress, [irm]),
+].map(({ targetContract, data }) => ({ to: targetContract, data }))
+
+const [oracle, irm] = await readMany(pinned, items)
+if (oracle.success) {
+  const adapters = decodeOracleInfo(oracleLens.getOracleInfo.decode(oracle.data))
+}
+if (irm.success) {
+  const info = irmLens.getInterestRateModelInfo.decode(irm.data)
+  const params = decodeIRMParams(info.interestRateModelType, info.interestRateModelParams)
+}
+```
+
+`defineLensRead(abi, functionName)` builds the same package over any ABI, for a
+lens view the SDK does not list. The OracleLens and IRMLens ABIs are vendored
+from euler-interfaces (`oracleLensAbi`, `irmLensAbi`); VaultLens reads use the
+`vaultLensAbi` the SDK already bundles.

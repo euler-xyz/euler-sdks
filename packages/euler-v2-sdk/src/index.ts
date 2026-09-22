@@ -73,3 +73,4 @@ export * from "./utils/eulerLabels.js";
 export * from "./utils/blockPin.js";
 export * from "./utils/readMany.js";
 export { encodeEVCBatch } from "./utils/batch.js";
+export * from "./utils/lens/index.js";
