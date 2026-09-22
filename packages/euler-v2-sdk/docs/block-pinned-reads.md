@@ -127,7 +127,7 @@ answer at its pin:
 
 | Form | Use |
 | --- | --- |
-| `batchItem(lens, args, onBehalfOf?)` | an `EVCBatchItem` for `readMany` (map `targetContract` to `to`) or an EVC batch |
+| `batchItem(lens, args, onBehalfOf?)` | an `EVCBatchItem` for `readMany` (map `targetContract` to `to`) or EVC `batchSimulation` via `eth_call` |
 | `decode(data)` | decodes the bytes a successful bundled read answered with, typed from the ABI |
 | `read(client, lens, args)` | one `readContract` through `client` |
 
