@@ -18,14 +18,20 @@ export type BlockPin =
 export type BlockPinnedClient = PublicClient & { blockPin: BlockPin };
 
 /**
- * JSON-RPC read methods whose positional block parameter the pin replaces,
- * keyed by that parameter's index. Everything else passes through untouched.
+ * JSON-RPC state-read methods whose positional block parameter the pin
+ * replaces, keyed by that parameter's index. Everything else passes through
+ * untouched: block and log queries name their own blocks, and transaction
+ * submission has no block to pin. `eth_estimateGas` is left out on purpose —
+ * it exists to send a transaction against the current state.
  */
 const BLOCK_PARAMETER_INDEX: Readonly<Record<string, number>> = {
 	eth_call: 1,
+	eth_createAccessList: 1,
 	eth_getBalance: 1,
 	eth_getCode: 1,
 	eth_getTransactionCount: 1,
+	eth_simulateV1: 1,
+	eth_getProof: 2,
 	eth_getStorageAt: 2,
 };
 
@@ -65,10 +71,13 @@ function snapshotBlockPin(pin: BlockPin): BlockPin {
  * applied one layer down: the returned client forwards each JSON-RPC request
  * to `client`, replacing the block parameter of the read methods with the pin
  * before it leaves. That covers `call`, `readContract`, `multicall` (viem's
- * Multicall3 batching included), `getBalance`, `getCode`, `getStorageAt` and
+ * Multicall3 batching included), `simulateBlocks`, `createAccessList`,
+ * `getBalance`, `getCode`, `getStorageAt`, `getProof` and
  * `getTransactionCount`, and therefore every SDK service and adapter handed
- * this client — nothing needs a block argument of its own. Chain, batching
- * and cache settings are carried over; the original client is not modified.
+ * this client — nothing needs a block argument of its own. Chain, batching,
+ * cache and CCIP-Read settings are carried over, so the pinned client makes
+ * exactly the off-chain lookups the source would; the original client is not
+ * modified.
  *
  * `normalizeQueryKeyValue` reads the pin off the client, so a query cache
  * keeps pinned and unpinned answers apart. The pin is copied and frozen at
@@ -106,6 +115,7 @@ export function pinClientToBlock(
 		transport: custom({ request }),
 		batch: source.batch,
 		cacheTime: source.cacheTime,
+		ccipRead: source.ccipRead,
 		pollingInterval: source.pollingInterval,
 		key: `${source.key}:pinned`,
 		name: `${source.name} (pinned)`,

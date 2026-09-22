@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import {
 	type Hex,
+	RpcRequestError,
 	createPublicClient,
 	custom,
 	decodeFunctionData,
+	encodeErrorResult,
 	encodeFunctionResult,
 	multicall3Abi,
 	numberToHex,
+	offchainLookupAbiItem,
 	parseAbi,
 } from "viem";
 import { mainnet } from "viem/chains";
@@ -47,6 +50,18 @@ function makeClient(seen: Seen[], batch?: { multicall: boolean }) {
 						return "0x";
 					case "eth_getStorageAt":
 						return WORD;
+					case "eth_getProof":
+						return {
+							address: TARGET,
+							accountProof: [],
+							balance: "0x0",
+							codeHash: WORD,
+							nonce: "0x0",
+							storageHash: WORD,
+							storageProof: [],
+						};
+					case "eth_createAccessList":
+						return { accessList: [], gasUsed: "0x0" };
 					case "eth_call": {
 						const [{ to, data }] = params as [{ to: string; data: Hex }];
 						// viem's multicall batching lands on Multicall3: answer aggregate3
@@ -163,12 +178,58 @@ test("state reads with a block argument are pinned at the right position", async
 	await pinned.getCode({ address: TARGET });
 	await pinned.getTransactionCount({ address: TARGET });
 	await pinned.getStorageAt({ address: TARGET, slot: "0x0" });
+	await pinned.getProof({ address: TARGET, storageKeys: ["0x0"] });
+	await pinned.createAccessList({ to: TARGET, data: "0x18160ddd" });
 
 	const byMethod = Object.fromEntries(seen.map((entry) => [entry.method, entry.params as unknown[]]));
 	assert.equal(byMethod.eth_getBalance![1], block);
 	assert.equal(byMethod.eth_getCode![1], block);
 	assert.equal(byMethod.eth_getTransactionCount![1], block);
 	assert.equal(byMethod.eth_getStorageAt![2], block);
+	assert.equal(byMethod.eth_getProof![2], block, "eth_getProof carries its block third");
+	assert.equal(byMethod.eth_createAccessList![1], block);
+});
+
+test("CCIP-Read settings are carried over, so a pinned client makes the source's lookups only", async () => {
+	const lookup = "0x00000000000000000000000000000000000000cc" as const;
+	const offchainLookupRevert = encodeErrorResult({
+		abi: [offchainLookupAbiItem],
+		errorName: "OffchainLookup",
+		args: [lookup, ["https://gateway.example/{sender}/{data}"], "0x1234", "0x12345678", "0x"],
+	});
+	const makeSource = (ccipRead: false | { request: () => Promise<Hex> }) =>
+		createPublicClient({
+			chain: mainnet,
+			ccipRead,
+			transport: custom({
+				request: async ({ method, params }: { method: string; params?: unknown }) => {
+					if (method !== "eth_call") throw new Error(`unexpected ${method}`);
+					const [{ to, data }] = params as [{ to: string; data: Hex }];
+					// the lookup target reverts with OffchainLookup until the callback data arrives
+					if (to.toLowerCase() === lookup && data === "0xabcdef01") {
+						throw new RpcRequestError({
+							body: { method, params },
+							error: { code: 3, message: "execution reverted", data: offchainLookupRevert },
+							url: "custom",
+						});
+					}
+					return WORD;
+				},
+			}),
+		});
+
+	// a source that disabled off-chain lookups: the pinned client must not perform one
+	const disabled = pinClientToBlock(makeSource(false), { blockNumber: 7n });
+	assert.equal(disabled.ccipRead, false);
+	await assert.rejects(() => disabled.call({ to: lookup, data: "0xabcdef01" }), /OffchainLookup|reverted/);
+
+	// a source with its own lookup handler: the pinned client uses that exact handler
+	let handled = 0;
+	const handler = { request: async () => { handled += 1; return "0x" as Hex; } };
+	const withHandler = pinClientToBlock(makeSource(handler), { blockNumber: 7n });
+	assert.equal(withHandler.ccipRead, handler);
+	await withHandler.call({ to: lookup, data: "0xabcdef01" });
+	assert.equal(handled, 1);
 });
 
 test("methods without a block argument pass through untouched", async () => {
