@@ -1,4 +1,5 @@
-import { describe, it } from "vitest";
+import { describe, expectTypeOf, it } from "vitest";
+import type { LiquidationRecord, LiquidationValuation } from "../src/index.js";
 import type { EulerSDK, EulerSDKOptions } from "../src/sdk/sdk.js";
 import type {
 	IActivityService,
@@ -11,6 +12,15 @@ import type {
  * models a strict consumer that must keep compiling.
  */
 describe("EulerSDK activity service public types", () => {
+	it("exports both documented liquidation USD sources", () => {
+		expectTypeOf<
+			LiquidationRecord["valuation"]
+		>().toEqualTypeOf<LiquidationValuation>();
+		expectTypeOf<LiquidationValuation["source"]>().toEqualTypeOf<
+			"historical-price-snapshots" | "historical-protocol-oracle"
+		>();
+	});
+
 	it("exposes callable liquidations on the built SDK without narrowing", () => {
 		const sdk = {} as EulerSDK;
 		// A strict consumer calls the guaranteed built-in method directly —

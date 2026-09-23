@@ -1,4 +1,5 @@
 import { createServer, type Server } from "node:http";
+import oracleUsdFixtures from "./fixtures/liquidation-oracle-usd.json";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getAddress, type Address } from "viem";
 import { buildEulerSDK } from "../src/sdk/buildSDK.js";
@@ -16,6 +17,7 @@ import {
 	joinActivityEndpointPath,
 	normalizeActivityEvent,
 	normalizeActivityEventsResponse,
+	normalizeLiquidationsResponse,
 	UnavailableActivityAdapter,
 	type ActivityEventsPage,
 	type ActivityEventType,
@@ -1760,6 +1762,183 @@ describe("ActivityService liquidations", () => {
 		},
 	});
 
+	// Producer fixtures from euler-data-v3#660 at b0460d8fdd4a28fdbae2c3bcc86bd58252989d5f.
+	// Monad uses a token-denominated oracle leg; Unichain retains the snapshot
+	// debt value alongside oracle-valued collateral with no native metadata.
+	const oracleRows = oracleUsdFixtures.map((fixture) => ({
+		...fixture.indexed,
+		debtAssetDecimals: fixture.debtDecimals,
+		debtAssetPriceUsd: fixture.debtPriceUsd,
+		collateralAssetDecimals: null,
+		collateralAssetPriceUsd: null,
+		...fixture.expected,
+		valuation: { status: "available", source: "historical-protocol-oracle" },
+		unitOfAccountValuation: {
+			source: "historical-protocol-oracle",
+			unitOfAccount: fixture.indexed.unitOfAccount,
+			...fixture.quote,
+			blockNumber: fixture.indexed.blockNumber,
+		},
+	}));
+
+	it.each(
+		oracleRows.map((row, index) => ({
+			row,
+			fixture: oracleUsdFixtures[index],
+		})),
+	)("fetches mixed snapshot/oracle sources on chain $row.chainId with nullable native metadata", async ({
+		row,
+		fixture,
+	}) => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify(
+							liquidationsPage([liquidationRow({ chainId: row.chainId }), row]),
+						),
+					),
+			),
+		);
+		const service = new ActivityService({ endpoint: "/api/internal" });
+		const page = await service.fetchLiquidations({ chainId: row.chainId });
+		expect(page.data).toHaveLength(2);
+		expect(page.data[0]?.valuation.source).toBe("historical-price-snapshots");
+		const record = page.data[1];
+		expect(record).toMatchObject({
+			...fixture.expected,
+			repayAssets: fixture.indexed.repayAssets,
+			yieldBalance: fixture.indexed.yieldBalance,
+			valuation: { status: "available", source: "historical-protocol-oracle" },
+			unitOfAccountValuation: fixture.quote,
+		});
+		expect(record).not.toHaveProperty("collateralAssetDecimals");
+		expect(record).not.toHaveProperty("collateralAssetPriceUsd");
+		if (fixture.indexed.collateralAssets === null) {
+			expect(record).not.toHaveProperty("collateralAsset");
+			expect(record).not.toHaveProperty("collateralAssets");
+			// The USD bonus uses mixed legs, not the standalone oracle bonus.
+			expect(record?.bonusUsd).toBe(0.11703948442752718);
+			expect(record?.unitOfAccountValuation?.bonusValue).toBe(
+				"117594065924527180",
+			);
+		} else {
+			expect(record?.collateralAssets).toBe(fixture.indexed.collateralAssets);
+		}
+	});
+
+	it.each([
+		"repayAssetsUsd",
+		"collateralAssetsUsd",
+	])("accepts a partial oracle valuation with only %s", (leg) => {
+		const [record] = normalizeLiquidationsResponse(
+			liquidationsPage([
+				{
+					...oracleRows[1],
+					repayAssetsUsd: null,
+					collateralAssetsUsd: null,
+					[leg]: 0,
+					bonusUsd: null,
+					valuation: {
+						status: "partial",
+						source: "historical-protocol-oracle",
+					},
+				},
+			]),
+		).data;
+		expect(record?.valuation.status).toBe("partial");
+		expect(record).toHaveProperty(leg, 0);
+		expect(record).not.toHaveProperty("bonusUsd");
+	});
+
+	it.each([
+		undefined,
+		null,
+		"v3-prices",
+		"future-oracle",
+	])("rejects unsupported liquidation source %s even in a mixed page", (source) => {
+		expect(() =>
+			normalizeLiquidationsResponse(
+				liquidationsPage([
+					liquidationRow(),
+					{ ...oracleRows[1], valuation: { status: "available", source } },
+				]),
+			),
+		).toThrow("$.data[1].valuation.source");
+	});
+
+	it.each([
+		"historical-price-snapshots",
+		"historical-protocol-oracle",
+	])("preserves numeric, status and bonus validation for %s", (source) => {
+		const row = {
+			...oracleRows[1],
+			valuation: { status: "available", source },
+		};
+		const invalid: Array<[Record<string, unknown>, string]> = [
+			[{ valuation: { status: "partial", source } }, "valuation.status"],
+			[{ valuation: { status: "unavailable", source } }, "valuation.status"],
+			[{ valuation: { status: "unknown", source } }, "valuation.status"],
+			[{ repayAssetsUsd: -1 }, "repayAssetsUsd"],
+			[{ collateralAssetsUsd: -1 }, "collateralAssetsUsd"],
+			[{ repayAssetsUsd: Number.NaN }, "repayAssetsUsd"],
+			[
+				{ collateralAssetsUsd: Number.POSITIVE_INFINITY },
+				"collateralAssetsUsd",
+			],
+			[{ repayAssetsUsd: "8.03" }, "repayAssetsUsd"],
+			[{ debtAssetPriceUsd: -1 }, "debtAssetPriceUsd"],
+			[
+				{ collateralAssetPriceUsd: Number.POSITIVE_INFINITY },
+				"collateralAssetPriceUsd",
+			],
+			[{ collateralAssetDecimals: 256 }, "collateralAssetDecimals"],
+			[{ collateralAssets: "1.5" }, "collateralAssets"],
+			[{ bonusUsd: null }, "bonusUsd"],
+			[{ bonusUsd: Number.NEGATIVE_INFINITY }, "bonusUsd"],
+			[{ collateralAssetsUsd: null }, "bonusUsd"],
+			[
+				{
+					unitOfAccountValuation: {
+						...row.unitOfAccountValuation,
+						bonusValue: "1",
+					},
+				},
+				"unitOfAccountValuation.bonusValue",
+			],
+			[
+				{
+					unitOfAccountValuation: {
+						...row.unitOfAccountValuation,
+						blockNumber: "1",
+					},
+				},
+				"unitOfAccountValuation.blockNumber",
+			],
+		];
+		for (const [override, path] of invalid) {
+			expect(() =>
+				normalizeLiquidationsResponse(
+					liquidationsPage([{ ...row, ...override }]),
+				),
+			).toThrow(`$.data[0].${path}`);
+		}
+		for (const bonusUsd of [-0.25, 0]) {
+			const page = normalizeLiquidationsResponse(
+				liquidationsPage([
+					{
+						...row,
+						repayAssetsUsd: 1,
+						collateralAssetsUsd: 1 + bonusUsd,
+						bonusUsd,
+					},
+				]),
+			);
+			expect(page.data[0]?.bonusUsd).toBe(bonusUsd);
+		}
+	});
+
 	it("fetches normalized liquidations with filters and offset pagination", async () => {
 		const requests: Array<{ url: string; headers: HeadersInit | undefined }> =
 			[];
@@ -2023,7 +2202,7 @@ describe("ActivityService liquidations", () => {
 		});
 
 		// The v3 contract: available = both legs, partial = exactly one,
-		// unavailable = neither, always from historical-price-snapshots.
+		// unavailable = neither; source must be a documented liquidation source.
 		const contradictions: Array<Record<string, unknown>> = [
 			// available with no or one valued leg.
 			liquidationRow({

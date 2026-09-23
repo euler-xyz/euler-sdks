@@ -1,0 +1,66 @@
+[
+  {
+    "indexed": {
+      "chainId": 143,
+      "vault": "0x75B6C392f778B8BCf9bdB676f8F128b4dD49aC19",
+      "violator": "0x08334b4118F57ef2FBB547e4040E2EeEE0B0AD0c",
+      "liquidator": "0x89491e3ae4e9DF4ed8ECa9D1BD3821DFD66368fA",
+      "collateral": "0x578c60e6Df60336bE41b316FDE74Aa3E2a4E0Ea5",
+      "repayAssets": "5073252620767027556",
+      "yieldBalance": "5133036828887308955",
+      "debtAsset": "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A",
+      "collateralAsset": "0x3475Ea1c3451a9a10Aeb51bd8836312175B88BAc",
+      "collateralAssets": "5133036828887308955",
+      "blockNumber": "85073526",
+      "timestamp": "2026-07-02T08:10:32.000Z",
+      "txHash": "0x95e5ee7645b74e7ac9c80ba0417fe8230236c4f9ab54d4e60fc7c618eff48e5e",
+      "oracle": "0x77c3b512d1d9e1f22eecde73f645da14f49cec73",
+      "unitOfAccount": "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A"
+    },
+    "quote": {
+      "unitOfAccountDecimals": 18,
+      "repayValue": "5073252620767027556",
+      "collateralValue": "5340833518359691324",
+      "bonusValue": "267580897592663768"
+    },
+    "debtPriceUsd": 0.02011,
+    "debtDecimals": 18,
+    "expected": {
+      "repayAssetsUsd": 0.10202311020362492,
+      "collateralAssetsUsd": 0.1074041620542134,
+      "bonusUsd": 0.005381051850588468
+    }
+  },
+  {
+    "indexed": {
+      "chainId": 130,
+      "vault": "0xA6be43F0505Da6e37B0805e1A0B7AaCb3065F0c8",
+      "violator": "0x12e74f3C61F6b4d17a9c3Fdb3F42e8f18a8bB394",
+      "liquidator": "0x834990FB2F4Ec7B039f1F29051195a15269ffe71",
+      "collateral": "0x64a1F82F9b7a0DF4CF465329112E03E45c5c297a",
+      "repayAssets": "8037413",
+      "yieldBalance": "8152917338544527180",
+      "debtAsset": "0x078D782b760474a361dDA0AF3839290b0EF57AD6",
+      "collateralAsset": null,
+      "collateralAssets": null,
+      "blockNumber": "54951245",
+      "timestamp": "2026-08-02T19:40:04.000Z",
+      "txHash": "0x677ac092cc94a24e0a2c6d759a51dae67575f082577ed29eee5fd976552280e8",
+      "oracle": "0x4267e3012799a804738a73a2fa9eb4fd441ceeff",
+      "unitOfAccount": "0x0000000000000000000000000000000000000348"
+    },
+    "quote": {
+      "unitOfAccountDecimals": 18,
+      "repayValue": "8035323272620000000",
+      "collateralValue": "8152917338544527180",
+      "bonusValue": "117594065924527180"
+    },
+    "debtPriceUsd": 0.999809,
+    "debtDecimals": 6,
+    "expected": {
+      "repayAssetsUsd": 8.035877854117,
+      "collateralAssetsUsd": 8.152917338544528,
+      "bonusUsd": 0.11703948442752718
+    }
+  }
+]
