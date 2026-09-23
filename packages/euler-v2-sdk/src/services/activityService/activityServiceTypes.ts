@@ -282,6 +282,12 @@ export interface FetchLiquidationsArgs {
 	offset?: number;
 }
 
+/** Historical USD valuation; status reflects USD legs, not native metadata. */
+export interface LiquidationValuation extends ActivityValuation {
+	/** Oracle provenance means at least one USD leg uses a historical oracle quote. */
+	source: "historical-price-snapshots" | "historical-protocol-oracle";
+}
+
 export interface LiquidationUnitOfAccountValuation {
 	source: "historical-protocol-oracle";
 	unitOfAccount: Address;
@@ -319,15 +325,16 @@ export interface LiquidationRecord {
 	collateralAssetPriceUsd?: number;
 	/** Collateral seized converted to underlying-asset native units. */
 	collateralAssets?: string;
+	/** May be available even when native collateral metadata/conversion is absent. */
 	collateralAssetsUsd?: number;
 	/** Liquidator bonus (collateral seized minus debt repaid) in event-time USD. */
 	bonusUsd?: number;
 	/**
-	 * Historical protocol-oracle fallback when a USD snapshot cannot value both
-	 * legs. Null when the producer cannot reconstruct a trustworthy quote.
+	 * Historical protocol-oracle quote, including when it supplies a USD leg.
+	 * Null when the producer cannot reconstruct a trustworthy quote.
 	 */
 	unitOfAccountValuation: LiquidationUnitOfAccountValuation | null;
-	valuation: ActivityValuation;
+	valuation: LiquidationValuation;
 	blockNumber: string;
 	txHash: Hex;
 	timestamp: string;

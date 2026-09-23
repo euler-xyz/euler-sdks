@@ -26,6 +26,7 @@ import type {
 	LiquidationsMeta,
 	LiquidationsPage,
 	LiquidationUnitOfAccountValuation,
+	LiquidationValuation,
 } from "./activityServiceTypes.js";
 import { ACTIVITY_EVENT_TYPES } from "./activityServiceTypes.js";
 
@@ -952,23 +953,29 @@ export const getActivityCaller = (
 ): Address | undefined =>
 	event.actor ?? readPayloadAddress(event, ["caller", "sender", "owner"]);
 
-const LIQUIDATION_VALUATION_SOURCE = "historical-price-snapshots";
-
 /**
  * The v3 liquidations contract couples the valuation discriminant to the two
  * USD legs — available: both `repayAssetsUsd` and `collateralAssetsUsd`
- * present, partial: exactly one, unavailable: neither — and requires the
- * historical-price-snapshots source. A contradictory row would let consumers
+ * present, partial: exactly one, unavailable: neither — and requires
+ * a documented historical USD source. Native metadata may be absent even
+ * when both USD legs are valued. A contradictory row would let consumers
  * trust `available` while receiving no historical valuation.
  */
 const readLiquidationValuation = (
 	value: unknown,
 	path: string,
 	presentUsdLegs: number,
-): ActivityValuation => {
+): LiquidationValuation => {
 	const valuation = readValuation(value, path);
-	if (valuation.source !== LIQUIDATION_VALUATION_SOURCE) {
-		fail(`${path}.source`, `expected ${LIQUIDATION_VALUATION_SOURCE}`);
+	const source = valuation.source;
+	if (
+		source !== "historical-price-snapshots" &&
+		source !== "historical-protocol-oracle"
+	) {
+		return fail(
+			`${path}.source`,
+			"expected historical-price-snapshots or historical-protocol-oracle",
+		);
 	}
 	const expectedStatus =
 		presentUsdLegs === 2
@@ -982,7 +989,7 @@ const readLiquidationValuation = (
 			`expected ${expectedStatus} with ${presentUsdLegs} valued liquidation leg(s)`,
 		);
 	}
-	return valuation;
+	return { ...valuation, source };
 };
 
 /** Historical token metadata can be null when unavailable at the event. */
