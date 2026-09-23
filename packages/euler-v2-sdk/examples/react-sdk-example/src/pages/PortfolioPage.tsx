@@ -920,7 +920,7 @@ function sortSavingsPositions(
 
 function isManagedSavings(position: PortfolioSavingsPosition<VaultEntity>): boolean {
   const vault = position.vault ?? position.position.vault;
-  return Boolean(vault && ("strategies" in vault || "supplyApy1h" in vault));
+  return Boolean(vault && ("strategies" in vault || "supplyApy" in vault));
 }
 
 function vaultName(vault: VaultEntity | undefined): string {
@@ -1237,10 +1237,12 @@ function ChainAccountSection({
                   <tr key={`${reward.token.address}-${reward.provider}-${idx}`}>
                     <td>{reward.token.symbol}</td>
                     <td>
-                      {formatBigInt(
-                        BigInt(reward.unclaimed),
-                        reward.token.decimals
-                      )}
+                      {reward.token.decimals === undefined
+                        ? "Unavailable"
+                        : formatBigInt(
+                            BigInt(reward.unclaimed),
+                            reward.token.decimals
+                          )}
                     </td>
                     <td>
                       {reward.tokenPrice > 0

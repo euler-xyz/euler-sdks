@@ -1,8 +1,8 @@
-import type { AddressPrefix } from "../entities/Account.js";
 import { type Address, getAddress, isAddressEqual, pad, toHex } from "viem";
+import type { AddressPrefix } from "../entities/Account.js";
 
 export const SUB_ACCOUNT_MIN_ID = 1;
-export const SUB_ACCOUNT_MAX_ID = 256;
+export const SUB_ACCOUNT_MAX_ID = 255;
 
 export interface GetFreeSubAccountsOptions {
 	startId?: number;

@@ -758,9 +758,9 @@ function getVaultSupplyApy(vault: any): number | undefined {
 				: parseFloat(vault.interestRates.supplyAPY);
 		return Number.isFinite(val) ? val : undefined;
 	}
-	// EulerEarn: supplyApy1h (percentage points)
-	if (typeof vault.supplyApy1h === "number") {
-		return Number.isFinite(vault.supplyApy1h) ? vault.supplyApy1h : undefined;
+	// EulerEarn: supplyApy (percentage points)
+	if (typeof vault.supplyApy === "number") {
+		return Number.isFinite(vault.supplyApy) ? vault.supplyApy : undefined;
 	}
 	return undefined;
 }

@@ -23,7 +23,7 @@ Generated from fetch-all-vaults-default-vs-onchain.json at 2026-03-30T10:30:27.0
 - timestamp: 8 issues across 8 vaults
 - collaterals: 7 issues across 4 vaults
 - asset: 7 issues across 5 vaults
-- supplyApy1h: 7 issues across 7 vaults
+- supplyApy: 7 issues across 7 vaults
 - fees: 6 issues across 3 vaults
 - shares: 6 issues across 5 vaults
 - totalAssets: 3 issues across 3 vaults
@@ -158,7 +158,7 @@ Generated from fetch-all-vaults-default-vs-onchain.json at 2026-03-30T10:30:27.0
   - `$.collaterals[5].vault.fees.accumulatedFeesShares`: 1
   - `$.collaterals[3].vault.fees.accumulatedFeesAssets`: 1
   - `$.collaterals[3].vault.fees.accumulatedFeesShares`: 1
-  - `$.collaterals[0].vault.supplyApy1h`: 1
+  - `$.collaterals[0].vault.supplyApy`: 1
 - Sample diffs:
   - 0x122e9eA082D8c060Bb1a3476aa18B9E739fBbAAf (EVault): `$.collaterals[0].vault.fees.accumulatedFeesAssets` bigint values differ by more than 1%; default `{"__type":"bigint","value":"6"}` vs onchain `{"__type":"bigint","value":"7"}`
   - 0x122e9eA082D8c060Bb1a3476aa18B9E739fBbAAf (EVault): `$.collaterals[0].vault.fees.accumulatedFeesShares` bigint values differ by more than 1%; default `{"__type":"bigint","value":"6"}` vs onchain `{"__type":"bigint","value":"7"}`
@@ -177,18 +177,18 @@ Generated from fetch-all-vaults-default-vs-onchain.json at 2026-03-30T10:30:27.0
   - 0x1B4715a2Ef8fecA45ACC2D19F780a33F34F498a0 (EulerEarn): `$.asset.symbol` value mismatch; default `"UNKNOWN"` vs onchain `""`
   - 0x21d3CeeAcced883d72f02f7D04Fb45218cAF8E27 (EulerEarn): `$.asset.name` value mismatch; default `"Unknown Asset"` vs onchain `""`
 
-### supplyApy1h
+### supplyApy
 
 - Issue count: 7
 - Affected vaults: 7
 - Reasons: `numeric values differ by more than 1%`: 7
 - Note: The scale mismatch is fixed. Remaining rows are smaller real APY differences.
 - Top paths:
-  - `$.supplyApy1h`: 7
+  - `$.supplyApy`: 7
 - Sample diffs:
-  - 0x2B47c128b35DDDcB66Ce2FA5B33c95314a7de245 (EulerEarn): `$.supplyApy1h` numeric values differ by more than 1%; default `0.03575364206996201` vs onchain `0.035012433221133774`
-  - 0x32Cf8bd02A916c3cf1E4Ccb9c7A00D4a3f96BfDF (EulerEarn): `$.supplyApy1h` numeric values differ by more than 1%; default `0.02209954368396083` vs onchain `0.01781715779721993`
-  - 0x3B4802FDb0E5d74aA37d58FD77d63e93d4f9A4AF (EulerEarn): `$.supplyApy1h` numeric values differ by more than 1%; default `0.022436817714437174` vs onchain `0.022188705397703425`
+  - 0x2B47c128b35DDDcB66Ce2FA5B33c95314a7de245 (EulerEarn): `$.supplyApy` numeric values differ by more than 1%; default `0.03575364206996201` vs onchain `0.035012433221133774`
+  - 0x32Cf8bd02A916c3cf1E4Ccb9c7A00D4a3f96BfDF (EulerEarn): `$.supplyApy` numeric values differ by more than 1%; default `0.02209954368396083` vs onchain `0.01781715779721993`
+  - 0x3B4802FDb0E5d74aA37d58FD77d63e93d4f9A4AF (EulerEarn): `$.supplyApy` numeric values differ by more than 1%; default `0.022436817714437174` vs onchain `0.022188705397703425`
 
 ### fees
 

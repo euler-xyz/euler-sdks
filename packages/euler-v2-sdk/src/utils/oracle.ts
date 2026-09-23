@@ -508,9 +508,15 @@ const makeRouteAdapterStep = (
 	if (info.name === "PythOracle") {
 		const decoded = decodePythOracleInfo(info.oracleInfo);
 		if (decoded) {
+			const decodedBase = decoded.base.toLowerCase();
+			const decodedQuote = decoded.quote.toLowerCase();
+			const contextBase = context.base.toLowerCase();
+			const contextQuote = context.quote.toLowerCase();
 			if (
-				decoded.base.toLowerCase() !== context.base.toLowerCase() ||
-				decoded.quote.toLowerCase() !== context.quote.toLowerCase()
+				!(
+					(decodedBase === contextBase && decodedQuote === contextQuote) ||
+					(decodedBase === contextQuote && decodedQuote === contextBase)
+				)
 			) {
 				return null;
 			}

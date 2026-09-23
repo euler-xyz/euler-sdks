@@ -58,6 +58,7 @@ import {
 	type FixedCyclicalBinaryIRMInfo,
 	type FixedCyclicalBinaryMonthlyIRMInfo,
 } from "../../../../../utils/irm.js";
+import { normalizeOracleReferenceAssetDecimals } from "../oracleReferenceAsset.js";
 
 const DEFAULT_HOOKED_OPERATIONS: EVaultHookedOperations = {
 	deposit: false,
@@ -146,7 +147,10 @@ function normalizeUnitOfAccountToken(token: Token): Token | undefined {
 
 	return {
 		...token,
-		decimals: token.decimals > 0 ? token.decimals : 18,
+		decimals: normalizeOracleReferenceAssetDecimals(
+			token.address,
+			token.decimals > 0 ? token.decimals : 18,
+		),
 	};
 }
 
@@ -432,6 +436,45 @@ function convertCollaterals(
 	}
 
 	return collaterals;
+}
+
+/**
+ * Echoes V3's own escrow answer, so the SDK cannot report a verdict V3
+ * contradicts for the same vault. V3 derives it in discovery from the escrow
+ * perspective's verified events and publishes it as `isEscrow` on every vault
+ * row.
+ *
+ * Before `isEscrow` existed, V3 said the same thing through `vaultType:
+ * "escrow"`. That value is deprecated: V3 still publishes it next to the flag
+ * for now and will stop, leaving an escrow vault as `vaultType: "evk"` with
+ * `isEscrow: true`. The string is read only when the flag is absent — a V3
+ * that predates the field — because once V3 stops publishing `escrow`,
+ * mapping `evk` to `false` would silently call every escrow vault ordinary.
+ */
+function resolveIsEscrow(
+	detail: V3VaultDetail,
+	owner: DataIssueOwnerRef,
+	errors: DataIssue[],
+): boolean | null {
+	if (typeof detail.isEscrow === "boolean") return detail.isEscrow;
+
+	const vaultType = detail.vaultType?.trim().toLowerCase();
+	if (vaultType === "escrow") return true;
+	if (vaultType === "evk") return false;
+
+	errors.push({
+		code: "SOURCE_UNAVAILABLE",
+		severity: "warning",
+		message:
+			vaultType === undefined || vaultType === ""
+				? "Missing isEscrow and vaultType; escrow status left unanswered rather than assumed."
+				: `Missing isEscrow and unrecognized vaultType "${detail.vaultType}"; escrow status left unanswered rather than assumed.`,
+		locations: [dataIssueLocation(owner, "$.isEscrow")],
+		source: "eVaultV3",
+		originalValue: detail.isEscrow ?? detail.vaultType,
+		normalizedValue: null,
+	});
+	return null;
 }
 
 export function convertVault(
@@ -835,6 +878,7 @@ export function convertVault(
 		shares,
 		asset,
 		unitOfAccount,
+		isEscrow: resolveIsEscrow(detail, owner, errors),
 		totalShares: parseBigIntField(detail.totalShares, {
 			path: "$.totalShares",
 			owner,

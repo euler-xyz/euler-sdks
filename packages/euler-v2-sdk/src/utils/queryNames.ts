@@ -6,6 +6,7 @@ import type { DeploymentService } from "../services/deploymentService/deployment
 import type { EulerLabelsURLAdapter } from "../services/eulerLabelsService/eulerLabelsService.js";
 import type { IntrinsicApyV3Adapter } from "../services/intrinsicApyService/adapters/intrinsicApyV3Adapter/index.js";
 import type { OracleAdapterService } from "../services/oracleAdapterService/oracleAdapterService.js";
+import type { PositionMigrationService } from "../services/positionMigrationService/positionMigrationService.js";
 import type { PricingBackendClient } from "../services/priceService/backendClient.js";
 import type { PriceService } from "../services/priceService/priceService.js";
 import type { RewardsDirectAdapter } from "../services/rewardsService/adapters/rewardsDirectAdapter/index.js";
@@ -14,6 +15,7 @@ import type { RewardsService } from "../services/rewardsService/rewardsService.j
 import type { SwapService } from "../services/swapService/swapService.js";
 import type { TokenlistService } from "../services/tokenlistService/tokenlistService.js";
 import type { WalletOnchainAdapter } from "../services/walletService/adapters/walletOnchainAdapter.js";
+import type { ActivityService } from "../services/activityService/activityService.js";
 import type { EVaultOnchainAdapter } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultOnchainAdapter.js";
 import type { EVaultV3Adapter } from "../services/vaults/eVaultService/adapters/eVaultV3Adapter/eVaultV3Adapter.js";
 import type { EulerEarnOnchainAdapter } from "../services/vaults/eulerEarnService/adapters/eulerEarnOnchainAdapter.js";
@@ -36,11 +38,13 @@ export type EulerSDKQueryName =
 	| QueryMethodName<EulerLabelsURLAdapter>
 	| QueryMethodName<IntrinsicApyV3Adapter>
 	| QueryMethodName<OracleAdapterService>
+	| QueryMethodName<PositionMigrationService>
 	| QueryMethodName<PricingBackendClient>
 	| QueryMethodName<PriceService>
 	| QueryMethodName<RewardsDirectAdapter>
 	| QueryMethodName<RewardsV3Adapter>
 	| QueryMethodName<RewardsService>
+	| QueryMethodName<ActivityService>
 	| QueryMethodName<SwapService>
 	| QueryMethodName<TokenlistService>
 	| QueryMethodName<WalletOnchainAdapter>

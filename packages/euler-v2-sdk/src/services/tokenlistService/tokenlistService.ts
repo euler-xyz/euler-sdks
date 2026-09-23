@@ -15,6 +15,7 @@ interface ApiToken {
 	decimals: number;
 	logoURI?: string;
 	groups?: string[];
+	tags?: string[];
 	metadata?: TokenListItem["metadata"];
 	coingeckoId?: string;
 }
@@ -123,17 +124,23 @@ export class TokenlistService implements ITokenlistService {
 		const fetchedAt = nowMs();
 		const list: TokenListItem[] = raw
 			.filter((t) => t?.address)
-			.map((t) => ({
-				chainId: t.chainId,
-				address: getAddress(t.address) as Address,
-				name: t.name ?? "",
-				symbol: t.symbol ?? "",
-				decimals: Number(t.decimals) ?? 0,
-				logoURI: t.logoURI ?? "",
-				...(t.groups?.length ? { groups: t.groups } : undefined),
-				...(t.metadata ? { metadata: t.metadata } : undefined),
-				...(t.coingeckoId != null ? { coingeckoId: t.coingeckoId } : undefined),
-			}));
+			.map((t) => {
+				const tags = Array.isArray(t.tags)
+					? t.tags.filter((tag): tag is string => typeof tag === "string")
+					: [];
+				return {
+					chainId: t.chainId,
+					address: getAddress(t.address) as Address,
+					name: t.name ?? "",
+					symbol: t.symbol ?? "",
+					decimals: Number(t.decimals) ?? 0,
+					logoURI: t.logoURI ?? "",
+					...(t.groups?.length ? { groups: t.groups } : undefined),
+					...(tags.length ? { tags } : undefined),
+					...(t.metadata ? { metadata: t.metadata } : undefined),
+					...(t.coingeckoId != null ? { coingeckoId: t.coingeckoId } : undefined),
+				};
+			});
 		this.cache.set(chainId, list);
 		const finishedAt = nowMs();
 		console.info(

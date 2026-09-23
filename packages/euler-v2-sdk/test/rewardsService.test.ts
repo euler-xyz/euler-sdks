@@ -1,17 +1,28 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
-import { getAddress, type Address, zeroAddress } from "viem";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
+import { test, vi } from "vitest";
+import {
+	decodeFunctionData,
+	formatUnits,
+	getAddress,
+	type Address,
+	type Hex,
+	zeroAddress,
+} from "viem";
 
 import { RewardsService } from "../src/services/rewardsService/rewardsService.js";
 import type {
 	FuulClaimCheck,
 	FuulClaimableReward,
 	IRewardsAdapter,
+	TurtleMerkleProof,
 	UserReward,
 } from "../src/services/rewardsService/index.js";
 import type { MerklOpportunity } from "../src/services/rewardsService/rewardsServiceTypes.js";
 import { RewardsV3Adapter } from "../src/services/rewardsService/adapters/rewardsV3Adapter/index.js";
 import { RewardsDirectAdapter } from "../src/services/rewardsService/adapters/rewardsDirectAdapter/index.js";
+import { buildEulerSDK } from "../src/sdk/buildSDK.js";
 
 const rewardToken = getAddress(
 	"0x0000000000000000000000000000000000000001",
@@ -40,13 +51,96 @@ const fuulProjectAddress = getAddress(
 const otherRewardToken = getAddress(
 	"0x0000000000000000000000000000000000000007",
 ) as Address;
+const turtleStreamAddress = getAddress(
+	"0x0000000000000000000000000000000000000010",
+) as Address;
 const secondCollateralAddress = getAddress(
 	"0x0000000000000000000000000000000000000008",
 ) as Address;
 const secondVaultAddress = getAddress(
 	"0x0000000000000000000000000000000000000009",
 ) as Address;
+const accountLensAddress = getAddress(
+	"0x0000000000000000000000000000000000000010",
+) as Address;
+const rewardStreamsAddress = getAddress(
+	"0x0000000000000000000000000000000000000011",
+) as Address;
+const proofHash =
+	"0x0000000000000000000000000000000000000000000000000000000000000abc" as Hex;
 const farFutureTimestamp = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+
+const MERKL_CLAIM_ABI = [
+	{
+		type: "function",
+		name: "claim",
+		inputs: [
+			{ name: "users", type: "address[]" },
+			{ name: "tokens", type: "address[]" },
+			{ name: "amounts", type: "uint256[]" },
+			{ name: "proofs", type: "bytes32[][]" },
+		],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+] as const;
+
+const BREVIS_CLAIM_ABI = [
+	{
+		type: "function",
+		name: "claim",
+		inputs: [
+			{ name: "earner", type: "address" },
+			{ name: "cumulativeAmounts", type: "uint256[]" },
+			{ name: "epoch", type: "uint64" },
+			{ name: "proof", type: "bytes32[]" },
+		],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+] as const;
+
+const FUUL_MANAGER_ABI = [
+	{
+		type: "function",
+		name: "claim",
+		inputs: [
+			{
+				name: "claimChecks",
+				type: "tuple[]",
+				components: [
+					{ name: "projectAddress", type: "address" },
+					{ name: "to", type: "address" },
+					{ name: "currency", type: "address" },
+					{ name: "currencyType", type: "uint8" },
+					{ name: "amount", type: "uint256" },
+					{ name: "reason", type: "uint8" },
+					{ name: "tokenId", type: "uint256" },
+					{ name: "deadline", type: "uint256" },
+					{ name: "proof", type: "bytes32" },
+					{ name: "signatures", type: "bytes[]" },
+				],
+			},
+		],
+		outputs: [],
+		stateMutability: "payable",
+	},
+] as const;
+
+const REWARD_STREAMS_ABI = [
+	{
+		type: "function",
+		name: "claimReward",
+		inputs: [
+			{ name: "rewarded", type: "address" },
+			{ name: "reward", type: "address" },
+			{ name: "to", type: "address" },
+			{ name: "ignoreRecentReward", type: "bool" },
+		],
+		outputs: [{ name: "amount", type: "uint256" }],
+		stateMutability: "nonpayable",
+	},
+] as const;
 
 const emptyAdapter: IRewardsAdapter = {
 	async fetchVaultRewards() {
@@ -64,6 +158,46 @@ const emptyAdapter: IRewardsAdapter = {
 	async fetchFuulClaimChecks() {
 		return [];
 	},
+};
+
+const makeRewardsService = () => {
+	const service = new RewardsService(emptyAdapter, {
+		merklDistributorAddress,
+		fuulManagerAddress: otherAccountAddress,
+		fuulFactoryAddress: fuulProjectAddress,
+	});
+	service.setProviderService({
+		getProvider(chainId: number) {
+			assert.equal(chainId, 1);
+			return {};
+		},
+		getSupportedChainIds() {
+			return [1];
+		},
+	} as any);
+	service.setDeploymentService({
+		getDeployment(chainId: number) {
+			assert.equal(chainId, 1);
+			return {
+				chainId,
+				name: "test",
+				status: "active",
+				addresses: {
+					coreAddrs: {
+						balanceTracker: rewardStreamsAddress,
+					},
+					lensAddrs: {
+						accountLens: accountLensAddress,
+					},
+				},
+			};
+		},
+		getDeploymentChainIds() {
+			return [1];
+		},
+		addDeployment() {},
+	} as any);
+	return service;
 };
 
 const makeBrevisReward = (overrides: Partial<UserReward> = {}): UserReward => ({
@@ -95,7 +229,7 @@ const makeMerklReward = (overrides: Partial<UserReward> = {}): UserReward => ({
 	provider: "merkl",
 	accumulated: "1000",
 	unclaimed: "1000",
-	proof: ["0xabc" as `0x${string}`],
+	proof: [proofHash],
 	claimAddress: merklDistributorAddress,
 	...overrides,
 });
@@ -111,7 +245,7 @@ const makeFuulClaimCheck = (
 	reason: 0,
 	token_id: "0",
 	deadline: "9999999999",
-	proof: "0xabc",
+	proof: proofHash,
 	signatures: ["0x123"],
 	...overrides,
 });
@@ -130,7 +264,7 @@ const makeFuulClaimableReward = (
 	reason: 0,
 	token_id: "0",
 	deadline: "9999999999",
-	proof: "0xabc",
+	proof: proofHash,
 	signatures: ["0x123"],
 	status: "claimable",
 	...overrides,
@@ -150,6 +284,47 @@ const makeFuulReward = (overrides: Partial<UserReward> = {}): UserReward => ({
 	accumulated: "1000",
 	unclaimed: "1000",
 	claimAddress,
+	...overrides,
+});
+
+const makeTurtleReward = (overrides: Partial<UserReward> = {}): UserReward => ({
+	chainId: 1,
+	token: {
+		address: rewardToken,
+		chainId: 1,
+		symbol: "EUL",
+		name: "EUL",
+		decimals: 18,
+	},
+	tokenPrice: 1,
+	provider: "turtle",
+	campaignId: "stream-1",
+	streamId: "stream-1",
+	streamAddress: turtleStreamAddress,
+	accumulated: "1000",
+	unclaimed: "1000",
+	proof: ["0xabc" as `0x${string}`],
+	timestamp: "2026-05-20T13:05:10Z",
+	...overrides,
+});
+
+const makeTurtleMerkleProof = (
+	overrides: Partial<TurtleMerkleProof> = {},
+): TurtleMerkleProof => ({
+	streamId: "stream-1",
+	streamAddress: turtleStreamAddress,
+	amount: "1000",
+	claimable: "1000",
+	timestamp: "2026-05-20T13:05:10Z",
+	proof: ["0xabc"],
+	rewardToken: {
+		address: rewardToken,
+		chainId: 1,
+		symbol: "EUL",
+		name: "EUL",
+		decimals: 18,
+	},
+	tokenPrice: 1,
 	...overrides,
 });
 
@@ -180,7 +355,9 @@ const makeMerklCampaign = (
 		subType: 0,
 		rewardToken: {
 			address: rewardToken,
+			chainId: 1,
 			symbol: "EUL",
+			decimals: 18,
 			icon: "https://example.invalid/eul.png",
 		},
 		apr: 0,
@@ -232,6 +409,780 @@ test("V3 rewards adapter normalizes Incentra APY campaigns as Brevis", async () 
 	assert.equal(info?.campaigns[0]?.source, "brevis");
 	assert.equal(info?.campaigns[0]?.action, "LEND");
 	assert.equal(info?.campaigns[0]?.apr, 0.045);
+});
+
+test("V3 rewards adapter normalizes Turtle user rewards", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsBreakdown(async () => ({
+		data: [
+			{
+				chainId: 1,
+				provider: "Turtle",
+				token: {
+					address: rewardToken,
+					chainId: 1,
+					symbol: "EUL",
+					name: "EUL",
+					decimals: 18,
+				},
+				tokenPrice: 1,
+				campaignId: "stream-1",
+				streamId: "stream-1",
+				streamAddress: turtleStreamAddress,
+				accumulated: "1000",
+				unclaimed: "1000",
+				merkleProof: ["0xabc"],
+				timestamp: "2026-05-20T13:05:10Z",
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "turtle");
+	assert.equal(rewards[0]?.campaignId, "stream-1");
+	assert.equal(rewards[0]?.streamId, "stream-1");
+	assert.equal(rewards[0]?.streamAddress, turtleStreamAddress);
+	assert.equal(rewards[0]?.timestamp, "2026-05-20T13:05:10Z");
+});
+
+test("V3 rewards adapter enriches Turtle breakdown rows from campaign metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsBreakdown(async () => ({
+		data: [
+			{
+				chainId: 8453,
+				vault: vaultAddress,
+				recipient: accountAddress,
+				rewardToken,
+				amount: "42035",
+				campaignId: "557af9e9-88e8-4233-95e1-630b8b37b613",
+				timestamp: "2026-06-22T00:00:00.000Z",
+			},
+		],
+	}));
+	adapter.setQueryV3RewardsApyPage(async (_chainId, _offset, _limit, vault) => {
+		assert.equal(vault, vaultAddress);
+		return {
+			data: [
+				{
+					chainId: 8453,
+					vault: vaultAddress,
+					campaigns: [
+						{
+							id: "557af9e9-88e8-4233-95e1-630b8b37b613",
+							provider: "turtle",
+							source: "turtle",
+							campaignType: "turtle_stream",
+							apr: 0.03,
+							rewardToken: {
+								address: rewardToken,
+								symbol: "USDC",
+								name: "USD Coin",
+								decimals: 6,
+							},
+							status: "active",
+						},
+					],
+				},
+			],
+		};
+	});
+
+	const rewards = await adapter.fetchUserRewards(8453, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "turtle");
+	assert.equal(rewards[0]?.campaignId, "557af9e9-88e8-4233-95e1-630b8b37b613");
+	assert.equal(rewards[0]?.streamId, "557af9e9-88e8-4233-95e1-630b8b37b613");
+	assert.equal(rewards[0]?.token.symbol, "USDC");
+	assert.equal(rewards[0]?.token.decimals, 6);
+	assert.equal(rewards[0]?.accumulated, "42035");
+	assert.equal(rewards[0]?.unclaimed, "42035");
+});
+
+const usdcAddress = getAddress(
+	"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+) as Address;
+const turtleUsdcVault = getAddress(
+	"0xa45EAc8E33168cefa0b225F500E6d93D43B8f1AF",
+) as Address;
+const turtleUsdcCampaignId = "4242c3ea-b6cc-46d5-8592-d072620b51bc";
+
+/**
+ * Production breakdown row whose campaign has dropped out of
+ * `/v3/apys/rewards`; only `rewardTokenMetadata` can resolve the token.
+ */
+const turtleUsdcBreakdownRow = {
+	chainId: 1,
+	vault: turtleUsdcVault,
+	recipient: accountAddress,
+	rewardToken: usdcAddress as string,
+	rewardTokenMetadata: {
+		address: usdcAddress as string,
+		symbol: "USDC",
+		decimals: 6,
+		name: "USD Coin",
+	},
+	amount: "603375",
+	campaignId: turtleUsdcCampaignId,
+	timestamp: "2026-08-13T12:00:00.000Z",
+};
+
+const buildTurtleUsdcAdapter = (
+	rewardTokenMetadata: unknown,
+): RewardsV3Adapter => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsBreakdown(async () => ({
+		data: [
+			{
+				...turtleUsdcBreakdownRow,
+				rewardTokenMetadata,
+			} as never,
+		],
+	}));
+	// The campaign is absent from the APY feed, exactly as in production.
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [{ chainId: 1, vault: turtleUsdcVault, campaigns: [] }],
+	}));
+	return adapter;
+};
+
+test("V3 rewards adapter resolves breakdown token metadata when the campaign is absent", async () => {
+	const adapter = buildTurtleUsdcAdapter(
+		turtleUsdcBreakdownRow.rewardTokenMetadata,
+	);
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "turtle");
+	assert.equal(rewards[0]?.campaignId, turtleUsdcCampaignId);
+	assert.equal(rewards[0]?.token.address, usdcAddress);
+	assert.equal(rewards[0]?.token.symbol, "USDC");
+	assert.equal(rewards[0]?.token.name, "USD Coin");
+	assert.equal(rewards[0]?.token.decimals, 6);
+	// Raw amounts stay unscaled; 603375 at 6 decimals is 0.603375 USDC.
+	assert.equal(rewards[0]?.accumulated, "603375");
+	assert.equal(rewards[0]?.unclaimed, "603375");
+	assert.equal(formatUnits(BigInt(rewards[0]?.unclaimed ?? "0"), 6), "0.603375");
+});
+
+test("V3 rewards adapter preserves zero-decimal breakdown token metadata", async () => {
+	const adapter = buildTurtleUsdcAdapter({
+		address: usdcAddress as string,
+		symbol: "ZERO",
+		name: "Zero Decimals",
+		decimals: 0,
+	});
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.symbol, "ZERO");
+	assert.equal(rewards[0]?.token.decimals, 0);
+	assert.equal(formatUnits(BigInt(rewards[0]?.unclaimed ?? "0"), 0), "603375");
+});
+
+test("V3 rewards adapter parses string decimals in breakdown token metadata", async () => {
+	const adapter = buildTurtleUsdcAdapter({
+		address: usdcAddress as string,
+		symbol: "USDC",
+		name: "USD Coin",
+		decimals: "6",
+	});
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.decimals, 6);
+	assert.equal(formatUnits(BigInt(rewards[0]?.unclaimed ?? "0"), 6), "0.603375");
+});
+
+test("V3 rewards adapter ignores unusable fields of address-matching breakdown token metadata", async () => {
+	// The address gate passes, so every other field is judged on its own: a
+	// blank symbol and a non-numeric decimals resolve nothing, while the name
+	// is still taken.
+	const adapter = buildTurtleUsdcAdapter({
+		address: usdcAddress as string,
+		symbol: "   ",
+		name: "USD Coin",
+		decimals: "nope",
+	});
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.symbol, usdcAddress);
+	assert.equal(rewards[0]?.token.name, "USD Coin");
+	assert.equal(rewards[0]?.token.decimals, undefined);
+});
+
+for (const [label, metadata] of [
+	["absent", undefined],
+	["null", null],
+	["unparseable-address", { address: "not-an-address", symbol: "USDC", decimals: 6 }],
+	[
+		"mismatched-address",
+		{
+			address: "0x0000000000000000000000000000000000000009",
+			symbol: "WRONG",
+			name: "Wrong Token",
+			decimals: 2,
+		},
+	],
+] as const) {
+	test(`V3 rewards adapter leaves decimals unresolved for ${label} breakdown token metadata`, async () => {
+		const adapter = buildTurtleUsdcAdapter(metadata);
+
+		const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+		assert.equal(rewards.length, 1);
+		assert.equal(rewards[0]?.token.address, usdcAddress);
+		// No source resolved the token, so the SDK reports it unresolved rather
+		// than guessing 18 decimals or borrowing another token's symbol.
+		assert.equal(rewards[0]?.token.symbol, usdcAddress);
+		assert.equal(rewards[0]?.token.decimals, undefined);
+		assert.equal(rewards[0]?.unclaimed, "603375");
+	});
+}
+
+test("V3 rewards adapter prefers campaign token metadata over breakdown metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsBreakdown(async () => ({
+		data: [
+			{
+				...turtleUsdcBreakdownRow,
+				rewardTokenMetadata: {
+					address: usdcAddress as string,
+					symbol: "STALE",
+					name: "Stale Metadata",
+					decimals: 8,
+				},
+			} as never,
+		],
+	}));
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				chainId: 1,
+				vault: turtleUsdcVault,
+				campaigns: [
+					{
+						id: turtleUsdcCampaignId,
+						provider: "turtle",
+						source: "turtle",
+						campaignType: "turtle_stream",
+						apr: 0.03,
+						status: "active",
+						rewardToken: {
+							address: usdcAddress as string,
+							symbol: "USDC",
+							name: "USD Coin",
+							decimals: 6,
+						},
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.symbol, "USDC");
+	assert.equal(rewards[0]?.token.decimals, 6);
+});
+
+test("V3 rewards adapter ignores fractional breakdown token decimals", async () => {
+	// 6.5 is not a scale. Truncating it to 6 would invent one, so the token
+	// stays unresolved.
+	const adapter = buildTurtleUsdcAdapter({
+		address: usdcAddress as string,
+		symbol: "USDC",
+		name: "USD Coin",
+		decimals: 6.5,
+	});
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.decimals, undefined);
+	assert.equal(rewards[0]?.unclaimed, "603375");
+});
+
+test("V3 rewards adapter ignores out-of-range breakdown token decimals", async () => {
+	// ERC-20 decimals are a uint8. A wild count would reach `formatUnits`, which
+	// allocates a string of that length, so it stays unresolved.
+	const adapter = buildTurtleUsdcAdapter({
+		address: usdcAddress as string,
+		symbol: "USDC",
+		name: "USD Coin",
+		decimals: 1_000_000_000,
+	});
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.decimals, undefined);
+	assert.equal(rewards[0]?.unclaimed, "603375");
+});
+
+test("fallback rewards factory keeps the resolved token when collapsing turtle stream rows", async () => {
+	// The factory merges V3 rows before the service-level reduction ever runs,
+	// so the token has to survive that earlier merge too.
+	const sdk = await buildEulerSDK({
+		config: {
+			rewardsServiceAdapter: "fallback",
+			rewardsV3ApiUrl: "https://example.invalid",
+		},
+		rewardsServiceConfig: {
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			enableTurtle: false,
+		},
+		buildQuery(queryName, fn) {
+			if (queryName === "queryV3RewardsBreakdown") {
+				return (async () => ({
+					data: [
+						{ ...turtleUsdcBreakdownRow, amount: "603375" },
+						{
+							...turtleUsdcBreakdownRow,
+							amount: "700000",
+							rewardTokenMetadata: null,
+						},
+					],
+				})) as typeof fn;
+			}
+			if (queryName === "queryV3RewardsApyPage") {
+				return (async () => ({
+					data: [{ chainId: 1, vault: turtleUsdcVault, campaigns: [] }],
+				})) as typeof fn;
+			}
+			return fn;
+		},
+	});
+
+	const rewards = await sdk.rewardsService.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.unclaimed, "700000");
+	assert.equal(rewards[0]?.token.symbol, "USDC");
+	assert.equal(rewards[0]?.token.decimals, 6);
+});
+
+test("rewards service keeps the resolved token when collapsing turtle stream rows", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsBreakdown(async () => ({
+		data: [
+			// Resolved token, smaller amount.
+			{ ...turtleUsdcBreakdownRow, amount: "603375" } as never,
+			// Larger amount, but the upstream could not resolve the token.
+			{
+				...turtleUsdcBreakdownRow,
+				amount: "700000",
+				rewardTokenMetadata: null,
+			} as never,
+		],
+	}));
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [{ chainId: 1, vault: turtleUsdcVault, campaigns: [] }],
+	}));
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	const rewards = await service.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	// The larger amount wins, but it is scaled by the token the other row
+	// resolved rather than by nothing at all.
+	assert.equal(rewards[0]?.unclaimed, "700000");
+	assert.equal(rewards[0]?.token.symbol, "USDC");
+	assert.equal(rewards[0]?.token.decimals, 6);
+});
+
+test("fallback rewards service supplements V3 Merkl user rewards with direct claim proof", async () => {
+	const sdk = await buildEulerSDK({
+		config: {
+			rewardsServiceAdapter: "fallback",
+			rewardsV3ApiUrl: "https://example.invalid",
+		},
+		rewardsServiceConfig: {
+			enableMerkl: true,
+			enableBrevis: false,
+			enableFuul: false,
+			enableTurtle: false,
+		},
+		buildQuery(queryName, fn) {
+			if (queryName === "queryV3RewardsBreakdown") {
+				return (async () => ({
+					data: [
+						{
+							chainId: 1,
+							provider: "merkl",
+							token: {
+								address: rewardToken,
+								chainId: 1,
+								symbol: "EUL",
+								name: "EUL",
+								decimals: 18,
+							},
+							tokenPrice: 2,
+							campaignId: "merkl-1",
+							accumulated: "1000",
+							unclaimed: "1000",
+							claimAddress: merklDistributorAddress,
+						},
+					],
+				})) as typeof fn;
+			}
+			if (queryName === "queryMerklUserRewards") {
+				return (async () => [
+					{
+						chainId: 1,
+						rewards: [
+							{
+								token: {
+									address: rewardToken,
+									chainId: 1,
+									price: 2,
+									symbol: "EUL",
+									name: "EUL",
+									decimals: 18,
+								},
+								amount: "1000",
+								claimed: "0",
+								proofs: [proofHash],
+							},
+						],
+					},
+				]) as typeof fn;
+			}
+			if (queryName === "queryV3RewardsApyPage") {
+				return (async () => ({ data: [] })) as typeof fn;
+			}
+			return fn;
+		},
+	});
+
+	const rewards = await sdk.rewardsService.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "merkl");
+	assert.equal(rewards[0]?.campaignId, "merkl-1");
+	assert.deepEqual(rewards[0]?.proof, [proofHash]);
+
+	const plan = await sdk.rewardsService.buildClaimPlan({
+		reward: rewards[0]!,
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+});
+
+test("fallback rewards service collapses V3 Merkl rows into the direct cumulative claim", async () => {
+	const sdk = await buildEulerSDK({
+		config: {
+			rewardsServiceAdapter: "fallback",
+			rewardsV3ApiUrl: "https://example.invalid",
+		},
+		rewardsServiceConfig: {
+			enableMerkl: true,
+			enableBrevis: false,
+			enableFuul: false,
+			enableTurtle: false,
+		},
+		buildQuery(queryName, fn) {
+			if (queryName === "queryV3RewardsBreakdown") {
+				return (async () => ({
+					data: [
+						{
+							chainId: 1,
+							provider: "merkl",
+							token: {
+								address: rewardToken,
+								chainId: 1,
+								symbol: "EUL",
+								name: "EUL",
+								decimals: 18,
+							},
+							tokenPrice: 2,
+							campaignId: "merkl-1",
+							accumulated: "400",
+							unclaimed: "400",
+						},
+						{
+							chainId: 1,
+							provider: "merkl",
+							token: {
+								address: rewardToken,
+								chainId: 1,
+								symbol: "EUL",
+								name: "EUL",
+								decimals: 18,
+							},
+							tokenPrice: 2,
+							campaignId: "merkl-2",
+							accumulated: "600",
+							unclaimed: "600",
+						},
+					],
+				})) as typeof fn;
+			}
+			if (queryName === "queryMerklUserRewards") {
+				return (async () => [
+					{
+						chainId: 1,
+						rewards: [
+							{
+								token: {
+									address: rewardToken,
+									chainId: 1,
+									price: 2,
+									symbol: "EUL",
+									name: "EUL",
+									decimals: 18,
+								},
+								amount: "1000",
+								claimed: "0",
+								proofs: [proofHash],
+							},
+						],
+					},
+				]) as typeof fn;
+			}
+			if (queryName === "queryV3RewardsApyPage") {
+				return (async () => ({ data: [] })) as typeof fn;
+			}
+			return fn;
+		},
+	});
+
+	const rewards = await sdk.rewardsService.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "merkl");
+	assert.equal(rewards[0]?.accumulated, "1000");
+	assert.equal(rewards[0]?.unclaimed, "1000");
+	assert.deepEqual(rewards[0]?.proof, [proofHash]);
+	assert.equal(rewards[0]?.claimAddress, merklDistributorAddress);
+
+	const plan = await sdk.rewardsService.buildClaimAllPlan({
+		chainId: 1,
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+});
+
+test("fallback rewards service collapses duplicate V3 Turtle stream rows", async () => {
+	const sdk = await buildEulerSDK({
+		config: {
+			rewardsServiceAdapter: "fallback",
+			rewardsV3ApiUrl: "https://example.invalid",
+		},
+		rewardsServiceConfig: {
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			enableTurtle: false,
+		},
+		buildQuery(queryName, fn) {
+			if (queryName === "queryV3RewardsBreakdown") {
+				return (async () => ({
+					data: [
+						{
+							chainId: 1,
+							provider: "turtle",
+							source: "turtle",
+							vault: vaultAddress,
+							rewardToken,
+							amount: "1000",
+							campaignId: "stream-1",
+							timestamp: "2026-05-20T13:05:10Z",
+						},
+						{
+							chainId: 1,
+							provider: "turtle",
+							source: "turtle",
+							vault: vaultAddress,
+							rewardToken,
+							amount: "1500",
+							campaignId: "stream-1",
+							timestamp: "2026-05-20T13:05:10Z",
+						},
+					],
+				})) as typeof fn;
+			}
+			if (queryName === "queryV3RewardsApyPage") {
+				return (async () => ({
+					data: [
+						{
+							vault: vaultAddress,
+							campaigns: [
+								{
+									id: "stream-1",
+									provider: "turtle",
+									source: "turtle",
+									campaignType: "turtle_stream",
+									rewardToken: {
+										address: rewardToken,
+										symbol: "EUL",
+										name: "EUL",
+										decimals: 18,
+									},
+								},
+							],
+						},
+					],
+				})) as typeof fn;
+			}
+			return fn;
+		},
+	});
+
+	const rewards = await sdk.rewardsService.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "turtle");
+	assert.equal(rewards[0]?.campaignId, "stream-1");
+	assert.equal(rewards[0]?.unclaimed, "1500");
+});
+
+test("V3 rewards adapter uses source when provider is attribution metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "accountable-valos-boost",
+						provider: "VALOS",
+						source: "merkl",
+						campaignType: "euler_lend",
+						apr: 0.27760914,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "MON",
+						},
+						status: "active",
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "merkl");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.ok(
+		Math.abs((info?.campaigns[0]?.apr ?? 0) - 0.0027760914) < 1e-12,
+	);
+	assert.equal(info?.campaigns[0]?.rewardTokenSymbol, "MON");
+	assert.ok(Math.abs((info?.getTotalRewardsApr() ?? 0) - 0.0027760914) < 1e-12);
+});
+
+test("V3 rewards adapter uses source for flat APY rows with attribution provider metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				id: "flat-accountable-valos-boost",
+				provider: "VALOS",
+				source: "merkl",
+				campaignType: "euler_lend",
+				apr: 0.27760914,
+				rewardToken: {
+					address: rewardToken,
+					symbol: "MON",
+				},
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "merkl");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.ok(
+		Math.abs((info?.campaigns[0]?.apr ?? 0) - 0.0027760914) < 1e-12,
+	);
+});
+
+test("V3 rewards adapter falls back to provider when source is unknown", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "unknown-source-merkl-provider",
+						provider: "merkl",
+						source: "accountable",
+						campaignType: "euler_lend",
+						apr: 1.5,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "EUL",
+						},
+						status: "active",
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "merkl");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.equal(info?.campaigns[0]?.apr, 0.015);
+});
+
+test("V3 rewards adapter normalizes Turtle stream APY rows", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "turtle-shells",
+						provider: "turtle",
+						source: "turtle",
+						campaignType: "turtle_stream",
+						apr: 3.5,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "USDC",
+						},
+						status: "active",
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "turtle");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.equal(info?.campaigns[0]?.campaignId, "turtle-shells");
+	assert.equal(info?.campaigns[0]?.rewardTokenSymbol, "USDC");
+	assert.equal(info?.campaigns[0]?.apr, 0.035);
 });
 
 test("V3 rewards adapter preserves collateral and looping campaign metadata", async () => {
@@ -306,6 +1257,18 @@ test("V3 rewards adapter maps campaign whitelist and blacklist (lowercased)", as
 						status: "active",
 						whitelist: [accountAddress],
 						blacklist: [otherAccountAddress],
+						eligibilityRequirements: [
+							{
+								type: "token-holding",
+								chainId: 1,
+								tokenAddress: rewardToken,
+								minimumAmount: "0100000000000000000000000",
+								minimumDurationSeconds: 10,
+								tokenSymbol: "EUL",
+								tokenDecimals: 18,
+							},
+						],
+						eligibilityRequirementsStatus: "complete",
 					},
 				],
 			},
@@ -322,6 +1285,21 @@ test("V3 rewards adapter maps campaign whitelist and blacklist (lowercased)", as
 	assert.deepEqual(info?.campaigns[0]?.blacklist, [
 		otherAccountAddress.toLowerCase(),
 	]);
+	assert.deepEqual(info?.campaigns[0]?.eligibilityRequirements, [
+		{
+			type: "token-holding",
+			chainId: 1,
+			tokenAddress: rewardToken,
+			minimumAmount: "100000000000000000000000",
+			minimumDurationSeconds: 10,
+			tokenSymbol: "EUL",
+			tokenDecimals: 18,
+		},
+	]);
+	assert.equal(
+		info?.campaigns[0]?.eligibilityRequirementsStatus,
+		"complete",
+	);
 	// Eligibility predicate honours the mapped lists.
 	assert.equal(info?.getActiveCampaigns({ viewer: accountAddress }).length, 1);
 	assert.equal(
@@ -346,6 +1324,16 @@ test("V3 rewards adapter maps whitelist and blacklist on flat rows", async () =>
 				},
 				whitelist: [accountAddress],
 				blacklist: [otherAccountAddress],
+				eligibilityRequirements: [
+					{
+						type: "token-holding",
+						chainId: 1,
+						tokenAddress: rewardToken,
+						minimumAmount: "100000000000000000000000",
+						minimumDurationSeconds: 10,
+					},
+				],
+				eligibilityRequirementsStatus: "complete",
 			},
 		],
 	}));
@@ -360,6 +1348,131 @@ test("V3 rewards adapter maps whitelist and blacklist on flat rows", async () =>
 	assert.deepEqual(info?.campaigns[0]?.blacklist, [
 		otherAccountAddress.toLowerCase(),
 	]);
+	assert.equal(
+		info?.campaigns[0]?.eligibilityRequirements?.[0]?.minimumAmount,
+		"100000000000000000000000",
+	);
+	assert.equal(
+		info?.campaigns[0]?.eligibilityRequirementsStatus,
+		"complete",
+	);
+});
+
+test("V3 rewards adapter preserves incomplete eligibility disclosure without modeled requirements", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				campaigns: [
+					{
+						id: "unknown-eligibility",
+						provider: "merkl",
+						campaignType: "euler_lend",
+						apr: 5,
+						rewardToken: {
+							address: rewardToken,
+							symbol: "EUL",
+						},
+						status: "active",
+						eligibilityRequirementsStatus: "incomplete",
+					},
+				],
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.equal(campaign?.eligibilityRequirements, undefined);
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
+});
+
+test("V3 rewards adapter fails closed when a complete response contains an unknown requirement", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				provider: "merkl",
+				action: "LEND",
+				id: "future-eligibility",
+				apr: 5,
+				rewardToken: {
+					address: rewardToken,
+					symbol: "EUL",
+				},
+				eligibilityRequirements: [{ type: "future-provider-rule" }],
+				eligibilityRequirementsStatus: "complete",
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.equal(campaign?.eligibilityRequirements, undefined);
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
+});
+
+test("V3 rewards adapter fails closed for a zero-address eligibility token", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				provider: "merkl",
+				action: "LEND",
+				id: "zero-address-eligibility",
+				apr: 5,
+				rewardToken: {
+					address: rewardToken,
+					symbol: "EUL",
+				},
+				eligibilityRequirements: [
+					{
+						type: "token-holding",
+						chainId: 1,
+						tokenAddress: zeroAddress,
+						minimumAmount: "100",
+						minimumDurationSeconds: 10,
+					},
+				],
+				eligibilityRequirementsStatus: "complete",
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.equal(campaign?.eligibilityRequirements, undefined);
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
+});
+
+test("V3 rewards adapter fails closed for legacy Merkl eligibility metadata", async () => {
+	const adapter = new RewardsV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3RewardsApyPage(async () => ({
+		data: [
+			{
+				vault: vaultAddress,
+				provider: "merkl",
+				action: "LEND",
+				id: "legacy-eligibility",
+				apr: 5,
+				rewardToken: {
+					address: rewardToken,
+					symbol: "EUL",
+				},
+			},
+		],
+	}));
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
 });
 
 test("direct rewards adapter expands Merkl MULTILENDBORROW markets", async () => {
@@ -501,6 +1614,7 @@ test("direct rewards adapter preserves standard Merkl allowlist metadata", async
 	const adapter = makeDirectRewardsAdapter({
 		EULER: [
 			makeMerklOpportunity({
+				id: "11011917105611148420",
 				aprRecord: {
 					breakdowns: [
 						{
@@ -518,6 +1632,16 @@ test("direct rewards adapter preserves standard Merkl allowlist metadata", async
 							evkAddress: vaultAddress,
 							whitelist: [accountAddress],
 							blacklist: [otherAccountAddress],
+							hooks: [
+								{
+									hookType: 2,
+									eligibilityDuration: 10,
+									eligibilityTokenAddress: rewardToken,
+									eligibilityTokenChainId: 1,
+									eligibilityTokenThreshold:
+										"100000000000000000000000",
+								},
+							],
 						},
 					}),
 				],
@@ -530,6 +1654,10 @@ test("direct rewards adapter preserves standard Merkl allowlist metadata", async
 
 	assert.equal(info?.campaigns.length, 1);
 	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.equal(
+		info?.campaigns[0]?.sourceUrl,
+		"https://app.merkl.xyz/opportunities/11011917105611148420/campaigns/standard-1",
+	);
 	assert.equal(info?.campaigns[0]?.apr, 0.042);
 	assert.equal(info?.campaigns[0]?.rewardTokenIcon, "https://example.invalid/eul.png");
 	assert.deepEqual(info?.campaigns[0]?.whitelist, [
@@ -538,6 +1666,185 @@ test("direct rewards adapter preserves standard Merkl allowlist metadata", async
 	assert.deepEqual(info?.campaigns[0]?.blacklist, [
 		otherAccountAddress.toLowerCase(),
 	]);
+	assert.deepEqual(info?.campaigns[0]?.eligibilityRequirements, [
+		{
+			type: "token-holding",
+			chainId: 1,
+			tokenAddress: rewardToken,
+			minimumAmount: "100000000000000000000000",
+			minimumDurationSeconds: 10,
+			tokenSymbol: "EUL",
+			tokenDecimals: 18,
+		},
+	]);
+	assert.equal(
+		info?.campaigns[0]?.eligibilityRequirementsStatus,
+		"complete",
+	);
+});
+
+test("direct rewards adapter preserves known requirements when Merkl hooks are incomplete", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER: [
+			makeMerklOpportunity({
+				aprRecord: {
+					breakdowns: [{ identifier: "unknown-hook", value: 4.2 }],
+				},
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "unknown-hook",
+						apr: 0,
+						params: {
+							evkAddress: vaultAddress,
+							hooks: [
+								{
+									hookType: 2,
+									eligibilityDuration: 10,
+									eligibilityTokenAddress: rewardToken,
+									eligibilityTokenChainId: 1,
+									eligibilityTokenThreshold: "100",
+								},
+								{ hookType: 99, schemaUid: "0xunknown" },
+							],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.deepEqual(campaign?.eligibilityRequirements, [
+		{
+			type: "token-holding",
+			chainId: 1,
+			tokenAddress: rewardToken,
+			minimumAmount: "100",
+			minimumDurationSeconds: 10,
+			tokenSymbol: "EUL",
+			tokenDecimals: 18,
+		},
+	]);
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
+});
+
+test("direct rewards adapter fails closed for a zero-address eligibility token", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER: [
+			makeMerklOpportunity({
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "zero-address-hook",
+						apr: 4.2,
+						params: {
+							evkAddress: vaultAddress,
+							hooks: [
+								{
+									hookType: 2,
+									eligibilityDuration: 10,
+									eligibilityTokenAddress: zeroAddress,
+									eligibilityTokenChainId: 1,
+									eligibilityTokenThreshold: "100",
+								},
+							],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+	assert.equal(campaign?.eligibilityRequirements, undefined);
+	assert.equal(campaign?.eligibilityRequirementsStatus, "incomplete");
+});
+
+test("direct rewards adapter omits invalid eligibility token symbols", async () => {
+	for (const symbol of ["", 42] as const) {
+		const adapter = makeDirectRewardsAdapter({
+			EULER: [
+				makeMerklOpportunity({
+					campaigns: [
+						makeMerklCampaign({
+							campaignId: `invalid-symbol-${String(symbol)}`,
+							apr: 4.2,
+							rewardToken: {
+								address: rewardToken,
+								chainId: 1,
+								symbol: symbol as unknown as string,
+								decimals: 18,
+							},
+							params: {
+								evkAddress: vaultAddress,
+								hooks: [
+									{
+										hookType: 2,
+										eligibilityDuration: 10,
+										eligibilityTokenAddress: rewardToken,
+										eligibilityTokenChainId: 1,
+										eligibilityTokenThreshold: "100",
+									},
+								],
+							},
+						}),
+					],
+				}),
+			],
+		});
+
+		const rewards = await adapter.fetchChainRewards(1);
+		const campaign = rewards.get(vaultAddress.toLowerCase())?.campaigns[0];
+
+		assert.equal(campaign?.eligibilityRequirements?.[0]?.tokenSymbol, undefined);
+		assert.equal(campaign?.eligibilityRequirementsStatus, "complete");
+	}
+});
+
+test("direct rewards adapter rejects negative eligibility token decimals", async () => {
+	const adapter = makeDirectRewardsAdapter({
+		EULER: [
+			makeMerklOpportunity({
+				aprRecord: {
+					breakdowns: [{ identifier: "negative-decimals", value: 4.2 }],
+				},
+				campaigns: [
+					makeMerklCampaign({
+						campaignId: "negative-decimals",
+						apr: 0,
+						rewardToken: {
+							address: rewardToken,
+							chainId: 1,
+							symbol: "EUL",
+							decimals: -1,
+						},
+						params: {
+							evkAddress: vaultAddress,
+							hooks: [
+								{
+									hookType: 2,
+									eligibilityDuration: 10,
+									eligibilityTokenAddress: rewardToken,
+									eligibilityTokenChainId: 1,
+									eligibilityTokenThreshold: "100",
+								},
+							],
+						},
+					}),
+				],
+			}),
+		],
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const requirement = rewards.get(vaultAddress.toLowerCase())?.campaigns[0]
+		?.eligibilityRequirements?.[0];
+
+	assert.equal(requirement?.tokenSymbol, "EUL");
+	assert.equal(requirement?.tokenDecimals, undefined);
 });
 
 test("direct rewards adapter maps split Merkl Euler lend and borrow opportunity types", async () => {
@@ -661,7 +1968,7 @@ test("rewards service rejects Brevis rewards without verified claim address", as
 			service.buildClaimPlan({
 				reward: makeBrevisReward({
 					claimAddress,
-					proof: ["0xabc" as `0x${string}`],
+					proof: [proofHash],
 					cumulativeAmounts: ["1000"],
 					epoch: "7",
 				}),
@@ -705,7 +2012,7 @@ test("V3 rewards adapter delegates Brevis claim verification to direct adapter",
 				claimableRewards: "1000",
 				epoch: "7",
 				cumulativeRewards: ["1000"],
-				merkleProof: ["0xabc"],
+				merkleProof: [proofHash],
 			},
 		],
 	}));
@@ -724,7 +2031,7 @@ test("V3 rewards adapter delegates Brevis claim verification to direct adapter",
 		reward: makeBrevisReward({
 			campaignId: "brevis-1",
 			claimAddress,
-			proof: ["0xabc" as `0x${string}`],
+			proof: [proofHash],
 			cumulativeAmounts: ["1000"],
 			epoch: "7",
 		}),
@@ -732,9 +2039,18 @@ test("V3 rewards adapter delegates Brevis claim verification to direct adapter",
 	});
 
 	assert.equal(plan.length, 1);
-	assert.equal(plan[0]?.type, "contractCall");
-	assert.equal(plan[0]?.to, claimAddress);
-	assert.equal(plan[0]?.functionName, "claim");
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.equal(operation.items.length, 1);
+	assert.equal(operation.items[0]?.targetContract, claimAddress);
+	const decoded = decodeFunctionData({
+		abi: BREVIS_CLAIM_ABI,
+		data: operation.items[0]!.data,
+	});
+	assert.equal(decoded.functionName, "claim");
 });
 
 test("direct rewards adapter verifies Brevis claim target against campaign metadata", async () => {
@@ -775,7 +2091,7 @@ test("direct rewards adapter verifies Brevis claim target against campaign metad
 				claimableRewards: "1000",
 				epoch: "7",
 				cumulativeRewards: ["1000"],
-				merkleProof: ["0xabc"],
+				merkleProof: [proofHash],
 			},
 		],
 	}));
@@ -825,7 +2141,7 @@ test("direct rewards adapter drops Brevis proofs with mismatched claim target", 
 				claimableRewards: "1000",
 				epoch: "7",
 				cumulativeRewards: ["1000"],
-				merkleProof: ["0xabc"],
+				merkleProof: [proofHash],
 			},
 		],
 	}));
@@ -918,6 +2234,72 @@ test("direct rewards adapter maps Fuul lend and looping incentives", async () =>
 	assert.equal(info?.campaigns[1]?.maxMultiplier, 5);
 });
 
+test("direct rewards adapter maps Turtle stream APY campaigns", async () => {
+	const adapter = new RewardsDirectAdapter({
+		enableMerkl: false,
+		enableBrevis: false,
+		enableFuul: false,
+	});
+	let requestUrl = "";
+	adapter.setQueryTurtleStreams(async (url) => {
+		requestUrl = url;
+		return [
+			{
+				id: "turtle-stream-1",
+				chainId: 1,
+				startTimestamp: "2026-01-01T00:00:00Z",
+				endTimestamp: "2100-01-01T00:00:00Z",
+				customArgs: {
+					targetToken: {
+						address: vaultAddress.toLowerCase(),
+						symbol: "eUSDC",
+					},
+				},
+				lastSnapshot: {
+					apr: "0.09",
+				},
+				rewardToken: {
+					address: rewardToken.toLowerCase(),
+					symbol: "AUSD",
+					logoUrl: "https://example.invalid/ausd.svg",
+				},
+			},
+			{
+				id: "future-stream",
+				chainId: 1,
+				startTimestamp: "2100-01-01T00:00:00Z",
+				customArgs: {
+					targetToken: {
+						address: secondVaultAddress,
+						symbol: "future",
+					},
+					apr: "0.05",
+				},
+				rewardToken: {
+					address: rewardToken,
+					symbol: "AUSD",
+				},
+			},
+		];
+	});
+
+	const rewards = await adapter.fetchChainRewards(1);
+	const info = rewards.get(vaultAddress.toLowerCase());
+	const params = new URL(requestUrl).searchParams;
+
+	assert.equal(requestUrl.startsWith("https://earn.turtle.xyz/v1/streams"), true);
+	assert.equal(params.get("chainId"), "1");
+	assert.equal(info?.campaigns.length, 1);
+	assert.equal(info?.campaigns[0]?.source, "turtle");
+	assert.equal(info?.campaigns[0]?.action, "LEND");
+	assert.equal(info?.campaigns[0]?.campaignId, "turtle-stream-1");
+	assert.equal(info?.campaigns[0]?.apr, 0.09);
+	assert.equal(info?.campaigns[0]?.rewardTokenAddress, rewardToken);
+	assert.equal(info?.campaigns[0]?.rewardTokenSymbol, "AUSD");
+	assert.equal(info?.campaigns[0]?.rewardTokenIcon, "https://example.invalid/ausd.svg");
+	assert.equal(rewards.has(secondVaultAddress.toLowerCase()), false);
+});
+
 test("rewards service derives Merkl claim target from trusted distributor", async () => {
 	const service = new RewardsService(emptyAdapter, {
 		merklDistributorAddress,
@@ -931,8 +2313,576 @@ test("rewards service derives Merkl claim target from trusted distributor", asyn
 	});
 
 	assert.equal(plan.length, 1);
-	assert.equal(plan[0]?.type, "contractCall");
-	assert.equal(plan[0]?.to, merklDistributorAddress);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.equal(operation.items[0]?.targetContract, merklDistributorAddress);
+});
+
+test("rewards service deduplicates identical user reward claims", async () => {
+	const otherProofHash =
+		"0x2222222222222222222222222222222222222222222222222222222222222222" as Hex;
+	const duplicateReward = makeMerklReward();
+	const distinctReward = makeMerklReward({
+		token: {
+			address: otherRewardToken,
+			chainId: 1,
+			symbol: "USDC",
+			name: "USDC",
+			decimals: 6,
+		},
+		proof: [otherProofHash],
+		accumulated: "2000",
+		unclaimed: "2000",
+	});
+	const service = new RewardsService(
+		{
+			...emptyAdapter,
+			async fetchUserRewards() {
+				return [duplicateReward, { ...duplicateReward }, distinctReward];
+			},
+		},
+		{
+			merklDistributorAddress,
+			fuulManagerAddress: zeroAddress,
+			fuulFactoryAddress: zeroAddress,
+		},
+	);
+
+	const rewards = await service.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 2);
+	assert.deepEqual(
+		rewards.map((reward) => reward.accumulated),
+		["1000", "2000"],
+	);
+});
+
+test("rewards service keeps latest cumulative Merkl reward per token", async () => {
+	const olderProofHash =
+		"0x2222222222222222222222222222222222222222222222222222222222222222" as Hex;
+	const latestProofHash =
+		"0x3333333333333333333333333333333333333333333333333333333333333333" as Hex;
+	const service = new RewardsService(
+		{
+			...emptyAdapter,
+			async fetchUserRewards() {
+				return [
+					makeMerklReward({
+						accumulated: "1000",
+						unclaimed: "1000",
+						proof: [olderProofHash],
+					}),
+					makeMerklReward({
+						accumulated: "2000",
+						unclaimed: "2000",
+						proof: [latestProofHash],
+					}),
+				];
+			},
+		},
+		{
+			merklDistributorAddress,
+			fuulManagerAddress: zeroAddress,
+			fuulFactoryAddress: zeroAddress,
+		},
+	);
+
+	const rewards = await service.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.accumulated, "2000");
+	assert.equal(rewards[0]?.unclaimed, "2000");
+	assert.deepEqual(rewards[0]?.proof, [latestProofHash]);
+});
+
+test("rewards service keeps the resolved Merkl token in either row order", async () => {
+	// Which row carries the token is independent of which one carries the
+	// larger cumulative amount, so the reduction has to merge in both
+	// directions rather than only when the incoming row wins.
+	const resolved = makeMerklReward({
+		accumulated: "1000",
+		unclaimed: "1000",
+		token: {
+			address: rewardToken,
+			chainId: 1,
+			symbol: "USDC",
+			name: "USD Coin",
+			decimals: 6,
+		},
+	});
+	const unresolved = makeMerklReward({
+		accumulated: "2000",
+		unclaimed: "2000",
+		token: {
+			address: rewardToken,
+			chainId: 1,
+			symbol: rewardToken,
+			name: rewardToken,
+		},
+	});
+
+	for (const rows of [
+		[resolved, unresolved],
+		[unresolved, resolved],
+	]) {
+		const service = new RewardsService(
+			{
+				...emptyAdapter,
+				async fetchUserRewards() {
+					return rows;
+				},
+			},
+			{
+				merklDistributorAddress,
+				fuulManagerAddress: zeroAddress,
+				fuulFactoryAddress: zeroAddress,
+			},
+		);
+
+		const rewards = await service.fetchUserRewards(1, accountAddress);
+
+		assert.equal(rewards.length, 1);
+		assert.equal(rewards[0]?.accumulated, "2000");
+		assert.equal(rewards[0]?.token.decimals, 6);
+	}
+});
+
+test("direct rewards adapter keeps latest Merkl cumulative reward per token", async () => {
+	const olderProofHash =
+		"0x2222222222222222222222222222222222222222222222222222222222222222" as Hex;
+	const latestProofHash =
+		"0x3333333333333333333333333333333333333333333333333333333333333333" as Hex;
+	const adapter = new RewardsDirectAdapter({
+		merklApiUrl: "https://example.invalid/merkl",
+		enableBrevis: false,
+		enableFuul: false,
+		enableTurtle: false,
+	});
+	adapter.setQueryMerklUserRewards(async () => [
+		{
+			chainId: 1,
+			rewards: [
+				{
+					token: {
+						address: rewardToken,
+						chainId: 1,
+						price: 2,
+						symbol: "EUL",
+						name: "EUL",
+						decimals: 18,
+					},
+					amount: "1000",
+					claimed: "0",
+					proofs: [olderProofHash],
+				},
+				{
+					token: {
+						address: rewardToken,
+						chainId: 1,
+						price: 2,
+						symbol: "EUL",
+						name: "EUL",
+						decimals: 18,
+					},
+					amount: "2000",
+					claimed: "0",
+					proofs: [latestProofHash],
+				},
+				{
+					token: {
+						address: rewardToken,
+						chainId: 1,
+						price: 2,
+						symbol: "EUL",
+						name: "EUL",
+						decimals: 18,
+					},
+					amount: "2000",
+					claimed: "0",
+					proofs: [latestProofHash],
+				},
+			],
+		},
+	]);
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.accumulated, "2000");
+	assert.equal(rewards[0]?.unclaimed, "2000");
+	assert.deepEqual(rewards[0]?.proof, [latestProofHash]);
+});
+
+test("rewards service deduplicates identical Merkl rewards before claim planning", async () => {
+	const service = new RewardsService(emptyAdapter, {
+		merklDistributorAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	const reward = makeMerklReward();
+
+	const plan = await service.buildClaimPlans({
+		rewards: [reward, { ...reward }],
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	const merklDecoded = decodeFunctionData({
+		abi: MERKL_CLAIM_ABI,
+		data: operation.items[0]!.data,
+	});
+	assert.equal(merklDecoded.functionName, "claim");
+	assert.equal(merklDecoded.args[0].length, 1);
+	assert.equal(merklDecoded.args[1].length, 1);
+	assert.equal(merklDecoded.args[2].length, 1);
+	assert.equal(merklDecoded.args[3].length, 1);
+});
+
+test("rewards service can build EVC batch items for claim providers", async () => {
+	const brevisReward = makeBrevisReward({
+		campaignId: "brevis-1",
+		claimAddress,
+		cumulativeAmounts: ["1000"],
+		epoch: "7",
+		proof: [proofHash],
+	});
+	const adapter = {
+		...emptyAdapter,
+		async fetchBrevisUserRewardClaims() {
+			return [brevisReward];
+		},
+		async fetchFuulClaimChecks() {
+			return [makeFuulClaimCheck()];
+		},
+		async fetchFuulTotals() {
+			return {
+				claimed: [],
+				unclaimed: [
+					{
+						currency: rewardToken,
+						currency_type: 0,
+						amount: "1000",
+						chain_id: 1,
+					},
+				],
+			};
+		},
+	} satisfies IRewardsAdapter & {
+		fetchBrevisUserRewardClaims: (
+			chainId: number,
+			address: Address,
+		) => Promise<UserReward[]>;
+	};
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress,
+		fuulManagerAddress: otherAccountAddress,
+		fuulFactoryAddress: fuulProjectAddress,
+	});
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					return { nativeUserClaimFee: 123n };
+				},
+			};
+		},
+	} as any);
+
+	const plan = await service.buildClaimPlans({
+		rewards: [
+			makeMerklReward({ claimAddress: undefined }),
+			brevisReward,
+			makeFuulReward(),
+		],
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) {
+		throw new Error("expected operation");
+	}
+	assert.equal(operation.name, "Claim rewards");
+	assert.equal(operation.items.length, 3);
+	assert.deepEqual(operation.walletBalanceTokens, [rewardToken]);
+
+	const [merklItem, brevisItem, fuulItem] = operation.items;
+	assert.equal(merklItem?.targetContract, merklDistributorAddress);
+	assert.equal(merklItem?.onBehalfOfAccount, accountAddress);
+	assert.equal(merklItem?.value, 0n);
+	const merklDecoded = decodeFunctionData({
+		abi: MERKL_CLAIM_ABI,
+		data: merklItem!.data,
+	});
+	assert.equal(merklDecoded.functionName, "claim");
+	assert.deepEqual(merklDecoded.args[0], [accountAddress]);
+	assert.deepEqual(merklDecoded.args[1], [rewardToken]);
+
+	assert.equal(brevisItem?.targetContract, claimAddress);
+	assert.equal(brevisItem?.onBehalfOfAccount, accountAddress);
+	assert.equal(brevisItem?.value, 0n);
+	const brevisDecoded = decodeFunctionData({
+		abi: BREVIS_CLAIM_ABI,
+		data: brevisItem!.data,
+	});
+	assert.equal(brevisDecoded.functionName, "claim");
+	assert.deepEqual(brevisDecoded.args, [
+		accountAddress,
+		[1000n],
+		7n,
+		[proofHash],
+	]);
+
+	assert.equal(fuulItem?.targetContract, otherAccountAddress);
+	assert.equal(fuulItem?.onBehalfOfAccount, accountAddress);
+	assert.equal(fuulItem?.value, 123n);
+	const fuulDecoded = decodeFunctionData({
+		abi: FUUL_MANAGER_ABI,
+		data: fuulItem!.data,
+	});
+	assert.equal(fuulDecoded.functionName, "claim");
+	assert.equal(fuulDecoded.args[0][0].to, accountAddress);
+});
+
+test("rewards service fetches claimable reward streams from account lens", async () => {
+	const service = makeRewardsService();
+	const calls: Array<{
+		accountLensAddress: Address;
+		account: Address;
+		vault: Address;
+	}> = [];
+	service.setQueryRewardAccountInfo(
+		async (_provider, queriedAccountLensAddress, account, vault) => {
+			calls.push({ accountLensAddress: queriedAccountLensAddress, account, vault });
+			return {
+				account,
+				vault,
+				enabledRewardsInfo: [
+					{
+						reward: rewardToken,
+						earnedReward: 100n,
+						earnedRewardRecentIgnored: 75n,
+					},
+					{
+						reward: otherRewardToken,
+						earnedReward: 0n,
+						earnedRewardRecentIgnored: 0n,
+					},
+				],
+			} as any;
+		},
+	);
+
+	const rewardStreams = await service.fetchRewardStreams({
+		chainId: 1,
+		positions: [
+			{ account: accountAddress, vault: vaultAddress },
+			{ account: accountAddress, vault: vaultAddress },
+		],
+	});
+
+	assert.equal(calls.length, 1);
+	assert.deepEqual(calls[0], {
+		accountLensAddress,
+		account: accountAddress,
+		vault: vaultAddress,
+	});
+	assert.deepEqual(rewardStreams, [
+		{
+			account: accountAddress,
+			vault: vaultAddress,
+			reward: rewardToken,
+			earnedReward: 100n,
+			earnedRewardRecentIgnored: 75n,
+		},
+	]);
+});
+
+test("deprecated setQueryVaultAccountInfo still drives reward stream reads", async () => {
+	// The old callback was declared as returning `VaultAccountInfo`, so it supplies
+	// neither `balanceTracker` nor `balance`. It must keep compiling and keep
+	// overriding the reader `fetchRewardStreams` uses — retargeting the unused
+	// legacy property instead would silently discard the override.
+	const service = makeRewardsService();
+	const calls: Array<{ account: Address; vault: Address }> = [];
+
+	service.setQueryVaultAccountInfo(async (_provider, _lens, account, vault) => {
+		calls.push({ account, vault });
+		return {
+			account,
+			vault,
+			enabledRewardsInfo: [
+				{
+					reward: rewardToken,
+					earnedReward: 100n,
+					earnedRewardRecentIgnored: 75n,
+				},
+			],
+		};
+	});
+
+	const rewardStreams = await service.fetchRewardStreams({
+		chainId: 1,
+		positions: [{ account: accountAddress, vault: vaultAddress }],
+	});
+
+	assert.deepEqual(calls, [{ account: accountAddress, vault: vaultAddress }]);
+	assert.deepEqual(rewardStreams, [
+		{
+			account: accountAddress,
+			vault: vaultAddress,
+			reward: rewardToken,
+			earnedReward: 100n,
+			earnedRewardRecentIgnored: 75n,
+		},
+	]);
+});
+
+test("deprecated setQueryVaultAccountInfo accepts a full AccountRewardInfo", async () => {
+	// A caller who already migrated the return shape but not the setter name must
+	// not be broken by the legacy projection.
+	const service = makeRewardsService();
+
+	service.setQueryVaultAccountInfo(async (_provider, _lens, account, vault) => ({
+		timestamp: 7n,
+		account,
+		vault,
+		balanceTracker: rewardStreamsAddress,
+		balanceForwarderEnabled: true,
+		balance: 5n,
+		enabledRewardsInfo: [
+			{ reward: rewardToken, earnedReward: 1n, earnedRewardRecentIgnored: 0n },
+		],
+	}));
+
+	const rewardStreams = await service.fetchRewardStreams({
+		chainId: 1,
+		positions: [{ account: accountAddress, vault: vaultAddress }],
+	});
+
+	assert.deepEqual(rewardStreams, [
+		{
+			account: accountAddress,
+			vault: vaultAddress,
+			reward: rewardToken,
+			earnedReward: 1n,
+			earnedRewardRecentIgnored: 0n,
+		},
+	]);
+});
+
+test("deprecated queryVaultAccountInfo still reads getVaultAccountInfo", async () => {
+	// Direct property access is part of the exported surface, so it stays callable
+	// and keeps its original contract.
+	const service = makeRewardsService();
+	const readCalls: Array<{
+		address: Address;
+		functionName: string;
+		args: readonly unknown[];
+	}> = [];
+	const readContract = async (call: {
+		address: Address;
+		functionName: string;
+		args: readonly unknown[];
+	}) => {
+		readCalls.push(call);
+		return { account: accountAddress };
+	};
+
+	const info = await service.queryVaultAccountInfo(
+		{ readContract } as never,
+		accountLensAddress,
+		accountAddress,
+		vaultAddress,
+	);
+
+	assert.equal(readCalls.length, 1);
+	assert.equal(readCalls[0]?.address, accountLensAddress);
+	assert.equal(readCalls[0]?.functionName, "getVaultAccountInfo");
+	assert.deepEqual(readCalls[0]?.args, [accountAddress, vaultAddress]);
+	assert.equal(info.account, accountAddress);
+});
+
+test("rewards service builds reward stream claims as an EVC batch", () => {
+	const service = makeRewardsService();
+
+	const plan = service.buildRewardStreamClaimPlan({
+		chainId: 1,
+		recipient: otherAccountAddress,
+		rewardStreams: [
+			{
+				account: accountAddress,
+				vault: vaultAddress,
+				reward: rewardToken,
+				earnedReward: 100n,
+				earnedRewardRecentIgnored: 100n,
+			},
+			{
+				account: accountAddress,
+				vault: secondVaultAddress,
+				reward: otherRewardToken,
+				earnedReward: 50n,
+				earnedRewardRecentIgnored: 25n,
+			},
+			{
+				account: accountAddress,
+				vault: secondVaultAddress,
+				reward: rewardToken,
+				earnedReward: 0n,
+				earnedRewardRecentIgnored: 0n,
+			},
+		],
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) {
+		throw new Error("expected operation");
+	}
+	assert.equal(operation.name, "Claim rewards");
+	assert.equal(operation.items.length, 2);
+	const [firstItem, secondItem] = operation.items;
+	assert.equal(firstItem?.targetContract, rewardStreamsAddress);
+	assert.equal(firstItem?.onBehalfOfAccount, accountAddress);
+	assert.equal(firstItem?.value, 0n);
+	const firstDecoded = decodeFunctionData({
+		abi: REWARD_STREAMS_ABI,
+		data: firstItem!.data,
+	});
+	assert.deepEqual(firstDecoded.args, [
+		vaultAddress,
+		rewardToken,
+		otherAccountAddress,
+		true,
+	]);
+
+	assert.equal(secondItem?.targetContract, rewardStreamsAddress);
+	assert.equal(secondItem?.onBehalfOfAccount, accountAddress);
+	assert.equal(secondItem?.value, 0n);
+	const secondDecoded = decodeFunctionData({
+		abi: REWARD_STREAMS_ABI,
+		data: secondItem!.data,
+	});
+	assert.deepEqual(secondDecoded.args, [
+		secondVaultAddress,
+		otherRewardToken,
+		otherAccountAddress,
+		false,
+	]);
 });
 
 test("rewards service rejects Merkl rewards with untrusted claim address", async () => {
@@ -970,9 +2920,12 @@ test("rewards service uses chain-specific Merkl distributor overrides", async ()
 	});
 
 	assert.equal(plan.length, 1);
-	assert.equal(plan[0]?.type, "contractCall");
-	assert.equal(plan[0]?.chainId, 324);
-	assert.equal(plan[0]?.to, zksyncMerklDistributorAddress);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.equal(operation.items[0]?.targetContract, zksyncMerklDistributorAddress);
 });
 
 test("rewards service rejects default Merkl distributor on unknown chains", async () => {
@@ -1022,14 +2975,15 @@ test("direct rewards adapter fetches Fuul user rewards from public claimable rew
 		requestUrl = url;
 		return [
 			makeFuulClaimableReward({
-				currency_chain_id: 8453,
+				currency_chain_id: 1,
 				currency_name: "USDC",
 				currency_decimals: 6,
 			}),
 			makeFuulClaimableReward({
-				currency_chain_id: 8453,
+				currency_chain_id: 1,
 				amount: "500",
 			}),
+			makeFuulClaimableReward({ currency_chain_id: 8453, amount: "2000" }),
 			makeFuulClaimableReward({ user_address: otherAccountAddress }),
 		];
 	});
@@ -1043,12 +2997,182 @@ test("direct rewards adapter fetches Fuul user rewards from public claimable rew
 	assert.equal(params.get("chain_id"), "1");
 	assert.equal(rewards.length, 1);
 	assert.equal(rewards[0]?.provider, "fuul");
-	assert.equal(rewards[0]?.chainId, 8453);
+	assert.equal(rewards[0]?.chainId, 1);
 	assert.equal(rewards[0]?.token.address, rewardToken);
-	assert.equal(rewards[0]?.token.chainId, 8453);
+	assert.equal(rewards[0]?.token.chainId, 1);
 	assert.equal(rewards[0]?.token.symbol, "USDC");
 	assert.equal(rewards[0]?.token.decimals, 6);
 	assert.equal(rewards[0]?.unclaimed, "1500");
+});
+
+test("rewards service excludes foreign-chain rows from claim-all", async () => {
+	const adapter: IRewardsAdapter = {
+		...emptyAdapter,
+		fetchUserRewards: async () => [
+			makeFuulReward({
+				chainId: 8453,
+				token: {
+					...makeFuulReward().token,
+					chainId: 8453,
+				},
+			}),
+		],
+	};
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	const plan = await service.buildClaimAllPlan({
+		chainId: 1,
+		account: accountAddress,
+	});
+
+	assert.deepEqual(plan, []);
+});
+
+test("direct rewards adapter filters fallback Fuul claim checks by chain", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryFuulClaimableRewards(async () => [
+		makeFuulClaimableReward({ currency_chain_id: 1, amount: "1000" }),
+		makeFuulClaimableReward({ currency_chain_id: 8453, amount: "2000" }),
+	]);
+
+	const claimChecks = await adapter.fetchFuulClaimChecks(accountAddress, 1);
+
+	assert.equal(claimChecks.length, 1);
+	assert.equal(claimChecks[0]?.amount, "1000");
+});
+
+test("rewards service rejects mixed-chain reward plans", async () => {
+	const service = new RewardsService(emptyAdapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+
+	await assert.rejects(
+		() =>
+			service.buildClaimPlans({
+				rewards: [
+					makeFuulReward(),
+					makeFuulReward({
+						chainId: 8453,
+						token: {
+							...makeFuulReward().token,
+							chainId: 8453,
+						},
+					}),
+				],
+				account: accountAddress,
+			}),
+		/Reward claim planning requires rewards from chain 1/,
+	);
+});
+
+test("direct rewards adapter fetches Turtle user rewards from configured streams", async () => {
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+			},
+		],
+	});
+	let requestUrl = "";
+	adapter.setQueryTurtleMerkleProofs(async (url) => {
+		requestUrl = url;
+		return [makeTurtleMerkleProof({ claimable: "900" })];
+	});
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+	const params = new URL(requestUrl).searchParams;
+
+	assert.equal(requestUrl.startsWith("https://earn.turtle.xyz/v1/streams/merkle_proofs"), true);
+	assert.equal(params.get("wallet"), accountAddress);
+	assert.equal(params.get("streamIds"), "stream-1");
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "turtle");
+	assert.equal(rewards[0]?.chainId, 1);
+	assert.equal(rewards[0]?.token.address, rewardToken);
+	assert.equal(rewards[0]?.campaignId, "stream-1");
+	assert.equal(rewards[0]?.streamId, "stream-1");
+	assert.equal(rewards[0]?.streamAddress, turtleStreamAddress);
+	assert.equal(rewards[0]?.accumulated, "1000");
+	assert.equal(rewards[0]?.unclaimed, "900");
+});
+
+test("direct rewards adapter does not treat Turtle cumulative allocation as claimable", async () => {
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+			},
+		],
+	});
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({ claimable: undefined }),
+	]);
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.accumulated, "1000");
+	assert.equal(rewards[0]?.unclaimed, "0");
+});
+
+test("direct rewards adapter falls back to configured Turtle stream decimals", async () => {
+	// The proof names the token but omits its scale. The stream config is a
+	// configured precision for that same address, not a guess, so it is used.
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+				rewardToken: { address: rewardToken, decimals: 6 },
+			},
+		],
+	});
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({
+			rewardToken: { address: rewardToken, chainId: 1, symbol: "USDC" },
+		}),
+	]);
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.address, rewardToken);
+	assert.equal(rewards[0]?.token.decimals, 6);
+});
+
+test("direct rewards adapter ignores configured decimals for another Turtle token", async () => {
+	// A stream reconfigured to pay a different token must not lend its old
+	// scale to the token the proof actually pays out in.
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+				rewardToken: { address: usdcAddress, decimals: 6 },
+			},
+		],
+	});
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({
+			rewardToken: { address: rewardToken, chainId: 1, symbol: "EUL" },
+		}),
+	]);
+
+	const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.token.address, rewardToken);
+	assert.equal(rewards[0]?.token.decimals, undefined);
 });
 
 test("rewards service builds Fuul claim plan from public claimable rewards", async () => {
@@ -1078,14 +3202,446 @@ test("rewards service builds Fuul claim plan from public claimable rewards", asy
 	});
 
 	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.equal(operation.items[0]?.targetContract, claimAddress);
+	assert.equal(operation.items[0]?.value, 123n);
+	const decoded = decodeFunctionData({
+		abi: FUUL_MANAGER_ABI,
+		data: operation.items[0]!.data,
+	});
+	assert.equal(decoded.functionName, "claim");
+	const claimCheck = (decoded.args[0] as any[])[0];
+	assert.equal(claimCheck?.projectAddress, fuulProjectAddress);
+	assert.equal(claimCheck?.currencyType, 1);
+	assert.equal(claimCheck?.amount, 1000n);
+});
+
+test("rewards service limits a Fuul claim plan to the selected reward", async () => {
+	const secondProjectAddress = otherAccountAddress;
+	const adapter: IRewardsAdapter = {
+		...emptyAdapter,
+		async fetchFuulClaimChecks() {
+			return [
+				makeFuulClaimCheck(),
+				makeFuulClaimCheck({
+					project_address: secondProjectAddress,
+					currency: otherRewardToken,
+					amount: "2000",
+				}),
+			];
+		},
+		async fetchFuulTotals() {
+			return {
+				claimed: [],
+				unclaimed: [
+					{
+						currency: rewardToken,
+						currency_type: 0,
+						amount: "1000",
+						chain_id: 1,
+					},
+					{
+						currency: otherRewardToken,
+						currency_type: 0,
+						amount: "2000",
+						chain_id: 1,
+					},
+				],
+			};
+		},
+	};
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: claimAddress,
+		fuulFactoryAddress: fuulProjectAddress,
+	});
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					return { nativeUserClaimFee: 123n };
+				},
+			};
+		},
+	} as any);
+
+	const plan = await service.buildClaimPlan({
+		reward: makeFuulReward({ fuulCurrencyType: 0 }),
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.equal(operation.items[0]?.value, 123n);
+	const decoded = decodeFunctionData({
+		abi: FUUL_MANAGER_ABI,
+		data: operation.items[0]!.data,
+	});
+	const claimChecks = decoded.args[0] as Array<{
+		currency: Address;
+		amount: bigint;
+	}>;
+	assert.equal(claimChecks.length, 1);
+	assert.equal(claimChecks[0]?.currency, rewardToken);
+	assert.equal(claimChecks[0]?.amount, 1000n);
+});
+
+test("rewards service hydrates Turtle claimable amount with canClaim", async () => {
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+			},
+		],
+	});
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({ claimable: undefined }),
+	]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					return 777n;
+				},
+			};
+		},
+	} as any);
+
+	const rewards = await service.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards.length, 1);
+	assert.equal(rewards[0]?.provider, "turtle");
+	assert.equal(rewards[0]?.accumulated, "1000");
+	assert.equal(rewards[0]?.unclaimed, "777");
+});
+
+test("rewards service uses Turtle proof chain as claim chain", async () => {
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+			},
+		],
+	});
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({ chainId: 11155111, claimable: undefined }),
+	]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	let providerChainId: number | undefined;
+	service.setProviderService({
+		getProvider(chainId: number) {
+			providerChainId = chainId;
+			return {
+				async readContract() {
+					return 777n;
+				},
+			};
+		},
+	} as any);
+
+	const rewards = await service.fetchUserRewards(1, accountAddress);
+
+	assert.equal(providerChainId, 11155111);
+	assert.equal(rewards[0]?.chainId, 11155111);
+	assert.equal(rewards[0]?.unclaimed, "777");
+});
+
+test("rewards service preserves Turtle proof chain when canClaim read fails", async () => {
+	const adapter = new RewardsDirectAdapter({
+		turtleStreams: [
+			{
+				streamId: "stream-1",
+				chainId: 1,
+				streamAddress: turtleStreamAddress,
+			},
+		],
+	});
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({ chainId: 11155111, claimable: undefined }),
+	]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					throw new Error("missing rpc");
+				},
+			};
+		},
+	} as any);
+
+	const rewards = await service.fetchUserRewards(1, accountAddress);
+
+	assert.equal(rewards[0]?.chainId, 11155111);
+	assert.equal(rewards[0]?.unclaimed, "0");
+});
+
+test("rewards service builds Turtle claim plan from stream proof data", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryTurtleMerkleProofs(async () => [makeTurtleMerkleProof()]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	let canClaimArgs: readonly unknown[] | undefined;
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract({ args }: { args: readonly unknown[] }) {
+					canClaimArgs = args;
+					return 1000n;
+				},
+			};
+		},
+	} as any);
+
+	const plan = await service.buildClaimPlans({
+		rewards: [
+			makeTurtleReward({
+				proof: undefined,
+				streamAddress: undefined,
+				timestamp: undefined,
+			}),
+		],
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
 	assert.equal(plan[0]?.type, "contractCall");
-	assert.equal(plan[0]?.chainId, 1);
-	assert.equal(plan[0]?.to, claimAddress);
-	assert.equal(plan[0]?.functionName, "claim");
-	assert.equal(plan[0]?.value, 123n);
-	assert.equal((plan[0]?.args[0] as any[])[0]?.projectAddress, fuulProjectAddress);
-	assert.equal((plan[0]?.args[0] as any[])[0]?.currencyType, 1);
-	assert.equal((plan[0]?.args[0] as any[])[0]?.amount, 1000n);
+	if (plan[0]?.type !== "contractCall")
+		throw new Error("expected contractCall");
+	assert.equal(plan[0].chainId, 1);
+	assert.equal(plan[0].to, turtleStreamAddress);
+	assert.equal(plan[0].value, 0n);
+	assert.equal(plan[0].functionName, "claim");
+	assert.equal(plan[0].simulationMode, "independent");
+	assert.deepEqual(canClaimArgs, [
+		accountAddress,
+		1000n,
+		Math.floor(Date.parse("2026-05-20T13:05:10Z") / 1000),
+		["0xabc"],
+	]);
+	assert.deepEqual(plan[0].args, [
+		1000n,
+		Math.floor(Date.parse("2026-05-20T13:05:10Z") / 1000),
+		["0xabc"],
+	]);
+});
+
+test("rewards service rejects a Turtle proof from another chain", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({ chainId: 11155111 }),
+	]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	let providerChainId: number | undefined;
+	service.setProviderService({
+		getProvider(chainId: number) {
+			providerChainId = chainId;
+			return {
+				async readContract() {
+					return 1000n;
+				},
+			};
+		},
+	} as any);
+
+	await assert.rejects(
+		() => service.buildClaimPlans({
+			rewards: [
+				makeTurtleReward({
+					proof: undefined,
+					streamAddress: undefined,
+					timestamp: undefined,
+				}),
+			],
+			account: accountAddress,
+		}),
+		/Turtle proof chain 11155111 does not match reward chain 1/,
+	);
+	assert.equal(providerChainId, undefined);
+});
+
+test("rewards service ignores Turtle proofs for another stream", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryTurtleMerkleProofs(async () => [
+		makeTurtleMerkleProof({ streamId: "stream-2" }),
+	]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					return 1000n;
+				},
+			};
+		},
+	} as any);
+
+	await assert.rejects(
+		() =>
+			service.buildClaimPlans({
+				rewards: [
+					makeTurtleReward({
+						proof: undefined,
+						streamAddress: undefined,
+						timestamp: undefined,
+					}),
+				],
+				account: accountAddress,
+			}),
+		/Missing Turtle stream contract/,
+	);
+});
+
+test("rewards service collapses duplicate Turtle stream claim plans", async () => {
+	const adapter = new RewardsDirectAdapter();
+	adapter.setQueryTurtleMerkleProofs(async () => [makeTurtleMerkleProof()]);
+	const service = new RewardsService(adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	let canClaimReads = 0;
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					canClaimReads++;
+					return 1000n;
+				},
+			};
+		},
+	} as any);
+
+	const plan = await service.buildClaimPlans({
+		rewards: [
+			makeTurtleReward({ unclaimed: "500" }),
+			makeTurtleReward({ accumulated: "1500", unclaimed: "1000" }),
+		],
+		account: accountAddress,
+	});
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "contractCall");
+	assert.equal(canClaimReads, 1);
+});
+
+test("rewards service fetches Turtle proof through V3 claim adapter", async () => {
+	const directAdapter = new RewardsDirectAdapter();
+	let proofRequestUrl = "";
+	directAdapter.setQueryTurtleMerkleProofs(async (url) => {
+		proofRequestUrl = url;
+		return [makeTurtleMerkleProof()];
+	});
+	const v3Adapter = new RewardsV3Adapter(
+		{ endpoint: "https://example.invalid" },
+		undefined,
+		directAdapter,
+	);
+	const service = new RewardsService(v3Adapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	let canClaimArgs: readonly unknown[] | undefined;
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract({ args }: { args: readonly unknown[] }) {
+					canClaimArgs = args;
+					return 1000n;
+				},
+			};
+		},
+	} as any);
+
+	const plan = await service.buildClaimPlans({
+		rewards: [
+			makeTurtleReward({
+				proof: undefined,
+				streamAddress: undefined,
+				timestamp: undefined,
+			}),
+		],
+		account: accountAddress,
+	});
+	const proofParams = new URL(proofRequestUrl).searchParams;
+
+	assert.equal(plan.length, 1);
+	assert.equal(plan[0]?.type, "contractCall");
+	assert.equal(proofParams.get("wallet"), accountAddress);
+	assert.equal(proofParams.get("streamIds"), "stream-1");
+	assert.deepEqual(canClaimArgs, [
+		accountAddress,
+		1000n,
+		Math.floor(Date.parse("2026-05-20T13:05:10Z") / 1000),
+		["0xabc"],
+	]);
+	assert.deepEqual(plan[0]?.args, [
+		1000n,
+		Math.floor(Date.parse("2026-05-20T13:05:10Z") / 1000),
+		["0xabc"],
+	]);
+});
+
+test("rewards service rejects Turtle rewards when canClaim returns zero", async () => {
+	const service = new RewardsService(emptyAdapter, {
+		merklDistributorAddress: zeroAddress,
+		fuulManagerAddress: zeroAddress,
+		fuulFactoryAddress: zeroAddress,
+	});
+	service.setProviderService({
+		getProvider() {
+			return {
+				async readContract() {
+					return 0n;
+				},
+			};
+		},
+	} as any);
+
+	await assert.rejects(
+		() =>
+			service.buildClaimPlans({
+				rewards: [makeTurtleReward()],
+				account: accountAddress,
+			}),
+		/No claimable Turtle rewards found/,
+	);
 });
 
 test("V3 rewards adapter delegates Fuul claim data to direct adapter", async () => {
@@ -1131,10 +3687,18 @@ test("V3 rewards adapter delegates Fuul claim data to direct adapter", async () 
 	});
 
 	assert.equal(plan.length, 1);
-	assert.equal(plan[0]?.type, "contractCall");
-	assert.equal(plan[0]?.to, claimAddress);
-	assert.equal(plan[0]?.functionName, "claim");
-	assert.equal(plan[0]?.value, 123n);
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) throw new Error("expected operation");
+	assert.equal(operation.items[0]?.targetContract, claimAddress);
+	assert.equal(operation.items[0]?.value, 123n);
+	const decoded = decodeFunctionData({
+		abi: FUUL_MANAGER_ABI,
+		data: operation.items[0]!.data,
+	});
+	assert.equal(decoded.functionName, "claim");
 });
 
 test("rewards service rejects Fuul claim checks whose recipient differs from the account", async () => {
@@ -1205,6 +3769,164 @@ test("rewards service rejects Fuul claim checks outside chain unclaimed metadata
 				rewards: [makeFuulReward()],
 				account: accountAddress,
 			}),
-		/Fuul claim check currency does not match unclaimed rewards/,
+		/No selected Fuul claim checks found/,
 	);
+});
+
+const captureTurtleFetch = () => {
+	const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
+	vi.stubGlobal(
+		"fetch",
+		async (input: RequestInfo | URL, init?: RequestInit) => {
+			requests.push({ url: String(input), init });
+			return new Response(JSON.stringify([]), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		},
+	);
+	return requests;
+};
+
+const turtleHeader = (init: RequestInit | undefined) =>
+	new Headers(init?.headers).get("x-api-key");
+
+test("direct rewards adapter sends the Turtle API key on stream and proof requests", async () => {
+	const requests = captureTurtleFetch();
+	try {
+		const adapter = new RewardsDirectAdapter({
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			turtleApiKey: "turtle-secret",
+			turtleStreams: [{ streamId: "stream-1", chainId: 1 }],
+		});
+
+		await adapter.fetchChainRewards(1);
+		await adapter.fetchUserRewards(1, accountAddress);
+
+		assert.equal(requests.length, 2);
+		assert.equal(
+			requests[0]?.url.startsWith("https://earn.turtle.xyz/v1/streams?"),
+			true,
+		);
+		assert.equal(
+			requests[1]?.url.startsWith(
+				"https://earn.turtle.xyz/v1/streams/merkle_proofs?",
+			),
+			true,
+		);
+		for (const request of requests) {
+			assert.equal(turtleHeader(request.init), "turtle-secret");
+			assert.equal(request.init?.redirect, "error");
+		}
+	} finally {
+		vi.unstubAllGlobals();
+	}
+});
+
+test("direct rewards adapter omits the Turtle API key header when none is configured", async () => {
+	const requests = captureTurtleFetch();
+	try {
+		const adapter = new RewardsDirectAdapter({
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			turtleStreams: [{ streamId: "stream-1", chainId: 1 }],
+		});
+
+		await adapter.fetchChainRewards(1);
+		await adapter.fetchUserRewards(1, accountAddress);
+
+		assert.equal(requests.length, 2);
+		for (const request of requests) {
+			assert.equal(turtleHeader(request.init), null);
+			assert.equal(request.init?.redirect, undefined);
+		}
+	} finally {
+		vi.unstubAllGlobals();
+	}
+});
+
+test("buildEulerSDK forwards the Turtle API key to the direct rewards adapter", async () => {
+	const requests = captureTurtleFetch();
+	try {
+		const sdk = await buildEulerSDK({
+			config: {
+				rewardsServiceAdapter: "direct",
+				rewardsTurtleApiKey: "config-key",
+			},
+			rewardsServiceConfig: {
+				enableMerkl: false,
+				enableBrevis: false,
+				enableFuul: false,
+				turtleApiKey: "explicit-key",
+			},
+		});
+
+		await sdk.rewardsService.fetchChainRewards(1);
+
+		const turtleRequests = requests.filter((request) =>
+			request.url.startsWith("https://earn.turtle.xyz/v1/streams?"),
+		);
+		assert.equal(turtleRequests.length, 1);
+		assert.equal(turtleHeader(turtleRequests[0]?.init), "config-key");
+	} finally {
+		vi.unstubAllGlobals();
+	}
+});
+
+type CapturedHttpRequest = { url: string; apiKey: string | undefined };
+
+const listenLocally = async (
+	handler: http.RequestListener,
+): Promise<{ origin: string; close: () => Promise<void> }> => {
+	const server = http.createServer(handler);
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address() as AddressInfo;
+	return {
+		origin: `http://127.0.0.1:${address.port}`,
+		close: () =>
+			new Promise<void>((resolve, reject) =>
+				server.close((err) => (err ? reject(err) : resolve())),
+			),
+	};
+};
+
+test("direct rewards adapter never replays the Turtle API key across a redirect", async () => {
+	const leaked: CapturedHttpRequest[] = [];
+	const target = await listenLocally((req, res) => {
+		leaked.push({
+			url: req.url ?? "",
+			apiKey: req.headers["x-api-key"] as string | undefined,
+		});
+		res.setHeader("Content-Type", "application/json");
+		res.end(JSON.stringify([{ streamId: "stream-1", chainId: 1 }]));
+	});
+	const redirecting = await listenLocally((req, res) => {
+		res.statusCode = 302;
+		res.setHeader("Location", `${target.origin}${req.url ?? ""}`);
+		res.end();
+	});
+	try {
+		const adapter = new RewardsDirectAdapter({
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			turtleApiUrl: `${redirecting.origin}/v1`,
+			turtleApiKey: "turtle-secret",
+			turtleStreams: [{ streamId: "stream-1", chainId: 1 }],
+		});
+
+		const chainRewards = await adapter.fetchChainRewards(1);
+		const proofs = await adapter.fetchTurtleProofs(accountAddress, [
+			"stream-1",
+		]);
+
+		assert.equal(chainRewards.size, 0);
+		assert.deepEqual(proofs, []);
+		assert.deepEqual(leaked, []);
+	} finally {
+		await Promise.all([redirecting.close(), target.close()]);
+	}
 });

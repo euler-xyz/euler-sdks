@@ -163,7 +163,7 @@ function makeEulerEarnCollateral(overrides: {
 		lostAssets: 0n,
 		availableAssets: overrides.totalAssets,
 		performanceFee: 0,
-		supplyApy1h: undefined,
+		supplyApy: undefined,
 		governance: {
 			owner: ZERO_ADDRESS,
 			creator: ZERO_ADDRESS,

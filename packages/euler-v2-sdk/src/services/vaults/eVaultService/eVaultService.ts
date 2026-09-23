@@ -41,10 +41,19 @@ export interface IEVaultAdapter {
 	): Promise<Address[]>;
 }
 
+/**
+ * On-chain perspectives that can be passed to fetchVerifiedVaultAddresses / fetchVerifiedVaults.
+ *
+ * NOTE: "verified" here means "passed the perspective's on-chain checks", NOT "trusted":
+ * - FACTORY only proves the vault was deployed through the EVK factory. Anyone can deploy
+ *   through the factory, so this is a discovery/provenance signal, not a trust signal.
+ * - ESCROW vaults satisfy the escrowed collateral criteria by construction and can be trusted
+ *   as escrow collateral.
+ * The curated on-chain whitelist (governedPerspective) is retired; trusted vault lists should
+ * be derived from euler-labels (see eulerLabelsService / populateLabels) or your own allowlist.
+ */
 export enum StandardEVaultPerspectives {
-	GOVERNED = "governedPerspective",
 	FACTORY = "evkFactoryPerspective",
-	EDGE = "edgeFactoryPerspective",
 	ESCROW = "escrowedCollateralPerspective",
 }
 

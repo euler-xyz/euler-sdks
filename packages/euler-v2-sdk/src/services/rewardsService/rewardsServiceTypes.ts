@@ -1,5 +1,6 @@
 import type { Address, Hex } from "viem";
 import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
+import type { AccountRewardStream } from "../../entities/Account.js";
 import type { TransactionPlan } from "../executionService/index.js";
 import type { IsActiveForViewerFn } from "./rewardCampaignEligibility.js";
 
@@ -10,8 +11,26 @@ import type { VaultRewardInfo } from "./vaultRewardInfo.js";
 // Public types
 // ---------------------------------------------------------------------------
 
-export type RewardSource = "merkl" | "brevis" | "fuul";
+export type RewardSource = "merkl" | "brevis" | "fuul" | "turtle";
 export type RewardAction = "LEND" | "BORROW" | "BORROW_COLLATERAL" | "LOOPING";
+
+export interface TokenHoldingEligibilityRequirement {
+	type: "token-holding";
+	chainId: number;
+	tokenAddress: Address;
+	/** Minimum token amount in base units. */
+	minimumAmount: string;
+	minimumDurationSeconds: number;
+	tokenSymbol?: string;
+	tokenDecimals?: number;
+}
+
+export type RewardEligibilityRequirement = TokenHoldingEligibilityRequirement;
+
+export type RewardEligibilityRequirementsStatus =
+	| "none"
+	| "complete"
+	| "incomplete";
 
 export interface RewardCampaign {
 	campaignId: string;
@@ -36,6 +55,15 @@ export interface RewardCampaign {
 	/** Lowercased Merkl recipient allowlist/denylist, when provided by campaign params. */
 	whitelist?: string[];
 	blacklist?: string[];
+	/** Token-holding eligibility hooks that must be satisfied for campaign rewards to apply. */
+	eligibilityRequirements?: RewardEligibilityRequirement[];
+	/**
+	 * Whether provider eligibility hooks are absent, fully modeled, or include
+	 * hooks the SDK cannot model. Whitelist and blacklist are separate viewer
+	 * gates. Follow `sourceUrl` for exact provider requirements whenever this is
+	 * `incomplete`.
+	 */
+	eligibilityRequirementsStatus?: RewardEligibilityRequirementsStatus;
 }
 
 export interface UserRewardToken {
@@ -43,7 +71,12 @@ export interface UserRewardToken {
 	chainId: number;
 	symbol: string;
 	name: string;
-	decimals: number;
+	/**
+	 * Token decimals. Omitted when no source resolved them, so that callers can
+	 * tell an unresolved token apart from one that genuinely has 0 decimals.
+	 * Raw reward amounts stay unscaled either way.
+	 */
+	decimals?: number;
 }
 
 export interface UserReward {
@@ -55,6 +88,8 @@ export interface UserReward {
 	tokenPrice: number;
 	/** Reward provider. */
 	provider: RewardSource;
+	/** Fuul currency type used to bind selected rewards to claim checks. */
+	fuulCurrencyType?: number;
 	/** Optional provider campaign identifier, when the upstream exposes one. */
 	campaignId?: string;
 	/** Total accumulated reward amount (raw, unscaled bigint as string). */
@@ -69,6 +104,50 @@ export interface UserReward {
 	cumulativeAmounts?: string[];
 	/** Epoch identifier (Brevis). */
 	epoch?: string;
+	/** Stream identifier for stream-based rewards (Turtle). */
+	streamId?: string;
+	/** Stream contract address for stream-based rewards (Turtle). */
+	streamAddress?: Address;
+	/** Proof timestamp for stream-based rewards. ISO string or Unix seconds. */
+	timestamp?: string | number;
+}
+
+export interface TurtleStreamConfig {
+	streamId: string;
+	chainId: number;
+	streamAddress?: Address;
+	rewardToken?: Partial<UserRewardToken>;
+	tokenPrice?: number;
+}
+
+export interface TurtleMerkleProof {
+	streamId?: string;
+	stream_id?: string;
+	id?: string;
+	chainId?: number | string;
+	streamAddress?: string;
+	stream_address?: string;
+	contractAddress?: string;
+	contract_address?: string;
+	claimAddress?: string;
+	amount?: string | number;
+	cumulativeAmount?: string | number;
+	cumulative_amount?: string | number;
+	claimable?: string | number;
+	claimableAmount?: string | number;
+	claimable_amount?: string | number;
+	unclaimed?: string | number;
+	unclaimedAmount?: string | number;
+	unclaimed_amount?: string | number;
+	timestamp?: string | number;
+	proof?: string[];
+	merkleProof?: string[];
+	merkle_proof?: string[];
+	token?: Partial<UserRewardToken>;
+	rewardToken?: Partial<UserRewardToken>;
+	tokenPrice?: string | number;
+	tokenPriceUsd?: string | number;
+	rewardTokenPriceUsd?: string | number;
 }
 
 export interface RewardsDirectAdapterConfig {
@@ -78,6 +157,15 @@ export interface RewardsDirectAdapterConfig {
 	brevisProofsApiUrl?: string;
 	/** Public Fuul incentives API base URL. */
 	fuulApiUrl?: string;
+	/** Turtle Earn API base URL. */
+	turtleApiUrl?: string;
+	/**
+	 * Turtle Earn API key, sent as an `X-API-Key` header on direct Turtle
+	 * requests. Credentialed requests do not follow redirects, so the key is
+	 * only ever sent to the configured `turtleApiUrl` origin. Treat it as a
+	 * server-side secret; do not ship it to browser bundles.
+	 */
+	turtleApiKey?: string;
 	/** Optional caller-hosted endpoint for Fuul totals. */
 	fuulTotalsUrl?: string;
 	/** Optional caller-hosted endpoint for Fuul claim checks. */
@@ -90,10 +178,13 @@ export interface RewardsDirectAdapterConfig {
 	fuulManagerAddress?: Address;
 	/** Override the Fuul factory address used to read per-project claim fees. */
 	fuulFactoryAddress?: Address;
+	/** Stream IDs/metadata used to query Turtle proof data directly. */
+	turtleStreams?: TurtleStreamConfig[];
 	/** Feature flags for individual providers. */
 	enableMerkl?: boolean;
 	enableBrevis?: boolean;
 	enableFuul?: boolean;
+	enableTurtle?: boolean;
 }
 
 export interface RewardsV3AdapterConfig {
@@ -111,6 +202,15 @@ export interface RewardsServiceConfig {
 	brevisProofsApiUrl?: string;
 	/** Public Fuul incentives API base URL. */
 	fuulApiUrl?: string;
+	/** Turtle Earn API base URL. */
+	turtleApiUrl?: string;
+	/**
+	 * Turtle Earn API key, sent as an `X-API-Key` header on direct Turtle
+	 * requests. Credentialed requests do not follow redirects, so the key is
+	 * only ever sent to the configured `turtleApiUrl` origin. Treat it as a
+	 * server-side secret; do not ship it to browser bundles.
+	 */
+	turtleApiKey?: string;
 	/** Optional caller-hosted endpoint for Fuul totals. */
 	fuulTotalsUrl?: string;
 	/** Optional caller-hosted endpoint for Fuul claim checks. */
@@ -123,10 +223,13 @@ export interface RewardsServiceConfig {
 	fuulManagerAddress?: Address;
 	/** Override the Fuul factory address used to read per-project claim fees. */
 	fuulFactoryAddress?: Address;
+	/** Stream IDs/metadata used to query Turtle proof data directly. */
+	turtleStreams?: TurtleStreamConfig[];
 	/** Feature flags for individual providers. */
 	enableMerkl?: boolean;
 	enableBrevis?: boolean;
 	enableFuul?: boolean;
+	enableTurtle?: boolean;
 	directAdapterConfig?: RewardsDirectAdapterConfig;
 	v3AdapterConfig?: RewardsV3AdapterConfig;
 	/**
@@ -144,11 +247,31 @@ export interface BuildRewardClaimPlanArgs {
 export interface BuildRewardClaimsPlanArgs {
 	rewards: UserReward[];
 	account: Address;
+	/** Expected execution chain. Defaults to the first reward's chain. */
+	chainId?: number;
 }
 
 export interface BuildRewardClaimAllPlanArgs {
 	chainId: number;
 	account: Address;
+}
+
+export interface RewardStreamPosition {
+	account: Address;
+	vault: Address;
+}
+
+export interface FetchRewardStreamsArgs {
+	chainId: number;
+	positions: RewardStreamPosition[];
+	accountLensAddress?: Address;
+}
+
+export interface BuildRewardStreamClaimPlanArgs {
+	chainId: number;
+	rewardStreams: AccountRewardStream[];
+	recipient: Address;
+	rewardStreamsAddress?: Address;
 }
 
 // ---------------------------------------------------------------------------
@@ -168,11 +291,17 @@ export interface IRewardsService {
 		address: Address,
 		chainId?: number,
 	): Promise<FuulClaimCheck[]>;
+	fetchRewardStreams(
+		args: FetchRewardStreamsArgs,
+	): Promise<AccountRewardStream[]>;
 	buildClaimPlan(args: BuildRewardClaimPlanArgs): Promise<TransactionPlan>;
 	buildClaimPlans(args: BuildRewardClaimsPlanArgs): Promise<TransactionPlan>;
 	buildClaimAllPlan(
 		args: BuildRewardClaimAllPlanArgs,
 	): Promise<TransactionPlan>;
+	buildRewardStreamClaimPlan(
+		args: BuildRewardStreamClaimPlanArgs,
+	): TransactionPlan;
 }
 
 export interface IRewardsAdapter {
@@ -187,6 +316,10 @@ export interface IRewardsAdapter {
 		address: Address,
 		chainId?: number,
 	): Promise<FuulClaimCheck[]>;
+	fetchTurtleProofs?(
+		address: Address,
+		streamIds: string[],
+	): Promise<TurtleMerkleProof[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -200,7 +333,9 @@ export interface MerklCampaign {
 	subType?: number | null;
 	rewardToken: {
 		address: string;
+		chainId?: number;
 		symbol: string;
+		decimals?: number;
 		icon?: string;
 	};
 	apr: number;
@@ -213,6 +348,7 @@ export interface MerklCampaign {
 		collateralAddress?: string;
 		whitelist?: string[];
 		blacklist?: string[];
+		hooks?: unknown;
 		markets?: Array<{
 			campaignParameters?: {
 				evkAddress?: string;
@@ -229,6 +365,7 @@ export interface MerklCampaign {
 }
 
 export interface MerklOpportunity {
+	id?: string;
 	chainId: number;
 	type: string;
 	identifier: string;

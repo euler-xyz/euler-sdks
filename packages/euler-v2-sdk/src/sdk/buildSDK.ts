@@ -1,5 +1,10 @@
+import type { Address } from "viem";
 import { EulerSDK } from "./sdk.js";
-import { ABIService, type IABIService } from "../services/abiService/index.js";
+import {
+	ABIService,
+	DEFAULT_EULER_INTERFACES_BRANCH,
+	type IABIService,
+} from "../services/abiService/index.js";
 import {
 	DeploymentService,
 	type IDeploymentService,
@@ -77,6 +82,7 @@ import {
 	type IRewardsService,
 	type RewardsDirectAdapterConfig,
 	type RewardsServiceConfig,
+	type UserReward,
 } from "../services/rewardsService/index.js";
 import {
 	IntrinsicApyService,
@@ -88,21 +94,25 @@ import {
 	OracleAdapterService,
 	type IOracleAdapterService,
 	type OracleAdapterServiceConfig,
+	UnavailableOracleAdapterService,
 } from "../services/oracleAdapterService/index.js";
 import {
 	DEFAULT_EULER_LABELS_BASE_URL,
 	DEFAULT_TOKENLIST_API_BASE_URL,
+	DEFAULT_V3_API_URL,
 	defaultAccountV3AdapterConfig,
 	defaultAccountVaultsAdapterConfig,
 	defaultDeploymentServiceConfig,
 	defaultEulerEarnV3AdapterConfig,
 	defaultEulerLabelsURLAdapterConfig,
 	defaultIntrinsicApyV3AdapterConfig,
+	defaultActivityV3AdapterConfig,
 	defaultPricingServiceConfig,
 	defaultRewardsV3AdapterConfig,
 	defaultSwapServiceConfig,
 	defaultTokenlistServiceConfig,
 	defaultVaultTypeAdapterConfig,
+	getEulerInterfacesDeploymentsUrl,
 } from "./defaultConfig.js";
 import { defaultEVaultV3AdapterConfig } from "./defaultConfig.js";
 import {
@@ -114,6 +124,28 @@ import {
 	REULLockService,
 	type IREULLockService,
 } from "../services/reulLockService/index.js";
+import {
+	SafeAccountService,
+	type ISafeAccountService,
+} from "../services/safeAccountService/index.js";
+import {
+	AavePositionMigrationConnector,
+	MetamorphoPositionMigrationConnector,
+	MorphoPositionMigrationConnector,
+	PositionMigrationService,
+	type AaveMigrationConnectorConfig,
+	type IPositionMigrationService,
+	type MetamorphoMigrationConnectorConfig,
+	type MorphoMigrationConnectorConfig,
+	type PositionMigrationServiceConfig,
+} from "../services/positionMigrationService/index.js";
+import {
+	ActivityService,
+	ActivityV3Adapter,
+	UnavailableActivityAdapter,
+	type ActivityServiceConfig,
+	type IActivityService,
+} from "../services/activityService/index.js";
 import {
 	type EulerSDKConfig,
 	readEulerSDKEnvConfig,
@@ -150,6 +182,10 @@ import type { IAccountAdapter } from "../services/accountService/accountService.
 import type { IEVaultAdapter } from "../services/vaults/eVaultService/eVaultService.js";
 import type { IEulerEarnAdapter } from "../services/vaults/eulerEarnService/eulerEarnService.js";
 import type { IRewardsAdapter } from "../services/rewardsService/rewardsServiceTypes.js";
+import {
+	mergeTurtleUserRewards,
+	preferResolvedRewardToken,
+} from "../services/rewardsService/rewardsService.js";
 import type { IVaultTypeAdapter } from "../services/vaults/vaultMetaService/adapters/IVaultTypeAdapter.js";
 import type { EulerPlugin } from "../plugins/types.js";
 import { BatchSimulationAdapter } from "../plugins/batchSimulation.js";
@@ -177,6 +213,9 @@ export interface BuildSDKOverrides<
 	oracleAdapterService?: IOracleAdapterService;
 	feeFlowService?: IFeeFlowService;
 	reulLockService?: IREULLockService;
+	safeAccountService?: ISafeAccountService;
+	positionMigrationService?: IPositionMigrationService;
+	activityService?: IActivityService;
 }
 
 export type { EulerSDKConfig } from "./config.js";
@@ -208,7 +247,15 @@ export interface BuildSDKOptions<
 	intrinsicApyServiceConfig?: IntrinsicApyServiceConfig;
 	oracleAdapterServiceConfig?: OracleAdapterServiceConfig;
 	feeFlowServiceConfig?: FeeFlowServiceConfig;
-	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with a 5s TTL. */
+	positionMigrationServiceConfig?: PositionMigrationServiceConfig;
+	positionMigrationConnectorConfig?: {
+		morpho?: MorphoMigrationConnectorConfig;
+		aave?: AaveMigrationConnectorConfig;
+		metamorpho?: MetamorphoMigrationConnectorConfig;
+	};
+	/** Configuration for the built-in V3 activity adapter. */
+	activityServiceConfig?: ActivityServiceConfig;
+	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with 5s success and failure TTLs. */
 	queryCacheConfig?: QueryCacheConfig;
 	/** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
 	buildQuery?: BuildQueryFn;
@@ -432,6 +479,8 @@ function resolveRewardsDirectAdapterConfig(
 		...maybeField("brevisApiUrl", envConfig.rewardsBrevisApiUrl),
 		...maybeField("brevisProofsApiUrl", envConfig.rewardsBrevisProofsApiUrl),
 		...maybeField("fuulApiUrl", envConfig.rewardsFuulApiUrl),
+		...maybeField("turtleApiUrl", envConfig.rewardsTurtleApiUrl),
+		...maybeField("turtleApiKey", envConfig.rewardsTurtleApiKey),
 		...maybeField("fuulTotalsUrl", envConfig.rewardsFuulTotalsUrl),
 		...maybeField("fuulClaimChecksUrl", envConfig.rewardsFuulClaimChecksUrl),
 		...maybeField("brevisChainIds", envConfig.rewardsBrevisChainIds),
@@ -441,13 +490,17 @@ function resolveRewardsDirectAdapterConfig(
 		),
 		...maybeField("fuulManagerAddress", envConfig.rewardsFuulManagerAddress),
 		...maybeField("fuulFactoryAddress", envConfig.rewardsFuulFactoryAddress),
+		...maybeField("turtleStreams", envConfig.rewardsTurtleStreams),
 		...maybeField("enableMerkl", envConfig.rewardsEnableMerkl),
 		...maybeField("enableBrevis", envConfig.rewardsEnableBrevis),
 		...maybeField("enableFuul", envConfig.rewardsEnableFuul),
+		...maybeField("enableTurtle", envConfig.rewardsEnableTurtle),
 		...maybeField("merklApiUrl", explicitConfig?.merklApiUrl),
 		...maybeField("brevisApiUrl", explicitConfig?.brevisApiUrl),
 		...maybeField("brevisProofsApiUrl", explicitConfig?.brevisProofsApiUrl),
 		...maybeField("fuulApiUrl", explicitConfig?.fuulApiUrl),
+		...maybeField("turtleApiUrl", explicitConfig?.turtleApiUrl),
+		...maybeField("turtleApiKey", explicitConfig?.turtleApiKey),
 		...maybeField("fuulTotalsUrl", explicitConfig?.fuulTotalsUrl),
 		...maybeField("fuulClaimChecksUrl", explicitConfig?.fuulClaimChecksUrl),
 		...maybeField("brevisChainIds", explicitConfig?.brevisChainIds),
@@ -457,14 +510,18 @@ function resolveRewardsDirectAdapterConfig(
 		),
 		...maybeField("fuulManagerAddress", explicitConfig?.fuulManagerAddress),
 		...maybeField("fuulFactoryAddress", explicitConfig?.fuulFactoryAddress),
+		...maybeField("turtleStreams", explicitConfig?.turtleStreams),
 		...maybeField("enableMerkl", explicitConfig?.enableMerkl),
 		...maybeField("enableBrevis", explicitConfig?.enableBrevis),
 		...maybeField("enableFuul", explicitConfig?.enableFuul),
+		...maybeField("enableTurtle", explicitConfig?.enableTurtle),
 		...(explicitConfig?.directAdapterConfig ?? {}),
 		...maybeField("merklApiUrl", config?.rewardsMerklApiUrl),
 		...maybeField("brevisApiUrl", config?.rewardsBrevisApiUrl),
 		...maybeField("brevisProofsApiUrl", config?.rewardsBrevisProofsApiUrl),
 		...maybeField("fuulApiUrl", config?.rewardsFuulApiUrl),
+		...maybeField("turtleApiUrl", config?.rewardsTurtleApiUrl),
+		...maybeField("turtleApiKey", config?.rewardsTurtleApiKey),
 		...maybeField("fuulTotalsUrl", config?.rewardsFuulTotalsUrl),
 		...maybeField("fuulClaimChecksUrl", config?.rewardsFuulClaimChecksUrl),
 		...maybeField("brevisChainIds", config?.rewardsBrevisChainIds),
@@ -474,9 +531,11 @@ function resolveRewardsDirectAdapterConfig(
 		),
 		...maybeField("fuulManagerAddress", config?.rewardsFuulManagerAddress),
 		...maybeField("fuulFactoryAddress", config?.rewardsFuulFactoryAddress),
+		...maybeField("turtleStreams", config?.rewardsTurtleStreams),
 		...maybeField("enableMerkl", config?.rewardsEnableMerkl),
 		...maybeField("enableBrevis", config?.rewardsEnableBrevis),
 		...maybeField("enableFuul", config?.rewardsEnableFuul),
+		...maybeField("enableTurtle", config?.rewardsEnableTurtle),
 	};
 }
 
@@ -507,6 +566,9 @@ export async function buildEulerSDK<
 		onFallback,
 		servicesOverrides,
 		feeFlowServiceConfig,
+		positionMigrationServiceConfig,
+		positionMigrationConnectorConfig,
+		activityServiceConfig,
 	} = options;
 
 	const envConfig = readEulerSDKEnvConfig();
@@ -525,15 +587,27 @@ export async function buildEulerSDK<
 	};
 	const resolvedBuildQuery =
 		buildQuery ?? createQueryCacheBuildQuery(resolvedQueryCacheConfig);
+	const resolvedEulerInterfacesBranch =
+		pickConfigValue(
+			config?.eulerInterfacesBranch,
+			undefined,
+			envConfig.eulerInterfacesBranch,
+		) ?? DEFAULT_EULER_INTERFACES_BRANCH;
 	const resolvedDeploymentServiceConfig = {
 		...defaultDeploymentServiceConfig,
+		deploymentsUrl: getEulerInterfacesDeploymentsUrl(
+			resolvedEulerInterfacesBranch,
+		),
 		...maybeField("deploymentsUrl", envConfig.deploymentsUrl),
 		...maybeField("deploymentsUrl", config?.deploymentsUrl),
 	};
 
 	// Build core services (these may be needed for adapters even if overridden)
 	const abiService =
-		servicesOverrides?.abiService ?? new ABIService(resolvedBuildQuery);
+		servicesOverrides?.abiService ??
+		new ABIService(resolvedBuildQuery, {
+			eulerInterfacesBranch: resolvedEulerInterfacesBranch,
+		});
 	const deploymentService =
 		servicesOverrides?.deploymentService ??
 		(await DeploymentService.build(
@@ -566,22 +640,25 @@ export async function buildEulerSDK<
 		return resolvedAccountServiceAdapter;
 	})();
 
-	const accountV3Config = resolveV3AdapterConfig(defaultAccountV3AdapterConfig, {
-		explicitConfig: resolvedAccountServiceConfig.v3AdapterConfig,
-		explicitV3ApiKey: v3ApiKey,
-		envConfig,
-		config,
-		envEndpoint: envConfig.accountV3ApiUrl,
-		configEndpoint: config?.accountV3ApiUrl,
-		envApiKey: envConfig.accountV3ApiKey,
-		configApiKey: config?.accountV3ApiKey,
-		envExtra: {
-			...maybeField("forceFresh", envConfig.accountV3ForceFresh),
+	const accountV3Config = resolveV3AdapterConfig(
+		defaultAccountV3AdapterConfig,
+		{
+			explicitConfig: resolvedAccountServiceConfig.v3AdapterConfig,
+			explicitV3ApiKey: v3ApiKey,
+			envConfig,
+			config,
+			envEndpoint: envConfig.accountV3ApiUrl,
+			configEndpoint: config?.accountV3ApiUrl,
+			envApiKey: envConfig.accountV3ApiKey,
+			configApiKey: config?.accountV3ApiKey,
+			envExtra: {
+				...maybeField("forceFresh", envConfig.accountV3ForceFresh),
+			},
+			configExtra: {
+				...maybeField("forceFresh", config?.accountV3ForceFresh),
+			},
 		},
-		configExtra: {
-			...maybeField("forceFresh", config?.accountV3ForceFresh),
-		},
-	});
+	);
 	const accountVaultsSubgraphUrls = mergeNumberRecords(
 		defaultAccountVaultsAdapterConfig.subgraphURLs,
 		envConfig.accountVaultsSubgraphUrls,
@@ -605,6 +682,7 @@ export async function buildEulerSDK<
 			deploymentService as DeploymentService,
 			accountVaultsAdapter,
 			resolvedBuildQuery,
+			abiService,
 		);
 		return accountOnchainAdapter;
 	};
@@ -681,22 +759,26 @@ export async function buildEulerSDK<
 				);
 				return "onchain" as const;
 			}
-			if (resolvedEVaultServiceAdapter === "fallback") return "onchain" as const;
+			if (resolvedEVaultServiceAdapter === "fallback")
+				return "onchain" as const;
 			return resolvedEVaultServiceAdapter;
 		})();
 
-		const eVaultV3Config = resolveV3AdapterConfig(defaultEVaultV3AdapterConfig, {
-			explicitConfig: resolvedEVaultServiceConfig.v3AdapterConfig,
-			explicitV3ApiKey: v3ApiKey,
-			envConfig,
-			config,
-			envEndpoint: envConfig.eVaultV3ApiUrl,
-			configEndpoint: config?.eVaultV3ApiUrl,
-			envApiKey: envConfig.eVaultV3ApiKey,
-			configApiKey: config?.eVaultV3ApiKey,
-			envExtra: { ...maybeField("batchSize", envConfig.eVaultV3BatchSize) },
-			configExtra: { ...maybeField("batchSize", config?.eVaultV3BatchSize) },
-		});
+		const eVaultV3Config = resolveV3AdapterConfig(
+			defaultEVaultV3AdapterConfig,
+			{
+				explicitConfig: resolvedEVaultServiceConfig.v3AdapterConfig,
+				explicitV3ApiKey: v3ApiKey,
+				envConfig,
+				config,
+				envEndpoint: envConfig.eVaultV3ApiUrl,
+				configEndpoint: config?.eVaultV3ApiUrl,
+				envApiKey: envConfig.eVaultV3ApiKey,
+				configApiKey: config?.eVaultV3ApiKey,
+				envExtra: { ...maybeField("batchSize", envConfig.eVaultV3BatchSize) },
+				configExtra: { ...maybeField("batchSize", config?.eVaultV3BatchSize) },
+			},
+		);
 		const canBuildEVaultV3 = !!eVaultV3Config.endpoint;
 		const canBuildEVaultOnchain = true; // onchain only needs provider + deployment, always available
 
@@ -897,8 +979,7 @@ export async function buildEulerSDK<
 			defaultVaultTypeAdapterConfig,
 			{
 				explicitConfig:
-					vaultTypeAdapterConfig &&
-					!("subgraphURLs" in vaultTypeAdapterConfig)
+					vaultTypeAdapterConfig && !("subgraphURLs" in vaultTypeAdapterConfig)
 						? {
 								...vaultTypeAdapterConfig,
 								...maybeField(
@@ -1183,7 +1264,104 @@ export async function buildEulerSDK<
 			);
 			const canBuildRewardsV3 = !!rewardsV3Config.endpoint;
 			const buildRewardsV3 = () =>
-				new RewardsV3Adapter(rewardsV3Config, resolvedBuildQuery, directAdapter);
+				new RewardsV3Adapter(
+					rewardsV3Config,
+					resolvedBuildQuery,
+					directAdapter,
+				);
+			const mergeUserRewards = (
+				directRewards: UserReward[],
+				v3Rewards: UserReward[],
+			): UserReward[] => {
+				const rewardKey = (reward: UserReward) =>
+					`${reward.provider}:${reward.chainId}:${reward.campaignId ?? reward.streamId ?? ""}:${reward.token.address.toLowerCase()}`;
+				const merklRewardKey = (reward: UserReward) =>
+					`${reward.chainId}:${reward.token.address.toLowerCase()}`;
+				const mergeMerklReward = (
+					base: UserReward,
+					supplement: UserReward,
+				): UserReward => {
+					const selected =
+						BigInt(supplement.accumulated) > BigInt(base.accumulated) ||
+						(BigInt(supplement.accumulated) === BigInt(base.accumulated) &&
+							BigInt(supplement.unclaimed) > BigInt(base.unclaimed))
+							? supplement
+							: base;
+					const fallback = selected === base ? supplement : base;
+
+					return {
+						...selected,
+						token: preferResolvedRewardToken(selected, fallback),
+						proof: selected.proof?.length ? selected.proof : fallback.proof,
+						claimAddress: selected.claimAddress ?? fallback.claimAddress,
+					};
+				};
+				// Shared with the service-level reduction: this factory merges the
+				// V3 and direct rows first, so a token resolved by only one of them
+				// has to survive here too.
+				const mergeTurtleReward = mergeTurtleUserRewards;
+				const rewards: UserReward[] = [];
+				const existing = new Map<string, number>();
+				const merklExisting = new Map<string, number>();
+				for (const reward of v3Rewards) {
+					if (reward.provider === "merkl") {
+						const key = merklRewardKey(reward);
+						const existingIndex = merklExisting.get(key);
+						if (existingIndex !== undefined) {
+							rewards[existingIndex] = mergeMerklReward(
+								rewards[existingIndex]!,
+								reward,
+							);
+							continue;
+						}
+						merklExisting.set(key, rewards.length);
+						rewards.push(reward);
+						continue;
+					}
+					if (reward.provider !== "turtle") {
+						rewards.push(reward);
+						continue;
+					}
+					const key = rewardKey(reward);
+					const existingIndex = existing.get(key);
+					if (existingIndex !== undefined) {
+						rewards[existingIndex] = mergeTurtleReward(
+							rewards[existingIndex]!,
+							reward,
+						);
+						continue;
+					}
+					existing.set(key, rewards.length);
+					rewards.push(reward);
+				}
+
+				for (const reward of directRewards) {
+					if (reward.provider === "merkl") {
+						const existingIndex = merklExisting.get(merklRewardKey(reward));
+						if (existingIndex !== undefined) {
+							rewards[existingIndex] = mergeMerklReward(
+								rewards[existingIndex]!,
+								reward,
+							);
+						}
+						continue;
+					}
+					if (reward.provider !== "turtle") continue;
+					const key = rewardKey(reward);
+					const existingIndex = existing.get(key);
+					if (existingIndex !== undefined) {
+						rewards[existingIndex] = mergeTurtleReward(
+							rewards[existingIndex]!,
+							reward,
+						);
+						continue;
+					}
+					existing.set(key, rewards.length);
+					rewards.push(reward);
+				}
+
+				return rewards;
+			};
 
 			let rewardsAdapter: IRewardsAdapter;
 			if (effectiveRewardsServiceAdapter === "direct") {
@@ -1195,26 +1373,53 @@ export async function buildEulerSDK<
 					);
 				rewardsAdapter = buildRewardsV3();
 			} else if (canBuildRewardsV3) {
-				rewardsAdapter = createFallbackAdapter<
+				const rewardsV3Adapter = buildRewardsV3();
+				const fallbackAdapter = createFallbackAdapter<
 					IRewardsAdapter,
 					| "fetchVaultRewards"
 					| "fetchChainRewards"
 					| "fetchUserRewards"
 					| "fetchFuulTotals"
 					| "fetchFuulClaimChecks"
-				>(buildRewardsV3(), directAdapter, {
+					| "fetchTurtleProofs"
+				>(rewardsV3Adapter, directAdapter, {
 					methods: [
 						"fetchVaultRewards",
 						"fetchChainRewards",
 						"fetchUserRewards",
 						"fetchFuulTotals",
 						"fetchFuulClaimChecks",
+						"fetchTurtleProofs",
 					],
 					adapterNames: {
 						primary: "rewardsV3",
 						secondary: "rewardsDirect",
 					},
 					onFallback,
+				});
+				rewardsAdapter = new Proxy(fallbackAdapter, {
+					get(target, prop, receiver) {
+						if (prop !== "fetchUserRewards") {
+							const value = Reflect.get(target, prop, receiver);
+							return typeof value === "function" ? value.bind(target) : value;
+						}
+
+						return async (chainId: number, address: Address) => {
+							const [directResult, v3Result] = await Promise.allSettled([
+								directAdapter.fetchUserRewards(chainId, address),
+								rewardsV3Adapter.fetchUserRewards(chainId, address),
+							]);
+							if (v3Result.status !== "fulfilled") {
+								if (directResult.status === "fulfilled")
+									return directResult.value;
+								throw directResult.reason;
+							}
+							const directRewards =
+								directResult.status === "fulfilled" ? directResult.value : [];
+
+							return mergeUserRewards(directRewards, v3Result.value);
+						};
+					},
 				});
 			} else {
 				console.warn(
@@ -1230,7 +1435,10 @@ export async function buildEulerSDK<
 					fuulManagerAddress: directAdapter.getFuulManagerAddress(),
 					fuulFactoryAddress: directAdapter.getFuulFactoryAddress(),
 				},
-				{ isActiveForViewer: rewardsServiceConfig?.isActiveForViewer },
+				{
+					isActiveForViewer: rewardsServiceConfig?.isActiveForViewer,
+					abiService,
+				},
 			);
 		})();
 
@@ -1271,16 +1479,34 @@ export async function buildEulerSDK<
 		})();
 	const oracleAdapterService =
 		servicesOverrides?.oracleAdapterService ??
-		new OracleAdapterService(
-			{
-				...maybeField("baseUrl", envConfig.oracleAdaptersBaseUrl),
-				...maybeField("cacheMs", envConfig.oracleAdaptersCacheMs),
-				...(oracleAdapterServiceConfig ?? {}),
-				...maybeField("baseUrl", config?.oracleAdaptersBaseUrl),
-				...maybeField("cacheMs", config?.oracleAdaptersCacheMs),
-			},
-			resolvedBuildQuery,
-		);
+		(disableV3
+			? new UnavailableOracleAdapterService("v3-disabled")
+			: new OracleAdapterService(
+					resolveV3AdapterConfig<
+						OracleAdapterServiceConfig & { endpoint: string }
+					>(
+						{ endpoint: DEFAULT_V3_API_URL },
+						{
+							explicitConfig: oracleAdapterServiceConfig,
+							explicitV3ApiKey: v3ApiKey,
+							envConfig,
+							config,
+							envEndpoint: envConfig.oracleAdapterV3ApiUrl,
+							configEndpoint: config?.oracleAdapterV3ApiUrl,
+							envApiKey: envConfig.oracleAdapterV3ApiKey,
+							configApiKey: config?.oracleAdapterV3ApiKey,
+							envExtra: {
+								...maybeField("cacheMs", envConfig.oracleAdapterV3CacheMs),
+								...maybeField("pageSize", envConfig.oracleAdapterV3PageSize),
+							},
+							configExtra: {
+								...maybeField("cacheMs", config?.oracleAdapterV3CacheMs),
+								...maybeField("pageSize", config?.oracleAdapterV3PageSize),
+							},
+						},
+					),
+					resolvedBuildQuery,
+				));
 	const feeFlowService =
 		servicesOverrides?.feeFlowService ??
 		new FeeFlowService(
@@ -1316,8 +1542,76 @@ export async function buildEulerSDK<
 	const reulLockService =
 		servicesOverrides?.reulLockService ??
 		new REULLockService(providerService, deploymentService);
+	const safeAccountService =
+		servicesOverrides?.safeAccountService ??
+		new SafeAccountService(providerService);
+	const positionMigrationService =
+		servicesOverrides?.positionMigrationService ??
+		(() => {
+			const connectors = [
+				...(positionMigrationServiceConfig?.includeDefaultConnectors === false
+					? []
+					: [
+							new MorphoPositionMigrationConnector(
+								deploymentService,
+								providerService,
+								executionService,
+								positionMigrationConnectorConfig?.morpho,
+							),
+							new AavePositionMigrationConnector(
+								deploymentService,
+								providerService,
+								executionService,
+								positionMigrationConnectorConfig?.aave,
+							),
+							new MetamorphoPositionMigrationConnector(
+								deploymentService,
+								providerService,
+								executionService,
+								positionMigrationConnectorConfig?.metamorpho,
+							),
+						]),
+				...(positionMigrationServiceConfig?.connectors ?? []),
+			];
+
+			return new PositionMigrationService(
+				providerService,
+				executionService,
+				{
+					...positionMigrationServiceConfig,
+					connectors,
+				},
+				resolvedBuildQuery,
+			);
+		})();
+	const resolvedActivityV3Config = resolveV3AdapterConfig(
+		defaultActivityV3AdapterConfig,
+		{
+			explicitConfig: activityServiceConfig,
+			explicitV3ApiKey: v3ApiKey,
+			envConfig,
+			config,
+			envEndpoint: envConfig.activityV3ApiUrl,
+			configEndpoint: config?.activityV3ApiUrl,
+			envApiKey: envConfig.activityV3ApiKey,
+			configApiKey: config?.activityV3ApiKey,
+		},
+	);
+	const canBuildActivityV3 =
+		resolvedActivityV3Config.endpoint.trim().length > 0;
+	const activityService =
+		servicesOverrides?.activityService ??
+		new ActivityService(
+			disableV3
+				? new UnavailableActivityAdapter("v3-disabled")
+				: canBuildActivityV3
+					? new ActivityV3Adapter(resolvedActivityV3Config)
+					: new UnavailableActivityAdapter("source-not-configured"),
+			resolvedBuildQuery,
+		);
 
 	if (executionService instanceof ExecutionService) {
+		executionService.setABIService(abiService);
 		executionService.setProviderService(providerService as ProviderService);
 		executionService.setVaultMetaService(
 			vaultMetaService as IVaultMetaService<TVaultEntity>,
@@ -1358,7 +1652,9 @@ export async function buildEulerSDK<
 	}
 
 	if (rewardsService instanceof RewardsService) {
+		rewardsService.setABIService(abiService);
 		rewardsService.setProviderService(providerService as ProviderService);
+		rewardsService.setDeploymentService(deploymentService as DeploymentService);
 	}
 	if (feeFlowService instanceof FeeFlowService) {
 		feeFlowService.setProviderService(providerService as ProviderService);
@@ -1408,6 +1704,9 @@ export async function buildEulerSDK<
 		oracleAdapterService,
 		feeFlowService,
 		reulLockService,
+		safeAccountService,
+		positionMigrationService,
+		activityService,
 		plugins,
 	});
 

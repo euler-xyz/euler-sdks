@@ -13,6 +13,10 @@ A monorepo for Euler SDKs and tools.
 
 ### Agent Skills
 
-Agent skill instructions are maintained in [`euler-xyz/agent-skills`](https://github.com/euler-xyz/agent-skills).
+The [Euler SDK skill](https://github.com/euler-xyz/agent-skills/blob/main/skills/euler-sdk/SKILL.md) provides integration guidance for `@eulerxyz/euler-v2-sdk` and is maintained in [`euler-xyz/agent-skills`](https://github.com/euler-xyz/agent-skills).
 
-- `euler-sdk` - SDK integration guide for building with `@eulerxyz/euler-v2-sdk`. See [`AGENTS.md`](./AGENTS.md) for agent usage guidance.
+```bash
+npx skills add euler-xyz/agent-skills --skill euler-sdk
+```
+
+See [`AGENTS.md`](./AGENTS.md) for agent usage guidance. SDK implementation documentation and examples are maintained in [`packages/euler-v2-sdk/docs/`](./packages/euler-v2-sdk/docs/) and [`packages/euler-v2-sdk/examples/`](./packages/euler-v2-sdk/examples/).

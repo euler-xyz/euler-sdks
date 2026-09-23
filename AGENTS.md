@@ -3,9 +3,11 @@
 ## Skills
 
 ### Available skills
-- `euler-sdk`: Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. Use the canonical skill from [`euler-xyz/agent-skills`](https://github.com/euler-xyz/agent-skills/tree/main/skills/euler-sdk) for tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `walletService`, `executionService`, `swapService`, `reulLockService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`.
+
+- `euler-sdk`: Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. Use the canonical [Euler SDK skill](https://github.com/euler-xyz/agent-skills/blob/main/skills/euler-sdk/SKILL.md) for tasks involving `buildEulerSDK`, SDK services (`accountService`, `portfolioService`, `vaultMetaService`, `walletService`, `executionService`, `swapService`, `positionMigrationService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`.
 
 ### How to use skills
-- Trigger rule: If user asks for SDK integration help or names `euler-sdk`, load and follow the canonical `euler-sdk` skill from `euler-xyz/agent-skills`.
-- Load minimally: Open `SKILL.md` first, then only the rule files needed for the current task.
-- Treat the SDK implementation docs and examples in this repository as source material for SDK behavior, and treat `euler-xyz/agent-skills` as the source of truth for packaged agent skill instructions.
+
+- Trigger rule: If the user asks for SDK integration help or names `euler-sdk`, load and follow the canonical skill linked above. Install it with `npx skills add euler-xyz/agent-skills --skill euler-sdk`.
+- Load minimally: Open the canonical `SKILL.md` first, then only the rule files needed for the current task from the same `euler-xyz/agent-skills` revision.
+- SDK behavior is defined by the implementation, docs, and examples in this repository. Packaged agent skill instructions are maintained in `euler-xyz/agent-skills`; update them there when SDK behavior changes.

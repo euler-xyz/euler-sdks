@@ -62,7 +62,7 @@ properties plus:
 | `lostAssets` | `bigint` | Assets tracked as lost by the vault. |
 | `availableAssets` | `bigint` | Assets available for withdrawal. |
 | `performanceFee` | `number` | Performance fee. |
-| `supplyApy1h` | `number | undefined` | One-hour supply APY in percentage points. |
+| `supplyApy` | `number | undefined` | Supply APY in percentage points. |
 | `governance` | `EulerEarnGovernance` | Governance and pending-governance state. |
 | `supplyQueue` | `Address[]` | Ordered supply strategy queue. |
 | `withdrawQueue` | `Address[]` | Ordered withdraw strategy queue. |

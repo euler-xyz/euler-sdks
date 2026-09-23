@@ -11,8 +11,6 @@ export interface Deployment {
 	addresses: {
 		bridgeAddrs?: {
 			eulOFTAdapter?: Address;
-			eusdOFTAdapter?: Address;
-			seusdOFTAdapter?: Address;
 		};
 		coreAddrs: {
 			balanceTracker: Address;
@@ -39,7 +37,6 @@ export interface Deployment {
 			accessControlEmergencyGovernorAdminTimelockController?: Address;
 			accessControlEmergencyGovernorWildcardTimelockController?: Address;
 			capRiskSteward?: Address;
-			eUSDAdminTimelockController?: Address;
 			eVaultFactoryGovernor?: Address;
 			eVaultFactoryTimelockController?: Address;
 		};
@@ -63,26 +60,16 @@ export interface Deployment {
 		peripheryAddrs?: {
 			adaptiveCurveIRMFactory?: Address;
 			capRiskStewardFactory?: Address;
-			edgeFactory?: Address;
-			edgeFactoryPerspective?: Address;
 			escrowedCollateralPerspective?: Address;
 			eulerEarnFactoryPerspective?: Address;
-			eulerEarnGovernedPerspective?: Address;
 			eulerEarnPublicAllocator?: Address;
-			eulerUngoverned0xPerspective?: Address;
-			eulerUngovernedNzxPerspective?: Address;
 			evkFactoryPerspective?: Address;
-			externalVaultRegistry?: Address;
-			feeCollector?: Address;
 			feeFlowController?: Address;
 			feeFlowControllerUtil?: Address;
 			fixedCyclicalBinaryIRMFactory?: Address;
-			governedPerspective?: Address;
 			governorAccessControlEmergencyFactory?: Address;
-			irmRegistry?: Address;
 			kinkIRMFactory?: Address;
 			kinkyIRMFactory?: Address;
-			oracleAdapterRegistry?: Address;
 			oracleRouterFactory?: Address;
 			securitizeFactory?: Address;
 			swapVerifier?: Address;
@@ -91,9 +78,7 @@ export interface Deployment {
 		};
 		tokenAddrs?: {
 			EUL?: Address;
-			eUSD?: Address;
 			rEUL?: Address;
-			seUSD?: Address;
 		};
 	};
 }

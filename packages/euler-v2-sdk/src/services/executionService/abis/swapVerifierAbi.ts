@@ -12,6 +12,75 @@ export const swapVerifierAbi = [
 	},
 	{
 		type: "function",
+		name: "transferBalanceFromSender",
+		inputs: [
+			{ name: "token", type: "address", internalType: "address" },
+			{ name: "maxAmount", type: "uint256", internalType: "uint256" },
+			{ name: "to", type: "address", internalType: "address" },
+		],
+		outputs: [{ name: "amount", type: "uint256", internalType: "uint256" }],
+		stateMutability: "nonpayable",
+	},
+	{
+		type: "function",
+		name: "aaveBorrowForSender",
+		inputs: [
+			{ name: "pool", type: "address", internalType: "address" },
+			{ name: "asset", type: "address", internalType: "address" },
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+			{ name: "to", type: "address", internalType: "address" },
+		],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+	{
+		type: "function",
+		name: "morphoWithdrawCollateralForSender",
+		inputs: [
+			{ name: "morpho", type: "address", internalType: "address" },
+			{
+				name: "marketParams",
+				type: "tuple",
+				internalType: "struct IMorpho.MarketParams",
+				components: [
+					{ name: "loanToken", type: "address", internalType: "address" },
+					{ name: "collateralToken", type: "address", internalType: "address" },
+					{ name: "oracle", type: "address", internalType: "address" },
+					{ name: "irm", type: "address", internalType: "address" },
+					{ name: "lltv", type: "uint256", internalType: "uint256" },
+				],
+			},
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+			{ name: "to", type: "address", internalType: "address" },
+		],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+	{
+		type: "function",
+		name: "morphoBorrowForSender",
+		inputs: [
+			{ name: "morpho", type: "address", internalType: "address" },
+			{
+				name: "marketParams",
+				type: "tuple",
+				internalType: "struct IMorpho.MarketParams",
+				components: [
+					{ name: "loanToken", type: "address", internalType: "address" },
+					{ name: "collateralToken", type: "address", internalType: "address" },
+					{ name: "oracle", type: "address", internalType: "address" },
+					{ name: "irm", type: "address", internalType: "address" },
+					{ name: "lltv", type: "uint256", internalType: "uint256" },
+				],
+			},
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+			{ name: "to", type: "address", internalType: "address" },
+		],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+	{
+		type: "function",
 		name: "verifyAmountMinAndDeposit",
 		inputs: [
 			{ name: "vault", type: "address", internalType: "address" },

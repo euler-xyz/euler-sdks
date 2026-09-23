@@ -18,15 +18,15 @@ import type {
 	BatchItemDescription,
 	EVCBatchItem,
 	TransactionPlan,
-	TransactionPlanItem,
 } from "../../services/executionService/executionServiceTypes.js";
 import { flattenBatchEntries } from "../../services/executionService/executionServiceTypes.js";
 import { applyBuildQuery, type BuildQueryFn } from "../../utils/buildQuery.js";
-import type {
-	EulerPlugin,
-	KeyringPluginPrefetch,
-	PluginPrefetchData,
-	PluginSDK,
+import {
+	type EulerPlugin,
+	type KeyringPluginPrefetch,
+	type PluginPrefetchData,
+	type PluginSDK,
+	prependToBatch,
 } from "../types.js";
 
 // ── Keyring ABIs (minimal: only the functions we need) ──
@@ -72,6 +72,24 @@ const HOOK_TARGET_ABI = [
 		outputs: [{ name: "", type: "address" }],
 		stateMutability: "view",
 	},
+	// Integrator-supplied hook targets (e.g. HookTargetAccessControlKeyringUnwind)
+	// expose the same values behind `get`-prefixed getters instead of the public
+	// immutables above. getPolicyId() is uint32 on the verified integrator ABI,
+	// matching the native policyId() getter and the SDK's `policyId: number` surface.
+	{
+		type: "function",
+		name: "getPolicyId",
+		inputs: [],
+		outputs: [{ name: "", type: "uint32" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "getKeyring",
+		inputs: [],
+		outputs: [{ name: "", type: "address" }],
+		stateMutability: "view",
+	},
 ] as const;
 
 // ── Credential data type (matches Keyring Connect SDK output) ──
@@ -85,6 +103,33 @@ export interface KeyringCredentialData {
 	key: Hex;
 	signature: Hex;
 	backdoor: Hex;
+}
+
+// Euler's native HookTargetAccessControlKeyring exposes the policy id and
+// keyring credentials contract as public immutables (`policyId()`, `keyring()`).
+// Integrator-supplied hook targets (e.g. HookTargetAccessControlKeyringUnwind)
+// expose the same values behind `get`-prefixed getters. Try each name in order
+// so both conventions resolve; rethrow the last error only if none succeed.
+async function readHookTargetGetter<T>(
+	provider: PublicClient,
+	hookTarget: Address,
+	functionNames: ReadonlyArray<
+		"policyId" | "getPolicyId" | "keyring" | "getKeyring"
+	>,
+): Promise<T> {
+	let lastError: unknown;
+	for (const functionName of functionNames) {
+		try {
+			return (await provider.readContract({
+				address: hookTarget,
+				abi: HOOK_TARGET_ABI,
+				functionName,
+			})) as T;
+		} catch (error) {
+			lastError = error;
+		}
+	}
+	throw lastError;
 }
 
 // ── Adapter (injectable query pattern) ──
@@ -111,31 +156,34 @@ export class KeyringPluginAdapter {
 	};
 
 	/**
-	 * Read the policyId from a hook target contract.
+	 * Read the policyId from a hook target contract. Falls back to `getPolicyId()`
+	 * for integrator hook targets (e.g. HookTargetAccessControlKeyringUnwind) that
+	 * expose `get`-prefixed getters instead of Euler's public immutables.
 	 */
 	queryKeyringPolicyId = async (
 		provider: PublicClient,
 		hookTarget: Address,
 	): Promise<number> => {
-		return provider.readContract({
-			address: hookTarget,
-			abi: HOOK_TARGET_ABI,
-			functionName: "policyId",
-		});
+		// Both policyId() and getPolicyId() are uint32, so viem returns a number
+		// directly — no bigint coercion (and no unsafe-integer rounding) needed.
+		return readHookTargetGetter<number>(provider, hookTarget, [
+			"policyId",
+			"getPolicyId",
+		]);
 	};
 
 	/**
-	 * Read the keyring credentials contract address from a hook target.
+	 * Read the keyring credentials contract address from a hook target. Falls back
+	 * to `getKeyring()` for integrator hook targets that use `get`-prefixed getters.
 	 */
 	queryKeyringAddress = async (
 		provider: PublicClient,
 		hookTarget: Address,
 	): Promise<Address> => {
-		return provider.readContract({
-			address: hookTarget,
-			abi: HOOK_TARGET_ABI,
-			functionName: "keyring",
-		});
+		return readHookTargetGetter<Address>(provider, hookTarget, [
+			"keyring",
+			"getKeyring",
+		]);
 	};
 }
 
@@ -161,20 +209,6 @@ function isKeyringHook(vault: EVault, hookTargets: Address[]): boolean {
 	const target = vault.hooks.hookTarget;
 	if (!target || target === zeroAddress) return false;
 	return hookTargets.some((ht) => ht.toLowerCase() === target.toLowerCase());
-}
-
-function prependToEveryBatch(
-	plan: TransactionPlan,
-	items: EVCBatchItem[],
-): TransactionPlan {
-	if (items.length === 0) return plan;
-
-	return plan.map((entry: TransactionPlanItem) => {
-		if (entry.type === "evcBatch") {
-			return { ...entry, items: [...items, ...entry.items] };
-		}
-		return entry;
-	});
 }
 
 function collectPlanTargetAddresses(plan: TransactionPlan): Address[] {
@@ -222,30 +256,38 @@ function collectAccountVaults(
 }
 
 async function resolveTargetVaults(
-	plan: TransactionPlan,
+	targetAddresses: Address[],
 	account: AddressOrAccount,
 	chainId: number,
 	sdk: PluginSDK,
 ): Promise<EVault[]> {
-	const targetAddresses = collectPlanTargetAddresses(plan);
 	if (!targetAddresses.length) return [];
 
-	if (typeof account !== "string") {
-		return collectAccountVaults(account, targetAddresses);
-	}
+	const accountVaults =
+		typeof account === "string"
+			? []
+			: collectAccountVaults(account, targetAddresses);
+	const accountVaultAddresses = new Set(
+		accountVaults.map((vault) => getAddress(vault.address)),
+	);
+	const missingTargetAddresses = targetAddresses.filter(
+		(address) => !accountVaultAddresses.has(getAddress(address)),
+	);
+	if (!missingTargetAddresses.length) return accountVaults;
 
 	const fetched = await sdk.vaultMetaService.fetchVaults(
 		chainId,
-		targetAddresses,
+		missingTargetAddresses,
 	);
-	return fetched.result.filter(
+	const fetchedVaults = fetched.result.filter(
 		(v): v is EVault =>
 			!!v &&
 			"hooks" in v &&
-			targetAddresses.some(
+			missingTargetAddresses.some(
 				(target) => getAddress(target) === getAddress(v.address),
 			),
 	);
+	return [...accountVaults, ...fetchedVaults];
 }
 
 export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
@@ -280,13 +322,19 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 			const chainHookTargets = config.hookTargets[chainId];
 			if (!chainHookTargets?.length) return undefined;
 
+			const targetAddresses = collectPlanTargetAddresses(plan);
 			const targetVaults = await resolveTargetVaults(
-				plan,
+				targetAddresses,
 				account,
 				chainId,
 				sdk,
 			);
-			if (!targetVaults.length) return undefined;
+			if (!targetVaults.length) {
+				return {
+					targetAddresses: new Set(targetAddresses),
+					gatedVaults: new Map(),
+				};
+			}
 			const provider = sdk.providerService.getProvider(chainId);
 
 			const entries = await Promise.all(
@@ -308,7 +356,7 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 			);
 
 			const gatedVaults = new Map<Address, GateInfo | null>(entries);
-			return { gatedVaults };
+			return { targetAddresses: new Set(targetAddresses), gatedVaults };
 		},
 
 		async processPlan(
@@ -327,49 +375,50 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 			const provider = sdk.providerService.getProvider(chainId);
 
 			const keyringPrefetch = prefetch?.keyring;
-
-			// Short-circuit: the form's vaults were prefetched and none are gated.
-			if (keyringPrefetch && keyringPrefetch.gatedVaults.size > 0) {
-				const anyGated = [...keyringPrefetch.gatedVaults.values()].some(
-					(info) => info !== null,
-				);
-				if (!anyGated) return plan;
-			}
-
-			// Resolve the keyring vaults to act on: prefer the prefetch's already-
-			// classified set, fall back to plan-walk + live isKeyringHook check.
-			let keyringEntries: Array<{ vault: EVault; gate: GateInfo }> = [];
-			if (keyringPrefetch) {
-				const targetVaults = await resolveTargetVaults(
-					plan,
-					account,
-					chainId,
-					sdk,
-				);
-				for (const vault of targetVaults) {
-					const address = getAddress(vault.address);
-					const gate = keyringPrefetch.gatedVaults.get(address);
-					if (gate) keyringEntries.push({ vault, gate });
-				}
-			} else {
+			const targetAddresses = collectPlanTargetAddresses(plan);
+			const keyringEntries = new Map<string, GateInfo>();
+			const addGate = (gate: GateInfo) => {
+				const key = [
+					getAddress(gate.keyring),
+					getAddress(gate.hookTarget),
+					gate.policyId,
+				].join(":");
+				keyringEntries.set(key, gate);
+			};
+			const resolveGates = async (addresses: Address[]) => {
 				const candidates = (
-					await resolveTargetVaults(plan, account, chainId, sdk)
-				).filter((v) => isKeyringHook(v, chainHookTargets));
-				keyringEntries = await Promise.all(
-					candidates.map(async (vault) => ({
-						vault,
-						gate: await resolveGateInfo(
-							provider,
-							getAddress(vault.hooks.hookTarget),
-						),
-					})),
+					await resolveTargetVaults(addresses, account, chainId, sdk)
+				).filter((vault) => isKeyringHook(vault, chainHookTargets));
+				const hookTargets = new Set(
+					candidates.map((vault) => getAddress(vault.hooks.hookTarget)),
 				);
+				const gates = await Promise.all(
+					[...hookTargets].map((hookTarget) =>
+						resolveGateInfo(provider, hookTarget),
+					),
+				);
+				for (const gate of gates) addGate(gate);
+			};
+			if (keyringPrefetch) {
+				for (const address of targetAddresses) {
+					const gate = keyringPrefetch.gatedVaults.get(address);
+					if (gate) addGate(gate);
+				}
+				const prefetchedTargetAddresses =
+					keyringPrefetch.targetAddresses ??
+					new Set(keyringPrefetch.gatedVaults.keys());
+				const newTargetAddresses = targetAddresses.filter(
+					(address) => !prefetchedTargetAddresses.has(address),
+				);
+				await resolveGates(newTargetAddresses);
+			} else {
+				await resolveGates(targetAddresses);
 			}
-			if (!keyringEntries.length) return plan;
+			if (!keyringEntries.size) return plan;
 
-			const items: EVCBatchItem[] = [];
+			const items = new Map<string, EVCBatchItem>();
 
-			for (const { gate } of keyringEntries) {
+			for (const gate of keyringEntries.values()) {
 				try {
 					// Credential validity is intentionally re-checked here even if
 					// prefetched: it can flip between prefetch and submit if the
@@ -389,7 +438,14 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 					});
 					if (!credentialData) continue;
 
-					items.push({
+					const credentialKey = [
+						getAddress(gate.keyring),
+						getAddress(credentialData.trader),
+						credentialData.policyId,
+					].join(":");
+					if (items.has(credentialKey)) continue;
+
+					items.set(credentialKey, {
 						targetContract: gate.keyring,
 						onBehalfOfAccount: sender,
 						value: BigInt(credentialData.cost),
@@ -411,8 +467,8 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 				} catch {}
 			}
 
-			if (!items.length) return plan;
-			return prependToEveryBatch(plan, items);
+			if (!items.size) return plan;
+			return prependToBatch(plan, [...items.values()]);
 		},
 
 		decodeBatchItem(item: EVCBatchItem): BatchItemDescription | null {

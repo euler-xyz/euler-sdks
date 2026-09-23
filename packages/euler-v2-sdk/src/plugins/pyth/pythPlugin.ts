@@ -12,6 +12,7 @@ import {
 	Account,
 	type AddressOrAccount,
 	type IHasVaultAddress,
+	type SubAccount,
 } from "../../entities/Account.js";
 import type { EVault, EVaultCollateral } from "../../entities/EVault.js";
 import type {
@@ -26,10 +27,11 @@ import {
 	serializeQueryArgs,
 	type BuildQueryFn,
 } from "../../utils/buildQuery.js";
-import { createBundledCall } from "../../utils/callBundler.js";
 import {
 	calculateHealthCheckSets,
+	collectLiquidationHealthChecks,
 	type HealthCheckAccountSet,
+	type PlanHealthCheckSet,
 } from "../../utils/healthCheckSets.js";
 import {
 	collectPythFeedsFromRouteSteps,
@@ -40,6 +42,7 @@ import {
 	type PluginBatchItems,
 	type PluginPrefetchData,
 	type PluginSDK,
+	PluginExecutionFatalError,
 	prependToBatch,
 	type PythPluginPrefetch,
 	type ReadPluginContext,
@@ -72,7 +75,6 @@ const normalizeHex = (value: string): Hex =>
 const normalizeFeedId = (value: string): Hex =>
 	normalizeHex(value).toLowerCase() as Hex;
 
-const PYTH_PRICE_ID_PATTERN = /0x[0-9a-fA-F]{64}/g;
 const DEFAULT_MAX_PYTH_UPDATE_FEE = 10n ** 16n;
 const OFFICIAL_PYTH_ADDRESSES_BY_CHAIN_ID = new Map<number, Address>([
 	[1, "0x4305FB66699C3B2702D4d05CF36551390A4c69C6"],
@@ -113,9 +115,10 @@ const OFFICIAL_PYTH_ADDRESSES_BY_CHAIN_ID = new Map<number, Address>([
 	[167000, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
 ]);
 
-const parseMissingPriceIds = (body: string): Set<Hex> => {
-	const matches = body.match(PYTH_PRICE_ID_PATTERN) ?? [];
-	return new Set(matches.map((id) => normalizeFeedId(id)));
+export type PythUpdateBundle = {
+	feedIds: Hex[];
+	publishTimes: number[];
+	updates: Hex[];
 };
 
 /**
@@ -125,6 +128,7 @@ const parseMissingPriceIds = (body: string): Set<Hex> => {
 export class PythPluginAdapter {
 	private hermesUrl: string;
 	private fetchFn: typeof fetch;
+	private inFlightUpdateBundles = new Map<string, Promise<PythUpdateBundle>>();
 
 	constructor(
 		hermesUrl: string,
@@ -141,18 +145,38 @@ export class PythPluginAdapter {
 
 	/**
 	 * Fetch latest price update data from Pyth Hermes API.
-	 * FeedIds are automatically bundled across concurrent calls within the same tick.
+	 * Concurrent calls coalesce only when their normalized feed sets are
+	 * identical.
 	 */
-	queryPythUpdateData = createBundledCall(
-		async (feedIds: Hex[]): Promise<Hex[]> => {
-			const normalizedIds = [...new Set(feedIds.map(normalizeFeedId))].sort(
-				(left, right) => left.localeCompare(right),
-			);
-			if (!normalizedIds.length) return [];
+	queryPythUpdateBundle = async (feedIds: Hex[]): Promise<PythUpdateBundle> => {
+		const normalizedIds = [...new Set(feedIds.map(normalizeFeedId))].sort(
+			(left, right) => left.localeCompare(right),
+		);
+		if (!normalizedIds.length) {
+			return { feedIds: [], publishTimes: [], updates: [] };
+		}
 
-			return this.fetchPythUpdateData(normalizedIds);
-		},
-	);
+		const key = normalizedIds.join(",");
+		const existing = this.inFlightUpdateBundles.get(key);
+		if (existing) return existing;
+
+		const pending = this.fetchPythUpdateBundle(normalizedIds);
+		this.inFlightUpdateBundles.set(key, pending);
+		try {
+			return await pending;
+		} finally {
+			if (this.inFlightUpdateBundles.get(key) === pending) {
+				this.inFlightUpdateBundles.delete(key);
+			}
+		}
+	};
+
+	queryPythUpdateData = async (feedIds: Hex[]): Promise<Hex[]> =>
+		(await this.queryPythUpdateBundle(feedIds)).updates;
+
+	getQueryKeyPythUpdateBundle(feedIds: Hex[]): string | null {
+		return this.getQueryKeyPythUpdateData(feedIds);
+	}
 
 	getQueryKeyPythUpdateData(feedIds: Hex[]): string | null {
 		return serializeQueryArgs([
@@ -160,23 +184,21 @@ export class PythPluginAdapter {
 		]);
 	}
 
-	private fetchPythUpdateData = async (feedIds: Hex[]): Promise<Hex[]> => {
-		if (!feedIds.length) return [];
+	private fetchPythUpdateBundle = async (
+		feedIds: Hex[],
+	): Promise<PythUpdateBundle> => {
+		if (!feedIds.length) {
+			return { feedIds: [], publishTimes: [], updates: [] };
+		}
 
 		const url = new URL("/v2/updates/price/latest", this.hermesUrl);
 		feedIds.forEach((id) => url.searchParams.append("ids[]", id));
 		url.searchParams.set("encoding", "hex");
+		url.searchParams.set("parsed", "true");
 
 		const response = await this.fetchFn(url.toString());
 		if (!response.ok) {
 			const body = await response.text().catch(() => "");
-			if (response.status === 404) {
-				const missingIds = parseMissingPriceIds(body);
-				if (missingIds.size > 0) {
-					const retryIds = feedIds.filter((id) => !missingIds.has(id));
-					return this.fetchPythUpdateData(retryIds);
-				}
-			}
 			throw new Error(
 				`Failed to fetch Pyth update data: ${response.status}${
 					body ? ` ${body}` : ""
@@ -184,11 +206,40 @@ export class PythPluginAdapter {
 			);
 		}
 
-		const body = (await response.json()) as { binary?: { data?: unknown[] } };
+		const body = (await response.json()) as {
+			binary?: { data?: unknown[] };
+			parsed?: Array<{
+				id?: unknown;
+				price?: { publish_time?: unknown };
+			}>;
+		};
 		const binaryData = body?.binary?.data;
-		if (!Array.isArray(binaryData)) return [];
-
-		return binaryData.map((item) => normalizeHex(String(item)));
+		const updates = Array.isArray(binaryData)
+			? binaryData.map((item) => normalizeHex(String(item)))
+			: [];
+		const publishTimeByFeed = new Map<Hex, number>();
+		for (const parsed of body.parsed ?? []) {
+			if (typeof parsed.id !== "string") continue;
+			const publishTime = parsed.price?.publish_time;
+			if (
+				typeof publishTime !== "number" ||
+				!Number.isSafeInteger(publishTime) ||
+				publishTime < 0
+			) {
+				continue;
+			}
+			publishTimeByFeed.set(normalizeFeedId(parsed.id), publishTime);
+		}
+		const hasCompletePublishTimes = feedIds.every((id) =>
+			publishTimeByFeed.has(id),
+		);
+		return {
+			feedIds,
+			publishTimes: hasCompletePublishTimes
+				? feedIds.map((id) => publishTimeByFeed.get(id)!)
+				: [],
+			updates,
+		};
 	};
 
 	/**
@@ -223,6 +274,10 @@ export class PythPluginAdapter {
 		this.queryPythUpdateData = fn;
 	}
 
+	setQueryPythUpdateBundle(fn: typeof this.queryPythUpdateBundle): void {
+		this.queryPythUpdateBundle = fn;
+	}
+
 	setQueryPythUpdateFee(fn: typeof this.queryPythUpdateFee): void {
 		this.queryPythUpdateFee = fn;
 	}
@@ -238,6 +293,7 @@ async function buildPythBatchItems(
 	trustedPythAddresses: ReadonlySet<string>,
 	maxUpdateFee: bigint,
 	sender: Address = zeroAddress,
+	failClosed = false,
 ): Promise<PluginBatchItems> {
 	if (!feeds.length) return { items: [], totalValue: 0n };
 
@@ -246,11 +302,15 @@ async function buildPythBatchItems(
 	for (const feed of feeds) {
 		const pythAddress = getAddress(feed.pythAddress) as Address;
 		if (!trustedPythAddresses.has(pythAddress.toLowerCase())) {
+			const error = new Error(`Untrusted Pyth contract for chainId ${chainId}`);
 			logPythPluginError(
 				pythAddress,
 				[feed.feedId],
-				new Error(`Untrusted Pyth contract for chainId ${chainId}`),
+				error,
 			);
+			if (failClosed) {
+				throw new PluginExecutionFatalError(error.message, { cause: error });
+			}
 			continue;
 		}
 		const set = grouped.get(pythAddress) || new Set();
@@ -264,7 +324,12 @@ async function buildPythBatchItems(
 	for (const [pythAddress, feedSet] of grouped.entries()) {
 		try {
 			const updateData = await adapter.queryPythUpdateData([...feedSet]);
-			if (!updateData.length) continue;
+			if (!updateData.length) {
+				if (failClosed) {
+					throw new Error("Pyth Hermes returned no update data");
+				}
+				continue;
+			}
 
 			const fee = await adapter.queryPythUpdateFee(
 				provider,
@@ -290,6 +355,12 @@ async function buildPythBatchItems(
 			totalValue += fee;
 		} catch (error) {
 			logPythPluginError(pythAddress, [...feedSet], error);
+			if (failClosed) {
+				throw new PluginExecutionFatalError(
+					`Pyth update materialization failed for ${pythAddress}`,
+					{ cause: error },
+				);
+			}
 		}
 	}
 
@@ -309,9 +380,12 @@ function deduplicateFeeds(feeds: PythFeed[]): PythFeed[] {
 
 type PythControllerVault = Pick<
 	EVault,
-	"address" | "debtPricingOracleRoute"
+	"address" | "asset" | "unitOfAccount" | "debtPricingOracleRoute"
 > & {
-	collaterals: Pick<EVaultCollateral, "address" | "oracleRoute">[];
+	collaterals: Pick<
+		EVaultCollateral,
+		"address" | "currentLiquidationLTV" | "oracleRoute"
+	>[];
 };
 
 const MINIMAL_ACCOUNT_FETCH_OPTIONS = {
@@ -380,6 +454,70 @@ async function resolveAccount(
 	return fetched.result;
 }
 
+async function resolvePlanHealthCheckSets(
+	plan: TransactionPlan,
+	account: Account<IHasVaultAddress>,
+	chainId: number,
+	sdk: PluginSDK,
+): Promise<PlanHealthCheckSet[]> {
+	const checksByViolator = new Map<Address, Set<Address>>();
+	for (const check of collectLiquidationHealthChecks(plan)) {
+		const controllers =
+			checksByViolator.get(check.violator) ?? new Set<Address>();
+		controllers.add(check.controller);
+		checksByViolator.set(check.violator, controllers);
+	}
+	if (!checksByViolator.size) return calculateHealthCheckSets(plan, account);
+
+	const additionalSubAccounts: SubAccount<IHasVaultAddress>[] = [];
+	for (const [violator, requiredControllers] of checksByViolator) {
+		let subAccount = account.getSubAccount(violator);
+		if (!subAccount) {
+			const fetched = await sdk.accountService.fetchSubAccount(
+				chainId,
+				violator,
+				undefined,
+				MINIMAL_ACCOUNT_FETCH_OPTIONS,
+			);
+			const blockingIssues = fetched.errors.filter(
+				(issue) => issue.severity === "error",
+			);
+			if (blockingIssues.length) {
+				throw new PluginExecutionFatalError(
+					`Pyth liquidation enrichment could not load complete violator metadata for ${violator}: ${blockingIssues.map((issue) => issue.message).join("; ")}`,
+				);
+			}
+			subAccount = fetched.result;
+		}
+
+		if (!subAccount) {
+			throw new PluginExecutionFatalError(
+				`Pyth liquidation enrichment could not load violator sub-account ${violator}.`,
+			);
+		}
+
+		for (const controller of requiredControllers) {
+			const controllerEnabled = subAccount.enabledControllers.some(
+				(enabled) => getAddress(enabled) === getAddress(controller),
+			);
+			const debtPosition = subAccount.positions.find(
+				(position) =>
+					getAddress(position.vaultAddress) === getAddress(controller) &&
+					position.borrowed > 0n,
+			);
+			if (!controllerEnabled || !debtPosition) {
+				throw new PluginExecutionFatalError(
+					`Pyth liquidation enrichment received incomplete violator metadata for ${violator}: controller ${controller} is not present as enabled debt.`,
+				);
+			}
+		}
+
+		additionalSubAccounts.push(subAccount);
+	}
+
+	return calculateHealthCheckSets(plan, account, additionalSubAccounts);
+}
+
 async function collectHealthCheckFeeds(
 	checkedAccounts: readonly HealthCheckAccountSet[],
 	chainId: number,
@@ -393,10 +531,18 @@ async function collectHealthCheckFeeds(
 	}
 	if (!controllerAddresses.size) return [];
 
-	const fetched = await sdk.vaultMetaService.fetchVaults(
-		chainId,
-		[...controllerAddresses],
+	const fetched = await sdk.vaultMetaService.fetchVaults(chainId, [
+		...controllerAddresses,
+	]);
+	const requiresCompleteMetadata = checkedAccounts.some(
+		(account) => account.requireCompleteMetadata,
 	);
+	const blockingIssues = fetched.errors.filter((issue) => issue.severity === "error");
+	if (requiresCompleteMetadata && blockingIssues.length) {
+		throw new PluginExecutionFatalError(
+			`Pyth liquidation enrichment could not load complete controller metadata: ${blockingIssues.map((issue) => issue.message).join("; ")}`,
+		);
+	}
 
 	const controllers = new Map<Address, PythControllerVault>();
 	for (const vault of fetched.result) {
@@ -410,7 +556,32 @@ async function collectHealthCheckFeeds(
 	for (const account of checkedAccounts) {
 		for (const controllerAddress of account.controllers) {
 			const controller = controllers.get(getAddress(controllerAddress));
-			if (!controller) continue;
+			if (!controller) {
+				if (account.requireCompleteMetadata) {
+					throw new PluginExecutionFatalError(
+						`Pyth liquidation enrichment could not resolve controller ${controllerAddress} for violator ${account.account}.`,
+					);
+				}
+				continue;
+			}
+			const unitOfAccount = controller.unitOfAccount?.address;
+			if (account.requireCompleteMetadata && !unitOfAccount) {
+				throw new PluginExecutionFatalError(
+					`Pyth liquidation enrichment could not resolve the unit of account for controller ${controllerAddress}.`,
+				);
+			}
+			const liabilityNeedsRoute = unitOfAccount
+				? getAddress(controller.asset.address) !== getAddress(unitOfAccount)
+				: false;
+			if (
+				account.requireCompleteMetadata &&
+				liabilityNeedsRoute &&
+				!controller.debtPricingOracleRoute?.steps.length
+			) {
+				throw new PluginExecutionFatalError(
+					`Pyth liquidation enrichment could not resolve the liability oracle route for controller ${controllerAddress}.`,
+				);
+			}
 
 			const selfKey = `${getAddress(controllerAddress).toLowerCase()}:${CONTROLLER_SELF}`;
 			if (!seenPairs.has(selfKey)) {
@@ -422,13 +593,30 @@ async function collectHealthCheckFeeds(
 
 			for (const collateralAddress of account.collaterals) {
 				const pairKey = `${getAddress(controllerAddress).toLowerCase()}:${getAddress(collateralAddress).toLowerCase()}`;
-				if (seenPairs.has(pairKey)) continue;
-				seenPairs.add(pairKey);
-
 				const collateral = controller.collaterals.find(
 					(c) => getAddress(c.address) === getAddress(collateralAddress),
 				);
-				if (!collateral) continue;
+				if (!collateral) {
+					// EVC collateral enablement is permissionless. A vault absent from
+					// the controller's LTV list has an effective zero LTV, so EVK skips
+					// its oracle read and no update feed is required.
+					continue;
+				}
+				const collateralNeedsRoute = unitOfAccount
+					? getAddress(collateralAddress) !== getAddress(unitOfAccount) &&
+						collateral.currentLiquidationLTV > 0
+					: false;
+				if (
+					account.requireCompleteMetadata &&
+					collateralNeedsRoute &&
+					!collateral.oracleRoute?.steps.length
+				) {
+					throw new PluginExecutionFatalError(
+						`Pyth liquidation enrichment could not resolve the oracle route for collateral ${collateralAddress} in controller ${controllerAddress}.`,
+					);
+				}
+				if (seenPairs.has(pairKey)) continue;
+				seenPairs.add(pairKey);
 				feeds.push(...collectPythFeedsFromRouteSteps(collateral.oracleRoute));
 			}
 		}
@@ -475,12 +663,38 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 	const buildBatchItemsFromPrefetch = (
 		entries: PythPluginPrefetch["entries"],
 		sender: Address,
+		failClosed = false,
 	): { items: EVCBatchItem[]; totalValue: bigint } => {
 		const items: EVCBatchItem[] = [];
 		let totalValue = 0n;
 		for (const entry of entries) {
-			if (!entry.updates.length) continue;
-			if (entry.fee > maxUpdateFee) continue;
+			if (
+				entry.feedIds.length !== entry.publishTimes.length ||
+				entry.feedIds.length === 0
+			) {
+				if (failClosed) {
+					throw new PluginExecutionFatalError(
+						"Pyth prefetch is missing publish-time evidence",
+					);
+				}
+				continue;
+			}
+			if (!entry.updates.length) {
+				if (failClosed) {
+					throw new PluginExecutionFatalError(
+						"Pyth prefetch has no update data",
+					);
+				}
+				continue;
+			}
+			if (entry.fee > maxUpdateFee) {
+				if (failClosed) {
+					throw new PluginExecutionFatalError(
+						`Pyth update fee ${entry.fee.toString()} exceeds max ${maxUpdateFee.toString()}`,
+					);
+				}
+				continue;
+			}
 			items.push({
 				targetContract: entry.pythAddress,
 				onBehalfOfAccount: sender,
@@ -511,7 +725,12 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 			sdk: PluginSDK,
 		): Promise<PythPluginPrefetch | undefined> {
 			const resolvedAccount = await resolveAccount(account, chainId, sdk);
-			const planSets = calculateHealthCheckSets(plan, resolvedAccount);
+			const planSets = await resolvePlanHealthCheckSets(
+				plan,
+				resolvedAccount,
+				chainId,
+				sdk,
+			);
 			const allAccounts: HealthCheckAccountSet[] = [];
 			for (const set of planSets) allAccounts.push(...set.accounts);
 			if (!allAccounts.length) return { entries: [] };
@@ -529,12 +748,15 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 			for (const feed of feeds) {
 				const pythAddress = getAddress(feed.pythAddress);
 				if (!trusted.has(pythAddress.toLowerCase())) {
+					const error = new PluginExecutionFatalError(
+						`Untrusted Pyth contract for chainId ${chainId}`,
+					);
 					logPythPluginError(
 						pythAddress,
 						[feed.feedId],
-						new Error(`Untrusted Pyth contract for chainId ${chainId}`),
+						error,
 					);
-					continue;
+					throw error;
 				}
 				const set = grouped.get(pythAddress) ?? new Set<Hex>();
 				set.add(feed.feedId);
@@ -542,26 +764,47 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 			}
 
 			const entries: PythPluginPrefetch["entries"] = [];
-			let hadError = false;
 			await Promise.all(
 				[...grouped.entries()].map(async ([pythAddress, feedSet]) => {
 					const feedIds = [...feedSet];
-					try {
-						const updates = await adapter.queryPythUpdateData(feedIds);
-						if (!updates.length) return;
-						const fee = await adapter.queryPythUpdateFee(
-							provider,
-							pythAddress,
-							updates,
+					const bundle = await adapter.queryPythUpdateBundle(feedIds);
+					const { updates } = bundle;
+					if (!updates.length) {
+						throw new PluginExecutionFatalError(
+							"Pyth Hermes returned no update data",
 						);
-						entries.push({ pythAddress, feedIds, updates, fee });
-					} catch (err) {
-						hadError = true;
-						logPythPluginError(pythAddress, feedIds, err);
 					}
+					if (
+						bundle.feedIds.length !== bundle.publishTimes.length ||
+						bundle.feedIds.length === 0
+					) {
+						throw new PluginExecutionFatalError(
+							"Pyth Hermes response is missing publish-time evidence",
+						);
+					}
+					const fee = await adapter.queryPythUpdateFee(
+						provider,
+						pythAddress,
+						updates,
+					);
+					if (fee > maxUpdateFee) {
+						throw new PluginExecutionFatalError(
+							`Pyth update fee ${fee.toString()} exceeds max ${maxUpdateFee.toString()}`,
+						);
+					}
+					entries.push({
+						pythAddress,
+						feedIds: bundle.feedIds,
+						publishTimes: bundle.publishTimes,
+						updates,
+						fee,
+					});
 				}),
 			);
-			return entries.length || !hadError ? { entries } : undefined;
+			entries.sort((left, right) =>
+				left.pythAddress.localeCompare(right.pythAddress),
+			);
+			return { entries };
 		},
 
 		async getReadPrepend(
@@ -614,17 +857,20 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 				// Prepend the prefetched Pyth update once. Pyth updates are
 				// multicall-scoped: a single update at the head of the first
 				// evcBatch serves every health-check downstream in that batch.
-				const built = buildBatchItemsFromPrefetch(prefetch.pyth.entries, sender);
+				const built = buildBatchItemsFromPrefetch(
+					prefetch.pyth.entries,
+					sender,
+					true,
+				);
 				if (!built.items.length) return plan;
 				return prependToBatch(plan, built.items);
 			}
 
 			const resolvedAccount = await resolveAccount(account, chainId, sdk);
 			const healthCheckSets = new Map(
-				calculateHealthCheckSets(plan, resolvedAccount).map((set) => [
-					set.planIndex,
-					set.accounts,
-				]),
+				(
+					await resolvePlanHealthCheckSets(plan, resolvedAccount, chainId, sdk)
+				).map((set) => [set.planIndex, set.accounts]),
 			);
 			const provider = sdk.providerService.getProvider(chainId);
 			const processed: TransactionPlanItem[] = [];
@@ -659,10 +905,11 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 					getTrustedPythAddresses(chainId),
 					maxUpdateFee,
 					sender,
+					true,
 				);
 				processed.push(
 					result.items.length
-						? { ...entry, items: [...result.items, ...entry.items] }
+						? prependToBatch([entry], result.items)[0]!
 						: entry,
 				);
 			}

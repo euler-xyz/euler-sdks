@@ -222,6 +222,15 @@ export function convertVaultAccountInfoToAccountPosition(
 		isCollateral: vaultAccountInfo.isCollateral,
 		liquidity,
 		balanceForwarderEnabled: vaultAccountInfo.balanceForwarderEnabled,
+		rewardStreams: (vaultAccountInfo.enabledRewardsInfo ?? [])
+			.filter((rewardInfo) => rewardInfo.earnedReward > 0n)
+			.map((rewardInfo) => ({
+				account: getAddress(vaultAccountInfo.account),
+				vault: getAddress(vaultAccountInfo.vault),
+				reward: getAddress(rewardInfo.reward),
+				earnedReward: rewardInfo.earnedReward,
+				earnedRewardRecentIgnored: rewardInfo.earnedRewardRecentIgnored,
+			})),
 	};
 	return new AccountPosition(positionData);
 }

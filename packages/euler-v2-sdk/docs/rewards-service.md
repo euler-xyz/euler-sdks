@@ -67,6 +67,22 @@ This split makes V3 the default for both vault reward APR catalogs and per-user 
 
 Brevis/Incentra claim planning requires all four fields: `claimAddress`, `proof`, `cumulativeAmounts`, and `epoch`. The default V3 service path returns proof-backed direct rewards when V3 rows do not contain all claim metadata.
 
+### Reward token resolution (V3)
+
+`UserReward.token` is resolved from, in order:
+
+1. Row-level token fields on the `/v3/rewards/breakdown` row (`token`, `rewardToken`, `rewardToken*`, `token*`).
+2. The campaign's `rewardToken` from `/v3/apys/rewards`, matched by campaign id (and vault, when present).
+3. The breakdown row's `rewardTokenMetadata`, which V3 resolves per row independently of whether the campaign is still listed by `/v3/apys/rewards`.
+
+`rewardTokenMetadata` is only accepted when its `address` normalizes to the same address as the row's reward token, so a mismatched or malformed payload can never relabel a reward. The field is nullable and absent on older V3 responses; both cases are treated as "no metadata". Decimals are accepted only as an integer in `[0, 255]` (numeric strings included), matching the ERC-20 `uint8`: a fractional value such as `6.5` is a malformed payload, not a scale, and is left unresolved rather than truncated, and an out-of-range count is rejected before it can reach a formatter.
+
+`UserRewardToken.decimals` is **optional**. When no source resolves it, the SDK omits it rather than assuming 18, because guessing 18 silently misreads every token that uses a different scale. Callers must handle `undefined` explicitly and must not fall back to a truthiness check (`decimals || 18` would also discard a valid `0`). `symbol` and `name` keep the existing convention of falling back to the token address when unresolved.
+
+The direct Turtle path follows the same rule: the Merkle proof's own token wins, then the configured `turtleStreams` entry's `rewardToken.decimals` when — and only when — its address matches the token the proof pays out in; a stream reconfigured to a different token never lends its old scale. When the proof, the configured stream and the campaign all omit `decimals`, the reward is reported unresolved instead of defaulting to 18. Where both paths produce a row for the same stream and token, the rows are collapsed: the larger amount wins, but a resolved token is always preferred over an unresolved one, so the surviving amount is never scaled by nothing. The fallback adapter factory in `buildSDK` merges the V3 and direct rows before `RewardsService` sees them, so it shares the same reduction (`mergeTurtleUserRewards`) rather than repeating it.
+
+Raw reward amounts (`accumulated`, `unclaimed`) and all claim/proof data are unaffected by token resolution — they stay unscaled regardless of whether metadata resolved.
+
 ## Claim Planning APIs
 
 Use the claim builders when the user is about to submit a reward claim:
@@ -128,7 +144,15 @@ Relevant `rewardsServiceConfig` fields:
 - `merklDistributorAddress`
 - `fuulManagerAddress`
 - `fuulFactoryAddress`
+- `turtleApiUrl`
+- `turtleApiKey`
+- `turtleStreams`
+- `enableMerkl`, `enableBrevis`, `enableFuul`, `enableTurtle`
 
 The top-level provider URL fields remain supported for backward compatibility. They are treated as `directAdapterConfig` inputs.
+
+`turtleApiKey` (or `config.rewardsTurtleApiKey` / `EULER_SDK_REWARDS_TURTLE_API_KEY`) is sent as an `X-API-Key` header on direct Turtle requests. The Turtle Earn API rejects unauthenticated requests, so the direct and fallback adapters return no Turtle data without it. Credentialed Turtle requests are made with `redirect: "error"`, so the key is only ever sent to the configured `turtleApiUrl` origin; a redirecting upstream or proxy yields no Turtle data rather than a replayed key. Keep the key server-side; browser builds should route Turtle traffic through a proxy via `turtleApiUrl` or disable Turtle with `enableTurtle: false`.
+
+Note that `enableTurtle: false` only stops Turtle campaign discovery and user-reward enumeration. `fetchTurtleProofs` still runs when a caller asks for explicit Turtle claim proofs, and the V3 and fallback adapters delegate that call to the direct adapter because V3 does not serve merkle proofs. A browser app that offers Turtle claims therefore still needs `turtleApiUrl` pointed at an authenticating proxy, while V3 and fallback deployments can return Turtle campaign data without a direct key.
 
 For Fuul claim planning, the SDK also needs a configured `providerService` so it can read claim fees from the Fuul factory contract.

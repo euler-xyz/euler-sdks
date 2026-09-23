@@ -137,6 +137,16 @@ export const accountLensAbi = [
 						internalType: "struct VaultAccountInfo[]",
 						components: [
 							{
+								name: "queryFailure",
+								type: "bool",
+								internalType: "bool",
+							},
+							{
+								name: "queryFailureReason",
+								type: "bytes",
+								internalType: "bytes",
+							},
+							{
 								name: "timestamp",
 								type: "uint256",
 								internalType: "uint256",
@@ -442,6 +452,16 @@ export const accountLensAbi = [
 						type: "tuple",
 						internalType: "struct VaultAccountInfo",
 						components: [
+							{
+								name: "queryFailure",
+								type: "bool",
+								internalType: "bool",
+							},
+							{
+								name: "queryFailureReason",
+								type: "bytes",
+								internalType: "bytes",
+							},
 							{
 								name: "timestamp",
 								type: "uint256",
@@ -1066,6 +1086,16 @@ export const accountLensAbi = [
 				type: "tuple",
 				internalType: "struct VaultAccountInfo",
 				components: [
+					{
+						name: "queryFailure",
+						type: "bool",
+						internalType: "bool",
+					},
+					{
+						name: "queryFailureReason",
+						type: "bytes",
+						internalType: "bytes",
+					},
 					{
 						name: "timestamp",
 						type: "uint256",

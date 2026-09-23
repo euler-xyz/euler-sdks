@@ -1,6 +1,7 @@
 import { getAddress } from "viem";
 import type { EulerEarn } from "../entities/EulerEarn.js";
 import type {
+	EulerLabelEarnVaultEntry,
 	EulerLabelEntity,
 	EulerLabelPoint,
 	EulerLabelProduct,
@@ -16,7 +17,6 @@ export const createEmptyEulerLabelsData = (): EulerLabelsData => ({
 	earnVaultEntries: {},
 	earnVaultBlocks: {},
 	earnVaultRestrictions: {},
-	recentlyAddedEarnVaults: new Set(),
 	deprecatedEarnVaults: {},
 	earnVaultDescriptions: {},
 	earnVaultNotices: {},
@@ -40,6 +40,7 @@ export const applyEulerLabelVaultOverrides = (
 ): EulerLabelProduct => {
 	const override = product.vaultOverrides?.[normalizeAddress(vaultAddress)];
 	if (!override) return product;
+	const tags = mergeTags(product.tags, override.tags);
 	return {
 		...product,
 		...(override.name !== undefined && { name: override.name }),
@@ -52,6 +53,7 @@ export const applyEulerLabelVaultOverrides = (
 		...(override.deprecationReason !== undefined && {
 			deprecationReason: override.deprecationReason,
 		}),
+		...(tags && { tags }),
 	};
 };
 
@@ -134,16 +136,13 @@ export const isEulerLabelVaultRecentlyAdded = (
 	vaultAddress: string,
 ): boolean => {
 	const normalized = normalizeAddress(vaultAddress);
-	if (
-		Object.values(data.products).some(
-			(product) => product.recentlyAddedVaults?.includes(normalized) ?? false,
-		)
-	) {
-		return true;
-	}
 	return (
-		data.recentlyAddedEarnVaults.has(normalized) ||
-		data.recentlyAddedEarnVaults.has(normalized.toLowerCase())
+		Object.values(data.products).some(
+			(product) =>
+				product.vaults.includes(normalized) &&
+				(productHasTag(product, "recently added") ||
+					vaultOverrideHasTag(product, normalized, "recently added")),
+		) || earnVaultEntryHasTag(data.earnVaultEntries[normalized.toLowerCase()], "recently added")
 	);
 };
 
@@ -255,6 +254,19 @@ const vaultOverrideHasTag = (
 	product?.vaultOverrides?.[normalizedVaultAddress]?.tags?.includes(tag) ??
 	false;
 
+const earnVaultEntryHasTag = (
+	entry: EulerLabelEarnVaultEntry | undefined,
+	tag: string,
+): boolean => entry?.tags?.includes(tag) ?? false;
+
+const mergeTags = (
+	productTags: string[] | undefined,
+	overrideTags: string[] | undefined,
+): string[] | undefined => {
+	const merged = [...(productTags ?? []), ...(overrideTags ?? [])];
+	return merged.length > 0 ? [...new Set(merged)] : undefined;
+};
+
 export const isEulerLabelVaultKeyring = (
 	data: EulerLabelsData,
 	vaultAddress: string,
@@ -283,6 +295,51 @@ export const isEulerLabelVaultAccessControlled = (
 		vaultOverrideHasTag(product, normalized, "access control")
 	);
 };
+
+export const isEulerLabelVaultGovernanceLimited = (
+	data: EulerLabelsData,
+	vaultAddress: string,
+): boolean => {
+	const normalized = normalizeAddress(vaultAddress);
+	const product = getEulerLabelProductByVault(data, normalized);
+	return (
+		productHasTag(product, "governance limited") ||
+		vaultOverrideHasTag(product, normalized, "governance limited")
+	);
+};
+
+export const isEulerLabelVaultHighUtilisationWarningSuppressed = (
+	data: EulerLabelsData,
+	vaultAddress: string,
+): boolean => {
+	const normalized = normalizeAddress(vaultAddress);
+	const product = getEulerLabelProductByVault(data, normalized);
+	return (
+		productHasTag(product, "suppress high utilisation warning") ||
+		vaultOverrideHasTag(
+			product,
+			normalized,
+			"suppress high utilisation warning",
+		)
+	);
+};
+
+export const isEulerLabelVaultCyclicalNote = (
+	data: EulerLabelsData,
+	vaultAddress: string,
+): boolean => {
+	const normalized = normalizeAddress(vaultAddress);
+	const product = getEulerLabelProductByVault(data, normalized);
+	return (
+		productHasTag(product, "cyclical note") ||
+		vaultOverrideHasTag(product, normalized, "cyclical note")
+	);
+};
+
+export const isEulerLabelProductGovernanceLimited = (
+	data: EulerLabelsData,
+	productKey: string,
+): boolean => productHasTag(data.products[productKey], "governance limited");
 
 export const getEulerLabelDeclaredEntityKeys = (
 	data: EulerLabelsData,

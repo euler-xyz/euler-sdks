@@ -434,7 +434,7 @@ function compareEarnVault(appVault, sdkVault) {
   const issues = [];
   const assetDecimals = sdkVault?.asset?.decimals ?? appVault.assetDecimals ?? 18;
   const shareDecimals = sdkVault?.shares?.decimals ?? appVault.vaultDecimals ?? 18;
-  const sdkSupplyApyPercent = sdkVault?.supplyApy1h !== undefined ? sdkVault.supplyApy1h * 100 : undefined;
+  const sdkSupplyApy = sdkVault?.supplyApy;
   const sdkPerformanceFee = sdkVault?.performanceFee !== undefined ? sdkVault.performanceFee * 1e18 : undefined;
 
   compareText(issues, "name", appVault.vaultName, sdkVault?.shares?.name);
@@ -451,8 +451,8 @@ function compareEarnVault(appVault, sdkVault) {
   compareNumberAllowMissingApp(issues, "assetPriceUsd", appVault.assetPrice, sdkVault?.marketPriceUsd ? Number(formatUnits(sdkVault.marketPriceUsd, 18)) : undefined);
   compareNumberAllowZeroAppMissingSdk(issues, "totalAssetsUsd", appVault.totalAssetsUSD, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.totalAssets * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
   compareNumberAllowZeroAppMissingSdk(issues, "availableAssetsUsd", appVault.availableAssetsUSD, sdkVault?.marketPriceUsd ? Number(formatUnits((sdkVault.availableAssets * sdkVault.marketPriceUsd) / 10n ** BigInt(assetDecimals), 18)) : undefined);
-  compareNumberWithTolerance(issues, "apyCurrent", appVault.apyCurrent, sdkSupplyApyPercent, 0.05);
-  compareNumberWithTolerance(issues, "supplyApy.base", appVault.supplyApy?.baseApy, sdkSupplyApyPercent, 0.05);
+  compareNumberWithTolerance(issues, "apyCurrent", appVault.apyCurrent, sdkSupplyApy, 0.05);
+  compareNumberWithTolerance(issues, "supplyApy.base", appVault.supplyApy?.baseApy, sdkSupplyApy, 0.05);
   compareNumber(issues, "supplyApy.rewards", appVault.supplyApy?.rewardApy, sdkVault?.rewards?.totalRewardsApr ? sdkVault.rewards.totalRewardsApr * 100 : 0);
   compareAddress(issues, "owner", appVault.owner, sdkVault?.governance?.owner);
   compareAddress(issues, "creator", appVault.creator, sdkVault?.governance?.creator);

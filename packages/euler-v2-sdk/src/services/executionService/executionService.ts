@@ -19,12 +19,16 @@ import type {
 import type { EulerPlugin, PluginPrefetchData } from "../../plugins/types.js";
 import { resolveBorrowCollateralPositions } from "../../utils/accountPositionClassification.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
+import type { IABIService } from "../abiService/index.js";
 import type { IEulerLabelsService } from "../eulerLabelsService/index.js";
 import type { IIntrinsicApyService } from "../intrinsicApyService/index.js";
 import type { IPriceService } from "../priceService/index.js";
 import type { ProviderService } from "../providerService/index.js";
 import type { IRewardsService } from "../rewardsService/index.js";
-import { SwapperMode } from "../swapService/swapServiceTypes.js";
+import {
+	type SwapQuote,
+	SwapperMode,
+} from "../swapService/swapServiceTypes.js";
 import {
 	adjustForInterest,
 	getSwapInputAmount,
@@ -61,6 +65,17 @@ import {
 	executeTransactionPlan,
 	type TransactionPlanExecutionResult,
 } from "./execute.js";
+import {
+	type ExecuteMaterializedOptions,
+	executeMaterialized,
+	type FinalizedMaterializedExecution,
+	finalizeMaterializedExecution,
+	type MaterializedExecution,
+	type MaterializedExecutionResult,
+	type MaterializedSignatureValue,
+	type MaterializeExecutionArgs,
+	materializeExecution,
+} from "./materializedExecution.js";
 import type {
 	ApproveCall,
 	BatchEntryDescription,
@@ -75,6 +90,7 @@ import type {
 	EncodeLiquidationArgs,
 	EncodeMigrateSameAssetCollateralArgs,
 	EncodeMigrateSameAssetDebtArgs,
+	EncodeMigrationAuthorizationCallArgs,
 	EncodeMintArgs,
 	EncodeMultiplySameAssetArgs,
 	EncodeMultiplyWithSwapArgs,
@@ -149,6 +165,7 @@ import {
 	simulateTransactionPlan,
 } from "./simulate.js";
 import { requiresZeroApprovalReset } from "./tokenApprovalReset.js";
+import { encodeMigrationAuthorizationCall } from "./migrationAuthorization.js";
 
 type CowSwapQuoteOrderAmounts = {
 	sellAmount: bigint;
@@ -177,6 +194,20 @@ function assertNonCowSwapQuote(
 	throw new Error(
 		`ExecutionService.${planFunctionName} does not support CoW swap quotes.${suffix}`,
 	);
+}
+
+function getWalletSwapApprovalToken(
+	swapQuote: Pick<SwapQuote, "tokenIn">,
+	tokenIn: Address,
+	planFunctionName: string,
+): Address {
+	const quoteToken = getAddress(swapQuote.tokenIn.address) as Address;
+	if (getAddress(tokenIn) !== quoteToken) {
+		throw new Error(
+			`ExecutionService.${planFunctionName} tokenIn must match swapQuote.tokenIn.address`,
+		);
+	}
+	return quoteToken;
 }
 
 function assertCowSwapQuote(
@@ -332,7 +363,14 @@ function isWalletCollateral(
 function cloneBatchEntries(entries: readonly EVCBatchEntry[]): EVCBatchEntry[] {
 	return entries.map((entry) =>
 		"type" in entry && entry.type === "operation"
-			? { type: "operation", name: entry.name, items: [...entry.items] }
+			? {
+					type: "operation",
+					name: entry.name,
+					items: [...entry.items],
+					...(entry.walletBalanceTokens?.length
+						? { walletBalanceTokens: [...entry.walletBalanceTokens] }
+						: {}),
+				}
 			: entry,
 	);
 }
@@ -501,7 +539,14 @@ function normalizeEVCStateTransitions(
 				.filter((ref) => !ref.remove)
 				.map((ref) => ref.item);
 			if (items.length > 0) {
-				result.push({ type: "operation", name: entry.name, items });
+				result.push({
+					type: "operation",
+					name: entry.name,
+					items,
+					...(entry.walletBalanceTokens?.length
+						? { walletBalanceTokens: [...entry.walletBalanceTokens] }
+						: {}),
+				});
 			}
 			return;
 		}
@@ -530,6 +575,11 @@ export interface IExecutionService<
 		transactionPlan: TransactionPlan,
 		options?: SimulateBatchOptions & { prefetch?: PluginPrefetchData },
 	): Promise<SimulateBatchResult<TVaultEntity>>;
+	/**
+	 * Simulate an already prepared envelope without rerunning plugins or approval
+	 * resolution.
+	 * @see docs/simulations-and-state-overrides.md
+	 */
 	simulatePreparedTransactionPlan(
 		prepared: TransactionPlanPrepared,
 		options?: SimulateBatchOptions,
@@ -565,6 +615,7 @@ export interface IExecutionService<
 	 * Run plugins and resolve required approvals up front, packaging the result
 	 * with its execution context so simulate/execute can be called repeatedly
 	 * without re-running plugins or refetching wallet allowances.
+	 * @see docs/simulations-and-state-overrides.md
 	 */
 	prepareTransactionPlan(args: {
 		plan: TransactionPlan;
@@ -596,12 +647,40 @@ export interface IExecutionService<
 		account: AddressOrAccount,
 		chainId: number,
 	): Promise<PluginPrefetchData>;
+	/**
+	 * Prepare and execute a raw plan. Callers that expose a review boundary
+	 * should prefer the materialized execution APIs.
+	 * @see docs/execution-service.md
+	 */
 	executeTransactionPlan(
 		args: ExecuteTransactionPlanArgs,
 	): Promise<TransactionPlanExecutionResult>;
+	/**
+	 * Execute an already prepared envelope without rerunning plugins or approval
+	 * resolution. This still performs execution-time Permit2 composition.
+	 * @see docs/execution-service.md
+	 */
 	executePreparedTransactionPlan(
 		args: ExecutePreparedTransactionPlanArgs,
 	): Promise<TransactionPlanExecutionResult>;
+	/** Deterministically compose a prepared plan using only explicit live inputs. */
+	materializeExecution(args: MaterializeExecutionArgs): MaterializedExecution;
+	/** Purely insert the declared signatures into a new immutable request vector. */
+	finalizeMaterializedExecution(
+		materialized: MaterializedExecution,
+		signatures: readonly MaterializedSignatureValue[],
+	): FinalizedMaterializedExecution;
+	/**
+	 * Sign, finalize, and dispatch the exact materialized request vector. A
+	 * supplied FinalizedMaterializedExecution is trusted application input and
+	 * must already be authenticated against the application's accepted review
+	 * digest; the SDK does not authenticate it.
+	 * @see docs/execution-service.md
+	 */
+	executeMaterialized(
+		materialized: MaterializedExecution | FinalizedMaterializedExecution,
+		options: ExecuteMaterializedOptions,
+	): Promise<MaterializedExecutionResult>;
 	executeCowSwapTransactionPlan(
 		args: ExecuteCowSwapTransactionPlanArgs,
 	): Promise<CowSwapTransactionPlanExecutionResult>;
@@ -641,6 +720,9 @@ export interface IExecutionService<
 	encodeMultiplyWithSwap(args: EncodeMultiplyWithSwapArgs): EVCBatchItem[];
 	encodeMultiplySameAsset(args: EncodeMultiplySameAssetArgs): EVCBatchItem[];
 	encodePermit2Call(args: EncodePermit2CallArgs): EVCBatchItem;
+	encodeMigrationAuthorizationCall(
+		args: EncodeMigrationAuthorizationCallArgs,
+	): EVCBatchItem;
 	encodeEnableCollateral(
 		chainId: number,
 		account: Address,
@@ -657,6 +739,7 @@ export interface IExecutionService<
 		vault: Address,
 	): EVCBatchItem;
 	encodeDisableController(vault: Address, account: Address): EVCBatchItem;
+	encodeTransferFromMax(vault: Address, from: Address, to: Address): EVCBatchItem;
 	/** Transaction plan functions: build plan items (approvals + EVC batch) for each operation. See implementation JSDoc for argument details. */
 	planCleanup(args: PlanCleanupArgs): TransactionPlan;
 	planDeposit(args: PlanDepositArgs): TransactionPlan;
@@ -749,6 +832,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	private rewardsService?: IRewardsService;
 	private intrinsicApyService?: IIntrinsicApyService;
 	private eulerLabelsService?: IEulerLabelsService;
+	private abiService?: IABIService;
 	private processPlugins?: ProcessPlanPlugins;
 	private prefetchPlugins?: PrefetchPlanPlugins;
 
@@ -799,6 +883,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		this.eulerLabelsService = eulerLabelsService;
 	}
 
+	setABIService(abiService: IABIService): void {
+		this.abiService = abiService;
+	}
+
 	setPlugins(plugins: EulerPlugin[]): void {
 		this.plugins = plugins;
 	}
@@ -828,7 +916,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		);
 	}
 
-	/** Simulate the full transaction plan, including approval resolution and plugin-aware batch execution. */
+	/**
+	 * Simulate the full transaction plan, including approval resolution and
+	 * plugin-aware batch execution.
+	 * @see docs/simulations-and-state-overrides.md
+	 */
 	async simulateTransactionPlan(
 		chainId: number,
 		account: AddressOrAccount,
@@ -857,6 +949,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * resolution have already run via {@link prepareTransactionPlan}, so this
 	 * skips the plugin pipeline and uses the envelope's chainId/account context
 	 * directly — no re-fetches of plugin-side data on each click.
+	 * @see docs/simulations-and-state-overrides.md
 	 */
 	async simulatePreparedTransactionPlan(
 		prepared: TransactionPlanPrepared,
@@ -878,6 +971,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * with its execution context. Simulate and execute can be called against the
 	 * returned envelope repeatedly without re-running plugins or refetching
 	 * wallet allowances.
+	 * @see docs/simulations-and-state-overrides.md
 	 */
 	async prepareTransactionPlan(args: {
 		plan: TransactionPlan;
@@ -973,7 +1067,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		);
 	}
 
-	/** Execute a transaction plan using caller-provided signing and send callbacks. */
+	/**
+	 * Execute a transaction plan using caller-provided signing and send callbacks.
+	 * @see docs/execution-service.md
+	 */
 	async executeTransactionPlan(
 		args: ExecuteTransactionPlanArgs,
 	): Promise<TransactionPlanExecutionResult> {
@@ -1008,6 +1105,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * Execute a {@link TransactionPlanPrepared} envelope. Plugins and approval
 	 * resolution were already applied by {@link prepareTransactionPlan}, so
 	 * this skips both — no per-execute plugin re-runs or wallet re-fetch.
+	 * @see docs/execution-service.md
 	 */
 	async executePreparedTransactionPlan(
 		args: ExecutePreparedTransactionPlanArgs,
@@ -1035,6 +1133,40 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			providerService,
 		};
 		return executeTransactionPlan(helperArgs);
+	}
+
+	/**
+	 * Compose a prepared plan without reads, clocks, or wallet prompts. Permit2
+	 * nonces and deadlines and the reviewed EVC address are explicit inputs.
+	 */
+	materializeExecution(args: MaterializeExecutionArgs): MaterializedExecution {
+		return materializeExecution(this, args);
+	}
+
+	/** Insert signatures into declared slots without mutating the reviewed template. */
+	finalizeMaterializedExecution(
+		materialized: MaterializedExecution,
+		signatures: readonly MaterializedSignatureValue[],
+	): FinalizedMaterializedExecution {
+		return finalizeMaterializedExecution(this, materialized, signatures);
+	}
+
+	/**
+	 * Collect declared signatures and dispatch the finalized bytes. Every hook is
+	 * awaited at its documented boundary; dispatch never re-encodes a request. A
+	 * supplied FinalizedMaterializedExecution is assumed to have been
+	 * authenticated by the application before this call.
+	 */
+	async executeMaterialized(
+		materialized: MaterializedExecution | FinalizedMaterializedExecution,
+		options: ExecuteMaterializedOptions,
+	): Promise<MaterializedExecutionResult> {
+		if (!this.providerService) {
+			throw new Error(
+				"ExecutionService.executeMaterialized requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
+			);
+		}
+		return executeMaterialized(this, this.providerService, materialized, options);
 	}
 
 	async executeCowSwapTransactionPlan(
@@ -1069,14 +1201,15 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			rewardsService: this.rewardsService,
 			intrinsicApyService: this.intrinsicApyService,
 			eulerLabelsService: this.eulerLabelsService,
+			abiService: this.abiService,
 			describeBatch: (batch) => this.describeBatch(batch),
 		};
 	}
 
 	/**
 	 * Run each plugin's processPlan in registration order. Plugins receive the
-	 * plan as modified by previous plugins; errors are caught per-plugin so a
-	 * single failing plugin can't poison the pipeline.
+	 * plan as modified by previous plugins. Any plugin failure rejects the
+	 * pipeline so a required safety operation can never be silently omitted.
 	 *
 	 * `prefetch` carries form-level data each plugin pre-resolved via
 	 * {@link prefetchPluginDataForPlan} — passing it lets the plugin skip its
@@ -1462,15 +1595,16 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	/**
 	 * Encodes EVC batch items for migrating a supplied/collateral position between two same-asset vaults.
 	 * Partial migration uses withdraw(amount, toVault, account) then skim(amount, account).
-	 * Max migration uses redeem(maxShares || maxUint256, toVault, account) then skim(amount, account).
+	 * Max migration uses redeem(maxShares || maxUint256, toVault, account) then skim(maxUint256, account)
+	 * so the destination credits the full unaccounted asset balance returned by redeem.
 	 *
 	 * @param args - Same-asset collateral migration encoding arguments
 	 * @param args.chainId - Chain ID (used for EVC enable/disable collateral)
 	 * @param args.fromVault - Source vault holding the supplied shares
 	 * @param args.toVault - Destination vault with the same underlying asset
-	 * @param args.amount - Asset amount expected to arrive at the destination vault and be skimmed
+	 * @param args.amount - Asset amount withdrawn and skimmed for a partial migration
 	 * @param args.account - Sub-account that owns the source shares and receives destination shares
-	 * @param args.isMax - If true, redeems shares instead of withdrawing assets
+	 * @param args.isMax - If true, redeems shares and skims the full unaccounted destination balance
 	 * @param args.maxShares - Optional exact share amount for max migration; defaults to maxUint256
 	 * @param args.enableCollateralTo - If true, enables the destination vault as collateral after skim
 	 * @param args.disableCollateralFrom - If true, disables the source vault as collateral after enabling the destination
@@ -1539,6 +1673,18 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	encodePermit2Call(args: EncodePermit2CallArgs): EVCBatchItem {
 		const { permit2 } = this.getCoreAddresses(args.chainId);
 		return encodeHelpers.encodePermit2Call(permit2, args);
+	}
+
+	/**
+	 * Insert an EIP-712 signature only at the versioned ABI path returned by
+	 * PositionMigrationService.prepareMigrationAuthorizationSlots. The path is
+	 * opaque application-authenticated metadata, not an independently trusted
+	 * SDK capability.
+	 */
+	encodeMigrationAuthorizationCall(
+		args: EncodeMigrationAuthorizationCallArgs,
+	): EVCBatchItem {
+		return encodeMigrationAuthorizationCall(args);
 	}
 
 	encodeEnableCollateral(
@@ -1807,7 +1953,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		return [{ type: "evcBatch", items }];
 	}
 
-	private encodeTransferFromMax(
+	encodeTransferFromMax(
 		vault: Address,
 		from: Address,
 		to: Address,
@@ -2573,19 +2719,18 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.account - Liquidator's account entity; used for chainId, owner, and controller/collateral state on liquidator sub-account
 	 * @param args.liquidatorSubAccountAddress - Sub-account address that will repay debt and receive seized collateral
 	 * @param args.vault - Address of the liability vault (debt is repaid to this vault)
-	 * @param args.asset - Address of the liability vault's underlying asset (used for approval of repay amount)
+	 * @param args.asset - Deprecated compatibility field; liquidation does not pull the liability asset from the wallet
 	 * @param args.violator - Sub-account address of the undercollateralized account being liquidated
 	 * @param args.collateral - Address of the collateral vault from which collateral is seized
 	 * @param args.repayAssets - Amount of liability asset the liquidator will repay (and receive collateral up to the liquidation incentive)
 	 * @param args.minYieldBalance - Minimum yield balance the liquidator requires; liquidation may revert if not met
-	 * @returns Array of transaction plan items (approval for repay asset + EVC batch)
+	 * @returns Array of transaction plan items (EVC batch only; liquidation does not require a wallet-token approval)
 	 */
 	planLiquidation(args: PlanLiquidationArgs): TransactionPlan {
 		const {
 			account,
 			liquidatorSubAccountAddress,
 			vault,
-			asset,
 			violator,
 			collateral,
 			repayAssets,
@@ -2593,15 +2738,6 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		} = args;
 
 		const plan: TransactionPlanItem[] = [];
-
-		// Add approval requirement for the liability asset the liquidator will repay
-		plan.push({
-			type: "requiredApproval",
-			token: asset,
-			owner: account.owner,
-			spender: vault,
-			amount: repayAssets,
-		});
 
 		// Check if controller needs to be enabled for the liquidator account on the liability vault
 		const enableController = !(
@@ -3003,12 +3139,17 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			wrappedNativeInfo,
 		} = args;
 		assertNonCowSwapQuote(swapQuote, "planDepositWithSwapFromWallet");
+		const approvalToken = getWalletSwapApprovalToken(
+			swapQuote,
+			tokenIn,
+			"planDepositWithSwapFromWallet",
+		);
 		const plan: TransactionPlanItem[] = [];
 
 		// Approval goes to the transferFromSender contract (which uses permit2 transferFrom internally)
 		plan.push({
 			type: "requiredApproval",
-			token: tokenIn,
+			token: approvalToken,
 			owner: account.owner,
 			spender: swapQuote.verify.verifierAddress,
 			amount,
@@ -3055,11 +3196,16 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	planSwapFromWallet(args: PlanSwapFromWalletArgs): TransactionPlan {
 		const { swapQuote, amount, tokenIn, account, wrappedNativeInfo } = args;
 		assertNonCowSwapQuote(swapQuote, "planSwapFromWallet");
+		const approvalToken = getWalletSwapApprovalToken(
+			swapQuote,
+			tokenIn,
+			"planSwapFromWallet",
+		);
 		const plan: TransactionPlanItem[] = [];
 
 		plan.push({
 			type: "requiredApproval",
-			token: tokenIn,
+			token: approvalToken,
 			owner: account.owner,
 			spender: swapQuote.verify.verifierAddress,
 			amount,
@@ -3095,6 +3241,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			skipCleanup = false,
 		} = args;
 		assertNonCowSwapQuote(swapQuote, "planSwapAndBorrowFromWallet");
+		const approvalToken = getWalletSwapApprovalToken(
+			swapQuote,
+			tokenIn,
+			"planSwapAndBorrowFromWallet",
+		);
 		const plan: TransactionPlanItem[] = [];
 		const cleanup = skipCleanup
 			? {
@@ -3106,7 +3257,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 		plan.push({
 			type: "requiredApproval",
-			token: tokenIn,
+			token: approvalToken,
 			owner: account.owner,
 			spender: swapQuote.verify.verifierAddress,
 			amount,
@@ -3167,11 +3318,16 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			wrappedNativeInfo,
 		} = args;
 		assertNonCowSwapQuote(swapQuote, "planSwapAndRepayFromWallet");
+		const approvalToken = getWalletSwapApprovalToken(
+			swapQuote,
+			tokenIn,
+			"planSwapAndRepayFromWallet",
+		);
 		const plan: TransactionPlanItem[] = [];
 
 		plan.push({
 			type: "requiredApproval",
-			token: tokenIn,
+			token: approvalToken,
 			owner: account.owner,
 			spender: swapQuote.verify.verifierAddress,
 			amount,
@@ -3356,6 +3512,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	planSwapDebt(args: PlanSwapDebtArgs): TransactionPlan {
 		const { swapQuote, account, swapperMode } = args;
 		assertNonCowSwapQuote(swapQuote, "planSwapDebt");
+		if (getAddress(swapQuote.accountIn) !== getAddress(swapQuote.accountOut)) {
+			throw new Error("Debt swaps must use the same account on both sides");
+		}
 		const plan: TransactionPlanItem[] = [];
 
 		const liabilityPosition = account?.getPosition(
@@ -3396,11 +3555,11 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args - Same-asset collateral migration plan arguments
 	 * @param args.fromVault - Source vault holding the supplied shares
 	 * @param args.toVault - Destination vault with the same underlying asset
-	 * @param args.amount - Asset amount to withdraw/redeem and skim into the destination vault
+	 * @param args.amount - Asset amount to withdraw and skim for a partial migration
 	 * @param args.positionAccount - Sub-account that owns the source shares and receives destination shares
 	 * @param args.fromAsset - Optional source underlying asset; defaults to the account position asset
 	 * @param args.toAsset - Destination underlying asset, used to verify this is a same-asset migration
-	 * @param args.isMax - If true, redeems shares instead of withdrawing assets
+	 * @param args.isMax - If true, redeems shares and skims the full unaccounted destination balance
 	 * @param args.maxShares - Optional exact share amount for max migration
 	 * @param args.enableCollateralTo - Optional override for enabling destination collateral
 	 * @param args.disableCollateralFrom - Optional override for disabling source collateral
@@ -3477,8 +3636,8 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	 * @param args.liabilityAmount - Current debt amount; defaults to the old-vault borrowed amount in account data
 	 * @param args.oldLiabilityAsset - Optional old liability asset; defaults to the old-vault account position asset
 	 * @param args.newLiabilityAsset - New liability underlying asset, used to verify this is a same-asset migration
-	 * @param args.sweepExcess - Whether to redeem and skim the migration cushion back into the new vault when the old vault has no pre-existing supplied shares (default true)
-	 * @param args.transferRemainingSharesToOwner - Whether to transfer new-vault shares to the owner when liabilityAccount differs from owner (default true)
+	 * @param args.sweepExcess - Whether to redeem and skim the migration cushion back into the new vault when the old vault has no pre-existing supplied shares; defaults to true only when the loaded old position exists and has no supplied shares
+	 * @param args.transferRemainingSharesToOwner - Whether to transfer all new-vault shares to the owner when liabilityAccount differs from owner; defaults to true only when the loaded target position exists and has no supplied shares
 	 * @returns Array of transaction plan items (EVC batch; no token approvals)
 	 */
 	planMigrateSameAssetDebt(
@@ -3492,14 +3651,18 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			liabilityAmount,
 			oldLiabilityAsset,
 			newLiabilityAsset,
-			sweepExcess = true,
-			transferRemainingSharesToOwner = true,
+			sweepExcess,
+			transferRemainingSharesToOwner,
 		} = args;
 		const plan: TransactionPlanItem[] = [];
 
 		const oldPosition = account?.getPosition(
 			liabilityAccount,
 			oldLiabilityVault,
+		);
+		const newPosition = account?.getPosition(
+			liabilityAccount,
+			newLiabilityVault,
 		);
 		const resolvedOldAsset = oldLiabilityAsset ?? oldPosition?.asset;
 
@@ -3527,12 +3690,14 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			newLiabilityVault,
 		);
 		const transferRemainingSharesTo =
-			transferRemainingSharesToOwner &&
+			(transferRemainingSharesToOwner ??
+				(newPosition !== undefined && !hasSuppliedPosition(newPosition))) &&
 			getAddress(liabilityAccount) !== getAddress(account.owner)
 				? account.owner
 				: undefined;
-		const shouldSweepExcess =
-			sweepExcess && !(oldPosition && hasSuppliedPosition(oldPosition));
+		const shouldSweepExcess = oldPosition === undefined
+			? sweepExcess === true
+			: (sweepExcess ?? true) && !hasSuppliedPosition(oldPosition);
 
 		const batchItems = this.encodeMigrateSameAssetDebt({
 			chainId: account.chainId,

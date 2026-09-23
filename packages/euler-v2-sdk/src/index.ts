@@ -24,6 +24,7 @@ export * from "./services/eulerLabelsService/index.js";
 export * from "./services/tokenlistService/index.js";
 export * from "./services/vaults/eVaultService/index.js";
 export * from "./services/vaults/vaultMetaService/index.js";
+export * from "./services/vaults/securitizeVaultService/index.js";
 export * from "./services/vaults/index.js";
 export * from "./services/executionService/index.js";
 export * from "./services/providerService/index.js";
@@ -34,6 +35,9 @@ export * from "./services/intrinsicApyService/index.js";
 export * from "./services/oracleAdapterService/index.js";
 export * from "./services/feeFlowService/index.js";
 export * from "./services/reulLockService/index.js";
+export * from "./services/safeAccountService/index.js";
+export * from "./services/positionMigrationService/index.js";
+export * from "./services/activityService/index.js";
 
 // Plugins
 export * from "./plugins/index.js";
@@ -43,16 +47,16 @@ export * from "./utils/subAccounts.js";
 export * from "./utils/accountPositionClassification.js";
 export { VaultType } from "./utils/types.js";
 export {
-  type BuildQueryFn,
-  type BuildQueryContext,
-  type QueryCacheConfig,
-  applyBuildQuery,
-  createQueryCacheBuildQuery,
-  getEulerSdkQueryKey,
-  normalizeQueryKeyObjectSets,
-  normalizeQueryKeySet,
-  normalizeQueryKeyValue,
-  serializeQueryArgs,
+	type BuildQueryFn,
+	type BuildQueryContext,
+	type QueryCacheConfig,
+	applyBuildQuery,
+	createQueryCacheBuildQuery,
+	getEulerSdkQueryKey,
+	normalizeQueryKeyObjectSets,
+	normalizeQueryKeySet,
+	normalizeQueryKeyValue,
+	serializeQueryArgs,
 } from "./utils/buildQuery.js";
 export type { EulerSDKQueryName, QueryMethodName } from "./utils/queryNames.js";
 export * from "./utils/stateOverrides/index.js";
@@ -66,3 +70,7 @@ export * from "./utils/parsing.js";
 export * from "./utils/decodeSmartContractErrors.js";
 export * from "./utils/eulerErrorSelectors.js";
 export * from "./utils/eulerLabels.js";
+export * from "./utils/blockPin.js";
+export * from "./utils/readMany.js";
+export { encodeEVCBatch } from "./utils/batch.js";
+export * from "./utils/lens/index.js";

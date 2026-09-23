@@ -31,12 +31,15 @@ import {
 import {
   applyEulerLabelVaultOverrides,
   createEmptyEulerLabelsData,
-  getEulerLabelAssetBlock,
-  getEulerLabelEntitiesByVault,
+	getEulerLabelAssetBlock,
+	getEulerLabelEntitiesByVault,
 	getEulerLabelProductByVault,
 	getEulerLabelVaultNotice,
 	isEulerLabelEarnVaultDeprecated,
+	isEulerLabelVaultCyclicalNote,
 	isEulerLabelVaultDeprecated,
+	isEulerLabelVaultGovernanceLimited,
+	isEulerLabelVaultHighUtilisationWarningSuppressed,
 	isEulerLabelVaultKeyring,
 	isEulerLabelVaultNotExplorable,
 	isEulerLabelVaultRecentlyAdded,
@@ -88,7 +91,7 @@ function makeDeployment(chainId = 1) {
   } as const;
 }
 
-test("buildQuery cache dedupes, clears rejected promises, and decorate query methods", async () => {
+test("buildQuery cache dedupes, short-caches failures, and decorate query methods", async () => {
   let runs = 0;
   const cached = createQueryCacheBuildQuery({ ttlMs: 60_000 })(
     "queryExample",
@@ -111,7 +114,48 @@ test("buildQuery cache dedupes, clears rejected promises, and decorate query met
 
   await assert.rejects(() => cached("boom"), /boom/);
   await assert.rejects(() => cached("boom"), /boom/);
-  assert.equal(runs, 6);
+  assert.equal(runs, 5);
+
+  const retryableFailures = createQueryCacheBuildQuery({
+    failureTtlMs: 0,
+    ttlMs: 60_000,
+  })(
+    "queryRetryableFailures",
+    async () => {
+      runs += 1;
+      throw new Error("retryable");
+    },
+    {},
+  );
+  await assert.rejects(() => retryableFailures(), /retryable/);
+  await assert.rejects(() => retryableFailures(), /retryable/);
+  assert.equal(runs, 7);
+
+  const originalNow = Date.now;
+  try {
+    let now = 1_000;
+    Date.now = () => now;
+    let cooledRuns = 0;
+    const cooledFailures = createQueryCacheBuildQuery({
+      failureTtlMs: 10,
+      ttlMs: 60_000,
+    })(
+      "queryCooledFailures",
+      async () => {
+        cooledRuns += 1;
+        throw new Error("cooled");
+      },
+      {},
+    );
+    await assert.rejects(() => cooledFailures(), /cooled/);
+    await assert.rejects(() => cooledFailures(), /cooled/);
+    assert.equal(cooledRuns, 1);
+    now += 11;
+    await assert.rejects(() => cooledFailures(), /cooled/);
+    assert.equal(cooledRuns, 2);
+  } finally {
+    Date.now = originalNow;
+  }
 
   const passthrough = createQueryCacheBuildQuery({ enabled: false })(
     "queryDisabled",
@@ -135,6 +179,19 @@ test("buildQuery cache dedupes, clears rejected promises, and decorate query met
   const circular: Record<string, unknown> = {};
   circular.self = circular;
   assert.equal(await uncachedFn(circular), "unserializable");
+
+  let nullKeyRuns = 0;
+  const nullKeyFn = createQueryCacheBuildQuery({ ttlMs: 60_000 })(
+    "queryNullKey",
+    async () => {
+      nullKeyRuns += 1;
+      return nullKeyRuns;
+    },
+    {},
+    { getCacheKey: () => null },
+  );
+  assert.equal(await nullKeyFn("same"), 1);
+  assert.equal(await nullKeyFn("same"), 2);
 
   class QueryContainer {
     queryAlpha = async () => "alpha";
@@ -340,6 +397,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
         decimals: 6,
         logoURI: "usdc.svg",
         groups: ["stable"],
+        tags: [" Stablecoin ", "stablecoin", "other"],
         metadata: { verified: true },
         coingeckoId: "usd-coin",
       },
@@ -363,6 +421,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   const tokenlist = await tokenlistService.loadTokenlist(1);
   assert.equal(tokenlist.length, 2);
   assert.equal(tokenlist[0]?.logoURI, "usdc.svg");
+  assert.deepEqual(tokenlist[0]?.tags, [" Stablecoin ", "stablecoin", "other"]);
   assert.equal(tokenlist[1]?.name, "");
   assert.equal(tokenlist[1]?.symbol, "");
   assert.equal(Number.isNaN(tokenlist[1]?.decimals), true);
@@ -707,15 +766,15 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
       vaults: [plainVault.address.toLowerCase()],
       deprecatedVaults: [stringEntityVault.address.toLowerCase()],
       deprecateReason: "legacy reason",
-      recentlyAddedVaults: [plainVault.address.toLowerCase()],
       notExplorable: true,
-      tags: ["keyring"],
+      tags: ["keyring", "governance limited", "cyclical note"],
       portfolioNotice: "product notice",
       vaultOverrides: {
         [plainVault.address.toLowerCase()]: {
           name: "Overridden Product",
           description: "override",
           portfolioNotice: "override notice",
+          tags: ["recently added", "suppress high utilisation warning"],
         },
       },
     },
@@ -742,7 +801,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
       address: collateralVault.address.toLowerCase(),
       block: ["US"],
       restricted: ["DE"],
-      recentlyAdded: true,
+      tags: ["recently added"],
       deprecated: true,
       deprecationReason: "earn migrated",
       description: "earn description",
@@ -792,7 +851,9 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   assert.deepEqual(labelsData.earnVaultBlocks[collateralVault.address.toLowerCase()], [
     "US",
   ]);
-  assert.equal(labelsData.recentlyAddedEarnVaults.has(collateralVault.address), true);
+  assert.deepEqual(labelsData.earnVaultEntries[collateralVault.address.toLowerCase()]?.tags, [
+    "recently added",
+  ]);
   assert.equal(
     labelsData.deprecatedEarnVaults[collateralVault.address.toLowerCase()],
     "earn migrated",
@@ -825,6 +886,12 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   assert.equal(getEulerLabelAssetBlock(labelsData, plainVault.asset.address)?.[0], "US");
   assert.equal(isEulerLabelVaultRecentlyAdded(labelsData, plainVault.address), true);
   assert.equal(isEulerLabelVaultRecentlyAdded(labelsData, collateralVault.address), true);
+  assert.equal(isEulerLabelVaultGovernanceLimited(labelsData, plainVault.address), true);
+  assert.equal(
+    isEulerLabelVaultHighUtilisationWarningSuppressed(labelsData, plainVault.address),
+    true,
+  );
+  assert.equal(isEulerLabelVaultCyclicalNote(labelsData, plainVault.address), true);
   assert.equal(isEulerLabelVaultDeprecated(labelsData, stringEntityVault.address), true);
   assert.equal(isEulerLabelEarnVaultDeprecated(labelsData, collateralVault.address), true);
   assert.equal(isEulerLabelVaultKeyring(labelsData, plainVault.address), true);
@@ -841,40 +908,58 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   assert.equal(collateralVault.eulerLabel?.portfolioNotice, "earn notice");
 
   const oracleAdapterService = new OracleAdapterService({}, buildQuery);
-  oracleAdapterService.setQueryOracleAdapters(async (chainId) => {
+  oracleAdapterService.setQueryV3OracleAdapterAssessment(async (chainId, address) => {
     assert.equal(chainId, 1);
-    return [
-      {
-        oracle: plainVault.oracle.oracle.toLowerCase(),
-        baseAsset: plainVault.asset.address.toLowerCase(),
-        quote_asset: zeroAddress,
-        provider: "Provider",
-        checks: [
-          { id: "Adapter whitelist", pass: false, severity: "HIGH" },
+    assert.equal(address, plainVault.oracle.oracle);
+    return {
+      data: {
+        chainId: 1,
+        address: plainVault.oracle.oracle.toLowerCase(),
+        recognized: true,
+        checksStatus: "warning",
+        reason: null,
+        inActiveRoute: true,
+        adapterClass: "ChainlinkOracle",
+        label: "Chainlink WETH / USD",
+        provider: "Chainlink",
+        methodology: "Market Price",
+        model: "Push",
+        config: {
+          base: plainVault.asset.address.toLowerCase(),
+          quote: zeroAddress,
+        },
+        findings: [
           {
-            id: "pricing-valid",
-            message: "Pricing valid",
-            pass: true,
-            severity: "INFO",
+            key: "quote-liveness",
+            outcome: "unknown",
+            severity: "medium",
+            description: "Quote liveness could not be established",
+          },
+          {
+            key: "feed-not-deprecated",
+            outcome: "pass",
+            severity: "medium",
+            description: "Feed is active",
           },
         ],
+        summary: { passed: 1, failed: 0, unknown: 1, notApplicable: 0 },
+        policyId: "oracle-adapter-policy",
+        policyVersion: 3,
+        blockNumber: "123",
+        evaluatedAt: "2026-09-01T12:00:00.000Z",
+        lastCheckedAt: "2026-09-01T12:01:00.000Z",
       },
-      {
-        adapter: "not-an-address",
-      },
-    ];
+    };
   });
-  const oracleAdapters = await oracleAdapterService.fetchOracleAdapters(1);
-  assert.equal(oracleAdapters.length, 1);
-  assert.equal(oracleAdapters[0]?.oracle, plainVault.oracle.oracle);
-  assert.equal(oracleAdapters[0]?.base, plainVault.asset.address);
-  assert.equal(oracleAdapters[0]?.checks?.length, 1);
-  assert.equal(
-    (await oracleAdapterService.fetchOracleAdapterMap(1))[
-      plainVault.oracle.oracle.toLowerCase()
-    ]?.provider,
-    "Provider",
+  const assessment = await oracleAdapterService.fetchOracleAdapterAssessment(
+    1,
+    plainVault.oracle.oracle,
   );
+  assert.equal(assessment?.address, plainVault.oracle.oracle);
+  assert.equal(assessment?.recognized, true);
+  assert.equal(assessment?.checksStatus, "warning");
+  assert.equal(assessment?.findings[0]?.outcome, "unknown");
+  assert.equal(assessment?.policyVersion, 3);
 
   assert.ok(calls.some((entry) => entry.queryName === "queryDeployments"));
 });
@@ -930,6 +1015,10 @@ test("native fetch-backed read helpers cover their error branches", async () => 
                   offset === 0
                     ? "0x00000000000000000000000000000000000000aa"
                     : "0x00000000000000000000000000000000000000bb",
+                tags:
+                  offset === 0
+                    ? [" Stablecoin ", "stablecoin", "other"]
+                    : ["btc"],
               },
             ],
             meta: { total: 2, offset, limit: 1 },
@@ -1009,8 +1098,16 @@ test("native fetch-backed read helpers cover their error branches", async () => 
     assert.deepEqual(
       await tokenlistService.queryTokenList("https://tokens-v3?limit=1&type=base"),
       [
-        { chainId: 1, address: "0x00000000000000000000000000000000000000aa" },
-        { chainId: 1, address: "0x00000000000000000000000000000000000000bb" },
+        {
+          chainId: 1,
+          address: "0x00000000000000000000000000000000000000aa",
+          tags: [" Stablecoin ", "stablecoin", "other"],
+        },
+        {
+          chainId: 1,
+          address: "0x00000000000000000000000000000000000000bb",
+          tags: ["btc"],
+        },
       ] as any,
     );
     assert.deepEqual(tokenUrls, [

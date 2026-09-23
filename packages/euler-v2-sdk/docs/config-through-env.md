@@ -21,6 +21,16 @@ RPC URLs use `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`.
 | `queryCacheEnabled` | `EULER_SDK_QUERY_CACHE_ENABLED` | `true` |
 | `queryCacheTtlMs` | `EULER_SDK_QUERY_CACHE_TTL_MS` | `5000` |
 
+## Activity
+
+| Config field | Environment variable | Default |
+|---|---|---|
+| `activityV3ApiUrl` | `EULER_SDK_ACTIVITY_V3_API_URL` | `v3ApiUrl` |
+| `activityV3ApiKey` | `EULER_SDK_ACTIVITY_V3_API_KEY` | `v3ApiKey` |
+
+The activity-specific values configure the normalized account and vault event
+endpoints without changing the V3 configuration used by other SDK services.
+
 ## Account Service
 
 | Config field | Environment variable | Default |
@@ -50,7 +60,7 @@ RPC URLs use `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`.
 
 `EULER_SDK_VAULT_TYPE_V3_TYPE_MAP_JSON` is a JSON object with string values, for example `{"custom":"EVault"}`.
 
-## Pricing, Swaps, And Deployments
+## Pricing, Swaps, And Euler Interfaces
 
 | Config field | Environment variable | Default |
 |---|---|---|
@@ -58,7 +68,13 @@ RPC URLs use `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`.
 | `pricingApiKey` | `EULER_SDK_PRICING_API_KEY` | `v3ApiKey` |
 | `swapApiUrl` | `EULER_SDK_SWAP_API_URL` | `https://swap.euler.finance` |
 | `swapDefaultDeadline` | `EULER_SDK_SWAP_DEFAULT_DEADLINE` | `1800` |
-| `deploymentsUrl` | `EULER_SDK_DEPLOYMENTS_URL` | Euler interfaces `EulerChains.json` |
+| `eulerInterfacesBranch` | `EULER_SDK_EULER_INTERFACES_BRANCH` | `master` |
+| `deploymentsUrl` | `EULER_SDK_DEPLOYMENTS_URL` | `EulerChains.json` from `eulerInterfacesBranch` |
+
+`eulerInterfacesBranch` keeps the runtime ABI service and the default
+deployments document on the same `euler-interfaces` branch. A direct
+`deploymentsUrl` remains available for custom mirrors and takes precedence for
+the deployment service without changing the ABI branch.
 
 ## Rewards
 
@@ -71,17 +87,25 @@ RPC URLs use `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`.
 | `rewardsBrevisApiUrl` | `EULER_SDK_REWARDS_BREVIS_API_URL` | Brevis campaigns API |
 | `rewardsBrevisProofsApiUrl` | `EULER_SDK_REWARDS_BREVIS_PROOFS_API_URL` | Brevis proofs API |
 | `rewardsFuulApiUrl` | `EULER_SDK_REWARDS_FUUL_API_URL` | Fuul incentives API |
+| `rewardsTurtleApiUrl` | `EULER_SDK_REWARDS_TURTLE_API_URL` | Turtle Earn API |
+| `rewardsTurtleApiKey` | `EULER_SDK_REWARDS_TURTLE_API_KEY` | none |
 | `rewardsFuulTotalsUrl` | `EULER_SDK_REWARDS_FUUL_TOTALS_URL` | none |
 | `rewardsFuulClaimChecksUrl` | `EULER_SDK_REWARDS_FUUL_CLAIM_CHECKS_URL` | none |
 | `rewardsBrevisChainIds` | `EULER_SDK_REWARDS_BREVIS_CHAIN_IDS` | all chains |
 | `rewardsMerklDistributorAddress` | `EULER_SDK_REWARDS_MERKL_DISTRIBUTOR_ADDRESS` | Merkl distributor |
 | `rewardsFuulManagerAddress` | `EULER_SDK_REWARDS_FUUL_MANAGER_ADDRESS` | Fuul manager |
 | `rewardsFuulFactoryAddress` | `EULER_SDK_REWARDS_FUUL_FACTORY_ADDRESS` | Fuul factory |
+| `rewardsTurtleStreams` | `EULER_SDK_REWARDS_TURTLE_STREAMS_JSON` | none |
 | `rewardsEnableMerkl` | `EULER_SDK_REWARDS_ENABLE_MERKL` | `true` |
 | `rewardsEnableBrevis` | `EULER_SDK_REWARDS_ENABLE_BREVIS` | `true` |
 | `rewardsEnableFuul` | `EULER_SDK_REWARDS_ENABLE_FUUL` | `true` |
+| `rewardsEnableTurtle` | `EULER_SDK_REWARDS_ENABLE_TURTLE` | `true` |
 
 `EULER_SDK_REWARDS_BREVIS_CHAIN_IDS` is a comma-separated list, for example `1,8453`.
+
+`EULER_SDK_REWARDS_TURTLE_STREAMS_JSON` is a JSON array of `{ streamId, chainId, streamAddress?, rewardToken?, tokenPrice? }` objects.
+
+The Turtle Earn API requires an API key on every endpoint. The direct rewards adapter sends `rewardsTurtleApiKey` as an `X-API-Key` header on its Turtle stream and proof requests; without it those requests are rejected and resolve to no Turtle campaigns or user rewards. The key is a server-side secret. Unlike the other variables in this table, `VITE_EULER_SDK_REWARDS_TURTLE_API_KEY` is ignored, so it cannot be injected into browser bundles; do not expose it through any other browser env injection either. Credentialed requests do not follow redirects, so the key is only ever sent to the `rewardsTurtleApiUrl` origin. Browser builds should either point `rewardsTurtleApiUrl` at a server-side proxy that adds the header, or set `rewardsEnableTurtle` to `false` and rely on the V3 rewards adapter. Disabling Turtle stops campaign discovery only; explicit Turtle claim proofs are still fetched through the direct adapter in every mode, so a browser app offering Turtle claims still needs the proxy URL.
 
 ## Intrinsic APY
 
@@ -113,8 +137,10 @@ Template variables are `{base}`, `{chainId}`, and `{filename}`.
 |---|---|---|
 | `tokenlistApiBaseUrl` | `EULER_SDK_TOKENLIST_API_BASE_URL` | `https://indexer.euler.finance` |
 | `tokenlistUrlTemplate` | `EULER_SDK_TOKENLIST_URL_TEMPLATE` | `{base}/v1/tokens?chainId={chainId}` |
-| `oracleAdaptersBaseUrl` | `EULER_SDK_ORACLE_ADAPTERS_BASE_URL` | `https://oracle-checks-data.euler.finance` |
-| `oracleAdaptersCacheMs` | `EULER_SDK_ORACLE_ADAPTERS_CACHE_MS` | `600000` |
+| `oracleAdapterV3ApiUrl` | `EULER_SDK_ORACLE_ADAPTER_V3_API_URL` | Shared V3 URL (`https://v3.euler.finance`) |
+| `oracleAdapterV3ApiKey` | `EULER_SDK_ORACLE_ADAPTER_V3_API_KEY` | Shared V3 API key when configured |
+| `oracleAdapterV3PageSize` | `EULER_SDK_ORACLE_ADAPTER_V3_PAGE_SIZE` | `100` |
+| `oracleAdapterV3CacheMs` | `EULER_SDK_ORACLE_ADAPTER_V3_CACHE_MS` | `300000` |
 
 ## Fee Flow
 

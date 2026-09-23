@@ -27,15 +27,22 @@ type BuildQueryFn = <T extends (...args: any[]) => Promise<any>>(
   queryName: string,
   fn: T,
   target: object,
+  // null is an explicit instruction to call fn without caching
   context?: { getCacheKey: (args: unknown[]) => string | null },
 ) => T;
 ```
+
+`context.getCacheKey(args)` returns a deterministic string for cacheable calls
+and `null` for calls that must bypass caching. `null` is a semantic no-cache
+signal, not a missing key: custom builders must call `fn` directly instead of
+replacing it with a generic serialized key. Activity cursor pages use this
+contract so pagination does not grow a long-lived cache entry per cursor.
 
 Pass `buildQuery` once when building the SDK and it propagates to every service and adapter:
 
 ```typescript
 const sdk = await buildEulerSDK({
-  queryCacheConfig: { ttlMs: 5000 }, // Optional: default is enabled with a 5s TTL
+  queryCacheConfig: { ttlMs: 5000 }, // Optional: default success/failure cache is 5s
   buildQuery: myBuildQueryFn,
   plugins: [createPythPlugin({ buildQuery: myBuildQueryFn })],
 })
@@ -50,11 +57,15 @@ Configure the built-in cache through `queryCacheConfig`:
 ```typescript
 const sdk = await buildEulerSDK({
   queryCacheConfig: {
-    enabled: true, // default
-    ttlMs: 5000,   // default
+    enabled: true,      // default
+    ttlMs: 5000,        // default success TTL
+    failureTtlMs: 5000, // default failure TTL
   },
 })
 ```
+
+Set `failureTtlMs: 0` when a consumer needs every failed query call to reach
+the underlying transport immediately.
 
 Disable it entirely:
 
@@ -89,18 +100,27 @@ export const queryClient = new QueryClient({
 export const sdkBuildQuery: BuildQueryFn = (queryName, fn, _target, context) => {
   const staleTime = STALE_TIMES[queryName] ?? DEFAULT_STALE_TIME;
 
-  const wrapped = (...args: unknown[]) =>
-    queryClient.fetchQuery({
-      queryKey: ["sdk", queryName, context?.getCacheKey(args) ?? serializeQueryArgs(args)],
+  const wrapped = (...args: unknown[]) => {
+    const cacheKey = context
+      ? context.getCacheKey(args)
+      : serializeQueryArgs(args);
+    if (cacheKey === null) return fn(...args);
+
+    return queryClient.fetchQuery({
+      queryKey: ["sdk", queryName, cacheKey],
       queryFn: () => fn(...args),
       staleTime,
     });
+  };
 
   return wrapped as typeof fn;
 };
 ```
 
 Each `query*` call becomes a `fetchQuery` with a deterministic cache key derived from the query name and the SDK-provided `context.getCacheKey(args)` helper. Generic keys remove provider-object noise and normalize address casing. Query-owned `getQueryKeyX` methods handle query-specific semantics such as unordered feed sets or asset filters while ordered payloads remain order-sensitive. If the cached value is fresh (within `staleTime`), no network call is made.
+
+Calls whose key helper returns `null` invoke the underlying fetcher directly and
+do not create a react-query cache entry.
 
 ### Central stale time settings
 
@@ -152,6 +172,14 @@ const STALE_TIMES: Record<string, number> = {
 
   // Account / subgraph lookups
   queryAccountVaults: 30_000,
+
+  // Position migration — connector state and Euler vault validation
+  queryListPositions: 30_000,
+  queryListTargets: 30_000,
+  queryGetPosition: 15_000,
+  queryGetAuthorization: 15_000,
+  queryEulerTargetVaultData: 20_000,
+  queryEulerSourceVaultAssets: 20_000,
 
   // Per-user on-chain state — changes on every tx
   queryEVCAccountInfo: 15_000,
@@ -208,10 +236,10 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 | `queryV3EVaultCollaterals` | url | `EVaultV3Adapter` | `(endpoint, chainId, vault)` | Fetch EVault collateral rows via V3 |
 | `queryV3EVaultList` | url | `EVaultV3Adapter` | `(endpoint, chainId, offset, limit)` | Fetch paginated EVault list via V3 |
 | `queryEulerEarnVaultInfoFull` | rpc | `EulerEarnOnchainAdapter` | `(provider, lensAddress, vault)` | Read EulerEarn vault state via EulerEarnVaultLens |
-| `queryEulerEarnConvertToAssets` | rpc | `EulerEarnOnchainAdapter` | `(provider, vault, shares, blockNumber?)` | Read `convertToAssets` for current or historical 1h APY sampling |
+| `queryEulerEarnConvertToAssets` | rpc | `EulerEarnOnchainAdapter` | `(provider, vault, shares, blockNumber?)` | Read `convertToAssets` for current or historical APY sampling |
 | `queryEulerEarnVerifiedArray` | rpc | `EulerEarnOnchainAdapter` | `(provider, perspective)` | Read verified EulerEarn vault list |
-| `queryBlockNumber` | rpc | `EulerEarnOnchainAdapter` | `(provider)` | Read current block number for 1h APY sampling |
-| `queryBlock` | rpc | `EulerEarnOnchainAdapter` | `(provider, blockNumber)` | Read block timestamp for 1h APY sampling |
+| `queryBlockNumber` | rpc | `EulerEarnOnchainAdapter` | `(provider)` | Read current block number for APY sampling |
+| `queryBlock` | rpc | `EulerEarnOnchainAdapter` | `(provider, blockNumber)` | Read block timestamp for APY sampling |
 | `queryV3EulerEarnDetail` | url | `EulerEarnV3Adapter` | `(endpoint, chainId, vault)` | Fetch EulerEarn detail via V3 |
 | `queryV3EulerEarnList` | url | `EulerEarnV3Adapter` | `(endpoint, chainId, offset, limit)` | Fetch paginated EulerEarn vault list via V3 |
 | `queryVaultInfoERC4626` | rpc | `SecuritizeVaultOnchainAdapter` | `(provider, utilsLensAddress, vault)` | Read ERC4626 vault info |
@@ -229,6 +257,19 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 | `queryEVaultInfoFull` | rpc | `AccountOnchainAdapter` | `(provider, vaultLensAddress, vault)` | Read vault info for account context |
 | `queryV3AccountPositions` | url | `AccountV3Adapter` | `(endpoint, chainId, address, forceFresh?)` | Fetch account positions via V3 |
 | `queryAccountVaults` | gql | `AccountVaultsSubgraphAdapter` | `({ chainId, account })` | Query account vault history from subgraph (auto-bundled) |
+
+### Position Migration Service
+
+| Query | Type | Class | Args | Description |
+|-------|------|-------|------|-------------|
+| `queryListPositions` | mixed | `PositionMigrationService` | `(args: ListMigrationPositionsArgs)` | List migration positions across registered connectors or one selected connector |
+| `queryListTargets` | mixed | `PositionMigrationService` | `(args: ListMigrationTargetsArgs)` | List available migration targets for a direction and source asset pair |
+| `queryGetPosition` | mixed | `PositionMigrationService` | `(args: GetMigrationPositionArgs)` | Resolve a connector position snapshot by position reference |
+| `queryGetAuthorization` | mixed | `PositionMigrationService` | `(args: GetMigrationAuthorizationArgs)` | Resolve the connector authorization request required before migration, if any |
+| `queryEulerTargetVaultData` | rpc | `PositionMigrationService` | `({ chainId, hasDebt, borrowVault?, collateralVault })` | Read target Euler vault assets and borrow LTV for inbound migration validation |
+| `queryEulerSourceVaultAssets` | rpc | `PositionMigrationService` | `({ chainId, borrowVault, collateralVault })` | Read source Euler borrow and collateral vault assets for outbound migration validation |
+
+`mixed` position-migration queries delegate to the registered connectors. The built-in connectors use RPC reads for position and authorization state, and use connector-owned external data sources for target discovery where configured.
 
 ### Wallet Adapter
 

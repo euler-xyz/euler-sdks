@@ -7,6 +7,7 @@ This SDK exposes multiple services. The main entry points are:
 - `vaultMetaService`
 - `executionService`
 - `swapService`
+- `positionMigrationService`
 
 Some services below are lower-level building blocks and usually do not need to be called directly, because they are already used by top-level services.
 
@@ -18,11 +19,15 @@ Some services below are lower-level building blocks and usually do not need to b
 - `executionService`: Builds, simulates, estimates gas for, and executes transaction plans for core actions (deposit, withdraw, borrow, repay, swap-based operations, liquidation, debt operations).
 - `swapService`: Fetches swap quotes and routes for asset exchange flows,
   including CoW provider metadata for supported CoW position flows.
+- `positionMigrationService`: Discovers supported external positions and
+  migration targets, builds required protocol authorizations, and returns
+  transaction plans for supported external-to-Euler and Euler-to-external
+  position migration flows.
 
 ## Vault-Specific Services
 
 - `eVaultService`: EVault-specific reads and enrichment (interest rates, collaterals, optional prices/rewards/labels).
-- `eulerEarnService`: Euler Earn-specific reads and enrichment (strategies, adapter-provided 1h supply APY, optional prices/rewards/labels).
+- `eulerEarnService`: Euler Earn-specific reads and enrichment (strategies, adapter-provided supply APY, optional prices/rewards/labels).
 - `securitizeVaultService`: Securitize collateral vault-specific reads and enrichment.
 
 These are often used indirectly through `vaultMetaService`, which handles vault type detection and routing.
@@ -34,11 +39,13 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 - `walletService`: Fetches native/ERC20 wallet balances and direct/Permit2 allowances for requested assets/spenders.
   See: [`wallet-service.md`](./wallet-service.md)
 - `priceService`: Resolves market prices used for valuation and computed account metrics.
-- `oracleAdapterService`: Fetches oracle adapter metadata/checks (provider, methodology, checks) from the oracle checks dataset and builds maps keyed by normalized `adapter.oracle` address for UI/tooling.
+- `oracleAdapterService`: Fetches Data V3 oracle adapter assessments and indexed Euler router state. Adapter identity (`recognized`) and health (`checksStatus`) are separate signals; finding outcomes remain `pass`, `fail`, `unknown`, or `not_applicable`.
 - `rewardsService`: Fetches reward campaign data used to populate vault/account rewards and builds provider-specific reward claim plans. The default V3 path returns proof-backed direct Brevis/Incentra rewards when claim planning needs metadata that V3 does not include.
   See: [`rewards-service.md`](./rewards-service.md)
 - `reulLockService`: Fetches rEUL vesting locks and builds rEUL unlock `contractCall` transaction plans.
   See: [`reul-lock-service.md`](./reul-lock-service.md)
+- `safeAccountService`: Detects whether an address is a Safe smart account and reads its signer configuration (threshold/owners).
+  See: [`safe-account-service.md`](./safe-account-service.md)
 - `feeFlowService`: Fetches FeeFlow state, filters eligible vaults, and builds FeeFlow buy plans.
   See: [`fee-flow-service.md`](./fee-flow-service.md)
 - `intrinsicApyService`: Fetches intrinsic APY data used by vault enrichments.
@@ -61,6 +68,7 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 | `executionService` | Simulates plans | Can populate simulated results | Can populate simulated results | Can populate simulated results | Can populate simulated results | Produces transaction plans/EVC batch payloads, resolves approvals, executes plans, and estimates gas |
 | `walletService` | Wallet assets only | No | No | No | No | Fetches requested native/ERC20 balances and direct/Permit2 allowances; `spenders` are optional when only balances are needed |
 | `swapService` | No (quotes only) | No | No | No | No | Returns swap quotes/providers for execution plans; CoW flows use regular quote methods with `cowSwap` metadata |
-| `oracleAdapterService` | No | No | No | No | No | Oracle adapter metadata API (`fetchOracleAdapters`, `fetchOracleAdapterMap`, `enrichAdapters`); maps are keyed by `adapter.oracle.toLowerCase()` |
+| `positionMigrationService` | External/Euler migration positions | No | No | No | No | Lists migration connectors, positions, and targets; builds migration authorizations, EVC batch payloads, transaction plans, and simulation-ready state overrides for supported Aave V3, Morpho Blue, and MetaMorpho flows |
+| `oracleAdapterService` | No | No | No | No | No | Data V3 assessment API (`fetchOracleAdapterAssessment`, `fetchOracleAdapterAssessments`, `fetchOracleAdapterAssessmentMap`) plus indexed router state (`fetchOracleRouters`, `fetchOracleRouterMap`); maps use lowercase addresses |
 
 See also: [`execution-service.md`](./execution-service.md), [`swaps.md`](./swaps.md), and [`cow-swaps.md`](./cow-swaps.md).

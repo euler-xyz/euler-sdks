@@ -57,27 +57,28 @@ export type DeriveStateOverridesOptions = {
 
 /**
  * Extract token balance requirements from a TransactionPlan.
- * Each RequiredApproval represents a deposit-like operation where the
- * user needs tokens in their wallet. We take the max amount per token.
+ * Each RequiredApproval represents a deposit-like operation where the user needs
+ * tokens in their wallet. Several approvals can draw on the same token within one
+ * plan (e.g. supplying it into two vaults, or supply + repay), so we sum the
+ * amounts per token — the wallet must cover their total, not the largest single
+ * one. Over-forging is harmless; under-forging would make an op revert with
+ * E_InsufficientBalance mid-simulation.
  */
 function extractBalanceRequirements(
 	plan: TransactionPlan,
 	account: Address,
 ): [Address, bigint][] {
-	const maxPerToken = new Map<Address, bigint>();
+	const totalPerToken = new Map<Address, bigint>();
 
 	for (const item of plan) {
 		if (item.type !== "requiredApproval") continue;
 		if (getAddress(item.owner) !== getAddress(account)) continue;
 
 		const token = getAddress(item.token);
-		const current = maxPerToken.get(token) || 0n;
-		if (item.amount > current) {
-			maxPerToken.set(token, item.amount);
-		}
+		totalPerToken.set(token, (totalPerToken.get(token) || 0n) + item.amount);
 	}
 
-	return Array.from(maxPerToken.entries());
+	return Array.from(totalPerToken.entries());
 }
 
 /**

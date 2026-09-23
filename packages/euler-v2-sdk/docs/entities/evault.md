@@ -147,6 +147,7 @@ properties plus:
 | Property | Type | Description |
 | --- | --- | --- |
 | `unitOfAccount` | `Token | undefined` | Unit-of-account token metadata. |
+| `isEscrow` | `boolean \| null \| undefined` | Whether the vault is escrowed collateral, as reported by the data source. Absent is stored as `null`. See [Escrow Status](#escrow-status). |
 | `totalCash` | `bigint` | Cash available in the vault. |
 | `totalBorrowed` | `bigint` | Total borrowed assets. |
 | `creator` | `Address` | Vault creator address. |
@@ -173,10 +174,58 @@ plus the `IEVault` properties above. Constructor normalization also adds:
 
 | Property | Type | Description |
 | --- | --- | --- |
+| `isEscrow` | `boolean \| null` | `true`, `false`, or `null` when the source has no answer. See [Escrow Status](#escrow-status). |
 | `caps` | `EVaultCapsComputed` | Caps with computed utilization getters. |
 | `collaterals` | `EVaultCollateral[]` | Collaterals with computed ramping fields. |
 | `debtPricingOracleRoute` | `OracleRoute | undefined` | Effective ordered asset-to-unit-of-account route when the vault has a unit of account. |
 | `populated` | `EVaultPopulated` | Base population flags plus `collaterals`. |
+
+## Escrow Status
+
+`isEscrow` separates escrowed collateral vaults from regular credit vaults. It
+is the one thing `type` cannot express: an escrow vault and a governed credit
+vault are both `VaultType.EVault`.
+
+The SDK reports the answer its data source gives and never derives one of its
+own, so `isEscrow` cannot contradict the system a consumer reads alongside it:
+
+| Adapter | Source of the answer |
+| --- | --- |
+| V3 (`EVaultV3Adapter`) | V3's `isEscrow` on the vault row, derived server-side from the escrow perspective. A V3 that predates the field is read through its deprecated `vaultType: escrow` value. |
+| On-chain (`EVaultOnchainAdapter`) | Membership of `EscrowedCollateralPerspective`'s verified set — the same answer `fetchVerifiedVaultAddresses(chainId, [StandardEVaultPerspectives.ESCROW])` returns. |
+
+`null` means the source has no answer: V3 published neither `isEscrow` nor a recognised `vaultType`,
+or the chain has no escrow perspective configured, or reading it failed. In
+each case `errors` carries a `SOURCE_UNAVAILABLE` issue at `$.isEscrow`, and an
+entity built without a verdict keeps `null` rather than having one inferred
+from its configuration. A vault that could not be fetched at all has no entity:
+`fetchVault` returns `undefined` with a diagnostic.
+
+`if (vault.isEscrow)` therefore never treats an unanswered vault as escrow; a
+consumer that needs to tell `false` from `null` compares explicitly.
+
+Both adapters answer from the same on-chain registry, so they converge rather
+than holding separate opinions: V3 derives the type during discovery from the
+escrow perspective's verified events, and the on-chain adapter reads that
+perspective directly. V3 serves the derived type from a stored row, falling
+back to `evk` while no row exists yet, and discovery never overwrites a row a
+curator has claimed with an entity or product. So the two paths can differ in
+two narrow cases only: while V3's copy is behind the chain, and for a vault
+curated as an ordinary vault *before* the perspective verified it — V3 refuses
+to curate an already-verified vault as anything but escrow, so only that
+ordering produces the gap.
+
+Simulation snapshots (`simulateTransactionPlan`) read the same perspective
+inside the lens batch, so simulated `EVault` entities carry the same `isEscrow`
+as fetched ones; a chain without a configured perspective, or a failed read,
+leaves them `null`.
+
+The perspective's verified set is itself narrower than the vaults that *would*
+pass its checks: registration is permissionless and permanent, so a vault nobody
+has registered reads as `false`. `perspectiveVerify(vault, false)` simulated per
+vault answers "would verify now" instead, at one `eth_call` per vault; the SDK
+uses the registry so that one read per chain answers a whole batch and agrees
+with the escrow list it already publishes.
 
 ## Computed Getters
 

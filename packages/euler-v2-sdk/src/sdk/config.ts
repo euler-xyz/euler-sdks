@@ -1,4 +1,4 @@
-import type { Address } from "viem";
+import { getAddress, type Address } from "viem";
 import type { AccountServiceAdapter } from "../services/accountService/accountServiceConfig.js";
 import type { EVaultServiceAdapter } from "../services/vaults/eVaultService/eVaultServiceConfig.js";
 import type { EulerEarnServiceAdapter } from "../services/vaults/eulerEarnService/eulerEarnServiceConfig.js";
@@ -11,9 +11,8 @@ export interface EulerSDKConfig {
 	v3ApiUrl?: string;
 	v3ApiKey?: string;
 	/**
-	 * Globally disables the V3 HTTP adapter as the primary in all fallback chains.
-	 * When true, services configured for `fallback` use the secondary adapter only
-	 * (onchain / direct / subgraph). Per-service `adapter` overrides still apply.
+	 * Disables built-in V3 HTTP adapters. Services with secondary adapters use
+	 * those sources; V3-only services report an unavailable capability.
 	 */
 	disableV3?: boolean;
 
@@ -50,15 +49,31 @@ export interface EulerSDKConfig {
 	rewardsBrevisApiUrl?: string;
 	rewardsBrevisProofsApiUrl?: string;
 	rewardsFuulApiUrl?: string;
+	rewardsTurtleApiUrl?: string;
+	rewardsTurtleApiKey?: string;
 	rewardsFuulTotalsUrl?: string;
 	rewardsFuulClaimChecksUrl?: string;
 	rewardsBrevisChainIds?: number[];
 	rewardsMerklDistributorAddress?: Address;
 	rewardsFuulManagerAddress?: Address;
 	rewardsFuulFactoryAddress?: Address;
+	rewardsTurtleStreams?: Array<{
+		streamId: string;
+		chainId: number;
+		streamAddress?: Address;
+		rewardToken?: {
+			address?: Address;
+			chainId?: number;
+			symbol?: string;
+			name?: string;
+			decimals?: number;
+		};
+		tokenPrice?: number;
+	}>;
 	rewardsEnableMerkl?: boolean;
 	rewardsEnableBrevis?: boolean;
 	rewardsEnableFuul?: boolean;
+	rewardsEnableTurtle?: boolean;
 
 	pricingApiUrl?: string;
 	pricingApiKey?: string;
@@ -66,6 +81,7 @@ export interface EulerSDKConfig {
 	swapApiUrl?: string;
 	swapDefaultDeadline?: number;
 
+	eulerInterfacesBranch?: string;
 	deploymentsUrl?: string;
 
 	eulerLabelsBaseUrl?: string;
@@ -80,12 +96,17 @@ export interface EulerSDKConfig {
 	tokenlistApiBaseUrl?: string;
 	tokenlistUrlTemplate?: string;
 
-	oracleAdaptersBaseUrl?: string;
-	oracleAdaptersCacheMs?: number;
+	oracleAdapterV3ApiUrl?: string;
+	oracleAdapterV3ApiKey?: string;
+	oracleAdapterV3PageSize?: number;
+	oracleAdapterV3CacheMs?: number;
 
 	feeFlowControllerAddress?: Address;
 	feeFlowControllerUtilAddress?: Address;
 	feeFlowDefaultBuyDeadlineSeconds?: number;
+
+	activityV3ApiUrl?: string;
+	activityV3ApiKey?: string;
 
 	queryCacheEnabled?: boolean;
 	queryCacheTtlMs?: number;
@@ -127,6 +148,18 @@ function readString(env: EnvRecord, name: string): string | undefined {
 
 	const vite = env[`VITE_${name}`]?.trim();
 	return vite || undefined;
+}
+
+/**
+ * Reads a server-only secret. Unlike `readString`, the `VITE_` alias is
+ * ignored so the value can never be injected into browser bundles.
+ */
+function readServerOnlyString(
+	env: EnvRecord,
+	name: string,
+): string | undefined {
+	const value = env[name]?.trim();
+	return value || undefined;
 }
 
 function readNumber(env: EnvRecord, name: string): number | undefined {
@@ -192,6 +225,141 @@ function readStringMap(
 	}
 
 	return parsed as Record<string, string>;
+}
+
+type TurtleStreamEnvConfig = NonNullable<
+	EulerSDKConfig["rewardsTurtleStreams"]
+>[number];
+type TurtleRewardTokenEnvConfig = NonNullable<
+	TurtleStreamEnvConfig["rewardToken"]
+>;
+
+function readPositiveInteger(value: unknown, message: string): number {
+	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+		throw new Error(message);
+	}
+	return value;
+}
+
+function readOptionalAddress(
+	value: unknown,
+	message: string,
+): Address | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "string") throw new Error(message);
+	try {
+		return getAddress(value) as Address;
+	} catch {
+		throw new Error(message);
+	}
+}
+
+function readOptionalString(
+	value: unknown,
+	message: string,
+): string | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "string") throw new Error(message);
+	return value;
+}
+
+function readOptionalNonNegativeInteger(
+	value: unknown,
+	message: string,
+): number | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+		throw new Error(message);
+	}
+	return value;
+}
+
+function readTurtleRewardToken(
+	value: unknown,
+	name: string,
+): TurtleRewardTokenEnvConfig | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		throw new Error(`${name} rewardToken values must be objects`);
+	}
+
+	const token = value as Record<string, unknown>;
+	return removeUndefined({
+		address: readOptionalAddress(
+			token.address,
+			`${name} rewardToken.address values must be EVM addresses`,
+		),
+		chainId:
+			token.chainId === undefined
+				? undefined
+				: readPositiveInteger(
+						token.chainId,
+						`${name} rewardToken.chainId values must be positive integers`,
+					),
+		symbol: readOptionalString(
+			token.symbol,
+			`${name} rewardToken.symbol values must be strings`,
+		),
+		name: readOptionalString(
+			token.name,
+			`${name} rewardToken.name values must be strings`,
+		),
+		decimals: readOptionalNonNegativeInteger(
+			token.decimals,
+			`${name} rewardToken.decimals values must be non-negative integers`,
+		),
+	});
+}
+
+function readTurtleStreams(
+	env: EnvRecord,
+	name: string,
+): EulerSDKConfig["rewardsTurtleStreams"] | undefined {
+	const value = readString(env, name);
+	if (value === undefined) return undefined;
+
+	const parsed = JSON.parse(value) as unknown;
+	if (!Array.isArray(parsed)) {
+		throw new Error(`${name} must be a JSON array of Turtle stream objects`);
+	}
+
+	return parsed.map((entry) => {
+		if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+			throw new Error(`${name} must be a JSON array of Turtle stream objects`);
+		}
+		const stream = entry as Record<string, unknown>;
+		if (typeof stream.streamId !== "string" || !stream.streamId.trim()) {
+			throw new Error(`${name} entries must include a string streamId`);
+		}
+		const chainId = readPositiveInteger(
+			stream.chainId,
+			`${name} entries must include a positive integer chainId`,
+		);
+		const streamAddress = readOptionalAddress(
+			stream.streamAddress,
+			`${name} streamAddress values must be EVM addresses`,
+		);
+		if (
+			stream.tokenPrice !== undefined &&
+			(typeof stream.tokenPrice !== "number" ||
+				!Number.isFinite(stream.tokenPrice) ||
+				stream.tokenPrice < 0)
+		) {
+			throw new Error(`${name} tokenPrice values must be non-negative numbers`);
+		}
+
+		const rewardToken = readTurtleRewardToken(stream.rewardToken, name);
+
+		return {
+			streamId: stream.streamId.trim(),
+			chainId,
+			...(streamAddress ? { streamAddress } : {}),
+			...(rewardToken ? { rewardToken } : {}),
+			...(stream.tokenPrice !== undefined
+				? { tokenPrice: stream.tokenPrice }
+				: {}),
+		};
+	});
 }
 
 function readNumberKeyedUrls(
@@ -308,6 +476,11 @@ export function readEulerSDKEnvConfig(
 			"EULER_SDK_REWARDS_BREVIS_PROOFS_API_URL",
 		),
 		rewardsFuulApiUrl: readString(env, "EULER_SDK_REWARDS_FUUL_API_URL"),
+		rewardsTurtleApiUrl: readString(env, "EULER_SDK_REWARDS_TURTLE_API_URL"),
+		rewardsTurtleApiKey: readServerOnlyString(
+			env,
+			"EULER_SDK_REWARDS_TURTLE_API_KEY",
+		),
 		rewardsFuulTotalsUrl: readString(env, "EULER_SDK_REWARDS_FUUL_TOTALS_URL"),
 		rewardsFuulClaimChecksUrl: readString(
 			env,
@@ -329,9 +502,14 @@ export function readEulerSDKEnvConfig(
 			env,
 			"EULER_SDK_REWARDS_FUUL_FACTORY_ADDRESS",
 		) as Address | undefined,
+		rewardsTurtleStreams: readTurtleStreams(
+			env,
+			"EULER_SDK_REWARDS_TURTLE_STREAMS_JSON",
+		),
 		rewardsEnableMerkl: readBoolean(env, "EULER_SDK_REWARDS_ENABLE_MERKL"),
 		rewardsEnableBrevis: readBoolean(env, "EULER_SDK_REWARDS_ENABLE_BREVIS"),
 		rewardsEnableFuul: readBoolean(env, "EULER_SDK_REWARDS_ENABLE_FUUL"),
+		rewardsEnableTurtle: readBoolean(env, "EULER_SDK_REWARDS_ENABLE_TURTLE"),
 
 		pricingApiUrl: readString(env, "EULER_SDK_PRICING_API_URL"),
 		pricingApiKey: readString(env, "EULER_SDK_PRICING_API_KEY"),
@@ -339,6 +517,7 @@ export function readEulerSDKEnvConfig(
 		swapApiUrl: readString(env, "EULER_SDK_SWAP_API_URL"),
 		swapDefaultDeadline: readNumber(env, "EULER_SDK_SWAP_DEFAULT_DEADLINE"),
 
+		eulerInterfacesBranch: readString(env, "EULER_SDK_EULER_INTERFACES_BRANCH"),
 		deploymentsUrl: readString(env, "EULER_SDK_DEPLOYMENTS_URL"),
 
 		eulerLabelsBaseUrl: readString(env, "EULER_SDK_EULER_LABELS_BASE_URL"),
@@ -374,13 +553,21 @@ export function readEulerSDKEnvConfig(
 		tokenlistApiBaseUrl: readString(env, "EULER_SDK_TOKENLIST_API_BASE_URL"),
 		tokenlistUrlTemplate: readString(env, "EULER_SDK_TOKENLIST_URL_TEMPLATE"),
 
-		oracleAdaptersBaseUrl: readString(
+		oracleAdapterV3ApiUrl: readString(
 			env,
-			"EULER_SDK_ORACLE_ADAPTERS_BASE_URL",
+			"EULER_SDK_ORACLE_ADAPTER_V3_API_URL",
 		),
-		oracleAdaptersCacheMs: readNumber(
+		oracleAdapterV3ApiKey: readString(
 			env,
-			"EULER_SDK_ORACLE_ADAPTERS_CACHE_MS",
+			"EULER_SDK_ORACLE_ADAPTER_V3_API_KEY",
+		),
+		oracleAdapterV3PageSize: readNumber(
+			env,
+			"EULER_SDK_ORACLE_ADAPTER_V3_PAGE_SIZE",
+		),
+		oracleAdapterV3CacheMs: readNumber(
+			env,
+			"EULER_SDK_ORACLE_ADAPTER_V3_CACHE_MS",
 		),
 
 		feeFlowControllerAddress: readString(
@@ -395,6 +582,9 @@ export function readEulerSDKEnvConfig(
 			env,
 			"EULER_SDK_FEE_FLOW_DEFAULT_BUY_DEADLINE_SECONDS",
 		),
+
+		activityV3ApiUrl: readString(env, "EULER_SDK_ACTIVITY_V3_API_URL"),
+		activityV3ApiKey: readString(env, "EULER_SDK_ACTIVITY_V3_API_KEY"),
 
 		queryCacheEnabled: readBoolean(env, "EULER_SDK_QUERY_CACHE_ENABLED"),
 		queryCacheTtlMs: readNumber(env, "EULER_SDK_QUERY_CACHE_TTL_MS"),

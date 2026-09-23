@@ -2,3 +2,8 @@ packages:
   - 'packages/*'
   - 'packages/euler-v2-sdk/examples'
   - 'packages/euler-v2-sdk/examples/react-sdk-example'
+allowBuilds:
+  bufferutil: true
+  esbuild: true
+  keccak: true
+  utf-8-validate: true

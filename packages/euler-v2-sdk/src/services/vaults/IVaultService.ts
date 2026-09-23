@@ -34,7 +34,7 @@ export interface FetchAllVaultsArgs<TVault, TOptions> {
 /**
  * Unified interface for vault services (Euler Earn, EVault).
  * @typeParam TVault - Vault entity type (EulerEarn | EVault)
- * @typeParam TPerspective - Perspective type (string, or perspective enums like StandardEulerEarnPerspectives | StandardEVaultPerspectives)
+ * @typeParam TPerspective - Perspective type (string, or perspective enums like StandardEVaultPerspectives)
  */
 export interface IVaultService<TVault, TPerspective> {
 	fetchVault(

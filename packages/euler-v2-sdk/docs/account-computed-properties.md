@@ -89,7 +89,7 @@ Returns `undefined` when vault entities are not populated, no APY data is availa
 | Vault Type | Supply APY | Borrow APY | Reward APR |
 |---|---|---|---|
 | EVault | `interestRates.supplyAPY` | `interestRates.borrowAPY` | `rewards.campaigns` filtered by action |
-| EulerEarn | `supplyApy` / `supplyApy1h` (adapter-provided 1h supply APY) | N/A | `rewards.campaigns` filtered by action |
+| EulerEarn | `supplyApy` (adapter-provided supply APY) | N/A | `rewards.campaigns` filtered by action |
 | SecuritizeCollateralVault | N/A | N/A | `rewards.campaigns` filtered by action |
 
 ## AccountLiquidity Properties

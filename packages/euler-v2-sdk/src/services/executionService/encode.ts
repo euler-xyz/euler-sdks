@@ -1174,6 +1174,9 @@ export function encodeSwapDebt(
 		swapperMode,
 	}: EncodeSwapDebtArgs,
 ): EVCBatchItem[] {
+	if (getAddress(swapQuote.accountIn) !== getAddress(swapQuote.accountOut)) {
+		throw new Error("Debt swaps must use the same account on both sides");
+	}
 	const items: EVCBatchItem[] = [];
 
 	if (enableController) {
@@ -1460,7 +1463,7 @@ export function encodeMigrateSameAssetCollateral(
 			data: encodeFunctionData({
 				abi: eVaultAbi,
 				functionName: "skim",
-				args: [amount, account],
+				args: [isMax ? maxUint256 : amount, account],
 			}),
 		},
 	];

@@ -2,16 +2,28 @@ import type { Address, Hex, PublicClient } from "viem";
 import type { AddressOrAccount } from "../entities/Account.js";
 import type { EVault } from "../entities/EVault.js";
 import type { EulerSDK } from "../sdk/sdk.js";
-import type {
-	BatchItemDescription,
-	EVCBatchItem,
-	TransactionPlan,
-	TransactionPlanItem,
+import {
+	isEVCBatchOperation,
+	type BatchItemDescription,
+	type EVCBatchItem,
+	type TransactionPlan,
+	type TransactionPlanItem,
 } from "../services/executionService/executionServiceTypes.js";
 
 export interface PluginBatchItems {
 	items: EVCBatchItem[];
 	totalValue: bigint;
+}
+
+/**
+ * A plugin failure with an explicitly safety-critical classification. SDK plan
+ * processing and prefetch APIs propagate this and every other plugin error.
+ */
+export class PluginExecutionFatalError extends Error {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options);
+		this.name = "PluginExecutionFatalError";
+	}
 }
 
 export interface ReadPluginContext {
@@ -40,12 +52,16 @@ export type PythPluginPrefetch = {
 	entries: Array<{
 		pythAddress: Address;
 		feedIds: Hex[];
+		/** Publish time for each feedIds entry, in the same order. */
+		publishTimes: number[];
 		updates: Hex[];
 		fee: bigint;
 	}>;
 };
 
 export type KeyringPluginPrefetch = {
+	/** Plan targets already classified by this payload, including non-vaults. */
+	targetAddresses?: Set<Address>;
 	gatedVaults: Map<
 		Address,
 		{
@@ -106,6 +122,19 @@ export function prependToBatch(
 	return plan.map((entry: TransactionPlanItem) => {
 		if (entry.type === "evcBatch" && !prepended) {
 			prepended = true;
+			const [firstEntry, ...remainingEntries] = entry.items;
+			if (firstEntry && isEVCBatchOperation(firstEntry)) {
+				return {
+					...entry,
+					items: [
+						{
+							...firstEntry,
+							items: [...items, ...firstEntry.items],
+						},
+						...remainingEntries,
+					],
+				};
+			}
 			return { ...entry, items: [...items, ...entry.items] };
 		}
 		return entry;

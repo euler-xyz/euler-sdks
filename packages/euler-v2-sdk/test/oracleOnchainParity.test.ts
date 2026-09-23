@@ -9,10 +9,13 @@ import {
 	getOracleRouteResolvedVaults,
 } from "../src/utils/oracle.js";
 import { convertVaultInfoFullToIEVault } from "../src/services/vaults/eVaultService/adapters/eVaultOnchainAdapter/vaultInfoConverter.js";
+import { makeVaultInfo } from "./helpers/lensFixtures.ts";
 import { convertVault } from "../src/services/vaults/eVaultService/adapters/eVaultV3Adapter/eVaultV3AdapterConversions.js";
 
 const BASE = "0x00000000000000000000000000000000000000f1" as const;
 const QUOTE = "0x0000000000000000000000000000000000000348" as const;
+const BTC_REFERENCE_ASSET =
+	"0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB" as const;
 const PYTH_FEED_ID =
 	"0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20" as const;
 
@@ -120,64 +123,70 @@ function encodePythOracleInfo({
 	);
 }
 
-function makeVaultInfo(oracleInfo: {
-	oracle: `0x${string}`;
-	name: string;
-	oracleInfo: `0x${string}`;
+function encodeCrossAdapterInfo({
+	base,
+	cross,
+	quote,
+	oracleBaseCrossInfo,
+	oracleCrossQuoteInfo,
+}: {
+	base: `0x${string}`;
+	cross: `0x${string}`;
+	quote: `0x${string}`;
+	oracleBaseCrossInfo: {
+		oracle: `0x${string}`;
+		name: string;
+		oracleInfo: `0x${string}`;
+	};
+	oracleCrossQuoteInfo: {
+		oracle: `0x${string}`;
+		name: string;
+		oracleInfo: `0x${string}`;
+	};
 }) {
-	return {
-		vault: "0x0000000000000000000000000000000000000abc",
-		asset: BASE,
-		assetName: "Base Asset",
-		assetSymbol: "BASE",
-		assetDecimals: 18n,
-		vaultName: "Vault",
-		vaultSymbol: "vBASE",
-		vaultDecimals: 18n,
-		unitOfAccount: QUOTE,
-		unitOfAccountName: "USD",
-		unitOfAccountSymbol: "USD",
-		unitOfAccountDecimals: 18n,
-		creator: "0x0000000000000000000000000000000000000001",
-		governorAdmin: "0x0000000000000000000000000000000000000002",
-		dToken: "0x0000000000000000000000000000000000000003",
-		balanceTracker: "0x0000000000000000000000000000000000000004",
-		interestFee: 0n,
-		accumulatedFeesShares: 0n,
-		accumulatedFeesAssets: 0n,
-		governorFeeReceiver: "0x0000000000000000000000000000000000000005",
-		protocolFeeReceiver: "0x0000000000000000000000000000000000000006",
-		protocolFeeShare: 0n,
-		hookedOperations: 0n,
-		hookTarget: "0x0000000000000000000000000000000000000007",
-		supplyCap: 0n,
-		borrowCap: 0n,
-		configFlags: 0n,
-		maxLiquidationDiscount: 0n,
-		liquidationCoolOffTime: 0n,
-		oracle: "0x0000000000000000000000000000000000000008",
-		oracleInfo,
-		irmInfo: {
-			interestRateInfo: [{ borrowSPY: 0n, borrowAPY: 0n, supplyAPY: 0n }],
-			interestRateModelInfo: {
-				interestRateModel: "0x0000000000000000000000000000000000000009",
-				interestRateModelType: 0n,
-				interestRateModelParams: "0x",
+	return encodeAbiParameters(
+		[
+			{
+				type: "tuple",
+				components: [
+					{ name: "base", type: "address" },
+					{ name: "cross", type: "address" },
+					{ name: "quote", type: "address" },
+					{ name: "oracleBaseCross", type: "address" },
+					{ name: "oracleCrossQuote", type: "address" },
+					{
+						name: "oracleBaseCrossInfo",
+						type: "tuple",
+						components: [
+							{ name: "oracle", type: "address" },
+							{ name: "name", type: "string" },
+							{ name: "oracleInfo", type: "bytes" },
+						],
+					},
+					{
+						name: "oracleCrossQuoteInfo",
+						type: "tuple",
+						components: [
+							{ name: "oracle", type: "address" },
+							{ name: "name", type: "string" },
+							{ name: "oracleInfo", type: "bytes" },
+						],
+					},
+				],
 			},
-		},
-		collateralLTVInfo: [],
-		liabilityPriceInfo: {
-			queryFailure: false,
-			queryFailureReason: "0x",
-			timestamp: 1n,
-			amountIn: 1n,
-			amountOutMid: 1n,
-			amountOutBid: 1n,
-			amountOutAsk: 1n,
-		},
-		timestamp: 1n,
-		evcCompatibleAsset: true,
-	} as const;
+		],
+		[
+			{
+				base,
+				cross,
+				quote,
+				oracleBaseCross: oracleBaseCrossInfo.oracle,
+				oracleCrossQuote: oracleCrossQuoteInfo.oracle,
+				oracleBaseCrossInfo,
+				oracleCrossQuoteInfo,
+			},
+		],
+	);
 }
 
 test("decodeOracleInfo ignores blank zero-address router leaves like V3", () => {
@@ -266,6 +275,32 @@ test("convertVaultInfoFullToIEVault suppresses blank root oracle tuples like V3"
 		name: "",
 	});
 	assert.equal(vault.debtPricingOracleRoute, undefined);
+});
+
+test("convertVaultInfoFullToIEVault uses oracle precision for the BTC reference asset", () => {
+	const errors: unknown[] = [];
+	const vault = convertVaultInfoFullToIEVault(
+		{
+			...makeVaultInfo({
+				oracle: zeroAddress,
+				name: "",
+				oracleInfo: "0x",
+			}),
+			unitOfAccount: BTC_REFERENCE_ASSET,
+			unitOfAccountName: "",
+			unitOfAccountSymbol: "",
+			unitOfAccountDecimals: 8n,
+		},
+		1,
+		errors as never[],
+	);
+
+	assert.deepEqual(vault.unitOfAccount, {
+		address: BTC_REFERENCE_ASSET,
+		name: "Bitcoin",
+		symbol: "BTC",
+		decimals: 18,
+	});
 });
 
 test("oracle routes preserve vault unwrap steps and exact configured leaves", () => {
@@ -360,6 +395,72 @@ test("oracle routes preserve vault unwrap steps and exact configured leaves", ()
 		),
 		[chainlinkOracle],
 	);
+});
+
+test("decodeOracleRouteForPair keeps inverted Pyth legs inside cross adapters", () => {
+	const usdc = getAddress("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
+	const usd = QUOTE;
+	const eul = getAddress("0xd9fcd98c322942075a5c3860693e9f4f03aae07b");
+	const crossAdapter = getAddress("0x336D821459db40bA9bfb8a1a89457D689AfbA6E8");
+	const chainlinkOracle = getAddress(
+		"0x6213f24332D35519039f2afa7e3BffE105a37d3F",
+	);
+	const pythOracle = getAddress("0xfa9880c197bb245d055ee864653EeECF8619de65");
+	const pythContract = getAddress("0x0000000000000000000000000000000000000c13");
+	const chainlinkInfo = {
+		oracle: chainlinkOracle,
+		name: "ChainlinkOracle",
+		oracleInfo: "0x",
+	} as const;
+	const pythInfo = {
+		oracle: pythOracle,
+		name: "PythOracle",
+		oracleInfo: encodePythOracleInfo({
+			pyth: pythContract,
+			base: eul,
+			quote: usd,
+		}),
+	} as const;
+	const oracleInfo = {
+		oracle: "0x1FC53457F04fdd8C73B28934C0ee77f1a41F8BC7",
+		name: "EulerRouter",
+		oracleInfo: encodeRouterInfo({
+			fallbackOracleInfo: {
+				oracle: zeroAddress,
+				name: "",
+				oracleInfo: "0x",
+			},
+			resolvedOraclesInfo: [
+				{
+					oracle: crossAdapter,
+					name: "CrossAdapter",
+					oracleInfo: encodeCrossAdapterInfo({
+						base: usdc,
+						cross: usd,
+						quote: eul,
+						oracleBaseCrossInfo: chainlinkInfo,
+						oracleCrossQuoteInfo: pythInfo,
+					}),
+				},
+			],
+			bases: [usdc],
+			quotes: [eul],
+		}),
+	} as const;
+
+	const route = decodeOracleRouteForPair(oracleInfo, usdc, eul);
+
+	assert.equal(route?.source, "configured");
+	assert.deepEqual(
+		route?.steps.map((step) => step.name),
+		["ChainlinkOracle", "PythOracle"],
+	);
+	assert.equal(route?.steps[0]?.oracle, chainlinkOracle);
+	assert.equal(route?.steps[0]?.base, usdc);
+	assert.equal(route?.steps[0]?.quote, usd);
+	assert.equal(route?.steps[1]?.oracle, pythOracle);
+	assert.equal(route?.steps[1]?.base, eul);
+	assert.equal(route?.steps[1]?.quote, usd);
 });
 
 test("convertVault maps V3 oracle resolved vault routes", () => {

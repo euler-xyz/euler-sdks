@@ -52,7 +52,6 @@ const EMPTY_LABELS_DATA: EulerLabelsData = {
 	earnVaultEntries: {},
 	earnVaultBlocks: {},
 	earnVaultRestrictions: {},
-	recentlyAddedEarnVaults: new Set(),
 	deprecatedEarnVaults: {},
 	earnVaultDescriptions: {},
 	earnVaultNotices: {},
@@ -149,23 +148,17 @@ const normalizeProducts = (
 		)
 			.map(tryNormalizeAddress)
 			.filter((v): v is string => v !== undefined);
-		const normalizedRecentlyAdded = (
-			Array.isArray(product.recentlyAddedVaults)
-				? product.recentlyAddedVaults
-				: []
-		)
-			.map(tryNormalizeAddress)
-			.filter((v): v is string => v !== undefined);
 		const raw = product as unknown as Record<string, unknown>;
 		const fallbackReason =
 			typeof raw.deprecateReason === "string" ? raw.deprecateReason : undefined;
+		const tags = filterStringArray(product.tags);
 
 		products[key] = {
 			...product,
 			vaults: normalizedVaults,
 			deprecatedVaults: normalizedDeprecated,
-			recentlyAddedVaults: normalizedRecentlyAdded,
 			deprecationReason: product.deprecationReason || fallbackReason,
+			...(tags && { tags }),
 			vaultOverrides: extractVaultOverrides(raw),
 		};
 		normalizedVaults.forEach((v) => allVaults.add(v));
@@ -216,7 +209,6 @@ const normalizeEarnVaults = (
 	const earnVaults: string[] = [];
 	const earnVaultBlocks: Record<string, string[]> = {};
 	const earnVaultRestrictions: Record<string, string[]> = {};
-	const recentlyAddedEarnVaults = new Set<string>();
 	const deprecatedEarnVaults: Record<string, string> = {};
 	const earnVaultDescriptions: Record<string, string> = {};
 	const earnVaultNotices: Record<string, string> = {};
@@ -234,11 +226,15 @@ const normalizeEarnVaults = (
 			earnVaultEntries[key] = { address: normalized };
 			continue;
 		}
-		const normalizedEntry = { ...entry, address: normalized };
+		const tags = filterStringArray(entry.tags);
+		const normalizedEntry = {
+			...entry,
+			address: normalized,
+			...(tags && { tags }),
+		};
 		earnVaultEntries[key] = normalizedEntry;
 		if (entry.block?.length) earnVaultBlocks[key] = entry.block;
 		if (entry.restricted?.length) earnVaultRestrictions[key] = entry.restricted;
-		if (entry.recentlyAdded) recentlyAddedEarnVaults.add(normalized);
 		if (entry.deprecated)
 			deprecatedEarnVaults[key] = entry.deprecationReason ?? "";
 		if (entry.description) earnVaultDescriptions[key] = entry.description;
@@ -251,7 +247,6 @@ const normalizeEarnVaults = (
 		earnVaultEntries,
 		earnVaultBlocks,
 		earnVaultRestrictions,
-		recentlyAddedEarnVaults,
 		deprecatedEarnVaults,
 		earnVaultDescriptions,
 		earnVaultNotices,
@@ -312,12 +307,21 @@ const normalizeAssets = (entries: EulerLabelAssetEntry[]) => {
 	return { assetBlocks, assetRestrictions, assetPatternRules };
 };
 
+const mergeTags = (
+	productTags: string[] | undefined,
+	overrideTags: string[] | undefined,
+): string[] | undefined => {
+	const merged = [...(productTags ?? []), ...(overrideTags ?? [])];
+	return merged.length > 0 ? [...new Set(merged)] : undefined;
+};
+
 const applyVaultOverrides = (
 	product: EulerLabelProduct,
 	vaultAddress: string,
 ): EulerLabelProduct => {
 	const override = product.vaultOverrides?.[vaultAddress];
 	if (!override) return product;
+	const tags = mergeTags(product.tags, override.tags);
 	return {
 		...product,
 		...(override.name !== undefined && { name: override.name }),
@@ -330,6 +334,7 @@ const applyVaultOverrides = (
 		...(override.deprecationReason !== undefined && {
 			deprecationReason: override.deprecationReason,
 		}),
+		...(tags && { tags }),
 	};
 };
 
@@ -405,7 +410,6 @@ export class EulerLabelsService implements IEulerLabelsService {
 			earnVaultEntries: earn.earnVaultEntries,
 			earnVaultBlocks: earn.earnVaultBlocks,
 			earnVaultRestrictions: earn.earnVaultRestrictions,
-			recentlyAddedEarnVaults: earn.recentlyAddedEarnVaults,
 			deprecatedEarnVaults: earn.deprecatedEarnVaults,
 			earnVaultDescriptions: earn.earnVaultDescriptions,
 			earnVaultNotices: earn.earnVaultNotices,
@@ -520,7 +524,6 @@ export class EulerLabelsService implements IEulerLabelsService {
 					...(earnVault?.portfolioNotice && {
 						portfolioNotice: earnVault.portfolioNotice,
 					}),
-					...(earnVault?.recentlyAdded && { recentlyAdded: true }),
 					...(earnVault?.notExplorable && { notExplorable: true }),
 					...(earnVault?.block && { block: earnVault.block }),
 					...(earnVault?.restricted && { restricted: earnVault.restricted }),

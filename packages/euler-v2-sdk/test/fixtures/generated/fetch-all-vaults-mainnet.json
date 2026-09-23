@@ -23048,7 +23048,6 @@
                 "symbol": "CS_RWA_USDC"
               },
               "strategies": [],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -23305,7 +23304,6 @@
                 "symbol": "cyETH"
               },
               "strategies": [],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -29830,7 +29828,6 @@
                 "symbol": "CSCOREUSDT0"
               },
               "strategies": [],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -31209,7 +31206,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -34406,7 +34402,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0,
               "supplyQueue": [
                 "0xB6761Fb99062f6dBc09395f6F16dF239720017db"
               ],
@@ -36898,7 +36893,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0,
               "supplyQueue": [
                 "0xba98fC35C9dfd69178AD5dcE9FA29c64554783b5"
               ],
@@ -41212,7 +41206,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0.036091958163658525,
               "supplyQueue": [
                 "0xB93d4928f39fBcd6C89a7DFbF0A867E6344561bE"
               ],
@@ -42426,7 +42419,6 @@
                 "symbol": "PYSXX1"
               },
               "strategies": [],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -46148,7 +46140,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0,
               "supplyQueue": [
                 "0x4cBcfD04Ad466aa4999Fe607fc1864B1b8A400E4"
               ],
@@ -47689,7 +47680,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0,
               "supplyQueue": [
                 "0x313603FA690301b0CaeEf8069c065862f9162162",
                 "0x7c280DBDEf569e96c7919251bD2B0edF0734C5A8",
@@ -52265,7 +52255,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0.019608489523620026,
               "supplyQueue": [
                 "0xe0a80d35bB6618CBA260120b279d357978c42BCE",
                 "0x797DD80692c3b2dAdabCe8e30C07fDE5307D48a9",
@@ -52517,7 +52506,6 @@
                 "symbol": "MUV"
               },
               "strategies": [],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -60073,7 +60061,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0.08929898431594985,
               "supplyQueue": [
                 "0xe0a80d35bB6618CBA260120b279d357978c42BCE",
                 "0x797DD80692c3b2dAdabCe8e30C07fDE5307D48a9",
@@ -61190,7 +61177,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0.048100336730166254,
               "supplyQueue": [
                 "0x14e314d5d53fd7Ad21d7d40046DfD98f183d22F1",
                 "0x4103686760B98Cc53daE52A04D317dBdF7952541"
@@ -61462,7 +61448,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0.08052186015546685,
               "supplyQueue": [
                 "0xB93d4928f39fBcd6C89a7DFbF0A867E6344561bE"
               ],
@@ -75788,7 +75773,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0.0017529672854028422,
               "supplyQueue": [
                 "0xCe2B7Fb77A47B8d87f81B31f2f6F43EEFB9B9BEc"
               ],
@@ -91942,7 +91926,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0.03854708093847033,
               "supplyQueue": [
                 "0xAB2726DAf820Aa9270D14Db9B18c8d187cbF2f30",
                 "0x9bD52F2805c6aF014132874124686e7b248c2Cbb",
@@ -101826,7 +101809,6 @@
                 "symbol": "SLC"
               },
               "strategies": [],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -115316,7 +115298,6 @@
                 "symbol": "deprecated"
               },
               "strategies": [],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -134144,7 +134125,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0.025961299722454326,
               "supplyQueue": [
                 "0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2",
                 "0xb3b36220fA7d12f7055dab5c9FD18E860e9a6bF8"
@@ -134944,7 +134924,6 @@
                 "symbol": "wUSDC"
               },
               "strategies": [],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -143938,7 +143917,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -146342,7 +146320,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -156270,7 +156247,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0.0017531212337635758,
               "supplyQueue": [
                 "0x98281466aBcF48eAAD8c6E22dEdD18A3426A93b4",
                 "0x53AfE3343f322c4189Ab69E0D048efd154259419",
@@ -162812,7 +162788,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0,
               "supplyQueue": [
                 "0xAB2726DAf820Aa9270D14Db9B18c8d187cbF2f30"
               ],
@@ -167319,7 +167294,6 @@
                 "symbol": "MUV"
               },
               "strategies": [],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -168582,7 +168556,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0.0017534828634633171,
               "supplyQueue": [
                 "0xf4af55Cf4E8044cf9e28cb8230E8d01409C83928"
               ],
@@ -179408,7 +179381,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0.04497190515205398,
               "supplyQueue": [
                 "0x7c280DBDEf569e96c7919251bD2B0edF0734C5A8",
                 "0x313603FA690301b0CaeEf8069c065862f9162162",
@@ -181783,7 +181755,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0,
               "supplyQueue": [
                 "0xB93d4928f39fBcd6C89a7DFbF0A867E6344561bE",
                 "0x93F9b0478d8030f7968617B8C305BF3413f7f2a2",
@@ -182780,7 +182751,6 @@
                 "symbol": "MUV"
               },
               "strategies": [],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -218016,7 +217986,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0.0017532112002081586,
               "supplyQueue": [
                 "0x5aC7Cfb14677320E8e7E8e39A6cfc619662BC7e6"
               ],
@@ -246870,7 +246839,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0,
               "supplyQueue": [
                 "0x1Cd028b971eBC0bf8a2c4fBf440112cAAf8cb6d5"
               ],
@@ -251690,7 +251658,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0.0017533804684579314,
               "supplyQueue": [
                 "0xc2c4aBae84fbb5b7bAAB52301A924b1F986C66bd",
                 "0x211711F277f146fC947D7053B41BB71BB5b5FC2C",
@@ -251781,7 +251748,6 @@
                 "symbol": "EUY USDC"
               },
               "strategies": [],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -251857,7 +251823,6 @@
                 "symbol": "MUV"
               },
               "strategies": [],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {
@@ -263058,7 +263023,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0,
               "supplyQueue": [
                 "0xaF5372792a29dC6b296d6FFD4AA3386aff8f9BB2",
                 "0xe1Ce9AF672f8854845E5474400B6ddC7AE458a10",
@@ -265728,7 +265692,6 @@
                   "vaultType": "EVault"
                 }
               ],
-              "supplyApy1h": 0,
               "supplyQueue": [],
               "timestamp": 1776924023,
               "totalAssets": {

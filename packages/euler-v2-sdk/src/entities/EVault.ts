@@ -173,6 +173,15 @@ export type RiskPrice = {
 export interface IEVault extends IERC4626Vault {
 	unitOfAccount?: Token;
 
+	/**
+	 * Whether the vault is escrowed collateral, as reported by the data source:
+	 * V3's `vaultType` on the V3 path, `EscrowedCollateralPerspective`
+	 * membership on the on-chain path. `null` when the source has no answer.
+	 * The SDK never derives one of its own, so it cannot contradict the source
+	 * a consumer is reading alongside it.
+	 */
+	isEscrow?: boolean | null;
+
 	totalCash: bigint;
 	totalBorrowed: bigint;
 
@@ -271,6 +280,7 @@ export class EVault
 	implements IEVault, IERC4626VaultConversion
 {
 	unitOfAccount?: Token;
+	isEscrow: boolean | null;
 	totalCash: bigint;
 	totalBorrowed: bigint;
 	creator: Address;
@@ -294,6 +304,7 @@ export class EVault
 	constructor(args: IEVault) {
 		super(args);
 		this.unitOfAccount = args.unitOfAccount;
+		this.isEscrow = args.isEscrow ?? null;
 		this.totalCash = args.totalCash;
 		this.totalBorrowed = args.totalBorrowed;
 		this.creator = args.creator;

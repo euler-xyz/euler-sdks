@@ -10,6 +10,8 @@ const borrowVault = getAddress("0x2000000000000000000000000000000000000000");
 const asset = getAddress("0x3000000000000000000000000000000000000000");
 const collateralWithValue = getAddress("0x4000000000000000000000000000000000000000");
 const collateralWithoutValue = getAddress("0x5000000000000000000000000000000000000000");
+const reward = getAddress("0x6000000000000000000000000000000000000000");
+const otherReward = getAddress("0x7000000000000000000000000000000000000000");
 
 function createVaultAccountInfo({
 	collateralValueBorrowing,
@@ -18,6 +20,7 @@ function createVaultAccountInfo({
 	collateralValuesBorrowing,
 	collateralValuesLiquidation,
 	collateralValuesRaw,
+	enabledRewardsInfo = [],
 }: {
 	collateralValueBorrowing: bigint;
 	collateralValueLiquidation: bigint;
@@ -25,6 +28,7 @@ function createVaultAccountInfo({
 	collateralValuesBorrowing: bigint[];
 	collateralValuesLiquidation: bigint[];
 	collateralValuesRaw: bigint[];
+	enabledRewardsInfo?: VaultAccountInfo["enabledRewardsInfo"];
 }): VaultAccountInfo {
 	return {
 			timestamp: 0n,
@@ -40,6 +44,7 @@ function createVaultAccountInfo({
 			assetAllowanceExpirationVaultPermit2: 0n,
 			assetAllowancePermit2: 0n,
 			balanceForwarderEnabled: false,
+			enabledRewardsInfo,
 			isController: true,
 			isCollateral: false,
 			liquidityInfo: {
@@ -72,6 +77,7 @@ test("on-chain account liquidity filters zero-value collaterals when another col
 			collateralValuesLiquidation: [50n, 0n],
 			collateralValuesRaw: [50n, 0n],
 		}),
+		1,
 		[],
 	);
 
@@ -91,6 +97,7 @@ test("on-chain account liquidity preserves all-zero collaterals", () => {
 			collateralValuesLiquidation: [0n, 0n],
 			collateralValuesRaw: [0n, 0n],
 		}),
+		1,
 		[],
 	);
 
@@ -98,6 +105,43 @@ test("on-chain account liquidity preserves all-zero collaterals", () => {
 		position.liquidity?.collaterals.map((collateral) => collateral.address),
 		[collateralWithValue, collateralWithoutValue],
 	);
+});
+
+test("on-chain account positions preserve claimable reward streams", () => {
+	const position = convertVaultAccountInfoToAccountPosition(
+		createVaultAccountInfo({
+			collateralValueBorrowing: 0n,
+			collateralValueLiquidation: 0n,
+			collateralValueRaw: 0n,
+			collateralValuesBorrowing: [0n, 0n],
+			collateralValuesLiquidation: [0n, 0n],
+			collateralValuesRaw: [0n, 0n],
+			enabledRewardsInfo: [
+				{
+					reward,
+					earnedReward: 100n,
+					earnedRewardRecentIgnored: 75n,
+				},
+				{
+					reward: otherReward,
+					earnedReward: 0n,
+					earnedRewardRecentIgnored: 0n,
+				},
+			],
+		}),
+		1,
+		[],
+	);
+
+	assert.deepEqual(position.rewardStreams, [
+		{
+			account,
+			vault: borrowVault,
+			reward,
+			earnedReward: 100n,
+			earnedRewardRecentIgnored: 75n,
+		},
+	]);
 });
 
 function createV3AccountPosition({

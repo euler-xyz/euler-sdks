@@ -388,7 +388,7 @@ function isInterestRateStringPath(path: string): boolean {
 }
 
 function isEulerEarnSupplyApyPath(path: string): boolean {
-  return path === "$.supplyApy1h" || path.endsWith(".supplyApy1h");
+  return path === "$.supplyApy" || path.endsWith(".supplyApy");
 }
 
 function isFeeBigIntPath(path: string): boolean {

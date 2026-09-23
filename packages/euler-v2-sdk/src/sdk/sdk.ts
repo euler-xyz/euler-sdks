@@ -22,6 +22,18 @@ import type { IIntrinsicApyService } from "../services/intrinsicApyService/index
 import type { IOracleAdapterService } from "../services/oracleAdapterService/index.js";
 import type { IFeeFlowService } from "../services/feeFlowService/index.js";
 import type { IREULLockService } from "../services/reulLockService/index.js";
+import {
+	SafeAccountService,
+	type ISafeAccountService,
+} from "../services/safeAccountService/index.js";
+import type { IPositionMigrationService } from "../services/positionMigrationService/index.js";
+import {
+	ActivityService,
+	ensureActivityLiquidationsSupport,
+	UnavailableActivityAdapter,
+	type IActivityService,
+	type IActivityServiceWithLiquidations,
+} from "../services/activityService/index.js";
 import type { EulerPlugin, PluginPrefetchData } from "../plugins/types.js";
 import type { TransactionPlan } from "../services/executionService/executionServiceTypes.js";
 import type { AddressOrAccount } from "../entities/Account.js";
@@ -49,6 +61,10 @@ export interface EulerSDKOptions<
 	oracleAdapterService: IOracleAdapterService;
 	feeFlowService: IFeeFlowService;
 	reulLockService: IREULLockService;
+	/** Defaults to a `SafeAccountService` built on `providerService` when omitted. */
+	safeAccountService?: ISafeAccountService;
+	positionMigrationService: IPositionMigrationService;
+	activityService?: IActivityService;
 	plugins?: EulerPlugin[];
 }
 
@@ -73,6 +89,14 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 	public readonly oracleAdapterService: IOracleAdapterService;
 	public readonly feeFlowService: IFeeFlowService;
 	public readonly reulLockService: IREULLockService;
+	public readonly safeAccountService: ISafeAccountService;
+	public readonly positionMigrationService: IPositionMigrationService;
+	/**
+	 * Always exposes the built-in liquidations guarantee: custom overrides
+	 * without `fetchLiquidations` are wrapped so the method stays callable
+	 * and reports activity-unavailable at runtime.
+	 */
+	public readonly activityService: IActivityServiceWithLiquidations;
 	public readonly plugins: EulerPlugin[];
 
 	constructor(options: EulerSDKOptions<TVaultEntity>) {
@@ -96,13 +120,24 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 		this.oracleAdapterService = options.oracleAdapterService;
 		this.feeFlowService = options.feeFlowService;
 		this.reulLockService = options.reulLockService;
+		this.safeAccountService =
+			options.safeAccountService ??
+			new SafeAccountService(options.providerService);
+		this.positionMigrationService = options.positionMigrationService;
+		this.activityService = ensureActivityLiquidationsSupport(
+			options.activityService ??
+				new ActivityService(
+					new UnavailableActivityAdapter("source-not-configured"),
+				),
+		);
 		this.plugins = options.plugins ?? [];
 	}
 
 	/**
 	 * Run all plugins' processPlan methods on a transaction plan.
 	 * Plugins execute in array order; each receives the plan as modified by previous plugins.
-	 * Errors in individual plugins are caught gracefully — the plan continues without that plugin.
+	 * Every plugin failure is propagated. A write plan must never continue after
+	 * silently omitting plugin effects such as oracle updates or access gates.
 	 *
 	 * `prefetch` carries per-plugin form-level data (Pyth Hermes updates,
 	 * keyring vault gating, …) so the plugin can skip its own network I/O.
@@ -117,17 +152,7 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 
 		for (const plugin of this.plugins) {
 			if (!plugin.processPlan) continue;
-			try {
-				plan = await plugin.processPlan(plan, account, chainId, this, prefetch);
-			} catch (err) {
-				if (typeof console !== "undefined") {
-					console.warn(
-						`[euler-v2-sdk] plugin "${plugin.name}" processPlan failed`,
-						err,
-					);
-				}
-				// Plugin failed — skip it gracefully, operation proceeds without this plugin's enrichment
-			}
+			plan = await plugin.processPlan(plan, account, chainId, this, prefetch);
 		}
 
 		return plan;
@@ -138,7 +163,8 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 	 * record keyed by plugin name; known SDK slots (`pyth`, `keyring`) are
 	 * typed. Run once per form-load so per-quote prepare/estimate/simulate can
 	 * pass the result back via `processPlugins(plan, account, chainId, prefetch)`
-	 * without re-doing the expensive lookups.
+	 * without re-doing the expensive lookups. Every plugin failure is propagated;
+	 * callers must not mistake missing safety evidence for an empty payload.
 	 */
 	async prefetchPluginData(
 		plan: TransactionPlan,
@@ -150,18 +176,8 @@ export class EulerSDK<TVaultEntity extends IVaultEntity = VaultEntity> {
 		const entries = await Promise.all(
 			this.plugins.map(async (plugin) => {
 				if (!plugin.prefetch) return null;
-				try {
-					const data = await plugin.prefetch(plan, account, chainId, this);
-					return data === undefined ? null : ([plugin.name, data] as const);
-				} catch (err) {
-					if (typeof console !== "undefined") {
-						console.warn(
-							`[euler-v2-sdk] plugin "${plugin.name}" prefetch failed`,
-							err,
-						);
-					}
-					return null;
-				}
+				const data = await plugin.prefetch(plan, account, chainId, this);
+				return data === undefined ? null : ([plugin.name, data] as const);
 			}),
 		);
 

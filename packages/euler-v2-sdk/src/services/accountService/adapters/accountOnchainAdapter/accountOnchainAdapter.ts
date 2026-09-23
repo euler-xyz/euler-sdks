@@ -1,6 +1,7 @@
 import type { IAccountAdapter } from "../../accountService.js";
 import type { ProviderService } from "../../../providerService/index.js";
 import type { DeploymentService } from "../../../deploymentService/index.js";
+import type { IABIService } from "../../../abiService/index.js";
 import { type Address, type Abi, encodeFunctionData, getAddress } from "viem";
 import type { IAccount, ISubAccount } from "../../../../entities/Account.js";
 import { EVault } from "../../../../entities/EVault.js";
@@ -14,7 +15,9 @@ import { convertVaultInfoFullToIEVault } from "../../../vaults/eVaultService/ada
 import {
 	type BuildQueryFn,
 	applyBuildQuery,
+	serializeQueryArgs,
 } from "../../../../utils/buildQuery.js";
+import { resolveAccountLensAbi } from "./resolveAccountLensAbi.js";
 import type {
 	EulerPlugin,
 	PluginBatchItems,
@@ -38,12 +41,13 @@ export const getEVCAccountInfoLensBatchItem = (
 	evc: Address,
 	subAccount: Address,
 	onBehalfOfAccount: Address,
+	abi: Abi = accountLensAbi,
 ): EVCBatchItem => ({
 	targetContract: accountLensAddress,
 	onBehalfOfAccount,
 	value: 0n,
 	data: encodeFunctionData({
-		abi: accountLensAbi,
+		abi,
 		functionName: "getEVCAccountInfo",
 		args: [evc, subAccount],
 	}),
@@ -54,12 +58,13 @@ export const getVaultAccountInfoLensBatchItem = (
 	subAccount: Address,
 	vault: Address,
 	onBehalfOfAccount: Address,
+	abi: Abi = accountLensAbi,
 ): EVCBatchItem => ({
 	targetContract: accountLensAddress,
 	onBehalfOfAccount,
 	value: 0n,
 	data: encodeFunctionData({
-		abi: accountLensAbi,
+		abi,
 		functionName: "getVaultAccountInfo",
 		args: [subAccount, vault],
 	}),
@@ -78,6 +83,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		private deploymentService: DeploymentService,
 		private positionsAdapter: IAccountVaultsAdapter,
 		buildQuery?: BuildQueryFn,
+		private abiService?: IABIService,
 	) {
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
@@ -103,14 +109,28 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		accountLensAddress: Address,
 		evc: Address,
 		subAccount: Address,
+		abi: Abi = accountLensAbi,
 	) => {
 		return provider.readContract({
 			address: accountLensAddress,
-			abi: accountLensAbi,
+			abi,
 			functionName: "getEVCAccountInfo",
 			args: [evc, subAccount],
 		});
 	};
+
+	// The resolved ABI is deliberately not part of the key: it is fetched once and
+	// memoized for the lifetime of the ABIService, so it is constant for every read
+	// keyed here, and serializing a ~33KB array into every key is pure overhead.
+	getQueryKeyEVCAccountInfo(
+		provider: ReturnType<ProviderService["getProvider"]>,
+		accountLensAddress: Address,
+		evc: Address,
+		subAccount: Address,
+		_abi?: Abi,
+	): string | null {
+		return serializeQueryArgs([provider, accountLensAddress, evc, subAccount]);
+	}
 
 	setQueryEVCAccountInfo(fn: typeof this.queryEVCAccountInfo): void {
 		this.queryEVCAccountInfo = fn;
@@ -121,14 +141,31 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		accountLensAddress: Address,
 		subAccount: Address,
 		vault: Address,
+		abi: Abi = accountLensAbi,
 	) => {
 		return provider.readContract({
 			address: accountLensAddress,
-			abi: accountLensAbi,
+			abi,
 			functionName: "getVaultAccountInfo",
 			args: [subAccount, vault],
 		});
 	};
+
+	/** See `getQueryKeyEVCAccountInfo` on why the ABI is not part of the key. */
+	getQueryKeyVaultAccountInfo(
+		provider: ReturnType<ProviderService["getProvider"]>,
+		accountLensAddress: Address,
+		subAccount: Address,
+		vault: Address,
+		_abi?: Abi,
+	): string | null {
+		return serializeQueryArgs([
+			provider,
+			accountLensAddress,
+			subAccount,
+			vault,
+		]);
+	}
 
 	setQueryVaultAccountInfo(fn: typeof this.queryVaultAccountInfo): void {
 		this.queryVaultAccountInfo = fn;
@@ -243,6 +280,19 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		const deployment = this.deploymentService.getDeployment(chainId);
 		const accountLensAddress = deployment.addresses.lensAddrs.accountLens;
 		const evc = deployment.addresses.coreAddrs.evc;
+		const { abi: resolvedAccountLensAbi, fallbackReason } =
+			await resolveAccountLensAbi(this.abiService, chainId);
+		if (fallbackReason) {
+			errors.push({
+				code: "FALLBACK_USED",
+				severity: "warning",
+				message: fallbackReason,
+				locations: [
+					dataIssueLocation(subAccountDiagnosticOwner(chainId, subAccount)),
+				],
+				source: "accountLens",
+			});
+		}
 
 		// Get EVC account info
 		const evcAccountInfoResult = await this.queryEVCAccountInfo(
@@ -250,6 +300,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 			accountLensAddress,
 			evc,
 			subAccount,
+			resolvedAccountLensAbi,
 		);
 
 		if (!evcAccountInfoResult) return { result: undefined, errors };
@@ -274,6 +325,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 				subAccount,
 				vaults,
 				errors,
+				resolvedAccountLensAbi,
 			);
 		} else {
 			vaultAccountInfos = await this.queryVaultAccountInfosGracefully(
@@ -283,6 +335,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 				subAccount,
 				vaults,
 				errors,
+				resolvedAccountLensAbi,
 			);
 		}
 
@@ -357,6 +410,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		subAccount: Address,
 		vaults: Address[],
 		errors: DataIssue[],
+		resolvedAccountLensAbi: Abi,
 	): Promise<VaultAccountInfo[]> {
 		const deployment = this.deploymentService.getDeployment(chainId);
 		const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
@@ -397,6 +451,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 				subAccount,
 				vaults,
 				errors,
+				resolvedAccountLensAbi,
 			);
 		}
 
@@ -411,7 +466,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 							prependItems: prepend.items,
 							totalValue: prepend.totalValue,
 							lensAddress: accountLensAddress,
-							lensAbi: accountLensAbi as unknown as Abi,
+							lensAbi: resolvedAccountLensAbi,
 							lensFunctionName: "getVaultAccountInfo",
 							lensArgs: [subAccount, vault],
 						},
@@ -428,6 +483,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 					accountLensAddress,
 					subAccount,
 					vault,
+					resolvedAccountLensAbi,
 				) as Promise<VaultAccountInfo>;
 			}),
 		);
@@ -448,6 +504,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 		subAccount: Address,
 		vaults: Address[],
 		errors: DataIssue[],
+		resolvedAccountLensAbi: Abi,
 	): Promise<VaultAccountInfo[]> {
 		const results = await Promise.allSettled(
 			vaults.map((vault) =>
@@ -456,6 +513,7 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 					accountLensAddress,
 					subAccount,
 					vault,
+					resolvedAccountLensAbi,
 				),
 			),
 		);
@@ -478,15 +536,10 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 	): VaultAccountInfo[] {
 		const vaultAccountInfos: VaultAccountInfo[] = [];
 
-		results.forEach((result, index) => {
-			const vault = vaults[index];
-			if (!vault) return;
-
-			if (result.status === "fulfilled") {
-				vaultAccountInfos.push(result.value as VaultAccountInfo);
-				return;
-			}
-
+		// `originalValue` carries the raw cause: a revert reason (hex) when the lens
+		// reports a whole-vault query failure, or the transport error message when
+		// the read itself failed.
+		const pushUnavailable = (vault: Address, originalValue: unknown) => {
 			errors.push({
 				code: "SOURCE_UNAVAILABLE",
 				severity: "warning",
@@ -498,11 +551,31 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 					),
 				],
 				source: "accountLens",
-				originalValue:
-					result.reason instanceof Error
-						? result.reason.message
-						: String(result.reason),
+				originalValue,
 			});
+		};
+
+		results.forEach((result, index) => {
+			const vault = vaults[index];
+			if (!vault) return;
+
+			if (result.status === "fulfilled") {
+				const vaultAccountInfo = result.value as VaultAccountInfo;
+				if (vaultAccountInfo.queryFailure) {
+					pushUnavailable(vault, vaultAccountInfo.queryFailureReason);
+					return;
+				}
+
+				vaultAccountInfos.push(vaultAccountInfo);
+				return;
+			}
+
+			pushUnavailable(
+				vault,
+				result.reason instanceof Error
+					? result.reason.message
+					: String(result.reason),
+			);
 		});
 
 		return vaultAccountInfos;

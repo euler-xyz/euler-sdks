@@ -24,7 +24,7 @@ export type SwapVerifierBuildArgs = {
 		vault?: Address;
 		account?: Address;
 		transferAsset?: Address;
-		deadline?: number;
+		deadline?: number | bigint;
 	};
 };
 

@@ -7,6 +7,10 @@
  * @returns A wrapped version of the query function
  */
 export interface BuildQueryContext {
+	/**
+	 * Returns a deterministic cache key, or `null` when this invocation must run
+	 * without caching. Custom builders must preserve `null` as a no-cache signal.
+	 */
 	getCacheKey: (args: unknown[]) => string | null;
 }
 
@@ -20,9 +24,11 @@ export type BuildQueryFn = <T extends (...args: any[]) => Promise<any>>(
 export interface QueryCacheConfig {
 	enabled?: boolean;
 	ttlMs?: number;
+	failureTtlMs?: number;
 }
 
 const DEFAULT_QUERY_CACHE_TTL_MS = 5_000;
+const DEFAULT_QUERY_FAILURE_TTL_MS = 5_000;
 
 function normalizeAddress(value: string): string {
 	if (/^0x[0-9a-fA-F]{40}$/.test(value)) {
@@ -51,8 +57,16 @@ export function normalizeQueryKeyValue(value: unknown): unknown {
 		"chain" in value &&
 		"transport" in value
 	) {
-		const client = value as { chain?: { id?: number } };
-		return { __type: "publicClient", chainId: client.chain?.id ?? "unknown" };
+		const client = value as { chain?: { id?: number }; blockPin?: unknown };
+		return {
+			__type: "publicClient",
+			chainId: client.chain?.id ?? "unknown",
+			// a client from `pinClientToBlock` answers at one block; keep its
+			// entries apart from the unpinned client's and from other pins
+			...(client.blockPin === undefined
+				? {}
+				: { blockPin: normalizeQueryKeyValue(client.blockPin) }),
+		};
 	}
 	if (Array.isArray(value)) return value.map(normalizeQueryKeyValue);
 	if (value !== null && typeof value === "object") {
@@ -108,6 +122,7 @@ export function createQueryCacheBuildQuery(
 ): BuildQueryFn {
 	const enabled = config?.enabled ?? true;
 	const ttlMs = config?.ttlMs ?? DEFAULT_QUERY_CACHE_TTL_MS;
+	const failureTtlMs = config?.failureTtlMs ?? DEFAULT_QUERY_FAILURE_TTL_MS;
 
 	return <T extends (...args: any[]) => Promise<any>>(
 		queryName: string,
@@ -123,11 +138,14 @@ export function createQueryCacheBuildQuery(
 				expiresAt: number;
 				value?: Awaited<ReturnType<T>>;
 				promise?: Promise<Awaited<ReturnType<T>>>;
+				error?: unknown;
 			}
 		>();
 
 		const wrapped = (async (...args: Parameters<T>) => {
-			const cacheKey = context?.getCacheKey(args) ?? getEulerSdkQueryKey(queryName, args);
+			const cacheKey = context
+				? context.getCacheKey(args)
+				: getEulerSdkQueryKey(queryName, args);
 			if (cacheKey === null) {
 				return fn(...args);
 			}
@@ -137,6 +155,7 @@ export function createQueryCacheBuildQuery(
 			if (cached && cached.expiresAt > now) {
 				if (cached.promise) return cached.promise;
 				if ("value" in cached) return cached.value as Awaited<ReturnType<T>>;
+				if ("error" in cached) throw cached.error;
 			}
 
 			const promise = fn(...args)
@@ -150,7 +169,14 @@ export function createQueryCacheBuildQuery(
 				.catch((error) => {
 					const current = cache.get(cacheKey);
 					if (current?.promise === promise) {
-						cache.delete(cacheKey);
+						if (failureTtlMs > 0) {
+							cache.set(cacheKey, {
+								error,
+								expiresAt: Date.now() + failureTtlMs,
+							});
+						} else {
+							cache.delete(cacheKey);
+						}
 					}
 					throw error;
 				});

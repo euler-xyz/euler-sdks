@@ -13,6 +13,16 @@ export type V3ListEnvelope<T> = {
 	};
 };
 
+type V3RewardEligibilityRequirement = {
+	type?: string;
+	chainId?: number;
+	tokenAddress?: string;
+	minimumAmount?: string;
+	minimumDurationSeconds?: number;
+	tokenSymbol?: string;
+	tokenDecimals?: number;
+};
+
 export type V3RewardsApyRow = {
 	chainId?: number;
 	vault?: string;
@@ -37,6 +47,7 @@ export type V3RewardsApyRow = {
 	campaignType?: string;
 	rewardToken?: {
 		address?: string;
+		chainId?: number;
 		symbol?: string;
 		name?: string;
 		decimals?: number | string;
@@ -53,6 +64,8 @@ export type V3RewardsApyRow = {
 	rewardTokenDecimals?: number | string;
 	whitelist?: string[];
 	blacklist?: string[];
+	eligibilityRequirements?: V3RewardEligibilityRequirement[];
+	eligibilityRequirementsStatus?: string;
 	campaigns?: Array<{
 		id?: string;
 		provider?: string;
@@ -71,8 +84,11 @@ export type V3RewardsApyRow = {
 		maxLeverage?: number | string;
 		whitelist?: string[];
 		blacklist?: string[];
+		eligibilityRequirements?: V3RewardEligibilityRequirement[];
+		eligibilityRequirementsStatus?: string;
 		rewardToken?: {
 			address?: string;
+			chainId?: number;
 			symbol?: string;
 			name?: string;
 			decimals?: number | string;
@@ -93,8 +109,13 @@ export type V3RewardsBreakdownEnvelope = {
 
 export type V3RewardsBreakdownRow = {
 	chainId?: number;
+	vault?: string;
+	vaultAddress?: string;
+	recipient?: string;
 	source?: string;
 	provider?: string;
+	currencyType?: number | string;
+	currency_type?: number | string;
 	token?: {
 		address?: string;
 		chainId?: number;
@@ -108,11 +129,34 @@ export type V3RewardsBreakdownRow = {
 	tokenDecimals?: number | string;
 	tokenPrice?: number | string;
 	tokenPriceUsd?: number | string;
+	rewardToken?:
+		| string
+		| {
+				address?: string;
+				chainId?: number;
+				symbol?: string;
+				name?: string;
+				decimals?: number | string;
+		  }
+		| null;
+	/**
+	 * Reward token metadata resolved by the upstream for this row, independent of
+	 * whether the row's campaign is still listed by `/v3/apys/rewards`. Null when
+	 * the upstream could not resolve the token; absent on older V3 responses.
+	 */
+	rewardTokenMetadata?: {
+		address?: string;
+		chainId?: number;
+		symbol?: string;
+		name?: string;
+		decimals?: number | string;
+	} | null;
 	rewardTokenAddress?: string;
 	rewardTokenSymbol?: string;
 	rewardTokenName?: string;
 	rewardTokenDecimals?: number | string;
 	rewardTokenPriceUsd?: number | string;
+	amount?: string | number;
 	campaignId?: string;
 	id?: string;
 	accumulated?: string | number;
@@ -131,4 +175,10 @@ export type V3RewardsBreakdownRow = {
 	cumulativeAmounts?: string[];
 	cumulativeRewards?: string[];
 	epoch?: string | number;
+	streamId?: string;
+	stream_id?: string;
+	streamAddress?: string;
+	stream_address?: string;
+	contractAddress?: string;
+	timestamp?: string | number;
 };

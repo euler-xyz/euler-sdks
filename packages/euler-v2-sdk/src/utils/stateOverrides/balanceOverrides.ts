@@ -83,8 +83,8 @@ export type GetBalanceOverridesOptions = {
 	/**
 	 * Caller-supplied slot hints. When `balanceSlotIndex` is present for a
 	 * token, the slot is computed cryptographically; access-list discovery is
-	 * skipped. Missing entries fall back to `fetchErc20SlotHints` (sequential
-	 * probing) before finally falling back to access-list discovery.
+	 * skipped. Missing entries fall back to access-list discovery before
+	 * sequential `fetchErc20SlotHints` probing.
 	 */
 	slotHints?: SlotHints;
 };
@@ -97,11 +97,13 @@ export type GetBalanceOverridesOptions = {
  *  2. Read `balanceOf` on-chain; skip if sufficient.
  *  3. Use caller-supplied `balanceSlotIndex` → compute slot cryptographically.
  *  4. Use cached probed slot index (`fetchErc20SlotHints` cache) → same.
- *  5. Probe sequentially via `fetchErc20SlotHints` (small N `eth_call`s).
- *  6. Fall back to legacy `eth_createAccessList` discovery + per-slot probe.
+ *  5. Probe via `eth_createAccessList` discovery + per-slot verification.
+ *  6. Fall back to sequential `fetchErc20SlotHints` probing when access-list
+ *     discovery is unavailable.
  *
- * Steps 3–5 are dramatically cheaper than (6) and work for the vast majority
- * of ERC20 layouts. Step 6 remains as a safety net for exotic packed storage.
+ * Access-list probing handles proxy / namespaced token layouts when the RPC
+ * supports it. Sequential probing remains the fallback for standard ERC20
+ * layouts on RPCs where `eth_createAccessList` is unavailable.
  */
 export async function getBalanceOverrides(
 	client: PublicClient,
@@ -185,25 +187,9 @@ export async function getBalanceOverrides(
 			continue;
 		}
 
-		// Sequential probing via fetchErc20SlotHints (cheap, owner-agnostic).
-		try {
-			const fresh = await fetchErc20SlotHints(client, tokenAddr, {
-				skipAllowance: true,
-			});
-			if (fresh.balanceSlotIndex !== undefined && !shouldSkipCaching(token)) {
-				const slot = computeBalanceSlot(account, fresh.balanceSlotIndex);
-				stateOverride.push({
-					address: tokenAddr,
-					stateDiff: [{ slot, value: valueHex }],
-				});
-				continue;
-			}
-		} catch (e) {
-			// fall through to legacy access-list discovery
-		}
-
-		// Legacy fallback: eth_createAccessList-based discovery. Only reached
-		// for exotic storage layouts where the small-integer slot probe failed.
+		// Prefer access-list discovery for unresolved tokens; it can surface
+		// proxy / namespaced storage slots that raw sequential probing cannot.
+		let resolvedViaAccessList = false;
 		try {
 			const accessedSlots = await getAccessedSlots(client, {
 				data: encodeFunctionData({
@@ -215,48 +201,70 @@ export async function getBalanceOverrides(
 			});
 
 			const tokenSlots = accessedSlots.get(getAddress(token));
-			if (!tokenSlots || tokenSlots.length === 0) continue;
+			if (tokenSlots && tokenSlots.length > 0) {
+				const candidateSlots: StorageSlot[] = tokenSlots.map((slot) => ({
+					address: getAddress(token),
+					slot,
+				}));
 
-			const candidateSlots: StorageSlot[] = tokenSlots.map((slot) => ({
-				address: getAddress(token),
-				slot,
-			}));
+				// Test each candidate: override slot → read balanceOf → pick best
+				const testBalances = await Promise.all(
+					candidateSlots.map((slot) =>
+						client
+							.readContract({
+								abi: erc20Abi,
+								address: token,
+								functionName: "balanceOf",
+								args: [account],
+								stateOverride: [
+									{
+										address: slot.address,
+										stateDiff: [{ slot: slot.slot, value: valueHex }],
+									},
+								],
+							})
+							.catch(() => 0n),
+					),
+				);
 
-			if (candidateSlots.length === 0) continue;
-
-			// Test each candidate: override slot → read balanceOf → pick best
-			const testBalances = await Promise.all(
-				candidateSlots.map((slot) =>
-					client
-						.readContract({
-							abi: erc20Abi,
-							address: token,
-							functionName: "balanceOf",
-							args: [account],
-							stateOverride: [
-								{
-									address: slot.address,
-									stateDiff: [{ slot: slot.slot, value: valueHex }],
-								},
-							],
-						})
-						.catch(() => 0n),
-				),
-			);
-
-			const bestIdx = findIndexOfLargest(testBalances);
-			const bestSlot = candidateSlots[bestIdx];
-			if (bestSlot) {
-				stateOverride.push({
-					address: bestSlot.address,
-					stateDiff: [{ slot: bestSlot.slot, value: valueHex }],
-				});
-				if (!shouldSkipCaching(token)) {
-					balanceSlotCache.set(cacheKey, bestSlot);
+				const bestIdx = findIndexOfLargest(testBalances);
+				const bestSlot = candidateSlots[bestIdx];
+				const bestBalance = bestIdx >= 0 ? testBalances[bestIdx] : undefined;
+				if (
+					bestSlot &&
+					bestBalance !== undefined &&
+					(bestBalance > currentBalance || shouldSkipCaching(token))
+				) {
+					stateOverride.push({
+						address: bestSlot.address,
+						stateDiff: [{ slot: bestSlot.slot, value: valueHex }],
+					});
+					if (!shouldSkipCaching(token)) {
+						balanceSlotCache.set(cacheKey, bestSlot);
+					}
+					resolvedViaAccessList = true;
 				}
 			}
 		} catch (e) {
 			console.warn(`[balanceOverrides] slot discovery failed for ${token}:`, e);
+		}
+		if (resolvedViaAccessList) continue;
+
+		// Sequential probing via fetchErc20SlotHints (cheap, owner-agnostic) is
+		// the fallback for standard ERC20 layouts when access-list is unavailable.
+		try {
+			const fresh = await fetchErc20SlotHints(client, tokenAddr, {
+				skipAllowance: true,
+			});
+			if (fresh.balanceSlotIndex !== undefined && !shouldSkipCaching(token)) {
+				const slot = computeBalanceSlot(account, fresh.balanceSlotIndex);
+				stateOverride.push({
+					address: tokenAddr,
+					stateDiff: [{ slot, value: valueHex }],
+				});
+			}
+		} catch (e) {
+			// unresolved; callers still get any other applicable overrides.
 		}
 	}
 

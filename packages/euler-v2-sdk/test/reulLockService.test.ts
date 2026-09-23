@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { getAddress, type Address } from "viem";
+import { decodeFunctionData, getAddress, type Address } from "viem";
 
 import {
 	REULLockService,
+	reulLockAbi,
 } from "../src/services/reulLockService/index.js";
+import type { BuildUnlockREULPlanArgs } from "../src/services/reulLockService/index.js";
 import { buildEulerSDK } from "../src/sdk/buildSDK.js";
 
 const ACCOUNT = getAddress("0x00000000000000000000000000000000000000aa");
@@ -83,7 +85,7 @@ test("fetchLocks reads locked rEUL amounts and per-lock withdraw amounts", async
 	);
 });
 
-test("buildUnlockPlan creates the rEUL unlock contract call", () => {
+test("buildUnlockPlan creates an rEUL unlock EVC batch item", () => {
 	const service = new REULLockService(
 		{ getProvider: () => undefined } as never,
 		createDeploymentService() as never,
@@ -93,19 +95,30 @@ test("buildUnlockPlan creates the rEUL unlock contract call", () => {
 		chainId: 1,
 		account: ACCOUNT,
 		lockTimestamp: 123n,
+		allowRemainderLoss: true,
 	});
 
 	assert.equal(plan.length, 1);
-	assert.equal(plan[0]?.type, "contractCall");
-	if (plan[0]?.type !== "contractCall") {
-		throw new Error("expected contractCall");
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
 	}
-
-	assert.equal(plan[0].chainId, 1);
-	assert.equal(plan[0].to, REUL);
-	assert.equal(plan[0].value, 0n);
-	assert.equal(plan[0].functionName, "withdrawToByLockTimestamp");
-	assert.deepEqual(plan[0].args, [ACCOUNT, 123n, true]);
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) {
+		throw new Error("expected operation");
+	}
+	assert.equal(operation.name, "Unlock rEUL");
+	assert.equal(operation.items.length, 1);
+	assert.equal(operation.items[0]?.targetContract, REUL);
+	assert.equal(operation.items[0]?.onBehalfOfAccount, ACCOUNT);
+	assert.equal(operation.items[0]?.value, 0n);
+	const decoded = decodeFunctionData({
+		abi: reulLockAbi,
+		data: operation.items[0]!.data,
+	});
+	assert.equal(decoded.functionName, "withdrawToByLockTimestamp");
+	assert.deepEqual(decoded.args, [ACCOUNT, 123n, true]);
 });
 
 test("buildUnlockPlan supports explicit rEUL address and remainder-loss override", () => {
@@ -122,12 +135,40 @@ test("buildUnlockPlan supports explicit rEUL address and remainder-loss override
 		allowRemainderLoss: false,
 	});
 
-	assert.equal(plan[0]?.type, "contractCall");
-	if (plan[0]?.type !== "contractCall") {
-		throw new Error("expected contractCall");
+	assert.equal(plan[0]?.type, "evcBatch");
+	if (plan[0]?.type !== "evcBatch") {
+		throw new Error("expected evcBatch");
 	}
-	assert.equal(plan[0].to, OVERRIDE_REUL);
-	assert.deepEqual(plan[0].args, [ACCOUNT, 456n, false]);
+	const operation = plan[0].items[0];
+	assert.equal(operation?.type, "operation");
+	if (!operation || !("items" in operation)) {
+		throw new Error("expected operation");
+	}
+	assert.equal(operation.items[0]?.targetContract, OVERRIDE_REUL);
+	assert.equal(operation.items[0]?.onBehalfOfAccount, ACCOUNT);
+	const decoded = decodeFunctionData({
+		abi: reulLockAbi,
+		data: operation.items[0]!.data,
+	});
+	assert.equal(decoded.functionName, "withdrawToByLockTimestamp");
+	assert.deepEqual(decoded.args, [ACCOUNT, 456n, false]);
+});
+
+test("buildUnlockPlan rejects an omitted remainder-loss policy", () => {
+	const service = new REULLockService(
+		{ getProvider: () => undefined } as never,
+		createDeploymentService() as never,
+	);
+	const missingLossPolicy = {
+		chainId: 1,
+		account: ACCOUNT,
+		lockTimestamp: 123n,
+	} as BuildUnlockREULPlanArgs;
+
+	assert.throws(
+		() => service.buildUnlockPlan(missingLossPolicy),
+		/allowRemainderLoss must be explicitly set/,
+	);
 });
 
 test("rEUL address is required when deployment metadata does not provide it", () => {
@@ -142,6 +183,7 @@ test("rEUL address is required when deployment metadata does not provide it", ()
 				chainId: 1,
 				account: ACCOUNT,
 				lockTimestamp: 123n,
+				allowRemainderLoss: true,
 			}),
 		/rEUL token address not configured/,
 	);

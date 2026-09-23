@@ -4,10 +4,10 @@ Labels are purely off-chain metadata sourced from [`euler-labels`](https://githu
 
 ## What labels provide
 
-- **Products** &mdash; named groupings of vaults with vault-level overrides, notices, deprecation, recently-added markers, classification tags (e.g. `keyring`, `access control`), and exploration flags
+- **Products** &mdash; named groupings of vaults with vault-level overrides, notices, deprecation, classification tags (e.g. `keyring`, `access control`, `governance limited`, `cyclical note`), and exploration flags
 - **Entities** &mdash; the organisation(s) governing a vault (name, logo, website, socials)
 - **Points** &mdash; third-party points programs available on specific vaults
-- **Euler Earn entries** &mdash; Earn vault membership, descriptions, notices, block/restricted countries, recently-added/deprecated/not-explorable flags
+- **Euler Earn entries** &mdash; Earn vault membership, descriptions, notices, block/restricted countries, classification tags, and deprecated/not-explorable flags
 - **Asset rules** &mdash; explicit or pattern-based block/restricted-country rules
 
 ## Usage
@@ -55,11 +55,17 @@ import {
   isEulerLabelVaultKeyring,
   isEulerLabelProductKeyring,
   isEulerLabelVaultAccessControlled,
+  isEulerLabelVaultCyclicalNote,
+  isEulerLabelVaultGovernanceLimited,
+  isEulerLabelVaultHighUtilisationWarningSuppressed,
 } from '@eulerxyz/euler-v2-sdk'
 
 isEulerLabelVaultKeyring(labelsData, vaultAddress)         // tag "keyring"
 isEulerLabelVaultAccessControlled(labelsData, vaultAddress) // tag "access control"
+isEulerLabelVaultGovernanceLimited(labelsData, vaultAddress) // tag "governance limited"
+isEulerLabelVaultHighUtilisationWarningSuppressed(labelsData, vaultAddress) // tag "suppress high utilisation warning"
+isEulerLabelVaultCyclicalNote(labelsData, vaultAddress) // tag "cyclical note"
 isEulerLabelProductKeyring(labelsData, productKey)
 ```
 
-To check any other tag, read `tags` directly off the resolved product or vault override.
+`isEulerLabelVaultRecentlyAdded(labelsData, vaultAddress)` resolves the `recently added` tag from product, vault override, or Earn-entry tags. To check any other tag, read `tags` directly off the resolved product, vault override, or Earn entry.

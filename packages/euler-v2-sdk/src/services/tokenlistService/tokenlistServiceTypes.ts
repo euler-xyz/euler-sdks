@@ -11,6 +11,7 @@ export interface TokenListItem {
 	decimals: number;
 	logoURI: string;
 	groups?: string[];
+	tags?: string[];
 	metadata?: {
 		provider?: string;
 		poolId?: string;
