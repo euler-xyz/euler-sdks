@@ -247,7 +247,11 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 			{},
 		);
 
-		const mainSubAccount = validSubs.find((sa) => sa.account === sa.owner);
+		// These flags belong to the shared address prefix. The owner's primary
+		// address need not have an indexed position, so any fetched subaccount
+		// provides the same owner-wide settings.
+		const mainSubAccount =
+			validSubs.find((sa) => sa.account === sa.owner) ?? validSubs[0];
 		const result = normalizeAccountOutput({
 			chainId,
 			owner: getAddress(address),
@@ -474,8 +478,23 @@ export class AccountOnchainAdapter implements IAccountAdapter {
 					);
 
 					if (result) return result;
-				} catch {
-					// Fall back to normal query on error
+					throw new Error("Read enrichment simulation failed.");
+				} catch (error) {
+					// Keep the fallback usable while making the missing update visible.
+					errors.push({
+						code: "SOURCE_UNAVAILABLE",
+						severity: "warning",
+						message: `Account read enrichment failed for ${getAddress(vault)}; using the ordinary lens query.`,
+						locations: [
+							dataIssueLocation(
+								subAccountDiagnosticOwner(chainId, subAccount),
+								"$.positions",
+							),
+						],
+						source: "batchSimulation",
+						originalValue:
+							error instanceof Error ? error.message : String(error),
+					});
 				}
 
 				return this.queryVaultAccountInfo(

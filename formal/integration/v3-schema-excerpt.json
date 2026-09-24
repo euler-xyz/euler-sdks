@@ -1,0 +1,2214 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Euler Data API (V3)",
+    "version": "3.0.0",
+    "description": "API specification for Euler Data v3. This spec defines the current\nresource-oriented contract for the platform, with emphasis on consistent\nschemas, predictable REST semantics, caching, observability, and a uniform\ndeveloper experience.\n\nMigration notes\n- Euler Data v3 is not a path-for-path clone of v1/v2. Some endpoints map\n  directly, some require multiple v3 calls, and some legacy aggregates were\n  intentionally removed.\n- The live [migration guide](/v3/docs/migration) explains how legacy v1/v2\n  endpoints and payloads map into the v3 resource model.\n- Important semantic changes:\n  - Vault base APY and rewards APY are exposed separately in v3.\n  - Account positions are flattened into account-vault rows instead of the\n    legacy nested sub-account shape.\n  - All supported API paths live under `/v3`; legacy paths return `410`.\n  - Summary endpoints prefer smaller, focused resources over large\n    BFF-style payloads.\n\nBase path: /v3\n\nConventions\n- JSON field naming: camelCase\n- Addresses: accept lowercase or checksum; responses are EIP-55 checksummed\n- Public APY values (`*Apy`, `apy*`): percent numbers with 6 decimal places (e.g., 5.123456 = 5.123456%)\n- Contract interest-rate fields (`borrowAPY`, `supplyAPY` in `interestRates`): decimal strings in contract fraction units\n- Ratios (utilization, LTV, etc.): numbers with 6 decimal places\n- Response timestamps: ISO-8601 strings (UTC). Some legacy fields still expose unix\n  seconds for compatibility and include `*Iso` companions.\n- Query time ranges: unix seconds (from/to)\n\nUnit policy\n- v3 separates market metadata from contract verdicts by both name and type.\n- Market-normalized USD prices and USD values are JSON numbers. These are values\n  derived from off-chain pricing, cached price snapshots, or API-level market math.\n  This includes `/v3/prices`, token price routes, vault/earn/protocol USD totals,\n  portfolio market values, portfolio USD liquidation/risk fields such as\n  `liabilityValueUsd`, `totalCollateralValueUsd`, `borrowLiquidationPriceUsd`,\n  and `collateralLiquidationPricesUsd`, and vault holder `assetsUsd`.\n- Contract-derived oracle and raw account-liquidity verdict values are exact strings.\n  These preserve the integer value used by contracts, normalized to 18 decimals\n  for API exposure. Oracle prices are quoted in the vault unit of account, which\n  can be USD, ETH, or another asset. This includes `/v3/oracles/prices`, raw\n  account-liquidity `liabilityValue` and `totalCollateralValue` objects,\n  `liabilityValueBorrowing`, `liabilityValueLiquidation`, and collateral verdict\n  values.\n- On-chain token quantities are bigint strings in their native unit scale. This\n  includes amounts, balances, shares, assets, borrows, reward amounts, liquidation\n  repay/yield amounts, and block numbers.\n- Caps are also bigint strings, but EVK caps are exposed as resolved underlying\n  asset-unit amounts rather than packed contract config words.\n- LTV config values use canonical basis-point strings. Legacy decimal aliases\n  may remain on config-history payloads for compatibility when explicitly named.\n\nRate limiting\n- Optional API keys for higher limits\n- Default limits are configurable; current defaults: free tier 100 req/min (IP-based)\n  and authenticated 1000 req/min (per API key), 60s window.\n- By default, proxy headers are not trusted for IP identity unless explicitly enabled.\n- Redis failures default to fail-closed (503) for strict enforcement; fail-open is opt-in.\n- RateLimit-* (IETF draft-6) and legacy X-RateLimit-* headers are returned.\n\nCORS\n- Public API responses use wildcard CORS, including preflight responses for unsafe methods.\n- Unsafe methods with request bodies must use a JSON media type.\n\nCaching\n- Cache-Control headers are returned for cacheable endpoints.\n- Defaults (may be adjusted in config):\n  - Prices: 300s\n  - APYs: 600s\n  - Rewards: 900s\n  - General responses: 60s (short 30s, long 300s)\n\nErrors\n- All errors use a standard envelope: { error: { code, message, requestId, details? } }\n- Domain error codes are documented in this spec.\n- JSON request bodies must use `Content-Type: application/json` or another `application/*+json` media type.\n- Request bodies larger than 1 MiB are rejected before route parsing with `413 PAYLOAD_TOO_LARGE`.\n"
+  },
+  "paths": {
+    "/v3/apys/intrinsic": {
+      "get": {
+        "tags": [
+          "APYs"
+        ],
+        "summary": "Intrinsic APYs",
+        "description": "Returns one row per chain and asset. The newest provider observation is selected; equal timestamps use provider and uniquifier ascending as deterministic tie-breakers.",
+        "x-status": "implemented",
+        "x-cache-ttl": 600,
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ChainIdParam"
+          },
+          {
+            "name": "assets",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/FieldsParam"
+          },
+          {
+            "$ref": "#/components/parameters/OffsetParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Intrinsic APYs",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/Cache-Control"
+              },
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IntrinsicApy"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PaginationMeta"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getApysIntrinsic"
+      }
+    },
+    "/v3/apys/intrinsic/history": {
+      "get": {
+        "tags": [
+          "APYs"
+        ],
+        "summary": "Intrinsic APY history",
+        "x-status": "implemented",
+        "x-cache-ttl": 300,
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ChainIdParam"
+          },
+          {
+            "name": "asset",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Asset address to query."
+          },
+          {
+            "name": "resolution",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1h",
+                "1d"
+              ]
+            },
+            "description": "Bucket size for aggregation."
+          },
+          {
+            "$ref": "#/components/parameters/StartTimestampParam"
+          },
+          {
+            "$ref": "#/components/parameters/EndTimestampParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Intrinsic APY history",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IntrinsicApyHistoryPoint"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/IntrinsicApyHistoryMeta"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getApysIntrinsicHistory"
+      }
+    },
+    "/v3/apys/rewards": {
+      "get": {
+        "tags": [
+          "Rewards"
+        ],
+        "summary": "Rewards APYs",
+        "x-status": "implemented",
+        "x-cache-ttl": 900,
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ChainIdParam"
+          },
+          {
+            "name": "vault",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rewards APYs",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/Cache-Control"
+              },
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RewardsApy"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PaginationMeta"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getApysRewards"
+      }
+    },
+    "/v3/apys/rewards/history": {
+      "get": {
+        "tags": [
+          "Rewards"
+        ],
+        "summary": "Rewards APY history",
+        "description": "Rewards APY history for a required time range.\nRequired query params: `chainId`, `from`, `to`.\nOptional filters: `vault`, `resolution`, `offset`, `limit`.\nMaximum allowed window is 30 days per request.\n",
+        "x-status": "implemented",
+        "x-cache-ttl": 300,
+        "parameters": [
+          {
+            "name": "chainId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "resolution",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1h",
+                "1d"
+              ],
+              "default": "1d"
+            }
+          },
+          {
+            "name": "vault",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/OffsetParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rewards APY history",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/Cache-Control"
+              },
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RewardsApyHistoryPoint"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PaginationMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        },
+        "operationId": "getApysRewardsHistory"
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "ChainIdParam": {
+        "name": "chainId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Comma-separated list of chain IDs (single value allowed).",
+        "example": "1,10,8453"
+      },
+      "RewardsBreakdownChainIdParam": {
+        "name": "chainId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "pattern": "^\\s*[1-9]\\d*\\s*(,\\s*[1-9]\\d*\\s*)*$"
+        },
+        "description": "Optional comma-separated chain filter. Every element must be a positive\nsafe integer; surrounding whitespace is ignored, and empty elements are\ninvalid. Duplicate IDs are accepted, count once toward the fan-out limit,\nand preserve first-occurrence order. At most 12 distinct supported chain\nIDs are allowed. Omitting this parameter leaves the result unrestricted by\nchain.\n",
+        "example": "1,42161,8453"
+      },
+      "ChainIdPath": {
+        "name": "chainId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "AddressPath": {
+        "name": "address",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "AddressScreeningHistoryAddressParam": {
+        "name": "address",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "pattern": "^0x[a-fA-F0-9]{40}$"
+        }
+      },
+      "AddressScreeningHistoryChainParam": {
+        "name": "chain",
+        "in": "query",
+        "required": false,
+        "description": "Matches the requested or resolved chain of an evaluation, or the chain of a request.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        }
+      },
+      "AddressScreeningHistoryFromParam": {
+        "name": "from",
+        "in": "query",
+        "required": false,
+        "description": "Inclusive lower bound on the evaluation or request time (RFC 3339).",
+        "schema": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "AddressScreeningHistoryToParam": {
+        "name": "to",
+        "in": "query",
+        "required": false,
+        "description": "Inclusive upper bound on the evaluation or request time (RFC 3339).",
+        "schema": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "AddressScreeningHistoryLimitParam": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 50
+        }
+      },
+      "OffsetParam": {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "default": 0
+        }
+      },
+      "IndexedEventsOffsetParam": {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "description": "Indexed-event page offset as a non-negative base-10 safe integer, with a maximum of 1000. Invalid values are rejected; use narrower time or event-type filters for deeper history.",
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "default": 0
+        }
+      },
+      "LimitParam": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "description": "Requested page size. Values above the endpoint cap are clamped; the default shared cap is 100.",
+        "schema": {
+          "type": "integer",
+          "default": 20,
+          "maximum": 100
+        }
+      },
+      "LabelViewParam": {
+        "name": "view",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "curation",
+            "resolved"
+          ],
+          "default": "curation"
+        },
+        "description": "Read view. `curation` (default) returns raw label fields with the resolved block nested, mirroring the write schema so read-modify-write round-trips stay safe. `resolved` returns the display cascade flattened to the top level with raw fields omitted, for read-only consumers. Unknown values are rejected with 400."
+      },
+      "LabelSetParam": {
+        "name": "labelSet",
+        "in": "query",
+        "required": false,
+        "description": "Label set identifier. Defaults to `public`.",
+        "schema": {
+          "type": "string",
+          "default": "public"
+        }
+      },
+      "LabelVersionParam": {
+        "name": "version",
+        "in": "query",
+        "required": false,
+        "description": "Version selector. Omission, `latest`, and `production` select the latest published snapshot. Explicit `current` and `draft` select the mutable working copy and require an authorized session as documented by the endpoint. Other published keys and aliases retain their stored casing.",
+        "schema": {
+          "type": "string",
+          "default": "latest"
+        }
+      },
+      "LabelSetIdPath": {
+        "name": "labelSetId",
+        "in": "path",
+        "required": true,
+        "description": "Label set identifier.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "LabelVersionIdPath": {
+        "name": "versionId",
+        "in": "path",
+        "required": true,
+        "description": "Published label version identifier.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "TokenLimitParam": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "description": "Requested token page size. Values above 500 are clamped.",
+        "schema": {
+          "type": "integer",
+          "default": 20,
+          "maximum": 500
+        }
+      },
+      "FieldsParam": {
+        "name": "fields",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Comma-separated list of fields to include."
+      },
+      "IncludeParam": {
+        "name": "include",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Comma-separated list of related resources to expand. Unknown values are ignored."
+      },
+      "SortParam": {
+        "name": "sort",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Sort field, prefix with '-' for descending."
+      },
+      "FromParam": {
+        "name": "from",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer"
+        },
+        "description": "Unix timestamp (seconds)."
+      },
+      "ToParam": {
+        "name": "to",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer"
+        },
+        "description": "Unix timestamp (seconds)."
+      },
+      "HistoryFromParam": {
+        "name": "from",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "description": "Unix timestamp in seconds, no later than 2038-01-19T03:14:07Z."
+      },
+      "HistoryToParam": {
+        "name": "to",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "description": "Unix timestamp in seconds, no later than 2038-01-19T03:14:07Z."
+      },
+      "StartTimestampParam": {
+        "name": "startTimestamp",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer"
+        },
+        "description": "Start of time range (unix seconds)."
+      },
+      "EndTimestampParam": {
+        "name": "endTimestamp",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer"
+        },
+        "description": "End of time range (unix seconds)."
+      },
+      "BlockNumberParam": {
+        "name": "blockNumber",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Block number (string to avoid precision limits)."
+      }
+    },
+    "schemas": {
+      "VaultLiquidation": {
+        "type": "object",
+        "properties": {
+          "maxLiquidationDiscount": {
+            "type": "number"
+          },
+          "liquidationCoolOffTime": {
+            "type": "integer"
+          },
+          "socializeDebt": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LiquidationValuation": {
+        "type": "object",
+        "required": [
+          "status",
+          "source"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "partial",
+              "unavailable"
+            ],
+            "description": "Available when both liquidation legs have USD values, partial when one does, and unavailable when neither does."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "historical-price-snapshots"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Present when valuation is partial or unavailable."
+          }
+        }
+      },
+      "LiquidationUnitOfAccountValuation": {
+        "type": "object",
+        "required": [
+          "source",
+          "unitOfAccount",
+          "unitOfAccountDecimals",
+          "repayValue",
+          "collateralValue",
+          "bonusValue",
+          "blockNumber"
+        ],
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "historical-protocol-oracle"
+            ]
+          },
+          "unitOfAccount": {
+            "type": "string",
+            "description": "Debt vault unit-of-account address used by the protocol oracle."
+          },
+          "unitOfAccountDecimals": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 255
+          },
+          "repayValue": {
+            "type": "string",
+            "pattern": "^\\d+$",
+            "description": "Debt repaid, quoted into the unit of account at the liquidation block."
+          },
+          "collateralValue": {
+            "type": "string",
+            "pattern": "^\\d+$",
+            "description": "Seized collateral-vault shares, quoted into the unit of account at the liquidation block."
+          },
+          "bonusValue": {
+            "type": "string",
+            "pattern": "^-?\\d+$",
+            "description": "Collateral value minus repay value in raw unit-of-account units."
+          },
+          "blockNumber": {
+            "type": "string",
+            "pattern": "^\\d+$"
+          }
+        }
+      },
+      "LiquidationEvent": {
+        "type": "object",
+        "required": [
+          "chainId",
+          "vault",
+          "violator",
+          "liquidator",
+          "collateral",
+          "repayAssets",
+          "yieldBalance",
+          "debtAsset",
+          "debtAssetDecimals",
+          "debtAssetPriceUsd",
+          "repayAssetsUsd",
+          "collateralAsset",
+          "collateralAssetDecimals",
+          "collateralAssetPriceUsd",
+          "collateralAssets",
+          "collateralAssetsUsd",
+          "bonusUsd",
+          "valuation",
+          "unitOfAccountValuation",
+          "blockNumber",
+          "txHash",
+          "timestamp"
+        ],
+        "properties": {
+          "chainId": {
+            "type": "integer"
+          },
+          "vault": {
+            "type": "string",
+            "description": "Debt vault address."
+          },
+          "violator": {
+            "type": "string"
+          },
+          "liquidator": {
+            "type": "string"
+          },
+          "collateral": {
+            "type": "string",
+            "description": "Collateral vault address."
+          },
+          "repayAssets": {
+            "type": "string",
+            "description": "Debt repaid in raw underlying units of the debt vault asset."
+          },
+          "yieldBalance": {
+            "type": "string",
+            "description": "Collateral seized in raw collateral-vault share units."
+          },
+          "debtAsset": {
+            "type": "string",
+            "nullable": true,
+            "description": "Underlying token address of the debt vault at the liquidation block."
+          },
+          "debtAssetDecimals": {
+            "type": "integer",
+            "nullable": true
+          },
+          "debtAssetPriceUsd": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "description": "Historical debt-asset USD price at or before the event time and block, never a current-price fallback."
+          },
+          "repayAssetsUsd": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0
+          },
+          "collateralAsset": {
+            "type": "string",
+            "nullable": true,
+            "description": "Underlying token address of the collateral vault at the liquidation block."
+          },
+          "collateralAssetDecimals": {
+            "type": "integer",
+            "nullable": true
+          },
+          "collateralAssetPriceUsd": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "description": "Historical collateral-asset USD price at or before the event time and block, never a current-price fallback."
+          },
+          "collateralAssets": {
+            "type": "string",
+            "nullable": true,
+            "description": "Seized collateral shares converted to raw underlying units from the first indexed collateral VaultStatus after the liquidation log in the same transaction, using EVK virtual-deposit and rounding semantics. Null when that transaction-ordered status is unavailable."
+          },
+          "collateralAssetsUsd": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0
+          },
+          "bonusUsd": {
+            "type": "number",
+            "nullable": true,
+            "description": "Collateral assets USD minus repaid debt USD. Null unless both values are available."
+          },
+          "valuation": {
+            "$ref": "#/components/schemas/LiquidationValuation"
+          },
+          "unitOfAccountValuation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LiquidationUnitOfAccountValuation"
+              }
+            ],
+            "nullable": true,
+            "description": "Protocol-oracle fallback when the historical USD bonus is unavailable. Null when the USD valuation is complete or the historical RPC quote is unavailable."
+          },
+          "blockNumber": {
+            "type": "string"
+          },
+          "txHash": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "VaultApyPoint": {
+        "type": "object",
+        "properties": {
+          "supplyApy": {
+            "type": "number",
+            "nullable": true,
+            "description": "Percent number with 6 decimal places."
+          },
+          "borrowApy": {
+            "type": "number",
+            "nullable": true,
+            "description": "Percent number with 6 decimal places."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "VaultApy": {
+        "type": "object",
+        "properties": {
+          "coverage": {
+            "$ref": "#/components/schemas/HistoryCoverage"
+          },
+          "current": {
+            "$ref": "#/components/schemas/VaultApyPoint"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VaultApyPoint"
+            }
+          }
+        }
+      },
+      "VaultApyMeta": {
+        "type": "object",
+        "properties": {
+          "coverage": {
+            "$ref": "#/components/schemas/HistoryCoverage"
+          },
+          "chainId": {
+            "type": "string"
+          },
+          "vault": {
+            "type": "string"
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "1h",
+              "1d"
+            ]
+          },
+          "startTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SecuritizeTokenRef": {
+        "type": "object",
+        "required": [
+          "address",
+          "symbol",
+          "decimals",
+          "name"
+        ],
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "decimals": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "AccountPositionLiquidity": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "vaultAddress": {
+            "type": "string"
+          },
+          "unitOfAccount": {
+            "type": "string"
+          },
+          "daysToLiquidation": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "Infinity",
+                  "MoreThanAYear"
+                ]
+              }
+            ]
+          },
+          "liabilityValue": {
+            "$ref": "#/components/schemas/AccountLiquidityValue"
+          },
+          "totalCollateralValue": {
+            "$ref": "#/components/schemas/AccountLiquidityValue"
+          },
+          "collaterals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "string"
+                },
+                "value": {
+                  "$ref": "#/components/schemas/AccountLiquidityValue"
+                },
+                "marketPriceUsd": {
+                  "type": "number",
+                  "description": "Market USD price number for the collateral asset."
+                },
+                "valueUsd": {
+                  "type": "number",
+                  "description": "Market USD value number for this collateral."
+                }
+              }
+            }
+          },
+          "liabilityValueUsd": {
+            "type": "number",
+            "description": "Market USD liability value number."
+          },
+          "totalCollateralValueUsd": {
+            "type": "number",
+            "description": "Market USD collateral value number."
+          }
+        }
+      },
+      "AccountPosition": {
+        "type": "object",
+        "properties": {
+          "chainId": {
+            "type": "integer"
+          },
+          "account": {
+            "type": "string"
+          },
+          "vault": {
+            "type": "string"
+          },
+          "vaultType": {
+            "type": "string",
+            "enum": [
+              "evk",
+              "earn",
+              "securitize"
+            ]
+          },
+          "asset": {
+            "type": "string",
+            "nullable": true
+          },
+          "shares": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw vault share amount as a bigint string."
+          },
+          "assets": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw underlying asset amount as a bigint string."
+          },
+          "borrowed": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw borrowed asset amount as a bigint string. `\"0\"` is a successful\nzero-debt read. `null` means EVK debt is currently unknown; it is not\na zero balance. Earn and Securitize positions use `\"0\"` because EVK\ndebt is not applicable to those vault types.\n"
+          },
+          "assetsValue": {
+            "type": "string",
+            "nullable": true,
+            "description": "Contract-derived account-liquidity asset value, raw 18-decimal bigint string."
+          },
+          "debtValue": {
+            "type": "string",
+            "nullable": true,
+            "description": "Contract-derived account-liquidity debt value, raw 18-decimal bigint\nstring. `null` means the EVK debt read is unknown, not zero.\n"
+          },
+          "isCollateral": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "balanceForwarderEnabled": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "isController": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Explicit EVC controller status when AccountLens provides it. `null`\nmeans controller status is unknown; a zero debt amount does not imply\n`false`. The field is non-applicable for Earn and Securitize positions.\n"
+          },
+          "liquidity": {
+            "$ref": "#/components/schemas/AccountPositionLiquidity"
+          },
+          "subAccount": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "owner": {
+                "type": "string",
+                "nullable": true
+              },
+              "timestamp": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "lastAccountStatusCheckTimestamp": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "enabledControllers": {
+                "type": "array",
+                "nullable": true,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "enabledCollaterals": {
+                "type": "array",
+                "nullable": true,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "isLockdownMode": {
+                "type": "boolean",
+                "nullable": true
+              },
+              "isPermitDisabledMode": {
+                "type": "boolean",
+                "nullable": true
+              }
+            }
+          },
+          "snapshot": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true,
+                "description": "Timestamp of the coherent snapshot represented by this position.\nA failed partial refresh retains the prior snapshot and timestamp\nwhen replacing it would erase known EVK debt or controller state.\n"
+              },
+              "ageSeconds": {
+                "type": "integer",
+                "nullable": true
+              },
+              "source": {
+                "type": "string",
+                "nullable": true
+              },
+              "method": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          }
+        }
+      },
+      "YieldApyBreakdown": {
+        "type": "object",
+        "properties": {
+          "lending": {
+            "type": "number",
+            "description": "Lending APY contribution as a percent number."
+          },
+          "borrowing": {
+            "type": "number",
+            "description": "Borrowing APY contribution as a percent number."
+          },
+          "rewards": {
+            "type": "number",
+            "description": "Rewards APY contribution as a percent number."
+          },
+          "intrinsicApy": {
+            "type": "number",
+            "description": "Intrinsic APY contribution as a percent number."
+          },
+          "total": {
+            "type": "number",
+            "description": "Total APY as a percent number."
+          }
+        }
+      },
+      "SerializedPortfolioAccountPosition": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "vaultAddress": {
+            "type": "string"
+          },
+          "vault": {
+            "$ref": "#/components/schemas/SerializedPortfolioVault"
+          },
+          "asset": {
+            "type": "string"
+          },
+          "shares": {
+            "type": "string",
+            "description": "Raw vault share amount as a bigint string."
+          },
+          "assets": {
+            "type": "string",
+            "description": "Raw underlying asset amount as a bigint string."
+          },
+          "borrowed": {
+            "type": "string",
+            "description": "Raw borrowed asset amount as a bigint string."
+          },
+          "isController": {
+            "type": "boolean"
+          },
+          "isCollateral": {
+            "type": "boolean"
+          },
+          "balanceForwarderEnabled": {
+            "type": "boolean"
+          },
+          "marketPriceUsd": {
+            "type": "number",
+            "description": "Market USD price number for this position's asset."
+          },
+          "suppliedValueUsd": {
+            "type": "number",
+            "description": "Market USD value number for this supplied position."
+          },
+          "borrowedValueUsd": {
+            "type": "number",
+            "description": "Market USD value number for this borrowed position."
+          },
+          "liquidity": {
+            "$ref": "#/components/schemas/AccountPositionLiquidity"
+          },
+          "borrowLiquidationPriceUsd": {
+            "type": "number",
+            "description": "Borrow liquidation price in USD."
+          },
+          "collateralLiquidationPricesUsd": {
+            "type": "object",
+            "description": "Liquidation prices in USD keyed by collateral address.",
+            "additionalProperties": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "AccountActivity": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "chainId": {
+            "type": "integer"
+          },
+          "vault": {
+            "type": "string"
+          },
+          "assets": {
+            "type": "string",
+            "description": "Raw underlying asset amount as a bigint string."
+          },
+          "shares": {
+            "type": "string",
+            "description": "Raw vault share amount as a bigint string."
+          },
+          "txHash": {
+            "type": "string"
+          },
+          "blockNumber": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ActivityCategory": {
+        "type": "string",
+        "enum": [
+          "lending",
+          "borrowing",
+          "swaps",
+          "liquidations",
+          "account",
+          "rewards",
+          "governance"
+        ]
+      },
+      "ActivityEventType": {
+        "type": "string",
+        "description": "Normalized event type. Filters apply to this value, not the source table name.",
+        "enum": [
+          "deposit",
+          "withdraw",
+          "mint",
+          "burn",
+          "transfer",
+          "borrow",
+          "repay",
+          "swap",
+          "interest_accrued",
+          "debt_socialized",
+          "pull_debt",
+          "liquidation",
+          "approval",
+          "balance_forwarder_status",
+          "convert_fees",
+          "set_caps",
+          "set_ltv",
+          "set_governor_admin",
+          "set_config_flags",
+          "set_fee_receiver",
+          "set_hook_config",
+          "set_interest_fee",
+          "set_interest_rate_model",
+          "set_liquidation_cool_off_time",
+          "set_max_liquidation_discount",
+          "set_oracle_config",
+          "set_fallback_oracle",
+          "set_resolved_vault",
+          "set_oracle_governor",
+          "accrue_interest",
+          "update_last_total_assets",
+          "update_lost_assets",
+          "reallocate_supply",
+          "reallocate_withdraw",
+          "set_name",
+          "set_symbol",
+          "set_fee",
+          "set_fee_recipient",
+          "set_curator",
+          "set_guardian",
+          "set_timelock",
+          "set_cap",
+          "set_is_allocator",
+          "set_supply_queue",
+          "set_withdraw_queue",
+          "submit_cap",
+          "submit_guardian",
+          "submit_timelock",
+          "submit_market_removal",
+          "revoke_pending_cap",
+          "revoke_pending_guardian",
+          "revoke_pending_timelock",
+          "revoke_pending_market_removal",
+          "ownership_transfer_started",
+          "ownership_transferred",
+          "frozen",
+          "unfrozen",
+          "paused",
+          "unpaused",
+          "seized",
+          "set_controller_perspective",
+          "set_supply_cap",
+          "owner_registered",
+          "collateral_status",
+          "operator_status",
+          "controller_status",
+          "lockdown_mode_status",
+          "nonce_status",
+          "nonce_used",
+          "permit_disabled_mode_status",
+          "reward_lock_created",
+          "reward_lock_removed",
+          "reward_transfer",
+          "reward_whitelist_status",
+          "public_reallocate_to",
+          "public_withdrawal",
+          "set_admin",
+          "set_allocation_fee",
+          "set_flow_caps",
+          "transfer_allocation_fee",
+          "buy",
+          "terms_of_use_signed"
+        ]
+      },
+      "ActivityAsset": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "amountRaw"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "assets",
+              "shares",
+              "value",
+              "collateral",
+              "yield"
+            ]
+          },
+          "amountRaw": {
+            "type": "string",
+            "pattern": "^\\d+$",
+            "description": "Native-unit on-chain amount without decimal normalization."
+          },
+          "address": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "description": "Token or vault address that gives the amount context when indexed."
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "decimals": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          },
+          "amount": {
+            "type": "string",
+            "description": "Optional decimal-normalized enrichment."
+          },
+          "amountUsd": {
+            "type": "string",
+            "description": "Optional event-time USD enrichment. Absence never means zero."
+          }
+        }
+      },
+      "ActivityChange": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fields"
+        ],
+        "properties": {
+          "fields": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Source-specific changed fields retained under normalized event identity."
+          }
+        }
+      },
+      "ActivityValuation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable",
+              "partial"
+            ]
+          },
+          "amountUsd": {
+            "type": "string"
+          },
+          "priceTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ActivityEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "chainId",
+          "timestamp",
+          "blockNumber",
+          "logIndex",
+          "txHash",
+          "type",
+          "category",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chainId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "blockNumber": {
+            "type": "string",
+            "pattern": "^\\d+$"
+          },
+          "logIndex": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "txHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{64}$"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ActivityEventType"
+          },
+          "category": {
+            "$ref": "#/components/schemas/ActivityCategory"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "v3-ponder"
+            ]
+          },
+          "rawType": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$"
+          },
+          "account": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$"
+          },
+          "subAccountIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          },
+          "vault": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$"
+          },
+          "vaultType": {
+            "type": "string",
+            "enum": [
+              "evk",
+              "earn",
+              "securitize"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$"
+          },
+          "counterparty": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$"
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityAsset"
+            }
+          },
+          "change": {
+            "$ref": "#/components/schemas/ActivityChange"
+          },
+          "valuation": {
+            "$ref": "#/components/schemas/ActivityValuation"
+          },
+          "groupId": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Source-specific fallback fields. Normalized properties remain authoritative."
+          }
+        }
+      },
+      "ActivityChainCoverage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "chainId",
+          "status",
+          "missingCategories"
+        ],
+        "properties": {
+          "chainId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "unsupported",
+              "syncing"
+            ]
+          },
+          "indexedFromBlock": {
+            "type": "string",
+            "pattern": "^\\d+$"
+          },
+          "indexedToBlock": {
+            "type": "string",
+            "pattern": "^\\d+$"
+          },
+          "missingCategories": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/ActivityCategory"
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ActivityCoverage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "chains",
+          "missingCategories"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "unsupported",
+              "syncing"
+            ]
+          },
+          "chains": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityChainCoverage"
+            }
+          },
+          "missingCategories": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/ActivityCategory"
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ActivityResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityEvent"
+            }
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "hasMore",
+              "nextCursor",
+              "source",
+              "coverage",
+              "timestamp"
+            ],
+            "properties": {
+              "hasMore": {
+                "type": "boolean"
+              },
+              "nextCursor": {
+                "type": "string",
+                "nullable": true
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "v3-ponder"
+                ]
+              },
+              "coverage": {
+                "$ref": "#/components/schemas/ActivityCoverage"
+              },
+              "timestamp": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      },
+      "Token": {
+        "type": "object",
+        "properties": {
+          "chainId": {
+            "type": "integer"
+          },
+          "address": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "decimals": {
+            "type": "integer"
+          },
+          "logoURI": {
+            "type": "string",
+            "description": "Preferred token image URI. Served from the Euler token image CDN with an hourly cache-busting query param."
+          },
+          "priceUsd": {
+            "type": "number",
+            "description": "Market USD price number when token list responses include a price."
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/TokenMetadata"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Asset group associations (e.g., pendle-pt, pendle-lp)."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "usd",
+                "eth",
+                "btc",
+                "mon",
+                "avax",
+                "hype",
+                "bnb"
+              ]
+            },
+            "description": "Category and symbol-derived correlation tags used by clients for asset-specific processing."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "asset",
+              "eToken",
+              "dToken",
+              "earnShare"
+            ],
+            "description": "What the token is to the protocol: `eToken` when the address is an EVK vault discovery recorded (escrow and Securitize vaults included), `dToken` when the indexer classified it as a vault's debt token, `earnShare` when it is an Earn vault, `asset` otherwise (also when unknown). Lets a client filter vault-issued tokens out without relying on name conventions."
+          }
+        }
+      },
+      "TokenMetadata": {
+        "type": "object",
+        "description": "Protocol integration metadata for a token.",
+        "properties": {
+          "isPendlePT": {
+            "type": "boolean"
+          },
+          "isPendleLP": {
+            "type": "boolean"
+          },
+          "pendleMarket": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "IntrinsicApy": {
+        "type": "object",
+        "properties": {
+          "chainId": {
+            "type": "integer"
+          },
+          "address": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "apy": {
+            "type": "number",
+            "description": "Percent number with 6 decimal places."
+          },
+          "provider": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RewardsApy": {
+        "type": "object",
+        "properties": {
+          "chainId": {
+            "type": "integer"
+          },
+          "vault": {
+            "type": "string"
+          },
+          "campaigns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "apr": {
+                  "type": "number",
+                  "description": "Reward APR contribution as a public percent number."
+                },
+                "rewardToken": {
+                  "$ref": "#/components/schemas/AssetRef"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "merkl",
+                    "turtle",
+                    "direct"
+                  ]
+                },
+                "startTimestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "endTimestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "upcoming",
+                    "ended"
+                  ],
+                  "description": "Campaign status. 'active' = ongoing, 'upcoming' = not yet started, 'ended' = past."
+                },
+                "campaignType": {
+                  "type": "string"
+                },
+                "collateralAsset": {
+                  "type": "string"
+                },
+                "requiresCb1Verification": {
+                  "type": "boolean"
+                },
+                "merklCampaignId": {
+                  "type": "string",
+                  "description": "Original Merkl campaign id when the public campaign is fanned out into vault-level instances."
+                },
+                "opportunityType": {
+                  "type": "string",
+                  "description": "Merkl opportunity type that produced this campaign."
+                },
+                "sourceUrl": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "Exact Merkl campaign page."
+                },
+                "distributionType": {
+                  "type": "string",
+                  "description": "Merkl distribution type for the campaign."
+                },
+                "whitelist": {
+                  "type": "array",
+                  "description": "Lowercase recipient addresses eligible for whitelist-gated campaigns.",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "blacklist": {
+                  "type": "array",
+                  "description": "Lowercase recipient addresses excluded from blacklist-gated campaigns.",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "eligibilityRequirements": {
+                  "type": "array",
+                  "description": "Requirements that must be satisfied for the campaign rewards to apply.",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "type",
+                      "chainId",
+                      "tokenAddress",
+                      "minimumAmount",
+                      "minimumDurationSeconds"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "token-holding"
+                        ]
+                      },
+                      "chainId": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "tokenAddress": {
+                        "type": "string"
+                      },
+                      "minimumAmount": {
+                        "type": "string",
+                        "pattern": "^[1-9][0-9]*$",
+                        "description": "Minimum token amount in base units."
+                      },
+                      "minimumDurationSeconds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Minimum continuous holding duration in seconds."
+                      },
+                      "tokenSymbol": {
+                        "type": "string"
+                      },
+                      "tokenDecimals": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "eligibilityRequirementsStatus": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "complete",
+                    "incomplete"
+                  ],
+                  "description": "Whether campaign eligibility hooks are absent, fully represented by\neligibilityRequirements, or include conditions this API cannot model.\nThis field is always present for Merkl campaigns. Retained legacy Merkl\nrows without completeness metadata are reported as incomplete. Consumers\nmust direct users to sourceUrl when this value is incomplete.\n"
+                }
+              }
+            }
+          },
+          "totalApr": {
+            "type": "number",
+            "description": "Sum of currently active reward APR contributions as a public percent number."
+          }
+        }
+      },
+      "RewardsApyHistoryPoint": {
+        "type": "object",
+        "properties": {
+          "chainId": {
+            "type": "integer"
+          },
+          "vault": {
+            "type": "string"
+          },
+          "rewardsApy": {
+            "type": "number",
+            "description": "Rewards APY as a public percent number."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Bucket timestamp as an ISO-8601 UTC string."
+          }
+        }
+      },
+      "RewardBreakdown": {
+        "type": "object",
+        "required": [
+          "chainId",
+          "vault",
+          "recipient",
+          "rewardToken",
+          "amount",
+          "campaignId",
+          "timestamp"
+        ],
+        "description": "Per-account reward breakdown row. For Merkl rows, `amount` is reconciled\nagainst direct Merkl user rewards when that data is available, so fully\nclaimed rows are omitted and positive rows use the current claimable\namount. If direct Merkl data is unavailable, stored Merkl rows are\nreturned only while their snapshot is 24 hours old or newer.\n",
+        "properties": {
+          "chainId": {
+            "type": "integer"
+          },
+          "vault": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "rewardToken": {
+            "type": "string"
+          },
+          "rewardTokenMetadata": {
+            "type": "object",
+            "nullable": true,
+            "description": "Token metadata resolved independently of campaign availability. Null when metadata is unavailable; consumers must not assume 18 decimals.",
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "decimals": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "amount": {
+            "type": "string",
+            "description": "Reward amount as a bigint string in token base units. Merkl amounts follow the reconciliation rules above. Turtle amounts are accumulated rewards, not a verified currently claimable balance."
+          },
+          "campaignId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "IntrinsicApyHistoryPoint": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "apy": {
+            "type": "number",
+            "description": "Intrinsic APY as a percent number."
+          },
+          "provider": {
+            "type": "string"
+          },
+          "uniquifier": {
+            "type": "string",
+            "description": "Provider-specific identity when one provider exposes multiple APY streams."
+          },
+          "apyDuration": {
+            "type": "number",
+            "description": "Duration in seconds used to compute the APY."
+          }
+        }
+      },
+      "IntrinsicApyHistoryMeta": {
+        "type": "object",
+        "properties": {
+          "chainId": {
+            "type": "string"
+          },
+          "asset": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "1h",
+              "1d"
+            ]
+          },
+          "startTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AddressScreeningActivity": {
+        "type": "object",
+        "required": [
+          "generatedAt",
+          "windows"
+        ],
+        "properties": {
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "hours",
+                "since",
+                "providerCalls",
+                "flagged",
+                "requests",
+                "cacheHits",
+                "failed"
+              ],
+              "properties": {
+                "hours": {
+                  "type": "integer"
+                },
+                "since": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "providerCalls": {
+                  "type": "integer",
+                  "description": "Retained evaluations in the window, one per provider call."
+                },
+                "flagged": {
+                  "type": "integer"
+                },
+                "requests": {
+                  "type": "integer",
+                  "description": "Every screening request in the window, whatever its outcome."
+                },
+                "cacheHits": {
+                  "type": "integer"
+                },
+                "failed": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "TokenCorrelationRuleEnabledRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "YieldSourceTokenRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "chainId",
+          "address"
+        ],
+        "properties": {
+          "chainId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "address": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "description": "Valid EVM address. Lowercase or correctly checksummed mixed-case input is accepted."
+          },
+          "symbol": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "apyMapping": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Source-specific mapping expression that extracts the token APY from the adapter response."
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Optional token metadata passed to custom APY adapters."
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "YieldSourceTokenResponse": {
+        "type": "object",
+        "required": [
+          "entryKey",
+          "source",
+          "chainId",
+          "address",
+          "enabled",
+          "origin"
+        ],
+        "properties": {
+          "entryKey": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "chainId": {
+            "type": "integer"
+          },
+          "address": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "apyMapping": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "yaml",
+              "toolbox"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "updatedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "validationError": {
+            "type": "string",
+            "description": "Validation failure that caused a persisted override to be disabled."
+          }
+        }
+      }
+    }
+  },
+  "_note": "Review excerpt; external references may point to omitted schemas. Not a standalone complete OpenAPI document."
+}

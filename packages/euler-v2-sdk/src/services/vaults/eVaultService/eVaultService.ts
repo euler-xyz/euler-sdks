@@ -234,6 +234,19 @@ export class EVaultService implements IEVaultService {
 
 	async populateCollaterals(eVaults: EVault[]): Promise<DataIssue[]> {
 		if (!this.vaultMetaService || eVaults.length === 0) return [];
+		const byChain = new Map<number, EVault[]>();
+		for (const vault of eVaults) {
+			const group = byChain.get(vault.chainId) ?? [];
+			group.push(vault);
+			byChain.set(vault.chainId, group);
+		}
+		if (byChain.size > 1) {
+			return (
+				await Promise.all(
+					[...byChain.values()].map((group) => this.populateCollaterals(group)),
+				)
+			).flat();
+		}
 		const errors: DataIssue[] = [];
 
 		const occurrencesByAddress = new Map<

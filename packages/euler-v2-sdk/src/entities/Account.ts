@@ -469,7 +469,9 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 		subAccount: ISubAccount<TVaultEntity> | SubAccount<TVaultEntity>,
 	): void {
 		this.subAccounts[getAddress(subAccount.account)] =
-			subAccount instanceof SubAccount ? subAccount : new SubAccount(subAccount);
+			subAccount instanceof SubAccount
+				? subAccount
+				: new SubAccount(subAccount);
 	}
 
 	/**
@@ -815,15 +817,16 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 			if (!sa) continue;
 			for (const p of sa.positions) {
 				const vault = p.vault as any;
+				// A refresh must replace the prior valuation, including when a price
+				// becomes unavailable or an outstanding debt has been repaid.
+				p.marketPriceUsd = undefined;
+				p.suppliedValueUsd = undefined;
+				p.borrowedValueUsd = undefined;
 				if (vault?.marketPriceUsd != null && vault?.asset?.decimals != null) {
 					const price = vault.marketPriceUsd as number;
 					const decimals = vault.asset.decimals as number;
 					p.marketPriceUsd = price;
-					p.suppliedValueUsd = tokenAmountToUsdValue(
-						p.assets,
-						decimals,
-						price,
-					);
+					p.suppliedValueUsd = tokenAmountToUsdValue(p.assets, decimals, price);
 					if (p.borrowed > 0n) {
 						p.borrowedValueUsd = tokenAmountToUsdValue(
 							p.borrowed,
@@ -840,7 +843,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 					for (const c of p.liquidity.collaterals) {
 						const collVault = c.vault as any;
 						const price = collVault?.marketPriceUsd;
-						if (price != null) c.marketPriceUsd = price;
+						c.marketPriceUsd = price;
 
 						const collateralPosition = sa.positions.find((position) =>
 							isAddressEqual(position.vaultAddress, c.address),
@@ -864,8 +867,7 @@ export class Account<TVaultEntity extends IHasVaultAddress = never>
 							totalCollateralValueUsd += c.valueUsd;
 						}
 					}
-					p.liquidity.totalCollateralValueUsd =
-						totalCollateralValueUsd;
+					p.liquidity.totalCollateralValueUsd = totalCollateralValueUsd;
 				}
 			}
 		}

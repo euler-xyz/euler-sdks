@@ -2,6 +2,7 @@ import {
 	type Abi,
 	type Address,
 	encodeFunctionData,
+	getAddress,
 	type Hash,
 	type Hex,
 	maxUint256,
@@ -24,6 +25,7 @@ import type {
 	TransactionPlanPrepared,
 } from "./executionServiceTypes.js";
 import {
+	assertAccountChain,
 	assertNoCowSwapPlanItems,
 	flattenBatchEntries,
 } from "./executionServiceTypes.js";
@@ -195,6 +197,51 @@ async function executeWithDecodedErrors<T>(fn: () => Promise<T>): Promise<T> {
 	}
 }
 
+/** Validate the complete resolved plan before any wallet side effect. */
+function assertExecutablePlan(plan: TransactionPlan, chainId: number): void {
+	let pendingPermit2 = false;
+	const pendingAllowanceKeys = new Set<string>();
+	for (const [index, item] of plan.entries()) {
+		if (item.type === "requiredApproval") {
+			if (!item.resolved) {
+				throw new Error(`Approval at plan item ${index} is unresolved`);
+			}
+			for (const resolved of item.resolved) {
+				if (resolved.type !== "permit2") continue;
+				const key = [resolved.owner, resolved.token, resolved.spender]
+					.map((address) => getAddress(address))
+					.join(":");
+				if (pendingAllowanceKeys.has(key)) {
+					throw new Error(
+						"Duplicate Permit2 allowance key before one EVC batch. Merge approval requirements before resolving them.",
+					);
+				}
+				pendingAllowanceKeys.add(key);
+				pendingPermit2 = true;
+			}
+		} else if (item.type === "evcBatch") {
+			pendingPermit2 = false;
+			pendingAllowanceKeys.clear();
+		} else if (item.type === "contractCall") {
+			if (pendingPermit2) {
+				throw new Error(
+					"Permit2 signature has no following EVC batch insertion point before contractCall",
+				);
+			}
+			if (item.chainId !== chainId) {
+				throw new Error(
+					`Plan item targets chain ${item.chainId}, but executor is configured for chain ${chainId}`,
+				);
+			}
+		}
+	}
+	if (pendingPermit2) {
+		throw new Error(
+			"Permit2 signature has no following EVC batch insertion point",
+		);
+	}
+}
+
 /**
  * Execute a transaction plan: resolves approvals, collects Permit2 signatures,
  * sends approval/EVC-batch/contract-call items sequentially, waits for each
@@ -205,10 +252,12 @@ export async function executeTransactionPlan(
 	args: ExecuteTransactionPlanInternalArgs,
 ): Promise<TransactionPlanExecutionResult> {
 	assertNoCowSwapPlanItems(args.plan, "executeTransactionPlan");
+	assertAccountChain(args.account, args.chainId);
 	const publicClient = args.providerService.getProvider(args.chainId);
 	const plan = args.alreadyResolved
 		? args.plan
 		: await maybeResolveApprovals(args);
+	assertExecutablePlan(plan, args.chainId);
 
 	const hashes: Hash[] = [];
 	const receipts: TransactionReceipt[] = [];

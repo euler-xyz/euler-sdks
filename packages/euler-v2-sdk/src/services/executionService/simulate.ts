@@ -7,6 +7,8 @@ import {
 	getAddress,
 	type Hex,
 	parseEther,
+	maxUint256,
+	maxUint160,
 	type StateOverride,
 	toFunctionSelector,
 	zeroAddress,
@@ -16,9 +18,44 @@ import { estimateContractGas } from "viem/actions";
 // Minimal ABI for resolving a vault's underlying asset and reading wallet ERC20
 // balances inside the simulated batch (per-layer wallet-balance capture).
 const walletBalanceAbi = [
-	{ type: "function", name: "asset", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-	{ type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
-	{ type: "function", name: "underlying", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+	{
+		type: "function",
+		name: "asset",
+		stateMutability: "view",
+		inputs: [],
+		outputs: [{ type: "address" }],
+	},
+	{
+		type: "function",
+		name: "balanceOf",
+		stateMutability: "view",
+		inputs: [{ type: "address" }],
+		outputs: [{ type: "uint256" }],
+	},
+	{
+		type: "function",
+		name: "underlying",
+		stateMutability: "view",
+		inputs: [],
+		outputs: [{ type: "address" }],
+	},
+] as const;
+
+const permit2AddressAbi = [
+	{
+		type: "function",
+		name: "permit2Address",
+		stateMutability: "view",
+		inputs: [],
+		outputs: [{ type: "address" }],
+	},
+	{
+		type: "function",
+		name: "permit2",
+		stateMutability: "view",
+		inputs: [],
+		outputs: [{ type: "address" }],
+	},
 ] as const;
 
 const merklClaimAbi = [
@@ -108,7 +145,10 @@ import {
 	type DecodedSmartContractError,
 	decodeSmartContractErrors,
 } from "../../utils/decodeSmartContractErrors.js";
-import { getApprovalOverrides } from "../../utils/stateOverrides/approvalOverrides.js";
+import {
+	computePermit2StateDiff,
+	getApprovalOverrides,
+} from "../../utils/stateOverrides/approvalOverrides.js";
 import { getBalanceOverrides } from "../../utils/stateOverrides/balanceOverrides.js";
 import { mergeStateOverrides } from "../../utils/stateOverrides/mergeStateOverrides.js";
 import type { SlotHints } from "../../utils/stateOverrides/slotHints.js";
@@ -289,6 +329,12 @@ export interface SimulateBatchResult<
 	insufficientWalletAssets?: SimulationInsufficientRequirement[];
 	insufficientPermit2Allowances?: SimulationInsufficientRequirement[];
 	insufficientDirectAllowances?: SimulationInsufficientRequirement[];
+	/** Approval routing could not be established; canExecute is false when present. */
+	allowanceDiagnosticsUnavailable?: Array<{
+		token: Address;
+		spender: Address;
+		reason: string;
+	}>;
 }
 
 export type SimulateBatchOptions = {
@@ -403,30 +449,14 @@ export async function deriveStateOverrides(
 			const permit2Address =
 				ctx.deploymentService.getDeployment(chainId).addresses.coreAddrs
 					.permit2;
-			if (!ctx.providerService) {
-				throw new Error(
-					"ExecutionService.deriveStateOverrides requires a providerService. Pass it to the ExecutionService constructor or call setProviderService().",
-				);
-			}
-			const provider = ctx.providerService.getProvider(chainId);
-			const permit2Only = await getApprovalOverrides(
-				provider,
-				owner,
-				approvalRequirements,
-				permit2Address,
+			const merged: StateOverride = [
 				{
-					walletAllowances: wallet?.allowances,
-					slotHints,
+					address: permit2Address,
+					stateDiff: computePermit2StateDiff(owner, approvalRequirements),
 				},
-			);
-			const merged: StateOverride = [];
+			];
 			if (nativeBalance > 0n)
 				merged.push({ address: owner, balance: nativeBalance });
-			// Drop ERC20 entries; keep only the Permit2 deterministic block.
-			for (const ov of permit2Only) {
-				if (getAddress(ov.address) === getAddress(permit2Address))
-					merged.push(ov);
-			}
 			return mergeStateOverrides(merged);
 		}
 		return nativeBalance > 0n
@@ -450,7 +480,19 @@ export async function deriveStateOverrides(
 			slotHints,
 		}),
 		noAllowanceOverride
-			? Promise.resolve([] as StateOverride)
+			? Promise.resolve(
+					approvalRequirements.length
+						? ([
+								{
+									address: permit2Address,
+									stateDiff: computePermit2StateDiff(
+										owner,
+										approvalRequirements,
+									),
+								},
+							] as StateOverride)
+						: [],
+				)
 			: getApprovalOverrides(
 					provider,
 					owner,
@@ -480,8 +522,7 @@ async function simulateIndependentContractCalls(
 	calls: ContractCall[],
 	stateOverrides?: StateOverride,
 ): Promise<
-	| { error: unknown; decoded: DecodedSmartContractError[] }
-	| undefined
+	{ error: unknown; decoded: DecodedSmartContractError[] } | undefined
 > {
 	if (!calls.length) return undefined;
 	if (!ctx.providerService) {
@@ -534,6 +575,11 @@ export async function simulateTransactionPlan<
 	options?: SimulateBatchOptions,
 ): Promise<SimulateBatchResult<TVaultEntity>> {
 	assertNoCowSwapPlanItems(transactionPlan, "simulateTransactionPlan");
+	if (transactionPlan.filter((item) => item.type === "evcBatch").length > 1) {
+		throw new Error(
+			"ExecutionService.simulateTransactionPlan cannot simulate multiple EVC transaction boundaries as one batch. Use mergePlans only when atomic composition is intended, or simulate each transaction against its preceding confirmed state.",
+		);
+	}
 	const unsupportedDirectCallIndex = transactionPlan.findIndex(
 		(item) =>
 			item.type === "contractCall" && item.simulationMode !== "independent",
@@ -763,7 +809,8 @@ export async function simulateTransactionPlan<
 		vaultStatusErrors.length === 0 &&
 		!insufficientWalletAssets?.length &&
 		!diagnostics.insufficientPermit2Allowances?.length &&
-		!diagnostics.insufficientDirectAllowances?.length;
+		!diagnostics.insufficientDirectAllowances?.length &&
+		!diagnostics.allowanceDiagnosticsUnavailable?.length;
 
 	return {
 		simulatedAccounts,
@@ -793,7 +840,9 @@ type SimulationOperation = {
 	walletBalanceTokens?: Address[];
 };
 
-function collectOperations(transactionPlan: TransactionPlan): SimulationOperation[] {
+function collectOperations(
+	transactionPlan: TransactionPlan,
+): SimulationOperation[] {
 	const operations: SimulationOperation[] = [];
 	for (const item of transactionPlan) {
 		if (item.type !== "evcBatch") continue;
@@ -1300,6 +1349,7 @@ async function buildSimulationBatch(
 		ctx,
 		owner,
 		batch,
+		ctx.deploymentService.getDeployment(chainId).addresses.coreAddrs.evc,
 	);
 
 	// Each touched sub-account's account-level liquidity (health factor, current
@@ -1312,8 +1362,8 @@ async function buildSimulationBatch(
 	const ctrlProvider = ctx.providerService?.getProvider(chainId);
 	const touchedSubs = Array.from(subAccountVaults.keys());
 	if (ctrlProvider && touchedSubs.length) {
-		const evc = ctx.deploymentService.getDeployment(chainId).addresses.coreAddrs
-			.evc;
+		const evc =
+			ctx.deploymentService.getDeployment(chainId).addresses.coreAddrs.evc;
 		try {
 			const controllerResults = await ctrlProvider.multicall({
 				allowFailure: true,
@@ -1420,10 +1470,13 @@ async function buildSimulationBatch(
 	}
 
 	for (const vault of securitizeVaults) {
-		pushLensItem(getVaultInfoERC4626LensBatchItem(utilsLensAddress, vault, owner), {
-			kind: "securitizeInfo",
-			vault,
-		});
+		pushLensItem(
+			getVaultInfoERC4626LensBatchItem(utilsLensAddress, vault, owner),
+			{
+				kind: "securitizeInfo",
+				vault,
+			},
+		);
 		pushLensItem(getSecuritizeGovernorAdminBatchItem(vault, owner), {
 			kind: "securitizeGovernor",
 			vault,
@@ -1475,7 +1528,11 @@ async function buildSimulationBatch(
 	// overrides, so consumers stitch using the delta vs the pre-batch layer.
 	const provider = ctx.providerService?.getProvider(chainId);
 	if (provider) {
-		const vaultsForAssets = [...eVaults, ...eulerEarnVaults, ...securitizeVaults];
+		const vaultsForAssets = [
+			...eVaults,
+			...eulerEarnVaults,
+			...securitizeVaults,
+		];
 		const assets = await Promise.all(
 			vaultsForAssets.map((vault) =>
 				provider
@@ -1509,8 +1566,7 @@ async function buildSimulationBatch(
 			(item) => getSelector(item.data) === REUL_UNLOCK_SELECTOR,
 		);
 		if (unlockItems.length > 0) {
-			const configuredEul =
-				deployment.addresses.tokenAddrs?.EUL;
+			const configuredEul = deployment.addresses.tokenAddrs?.EUL;
 			if (configuredEul) {
 				addWalletToken(assetTokens, configuredEul);
 			} else {
@@ -1558,6 +1614,7 @@ function collectCandidateVaults(
 	ctx: ExecutionSimulationContext,
 	owner: Address,
 	batch: EVCBatchItem[],
+	evcAddress: Address,
 ): {
 	candidateVaults: Set<Address>;
 	subAccountVaults: Map<Address, Set<Address>>;
@@ -1588,18 +1645,30 @@ function collectCandidateVaults(
 		const target = getAddress(item.targetContract);
 
 		if (
-			fn === "enablecollateral" ||
-			fn === "disablecollateral" ||
-			fn === "enablecontroller"
+			target === getAddress(evcAddress) &&
+			(fn === "enablecollateral" ||
+				fn === "disablecollateral" ||
+				fn === "enablecontroller" ||
+				fn === "disablecontroller" ||
+				fn === "reordercollaterals")
 		) {
 			const account = item.args.account as Address | undefined;
+			if (account && isSubAccount(owner, account)) {
+				const key = getAddress(account);
+				if (!subAccountVaults.has(key))
+					subAccountVaults.set(key, new Set<Address>());
+			}
 			const vault = item.args.vault as Address | undefined;
 			if (vault) addCandidateVault(vault);
 			if (account && vault) addSubAccountVault(account, vault);
 			continue;
 		}
 
-		if (fn === "transfer" || fn === "transferfrom" || fn === "transferfrommax") {
+		if (
+			fn === "transfer" ||
+			fn === "transferfrom" ||
+			fn === "transferfrommax"
+		) {
 			const to = item.args.to as Address | undefined;
 			const from =
 				fn === "transferfrom" || fn === "transferfrommax"
@@ -1739,18 +1808,41 @@ async function runSimulation(
 		};
 	}
 
-	if (!decodedResult) {
+	// EVC.batchSimulation returns one result per supplied item, plus both
+	// status-check arrays. Missing evidence must not be interpreted as success.
+	const decoded = decodedResult as readonly unknown[] | undefined;
+	if (
+		!Array.isArray(decoded) ||
+		decoded.length !== 3 ||
+		!Array.isArray(decoded[0]) ||
+		decoded[0].length !== fullBatch.length ||
+		!Array.isArray(decoded[1]) ||
+		!Array.isArray(decoded[2]) ||
+		decoded[0].some(
+			(item) =>
+				typeof item?.success !== "boolean" || typeof item?.result !== "string",
+		) ||
+		[...decoded[1], ...decoded[2]].some(
+			(check) =>
+				typeof check?.isValid !== "boolean" ||
+				typeof check?.checkedAddress !== "string" ||
+				typeof check?.result !== "string",
+		)
+	) {
 		return {
-			batchResults: [],
-			accountStatusErrors: [],
-			vaultStatusErrors: [],
+			simulatedAccounts: [],
+			simulatedVaults: [],
+			simulationError: {
+				error: new Error(
+					"EVC batch simulation returned an incomplete or malformed result",
+				),
+				decoded: [],
+			},
 		};
 	}
-
-	const decoded = decodedResult as readonly unknown[];
 	const batchResults = decoded[0] as BatchItemResult[];
-	const accountChecks = (decoded[1] as StatusCheckResult[] | undefined) ?? [];
-	const vaultChecks = (decoded[2] as StatusCheckResult[] | undefined) ?? [];
+	const accountChecks = decoded[1] as StatusCheckResult[];
+	const vaultChecks = decoded[2] as StatusCheckResult[];
 
 	const accountStatusErrors = await Promise.all(
 		accountChecks
@@ -1838,6 +1930,7 @@ async function fetchSimulationDiagnostics(
 	insufficientWalletAssets?: SimulationInsufficientRequirement[];
 	insufficientPermit2Allowances?: SimulationInsufficientRequirement[];
 	insufficientDirectAllowances?: SimulationInsufficientRequirement[];
+	allowanceDiagnosticsUnavailable?: SimulateBatchResult["allowanceDiagnosticsUnavailable"];
 }> {
 	if (!ctx.walletService || !transactionPlan) return {};
 
@@ -1876,16 +1969,105 @@ async function fetchSimulationDiagnostics(
 	const walletByToken = new Map<Address, bigint>();
 	const directByToken = new Map<Address, bigint>();
 	const permit2ByToken = new Map<Address, bigint>();
+	const unavailable: NonNullable<
+		SimulateBatchResult["allowanceDiagnosticsUnavailable"]
+	> = [];
+	const spenders = [
+		...new Set(
+			requiredApprovals
+				.filter(
+					(approval) =>
+						(approval.amount === maxUint256
+							? (wallet.getAsset(getAddress(approval.token))?.balance ?? 0n)
+							: approval.amount) > 0n,
+				)
+				.map((approval) => getAddress(approval.spender)),
+		),
+	];
+	const deployment = ctx.deploymentService.getDeployment(chainId);
+	const configuredVerifier = deployment.addresses.peripheryAddrs?.swapVerifier;
+	const isConfiguredVerifier = (spender: Address) =>
+		configuredVerifier !== undefined &&
+		spender === getAddress(configuredVerifier);
+	const vaultSpenders = spenders.filter(
+		(spender) => !isConfiguredVerifier(spender),
+	);
+	let vaultTypes: Partial<Record<Address, string>> = {};
+	try {
+		if (vaultSpenders.length)
+			vaultTypes =
+				(await ctx.vaultMetaService?.fetchVaultTypes(chainId, vaultSpenders)) ??
+				{};
+	} catch {
+		/* A missing classification is reported per requirement below. */
+	}
+	type AllowanceRoute = {
+		kind: "fallback" | "preferred" | "direct" | "unknown";
+		reason?: string;
+	};
+	const routes = new Map<Address, AllowanceRoute>();
+	const configuredPermit2 = getAddress(deployment.addresses.coreAddrs.permit2);
+	await Promise.all(
+		spenders.map(async (spender) => {
+			const type = vaultTypes[spender];
+			const verifier = isConfiguredVerifier(spender);
+			if (
+				!verifier &&
+				type !== VaultType.EVault &&
+				type !== VaultType.EulerEarn &&
+				type !== VaultType.SecuritizeCollateral
+			) {
+				// A generic ERC4626 interface does not imply Permit2 support.
+				routes.set(spender, {
+					kind: "unknown",
+					reason:
+						"Spender transfer route is unclassified; Permit2 support cannot be inferred from ERC4626.",
+				});
+				return;
+			}
+			try {
+				const provider = ctx.providerService?.getProvider(chainId);
+				if (!provider) throw new Error("Provider unavailable");
+				// The configured SwapVerifier inherits MigrationHelper's public permit2;
+				// known vault implementations expose permit2Address instead. These
+				// classifications rely on deployment/type metadata, not bytecode proof.
+				const permit2 = getAddress(
+					await provider.readContract({
+						address: spender,
+						abi: permit2AddressAbi,
+						functionName: verifier ? "permit2" : "permit2Address",
+					}),
+				);
+				if (permit2 === zeroAddress) routes.set(spender, { kind: "direct" });
+				else if (permit2 !== configuredPermit2)
+					routes.set(spender, {
+						kind: "unknown",
+						reason:
+							"Spender uses a different Permit2 contract from the wallet allowance snapshot.",
+					});
+				else
+					routes.set(spender, {
+						kind:
+							!verifier && type === VaultType.EVault ? "fallback" : "preferred",
+					});
+			} catch {
+				routes.set(spender, {
+					kind: "unknown",
+					reason: "Spender Permit2 configuration could not be read.",
+				});
+			}
+		}),
+	);
 	const now = Math.floor(Date.now() / 1000);
 
 	for (const approval of requiredApprovals) {
 		const token = getAddress(approval.token);
 		const spender = getAddress(approval.spender);
-		const amount = approval.amount;
 		const walletAsset = wallet.getAsset(token);
 		const allowances = walletAsset?.allowances[spender];
 
 		const balance = walletAsset?.balance ?? 0n;
+		const amount = approval.amount === maxUint256 ? balance : approval.amount;
 		if (balance < amount) {
 			const deficit = amount - balance;
 			const prev = walletByToken.get(token) ?? 0n;
@@ -1893,27 +2075,57 @@ async function fetchSimulationDiagnostics(
 		}
 
 		const directAllowance = allowances?.assetForVault ?? 0n;
-		if (directAllowance < amount) {
-			const deficit = amount - directAllowance;
-			const prev = directByToken.get(token) ?? 0n;
-			if (deficit > prev) directByToken.set(token, deficit);
-		}
+		const tokenToPermit2 = allowances?.assetForPermit2 ?? 0n;
+		const permit2ToSpender = allowances?.assetForVaultInPermit2 ?? 0n;
+		const expiration = allowances?.permit2ExpirationTime ?? 0;
+		const route = routes.get(spender)!;
+		// EVK falls back when Permit2 fails. Earn and supported ERC4626EVC
+		// collateral vaults instead select Permit2 from its spender allowance;
+		// a missing token-to-Permit2 allowance then reverts without fallback.
+		const permit2Allowance =
+			now > expiration || amount > maxUint160
+				? 0n
+				: tokenToPermit2 < permit2ToSpender
+					? tokenToPermit2
+					: permit2ToSpender;
+		if (amount === 0n) continue;
+		if (route.kind === "unknown")
+			unavailable.push({ token, spender, reason: route.reason! });
+		const selectsPermit2 =
+			route.kind === "preferred" &&
+			now <= expiration &&
+			permit2ToSpender >= amount;
+		if (
+			route.kind === "fallback" &&
+			(directAllowance >= amount || permit2Allowance >= amount)
+		)
+			continue;
+		if (selectsPermit2 && permit2Allowance >= amount) continue;
+		if (
+			route.kind !== "fallback" &&
+			!selectsPermit2 &&
+			directAllowance >= amount
+		)
+			continue;
 
-		const permit2Allowance = allowances?.assetForVaultInPermit2 ?? 0n;
-		const permit2ExpirationTime = allowances?.permit2ExpirationTime ?? 0;
-		const permit2Expired =
-			permit2ExpirationTime > 0 && now >= permit2ExpirationTime;
-		if (permit2Allowance < amount || permit2Expired) {
-			const deficit = permit2Expired ? amount : amount - permit2Allowance;
-			const prev = permit2ByToken.get(token) ?? 0n;
-			if (deficit > prev) permit2ByToken.set(token, deficit);
-		}
+		const directDeficit = selectsPermit2 ? 0n : amount - directAllowance;
+		if (directDeficit > (directByToken.get(token) ?? 0n))
+			directByToken.set(token, directDeficit);
+		const permit2Deficit =
+			route.kind === "fallback" || selectsPermit2
+				? amount - permit2Allowance
+				: 0n;
+		if (permit2Deficit > (permit2ByToken.get(token) ?? 0n))
+			permit2ByToken.set(token, permit2Deficit);
 	}
 
 	const mapToArray = (map: Map<Address, bigint>) =>
 		Array.from(map.entries()).map(([token, amount]) => ({ token, amount }));
 
 	return {
+		...(unavailable.length > 0
+			? { allowanceDiagnosticsUnavailable: unavailable }
+			: {}),
 		...(walletByToken.size > 0
 			? { insufficientWalletAssets: mapToArray(walletByToken) }
 			: {}),
@@ -1932,20 +2144,28 @@ async function fetchSimulationDiagnostics(
 // so the wallet must cover their *total*, not the largest single one. Forging
 // the sum lets an underfunded batch simulate through to completion — so the
 // running-balance shortfall reports the true peak deficit instead of the batch
-// reverting partway with E_InsufficientBalance. Over-forging is harmless: the
+// reverting partway with E_InsufficientBalance. For fixed-amount operations, the
 // shortfall is computed against the real balance, not this forged amount.
 export function extractBalanceRequirements(
 	transactionPlan: TransactionPlan,
 	account: Address,
 ): [Address, bigint][] {
 	const totalPerToken = new Map<Address, bigint>();
+	const balanceDependentTokens = new Set<Address>();
 	for (const item of transactionPlan) {
 		if (item.type !== "requiredApproval") continue;
 		if (getAddress(item.owner) !== getAddress(account)) continue;
 		const token = getAddress(item.token);
+		if (item.amount === maxUint256) balanceDependentTokens.add(token);
 		totalPerToken.set(token, (totalPerToken.get(token) ?? 0n) + item.amount);
 	}
-	return Array.from(totalPerToken.entries());
+	// Deposit-all reads the wallet balance during execution. Forging that
+	// balance would change the operation itself, so preserve it even when
+	// other operations also spend the token. Keep zero requirements for reads.
+	return Array.from(totalPerToken.entries()).map(([token, amount]) => [
+		token,
+		balanceDependentTokens.has(token) ? 0n : amount,
+	]);
 }
 
 function extractApprovalRequirements(

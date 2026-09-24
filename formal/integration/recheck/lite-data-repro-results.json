@@ -1,0 +1,45 @@
+{
+  "suite": "Published SDK 3.3.0 synthetic reproductions; not browser or live deployment tests",
+  "results": [
+    {
+      "id": "D01",
+      "observed": "Asset-target preview uses one-to-one shares and redeems too many assets at an accrued rate.",
+      "lite": "Normal Earn withdrawal avoids this preview."
+    },
+    {
+      "id": "D02",
+      "observed": "SDK threshold 0.8333333333333334 vs contract integer threshold 0.8333.",
+      "lite": "Vault collateral detail uses this field."
+    },
+    {
+      "id": "D03",
+      "observed": "24-decimal UoA assetRiskPrice throws RangeError.",
+      "lite": "Position risk-price getter reaches this method; no deployed 24-decimal UoA established."
+    },
+    {
+      "id": "D04",
+      "observed": "True owner flags return false when only secondary subaccount discovered.",
+      "lite": "Account state reachable, but no Lite decision/display consumer found."
+    },
+    {
+      "id": "D05",
+      "observed": "Known asset/debt row disappears when optional subAccount metadata is null.",
+      "lite": "Conditional fast planning snapshot; ordinary displayed portfolio uses onchain."
+    },
+    {
+      "id": "D06",
+      "observed": "Null borrowed balance becomes 0n in a defined successful account result.",
+      "lite": "Conditional fast planning snapshot; ordinary displayed portfolio uses onchain."
+    },
+    {
+      "id": "D07",
+      "observed": "GraphQL error returns empty discovery with no rejection.",
+      "lite": "Normal portfolio and planning account reads reach this adapter through the proxy."
+    },
+    {
+      "id": "D11",
+      "observed": "One-position portfolio headline APY 1% versus position APY 2.5%; collateral-specific reward omitted only from aggregate.",
+      "lite": "The UI consumes these same aggregate and position getters."
+    }
+  ]
+}

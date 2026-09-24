@@ -30,6 +30,8 @@ const sdk = await buildEulerSDK({
 });
 ```
 
+`disableV3: true` also disables the built-in pricing backend (retaining onchain pricing), tokenlist and intrinsic APY HTTP reads. The latter two report unavailable for built-in V3 sources; explicit custom tokenlist URL functions/templates remain supported, and applications can supply `servicesOverrides` for other data sources.
+
 `disableV3: true` short-circuits every `"fallback"` selection to the non-V3 adapter, and is the safest setting when the V3 endpoint is intentionally unreachable.
 
 If V3 credentials are not configured, the fallback chain collapses gracefully to the secondary adapter (a one-line warning is logged once during construction).

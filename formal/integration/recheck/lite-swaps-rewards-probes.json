@@ -1,0 +1,32 @@
+{
+  "sdkVersion": "3.3.0",
+  "scope": "offline published-package regressions with synthetic responses, not browser or deployed incident reproduction",
+  "results": [
+    {
+      "id": "S01",
+      "sdkDebt": "2",
+      "canonicalMorphoDebt": "1",
+      "result": "published SDK arithmetic mismatch reproduced",
+      "liteCaveat": "Lite supplies its own borrowAmount from indexed debt, bypassing this default borrowing estimate."
+    },
+    {
+      "id": "S09",
+      "offsets": [
+        0,
+        100,
+        200
+      ],
+      "result": "published SDK repeats unpaginated 100-row response; probe stops third request",
+      "litePath": "server vault snapshot enables populateRewards, which uses chain-wide fetchChainRewards"
+    },
+    {
+      "id": "S10",
+      "raw": "1000000",
+      "fabricatedDecimals": 18,
+      "displayIfTrusted": 1e-12,
+      "actualTokensIfDecimals6": 1,
+      "result": "published direct adapter fabricates 18 for missing metadata",
+      "liteCaveat": "Lite formatter trusts supplied decimals; tested adapter output, formatter consumption inspected in source, no actual live token asserted."
+    }
+  ]
+}

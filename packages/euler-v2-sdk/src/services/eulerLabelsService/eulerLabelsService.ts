@@ -422,6 +422,18 @@ export class EulerLabelsService implements IEulerLabelsService {
 
 	async populateLabels(vaults: ERC4626Vault[]): Promise<void> {
 		if (vaults.length === 0) return;
+		const byChain = new Map<number, ERC4626Vault[]>();
+		for (const vault of vaults) {
+			const group = byChain.get(vault.chainId) ?? [];
+			group.push(vault);
+			byChain.set(vault.chainId, group);
+		}
+		if (byChain.size > 1) {
+			await Promise.all(
+				[...byChain.values()].map((group) => this.populateLabels(group)),
+			);
+			return;
+		}
 
 		const chainId = vaults[0]!.chainId;
 		const labelsData = await this.fetchEulerLabelsData(chainId);
@@ -528,6 +540,8 @@ export class EulerLabelsService implements IEulerLabelsService {
 					...(earnVault?.block && { block: earnVault.block }),
 					...(earnVault?.restricted && { restricted: earnVault.restricted }),
 				};
+			} else {
+				vault.eulerLabel = undefined;
 			}
 
 			vault.populated.labels = true;

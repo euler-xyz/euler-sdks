@@ -684,25 +684,27 @@ export const decodeOracleRouteForPair = (
 				const adapterStep = makeRouteAdapterStep(info, context);
 				return adapterStep ? { steps: [adapterStep], source } : null;
 			}
-			if (
-				decoded.base.toLowerCase() !== context.base.toLowerCase() ||
-				decoded.quote.toLowerCase() !== context.quote.toLowerCase()
-			) {
-				return null;
-			}
-			const baseCross = visit(
-				decoded.oracleBaseCrossInfo,
+			const forward =
+				decoded.base.toLowerCase() === context.base.toLowerCase() &&
+				decoded.quote.toLowerCase() === context.quote.toLowerCase();
+			const inverse =
+				decoded.quote.toLowerCase() === context.base.toLowerCase() &&
+				decoded.base.toLowerCase() === context.quote.toLowerCase();
+			if (!forward && !inverse) return null;
+			// CrossAdapter executes quote/cross then cross/base for an inverse quote.
+			const first = visit(
+				inverse ? decoded.oracleCrossQuoteInfo : decoded.oracleBaseCrossInfo,
 				depth + 1,
-				{ base: decoded.base, quote: decoded.cross },
+				{ base: context.base, quote: decoded.cross },
 				source,
 			);
-			const crossQuote = visit(
-				decoded.oracleCrossQuoteInfo,
+			const second = visit(
+				inverse ? decoded.oracleBaseCrossInfo : decoded.oracleCrossQuoteInfo,
 				depth + 1,
-				{ base: decoded.cross, quote: decoded.quote },
+				{ base: decoded.cross, quote: context.quote },
 				source,
 			);
-			const steps = [...(baseCross?.steps ?? []), ...(crossQuote?.steps ?? [])];
+			const steps = [...(first?.steps ?? []), ...(second?.steps ?? [])];
 			if (steps.length > 0) return { steps, source };
 			const adapterStep = makeRouteAdapterStep(info, context);
 			return adapterStep ? { steps: [adapterStep], source } : null;
@@ -1195,7 +1197,8 @@ export const collectPythFeedsFromAdapters = (
  */
 export const collectPythFeedsFromRouteSteps = (
 	routeOrSteps: OracleRoute | readonly OracleRouteStep[] | null | undefined,
-): PythFeed[] => collectPythFeedsFromAdapters(getOracleRouteAdapters(routeOrSteps));
+): PythFeed[] =>
+	collectPythFeedsFromAdapters(getOracleRouteAdapters(routeOrSteps));
 
 /**
  * Select adapters representing leaf pricing route(s) for a base->quote pair.

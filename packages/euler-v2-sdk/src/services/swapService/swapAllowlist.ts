@@ -63,7 +63,7 @@ export function assertSwapVerifierAllowed(
 	swapVerifierAddress: string,
 	knownSwapVerifier: string | undefined,
 ): void {
-	if (!knownSwapVerifier) {
+	if (!knownSwapVerifier || !normalizeAddress(knownSwapVerifier)) {
 		throw new Error("Known swap verifier address not configured");
 	}
 	if (swapVerifierAddress.toLowerCase() !== knownSwapVerifier.toLowerCase()) {

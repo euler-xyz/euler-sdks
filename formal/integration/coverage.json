@@ -1,0 +1,1520 @@
+{
+  "sdkBase": "ff224741c251cae7673c5f835dcf3bbccd9d6605",
+  "reviewedAt": "2026-09-23",
+  "note": "Every SDK source file has a review assignment, not a proof or exhaustive branch/test coverage. See each named report for depth, evidence and limits. Hashes identify the reviewed local source, including uncommitted changes.",
+  "entries": [
+    {
+      "path": "packages/euler-v2-sdk/src/entities/Account.ts",
+      "sha256": "459921013ee6cb39ae0a82e71084f705f4efbb4068703707cac86dd04652d29c",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/entities/ERC4626Vault.ts",
+      "sha256": "cb8edfb417d09b52fef60299da80bdb3d3f1c7a38bbaf26dcf309755da7130eb",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/entities/EVault.ts",
+      "sha256": "5cbe8db10e36ce6555b385fb18b65168b2e4331f1de7893c994779a8011112ac",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/entities/EulerEarn.ts",
+      "sha256": "fc2f90ae319665198e5c2fb513b1627580ba92b9ff4d68a3d23370d41fd5ea73",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/entities/EulerLabels.ts",
+      "sha256": "1e28f17f9bf9bdd9efee1d97e6e6f0820a48f55843bf8b3658f154f95fce0e4a",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/entities/Portfolio.ts",
+      "sha256": "623728fc6b4abcfd95fd2bea8b9a4ca54ecc5685b7efb94f23ec1808591afb8c",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/entities/SecuritizeCollateralVault.ts",
+      "sha256": "19e4fa74b6f7c9800f0cf722d3e31de49a1bede2d203fdf98b421eb6e754ca24",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/entities/Wallet.ts",
+      "sha256": "f88dadfb0b3028adbefb75786ea06bdaf6c9471a5f555e670b3f58c7b43676c8",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/index.ts",
+      "sha256": "af13189e204de7dbf2622ed01114780b949f07f663a08a2932c941a2ad13f8a7",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/plugins/batchSimulation.ts",
+      "sha256": "bba9f1b2b51a9ab26e1a5258ef3f009e1ba983514f8952ff08fa3be7475c5864",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/plugins/index.ts",
+      "sha256": "3c77899c04c2e5f9d22e29be40801ca174331a5e5eee5b15516255336ffb607a",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/plugins/keyring/index.ts",
+      "sha256": "fd8f4c3a17a31bb67f8069ee56489ffb091a9ba5f7a110de91bd9d69c5718f9f",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/plugins/keyring/keyringPlugin.ts",
+      "sha256": "1929de9b593abd78dba4837929011e62ae630222f86e7f08633fe0bea4864c50",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/plugins/pyth/index.ts",
+      "sha256": "5828b84aa5c16e166d2cf5535ba2b652968aaef2caab06133c29fb031d96a5fb",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/plugins/pyth/pythPlugin.ts",
+      "sha256": "dd749061ab9a38f3b47fa0a66c57c2f823db4507685e5444d9e5e1533c5c30d0",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/plugins/types.ts",
+      "sha256": "3023474a47e2009477ad9df1b9d16c1f95552e499d47e77ca9f27ef990bf4c33",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/sdk/buildSDK.ts",
+      "sha256": "538db04281442a5b602557bd0be3c4a66174b4391951d5c83cdc2c8e0ddccad0",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/sdk/config.ts",
+      "sha256": "ab3dc4cd94629b109865ac9fb703834baba7466897071cce35e363a5513e6dac",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/sdk/defaultConfig.ts",
+      "sha256": "6689491c70f40c66006adc1ff8b6c25f717993500e01160c7ab8e9c3487655ed",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/sdk/sdk.ts",
+      "sha256": "616978379153d74c4010ae8962e409a9639090a04c9cc92113172dd5e3874bb9",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/abiService/abiService.ts",
+      "sha256": "481bfd8d1f63232966becf707d4795780a5f70fe1d1887cda7a3b36a55a7807b",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/abiService/index.ts",
+      "sha256": "6ae2826a3bab0fbb2f64ef5cca213e953019a5277c4067a992a5889b82c86945",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/accountService/accountService.ts",
+      "sha256": "343c281a02665b139c9ff46b29969fe62b8ec7a35298af244971d04579513442",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/accountService/accountServiceConfig.ts",
+      "sha256": "fb86b9c19c266c0825b7ad04778dda1c609a7e88e64a5b29313bd2d1a760dacd",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/accountService/adapters/accountOnchainAdapter/abis/accountLensAbi.ts",
+      "sha256": "8013a06bea983843ad81c03dc0287377987cacc824eda790fbd16a077a4deb57",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/accountService/adapters/accountOnchainAdapter/accountInfoConverter.ts",
+      "sha256": "bc1f220ac4e016352e5d354ea720e68796bc324fc18150f5efd5871fea2f8ef4",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/accountService/adapters/accountOnchainAdapter/accountLensTypes.ts",
+      "sha256": "7db79919502b69a439de4931ccb730287b1e0cd308beea8e495cfc2092c43a19",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/accountService/adapters/accountOnchainAdapter/accountOnchainAdapter.ts",
+      "sha256": "c9928db465388ccc961667fa692ef113c6366704c41d8b7ce341036c9ad12bbf",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/accountService/adapters/accountOnchainAdapter/accountVaultsSubgraphAdapter.ts",
+      "sha256": "b28217e8e265dc9efb7bf794a4a3fb5ad5696dd35a76c385050ac4925a4a2d07",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/accountService/adapters/accountOnchainAdapter/resolveAccountLensAbi.ts",
+      "sha256": "59eb40ad61af7b39c0b5b0dbbc331a428d1cad277d0589696da8f7432f16150c",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/accountService/adapters/accountOutputNormalization.ts",
+      "sha256": "2869326d382aaa6e05a750cd4f1b3865ce0990551f0b74af17483985e38867bb",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/accountService/adapters/accountV3Adapter/accountV3Adapter.ts",
+      "sha256": "2d161cf0af23040f0b134723fcf7c2fe3550cda66eb7bc193fd5e0e3168ba0c3",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/accountService/adapters/accountVaultsSubgraphAdapter/accountVaultsSubgraphAdapter.ts",
+      "sha256": "feff50092cd6d1c7c6bb3183944a423c32f24cfa73a5956e09205e04d715ca7c",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/accountService/index.ts",
+      "sha256": "5ff18281c854d7250a7a2087d3296931e397ab64823844c310b27bc1da07fd21",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/activityService/activityEvent.ts",
+      "sha256": "96b698c15a6761e47c303161640c624eca094352a3464702d2e5c5ae9383b5e3",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/activityService/activityService.ts",
+      "sha256": "6f18eaa2c336117e766815dea16a43ab132286b54bb07846d046b19fe1db5afd",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/activityService/activityServiceTypes.ts",
+      "sha256": "51fe17529405ed725cd7062eda64bb3b37e660d4b03affea8f0c92f32249c90b",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/activityService/adapters/activityV3Adapter.ts",
+      "sha256": "58a2690b56ad20f7f832ef0ba0348a66942e9be04889d1e9005b41f1f4b4e8b7",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/activityService/index.ts",
+      "sha256": "c8a3997d45bfba9ed7bb0cd792d6d20724739333f0667eb776046113dc61f5f0",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/deploymentService/deploymentService.ts",
+      "sha256": "f2c1f270d162e0c135d9eebf91aa98940bf910dbfe0a0368ab1274e50486b5af",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/deploymentService/index.ts",
+      "sha256": "ac43bba08071c169b1fc7a4f27a23c0cb50e22ceaaad1e8f282f632e54a14297",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/eulerLabelsService/eulerLabelsService.ts",
+      "sha256": "ba58eb6f8450940f153527582dfc1c03433a9c1db0f7fb11f42cf048e776f9fa",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/eulerLabelsService/index.ts",
+      "sha256": "c8833a79ae1efeae982d1717ba0f7acde2acaece05409d3f7d375501a19d5d00",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/abis/cowSwapWrapperAbi.ts",
+      "sha256": "96fd685943d5dd94e764d825e40c42320a8d7965e380d7b30f299476f13fcb6e",
+      "review": [
+        "execution"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/abis/eVaultAbi.ts",
+      "sha256": "eb8e6f44beff242dfc6c506ca4373d8e38f135ac7fe4e2f7d12202392c83cfb5",
+      "review": [
+        "execution"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/abis/ethereumVaultConnectorAbi.ts",
+      "sha256": "7e7d04bd009de6ae285276966f44bc4f52c9ab256b047fcff452634646bf43f7",
+      "review": [
+        "execution"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/abis/permit2PermitAbi.ts",
+      "sha256": "a12d55c57e380622086df1b523820fa3c7f6995ccb9ea045eed7813c861e8e93",
+      "review": [
+        "execution"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/abis/swapVerifierAbi.ts",
+      "sha256": "9b300cc1ad94014d6f9e99b11935be1d205362d8d97340ab8d2a33b8eb94e920",
+      "review": [
+        "execution"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/abis/swapperAbi.ts",
+      "sha256": "671ad5614d16887b1dd4dc83e942ba9cb03eb3437d757bc6f7180114661e5c80",
+      "review": [
+        "execution"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/cowExecutor.ts",
+      "sha256": "876bed150e308cac178280e92ef89da641b03edf20320884a690bcf2f2e59b9c",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/cowSwapHelpers.ts",
+      "sha256": "d27b7713696e79b86b1f7898c30020e0cce5d8b7d5bd5238a4d05ea99d887919",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/encode.ts",
+      "sha256": "5a7f7748cd65fb4322b63d166c2832dd5f200dd328e4a6768f1fb770a40a5f7b",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/execute.ts",
+      "sha256": "cbc89e74106b8de49bd871d4fde762ff294d35bed0d652be9061db9dd3d3811f",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/executionService.ts",
+      "sha256": "5e571e0e9aaa8befadf465e48a92d5a85b98dbcf16c281b9a4da46a7d1195344",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/executionServiceTypes.ts",
+      "sha256": "21affa5310b6cb8dad08c88d98cdaa44c499144ea69e68e75e6b2866b7ab3f63",
+      "review": [
+        "execution"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/index.ts",
+      "sha256": "5eb2d23ce92e9d937b43ce1708f7b5e89a7b7c2210b49a611063ae5960671d11",
+      "review": [
+        "execution"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/materializedExecution.ts",
+      "sha256": "7ba8b0ed4a73c053cc5d62b9718391fb645534f680e181c7180123e6ea288ab5",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/migrationAuthorization.ts",
+      "sha256": "670cb891746af0d99c103f97c2bc71e4c1bd2cd89cbca3fd3ea5ab29b51f5c16",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/simulate.ts",
+      "sha256": "36a623efe913821a6a03eeabebe531d5abf5151996282c37925c1ed01bb9ff49",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/executionService/tokenApprovalReset.ts",
+      "sha256": "134a40168460a83e92a3e826d78abd781e0240fdb8e2f966ed6001b1cc915a81",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/feeFlowService/feeFlowService.ts",
+      "sha256": "17c91ee6a1c9c861e6c6ee9614f20343c7720d39e6f15e7c8e4caf12ea3655f9",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/feeFlowService/feeFlowServiceTypes.ts",
+      "sha256": "f3527b3f75cb01bf42eb43df839b99bef36068c3178d43163eeb3fd6c4b07985",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/feeFlowService/index.ts",
+      "sha256": "cab1d01478c2156bd06469ad48b0c9a477f1b1d0a3b269d2235d1fe8ad6cb6fa",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/intrinsicApyService/adapters/intrinsicApyV3Adapter/index.ts",
+      "sha256": "f7a04eb56329db904c0335c9d6d71e8dd95d464d84a62067ac604bc2110b04b3",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/intrinsicApyService/adapters/intrinsicApyV3Adapter/intrinsicApyV3Adapter.ts",
+      "sha256": "029678b91c896e39d549671e4e1f08533dd1b617fe9ec46c9292a709ed14fa24",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/intrinsicApyService/adapters/intrinsicApyV3Adapter/intrinsicApyV3AdapterTypes.ts",
+      "sha256": "bec3ab0ca2cdb32f26106a07d31f4c4c26997aece3890feab2031a29d11aa4fa",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/intrinsicApyService/index.ts",
+      "sha256": "e11ab73ff2db3d697a05dd0931d6a7d3cf073af446db7ec05f0d04ecf7182f23",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/intrinsicApyService/intrinsicApyService.ts",
+      "sha256": "c7c304a485c299e5e1184eff176f6f721b8e9d86116401e22c5ff5b42f78c5af",
+      "review": [
+        "infrastructure",
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/oracleAdapterService/index.ts",
+      "sha256": "747c7c6e954376735ac5143cea49a322d02abafc0fa77dca1d885f27ee7c88d2",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/oracleAdapterService/oracleAdapterService.ts",
+      "sha256": "d4e3db4646c0dc0e6e7ee2e91caaaf8955b7c853c7c68b616a54cd454d9a642d",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/portfolioService/index.ts",
+      "sha256": "85d5c5efcac6bba55e75361414e8627a53bdab66134165a044004f182303435e",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/portfolioService/portfolioService.ts",
+      "sha256": "5676ea0d67e6575b7574fee9cf86fa1ddf4a233fc02bd9cd78d69fd5414f29a9",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/aave/aaveConnector.ts",
+      "sha256": "586d06036907cf57e01be2996f74c0f386a2a3ef6f621ef691203b222511864a",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/aave/aaveConnectorTypes.ts",
+      "sha256": "c3923a7357a3a405004ab1d1b1129190ece9e52ae84ca9fa066506d790b8fde9",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/aave/abis/aaveV3Abi.ts",
+      "sha256": "db0661d8d2d8661f77b2376f3fd2be92b93a019393e1110a142ce44a3b178c26",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/aave/index.ts",
+      "sha256": "f035c350d79d5662da1b0939f9acaccc91c98965f61cc2952fd5565ade9fa3b8",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/index.ts",
+      "sha256": "750cef5737a10219ecf90e4d20e7990e69c01a0060759918ddb30fa32548c027",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/metamorpho/abis/metamorphoAbi.ts",
+      "sha256": "295b0cc76240ad46a54cc27dc0d69de57f3a2538c5e0def64c10ac1c29c28599",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/metamorpho/index.ts",
+      "sha256": "2203a2c9b595585bbb8de9dc9d2ce98c9b37754744733318c133a3d38d7b939e",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/metamorpho/metamorphoConnector.ts",
+      "sha256": "4a36f0725e88767d238eb0dd327650260b4bbfe28b6435c7036f7bce46f3a10f",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/metamorpho/metamorphoConnectorTypes.ts",
+      "sha256": "0a827876aa6911ad0c709d4fef89c5bfffdac191cb9925a3d1e079d7fa26b1f9",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/morpho/abis/morphoBlueAbi.ts",
+      "sha256": "cb6a2f638eb6b5e94bed2052a1e2a401a528cdaa0889db27dde06b0445e7bcbb",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/morpho/index.ts",
+      "sha256": "7b91c414cfd89ef328020500d208df02e6cda43b62743204896797324aba3537",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/morpho/morphoConnector.ts",
+      "sha256": "5edffa0b1b39ed05caea8abc684da78f8a21ba3982542dfe24c867af1448a0e5",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/morpho/morphoConnectorTypes.ts",
+      "sha256": "5d42da47642b659059db4b67f83d7433e2df4beafbc277501a4c85c2d7cb850c",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/connectors/shared.ts",
+      "sha256": "d99f91c51df1ac61327db5bfe300e487b6f3e8335fc37af08ddd636fea92b29f",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/index.ts",
+      "sha256": "c8e7da83892f7af30721c944850a9f5175b577913f2ac83049ad4d6d39556b32",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/positionMigrationService.ts",
+      "sha256": "e44cd6534c0e6a834b98f0efe70b3e8f1dcd94c65ad3925e919b53cdde7f1163",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/positionMigrationService/positionMigrationServiceTypes.ts",
+      "sha256": "7056393d2c878b5dace46e28070a2074511b8b8b080ceb1126774595716c584e",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/priceService/backendClient.ts",
+      "sha256": "cbfda5679690ecefee3edbe3afb511b87c0a38628e450d47449d534855fc6a91",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/priceService/index.ts",
+      "sha256": "3ff8a562de31134c3802357b8387fcc7fda7bf0c7270386f53c2a82a235b4770",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/priceService/priceService.ts",
+      "sha256": "a9f3be4fedd0619355a84102e657cffa80199d3ad681113f9af0c55e4b25d370",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/priceService/utilsLensPriceAbi.ts",
+      "sha256": "711f62b593a23dfac5cd03c2ca486483fabb6e4e7ddc2c072b00178d91db5608",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/providerService/index.ts",
+      "sha256": "c8bd28fa480d4dc430daf89ab9b886809cf7d67ea35ad2976dc32fa111f886dc",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/providerService/providerService.ts",
+      "sha256": "41a6f8d6902c3cf0f5b70507c2d4c65dd2279da25763bf21909b82eacd6fe15a",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/reulLockService/index.ts",
+      "sha256": "3be2ef124d33b7bc90edf422fb029e261e930b4e12511f7b880c1abec951a8cd",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/reulLockService/reulLockService.ts",
+      "sha256": "95046b287b648cdc0c3fb19eaf46a7053ed7f9c87c3453e34f76fb278e68da44",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/reulLockService/reulLockServiceTypes.ts",
+      "sha256": "0657d0b1f9824e276da415018c084e38d50eb2514e44d6e636c8621641f34a33",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/rewardsService/adapters/rewardsDirectAdapter/index.ts",
+      "sha256": "6dcff93fb2119592798a8a877d23b824fd54c2e4f40cd43d3a3ade1aa85a4f8f",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/rewardsService/adapters/rewardsDirectAdapter/rewardsDirectAdapter.ts",
+      "sha256": "1f1162f47fe0c4aebae25ac9bdfe3ffbafd6f7cb1165fb0337e8252c4146a8f7",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/rewardsService/adapters/rewardsV3Adapter/index.ts",
+      "sha256": "b2570518b524590fd7cbd0fb97926d98da6ebcefadf03c03552cb2ad55de686d",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/rewardsService/adapters/rewardsV3Adapter/rewardsV3Adapter.ts",
+      "sha256": "e9ad3db86eb5d16839845f4f691f0c1b14da765ba7731f087d5e131cae803344",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/rewardsService/adapters/rewardsV3Adapter/rewardsV3AdapterTypes.ts",
+      "sha256": "04cdf44e2bd5ec581c384098a867b28cc2875be10c29e8835f1932750f4fe50a",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/rewardsService/index.ts",
+      "sha256": "8b227c24b91d468698be6fab669e6f1ae1ab73ba1eb553023ed513eea4c4d90b",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/rewardsService/merklDistributor.ts",
+      "sha256": "81634d46e55421b62813820c56651e5775b1be0ac4e0c648c55c988af8547892",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/rewardsService/rewardCampaignEligibility.ts",
+      "sha256": "17befba4efa2aa6bf2c39d59e7badffa5fbeaa7b9feb7b4df8e3a91f7ce2e20a",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/rewardsService/rewardsService.ts",
+      "sha256": "28e9675ba9f66e959f02a83696f0c162ebb6659403d55767702fe1e21d15c8f2",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/rewardsService/rewardsServiceTypes.ts",
+      "sha256": "a9cbc065376beef3bb00ecaf562c72fa4b251f837761f4228e578636f96ee6f3",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/rewardsService/vaultRewardInfo.ts",
+      "sha256": "85179f0a16e224a61630d126ac42aead8c9ce95efc6389665c8bf3708b293ae9",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/safeAccountService/index.ts",
+      "sha256": "c4e43d93e19a153b22b95e55cd6e40339cb6739fd698054bb780302f997c9e7f",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/safeAccountService/safeAccountService.ts",
+      "sha256": "b2472e8616551dfd5a548c7953e3531d2c1bc17b6c16532f60764b2bd617b915",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/safeAccountService/safeAccountServiceTypes.ts",
+      "sha256": "e56e2644ff1c2438b655db6110c38ed3c93c7dca6ff708b80b506a9075b34781",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/swapService/index.ts",
+      "sha256": "8788eddf659f2513c67c31a36d6911d9e929d44abf0dbe9294dec022a85bb8ca",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/swapService/swapAllowlist.ts",
+      "sha256": "00a27852fd2615b3be9936029bd9d271f2fbe33210d425ba756d5246cf63f079",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/swapService/swapService.ts",
+      "sha256": "f14f75a7601c5217adad104dabe53d9cf9e03df4ca21c368c3bc0d3101f4b2ba",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/swapService/swapServiceTypes.ts",
+      "sha256": "8320efab7dd696f00b4394f8e5e5b9f768ab4a335a029fc6bf7bb6b907eb6c00",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/swapService/swapVerification.ts",
+      "sha256": "df5ea9e535cbc272ffe4caab2561f7ea8a0e433da664595984463b9e4e684d22",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/swapService/swapVerifierAbi.ts",
+      "sha256": "3687ae995f56785705a45c46c483fb65ffef1b4282873a7eada00323d95b834d",
+      "review": [
+        "swap-migration"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/tokenlistService/index.ts",
+      "sha256": "9b89e857b8bacb3aa597ca3458628a0a910b0255530356b03bf82f1fe1034804",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/tokenlistService/tokenlistService.ts",
+      "sha256": "16776712a22703c6cdc440d2710cfd8ee42cde1b9e51187d4852064dfaacc43e",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/tokenlistService/tokenlistServiceTypes.ts",
+      "sha256": "a60c6e348b08333f9b67cf0f9c5aacc10854f8db41be07870e9756bf34272b83",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/IVaultService.ts",
+      "sha256": "fa32844267b61718b106e8b35d7bb872b990ac1356dec2689a6a06e1410dbfb0",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eVaultService/adapters/eVaultOnchainAdapter/abis/vaultLensAbi.ts",
+      "sha256": "b09f1ecaffe8e8c2aa36b1a564b15ff80bf6d1b9f92599aea2e7f2a12f1088c6",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.ts",
+      "sha256": "4624ac75bcce4a91295f90bd4e1654edd4221f36458dc28b87334c221e0fc262",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultOnchainAdapter.ts",
+      "sha256": "d22af64a53df69e2719baf2b5b7c0dd39476dd4c50f740178735b984199b0596",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eVaultService/adapters/eVaultOnchainAdapter/vaultInfoConverter.ts",
+      "sha256": "c7402eed53abe473f7b0cdef9346d4378fc22c23093ed76b2c8ad8c910b36d89",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eVaultService/adapters/eVaultV3Adapter/eVaultV3Adapter.ts",
+      "sha256": "9d78d57417864cd73b2628499b3420822643f5425602860312928c612e3c6972",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eVaultService/adapters/eVaultV3Adapter/eVaultV3AdapterConversions.ts",
+      "sha256": "f6d8d2fd182e4d5d9df97ebcdd54d1546fded45f80ac16c1f23da120cfaa58a6",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eVaultService/adapters/eVaultV3Adapter/eVaultV3AdapterTypes.ts",
+      "sha256": "6850fba347760a05282a42584c4bff4af3dcd209cdce2a27a0e6da2593457e80",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eVaultService/adapters/oracleReferenceAsset.ts",
+      "sha256": "1d815ac1f8e4e1f77c4701cf07227ad6dfb6dc7a90688ec565bee2e4cb1b2017",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eVaultService/eVaultService.ts",
+      "sha256": "30045736fb330b8eb868ca8ce97f5e34c3d5468de6eaae02b98ffe6cde34f5c2",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eVaultService/eVaultServiceConfig.ts",
+      "sha256": "bd3bf01a76e3ad4e8656d1788178600b3a3f0ef296af1f94c75cff089de70dac",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eVaultService/index.ts",
+      "sha256": "2b4b80be3d2e815bc1501647d4af35cfa4dfca7a2a0926377693a006ba5926eb",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eulerEarnService/adapters/abis/eulerEarnVaultLensAbi.ts",
+      "sha256": "6c83e26deabc603ad548ac39212bfeaab5b98ab7da731a2ece2a4d1e96b242c7",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eulerEarnService/adapters/eulerEarnInfoConverter.ts",
+      "sha256": "37aa2e56b5c54ba91286ab9b596b4ae2249a5024ef1fba768b38941ae5c6e630",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eulerEarnService/adapters/eulerEarnLensTypes.ts",
+      "sha256": "81d4c46348e8c417efa701613268de53d43b9f38a7bed9a4fe154b635ae5eab8",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eulerEarnService/adapters/eulerEarnOnchainAdapter.ts",
+      "sha256": "3b507899be4563937cd477427c0e742ee4720b5bef13114e768a9b3d33a607d6",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eulerEarnService/adapters/eulerEarnV3Adapter.ts",
+      "sha256": "38589119cb0f4b7629d880c0e793be48006dd684693e537efe49746ec8a984a5",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eulerEarnService/eulerEarnService.ts",
+      "sha256": "5105c2192c50d90cd33efe23d2a77d15f237254a7c703283133d08b6a3f1cafa",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eulerEarnService/eulerEarnServiceConfig.ts",
+      "sha256": "2d7869b4886364da7d0f7c453cd16ec2d922cffd1fb511cd840550b33b476d00",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/eulerEarnService/index.ts",
+      "sha256": "813774c555b026417dc2c429bda12ea174e3711b1a6ad3c7c1530734711e8d5c",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/index.ts",
+      "sha256": "596feed2bab4a0e2206c410d20af81b680cd04252e9432a7306fd647c10c2fcc",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/securitizeVaultService/adapters/abis/erc4626EvcCollateralSecuritizeAbi.ts",
+      "sha256": "38067dfcdd76ce77ac8e26323bbf5c846aad3a7b01fd3c07b2262947546760f9",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/securitizeVaultService/adapters/abis/utilsLensAbi.ts",
+      "sha256": "8b0d272f3d01859a4acfdf7b75f6eb25a7bd25be1ec99e91ea2e741908f78947",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/securitizeVaultService/adapters/securitizeVaultInfoConverter.ts",
+      "sha256": "af12f8ac4e6c2423e9c5866a2afa320268cb65cc5a957938ecf504337ee47541",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/securitizeVaultService/adapters/securitizeVaultLensTypes.ts",
+      "sha256": "f823be957a14046196b4ed163a2d144052736efaab9b32a5a185849823ce3bef",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/securitizeVaultService/adapters/securitizeVaultOnchainAdapter.ts",
+      "sha256": "c9d68a7014a9c0101db27484153c972ed1138ef0ee475ff88bfc49cc9cece1a5",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/securitizeVaultService/index.ts",
+      "sha256": "f4019086e8fa4f5261339917ff77199b527cc875c51f8502a7e9829b509df7da",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/securitizeVaultService/securitizeVaultService.ts",
+      "sha256": "543f50f665b5d4d15c906675c0674f1ed3de3da0abb25d18b31db204c4609e9d",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/vaultMetaService/adapters/IVaultTypeAdapter.ts",
+      "sha256": "78c1e7f2cbe2cef178ad7c9487a2e158772470821ab7ab14c07a1dde301ecb65",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/vaultMetaService/adapters/VaultTypeSubgraphAdapter.ts",
+      "sha256": "0186c253e3c2d6cba69aa603f83ae4d8ee5842708af7fbce5ef20f66ffc25c1b",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/vaultMetaService/adapters/VaultTypeV3Adapter.ts",
+      "sha256": "affec39cf9624ce197c97ac0157328029c54c69a6dc8997b16185bda9c926d54",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/vaultMetaService/index.ts",
+      "sha256": "2ec2475a44988b3fe35be8aade1b17c2c762ac64425e6d62378c20a5ebd10cb9",
+      "review": [
+        "data"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/vaults/vaultMetaService/vaultMetaService.ts",
+      "sha256": "41ba5573334c47771e3495fdd76cd4d5ec1a85e2b18717a91fda569d07538f5d",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/walletService/adapters/walletOnchainAdapter.ts",
+      "sha256": "3e7437f58351d3baa11120bbff4fded4b04703d94f7f773e29e5d5d7eaaef7a0",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/walletService/index.ts",
+      "sha256": "3e0498fdbe54c63a4d7b4ad8fabb384d86ef313a76627ab5bd67cb87ab83c211",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/services/walletService/walletService.ts",
+      "sha256": "b827cf2a14fe587ebd9631a949c1c2f64c996229f95ddb4263186768818624f3",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/accountComputations.ts",
+      "sha256": "a98234ccd56f923e0325848ed6c992651afbe939d4d55e19df44430caf9f6402",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/accountPositionClassification.ts",
+      "sha256": "cf0fa91e2ba37a65bda49dbe8515fce107d148e13b9efd30fa3d1c852e4ec39e",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/batch.ts",
+      "sha256": "68ee60e7ca54f1b68704d3eb291cf523645efb696b83e3986b4ea226bd085be3",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/blockPin.ts",
+      "sha256": "221f636f7bd1c988fc8b48f1894c2ebdc1a45aa1c4b06e6c09c9994f30628346",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/buildQuery.ts",
+      "sha256": "9c742beee2be22aa926ef48e8b30fb69216567c422d528b8f88aaa691ba14e26",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/callBundler.ts",
+      "sha256": "58435483437031f9e8e478dbd9b21b813e5cb5d926132346cd8d2b4b6505849d",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/decodeSmartContractErrors.ts",
+      "sha256": "c1011806fd38a03ad9fa40e94d0518e8a16fa162a21ee16d04ea2adf8f5741f0",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/entityDiagnostics.ts",
+      "sha256": "9d1a95f4708d99342cdd8f584829d8992285b97a6a91eb7073bc55e5c4ec50d9",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/eulerErrorSelectors.ts",
+      "sha256": "853e77fbf8b812fe43614112a0ac2c3d14ae081bdfb1ff9a96af63fc57c46e43",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/eulerLabels.ts",
+      "sha256": "e45ea01018caa6df669d3761d4604137e3022bddfd0931da8f0bf89f83795826",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/fallbackAdapter.ts",
+      "sha256": "83e2eb34b1f1fcc26a14110ed5b9565fb9c45d81c49fe4533501566eba77179f",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/healthCheckSets.ts",
+      "sha256": "19f2b751eff81d423d55122da6f6a0ebc77a4d89d855af091713234365876891",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/irm.ts",
+      "sha256": "2c6ac8d1d1cbb5a0a41f71f8c77eec130f696c5f0822828ec02c87a1ac5880c6",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/lens/abis/irmLensAbi.ts",
+      "sha256": "6166556647b513d92e2e37d2f733ad72c7b9a591da1171c949e47e48bb9e84ec",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/lens/abis/oracleLensAbi.ts",
+      "sha256": "c6339cafbc07d1d3c48d7fc48c22bdc4425857e44c6edb48978c0184da7f2f86",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/lens/index.ts",
+      "sha256": "c79e653ffe34d4ee05a99a64b2e525b72065291f0816b77c210c415fdbeb54e5",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/lens/lensRead.ts",
+      "sha256": "c4ec882b26922f069e4c0dbf69306b22976e18a04d706f963603c7cce6c34ef1",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/normalization.ts",
+      "sha256": "d591046d231faf83257ef300d282dde99672969eaaa2e3531133e519271bd6bf",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/oracle.ts",
+      "sha256": "d5f2ec57a59fc4521e9978e9051c250e3c85f81effd792d259cb1c538b483f73",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/parsing.ts",
+      "sha256": "21676d36baf9042b380a414f5eee63c413d075b5e07ec0edf9cc112ca9e15c6f",
+      "review": [
+        "data"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/queryNames.ts",
+      "sha256": "68f697ab4836b99d81a14ada64da292f8313d7676db2f6af9ce22e51d2cbb7d0",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/readMany.ts",
+      "sha256": "c4ec1fd9360d471d0802184a5a7bdc663e47f69e82a5c1e1c9ce80c89a10c13b",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/stateOverrides/accessList.ts",
+      "sha256": "d44c5592d5fe18ec5496aeba161f82cca30561558c3400cfd3c393472a93d4ed",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/stateOverrides/approvalOverrides.ts",
+      "sha256": "b7ebd79bef7f406c1b77e0bc9a1ab500c97fb9547b5b39b705723c9aa8ee02ef",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/stateOverrides/balanceOverrides.ts",
+      "sha256": "d33b1f48e30af6b54d921e5adcd962fa6d449cd70f9bcc9bfd39429163b474d8",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/stateOverrides/getStateOverrides.ts",
+      "sha256": "f799618d358d1617a00c29d1d493db86570c518334f3ab98d5f1a8b5bf64b280",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/stateOverrides/index.ts",
+      "sha256": "fb21c02feec3475d2503bd5d518e3ce6b30ba1671579fb95106112789d897bd9",
+      "review": [
+        "execution"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/stateOverrides/mergeStateOverrides.ts",
+      "sha256": "cd555db617d347ccc2a3e912af4f7e51059399bcd7e056217a1b411b926fe5fa",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/stateOverrides/slotHints.ts",
+      "sha256": "cddfbffbcf97b38e4a925208708d46f2140fb585f9caea4397b65165cd1a7336",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/stateOverrides/types.ts",
+      "sha256": "677b9f56b3d5652ab9dc3b395dcfddeba878b39c955a22379e2921b4dc8fdc87",
+      "review": [
+        "execution"
+      ],
+      "level": "interface/export review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/subAccounts.ts",
+      "sha256": "0702468f9c34bda5efd83f7b739c6d2f959e8dcb681499db5fa9dbe6ab372505",
+      "review": [
+        "execution"
+      ],
+      "level": "source and call-path review"
+    },
+    {
+      "path": "packages/euler-v2-sdk/src/utils/types.ts",
+      "sha256": "c2675257a2c2467be0a544b4a3a1fea10096995e8246aaa927c8b2f79764b253",
+      "review": [
+        "infrastructure"
+      ],
+      "level": "interface/export review"
+    }
+  ]
+}

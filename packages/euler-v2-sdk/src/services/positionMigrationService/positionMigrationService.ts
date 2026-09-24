@@ -123,7 +123,10 @@ function migrationSignatureKind(
 
 function sameScalar(actual: unknown, expected: unknown): boolean {
 	if (typeof actual === "string" && typeof expected === "string") {
-		if (/^0x[0-9a-fA-F]{40}$/.test(actual) && /^0x[0-9a-fA-F]{40}$/.test(expected)) {
+		if (
+			/^0x[0-9a-fA-F]{40}$/.test(actual) &&
+			/^0x[0-9a-fA-F]{40}$/.test(expected)
+		) {
 			return getAddress(actual) === getAddress(expected);
 		}
 	}
@@ -657,19 +660,32 @@ export class PositionMigrationService implements IPositionMigrationService {
 		position?: MigrationPosition;
 		positionRef?: unknown;
 	}): Promise<MigrationPosition> {
-		if (args.position) return args.position;
-		if (args.positionRef === undefined) {
+		if (!args.position && args.positionRef === undefined) {
 			throw new Error(
 				"Migration position or positionRef is required to resolve a source position",
 			);
 		}
 
-		return this.queryGetPosition({
-			connectorId: args.connectorId,
-			chainId: args.chainId,
-			owner: args.owner,
-			positionRef: args.positionRef,
-		});
+		const position =
+			args.position ??
+			(await this.queryGetPosition({
+				connectorId: args.connectorId,
+				chainId: args.chainId,
+				owner: args.owner,
+				positionRef: args.positionRef,
+			}));
+		if (position.connectorId !== args.connectorId) {
+			throw new Error("Migration position connector mismatch");
+		}
+		if (position.chainId !== args.chainId) {
+			throw new Error("Migration position chain ID mismatch");
+		}
+		assertSameAddress(
+			position.owner,
+			args.owner,
+			"Migration position owner mismatch",
+		);
+		return position;
 	}
 
 	private getStubAuthorization(

@@ -1,0 +1,51 @@
+{
+  "date": "2026-09-23",
+  "base": "ff224741c251cae7673c5f835dcf3bbccd9d6605",
+  "branch": "main",
+  "localOnly": true,
+  "checks": {
+    "fullSdkSuite": {
+      "passed": 1277,
+      "files": 57,
+      "normalTimeout": true,
+      "command": "pnpm --filter @eulerxyz/euler-v2-sdk test",
+      "log": "/private/tmp/euler-sdk-recheck-full-tests.log"
+    },
+    "sdkBuild": "passed",
+    "sdkTypecheck": "passed",
+    "finalSimulationSuite": {
+      "passed": 32,
+      "log": "/private/tmp/euler-sdk-recheck-final-simulate.log"
+    },
+    "evcSolidity": {
+      "passed": 4,
+      "log": "/private/tmp/euler-sdk-recheck-evc.log"
+    },
+    "compiledEvcAbiFunctions": 44,
+    "lensFields": {
+      "structs": 21,
+      "tupleOccurrences": 59,
+      "scope": "field names and order only"
+    },
+    "reviewedSourceFiles": 189,
+    "findingEntries": 50,
+    "pinnedReferenceChecks": {
+      "scope": "Pinned GitHub path existence and cited line bounds only; semantic relevance was manually reviewed.",
+      "references": 163,
+      "distinctFilesAndRevisions": 85,
+      "sourceFiles": [
+        "execution.md",
+        "data.md",
+        "swap-rewards.md",
+        "infrastructure.md"
+      ]
+    },
+    "diffCheck": "passed"
+  },
+  "notes": [
+    "The initial full run inside the restricted sandbox failed six network/local-server tests. The full suite rerun with required permissions passed at its normal timeout.",
+    "After the full suite, the production change was formatted only; final simulation tests and reviewed-source hashes were checked again.",
+    "No new Lean or TLC model run in this recheck. Prior formal results are not an end-to-end proof.",
+    "Remaining E07 rate quantization, E11 approval resolver behavior and other boundaries are explicit in FINDINGS.md."
+  ]
+}

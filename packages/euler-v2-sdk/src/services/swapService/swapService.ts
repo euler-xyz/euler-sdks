@@ -273,7 +273,10 @@ export class SwapService implements ISwapService {
 		const expectedVerifierAddress = this.deploymentService.getDeployment(
 			request.chainId,
 		).addresses.peripheryAddrs?.swapVerifier;
-		if (!expectedVerifierAddress) {
+		if (
+			!expectedVerifierAddress ||
+			getAddress(expectedVerifierAddress) === zeroAddress
+		) {
 			throw new Error(
 				`SwapVerifier address missing for chainId ${request.chainId}`,
 			);
@@ -362,13 +365,14 @@ export class SwapService implements ISwapService {
 			eulerSwapV2Periphery:
 				deploymentAddresses.eulerSwapAddrs?.eulerSwapV2Periphery,
 		});
-		if (allowedSwappers.length > 0) {
-			const quoteSwapper = getAddress(quote.swap.swapperAddress).toLowerCase();
-			if (!allowedSwappers.includes(quoteSwapper)) {
-				throw new Error(
-					`Swap quote swap.swapperAddress (${quote.swap.swapperAddress}) is not in the canonical allowlist: ${allowedSwappers.join(", ")}`,
-				);
-			}
+		if (allowedSwappers.length === 0) {
+			throw new Error("Known swapper address not configured");
+		}
+		const quoteSwapper = getAddress(quote.swap.swapperAddress).toLowerCase();
+		if (!allowedSwappers.includes(quoteSwapper)) {
+			throw new Error(
+				`Swap quote swap.swapperAddress (${quote.swap.swapperAddress}) is not in the canonical allowlist: ${allowedSwappers.join(", ")}`,
+			);
 		}
 
 		const expectedVerificationType = request.isRepay

@@ -384,12 +384,19 @@ export class AavePositionMigrationConnector
 							functionName: "balanceOf",
 							args: [owner],
 						},
-						{
-							address: debtReserve.stableDebtTokenAddress,
-							abi: aaveDebtTokenAbi,
-							functionName: "balanceOf",
-							args: [owner],
-						},
+						// Stable debt was removed from newer Aave versions. A
+						// reserve without a stable token must not trigger a read
+						// from address zero in this allowFailure:false multicall.
+						...(isNonZeroAddress(debtReserve.stableDebtTokenAddress)
+							? [
+									{
+										address: debtReserve.stableDebtTokenAddress,
+										abi: aaveDebtTokenAbi,
+										functionName: "balanceOf",
+										args: [owner],
+									},
+								]
+							: []),
 					]
 				: []),
 		];
@@ -444,7 +451,7 @@ export class AavePositionMigrationConnector
 		| Extract<
 				AaveConnectorMigrationAuthorizationRequest,
 				{ kind: "transaction" }
-			>
+		  >
 		| undefined
 	>;
 	async getAuthorization(
@@ -1703,8 +1710,16 @@ export class AavePositionMigrationConnector
 			args.request,
 			"aTokenApproval",
 		);
-		assertSameAddress(request.owner, args.owner, "Aave approval owner mismatch");
-		assertSameAddress(request.token, args.aToken, "Aave approval token mismatch");
+		assertSameAddress(
+			request.owner,
+			args.owner,
+			"Aave approval owner mismatch",
+		);
+		assertSameAddress(
+			request.token,
+			args.aToken,
+			"Aave approval token mismatch",
+		);
 		assertSameAddress(
 			request.call.to,
 			args.aToken,
@@ -1723,7 +1738,9 @@ export class AavePositionMigrationConnector
 			"Aave approval spender must be the Euler SwapVerifier",
 		);
 		if (typeof amount !== "bigint" || amount < args.minimumAmount) {
-			throw new Error("Aave approval amount is below the capped transfer amount");
+			throw new Error(
+				"Aave approval amount is below the capped transfer amount",
+			);
 		}
 		return true;
 	}

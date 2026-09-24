@@ -28,12 +28,21 @@ export function createCallBundler<K, V>(
  * Wraps a batch function `(keys: K[]) => Promise<V>` into a function with the
  * same signature, where keys from concurrent calls within the same debounce
  * window are merged into a single batch invocation. All callers receive the same
- * result.
+ * result. A finite maxBatchSize is unsupported: arbitrary results cannot be
+ * combined without an application-specific reducer.
  */
 export function createBundledCall<K, V>(
 	batchFn: (keys: K[]) => Promise<V>,
 	options?: CallBundlerOptions,
 ): (keys: K[]) => Promise<V> {
+	if (
+		options?.maxBatchSize !== undefined &&
+		options.maxBatchSize !== Infinity
+	) {
+		throw new Error(
+			"createBundledCall does not support a finite maxBatchSize; use createCallBundler for per-key results",
+		);
+	}
 	const load = createCallBundler<K, V>(async (keys) => {
 		const result = await batchFn(keys);
 		return keys.map(() => result);
@@ -59,10 +68,18 @@ export class CallBundler<K, V> {
 		this.batchFn = batchFn;
 		this.maxBatchSize = options?.maxBatchSize ?? Infinity;
 		this.debounceMs = Math.max(0, options?.debounceMs ?? 5);
-		this.maxConcurrentBatches = Math.max(
-			1,
-			options?.maxConcurrentBatches ?? 4,
-		);
+		this.maxConcurrentBatches = Math.max(1, options?.maxConcurrentBatches ?? 4);
+		for (const [name, value] of [
+			["maxBatchSize", this.maxBatchSize],
+			["maxConcurrentBatches", this.maxConcurrentBatches],
+		] as const) {
+			if (value !== Infinity && (!Number.isSafeInteger(value) || value < 1)) {
+				throw new Error(`${name} must be a positive safe integer or Infinity`);
+			}
+		}
+		if (!Number.isFinite(this.debounceMs)) {
+			throw new Error("debounceMs must be finite");
+		}
 	}
 
 	load(key: K): Promise<V> {
@@ -96,16 +113,17 @@ export class CallBundler<K, V> {
 			this.dispatchBatch(batch);
 		}
 
-		if (this.queue.length > 0) {
-			this.scheduleDispatch();
-		}
+		// Active batches schedule the remaining queue when capacity becomes free.
+		// Rescheduling here with debounceMs=0 would continually queue microtasks,
+		// starving the I/O that those active batches are waiting for.
 	}
 
 	private dispatchBatch(batch: QueueItem<K, V>[]): void {
 		this.activeBatchCount += 1;
 		const keys = batch.map((item) => item.key);
 
-		this.batchFn(keys)
+		Promise.resolve()
+			.then(() => this.batchFn(keys))
 			.then((values) => {
 				if (values.length !== keys.length) {
 					const error = new Error(

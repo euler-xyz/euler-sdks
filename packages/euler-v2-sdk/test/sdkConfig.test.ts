@@ -296,3 +296,26 @@ describe("SDK env config", () => {
 		).resolves.toMatchObject({ recognized: true });
 	});
 });
+
+describe("integration review: disableV3", () => {
+ it("disables built-in pricing, tokenlist and intrinsic APY requests too", async () => {
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("No V3 request should be made"));
+  try {
+   const sdk = await buildEulerSDK({ config: { disableV3: true }, servicesOverrides: { deploymentService } });
+   await expect(sdk.tokenlistService.loadTokenlist(1)).rejects.toThrow(/unavailable while disableV3/);
+   await expect(sdk.intrinsicApyService.fetchChainIntrinsicApys(1)).rejects.toThrow(/unavailable while disableV3/);
+   // The on-chain fallback may report unavailable because this fixture has no deployment.
+   await sdk.priceService.fetchAssetUsdPriceByAddress(1, "0x0000000000000000000000000000000000000001").catch(() => undefined);
+   expect(fetchSpy).not.toHaveBeenCalled();
+  } finally { fetchSpy.mockRestore(); }
+ });
+});
+
+it("disableV3 preserves an explicitly configured non-V3 tokenlist source", async () => {
+ const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json([]));
+ try {
+  const sdk = await buildEulerSDK({ config: { disableV3: true }, tokenlistServiceConfig: { getTokenListUrl: () => "https://tokens.example/list.json" }, servicesOverrides: { deploymentService } });
+  await expect(sdk.tokenlistService.loadTokenlist(1)).resolves.toEqual([]);
+  expect(fetchSpy).toHaveBeenCalledWith("https://tokens.example/list.json");
+ } finally { fetchSpy.mockRestore(); }
+});

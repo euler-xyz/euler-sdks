@@ -16,6 +16,7 @@ export type V3ListEnvelope<T> = {
 	data?: T[];
 	meta?: {
 		total?: number;
+		hasMore?: boolean;
 		offset?: number;
 		limit?: number;
 	};

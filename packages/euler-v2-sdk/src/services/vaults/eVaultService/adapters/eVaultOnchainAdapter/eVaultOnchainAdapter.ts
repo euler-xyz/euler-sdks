@@ -181,7 +181,6 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 		const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
 		const firstPassErrorsByIndex = new Map<number, DataIssue[]>();
 		const finalPassErrorsByIndex = new Map<number, DataIssue[]>();
-		const secondPassIndices = new Set<number>();
 		const escrowErrors: DataIssue[] = [];
 		const escrowVerified =
 			vaults.length > 0
@@ -247,7 +246,6 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 				try {
 					const prepend = await this.collectReadPrepend(chainId, [eVault]);
 					if (!prepend || prepend.items.length === 0) return eVault;
-					secondPassIndices.add(vaultIndex);
 
 					const result = await executeBatchSimulation<VaultInfoFull>(
 						{
@@ -263,7 +261,7 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 						this.batchSimulationAdapter,
 					);
 
-					if (!result) return eVault;
+					if (!result) throw new Error("Read enrichment simulation failed.");
 					const conversionErrors: DataIssue[] = [];
 					const parsed = convertVaultInfoFullToIEVault(
 						result,
@@ -275,7 +273,24 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 						...parsed,
 						isEscrow: isEscrow(parsed.address),
 					});
-				} catch {
+				} catch (error) {
+					finalPassErrorsByIndex.set(vaultIndex, [
+						...(firstPassErrorsByIndex.get(vaultIndex) ?? []),
+						{
+							code: "SOURCE_UNAVAILABLE",
+							severity: "warning",
+							message:
+								"Vault read enrichment failed; returned the initial vault snapshot.",
+							locations: [
+								dataIssueLocation(
+									vaultDiagnosticOwner(chainId, eVault.address),
+								),
+							],
+							source: "batchSimulation",
+							originalValue:
+								error instanceof Error ? error.message : String(error),
+						},
+					]);
 					return eVault;
 				}
 			}),
@@ -283,10 +298,11 @@ export class EVaultOnchainAdapter implements IEVaultAdapter {
 
 		const errors = [
 			...escrowErrors,
-			...vaults.flatMap((_, index) =>
-				secondPassIndices.has(index)
-					? (finalPassErrorsByIndex.get(index) ?? [])
-					: (firstPassErrorsByIndex.get(index) ?? []),
+			...vaults.flatMap(
+				(_, index) =>
+					finalPassErrorsByIndex.get(index) ??
+					firstPassErrorsByIndex.get(index) ??
+					[],
 			),
 		];
 

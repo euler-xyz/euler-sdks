@@ -197,7 +197,8 @@ export class PortfolioBorrowPosition<
 		this.borrowed = args.borrowed;
 		this.supplied = args.supplied;
 		this.price = args.price;
-		this.primaryCollateralLiquidationPrice = args.primaryCollateralLiquidationPrice;
+		this.primaryCollateralLiquidationPrice =
+			args.primaryCollateralLiquidationPrice;
 		this.borrowLiquidationPriceUsd = args.borrowLiquidationPriceUsd;
 		this.collateralLiquidationPricesUsd = args.collateralLiquidationPricesUsd;
 		this.liquidatable = args.liquidatable;
@@ -459,8 +460,7 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 					: undefined;
 				const multiplier = computeBorrowMultiplier(borrow, collaterals);
 				const liabilityValueUsd =
-					borrow.liquidity?.liabilityValueUsd ??
-					borrow.borrowedValueUsd;
+					borrow.liquidity?.liabilityValueUsd ?? borrow.borrowedValueUsd;
 				const totalCollateralValueUsd =
 					borrow.liquidity?.totalCollateralValueUsd ??
 					sumYieldPositionUsd(collaterals, "suppliedValueUsd");
@@ -654,22 +654,12 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 				if (borrow.borrowed === 0n) continue;
 				if (!this.includePosition(borrow)) continue;
 
-				positions.push({
-					vault: borrow.vault,
-					borrowedValueUsd: borrow.borrowedValueUsd,
-				});
-
 				const collaterals = resolveBorrowCollateralPositions(
 					subAccount,
 					borrow,
 					(position) => this.includePosition(position),
 				);
-				for (const collateral of collaterals) {
-					positions.push({
-						vault: collateral.vault,
-						suppliedValueUsd: collateral.suppliedValueUsd,
-					});
-				}
+				positions.push(...borrowYieldPositions(borrow, collaterals));
 			}
 		}
 
@@ -755,8 +745,7 @@ function borrowYieldPositions<TVaultEntity extends IHasVaultAddress>(
 					getAddress(collateral.vaultAddress),
 				),
 				multiplier,
-				equityUsd:
-					equityUsd != null && equityUsd > 0 ? equityUsd : undefined,
+				equityUsd: equityUsd != null && equityUsd > 0 ? equityUsd : undefined,
 			},
 		},
 		...collaterals.map((collateral) => ({

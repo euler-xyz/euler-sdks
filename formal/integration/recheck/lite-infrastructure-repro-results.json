@@ -1,0 +1,24 @@
+{
+  "packageVersion": "3.3.0",
+  "boundary": "Controlled package-level tests; no browser interaction, live transaction, or production incident validation.",
+  "results": [
+    {
+      "id": "I01",
+      "outcome": "reproduced",
+      "observed": "Late old response replaced the completed new response under default 5-second SDK cache settings.",
+      "boundary": "SDK cache used by Lite server. Browser uses its own wrapper; server-route concurrency not reproduced end-to-end."
+    },
+    {
+      "id": "I04",
+      "outcome": "reproduced",
+      "observed": "Failed prepend plus successful lens read returned 42 as a successful enriched result.",
+      "boundary": "Published helper with a controlled ABI-encoded RPC result. Lite onchain account reads call this helper; no live oracle failure was induced."
+    },
+    {
+      "id": "I06",
+      "outcome": "cache collision reproduced only",
+      "observed": "One blob and two identical blobs reuse one fee response.",
+      "boundary": "Synthetic differing-multiplicity inputs and fee callback. Does not prove Hermes emits this pattern or a live deployment charges a nonzero multiplicity-dependent fee."
+    }
+  ]
+}

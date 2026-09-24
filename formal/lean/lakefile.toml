@@ -1,0 +1,9 @@
+name = "euler_arithmetic"
+version = "0.1.0"
+defaultTargets = ["EulerArithmetic", "BatchComposition"]
+
+[[lean_lib]]
+name = "EulerArithmetic"
+
+[[lean_lib]]
+name = "BatchComposition"

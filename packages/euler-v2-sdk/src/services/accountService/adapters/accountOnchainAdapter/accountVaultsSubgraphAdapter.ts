@@ -38,27 +38,49 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 			const chainResults = new Map<number, Map<string, any>>();
 			for (const [chainId, accounts] of byChain) {
 				const subgraphUrl = this.config.subgraphURLs[chainId];
-				if (!subgraphUrl) continue;
+				if (!subgraphUrl) {
+					throw new Error(
+						`Account discovery subgraph is not configured for chain ${chainId}`,
+					);
+				}
 
 				const ids = [...new Set(accounts.map((a) => getAddressPrefix(a)))];
-				const response = await fetch(subgraphUrl, {
-					method: "POST",
-					body: JSON.stringify({
-						query: `query AccountVaults($ids: [String!]!) {
-              trackingActiveAccounts(where: { id_in: $ids }) {
+				const map = new Map<string, any>();
+				// The Graph defaults list fields to 100 entities. Bound each group so
+				// a burst of bundled account queries cannot silently omit later owners.
+				for (let offset = 0; offset < ids.length; offset += 100) {
+					const response = await fetch(subgraphUrl, {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							query: `query AccountVaults($ids: [String!]!) {
+              trackingActiveAccounts(first: 100, where: { id_in: $ids }) {
                 id
                 deposits
                 borrows
               }
             }`,
-						variables: { ids },
-						operationName: "AccountVaults",
-					}),
-				});
-				const json = await response.json();
-				const map = new Map<string, any>();
-				for (const entry of (json as any).data?.trackingActiveAccounts ?? []) {
-					map.set(entry.id.toLowerCase(), entry);
+							variables: { ids: ids.slice(offset, offset + 100) },
+							operationName: "AccountVaults",
+						}),
+					});
+					if (!response.ok) {
+						throw new Error(
+							`Account discovery subgraph HTTP ${response.status}`,
+						);
+					}
+					const json = await response.json();
+					if (
+						(json as any).errors?.length ||
+						!Array.isArray((json as any).data?.trackingActiveAccounts)
+					) {
+						throw new Error(
+							"Account discovery subgraph returned errors or an invalid response",
+						);
+					}
+					for (const entry of (json as any).data.trackingActiveAccounts) {
+						map.set(entry.id.toLowerCase(), entry);
+					}
 				}
 				chainResults.set(chainId, map);
 			}

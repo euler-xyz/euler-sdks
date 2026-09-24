@@ -678,3 +678,21 @@ test("Keyring plugin injects one credential for vaults sharing a gate", async ()
 	assert.equal(items[0]?.value, 456n);
 	assert.deepEqual(items.slice(1), [firstItem, secondItem]);
 });
+
+test.each(["prefetch-read", "credential-read", "callback", "wrong-account", "wrong-chain", "wrong-policy", "unsafe-cost"] as const)(
+ "Keyring fails explicitly for %s instead of silently returning an incomplete plan", async (scenario) => {
+  const plugin = createKeyringPlugin({ hookTargets: { 1: [HOOK_TARGET] }, getCredentialData: async () => {
+   if (scenario === "callback") throw new Error("credential service unavailable");
+   return { trader: scenario === "wrong-account" ? TARGET_B : ACCOUNT, policyId: scenario === "wrong-policy" ? 8 : 7, chainId: scenario === "wrong-chain" ? 10 : 1, validUntil: 123, cost: scenario === "unsafe-cost" ? Number.MAX_SAFE_INTEGER + 1 : 456, key: "0x01", signature: "0x02", backdoor: "0x03" };
+  } });
+  const sdk = { providerService: { getProvider: () => ({ readContract: async ({ functionName }: { functionName: string }) => {
+   if (scenario === "prefetch-read") throw new Error("RPC unavailable");
+   if (functionName === "checkKeyringCredentialOrWildCard") { if (scenario === "credential-read") throw new Error("RPC unavailable"); return false; }
+   if (functionName === "policyId") return 7;
+   if (functionName === "keyring") return KEYRING;
+   throw new Error("unexpected getter");
+  } }) }, vaultMetaService: { fetchVaults: async () => ({ result: [createVault(HOOK_TARGET)], errors: [] }) } } as never;
+  const plan: TransactionPlan = [{ type: "evcBatch", items: [{ targetContract: TARGET_A, onBehalfOfAccount: ACCOUNT, value: 0n, data: "0xaaaa" }] }];
+  if (scenario === "prefetch-read") await assert.rejects(plugin.prefetch!(plan, ACCOUNT, 1, sdk), /Could not resolve Keyring gate/);
+  else await assert.rejects(plugin.processPlan!(plan, ACCOUNT, 1, sdk), /Could not prepare Keyring credential/);
+ });

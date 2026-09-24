@@ -263,11 +263,7 @@ export class PythPluginAdapter {
 		pythAddress: Address,
 		updateData: Hex[],
 	): string | null {
-		return serializeQueryArgs([
-			provider,
-			pythAddress,
-			normalizeQueryKeySet(updateData),
-		]);
+		return serializeQueryArgs([provider, pythAddress, updateData]);
 	}
 
 	setQueryPythUpdateData(fn: typeof this.queryPythUpdateData): void {
@@ -303,11 +299,7 @@ async function buildPythBatchItems(
 		const pythAddress = getAddress(feed.pythAddress) as Address;
 		if (!trustedPythAddresses.has(pythAddress.toLowerCase())) {
 			const error = new Error(`Untrusted Pyth contract for chainId ${chainId}`);
-			logPythPluginError(
-				pythAddress,
-				[feed.feedId],
-				error,
-			);
+			logPythPluginError(pythAddress, [feed.feedId], error);
 			if (failClosed) {
 				throw new PluginExecutionFatalError(error.message, { cause: error });
 			}
@@ -460,6 +452,8 @@ async function resolvePlanHealthCheckSets(
 	chainId: number,
 	sdk: PluginSDK,
 ): Promise<PlanHealthCheckSet[]> {
+	const evcAddress =
+		sdk.deploymentService.getDeployment(chainId).addresses.coreAddrs.evc;
 	const checksByViolator = new Map<Address, Set<Address>>();
 	for (const check of collectLiquidationHealthChecks(plan)) {
 		const controllers =
@@ -467,7 +461,8 @@ async function resolvePlanHealthCheckSets(
 		controllers.add(check.controller);
 		checksByViolator.set(check.violator, controllers);
 	}
-	if (!checksByViolator.size) return calculateHealthCheckSets(plan, account);
+	if (!checksByViolator.size)
+		return calculateHealthCheckSets(plan, account, undefined, evcAddress);
 
 	const additionalSubAccounts: SubAccount<IHasVaultAddress>[] = [];
 	for (const [violator, requiredControllers] of checksByViolator) {
@@ -515,7 +510,12 @@ async function resolvePlanHealthCheckSets(
 		additionalSubAccounts.push(subAccount);
 	}
 
-	return calculateHealthCheckSets(plan, account, additionalSubAccounts);
+	return calculateHealthCheckSets(
+		plan,
+		account,
+		additionalSubAccounts,
+		evcAddress,
+	);
 }
 
 async function collectHealthCheckFeeds(
@@ -537,7 +537,9 @@ async function collectHealthCheckFeeds(
 	const requiresCompleteMetadata = checkedAccounts.some(
 		(account) => account.requireCompleteMetadata,
 	);
-	const blockingIssues = fetched.errors.filter((issue) => issue.severity === "error");
+	const blockingIssues = fetched.errors.filter(
+		(issue) => issue.severity === "error",
+	);
 	if (requiresCompleteMetadata && blockingIssues.length) {
 		throw new PluginExecutionFatalError(
 			`Pyth liquidation enrichment could not load complete controller metadata: ${blockingIssues.map((issue) => issue.message).join("; ")}`,
@@ -640,7 +642,11 @@ export interface PythPluginConfig {
 
 export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 	const hermesUrl = config.hermesUrl || "https://hermes.pyth.network";
-	const adapter = new PythPluginAdapter(hermesUrl, config.buildQuery, config.fetchFn);
+	const adapter = new PythPluginAdapter(
+		hermesUrl,
+		config.buildQuery,
+		config.fetchFn,
+	);
 	const maxUpdateFee = config.maxUpdateFee ?? DEFAULT_MAX_PYTH_UPDATE_FEE;
 	const getTrustedPythAddresses = (chainId: number): Set<string> => {
 		const addresses = new Set<string>();
@@ -735,11 +741,7 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 			for (const set of planSets) allAccounts.push(...set.accounts);
 			if (!allAccounts.length) return { entries: [] };
 
-			const feeds = await collectHealthCheckFeeds(
-				allAccounts,
-				chainId,
-				sdk,
-			);
+			const feeds = await collectHealthCheckFeeds(allAccounts, chainId, sdk);
 			if (!feeds.length) return { entries: [] };
 
 			const provider = sdk.providerService.getProvider(chainId);
@@ -751,11 +753,7 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 					const error = new PluginExecutionFatalError(
 						`Untrusted Pyth contract for chainId ${chainId}`,
 					);
-					logPythPluginError(
-						pythAddress,
-						[feed.feedId],
-						error,
-					);
+					logPythPluginError(pythAddress, [feed.feedId], error);
 					throw error;
 				}
 				const set = grouped.get(pythAddress) ?? new Set<Hex>();

@@ -1322,6 +1322,9 @@ function toAssetsUp(
 	totalAssets: bigint,
 	totalShares: bigint,
 ): bigint {
-	if (shares === 0n || totalAssets === 0n || totalShares === 0n) return 0n;
-	return (shares * totalAssets + totalShares - 1n) / totalShares;
+	// Morpho Blue SharesMathLib uses one virtual asset and 1e6 virtual shares
+	// for borrow balances as well as supply balances. In particular, nonzero
+	// shares can still owe one asset when the stored total assets round to zero.
+	const denominator = totalShares + 1_000_000n;
+	return (shares * (totalAssets + 1n) + denominator - 1n) / denominator;
 }

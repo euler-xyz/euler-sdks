@@ -461,6 +461,23 @@ test("decodeOracleRouteForPair keeps inverted Pyth legs inside cross adapters", 
 	assert.equal(route?.steps[1]?.oracle, pythOracle);
 	assert.equal(route?.steps[1]?.base, eul);
 	assert.equal(route?.steps[1]?.quote, usd);
+
+	const inverseRoot = {
+		oracle: crossAdapter,
+		name: "CrossAdapter",
+		oracleInfo: encodeCrossAdapterInfo({
+			base: usdc, cross: usd, quote: eul,
+			oracleBaseCrossInfo: chainlinkInfo, oracleCrossQuoteInfo: pythInfo,
+		}),
+	};
+	const inverseRoute = decodeOracleRouteForPair(inverseRoot, eul, usdc);
+	assert.deepEqual(inverseRoute?.steps.map((step) => step.oracle), [pythOracle, chainlinkOracle]);
+	assert.equal(inverseRoute?.steps[0]?.kind, "adapter");
+	assert.equal(inverseRoute?.steps[0]?.base, eul);
+	assert.equal(inverseRoute?.steps[0]?.quote, usd);
+	assert.equal(inverseRoute?.steps[1]?.base, usd);
+	assert.equal(inverseRoute?.steps[1]?.quote, usdc);
+	assert.equal(decodeOracleRouteForPair(inverseRoot, eul, usd), undefined);
 });
 
 test("convertVault maps V3 oracle resolved vault routes", () => {

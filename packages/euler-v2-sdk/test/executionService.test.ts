@@ -602,16 +602,16 @@ test("mergePlans preserves operation wallet balance token metadata", () => {
 	);
 });
 
-test("mergePlans collapses collateral state transitions to the resulting action", () => {
+test("mergePlans preserves opposing collateral transitions and their intermediate effects", () => {
 	const service = createExecutionService();
 	const enable = service.encodeEnableCollateral(1, ACCOUNT, COLLATERAL_VAULT);
 	const disable = service.encodeDisableCollateral(1, ACCOUNT, COLLATERAL_VAULT);
 
-	const cancelled = service.mergePlans([
+	const opposing = service.mergePlans([
 		service.convertBatchItemsToPlan([enable]),
 		service.convertBatchItemsToPlan([disable]),
 	]);
-	assert.deepEqual(cancelled, []);
+	assert.deepEqual(getOnlyEvcBatchItems(opposing), [enable, disable]);
 
 	const enabled = service.mergePlans([
 		service.convertBatchItemsToPlan([enable]),
@@ -623,10 +623,10 @@ test("mergePlans collapses collateral state transitions to the resulting action"
 	if (enabled[0]?.type !== "evcBatch") {
 		throw new Error("expected evcBatch");
 	}
-	assert.deepEqual(flattenBatchEntries(enabled[0].items), [enable]);
+	assert.deepEqual(flattenBatchEntries(enabled[0].items), [enable, disable, enable]);
 });
 
-test("mergePlans deduplicates repeated controller transitions without cancelling opposites", () => {
+test("mergePlans preserves repeated and opposing controller transitions", () => {
 	const service = createExecutionService();
 	const enable = service.encodeEnableController(1, ACCOUNT, LIABILITY_VAULT);
 	const disable = service.encodeDisableController(LIABILITY_VAULT, ACCOUNT);
@@ -646,6 +646,8 @@ test("mergePlans deduplicates repeated controller transitions without cancelling
 	}
 	assert.deepEqual(flattenBatchEntries(merged[0].items), [
 		enable,
+		enable,
+		disable,
 		disable,
 		enable,
 	]);
@@ -3355,4 +3357,110 @@ test("same-asset debt migration transfers target shares only with explicit opt-i
 		items.some((item) => decodeBatchFunctionName(item) === "transferFromMax"),
 		true,
 	);
+});
+
+
+test("execution entry points reject account snapshots from another chain before plugins or wallet reads", async () => {
+	const service = createExecutionService();
+	let pluginCalls = 0;
+	let walletReads = 0;
+	service.setPluginProcessor(async (plan) => { pluginCalls++; return plan; });
+	service.setPluginPrefetcher(async () => { pluginCalls++; return {}; });
+	service.setWalletService({ fetchWallet: async () => { walletReads++; throw new Error("must not fetch"); } } as never);
+	service.setProviderService({ getProvider: () => { throw new Error("must not obtain provider"); } } as never);
+	const account = { owner: ACCOUNT, chainId: 2 } as never;
+	const prepared = { __prepared: true as const, chainId: 1, account, plan: [], usePermit2: false, unlimitedApproval: false };
+	const expected = /Account targets chain 2.*context targets chain 1/;
+	for (const run of [
+		() => service.prepareTransactionPlan({ plan: [], account, chainId: 1 }),
+		() => service.processPlanPlugins([], account, 1),
+		() => service.prefetchPluginDataForPlan([], account, 1),
+		() => service.simulateTransactionPlan(1, account, []),
+		() => service.estimateGasForTransactionPlan(1, account, []),
+		() => service.simulatePreparedTransactionPlan(prepared),
+		() => service.estimateGasForPreparedTransactionPlan(prepared),
+		() => service.executeTransactionPlan({ plan: [], account, chainId: 1, sendTransaction: async () => "0x" }),
+		() => service.executePreparedTransactionPlan({ prepared, sendTransaction: async () => "0x" }),
+	]) await assert.rejects(run, expected);
+	assert.throws(() => service.materializeExecution({ prepared, inputs: { evcAddress: EVC, permit2: [] } }), expected);
+	assert.equal(pluginCalls, 0);
+	assert.equal(walletReads, 0);
+});
+
+
+test("encoders treat checksummed and lowercase vault addresses as the same controller and repayment path", () => {
+	const service = createExecutionService();
+	const vault = getAddress("0xA3a37C542d1F48091fAbfDb57872A2001A270A30");
+	const lowerVault = vault.toLowerCase() as typeof vault;
+	const asset = getAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7");
+	const borrow = service.encodeBorrow({
+		chainId: 1, vault: lowerVault, amount: 1n, owner: ACCOUNT,
+		borrowAccount: ACCOUNT, receiver: ACCOUNT,
+		currentController: vault, enableController: false,
+	});
+	assert.deepEqual(borrow.map((item) => decodeFunctionData({ abi: eVaultAbi, data: item.data }).functionName), ["borrow"]);
+	const repay = service.encodeRepayFromDeposit({
+		chainId: 1, liabilityVault: vault, fromVault: lowerVault,
+		liabilityAsset: asset, fromAsset: asset.toLowerCase() as typeof asset,
+		liabilityAmount: 10n, from: ACCOUNT, receiver: ACCOUNT,
+	});
+	assert.deepEqual(repay.map((item) => decodeFunctionData({ abi: eVaultAbi, data: item.data }).functionName), ["repayWithShares"]);
+});
+
+test("planMint rounds the provided share exchange rate upward for its required approval", () => {
+	const plan = createExecutionService().planMint({
+		vault: VAULT_IN, asset: TOKEN_IN, shares: 1n, receiver: ACCOUNT,
+		account: { chainId: 1, owner: ACCOUNT, isCollateralEnabled: () => false } as never,
+		sharesToAssetsExchangeRateWad: 1_500_000_000_000_000_000n,
+	});
+	assert.equal(plan[0]?.type, "requiredApproval");
+	if (plan[0]?.type === "requiredApproval") assert.equal(plan[0].amount, 2n);
+});
+
+test("EulerEarn asset-denominated redeem enforces assets on-chain and preserves explicit shares", () => {
+	const service = createExecutionService();
+	const account = {
+		chainId: 1,
+		owner: ACCOUNT,
+		getPosition: () => ({
+			isCollateral: true,
+			vault: {
+				address: VAULT_IN,
+				type: VaultType.EulerEarn,
+				previewWithdraw: () => { throw new Error("snapshot omits pending fee shares"); },
+			},
+		}),
+	} as never;
+	for (const amount of [{ assets: 1_000_000n }, { shares: maxUint256 }]) {
+		const plan = service.planRedeem({ account, vault: VAULT_IN, owner: ACCOUNT, receiver: RECEIVER,
+			disableCollateral: true, ...amount });
+		assert.equal(plan[0]?.type, "evcBatch");
+		if (plan[0]?.type !== "evcBatch") throw new Error("missing batch");
+		assert.equal((plan[0].items[0] as { name: string }).name, "redeem");
+		const calls = flattenBatchEntries(plan[0].items);
+		assert.equal(calls.length, 2);
+		const vaultCall = decodeFunctionData({ abi: eVaultAbi, data: calls[1].data });
+		assert.equal(vaultCall.functionName, "assets" in amount ? "withdraw" : "redeem");
+		assert.deepEqual(vaultCall.args, ["assets" in amount ? amount.assets : amount.shares, getAddress(RECEIVER), getAddress(ACCOUNT)]);
+		assert.equal(decodeBatchFunctionName(calls[0]), "disableCollateral");
+	}
+});
+
+test("approval resolution binds wallet chain and owner and normalizes spender casing", () => {
+	const service = createExecutionService();
+	const spender = getAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd");
+	const approval = { type: "requiredApproval" as const, token: TOKEN_IN, owner: ACCOUNT,
+		spender: spender.toLowerCase() as typeof spender, amount: 10n };
+	const wallet = {
+		chainId: 1, account: ACCOUNT,
+		getAsset: () => ({ allowances: { [spender]: { assetForVault: 10n } } }),
+	};
+	for (const invalidWallet of [{ ...wallet, chainId: 2 }, { ...wallet, account: RECEIVER }]) {
+		const plan = [{ ...approval }];
+		assert.throws(() => service.resolveRequiredApprovalsWithWallet({ plan, chainId: 1, wallet: invalidWallet as never }), /wallet (chainId|account)/);
+		assert.deepEqual(plan, [approval], "validation precedes plan mutation");
+	}
+	const plan = service.resolveRequiredApprovalsWithWallet({ plan: [{ ...approval }], chainId: 1, wallet: wallet as never });
+	assert.equal(plan[0].type, "requiredApproval");
+	if (plan[0].type === "requiredApproval") assert.deepEqual(plan[0].resolved, []);
 });

@@ -515,6 +515,18 @@ export type TransactionPlanPrepared = {
 	unlimitedApproval: boolean;
 };
 
+/** Prevent reusing populated account state across chains. */
+export function assertAccountChain(
+	account: AddressOrAccount,
+	chainId: number,
+): void {
+	if (typeof account !== "string" && account.chainId !== chainId) {
+		throw new Error(
+			`Account targets chain ${account.chainId}, but execution context targets chain ${chainId}`,
+		);
+	}
+}
+
 export function isPreparedTransactionPlan(
 	value: unknown,
 ): value is TransactionPlanPrepared {

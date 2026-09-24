@@ -592,3 +592,40 @@ test("ExecutionService.executeTransactionPlan rejects CoW plan items", async () 
 		/does not support CoW swap plans/,
 	);
 });
+
+
+test("executeTransactionPlan rejects invalid resolved boundaries before wallet side effects", async () => {
+	const permit: TransactionPlan[number] = {
+		type: "requiredApproval", token: TOKEN, owner: ACCOUNT, spender: SPENDER, amount: 10n,
+		resolved: [{ type: "permit2", token: TOKEN, owner: ACCOUNT, spender: SPENDER, amount: 10n }],
+	};
+	const direct: TransactionPlan[number] = {
+		type: "contractCall", chainId: 1, to: TOKEN, abi: erc20Abi,
+		functionName: "approve", args: [SPENDER, 1n], value: 0n,
+	};
+	const batch: TransactionPlan[number] = { type: "evcBatch", items: [] };
+	const scenarios: Array<[TransactionPlan, RegExp]> = [
+		[[permit], /no following EVC batch insertion point/],
+		[[permit, { ...permit }, batch], /Duplicate Permit2 allowance key/],
+		[[permit, direct, batch], /no following EVC batch insertion point/],
+		[[direct, { ...permit, resolved: undefined }, batch], /Approval at plan item 1 is unresolved/],
+		[[direct, { ...direct, chainId: 2 }], /targets chain 2/],
+	];
+	for (const alreadyResolved of [false, true]) {
+		for (const [plan, expected] of scenarios) {
+			const mocks = createExecutorMocks();
+			let signaturePrompts = 0;
+			await assert.rejects(executeTransactionPlan({
+				plan, account: ACCOUNT, chainId: 1, alreadyResolved,
+				executionService: mocks.executionService,
+				deploymentService: mocks.deploymentService,
+				providerService: mocks.providerService,
+				sendTransaction: mocks.walletClient.sendTransaction,
+				signTypedData: async () => { signaturePrompts++; return "0x"; },
+			}), expected);
+			assert.equal(signaturePrompts, 0);
+			assert.deepEqual(mocks.sent, []);
+			assert.deepEqual(mocks.waits, []);
+		}
+	}
+});

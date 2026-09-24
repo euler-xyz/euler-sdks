@@ -687,6 +687,29 @@ export async function executeCowSwapTransactionPlan(
 		);
 	}
 	const cowSwapItems = args.plan.filter(isCowSwapPlanItem);
+	// Validate the complete plan before any approval, cancellation, or order
+	// submission. A stale item later in the vector must not cause a partial run.
+	for (const item of cowSwapItems) {
+		if (item.chainId !== args.chainId || item.params.chainId !== args.chainId) {
+			throw new Error(
+				`CoW swap plan item targets chain ${item.chainId} (params ${item.params.chainId}), but executor is configured for chain ${args.chainId}`,
+			);
+		}
+		const owner =
+			item.kind === "cancelClosePosition"
+				? (item.params as CowSwapCancelClosePositionPlanParams).owner
+				: (
+						item.params as
+							| CowSwapOpenPositionPlanParams
+							| CowSwapCollateralSwapPlanParams
+							| CowSwapClosePositionPlanParams
+					).wrapper.owner;
+		if (getAddress(owner) !== getAddress(args.account)) {
+			throw new Error(
+				"CoW swap plan owner does not match the executing account",
+			);
+		}
+	}
 	const orderUids: CowSwapOrderUid[] = [];
 	const hashes: Hash[] = [];
 	const results: CowSwapPlanItemExecutionResult[] = [];
@@ -709,11 +732,6 @@ export async function executeCowSwapTransactionPlan(
 	};
 
 	for (const item of cowSwapItems) {
-		if (item.chainId !== args.chainId) {
-			throw new Error(
-				`CoW swap plan item targets chain ${item.chainId}, but executor is configured for chain ${args.chainId}`,
-			);
-		}
 		const result = await executeCowSwapPlanItem(
 			args,
 			item,

@@ -82,9 +82,7 @@ export class IntrinsicApyService implements IIntrinsicApyService {
 				);
 				for (const vault of chainVaults) {
 					const info = apyMap.get(vault.asset.address.toLowerCase());
-					if (info) {
-						vault.intrinsicApy = info;
-					}
+					vault.intrinsicApy = info;
 					vault.populated.intrinsicApy = true;
 				}
 			}),

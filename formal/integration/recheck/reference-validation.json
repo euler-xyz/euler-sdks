@@ -1,0 +1,11 @@
+{
+  "scope": "Pinned GitHub path existence and cited line bounds only; semantic relevance was manually reviewed.",
+  "references": 163,
+  "distinctFilesAndRevisions": 85,
+  "sourceFiles": [
+    "execution.md",
+    "data.md",
+    "swap-rewards.md",
+    "infrastructure.md"
+  ]
+}

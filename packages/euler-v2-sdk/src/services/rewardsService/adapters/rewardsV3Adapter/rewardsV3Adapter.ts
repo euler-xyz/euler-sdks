@@ -27,6 +27,22 @@ import type {
 
 const DEFAULT_PAGE_SIZE = 100;
 
+const hasNextRewardsPage = (
+	page: V3ListEnvelope<V3RewardsApyRow>,
+	rowCount: number,
+	nextOffset: number,
+): boolean => {
+	if (rowCount === 0) return false;
+	if (typeof page.meta?.hasMore === "boolean") return page.meta.hasMore;
+	if (typeof page.meta?.total === "number") return nextOffset < page.meta.total;
+	if (typeof page.meta?.limit === "number" && page.meta.limit > 0) {
+		return rowCount >= page.meta.limit;
+	}
+	// The current V3 rewards APY endpoint returns the complete list and no
+	// pagination metadata. Its row count alone must not trigger another request.
+	return false;
+};
+
 const normalizeAddress = (value?: string): Address | undefined => {
 	if (!value) return undefined;
 	try {
@@ -535,10 +551,8 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 				this.mergeRewardsApyRow(map, row);
 			}
 
-			if (rows.length < pageSize) break;
 			offset += rows.length;
-			if (typeof page.meta?.total === "number" && offset >= page.meta.total)
-				break;
+			if (!hasNextRewardsPage(page, rows.length, offset)) break;
 		}
 
 		return map;
@@ -586,10 +600,8 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 					}
 				}
 
-				if (rows.length < pageSize) break;
 				offset += rows.length;
-				if (typeof page.meta?.total === "number" && offset >= page.meta.total)
-					break;
+				if (!hasNextRewardsPage(page, rows.length, offset)) break;
 			}
 		};
 

@@ -97,7 +97,7 @@ export class EVaultV3Adapter implements IEVaultAdapter {
 		if (
 			typeof configured === "number" &&
 			Number.isFinite(configured) &&
-			configured > 0
+			configured >= 1
 		) {
 			return Math.floor(configured);
 		}

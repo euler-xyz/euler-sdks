@@ -26,6 +26,7 @@ import {
 	type KeyringPluginPrefetch,
 	type PluginPrefetchData,
 	type PluginSDK,
+	PluginExecutionFatalError,
 	prependToBatch,
 } from "../types.js";
 
@@ -349,8 +350,11 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 							getAddress(vault.hooks.hookTarget),
 						);
 						return [address, info] as const;
-					} catch {
-						return [address, null] as const;
+					} catch (cause) {
+						throw new PluginExecutionFatalError(
+							`Could not resolve Keyring gate for ${address}.`,
+							{ cause },
+						);
 					}
 				}),
 			);
@@ -437,6 +441,27 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 						policyId: gate.policyId,
 					});
 					if (!credentialData) continue;
+					if (
+						getAddress(credentialData.trader) !== sender ||
+						credentialData.chainId !== chainId ||
+						credentialData.policyId !== gate.policyId
+					) {
+						throw new Error(
+							"Keyring credential does not match the requested account, chain, and policy",
+						);
+					}
+					for (const value of [
+						credentialData.cost,
+						credentialData.validUntil,
+						credentialData.policyId,
+						credentialData.chainId,
+					]) {
+						if (!Number.isSafeInteger(value) || value < 0) {
+							throw new Error(
+								"Keyring credential numeric fields must be non-negative safe integers",
+							);
+						}
+					}
 
 					const credentialKey = [
 						getAddress(gate.keyring),
@@ -464,7 +489,12 @@ export function createKeyringPlugin(config: KeyringPluginConfig): EulerPlugin {
 							],
 						}),
 					});
-				} catch {}
+				} catch (cause) {
+					throw new PluginExecutionFatalError(
+						`Could not prepare Keyring credential for ${gate.hookTarget}.`,
+						{ cause },
+					);
+				}
 			}
 
 			if (!items.size) return plan;

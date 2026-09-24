@@ -1,0 +1,69 @@
+{
+  "sdkBase": "ff224741c251cae7673c5f835dcf3bbccd9d6605",
+  "date": "2026-09-23",
+  "repositories": {
+    "ethereum-vault-connector": {
+      "url": "https://github.com/euler-xyz/ethereum-vault-connector",
+      "commit": "838e5f72eaea25fab7d242760245244226096054",
+      "localPath": "/private/tmp/euler-sdk-integration-review/ethereum-vault-connector",
+      "libTree": "040000 tree 4464818eb31301fbdc0fa31a1c58f6c8b77766cb\tlib"
+    },
+    "euler-price-oracle": {
+      "url": "https://github.com/euler-xyz/euler-price-oracle",
+      "commit": "bc70a37b9a22d57e5d47d144644617f9be62ba3a",
+      "localPath": "/private/tmp/euler-sdk-integration-review/euler-price-oracle",
+      "libTree": "040000 tree ddfdb44032b2b667872d24a048291b7e6bd8f3b2\tlib"
+    },
+    "euler-vault-kit": {
+      "url": "https://github.com/euler-xyz/euler-vault-kit",
+      "commit": "bfb325a6e6ca09613d940b46f72ccfe017353933",
+      "localPath": "/private/tmp/euler-sdk-integration-review/euler-vault-kit",
+      "libTree": "040000 tree 78f20cb107ffcd42aa68457e7a44c8e85173ced3\tlib"
+    },
+    "evk-periphery": {
+      "url": "https://github.com/euler-xyz/evk-periphery",
+      "commit": "816c5943e5fab3a213e907dd5beaf9542305593a",
+      "localPath": "/private/tmp/euler-sdk-integration-review/evk-periphery",
+      "libTree": "040000 tree 5d7b0c498d456d571704bc0b716b6d10449fd83f\tlib"
+    },
+    "euler-lite": {
+      "url": "https://github.com/euler-xyz/euler-lite",
+      "commit": "fffb1cfcb964a236cc4e92e5d037c70ad1fd0207",
+      "localPath": "/private/tmp/euler-sdk-integration-review/euler-lite",
+      "libTree": ""
+    },
+    "euler-earn": {
+      "url": "https://github.com/euler-xyz/euler-earn.git",
+      "commit": "ea3dacc05f4003a1326815429d70d0c77f0dabb4",
+      "localPath": "/private/tmp/euler-sdk-integration-review/euler-earn"
+    },
+    "morpho-blue": {
+      "url": "https://github.com/morpho-org/morpho-blue.git",
+      "commit": "8e26ca6a8dbc5089edcd67fb576248810fd2870a",
+      "localPath": "/private/tmp/euler-sdk-integration-review/morpho-blue"
+    },
+    "aave-v3-origin": {
+      "url": "https://github.com/aave-dao/aave-v3-origin.git",
+      "commit": "8305565ae342f1773c42cd2e4593f175fe5968a0",
+      "localPath": "/private/tmp/euler-sdk-integration-review/aave-v3-origin"
+    },
+    "euler-data-v3": {
+      "url": "https://github.com/euler-xyz/euler-data-v3.git",
+      "commit": "fc9485fe2d7a38028871c59f2540118fe2a5c691",
+      "localPath": "/Users/kanv/Documents/euler/euler-data-v3",
+      "note": "Existing local checkout inspected for rewards endpoint response semantics; not a live deployment attestation."
+    }
+  },
+  "api": {
+    "url": "https://v3.euler.finance/v3/openapi.json",
+    "docs": "https://v3.euler.finance/v3/docs",
+    "sha256": "eb30fc696a5d90a15b1ca8ce0786abdf82480b423eb4cc418eeb64988279a8d9",
+    "retrieved": "2026-09-23",
+    "snapshot": "v3-schema-excerpt.json",
+    "note": "Excerpt of source schemas and endpoint descriptions used in review; hash refers to the full downloaded document."
+  },
+  "consumer": {
+    "eulerLiteDeclaredSdkVersion": "3.3.0",
+    "note": "Consumer source comparison uses its pinned checkout; this is not a claim that the SDK main checkout is the same published artifact."
+  }
+}

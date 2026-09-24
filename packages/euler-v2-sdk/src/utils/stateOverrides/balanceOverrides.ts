@@ -124,6 +124,7 @@ export async function getBalanceOverrides(
 	// nothing at all.
 	const remaining: [Address, bigint][] = [];
 	for (const [token, requiredAmount] of tokens) {
+		if (requiredAmount === 0n) continue;
 		const supplied = walletBalances?.[getAddress(token)];
 		if (supplied !== undefined && supplied >= requiredAmount) continue;
 		remaining.push([token, requiredAmount]);

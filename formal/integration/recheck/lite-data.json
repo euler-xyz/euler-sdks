@@ -1,0 +1,448 @@
+{
+  "liteCommit": "e1e39e7d6e8cb36d5ec84aa592965c5ad35fcfb1",
+  "priorLiteCommit": "fffb1cfcb964a236cc4e92e5d037c70ad1fd0207",
+  "sdkVersion": "3.3.0",
+  "scope": "Source reachability against public master and published SDK; synthetic package calls are not browser or live deployment reproduction.",
+  "findings": [
+    {
+      "id": "D01",
+      "classification": "no-normal-ui-path",
+      "summary": "Ordinary Earn withdrawal bypasses the defective assets-to-redeem-shares path.",
+      "trigger": "The SDK defect requires planRedeem with an assets argument, or directly calling Earn.previewWithdraw.",
+      "productionImpact": "No normal Earn withdrawal over-redemption demonstrated in Lite.",
+      "mitigation": "Earn partial withdrawal compiles planWithdraw({assets}); max compiles planRedeem({shares}). Batch/review intentions preserve that distinction. Other previewWithdraw use is EVK-only repayment; Earn is excluded from savings repayment.",
+      "reproduction": "SDK fixture reproduces wrong preview at earned exchange rate, but triggering it from Lite requires changing/injecting a planner intent rather than following the normal UI.",
+      "runtimeReproduced": true,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/earn/[vault]/[subAccount]/withdraw.vue",
+          "line": 145
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/earn/[vault]/[subAccount]/withdraw.vue",
+          "line": 182
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerTx.ts",
+          "line": 1004
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/planning/lite-compilers.ts",
+          "line": 107
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useRepaySavingsOptions.ts",
+          "line": 10
+        }
+      ]
+    },
+    {
+      "id": "D02",
+      "classification": "reachable-state-dependent",
+      "summary": "SDK currentLiquidationLTV reaches Lite vault and market pair displays.",
+      "trigger": "A decreasing liquidation-LTV ramp at a fractional-basis-point time, or an increased target with ramp metadata.",
+      "productionImpact": "Vault/market collateral threshold and ramp indicators can differ from EVK; the runtime decreasing-ramp fixture gives 0.8333333333 versus 0.8333. At displayed two-decimal-percent precision this can round to the same label, so visibility depends on rounding position.",
+      "mitigation": "Live position risk helpers prefer accountLiquidationLTV from AccountLens over per-vault fallback. Therefore this is not proof every Lite account health metric uses the bad getter.",
+      "reproduction": "Load a vault/pair fixture with initial 8500, target 8000, target time 103, duration 3, timestamp 101. Inspect underlying SDK field and collateral detail; for a visible display difference choose a rounding boundary. No deployed ramp fixture established.",
+      "runtimeReproduced": true,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/components/entities/vault/overview/VaultOverviewBlockBorrow.vue",
+          "line": 176
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/components/entities/vault/overview/VaultOverviewPairBlockGeneral.vue",
+          "line": 30
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/utils/borrow-pair.ts",
+          "line": 37
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/utils/ltv.ts",
+          "line": 8
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useTxBatch.ts",
+          "line": 1044
+        }
+      ]
+    },
+    {
+      "id": "D03",
+      "classification": "reachable-configuration-dependent",
+      "summary": "Position risk prices call the affected SDK high-decimal getter.",
+      "trigger": "An EVK UoA has decimals above 18 and a usable oracle price.",
+      "productionImpact": "The on-chain price calculation throws; affected position risk display/update can fail.",
+      "mitigation": "Ordinary 18-or-fewer-decimal UoAs do not trigger it. No affected deployed vault was found.",
+      "reproduction": "Use a 24-decimal UoA fixture in a position; getAssetUsdPrice(vault,\"on-chain\") reaches assetRiskPrice. Published-package runtime confirms RangeError, not browser rendering.",
+      "runtimeReproduced": true,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/utils/sdk-prices.ts",
+          "line": 141
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/utils/sdk-prices.ts",
+          "line": 162
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/position/[number]/index.vue",
+          "line": 357
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/position/[number]/index.vue",
+          "line": 570
+        }
+      ]
+    },
+    {
+      "id": "D04",
+      "classification": "reachable-data-only",
+      "summary": "Incorrect owner-mode flags enter Lite account objects, but no UI decision consumer was found.",
+      "trigger": "Only secondary subaccounts discovered; owner lockdown or permit-disabled flag true.",
+      "productionImpact": "SDK Account state is wrong and copied into batch snapshots. An additional Lite effect from these specific wrong flags was not established.",
+      "mitigation": "Repository search found only copying of isLockdownMode/isPermitDisabledMode in useTxBatch, no Lite gate or flag display. Onchain enforcement remains.",
+      "reproduction": "Runtime adapter fixture with secondary-only discovery and both EVC flags true returns both false. Inspect Account object through the normal onchain loader; do not call it a reproduced UI bypass.",
+      "runtimeReproduced": true,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerAccount.ts",
+          "line": 137
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useFreshAccount.ts",
+          "line": 71
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useTxBatch.ts",
+          "line": 1322
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useTxBatch.ts",
+          "line": 1606
+        }
+      ]
+    },
+    {
+      "id": "D05",
+      "classification": "conditionally-reachable-planning-state",
+      "summary": "Known balances disappear from a fast planning snapshot.",
+      "trigger": "V3 returns balance rows with null optional subAccount metadata; V3-enabled fast source is used and finishes before fresh onchain or onchain fails.",
+      "productionImpact": "positions becomes empty. Forms/non-authoritative previews can observe incorrect planning state. This is not the normal displayed-portfolio data path.",
+      "mitigation": "useEulerAccount uses fresh onchain for ordinary portfolio. useFreshAccount races fast/fresh, always preferring successful fresh. Reviewed execution then hydrates required subaccounts onchain before final compilation. Hydration uses known vaults plus controller/collateral state; do not claim it discovers every missing standalone deposit.",
+      "reproduction": "Published-package degraded-response fixture reproduces underlying adapter defect. In local Lite intercept V3 response and delay/fail onchain account loading; inspect usePlanAccount/form preview, then release onchain and confirm replacement. No browser run performed.",
+      "runtimeReproduced": true,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerSdk.ts",
+          "line": 133
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useFreshAccount.ts",
+          "line": 41
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useFreshAccount.ts",
+          "line": 59
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/usePlanAccount.ts",
+          "line": 14
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerAccount.ts",
+          "line": 137
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 197
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 219
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 292
+        }
+      ]
+    },
+    {
+      "id": "D06",
+      "classification": "conditionally-reachable-planning-state",
+      "summary": "Unknown debt becomes zero in a fast planning snapshot.",
+      "trigger": "V3 returns valid subAccount metadata but null borrowed/shares/assets; V3-enabled fast source is used and finishes before fresh onchain or onchain fails.",
+      "productionImpact": "defined Account with borrowed 0 suppresses the configured fallback. Forms/non-authoritative previews can observe incorrect planning state. This is not the normal displayed-portfolio data path.",
+      "mitigation": "useEulerAccount uses fresh onchain for ordinary portfolio. useFreshAccount races fast/fresh, always preferring successful fresh. Reviewed execution then hydrates required subaccounts onchain before final compilation. Hydration uses known vaults plus controller/collateral state; do not claim it discovers every missing standalone deposit.",
+      "reproduction": "Published-package degraded-response fixture reproduces underlying adapter defect. In local Lite intercept V3 response and delay/fail onchain account loading; inspect usePlanAccount/form preview, then release onchain and confirm replacement. No browser run performed.",
+      "runtimeReproduced": true,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerSdk.ts",
+          "line": 133
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useFreshAccount.ts",
+          "line": 41
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useFreshAccount.ts",
+          "line": 59
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/usePlanAccount.ts",
+          "line": 14
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerAccount.ts",
+          "line": 137
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 197
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 219
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 292
+        }
+      ]
+    },
+    {
+      "id": "D07",
+      "classification": "reachable-error-dependent",
+      "summary": "Normal onchain portfolio discovery accepts a parseable subgraph error as empty.",
+      "trigger": "Subgraph/internal proxy returns JSON errors, missing data, or a parseable HTTP failure.",
+      "productionImpact": "Portfolio can become empty instead of showing an account-discovery failure; planners also use this discovery.",
+      "mitigation": "Socket errors and invalid JSON already throw. Proxy preserves upstream status/body and does not validate GraphQL success, so it does not block this mechanism. SDK creates an empty Account for unavailable discovery.",
+      "reproduction": "Intercept POST /api/internal/proxy/subgraph/{chainId} with 200 {\"errors\":[{\"message\":\"indexing unavailable\"}]} and refresh portfolio. Published-package adapter test returns {} with no rejection; browser action not executed.",
+      "runtimeReproduced": true,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerAccount.ts",
+          "line": 137
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerSdk.ts",
+          "line": 231
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/server/api/internal/proxy/subgraph/[chainId].post.ts",
+          "line": 100
+        }
+      ]
+    },
+    {
+      "id": "D08",
+      "classification": "no-normal-ui-path",
+      "summary": "The required bundle of more than 100 distinct owners is not generated by ordinary Lite.",
+      "trigger": "More than 100 matching indexed owner-prefix entities requested on same-chain SDK instance within its bundling window.",
+      "productionImpact": "No ordinary single-wallet/spy-account screen trigger found.",
+      "mitigation": "Lite account loaders each request one effective owner. Server SDK is used for vault/label reads, not mass-account discovery; separate browser tabs have separate SDK instances.",
+      "reproduction": "Would require a custom stress harness invoking SDK discovery for 101 owners in one instance; not a natural Lite repro.",
+      "runtimeReproduced": false,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerAccount.ts",
+          "line": 152
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useFreshAccount.ts",
+          "line": 62
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/server/utils/sdk-server.ts",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "id": "D09",
+      "classification": "no-normal-ui-path",
+      "summary": "Lite does not supply invalid fractional/NaN pagination configuration.",
+      "trigger": "Custom SDK batchSize between 0 and 1 or oracle pageSize NaN.",
+      "productionImpact": "No default Lite trigger found.",
+      "mitigation": "Browser/server builder configurations omit these settings; oracle catalogue call supplies active:true only.",
+      "reproduction": "Requires changing app configuration/code or directly constructing malformed SDK settings; no browser reproduction expected from normal controls.",
+      "runtimeReproduced": false,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerSdk.ts",
+          "line": 191
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/server/utils/sdk-server.ts",
+          "line": 104
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerOracleAdapters.ts",
+          "line": 168
+        }
+      ]
+    },
+    {
+      "id": "D10",
+      "classification": "no-normal-ui-path",
+      "summary": "First-party V3 classification uses supported canonical types.",
+      "trigger": "Custom API emits EulerEarn/SecuritizeCollateral aliases without recognized resource fallback.",
+      "productionImpact": "No current first-party Lite classification failure established.",
+      "mitigation": "Normal API emits earn/evk/securitize. Lite can be pointed at custom backends, making it a compatibility case.",
+      "reproduction": "Return an alternate alias without resource from a custom/mock V3 resolver; this changes the upstream contract versus inspected first-party producer.",
+      "runtimeReproduced": false,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerSdk.ts",
+          "line": 136
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerSdk.ts",
+          "line": 192
+        }
+      ]
+    },
+    {
+      "id": "D11",
+      "classification": "reachable-campaign-dependent",
+      "summary": "Portfolio headline APY/ROE uses the deficient SDK aggregate; position rows use the richer getter.",
+      "trigger": "An eligible BORROW_COLLATERAL or LOOPING reward on a visible position.",
+      "productionImpact": "Portfolio headline understates rewards relative to the same position. Runtime single-position fixture shows 1% headline versus 2.5% position APY. Payouts are unchanged.",
+      "mitigation": "Ordinary BORROW-only rewards do not require omitted context. Live campaign eligibility/economics were not attested.",
+      "reproduction": "Use the committed fixture with 200 supplied, 100 borrowed, 5% supply, 8% borrow and 3% collateral-specific reward. Published 3.3.0 aggregate 1% versus position 2.5% confirmed; Lite consumes these exact getters. No browser execution.",
+      "runtimeReproduced": true,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerAccount.ts",
+          "line": 242
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/portfolio.vue",
+          "line": 167
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/portfolio.vue",
+          "line": 272
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/components/entities/portfolio/PortfolioBorrowItem.vue",
+          "line": 285
+        }
+      ]
+    },
+    {
+      "id": "D12",
+      "classification": "no-normal-ui-path",
+      "summary": "Repeated population of the same Account entity was not found in Lite.",
+      "trigger": "Call Account.populateMarketPrices twice on same instance after price disappears/debt changes.",
+      "productionImpact": "The SDK defect is real, but an ordinary Lite lifecycle reaching that exact mechanism was not established.",
+      "mitigation": "AccountService constructs a fresh Account on each fetch. Lite replaces returned portfolio, and batch projections create new Account objects. Hydrated vault population alone is not the stale Account-field defect.",
+      "reproduction": "SDK same-instance fixture can reproduce; would require an added direct Account.populateMarketPrices call in Lite. Do not equate any stale display with this finding.",
+      "runtimeReproduced": false,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerAccount.ts",
+          "line": 152
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerAccount.ts",
+          "line": 169
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useTxBatch.ts",
+          "line": 1603
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useVaults.ts",
+          "line": 680
+        }
+      ]
+    },
+    {
+      "id": "D13",
+      "classification": "reachable-error-dependent",
+      "summary": "Pyth-enriched onchain account/vault reads can hide enrichment failure diagnostics.",
+      "trigger": "Pyth/plugin prepend attempted, then second pass absent/fails after ordinary read.",
+      "productionImpact": "Lite receives fallback snapshot without expected warning; price/read failure explanation is incomplete. Raw balances are not newly corrupted by this diagnostic loss.",
+      "mitigation": "Lite logs returned errors, so diagnostics omitted by SDK cannot be logged; read results may remain useful. Server SDK has no Pyth plugin, but browser/fresh SDK does.",
+      "reproduction": "Use local failing Pyth/enrichment response after a successful ordinary account/vault lens response; inspect fetched.errors. Existing SDK regression is synthetic; no browser fault injection performed.",
+      "runtimeReproduced": false,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerSdk.ts",
+          "line": 323
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerAccount.ts",
+          "line": 156
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useFreshAccount.ts",
+          "line": 73
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useVaults.ts",
+          "line": 385
+        }
+      ]
+    },
+    {
+      "id": "D14",
+      "classification": "reachable-configuration-dependent",
+      "summary": "Enabled Pyth plugin can encounter unsupported reverse CrossAdapter route decoding.",
+      "trigger": "A queried reverse CrossAdapter route contains a needed Pyth leaf and no other prefetched route supplies it.",
+      "productionImpact": "Read enrichment/transaction preparation can omit needed update and return deficient prices or fail.",
+      "mitigation": "Reverse route is valid onchain, but no actual deployed inverse/Pyth configuration was established. Ordinary forward routes do not prove trigger.",
+      "reproduction": "Load a reverse CrossAdapter/Pyth fixture and request vault/account read or transaction simulation. Existing SDK route regression proves missing leaf only; not a deployed browser scenario.",
+      "runtimeReproduced": false,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerSdk.ts",
+          "line": 323
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerTx.ts",
+          "line": 459
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerAccount.ts",
+          "line": 152
+        }
+      ]
+    },
+    {
+      "id": "D15",
+      "classification": "no-normal-ui-path",
+      "summary": "Lite fetches one chain at a time and does not call mixed-chain SDK population methods.",
+      "trigger": "Heterogeneous-chain array passed to EVaultService.populateCollaterals or EulerEarnService.populateStrategyVaults.",
+      "productionImpact": "No normal Lite cross-chain child-vault confusion demonstrated.",
+      "mitigation": "Browser fetches capture targetChainId; server vault snapshots/labels fetch by chain. Hydration calls each entity method with registry stub, not the faulty mixed-array service methods.",
+      "reproduction": "Custom SDK harness with chain 1 and 10 parents needed; switching the Lite chain alone is not this trigger.",
+      "runtimeReproduced": false,
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useVaults.ts",
+          "line": 127
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useVaults.ts",
+          "line": 379
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useVaults.ts",
+          "line": 666
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/server/utils/vaults-cache.ts",
+          "line": 251
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/server/utils/labels-view.ts",
+          "line": 278
+        }
+      ]
+    }
+  ]
+}

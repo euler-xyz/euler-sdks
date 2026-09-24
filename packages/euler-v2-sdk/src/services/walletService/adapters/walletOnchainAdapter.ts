@@ -113,7 +113,9 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 					args: [group.account, assets],
 				});
 				if (balances.length !== assets.length) {
-					throw new Error("utilsLens.tokenBalances returned an unexpected length");
+					throw new Error(
+						"utilsLens.tokenBalances returned an unexpected length",
+					);
 				}
 
 				const balancesByAsset = new Map<string, bigint>();
@@ -276,7 +278,9 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 			);
 			const balanceResults = new Map<Address, BalanceResult>();
 
-			if (requestedAssets.some(({ assetAddress }) => assetAddress === zeroAddress)) {
+			if (
+				requestedAssets.some(({ assetAddress }) => assetAddress === zeroAddress)
+			) {
 				const nativeBalance = await this.queryNativeBalance(
 					provider,
 					accountAddress,
@@ -287,11 +291,14 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 					errors.push({
 						code: "SOURCE_UNAVAILABLE",
 						severity: "warning",
-						message:
-							"Failed to fetch native balance; defaulted to 0.",
+						message: "Failed to fetch native balance; defaulted to 0.",
 						locations: [
 							dataIssueLocation(
-								walletAssetDiagnosticOwner(chainId, accountAddress, zeroAddress),
+								walletAssetDiagnosticOwner(
+									chainId,
+									accountAddress,
+									zeroAddress,
+								),
 								"$.balance",
 							),
 						],
@@ -325,25 +332,29 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 								failed: true as const,
 							}));
 
-						if (tokenBalances.failed) {
-							errors.push({
-								code: "SOURCE_UNAVAILABLE",
-								severity: "warning",
-								message:
-									"Failed to fetch token balance through utilsLens; falling back to balanceOf.",
-								locations: [
-									dataIssueLocation(
-										walletAssetDiagnosticOwner(
-											chainId,
-											accountAddress,
-											assetAddress,
+						// UtilsLens.tokenBalances converts a reverting balanceOf to zero.
+						// Verify zero responses directly so an unavailable balance is
+						// distinguishable from a successful zero balance in diagnostics.
+						if (tokenBalances.failed || tokenBalances.value === 0n) {
+							if (tokenBalances.failed)
+								errors.push({
+									code: "SOURCE_UNAVAILABLE",
+									severity: "warning",
+									message:
+										"Failed to fetch token balance through utilsLens; falling back to balanceOf.",
+									locations: [
+										dataIssueLocation(
+											walletAssetDiagnosticOwner(
+												chainId,
+												accountAddress,
+												assetAddress,
+											),
+											"$.balance",
 										),
-										"$.balance",
-									),
-								],
-								source: "utilsLens.tokenBalances",
-								normalizedValue: "fallback-balanceOf",
-							});
+									],
+									source: "utilsLens.tokenBalances",
+									normalizedValue: "fallback-balanceOf",
+								});
 
 							const balance = await this.queryBalanceOf(
 								provider,
@@ -356,8 +367,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 								errors.push({
 									code: "SOURCE_UNAVAILABLE",
 									severity: "warning",
-									message:
-										"Failed to fetch asset balance; defaulted to 0.",
+									message: "Failed to fetch asset balance; defaulted to 0.",
 									locations: [
 										dataIssueLocation(
 											walletAssetDiagnosticOwner(
@@ -398,8 +408,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 						errors.push({
 							code: "SOURCE_UNAVAILABLE",
 							severity: "warning",
-							message:
-								"Failed to fetch asset balance; defaulted to 0.",
+							message: "Failed to fetch asset balance; defaulted to 0.",
 							locations: [
 								dataIssueLocation(
 									walletAssetDiagnosticOwner(
@@ -575,7 +584,11 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 							path: `$.allowances['${spenderAddress}'].permit2ExpirationTime`,
 							errors,
 							source: "permit2.allowance",
-							owner: walletAssetDiagnosticOwner(chainId, accountAddress, assetAddress),
+							owner: walletAssetDiagnosticOwner(
+								chainId,
+								accountAddress,
+								assetAddress,
+							),
 							fallback: 0,
 						},
 					);
@@ -585,7 +598,11 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 							path: `$.allowances['${spenderAddress}'].permit2Nonce`,
 							errors,
 							source: "permit2.allowance",
-							owner: walletAssetDiagnosticOwner(chainId, accountAddress, assetAddress),
+							owner: walletAssetDiagnosticOwner(
+								chainId,
+								accountAddress,
+								assetAddress,
+							),
 							fallback: 0,
 						},
 					);
@@ -622,7 +639,9 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 				severity: "warning",
 				message: "Failed to fetch wallet info.",
 				locations: [
-					dataIssueLocation(walletDiagnosticOwner(chainId, getAddress(account))),
+					dataIssueLocation(
+						walletDiagnosticOwner(chainId, getAddress(account)),
+					),
 				],
 				source: "walletOnchainAdapter",
 				originalValue: error instanceof Error ? error.message : String(error),

@@ -1,5 +1,9 @@
 import { type Address, getAddress, type Hex, zeroAddress } from "viem";
 import {
+	MERKL_DEFAULT_DISTRIBUTOR,
+	resolveMerklDistributorAddress,
+} from "../../merklDistributor.js";
+import {
 	applyBuildQuery,
 	type BuildQueryFn,
 	normalizeQueryKeyObjectSets,
@@ -37,8 +41,6 @@ const DEFAULT_BREVIS_PROOFS_API_URL =
 const DEFAULT_FUUL_API_URL = "https://api.fuul.xyz/api/v1";
 const DEFAULT_TURTLE_API_URL = "https://earn.turtle.xyz/v1";
 
-const DEFAULT_MERKL_DISTRIBUTOR: Address =
-	"0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae";
 const DEFAULT_FUUL_MANAGER: Address =
 	"0x8a0836dA623ea1083c85acB958DeEa3716b39dc6";
 const DEFAULT_FUUL_FACTORY: Address =
@@ -527,7 +529,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		this.brevisChainIds = config?.brevisChainIds;
 		this.turtleStreams = config?.turtleStreams ?? [];
 		this.merklDistributorAddress =
-			config?.merklDistributorAddress ?? DEFAULT_MERKL_DISTRIBUTOR;
+			config?.merklDistributorAddress ?? MERKL_DEFAULT_DISTRIBUTOR;
 		this.fuulManagerAddress =
 			config?.fuulManagerAddress ?? DEFAULT_FUUL_MANAGER;
 		this.fuulFactoryAddress =
@@ -1285,7 +1287,10 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 					accumulated: reward.amount,
 					unclaimed: unclaimed.toString(),
 					proof: reward.proofs as Hex[],
-					claimAddress: this.merklDistributorAddress,
+					claimAddress: resolveMerklDistributorAddress(
+						reward.token.chainId,
+						this.merklDistributorAddress,
+					),
 				};
 				const key = `${userReward.chainId}:${tokenAddress.toLowerCase()}`;
 				const existing = rewardsByToken.get(key);
@@ -1367,7 +1372,6 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 					chainId: batch.claimChainId,
 					symbol: campaign.reward_info.token_symbol,
 					name: campaign.reward_info.token_symbol,
-					decimals: 18,
 				},
 				tokenPrice,
 				provider: "brevis",
@@ -1399,7 +1403,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 					chainId: number;
 					token: Address;
 					symbol: string;
-					decimals: number;
+					decimals?: number;
 					amount: bigint;
 				}
 			>();
@@ -1412,12 +1416,21 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 				const existing = totals.get(key);
 				if (existing) {
 					existing.amount += BigInt(reward.amount);
+					if (
+						existing.decimals === undefined &&
+						reward.currency_decimals !== undefined
+					) {
+						existing.decimals = Number(reward.currency_decimals);
+					}
 				} else {
 					totals.set(key, {
 						chainId: claimChainId,
 						token: tokenAddress,
 						symbol: reward.currency_name || tokenAddress,
-						decimals: Number(reward.currency_decimals ?? 18),
+						decimals:
+							reward.currency_decimals === undefined
+								? undefined
+								: Number(reward.currency_decimals),
 						amount: BigInt(reward.amount),
 					});
 				}
@@ -1454,7 +1467,6 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 					chainId: reward.chain_id,
 					symbol: tokenAddress,
 					name: tokenAddress,
-					decimals: 18,
 				},
 				tokenPrice: 0,
 				provider: "fuul",

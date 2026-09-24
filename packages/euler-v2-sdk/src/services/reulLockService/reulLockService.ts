@@ -66,6 +66,10 @@ export class REULLockService implements IREULLockService {
 	 * @param args.batchSize - Number of per-lock withdraw amount calls to issue concurrently.
 	 */
 	async fetchLocks(args: FetchREULLocksArgs): Promise<REULLock[]> {
+		const batchSize = args.batchSize ?? DEFAULT_BATCH_SIZE;
+		if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
+			throw new Error("batchSize must be a positive safe integer");
+		}
 		const rEulAddress = this.resolveREULAddress(args.chainId, args.rEulAddress);
 		const provider = this.providerService.getProvider(args.chainId);
 
@@ -80,7 +84,6 @@ export class REULLockService implements IREULLockService {
 			unlockableAmount: bigint;
 			amountToBeBurned: bigint;
 		}[] = [];
-		const batchSize = args.batchSize ?? DEFAULT_BATCH_SIZE;
 
 		for (let i = 0; i < timestamps.length; i += batchSize) {
 			const batch = timestamps
@@ -119,7 +122,9 @@ export class REULLockService implements IREULLockService {
 	 */
 	buildUnlockPlan(args: BuildUnlockREULPlanArgs): TransactionPlan {
 		if (typeof args.allowRemainderLoss !== "boolean") {
-			throw new Error("allowRemainderLoss must be explicitly set for rEUL unlocks");
+			throw new Error(
+				"allowRemainderLoss must be explicitly set for rEUL unlocks",
+			);
 		}
 		const rEulAddress = this.resolveREULAddress(args.chainId, args.rEulAddress);
 		const eulAddress = this.deploymentService.getDeployment(args.chainId)
@@ -131,11 +136,7 @@ export class REULLockService implements IREULLockService {
 			data: encodeFunctionData({
 				abi: reulLockAbi,
 				functionName: "withdrawToByLockTimestamp",
-				args: [
-					args.account,
-					args.lockTimestamp,
-					args.allowRemainderLoss,
-				],
+				args: [args.account, args.lockTimestamp, args.allowRemainderLoss],
 			}),
 		};
 		return [
@@ -155,15 +156,14 @@ export class REULLockService implements IREULLockService {
 		];
 	}
 
-	private resolveREULAddress(
-		chainId: number,
-		override?: Address,
-	): Address {
+	private resolveREULAddress(chainId: number, override?: Address): Address {
 		const rEulAddress =
 			override ??
 			this.deploymentService.getDeployment(chainId).addresses.tokenAddrs?.rEUL;
 		if (!rEulAddress) {
-			throw new Error(`rEUL token address not configured for chainId ${chainId}`);
+			throw new Error(
+				`rEUL token address not configured for chainId ${chainId}`,
+			);
 		}
 		return rEulAddress;
 	}

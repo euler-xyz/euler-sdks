@@ -4,10 +4,14 @@ import {
 	type StateOverride,
 	getAddress,
 	parseEther,
+	maxUint256,
 } from "viem";
 import type { TransactionPlan } from "../../services/executionService/executionServiceTypes.js";
 import { getBalanceOverrides } from "./balanceOverrides.js";
-import { getApprovalOverrides } from "./approvalOverrides.js";
+import {
+	computePermit2StateDiff,
+	getApprovalOverrides,
+} from "./approvalOverrides.js";
 import { mergeStateOverrides } from "./mergeStateOverrides.js";
 import type { SlotHints } from "./slotHints.js";
 
@@ -61,7 +65,8 @@ export type DeriveStateOverridesOptions = {
  * tokens in their wallet. Several approvals can draw on the same token within one
  * plan (e.g. supplying it into two vaults, or supply + repay), so we sum the
  * amounts per token — the wallet must cover their total, not the largest single
- * one. Over-forging is harmless; under-forging would make an op revert with
+ * one. Balance-dependent max amounts retain the real balance; under-forging
+ * fixed-amount operations would make an op revert with
  * E_InsufficientBalance mid-simulation.
  */
 function extractBalanceRequirements(
@@ -69,16 +74,24 @@ function extractBalanceRequirements(
 	account: Address,
 ): [Address, bigint][] {
 	const totalPerToken = new Map<Address, bigint>();
+	const balanceDependentTokens = new Set<Address>();
 
 	for (const item of plan) {
 		if (item.type !== "requiredApproval") continue;
 		if (getAddress(item.owner) !== getAddress(account)) continue;
 
 		const token = getAddress(item.token);
+		if (item.amount === maxUint256) balanceDependentTokens.add(token);
 		totalPerToken.set(token, (totalPerToken.get(token) || 0n) + item.amount);
 	}
 
-	return Array.from(totalPerToken.entries());
+	// Deposit-all reads the wallet balance during execution. Forging that
+	// balance would change the operation itself, so preserve it even when
+	// other operations also spend the token. Keep zero requirements for reads.
+	return Array.from(totalPerToken.entries()).map(([token, amount]) => [
+		token,
+		balanceDependentTokens.has(token) ? 0n : amount,
+	]);
 }
 
 /**
@@ -156,7 +169,16 @@ export async function deriveStateOverrides(
 			slotHints,
 		}),
 		noAllowanceOverride
-			? Promise.resolve([] as StateOverride)
+			? Promise.resolve(
+					approvalPairs.length
+						? ([
+								{
+									address: permit2Address,
+									stateDiff: computePermit2StateDiff(account, approvalPairs),
+								},
+							] as StateOverride)
+						: [],
+				)
 			: getApprovalOverrides(client, account, approvalPairs, permit2Address, {
 					walletAllowances: wallet?.allowances,
 					slotHints,

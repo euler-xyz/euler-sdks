@@ -48,12 +48,12 @@ export interface VaultTypeV3AdapterConfig {
 
 const defaultTypeMap: Record<string, string> = {
 	earn: VaultType.EulerEarn,
-	eulerEarn: VaultType.EulerEarn,
+	eulerearn: VaultType.EulerEarn,
 	evault: VaultType.EVault,
 	evk: VaultType.EVault,
 	vault: VaultType.EVault,
 	securitize: VaultType.SecuritizeCollateral,
-	securitizeCollateral: VaultType.SecuritizeCollateral,
+	securitizecollateral: VaultType.SecuritizeCollateral,
 };
 
 const V3_VAULT_RESOLVE_BATCH_SIZE = 100;
@@ -166,10 +166,7 @@ export class VaultTypeV3Adapter implements IVaultTypeAdapter {
 					offset += V3_VAULT_RESOLVE_BATCH_SIZE
 				) {
 					chunks.push(
-						uniqueAddresses.slice(
-							offset,
-							offset + V3_VAULT_RESOLVE_BATCH_SIZE,
-						),
+						uniqueAddresses.slice(offset, offset + V3_VAULT_RESOLVE_BATCH_SIZE),
 					);
 				}
 
@@ -224,7 +221,10 @@ export class VaultTypeV3Adapter implements IVaultTypeAdapter {
 		chainId: number,
 		vaultAddress: Address,
 	): Promise<string | undefined> {
-		const result = await this.queryV3VaultResolve({ address: vaultAddress, chainId });
+		const result = await this.queryV3VaultResolve({
+			address: vaultAddress,
+			chainId,
+		});
 		if (!result || result.type === VaultType.Unknown) return undefined;
 		return result.type;
 	}

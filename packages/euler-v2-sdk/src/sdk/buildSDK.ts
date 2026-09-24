@@ -1144,6 +1144,16 @@ export async function buildEulerSDK<
 		})();
 
 	// Build tokenlist service if not overridden
+	// The generic tokenlist service also supports explicitly configured non-V3
+	// sources. Apply the same config precedence when deciding whether it uses
+	// the built-in V3 URL builder.
+	const usesBuiltInV3Tokenlist = config?.tokenlistUrlTemplate
+		? false
+		: config?.tokenlistApiBaseUrl
+			? true
+			: tokenlistServiceConfig?.getTokenListUrl
+				? false
+				: !envConfig.tokenlistUrlTemplate;
 	const tokenlistService =
 		servicesOverrides?.tokenlistService ??
 		new TokenlistService(
@@ -1152,6 +1162,15 @@ export async function buildEulerSDK<
 				...makeTokenlistConfig(envConfig),
 				...(tokenlistServiceConfig ?? {}),
 				...makeTokenlistConfig(config),
+				...(disableV3 && usesBuiltInV3Tokenlist
+					? {
+							getTokenListUrl: () => {
+								throw new Error(
+									"Token list is unavailable while disableV3 is enabled; provide a tokenlistService override for another source.",
+								);
+							},
+						}
+					: {}),
 			},
 			resolvedBuildQuery,
 		);
@@ -1210,7 +1229,7 @@ export async function buildEulerSDK<
 			return new PriceService(
 				providerService as ProviderService,
 				deploymentService as DeploymentService,
-				backendClient,
+				disableV3 ? undefined : backendClient,
 				resolvedBuildQuery,
 			);
 		})();
@@ -1446,6 +1465,17 @@ export async function buildEulerSDK<
 	const intrinsicApyService =
 		servicesOverrides?.intrinsicApyService ??
 		(() => {
+			if (disableV3) {
+				const unavailable = async (): Promise<never> => {
+					throw new Error(
+						"Intrinsic APY is unavailable while disableV3 is enabled.",
+					);
+				};
+				return new IntrinsicApyService({
+					fetchIntrinsicApy: unavailable,
+					fetchChainIntrinsicApys: unavailable,
+				});
+			}
 			const resolvedIntrinsicApyServiceConfig = intrinsicApyServiceConfig ?? {};
 			const intrinsicApyAdapter = new IntrinsicApyV3Adapter(
 				resolveV3AdapterConfig(defaultIntrinsicApyV3AdapterConfig, {

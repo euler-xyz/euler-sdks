@@ -18,6 +18,16 @@ import type {
 
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_MAX_ASSETS_PER_REQUEST = 50;
+// The V3 public API clamps its shared page size to 100 rows.
+const MAX_PAGE_SIZE = 100;
+
+const boundedPageSize = (
+	value: number | undefined,
+	fallback: number,
+): number =>
+	value === undefined || !Number.isFinite(value)
+		? fallback
+		: Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(value)));
 
 const normalize = (addr: string): string => addr.toLowerCase();
 
@@ -74,7 +84,9 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 			chainId: String(chainId),
 			offset: String(offset),
 			limit: String(limit),
-			...(normalizedAssets?.length ? { assets: normalizedAssets.join(",") } : {}),
+			...(normalizedAssets?.length
+				? { assets: normalizedAssets.join(",") }
+				: {}),
 		});
 
 		const response = await fetch(url, {
@@ -111,7 +123,8 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 		const apyMap = new Map<string, IntrinsicApyInfo>();
 
 		for (const row of rows) {
-			if (!row.address || typeof row.apy !== "number" || !row.provider) continue;
+			if (!row.address || typeof row.apy !== "number" || !row.provider)
+				continue;
 			apyMap.set(normalize(row.address), {
 				apy: row.apy,
 				provider: row.provider,
@@ -130,9 +143,9 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 			...new Set(assetAddresses.map((address) => normalize(address))),
 		] as Address[];
 		const apyMap = new Map<string, IntrinsicApyInfo>();
-		const maxAssetsPerRequest = Math.max(
-			1,
-			this.config.maxAssetsPerRequest ?? DEFAULT_MAX_ASSETS_PER_REQUEST,
+		const maxAssetsPerRequest = boundedPageSize(
+			this.config.maxAssetsPerRequest,
+			DEFAULT_MAX_ASSETS_PER_REQUEST,
 		);
 		const chunks: Address[][] = [];
 		for (
@@ -145,21 +158,14 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 			);
 		}
 
-		const pages = await Promise.all(
+		const results = await Promise.all(
 			chunks.map((chunk) =>
-				this.queryV3IntrinsicApysPage(
-					this.config.endpoint,
-					chainId,
-					0,
-					Math.max(chunk.length, DEFAULT_PAGE_SIZE),
-					chunk,
-				),
+				this.fetchIntrinsicApyPages(chainId, DEFAULT_PAGE_SIZE, chunk),
 			),
 		);
 
-		for (const page of pages) {
-			const rows = Array.isArray(page.data) ? page.data : [];
-			for (const [address, info] of this.mapRowsToApyMap(rows)) {
+		for (const result of results) {
+			for (const [address, info] of result) {
 				apyMap.set(address, info);
 			}
 		}
@@ -216,7 +222,17 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 			return this.fetchChunkedIntrinsicApys(chainId, assetAddresses);
 		}
 
-		const pageSize = Math.max(1, this.config.pageSize ?? DEFAULT_PAGE_SIZE);
+		return this.fetchIntrinsicApyPages(
+			chainId,
+			boundedPageSize(this.config.pageSize, DEFAULT_PAGE_SIZE),
+		);
+	}
+
+	private async fetchIntrinsicApyPages(
+		chainId: number,
+		pageSize: number,
+		assets?: Address[],
+	): Promise<Map<string, IntrinsicApyInfo>> {
 		const apyMap = new Map<string, IntrinsicApyInfo>();
 		let offset = 0;
 
@@ -226,6 +242,7 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 				chainId,
 				offset,
 				pageSize,
+				assets,
 			);
 			const rows = Array.isArray(page.data) ? page.data : [];
 
@@ -233,9 +250,15 @@ export class IntrinsicApyV3Adapter implements IIntrinsicApyAdapter {
 				apyMap.set(address, info);
 			}
 
-			if (rows.length < pageSize) break;
+			if (rows.length === 0) break;
 			offset += rows.length;
-			if (typeof page.meta?.total === "number" && offset >= page.meta.total) break;
+			if (page.meta?.hasMore === false) break;
+			if (typeof page.meta?.total === "number" && offset >= page.meta.total)
+				break;
+			// A short page may only reflect an endpoint's lower cap. Prefer its
+			// continuation metadata and echoed limit over our requested size.
+			const effectivePageSize = boundedPageSize(page.meta?.limit, pageSize);
+			if (page.meta?.hasMore !== true && rows.length < effectivePageSize) break;
 		}
 
 		return apyMap;

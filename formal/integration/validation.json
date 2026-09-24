@@ -1,0 +1,53 @@
+{
+  "date": "2026-09-23",
+  "base": "ff224741c251cae7673c5f835dcf3bbccd9d6605",
+  "branch": "main",
+  "localOnly": true,
+  "checks": {
+    "sdkTests": {
+      "passed": 1277,
+      "files": 57,
+      "normalTimeout": true
+    },
+    "integrationTests": {
+      "passed": 291,
+      "files": 19
+    },
+    "formalSdkTests": {
+      "passed": 544,
+      "files": 5
+    },
+    "lean": {
+      "theorems": 29,
+      "oracleRows": 497,
+      "axiomAudit": "passed"
+    },
+    "tla": {
+      "positiveConfigurations": 8,
+      "expectedCounterexampleControls": 7
+    },
+    "evcSolidity": {
+      "passed": 3
+    },
+    "evcAbiFunctions": {
+      "matched": 44
+    },
+    "lensFields": {
+      "structs": 21,
+      "occurrences": 59,
+      "scope": "field names and order only"
+    },
+    "sourceInventory": {
+      "files": 189,
+      "interfacesExports": 79
+    },
+    "build": "passed",
+    "typecheck": "passed",
+    "diffCheck": "passed"
+  },
+  "notes": [
+    "Final full suite passed normal deadline. An intermediate rewards-only run timed out in an existing network test and passed with 30 seconds.",
+    "After the complete suite only source formatting changed; the final focused suite rechecked affected modules.",
+    "No deployed-chain fork matrix, live transaction, deployed bytecode attestation, or bug-free certification."
+  ]
+}

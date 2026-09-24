@@ -34,7 +34,7 @@ See [examples/simulations/simulate-deposit-example.ts](../examples/simulations/s
 
 ### `simulateTransactionPlan(chainId, account, transactionPlan, options?)`
 
-Simulates a full `TransactionPlan` after applying configured write-path plugins. The `account` argument is `AddressOrAccount` (`Address | Account`): pass an owner address when the SDK should fetch whatever plugin data it needs, or pass an already-fetched `Account` when you want plugins to reuse account state.
+Simulates a `TransactionPlan` with at most one EVC transaction boundary after applying configured write-path plugins. Plans containing multiple `evcBatch` items are rejected: combining them would move deferred health checks and could change whether execution succeeds. Use `mergePlans` when one atomic batch is intended; otherwise simulate each transaction after its preceding state is confirmed. The `account` argument is `AddressOrAccount` (`Address | Account`): pass an owner address when the SDK should fetch whatever plugin data it needs, or pass an already-fetched `Account` when you want plugins to reuse account state.
 
 Returns:
 
@@ -46,6 +46,15 @@ Returns:
 - `failedBatchItems`: decoded failed batch items with error details
 - `accountStatusErrors` / `vaultStatusErrors`: health-check failures after execution
 - requirements not met by the connected wallet (`insufficientWalletAssets`, `insufficientDirectAllowances`, `insufficientPermit2Allowances`)
+- `allowanceDiagnosticsUnavailable`: `{ token, spender, reason }` entries when a required spender's transfer route cannot be established; these make `canExecute` false
+
+A successful result describes execution under the supplied simulation state. Native funding is synthetic by default, wallet/controller discovery is best effort, and `snapshotReadFailures` reports missing account/position reads. Check those gaps when using snapshots for review; `canExecute` alone does not certify real gas funding, signatures, freshness, or complete read coverage. A direct call marked `simulationMode: "independent"` must not depend on earlier plan effects.
+
+Allowance diagnostics follow the recognized spender's transfer rules. EVault can fall back from Permit2 to direct ERC20 approval. EulerEarn, Securitize collateral vaults and the configured SwapVerifier instead select Permit2 when its spender allowance and expiration suffice; if token→Permit2 approval is insufficient, that transfer fails even when direct approval is sufficient. The diagnostic checks both Permit2 allowances and its amount limit. Approval resolution does not yet automatically repair every preferred-Permit2 case: its direct-allowance shortcut can still skip a needed token→Permit2 approval.
+
+For nonzero requirements, simulation looks up spender vault types and reads each recognized spender's Permit2 configuration once. Vaults expose `permit2Address()`; the configured `peripheryAddrs.swapVerifier` exposes `permit2()`. A zero address selects direct approval only. Unknown/custom spender types, failed configuration reads and a different Permit2 contract from the wallet snapshot produce `allowanceDiagnosticsUnavailable`; a generic ERC4626 interface does not establish Permit2 support. Type/deployment metadata is not bytecode attestation. Wallet-service absence or fetch failure still makes wallet diagnostics unavailable without this field, and expiration checks use the host clock. Zero-amount requirements need no route reads.
+
+Deposit-all (`maxUint256`) requirements preserve real token balances, because forging the balance would change the amount deposited, including when a fixed-amount operation spends the same token.
 
 Why use it:
 - Filter failing swap quotes or routes before submitting a transaction.
@@ -106,7 +115,7 @@ const gas = await sdk.executionService.estimateGasForTransactionPlan(
 
 ### Priming slot hints
 
-Slot hints are owner-/spender-agnostic, deterministic per-token storage layouts. Compute them once per token and reuse forever:
+Slot hints are owner-/spender-agnostic, deterministic per-token storage layouts. Reuse them while the token storage layout remains unchanged; refresh after an implementation or storage-layout upgrade:
 
 ```typescript
 import { fetchErc20SlotHints, fetchErc20SlotHintsBatch } from "@eulerxyz/euler-v2-sdk"

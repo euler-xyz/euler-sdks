@@ -24,6 +24,7 @@ import type {
 	TransactionPlanPrepared,
 } from "./executionServiceTypes.js";
 import {
+	assertAccountChain,
 	assertNoCowSwapPlanItems,
 	flattenBatchEntries,
 } from "./executionServiceTypes.js";
@@ -244,7 +245,9 @@ function deepFreeze<T>(value: T): T {
 	return value;
 }
 
-function cloneTypedData(typedData: PermitSingleTypedData): PermitSingleTypedData {
+function cloneTypedData(
+	typedData: PermitSingleTypedData,
+): PermitSingleTypedData {
 	return {
 		domain: { ...typedData.domain },
 		types: {
@@ -325,6 +328,7 @@ export function materializeExecution(
 	args: MaterializeExecutionArgs,
 ): MaterializedExecution {
 	const { prepared, inputs } = args;
+	assertAccountChain(prepared.account, prepared.chainId);
 	assertNoCowSwapPlanItems(prepared.plan, "materializeExecution");
 	const from = ownerOf(prepared.account);
 	const evcAddress = getAddress(inputs.evcAddress);
@@ -344,12 +348,10 @@ export function materializeExecution(
 		planItemIndex: number;
 		resolvedIndex: number;
 		item: EVCBatchItem;
-		slot: Omit<
-			MaterializedPermit2SignatureSlot,
-			"insertion" | "slotId"
-		>;
+		slot: Omit<MaterializedPermit2SignatureSlot, "insertion" | "slotId">;
 	}> = [];
 	const consumedPermitInputs = new Set<string>();
+	const allowanceKeys = new Set<string>();
 
 	for (const [planItemIndex, item] of prepared.plan.entries()) {
 		if (item.type === "cowSwap") {
@@ -376,6 +378,15 @@ export function materializeExecution(
 					continue;
 				}
 
+				const allowanceKey = [resolved.owner, resolved.token, resolved.spender]
+					.map((address) => getAddress(address))
+					.join(":");
+				if (allowanceKeys.has(allowanceKey)) {
+					throw new Error(
+						"Duplicate Permit2 allowance key in materialized execution. Merge requirements or execute separate materializations.",
+					);
+				}
+				allowanceKeys.add(allowanceKey);
 				const key = inputKey(planItemIndex, resolvedIndex);
 				const input = permitInputs.get(key);
 				if (!input) {
@@ -459,7 +470,9 @@ export function materializeExecution(
 		}
 
 		if (pendingPermitItems.length > 0) {
-			throw new Error("Permit2 signature has no following EVC batch insertion point");
+			throw new Error(
+				"Permit2 signature has no following EVC batch insertion point",
+			);
 		}
 		if (item.chainId !== prepared.chainId) {
 			throw new Error(
@@ -483,13 +496,17 @@ export function materializeExecution(
 	}
 
 	if (pendingPermitItems.length > 0) {
-		throw new Error("Permit2 signature has no following EVC batch insertion point");
+		throw new Error(
+			"Permit2 signature has no following EVC batch insertion point",
+		);
 	}
 	if (consumedPermitInputs.size !== permitInputs.size) {
 		const unused = [...permitInputs.keys()].filter(
 			(key) => !consumedPermitInputs.has(key),
 		);
-		throw new Error(`Unused Permit2 materialization inputs: ${unused.join(", ")}`);
+		throw new Error(
+			`Unused Permit2 materialization inputs: ${unused.join(", ")}`,
+		);
 	}
 
 	return deepFreeze({
@@ -512,7 +529,9 @@ export function finalizeMaterializedExecution(
 	if (signatures.length !== materialized.signatureSlots.length) {
 		throw new Error("Signature values do not exactly match materialized slots");
 	}
-	const signatureById = new Map(signatures.map((value) => [value.slotId, value]));
+	const signatureById = new Map(
+		signatures.map((value) => [value.slotId, value]),
+	);
 	if (signatureById.size !== signatures.length) {
 		throw new Error("Duplicate materialized signature value");
 	}
@@ -552,7 +571,8 @@ export function finalizeMaterializedExecution(
 			});
 			if (
 				reviewedItem.targetContract !== expectedPlaceholder.targetContract ||
-				reviewedItem.onBehalfOfAccount !== expectedPlaceholder.onBehalfOfAccount ||
+				reviewedItem.onBehalfOfAccount !==
+					expectedPlaceholder.onBehalfOfAccount ||
 				reviewedItem.value !== expectedPlaceholder.value ||
 				reviewedItem.data !== expectedPlaceholder.data
 			) {
@@ -740,7 +760,10 @@ export async function executeMaterialized(
 		if (!execution) throw new Error("Materialized execution was not finalized");
 		await options.onFinalized?.(execution);
 		for (; nextRequestIndex < execution.requests.length; nextRequestIndex++) {
-			await dispatchRequest(execution.requests[nextRequestIndex]!, nextRequestIndex);
+			await dispatchRequest(
+				execution.requests[nextRequestIndex]!,
+				nextRequestIndex,
+			);
 		}
 	});
 	if (!execution) throw new Error("Materialized execution was not finalized");

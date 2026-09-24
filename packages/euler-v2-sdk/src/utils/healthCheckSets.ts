@@ -148,7 +148,10 @@ function decodeEVaultFunction(item: EVCBatchItem) {
 function applyEvcStateMutation(
 	item: EVCBatchItem,
 	states: Map<Address, HealthCheckState>,
-): void {
+	evcAddress?: Address,
+): Address | undefined {
+	if (evcAddress && getAddress(item.targetContract) !== getAddress(evcAddress))
+		return;
 	const decoded = decodeEvcFunction(item);
 	if (!decoded) return;
 	const args = (decoded.args ?? []) as readonly unknown[];
@@ -156,24 +159,34 @@ function applyEvcStateMutation(
 	if (decoded.functionName === "enableController") {
 		const [account, vault] = args as [Address, Address];
 		addAddress(ensureState(states, account).controllers, vault);
-		return;
+		return getAddress(account);
 	}
 
 	if (decoded.functionName === "disableController") {
 		const [account] = args as [Address];
-		ensureState(states, account).controllers.clear();
-		return;
+		// EVC removes only msg.sender. The sender may be an operator or a
+		// controller callback, which this helper cannot authenticate. Retain the
+		// controller superset rather than incorrectly dropping required feeds.
+		ensureState(states, account);
+		return getAddress(account);
 	}
 
 	if (decoded.functionName === "enableCollateral") {
 		const [account, vault] = args as [Address, Address];
 		addAddress(ensureState(states, account).collaterals, vault);
-		return;
+		return getAddress(account);
 	}
 
 	if (decoded.functionName === "disableCollateral") {
 		const [account, vault] = args as [Address, Address];
 		deleteAddress(ensureState(states, account).collaterals, vault);
+		return getAddress(account);
+	}
+
+	if (decoded.functionName === "reorderCollaterals") {
+		const [account] = args as [Address];
+		ensureState(states, account);
+		return getAddress(account);
 	}
 }
 
@@ -191,7 +204,8 @@ function getCheckedAccountsFromEVaultCall(item: EVCBatchItem): Address[] {
 		decoded.functionName === "borrow" ||
 		decoded.functionName === "pullDebt" ||
 		decoded.functionName === "repayWithShares" ||
-		decoded.functionName === "transfer"
+		decoded.functionName === "transfer" ||
+		decoded.functionName === "disableController"
 	) {
 		return [onBehalfOfAccount];
 	}
@@ -269,10 +283,17 @@ function snapshotCheckedAccounts(
 	});
 }
 
+/**
+ * Track known EVC/EVault status-check dependencies. Pass the deployed EVC address
+ * to authenticate EVC call destinations. Omitting it retains legacy selector
+ * inference for compatibility; integrations should supply it explicitly.
+ * Arbitrary contract callbacks and nested batches are outside this static model.
+ */
 export function calculateHealthCheckSets(
 	plan: TransactionPlan,
 	account: Account<IHasVaultAddress>,
 	additionalSubAccounts: readonly SubAccount<IHasVaultAddress>[] = [],
+	evcAddress?: Address,
 ): PlanHealthCheckSet[] {
 	ensurePopulatedAccount(account);
 
@@ -284,7 +305,8 @@ export function calculateHealthCheckSets(
 
 		const checkedAccounts = new Set<Address>();
 		for (const item of flattenBatchEntries(entry.items)) {
-			applyEvcStateMutation(item, states);
+			const evcCheckedAccount = applyEvcStateMutation(item, states, evcAddress);
+			if (evcCheckedAccount) checkedAccounts.add(evcCheckedAccount);
 			applyEVaultStateMutation(item, states);
 
 			const checkedAccountsForItem = getCheckedAccountsFromEVaultCall(item);

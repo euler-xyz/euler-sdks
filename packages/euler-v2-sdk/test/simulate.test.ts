@@ -130,6 +130,7 @@ async function simulateAndCollectVaultAccountReads(
 		[getAddress(TARGET)]: VaultType.EVault,
 	},
 	abiService?: IABIService,
+	controllers: Address[] = [],
 ): Promise<Set<string>> {
 	const simulateContract = vi.fn(
 		async ({ args }: { args: readonly [EVCBatchItem[]] }) => {
@@ -150,7 +151,7 @@ async function simulateAndCollectVaultAccountReads(
 	);
 	const provider = {
 		simulateContract,
-		multicall: vi.fn(async () => []),
+		multicall: vi.fn(async ({ contracts }: { contracts: unknown[] }) => contracts.map(() => ({ status: "success", result: controllers }))),
 		readContract: vi.fn(async () => {
 			throw new Error("asset unavailable");
 		}),
@@ -964,11 +965,25 @@ test("simulation helpers fail clearly when provider service is not configured", 
 	);
 });
 
-test("simulateTransactionPlan reports direct allowance deficits from spender allowance", async () => {
+test("simulation accepts either complete allowance path and checks both Permit2 allowances", async () => {
+	let spenderType: string = VaultType.EVault;
+	let actualPermit2 = "0x0000000000000000000000000000000000000012";
+	let permit2Reads = 0;
+	let permit2ReadFails = false;
+	let simulationSucceeds = false;
+	let configuredVerifier: Address | undefined;
+	const allowance = {
+		assetForVault: 40n,
+		assetForPermit2: 95n,
+		assetForVaultInPermit2: 1_000n,
+		permit2ExpirationTime: Math.floor(Date.now() / 1000) + 60,
+		permit2Nonce: 0,
+	};
 	const service = new ExecutionService(
 		{
 			getDeployment: () => ({
 				addresses: {
+					peripheryAddrs: { swapVerifier: configuredVerifier },
 					coreAddrs: {
 						evc: EVC,
 						permit2: "0x0000000000000000000000000000000000000012",
@@ -989,13 +1004,7 @@ test("simulateTransactionPlan reports direct allowance deficits from spender all
 					getAsset: () => ({
 						balance: 1_000n,
 						allowances: {
-							[SPENDER]: {
-								assetForVault: 40n,
-								assetForPermit2: 95n,
-								assetForVaultInPermit2: 1_000n,
-								permit2ExpirationTime: Math.floor(Date.now() / 1000) + 60,
-								permit2Nonce: 0,
-							},
+							[SPENDER]: allowance,
 						},
 					}),
 				},
@@ -1003,13 +1012,20 @@ test("simulateTransactionPlan reports direct allowance deficits from spender all
 		} as never,
 		{
 			getProvider: () => ({
-				simulateContract: async () => {
+				readContract: async ({ functionName }: { functionName: string }) => {
+					assert.equal(functionName, configuredVerifier ? "permit2" : "permit2Address");
+					permit2Reads++;
+					if (permit2ReadFails) throw new Error("configuration unavailable");
+					return actualPermit2;
+				},
+				simulateContract: async ({ args }: { args: readonly [EVCBatchItem[]] }) => {
+					if (simulationSucceeds) return { result: [args[0].map((item) => ({ success: getAddress(item.targetContract) === getAddress(TARGET), result: "0x" })), [], []] };
 					throw new Error("stop after diagnostics");
 				},
 			}),
 		} as never,
 		{
-			fetchVaultTypes: async () => ({}),
+			fetchVaultTypes: async () => ({ [getAddress(SPENDER)]: spenderType }),
 		} as never,
 	);
 	const plan: TransactionPlan = [
@@ -1040,7 +1056,84 @@ test("simulateTransactionPlan reports direct allowance deficits from spender all
 	assert.deepEqual(result.insufficientDirectAllowances, [
 		{ token: TOKEN, amount: 60n },
 	]);
-	assert.equal(result.insufficientPermit2Allowances, undefined);
+	assert.deepEqual(result.insufficientPermit2Allowances, [{ token: TOKEN, amount: 5n }]);
+
+	for (const path of ["direct", "permit2"] as const) {
+		allowance.assetForVault = path === "direct" ? 100n : 0n;
+		allowance.assetForPermit2 = path === "permit2" ? 100n : 0n;
+		allowance.permit2ExpirationTime = path === "permit2" ? Math.floor(Date.now() / 1000) + 60 : 0;
+		const alternative = await service.simulateTransactionPlan(1, ACCOUNT, plan, { stateOverrides: false });
+		assert.equal(alternative.insufficientDirectAllowances, undefined, path);
+		assert.equal(alternative.insufficientPermit2Allowances, undefined, path);
+	}
+	assert.equal(permit2Reads, 3, "one configuration read per unique spender, per simulation");
+
+	// Earn chooses a live Permit2 spender allowance even when direct approval is
+	// sufficient; unlike EVK, it does not retry direct transfer on failure.
+	for (const type of [VaultType.EulerEarn, VaultType.SecuritizeCollateral]) {
+		spenderType = type;
+		allowance.assetForVault = 100n;
+		allowance.assetForPermit2 = 95n;
+		const preferred = await service.simulateTransactionPlan(1, ACCOUNT, plan, { stateOverrides: false });
+		assert.equal(preferred.insufficientDirectAllowances, undefined);
+		assert.deepEqual(preferred.insufficientPermit2Allowances, [{ token: TOKEN, amount: 5n }]);
+		allowance.permit2ExpirationTime = 0;
+		const expired = await service.simulateTransactionPlan(1, ACCOUNT, plan, { stateOverrides: false });
+		assert.equal(expired.insufficientDirectAllowances, undefined);
+		assert.equal(expired.insufficientPermit2Allowances, undefined);
+		allowance.permit2ExpirationTime = Math.floor(Date.now() / 1000) + 60;
+	}
+
+	actualPermit2 = "0x0000000000000000000000000000000000000000";
+	allowance.assetForVault = 0n;
+	allowance.assetForPermit2 = 100n;
+	const disabled = await service.simulateTransactionPlan(1, ACCOUNT, plan, { stateOverrides: false });
+	assert.deepEqual(disabled.insufficientDirectAllowances, [{ token: TOKEN, amount: 100n }]);
+	assert.equal(disabled.insufficientPermit2Allowances, undefined);
+	assert.equal(disabled.allowanceDiagnosticsUnavailable, undefined);
+
+	actualPermit2 = "0x0000000000000000000000000000000000000099";
+	const different = await service.simulateTransactionPlan(1, ACCOUNT, plan, { stateOverrides: false });
+	assert.match(different.allowanceDiagnosticsUnavailable?.[0]?.reason ?? "", /different Permit2/);
+
+	const beforeGeneric = permit2Reads;
+	spenderType = "GenericERC4626";
+	const generic = await service.simulateTransactionPlan(1, ACCOUNT, plan, { stateOverrides: false });
+	assert.deepEqual(generic.insufficientDirectAllowances, [{ token: TOKEN, amount: 100n }]);
+	assert.equal(generic.insufficientPermit2Allowances, undefined);
+	assert.match(generic.allowanceDiagnosticsUnavailable?.[0]?.reason ?? "", /unclassified/);
+	assert.equal(permit2Reads, beforeGeneric, "generic ERC4626 does not imply a Permit2 getter or route");
+
+	if (plan[0].type !== "requiredApproval") throw new Error("missing requirement");
+	plan[0].amount = 0n;
+	spenderType = VaultType.EVault;
+	const zero = await service.simulateTransactionPlan(1, ACCOUNT, plan, { stateOverrides: false });
+	assert.equal(zero.allowanceDiagnosticsUnavailable, undefined);
+	assert.equal(permit2Reads, beforeGeneric, "zero requirements need no route reads");
+	plan[0].amount = 100n;
+	allowance.assetForVault = 100n;
+	permit2ReadFails = true;
+	const unread = await service.simulateTransactionPlan(1, ACCOUNT, plan, { stateOverrides: false });
+	assert.match(unread.allowanceDiagnosticsUnavailable?.[0]?.reason ?? "", /could not be read/);
+
+	spenderType = "GenericERC4626";
+	simulationSucceeds = true;
+	const unknownWithSuccessfulCalls = await service.simulateTransactionPlan(1, ACCOUNT, plan, { stateOverrides: false });
+	assert.equal(unknownWithSuccessfulCalls.simulationError, undefined);
+	assert.equal(unknownWithSuccessfulCalls.failedBatchItems, undefined);
+	assert.equal(unknownWithSuccessfulCalls.canExecute, false, "unclassified approval routes must remain explicit even if synthetic execution succeeds");
+	assert.equal(unknownWithSuccessfulCalls.allowanceDiagnosticsUnavailable?.length, 1);
+
+	configuredVerifier = SPENDER;
+	actualPermit2 = "0x0000000000000000000000000000000000000012";
+	permit2ReadFails = false;
+	allowance.assetForPermit2 = 95n;
+	const canonicalVerifier = await service.simulateTransactionPlan(1, ACCOUNT, plan, { stateOverrides: false });
+	assert.equal(canonicalVerifier.allowanceDiagnosticsUnavailable, undefined);
+	assert.deepEqual(canonicalVerifier.insufficientPermit2Allowances, [{ token: TOKEN, amount: 5n }]);
+	allowance.assetForPermit2 = 100n;
+	const fundedVerifier = await service.simulateTransactionPlan(1, ACCOUNT, plan, { stateOverrides: false });
+	assert.equal(fundedVerifier.canExecute, true, "configured verifier uses its source-backed preferred route");
 });
 
 test("simulateTransactionPlan reads both sides of transferFromMax cleanup", async () => {
@@ -1682,4 +1775,45 @@ test("extractBalanceRequirements sums a token's approvals across spenders", () =
 	const requirements = extractBalanceRequirements(plan, ACCOUNT);
 
 	assert.deepEqual(requirements, [[getAddress(TOKEN), 100n]]);
+});
+
+
+test("simulation rejects separate EVC transaction boundaries before RPC instead of merging status checks", async () => {
+	const service = createExecutionService();
+	const plan: TransactionPlan = [
+		{ type: "evcBatch", items: [{ targetContract: EVC, onBehalfOfAccount: ACCOUNT, value: 0n, data: "0x" }] },
+		{ type: "evcBatch", items: [{ targetContract: EVC, onBehalfOfAccount: ACCOUNT, value: 0n, data: "0x" }] },
+	];
+	await assert.rejects(service.simulateTransactionPlan(1, ACCOUNT, plan, { stateOverrides: false }),
+		/multiple EVC transaction boundaries/);
+});
+
+test("simulation cannot approve missing action results or status-check arrays", async () => {
+	for (const result of [undefined, [[], [], []], [[{ success: true, result: "0x" }]],
+		[[{ success: "yes", result: "0x" }], [], []]]) {
+		const service = createExecutionService({
+			simulateContract: async () => ({ result }),
+			multicall: async () => [],
+		}, { fetchVaultTypes: async () => ({}) });
+		const simulated = await service.simulateTransactionPlan(1, ACCOUNT, [
+			{ type: "evcBatch", items: [{ targetContract: TARGET, onBehalfOfAccount: ACCOUNT, value: 0n, data: "0x1234" }] },
+		], { stateOverrides: false });
+		assert.equal(simulated.canExecute, false);
+		assert.match(String(simulated.simulationError?.error), /incomplete or malformed/);
+	}
+});
+
+
+test("EVC-only disable and reorder operations include decoded subaccount controller reads", async () => {
+	const sub = getSubAccountAddress(CHECKSUM_ACCOUNT, 7);
+	for (const data of [
+		encodeFunctionData({ abi: ethereumVaultConnectorAbi, functionName: "disableController", args: [sub] }),
+		encodeFunctionData({ abi: ethereumVaultConnectorAbi, functionName: "reorderCollaterals", args: [sub, 0, 1] }),
+	]) {
+		const call = { targetContract: EVC, onBehalfOfAccount: "0x0000000000000000000000000000000000000000" as Address, value: 0n, data };
+		const reads = await simulateAndCollectVaultAccountReads([{ type: "evcBatch", items: [call] }], undefined, undefined, [TARGET]);
+		assert(reads.has(`${sub}:${getAddress(TARGET)}`));
+		const unrelated = await simulateAndCollectVaultAccountReads([{ type: "evcBatch", items: [{ ...call, targetContract: TARGET }] }], undefined, undefined, [TARGET]);
+		assert(!unrelated.has(`${sub}:${getAddress(TARGET)}`), "selector at another destination is not EVC state mutation");
+	}
 });

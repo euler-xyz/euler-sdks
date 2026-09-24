@@ -1,0 +1,382 @@
+{
+  "liteRevision": "e1e39e7d6e8cb36d5ec84aa592965c5ad35fcfb1",
+  "previousLiteRevision": "fffb1cfcb964a236cc4e92e5d037c70ad1fd0207",
+  "sdkVersion": "3.3.0",
+  "scope": "Source reachability plus controlled runtime tests; not browser or on-chain reproduction",
+  "findings": [
+    {
+      "id": "E01",
+      "status": "reachable-but-main-cart-guarded",
+      "summary": "Lite calls the affected merge method, but its main multi-intent compiler detects omitted calls.",
+      "trigger": "Queue plans containing repeated or opposing collateral/controller operations so the SDK normalizer removes calls.",
+      "productionImpact": "Cart previews can lose operations or fail layer mapping; authoritative multi-intent review rejects omitted effects before signing. Do not carry over the generic SDK claim of a silently wrong submitted cart transaction.",
+      "runtimeReproduced": true,
+      "limitations": "Controlled compiler fixtures with two EVC transitions and with two actual SDK borrow plans through Lite public planner compiler, not a browser-click reproduction. Single refinance intents merge internally before the outer count is measured (lite-compilers.ts:97); the guard cannot establish safety of every internal merge, but no concrete damaging normal refinance sequence was established.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useTxBatch.ts",
+          "line": 1763
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/planning/compiler.ts",
+          "line": 85
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/planning/compiler.ts",
+          "line": 130
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/planning/lite-compilers.ts",
+          "line": 78
+        }
+      ]
+    },
+    {
+      "id": "E02",
+      "status": "not-demonstrated-in-normal-ui",
+      "summary": "Normal Lite plans compose one main EVC batch; prerequisite and cleanup transactions are handled separately.",
+      "trigger": "SDK issue needs multiple separate EVC batches fed to one SDK simulation.",
+      "productionImpact": "No normal Lite UI reproduction established. An approval transaction plus one EVC batch is not the reported two-EVC-health-boundary counterexample.",
+      "runtimeReproduced": false,
+      "limitations": "Manual/custom plans could expose it; SDK merge collapses supported cart plans to one main EVC batch.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/planning/compiler.ts",
+          "line": 85
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/materialization/prepared-plan.ts",
+          "line": 439
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 456
+        }
+      ]
+    },
+    {
+      "id": "E03",
+      "status": "blocked-by-lite-materialization",
+      "summary": "Lite executes sealed materialized requests rather than the vulnerable raw execute workflow.",
+      "trigger": "An orphan permit or wrong-chain direct call in a manually authored plan.",
+      "productionImpact": "Preparation rejects the invalid plan before wallet signing/submission; the reported late raw-execution approval side effect is not reached.",
+      "runtimeReproduced": false,
+      "limitations": "Not a claim that every wallet interaction in Lite is immune to all late failures.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 637
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/materialization/prepared-plan.ts",
+          "line": 559
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/materialization/prepared-plan.ts",
+          "line": 575
+        }
+      ]
+    },
+    {
+      "id": "E04",
+      "status": "not-demonstrated-in-normal-ui",
+      "summary": "Cart merge aggregates same-key approvals and Lite uses materialized execution.",
+      "trigger": "Two unresolved permits with identical owner/token/spender within one executed batch.",
+      "productionImpact": "Normal merged cart requests do not preserve duplicate same-key approval requirements. No current UI flow producing this raw-execution nonce failure was established.",
+      "runtimeReproduced": false,
+      "limitations": "Slot preparation itself reads each nonce independently; a future/custom single-intent plan with duplicate keys would need rechecking. Do not label all repeated explicit materialized nonces invalid.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/planning/compiler.ts",
+          "line": 85
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 385
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/materialization/signature-slots.ts",
+          "line": 106
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 637
+        }
+      ]
+    },
+    {
+      "id": "E05",
+      "status": "blocked-by-lite-context-checks",
+      "summary": "The authoritative Lite preparation binds intent, account snapshot, connected account and chain.",
+      "trigger": "Contradictory account/chain data supplied to an SDK entry point.",
+      "productionImpact": "The reviewed UI path rejects the mismatch before materialization and dispatch instead of trusting conflicting snapshots.",
+      "runtimeReproduced": false,
+      "limitations": "These checks establish the reviewed execution path, not every asynchronous preview/cache operation.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 267
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 293
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/planning/lite-compilers.ts",
+          "line": 48
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/materialization/prepared-plan.ts",
+          "line": 376
+        }
+      ]
+    },
+    {
+      "id": "E06",
+      "status": "reachable",
+      "summary": "Raw URL casing can reach allowance resolution; more severe borrow/repay casing variants are not demonstrated with normally normalized entity data.",
+      "trigger": "Open a valid lowercased /earn/<vault> or /lend/<vault> URL for a vault with checksum capitals and existing approval.",
+      "productionImpact": "The existing allowance is missed because its dictionary key is checksummed, resulting in unnecessary approval/signature prompts. This can cost gas if submitted. Normal account/vault adapters normalize addresses, which masks several other casing subcases.",
+      "runtimeReproduced": true,
+      "limitations": "Actual Lite intent factory plus published resolver tested with controlled wallet data: lowercase2 approval steps versus checksum0. No browser or chain transaction was submitted.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/earn/[vault]/index.vue",
+          "line": 42
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/earn/[vault]/index.vue",
+          "line": 172
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/lend/[vault]/index.vue",
+          "line": 105
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/domain/canonical.ts",
+          "line": 134
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/planning/lite-compilers.ts",
+          "line": 100
+        }
+      ]
+    },
+    {
+      "id": "E07",
+      "status": "not-used",
+      "summary": "Lite exposes deposits by asset amount, not the SDK planMint share-quantity planner.",
+      "trigger": "A call to planMint with a finite approval estimate.",
+      "productionImpact": "No normal UI path to the mint-rounding bug was found.",
+      "runtimeReproduced": false,
+      "limitations": "Repository-wide production-code search found no planMint caller; this is an SDK integration concern outside current Lite flows.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/planning/lite-compilers.ts",
+          "line": 9
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/planning/lite-compilers.ts",
+          "line": 171
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/earn/[vault]/index.vue",
+          "line": 172
+        }
+      ]
+    },
+    {
+      "id": "E08",
+      "status": "avoided-by-lite-withdraw-choice",
+      "summary": "Earn partial withdrawal uses withdraw(assets); Max uses redeem(shares).",
+      "trigger": "The SDK bug requires planRedeem({assets}), which the normal Earn page does not call.",
+      "productionImpact": "The reported over-redemption/insufficient-shares failure is not reached by current Earn withdrawal UI. Earn display estimate accuracy remains a separate issue.",
+      "runtimeReproduced": false,
+      "limitations": "The shared wrapper technically permits assets-only redeem, but production callers choose the safe branches. Asset-based display conversions must not be conflated with executable E08.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/earn/[vault]/[subAccount]/withdraw.vue",
+          "line": 143
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/earn/[vault]/[subAccount]/withdraw.vue",
+          "line": 150
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerTx.ts",
+          "line": 1004
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerTx.ts",
+          "line": 1039
+        }
+      ]
+    },
+    {
+      "id": "E09",
+      "status": "conditional-no-specific-failing-ui-path",
+      "summary": "Lite uses SDK dependency inference, but ordinary collateral/controller changes also contain vault operations that mark affected accounts.",
+      "trigger": "An EVC-only transition or uncovered account dependency must survive normal UI planning without a companion vault call that supplies the same dependency.",
+      "productionImpact": "The SDK mechanism is in the call chain, but no concrete current UI operation demonstrating a missed necessary update or read was established. Avoid calling generic standalone EVC fixtures a Lite reproduction.",
+      "runtimeReproduced": false,
+      "limitations": "Disable collateral UI transfers shares from the same account and then disables collateral. Standalone cleanup is registered/exported but no page creates a cleanup intent; reorder/raw EVC controller calls were not found. Nested/plugin/custom paths are not exhaustively proved.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/position/[number]/index.vue",
+          "line": 681
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/position/[number]/index.vue",
+          "line": 686
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/planning/lite-compilers.ts",
+          "line": 156
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 369
+        }
+      ]
+    },
+    {
+      "id": "E10",
+      "status": "not-demonstrated-with-normal-provider",
+      "summary": "Requires malformed decoded provider output or an incompatible configured contract.",
+      "trigger": "A custom provider bypasses normal ABI decoding or configured EVC returns semantically wrong arrays.",
+      "productionImpact": "Normal Lite RPC use does not establish this defensive-boundary trigger.",
+      "runtimeReproduced": false,
+      "limitations": "The SDK fixture mocked decoded values; no corrupt real RPC response through Lite and viem was reproduced.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useEulerSdk.ts",
+          "line": 253
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 456
+        }
+      ]
+    },
+    {
+      "id": "E11",
+      "status": "reachable-with-existing-allowance-state",
+      "summary": "Lite deliberately ignores aggregate allowance diagnostics, but invokes the affected resolver.",
+      "trigger": "An Earn vault has enough direct approval, an unexpired sufficient Permit2 spender authorization, but insufficient ERC20 approval to Permit2.",
+      "productionImpact": "UI can prepare and simulate with synthetic allowances without adding the missing real Permit2 approval; the deposit fails: wallet gas estimation may block before broadcast, otherwise Earn reverts. No automatic route repair or token-to-Permit2 allowance guard exists in the inspected final dispatch path. The separate SDK false-rejection from requiring both routes is masked by Lite projection.",
+      "runtimeReproduced": true,
+      "limitations": "Controlled published resolver reproduction with direct100, token-to-Permit2 95, spenderPermit2 1000 unexpired yields0 repairs using Lite finite settings. Actual Earn contract route established in prior pinned source review, not executed here. Existing state can result from prior authorization/revocation; no live affected wallet identified.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/earn/[vault]/index.vue",
+          "line": 172
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 374
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 456
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/simulation/euler-projection.ts",
+          "line": 23
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useTransactionPlanSimulation.ts",
+          "line": 26
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/adapters/eoa.ts",
+          "line": 74
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/adapters/eoa.ts",
+          "line": 85
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 652
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/sdk-published-3.3.0/package/dist/src/services/executionService/materializedExecution.js",
+          "line": 384
+        }
+      ]
+    },
+    {
+      "id": "E12",
+      "status": "not-used-by-normal-deposit-max",
+      "summary": "Lite deposit Max supplies a finite selected wallet amount; it does not encode deposit(maxUint256).",
+      "trigger": "The reported bug needs maxUint256 funding metadata plus a deposit-all sentinel.",
+      "productionImpact": "No current ordinary Lend/Earn deposit UI reproduction. Max repayment and Max share redemption use different semantics and are not evidence for this deposit bug.",
+      "runtimeReproduced": false,
+      "limitations": "Cart simulation does enable balance overrides, so a future/manual sentinel deposit could reach it. Current code searches found sentinels only for repay, transfer, share redeem and cap checks.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/lend/[vault]/index.vue",
+          "line": 624
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/lend/[vault]/index.vue",
+          "line": 88
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/earn/[vault]/index.vue",
+          "line": 175
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/borrow/useBorrowForm.ts",
+          "line": 978
+        }
+      ]
+    },
+    {
+      "id": "E13",
+      "status": "not-used-fields",
+      "summary": "Lite uses state overrides but inspected built-in migration/approval overrides contain stateDiff, not full state or code.",
+      "trigger": "A caller supplies a code replacement or full storage replacement.",
+      "productionImpact": "The confirmed code/full-storage-loss bug has no identified normal Lite input. Existing duplicate stateDiff slots are handled by viem and must not be counted as the same defect.",
+      "runtimeReproduced": false,
+      "limitations": "Published positionMigrationService.js:454-592 emits stateDiff only; absence applies to inspected built-in routes.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useReviewedExecution.ts",
+          "line": 458
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/features/reviewed-execution/planning/migration-compiler.ts",
+          "line": 45
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useTxBatch.ts",
+          "line": 1756
+        }
+      ]
+    },
+    {
+      "id": "E14",
+      "status": "option-not-enabled",
+      "summary": "Lite wrapper exposes noAllowanceOverride but no production caller sets it true.",
+      "trigger": "Simulation invoked with noAllowanceOverride:true.",
+      "productionImpact": "No current Lite UI reproduction; common noBalanceOverride:true is a separate flag.",
+      "runtimeReproduced": false,
+      "limitations": "Repository-wide search found only option declaration/pass-through, not activation.",
+      "evidence": [
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useStateOverrideOptions.ts",
+          "line": 141
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/composables/useStateOverrideOptions.ts",
+          "line": 146
+        },
+        {
+          "file": "/private/tmp/euler-sdk-integration-review/euler-lite-master/pages/lend/[vault]/index.vue",
+          "line": 88
+        }
+      ]
+    }
+  ]
+}

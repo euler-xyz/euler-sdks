@@ -138,18 +138,32 @@ export class EulerEarn
 		return "inactive";
 	}
 
-	/** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
+	/** Snapshot conversion using EulerEarn's virtual deposit; excludes unminted fee shares. */
 	override convertToAssets(shares: bigint): bigint {
 		const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
 		const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
 		return (shares * totalAssetsAdjusted) / totalSharesAdjusted;
 	}
 
-	/** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
+	/** Snapshot conversion using EulerEarn's virtual deposit; excludes unminted fee shares. */
 	override convertToShares(assets: bigint): bigint {
 		const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
 		const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
 		return (assets * totalSharesAdjusted) / totalAssetsAdjusted;
+	}
+
+	/**
+	 * Shares required for an asset withdrawal, rounded up at this snapshot's rate.
+	 * Like the other snapshot conversions, this excludes unminted performance-fee
+	 * shares; use the contract's previewWithdraw for an exact live quotation.
+	 */
+	override previewWithdraw(assets: bigint): bigint {
+		const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
+		const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
+		return (
+			(assets * totalSharesAdjusted + totalAssetsAdjusted - 1n) /
+			totalAssetsAdjusted
+		);
 	}
 
 	async populateStrategyVaults(

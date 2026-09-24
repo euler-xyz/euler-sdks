@@ -1,0 +1,379 @@
+{
+  "sdkBase": "ff224741c251cae7673c5f835dcf3bbccd9d6605",
+  "date": "2026-09-23",
+  "meaning": "50 prior report entries, not 50 distinct vulnerabilities. I05 duplicates E09; E08 and D01 overlap. See individual verdicts.",
+  "reports": [
+    {
+      "path": "execution.md",
+      "sha256": "bcd9657a1144c0c39ce0a2a5cb86849fa3574c1049e5800bbf3c2c55ef8ff30d",
+      "entries": 14
+    },
+    {
+      "path": "data.md",
+      "sha256": "e5013883cb3604b1e4bc016004573ff1433bfa04dd893606e01ae295ce8f15c8",
+      "entries": 15
+    },
+    {
+      "path": "swap-rewards.md",
+      "sha256": "ff77e299418400d27289732127fb0c76b98438e6c75066763f4208fc8d61fac9",
+      "entries": 10
+    },
+    {
+      "path": "infrastructure.md",
+      "sha256": "99bef08af23b8bf069f76ba846d8b6d1209f15b5a9a737e23af673772bd49b41",
+      "entries": 11
+    }
+  ],
+  "entries": [
+    {
+      "id": "E01",
+      "title": "Batch normalization changes EVC behavior",
+      "report": "execution.md",
+      "line": 14,
+      "verdict": "Status: confirmed bug; current fix adequate for preserving calls within one intentionally merged transaction. Original [services/executionService/executionService.ts:475\u2013531](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/executionService/executionService.ts#L475) cancels opposing collateral transitions and suppresses repeats; `1903\u20131909` applies it from `mergePlans`. An account with collateral already enabled can submit enable then disable; removing both leaves it enabled. Intervening calls can also observe state or require it. The public merge API makes this reachable without malformed data."
+    },
+    {
+      "id": "E02",
+      "title": "Simulation erases transaction boundaries",
+      "report": "execution.md",
+      "line": 22,
+      "verdict": "Status: confirmed bug; conservative rejection is adequate. Original [services/executionService/simulate.ts:589\u2013590,796\u2013812](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/executionService/simulate.ts#L589) extracts every `evcBatch` into operations and executes them in one simulated batch. Original `execute.ts:294\u2013315` sends each batch as a separate transaction. Disable collateral in the first batch and restore it in the second: the first real transaction can fail its final health check, while one combined simulation succeeds."
+    },
+    {
+      "id": "E03",
+      "title": "Orphaned signatures and late invalid-plan detection",
+      "report": "execution.md",
+      "line": 28,
+      "verdict": "Status: confirmed SDK workflow bug for caller-authored invalid boundaries; fixed. Original [services/executionService/execute.ts:235\u2013287](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/executionService/execute.ts#L235) sends token approvals and collects Permit2 signatures before knowing that an EVC insertion point exists. `294\u2013315` consumes signatures only at an EVC batch; `327\u2013347` handles a direct call, checks its chain late, and clears pending permits. An end-of-plan permit is also silently unused. Built-in valid deposit plans do have insertion points; manually concatenated/raw plans expose the problem."
+    },
+    {
+      "id": "E04",
+      "title": "Repeated Permit2 keys",
+      "report": "execution.md",
+      "line": 34,
+      "verdict": "Status: confirmed raw-execution nonce bug under normal Permit2 semantics; materialization restriction is conditional hardening. Original [services/executionService/execute.ts:258\u2013285](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/executionService/execute.ts#L258) reads the same current nonce for each pending permit before the containing EVC batch is sent. Two requirements for the same owner/token/spender produce signatures for nonce N twice. The first permit advances the nonce; the second cannot consume N again. Merge/aggregate requirements first or separate their executed batches."
+    },
+    {
+      "id": "E05",
+      "title": "Chain/account snapshot consistency",
+      "report": "execution.md",
+      "line": 42,
+      "verdict": "Status: defensive hardening against contradictory caller context; not an established wrong-chain signing exploit. Original [services/executionService/executionService.ts:924\u2013944,954\u2013965,1218\u20131246](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/executionService/executionService.ts#L924) accepts an Account plus a separate chain ID, forwards both to plugins, and extracts only its owner. `2055\u20132077` reads Wallet allowances without checking wallet chain or approval owner. Supplying a snapshot for another chain/owner can select the wrong plugin metadata or skip needed approvals."
+    },
+    {
+      "id": "E06",
+      "title": "Address casing changes execution",
+      "report": "execution.md",
+      "line": 48,
+      "verdict": "Status: confirmed bug; inspected comparisons fixed. Original [services/executionService/encode.ts:459\u2013460](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/executionService/encode.ts#L459) can disable an existing controller merely because the same address uses different casing. EVK [src/EVault/modules/RiskManager.sol:55\u201360](https://github.com/euler-xyz/euler-vault-kit/blob/bfb325a6e6ca09613d940b46f72ccfe017353933/src/EVault/modules/RiskManager.sol#L55) rejects controller removal with debt, so an otherwise valid borrow can revert. Original `encode.ts:926\u2013948` and `executionService.ts:2883\u20132897` can misclassify equal asset/vault addresses; `executionService.ts:2077` can miss an existing normalized allowance key."
+    },
+    {
+      "id": "E07",
+      "title": "Mint approval rounding",
+      "report": "execution.md",
+      "line": 54,
+      "verdict": "Status: confirmed final-rounding bug; current correction is partial, not exact preview parity. Original [services/executionService/executionService.ts:2469\u20132471](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/executionService/executionService.ts#L2469) computes floor(shares \u00d7 supplied WAD rate / WAD). EVK [src/EVault/modules/Vault.sol:71\u201373,139\u2013147](https://github.com/euler-xyz/euler-vault-kit/blob/bfb325a6e6ca09613d940b46f72ccfe017353933/src/EVault/modules/Vault.sol#L71) uses shares-to-assets ceiling, implemented in [src/EVault/shared/types/Shares.sol:29\u201334](https://github.com/euler-xyz/euler-vault-kit/blob/bfb325a6e6ca09613d940b46f72ccfe017353933/src/EVault/shared/types/Shares.sol#L29); adjusted totals include 1,000,000 virtual assets/shares (`shared/lib/ConversionHelpers.sol:13\u201323`). Earn also rounds mint assets up ([src/EulerEarn.sol:571\u2013575](https://github.com/euler-xyz/euler-earn/blob/ea3dacc05f4003a1326815429d70d0c77f0dabb4/src/EulerEarn.sol#L571)). With one share and an exactly represented rate of 1.5, approval 1 is insufficient for the required 2. A finite direct/Permit2 approval can therefore make mint revert; existing larger approvals or unlimited resolution can mask it."
+    },
+    {
+      "id": "E08",
+      "title": "Earn asset-denominated redeem: corrected baseline claim",
+      "report": "execution.md",
+      "line": 60,
+      "verdict": "Status: confirmed wrong-quantity planning bug; the original underdelivery claim is retracted. Overlaps data finding D01. Original [entities/ERC4626Vault.ts:102\u2013105](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/entities/ERC4626Vault.ts#L102) returns `assets` from `previewWithdraw`; original [entities/EulerEarn.ts:141\u2013153](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/entities/EulerEarn.ts#L141) overrides floor conversions but has no preview override. Original [services/executionService/executionService.ts:2580\u20132598](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/executionService/executionService.ts#L2580) therefore encodes `redeem(requestedAssets)` as though every asset required one share."
+    },
+    {
+      "id": "E09",
+      "title": "Missing EVC health/read dependencies",
+      "report": "execution.md",
+      "line": 70,
+      "verdict": "Status: confirmed dependency-model bug; fix adequate within static selector model. Original [utils/healthCheckSets.ts:148\u2013177,180\u2013215,285\u2013301](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/utils/healthCheckSets.ts#L148) mutates its local sets without marking EVC-only calls' decoded account as checked, clears every controller on raw EVC disable, and omits reorder. Original [services/executionService/simulate.ts:1589\u20131599](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/executionService/simulate.ts#L1589) infers only three EVC transitions and omits disable-controller/reorder account reads."
+    },
+    {
+      "id": "E10",
+      "title": "Missing/malformed simulation arrays",
+      "report": "execution.md",
+      "line": 78,
+      "verdict": "Status: defensive hardening; ordinary honest-EVC malformed-RPC success is not established. Original [services/executionService/simulate.ts:1723\u20131753](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/executionService/simulate.ts#L1723) trusts a provider's decoded result and treats missing results/check arrays as empty. A custom provider returning `undefined`, or ABI-valid but semantically wrong empty arrays from a misconfigured contract, can bypass action failures; current structural and result-count checks reject them."
+    },
+    {
+      "id": "E11",
+      "title": "Allowance route diagnostics: original and corrected local fix",
+      "report": "execution.md",
+      "line": 84,
+      "verdict": "Status: confirmed original false-rejection bug and missing route information; initial local OR fix was incomplete. Diagnostics corrected further; resolver remains incomplete. Original [services/executionService/simulate.ts:1895\u20131909](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/executionService/simulate.ts#L1895) independently emits direct and Permit2 deficits, while `760\u2013766` requires both absent. EVK can succeed with either route, so valid direct-only or Permit2-only approval is falsely rejected. Token\u2192Permit2 allowance was omitted. That omission alone did not establish an original false-positive: the original direct-allowance requirement often still blocked it."
+    },
+    {
+      "id": "E12",
+      "title": "Deposit-all balance overrides",
+      "report": "execution.md",
+      "line": 106,
+      "verdict": "Status: confirmed simulation bug for max-sentinel plans; fixed within built-in sentinel semantics. Original [services/executionService/simulate.ts:1937\u20131947](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/executionService/simulate.ts#L1937) and [utils/stateOverrides/getStateOverrides.ts:67\u201381](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/utils/stateOverrides/getStateOverrides.ts#L67) sum maxUint256 as a literal funding requirement. With ordinary storage-compatible ERC20s this forges a max balance. EVK [src/EVault/modules/Vault.sol:124\u2013130](https://github.com/euler-xyz/euler-vault-kit/blob/bfb325a6e6ca09613d940b46f72ccfe017353933/src/EVault/modules/Vault.sol#L124) interprets `deposit(maxUint256)` by reading the account's balance; `shared/types/Types.sol:68\u201370` rejects values above the uint112 sane bound. A real affordable deposit-all can therefore fail synthetic simulation because the override changed its amount."
+    },
+    {
+      "id": "E13",
+      "title": "State override composition",
+      "report": "execution.md",
+      "line": 112,
+      "verdict": "Status: confirmed loss of code/full state; duplicate-slot claim narrowed to cleanup. Original [utils/stateOverrides/mergeStateOverrides.ts:23\u201341,44\u201350](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/utils/stateOverrides/mergeStateOverrides.ts#L23) copies only address/balance/nonce/stateDiff. Caller-supplied `code` and full `state` disappear even for a single entry. Simulations of injected code/storage consequently use different state than requested. This is a viem/RPC composition bug, not an EVC contract defect; installed viem [installed viem stateOverride.ts:65\u201375](/Users/kanv/Documents/euler/euler-sdks/node_modules/.pnpm/viem@2.48.8_bufferutil@4.1.0_typescript@5.9.3_utf-8-validate@5.0.10_zod@4.3.6/node_modules/viem/utils/stateOverride.ts:65) supports those fields."
+    },
+    {
+      "id": "E14",
+      "title": "noAllowanceOverride inconsistency",
+      "report": "execution.md",
+      "line": 120,
+      "verdict": "Status: confirmed documented-behavior/extra-RPC bug; fix adequate. Original public option comments promise skipping ERC20 allowances while retaining deterministic Permit2 state ([utils/stateOverrides/getStateOverrides.ts:26\u201331](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/utils/stateOverrides/getStateOverrides.ts#L26); [services/executionService/simulate.ts:319\u2013324](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/executionService/simulate.ts#L319)). The general paths instead emit no approval state (`getStateOverrides.ts:158\u2013163`, `simulate.ts:452\u2013463`). The fast path calls the full probing helper then filters away ERC20 output (`simulate.ts:402\u2013429`), so it still incurs the supposedly skipped reads/probes and can fail on them."
+    },
+    {
+      "id": "D01",
+      "title": "Confirmed inherited conversion defect; snapshot fix has an explicit remaining limit",
+      "report": "data.md",
+      "line": 26,
+      "verdict": "Verdict: Confirmed; snapshot fix adequate within its documented scope, with pending-fee parity still conditional."
+    },
+    {
+      "id": "D02",
+      "title": "Confirmed contract-parity defect in liquidation LTV display/calculation",
+      "report": "data.md",
+      "line": 38,
+      "verdict": "Verdict: Confirmed; fixed for canonical contract-derived inputs."
+    },
+    {
+      "id": "D03",
+      "title": "Conditional high-decimal compatibility defect, with a confirmed exception path",
+      "report": "data.md",
+      "line": 50,
+      "verdict": "Verdict: Conditional compatibility defect; the exception is confirmed for UoA decimals above 18."
+    },
+    {
+      "id": "D04",
+      "title": "Confirmed owner-mode loss when only a secondary subaccount is discovered",
+      "report": "data.md",
+      "line": 62,
+      "verdict": "Verdict: Confirmed; fixed when at least one owner-prefix subaccount was fetched successfully."
+    },
+    {
+      "id": "D05",
+      "title": "Confirmed balance loss on degraded API metadata; metadata completeness remains unresolved",
+      "report": "data.md",
+      "line": 74,
+      "verdict": "Verdict: Confirmed; known balances preserved, missing metadata remains unknown."
+    },
+    {
+      "id": "D06",
+      "title": "Confirmed unknown-to-zero conversion prevents configured fallback",
+      "report": "data.md",
+      "line": 86,
+      "verdict": "Verdict: Confirmed; nullable balances now make the snapshot unavailable so configured fallback can run."
+    },
+    {
+      "id": "D07",
+      "title": "Confirmed parseable subgraph-error handling defect",
+      "report": "data.md",
+      "line": 98,
+      "verdict": "Verdict: Confirmed; parseable failure envelopes are rejected."
+    },
+    {
+      "id": "D08",
+      "title": "Conditional truncation at the documented Graph default; narrower trigger than \u201c100 requests\u201d",
+      "report": "data.md",
+      "line": 110,
+      "verdict": "Verdict: Conditional on documented Graph default and more than 100 matching prefix entities; chunking fix adequate."
+    },
+    {
+      "id": "D09",
+      "title": "Invalid-configuration hardening; distinguish the two failure mechanisms",
+      "report": "data.md",
+      "line": 122,
+      "verdict": "Verdict: Hardening for invalid/custom configuration; specific nontermination mechanisms confirmed."
+    },
+    {
+      "id": "D10",
+      "title": "Confirmed dead alias entries; first-party API impact not established",
+      "report": "data.md",
+      "line": 134,
+      "verdict": "Verdict: Hardening for aliases; dead mappings confirmed, first-party API outage not established."
+    },
+    {
+      "id": "D11",
+      "title": "Confirmed internal aggregate-yield inconsistency, not onchain yield accounting",
+      "report": "data.md",
+      "line": 146,
+      "verdict": "Verdict: Confirmed internal display inconsistency; context fix adequate, reward economics not independently validated."
+    },
+    {
+      "id": "D12",
+      "title": "Confirmed stale derived values after repeated population",
+      "report": "data.md",
+      "line": 158,
+      "verdict": "Verdict: Confirmed; stale derived values cleared on refresh."
+    },
+    {
+      "id": "D13",
+      "title": "Confirmed suppressed diagnostics on enrichment fallback",
+      "report": "data.md",
+      "line": 170,
+      "verdict": "Verdict: Confirmed diagnostics defect; fixed, complementary to shared prepend validation."
+    },
+    {
+      "id": "D14",
+      "title": "Confirmed reverse CrossAdapter route rejection; Pyth effect is conditional",
+      "report": "data.md",
+      "line": 182,
+      "verdict": "Verdict: Confirmed route-decoding defect; downstream Pyth-update consequence conditional."
+    },
+    {
+      "id": "D15",
+      "title": "Confirmed mixed-chain public-method defect; normal single-chain calls unaffected",
+      "report": "data.md",
+      "line": 194,
+      "verdict": "Verdict: Confirmed for mixed-chain public-method inputs; partitioning fix adequate."
+    },
+    {
+      "id": "S01",
+      "title": "Morpho virtual shares/assets omitted",
+      "report": "swap-rewards.md",
+      "line": 24,
+      "verdict": "Verdict: confirmed arithmetic mismatch; fixed for stored market totals. Actual migration failure or excess borrowing remains state-dependent."
+    },
+    {
+      "id": "S02",
+      "title": "Aave reserve with a zero stable-debt token",
+      "report": "swap-rewards.md",
+      "line": 36,
+      "verdict": "Verdict: conditional compatibility hardening; a failure in a correctly configured pinned Aave Pool is not established."
+    },
+    {
+      "id": "S03",
+      "title": "Cached migration position not bound to its request",
+      "report": "swap-rewards.md",
+      "line": 48,
+      "verdict": "Verdict: confirmed request-context validation defect; partly defense in depth. The connector-ID part duplicates some existing connector checks; the combined finding is not a duplicate."
+    },
+    {
+      "id": "S04",
+      "title": "Empty swapper configuration skips allowlisting",
+      "report": "swap-rewards.md",
+      "line": 60,
+      "verdict": "Verdict: confirmed conditional unsafe quote/configuration acceptance; practical fund loss is not established."
+    },
+    {
+      "id": "S05",
+      "title": "Zero verifier accepted as trusted",
+      "report": "swap-rewards.md",
+      "line": 76,
+      "verdict": "Verdict: confirmed conditional unsafe quote/configuration acceptance; no fund-loss claim. Separate from S04: one checks the swapper identity, the other checks whether the trusted postcondition target can exist."
+    },
+    {
+      "id": "S06",
+      "title": "CoW validates later plan items after earlier effects",
+      "report": "swap-rewards.md",
+      "line": 90,
+      "verdict": "Verdict: confirmed execution-order defect for locally detectable invalid context; fixed preflight scope."
+    },
+    {
+      "id": "S07",
+      "title": "Direct Merkl rows disagree with the claim planner",
+      "report": "swap-rewards.md",
+      "line": 102,
+      "verdict": "Verdict: confirmed internal default-configuration mismatch; deployment-address correctness not established by this test."
+    },
+    {
+      "id": "S08",
+      "title": "Intrinsic APY pagination truncation",
+      "report": "swap-rewards.md",
+      "line": 114,
+      "verdict": "Verdict: confirmed integration defect under supported pagination overrides; pinned Data V3 response shape is fixed."
+    },
+    {
+      "id": "S09",
+      "title": "Repeated reads of unpaginated reward APYs",
+      "report": "swap-rewards.md",
+      "line": 126,
+      "verdict": "Verdict: confirmed source-to-source pagination mismatch; fixed for the pinned unpaginated endpoint."
+    },
+    {
+      "id": "S10",
+      "title": "Unresolved reward decimals replaced with 18",
+      "report": "swap-rewards.md",
+      "line": 138,
+      "verdict": "Verdict: confirmed public metadata-contract violation; incorrect displayed values for live non-18 tokens are conditional."
+    },
+    {
+      "id": "I01",
+      "title": "An old request can replace newer cached data",
+      "report": "infrastructure.md",
+      "line": 5,
+      "verdict": "Verdict: confirmed SDK cache race. [Original buildQuery.ts:153\u2013186](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/utils/buildQuery.ts#L153) expires a pending entry from its start time. The successful completion always calls `cache.set`, whereas the rejection branch already checks promise ownership."
+    },
+    {
+      "id": "I02",
+      "title": "A configured request queue can stop making progress",
+      "report": "infrastructure.md",
+      "line": 13,
+      "verdict": "Verdict: confirmed utility bugs, with limited built-in reachability. [Original callBundler.ts:75\u2013108](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/utils/callBundler.ts#L75) reschedules a nonempty queue even while every concurrency slot is occupied. With `debounceMs:0`, this repeatedly queues microtasks. A pending network/timer completion cannot free a slot because the microtask queue never empties. Two calls, batch size one and concurrency one are sufficient."
+    },
+    {
+      "id": "I03",
+      "title": "Invalid sizes and an aggregate helper that cannot join chunks",
+      "report": "infrastructure.md",
+      "line": 21,
+      "verdict": "Verdict: mixed; invalid-input hardening plus a confirmed exported-helper limitation. [Original callBundler.ts:33\u201346 and 58\u201365](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/utils/callBundler.ts#L33) accepts finite `maxBatchSize` in `createBundledCall`, but that helper returns only `results[0]`. For input `[a,b]`, size one, and a batch callback returning its input, both chunks run but the public result is only `[a]`. The helper cannot generically combine arbitrary result type V. It is exported, but no production SDK call site uses it."
+    },
+    {
+      "id": "I04",
+      "title": "A successful lens result does not prove preceding updates succeeded",
+      "report": "infrastructure.md",
+      "line": 27,
+      "verdict": "Verdict: confirmed read-enrichment reliability bug; missing-result checks are additional hardening. [Original batchSimulation.ts:119\u2013136](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/plugins/batchSimulation.ts#L119) inspects only the final lens result. In [actual EVC:632\u2013648](https://github.com/euler-xyz/ethereum-vault-connector/blob/838e5f72eaea25fab7d242760245244226096054/src/EthereumVaultConnector.sol#L632), simulation deliberately records each failure and continues to later calls. Ordinary `batch` instead reverts on the first failure at lines600\u2013613."
+    },
+    {
+      "id": "I05",
+      "title": "EVC-only Pyth preparation",
+      "report": "infrastructure.md",
+      "line": 35,
+      "verdict": "Verdict: duplicate of E09, not an additional finding. Pyth previously relied on incomplete health-check discovery. Its call site now passes the configured EVC address, so real EVC collateral/controller mutations are interpreted with their proper destination. See [execution recheck](execution.md) for contract checks, actual EVC regression, and the distinction between a controller address and the account argument. Do not count this again as a separate bug."
+    },
+    {
+      "id": "I06",
+      "title": "Pyth fee cache collapses different argument arrays",
+      "report": "infrastructure.md",
+      "line": 39,
+      "verdict": "Verdict: confirmed cache-key collision; current production fee impact not established. [Original pythPlugin.ts:261\u2013274](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/plugins/pyth/pythPlugin.ts#L261) normalizes `updateData` as a set. `[blob]` and `[blob,blob]` therefore share a cache key even though the RPC receives different arrays."
+    },
+    {
+      "id": "I07",
+      "title": "Keyring preparation hides failures and trusts mismatched credentials",
+      "report": "infrastructure.md",
+      "line": 47,
+      "verdict": "Verdict: confirmed loss of failure information, plus defensive validation of trusted callback output. [Original keyringPlugin.ts:340\u2013359](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/plugins/keyring/keyringPlugin.ts#L340) records a failed gate read as `null`, indistinguishable from \u201cnot gated\u201d. Lines402\u2013417 then skip those prefetched targets. Lines421\u2013467 catch credential-read/callback/encoding failures and return the incomplete plan. Credential insertion at448\u2013465 does not bind returned trader, chain and policy to the requested values."
+    },
+    {
+      "id": "I08",
+      "title": "disableV3 does not disable all built-in V3 requests",
+      "report": "infrastructure.md",
+      "line": 55,
+      "verdict": "Verdict: confirmed documented configuration mismatch. [Original config.ts:13\u201317](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/sdk/config.ts#L13) promises that built-in V3 HTTP adapters are disabled and V3-only services report unavailable. But original buildSDK.ts1147\u20131162,1210\u20131218 and1446\u20131473 still construct the built-in tokenlist, backend-assisted price service and intrinsic APY adapter without that restriction."
+    },
+    {
+      "id": "I09",
+      "title": "Old enrichment survives removal; chain-specific labels can cross chains",
+      "report": "infrastructure.md",
+      "line": 61,
+      "verdict": "Verdict: confirmed SDK enrichment bugs. [Original intrinsicApyService.ts:79\u201388](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/intrinsicApyService/intrinsicApyService.ts#L79) and [eulerLabelsService.ts:506\u2013533](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/eulerLabelsService/eulerLabelsService.ts#L506) only assign when fresh data exists. Reusing an entity after the source removes its APY or labels leaves the old fields attached while marking population complete. A successful empty refresh is distinct from a thrown request; the fix does not erase existing values on an exception."
+    },
+    {
+      "id": "I10",
+      "title": "A zero wallet balance can conceal a failed token read",
+      "report": "infrastructure.md",
+      "line": 67,
+      "verdict": "Verdict: confirmed diagnostics gap; upstream best-effort behavior is intentional. [UtilsLens.sol:177\u2013192](https://github.com/euler-xyz/evk-periphery/blob/816c5943e5fab3a213e907dd5beaf9542305593a/src/Lens/UtilsLens.sol#L177) catches a token's reverting `balanceOf` and returns zero. [Original walletOnchainAdapter.ts:316\u2013383](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/walletService/adapters/walletOnchainAdapter.ts#L316) attaches a warning only if the outer lens query rejects, so this inner token failure looks like a clean zero balance."
+    },
+    {
+      "id": "I11",
+      "title": "Fallback loses an undefined rejection and misses failure telemetry",
+      "report": "infrastructure.md",
+      "line": 73,
+      "verdict": "Verdict: confirmed exported utility edge cases, low direct impact. [Original fallbackAdapter.ts:155\u2013186](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/utils/fallbackAdapter.ts#L155) records the thrown value and decides that a throw happened only if it is not `undefined`. JavaScript permits `throw undefined`/`Promise.reject()`; those return an undefined result without invoking fallback. Normal built-in Error rejections are unaffected."
+    }
+  ]
+}

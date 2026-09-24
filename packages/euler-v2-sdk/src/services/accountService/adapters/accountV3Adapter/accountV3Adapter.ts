@@ -50,9 +50,9 @@ type V3AccountPositionRow = {
 	account: string;
 	vault: string;
 	asset: string;
-	shares: string;
-	assets: string;
-	borrowed: string;
+	shares: string | null;
+	assets: string | null;
+	borrowed: string | null;
 	isController: boolean;
 	isCollateral: boolean;
 	balanceForwarderEnabled: boolean;
@@ -240,19 +240,19 @@ function convertPosition(
 		account,
 		vaultAddress,
 		asset,
-		shares: parseBigIntField(row.shares, {
+		shares: parseBigIntField(row.shares ?? undefined, {
 			path: "$.shares",
 			owner: positionOwner,
 			errors,
 			source: "accountV3",
 		}),
-		assets: parseBigIntField(row.assets, {
+		assets: parseBigIntField(row.assets ?? undefined, {
 			path: "$.assets",
 			owner: positionOwner,
 			errors,
 			source: "accountV3",
 		}),
-		borrowed: parseBigIntField(row.borrowed, {
+		borrowed: parseBigIntField(row.borrowed ?? undefined, {
 			path: "$.borrowed",
 			owner: positionOwner,
 			errors,
@@ -296,7 +296,7 @@ function buildSubAccount(
 	errors: DataIssue[],
 ): ISubAccount & { isLockdownMode: boolean; isPermitDisabledMode: boolean } {
 	const first = rows[0];
-	const meta = first?.subAccount;
+	const meta = rows.find((row) => row.subAccount)?.subAccount;
 
 	if (!first || !meta) {
 		if (first && !meta) {
@@ -326,7 +326,9 @@ function buildSubAccount(
 			lastAccountStatusCheckTimestamp: 0,
 			enabledControllers: [],
 			enabledCollaterals: [],
-			positions: [],
+			positions: rows.map((row, positionIndex) =>
+				convertPosition(row, positionIndex, errors),
+			),
 			isLockdownMode: false,
 			isPermitDisabledMode: false,
 		};
@@ -576,6 +578,19 @@ export class AccountV3Adapter implements IAccountAdapter {
 					this.config.forceFresh,
 				);
 				const pageRows = response.data ?? [];
+				// V3 explicitly uses null for an unknown balance or failed EVK debt
+				// read. Returning a zero here would hide positions and prevent the
+				// fallback adapter from trying the authoritative on-chain source.
+				if (
+					pageRows.some(
+						(row) =>
+							row.shares == null || row.assets == null || row.borrowed == null,
+					)
+				) {
+					throw new Error(
+						"Account positions contain unknown shares, assets, or debt; a complete balance snapshot is unavailable",
+					);
+				}
 				rows.push(...pageRows);
 
 				offset += pageRows.length;

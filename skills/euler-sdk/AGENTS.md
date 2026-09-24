@@ -85,7 +85,7 @@ Execution order:
 4. Send `evcBatch` transaction(s)
 5. Wait for receipts and refresh UI state
 
-Use `mergePlans` to atomically combine user intents and `describeBatch` for previews.
+Use `mergePlans` to compose compatible user intents into one EVC batch and `describeBatch` for previews. It preserves every call, including repeated or opposing collateral/controller transitions, sums required approvals, and clears previous approval resolutions. Combining batches changes transaction/status-check boundaries; resolve approvals again and simulate the combined plan under the intended chain and execution context.
 `planX` methods group their encoded batch items into named operations inside `evcBatch` entries. Raw batch items remain valid batch entries for plugin prepends/appends. `mergePlans` preserves operation groupings and refuses to automatically merge `contractCall` items. `describeBatch` mirrors the input batch-entry shape: operation entries keep their name and contain decoded child items.
 
 ### 2.2 Simulation Gate

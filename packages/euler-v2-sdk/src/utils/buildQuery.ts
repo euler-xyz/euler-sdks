@@ -160,10 +160,14 @@ export function createQueryCacheBuildQuery(
 
 			const promise = fn(...args)
 				.then((value) => {
-					cache.set(cacheKey, {
-						expiresAt: Date.now() + ttlMs,
-						value,
-					});
+					// An expired in-flight request may have been superseded. Its caller
+					// still receives its result, but it must not replace a newer entry.
+					if (cache.get(cacheKey)?.promise === promise) {
+						cache.set(cacheKey, {
+							expiresAt: Date.now() + ttlMs,
+							value,
+						});
+					}
 					return value;
 				})
 				.catch((error) => {

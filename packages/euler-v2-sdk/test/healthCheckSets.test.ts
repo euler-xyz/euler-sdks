@@ -7,6 +7,7 @@ import {
 	zeroAddress,
 } from "viem";
 import { Account, SubAccount } from "../src/entities/Account.js";
+import { ethereumVaultConnectorAbi } from "../src/services/executionService/abis/ethereumVaultConnectorAbi.js";
 import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
 import type {
 	EVCBatchItem,
@@ -239,4 +240,41 @@ test("calculateHealthCheckSets includes the liquidator and complete violator sta
 			],
 		},
 	]);
+});
+
+
+test("EVC-only transitions schedule health checks for their decoded account", () => {
+	const evc = getAddress("0x0000000000000000000000000000000000000011");
+	const subAccount = new SubAccount({
+		chainId: 1, timestamp: 0, account: OWNER, owner: OWNER,
+		lastAccountStatusCheckTimestamp: 0,
+		enabledControllers: [CONTROLLER], enabledCollaterals: [COLLATERAL, OTHER_COLLATERAL],
+		positions: [],
+	} as never);
+	const account = new Account({ chainId: 1, owner: OWNER, populated: { vaults: true }, subAccounts: {} });
+	const operations = [
+		{ functionName: "enableCollateral", args: [OWNER, COLLATERAL] },
+		{ functionName: "disableCollateral", args: [OWNER, OTHER_COLLATERAL] },
+		{ functionName: "reorderCollaterals", args: [OWNER, 0, 1] },
+		{ functionName: "enableController", args: [OWNER, CONTROLLER] },
+		{ functionName: "disableController", args: [OWNER] },
+	] as const;
+	for (const operation of operations) {
+		const item: EVCBatchItem = {
+			targetContract: evc, onBehalfOfAccount: zeroAddress, value: 0n,
+			data: encodeFunctionData({ abi: ethereumVaultConnectorAbi, ...operation }),
+		};
+		const plan: TransactionPlan = [{ type: "evcBatch", items: [item] }];
+		const result = calculateHealthCheckSets(plan, account, [subAccount], evc);
+		assert.equal(result.length, 1, operation.functionName);
+		assert.equal(result[0]?.accounts[0]?.account, OWNER);
+		assert.deepEqual(result[0]?.accounts[0]?.controllers, [CONTROLLER]);
+		assert.deepEqual(result[0]?.accounts[0]?.collaterals,
+			operation.functionName === "disableCollateral" ? [COLLATERAL] : [COLLATERAL, OTHER_COLLATERAL]);
+		// Identical calldata sent to an unrelated contract cannot change the
+		// inferred EVC controller/collateral state.
+		assert.deepEqual(calculateHealthCheckSets([
+			{ type: "evcBatch", items: [{ ...item, targetContract: ASSET }] },
+		], account, [subAccount], evc), []);
+	}
 });

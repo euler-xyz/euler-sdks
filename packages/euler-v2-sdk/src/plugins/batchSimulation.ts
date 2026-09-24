@@ -120,11 +120,15 @@ export async function executeBatchSimulation<T>(
 		const batchResults = (
 			decoded as readonly unknown[]
 		)[0] as BatchItemResult[];
-		if (!batchResults || batchResults.length === 0) return undefined;
+		if (
+			!batchResults ||
+			batchResults.length !== batchItems.length ||
+			batchResults.some((result) => !result.success)
+		)
+			return undefined;
 
 		// The lens call is the last item in the batch
 		const lensResult = batchResults[batchResults.length - 1]!;
-		if (!lensResult.success) return undefined;
 
 		// Decode the lens result using the lens ABI
 		const lensDecoded = decodeFunctionResult({

@@ -1,0 +1,20 @@
+{
+  "checkedAt": "2026-09-23",
+  "repository": "https://github.com/pyth-network/pyth-crosschain",
+  "commit": "2e6b859a331158b75468a2290e077da6f4b23175",
+  "files": [
+    {
+      "repositoryPath": "target_chains/ethereum/contracts/contracts/pyth/Pyth.sol",
+      "sha256": "a63794e3455e3e9025f0c1a6f683f87fb2f55915b0eac2c192eaa5df444775cb"
+    },
+    {
+      "repositoryPath": "target_chains/ethereum/contracts/contracts/pyth/PythGetters.sol",
+      "sha256": "ecbd99f8d2c23d5cd32d96b49a49045248d7a70a8c429a302e43dcd5e33ff2ec"
+    }
+  ],
+  "feeDocumentation": {
+    "url": "https://docs.pyth.network/price-feeds/core/current-fees",
+    "retrieved": "2026-09-23",
+    "relevance": "Documents zero current Core mainnet fees; prevents claiming current nonzero-fee impact from source mechanics alone."
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "sdk": "3.3.0",
+  "lite": "e1e39e7d6e8cb36d5ec84aa592965c5ad35fcfb1",
+  "E01": {
+    "originalCalls": 2,
+    "mergedCalls": 0,
+    "liteCompiler": "rejected omitted intent effect",
+    "actualTwoBorrowPlannerCompiler": "rejected repeated controller effect"
+  },
+  "E06": {
+    "lowercaseUrlPreserved": true,
+    "lowercaseApprovalCount": 2,
+    "checksummedApprovalCount": 0
+  },
+  "E11": {
+    "required": 100,
+    "direct": 100,
+    "tokenToPermit2": 95,
+    "permit2ToEarn": 1000,
+    "unexpired": true,
+    "resolverApprovalCount": 0
+  }
+}

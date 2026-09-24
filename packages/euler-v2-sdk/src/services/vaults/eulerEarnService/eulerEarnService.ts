@@ -256,6 +256,21 @@ export class EulerEarnService implements IEulerEarnService {
 		eVaultFetchOptions?: EVaultFetchOptions,
 	): Promise<DataIssue[]> {
 		if (!this.vaultMetaService || eulerEarns.length === 0) return [];
+		const byChain = new Map<number, EulerEarn[]>();
+		for (const vault of eulerEarns) {
+			const group = byChain.get(vault.chainId) ?? [];
+			group.push(vault);
+			byChain.set(vault.chainId, group);
+		}
+		if (byChain.size > 1) {
+			return (
+				await Promise.all(
+					[...byChain.values()].map((group) =>
+						this.populateStrategyVaults(group, eVaultFetchOptions),
+					),
+				)
+			).flat();
+		}
 		const errors: DataIssue[] = [];
 
 		const occurrencesByAddress = new Map<

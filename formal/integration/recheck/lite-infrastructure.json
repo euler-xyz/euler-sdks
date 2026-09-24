@@ -1,0 +1,137 @@
+{
+  "liteCommit": "e1e39e7d6e8cb36d5ec84aa592965c5ad35fcfb1",
+  "sdkVersion": "3.3.0",
+  "entries": [
+    {
+      "id": "I01",
+      "classification": "conditional-server",
+      "surface": "Server cache, browser bypasses it",
+      "explanation": "Lite browser passes sdkBuildQuery/sdkFreshBuildQuery backed by TanStack, so the SDK default cache race does not describe the browser cache. The server builds a shared per-chain SDK without a custom wrapper. Concurrent labels/public-metadata and vault snapshot work can share underlying queries; an old read lasting longer than the default five-second TTL can be overtaken and overwrite a newer result. Same-route in-flight dedup reduces opportunities.",
+      "validation": "Controlled default SDK-cache reproduction passes; full concurrent server-route reproduction not performed.",
+      "evidence": [
+        "utils/sdk-query-cache.ts:49",
+        "composables/useEulerSdk.ts:315",
+        "server/utils/sdk-server.ts:119",
+        "server/utils/labels-view.ts:136",
+        "server/utils/vaults-cache.ts:224"
+      ]
+    },
+    {
+      "id": "I02",
+      "classification": "not-normal",
+      "surface": "No triggering Lite batching configuration",
+      "explanation": "Lite does not import the exported call bundlers or configure their zero-delay/concurrency/synchronous-callback trigger. Built-in SDK callbacks retain their ordinary defaults.",
+      "validation": "Source tracing; no Lite reproduction.",
+      "evidence": [
+        "composables/useEulerSdk.ts:180",
+        "server/utils/sdk-server.ts:105"
+      ]
+    },
+    {
+      "id": "I03",
+      "classification": "not-normal",
+      "surface": "No invalid sizes or aggregate helper usage",
+      "explanation": "The exported aggregate helper is not used by Lite. Its rEUL lock call supplies chain/account/contract and leaves batchSize at the safe default.",
+      "validation": "Source tracing; no Lite reproduction.",
+      "evidence": [
+        "composables/useREULLocks.ts:57"
+      ]
+    },
+    {
+      "id": "I04",
+      "classification": "reachable",
+      "surface": "Pyth-enriched account and vault reads",
+      "explanation": "Lite installs Pyth on its fresh/onchain SDK and uses that instance for portfolio reads. If an update call fails but the lens read succeeds, published3.3.0 accepts the final result. The oracle adapter price panel also independently slices off update results without checking them; an SDK helper fix alone does not repair that separate Lite logic. Existing prices may still be valid.",
+      "validation": "Published helper reproduced with ABI-encoded failed-update/successful-read output; no live failing oracle or browser session.",
+      "evidence": [
+        "composables/useEulerSdk.ts:324",
+        "composables/useEulerAccount.ts:149",
+        "composables/useOracleAdapterPrices.ts:278"
+      ]
+    },
+    {
+      "id": "I05",
+      "classification": "duplicate",
+      "surface": "Same issue as E09",
+      "explanation": "Use E09 classification and call-chain evidence in lite-execution.md.",
+      "validation": "Duplicate, not another finding.",
+      "evidence": [
+        "composables/useEulerSdk.ts:324"
+      ]
+    },
+    {
+      "id": "I06",
+      "classification": "conditional-upstream",
+      "surface": "Pyth fee cache key is used, live failure unestablished",
+      "explanation": "Lite uses PythPluginAdapter and preserves its custom cache-key function through the TanStack wrapper. Differing duplicate multiplicities can collide. Normal feed IDs are deduplicated, and no ordinary Hermes response with the needed blob pattern or nonzero fee deployment was established.",
+      "validation": "Published cache collision reproduced with synthetic inputs. This does not establish a production fee failure.",
+      "evidence": [
+        "utils/pyth.ts:22",
+        "utils/pyth.ts:382",
+        "utils/sdk-query-cache.ts:52",
+        "utils/sdk-query-policy.ts:172"
+      ]
+    },
+    {
+      "id": "I07",
+      "classification": "reachable",
+      "surface": "Keyring gated transaction preparation",
+      "explanation": "Lite installs the Keyring plugin with hook targets and a credential callback. A failed gate/config/credential read can be silently skipped; the later transaction preview can fail for missing credentials. Lite caches credentials by chain/account/hook/policy and checks expiration and current Keyring address, narrowing the wrong-identity callback case. Onchain access control remains intact.",
+      "validation": "Source-reachable failure path; no live gated-vault failure induced.",
+      "evidence": [
+        "composables/useEulerSdk.ts:325",
+        "utils/sdk-keyring.ts:20",
+        "utils/sdk-keyring.ts:59",
+        "features/reviewed-execution/planning/plugin-data.ts:28"
+      ]
+    },
+    {
+      "id": "I08",
+      "classification": "conditional-config",
+      "surface": "Fallback deployment without configured V3",
+      "explanation": "Lite explicitly sets disableV3 when fallback is selected and V3 is absent; the SDK retains built-in V3 dependencies. Lite additionally installs its own intrinsic-APY service explicitly using V3. Consequently a fix to disabled SDK defaults alone cannot promise that Lite becomes wholly RPC-only.",
+      "validation": "Source trace for supported deployment mode; active production environment not inspected.",
+      "evidence": [
+        "composables/useEulerSdk.ts:236",
+        "composables/useEulerSdk.ts:305",
+        "server/utils/sdk-server.ts:115"
+      ]
+    },
+    {
+      "id": "I09",
+      "classification": "not-normal",
+      "surface": "Entity reuse and mixed-chain trigger not demonstrated",
+      "explanation": "Ordinary vault refresh creates new entities; snapshot enrichment runs on newly hydrated entities and requests are chain-specific. No normal Lite flow was found that refreshes SDK labels/APY on the same old populated object after removal, or passes mixed-chain labels to populateLabels. Lite also has its own only-set-if-present APY wrapper, so merely fixing the SDK method would not fix a hypothetical reuse through that wrapper.",
+      "validation": "Affected SDK methods and analogous Lite wrapper exist; user-visible trigger not established.",
+      "evidence": [
+        "utils/yuzu-intrinsic-apy.ts:118",
+        "composables/useVaults.ts:659",
+        "composables/useVaults.ts:682",
+        "utils/euler-labels-fetch.ts:4"
+      ]
+    },
+    {
+      "id": "I10",
+      "classification": "reachable",
+      "surface": "Wallet token balances and input limits",
+      "explanation": "Lite uses walletService.fetchWallet for token balances and copies the returned balances into its wallet map. If the token balanceOf reverts but UtilsLens supplies zero, no outer error reaches Lite diagnostics; balance can look zero and limit supply/swap input. Requires a token read that actually fails.",
+      "validation": "Source call-chain confirmed; no live failing token selected.",
+      "evidence": [
+        "composables/useWallets.ts:163",
+        "composables/useWallets.ts:176",
+        "composables/useWallets.ts:182"
+      ]
+    },
+    {
+      "id": "I11",
+      "classification": "not-normal",
+      "surface": "No custom undefined-throw adapter or callback",
+      "explanation": "Lite configures standard adapters and does not register onFallback. The demonstrated undefined-rejection custom-adapter case and missing notification have no normal Lite-specific trigger/consumer. Ordinary dual-source failures still propagate.",
+      "validation": "Source tracing; no Lite reproduction.",
+      "evidence": [
+        "composables/useEulerSdk.ts:315",
+        "server/utils/sdk-server.ts:122"
+      ]
+    }
+  ]
+}

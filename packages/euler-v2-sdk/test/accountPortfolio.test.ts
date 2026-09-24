@@ -1047,6 +1047,8 @@ test("portfolio borrow breakdown picks up BORROW_COLLATERAL rewards on collatera
 	assert.equal(borrowPosition.apyBreakdown?.rewards, 2);
 	// ROE denominator is equity (200-100=100). Rewards contribution = 100*4% / 100 = 4.
 	assert.equal(borrowPosition.roeBreakdown?.rewards, 4);
+	assert.deepEqual(portfolio.apyBreakdown, borrowPosition.apyBreakdown);
+	assert.deepEqual(portfolio.roeBreakdown, borrowPosition.roeBreakdown);
 });
 
 test("portfolio borrow breakdown picks up LOOPING rewards on multiplier match", () => {
@@ -1125,6 +1127,8 @@ test("portfolio borrow breakdown picks up LOOPING rewards on multiplier match", 
 	assert.equal(borrowPosition.apyBreakdown?.rewards, 2.5);
 	// ROE denominator is equity (100). Rewards = 500 / 100 = 5.
 	assert.equal(borrowPosition.roeBreakdown?.rewards, 5);
+	assert.deepEqual(portfolio.apyBreakdown, borrowPosition.apyBreakdown);
+	assert.deepEqual(portfolio.roeBreakdown, borrowPosition.roeBreakdown);
 });
 
 test("subAccount ROE picks up BORROW_COLLATERAL rewards", () => {

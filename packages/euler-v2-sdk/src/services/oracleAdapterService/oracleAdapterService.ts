@@ -161,6 +161,11 @@ const DEFAULT_ENDPOINT = "https://v3.euler.finance";
 const DEFAULT_CACHE_MS = 5 * 60 * 1000;
 const DEFAULT_PAGE_SIZE = 100;
 
+const configuredPageSize = (value: number | undefined): number =>
+	typeof value === "number" && Number.isFinite(value) && value >= 1
+		? Math.min(100, Math.floor(value))
+		: DEFAULT_PAGE_SIZE;
+
 type CacheValue<T> = { expiresAt: number; value: T };
 
 const normalizeEndpoint = (endpoint: string): string =>
@@ -373,10 +378,7 @@ export class OracleAdapterService implements IOracleAdapterService {
 		if (cached && cached.expiresAt > Date.now()) return cached.value;
 
 		const assessments: OracleAdapterAssessment[] = [];
-		const pageSize = Math.max(
-			1,
-			Math.min(100, this.config.pageSize ?? DEFAULT_PAGE_SIZE),
-		);
+		const pageSize = configuredPageSize(this.config.pageSize);
 		let offset = 0;
 		for (;;) {
 			const page = await this.queryV3OracleAdapterAssessmentsPage(
@@ -434,10 +436,7 @@ export class OracleAdapterService implements IOracleAdapterService {
 		if (cached && cached.expiresAt > Date.now()) return cached.value;
 
 		const routers: OracleRouter[] = [];
-		const pageSize = Math.max(
-			1,
-			Math.min(100, this.config.pageSize ?? DEFAULT_PAGE_SIZE),
-		);
+		const pageSize = configuredPageSize(this.config.pageSize);
 		let offset = 0;
 		for (;;) {
 			const page = await this.queryV3OracleRoutersPage(
@@ -658,7 +657,9 @@ export class OracleAdapterService implements IOracleAdapterService {
 			throw new Error("Invalid oracle router response: invalid identity");
 		}
 		if (typeof raw.deployedAt !== "string") {
-			throw new Error("Invalid oracle router response: invalid deployedAt value");
+			throw new Error(
+				"Invalid oracle router response: invalid deployedAt value",
+			);
 		}
 		if (!Array.isArray(raw.configs)) {
 			throw new Error("Invalid oracle router response: invalid configs value");
@@ -690,14 +691,18 @@ export class OracleAdapterService implements IOracleAdapterService {
 		const asset1 = normalizeAddress(raw.asset1);
 		const oracle = normalizeAddress(raw.oracle);
 		if (!asset0 || !asset1 || !oracle) {
-			throw new Error("Invalid oracle router config response: invalid identity");
+			throw new Error(
+				"Invalid oracle router config response: invalid identity",
+			);
 		}
 		if (
 			typeof raw.blockNumber !== "string" ||
 			typeof raw.timestamp !== "string" ||
 			typeof raw.txHash !== "string"
 		) {
-			throw new Error("Invalid oracle router config response: invalid metadata");
+			throw new Error(
+				"Invalid oracle router config response: invalid metadata",
+			);
 		}
 		return {
 			asset0,

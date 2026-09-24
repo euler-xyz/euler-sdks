@@ -113,6 +113,14 @@ Runnable examples are in [`./examples`](./examples), including end-to-end execut
 
 Comparison, parity-check, and other test-oriented scripts and reports live under [`./test/parity`](./test/parity).
 
+## Local Verification
+
+The repository's [formal verification suite](../../formal/README.md) checks batch
+composition, EVault share arithmetic, and materialized execution using Lean,
+TLA+ and tests against the SDK implementation. Run `pnpm verify:formal` from the
+repository root after setting up the documented local tools. The focused SDK
+correspondence tests can run independently with `pnpm verify:formal:tests`.
+
 ## Release Process
 
 This package is published through the repo-local [`RELEASE.md`](./RELEASE.md) playbook and the local `$publish` skill.

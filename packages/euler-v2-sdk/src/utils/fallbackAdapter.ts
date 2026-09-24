@@ -102,7 +102,8 @@ export function createFallbackAdapter<
 				? { trigger: "custom-shouldFallback" }
 				: undefined;
 		}
-		if (primaryResult.result === undefined) return { trigger: "result-undefined" };
+		if (primaryResult.result === undefined)
+			return { trigger: "result-undefined" };
 		if (Array.isArray(primaryResult.result)) {
 			const missingIndices: number[] = [];
 			for (let i = 0; i < primaryResult.result.length; i += 1) {
@@ -154,6 +155,7 @@ export function createFallbackAdapter<
 
 				let primaryResult: ServiceResult<unknown> | undefined;
 				let primaryThrow: unknown;
+				let primaryThrew = false;
 
 				if (!circuitOpen) {
 					try {
@@ -168,6 +170,7 @@ export function createFallbackAdapter<
 						primaryResult = out;
 					} catch (err) {
 						primaryThrow = err;
+						primaryThrew = true;
 					}
 				}
 
@@ -179,7 +182,7 @@ export function createFallbackAdapter<
 				}
 
 				const needsFallback =
-					circuitOpen || primaryThrow !== undefined || resultTrigger !== undefined;
+					circuitOpen || primaryThrew || resultTrigger !== undefined;
 
 				if (!needsFallback) {
 					consecutiveFailures = 0;
@@ -197,27 +200,30 @@ export function createFallbackAdapter<
 				const secondaryFn = Reflect.get(secondary, prop) as (
 					...a: unknown[]
 				) => unknown;
-				const secondaryOut = await secondaryFn.apply(secondary, args);
-
-				if (options.onFallback) {
-					const trigger: FallbackTrigger = circuitOpen
-						? "circuit-open"
-						: primaryThrow !== undefined
-							? "primary-threw"
-							: (resultTrigger?.trigger ?? "result-undefined");
-					try {
-						options.onFallback({
-							method: prop as TKey,
-							args,
-							primaryName: names.primary,
-							secondaryName: names.secondary,
-							trigger,
-							primaryError: primaryThrow,
-							primaryIssues: primaryResult?.errors,
-							missingIndices: resultTrigger?.missingIndices,
-						});
-					} catch {
-						// swallow — telemetry must never break the data flow.
+				let secondaryOut: unknown;
+				try {
+					secondaryOut = await secondaryFn.apply(secondary, args);
+				} finally {
+					if (options.onFallback) {
+						const trigger: FallbackTrigger = circuitOpen
+							? "circuit-open"
+							: primaryThrew
+								? "primary-threw"
+								: (resultTrigger?.trigger ?? "result-undefined");
+						try {
+							options.onFallback({
+								method: prop as TKey,
+								args,
+								primaryName: names.primary,
+								secondaryName: names.secondary,
+								trigger,
+								primaryError: primaryThrow,
+								primaryIssues: primaryResult?.errors,
+								missingIndices: resultTrigger?.missingIndices,
+							});
+						} catch {
+							// swallow — telemetry must never break the data flow.
+						}
 					}
 				}
 

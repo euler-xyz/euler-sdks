@@ -130,6 +130,7 @@ const makeLiquidationSdk = (
 		errors: Array<{ message: string; severity: "info" | "warning" | "error" }>;
 	}>,
 ) => ({
+	deploymentService: { getDeployment: () => ({ addresses: { coreAddrs: { evc: EVC } } }) },
 	accountService: {
 		fetchAccount: async () => ({
 			result: new Account({
@@ -665,7 +666,8 @@ test("Pyth plugin uses final batch controller and collateral state for health ch
 			readContract: async () => 11n,
 		} as unknown as PublicClient;
 		const sdk = {
-			accountService: {
+			deploymentService: { getDeployment: () => ({ addresses: { coreAddrs: { evc: EVC } } }) },
+	accountService: {
 				fetchAccount: async () => {
 					fetchedAccount = true;
 					return {
@@ -791,7 +793,8 @@ test("Pyth plugin caches empty prefetch results as a no-op", async () => {
 		},
 	} as unknown as PublicClient;
 	const sdk = {
-		accountService: {
+		deploymentService: { getDeployment: () => ({ addresses: { coreAddrs: { evc: EVC } } }) },
+	accountService: {
 			fetchAccount: async () => {
 				fetchedAccount = true;
 				return {
@@ -1019,4 +1022,21 @@ test("Pyth plugin skips update batches above the configured fee cap", async () =
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
+});
+
+test("Pyth enrichment schedules oracle updates for an EVC-only controller enable", async () => {
+ const requested = new Set<string>();
+ const plugin = createPythPlugin({ fetchFn: (async (input: RequestInfo | URL) => {
+  const ids = getRequestedIds(input.toString());
+  ids.forEach((id) => requested.add(id));
+  return Response.json({ binary: { data: ["feedface"] }, parsed: ids.map((id) => ({ id, price: { publish_time: 1_900_000_000 } })) });
+ }) as typeof fetch });
+ const subAccount = makeViolatorSubAccount();
+ const account = new Account({ chainId: 1, owner: VIOLATOR, populated: { vaults: true }, subAccounts: { [VIOLATOR]: subAccount } });
+ const sdk = makeLiquidationSdk(async () => ({ result: subAccount, errors: [] }));
+ const plan: TransactionPlan = [{ type: "evcBatch", items: [{ targetContract: EVC, onBehalfOfAccount: VIOLATOR, value: 0n, data: encodeFunctionData({ abi: ethereumVaultConnectorAbi, functionName: "enableController", args: [VIOLATOR, CONTROLLER] }) }] }];
+ const processed = await plugin.processPlan!(plan, account, 1, sdk as never);
+ assert.deepEqual(requested, new Set([DEBT_FEED, GOOD_FEED, OTHER_FEED]));
+ assert.equal(processed[0]?.type, "evcBatch");
+ if (processed[0]?.type === "evcBatch") assert.equal(flattenBatchEntries(processed[0].items)[0]?.targetContract, PYTH);
 });

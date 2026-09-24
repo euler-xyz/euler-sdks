@@ -67,6 +67,8 @@ Common plan functions include:
 - `planCleanup`
 - `planOpenPositionWithCoW`, `planClosePositionWithCow`, `planSwapCollateralWithCoW`, `planCancelClosePositionWithCow`
 
+`planRedeem({ shares })` always redeems the supplied share quantity. For EulerEarn, `planRedeem({ assets })` encodes `withdraw` so the requested asset amount accounts for accrued performance fees on-chain. Other vaults derive shares from the populated snapshot; use `planWithdraw` when execution must enforce an exact asset amount.
+
 Repay planners accept `cleanupOnMax`. When set on a full repay, the planner appends cleanup calls that disable active collaterals on the repaid sub-account and transfer those collateral shares back to the owner. The share transfer applies only to EVK collateral vaults; non-EVK collaterals (e.g. Securitize RWA vaults) are still disabled but not swept, since they don't implement the `transferFromMax` used by the sweep. Source-deposit repay and swap repay also transfer any remaining source-vault shares to the owner. For same-asset different-vault repay, pre-existing liability-vault deposits are preserved.
 
 Borrow and leverage planners (`planBorrow`, `planSwapAndBorrowFromWallet`, `planMultiplyWithSwap`, `planMultiplySameAsset`) automatically prepend cleanup calls that disable stale enabled collaterals/controllers on the target sub-account before the borrow batch, so a fresh borrow doesn't inherit leftover EVC state. Pass `skipCleanup: true` to opt out when the caller manages EVC state explicitly. `planCleanup` builds that cleanup batch on its own, and the `encodeEnable*`/`encodeDisable*` encoders expose the individual collateral/controller state transitions.
@@ -100,6 +102,8 @@ const result = await sdk.executionService.executeTransactionPlan({
 ```
 
 The `account` argument is `AddressOrAccount` (`Address | Account`) for `executeTransactionPlan`, `simulateTransactionPlan`, and `estimateGasForTransactionPlan`. Passing an already-fetched `Account` lets plugins reuse account state; passing an address lets plugins fetch the minimal data they need.
+
+Populated `Account` and `Wallet` objects must belong to the requested chain, and approval owners must match the wallet used to resolve them. Invalid direct-call chains, orphaned Permit2 requirements and duplicate pending Permit2 allowance keys are rejected before wallet callbacks. Combine repeated approval requirements before resolving them. Materialized execution additionally requires each Permit2 owner/token/spender key to occur only once across its request vector; use separate materializations for successive permits on the same allowance.
 
 The bundled executor:
 
@@ -284,7 +288,9 @@ Reward claim planning is intentionally kept out of `executionService`. Provider-
 
 ## `mergePlans` and `describeBatch`
 
-- `mergePlans(plans)`: merges multiple plans into one plan. Required approvals for the same `(token, owner, spender)` are summed, executable items keep their order, adjacent EVC batches are concatenated, and operation groupings are preserved. Redundant EVC state transitions across the merged batches are collapsed — e.g. a `disableCollateral` from a cleanup plan followed by a matching `enableCollateral` in a borrow plan cancel out — so merging a `planCleanup` plan with a borrow plan produces a minimal batch. `contractCall` items are not merged automatically; merge those flows manually.
+- `mergePlans(plans)`: composes compatible plans into one EVC batch. Required approvals for the same `(token, owner, spender)` are summed and their previous resolutions are cleared. Every call remains in its original order with its target, account, value, and calldata unchanged; named operations and wallet-token metadata are preserved. Collateral/controller transitions are never cancelled or deduplicated, including repeated calls. Input plans are not mutated; output batch and operation arrays are new, while raw call objects are shared. `contractCall` and CoW items are rejected; compose those execution flows manually.
+
+  This operation deliberately combines the original EVC transaction boundaries, so status checks run at the merged batch boundary. It does **not** guarantee equivalence to executing the input plans as separate transactions. Use a compatible chain and execution context, resolve approvals again, and simulate the combined plan. For example, `enableCollateral → disableCollateral` must retain both calls: removing them leaves initially enabled collateral enabled, changes intermediate observations, and can change authorization or status-check behavior. Even calls with the same selector can target unrelated contracts; calldata alone does not justify removing them.
 - `describeBatch(batch, extraAbis?)`: decodes batch item calldata into human-readable function names and arguments. If the input batch contains operation entries, the returned description preserves the same operation grouping and operation names while decoding child items.
 
 `describeBatch` is a decoder/inspector only; it does not execute anything.

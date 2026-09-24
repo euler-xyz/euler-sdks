@@ -5,7 +5,13 @@
     "prepare": "husky packages/euler-v2-sdk/.husky",
     "build": "pnpm --filter './packages/**' run build",
     "typecheck": "pnpm --filter './packages/**' run typecheck",
-    "clean": "pnpm --filter './packages/**' run clean"
+    "clean": "pnpm --filter './packages/**' run clean",
+    "verify:formal": "node formal/check.mjs",
+    "verify:lean": "node formal/lean/check.mjs",
+    "verify:tla": "node formal/tla/check.mjs",
+    "verify:formal:tests": "pnpm -C packages/euler-v2-sdk exec vitest run test/batchComposition.test.ts test/evaultArithmeticFormal.test.ts test/materializationIntegrity.test.ts test/materializedExecutionModel.test.ts test/materializedExecution.test.ts",
+    "setup:tlc": "node formal/setup-tlc.mjs",
+    "verify:integration": "node formal/integration/check-coverage.mjs && pnpm -C packages/euler-v2-sdk exec vitest run test/dataIntegrationParity.test.ts test/integrationInfraRegression.test.ts test/pluginIntegrationRegression.test.ts test/swapMigrationIntegration.test.ts test/rewardsApyIntegration.test.ts test/execute.test.ts test/executionService.test.ts test/simulate.test.ts test/healthCheckSets.test.ts test/pythPlugin.test.ts test/keyringPlugin.test.ts test/sdkConfig.test.ts test/oracleOnchainParity.test.ts test/accountPortfolio.test.ts test/stateOverrideComposition.test.ts test/materializedExecution.test.ts test/approvalOverrides.test.ts test/balanceOverrides.test.ts test/readPathServices.test.ts"
   },
   "devDependencies": {
     "husky": "^9.1.7"

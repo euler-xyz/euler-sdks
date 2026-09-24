@@ -1,0 +1,495 @@
+{
+  "base": "ff224741c251cae7673c5f835dcf3bbccd9d6605",
+  "scope": "Prior review entries; predicted production consequences under stated conditions; not deployment incidents.",
+  "coveredOriginalEntries": 50,
+  "rankedGroups": 48,
+  "counts": {
+    "P1": 4,
+    "P2": 34,
+    "P3": 10
+  },
+  "rankings": [
+    {
+      "rank": 1,
+      "priority": "P1",
+      "ids": [
+        "D06"
+      ],
+      "title": "Unknown debt becomes zero",
+      "productionConsequence": "When a balance/debt read is unavailable, the SDK can present zero and skip its backup source. A user or bot can underestimate debt and risk. The actual debt remains onchain.",
+      "localState": "Local fix"
+    },
+    {
+      "rank": 2,
+      "priority": "P1",
+      "ids": [
+        "D05"
+      ],
+      "title": "Known positions disappear",
+      "productionConsequence": "An API response contains balances but lacks optional account metadata. The SDK drops the positions, so the app can hide real deposits and debt.",
+      "localState": "Local fix; missing metadata remains unknown"
+    },
+    {
+      "rank": 3,
+      "priority": "P1",
+      "ids": [
+        "E01"
+      ],
+      "title": "Merging plans changes the requested action",
+      "productionConsequence": "The SDK removes calls it thinks cancel out. Depending on starting state, collateral can remain enabled when the user requested disabling it, or necessary intermediate behavior disappears.",
+      "localState": "Local fix"
+    },
+    {
+      "rank": 4,
+      "priority": "P1",
+      "ids": [
+        "E08",
+        "D01"
+      ],
+      "title": "Earn withdraws the wrong quantity",
+      "productionConsequence": "An asset-target request is encoded using the same number of shares. With accrued yield, it can redeem too many shares and return more assets than requested, or fail for insufficient shares.",
+      "localState": "Execution fixed locally; fee-aware snapshot estimates remain incomplete"
+    },
+    {
+      "rank": 5,
+      "priority": "P2",
+      "ids": [
+        "D07"
+      ],
+      "title": "An account-data outage looks like an empty account",
+      "productionConsequence": "A parseable HTTP/GraphQL failure is treated as no results. The app can show no positions rather than show a read failure. Socket errors and invalid JSON already threw.",
+      "localState": "Local fix"
+    },
+    {
+      "rank": 6,
+      "priority": "P2",
+      "ids": [
+        "E11"
+      ],
+      "title": "Approval logic disagrees with the token spender",
+      "productionConsequence": "Valid EVK approval paths can be rejected. Earn may choose Permit2 even with sufficient direct approval, then fail because token-to-Permit2 approval is too small.",
+      "localState": "PARTIAL: diagnostics fixed; resolver can still skip a needed approval"
+    },
+    {
+      "rank": 7,
+      "priority": "P2",
+      "ids": [
+        "I01"
+      ],
+      "title": "Older data replaces newer data",
+      "productionConsequence": "A slow request finishes after its replacement and overwrites the fresh cache entry. Subsequent screens or plans can use older balances, prices or configuration until refresh.",
+      "localState": "Local fix"
+    },
+    {
+      "rank": 8,
+      "priority": "P2",
+      "ids": [
+        "E02"
+      ],
+      "title": "Simulation says a multi-transaction plan works when it does not",
+      "productionConsequence": "Simulation combines separate transactions into one. A real transaction can fail its own health check even though the combined simulation passes. Earlier separate approvals may already have happened.",
+      "localState": "Local fix rejects unsupported multi-batch simulation"
+    },
+    {
+      "rank": 9,
+      "priority": "P2",
+      "ids": [
+        "E06"
+      ],
+      "title": "Address capitalization breaks a valid operation",
+      "productionConsequence": "The same address written with different casing is treated as different. Borrow/repay can take the wrong path, attempt to disable a controller with debt, or request an unnecessary approval.",
+      "localState": "Local fix"
+    },
+    {
+      "rank": 10,
+      "priority": "P2",
+      "ids": [
+        "E12"
+      ],
+      "title": "Deposit-all is falsely rejected by simulation",
+      "productionConsequence": "Simulation replaces the real wallet balance with an enormous amount, then deposit-all tries to use it and hits the vault limit. A valid deposit can appear impossible.",
+      "localState": "Local fix"
+    },
+    {
+      "rank": 11,
+      "priority": "P2",
+      "ids": [
+        "S09"
+      ],
+      "title": "Reward reads never finish",
+      "productionConsequence": "If the unpaginated endpoint returns at least 100 rows, the SDK keeps asking for another page and receives the same rows. Loading can hang and requests repeat until an error or interruption.",
+      "localState": "Local fix; current live row threshold was not measured"
+    },
+    {
+      "rank": 12,
+      "priority": "P2",
+      "ids": [
+        "E07"
+      ],
+      "title": "Mint approval is too small",
+      "productionConsequence": "The required asset amount is rounded down or loses precision in the supplied exchange rate. A finite-approval mint can revert even when the wallet has enough tokens.",
+      "localState": "PARTIAL: final rounding fixed; rate precision/default-rate problem remains"
+    },
+    {
+      "rank": 13,
+      "priority": "P2",
+      "ids": [
+        "S06"
+      ],
+      "title": "CoW cancellation happens before a later error is caught",
+      "productionConsequence": "A plan starts with a valid cancellation and contains a later account/chain mismatch. The cancellation can be submitted before the SDK reports failure; a later error cannot undo it.",
+      "localState": "Local preflight fix"
+    },
+    {
+      "rank": 14,
+      "priority": "P2",
+      "ids": [
+        "E03"
+      ],
+      "title": "Approvals/signatures happen before an invalid plan is rejected",
+      "productionConsequence": "A manually assembled plan has no place to use a permit or contains a later wrong-chain call. Users may approve tokens or sign unnecessarily, then see the workflow fail. Separate mined approvals persist.",
+      "localState": "Local preflight fix"
+    },
+    {
+      "rank": 15,
+      "priority": "P2",
+      "ids": [
+        "E09",
+        "I05"
+      ],
+      "title": "Required oracle updates or account reads are missed",
+      "productionConsequence": "An EVC-only collateral/controller change still triggers a health check, but the SDK misses that dependency. Affected plans can omit price updates or show incomplete simulated state; onchain checks still run.",
+      "localState": "Local fix within the static call model"
+    },
+    {
+      "rank": 16,
+      "priority": "P2",
+      "ids": [
+        "S05"
+      ],
+      "title": "A zero verifier removes the promised swap check",
+      "productionConsequence": "Only if both configuration and quote accept a zero verifier: the low-level call performs no minimum-output/debt/deadline verification. Other calls/checks still apply; no deployed loss was established.",
+      "localState": "Local guard; elevate to a release blocker if this configuration exists"
+    },
+    {
+      "rank": 17,
+      "priority": "P2",
+      "ids": [
+        "I04"
+      ],
+      "title": "A failed price update is hidden by a successful read",
+      "productionConsequence": "The update fails, but EVC simulation continues and the final lens read succeeds. The SDK can return an ordinary snapshot as if enrichment succeeded; the prices may be older or still valid.",
+      "localState": "Local fix"
+    },
+    {
+      "rank": 18,
+      "priority": "P2",
+      "ids": [
+        "D13"
+      ],
+      "title": "Warnings disappear when updated reads fail",
+      "productionConsequence": "An attempted oracle-enriched read fails and the SDK falls back to the original snapshot while losing its warnings. Consumers cannot see why the returned data may be incomplete.",
+      "localState": "Local fix"
+    },
+    {
+      "rank": 19,
+      "priority": "P2",
+      "ids": [
+        "D14"
+      ],
+      "title": "An inverse oracle route is rejected",
+      "productionConsequence": "The contract supports the reverse pair but the SDK fails to decode it. Where that route needs Pyth and no alternative supplies the update, reads/plans can miss it and fail.",
+      "localState": "Local fix; deployed inverse/Pyth combination not established"
+    },
+    {
+      "rank": 20,
+      "priority": "P2",
+      "ids": [
+        "D15"
+      ],
+      "title": "Vault information comes from the wrong chain",
+      "productionConsequence": "A public population call receives vaults from multiple chains but fetches all child vaults on the first chain. An identical address can attach the wrong collateral or strategy information.",
+      "localState": "Local fix; mixed-chain input required"
+    },
+    {
+      "rank": 21,
+      "priority": "P2",
+      "ids": [
+        "S03"
+      ],
+      "title": "A migration uses another account or chain's cached position",
+      "productionConsequence": "After account/network changes, a reused position can supply wrong markets and amounts to the new plan. Expect unsuitable prompts/plans or reverts; contracts still enforce ownership.",
+      "localState": "Local context checks"
+    },
+    {
+      "rank": 22,
+      "priority": "P2",
+      "ids": [
+        "E04"
+      ],
+      "title": "Two permits reuse the same nonce",
+      "productionConsequence": "A raw batch contains repeated owner/token/spender requirements. Both signatures use the same counter, so the second permit fails and the batch reverts. Manually sequenced materialized cases are distinct.",
+      "localState": "Raw guard; materialized guard conservatively restricts supported plans"
+    },
+    {
+      "rank": 23,
+      "priority": "P2",
+      "ids": [
+        "S01"
+      ],
+      "title": "Morpho debt conversion uses the wrong formula",
+      "productionConsequence": "The SDK omits Morpho's virtual assets/shares. Debt and migration amounts can differ from contract math, especially at small balances; depending on buffers/state, plans may overestimate or fail.",
+      "localState": "Stored-total math fixed; pending interest remains a limit"
+    },
+    {
+      "rank": 24,
+      "priority": "P2",
+      "ids": [
+        "D02"
+      ],
+      "title": "Displayed liquidation thresholds disagree with the contract",
+      "productionConsequence": "During a changing liquidation LTV, SDK interpolation differs from contract rounding or immediate increases. Boundary risk calculations and displayed headroom can be wrong; the contract uses its own threshold.",
+      "localState": "Local fix for canonical inputs"
+    },
+    {
+      "rank": 25,
+      "priority": "P2",
+      "ids": [
+        "D04"
+      ],
+      "title": "Account restrictions look disabled",
+      "productionConsequence": "Only a secondary subaccount is discovered. The SDK ignores its owner-wide lockdown/permit-disabled flags and defaults them to false. The UI may offer actions the contract subsequently rejects.",
+      "localState": "Local fix when one prefix account was read"
+    },
+    {
+      "rank": 26,
+      "priority": "P2",
+      "ids": [
+        "I07"
+      ],
+      "title": "Keyring preparation silently skips a failure",
+      "productionConsequence": "A gate/credential lookup or callback fails, yet preparation continues. A gated operation can later revert with poor explanation. Wrong callback credentials are also rejected by the new guard; no access-control bypass was shown.",
+      "localState": "Local fail-fast fix; null opt-out remains"
+    },
+    {
+      "rank": 27,
+      "priority": "P2",
+      "ids": [
+        "S07"
+      ],
+      "title": "Merkl claim planning rejects its own reward rows",
+      "productionConsequence": "With default configuration on chains 50/324, the reader and claim builder choose different distributor addresses. A proof-bearing reward row cannot be turned into a claim plan.",
+      "localState": "Local consistency fix; deployed distributor correctness not attested"
+    },
+    {
+      "rank": 28,
+      "priority": "P2",
+      "ids": [
+        "I02"
+      ],
+      "title": "Custom batching can freeze the application",
+      "productionConsequence": "With zero debounce and occupied request slots, the utility continually queues microtasks and prevents I/O completion. A synchronously throwing custom callback can also strand requests. Built-in defaults do not establish this trigger.",
+      "localState": "Local fix; conditional on custom settings/callback"
+    },
+    {
+      "rank": 29,
+      "priority": "P2",
+      "ids": [
+        "I08"
+      ],
+      "title": "Disabling V3 still leaves requests to V3",
+      "productionConsequence": "An app configured to avoid V3 still fetches built-in prices, token lists or APYs there. Those features can fail when V3 is intentionally unavailable.",
+      "localState": "Local configuration fix"
+    },
+    {
+      "rank": 30,
+      "priority": "P2",
+      "ids": [
+        "E13"
+      ],
+      "title": "Simulation ignores supplied code or storage",
+      "productionConsequence": "A caller supplies custom code/full-storage overrides, but merging drops them. Simulation evaluates a different environment and can produce the wrong conclusion. Duplicate-slot behavior was already handled by viem.",
+      "localState": "Local fix; custom overrides required"
+    },
+    {
+      "rank": 31,
+      "priority": "P2",
+      "ids": [
+        "D12"
+      ],
+      "title": "Old dollar values survive a refresh",
+      "productionConsequence": "On a reused entity, a price disappears or debt is repaid, but old USD values remain. The dashboard can display stale exposure or debt after the underlying fields change.",
+      "localState": "Local fix"
+    },
+    {
+      "rank": 32,
+      "priority": "P2",
+      "ids": [
+        "D08"
+      ],
+      "title": "Large account discovery requests omit accounts",
+      "productionConsequence": "More than 100 distinct indexed owner prefixes are requested together. With the documented Graph default, results can be truncated and omitted accounts look empty. No live-endpoint reproduction was made.",
+      "localState": "Local explicit pagination/chunk fix"
+    },
+    {
+      "rank": 33,
+      "priority": "P2",
+      "ids": [
+        "S08"
+      ],
+      "title": "APY requests return only part of the dataset",
+      "productionConsequence": "Custom page/chunk sizes exceed the server cap. The SDK mistakes the first capped page for the end, leaving some assets without APYs. Default sizes do not trigger that case.",
+      "localState": "Pinned API case fixed; custom total-only pagination remains limited"
+    },
+    {
+      "rank": 34,
+      "priority": "P2",
+      "ids": [
+        "D11"
+      ],
+      "title": "Portfolio yield disagrees with individual positions",
+      "productionConsequence": "Aggregate calculations omit the collateral/leverage context needed for some rewards. The portfolio can underreport those reward contributions even while the individual position displays them.",
+      "localState": "Local consistency fix; reward payouts unaffected"
+    },
+    {
+      "rank": 35,
+      "priority": "P2",
+      "ids": [
+        "I09"
+      ],
+      "title": "Old or wrong-chain labels/APYs remain attached",
+      "productionConsequence": "A successful refresh removes an entry but the SDK keeps its old value; mixed-chain labels can also come from the first chain. Users see obsolete yield or incorrect advisory labels.",
+      "localState": "Local fix"
+    },
+    {
+      "rank": 36,
+      "priority": "P2",
+      "ids": [
+        "S10"
+      ],
+      "title": "Reward amounts display at the wrong scale",
+      "productionConsequence": "Unknown token decimals are fabricated as 18. For a six-decimal token, a one-token reward could display as 0.000000000001. Raw claim amounts are unchanged; an affected live token was not demonstrated.",
+      "localState": "Local unknown-metadata fix"
+    },
+    {
+      "rank": 37,
+      "priority": "P2",
+      "ids": [
+        "I10"
+      ],
+      "title": "A failed token read looks like zero balance",
+      "productionConsequence": "The lens catches a reverting balanceOf and returns zero; the SDK treats it as a clean read. A wallet asset can look absent without a warning.",
+      "localState": "Local diagnostic fix; extra reads for zero balances"
+    },
+    {
+      "rank": 38,
+      "priority": "P2",
+      "ids": [
+        "E14"
+      ],
+      "title": "The skip-allowance-overrides option is inconsistent",
+      "productionConsequence": "Some simulation paths still probe allowances; others omit the deterministic Permit2 state promised by the option. A custom simulation can incur extra RPC work or fail unexpectedly.",
+      "localState": "Local fix"
+    },
+    {
+      "rank": 39,
+      "priority": "P3",
+      "ids": [
+        "E05"
+      ],
+      "title": "Contradictory account/chain inputs are accepted",
+      "productionConsequence": "An application passes account or wallet state belonging to another chain/owner. The SDK may use wrong plugin data or skip approvals. Actual signer/network selection remains in wallet callbacks.",
+      "localState": "Local input guards; no wrong-chain signing exploit established"
+    },
+    {
+      "rank": 40,
+      "priority": "P3",
+      "ids": [
+        "D03"
+      ],
+      "title": "Risk calculations throw for unusual token precision",
+      "productionConsequence": "A unit-of-account token with more than 18 decimals reaches the getter and causes a negative-exponent exception. Affected risk views can fail; no deployed example was established.",
+      "localState": "Local compatibility fix"
+    },
+    {
+      "rank": 41,
+      "priority": "P3",
+      "ids": [
+        "I03"
+      ],
+      "title": "Invalid batching options hang or lose results",
+      "productionConsequence": "Invalid sizes can stop progress, including nonempty rEUL lock reads. Separately, finite chunks in an exported aggregate helper return only the first chunk; no built-in caller uses that helper.",
+      "localState": "Local validation/rejection; custom configurations"
+    },
+    {
+      "rank": 42,
+      "priority": "P3",
+      "ids": [
+        "D09"
+      ],
+      "title": "Invalid page sizes stop request progress",
+      "productionConsequence": "A fractional EVault batch size can round to zero and loop; NaN oracle pagination can fail to terminate for certain responses. These are invalid custom settings, not defaults.",
+      "localState": "Local configuration hardening"
+    },
+    {
+      "rank": 43,
+      "priority": "P3",
+      "ids": [
+        "S04"
+      ],
+      "title": "Missing swapper configuration disables allowlisting",
+      "productionConsequence": "With an empty/all-zero canonical list, quotes from another swapper pass that check. A proper verifier still enforces its final condition. An unsafe quote/configuration combination is required; no live loss was shown.",
+      "localState": "Local rejection of missing configuration"
+    },
+    {
+      "rank": 44,
+      "priority": "P3",
+      "ids": [
+        "E10"
+      ],
+      "title": "A custom decoded simulation result looks successful",
+      "productionConsequence": "A custom provider or wrong contract returns missing/semantically invalid arrays. The SDK can mistake absent failures for success. Honest EVC responses and ordinary viem ABI decoding do not establish this trigger.",
+      "localState": "Local defensive validation"
+    },
+    {
+      "rank": 45,
+      "priority": "P3",
+      "ids": [
+        "S02"
+      ],
+      "title": "A compatible Aave Pool returns no stable-debt token",
+      "productionConsequence": "If a Pool returns zero, the unnecessary token read makes position fetching fail. The inspected current Pool supplies a compatibility token, so its normal path was not demonstrated broken.",
+      "localState": "Local compatibility guard"
+    },
+    {
+      "rank": 46,
+      "priority": "P3",
+      "ids": [
+        "D10"
+      ],
+      "title": "Alternative vault-type names fail to match",
+      "productionConsequence": "A custom API returns an intended alias without a usable resource fallback. The SDK can label the vault unknown. The inspected first-party API uses canonical names that already work.",
+      "localState": "Local alias compatibility fix"
+    },
+    {
+      "rank": 47,
+      "priority": "P3",
+      "ids": [
+        "I06"
+      ],
+      "title": "Different Pyth fee requests share one cache key",
+      "productionConsequence": "Duplicate update blobs are collapsed in the key. A fee can be wrong only if multiplicity differs and fees depend on update count; normal Hermes/deployment impact was not demonstrated.",
+      "localState": "Local cache fix; fee impact conditional"
+    },
+    {
+      "rank": 48,
+      "priority": "P3",
+      "ids": [
+        "I11"
+      ],
+      "title": "Unusual failures miss fallback or its notification",
+      "productionConsequence": "A custom adapter rejects with undefined, so the SDK skips fallback; when both sources fail, the fallback notification can also be omitted. Normal Error rejections are unaffected by the first case.",
+      "localState": "Local utility/telemetry fix"
+    }
+  ]
+}

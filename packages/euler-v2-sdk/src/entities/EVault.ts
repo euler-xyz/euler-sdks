@@ -2,11 +2,7 @@
 // Numeric on-chain values use bigint to avoid precision loss.
 
 import { type Address, maxUint256 } from "viem";
-import type {
-	OracleInfo,
-	OraclePrice,
-	OracleRoute,
-} from "../utils/oracle.js";
+import type { OracleInfo, OraclePrice, OracleRoute } from "../utils/oracle.js";
 import type { InterestRateModelType } from "../services/vaults/eVaultService/adapters/eVaultOnchainAdapter/eVaultLensTypes.js";
 import type { Token } from "../utils/types.js";
 import type {
@@ -170,6 +166,12 @@ export type RiskPrice = {
 	priceBorrowing: bigint;
 };
 
+function oraclePriceToWad(value: bigint, decimals: number): bigint {
+	return decimals <= 18
+		? value * 10n ** BigInt(18 - decimals)
+		: value / 10n ** BigInt(decimals - 18);
+}
+
 export interface IEVault extends IERC4626Vault {
 	unitOfAccount?: Token;
 
@@ -250,12 +252,15 @@ function buildCollateral(
 		ramping !== undefined &&
 		rampTimeRemaining > 0n &&
 		ramping.rampDuration > 0n &&
-		ramping.initialLiquidationLTV !== collateral.liquidationLTV;
+		ramping.initialLiquidationLTV > collateral.liquidationLTV;
 	const currentLiquidationLTV = isLiquidationLTVRamping
-		? collateral.liquidationLTV +
-			((ramping.initialLiquidationLTV - collateral.liquidationLTV) *
-				Number(rampTimeRemaining)) /
-				Number(ramping.rampDuration)
+		? Number(
+				BigInt(Math.round(collateral.liquidationLTV * 10_000)) +
+					((BigInt(Math.round(ramping.initialLiquidationLTV * 10_000)) -
+						BigInt(Math.round(collateral.liquidationLTV * 10_000))) *
+						rampTimeRemaining) /
+						ramping.rampDuration,
+			) / 10_000
 		: collateral.liquidationLTV;
 
 	return {
@@ -325,8 +330,9 @@ export class EVault
 		this.collaterals = args.collaterals.map((collateral) =>
 			buildCollateral(collateral, this.timestamp),
 		);
-		this.debtPricingOracleRoute =
-			this.unitOfAccount ? args.debtPricingOracleRoute : undefined;
+		this.debtPricingOracleRoute = this.unitOfAccount
+			? args.debtPricingOracleRoute
+			: undefined;
 		this.evcCompatibleAsset = args.evcCompatibleAsset;
 		this.oraclePriceRaw = args.oraclePriceRaw;
 		this.populated = {
@@ -400,10 +406,9 @@ export class EVault
 		const price = getAssetOraclePrice(this);
 		if (!price) return undefined;
 
-		const scale = 10n ** BigInt(18 - price.decimals);
 		return {
-			priceLiquidation: price.amountOutMid * scale,
-			priceBorrowing: price.amountOutAsk * scale,
+			priceLiquidation: oraclePriceToWad(price.amountOutMid, price.decimals),
+			priceBorrowing: oraclePriceToWad(price.amountOutAsk, price.decimals),
 		};
 	}
 
@@ -412,10 +417,9 @@ export class EVault
 		const price = getCollateralOraclePrice(this, collateralVault);
 		if (!price) return undefined;
 
-		const scale = 10n ** BigInt(18 - price.decimals);
 		return {
-			priceLiquidation: price.amountOutMid * scale,
-			priceBorrowing: price.amountOutBid * scale,
+			priceLiquidation: oraclePriceToWad(price.amountOutMid, price.decimals),
+			priceBorrowing: oraclePriceToWad(price.amountOutBid, price.decimals),
 		};
 	}
 
