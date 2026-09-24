@@ -19,6 +19,10 @@
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
     },
+    "./public-labels": {
+      "types": "./dist/src/publicLabels.d.ts",
+      "default": "./dist/src/publicLabels.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
