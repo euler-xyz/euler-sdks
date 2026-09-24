@@ -57,8 +57,16 @@ export function normalizeQueryKeyValue(value: unknown): unknown {
 		"chain" in value &&
 		"transport" in value
 	) {
-		const client = value as { chain?: { id?: number } };
-		return { __type: "publicClient", chainId: client.chain?.id ?? "unknown" };
+		const client = value as { chain?: { id?: number }; blockPin?: unknown };
+		return {
+			__type: "publicClient",
+			chainId: client.chain?.id ?? "unknown",
+			// a client from `pinClientToBlock` answers at one block; keep its
+			// entries apart from the unpinned client's and from other pins
+			...(client.blockPin === undefined
+				? {}
+				: { blockPin: normalizeQueryKeyValue(client.blockPin) }),
+		};
 	}
 	if (Array.isArray(value)) return value.map(normalizeQueryKeyValue);
 	if (value !== null && typeof value === "object") {

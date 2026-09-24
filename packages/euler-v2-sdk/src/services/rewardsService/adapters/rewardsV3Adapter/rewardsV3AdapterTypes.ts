@@ -139,6 +139,18 @@ export type V3RewardsBreakdownRow = {
 				decimals?: number | string;
 		  }
 		| null;
+	/**
+	 * Reward token metadata resolved by the upstream for this row, independent of
+	 * whether the row's campaign is still listed by `/v3/apys/rewards`. Null when
+	 * the upstream could not resolve the token; absent on older V3 responses.
+	 */
+	rewardTokenMetadata?: {
+		address?: string;
+		chainId?: number;
+		symbol?: string;
+		name?: string;
+		decimals?: number | string;
+	} | null;
 	rewardTokenAddress?: string;
 	rewardTokenSymbol?: string;
 	rewardTokenName?: string;

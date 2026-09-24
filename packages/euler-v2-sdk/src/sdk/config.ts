@@ -50,6 +50,7 @@ export interface EulerSDKConfig {
 	rewardsBrevisProofsApiUrl?: string;
 	rewardsFuulApiUrl?: string;
 	rewardsTurtleApiUrl?: string;
+	rewardsTurtleApiKey?: string;
 	rewardsFuulTotalsUrl?: string;
 	rewardsFuulClaimChecksUrl?: string;
 	rewardsBrevisChainIds?: number[];
@@ -147,6 +148,18 @@ function readString(env: EnvRecord, name: string): string | undefined {
 
 	const vite = env[`VITE_${name}`]?.trim();
 	return vite || undefined;
+}
+
+/**
+ * Reads a server-only secret. Unlike `readString`, the `VITE_` alias is
+ * ignored so the value can never be injected into browser bundles.
+ */
+function readServerOnlyString(
+	env: EnvRecord,
+	name: string,
+): string | undefined {
+	const value = env[name]?.trim();
+	return value || undefined;
 }
 
 function readNumber(env: EnvRecord, name: string): number | undefined {
@@ -464,6 +477,10 @@ export function readEulerSDKEnvConfig(
 		),
 		rewardsFuulApiUrl: readString(env, "EULER_SDK_REWARDS_FUUL_API_URL"),
 		rewardsTurtleApiUrl: readString(env, "EULER_SDK_REWARDS_TURTLE_API_URL"),
+		rewardsTurtleApiKey: readServerOnlyString(
+			env,
+			"EULER_SDK_REWARDS_TURTLE_API_KEY",
+		),
 		rewardsFuulTotalsUrl: readString(env, "EULER_SDK_REWARDS_FUUL_TOTALS_URL"),
 		rewardsFuulClaimChecksUrl: readString(
 			env,

@@ -71,7 +71,12 @@ export interface UserRewardToken {
 	chainId: number;
 	symbol: string;
 	name: string;
-	decimals: number;
+	/**
+	 * Token decimals. Omitted when no source resolved them, so that callers can
+	 * tell an unresolved token apart from one that genuinely has 0 decimals.
+	 * Raw reward amounts stay unscaled either way.
+	 */
+	decimals?: number;
 }
 
 export interface UserReward {
@@ -154,6 +159,13 @@ export interface RewardsDirectAdapterConfig {
 	fuulApiUrl?: string;
 	/** Turtle Earn API base URL. */
 	turtleApiUrl?: string;
+	/**
+	 * Turtle Earn API key, sent as an `X-API-Key` header on direct Turtle
+	 * requests. Credentialed requests do not follow redirects, so the key is
+	 * only ever sent to the configured `turtleApiUrl` origin. Treat it as a
+	 * server-side secret; do not ship it to browser bundles.
+	 */
+	turtleApiKey?: string;
 	/** Optional caller-hosted endpoint for Fuul totals. */
 	fuulTotalsUrl?: string;
 	/** Optional caller-hosted endpoint for Fuul claim checks. */
@@ -192,6 +204,13 @@ export interface RewardsServiceConfig {
 	fuulApiUrl?: string;
 	/** Turtle Earn API base URL. */
 	turtleApiUrl?: string;
+	/**
+	 * Turtle Earn API key, sent as an `X-API-Key` header on direct Turtle
+	 * requests. Credentialed requests do not follow redirects, so the key is
+	 * only ever sent to the configured `turtleApiUrl` origin. Treat it as a
+	 * server-side secret; do not ship it to browser bundles.
+	 */
+	turtleApiKey?: string;
 	/** Optional caller-hosted endpoint for Fuul totals. */
 	fuulTotalsUrl?: string;
 	/** Optional caller-hosted endpoint for Fuul claim checks. */

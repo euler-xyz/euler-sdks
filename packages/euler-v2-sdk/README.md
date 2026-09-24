@@ -97,6 +97,7 @@ All docs are in [`./docs`](./docs).
 17. [Fallback System](./docs/fallback-system.md) - V3 → onchain/subgraph/direct fallback chains, trigger semantics, and `onFallback` telemetry.
 18. [Data Architecture](./docs/data-architecture.md) - Entities/adapters/services layering, population model, and data flow.
 19. [Cross-Service Data Population](./docs/cross-service-data-population.md) - How services enrich entities with prices, rewards, labels, and nested vaults.
+20. [Block-Pinned Reads](./docs/block-pinned-reads.md) - Reading every on-chain value at one block (number or EIP-1898 hash) and bundling lens reads into one `eth_call`.
 20. [Portfolio](./docs/portfolio.md) - High-level savings/borrows abstraction built from populated accounts.
 21. [Entity Reference](./docs/entities/index.md) - Property-level reference for exported entity shapes.
 22. [Account Computed Properties](./docs/account-computed-properties.md) - Health factor/LTV/net-value computed fields and data prerequisites.

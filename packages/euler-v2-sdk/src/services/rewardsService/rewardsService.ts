@@ -264,11 +264,34 @@ const turtleRewardStreamKey = (reward: UserReward): string | undefined => {
 		reward.chainId,
 		streamId,
 		reward.token.address.toLowerCase(),
-		reward.streamAddress?.toLowerCase() ?? reward.claimAddress?.toLowerCase() ?? "",
+		reward.streamAddress?.toLowerCase() ??
+			reward.claimAddress?.toLowerCase() ??
+			"",
 	].join(":");
 };
 
-const mergeTurtleReward = (
+/**
+ * The row with the larger amount is not necessarily the row whose token the
+ * upstream managed to resolve. Scaling an amount by the wrong decimals is
+ * worse than taking the other row's token, so an unresolved token always
+ * yields to a resolved one.
+ */
+export const preferResolvedRewardToken = (
+	selected: UserReward,
+	supplement: UserReward,
+): UserReward["token"] =>
+	selected.token.decimals === undefined &&
+	supplement.token.decimals !== undefined
+		? supplement.token
+		: selected.token;
+
+/**
+ * Collapse two rows of the same turtle stream into one. Exported because the
+ * fallback adapter factory in `buildSDK` merges the V3 and direct rows before
+ * this service ever sees them, and both reductions have to keep the same
+ * token.
+ */
+export const mergeTurtleUserRewards = (
 	base: UserReward,
 	candidate: UserReward,
 ): UserReward => {
@@ -284,6 +307,7 @@ const mergeTurtleReward = (
 
 	return {
 		...selected,
+		token: preferResolvedRewardToken(selected, supplement),
 		proof: selected.proof?.length ? selected.proof : supplement.proof,
 		claimAddress: selected.claimAddress ?? supplement.claimAddress,
 		streamId: selected.streamId ?? supplement.streamId,
@@ -310,7 +334,7 @@ const collapseTurtleStreamRewards = (rewards: UserReward[]): UserReward[] => {
 			continue;
 		}
 
-		collapsed[existingIndex] = mergeTurtleReward(
+		collapsed[existingIndex] = mergeTurtleUserRewards(
 			collapsed[existingIndex]!,
 			reward,
 		);
@@ -319,7 +343,9 @@ const collapseTurtleStreamRewards = (rewards: UserReward[]): UserReward[] => {
 	return collapsed;
 };
 
-const collapseMerklCumulativeRewards = (rewards: UserReward[]): UserReward[] => {
+const collapseMerklCumulativeRewards = (
+	rewards: UserReward[],
+): UserReward[] => {
 	const collapsed: UserReward[] = [];
 	const indexes = new Map<string, number>();
 
@@ -341,10 +367,18 @@ const collapseMerklCumulativeRewards = (rewards: UserReward[]): UserReward[] => 
 			continue;
 		}
 
+		// Pick the amount winner first, then merge the token in either direction:
+		// a smaller row can still be the only one that resolved its decimals.
 		const existing = collapsed[existingIndex]!;
-		if (BigInt(reward.accumulated) > BigInt(existing.accumulated)) {
-			collapsed[existingIndex] = reward;
-		}
+		const selected =
+			BigInt(reward.accumulated) > BigInt(existing.accumulated)
+				? reward
+				: existing;
+		const supplement = selected === reward ? existing : reward;
+		collapsed[existingIndex] = {
+			...selected,
+			token: preferResolvedRewardToken(selected, supplement),
+		};
 	}
 
 	return collapsed;
@@ -383,7 +417,10 @@ const turtleProofStreamId = (proof: TurtleMerkleProof): string | undefined =>
 	proof.streamId ?? proof.stream_id ?? proof.id;
 
 const turtleProofChainId = (proof?: TurtleMerkleProof): number | undefined => {
-	if (typeof proof?.chainId === "number" && Number.isSafeInteger(proof.chainId)) {
+	if (
+		typeof proof?.chainId === "number" &&
+		Number.isSafeInteger(proof.chainId)
+	) {
 		return proof.chainId;
 	}
 	if (typeof proof?.chainId === "string" && /^\d+$/.test(proof.chainId)) {
@@ -947,12 +984,12 @@ export class RewardsService implements IRewardsService {
 				items: [
 					{
 						type: "operation",
-							name: operationName,
-							items,
-							...(walletBalanceTokens.length ? { walletBalanceTokens } : {}),
-						},
-					],
-				},
+						name: operationName,
+						items,
+						...(walletBalanceTokens.length ? { walletBalanceTokens } : {}),
+					},
+				],
+			},
 		];
 	}
 

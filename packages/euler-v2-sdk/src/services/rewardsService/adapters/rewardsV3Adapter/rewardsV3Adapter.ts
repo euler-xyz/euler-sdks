@@ -138,6 +138,29 @@ const normalizeTimestampSeconds = (value: unknown): number | undefined => {
 	return undefined;
 };
 
+/** ERC-20 declares `decimals` as a `uint8`. */
+const MAX_TOKEN_DECIMALS = 255;
+
+/**
+ * Token decimals are an exact scale, not a measurement: `6.5` is a malformed
+ * payload, and truncating it to `6` would invent a scale the upstream never
+ * stated. Anything outside an integer `[0, 255]` stays unresolved — a wild
+ * count reaches `formatUnits` downstream, where it allocates a string of that
+ * length or throws.
+ */
+const normalizeTokenDecimals = (value: unknown): number | undefined => {
+	const parsed = normalizeFiniteNumber(value);
+	if (
+		parsed === undefined ||
+		!Number.isInteger(parsed) ||
+		parsed < 0 ||
+		parsed > MAX_TOKEN_DECIMALS
+	) {
+		return undefined;
+	}
+	return parsed;
+};
+
 const normalizeNonNegativeInteger = (value: unknown): number | undefined => {
 	const parsed = normalizeFiniteNumber(value);
 	if (parsed === undefined) return undefined;
@@ -264,13 +287,16 @@ type RewardsClaimAdapter = Pick<
 	) => Promise<TurtleMerkleProof[]>;
 };
 
-type RewardTokenLike = {
-	address?: string;
-	chainId?: number;
-	symbol?: string;
-	name?: string;
-	decimals?: number | string;
-} | null | undefined;
+type RewardTokenLike =
+	| {
+			address?: string;
+			chainId?: number;
+			symbol?: string;
+			name?: string;
+			decimals?: number | string;
+	  }
+	| null
+	| undefined;
 
 type CampaignMetadata = {
 	provider?: string;
@@ -292,6 +318,31 @@ const normalizeRewardToken = (
 ): RewardTokenLike => {
 	if (typeof value === "string") return { address: value };
 	return value;
+};
+
+const firstDefined = <T>(...values: (T | undefined)[]): T | undefined =>
+	values.find((value) => value !== undefined);
+
+const normalizeTokenText = (value: unknown): string | undefined => {
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
+};
+
+/**
+ * Breakdown rows carry upstream-resolved token metadata that is populated even
+ * when the row's campaign has dropped out of `/v3/apys/rewards`. Only accept it
+ * when it describes the row's own reward token, so a malformed or mismatched
+ * payload can never relabel a reward.
+ */
+const resolveBreakdownTokenMetadata = (
+	row: V3RewardsBreakdownRow,
+	tokenAddress: Address,
+): RewardTokenLike => {
+	const metadata = row.rewardTokenMetadata;
+	if (!metadata || typeof metadata !== "object") return undefined;
+	if (normalizeAddress(metadata.address) !== tokenAddress) return undefined;
+	return metadata;
 };
 
 export class RewardsV3Adapter implements IRewardsAdapter {
@@ -418,8 +469,9 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 				const campaignId = row.campaignId ?? row.id;
 				const vaultAddress = normalizeAddress(row.vault ?? row.vaultAddress);
 				const metadata = campaignId
-					? campaignMetadata.get(campaignMetadataKey(campaignId, vaultAddress)) ??
-						campaignMetadata.get(campaignMetadataKey(campaignId))
+					? (campaignMetadata.get(
+							campaignMetadataKey(campaignId, vaultAddress),
+						) ?? campaignMetadata.get(campaignMetadataKey(campaignId)))
 					: undefined;
 
 				return this.convertRow(chainId, row, metadata);
@@ -688,7 +740,9 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 		const campaignId = row.campaignId ?? row.id;
 		const provider =
 			normalizeProvider(row.provider ?? row.source) ??
-			normalizeProvider(campaignMetadata?.provider ?? campaignMetadata?.source) ??
+			normalizeProvider(
+				campaignMetadata?.provider ?? campaignMetadata?.source,
+			) ??
 			(isUuidLike(campaignId) ? "turtle" : undefined);
 		if (!provider) return undefined;
 
@@ -703,41 +757,55 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 		);
 		if (!tokenAddress) return undefined;
 
+		const breakdownRewardToken = resolveBreakdownTokenMetadata(
+			row,
+			tokenAddress,
+		);
+
+		const symbol = firstDefined(
+			normalizeTokenText(row.token?.symbol),
+			normalizeTokenText(rowRewardToken?.symbol),
+			normalizeTokenText(row.rewardTokenSymbol),
+			normalizeTokenText(row.tokenSymbol),
+			normalizeTokenText(metadataRewardToken?.symbol),
+			normalizeTokenText(breakdownRewardToken?.symbol),
+		);
+
 		const token: UserRewardToken = {
 			address: tokenAddress,
 			chainId:
 				row.token?.chainId ??
 				rowRewardToken?.chainId ??
 				metadataRewardToken?.chainId ??
+				breakdownRewardToken?.chainId ??
 				row.chainId ??
 				defaultChainId,
-			symbol:
-				row.token?.symbol ??
-				rowRewardToken?.symbol ??
-				row.rewardTokenSymbol ??
-				row.tokenSymbol ??
-				metadataRewardToken?.symbol ??
-				tokenAddress,
+			symbol: symbol ?? tokenAddress,
 			name:
-				row.token?.name ??
-				rowRewardToken?.name ??
-				row.rewardTokenName ??
-				row.tokenName ??
-				row.token?.symbol ??
-				rowRewardToken?.symbol ??
-				row.rewardTokenSymbol ??
-				row.tokenSymbol ??
-				metadataRewardToken?.name ??
-				metadataRewardToken?.symbol ??
-				tokenAddress,
-			decimals:
-				normalizeNonNegativeInteger(
-					row.token?.decimals ??
-						rowRewardToken?.decimals ??
-						row.rewardTokenDecimals ??
-						row.tokenDecimals ??
-						metadataRewardToken?.decimals,
-				) ?? 18,
+				firstDefined(
+					normalizeTokenText(row.token?.name),
+					normalizeTokenText(rowRewardToken?.name),
+					normalizeTokenText(row.rewardTokenName),
+					normalizeTokenText(row.tokenName),
+					normalizeTokenText(row.token?.symbol),
+					normalizeTokenText(rowRewardToken?.symbol),
+					normalizeTokenText(row.rewardTokenSymbol),
+					normalizeTokenText(row.tokenSymbol),
+					normalizeTokenText(metadataRewardToken?.name),
+					normalizeTokenText(metadataRewardToken?.symbol),
+					normalizeTokenText(breakdownRewardToken?.name),
+					normalizeTokenText(breakdownRewardToken?.symbol),
+				) ?? tokenAddress,
+			// Left undefined when no source resolves: guessing 18 here silently
+			// misreads every token that does not use 18 decimals.
+			decimals: firstDefined(
+				normalizeTokenDecimals(row.token?.decimals),
+				normalizeTokenDecimals(rowRewardToken?.decimals),
+				normalizeTokenDecimals(row.rewardTokenDecimals),
+				normalizeTokenDecimals(row.tokenDecimals),
+				normalizeTokenDecimals(metadataRewardToken?.decimals),
+				normalizeTokenDecimals(breakdownRewardToken?.decimals),
+			),
 		};
 
 		const accumulated =

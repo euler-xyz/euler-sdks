@@ -6,5 +6,7 @@ export {
 } from "./securitizeVaultService.js";
 export {
 	SecuritizeVaultOnchainAdapter,
+	getSecuritizeGovernorAdminBatchItem,
+	getSecuritizeSupplyCapResolvedBatchItem,
 	getVaultInfoERC4626LensBatchItem,
 } from "./adapters/securitizeVaultOnchainAdapter.js";

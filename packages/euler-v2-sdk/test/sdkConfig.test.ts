@@ -39,6 +39,7 @@ describe("SDK env config", () => {
 			EULER_SDK_REWARDS_ENABLE_TURTLE: "false",
 			EULER_SDK_REWARDS_BREVIS_CHAIN_IDS: "1,8453",
 			EULER_SDK_REWARDS_TURTLE_API_URL: "https://turtle.example/v1",
+			EULER_SDK_REWARDS_TURTLE_API_KEY: "turtle-secret",
 			EULER_SDK_REWARDS_TURTLE_STREAMS_JSON:
 				'[{"streamId":"stream-1","chainId":1,"streamAddress":"0x0000000000000000000000000000000000000001","rewardToken":{"address":"0x0000000000000000000000000000000000000002","symbol":"EUL","decimals":18},"tokenPrice":1.5}]',
 			EULER_SDK_VAULT_TYPE_V3_TYPE_MAP_JSON: '{"custom":"EVault"}',
@@ -65,6 +66,7 @@ describe("SDK env config", () => {
 			rewardsEnableTurtle: false,
 			rewardsBrevisChainIds: [1, 8453],
 			rewardsTurtleApiUrl: "https://turtle.example/v1",
+			rewardsTurtleApiKey: "turtle-secret",
 			rewardsTurtleStreams: [
 				{
 					streamId: "stream-1",
@@ -92,6 +94,20 @@ describe("SDK env config", () => {
 
 		expect(config.rpcUrls).toEqual({ 1: "https://vite-mainnet.example" });
 		expect(config.v3ApiKey).toBe("vite-secret");
+	});
+
+	it("ignores the VITE_ alias for the server-only Turtle API key", () => {
+		expect(
+			readEulerSDKEnvConfig({
+				VITE_EULER_SDK_REWARDS_TURTLE_API_KEY: "vite-turtle-secret",
+			}).rewardsTurtleApiKey,
+		).toBeUndefined();
+		expect(
+			readEulerSDKEnvConfig({
+				EULER_SDK_REWARDS_TURTLE_API_KEY: "turtle-secret",
+				VITE_EULER_SDK_REWARDS_TURTLE_API_KEY: "vite-turtle-secret",
+			}).rewardsTurtleApiKey,
+		).toBe("turtle-secret");
 	});
 
 	it("uses the V3 tokenlist endpoint by default", () => {
