@@ -1,4 +1,5 @@
-import { getAddress } from "viem";
+import { erc20Abi, getAddress } from "viem";
+import type { IProviderService } from "../providerService/index.js";
 import type { Address } from "viem";
 import type {
 	TokenListItem,
@@ -32,6 +33,8 @@ interface ApiTokenListPage {
 type ApiTokenListResponse = ApiToken[] | ApiTokenListPage;
 
 export interface ITokenlistService {
+	/** Optional for custom list-only service overrides; built-in services provide it. */
+	resolveTokenDecimals?(chainId: number, asset: Address): Promise<number>;
 	loadTokenlist(chainId: number): Promise<TokenListItem[]>;
 	getToken(chainId: number, asset: Address): TokenListItem | undefined;
 	isLoaded(chainId: number): boolean;
@@ -72,9 +75,58 @@ export class TokenlistService implements ITokenlistService {
 	private readonly config: TokenlistServiceConfig;
 	private readonly cache = new Map<number, TokenListItem[]>();
 
-	constructor(config: TokenlistServiceConfig, buildQuery?: BuildQueryFn) {
+	private readonly pendingDecimals = new Map<string, Promise<number>>();
+
+	constructor(
+		config: TokenlistServiceConfig,
+		buildQuery?: BuildQueryFn,
+		private readonly providerService?: IProviderService,
+	) {
 		this.config = config;
 		if (buildQuery) applyBuildQuery(this, buildQuery);
+	}
+
+	/** Do not retain decimals (or failures) in the shared query cache. */
+	getQueryKeyTokenDecimals(): null {
+		return null;
+	}
+
+	queryTokenDecimals = async (
+		chainId: number,
+		asset: Address,
+	): Promise<number> => {
+		if (!this.providerService) {
+			throw new Error("Token decimals require a provider service");
+		}
+		const decimals = await this.providerService
+			.getProvider(chainId)
+			.readContract({
+				address: asset,
+				abi: erc20Abi,
+				functionName: "decimals",
+			});
+		if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
+			throw new Error(
+				`Invalid ERC20 decimals for chain ${chainId}, asset ${asset}`,
+			);
+		}
+		return decimals;
+	};
+
+	/**
+	 * Read ERC20 decimals on demand, independently of list metadata.
+	 * Only concurrent reads are shared; settled results and failures are released.
+	 */
+	async resolveTokenDecimals(chainId: number, asset: Address): Promise<number> {
+		const address = getAddress(asset);
+		const key = `${chainId}:${address}`;
+		const pending = this.pendingDecimals.get(key);
+		if (pending) return pending;
+		const request = this.queryTokenDecimals(chainId, address).finally(() => {
+			this.pendingDecimals.delete(key);
+		});
+		this.pendingDecimals.set(key, request);
+		return request;
 	}
 
 	queryTokenList = async (url: string): Promise<ApiToken[]> => {

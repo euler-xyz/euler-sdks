@@ -25,6 +25,7 @@ export default defineConfig({
 		include: [
 			"test/readPathInfra.test.ts",
 			"test/readPathServices.test.ts",
+			"test/tokenDecimals.test.ts",
 			"test/blockPin.test.ts",
 			"test/readMany.test.ts",
 			"test/blockPinnedReadsExports.test.ts",

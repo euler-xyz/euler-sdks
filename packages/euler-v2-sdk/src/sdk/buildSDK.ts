@@ -1163,6 +1163,7 @@ export async function buildEulerSDK<
 				...makeTokenlistConfig(config),
 			},
 			resolvedBuildQuery,
+			providerService,
 		);
 
 	// Build swap service if not overridden

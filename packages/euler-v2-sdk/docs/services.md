@@ -49,11 +49,47 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 - `feeFlowService`: Fetches FeeFlow state, filters eligible vaults, and builds FeeFlow buy plans.
   See: [`fee-flow-service.md`](./fee-flow-service.md)
 - `intrinsicApyService`: Fetches intrinsic APY data used by vault enrichments.
-- `tokenlistService`: Provides token metadata/list data.
+- `tokenlistService`: Provides token metadata/list data and on-demand on-chain ERC20 decimals (see below).
 - `eulerLabelsService`: Provides normalized euler-labels products, entities, points, Earn entries, notices, and asset restrictions.
 - `providerService`: Manages per-chain RPC providers.
 - `deploymentService`: Provides chain-specific deployed addresses/configuration.
 - `abiService`: Provides ABI access used for contract encoding/decoding.
+
+## On-demand ERC20 decimals
+
+```typescript
+// Resolve only the ERC20 selected by the caller, before human-unit conversion.
+if (!sdk.tokenlistService.resolveTokenDecimals) {
+  throw new Error("Token decimals are unavailable with this token-list service");
+}
+const decimals = await sdk.tokenlistService.resolveTokenDecimals(chainId, asset);
+const amount = parseUnits(inputAmount, decimals); // parseUnits from viem
+```
+
+`resolveTokenDecimals(chainId: number, asset: Address): Promise<number>` reads
+`decimals()` through the SDK's provider for that chain. It does not load, scan,
+trust, or mutate token-list metadata. Zero is valid; only integer uint8 values
+(0–255) are accepted. Missing providers, RPC/revert/decode failures and malformed
+values reject: there is no token-list or 18-decimal fallback. Callers should block
+amount conversion/submission on failure and discard results if the selected chain
+or asset changes while awaiting the read. This API is for ERC20s, not native-asset
+sentinels.
+
+Concurrent reads on the same service share one request per normalized chain and
+address. No settled values or failures are retained: the next call reads again,
+so the service does not accumulate a cache of visited tokens. The existing query
+hook exposes `queryTokenDecimals` with a `null` cache key; custom `buildQuery`
+implementations must honor that no-cache signal. Verification is relative to the
+configured provider's state, not a guarantee that an upgradeable token cannot
+change later.
+
+`buildEulerSDK` wires its provider automatically. Standalone construction accepts
+it as the third argument: `new TokenlistService(config, buildQuery, providerService)`.
+Existing list-only construction still works; resolving decimals without a provider
+rejects. The resolver is optional on `ITokenlistService` so existing custom
+list-only overrides remain compatible. Callers using a custom override must
+check that the resolver exists before relying on it.
+Planners and raw-unit encoders remain unchanged and do not perform implicit reads.
 
 ## Service Capability Matrix
 
