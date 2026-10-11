@@ -2280,15 +2280,30 @@ test("direct rewards adapter maps Turtle stream APY campaigns", async () => {
 					symbol: "AUSD",
 				},
 			},
+			{
+				id: "base-stream",
+				chainId: 8453,
+				startTimestamp: "2026-01-01T00:00:00Z",
+				endTimestamp: "2100-01-01T00:00:00Z",
+				customArgs: {
+					targetToken: {
+						address: secondCollateralAddress,
+						symbol: "base",
+					},
+				},
+				lastSnapshot: { apr: "0.07" },
+				rewardToken: {
+					address: rewardToken,
+					symbol: "AUSD",
+				},
+			},
 		];
 	});
 
 	const rewards = await adapter.fetchChainRewards(1);
 	const info = rewards.get(vaultAddress.toLowerCase());
-	const params = new URL(requestUrl).searchParams;
 
-	assert.equal(requestUrl.startsWith("https://earn.turtle.xyz/v1/streams"), true);
-	assert.equal(params.get("chainId"), "1");
+	assert.equal(requestUrl, "https://earn.turtle.xyz/v2/streams/");
 	assert.equal(info?.campaigns.length, 1);
 	assert.equal(info?.campaigns[0]?.source, "turtle");
 	assert.equal(info?.campaigns[0]?.action, "LEND");
@@ -2298,6 +2313,7 @@ test("direct rewards adapter maps Turtle stream APY campaigns", async () => {
 	assert.equal(info?.campaigns[0]?.rewardTokenSymbol, "AUSD");
 	assert.equal(info?.campaigns[0]?.rewardTokenIcon, "https://example.invalid/ausd.svg");
 	assert.equal(rewards.has(secondVaultAddress.toLowerCase()), false);
+	assert.equal(rewards.has(secondCollateralAddress.toLowerCase()), false);
 });
 
 test("rewards service derives Merkl claim target from trusted distributor", async () => {
@@ -3090,9 +3106,9 @@ test("direct rewards adapter fetches Turtle user rewards from configured streams
 	const rewards = await adapter.fetchUserRewards(1, accountAddress);
 	const params = new URL(requestUrl).searchParams;
 
-	assert.equal(requestUrl.startsWith("https://earn.turtle.xyz/v1/streams/merkle_proofs"), true);
+	assert.equal(requestUrl.startsWith("https://earn.turtle.xyz/v2/streams/merkle_proofs?"), true);
 	assert.equal(params.get("wallet"), accountAddress);
-	assert.equal(params.get("streamIds"), "stream-1");
+	assert.deepEqual(params.getAll("streamIds"), ["stream-1"]);
 	assert.equal(rewards.length, 1);
 	assert.equal(rewards[0]?.provider, "turtle");
 	assert.equal(rewards[0]?.chainId, 1);
@@ -3102,6 +3118,108 @@ test("direct rewards adapter fetches Turtle user rewards from configured streams
 	assert.equal(rewards[0]?.streamAddress, turtleStreamAddress);
 	assert.equal(rewards[0]?.accumulated, "1000");
 	assert.equal(rewards[0]?.unclaimed, "900");
+});
+
+test("direct rewards adapter reads Turtle v2 merkle proofs for several streams", async () => {
+	const firstStreamId = "7e9c407e-3992-4587-b8e7-9a30f96b12b5";
+	const secondStreamId = "6ab3c09e-a384-436e-ba8b-c30d249bdf83";
+	const secondStreamAddress = getAddress(
+		"0x0000000000000000000000000000000000000012",
+	) as Address;
+	const requests: string[] = [];
+	// Shape of a live GET /v2/streams/merkle_proofs answer (October 2026). The
+	// IDs are Turtle's documented examples; the other values are placeholders.
+	vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+		requests.push(String(input));
+		return new Response(
+			JSON.stringify({
+				proofs: [
+					{
+						streamId: firstStreamId,
+						chainId: 1,
+						contractAddress: turtleStreamAddress.toLowerCase(),
+						amount: "1500000",
+						proof: [proofHash, proofHash],
+						rootHash: proofHash,
+						timestamp: "2026-10-01T00:00:00Z",
+						error: null,
+					},
+					{
+						streamId: secondStreamId,
+						chainId: 1,
+						contractAddress: secondStreamAddress,
+						amount: "2500000",
+						proof: [proofHash],
+						rootHash: proofHash,
+						timestamp: "2026-10-01T00:00:00Z",
+						error: null,
+					},
+				],
+			}),
+			{ status: 200, headers: { "Content-Type": "application/json" } },
+		);
+	});
+	try {
+		const usdc = { address: usdcAddress, symbol: "USDC", decimals: 6 };
+		const adapter = new RewardsDirectAdapter({
+			enableMerkl: false,
+			enableBrevis: false,
+			enableFuul: false,
+			turtleApiKey: "turtle-secret",
+			turtleStreams: [
+				{ streamId: firstStreamId, chainId: 1, rewardToken: usdc },
+				{ streamId: secondStreamId, chainId: 1, rewardToken: usdc },
+			],
+		});
+
+		const rewards = await adapter.fetchUserRewards(1, accountAddress);
+
+		assert.equal(requests.length, 1);
+		const url = new URL(requests[0] ?? "");
+		assert.equal(url.origin, "https://earn.turtle.xyz");
+		assert.equal(url.pathname, "/v2/streams/merkle_proofs");
+		assert.equal(url.searchParams.get("wallet"), accountAddress);
+		assert.deepEqual(url.searchParams.getAll("streamIds"), [
+			firstStreamId,
+			secondStreamId,
+		]);
+		assert.deepEqual(
+			rewards.map((reward) => ({
+				streamId: reward.streamId,
+				streamAddress: reward.streamAddress,
+				accumulated: reward.accumulated,
+				unclaimed: reward.unclaimed,
+				proofLength: reward.proof?.length,
+				timestamp: reward.timestamp,
+				token: reward.token.address,
+				decimals: reward.token.decimals,
+			})),
+			[
+				{
+					streamId: firstStreamId,
+					streamAddress: turtleStreamAddress,
+					accumulated: "1500000",
+					unclaimed: "0",
+					proofLength: 2,
+					timestamp: "2026-10-01T00:00:00Z",
+					token: usdcAddress,
+					decimals: 6,
+				},
+				{
+					streamId: secondStreamId,
+					streamAddress: secondStreamAddress,
+					accumulated: "2500000",
+					unclaimed: "0",
+					proofLength: 1,
+					timestamp: "2026-10-01T00:00:00Z",
+					token: usdcAddress,
+					decimals: 6,
+				},
+			],
+		);
+	} finally {
+		vi.unstubAllGlobals();
+	}
 });
 
 test("direct rewards adapter does not treat Turtle cumulative allocation as claimable", async () => {
@@ -3806,13 +3924,10 @@ test("direct rewards adapter sends the Turtle API key on stream and proof reques
 		await adapter.fetchUserRewards(1, accountAddress);
 
 		assert.equal(requests.length, 2);
-		assert.equal(
-			requests[0]?.url.startsWith("https://earn.turtle.xyz/v1/streams?"),
-			true,
-		);
+		assert.equal(requests[0]?.url, "https://earn.turtle.xyz/v2/streams/");
 		assert.equal(
 			requests[1]?.url.startsWith(
-				"https://earn.turtle.xyz/v1/streams/merkle_proofs?",
+				"https://earn.turtle.xyz/v2/streams/merkle_proofs?",
 			),
 			true,
 		);
@@ -3866,8 +3981,8 @@ test("buildEulerSDK forwards the Turtle API key to the direct rewards adapter", 
 
 		await sdk.rewardsService.fetchChainRewards(1);
 
-		const turtleRequests = requests.filter((request) =>
-			request.url.startsWith("https://earn.turtle.xyz/v1/streams?"),
+		const turtleRequests = requests.filter(
+			(request) => request.url === "https://earn.turtle.xyz/v2/streams/",
 		);
 		assert.equal(turtleRequests.length, 1);
 		assert.equal(turtleHeader(turtleRequests[0]?.init), "config-key");
@@ -3913,7 +4028,7 @@ test("direct rewards adapter never replays the Turtle API key across a redirect"
 			enableMerkl: false,
 			enableBrevis: false,
 			enableFuul: false,
-			turtleApiUrl: `${redirecting.origin}/v1`,
+			turtleApiUrl: `${redirecting.origin}/v2`,
 			turtleApiKey: "turtle-secret",
 			turtleStreams: [{ streamId: "stream-1", chainId: 1 }],
 		});
