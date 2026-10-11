@@ -113,6 +113,7 @@ export type V3RewardsBreakdownRow = {
 	vaultAddress?: string;
 	recipient?: string;
 	source?: string;
+	/** `merkl` or `turtle`; absent on V3 responses from before rows carried their provider. */
 	provider?: string;
 	currencyType?: number | string;
 	currency_type?: number | string;
