@@ -84,6 +84,7 @@ import {
 	type RewardsServiceConfig,
 	type UserReward,
 } from "../services/rewardsService/index.js";
+import { withDirectSources } from "../services/rewardsService/adapters/rewardsV3Adapter/withDirectSources.js";
 import {
 	IntrinsicApyService,
 	IntrinsicApyV3Adapter,
@@ -1274,9 +1275,12 @@ export async function buildEulerSDK<
 			);
 			const canBuildRewardsV3 = !!rewardsV3Config.endpoint;
 			const buildRewardsV3 = () =>
-				new RewardsV3Adapter(
-					rewardsV3Config,
-					resolvedBuildQuery,
+				withDirectSources(
+					new RewardsV3Adapter(
+						rewardsV3Config,
+						resolvedBuildQuery,
+						directAdapter,
+					),
 					directAdapter,
 				);
 			const mergeUserRewards = (
