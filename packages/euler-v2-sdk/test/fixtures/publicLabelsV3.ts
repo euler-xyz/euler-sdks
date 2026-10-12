@@ -53,7 +53,7 @@ export const publicLabelsFixture: PublicLabelsSource = {
 			campaigns: [
 				{
 					name: "KPK RWA points",
-					logo: "https://token-images.euler.finance/labels/kpk",
+					logo: "https://v3.euler.finance/v3/images/labels/kpk",
 					type: "deposit",
 				},
 			],
@@ -99,7 +99,7 @@ export const publicLabelsFixture: PublicLabelsSource = {
 		{
 			id: KPK,
 			name: "KPK",
-			logo: "https://token-images.euler.finance/labels/kpk",
+			logo: "https://v3.euler.finance/v3/images/labels/kpk",
 			description: "KPK is a third-party curator.",
 			url: "https://kpk.io/",
 			socialTwitter: "https://x.com/kpk_io",
@@ -120,7 +120,7 @@ export const publicLabelsFixture: PublicLabelsSource = {
 		{
 			id: SECURITIZE,
 			name: "Securitize",
-			logo: "https://token-images.euler.finance/labels/securitize",
+			logo: "https://v3.euler.finance/v3/images/labels/securitize",
 			description: "Securitize is a tokenisation platform.",
 			url: "https://securitize.io/",
 			socialTwitter: "https://x.com/Securitize",

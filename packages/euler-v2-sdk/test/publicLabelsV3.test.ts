@@ -520,7 +520,7 @@ describe("normalizePublicLabelsData", () => {
 			"securitize",
 		]);
 		expect(result.entities.kpk?.logo).toBe(
-			"https://token-images.euler.finance/labels/kpk",
+			"https://v3.euler.finance/v3/images/labels/kpk",
 		);
 		expect(result.entities.kpk?.addresses).toEqual({
 			[getAddress(KPK_GOVERNOR)]: "KPK Euler RWA Curation Safe",
@@ -528,7 +528,7 @@ describe("normalizePublicLabelsData", () => {
 		expect(result.points[getAddress(KPK_VAULT)]).toEqual([
 			{
 				name: "KPK RWA points",
-				logo: "https://token-images.euler.finance/labels/kpk",
+				logo: "https://v3.euler.finance/v3/images/labels/kpk",
 				type: "deposit",
 			},
 		]);
