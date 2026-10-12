@@ -313,6 +313,22 @@ const isUuidLike = (value?: string): boolean =>
 		value ?? "",
 	);
 
+// V3 breakdown rows name their provider. Rows from V3 releases that sent neither field are the
+// only ones still matched to a provider through the campaign lookup.
+const resolveBreakdownProvider = (
+	row: V3RewardsBreakdownRow,
+	campaignId: string | undefined,
+	campaignMetadata: CampaignMetadata | undefined,
+): RewardSource | undefined => {
+	if (row.provider !== undefined || row.source !== undefined) {
+		return normalizeProvider(row.provider) ?? normalizeProvider(row.source);
+	}
+	return (
+		normalizeProvider(campaignMetadata?.provider ?? campaignMetadata?.source) ??
+		(isUuidLike(campaignId) ? "turtle" : undefined)
+	);
+};
+
 const normalizeRewardToken = (
 	value: string | RewardTokenLike,
 ): RewardTokenLike => {
@@ -738,12 +754,11 @@ export class RewardsV3Adapter implements IRewardsAdapter {
 		campaignMetadata?: CampaignMetadata,
 	): UserReward | undefined {
 		const campaignId = row.campaignId ?? row.id;
-		const provider =
-			normalizeProvider(row.provider ?? row.source) ??
-			normalizeProvider(
-				campaignMetadata?.provider ?? campaignMetadata?.source,
-			) ??
-			(isUuidLike(campaignId) ? "turtle" : undefined);
+		const provider = resolveBreakdownProvider(
+			row,
+			campaignId,
+			campaignMetadata,
+		);
 		if (!provider) return undefined;
 
 		const rowRewardToken = normalizeRewardToken(row.rewardToken);
