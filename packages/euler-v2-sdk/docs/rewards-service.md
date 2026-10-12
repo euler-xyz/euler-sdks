@@ -52,13 +52,14 @@ On `Portfolio`, per-position, and sub-account views, the plain `netApy` / `roe` 
   - uses `GET /v3/rewards/breakdown` for per-account reward reads
   - normalizes both Brevis and Incentra provider labels to `brevis`
   - V3 serves Merkl and Turtle. Brevis/Incentra and Fuul are read directly beside it, in both `v3` and `fallback` mode, unless switched off with `rewardsEnableBrevis` or `rewardsEnableFuul`:
-    - their campaigns are added to the V3 vault reward APRs, and their proof-backed rows to the per-account rewards;
-    - a source that V3 answers for itself is taken from V3 only, so it is never counted twice;
+    - their campaigns are added to the V3 vault reward APRs, and their account rows to the per-account rewards;
+    - campaigns are deduplicated by source within each vault. Brevis account rows are matched by chain, campaign, token, and epoch when known; a direct proof-backed row supplies claim data when the matching V3 row is incomplete. Fuul account currency totals come from V3 when V3 serves Fuul;
     - a failed direct read leaves the V3 answer as it is; a failed V3 read still fails, so `fallback` mode moves to the direct adapter
   - Fuul claim checks and totals go to the direct adapter as before
 - `direct`
   - uses the Merkl, Brevis, and Fuul provider endpoints directly
   - Brevis campaigns are read in both of Brevis's answer shapes: snake_case with numbers, and the camelCase with numeric strings it sends since 2026
+  - Brevis account claim discovery includes ended campaigns; vault APR discovery reads active campaigns
   - a Fuul incentive names its vault in `trigger.context.token_address` or, for the `euler-vaults` trigger, `trigger.context.vault`; Fuul gives no end date, so an incentive it has not refreshed for 7 days is left out
 
 This split makes V3 the default for both vault reward APR catalogs and per-user reward breakdowns, without coupling the V3 adapter to the direct adapter implementation.

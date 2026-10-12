@@ -52,6 +52,20 @@ function mergeVaultRewardInfo(
 	});
 }
 
+const brevisRewardKey = (reward: UserReward): string | undefined =>
+	reward.provider === "brevis" && reward.campaignId
+		? `${reward.chainId}:${reward.campaignId}:${reward.token.address.toLowerCase()}`
+		: undefined;
+
+const hasBrevisClaimData = (reward: UserReward): boolean =>
+	Boolean(
+		reward.claimAddress &&
+			reward.proof?.length &&
+			reward.cumulativeAmounts?.length &&
+			reward.epoch !== undefined &&
+			reward.epoch !== "",
+	);
+
 /**
  * Adds the reward sources V3 does not serve to a V3 adapter's answers. A
  * failed V3 read still fails, so a fallback to the direct adapter keeps
@@ -70,10 +84,14 @@ export function withDirectSources<T extends IRewardsAdapter>(
 				.fetchSourceChainRewards(chainId, SOURCES_BESIDE_V3)
 				.catch(() => new Map<string, VaultRewardInfo>()),
 		]);
-		const served = campaignSources(v3Rewards.values());
 		const merged = new Map(v3Rewards);
 		for (const [vault, info] of directRewards) {
-			const combined = mergeVaultRewardInfo(merged.get(vault), info, served);
+			const v3Info = merged.get(vault);
+			const combined = mergeVaultRewardInfo(
+				v3Info,
+				info,
+				campaignSources([v3Info]),
+			);
 			if (combined) merged.set(vault, combined);
 		}
 		return merged;
@@ -103,11 +121,40 @@ export function withDirectSources<T extends IRewardsAdapter>(
 				.fetchSourceUserRewards(chainId, address, SOURCES_BESIDE_V3)
 				.catch(() => [] as UserReward[]),
 		]);
-		const served = new Set<string>(v3Rewards.map((reward) => reward.provider));
-		return [
-			...v3Rewards,
-			...directRewards.filter((reward) => !served.has(reward.provider)),
-		];
+		const merged = [...v3Rewards];
+		const v3BrevisIndexes = new Map<string, number[]>();
+		for (const [index, reward] of v3Rewards.entries()) {
+			const key = brevisRewardKey(reward);
+			if (key) v3BrevisIndexes.set(key, [...(v3BrevisIndexes.get(key) ?? []), index]);
+		}
+		// Fuul rows are currency totals rather than campaign rows, so V3 takes
+		// precedence for that provider. Brevis rows can be matched by campaign.
+		const served = new Set(v3Rewards.map((reward) => reward.provider));
+		for (const reward of directRewards) {
+			if (reward.provider === "brevis") {
+				const key = brevisRewardKey(reward);
+				const index = (key ? v3BrevisIndexes.get(key) : undefined)?.find(
+					(candidate) => {
+						const existing = merged[candidate]!;
+						return (
+							existing.epoch === reward.epoch ||
+							(existing.epoch === undefined && !hasBrevisClaimData(existing))
+						);
+					},
+				);
+				if (index === undefined) {
+					merged.push(reward);
+				} else if (
+					!hasBrevisClaimData(merged[index]!) &&
+					hasBrevisClaimData(reward)
+				) {
+					merged[index] = reward;
+				}
+			} else if (!served.has(reward.provider)) {
+				merged.push(reward);
+			}
+		}
+		return merged;
 	};
 
 	const overrides: Partial<Record<PropertyKey, unknown>> = {

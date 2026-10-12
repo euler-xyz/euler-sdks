@@ -115,7 +115,14 @@ test("V3 rewards adapter keeps provider-labelled rows when the campaign lookup f
 
 test("V3 rewards adapter does not guess a provider for a row that names one it does not know", async () => {
 	const adapter = buildAdapter(
-		[breakdownRow({ campaignId: turtleStream, provider: "another-provider" })],
+		[
+			breakdownRow({ campaignId: turtleStream, provider: "another-provider" }),
+			breakdownRow({
+				campaignId: turtleStream,
+				provider: "another-provider",
+				source: "merkl",
+			}),
+		],
 		async () => ({
 			data: [
 				{

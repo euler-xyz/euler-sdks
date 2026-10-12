@@ -320,9 +320,8 @@ const resolveBreakdownProvider = (
 	campaignId: string | undefined,
 	campaignMetadata: CampaignMetadata | undefined,
 ): RewardSource | undefined => {
-	if (row.provider !== undefined || row.source !== undefined) {
-		return normalizeProvider(row.provider) ?? normalizeProvider(row.source);
-	}
+	if (row.provider !== undefined) return normalizeProvider(row.provider);
+	if (row.source !== undefined) return normalizeProvider(row.source);
 	return (
 		normalizeProvider(campaignMetadata?.provider ?? campaignMetadata?.source) ??
 		(isUuidLike(campaignId) ? "turtle" : undefined)
