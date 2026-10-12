@@ -30,7 +30,6 @@ const DEFAULT_RPC_URLS = {
   239: "https://rpc.tac.build",
   480: "https://worldchain-mainnet.g.alchemy.com/public",
   999: "https://rpc.hyperliquid.xyz/evm",
-  1923: "https://swell-mainnet.alt.technology",
   5000: "https://mantle-rpc.publicnode.com",
   8453: "https://base-rpc.publicnode.com",
   9745: "https://rpc.plasma.to",
@@ -500,7 +499,7 @@ function buildSdkOptions() {
   );
   const onchainSupportedRpcUrls = Object.fromEntries(
     Object.entries(RPC_URLS).filter(([chainId]) =>
-      [1, 56, 130, 143, 146, 239, 1923, 8453, 9745, 42161, 43114, 59144, 60808, 80094].includes(Number(chainId)),
+      [1, 56, 130, 143, 146, 239, 8453, 9745, 42161, 43114, 59144, 60808, 80094].includes(Number(chainId)),
     ),
   );
 

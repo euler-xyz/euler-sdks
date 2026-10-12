@@ -44,8 +44,8 @@ const INDEXER_HOST = process.env.INDEXER_HOST ?? "https://indexer.euler.finance"
 const V3_HOST = process.env.V3_HOST ?? "https://v3.euler.finance";
 const ADAPTER_MODE = (process.env.ADAPTER_MODE ?? "onchain").toLowerCase();
 
-// Euler Lite supports these 14 chains (from __CHAIN_CONFIG__)
-const LITE_SUPPORTED_CHAINS = [1, 56, 130, 143, 146, 239, 1923, 8453, 9745, 42161, 43114, 59144, 60808, 80094];
+// Chains Euler Lite supports (from __CHAIN_CONFIG__)
+const LITE_SUPPORTED_CHAINS = [1, 56, 130, 143, 146, 239, 8453, 9745, 42161, 43114, 59144, 60808, 80094];
 
 const DEFAULT_CHAIN_IDS = [1];
 const CHAIN_IDS = process.env.CHAIN_IDS
@@ -61,7 +61,6 @@ const DEFAULT_RPC_URLS = {
   143: "https://rpc3.monad.xyz",
   146: "https://rpc.soniclabs.com",
   239: "https://rpc.tac.build",
-  1923: "https://swell-mainnet.alt.technology",
   8453: "https://base-rpc.publicnode.com",
   9745: "https://rpc.plasma.to",
   42161: "https://arbitrum-one-rpc.publicnode.com",

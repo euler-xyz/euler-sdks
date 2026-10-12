@@ -46,7 +46,6 @@ const CHAIN_NAMES: Record<number, string> = {
 	143: "Monad",
 	146: "Sonic",
 	239: "TAC",
-	1923: "Swell",
 	8453: "Base",
 	9745: "Plasma",
 	42161: "Arbitrum",

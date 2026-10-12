@@ -42,12 +42,6 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: () => "",
       },
-      "/api/subgraphs/euler-simple-swell": {
-        target:
-          "https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-swell/latest/gn",
-        changeOrigin: true,
-        rewrite: () => "",
-      },
     },
   },
   resolve: {

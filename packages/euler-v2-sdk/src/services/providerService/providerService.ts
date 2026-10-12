@@ -18,7 +18,6 @@ import {
 	tac,
 	plasma,
 	monad,
-	swellchain,
 	avalanche,
 	hyperEvm,
 } from "viem/chains";
@@ -36,7 +35,6 @@ const defaultChains = [
 	tac,
 	plasma,
 	monad,
-	swellchain,
 	avalanche,
 	hyperEvm,
 ];
