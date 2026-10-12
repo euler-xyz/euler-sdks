@@ -407,7 +407,7 @@ export interface BrevisCampaign {
 	start_time: number;
 	end_time: number;
 	reward_info: BrevisRewardInfo;
-	status: number;
+	status?: number | string;
 }
 
 export interface BrevisCampaignsRequest {
@@ -418,7 +418,8 @@ export interface BrevisCampaignsRequest {
 
 export interface BrevisCampaignsResponse {
 	err?: { code: number; msg: string };
-	campaigns: BrevisCampaign[];
+	/** As Brevis sends them; `normalizeBrevisCampaign` reads both of its shapes. */
+	campaigns: unknown[];
 }
 
 // ---------------------------------------------------------------------------
@@ -480,6 +481,8 @@ export interface FuulTrigger {
 	context: {
 		chain_id: number;
 		token_address?: string;
+		/** Fuul's `euler-vaults` trigger names the vault here instead of `token_address`. */
+		vault?: string;
 		borrowVault?: string;
 		depositVault?: string;
 		min_leverage?: number;

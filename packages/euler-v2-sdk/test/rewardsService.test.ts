@@ -2191,7 +2191,7 @@ test("direct rewards adapter maps Fuul lend and looping incentives", async () =>
 					},
 					apr: 0.04,
 					tvl: 0,
-					refreshed_at: "",
+					refreshed_at: new Date().toISOString(),
 				},
 			];
 		}
@@ -2216,7 +2216,7 @@ test("direct rewards adapter maps Fuul lend and looping incentives", async () =>
 				},
 				apr: 0.03,
 				tvl: 0,
-				refreshed_at: "",
+				refreshed_at: new Date().toISOString(),
 			},
 		];
 	});

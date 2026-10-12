@@ -22,12 +22,18 @@ import type {
 	RewardCampaign,
 	RewardEligibilityRequirement,
 	RewardEligibilityRequirementsStatus,
+	RewardSource,
 	RewardsDirectAdapterConfig,
 	TurtleMerkleProof,
 	TurtleStreamConfig,
 	UserReward,
 } from "../../rewardsServiceTypes.js";
 import { VaultRewardInfo } from "../../vaultRewardInfo.js";
+import {
+	BREVIS_BORROW,
+	BREVIS_LEND,
+	normalizeBrevisCampaigns,
+} from "./brevisCampaign.js";
 
 const DEFAULT_MERKL_API_URL = "https://api.merkl.xyz/v4";
 const DEFAULT_BREVIS_API_URL =
@@ -44,8 +50,25 @@ const DEFAULT_FUUL_MANAGER: Address =
 const DEFAULT_FUUL_FACTORY: Address =
 	"0xa0080A60EE9f1985151161Fa6b09652Dc46afdEF";
 
-const BREVIS_LEND = 2002;
-const BREVIS_BORROW = 2001;
+const FUUL_INCENTIVE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const DIRECT_REWARD_SOURCES: readonly RewardSource[] = [
+	"merkl",
+	"brevis",
+	"fuul",
+	"turtle",
+];
+
+/** Fuul gives no end date, so an incentive it has not refreshed for a week counts as over. */
+function isRecentlyRefreshedFuulIncentive(
+	incentive: FuulIncentive,
+	nowMs: number,
+): boolean {
+	const refreshedAtMs = Date.parse(incentive.refreshed_at);
+	return (
+		Number.isFinite(refreshedAtMs) &&
+		nowMs - refreshedAtMs <= FUUL_INCENTIVE_MAX_AGE_MS
+	);
+}
 
 type MerklOpportunityType =
 	| "EULER"
@@ -719,18 +742,27 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	async fetchChainRewards(
 		chainId: number,
 	): Promise<Map<string, VaultRewardInfo>> {
+		return this.fetchSourceChainRewards(chainId, DIRECT_REWARD_SOURCES);
+	}
+
+	/** Vault reward APYs from the given sources only, each still subject to its enable flag. */
+	async fetchSourceChainRewards(
+		chainId: number,
+		sources: readonly RewardSource[],
+	): Promise<Map<string, VaultRewardInfo>> {
 		const [merklCampaigns, brevisCampaigns, fuulCampaigns, turtleCampaigns] =
 			await Promise.all([
-				this.enableMerkl
+				this.isSourceEnabled("merkl", sources)
 					? this.fetchMerklCampaigns(chainId)
 					: Promise.resolve([]),
+				this.isSourceEnabled("brevis", sources) &&
 				this.isBrevisChainEnabled(chainId)
 					? this.fetchBrevisCampaigns(chainId)
 					: Promise.resolve([]),
-				this.enableFuul
+				this.isSourceEnabled("fuul", sources)
 					? this.fetchFuulCampaigns(chainId)
 					: Promise.resolve([]),
-				this.enableTurtle
+				this.isSourceEnabled("turtle", sources)
 					? this.fetchTurtleCampaigns(chainId)
 					: Promise.resolve([]),
 			]);
@@ -748,18 +780,28 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		chainId: number,
 		address: Address,
 	): Promise<UserReward[]> {
+		return this.fetchSourceUserRewards(chainId, address, DIRECT_REWARD_SOURCES);
+	}
+
+	/** An account's rewards from the given sources only, each still subject to its enable flag. */
+	async fetchSourceUserRewards(
+		chainId: number,
+		address: Address,
+		sources: readonly RewardSource[],
+	): Promise<UserReward[]> {
 		const [merklRewards, brevisRewards, fuulRewards, turtleRewards] =
 			await Promise.all([
-				this.enableMerkl
+				this.isSourceEnabled("merkl", sources)
 					? this.fetchMerklUserRewards(chainId, address)
 					: Promise.resolve([]),
+				this.isSourceEnabled("brevis", sources) &&
 				this.isBrevisChainEnabled(chainId)
 					? this.fetchBrevisUserRewards(chainId, address)
 					: Promise.resolve([]),
-				this.enableFuul
+				this.isSourceEnabled("fuul", sources)
 					? this.fetchFuulUserRewards(chainId, address)
 					: Promise.resolve([]),
-				this.enableTurtle
+				this.isSourceEnabled("turtle", sources)
 					? this.fetchTurtleUserRewards(chainId, address)
 					: Promise.resolve([]),
 			]);
@@ -859,6 +901,23 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	): Promise<UserReward[]> {
 		if (!this.isBrevisChainEnabled(chainId)) return [];
 		return this.fetchBrevisUserRewards(chainId, address);
+	}
+
+	private isSourceEnabled(
+		source: RewardSource,
+		sources: readonly RewardSource[],
+	): boolean {
+		if (!sources.includes(source)) return false;
+		switch (source) {
+			case "merkl":
+				return this.enableMerkl;
+			case "brevis":
+				return this.enableBrevis;
+			case "fuul":
+				return this.enableFuul;
+			case "turtle":
+				return this.enableTurtle;
+		}
 	}
 
 	private isBrevisChainEnabled(chainId: number): boolean {
@@ -1077,7 +1136,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 
 		if (response.err || !response.campaigns) return [];
 
-		return response.campaigns.map(
+		return normalizeBrevisCampaigns(response.campaigns).map(
 			(c: BrevisCampaign) =>
 				({
 					campaignId: c.campaign_id,
@@ -1106,25 +1165,32 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 			).catch(() => []),
 		]);
 
+		const nowMs = Date.now();
 		const lendCampaigns = eulerIncentives
-			.filter((item) => item.trigger?.context?.token_address)
-			.map((item) => {
-				const vaultAddress = item.trigger.context.token_address!.toLowerCase();
-				return {
-					campaignId: `${item.protocol}:${item.project}:${vaultAddress}`,
-					source: "fuul" as const,
-					action: "LEND" as const,
-					apr: item.apr,
-					rewardTokenSymbol: item.project,
-					endTimestamp: 0,
-					sourceUrl: "https://www.fuul.xyz/",
-					_vaultAddress: vaultAddress,
-				} as RewardCampaign & { _vaultAddress: string };
+			.filter((item) => isRecentlyRefreshedFuulIncentive(item, nowMs))
+			.flatMap((item) => {
+				const context = item.trigger?.context;
+				const target = context?.token_address ?? context?.vault;
+				if (!target) return [];
+				const vaultAddress = target.toLowerCase();
+				return [
+					{
+						campaignId: `${item.protocol}:${item.project}:${vaultAddress}`,
+						source: "fuul" as const,
+						action: "LEND" as const,
+						apr: item.apr,
+						rewardTokenSymbol: item.project,
+						endTimestamp: 0,
+						sourceUrl: "https://www.fuul.xyz/",
+						_vaultAddress: vaultAddress,
+					} as RewardCampaign & { _vaultAddress: string },
+				];
 			});
 
 		const loopingCampaigns = loopingIncentives
 			.filter(
 				(item) =>
+					isRecentlyRefreshedFuulIncentive(item, nowMs) &&
 					item.trigger?.context?.borrowVault &&
 					item.trigger?.context?.depositVault,
 			)
@@ -1322,7 +1388,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		if (!campaignsResponse.campaigns?.length) return [];
 
 		const campaignMap = new Map<string, BrevisCampaign>();
-		for (const c of campaignsResponse.campaigns) {
+		for (const c of normalizeBrevisCampaigns(campaignsResponse.campaigns)) {
 			campaignMap.set(c.campaign_id, c);
 		}
 
