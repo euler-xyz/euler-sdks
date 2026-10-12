@@ -35,7 +35,7 @@ const DEFAULT_BREVIS_API_URL =
 const DEFAULT_BREVIS_PROOFS_API_URL =
 	"https://incentra-prd.brevis.network/v1/getMerkleProofsBatch";
 const DEFAULT_FUUL_API_URL = "https://api.fuul.xyz/api/v1";
-const DEFAULT_TURTLE_API_URL = "https://earn.turtle.xyz/v1";
+const DEFAULT_TURTLE_API_URL = "https://earn.turtle.xyz/v2";
 
 const DEFAULT_MERKL_DISTRIBUTOR: Address =
 	"0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae";
@@ -825,7 +825,11 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	): Promise<TurtleMerkleProof[]> {
 		if (streamIds.length === 0) return [];
 		const separator = this.turtleApiUrl.includes("?") ? "&" : "?";
-		const url = `${this.turtleApiUrl}/streams/merkle_proofs${separator}wallet=${encodeURIComponent(address)}&streamIds=${encodeURIComponent(streamIds.join(","))}`;
+		// Turtle reads one stream per `streamIds` value; a comma-joined list is
+		// parsed as a single UUID and the whole request is rejected with 400.
+		const query = new URLSearchParams({ wallet: address });
+		for (const streamId of streamIds) query.append("streamIds", streamId);
+		const url = `${this.turtleApiUrl}/streams/merkle_proofs${separator}${query}`;
 		return this.queryTurtleMerkleProofs(url).catch(() => []);
 	}
 
@@ -1149,9 +1153,10 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 	private async fetchTurtleCampaigns(
 		chainId: number,
 	): Promise<RewardCampaign[]> {
-		const separator = this.turtleApiUrl.includes("?") ? "&" : "?";
+		// Turtle's stream list has no chain filter: every chain reads the same
+		// list and keeps its own streams below.
 		const streams = await this.queryTurtleStreams(
-			`${this.turtleApiUrl}/streams${separator}chainId=${chainId}`,
+			`${this.turtleApiUrl}/streams/`,
 		).catch(() => []);
 		const campaigns: (RewardCampaign & { _vaultAddress: string })[] = [];
 

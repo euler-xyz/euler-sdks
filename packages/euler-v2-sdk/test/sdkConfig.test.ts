@@ -39,7 +39,7 @@ describe("SDK env config", () => {
 			EULER_SDK_REWARDS_ENABLE_MERKL: "false",
 			EULER_SDK_REWARDS_ENABLE_TURTLE: "false",
 			EULER_SDK_REWARDS_BREVIS_CHAIN_IDS: "1,8453",
-			EULER_SDK_REWARDS_TURTLE_API_URL: "https://turtle.example/v1",
+			EULER_SDK_REWARDS_TURTLE_API_URL: "https://turtle.example/v2",
 			EULER_SDK_REWARDS_TURTLE_API_KEY: "turtle-secret",
 			EULER_SDK_REWARDS_TURTLE_STREAMS_JSON:
 				'[{"streamId":"stream-1","chainId":1,"streamAddress":"0x0000000000000000000000000000000000000001","rewardToken":{"address":"0x0000000000000000000000000000000000000002","symbol":"EUL","decimals":18},"tokenPrice":1.5}]',
@@ -67,7 +67,7 @@ describe("SDK env config", () => {
 			rewardsEnableMerkl: false,
 			rewardsEnableTurtle: false,
 			rewardsBrevisChainIds: [1, 8453],
-			rewardsTurtleApiUrl: "https://turtle.example/v1",
+			rewardsTurtleApiUrl: "https://turtle.example/v2",
 			rewardsTurtleApiKey: "turtle-secret",
 			rewardsTurtleStreams: [
 				{

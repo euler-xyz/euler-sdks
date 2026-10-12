@@ -87,7 +87,7 @@ the deployment service without changing the ABI branch.
 | `rewardsBrevisApiUrl` | `EULER_SDK_REWARDS_BREVIS_API_URL` | Brevis campaigns API |
 | `rewardsBrevisProofsApiUrl` | `EULER_SDK_REWARDS_BREVIS_PROOFS_API_URL` | Brevis proofs API |
 | `rewardsFuulApiUrl` | `EULER_SDK_REWARDS_FUUL_API_URL` | Fuul incentives API |
-| `rewardsTurtleApiUrl` | `EULER_SDK_REWARDS_TURTLE_API_URL` | Turtle Earn API |
+| `rewardsTurtleApiUrl` | `EULER_SDK_REWARDS_TURTLE_API_URL` | Turtle Earn API v2 (`https://earn.turtle.xyz/v2`) |
 | `rewardsTurtleApiKey` | `EULER_SDK_REWARDS_TURTLE_API_KEY` | none |
 | `rewardsFuulTotalsUrl` | `EULER_SDK_REWARDS_FUUL_TOTALS_URL` | none |
 | `rewardsFuulClaimChecksUrl` | `EULER_SDK_REWARDS_FUUL_CLAIM_CHECKS_URL` | none |
@@ -104,6 +104,8 @@ the deployment service without changing the ABI branch.
 `EULER_SDK_REWARDS_BREVIS_CHAIN_IDS` is a comma-separated list, for example `1,8453`.
 
 `EULER_SDK_REWARDS_TURTLE_STREAMS_JSON` is a JSON array of `{ streamId, chainId, streamAddress?, rewardToken?, tokenPrice? }` objects.
+
+`rewardsTurtleApiUrl` is the Turtle Earn `/v2` base. The direct adapter reads `GET {url}/streams/` for campaign discovery and `GET {url}/streams/merkle_proofs?wallet=…&streamIds=…` for proofs, with one `streamIds` parameter per stream. Turtle removed `/v1` in October 2026 (every `/v1` path answers 404), so an override or proxy must serve these `/v2` paths and pass repeated `streamIds` through unchanged.
 
 The Turtle Earn API requires an API key on every endpoint. The direct rewards adapter sends `rewardsTurtleApiKey` as an `X-API-Key` header on its Turtle stream and proof requests; without it those requests are rejected and resolve to no Turtle campaigns or user rewards. The key is a server-side secret. Unlike the other variables in this table, `VITE_EULER_SDK_REWARDS_TURTLE_API_KEY` is ignored, so it cannot be injected into browser bundles; do not expose it through any other browser env injection either. Credentialed requests do not follow redirects, so the key is only ever sent to the `rewardsTurtleApiUrl` origin. Browser builds should either point `rewardsTurtleApiUrl` at a server-side proxy that adds the header, or set `rewardsEnableTurtle` to `false` and rely on the V3 rewards adapter. Disabling Turtle stops campaign discovery only; explicit Turtle claim proofs are still fetched through the direct adapter in every mode, so a browser app offering Turtle claims still needs the proxy URL.
 
