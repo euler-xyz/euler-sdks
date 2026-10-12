@@ -2053,32 +2053,34 @@ test("V3 rewards adapter delegates Brevis claim verification to direct adapter",
 	assert.equal(decoded.functionName, "claim");
 });
 
-test("direct rewards adapter verifies Brevis claim target against campaign metadata", async () => {
+test("direct rewards adapter verifies an ended Brevis claim target against campaign metadata", async () => {
 	const adapter = new RewardsDirectAdapter();
 	let campaignsBody: unknown;
 	adapter.setQueryBrevisCampaigns(async (_url, body) => {
 		campaignsBody = body;
 		return {
-			campaigns: [
-				{
-					chain_id: 1,
-					vault_address: vaultAddress,
-					action: 2002,
-					campaign_id: "brevis-1",
-					campaign_name: "Brevis",
-					start_time: 1,
-					end_time: 2,
-					reward_info: {
-						token_address: rewardToken,
-						token_symbol: "EUL",
-						apr: 0.01,
-						rewardUsdPrice: 1,
-						claim_chain_id: 1,
-						claim_contract: claimAddress,
-					},
-					status: 4,
-				},
-			],
+			campaigns: body.status?.includes(5)
+				? [
+						{
+							chain_id: 1,
+							vault_address: vaultAddress,
+							action: 2002,
+							campaign_id: "brevis-1",
+							campaign_name: "Brevis",
+							start_time: 1,
+							end_time: 2,
+							reward_info: {
+								token_address: rewardToken,
+								token_symbol: "EUL",
+								apr: 0.01,
+								rewardUsdPrice: 1,
+								claim_chain_id: 1,
+								claim_contract: claimAddress,
+							},
+							status: 5,
+						},
+					]
+				: [],
 		};
 	});
 	adapter.setQueryBrevisUserProofs(async () => ({
@@ -2103,7 +2105,7 @@ test("direct rewards adapter verifies Brevis claim target against campaign metad
 	assert.deepEqual(campaignsBody, {
 		chain_id: [1],
 		user_address: [accountAddress],
-		status: [3, 4],
+		status: [3, 4, 5],
 	});
 });
 

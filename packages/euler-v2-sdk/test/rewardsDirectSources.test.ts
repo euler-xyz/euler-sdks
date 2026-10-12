@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { getAddress, zeroAddress } from "viem";
+import { getAddress, type Hex, zeroAddress } from "viem";
 
 import { buildEulerSDK } from "../src/sdk/buildSDK.js";
 import { RewardsDirectAdapter } from "../src/services/rewardsService/adapters/rewardsDirectAdapter/index.js";
@@ -98,7 +98,21 @@ const campaign = (
 	}) as RewardCampaign;
 
 const reward = (provider: UserReward["provider"]): UserReward =>
-	({ provider, chainId: 1, campaignId: provider }) as UserReward;
+	({
+		provider,
+		chainId: 1,
+		campaignId: provider,
+		token: {
+			address: zeroAddress,
+			chainId: 1,
+			symbol: "EUL",
+			name: "EUL",
+			decimals: 18,
+		},
+		tokenPrice: 1,
+		accumulated: "1",
+		unclaimed: "1",
+	});
 
 const v3Adapter = (
 	chainRewards: Map<string, VaultRewardInfo>,
@@ -127,12 +141,15 @@ test("Brevis campaigns are read in the camelCase shape Brevis answers with today
 
 test("a Brevis campaign without a vault is left out instead of failing the read", async () => {
 	const adapter = directOnly({ enableBrevis: true });
-	adapter.setQueryBrevisCampaigns(async () => ({
+	adapter.setQueryBrevisCampaigns(async (_url, body) => {
+		assert.deepEqual(body.status, [3]);
+		return {
 		campaigns: [
 			{ ...brevisCamelCaseCampaign(), vaultAddress: undefined },
 			brevisCamelCaseCampaign(),
 		],
-	}));
+		};
+	});
 
 	const rewards = await adapter.fetchChainRewards(1);
 
@@ -254,6 +271,10 @@ test("a source V3 already answers for is not read twice", async () => {
 		fetchSourceChainRewards: async () =>
 			new Map([
 				[
+					merklVault.toLowerCase(),
+					new VaultRewardInfo({ campaigns: [campaign("brevis", "direct-duplicate")] }),
+				],
+				[
 					brevisVault.toLowerCase(),
 					new VaultRewardInfo({ campaigns: [campaign("brevis", "b-1")] }),
 				],
@@ -261,14 +282,58 @@ test("a source V3 already answers for is not read twice", async () => {
 		fetchSourceUserRewards: async () => [reward("fuul"), reward("brevis")],
 	};
 	const adapter = withDirectSources(v3, direct);
+	const chainRewards = await adapter.fetchChainRewards(1);
 
-	assert.deepEqual([...(await adapter.fetchChainRewards(1)).keys()], [
+	assert.deepEqual([...chainRewards.keys()], [
 		merklVault.toLowerCase(),
+		brevisVault.toLowerCase(),
 	]);
+	assert.deepEqual(
+		chainRewards.get(merklVault.toLowerCase())?.campaigns.map((c) => c.campaignId),
+		["v3-brevis"],
+	);
+	assert.deepEqual(
+		chainRewards.get(brevisVault.toLowerCase())?.campaigns.map((c) => c.campaignId),
+		["b-1"],
+	);
 	assert.deepEqual(
 		(await adapter.fetchUserRewards(1, account)).map((r) => r.provider),
 		["fuul", "brevis"],
 	);
+});
+
+test("Brevis keeps direct claim data for an incomplete V3 row and other campaigns", async () => {
+	const v3Reward = { ...reward("brevis"), campaignId: "b-1" };
+	const directReward = {
+		...v3Reward,
+		claimAddress: claimContract,
+		proof: [`0x${"11".repeat(32)}` as Hex],
+		cumulativeAmounts: ["10"],
+		epoch: "1",
+		accumulated: "10",
+		unclaimed: "10",
+	};
+	const otherCampaign = { ...directReward, campaignId: "b-2" };
+	const otherEpoch = { ...directReward, epoch: "2" };
+	const direct = {
+		fetchSourceChainRewards: async () => new Map<string, VaultRewardInfo>(),
+		fetchSourceUserRewards: async () => [directReward, otherCampaign, otherEpoch],
+	};
+
+	const incomplete = withDirectSources(v3Adapter(new Map(), [v3Reward]), direct);
+	assert.deepEqual(await incomplete.fetchUserRewards(1, account), [
+		directReward,
+		otherCampaign,
+		otherEpoch,
+	]);
+
+	const completeV3 = { ...directReward, unclaimed: "11" };
+	const complete = withDirectSources(v3Adapter(new Map(), [completeV3]), direct);
+	assert.deepEqual(await complete.fetchUserRewards(1, account), [
+		completeV3,
+		otherCampaign,
+		otherEpoch,
+	]);
 });
 
 test("a failed direct read leaves V3's answer, and a failed V3 read still fails", async () => {
@@ -357,6 +422,67 @@ for (const mode of ["v3", "fallback"] as const) {
 			rewards.get(brevisVault.toLowerCase())?.campaigns[0]?.source,
 			"brevis",
 		);
+	});
+
+	test(`the SDK in ${mode} mode keeps a direct Brevis claim when V3 omits its proof`, async () => {
+		const campaign = brevisCamelCaseCampaign();
+		const proof = `0x${"11".repeat(32)}` as Hex;
+		const sdk = await buildEulerSDK({
+			config: {
+				rewardsServiceAdapter: mode,
+				rewardsV3ApiUrl: "https://example.invalid",
+			},
+			rewardsServiceConfig: {
+				enableMerkl: false,
+				enableFuul: false,
+				enableTurtle: false,
+			},
+			buildQuery(queryName, fn) {
+				if (queryName === "queryV3RewardsBreakdown") {
+					return (async () => ({
+						data: [{
+							chainId: 1,
+							vault: brevisVault,
+							recipient: account,
+							rewardToken: campaign.rewardInfo.tokenAddress,
+							amount: "10",
+							campaignId: campaign.campaignId,
+							provider: "brevis",
+						}],
+					})) as typeof fn;
+				}
+				if (queryName === "queryV3RewardsApyPage") {
+					return (async () => ({ data: [] })) as typeof fn;
+				}
+				if (queryName === "queryBrevisCampaigns") {
+					return (async () => ({ campaigns: [campaign] })) as typeof fn;
+				}
+				if (queryName === "queryBrevisUserProofs") {
+					return (async () => ({
+						err: null,
+						rewardsBatch: [{
+							campaignId: campaign.campaignId,
+							claimChainId: 1,
+							claimContractAddr: claimContract,
+							claimableRewards: "10",
+							epoch: "1",
+							cumulativeRewards: ["10"],
+							merkleProof: [proof],
+						}],
+					})) as typeof fn;
+				}
+				return fn;
+			},
+		});
+
+		const rewards = await sdk.rewardsService.fetchUserRewards(1, account);
+		assert.equal(rewards.length, 1);
+		assert.equal(rewards[0]?.provider, "brevis");
+		assert.equal(rewards[0]?.campaignId, campaign.campaignId);
+		assert.equal(rewards[0]?.claimAddress, claimContract);
+		assert.deepEqual(rewards[0]?.proof, [proof]);
+		assert.deepEqual(rewards[0]?.cumulativeAmounts, ["10"]);
+		assert.equal(rewards[0]?.epoch, "1");
 	});
 }
 

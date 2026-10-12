@@ -1381,7 +1381,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 			{
 				chain_id: [chainId],
 				user_address: [address],
-				status: [3, 4],
+				status: [3, 4, 5],
 			},
 		).catch(() => ({ campaigns: [] }) as BrevisCampaignsResponse);
 
