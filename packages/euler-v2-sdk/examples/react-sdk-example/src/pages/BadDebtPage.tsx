@@ -78,7 +78,6 @@ const SUBGRAPH_ENDPOINTS: Record<number, string> = {
   130: "/api/subgraphs/euler-simple-unichain",
   143: "/api/subgraphs/euler-simple-monad",
   146: "/api/subgraphs/euler-simple-sonic",
-  1923: "/api/subgraphs/euler-simple-swell",
 };
 
 function formatUsd(value: number | undefined): string {
