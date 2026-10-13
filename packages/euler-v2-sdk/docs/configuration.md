@@ -58,7 +58,7 @@ const sdk = await buildEulerSDK({
     accountServiceAdapter: "v3",
     eVaultServiceAdapter: "v3",
     rewardsServiceAdapter: "direct",
-    tokenlistApiBaseUrl: "https://indexer.euler.finance",
+    tokenlistApiBaseUrl: "https://v3.euler.finance",
   },
 });
 ```

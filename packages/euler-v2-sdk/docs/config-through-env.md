@@ -137,8 +137,8 @@ Template variables are `{base}`, `{chainId}`, and `{filename}`.
 
 | Config field | Environment variable | Default |
 |---|---|---|
-| `tokenlistApiBaseUrl` | `EULER_SDK_TOKENLIST_API_BASE_URL` | `https://indexer.euler.finance` |
-| `tokenlistUrlTemplate` | `EULER_SDK_TOKENLIST_URL_TEMPLATE` | `{base}/v1/tokens?chainId={chainId}` |
+| `tokenlistApiBaseUrl` | `EULER_SDK_TOKENLIST_API_BASE_URL` | `https://v3.euler.finance` |
+| `tokenlistUrlTemplate` | `EULER_SDK_TOKENLIST_URL_TEMPLATE` | `{base}/v3/tokens?chainId={chainId}&limit=500&type=base` |
 | `oracleAdapterV3ApiUrl` | `EULER_SDK_ORACLE_ADAPTER_V3_API_URL` | Shared V3 URL (`https://v3.euler.finance`) |
 | `oracleAdapterV3ApiKey` | `EULER_SDK_ORACLE_ADAPTER_V3_API_KEY` | Shared V3 API key when configured |
 | `oracleAdapterV3PageSize` | `EULER_SDK_ORACLE_ADAPTER_V3_PAGE_SIZE` | `100` |

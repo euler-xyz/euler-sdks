@@ -52,7 +52,7 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 - `tokenlistService`: Provides token metadata/list data and on-demand on-chain ERC20 decimals (see below).
 - `eulerLabelsService`: Provides normalized euler-labels products, entities, points, Earn entries, notices, and asset restrictions.
 - `providerService`: Manages per-chain RPC providers.
-- `deploymentService`: Provides chain-specific deployed addresses/configuration.
+- `deploymentService`: Provides chain-specific deployed addresses/configuration, including the chain's `status` (`staging`, `production`, `unlisted` or `deprecated`) and optional `explorerUrl`.
 - `abiService`: Provides ABI access used for contract encoding/decoding.
 
 ## On-demand ERC20 decimals
