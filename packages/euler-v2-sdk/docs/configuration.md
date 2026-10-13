@@ -79,7 +79,42 @@ Use explicit nested service config when the option is a function or a custom obj
 | `buildQuery` | 5s in-memory cache | Wrap all external queries for caching, logging, or profiling |
 | `queryCacheConfig` | `{ enabled: true, ttlMs: 5000, failureTtlMs: 5000 }` | Built-in query cache settings when `buildQuery` is not supplied |
 | `plugins` | `[]` | Extend on-chain reads and transaction plans |
+| `chains` | `{}` | Viem chains for chains viem lacks, patches to resolved chains, and per-chain transport tuning |
 | `servicesOverrides` | `{}` | Replace any built-in service with a custom implementation |
+
+## Chains
+
+The provider service builds one viem public client per chain in `rpcUrls`. Each chain resolves in this order:
+
+1. `chains[chainId]` when it is a complete viem `Chain`.
+2. The EulerChains `viemName` from the deployments document, for chain ids that viem exports more than once.
+3. The only viem chain with that id.
+
+Otherwise `buildEulerSDK()` throws an error that names both fixes: set `viemName` for the chain in euler-interfaces, or pass the chain in `chains`.
+
+A partial `chains[chainId]` patches the resolved chain: `contracts`, `blockExplorers` and `rpcUrls` merge by key, other fields replace. The same entry can carry `transport` tuning for that chain: `http` options for viem's `http()` transport and `multicall` batching options, each merged over the SDK defaults.
+
+```typescript
+import { defineChain } from "viem";
+
+const sdk = await buildEulerSDK({
+  config: { rpcUrls: { 146: "https://your-sonic-rpc", 777001: "https://your-rpc" } },
+  chains: {
+    // A chain viem does not ship yet
+    777001: defineChain({
+      id: 777001,
+      name: "New Chain",
+      nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+      rpcUrls: { default: { http: ["https://your-rpc"] } },
+      contracts: { multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" } },
+    }),
+    // Smaller multicall batches for one chain
+    146: { transport: { multicall: { batchSize: 128 } } },
+  },
+});
+```
+
+Browser builds do not embed viem's chain list. The package's `browser` field maps the chain list module to one that loads `viem/chains` with a dynamic import, which bundlers emit as a separate chunk. `buildEulerSDK()` and `ProviderService.build()` load that chunk only when a chain in `rpcUrls` is not a complete `chains` entry, so an app that supplies every chain never downloads it. Construct `ProviderService` with `await ProviderService.build(rpcUrls, options)` in browser code; the synchronous constructor resolves chains from viem only after the list has loaded.
 
 ## V3 adapter config
 

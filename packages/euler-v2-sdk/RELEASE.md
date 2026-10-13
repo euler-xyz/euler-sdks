@@ -11,6 +11,16 @@ major version. Its required Pyth `publishTimes` evidence and required
 `IExecutionService` / `IPositionMigrationService` additions are not backward
 compatible. Do not publish these changes under a minor or patch version.
 
+## PR #119 release classification
+
+PR #119 is an intentional breaking SDK release and must be published under a
+new major version. The provider service drops its built-in chain list and
+resolves chains from viem by id, `Deployment.status` narrows to
+`staging | production | unlisted | deprecated`, and browser builds must create
+the provider service with `ProviderService.build()` unless every chain is
+supplied through `chains`. Do not publish these changes under a minor or patch
+version.
+
 ## Release inputs
 
 The publish skill should use this file as the repo-local playbook for `@eulerxyz/euler-v2-sdk` releases.

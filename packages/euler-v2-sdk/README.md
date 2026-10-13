@@ -106,6 +106,7 @@ All docs are in [`./docs`](./docs).
 25. [Labels and vault assessments](./docs/labels.md) - Published metadata, visibility and raw assessment reads.
 26. [Decoding Smart Contract Errors](./docs/decode-smart-contract-errors.md) - Revert decoding utilities for better error handling.
 27. [Entity Diagnostics](./docs/entity-diagnostics.md) - Sidecar metadata for data normalization, fallbacks, and per-field warnings.
+28. [Adding a Chain](./docs/adding-a-chain.md) - What the SDK reads at runtime per chain, and the per-chain entries kept in this repository.
 
 ## Examples
 
