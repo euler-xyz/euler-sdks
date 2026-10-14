@@ -11,6 +11,7 @@ import {
 } from "../services/deploymentService/index.js";
 import {
 	ProviderService,
+	type ChainOverrides,
 	type IProviderService,
 } from "../services/providerService/index.js";
 import {
@@ -264,6 +265,13 @@ export interface BuildSDKOptions<
 	};
 	/** Configuration for the built-in V3 activity adapter. */
 	activityServiceConfig?: ActivityServiceConfig;
+	/**
+	 * Viem chains keyed by chain id, for chains viem lacks or to patch a resolved
+	 * chain (for example its multicall or explorer). The same entry can carry
+	 * per-chain `transport` tuning. Other chains resolve through the EulerChains
+	 * `viemName`, then the only viem chain with that id.
+	 */
+	chains?: ChainOverrides;
 	/** Default in-memory cache applied to all decorated `query*` methods. Enabled by default with 5s success and failure TTLs. */
 	queryCacheConfig?: QueryCacheConfig;
 	/** Optional query decorator applied to all query* functions across all services. Use for global logging, caching, profiling, etc. */
@@ -299,6 +307,22 @@ function mergeNumberRecords<T>(
 		...(explicitRecord ?? {}),
 		...(configRecord ?? {}),
 	};
+}
+
+function readViemNames(
+	deploymentService: IDeploymentService,
+	chainIds: readonly number[],
+): Record<number, string> {
+	const registryChainIds = new Set(deploymentService.getDeploymentChainIds());
+	return Object.fromEntries(
+		chainIds
+			.filter((chainId) => registryChainIds.has(chainId))
+			.map((chainId) => [
+				chainId,
+				deploymentService.getDeployment(chainId).viemName,
+			])
+			.filter((entry): entry is [number, string] => !!entry[1]),
+	);
 }
 
 function mergeStringRecords<T>(
@@ -579,6 +603,7 @@ export async function buildEulerSDK<
 		positionMigrationServiceConfig,
 		positionMigrationConnectorConfig,
 		activityServiceConfig,
+		chains,
 	} = options;
 
 	const envConfig = readEulerSDKEnvConfig();
@@ -625,7 +650,14 @@ export async function buildEulerSDK<
 			resolvedBuildQuery,
 		));
 	const providerService =
-		servicesOverrides?.providerService ?? new ProviderService(resolvedRpcUrls);
+		servicesOverrides?.providerService ??
+		(await ProviderService.build(resolvedRpcUrls, {
+			chains,
+			viemNames: readViemNames(
+				deploymentService,
+				Object.keys(resolvedRpcUrls).map(Number),
+			),
+		}));
 
 	const disableV3 =
 		pickConfigValue(config?.disableV3, undefined, envConfig.disableV3) ?? false;

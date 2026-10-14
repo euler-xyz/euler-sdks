@@ -367,7 +367,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   );
   assert.throws(
     () => new ProviderService({ 999999: "https://invalid.example" }),
-    /Chain 999999 not supported/,
+    /viem has no chain with id 999999/,
   );
 
   const abiService = new ABIService(buildQuery);

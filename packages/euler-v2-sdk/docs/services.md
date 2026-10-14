@@ -51,8 +51,8 @@ All fetch-option types support `populateAll?: boolean`. When `true`, the service
 - `intrinsicApyService`: Fetches intrinsic APY data used by vault enrichments.
 - `tokenlistService`: Provides token metadata/list data and on-demand on-chain ERC20 decimals (see below).
 - `eulerLabelsService`: Provides normalized euler-labels products, entities, points, Earn entries, notices, and asset restrictions.
-- `providerService`: Manages per-chain RPC providers.
-- `deploymentService`: Provides chain-specific deployed addresses/configuration.
+- `providerService`: Manages per-chain RPC providers. Chains resolve from viem by id; see [Chains](./configuration.md#chains).
+- `deploymentService`: Provides chain-specific deployed addresses/configuration, including the chain's `status` (`staging`, `production`, `unlisted` or `deprecated`) and optional `explorerUrl`.
 - `abiService`: Provides ABI access used for contract encoding/decoding.
 
 ## On-demand ERC20 decimals

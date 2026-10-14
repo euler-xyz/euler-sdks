@@ -25,6 +25,9 @@
     },
     "./package.json": "./package.json"
   },
+  "browser": {
+    "./dist/src/services/providerService/viemChainCatalog.js": "./dist/src/services/providerService/viemChainCatalog.browser.js"
+  },
   "files": [
     "dist"
   ],

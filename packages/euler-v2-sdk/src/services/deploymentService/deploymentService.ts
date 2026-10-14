@@ -1,13 +1,33 @@
 import type { Address } from "viem";
 import type { BuildQueryFn } from "../../utils/buildQuery.js";
 
+/**
+ * `staging`: being launched. `production`: live and public. `unlisted`: live
+ * contracts and indexing for partners, not offered in Euler apps.
+ * `deprecated`: winding down, exits only.
+ */
+export type EulerChainStatus =
+	| "staging"
+	| "production"
+	| "unlisted"
+	| "deprecated";
+
+const EULER_CHAIN_STATUSES: ReadonlySet<string> = new Set<EulerChainStatus>([
+	"staging",
+	"production",
+	"unlisted",
+	"deprecated",
+]);
+
 export interface Deployment {
 	chainId: number;
 	name: string;
 	viemName?: string;
 	safeBaseUrl?: string;
 	safeAddressPrefix?: string;
-	status: string;
+	status: EulerChainStatus;
+	/** Block explorer web origin without a trailing slash, e.g. `https://etherscan.io`. */
+	explorerUrl?: string;
 	addresses: {
 		bridgeAddrs?: {
 			eulOFTAdapter?: Address;
@@ -85,10 +105,45 @@ export interface Deployment {
 
 export type Deployments = Record<number, Deployment>;
 
+/** An `EulerChains.json` row as published, before status and explorer normalization. */
+export type DeploymentInput = Omit<Deployment, "status" | "explorerUrl"> & {
+	status?: string;
+	explorerUrl?: string;
+};
+
+export function normalizeChainStatus(status: unknown): EulerChainStatus {
+	if (status === "testing") return "staging";
+	if (typeof status === "string" && EULER_CHAIN_STATUSES.has(status)) {
+		return status as EulerChainStatus;
+	}
+	return "unlisted";
+}
+
+export function normalizeExplorerUrl(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim().replace(/\/+$/, "");
+	if (!trimmed.startsWith("https://")) return undefined;
+	try {
+		return new URL(trimmed).hostname ? trimmed : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+export function normalizeDeployment(input: DeploymentInput): Deployment {
+	const { status, explorerUrl, ...rest } = input;
+	const normalizedExplorerUrl = normalizeExplorerUrl(explorerUrl);
+	return {
+		...rest,
+		status: normalizeChainStatus(status),
+		...(normalizedExplorerUrl ? { explorerUrl: normalizedExplorerUrl } : {}),
+	};
+}
+
 export interface IDeploymentService {
 	getDeploymentChainIds(): number[];
 	getDeployment(chainId: number): Deployment;
-	addDeployment(deployment: Deployment): void;
+	addDeployment(deployment: DeploymentInput): void;
 }
 
 export interface DeploymentServiceConfig {
@@ -98,7 +153,7 @@ export interface DeploymentServiceConfig {
 export class DeploymentService implements IDeploymentService {
 	private deployments: Deployments;
 
-	static queryDeployments = async (url: string): Promise<Deployment[]> => {
+	static queryDeployments = async (url: string): Promise<DeploymentInput[]> => {
 		if (!url) {
 			throw new Error("Deployments URL is required");
 		}
@@ -107,7 +162,7 @@ export class DeploymentService implements IDeploymentService {
 		if (!Array.isArray(data)) {
 			throw new Error("Invalid deployment data format");
 		}
-		return data as Deployment[];
+		return data as DeploymentInput[];
 	};
 
 	static setQueryDeployments(
@@ -124,18 +179,20 @@ export class DeploymentService implements IDeploymentService {
 			? buildQuery("queryDeployments", DeploymentService.queryDeployments, {})
 			: DeploymentService.queryDeployments;
 		const data = await queryFn(deploymentServiceConfig.deploymentsUrl);
-		const deployments = data.reduce(
-			(acc: Record<number, Deployment>, deployment: Deployment) => {
-				acc[deployment.chainId] = deployment;
-				return acc;
-			},
-			{},
+		return new DeploymentService(
+			Object.fromEntries(
+				data.map((deployment) => [deployment.chainId, deployment]),
+			),
 		);
-		return new DeploymentService(deployments);
 	}
 
-	constructor(deployments: Deployments) {
-		this.deployments = deployments;
+	constructor(deployments: Record<number, DeploymentInput>) {
+		this.deployments = Object.fromEntries(
+			Object.entries(deployments).map(([chainId, deployment]) => [
+				chainId,
+				normalizeDeployment(deployment),
+			]),
+		);
 	}
 
 	getDeploymentChainIds(): number[] {
@@ -149,7 +206,10 @@ export class DeploymentService implements IDeploymentService {
 		return this.deployments[chainId];
 	}
 
-	addDeployment(deployment: Deployment): void {
-		this.deployments[deployment.chainId] = deployment;
+	addDeployment(deployment: DeploymentInput): void {
+		this.deployments = {
+			...this.deployments,
+			[deployment.chainId]: normalizeDeployment(deployment),
+		};
 	}
 }
