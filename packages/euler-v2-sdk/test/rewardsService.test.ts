@@ -23,6 +23,7 @@ import type { MerklOpportunity } from "../src/services/rewardsService/rewardsSer
 import { RewardsV3Adapter } from "../src/services/rewardsService/adapters/rewardsV3Adapter/index.js";
 import { RewardsDirectAdapter } from "../src/services/rewardsService/adapters/rewardsDirectAdapter/index.js";
 import { buildEulerSDK } from "../src/sdk/buildSDK.js";
+import { DeploymentService } from "../src/services/deploymentService/index.js";
 
 const rewardToken = getAddress(
 	"0x0000000000000000000000000000000000000001",
@@ -727,6 +728,7 @@ test("fallback rewards factory keeps the resolved token when collapsing turtle s
 	// The factory merges V3 rows before the service-level reduction ever runs,
 	// so the token has to survive that earlier merge too.
 	const sdk = await buildEulerSDK({
+		servicesOverrides: { deploymentService: new DeploymentService({}) },
 		config: {
 			rewardsServiceAdapter: "fallback",
 			rewardsV3ApiUrl: "https://example.invalid",
@@ -802,6 +804,7 @@ test("rewards service keeps the resolved token when collapsing turtle stream row
 
 test("fallback rewards service supplements V3 Merkl user rewards with direct claim proof", async () => {
 	const sdk = await buildEulerSDK({
+		servicesOverrides: { deploymentService: new DeploymentService({}) },
 		config: {
 			rewardsServiceAdapter: "fallback",
 			rewardsV3ApiUrl: "https://example.invalid",
@@ -882,6 +885,7 @@ test("fallback rewards service supplements V3 Merkl user rewards with direct cla
 
 test("fallback rewards service collapses V3 Merkl rows into the direct cumulative claim", async () => {
 	const sdk = await buildEulerSDK({
+		servicesOverrides: { deploymentService: new DeploymentService({}) },
 		config: {
 			rewardsServiceAdapter: "fallback",
 			rewardsV3ApiUrl: "https://example.invalid",
@@ -978,6 +982,7 @@ test("fallback rewards service collapses V3 Merkl rows into the direct cumulativ
 
 test("fallback rewards service collapses duplicate V3 Turtle stream rows", async () => {
 	const sdk = await buildEulerSDK({
+		servicesOverrides: { deploymentService: new DeploymentService({}) },
 		config: {
 			rewardsServiceAdapter: "fallback",
 			rewardsV3ApiUrl: "https://example.invalid",

@@ -3,6 +3,7 @@ import { test } from "vitest";
 import { getAddress, type Hex, zeroAddress } from "viem";
 
 import { buildEulerSDK } from "../src/sdk/buildSDK.js";
+import { DeploymentService } from "../src/services/deploymentService/index.js";
 import { RewardsDirectAdapter } from "../src/services/rewardsService/adapters/rewardsDirectAdapter/index.js";
 import { normalizeBrevisCampaign } from "../src/services/rewardsService/adapters/rewardsDirectAdapter/brevisCampaign.js";
 import { withDirectSources } from "../src/services/rewardsService/adapters/rewardsV3Adapter/withDirectSources.js";
@@ -382,6 +383,7 @@ test("the wrapped V3 adapter keeps its other methods", () => {
 for (const mode of ["v3", "fallback"] as const) {
 	test(`the SDK in ${mode} mode shows a Brevis campaign beside V3's rewards`, async () => {
 		const sdk = await buildEulerSDK({
+			servicesOverrides: { deploymentService: new DeploymentService({}) },
 			config: {
 				rewardsServiceAdapter: mode,
 				rewardsV3ApiUrl: "https://example.invalid",
@@ -428,6 +430,7 @@ for (const mode of ["v3", "fallback"] as const) {
 		const campaign = brevisCamelCaseCampaign();
 		const proof = `0x${"11".repeat(32)}` as Hex;
 		const sdk = await buildEulerSDK({
+			servicesOverrides: { deploymentService: new DeploymentService({}) },
 			config: {
 				rewardsServiceAdapter: mode,
 				rewardsV3ApiUrl: "https://example.invalid",
@@ -489,6 +492,7 @@ for (const mode of ["v3", "fallback"] as const) {
 test("the SDK reads no Brevis or Fuul beside V3 when both are switched off", async () => {
 	const calls: string[] = [];
 	const sdk = await buildEulerSDK({
+		servicesOverrides: { deploymentService: new DeploymentService({}) },
 		config: {
 			rewardsServiceAdapter: "v3",
 			rewardsV3ApiUrl: "https://example.invalid",
