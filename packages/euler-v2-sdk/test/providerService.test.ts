@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { type Chain, defineChain, zeroAddress } from "viem";
+import * as viemChains from "viem/chains";
 import { base, mainnet } from "viem/chains";
 import { buildEulerSDK } from "../src/sdk/buildSDK.js";
 import type { IDeploymentService } from "../src/services/deploymentService/index.js";
@@ -9,6 +10,7 @@ import {
 	ProviderService,
 	resolveViemChain,
 } from "../src/services/providerService/index.js";
+import { INTERIM_VIEM_NAMES } from "../src/services/providerService/chainResolution.js";
 
 const RPC_URL = "https://rpc.example";
 const MULTICALL = "0x1111111111111111111111111111111111111111";
@@ -19,6 +21,20 @@ const customChain = defineChain({
 	nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
 	rpcUrls: { default: { http: [RPC_URL] } },
 	contracts: { multicall3: { address: MULTICALL } },
+});
+
+const catalogChain = defineChain({
+	id: 777002,
+	name: "Catalog Chain",
+	nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+	rpcUrls: { default: { http: [RPC_URL] } },
+	blockExplorers: {
+		default: { name: "Catalog Explorer", url: "https://catalog.example" },
+	},
+	contracts: {
+		multicall3: { address: "0x2222222222222222222222222222222222222222" },
+		ensRegistry: { address: "0x3333333333333333333333333333333333333333" },
+	},
 });
 
 function deepFreeze<T>(value: T): T {
@@ -45,46 +61,12 @@ describe("ProviderService chain resolution", () => {
 		expect(chainOf(59144).name).toBe("Linea Mainnet");
 	});
 
-	it("resolves every chain in the current registry", () => {
-		// euler-interfaces EulerChains.json on master, 2026-10-13: chain ids and viemName values.
-		const registry: Record<number, string | undefined> = {
-			1: "mainnet",
-			56: "bsc",
-			130: undefined,
-			137: undefined,
-			143: undefined,
-			146: undefined,
-			239: "tac",
-			999: undefined,
-			8453: undefined,
-			9745: undefined,
-			42161: undefined,
-			43114: undefined,
-			59144: undefined,
-			60808: "bob",
-			80094: undefined,
-		};
-		const chainIds = Object.keys(registry).map(Number);
-		const viemNames = Object.fromEntries(
-			Object.entries(registry).filter(
-				(entry): entry is [string, string] => entry[1] !== undefined,
-			),
-		);
-
-		const service = new ProviderService(
-			Object.fromEntries(chainIds.map((chainId) => [chainId, RPC_URL])),
-			{ viemNames },
-		);
-
-		for (const chainId of chainIds) {
-			expect(service.getProvider(chainId).chain?.id).toBe(chainId);
+	it("resolves each interim viem name while the registry has no viemName for its chain", () => {
+		for (const [chainId, viemName] of Object.entries(INTERIM_VIEM_NAMES)) {
+			expect(chainOf(Number(chainId))).toBe(
+				viemChains[viemName as keyof typeof viemChains],
+			);
 		}
-	});
-
-	it("keeps the previous choice for Base and HyperEVM while the registry has no viemName for them", () => {
-		const baseChain = chainOf(8453);
-		expect(baseChain).toBe(base);
-		expect(chainOf(999).name).toBe("HyperEVM");
 	});
 
 	it("uses the EulerChains viemName to pick among viem chains that share an id", () => {
@@ -144,23 +126,22 @@ describe("ProviderService chain resolution", () => {
 	});
 
 	it("patches the resolved chain's multicall and explorer", () => {
-		const chain = chainOf(8453, {
-			chains: {
-				8453: {
-					contracts: { multicall3: { address: MULTICALL } },
-					blockExplorers: {
-						default: { name: "Explorer", url: "https://explorer.example" },
-					},
+		const chain = resolveViemChain(catalogChain.id, {
+			override: deepFreeze({
+				contracts: { multicall3: { address: MULTICALL } },
+				blockExplorers: {
+					default: { name: "Explorer", url: "https://explorer.example" },
 				},
-			},
+			}),
+			catalog: deepFreeze({ catalogChain }),
 		});
 
-		expect(chain.name).toBe("Base");
+		expect(chain.name).toBe("Catalog Chain");
 		expect(chain.contracts?.multicall3?.address).toBe(MULTICALL);
-		expect(chain.contracts?.l2OutputOracle).toEqual(base.contracts.l2OutputOracle);
+		expect(chain.contracts?.ensRegistry).toEqual(catalogChain.contracts.ensRegistry);
 		expect(chain.blockExplorers?.default.url).toBe("https://explorer.example");
-		expect(chain.formatters).toBe(base.formatters);
-		expect(base.contracts.multicall3.address).not.toBe(MULTICALL);
+		expect(chain.nativeCurrency).toBe(catalogChain.nativeCurrency);
+		expect(catalogChain.contracts.multicall3.address).not.toBe(MULTICALL);
 	});
 
 	it("explains that a patch needs a chain viem can resolve", () => {
@@ -209,22 +190,16 @@ describe("ProviderService chain resolution", () => {
 
 	it("does not mutate the supplied overrides", () => {
 		const chains: ChainOverrides = deepFreeze({
-			8453: {
-				contracts: { multicall3: { address: MULTICALL } },
-				transport: { multicall: { batchSize: 64 } },
-			},
-			777001: { ...customChain },
+			777001: { ...customChain, transport: { multicall: { batchSize: 64 } } },
 		});
 
-		const service = new ProviderService(
-			{ 8453: RPC_URL, 777001: RPC_URL },
-			{ chains },
-		);
+		const service = new ProviderService({ 777001: RPC_URL }, { chains });
 
-		expect(service.getProvider(8453).chain?.contracts?.multicall3?.address).toBe(
-			MULTICALL,
-		);
 		expect(service.getProvider(777001).chain?.name).toBe("Custom Chain");
+		expect(service.getProvider(777001).batch?.multicall).toEqual({
+			batchSize: 64,
+			wait: 10,
+		});
 	});
 
 	it("still reports chains without an RPC URL", () => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { getAddress, zeroAddress } from "viem";
+import { defineChain, getAddress, zeroAddress } from "viem";
 
 import {
   applyBuildQuery,
@@ -352,15 +352,25 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
     /Deployment not found/,
   );
 
-  const providerService = new ProviderService({
-    1: "https://ethereum-rpc.publicnode.com",
-    8453: "https://base-rpc.publicnode.com",
+  const customChain = defineChain({
+    id: 777001,
+    name: "Custom Chain",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: { default: { http: ["https://rpc.example"] } },
   });
+  const providerService = new ProviderService(
+    {
+      1: "https://ethereum-rpc.publicnode.com",
+      777001: "https://rpc.example",
+    },
+    { chains: { 777001: customChain } },
+  );
   assert.deepEqual(
     providerService.getSupportedChainIds().sort((a, b) => a - b),
-    [1, 8453],
+    [1, 777001],
   );
   assert.equal(providerService.getProvider(1).chain?.id, 1);
+  assert.equal(providerService.getProvider(777001).chain?.name, "Custom Chain");
   assert.throws(
     () => providerService.getProvider(10),
     /No provider configured/,

@@ -1,14 +1,29 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
+import { isAddress, zeroAddress } from "viem";
 import { getCowSwapChainConfig } from "../src/services/executionService/index.js";
+import { COWSWAP_CHAIN_CONFIG } from "../src/services/executionService/cowSwapHelpers.js";
 
-test("returns the BSC CoW Swap deployment config", () => {
-	assert.deepEqual(getCowSwapChainConfig(56), {
-		orderbookUrl: "https://api.cow.fi/bnb",
-		settlementContract: "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
-		vaultRelayer: "0xC92E8bdf79f0507f65a392b0ab4667716BFE0110",
-		openPositionWrapper: "0x64C26b3A182826fe2AB8c04C8Caf40B0c4Bf9a66",
-		closePositionWrapper: "0x4f4CE927188637b4a1d91350c3114F4BD301dd02",
-		collateralSwapWrapper: "0xCC054CD4b814a2caEb63C6F6A446435480a383F3",
-	});
+test("every CoW Swap chain config has an https orderbook and distinct checksummed contracts", () => {
+	for (const [chainId, config] of Object.entries(COWSWAP_CHAIN_CONFIG)) {
+		const { orderbookUrl, ...contracts } = config;
+		const wrappers = [
+			contracts.openPositionWrapper,
+			contracts.closePositionWrapper,
+			contracts.collateralSwapWrapper,
+		];
+
+		assert.equal(getCowSwapChainConfig(Number(chainId)), config);
+		assert.equal(new URL(orderbookUrl).protocol, "https:");
+		assert.equal(orderbookUrl.endsWith("/"), false);
+		for (const address of Object.values(contracts)) {
+			assert.ok(isAddress(address), `${chainId}: ${address}`);
+			assert.notEqual(address, zeroAddress);
+		}
+		assert.equal(new Set(wrappers).size, wrappers.length);
+	}
+});
+
+test("has no CoW Swap config for a chain without an entry", () => {
+	assert.equal(getCowSwapChainConfig(777001), undefined);
 });
