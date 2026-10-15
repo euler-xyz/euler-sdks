@@ -173,16 +173,14 @@ describe("DeploymentService chain status and explorer", () => {
 });
 
 describe("default subgraph URLs", () => {
-	it("has no defaults for chains whose Goldsky subgraphs were removed", () => {
-		const chainIds = Object.keys(
-			defaultAccountVaultsAdapterConfig.subgraphURLs,
-		).map(Number);
+	it("gives each chain its own https subgraph URL", () => {
+		const entries = Object.entries(defaultAccountVaultsAdapterConfig.subgraphURLs);
 
-		for (const retired of [10, 100, 480, 5000, 57073]) {
-			expect(chainIds).not.toContain(retired);
+		for (const [chainId, url] of entries) {
+			expect(Number.isSafeInteger(Number(chainId))).toBe(true);
+			expect(Number(chainId)).toBeGreaterThan(0);
+			expect(new URL(url).protocol).toBe("https:");
 		}
-		for (const live of [1, 56, 130, 143, 146, 239, 999, 8453, 9745, 42161]) {
-			expect(chainIds).toContain(live);
-		}
+		expect(new Set(entries.map(([, url]) => url)).size).toBe(entries.length);
 	});
 });

@@ -13,7 +13,7 @@ These need no SDK change:
 - **RPC URLs.** Apps supply them through `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`.
 - **V3 data.** Vaults, accounts, prices, rewards, labels and token lists come from the V3 API for the chain.
 
-The SDK pins its `viem` version in `package.json`. A chain that viem ships later reaches the SDK's built-in resolution only after that pin is bumped.
+The SDK pins its `viem` version in `package.json`. A chain that viem ships later reaches the SDK's built-in resolution only after that pin is bumped. `pnpm test:live` checks that the pinned viem resolves every chain in the live `EulerChains.json`; `pnpm test` reads no live registry.
 
 ## Kept in this repository
 

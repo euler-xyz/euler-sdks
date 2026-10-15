@@ -37,6 +37,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:reads": "vitest run --config vitest.reads.config.ts",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "test:coverage:reads": "vitest run --config vitest.reads.config.ts --coverage",
     "format": "biome format --write src",
     "lint": "biome lint src",

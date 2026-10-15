@@ -3,6 +3,7 @@ import { test } from "vitest";
 import { type Address, getAddress, type Hex } from "viem";
 import { RewardsV3Adapter } from "../src/services/rewardsService/adapters/rewardsV3Adapter/index.js";
 import { buildEulerSDK } from "../src/sdk/buildSDK.js";
+import { DeploymentService } from "../src/services/deploymentService/index.js";
 
 // Monad rows as /v3/rewards/breakdown returns them once rows carry `provider`; the addresses and
 // the MULTILENDBORROW campaign are the live ones of 2026-10-11.
@@ -171,6 +172,7 @@ test("fallback rewards service shows a multi-vault Merkl reward once with the di
 	const proof = `0x${"11".repeat(32)}` as Hex;
 	const merklTotal = "202697170366146413386247";
 	const sdk = await buildEulerSDK({
+		servicesOverrides: { deploymentService: new DeploymentService({}) },
 		config: {
 			rewardsServiceAdapter: "fallback",
 			rewardsV3ApiUrl: "https://example.invalid",

@@ -27,7 +27,7 @@ export interface ChainResolutionSources {
 
 // euler-interfaces has no viemName for these chains yet, and viem exports
 // several chains with their ids. Remove once the registry names them.
-const INTERIM_VIEM_NAMES: Readonly<Record<number, string>> = {
+export const INTERIM_VIEM_NAMES: Readonly<Record<number, string>> = {
 	8453: "base",
 	999: "hyperEvm",
 };
