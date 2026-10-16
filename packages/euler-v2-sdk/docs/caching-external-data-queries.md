@@ -119,6 +119,8 @@ export const sdkBuildQuery: BuildQueryFn = (queryName, fn, _target, context) => 
 
 Each `query*` call becomes a `fetchQuery` with a deterministic cache key derived from the query name and the SDK-provided `context.getCacheKey(args)` helper. Generic keys remove provider-object noise and normalize address casing. Query-owned `getQueryKeyX` methods handle query-specific semantics such as unordered feed sets or asset filters while ordered payloads remain order-sensitive. If the cached value is fresh (within `staleTime`), no network call is made.
 
+`queryPublicLabels` keys include an opaque adapter scope. Separate labels adapters do not share cache entries, including when endpoints, API keys or injected request functions differ; repeated calls on the same adapter still deduplicate. The scope contains no source credentials.
+
 Calls whose key helper returns `null` invoke the underlying fetcher directly and
 do not create a react-query cache entry.
 
@@ -132,11 +134,9 @@ const STALE_TIMES: Record<string, number> = {
   queryDeployments: Infinity,
   queryABI: Infinity,
   queryTokenList: Infinity,
-  queryEulerLabelsEntities: Infinity,
-  queryEulerLabelsProducts: Infinity,
-  queryEulerLabelsPoints: Infinity,
-  queryEulerLabelsEarnVaults: Infinity,
-  queryEulerLabelsAssets: Infinity,
+
+  // Public labels include live visibility and geo policies.
+  queryPublicLabels: 5_000,
 
   // Perspective / factory lists — change only when new vaults are deployed
   queryEVaultVerifiedArray: 5 * MINUTE,

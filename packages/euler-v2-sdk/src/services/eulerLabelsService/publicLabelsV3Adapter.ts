@@ -1,4 +1,8 @@
-import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
+import {
+	type BuildQueryFn,
+	applyBuildQuery,
+	serializeQueryArgs,
+} from "../../utils/buildQuery.js";
 import { normalizePublicLabelsData } from "./publicLabelsV3Normalize.js";
 import {
 	PUBLIC_LABELS_PAGE_SIZE,
@@ -576,29 +580,28 @@ const buildPublicLabelsRequest =
 		path: string,
 		query: PublicLabelsQuery,
 	): Promise<PublicLabelsResponse<T>> => {
-		const params = new URLSearchParams();
+		const relative = config.endpoint.startsWith("/");
+		// The placeholder only parses relative URLs; it is never sent to fetch.
+		const url = relative
+			? new URL(config.endpoint, "https://euler-sdk.invalid")
+			: new URL(config.endpoint);
+		const basePath = url.pathname.replace(/\/+$/, "");
+		// Browser proxy prefixes precede the full API path, including /v3.
+		url.pathname = `${!relative && basePath.endsWith("/v3") ? basePath : `${basePath}/v3`}${path}`;
 		for (const [key, value] of Object.entries(query)) {
-			if (value !== undefined) params.set(key, String(value));
+			if (value !== undefined) url.searchParams.set(key, String(value));
 		}
-
-		let url: URL | string;
-		if (config.endpoint.startsWith("/")) {
-			// Browser proxy prefixes precede the full API path, including /v3.
-			const basePath = config.endpoint.replace(/\/+$/, "");
-			const search = params.toString();
-			url = `${basePath}/v3${path}${search ? `?${search}` : ""}`;
-		} else {
-			url = new URL(config.endpoint);
-			const basePath = url.pathname.replace(/\/+$/, "");
-			url.pathname = `${basePath.endsWith("/v3") ? basePath : `${basePath}/v3`}${path}`;
-			for (const [key, value] of params) url.searchParams.set(key, value);
-		}
+		// Preserve explicit ports regardless of the browser's protocol.
+		const authority = config.endpoint.match(/^\/{2,}[^/?#]*/)?.[0] ?? "";
+		const requestUrl = relative
+			? `${authority}${url.pathname}${url.search}${url.hash}`
+			: url;
 
 		const headers = new Headers({ accept: "application/json" });
 		if (config.apiKey?.trim()) {
 			headers.set("X-API-Key", config.apiKey.trim());
 		}
-		const response = await fetch(url, { headers });
+		const response = await fetch(requestUrl, { headers });
 		if (!response.ok) {
 			throw new Error(
 				`Public Labels V3 returned ${response.status} for ${path}`,
@@ -607,10 +610,19 @@ const buildPublicLabelsRequest =
 		return (await response.json()) as PublicLabelsResponse<T>;
 	};
 
+// Separate module loads and adapter instances without serializing source credentials.
+const publicLabelsCacheNamespace = Math.random().toString(36).slice(2);
+let nextPublicLabelsCacheId = 0;
+
 class PublicLabelsV3Base {
+	private readonly cacheScope = `${publicLabelsCacheNamespace}:${nextPublicLabelsCacheId++}`;
 	queryPublicLabels: PublicLabelsRequest;
 	protected readonly labelSet: string;
 	protected readonly version: string;
+
+	getQueryKeyPublicLabels(path: string, query: PublicLabelsQuery): string | null {
+		return serializeQueryArgs([this.cacheScope, path, query]);
+	}
 
 	constructor(config: PublicLabelsV3AdapterConfig, buildQuery?: BuildQueryFn) {
 		this.labelSet = validateLabelSet(config.labelSet?.trim() || "public");

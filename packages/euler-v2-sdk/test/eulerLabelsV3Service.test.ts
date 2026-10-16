@@ -5,6 +5,8 @@ import {
 	EulerLabelsService,
 	EulerLabelsV3Service,
 	normalizePublicLabelsData,
+	serializeQueryArgs,
+	type BuildQueryFn,
 	type BuildSDKOptions,
 	type EVault,
 	type IDeploymentService,
@@ -101,6 +103,20 @@ function mockHttp(request = fixtureRequest()) {
 	});
 }
 
+// Model the documented React Query key shared across SDK instances.
+function createSharedQueryCache() {
+	const cache = new Map<string, Promise<unknown>>();
+	const buildQuery: BuildQueryFn = (name, fn, _target, context) =>
+		((...args: unknown[]) => {
+			const key = context ? context.getCacheKey(args) : serializeQueryArgs(args);
+			if (key === null) return fn(...args);
+			const queryKey = JSON.stringify(["sdk", name, key]);
+			if (!cache.has(queryKey)) cache.set(queryKey, fn(...args));
+			return cache.get(queryKey)!;
+		}) as typeof fn;
+	return { buildQuery, cache };
+}
+
 beforeEach(() => {
 	for (const key of Object.keys(process.env)) {
 		if (/^(VITE_)?EULER_SDK_/.test(key)) vi.stubEnv(key, undefined);
@@ -130,6 +146,79 @@ describe("SDK Public Labels V3 default", () => {
 			expect(url.origin).toBe("https://v3.euler.finance");
 			expect(url.pathname).toMatch(/^\/v3\//);
 		}
+	});
+
+	it.each([
+		"shared endpoint",
+		"labels endpoint",
+		"API key",
+		"proxy query",
+		"custom request",
+		"reused custom request",
+	])("isolates a %s override in a shared application cache while retaining repeated-read caching", async (override) => {
+		const firstSource = structuredClone(publicLabelsFixture);
+		firstSource.geoPolicies[0]!.countries = ["US"];
+		firstSource.geoPolicies[0]!.countriesResolved = ["US"];
+		const secondSource = structuredClone(firstSource);
+		secondSource.geoPolicies[0]!.countries = ["GB"];
+		secondSource.geoPolicies[0]!.countriesResolved = ["GB"];
+		secondSource.visibility[KPK_VAULT.toLowerCase()]!.status = "hidden";
+		const firstRequest = fixtureRequest(() => firstSource);
+		const secondRequest = fixtureRequest(() => secondSource);
+		let activeRequest = firstRequest;
+		const sharedRequest: PublicLabelsRequest = (path, query) => activeRequest(path, query);
+		const { buildQuery, cache } = createSharedQueryCache();
+		const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+			const url = new URL(String(input), "https://app.example");
+			const key = new Headers(init?.headers).get("X-API-Key");
+			const second = url.hostname === "labels-b.example"
+				|| url.searchParams.get("tenant") === "tenant-b-private"
+				|| key === "key-b-private";
+			const request = second ? secondRequest : firstRequest;
+			const path = url.pathname.slice(url.pathname.lastIndexOf("/v3") + 3);
+			return Response.json(await request(path, Object.fromEntries(url.searchParams)));
+		});
+		const options = (side: "a" | "b"): BuildSDKOptions => {
+			switch (override) {
+				case "shared endpoint":
+					return { config: { v3ApiUrl: `https://labels-${side}.example` } };
+				case "labels endpoint":
+					return { eulerLabelsV3AdapterConfig: { endpoint: `https://labels-${side}.example` } };
+				case "API key":
+					return { config: { v3ApiUrl: "https://labels.example", v3ApiKey: `key-${side}-private` } };
+				case "proxy query":
+					return { config: { v3ApiUrl: `/api/v3?tenant=tenant-${side}-private` } };
+				case "custom request":
+					return { eulerLabelsV3AdapterConfig: { request: side === "a" ? firstRequest : secondRequest } };
+				default:
+					return { eulerLabelsV3AdapterConfig: { request: sharedRequest } };
+			}
+		};
+		const first = await build({ ...options("a"), buildQuery });
+		const firstReads = await Promise.all([
+			first.eulerLabelsService.fetchEulerLabelsData(1),
+			first.eulerLabelsService.fetchEulerLabelsData(1),
+		]);
+		expect(firstReads[0]).toMatchObject(normalizePublicLabelsData(1, firstSource));
+		expect(firstReads[1]).toEqual(firstReads[0]);
+		const firstCount = firstRequest.mock.calls.length;
+		expect(firstCount).toBeGreaterThan(0);
+
+		activeRequest = secondRequest;
+		const second = await build({ ...options("b"), buildQuery });
+		expect(await second.eulerLabelsService.fetchEulerLabelsData(1)).toMatchObject(
+			normalizePublicLabelsData(1, secondSource),
+		);
+		const secondCount = secondRequest.mock.calls.length;
+		expect(secondCount).toBeGreaterThan(0);
+		await first.eulerLabelsService.fetchEulerLabelsData(1);
+		await second.eulerLabelsService.fetchEulerLabelsData(1);
+		expect(firstRequest).toHaveBeenCalledTimes(firstCount);
+		expect(secondRequest).toHaveBeenCalledTimes(secondCount);
+		if (override.includes("request")) expect(fetch).not.toHaveBeenCalled();
+		const serializedKeys = JSON.stringify([...cache.keys()]);
+		for (const secret of ["key-a-private", "key-b-private", "tenant-a-private", "tenant-b-private"])
+			expect(serializedKeys).not.toContain(secret);
 	});
 
 	it.each([
@@ -207,11 +296,12 @@ describe("SDK Public Labels V3 default", () => {
 		}
 	});
 
-	it.each(["/api/v3", "/api/v3/"])("loads complete labels through the React example proxy at %s", async (endpoint) => {
+	it.each(["/api/v3", "/api/v3/", "/api/v3?scope=tenant", "/api/v3/?scope=tenant&limit=999&offset=77"])("loads complete labels through the React example proxy at %s", async (endpoint) => {
 		const request = fixtureRequest();
 		const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
 			expect(String(input)).toMatch(/^\/api\/v3\/v3\//);
 			const url = new URL(String(input), "https://app.example");
+			if (endpoint.includes("?")) expect(url.searchParams.get("scope")).toBe("tenant");
 			// Match the React example's Vite proxy rewrite before checking the upstream route.
 			const upstreamPath = url.pathname.replace(/^\/api\/v3/, "");
 			expect(upstreamPath).toMatch(/^\/v3\//);
