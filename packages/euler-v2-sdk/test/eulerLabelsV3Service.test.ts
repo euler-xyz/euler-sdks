@@ -8,12 +8,12 @@ import {
 	type BuildSDKOptions,
 	type EVault,
 	type IDeploymentService,
+	type PublicEulerLabelsData,
 	type PublicLabelsQuery,
 	type PublicLabelsRequest,
 	type PublicLabelsResponse,
 	type PublicLabelsSource,
 } from "../src/index.js";
-import { defaultEulerLabelsURLAdapterConfig } from "../src/sdk/defaultConfig.js";
 import {
 	KPK_VAULT,
 	PUBLIC_LABELS_FIXTURE_VERSION,
@@ -232,22 +232,6 @@ describe("SDK Public Labels V3 default", () => {
 		expect(fetch).not.toHaveBeenCalled();
 	});
 
-	it("keeps logo-only customization on V3", async () => {
-		const sdk = await build({
-			config: {
-				eulerLabelsLogoUrlTemplate:
-					"https://images.example/proxy?url={filename}",
-			},
-			eulerLabelsV3AdapterConfig: { request: fixtureRequest() },
-		});
-		const vault = { address: KPK_VAULT, chainId: 1, populated: {} } as EVault;
-		await sdk.eulerLabelsService.populateLabels([vault]);
-		expect(sdk.eulerLabelsService).toBeInstanceOf(EulerLabelsV3Service);
-		expect(vault.eulerLabel?.entities[0]?.logo).toBe(
-			"https://images.example/proxy?url=https://v3.euler.finance/v3/images/labels/kpk",
-		);
-	});
-
 	it("keeps construction usable but rejects reads and population without HTTP when V3 is disabled", async () => {
 		const fetch = vi.spyOn(globalThis, "fetch");
 		const request = fixtureRequest();
@@ -277,67 +261,11 @@ describe("SDK Public Labels V3 default", () => {
 	});
 });
 
-describe("explicit file and service compatibility", () => {
-	it.each([
-		"config",
-		"env",
-		"adapter",
-	])("keeps explicit %s file URLs and logo resolution, including with disableV3", async (mode) => {
-		const base = "https://app.example/api/internal/labels";
-		const fetch = vi
-			.spyOn(globalThis, "fetch")
-			.mockImplementation(async (input) => {
-				const url = String(input);
-				if (url.endsWith("entities.json")) return Response.json({});
-				if (url.endsWith("products.json"))
-					return Response.json({
-						fixture: {
-							name: "File labels",
-							description: "",
-							url: "",
-							vaults: [KPK_VAULT],
-						},
-					});
-				return Response.json([]);
-			});
-		if (mode === "env") vi.stubEnv("EULER_SDK_EULER_LABELS_BASE_URL", base);
-		const sdk = await build({
-			config: {
-				disableV3: true,
-				...(mode === "config" && { eulerLabelsBaseUrl: base }),
-			},
-			...(mode === "adapter" && {
-				eulerLabelsAdapterConfig: Object.fromEntries(
-					Object.entries(defaultEulerLabelsURLAdapterConfig).map(
-						([key, fn]) => [
-							key,
-							(arg: never) =>
-								fn(arg).replace(
-									"https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master",
-									base,
-								),
-						],
-					),
-				) as typeof defaultEulerLabelsURLAdapterConfig,
-			}),
-		});
-		expect(sdk.eulerLabelsService).toBeInstanceOf(EulerLabelsService);
-		const data = await sdk.eulerLabelsService.fetchEulerLabelsData(1);
-		expect(data.products.fixture?.name).toBe("File labels");
-		expect(data.verifiedVaultAddresses).toEqual([getAddress(KPK_VAULT)]);
-		expect(sdk.eulerLabelsService.resolveLogoUrl("curator.svg")).toBe(
-			`${base}/logo/curator.svg`,
-		);
-		expect(fetch.mock.calls).toHaveLength(6);
-		expect(
-			fetch.mock.calls.every(([input]) => String(input).startsWith(base)),
-		).toBe(true);
-	});
-
-	it("preserves the explicit file service's partial-failure population behavior", async () => {
+describe("application-owned labels flow", () => {
+	it("preserves the base adapter service's partial-failure population behavior", async () => {
 		const fetchProducts = vi.fn().mockResolvedValue({
 			fixture: {
-				name: "File labels",
+				name: "Application labels",
 				description: "",
 				url: "",
 				vaults: [KPK_VAULT],
@@ -351,29 +279,75 @@ describe("explicit file and service compatibility", () => {
 		const vault = { address: KPK_VAULT, chainId: 1, populated: {} } as EVault;
 		await service.populateLabels([vault]);
 		const populated = vault.eulerLabel;
-		fetchProducts.mockRejectedValueOnce(new Error("File unavailable"));
+		fetchProducts.mockRejectedValueOnce(
+			new Error("Application source unavailable"),
+		);
 		await service.populateLabels([vault]);
 		expect(vault.eulerLabel).toBe(populated);
 	});
 
-	it("rejects conflicting file/V3 configurations while allowing a service override to own source selection", async () => {
-		const options = {
-			config: { eulerLabelsBaseUrl: "https://files.example" },
-			eulerLabelsV3AdapterConfig: { labelSet: "partner" },
-		};
-		await expect(build(options)).rejects.toThrow(
-			"Euler labels source is ambiguous",
-		);
-		const service = new EulerLabelsService({
-			fetchEulerLabelsEntities: async () => ({}),
-			fetchEulerLabelsProducts: async () => ({}),
-			fetchEulerLabelsPoints: async () => [],
+	it.each([
+		false,
+		true,
+	])("uses a complete custom bundle with disableV3=%s without SDK HTTP or re-normalization", async (disableV3) => {
+		const fetch = vi.spyOn(globalThis, "fetch");
+		const source = structuredClone(publicLabelsFixture);
+		source.visibility[KPK_VAULT.toLowerCase()]!.status = "hidden";
+		const bundle = normalizePublicLabelsData(1, source);
+		const loadBundle = vi
+			.fn<(chainId: number) => Promise<PublicEulerLabelsData>>()
+			.mockResolvedValue(bundle);
+		const unsupported = vi.fn(async (): Promise<never> => {
+			throw new Error("This application supplies complete labels bundles");
 		});
+		class ApplicationLabelsService extends EulerLabelsService {
+			constructor() {
+				super(
+					{
+						fetchEulerLabelsEntities: unsupported,
+						fetchEulerLabelsProducts: unsupported,
+						fetchEulerLabelsPoints: unsupported,
+						fetchEulerLabelsEarnVaults: unsupported,
+						fetchEulerLabelsAssets: unsupported,
+					},
+					(url) =>
+						`https://images.example/proxy?url=${encodeURIComponent(url)}`,
+				);
+			}
+			override fetchEulerLabelsData(chainId: number) {
+				return loadBundle(chainId);
+			}
+		}
+		const labelsService = new ApplicationLabelsService();
 		const sdk = await build({
-			...options,
-			servicesOverrides: { eulerLabelsService: service },
+			config: { disableV3 },
+			// The custom service owns source selection, so even unused invalid V3 config is ignored.
+			eulerLabelsV3AdapterConfig: { labelSet: "invalid/dataset" },
+			servicesOverrides: { eulerLabelsService: labelsService },
 		});
-		expect(sdk.eulerLabelsService).toBe(service);
+		expect(sdk.eulerLabelsService).toBe(labelsService);
+		const data = await sdk.eulerLabelsService.fetchEulerLabelsData(1);
+		expect(data).toBe(bundle);
+		expect(data.verifiedVaultAddresses).toEqual([]);
+		expect(data).toMatchObject({
+			visibility: source.visibility,
+			rawGeoPolicies: source.geoPolicies,
+		});
+		const vault = { address: KPK_VAULT, chainId: 1, populated: {} } as EVault;
+		await sdk.eulerLabelsService.populateLabels([vault]);
+		expect(vault.eulerLabel?.products[0]?.name).toBe("KPK VBILL/USDC Lend");
+		expect(vault.eulerLabel?.entities[0]?.logo).toBe(
+			"https://images.example/proxy?url=https%3A%2F%2Fv3.euler.finance%2Fv3%2Fimages%2Flabels%2Fkpk",
+		);
+		expect(unsupported).not.toHaveBeenCalled();
+		expect(loadBundle).toHaveBeenCalledWith(1);
+		loadBundle.mockRejectedValueOnce(
+			new Error("Application labels unavailable"),
+		);
+		await expect(
+			sdk.eulerLabelsService.fetchEulerLabelsData(1),
+		).rejects.toThrow("Application labels unavailable");
+		expect(fetch).not.toHaveBeenCalled();
 	});
 });
 

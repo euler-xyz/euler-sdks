@@ -34,7 +34,7 @@ async function fetchTopVerifiedVaultsExample() {
 
   const labelsData = await sdk.eulerLabelsService.fetchEulerLabelsData(mainnet.id);
   if (!("visibility" in labelsData)) {
-    throw new Error("This example requires Public Labels V3; omit explicit file-source overrides.");
+    throw new Error("This example requires Public Labels V3 policy metadata.");
   }
   // Membership includes warning verdicts; this example requires a visible, verified verdict.
   const isVerifiedByLabels = (address: string) => {

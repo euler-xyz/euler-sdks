@@ -14,7 +14,7 @@ import { getV3ApiEndpoint } from "../config/endpoints.ts";
 import { useProxyV3Calls } from "../queries/queryOptionsStore.ts";
 import {
   fetchEarnVaultAddressesFromLabels,
-  fetchVaultAddressesFromLabelProducts,
+  fetchEligibleVaultAddressesFromLabels,
   sdkBuildQuery,
 } from "../queries/sdkQueries.ts";
 import { tokenAmountToUsdValue } from "../utils/format.ts";
@@ -180,10 +180,10 @@ async function fetchChainSourceTotals(
   }
 }
 
-async function fetchProductLabeledAddresses(onchainSdk: EulerSDK, chainId: number) {
+async function fetchEligibleLabelAddresses(onchainSdk: EulerSDK, chainId: number) {
   const [eVaultAddresses, earnAddresses] = await Promise.all([
-    fetchVaultAddressesFromLabelProducts(onchainSdk, chainId),
-    fetchEarnVaultAddressesFromLabels(chainId),
+    fetchEligibleVaultAddressesFromLabels(onchainSdk, chainId),
+    fetchEarnVaultAddressesFromLabels(onchainSdk, chainId),
   ]);
 
   return { eVaultAddresses, earnAddresses };
@@ -218,7 +218,7 @@ async function fetchTotalsReport(v3ApiEndpoint: string): Promise<TotalsReport> {
   const chains = await Promise.all(
     APP_CHAIN_IDS_MINUS_BOB.map(async (chainId) => {
       try {
-        const { eVaultAddresses, earnAddresses } = await fetchProductLabeledAddresses(
+        const { eVaultAddresses, earnAddresses } = await fetchEligibleLabelAddresses(
           onchainSdk,
           chainId
         );
@@ -459,7 +459,7 @@ export function TotalsPage() {
         <div>
           <h1 className="page-title">Totals</h1>
           <p className="page-subtitle">
-            Product-labeled EVaults and Euler Earn vaults across the app chains.
+            EVaults and Euler Earn vaults with eligible labels across the app chains.
           </p>
         </div>
         <button

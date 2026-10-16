@@ -126,7 +126,7 @@ Publishing uses the operator's local npm session. npm may prompt for a one-time 
 
 ### Default labels service
 
-`buildEulerSDK().eulerLabelsService` uses Public Labels V3 (`public` / `latest`), sharing the configured V3 endpoint, API key and query cache. Results preserve live visibility, managing entities and geo policies; failed reads reject without falling back to files. Use `eulerLabelsV3AdapterConfig` for dataset, publication or transport customization. Explicit file URLs and service overrides remain supported for existing integrations. See [Labels](./docs/labels.md) for source selection and trust semantics.
+`buildEulerSDK().eulerLabelsService` uses Public Labels V3 (`public` / `latest`), sharing the configured V3 endpoint, API key and query cache. Results preserve live visibility, managing entities and geo policies; failed reads reject without falling back to files. Use `eulerLabelsV3AdapterConfig` for dataset, publication or transport customization. Applications supply custom labels flows through `servicesOverrides.eulerLabelsService`. See [Labels](./docs/labels.md) for source selection and trust semantics.
 
 ### V3 labels without assessments
 

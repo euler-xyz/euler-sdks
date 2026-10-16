@@ -52,12 +52,9 @@ import {
 } from "../services/vaults/securitizeVaultService/index.js";
 import { SecuritizeVaultOnchainAdapter } from "../services/vaults/securitizeVaultService/adapters/securitizeVaultOnchainAdapter.js";
 import {
-	EulerLabelsService,
 	EulerLabelsV3Service,
 	PublicLabelsV3Adapter,
 	type PublicLabelsV3AdapterConfig,
-	EulerLabelsURLAdapter,
-	type EulerLabelsURLAdapterConfig,
 	type IEulerLabelsService,
 } from "../services/eulerLabelsService/index.js";
 import {
@@ -108,14 +105,12 @@ import {
 	type VaultAssessmentServiceConfig,
 } from "../services/vaultAssessmentService/index.js";
 import {
-	DEFAULT_EULER_LABELS_BASE_URL,
 	DEFAULT_TOKENLIST_API_BASE_URL,
 	DEFAULT_V3_API_URL,
 	defaultAccountV3AdapterConfig,
 	defaultAccountVaultsAdapterConfig,
 	defaultDeploymentServiceConfig,
 	defaultEulerEarnV3AdapterConfig,
-	defaultEulerLabelsURLAdapterConfig,
 	defaultIntrinsicApyV3AdapterConfig,
 	defaultActivityV3AdapterConfig,
 	defaultPricingServiceConfig,
@@ -251,8 +246,6 @@ export interface BuildSDKOptions<
 		| VaultTypeV3AdapterConfig;
 	/** Additional vault services to register; use { type, service } to register a custom vault type for getFactoryByType(chainId, type). Pass the extended entity type as the generic (e.g. buildEulerSDK<VaultEntity | CustomVault>({ ..., additionalVaultServices: [{ type: 'CustomVault', service: customService }] })). */
 	additionalVaultServices?: VaultServiceEntry<TVaultEntity>[];
-	/** Explicit file labels source. Conflicts with eulerLabelsV3AdapterConfig. */
-	eulerLabelsAdapterConfig?: EulerLabelsURLAdapterConfig;
 	/** Public Labels V3 options; endpoint and API key inherit the shared V3 config. */
 	eulerLabelsV3AdapterConfig?: Partial<PublicLabelsV3AdapterConfig>;
 	tokenlistServiceConfig?: TokenlistServiceConfig;
@@ -410,90 +403,6 @@ function applyTemplate(
 	);
 }
 
-function makeEulerLabelsConfig(
-	config: EulerSDKConfig | undefined,
-): Partial<EulerLabelsURLAdapterConfig> {
-	if (!config) return {};
-
-	const baseUrl = config.eulerLabelsBaseUrl ?? DEFAULT_EULER_LABELS_BASE_URL;
-	const hasBaseOverride = config.eulerLabelsBaseUrl !== undefined;
-
-	return {
-		...(hasBaseOverride || config.eulerLabelsEntitiesUrlTemplate
-			? {
-					getEulerLabelsEntitiesUrl: (chainId: number) =>
-						config.eulerLabelsEntitiesUrlTemplate
-							? applyTemplate(config.eulerLabelsEntitiesUrlTemplate, {
-									base: baseUrl,
-									chainId,
-								})
-							: `${baseUrl}/${chainId}/entities.json`,
-				}
-			: {}),
-		...(hasBaseOverride || config.eulerLabelsProductsUrlTemplate
-			? {
-					getEulerLabelsProductsUrl: (chainId: number) =>
-						config.eulerLabelsProductsUrlTemplate
-							? applyTemplate(config.eulerLabelsProductsUrlTemplate, {
-									base: baseUrl,
-									chainId,
-								})
-							: `${baseUrl}/${chainId}/products.json`,
-				}
-			: {}),
-		...(hasBaseOverride || config.eulerLabelsPointsUrlTemplate
-			? {
-					getEulerLabelsPointsUrl: (chainId: number) =>
-						config.eulerLabelsPointsUrlTemplate
-							? applyTemplate(config.eulerLabelsPointsUrlTemplate, {
-									base: baseUrl,
-									chainId,
-								})
-							: `${baseUrl}/${chainId}/points.json`,
-				}
-			: {}),
-		...(hasBaseOverride || config.eulerLabelsEarnVaultsUrlTemplate
-			? {
-					getEulerLabelsEarnVaultsUrl: (chainId: number) =>
-						config.eulerLabelsEarnVaultsUrlTemplate
-							? applyTemplate(config.eulerLabelsEarnVaultsUrlTemplate, {
-									base: baseUrl,
-									chainId,
-								})
-							: `${baseUrl}/${chainId}/earn-vaults.json`,
-				}
-			: {}),
-		...(hasBaseOverride || config.eulerLabelsAssetsUrlTemplate
-			? {
-					getEulerLabelsAssetsUrl: (chainId: number) =>
-						config.eulerLabelsAssetsUrlTemplate
-							? applyTemplate(config.eulerLabelsAssetsUrlTemplate, {
-									base: baseUrl,
-									chainId,
-								})
-							: `${baseUrl}/${chainId}/assets.json`,
-				}
-			: {}),
-		...(hasBaseOverride || config.eulerLabelsGlobalAssetsUrl
-			? {
-					getEulerLabelsGlobalAssetsUrl: () =>
-						config.eulerLabelsGlobalAssetsUrl ?? `${baseUrl}/all/assets.json`,
-				}
-			: {}),
-		...(hasBaseOverride || config.eulerLabelsLogoUrlTemplate
-			? {
-					getEulerLabelsLogoUrl: (filename: string) =>
-						config.eulerLabelsLogoUrlTemplate
-							? applyTemplate(config.eulerLabelsLogoUrlTemplate, {
-									base: baseUrl,
-									filename,
-								})
-							: `${baseUrl}/logo/${filename}`,
-				}
-			: {}),
-	};
-}
-
 function makeTokenlistConfig(
 	config: EulerSDKConfig | undefined,
 ): Partial<TokenlistServiceConfig> {
@@ -592,7 +501,6 @@ export async function buildEulerSDK<
 		accountVaultsAdapterConfig,
 		vaultTypeAdapterConfig,
 		additionalVaultServices,
-		eulerLabelsAdapterConfig,
 		eulerLabelsV3AdapterConfig,
 		tokenlistServiceConfig,
 		swapServiceConfig,
@@ -1172,58 +1080,30 @@ export async function buildEulerSDK<
 		servicesOverrides?.portfolioService ??
 		new PortfolioService<TVaultEntity>(accountService);
 
-	// Explicit file data URLs select compatibility mode; logo-only customization keeps V3.
-	const explicitEulerLabelsConfig = {
-		...makeEulerLabelsConfig(envConfig),
-		...(eulerLabelsAdapterConfig ?? {}),
-		...makeEulerLabelsConfig(config),
-	};
 	const eulerLabelsService: IEulerLabelsService =
 		servicesOverrides?.eulerLabelsService ??
-		(() => {
-			const hasFileSource = Object.keys(explicitEulerLabelsConfig).some(
-				(key) => key !== "getEulerLabelsLogoUrl",
-			);
-			if (hasFileSource && eulerLabelsV3AdapterConfig) {
-				throw new Error(
-					"Euler labels source is ambiguous: configure file URLs or eulerLabelsV3AdapterConfig, not both.",
-				);
-			}
-			if (hasFileSource) {
-				const fileConfig = {
-					...defaultEulerLabelsURLAdapterConfig,
-					...explicitEulerLabelsConfig,
-				};
-				return new EulerLabelsService(
-					new EulerLabelsURLAdapter(fileConfig, resolvedBuildQuery),
-					fileConfig.getEulerLabelsLogoUrl,
-				);
-			}
-			if (disableV3) {
-				return new EulerLabelsV3Service({
+		(disableV3
+			? new EulerLabelsV3Service({
 					fetchPublicEulerLabelsData: async () => {
 						throw new Error(
-							"Euler labels unavailable: V3 is disabled. Configure explicit file URLs or servicesOverrides.eulerLabelsService.",
+							"Euler labels unavailable: V3 is disabled. Supply servicesOverrides.eulerLabelsService for a custom labels flow.",
 						);
 					},
-				});
-			}
-			return new EulerLabelsV3Service(
-				new PublicLabelsV3Adapter(
-					resolveV3AdapterConfig<PublicLabelsV3AdapterConfig>(
-						{ endpoint: DEFAULT_V3_API_URL },
-						{
-							explicitConfig: eulerLabelsV3AdapterConfig,
-							explicitV3ApiKey: v3ApiKey,
-							envConfig,
-							config,
-						},
+				})
+			: new EulerLabelsV3Service(
+					new PublicLabelsV3Adapter(
+						resolveV3AdapterConfig<PublicLabelsV3AdapterConfig>(
+							{ endpoint: DEFAULT_V3_API_URL },
+							{
+								explicitConfig: eulerLabelsV3AdapterConfig,
+								explicitV3ApiKey: v3ApiKey,
+								envConfig,
+								config,
+							},
+						),
+						resolvedBuildQuery,
 					),
-					resolvedBuildQuery,
-				),
-				explicitEulerLabelsConfig.getEulerLabelsLogoUrl,
-			);
-		})();
+				));
 
 	// Build tokenlist service if not overridden
 	const tokenlistService =

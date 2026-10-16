@@ -84,16 +84,6 @@ export interface EulerSDKConfig {
 	eulerInterfacesBranch?: string;
 	deploymentsUrl?: string;
 
-	/** Explicit file labels source; omit file data URLs to use Public Labels V3. */
-	eulerLabelsBaseUrl?: string;
-	eulerLabelsEntitiesUrlTemplate?: string;
-	eulerLabelsProductsUrlTemplate?: string;
-	eulerLabelsPointsUrlTemplate?: string;
-	eulerLabelsEarnVaultsUrlTemplate?: string;
-	eulerLabelsAssetsUrlTemplate?: string;
-	eulerLabelsGlobalAssetsUrl?: string;
-	eulerLabelsLogoUrlTemplate?: string;
-
 	tokenlistApiBaseUrl?: string;
 	tokenlistUrlTemplate?: string;
 
@@ -521,36 +511,6 @@ export function readEulerSDKEnvConfig(
 
 		eulerInterfacesBranch: readString(env, "EULER_SDK_EULER_INTERFACES_BRANCH"),
 		deploymentsUrl: readString(env, "EULER_SDK_DEPLOYMENTS_URL"),
-
-		eulerLabelsBaseUrl: readString(env, "EULER_SDK_EULER_LABELS_BASE_URL"),
-		eulerLabelsEntitiesUrlTemplate: readString(
-			env,
-			"EULER_SDK_EULER_LABELS_ENTITIES_URL_TEMPLATE",
-		),
-		eulerLabelsProductsUrlTemplate: readString(
-			env,
-			"EULER_SDK_EULER_LABELS_PRODUCTS_URL_TEMPLATE",
-		),
-		eulerLabelsPointsUrlTemplate: readString(
-			env,
-			"EULER_SDK_EULER_LABELS_POINTS_URL_TEMPLATE",
-		),
-		eulerLabelsEarnVaultsUrlTemplate: readString(
-			env,
-			"EULER_SDK_EULER_LABELS_EARN_VAULTS_URL_TEMPLATE",
-		),
-		eulerLabelsAssetsUrlTemplate: readString(
-			env,
-			"EULER_SDK_EULER_LABELS_ASSETS_URL_TEMPLATE",
-		),
-		eulerLabelsGlobalAssetsUrl: readString(
-			env,
-			"EULER_SDK_EULER_LABELS_GLOBAL_ASSETS_URL",
-		),
-		eulerLabelsLogoUrlTemplate: readString(
-			env,
-			"EULER_SDK_EULER_LABELS_LOGO_URL_TEMPLATE",
-		),
 
 		tokenlistApiBaseUrl: readString(env, "EULER_SDK_TOKENLIST_API_BASE_URL"),
 		tokenlistUrlTemplate: readString(env, "EULER_SDK_TOKENLIST_URL_TEMPLATE"),

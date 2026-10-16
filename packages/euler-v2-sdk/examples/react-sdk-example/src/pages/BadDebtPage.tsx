@@ -5,7 +5,7 @@ import { buildEulerSDK, type EulerSDK, type EVault } from "@eulerxyz/euler-v2-sd
 import { useSDK } from "../context/SdkContext.tsx";
 import { CopyAddress } from "../components/CopyAddress.tsx";
 import { formatBigInt, formatPriceUsd } from "../utils/format.ts";
-import { fetchVaultAddressesFromLabelProducts } from "../queries/sdkQueries.ts";
+import { fetchEligibleVaultAddressesFromLabels } from "../queries/sdkQueries.ts";
 import { V3_PROXY_ENDPOINT } from "../config/endpoints.ts";
 
 type TrackingVaultBalanceRow = {
@@ -248,7 +248,7 @@ async function fetchVaultOptions(
   sdk: EulerSDK,
   chainId: number
 ): Promise<VaultOption[]> {
-  const addresses = await fetchVaultAddressesFromLabelProducts(sdk, chainId);
+  const addresses = await fetchEligibleVaultAddressesFromLabels(sdk, chainId);
   const response = await sdk.eVaultService.fetchVaults(chainId, addresses, {
     populateLabels: true,
   });

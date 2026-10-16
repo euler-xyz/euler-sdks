@@ -2,13 +2,11 @@ export { EulerLabelsV3Service } from "./eulerLabelsV3Service.js";
 export {
 	EulerLabelsService,
 	normalizeEulerLabelsFileData,
-	EulerLabelsURLAdapter,
 } from "./eulerLabelsService.js";
 export type {
 	IEulerLabelsService,
 	EulerLabelsFileData,
 	IEulerLabelsAdapter,
-	EulerLabelsURLAdapterConfig,
 } from "./eulerLabelsService.js";
 export {
 	PublicLabelsV3Adapter,

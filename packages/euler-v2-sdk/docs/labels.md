@@ -2,7 +2,7 @@
 
 Labels are purely off-chain metadata. They have no effect on any on-chain calculations, pricing, or risk parameters.
 
-`buildEulerSDK()` uses `EulerLabelsV3Service` with `PublicLabelsV3Adapter` by default. It reads published metadata from Public Labels V3 and retains live visibility, managing entities and geo policies in `PublicEulerLabelsData`. Configure new integrations through V3; file-based `euler-labels` sources are available only as explicit compatibility mode.
+`buildEulerSDK()` uses `EulerLabelsV3Service` with `PublicLabelsV3Adapter` by default. It reads published metadata from Public Labels V3 and retains live visibility, managing entities and geo policies in `PublicEulerLabelsData`. Applications can replace the default with their own complete labels flow through `servicesOverrides.eulerLabelsService`.
 
 ## What labels provide
 
@@ -10,9 +10,9 @@ Labels are purely off-chain metadata. They have no effect on any on-chain calcul
 - **Entities** &mdash; the organisation(s) governing a vault (name, logo, website, socials)
 - **Points** &mdash; third-party points programs available on specific vaults
 - **Euler Earn entries** &mdash; Earn vault membership, descriptions, notices, block/restricted countries, classification tags, and deprecated/not-explorable flags
-- **Geo policies** &mdash; live country rules in `rawGeoPolicies`; explicit or pattern-based file asset rules in compatibility mode
+- **Geo policies** &mdash; live country rules in `rawGeoPolicies`; application-owned country rules in custom normalized bundles
 
-The country fields (`block`/`restricted` on products, overrides and Earn entries, `earnVaultBlocks`, `earnVaultRestrictions`, `assetBlocks`, `assetRestrictions`, `assetPatternRules`) are populated only by the file-based dataset. Under the V3 adapters they are always empty and the helpers that read them answer nothing: the bundle carries the live rules as `rawGeoPolicies` and the application evaluates them itself (see [Public Labels V3](#public-labels-v3)).
+The country fields (`block`/`restricted` on products, overrides and Earn entries, `earnVaultBlocks`, `earnVaultRestrictions`, `assetBlocks`, `assetRestrictions`, `assetPatternRules`) can be supplied by application-owned normalized bundles. Under the V3 adapters they are always empty and the helpers that read them answer nothing: the bundle carries the live rules as `rawGeoPolicies` and the application evaluates them itself (see [Public Labels V3](#public-labels-v3)).
 
 ## Usage
 
@@ -50,7 +50,7 @@ console.log(vaultEntity?.eulerLabel?.deprecated)
 
 Population applies display metadata and absolute V3 logo URLs without deriving a trust badge from product membership. A successful V3 refresh clears a vault's attached labels if its metadata is absent. Failed V3 reads reject; vault read services report label population failures through their existing `SOURCE_UNAVAILABLE` diagnostics.
 
-The service interface also supports application overrides and file sources. Narrow the returned data before accessing V3-only fields:
+The service interface also supports application-owned bundles. Narrow the returned data before accessing V3-only fields:
 
 ```typescript
 if ('visibility' in labelsData) {
@@ -97,7 +97,7 @@ const sdk = await buildEulerSDK({
 })
 ```
 
-The usual config priority applies to shared endpoint/key values: `config` overrides the explicit adapter config, which overrides environment values. Proxies receive the same V3 paths and query parameters; the adapter preserves a base path ending in `/v3` or appends `/v3` otherwise. An injected `request` owns transport and authentication. V3 request or validation failures propagate without file fallback. With `disableV3: true`, labels reads fail lazily unless an explicit file source or service override is supplied.
+The usual config priority applies to shared endpoint/key values: `config` overrides the explicit adapter config, which overrides environment values. Proxies receive the same V3 paths and query parameters; the adapter preserves a base path ending in `/v3` or appends `/v3` otherwise. An injected `request` owns transport and authentication. V3 request or validation failures propagate without file fallback. With `disableV3: true`, labels reads fail lazily unless a custom service override is supplied.
 
 `fetchEulerLabelsEntities` and `fetchEulerLabelsProducts` expose display metadata, including hidden records. `fetchEulerLabelsPoints` preserves deposit/borrow campaign scope. `fetchEulerLabelsEarnVaults` returns eligible Earn entries, while `fetchEulerLabelsData().earnVaultEntries` retains all published Earn metadata. `fetchEulerLabelsAssets` returns an empty list after a successful V3 read; evaluate `rawGeoPolicies` instead of using file country helpers.
 
@@ -157,19 +157,48 @@ const labels = new PublicLabelsV3Adapter({
 Applications with a durable geo cache can pass its validated policies as the third argument to `fetchPublicLabelsSnapshot(chainId, version, geoPolicies)`. The adapter validates the supplied collection and embeds it atomically with metadata, without a second geo request. Omitting it performs the ordinary live fetch. Persisted timestamps, stale-on-error decisions and country enforcement remain application-owned.
 
 
-## Explicit file sources
+## Custom labels flows
 
-`EulerLabelsService` and `EulerLabelsURLAdapter` support existing JSON file integrations. Explicit `eulerLabelsAdapterConfig`, `config.eulerLabelsBaseUrl`, or any file data URL/template (including its environment variable) selects that source. File configuration keeps its existing precedence and per-file error handling. A logo-only template customizes V3 logo resolution without selecting file mode.
+Use `servicesOverrides.eulerLabelsService` when the application owns fetching, source selection, validation, freshness or policy. This override takes precedence over built-in V3 configuration and remains available with `disableV3: true`. The SDK does not configure or fetch label files.
+
+An application can implement `IEulerLabelsService` directly or extend the source-agnostic `EulerLabelsService` to reuse display population. Override `fetchEulerLabelsData` to return the complete normalized bundle unchanged; the base population routine calls that method without re-deriving membership or dropping custom policy fields:
 
 ```typescript
+import {
+  buildEulerSDK,
+  EulerLabelsService,
+  type EulerLabelsData,
+} from '@eulerxyz/euler-v2-sdk'
+
+class AppLabelsService extends EulerLabelsService {
+  constructor(private readonly loadBundle: (chainId: number) => Promise<EulerLabelsData>) {
+    const unsupported = async (): Promise<never> => {
+      throw new Error('This application supplies complete labels bundles')
+    }
+    super({
+      fetchEulerLabelsEntities: unsupported,
+      fetchEulerLabelsProducts: unsupported,
+      fetchEulerLabelsPoints: unsupported,
+      fetchEulerLabelsEarnVaults: unsupported,
+      fetchEulerLabelsAssets: unsupported,
+    })
+  }
+
+  override fetchEulerLabelsData(chainId: number) {
+    return this.loadBundle(chainId)
+  }
+}
+
 const sdk = await buildEulerSDK({
-  config: { eulerLabelsBaseUrl: 'https://app.example/api/internal/labels' },
+  servicesOverrides: {
+    eulerLabelsService: new AppLabelsService(loadApplicationLabels),
+  },
 })
 ```
 
-File mode uses the configured base for chain files, global assets and logos. Individual file overrides retain the exported `defaultEulerLabelsURLAdapterConfig` values for unspecified files. Supplying file data URLs together with `eulerLabelsV3AdapterConfig` throws a source-conflict error. `servicesOverrides.eulerLabelsService` always takes precedence and owns its source selection, including when V3 is disabled.
+The application implements `loadApplicationLabels`, including failure and refresh behavior. A V3 bundle can retain its `PublicEulerLabelsData` subtype. Pass a logo resolver to the base constructor if the application transforms image URLs. Collection methods in this example intentionally throw; applications that use them implement those methods themselves.
 
-`normalizeEulerLabelsFileData(files)` derives the same `EulerLabelsData` shape from an already-fetched `{entities, products, points, earnVaults, assets}` file collection. Application-owned static loaders can require every document to succeed before invoking it and provide their own durable checkpoint. It performs no network reads; V3 adapters remain independent of file authoring.
+`normalizeEulerLabelsFileData(files)` and `EulerLabelsFileData` remain available from the root and `public-labels` exports for application-owned static snapshots. The pure helper derives `EulerLabelsData` from an already-loaded `{entities, products, points, earnVaults, assets}` collection. It performs no network reads, chooses no URL and does not add V3 visibility. The application owns fetching, completeness checks and policy before injecting the resulting bundle.
 
 ## Vault assessments
 

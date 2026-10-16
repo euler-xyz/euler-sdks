@@ -3,7 +3,6 @@ import type { AccountOnchainAdapter } from "../services/accountService/adapters/
 import type { AccountVaultsSubgraphAdapter } from "../services/accountService/adapters/accountOnchainAdapter/accountVaultsSubgraphAdapter.js";
 import type { AccountV3Adapter } from "../services/accountService/adapters/accountV3Adapter/accountV3Adapter.js";
 import type { DeploymentService } from "../services/deploymentService/deploymentService.js";
-import type { EulerLabelsURLAdapter } from "../services/eulerLabelsService/eulerLabelsService.js";
 import type { PublicLabelsV3Adapter } from "../services/eulerLabelsService/publicLabelsV3Adapter.js";
 import type { IntrinsicApyV3Adapter } from "../services/intrinsicApyService/adapters/intrinsicApyV3Adapter/index.js";
 import type { OracleAdapterService } from "../services/oracleAdapterService/oracleAdapterService.js";
@@ -37,7 +36,6 @@ export type EulerSDKQueryName =
 	| QueryMethodName<AccountVaultsSubgraphAdapter>
 	| QueryMethodName<AccountV3Adapter>
 	| QueryMethodName<typeof DeploymentService>
-	| QueryMethodName<EulerLabelsURLAdapter>
 	| QueryMethodName<PublicLabelsV3Adapter>
 	| QueryMethodName<IntrinsicApyV3Adapter>
 	| QueryMethodName<OracleAdapterService>

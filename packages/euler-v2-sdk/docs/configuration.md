@@ -63,7 +63,7 @@ const sdk = await buildEulerSDK({
 });
 ```
 
-Use explicit nested service config when the option is a function or a custom object that cannot be represented through env/config, such as `eulerLabelsV3AdapterConfig`, `eulerLabelsAdapterConfig`, `tokenlistServiceConfig`, `buildQuery`, `plugins`, `additionalVaultServices`, or `servicesOverrides`.
+Use explicit nested service config when the option is a function or a custom object that cannot be represented through env/config, such as `eulerLabelsV3AdapterConfig`, `tokenlistServiceConfig`, `buildQuery`, `plugins`, `additionalVaultServices`, or `servicesOverrides`.
 
 ## Key options
 
@@ -77,7 +77,6 @@ Use explicit nested service config when the option is a function or a custom obj
 | `intrinsicApyServiceConfig` | V3 intrinsic APY API | Underlying yield data for vault assets |
 | `activityServiceConfig` | V3 activity API | Normalized account and vault event timelines with coverage metadata |
 | `eulerLabelsV3AdapterConfig` | Public Labels V3, `public` / `latest` | Published metadata, live visibility and geo policies; optional dataset, publication and request override |
-| `eulerLabelsAdapterConfig` | none | Explicit JSON file source for compatibility |
 | `buildQuery` | 5s in-memory cache | Wrap all external queries for caching, logging, or profiling |
 | `queryCacheConfig` | `{ enabled: true, ttlMs: 5000, failureTtlMs: 5000 }` | Built-in query cache settings when `buildQuery` is not supplied |
 | `plugins` | `[]` | Extend on-chain reads and transaction plans |
@@ -135,7 +134,7 @@ Adapter-specific keys override the shared key within the same configuration laye
 
 Labels default to Public Labels V3 with the shared `v3ApiUrl`, `v3ApiKey` and `buildQuery`. `eulerLabelsV3AdapterConfig` accepts `endpoint`, `apiKey`, `labelSet`, `version` and an application-owned `request` function. Endpoint/key priority follows the standard config layers.
 
-Explicit file data settings (`eulerLabelsAdapterConfig`, `eulerLabelsBaseUrl`, or file URL templates/environment variables) select `EulerLabelsURLAdapter` compatibility mode. A logo-only template does not select files. File and V3 adapter settings together throw rather than silently choosing one. `servicesOverrides.eulerLabelsService` takes precedence over both. With `disableV3: true` and no explicit file/service source, SDK construction succeeds and labels reads throw without HTTP. V3 failures never trigger a file fallback. See [Labels](./labels.md).
+`servicesOverrides.eulerLabelsService` replaces the built-in service and takes precedence over V3 options. The application owns any custom fetching, normalization, freshness and policy; the SDK has no file URL config or file-fetching adapter. With `disableV3: true` and no custom service, SDK construction succeeds and labels reads throw without HTTP. V3 failures propagate without an automatic alternate source. See [Custom labels flows](./labels.md#custom-labels-flows).
 
 ## Turtle Earn API key
 

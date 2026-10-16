@@ -9,7 +9,6 @@ import type {
 	EulerLabelVaultOverride,
 } from "../../entities/EulerLabels.js";
 import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
-import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 import { getAddress } from "viem";
 import type { PublicEulerLabelsData } from "./publicLabelsV3Types.js";
 
@@ -385,6 +384,7 @@ export const normalizeEulerLabelsFileData = (
 	};
 };
 
+/** Application-owned labels adapter and population helper; performs no built-in HTTP reads. */
 export class EulerLabelsService implements IEulerLabelsService {
 	constructor(
 		private adapter: IEulerLabelsAdapter,
@@ -583,144 +583,5 @@ export function populateEulerLabels(
 		}
 
 		vault.populated.labels = true;
-	}
-}
-
-export interface EulerLabelsURLAdapterConfig {
-	getEulerLabelsEntitiesUrl: (chainId: number) => string;
-	getEulerLabelsProductsUrl: (chainId: number) => string;
-	getEulerLabelsPointsUrl: (chainId: number) => string;
-	getEulerLabelsEarnVaultsUrl?: (chainId: number) => string;
-	getEulerLabelsAssetsUrl?: (chainId: number) => string;
-	getEulerLabelsGlobalAssetsUrl?: () => string;
-	getEulerLabelsLogoUrl: (filename: string) => string;
-}
-export class EulerLabelsURLAdapter implements IEulerLabelsAdapter {
-	constructor(
-		private readonly config: EulerLabelsURLAdapterConfig,
-		buildQuery?: BuildQueryFn,
-	) {
-		if (buildQuery) applyBuildQuery(this, buildQuery);
-	}
-
-	queryEulerLabelsEntities = async (
-		url: string,
-	): Promise<Record<string, EulerLabelEntity>> => {
-		const response = await fetch(url);
-		if (!response.ok) {
-			throw new Error(
-				`Failed to fetch Euler labels entities: ${response.statusText}`,
-			);
-		}
-		return response.json() as Promise<Record<string, EulerLabelEntity>>;
-	};
-
-	setQueryEulerLabelsEntities(fn: typeof this.queryEulerLabelsEntities): void {
-		this.queryEulerLabelsEntities = fn;
-	}
-
-	queryEulerLabelsProducts = async (
-		url: string,
-	): Promise<Record<string, EulerLabelProduct>> => {
-		const response = await fetch(url);
-		if (!response.ok) {
-			throw new Error(
-				`Failed to fetch Euler labels products: ${response.statusText}`,
-			);
-		}
-		return response.json() as Promise<Record<string, EulerLabelProduct>>;
-	};
-
-	setQueryEulerLabelsProducts(fn: typeof this.queryEulerLabelsProducts): void {
-		this.queryEulerLabelsProducts = fn;
-	}
-
-	queryEulerLabelsPoints = async (url: string): Promise<EulerLabelPoint[]> => {
-		const response = await fetch(url);
-		if (!response.ok) {
-			throw new Error(
-				`Failed to fetch Euler labels points: ${response.statusText}`,
-			);
-		}
-		return response.json() as Promise<EulerLabelPoint[]>;
-	};
-
-	setQueryEulerLabelsPoints(fn: typeof this.queryEulerLabelsPoints): void {
-		this.queryEulerLabelsPoints = fn;
-	}
-
-	queryEulerLabelsEarnVaults = async (
-		url: string,
-	): Promise<Array<string | EulerLabelEarnVaultEntry>> => {
-		const response = await fetch(url);
-		if (!response.ok) {
-			throw new Error(
-				`Failed to fetch Euler labels earn vaults: ${response.statusText}`,
-			);
-		}
-		return response.json() as Promise<Array<string | EulerLabelEarnVaultEntry>>;
-	};
-
-	setQueryEulerLabelsEarnVaults(
-		fn: typeof this.queryEulerLabelsEarnVaults,
-	): void {
-		this.queryEulerLabelsEarnVaults = fn;
-	}
-
-	queryEulerLabelsAssets = async (
-		url: string,
-	): Promise<EulerLabelAssetEntry[]> => {
-		const response = await fetch(url);
-		if (!response.ok) {
-			throw new Error(
-				`Failed to fetch Euler labels assets: ${response.statusText}`,
-			);
-		}
-		return response.json() as Promise<EulerLabelAssetEntry[]>;
-	};
-
-	setQueryEulerLabelsAssets(fn: typeof this.queryEulerLabelsAssets): void {
-		this.queryEulerLabelsAssets = fn;
-	}
-
-	async fetchEulerLabelsEntities(
-		chainId: number,
-	): Promise<Record<string, EulerLabelEntity>> {
-		return this.queryEulerLabelsEntities(
-			this.config.getEulerLabelsEntitiesUrl(chainId),
-		);
-	}
-	async fetchEulerLabelsProducts(
-		chainId: number,
-	): Promise<Record<string, EulerLabelProduct>> {
-		return this.queryEulerLabelsProducts(
-			this.config.getEulerLabelsProductsUrl(chainId),
-		);
-	}
-	async fetchEulerLabelsPoints(chainId: number): Promise<EulerLabelPoint[]> {
-		return this.queryEulerLabelsPoints(
-			this.config.getEulerLabelsPointsUrl(chainId),
-		);
-	}
-	async fetchEulerLabelsEarnVaults(
-		chainId: number,
-	): Promise<Array<string | EulerLabelEarnVaultEntry>> {
-		if (!this.config.getEulerLabelsEarnVaultsUrl) return [];
-		return this.queryEulerLabelsEarnVaults(
-			this.config.getEulerLabelsEarnVaultsUrl(chainId),
-		);
-	}
-	async fetchEulerLabelsAssets(
-		chainId: number,
-	): Promise<EulerLabelAssetEntry[]> {
-		if (!this.config.getEulerLabelsAssetsUrl) return [];
-		const urls = [
-			this.config.getEulerLabelsAssetsUrl(chainId),
-			this.config.getEulerLabelsGlobalAssetsUrl?.(),
-		].filter((url): url is string => typeof url === "string");
-		const results = await Promise.all(
-			urls.map((url) => this.queryEulerLabelsAssets(url).catch(() => [])),
-		);
-		return results.flat();
 	}
 }

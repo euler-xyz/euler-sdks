@@ -14,10 +14,7 @@ import { DeploymentService } from "../src/services/deploymentService/deploymentS
 import { ProviderService } from "../src/services/providerService/providerService.js";
 import { ABIService } from "../src/services/abiService/abiService.js";
 import { TokenlistService } from "../src/services/tokenlistService/tokenlistService.js";
-import {
-  EulerLabelsService,
-  EulerLabelsURLAdapter,
-} from "../src/services/eulerLabelsService/eulerLabelsService.js";
+import { EulerLabelsService } from "../src/services/eulerLabelsService/eulerLabelsService.js";
 import { IntrinsicApyService } from "../src/services/intrinsicApyService/intrinsicApyService.js";
 import { WalletService } from "../src/services/walletService/walletService.js";
 import { WalletOnchainAdapter } from "../src/services/walletService/adapters/walletOnchainAdapter.js";
@@ -620,29 +617,10 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   );
   assert.deepEqual(new Wallet(wallet.result).assets, wallet.result.assets);
 
-  const labelsAdapter = new EulerLabelsURLAdapter(
-    {
-      getEulerLabelsEntitiesUrl: (chainId) =>
-        `https://labels/${chainId}/entities`,
-      getEulerLabelsProductsUrl: (chainId) =>
-        `https://labels/${chainId}/products`,
-      getEulerLabelsPointsUrl: (chainId) => `https://labels/${chainId}/points`,
-      getEulerLabelsEarnVaultsUrl: (chainId) =>
-        `https://labels/${chainId}/earn-vaults`,
-      getEulerLabelsAssetsUrl: (chainId) => `https://labels/${chainId}/assets`,
-      getEulerLabelsGlobalAssetsUrl: () => "https://labels/all/assets",
-      getEulerLabelsLogoUrl: (filename) => `https://cdn/${filename}`,
-    },
-    buildQuery,
-  );
-  labelsAdapter.setQueryEulerLabelsEntities(async (url) => {
-    assert.equal(url, "https://labels/1/entities");
-    return { euler: { name: "Euler", logo: "euler.svg" } } as any;
-  });
-  labelsAdapter.setQueryEulerLabelsProducts(async (url) => {
-    assert.equal(url, "https://labels/1/products");
-    return {
-      // Bare-string `entity` covers single-curator products in the labels JSON.
+  const labelsAdapter = {
+    fetchEulerLabelsEntities: async (_chainId: number) =>
+      ({ euler: { name: "Euler", logo: "euler.svg" } }) as any,
+    fetchEulerLabelsProducts: async (_chainId: number) => ({
       product: {
         name: "Flagship",
         entity: "euler",
@@ -651,42 +629,17 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
         deprecationReason: "Migrated",
         logo: "product.svg",
       },
-    } as any;
-  });
-  labelsAdapter.setQueryEulerLabelsPoints(async (url) => {
-    assert.equal(url, "https://labels/1/points");
-    return [
+    }) as any,
+    fetchEulerLabelsPoints: async (_chainId: number) => [
       {
         name: "Points",
         collateralVaults: [plainVault.address],
         logo: "points.svg",
       },
-    ] as any;
-  });
-  labelsAdapter.setQueryEulerLabelsEarnVaults(async (url) => {
-    assert.equal(url, "https://labels/1/earn-vaults");
-    return [];
-  });
-  const initialAssetUrls: string[] = [];
-  labelsAdapter.setQueryEulerLabelsAssets(async (url) => {
-    initialAssetUrls.push(url);
-    return [];
-  });
-  assert.equal(
-    Object.keys(await labelsAdapter.fetchEulerLabelsEntities(1)).length,
-    1,
-  );
-  assert.equal(
-    Object.keys(await labelsAdapter.fetchEulerLabelsProducts(1)).length,
-    1,
-  );
-  assert.equal((await labelsAdapter.fetchEulerLabelsPoints(1)).length, 1);
-  assert.equal((await labelsAdapter.fetchEulerLabelsEarnVaults(1)).length, 0);
-  assert.equal((await labelsAdapter.fetchEulerLabelsAssets(1)).length, 0);
-  assert.deepEqual(initialAssetUrls, [
-    "https://labels/1/assets",
-    "https://labels/all/assets",
-  ]);
+    ] as any,
+    fetchEulerLabelsEarnVaults: async (_chainId: number): Promise<any[]> => [],
+    fetchEulerLabelsAssets: async (_chainId: number): Promise<any[]> => [],
+  };
 
   const labelsService = new EulerLabelsService(
     labelsAdapter,
@@ -788,7 +741,7 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
   assert.equal(bareVault.populated.labels, true);
 
   labelsService.setAdapter(labelsAdapter);
-  labelsAdapter.setQueryEulerLabelsProducts(async () => ({
+  labelsAdapter.fetchEulerLabelsProducts = async () => ({
     parityProduct: {
       name: "Base Product",
       description: "base",
@@ -810,8 +763,8 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
         },
       },
     },
-  }) as any);
-  labelsAdapter.setQueryEulerLabelsEntities(async () => ({
+  }) as any;
+  labelsAdapter.fetchEulerLabelsEntities = async () => ({
     euler: {
       name: "Euler",
       logo: "euler.svg",
@@ -820,15 +773,15 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
         [plainVault.address.toLowerCase()]: "Vault",
       },
     },
-  }) as any);
-  labelsAdapter.setQueryEulerLabelsPoints(async () => [
+  }) as any;
+  labelsAdapter.fetchEulerLabelsPoints = async () => [
     {
       name: "Points",
       logo: "points.svg",
       collateralVaults: [plainVault.address.toLowerCase()],
     },
-  ] as any);
-  labelsAdapter.setQueryEulerLabelsEarnVaults(async () => [
+  ] as any;
+  labelsAdapter.fetchEulerLabelsEarnVaults = async () => [
     {
       address: collateralVault.address.toLowerCase(),
       block: ["US"],
@@ -840,35 +793,24 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
       portfolioNotice: "earn notice",
       notExplorable: true,
     },
-  ]);
-  labelsAdapter.setQueryEulerLabelsAssets(async (url) =>
-    url === "https://labels/all/assets"
-      ? [
-          {
-            names: ["Global Asset Rule"],
-            block: ["CA"],
-          },
-        ]
-      : [
-          {
-            address: plainVault.asset.address.toLowerCase(),
-            block: ["US"],
-            restricted: ["DE"],
-          },
-          {
-            symbols: ["USDC"],
-            symbolRegex: "usd",
-            names: ["USD Coin"],
-            nameRegex: "coin",
-            block: ["GB"],
-          },
-          {
-            symbols: ["BAD"],
-            symbolRegex: "[",
-            block: ["FR"],
-          },
-        ],
-  );
+  ];
+  // Custom flows own source merging before the service normalizes their data.
+  labelsAdapter.fetchEulerLabelsAssets = async () => [
+    { names: ["Global Asset Rule"], block: ["CA"] },
+    {
+      address: plainVault.asset.address.toLowerCase(),
+      block: ["US"],
+      restricted: ["DE"],
+    },
+    {
+      symbols: ["USDC"],
+      symbolRegex: "usd",
+      names: ["USD Coin"],
+      nameRegex: "coin",
+      block: ["GB"],
+    },
+    { symbols: ["BAD"], symbolRegex: "[", block: ["FR"] },
+  ];
   const labelsData = await labelsService.fetchEulerLabelsData(1);
   assert.equal(labelsData.products.parityProduct?.vaults[0], plainVault.address);
   assert.equal(
@@ -1057,28 +999,6 @@ test("native fetch-backed read helpers cover their error branches", async () => 
           }),
         } as Response;
       }
-      if (url.includes("labels-entities-ok")) {
-        return {
-          ok: true,
-          json: async () => ({ euler: { name: "Euler" } }),
-        } as Response;
-      }
-      if (url.includes("labels-products-ok")) {
-        return {
-          ok: true,
-          json: async () => ({
-            product: { name: "Product", vaults: [zeroAddress] },
-          }),
-        } as Response;
-      }
-      if (url.includes("labels-points-ok")) {
-        return {
-          ok: true,
-          json: async () => [
-            { name: "Point", collateralVaults: [zeroAddress] },
-          ],
-        } as Response;
-      }
       if (url.includes("tokens-bad-status")) {
         return {
           ok: false,
@@ -1153,34 +1073,6 @@ test("native fetch-backed read helpers cover their error branches", async () => 
     await assert.rejects(
       () => tokenlistService.queryTokenList("https://tokens-bad-payload"),
       /Invalid token list response/,
-    );
-
-    const labelsAdapter = new EulerLabelsURLAdapter({
-      getEulerLabelsEntitiesUrl: () => "https://labels-entities-ok",
-      getEulerLabelsProductsUrl: () => "https://labels-products-ok",
-      getEulerLabelsPointsUrl: () => "https://labels-points-ok",
-      getEulerLabelsLogoUrl: (filename) => filename,
-    });
-    assert.equal(
-      Object.keys(await labelsAdapter.fetchEulerLabelsEntities(1)).length,
-      1,
-    );
-    assert.equal(
-      Object.keys(await labelsAdapter.fetchEulerLabelsProducts(1)).length,
-      1,
-    );
-    assert.equal((await labelsAdapter.fetchEulerLabelsPoints(1)).length, 1);
-    await assert.rejects(
-      () => labelsAdapter.queryEulerLabelsEntities("https://labels-entities"),
-      /Failed to fetch Euler labels entities/,
-    );
-    await assert.rejects(
-      () => labelsAdapter.queryEulerLabelsProducts("https://labels-products"),
-      /Failed to fetch Euler labels products/,
-    );
-    await assert.rejects(
-      () => labelsAdapter.queryEulerLabelsPoints("https://labels-points"),
-      /Failed to fetch Euler labels points/,
     );
   } finally {
     DeploymentService.setQueryDeployments(originalQueryDeployments);
