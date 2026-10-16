@@ -12,7 +12,7 @@ These need no SDK change:
   - viem lacks the chain: add it to viem upstream. Until a viem release with the chain is pinned here, apps pass the chain through `chains` in `buildEulerSDK()`.
 - **RPC URLs.** Apps supply them through `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`.
 - **V3 data.** Vaults, accounts, prices, rewards and token lists come from the V3 API for the chain.
-- **Labels.** The default `EulerLabelsURLAdapter` reads the chain's JSON files from `https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master/<chainId>/`, plus global assets and logos from the same repository. Apps can customize these URLs through `eulerLabelsAdapterConfig`. Public Labels V3 is an explicit opt-in through `PublicLabelsV3Adapter`; apps that use it as the SDK's label source supply `servicesOverrides.eulerLabelsService`. See [Labels](./labels.md#public-labels-v3).
+- **Labels.** The default `EulerLabelsV3Service` reads the chain's published metadata, live visibility and geo policies from Public Labels V3, using the shared V3 endpoint and query cache. Publish the chain's labels in V3; no SDK chain entry is required. `eulerLabelsV3AdapterConfig` selects a dataset, version or custom transport. Explicit file URL configurations and `servicesOverrides.eulerLabelsService` remain supported for existing integrations. See [Labels](./labels.md#public-labels-v3).
 
 A configured chain missing from the pinned viem catalog is unavailable through `providerService`; other configured chains remain usable. `getSupportedChainIds()` lists only resolved providers, and `getProvider(chainId)` explains how to supply a missing chain. Invalid overrides, conflicting registry names and ambiguous chain ids still fail SDK initialization.
 

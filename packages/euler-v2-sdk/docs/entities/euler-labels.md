@@ -125,6 +125,16 @@ than classes.
 | `assetRestrictions` | `Record<string, string[]>` | Asset restriction rules keyed by address. |
 | `assetPatternRules` | `EulerLabelAssetPatternRule[]` | Asset pattern rules compiled from symbol/name rules. |
 
+## `PublicEulerLabelsData`
+
+The default labels service returns the common `EulerLabelsData` fields plus the V3 fields below. Narrow a service result with `'visibility' in data`. Display products and Earn metadata include hidden and pending records. `verifiedVaultAddresses` and `earnVaults` require a managing entity and a visible or warning verdict; this eligibility is not a complete governance-verification badge. File country maps are empty under V3, and applications evaluate the live geo policies themselves.
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `visibility` | `Record<string, PublicVaultVisibility>` | Live verdicts keyed by lowercase vault address, including status, exploration flags, decision source and reason. |
+| `managingEntityByVault` | `Record<string, string>` | Managing entity IDs keyed by lowercase vault address. |
+| `rawGeoPolicies` | `PublicGeoPolicy[]` | Applicable live global and chain geo policies with resolved countries. |
+
 ## `EulerLabel`
 
 | Property | Type | Description |

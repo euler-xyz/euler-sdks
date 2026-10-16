@@ -292,6 +292,7 @@ The higher-level `fetch*` service methods (e.g. `fetchVault`, `fetchAccount`) or
 
 | Query | Type | Class | Args | Description |
 |-------|------|-------|------|-------------|
+| `queryPublicLabels` | url | `PublicLabelsV3Adapter` | `(path, query)` | Default labels metadata, live visibility and geo policies |
 | `queryEulerLabelsEntities` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch entity labels from Euler API |
 | `queryEulerLabelsProducts` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch product labels from Euler API |
 | `queryEulerLabelsPoints` | url | `EulerLabelsURLAdapter` | `(url)` | Fetch points labels from Euler API |

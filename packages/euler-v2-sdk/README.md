@@ -65,7 +65,7 @@ const simulation = await sdk.simulationService.simulateTransactionPlan(
 - planning and composing EVC transaction batches
 - resolving approvals (approve/Permit2 paths)
 - simulating transactions before execution
-- handling vault swaps, wallet-to-wallet swaps, pricing, rewards, rEUL locks, Safe smart-account detection, normalized euler-labels metadata, and deployed addresses
+- handling vault swaps, wallet-to-wallet swaps, pricing, rewards, rEUL locks, Safe smart-account detection, Public Labels V3 metadata, visibility and geo policies, and deployed addresses
 - fetching Data V3 oracle adapter assessments and indexed router state
 
 The SDK is built with dependency injection, so you can use `buildEulerSDK()` for a default setup, run individual services in isolation, or modify the behavior with your custom implementations.
@@ -123,6 +123,10 @@ Git tags and GitHub Releases are the release-note source of truth. The committed
 The publish flow verifies npm auth, runs `pnpm -C packages/euler-v2-sdk run release:check`, creates and pushes an `euler-v2-sdk-vX.Y.Z` tag from the selected `main` commit, temporarily writes the tag version for npm, dry-runs the package, publishes with `npm publish --access public --provenance=false`, restores the working tree, and creates the GitHub Release against the verified tag from a generated notes file. Prereleases publish with the matching npm dist-tag, for example `npm publish --access public --tag beta --provenance=false`.
 
 Publishing uses the operator's local npm session. npm may prompt for a one-time password or provide a browser authentication URL; complete that prompt before the publish process exits.
+
+### Default labels service
+
+`buildEulerSDK().eulerLabelsService` uses Public Labels V3 (`public` / `latest`), sharing the configured V3 endpoint, API key and query cache. Results preserve live visibility, managing entities and geo policies; failed reads reject without falling back to files. Use `eulerLabelsV3AdapterConfig` for dataset, publication or transport customization. Explicit file URLs and service overrides remain supported for existing integrations. See [Labels](./docs/labels.md) for source selection and trust semantics.
 
 ### V3 labels without assessments
 

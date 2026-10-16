@@ -26,9 +26,21 @@ async function fetchApysExample() {
     eulerEarnServiceConfig: { adapter: "onchain" },
   });
 
+  const labelsData = await sdk.eulerLabelsService.fetchEulerLabelsData(mainnet.id);
+  if (!("visibility" in labelsData)) {
+    throw new Error("This example requires Public Labels V3; omit explicit file-source overrides.");
+  }
+  // Membership includes warning verdicts; this example requires a visible, verified verdict.
+  const isVerifiedByLabels = (address: string) => {
+    const verdict = labelsData.visibility[address.toLowerCase()];
+    return verdict?.status === "visible" && verdict.decidedBy === "verified";
+  };
+  const verifiedEVaults = new Set(labelsData.verifiedVaultAddresses.filter(isVerifiedByLabels).map(a => a.toLowerCase()));
+  const verifiedEarnVaults = new Set(labelsData.earnVaults.filter(isVerifiedByLabels).map(a => a.toLowerCase()));
+
   // Enumerate the EVault universe via the factory perspective (provenance only, NOT a
   // trust signal - anyone can deploy through the factory), then keep only vaults that
-  // are label-verified, i.e. listed in a euler-labels product.
+  // are eligible members with a visible, verified Public Labels V3 verdict.
   console.log("Fetching EVaults...");
   const { result: eVaultResults } = await sdk.eVaultService.fetchVerifiedVaults(mainnet.id, [
     StandardEVaultPerspectives.FACTORY,
@@ -37,7 +49,7 @@ async function fetchApysExample() {
   });
   const eVaults = eVaultResults
     .filter((vault) => vault !== undefined)
-    .filter((vault) => (vault.eulerLabel?.products.length ?? 0) > 0 && !vault.eulerLabel?.deprecated);
+    .filter((vault) => verifiedEVaults.has(vault.address.toLowerCase()) && !vault.eulerLabel?.deprecated);
 
   eVaults.sort((a, b) => Number(b.interestRates.supplyAPY) - Number(a.interestRates.supplyAPY));
 
@@ -75,7 +87,7 @@ async function fetchApysExample() {
     });
   const eulerEarnVaults = eulerEarnVaultResults
     .filter((vault) => vault !== undefined)
-    .filter((vault) => vault.eulerLabel?.earnVault !== undefined && !vault.eulerLabel?.deprecated);
+    .filter((vault) => verifiedEarnVaults.has(vault.address.toLowerCase()) && !vault.eulerLabel?.deprecated);
 
   eulerEarnVaults.sort((a, b) => (b.supplyApy ?? 0) - (a.supplyApy ?? 0));
 

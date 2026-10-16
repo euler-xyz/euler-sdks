@@ -120,7 +120,9 @@ The Turtle Earn API requires an API key on every endpoint. The direct rewards ad
 
 ## Euler Labels
 
-| Config field | Environment variable | Default |
+Labels default to Public Labels V3 through shared `v3ApiUrl` / `v3ApiKey`. The file settings below select explicit compatibility mode when a base URL or data URL is supplied. Their defaults apply only within file mode. A logo-only template keeps V3 active and receives its absolute image URL as `{filename}`. Use `eulerLabelsV3AdapterConfig` for V3 dataset/version or request customization; combining it with file data settings throws. `servicesOverrides.eulerLabelsService` takes precedence. See [Labels](./labels.md).
+
+| Config field | Environment variable | File-mode default |
 |---|---|---|
 | `eulerLabelsBaseUrl` | `EULER_SDK_EULER_LABELS_BASE_URL` | Euler labels GitHub raw base |
 | `eulerLabelsEntitiesUrlTemplate` | `EULER_SDK_EULER_LABELS_ENTITIES_URL_TEMPLATE` | `{base}/{chainId}/entities.json` |

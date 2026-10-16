@@ -84,6 +84,7 @@ export interface EulerSDKConfig {
 	eulerInterfacesBranch?: string;
 	deploymentsUrl?: string;
 
+	/** Explicit file labels source; omit file data URLs to use Public Labels V3. */
 	eulerLabelsBaseUrl?: string;
 	eulerLabelsEntitiesUrlTemplate?: string;
 	eulerLabelsProductsUrlTemplate?: string;

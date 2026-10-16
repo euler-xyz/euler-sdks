@@ -11,6 +11,7 @@ import type {
 import type { ERC4626Vault } from "../../entities/ERC4626Vault.js";
 import { type BuildQueryFn, applyBuildQuery } from "../../utils/buildQuery.js";
 import { getAddress } from "viem";
+import type { PublicEulerLabelsData } from "./publicLabelsV3Types.js";
 
 export interface IEulerLabelsAdapter {
 	fetchEulerLabelsEntities(
@@ -38,7 +39,10 @@ export interface IEulerLabelsService {
 		chainId: number,
 	): Promise<Array<string | EulerLabelEarnVaultEntry>>;
 	fetchEulerLabelsAssets(chainId: number): Promise<EulerLabelAssetEntry[]>;
-	fetchEulerLabelsData(chainId: number): Promise<EulerLabelsData>;
+	/** V3 results retain live visibility and geo policy fields; narrow with `"visibility" in data`. */
+	fetchEulerLabelsData(
+		chainId: number,
+	): Promise<EulerLabelsData | PublicEulerLabelsData>;
 	resolveLogoUrl(filename: string): string;
 	populateLabels(vaults: ERC4626Vault[]): Promise<void>;
 }
@@ -450,126 +454,135 @@ export class EulerLabelsService implements IEulerLabelsService {
 
 	async populateLabels(vaults: ERC4626Vault[]): Promise<void> {
 		if (vaults.length === 0) return;
+		const labelsData = await this.fetchEulerLabelsData(vaults[0]!.chainId);
+		populateEulerLabels(vaults, labelsData, (logo) => this.resolveLogoUrl(logo));
+	}
+}
 
-		const chainId = vaults[0]!.chainId;
-		const labelsData = await this.fetchEulerLabelsData(chainId);
+/** Applies a successfully fetched snapshot without deriving trust or geo policy from display labels. */
+export function populateEulerLabels(
+	vaults: ERC4626Vault[],
+	labelsData: EulerLabelsData,
+	resolveLogoUrl: (filename: string) => string,
+	clearMissingLabels = false,
+): void {
+	// Pre-index products by lowercase vault address for efficient lookup
+	const productsByVault = new Map<string, EulerLabelProduct[]>();
+	for (const product of Object.values(labelsData.products)) {
+		for (const vaultAddr of [
+			...product.vaults,
+			...(product.deprecatedVaults ?? []),
+		]) {
+			const key = vaultAddr.toLowerCase();
+			const list = productsByVault.get(key) ?? [];
+			list.push(product);
+			productsByVault.set(key, list);
+		}
+	}
 
-		// Pre-index products by lowercase vault address for efficient lookup
-		const productsByVault = new Map<string, EulerLabelProduct[]>();
-		for (const product of Object.values(labelsData.products)) {
-			for (const vaultAddr of [
-				...product.vaults,
-				...(product.deprecatedVaults ?? []),
-			]) {
-				const key = vaultAddr.toLowerCase();
-				const list = productsByVault.get(key) ?? [];
-				list.push(product);
-				productsByVault.set(key, list);
+	// Pre-index deprecated vaults: address -> deprecationReason
+	const deprecatedVaultsMap = new Map<string, string>();
+	for (const product of Object.values(labelsData.products)) {
+		if (!product.deprecatedVaults) continue;
+		for (const vaultAddr of product.deprecatedVaults) {
+			const normalized = tryNormalizeAddress(vaultAddr);
+			if (!normalized) continue;
+			const override =
+				product.vaultOverrides?.[normalized]?.deprecationReason;
+			deprecatedVaultsMap.set(
+				normalized.toLowerCase(),
+				override ?? product.deprecationReason ?? "",
+			);
+		}
+	}
+
+	for (const vault of vaults) {
+		const normalizedAddress = normalizeAddressOrThrow(vault.address);
+		const addrLower = normalizedAddress.toLowerCase();
+
+		// Resolve products this vault belongs to (with logos)
+		const products = (productsByVault.get(addrLower) ?? []).map((p) => {
+			const product = applyVaultOverrides(p, normalizedAddress);
+			return {
+				...product,
+				logo: product.logo ? resolveLogoUrl(product.logo) : undefined,
+			};
+		});
+
+		// Derive curator entities from the vault's products. The product `entity`
+		// field is sometimes a bare string and sometimes an array — normalize to
+		// an array. Dedupe by slug while preserving first-seen order so the
+		// primary curator stays first.
+		const seenEntitySlugs = new Set<string>();
+		const entities: EulerLabelEntity[] = [];
+		for (const product of products) {
+			if (!product.entity) continue;
+			const slugs = Array.isArray(product.entity)
+				? product.entity
+				: [product.entity];
+			for (const slug of slugs) {
+				if (seenEntitySlugs.has(slug)) continue;
+				seenEntitySlugs.add(slug);
+				const entity = labelsData.entities[slug];
+				if (!entity) continue;
+				entities.push({
+					...entity,
+					logo: entity.logo ? resolveLogoUrl(entity.logo) : entity.logo,
+				});
 			}
 		}
 
-		// Pre-index deprecated vaults: address -> deprecationReason
-		const deprecatedVaultsMap = new Map<string, string>();
-		for (const product of Object.values(labelsData.products)) {
-			if (!product.deprecatedVaults) continue;
-			for (const vaultAddr of product.deprecatedVaults) {
-				const normalized = tryNormalizeAddress(vaultAddr);
-				if (!normalized) continue;
-				const override =
-					product.vaultOverrides?.[normalized]?.deprecationReason;
-				deprecatedVaultsMap.set(
-					normalized.toLowerCase(),
-					override ?? product.deprecationReason ?? "",
-				);
-			}
+		// Resolve this vault's points campaigns (with logos)
+		const points = (labelsData.points[normalizedAddress] ?? []).map((p) => ({
+			...p,
+			logo: p.logo ? resolveLogoUrl(p.logo) : p.logo,
+		}));
+
+		const earnVault = labelsData.earnVaultEntries[addrLower];
+		const vaultAnnotation = labelsData.vaultAnnotations?.[addrLower];
+		const earnDeprecationReason = labelsData.deprecatedEarnVaults[addrLower];
+		const deprecationReason =
+			deprecatedVaultsMap.get(addrLower) ??
+			earnDeprecationReason ??
+			(vaultAnnotation?.deprecated
+				? (vaultAnnotation.deprecationReason ?? "")
+				: undefined);
+
+		const hasAnyLabel =
+			products.length > 0 ||
+			entities.length > 0 ||
+			points.length > 0 ||
+			deprecationReason !== undefined ||
+			earnVault !== undefined ||
+			(vaultAnnotation !== undefined &&
+				Object.keys(vaultAnnotation).length > 0);
+
+		if (hasAnyLabel) {
+			vault.eulerLabel = {
+				entities,
+				products,
+				points,
+				...(deprecationReason !== undefined && {
+					deprecated: true,
+					deprecationReason,
+				}),
+				...(earnVault && { earnVault }),
+				...(earnVault?.description && { description: earnVault.description }),
+				...(earnVault?.portfolioNotice && {
+					portfolioNotice: earnVault.portfolioNotice,
+				}),
+				...(vaultAnnotation?.portfolioNotice && {
+					portfolioNotice: vaultAnnotation.portfolioNotice,
+				}),
+				...(earnVault?.notExplorable && { notExplorable: true }),
+				...(earnVault?.block && { block: earnVault.block }),
+				...(earnVault?.restricted && { restricted: earnVault.restricted }),
+			};
+		} else if (clearMissingLabels) {
+			vault.eulerLabel = undefined;
 		}
 
-		for (const vault of vaults) {
-			const normalizedAddress = normalizeAddressOrThrow(vault.address);
-			const addrLower = normalizedAddress.toLowerCase();
-
-			// Resolve products this vault belongs to (with logos)
-			const products = (productsByVault.get(addrLower) ?? []).map((p) => {
-				const product = applyVaultOverrides(p, normalizedAddress);
-				return {
-					...product,
-					logo: product.logo ? this.resolveLogoUrl(product.logo) : undefined,
-				};
-			});
-
-			// Derive curator entities from the vault's products. The product `entity`
-			// field is sometimes a bare string and sometimes an array — normalize to
-			// an array. Dedupe by slug while preserving first-seen order so the
-			// primary curator stays first.
-			const seenEntitySlugs = new Set<string>();
-			const entities: EulerLabelEntity[] = [];
-			for (const product of products) {
-				if (!product.entity) continue;
-				const slugs = Array.isArray(product.entity)
-					? product.entity
-					: [product.entity];
-				for (const slug of slugs) {
-					if (seenEntitySlugs.has(slug)) continue;
-					seenEntitySlugs.add(slug);
-					const entity = labelsData.entities[slug];
-					if (!entity) continue;
-					entities.push({
-						...entity,
-						logo: entity.logo ? this.resolveLogoUrl(entity.logo) : entity.logo,
-					});
-				}
-			}
-
-			// Resolve points where this vault is a collateral vault (with logos)
-			const points = (labelsData.points[normalizedAddress] ?? []).map((p) => ({
-				...p,
-				logo: p.logo ? this.resolveLogoUrl(p.logo) : p.logo,
-			}));
-
-			const earnVault = labelsData.earnVaultEntries[addrLower];
-			const vaultAnnotation = labelsData.vaultAnnotations?.[addrLower];
-			const earnDeprecationReason = labelsData.deprecatedEarnVaults[addrLower];
-			const deprecationReason =
-				deprecatedVaultsMap.get(addrLower) ??
-				earnDeprecationReason ??
-				(vaultAnnotation?.deprecated
-					? (vaultAnnotation.deprecationReason ?? "")
-					: undefined);
-
-			const hasAnyLabel =
-				products.length > 0 ||
-				entities.length > 0 ||
-				points.length > 0 ||
-				deprecationReason !== undefined ||
-				earnVault !== undefined ||
-				(vaultAnnotation !== undefined &&
-					Object.keys(vaultAnnotation).length > 0);
-
-			if (hasAnyLabel) {
-				vault.eulerLabel = {
-					entities,
-					products,
-					points,
-					...(deprecationReason !== undefined && {
-						deprecated: true,
-						deprecationReason,
-					}),
-					...(earnVault && { earnVault }),
-					...(earnVault?.description && { description: earnVault.description }),
-					...(earnVault?.portfolioNotice && {
-						portfolioNotice: earnVault.portfolioNotice,
-					}),
-					...(vaultAnnotation?.portfolioNotice && {
-						portfolioNotice: vaultAnnotation.portfolioNotice,
-					}),
-					...(earnVault?.notExplorable && { notExplorable: true }),
-					...(earnVault?.block && { block: earnVault.block }),
-					...(earnVault?.restricted && { restricted: earnVault.restricted }),
-				};
-			}
-
-			vault.populated.labels = true;
-		}
+		vault.populated.labels = true;
 	}
 }
 

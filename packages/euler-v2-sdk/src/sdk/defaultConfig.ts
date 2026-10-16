@@ -72,6 +72,7 @@ export const defaultActivityV3AdapterConfig: ActivityServiceConfig = {
 export const defaultVaultTypeSubgraphAdapterConfig: VaultTypeSubgraphAdapterConfig =
 	defaultAccountVaultsAdapterConfig;
 
+/** Compatibility file source; buildEulerSDK defaults to Public Labels V3. */
 export const DEFAULT_EULER_LABELS_BASE_URL =
 	"https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master";
 

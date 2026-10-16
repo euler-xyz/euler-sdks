@@ -1,3 +1,4 @@
+export { EulerLabelsV3Service } from "./eulerLabelsV3Service.js";
 export {
 	EulerLabelsService,
 	normalizeEulerLabelsFileData,
