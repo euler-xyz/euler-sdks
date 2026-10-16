@@ -456,7 +456,7 @@ export function encodeBorrow(
 		);
 	}
 
-	if (currentController && currentController !== vault) {
+	if (currentController && getAddress(currentController) !== getAddress(vault)) {
 		items.push(encodeDisableController(currentController, borrowAccount));
 	}
 
@@ -605,7 +605,10 @@ export function encodeMultiplyWithSwap(
 		});
 	}
 
-	if (currentController && currentController !== liabilityVault) {
+	if (
+		currentController &&
+		getAddress(currentController) !== getAddress(liabilityVault)
+	) {
 		items.push(encodeDisableController(currentController, receiver));
 	}
 
@@ -642,7 +645,10 @@ export function encodeMultiplyWithSwap(
 		data: swapQuote.verify.verifierData,
 	});
 
-	if (enableCollateralLong && collateralVault !== longVault) {
+	if (
+		enableCollateralLong &&
+		getAddress(collateralVault) !== getAddress(longVault)
+	) {
 		items.push(encodeEnableCollateral(evc, receiver, longVault));
 	}
 
@@ -712,7 +718,10 @@ export function encodeMultiplySameAsset(
 		});
 	}
 
-	if (currentController && currentController !== liabilityVault) {
+	if (
+		currentController &&
+		getAddress(currentController) !== getAddress(liabilityVault)
+	) {
 		items.push(encodeDisableController(currentController, receiver));
 	}
 
@@ -923,7 +932,10 @@ export function encodeRepayFromDeposit({
 	disableControllerOnMax = true,
 	isMax = false,
 }: EncodeRepayFromDepositArgs): EVCBatchItem[] {
-	if (fromAsset === liabilityAsset && fromVault === liabilityVault) {
+	if (
+		getAddress(fromAsset) === getAddress(liabilityAsset) &&
+		getAddress(fromVault) === getAddress(liabilityVault)
+	) {
 		return encodeRepayWithSharesSameAssetAndVault(
 			liabilityVault,
 			liabilityAmount,
@@ -933,7 +945,7 @@ export function encodeRepayFromDeposit({
 		);
 	}
 
-	if (fromAsset === liabilityAsset) {
+	if (getAddress(fromAsset) === getAddress(liabilityAsset)) {
 		return encodeRepayWithSharesSameAssetDifferentVault(
 			fromVault,
 			liabilityVault,
@@ -1277,7 +1289,10 @@ export function encodeSwapAndBorrowFromWallet(
 		},
 	];
 
-	if (currentController && currentController !== borrowVault) {
+	if (
+		currentController &&
+		getAddress(currentController) !== getAddress(borrowVault)
+	) {
 		items.push(encodeDisableController(currentController, borrowAccount));
 	}
 	if (enableController) {

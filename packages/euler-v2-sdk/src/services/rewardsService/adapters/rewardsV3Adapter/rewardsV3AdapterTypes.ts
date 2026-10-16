@@ -5,6 +5,7 @@ export type { RewardsV3AdapterConfig };
 export type V3ListEnvelope<T> = {
 	data?: T[];
 	meta?: {
+		hasMore?: boolean;
 		total?: number;
 		offset?: number;
 		limit?: number;

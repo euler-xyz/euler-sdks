@@ -43,6 +43,7 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 				const ids = [...new Set(accounts.map((a) => getAddressPrefix(a)))];
 				const response = await fetch(subgraphUrl, {
 					method: "POST",
+					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
 						query: `query AccountVaults($ids: [String!]!) {
               trackingActiveAccounts(where: { id_in: $ids }) {
@@ -55,9 +56,40 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 						operationName: "AccountVaults",
 					}),
 				});
-				const json = await response.json();
+				if (!response.ok) {
+					throw new Error(
+						`Account vaults subgraph ${response.status} ${response.statusText}`,
+					);
+				}
+				const json = (await response.json()) as {
+					data?: {
+						trackingActiveAccounts?: Array<{
+							id: string;
+							deposits: string[];
+							borrows: string[];
+						}>;
+					};
+					errors?: unknown[];
+				};
+				if (json?.errors?.length) {
+					throw new Error("Account vaults subgraph returned GraphQL errors.");
+				}
+				if (!Array.isArray(json?.data?.trackingActiveAccounts)) {
+					throw new Error(
+						"Account vaults subgraph returned malformed account data.",
+					);
+				}
 				const map = new Map<string, any>();
-				for (const entry of (json as any).data?.trackingActiveAccounts ?? []) {
+				for (const entry of json.data.trackingActiveAccounts) {
+					if (
+						typeof entry?.id !== "string" ||
+						!Array.isArray(entry.deposits) ||
+						!Array.isArray(entry.borrows)
+					) {
+						throw new Error(
+							"Account vaults subgraph returned malformed account data.",
+						);
+					}
 					map.set(entry.id.toLowerCase(), entry);
 				}
 				chainResults.set(chainId, map);

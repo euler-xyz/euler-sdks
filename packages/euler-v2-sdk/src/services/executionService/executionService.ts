@@ -37,6 +37,7 @@ import {
 import {
 	type IVaultMetaService,
 	isEVault,
+	isEulerEarn,
 	type VaultEntity,
 } from "../vaults/vaultMetaService/index.js";
 import type {
@@ -376,19 +377,6 @@ function cloneBatchEntries(entries: readonly EVCBatchEntry[]): EVCBatchEntry[] {
 	);
 }
 
-type EVCStateTransition = {
-	kind: "collateral" | "controller";
-	action: "enable" | "disable";
-	account: Address;
-	vault: Address;
-};
-
-type BatchItemRef = {
-	item: EVCBatchItem;
-	remove: boolean;
-	transition?: EVCStateTransition;
-};
-
 type CleanupBatchItems = {
 	items: EVCBatchItem[];
 	disabledControllers: Set<Address>;
@@ -420,145 +408,6 @@ function hasShareConversion(vault: unknown): vault is VaultWithShareConversion {
 		"previewWithdraw" in vault &&
 		typeof vault.previewWithdraw === "function"
 	);
-}
-
-function getStateTransition(
-	item: EVCBatchItem,
-): EVCStateTransition | undefined {
-	try {
-		const decoded = decodeFunctionData({
-			abi: ethereumVaultConnectorAbi,
-			data: item.data,
-		});
-
-		if (
-			decoded.functionName === "enableCollateral" ||
-			decoded.functionName === "disableCollateral" ||
-			decoded.functionName === "enableController"
-		) {
-			const [account, vault] = decoded.args as [Address, Address];
-			return {
-				kind:
-					decoded.functionName === "enableController"
-						? "controller"
-						: "collateral",
-				action: decoded.functionName.startsWith("enable")
-					? "enable"
-					: "disable",
-				account,
-				vault,
-			};
-		}
-	} catch {}
-
-	try {
-		const decoded = decodeFunctionData({
-			abi: eVaultAbi,
-			data: item.data,
-		});
-		if (decoded.functionName === "disableController") {
-			return {
-				kind: "controller",
-				action: "disable",
-				account: item.onBehalfOfAccount,
-				vault: item.targetContract,
-			};
-		}
-	} catch {}
-
-	return undefined;
-}
-
-function stateTransitionKey(transition: EVCStateTransition): string {
-	return `${transition.kind}:${getAddress(transition.account)}:${getAddress(transition.vault)}`;
-}
-
-function normalizeEVCStateTransitions(
-	entries: readonly EVCBatchEntry[],
-): EVCBatchEntry[] {
-	const entryRefs = entries.map((entry) =>
-		isEVCBatchOperation(entry)
-			? entry.items.map(
-					(item): BatchItemRef => ({
-						item,
-						remove: false,
-						transition: getStateTransition(item),
-					}),
-				)
-			: [
-					{
-						item: entry,
-						remove: false,
-						transition: getStateTransition(entry),
-					},
-				],
-	);
-	const refs = entryRefs.flat();
-	const collateralStacks = new Map<
-		string,
-		Array<{ action: EVCStateTransition["action"]; ref: BatchItemRef }>
-	>();
-	const controllerLast = new Map<
-		string,
-		{ action: EVCStateTransition["action"] }
-	>();
-
-	for (const ref of refs) {
-		const transition = ref.transition;
-		if (!transition) continue;
-
-		const key = stateTransitionKey(transition);
-		if (transition.kind === "collateral") {
-			const stack = collateralStacks.get(key) ?? [];
-			const previous = stack[stack.length - 1];
-			if (previous?.action === transition.action) {
-				ref.remove = true;
-			} else if (previous) {
-				previous.ref.remove = true;
-				ref.remove = true;
-				stack.pop();
-			} else {
-				stack.push({ action: transition.action, ref });
-			}
-			collateralStacks.set(key, stack);
-			continue;
-		}
-
-		const previous = controllerLast.get(key);
-		if (previous?.action === transition.action) {
-			ref.remove = true;
-		} else {
-			controllerLast.set(key, { action: transition.action });
-		}
-	}
-
-	const result: EVCBatchEntry[] = [];
-	entries.forEach((entry, index) => {
-		const refsForEntry = entryRefs[index] ?? [];
-		if (isEVCBatchOperation(entry)) {
-			const items = refsForEntry
-				.filter((ref) => !ref.remove)
-				.map((ref) => ref.item);
-			if (items.length > 0) {
-				result.push({
-					type: "operation",
-					name: entry.name,
-					items,
-					...(entry.walletBalanceTokens?.length
-						? { walletBalanceTokens: [...entry.walletBalanceTokens] }
-						: {}),
-				});
-			}
-			return;
-		}
-
-		const ref = refsForEntry[0];
-		if (ref && !ref.remove) {
-			result.push(ref.item);
-		}
-	});
-
-	return result;
 }
 
 export interface IExecutionService<
@@ -1903,13 +1752,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			}
 		}
 
-		const optimizedExecutableItems = executableItems.flatMap((item) => {
-			if (item.type !== "evcBatch") return [item];
-			const items = normalizeEVCStateTransitions(item.items);
-			return items.length > 0 ? [{ type: "evcBatch" as const, items }] : [];
-		});
-
-		return [...approvalByKey.values(), ...optimizedExecutableItems];
+		return [...approvalByKey.values(), ...executableItems];
 	}
 
 	/**
@@ -2539,12 +2382,13 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 	/**
 	 * Builds a transaction plan for redeeming vault shares for underlying assets.
 	 * Pass `shares` directly, or pass `assets` to derive shares from the account's populated vault state.
+	 * For EulerEarn assets, encodes `withdraw` so the contract computes shares after accruing fees.
 	 * Use `maxUint256` for `shares` to redeem all available shares.
 	 *
 	 * @param args - Redeem plan arguments
 	 * @param args.vault - Address of the vault to redeem shares from
 	 * @param args.shares - Number of vault shares to redeem (use maxUint256 for "redeem all")
-	 * @param args.assets - Underlying asset amount used to calculate shares from the account vault snapshot
+	 * @param args.assets - Underlying assets to withdraw from EulerEarn, or to calculate redeem shares from other vault snapshots
 	 * @param args.owner - Sub-account address whose shares are being redeemed
 	 * @param args.receiver - Address that will receive the underlying assets
 	 * @param args.account - Account entity; used for chainId and position/collateral state
@@ -2557,18 +2401,21 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 		// Get position to check collateral state
 		const position = account?.getPosition(owner, vault);
-		const shares = this.resolveRedeemShares(args, position);
-
-		// Build EVC batch items
-		const batchItems = this.encodeRedeem({
+		const commonArgs = {
 			chainId: account.chainId,
 			vault,
-			shares,
 			receiver,
 			owner,
 			disableCollateral:
 				disableCollateral && (!position || position.isCollateral),
-		});
+		};
+		const batchItems =
+			isEulerEarn(position?.vault) && args.assets !== undefined
+				? this.encodeWithdraw({ ...commonArgs, assets: args.assets })
+				: this.encodeRedeem({
+						...commonArgs,
+						shares: this.resolveRedeemShares(args, position),
+					});
 
 		plan.push(...this.convertBatchItemsToPlan(batchItems, "redeem"));
 
@@ -2882,7 +2729,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		const fromAsset = fromPosition.asset;
 
 		// Cross-asset repay requires a swap path; this planner only builds same-asset batches.
-		if (fromAsset !== liabilityAsset) {
+		if (getAddress(fromAsset) !== getAddress(liabilityAsset)) {
 			// This path requires a swap, which is handled by planRepayWithSwap
 			throw new Error(
 				"planRepayFromDeposit only supports same-asset paths. Use planRepayWithSwap for different assets.",
@@ -2891,7 +2738,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 
 		const isMax = liabilityAmount === maxUint256;
 		const amount =
-			isMax && fromVault !== liabilityVault
+			isMax && getAddress(fromVault) !== getAddress(liabilityVault)
 				? liabilityPosition.borrowed
 				: liabilityAmount;
 		const hasPreExistingLiabilityDeposit =
@@ -2913,7 +2760,10 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		});
 
 		if (cleanupOnMax && isMax) {
-			if (fromVault !== liabilityVault && !hasPreExistingLiabilityDeposit) {
+			if (
+				getAddress(fromVault) !== getAddress(liabilityVault) &&
+				!hasPreExistingLiabilityDeposit
+			) {
 				// Sweep only the repay cushion. If liability shares existed before this batch,
 				// redeem(max) would also migrate that unrelated deposit into the source vault.
 				batchItems.push({
@@ -3837,7 +3687,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 				amount: collateralAmount,
 			});
 		}
-		if (swapQuote.accountIn !== swapQuote.accountOut) {
+		if (getAddress(swapQuote.accountIn) !== getAddress(swapQuote.accountOut)) {
 			throw new Error("Account in and account out must be the same");
 		}
 		const receiver = swapQuote.accountIn;
@@ -3933,7 +3783,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		} = args;
 		assertCowSwapQuote(swapQuote, "planOpenPositionWithCoW");
 
-		if (swapQuote.accountIn !== swapQuote.accountOut) {
+		if (getAddress(swapQuote.accountIn) !== getAddress(swapQuote.accountOut)) {
 			throw new Error("Account in and account out must be the same");
 		}
 

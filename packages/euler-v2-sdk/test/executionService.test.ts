@@ -668,31 +668,35 @@ test("mergePlans preserves operation wallet balance token metadata", () => {
 	);
 });
 
-test("mergePlans collapses collateral state transitions to the resulting action", () => {
+test("mergePlans preserves opposing collateral transitions and their intermediate effects", () => {
 	const service = createExecutionService();
 	const enable = service.encodeEnableCollateral(1, ACCOUNT, COLLATERAL_VAULT);
 	const disable = service.encodeDisableCollateral(1, ACCOUNT, COLLATERAL_VAULT);
 
-	const cancelled = service.mergePlans([
+	const merged = service.mergePlans([
 		service.convertBatchItemsToPlan([enable]),
 		service.convertBatchItemsToPlan([disable]),
 	]);
-	assert.deepEqual(cancelled, []);
+	assert.deepEqual(getOnlyEvcBatchItems(merged), [enable, disable]);
 
-	const enabled = service.mergePlans([
+	const observation = createBatchItem(COLLATERAL_VAULT);
+	const repeated = service.mergePlans([
 		service.convertBatchItemsToPlan([enable]),
+		service.convertBatchItemsToPlan([observation]),
 		service.convertBatchItemsToPlan([disable]),
 		service.convertBatchItemsToPlan([enable]),
+		service.convertBatchItemsToPlan([enable]),
 	]);
-	assert.equal(enabled.length, 1);
-	assert.equal(enabled[0]?.type, "evcBatch");
-	if (enabled[0]?.type !== "evcBatch") {
-		throw new Error("expected evcBatch");
-	}
-	assert.deepEqual(flattenBatchEntries(enabled[0].items), [enable]);
+	assert.deepEqual(getOnlyEvcBatchItems(repeated), [
+		enable,
+		observation,
+		disable,
+		enable,
+		enable,
+	]);
 });
 
-test("mergePlans deduplicates repeated controller transitions without cancelling opposites", () => {
+test("mergePlans preserves repeated and opposing controller transitions", () => {
 	const service = createExecutionService();
 	const enable = service.encodeEnableController(1, ACCOUNT, LIABILITY_VAULT);
 	const disable = service.encodeDisableController(LIABILITY_VAULT, ACCOUNT);
@@ -712,9 +716,153 @@ test("mergePlans deduplicates repeated controller transitions without cancelling
 	}
 	assert.deepEqual(flattenBatchEntries(merged[0].items), [
 		enable,
+		enable,
+		disable,
 		disable,
 		enable,
 	]);
+});
+
+test("mergePlans preserves every call when two deposits enable the same collateral", () => {
+	const service = createExecutionService();
+	const args = {
+		account: {
+			owner: ACCOUNT,
+			chainId: 1,
+			isCollateralEnabled: () => false,
+		} as never,
+		vault: COLLATERAL_VAULT,
+		asset: TOKEN_IN,
+		amount: AMOUNT,
+		receiver: ACCOUNT,
+		enableCollateral: true,
+	};
+	const first = service.planDeposit(args);
+	const second = service.planDeposit(args);
+	const originalFirst = structuredClone(first);
+	const originalSecond = structuredClone(second);
+	const merged = service.mergePlans([first, second]);
+
+	assert.deepEqual(getOnlyEvcBatchItems(merged), [
+		...getOnlyEvcBatchItems(first),
+		...getOnlyEvcBatchItems(second),
+	]);
+	assert.equal(getOnlyEvcBatchItems(merged).length, 4);
+	assert.equal(merged[0]?.type, "requiredApproval");
+	assert.equal(merged[0]?.type === "requiredApproval" && merged[0].amount, AMOUNT * 2n);
+	assert.deepEqual(first, originalFirst);
+	assert.deepEqual(second, originalSecond);
+});
+
+test("multiply and swap-borrow encoders retain the same controller regardless of address casing", () => {
+	const service = createExecutionService();
+	const multiplyArgs = {
+		chainId: 1,
+		collateralVault: COLLATERAL_VAULT,
+		collateralAmount: 0n,
+		liabilityVault: CHECKSUMMED_SPENDER,
+		liabilityAmount: AMOUNT,
+		longVault: SOURCE_VAULT,
+		owner: ACCOUNT,
+		receiver: RECEIVER,
+		currentController: CHECKSUMMED_SPENDER,
+	};
+	const encoders = [
+		(currentController: `0x${string}`) => service.encodeMultiplySameAsset({
+			...multiplyArgs,
+			currentController,
+		}),
+		(currentController: `0x${string}`) => service.encodeMultiplyWithSwap({
+			...multiplyArgs,
+			currentController,
+			swapQuote: createSwapQuote() as never,
+		}),
+		(currentController: `0x${string}`) => service.encodeSwapAndBorrowFromWallet({
+			chainId: 1,
+			swapQuote: createSwapQuote() as never,
+			amount: AMOUNT,
+			sender: ACCOUNT,
+			borrowAccount: RECEIVER,
+			collateralVault: COLLATERAL_VAULT,
+			borrowVault: CHECKSUMMED_SPENDER,
+			borrowAmount: AMOUNT,
+			receiver: ACCOUNT,
+			currentController,
+		}),
+	];
+	const disableSelector = service.encodeDisableController(CHECKSUMMED_SPENDER, ACCOUNT).data;
+	for (const encode of encoders) {
+		const lower = encode(LOWERCASE_SPENDER);
+		assert.deepEqual(lower, encode(CHECKSUMMED_SPENDER));
+		assert.equal(lower.some((item) => item.data === disableSelector), false);
+		assert.equal(encode(LIABILITY_VAULT).some((item) => item.data === disableSelector), true);
+	}
+});
+
+test("swap multiply identifies the initial and long collateral vault independently of casing", () => {
+	const service = createExecutionService();
+	const args = {
+		chainId: 1,
+		collateralVault: CHECKSUMMED_SPENDER,
+		collateralAmount: AMOUNT,
+		liabilityVault: LIABILITY_VAULT,
+		liabilityAmount: AMOUNT,
+		longVault: CHECKSUMMED_SPENDER,
+		owner: ACCOUNT,
+		receiver: RECEIVER,
+		swapQuote: createSwapQuote() as never,
+	};
+	const checksummed = service.encodeMultiplyWithSwap(args);
+	const lowercase = service.encodeMultiplyWithSwap({
+		...args,
+		longVault: LOWERCASE_SPENDER,
+	});
+	assert.deepEqual(lowercase, checksummed);
+
+	const distinct = service.encodeMultiplyWithSwap({
+		...args,
+		longVault: SOURCE_VAULT,
+	});
+	assert.equal(distinct.length, checksummed.length + 1);
+	assert.deepEqual(
+		decodeFunctionData({
+			abi: ethereumVaultConnectorAbi,
+			data: distinct.at(-1)!.data,
+		}).args,
+		[getAddress(RECEIVER), getAddress(SOURCE_VAULT)],
+	);
+});
+
+test("swap multiply and CoW opening accept equivalent account addresses and reject distinct accounts", () => {
+	const service = createExecutionService();
+	const common = {
+		account: {
+			owner: ACCOUNT,
+			chainId: 1,
+			isCollateralEnabled: () => false,
+			isControllerEnabled: () => false,
+			getCurrentController: () => undefined,
+		} as never,
+		collateralVault: COLLATERAL_VAULT,
+		collateralAmount: AMOUNT,
+		collateralAsset: SAME_ASSET,
+	};
+	const planners = [
+		(accountOut: `0x${string}`) => service.planMultiplyWithSwap({
+			...common,
+			swapQuote: { ...createSwapQuote(), accountOut } as never,
+		}),
+		(accountOut: `0x${string}`) => service.planOpenPositionWithCoW({
+			...common,
+			swapQuote: { ...createCowSwapQuote(), accountOut } as never,
+			validTo: 1234,
+		}),
+	];
+	assert.notEqual(ACCOUNT, getAddress(ACCOUNT));
+	for (const plan of planners) {
+		assert.deepEqual(plan(getAddress(ACCOUNT)), plan(ACCOUNT));
+		assert.throws(() => plan(SOURCE_ACCOUNT), /Account in and account out must be the same/);
+	}
 });
 
 test("mergePlans rejects contract calls because call boundaries need manual merging", () => {

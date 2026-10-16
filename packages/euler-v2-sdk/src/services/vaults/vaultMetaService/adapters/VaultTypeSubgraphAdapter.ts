@@ -52,14 +52,28 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 				for (let i = 0; i < ids.length; i += PAGE_SIZE) {
 					const pageIds = ids.slice(i, i + PAGE_SIZE);
 					const response = await fetch(subgraphUrl, {
-            method: "POST",
+						method: "POST",
 						headers: { "Content-Type": "application/json" },
 						body: JSON.stringify({ query, variables: { ids: pageIds } }),
 					});
+					if (!response.ok) {
+						throw new Error(
+							`Vault type subgraph ${response.status} ${response.statusText}`,
+						);
+					}
 					const json = (await response.json()) as {
 						data?: { vaults?: Array<{ id: string; factory: string }> };
+						errors?: unknown[];
 					};
-					for (const v of json.data?.vaults ?? []) {
+					if (json?.errors?.length) {
+						throw new Error("Vault type subgraph returned GraphQL errors.");
+					}
+					if (!Array.isArray(json?.data?.vaults)) {
+						throw new Error(
+							"Vault type subgraph returned malformed vault data.",
+						);
+					}
+					for (const v of json.data.vaults) {
 						map.set(v.id.toLowerCase(), getAddress(v.factory));
 					}
 				}
@@ -82,7 +96,10 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 		chainId: number,
 		vaultAddress: Address,
 	): Promise<string | undefined> {
-		const result = await this.queryVaultFactories({ address: vaultAddress, chainId });
+		const result = await this.queryVaultFactories({
+			address: vaultAddress,
+			chainId,
+		});
 		return result?.factory;
 	}
 

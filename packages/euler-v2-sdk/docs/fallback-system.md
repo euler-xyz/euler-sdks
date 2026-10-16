@@ -48,6 +48,10 @@ The wrapper considers a primary call failed in these cases:
 
 Per-item warnings (e.g. `SOURCE_UNAVAILABLE` on a nested oracle) on a **fully-populated** response do **not** trigger fallback — the secondary cannot recover information the primary already returned, and re-fetching only doubles latency.
 
+The V3 account adapter treats a null or missing required balance (`shares`, `assets`, or `borrowed`) or sub-account metadata block as an unavailable snapshot. It returns an undefined result with a `SOURCE_UNAVAILABLE` diagnostic, triggering a full on-chain account or sub-account read when fallback is configured. Explicit zero balances remain valid.
+
+If the final adapter result is undefined and includes `SOURCE_UNAVAILABLE` or an error-severity diagnostic, `AccountService.fetchAccount()` and `fetchSubAccount()` reject with `AccountDataUnavailableError` (`code: "ACCOUNT_DATA_UNAVAILABLE"`). Its `errors` field retains the diagnostics. This applies to V3-only reads and failed fallback reads, and prevents `resolveNewSubAccount()` from selecting a candidate after failed discovery or a failed candidate read. A successful empty response, including an empty fallback response, remains valid.
+
 ## Telemetry
 
 Pass an `onFallback` callback to `buildEulerSDK` to observe every fallback event:

@@ -40,6 +40,8 @@ Fetch/build services return diagnostics next to data:
 
 For batch vault fetches (`fetchVaults`, `fetchVerifiedVaults`, `fetchAllVaults`), `result` may contain `undefined` entries for per-vault failures. Those failures are reported in `errors` with a `vault` owner location for the affected address. For `fetchVaults` and `fetchVerifiedVaults`, result order matches the input/discovery order. For `fetchAllVaults`, entries rejected by the optional pre-population filter are also returned as `undefined`.
 
+Account reads reject with `AccountDataUnavailableError` when the final adapter returns no snapshot alongside `SOURCE_UNAVAILABLE` or an error-severity diagnostic. The error exposes `code: "ACCOUNT_DATA_UNAVAILABLE"`, `chainId`, `address`, and the adapter diagnostics in `errors`. `resolveNewSubAccount()` and portfolio reads propagate this failure. A successful empty account discovery still returns an empty `Account`; a successful empty sub-account read returns `undefined`.
+
 Fetch option objects also support `populateAll: true` to force all enrichment steps on.
 
 Errors include issues from nested entities and populated sub-services. Nested diagnostics are remapped to the rendered owner, for example a collateral vault issue becomes a `vaultCollateral` location on the parent vault.
