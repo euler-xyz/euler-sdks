@@ -11,7 +11,10 @@ These need no SDK change:
   - viem exports several chains with the id: set `viemName` for the chain in euler-interfaces.
   - viem lacks the chain: add it to viem upstream. Until a viem release with the chain is pinned here, apps pass the chain through `chains` in `buildEulerSDK()`.
 - **RPC URLs.** Apps supply them through `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`.
-- **V3 data.** Vaults, accounts, prices, rewards, labels and token lists come from the V3 API for the chain.
+- **V3 data.** Vaults, accounts, prices, rewards and token lists come from the V3 API for the chain.
+- **Labels.** The default `EulerLabelsV3Service` reads the chain's published metadata, live visibility and geo policies from Public Labels V3, using the shared V3 endpoint and query cache. Publish the chain's labels in V3; no SDK chain entry is required. `eulerLabelsV3AdapterConfig` selects a dataset, version or custom transport. Applications can supply a custom labels flow through `servicesOverrides.eulerLabelsService`. See [Labels](./labels.md#public-labels-v3).
+
+A configured chain missing from the pinned viem catalog is unavailable through `providerService` unless `chains` supplies a valid explicit override; other configured chains remain usable. `getSupportedChainIds()` lists only resolved providers, and `getProvider(chainId)` explains how to supply a missing chain. Invalid overrides, conflicting registry names and ambiguous chain ids still fail SDK initialization.
 
 The SDK pins its `viem` version in `package.json`. A chain that viem ships later reaches the SDK's built-in resolution only after that pin is bumped. `pnpm test:live` checks that the pinned viem resolves every chain in the live `EulerChains.json`; `pnpm test` reads no live registry.
 

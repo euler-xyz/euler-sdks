@@ -76,7 +76,12 @@ const normalizeFeedId = (value: string): Hex =>
 	normalizeHex(value).toLowerCase() as Hex;
 
 const DEFAULT_MAX_PYTH_UPDATE_FEE = 10n ** 16n;
-const OFFICIAL_PYTH_ADDRESSES_BY_CHAIN_ID = new Map<number, Address>([
+// Pyth Core deployments: https://docs.pyth.network/price-feeds/core/upgrade/contracts
+// Includes both Base deployments in pyth-network/pyth-crosschain's contract store.
+const OFFICIAL_PYTH_ADDRESSES_BY_CHAIN_ID = new Map<
+	number,
+	Address | readonly Address[]
+>([
 	[1, "0x4305FB66699C3B2702D4d05CF36551390A4c69C6"],
 	[10, "0xff1a0f4744e8582DF1aE09D5611b887B6a12925C"],
 	[56, "0x4D7E825f80bDf85e913E0DD2A2D54927e9dE1594"],
@@ -99,6 +104,14 @@ const OFFICIAL_PYTH_ADDRESSES_BY_CHAIN_ID = new Map<number, Address>([
 	[1923, "0xDd24F84d36BF92C65F92307595335bdFab5Bbd21"],
 	[2020, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
 	[2741, "0x8739d5024B5143278E2b15Bd9e7C26f6CEc658F1"],
+	[
+		8453,
+		[
+			"0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a",
+			"0xbC16aee60f64864882BC6C4E428e148Fc0E272F5",
+		],
+	],
+	[9745, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
 	[34443, "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729"],
 	[42161, "0xff1a0f4744e8582DF1aE09D5611b887B6a12925C"],
 	[42220, "0xff1a0f4744e8582DF1aE09D5611b887B6a12925C"],
@@ -644,9 +657,12 @@ export function createPythPlugin(config: PythPluginConfig = {}): EulerPlugin {
 	const maxUpdateFee = config.maxUpdateFee ?? DEFAULT_MAX_PYTH_UPDATE_FEE;
 	const getTrustedPythAddresses = (chainId: number): Set<string> => {
 		const addresses = new Set<string>();
-		const officialAddress = OFFICIAL_PYTH_ADDRESSES_BY_CHAIN_ID.get(chainId);
-		if (officialAddress)
-			addresses.add(getAddress(officialAddress).toLowerCase());
+		const officialAddresses = OFFICIAL_PYTH_ADDRESSES_BY_CHAIN_ID.get(chainId);
+		for (const address of typeof officialAddresses === "string"
+			? [officialAddresses]
+			: (officialAddresses ?? [])) {
+			addresses.add(getAddress(address).toLowerCase());
+		}
 
 		const configuredAddresses = config.pythAddresses?.[chainId];
 		const customAddresses = Array.isArray(configuredAddresses)

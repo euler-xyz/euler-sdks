@@ -115,7 +115,7 @@ async function fetchVaultDetailsExample() {
     }
   }
 
-  // Labels (off-chain metadata from euler-labels)
+  // Labels (off-chain metadata from Public Labels V3)
   console.log("\n" + "-".repeat(80));
   console.log("LABELS");
   console.log("-".repeat(80));

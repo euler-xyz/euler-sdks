@@ -66,6 +66,15 @@ const overrideFix = (chainId: number) =>
 const registryFix = (chainId: number) =>
 	`set viemName for chain ${chainId} in euler-interfaces EulerChains.json`;
 
+export class MissingViemChainError extends Error {
+	constructor(chainId: number, viemName?: string) {
+		super(
+			`viem has no chain with id ${chainId}${viemName ? ` or export "${viemName}"` : ""}. Either ${overrideFix(chainId)}, or ${registryFix(chainId)} once viem ships the chain.`,
+		);
+		this.name = "MissingViemChainError";
+	}
+}
+
 function findChainsWithId(
 	catalog: ViemChainCatalog,
 	chainId: number,
@@ -97,6 +106,12 @@ function resolveFromViem(
 	if (viemName) {
 		const named = catalog[viemName];
 		if (isViemChain(named) && named.id === chainId) return named;
+		if (
+			named === undefined &&
+			findChainsWithId(catalog, chainId).length === 0
+		) {
+			throw new MissingViemChainError(chainId, viemName);
+		}
 		throw new Error(
 			`EulerChains viemName "${viemName}" for chain ${chainId} is not a viem chain with that id. Fix viemName for chain ${chainId} in euler-interfaces EulerChains.json, or ${overrideFix(chainId)}.`,
 		);
@@ -119,9 +134,7 @@ function resolveFromViem(
 		);
 	}
 
-	throw new Error(
-		`viem has no chain with id ${chainId}. Either ${overrideFix(chainId)}, or ${registryFix(chainId)} once viem ships the chain.`,
-	);
+	throw new MissingViemChainError(chainId);
 }
 
 function assertChainId(chainId: number, chain: Partial<Chain>): void {

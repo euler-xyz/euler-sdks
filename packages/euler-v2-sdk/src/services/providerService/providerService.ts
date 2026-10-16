@@ -8,6 +8,7 @@ import {
 import {
 	type ChainOverrides,
 	type ChainTransportOptions,
+	MissingViemChainError,
 	needsViemChains,
 	resolveViemChain,
 } from "./chainResolution.js";
@@ -62,6 +63,7 @@ function createChainClient(
 
 export class ProviderService implements IProviderService {
 	private readonly providers: Readonly<Record<number, PublicClient>>;
+	private readonly unavailableChains = new Map<number, MissingViemChainError>();
 
 	/** Loads viem's chain list first when a chain needs it; required in browser builds. */
 	static async build(
@@ -79,21 +81,40 @@ export class ProviderService implements IProviderService {
 		options: ProviderServiceOptions = {},
 	) {
 		const catalog = getLoadedViemChains();
-		this.providers = Object.fromEntries(
-			Object.entries(rpcUrls).map(([key, rpcUrl]) => {
-				const chainId = Number(key);
-				const override = options.chains?.[chainId];
-				const chain = resolveViemChain(chainId, {
+		const providers: Record<number, PublicClient> = {};
+		for (const [key, rpcUrl] of Object.entries(rpcUrls)) {
+			const chainId = Number(key);
+			const override = options.chains?.[chainId];
+			let chain: Chain;
+			try {
+				chain = resolveViemChain(chainId, {
 					override,
 					viemName: options.viemNames?.[chainId],
 					catalog,
 				});
-				return [chainId, createChainClient(chain, rpcUrl, override?.transport)];
-			}),
-		);
+			} catch (error) {
+				if (
+					error instanceof MissingViemChainError &&
+					Number.isSafeInteger(chainId) &&
+					chainId > 0
+				) {
+					this.unavailableChains.set(chainId, error);
+					continue;
+				}
+				throw error;
+			}
+			providers[chainId] = createChainClient(
+				chain,
+				rpcUrl,
+				override?.transport,
+			);
+		}
+		this.providers = providers;
 	}
 
 	getProvider(chainId: number): PublicClient {
+		const resolutionError = this.unavailableChains.get(chainId);
+		if (resolutionError) throw resolutionError;
 		const provider = this.providers[chainId];
 		if (!provider) {
 			throw new Error(`No provider configured for chainId ${chainId}`);

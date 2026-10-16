@@ -85,7 +85,7 @@ Adapters are the SDK's I/O boundary. They implement focused interfaces (e.g. `IE
 |------|----------|------------|
 | **Onchain** | `EVaultOnchainAdapter`, `AccountOnchainAdapter`, `WalletOnchainAdapter` | Lens contracts via RPC (`VaultLens`, `AccountLens`, `UtilsLens`) |
 | **Subgraph** | `VaultTypeSubgraphAdapter`, `AccountVaultsSubgraphAdapter` | The Graph (indexed chain data — vault factories, account vault history) |
-| **Backend / API** | `VaultTypeV3Adapter`, `PricingBackendClient`, `EulerLabelsURLAdapter` | REST APIs (vault type resolution, pricing, labels, rewards) |
+| **Backend / API** | `VaultTypeV3Adapter`, `PricingBackendClient`, `PublicLabelsV3Adapter` | REST APIs (vault type resolution, pricing, labels, rewards) |
 
 ### Adapter → entity interface
 

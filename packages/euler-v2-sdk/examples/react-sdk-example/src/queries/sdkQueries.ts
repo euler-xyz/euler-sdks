@@ -60,20 +60,14 @@ export const queryClient = new QueryClient({
 // ---------------------------------------------------------------------------
 
 const MINUTE = 60_000;
-const EULER_LABELS_BASE =
-  import.meta.env.EULER_SDK_EULER_LABELS_BASE_URL ??
-  "https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master";
-
 const STALE_TIMES: Record<string, number> = {
   // Static metadata — essentially never changes
   queryDeployments: Infinity,
   queryABI: Infinity,
   queryTokenList: Infinity,
-  queryEulerLabelsEntities: Infinity,
-  queryEulerLabelsProducts: Infinity,
-  queryEulerLabelsPoints: Infinity,
-  queryEulerLabelsEarnVaults: Infinity,
-  queryEulerLabelsAssets: Infinity,
+
+  // Public labels include live visibility and geo policies.
+  queryPublicLabels: 5_000,
 
   // Perspective / factory lists — change only when new vaults are deployed
   queryEVaultVerifiedArray: 5 * MINUTE,
@@ -418,81 +412,28 @@ export function unwrapServiceResult<T>(
   return unwrapServiceResultWithDiagnostics(operation, response).result;
 }
 
-export async function fetchVaultAddressesFromLabelProducts(
+/** Eligible membership comes from the complete snapshot, not display product contents. */
+export async function fetchEligibleVaultAddressesFromLabels(
   sdk: EulerSDK,
   chainId: number
 ): Promise<Address[]> {
-  const products = await sdk.eulerLabelsService.fetchEulerLabelsProducts(chainId);
-  const seen = new Set<string>();
-  const addresses: Address[] = [];
-
-  for (const product of Object.values(products)) {
-    for (const vault of [
-      ...(product.vaults ?? []),
-      ...(product.deprecatedVaults ?? []),
-    ]) {
-      try {
-        const normalized = getAddress(vault);
-        const key = normalized.toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        addresses.push(normalized);
-      } catch {
-        continue;
-      }
-    }
-  }
-
-  return addresses;
+  const data = await sdk.eulerLabelsService.fetchEulerLabelsData(chainId);
+  return data.verifiedVaultAddresses.map((address) => getAddress(address));
 }
 
 export async function fetchEarnVaultAddressesFromLabels(
+  sdk: EulerSDK,
   chainId: number
 ): Promise<Address[]> {
-  const response = await fetch(`${EULER_LABELS_BASE}/${chainId}/earn-vaults.json`);
-  if (response.status === 404) return [];
-  if (!response.ok) {
-    throw new Error(`Failed to fetch Euler labels earn vaults: ${response.statusText}`);
-  }
-
-  const payload = (await response.json()) as unknown;
-  if (!Array.isArray(payload)) return [];
-
-  const seen = new Set<string>();
-  const addresses: Address[] = [];
-
-  for (const entry of payload) {
-    const rawAddress =
-      typeof entry === "string"
-        ? entry
-        : typeof entry === "object" &&
-            entry !== null &&
-            "address" in entry &&
-            typeof entry.address === "string"
-          ? entry.address
-          : undefined;
-
-    if (!rawAddress) continue;
-
-    try {
-      const normalized = getAddress(rawAddress);
-      const key = normalized.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      addresses.push(normalized);
-    } catch {
-      continue;
-    }
-  }
-
-  return addresses;
+  const data = await sdk.eulerLabelsService.fetchEulerLabelsData(chainId);
+  return data.earnVaults.map((address) => getAddress(address));
 }
 
 async function fetchLabeledVaultsWithDiagnostics(
   sdk: EulerSDK,
   chainId: number
 ) {
-  const addresses = await fetchVaultAddressesFromLabelProducts(sdk, chainId);
+  const addresses = await fetchEligibleVaultAddressesFromLabels(sdk, chainId);
 
   const res = unwrapServiceResultWithDiagnostics(
     "eVaultService.fetchVaults",
@@ -510,7 +451,7 @@ async function fetchEulerEarnVaultsWithDiagnostics(
   sdk: EulerSDK,
   chainId: number
 ) {
-  const addresses = await fetchEarnVaultAddressesFromLabels(chainId);
+  const addresses = await fetchEarnVaultAddressesFromLabels(sdk, chainId);
 
   const res = unwrapServiceResultWithDiagnostics(
     "eulerEarnService.fetchVaults",
@@ -974,15 +915,15 @@ async function buildLabeledPortfolioPositionFilter(
   sdk: EulerSDK,
   chainId: number
 ): Promise<PortfolioPositionFilter<VaultEntity>> {
-  const [productVaults, earnVaults, escrowVaults] = await Promise.all([
-    fetchVaultAddressesFromLabelProducts(sdk, chainId).catch(() => [] as Address[]),
-    fetchEarnVaultAddressesFromLabels(chainId).catch(() => [] as Address[]),
+  const [eligibleVaults, earnVaults, escrowVaults] = await Promise.all([
+    fetchEligibleVaultAddressesFromLabels(sdk, chainId).catch(() => [] as Address[]),
+    fetchEarnVaultAddressesFromLabels(sdk, chainId).catch(() => [] as Address[]),
     sdk.eVaultService
       .fetchVerifiedVaultAddresses(chainId, [StandardEVaultPerspectives.ESCROW])
       .catch(() => [] as Address[]),
   ]);
   const labeledVaults = new Set(
-    [...productVaults, ...earnVaults, ...escrowVaults].map((vault) =>
+    [...eligibleVaults, ...earnVaults, ...escrowVaults].map((vault) =>
       getAddress(vault).toLowerCase()
     )
   );
@@ -1092,7 +1033,7 @@ export function useFeeFlowPageData() {
         "vaultMetaService.fetchVaults",
         await sdk!.vaultMetaService.fetchVaults(
           chainId,
-          await fetchVaultAddressesFromLabelProducts(sdk!, chainId),
+          await fetchEligibleVaultAddressesFromLabels(sdk!, chainId),
           {
             populateMarketPrices: true,
             populateRewards: true,

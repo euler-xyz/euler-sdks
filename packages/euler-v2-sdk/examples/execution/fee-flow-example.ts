@@ -63,6 +63,17 @@ async function feeFlowExample() {
     eulerEarnServiceConfig: { adapter: "onchain" },
   });
 
+  const labelsData = await sdk.eulerLabelsService.fetchEulerLabelsData(mainnet.id);
+  if (!("visibility" in labelsData)) {
+    throw new Error("This example requires Public Labels V3 policy metadata.");
+  }
+  // Membership includes warning verdicts; this example requires a visible, verified verdict.
+  const isVerifiedByLabels = (address: string) => {
+    const verdict = labelsData.visibility[address.toLowerCase()];
+    return verdict?.status === "visible" && verdict.decidedBy === "verified";
+  };
+  const verifiedEVaults = new Set(labelsData.verifiedVaultAddresses.filter(isVerifiedByLabels).map(a => a.toLowerCase()));
+
   const feeFlowState = await sdk.feeFlowService.fetchState(chainId);
   const tokenList = await sdk.tokenlistService.loadTokenlist(chainId);
   const paymentTokenMeta = tokenList.find(
@@ -84,7 +95,7 @@ async function feeFlowExample() {
 
   // The factory perspective is provenance only, NOT a trust signal (anyone can deploy
   // through the factory). Since the buy plan interacts with the selected vaults
-  // (convertFees), restrict the universe to label-verified and escrow vaults.
+  // (convertFees), restrict the universe to visible, verified label members and escrow vaults.
   const universeAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(chainId, [
     StandardEVaultPerspectives.FACTORY,
     StandardEVaultPerspectives.ESCROW,
@@ -106,7 +117,7 @@ async function feeFlowExample() {
   const allEVaults = (allVaultResults.filter(Boolean) as EVault[]).filter(
     (vault) =>
       !vault.eulerLabel?.deprecated
-      && ((vault.eulerLabel?.products.length ?? 0) > 0 || escrowSet.has(vault.address.toLowerCase())),
+      && (verifiedEVaults.has(vault.address.toLowerCase()) || escrowSet.has(vault.address.toLowerCase())),
   );
 
   const eligibleVaults = sdk.feeFlowService.getEligibleVaults(allEVaults, chainId);

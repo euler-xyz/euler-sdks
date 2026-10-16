@@ -120,18 +120,7 @@ The Turtle Earn API requires an API key on every endpoint. The direct rewards ad
 
 ## Euler Labels
 
-| Config field | Environment variable | Default |
-|---|---|---|
-| `eulerLabelsBaseUrl` | `EULER_SDK_EULER_LABELS_BASE_URL` | Euler labels GitHub raw base |
-| `eulerLabelsEntitiesUrlTemplate` | `EULER_SDK_EULER_LABELS_ENTITIES_URL_TEMPLATE` | `{base}/{chainId}/entities.json` |
-| `eulerLabelsProductsUrlTemplate` | `EULER_SDK_EULER_LABELS_PRODUCTS_URL_TEMPLATE` | `{base}/{chainId}/products.json` |
-| `eulerLabelsPointsUrlTemplate` | `EULER_SDK_EULER_LABELS_POINTS_URL_TEMPLATE` | `{base}/{chainId}/points.json` |
-| `eulerLabelsEarnVaultsUrlTemplate` | `EULER_SDK_EULER_LABELS_EARN_VAULTS_URL_TEMPLATE` | `{base}/{chainId}/earn-vaults.json` |
-| `eulerLabelsAssetsUrlTemplate` | `EULER_SDK_EULER_LABELS_ASSETS_URL_TEMPLATE` | `{base}/{chainId}/assets.json` |
-| `eulerLabelsGlobalAssetsUrl` | `EULER_SDK_EULER_LABELS_GLOBAL_ASSETS_URL` | `{base}/all/assets.json` |
-| `eulerLabelsLogoUrlTemplate` | `EULER_SDK_EULER_LABELS_LOGO_URL_TEMPLATE` | `{base}/logo/{filename}` |
-
-Template variables are `{base}`, `{chainId}`, and `{filename}`.
+Labels use the shared `v3ApiUrl` / `v3ApiKey` settings and query cache. Use `eulerLabelsV3AdapterConfig` for V3 dataset/version or request customization. Applications that own a different labels flow inject `servicesOverrides.eulerLabelsService`; the SDK has no file URL configuration or file-fetching adapter. See [Custom labels flows](./labels.md#custom-labels-flows).
 
 ## Token Lists And Oracle Metadata
 

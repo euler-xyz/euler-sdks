@@ -7,7 +7,6 @@ import type {
 	VaultTypeSubgraphAdapterConfig,
 	VaultTypeV3AdapterConfig,
 } from "../services/vaults/vaultMetaService/index.js";
-import type { EulerLabelsURLAdapterConfig } from "../services/eulerLabelsService/index.js";
 import type { SwapServiceConfig } from "../services/swapService/index.js";
 import type { TokenlistServiceConfig } from "../services/tokenlistService/index.js";
 import type { PricingServiceConfig } from "../services/priceService/index.js";
@@ -71,26 +70,6 @@ export const defaultActivityV3AdapterConfig: ActivityServiceConfig = {
 /** Same subgraph endpoints as account vaults; kept for explicit subgraph-based vault type resolution. */
 export const defaultVaultTypeSubgraphAdapterConfig: VaultTypeSubgraphAdapterConfig =
 	defaultAccountVaultsAdapterConfig;
-
-export const DEFAULT_EULER_LABELS_BASE_URL =
-	"https://raw.githubusercontent.com/euler-xyz/euler-labels/refs/heads/master";
-
-export const defaultEulerLabelsURLAdapterConfig: EulerLabelsURLAdapterConfig = {
-	getEulerLabelsEntitiesUrl: (chainId: number) =>
-		`${DEFAULT_EULER_LABELS_BASE_URL}/${chainId}/entities.json`,
-	getEulerLabelsProductsUrl: (chainId: number) =>
-		`${DEFAULT_EULER_LABELS_BASE_URL}/${chainId}/products.json`,
-	getEulerLabelsPointsUrl: (chainId: number) =>
-		`${DEFAULT_EULER_LABELS_BASE_URL}/${chainId}/points.json`,
-	getEulerLabelsEarnVaultsUrl: (chainId: number) =>
-		`${DEFAULT_EULER_LABELS_BASE_URL}/${chainId}/earn-vaults.json`,
-	getEulerLabelsAssetsUrl: (chainId: number) =>
-		`${DEFAULT_EULER_LABELS_BASE_URL}/${chainId}/assets.json`,
-	getEulerLabelsGlobalAssetsUrl: () =>
-		`${DEFAULT_EULER_LABELS_BASE_URL}/all/assets.json`,
-	getEulerLabelsLogoUrl: (filename: string) =>
-		`${DEFAULT_EULER_LABELS_BASE_URL}/logo/${filename}`,
-};
 
 export const defaultPricingServiceConfig: PricingServiceConfig = {
 	endpoint: DEFAULT_V3_API_URL,

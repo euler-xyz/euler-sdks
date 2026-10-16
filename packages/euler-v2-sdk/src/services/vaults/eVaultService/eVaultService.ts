@@ -50,7 +50,7 @@ export interface IEVaultAdapter {
  * - ESCROW vaults satisfy the escrowed collateral criteria by construction and can be trusted
  *   as escrow collateral.
  * The curated on-chain whitelist (governedPerspective) is retired; trusted vault lists should
- * be derived from euler-labels (see eulerLabelsService / populateLabels) or your own allowlist.
+ * be derived from Public Labels V3 membership and visibility (see eulerLabelsService) or your own allowlist.
  */
 export enum StandardEVaultPerspectives {
 	FACTORY = "evkFactoryPerspective",

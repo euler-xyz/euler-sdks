@@ -52,7 +52,7 @@ export interface IEulerEarnAdapter {
  * NOTE: FACTORY only proves the vault was deployed through the EulerEarn factory - a
  * discovery/provenance signal, not a trust signal. The curated on-chain whitelist
  * (eulerEarnGovernedPerspective) is retired; trusted vault lists should be derived from
- * euler-labels (see eulerLabelsService / populateLabels) or your own allowlist.
+ * Public Labels V3 membership and visibility (see eulerLabelsService) or your own allowlist.
  */
 export enum StandardEulerEarnPerspectives {
 	FACTORY = "eulerEarnFactoryPerspective",

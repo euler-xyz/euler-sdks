@@ -230,8 +230,9 @@ Perspectives are on-chain contracts that verify vaults meet certain criteria. Ea
 > deployed through the EVK factory, which anyone can use. The curated on-chain whitelist
 > (`governedPerspective`) is retired, so there is no on-chain source of trusted vaults anymore
 > (escrow vaults excepted — they satisfy the escrow criteria by construction). Derive trusted
-> vault lists from euler-labels (`populateAll` / `populateLabels` fills `vault.eulerLabel`;
-> vaults listed in a product are the curated set) or maintain your own allowlist.
+> vault lists from Public Labels V3 membership plus the application's visibility/verification
+> policy, or maintain your own allowlist. `populateLabels` fills display metadata even for
+> hidden or pending records, so an attached product or Earn entry is not a trust signal.
 
 ```typescript
 import { StandardEVaultPerspectives } from '@eulerxyz/euler-v2-sdk'
@@ -247,7 +248,13 @@ const { result: vaults } = await sdk.eVaultService.fetchVerifiedVaults(1, [
   StandardEVaultPerspectives.ESCROW,
 ])
 
-// Trusted subset: label-verified (listed in a euler-labels product) or escrow
+// This example selects eligible members with a visible, verified V3 verdict, or escrow.
+const labelsData = await sdk.eulerLabelsService.fetchEulerLabelsData(1)
+if (!('visibility' in labelsData)) throw new Error('Public Labels V3 is required')
+const verifiedSet = new Set(labelsData.verifiedVaultAddresses.filter(address => {
+  const verdict = labelsData.visibility[address.toLowerCase()]
+  return verdict?.status === 'visible' && verdict.decidedBy === 'verified'
+}).map(address => address.toLowerCase()))
 const escrowAddresses = await sdk.eVaultService.fetchVerifiedVaultAddresses(1, [
   StandardEVaultPerspectives.ESCROW,
 ])
@@ -258,7 +265,7 @@ const { result: universe } = await sdk.eVaultService.fetchVerifiedVaults(1, [
 ], { populateAll: true })
 const trusted = universe.filter(v => v
   && !v.eulerLabel?.deprecated
-  && ((v.eulerLabel?.products.length ?? 0) > 0 || escrowSet.has(v.address.toLowerCase())))
+  && (verifiedSet.has(v.address.toLowerCase()) || escrowSet.has(v.address.toLowerCase())))
 ```
 
 Available EVault perspectives:
@@ -310,7 +317,7 @@ Available EulerEarn perspectives:
 |-------------|-------------|
 | `FACTORY` | All EulerEarn vaults from factory (provenance only, untrusted) |
 
-For trusted EulerEarn vaults, filter to the label-verified set: `vault.eulerLabel?.earnVault !== undefined && !vault.eulerLabel?.deprecated`.
+For EulerEarn selection, use `labelsData.earnVaults` and apply the same explicit visibility/verification policy as above. `earnVaultEntries` and attached `eulerLabel.earnVault` preserve display metadata for hidden or pending vaults and do not establish eligible membership. Exclude deprecated entries according to the application's policy.
 
 ### Custom perspective addresses
 
