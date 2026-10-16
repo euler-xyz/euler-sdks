@@ -84,13 +84,15 @@ Use explicit nested service config when the option is a function or a custom obj
 
 ## Chains
 
-The provider service builds one viem public client per chain in `rpcUrls`. Each chain resolves in this order:
+The provider service builds a viem public client for each resolvable chain in `rpcUrls`. Each chain resolves in this order:
 
 1. `chains[chainId]` when it is a complete viem `Chain`.
 2. The EulerChains `viemName` from the deployments document, for chain ids that viem exports more than once.
 3. The only viem chain with that id.
 
-Otherwise `buildEulerSDK()` throws an error that names both fixes: set `viemName` for the chain in euler-interfaces, or pass the chain in `chains`.
+A chain missing from the pinned viem catalog is excluded from `providerService.getSupportedChainIds()`, including when its registry `viemName` is also absent from viem. Other configured chains remain usable. Calling `getProvider(chainId)` for the missing chain throws an error explaining how to supply a complete `chains` override or update the viem pin and registry metadata. If every configured chain is missing, the supported provider list is empty, as it is with an empty RPC configuration. Compare the supported ids with the configured RPC chain ids at application startup to detect unavailable chains, and call `getProvider(chainId)` for the diagnostic.
+
+Ambiguous chain ids, invalid or mismatched `viemName` values for known chains, and invalid chain overrides still fail `buildEulerSDK()` initialization. A partial override requires a base chain that viem can resolve.
 
 A partial `chains[chainId]` patches the resolved chain: `contracts`, `blockExplorers` and `rpcUrls` merge by key, other fields replace. The same entry can carry `transport` tuning for that chain: `http` options for viem's `http()` transport and `multicall` batching options, each merged over the SDK defaults.
 

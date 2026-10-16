@@ -375,8 +375,12 @@ test("deployment, provider, abi, tokenlist, intrinsic apy, wallet, and labels se
     () => providerService.getProvider(10),
     /No provider configured/,
   );
+  const unavailableProvider = new ProviderService({
+    999999: "https://invalid.example",
+  });
+  assert.deepEqual(unavailableProvider.getSupportedChainIds(), []);
   assert.throws(
-    () => new ProviderService({ 999999: "https://invalid.example" }),
+    () => unavailableProvider.getProvider(999999),
     /viem has no chain with id 999999/,
   );
 

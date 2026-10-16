@@ -107,6 +107,54 @@ describe("ProviderService chain resolution", () => {
 		);
 	});
 
+	it.each([
+		undefined,
+		"futureChain",
+	])("keeps resolved providers usable when another chain is missing (viemName: %s)", (viemName) => {
+		const service = new ProviderService(
+			{ 137: RPC_URL, 777001: RPC_URL },
+			{ viemNames: viemName ? { 777001: viemName } : undefined },
+		);
+
+		expect(service.getSupportedChainIds()).toEqual([137]);
+		expect(service.getProvider(137).chain?.name).toBe("Polygon");
+		expect(() => service.getProvider(777001)).toThrow(
+			/viem has no chain with id 777001.*pass chains: \{ 777001: <viem Chain> \}/,
+		);
+		if (viemName) {
+			expect(() => service.getProvider(777001)).toThrow(/export "futureChain"/);
+		}
+	});
+
+	it.each([
+		Number.NaN,
+		Number.POSITIVE_INFINITY,
+		-1,
+		1.5,
+	])("rejects an invalid RPC chain id %s during initialization", (chainId) => {
+		expect(
+			() => new ProviderService({ 137: RPC_URL, [chainId]: RPC_URL }),
+		).toThrow();
+	});
+
+	it.each([
+		{ viemNames: { 137: "futureChain" } },
+		{ viemNames: { 777001: "mainnet" } },
+		{ chains: { 777001: { id: 137 } } },
+		{ chains: { 777001: { name: "Incomplete chain" } } },
+	])("rejects invalid explicit metadata during initialization: %j", (options) => {
+		expect(
+			() => new ProviderService({ 137: RPC_URL, 777001: RPC_URL }, options),
+		).toThrow();
+	});
+
+	it("rejects ambiguous chains during initialization", () => {
+		expect(
+			() =>
+				new ProviderService({ 137: RPC_URL, 777001: RPC_URL, 84532: RPC_URL }),
+		).toThrow(/several chains with id 84532/);
+	});
+
 	it("uses a complete app-supplied chain for a chain viem lacks", () => {
 		const chain = chainOf(777001, { chains: { 777001: customChain } });
 
@@ -270,6 +318,42 @@ describe("browser chain catalog", () => {
 });
 
 describe("buildEulerSDK chains", () => {
+	const emptyDeploymentService: IDeploymentService = {
+		getDeploymentChainIds: () => [],
+		getDeployment: () => {
+			throw new Error("No deployments in fixture");
+		},
+		addDeployment: () => {},
+	};
+
+	it("builds usable chains when an RPC chain is absent from viem", async () => {
+		const sdk = await buildEulerSDK({
+			config: { rpcUrls: { 137: RPC_URL, 777001: RPC_URL } },
+			servicesOverrides: { deploymentService: emptyDeploymentService },
+		});
+
+		expect(sdk.providerService.getSupportedChainIds()).toEqual([137]);
+		expect(sdk.providerService.getProvider(137).chain?.name).toBe("Polygon");
+		expect(() => sdk.providerService.getProvider(777001)).toThrow(
+			/viem has no chain with id 777001/,
+		);
+	});
+
+	it.each([
+		{},
+		{ 777001: RPC_URL },
+	])("builds an empty provider set when no configured chain resolves: %j", async (rpcUrls) => {
+		const sdk = await buildEulerSDK({
+			config: { rpcUrls },
+			servicesOverrides: { deploymentService: emptyDeploymentService },
+		});
+
+		expect(sdk.providerService.getSupportedChainIds()).toEqual([]);
+		expect(() => sdk.providerService.getProvider(777001)).toThrow(
+			777001 in rpcUrls ? /viem has no chain/ : /No provider configured/,
+		);
+	});
+
 	it("resolves chains through the registry viemName and app overrides", async () => {
 		const deployment = (chainId: number) => ({
 			chainId,

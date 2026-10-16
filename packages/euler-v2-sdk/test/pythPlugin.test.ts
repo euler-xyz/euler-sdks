@@ -5,7 +5,9 @@ import {
 	PythPluginAdapter,
 } from "../src/plugins/pyth/pythPlugin.js";
 import {
+	decodeFunctionData,
 	encodeFunctionData,
+	parseAbi,
 	getAddress,
 	type Address,
 	type Hex,
@@ -129,11 +131,16 @@ const makeLiquidationSdk = (
 		result: ReturnType<typeof makeViolatorSubAccount> | undefined;
 		errors: Array<{ message: string; severity: "info" | "warning" | "error" }>;
 	}>,
+	{
+		chainId = 1,
+		pythAddress = PYTH,
+		provider = { readContract: async () => 11n } as unknown as PublicClient,
+	}: { chainId?: number; pythAddress?: Address; provider?: PublicClient } = {},
 ) => ({
 	accountService: {
 		fetchAccount: async () => ({
 			result: new Account({
-				chainId: 1,
+				chainId,
 				owner: OWNER,
 				populated: { vaults: true },
 				isLockdownMode: false,
@@ -145,8 +152,7 @@ const makeLiquidationSdk = (
 		fetchSubAccount,
 	},
 	providerService: {
-		getProvider: () =>
-			({ readContract: async () => 11n }) as unknown as PublicClient,
+		getProvider: () => provider,
 	},
 	vaultMetaService: {
 		fetchVaults: async () => ({
@@ -155,12 +161,12 @@ const makeLiquidationSdk = (
 					address: CONTROLLER,
 					asset: { address: ASSET },
 					unitOfAccount: { address: UNIT },
-					debtPricingOracleRoute: makePythRoute(PYTH, DEBT_FEED),
+					debtPricingOracleRoute: makePythRoute(pythAddress, DEBT_FEED),
 					collaterals: [
-						{ address: COLLATERAL, oracleRoute: makePythRoute() },
+						{ address: COLLATERAL, oracleRoute: makePythRoute(pythAddress) },
 						{
 							address: OTHER_COLLATERAL,
-							oracleRoute: makePythRoute(PYTH, OTHER_FEED),
+							oracleRoute: makePythRoute(pythAddress, OTHER_FEED),
 						},
 					],
 				},
@@ -914,6 +920,115 @@ test("Pyth plugin read prepend honors empty prefetch results", async () => {
 
 	assert.equal(result, null);
 	assert.equal(queriedFee, false);
+});
+
+test.each([
+	[8453, "0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a"],
+	[8453, "0xbC16aee60f64864882BC6C4E428e148Fc0E272F5"],
+	[9745, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[43114, "0x4305FB66699C3B2702D4d05CF36551390A4c69C6"],
+] as const)("Pyth plugin trusts official Core deployment on chain %s at %s for reads and plans", async (chainId, address) => {
+	const pythAddress = getAddress(address);
+	const feeTargets: Address[] = [];
+	const provider = {
+		readContract: async ({
+			address,
+			functionName,
+		}: {
+			address: Address;
+			functionName: string;
+		}) => {
+			assert.equal(functionName, "getUpdateFee");
+			feeTargets.push(address);
+			return 11n;
+		},
+	} as unknown as PublicClient;
+	const plugin = createPythPlugin({
+		fetchFn: (async () =>
+			Response.json({
+				binary: { encoding: "hex", data: ["feedface"] },
+			})) as typeof fetch,
+	});
+	const read = await plugin.getReadPrepend?.({
+		chainId,
+		provider,
+		vaults: [
+			{
+				debtPricingOracleRoute: makePythRoute(pythAddress),
+				collaterals: [],
+			} as never,
+		],
+	});
+	assert.equal(read?.items.length, 1);
+	assert.equal(read?.items[0]?.targetContract, pythAddress);
+	assert.equal(read?.totalValue, 11n);
+
+	const sdk = makeLiquidationSdk(
+		async () => ({ result: makeViolatorSubAccount(), errors: [] }),
+		{ chainId, pythAddress, provider },
+	) as never;
+	const plan = makeLiquidationPlan();
+	const processed = await plugin.processPlan?.(plan, OWNER, chainId, sdk);
+	assert.equal(processed?.[0]?.type, "evcBatch");
+	if (processed?.[0]?.type !== "evcBatch") throw new Error("expected evcBatch");
+	const items = flattenBatchEntries(processed[0].items);
+	assert.equal(items.length, 2);
+	assert.equal(items[0]?.targetContract, pythAddress);
+	assert.equal(items[0]?.onBehalfOfAccount, OWNER);
+	assert.equal(items[0]?.value, 11n);
+	assert.deepEqual(
+		decodeFunctionData({
+			abi: parseAbi(["function updatePriceFeeds(bytes[] updateData) payable"]),
+			data: items[0]!.data,
+		}),
+		{ functionName: "updatePriceFeeds", args: [["0xfeedface"]] },
+	);
+	assert.equal(items[1]?.targetContract, CONTROLLER);
+	assert.deepEqual(feeTargets, [pythAddress, pythAddress]);
+});
+
+test.each([
+	[8453, UNTRUSTED_PYTH],
+	[9745, UNTRUSTED_PYTH],
+	[8453, "0x2880aB155794e7179c9eE2e38200202908C17B43"],
+	[9745, "0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a"],
+] as const)("Pyth plugin rejects untrusted or other-chain address on chain %s at %s", async (chainId, address) => {
+	const pythAddress = getAddress(address);
+	let feeQueries = 0;
+	let hermesQueries = 0;
+	const provider = {
+		readContract: async () => {
+			feeQueries++;
+			return 11n;
+		},
+	} as unknown as PublicClient;
+	const plugin = createPythPlugin({
+		fetchFn: (async () => {
+			hermesQueries++;
+			return Response.json({ binary: { encoding: "hex", data: ["feedface"] } });
+		}) as typeof fetch,
+	});
+	const read = await plugin.getReadPrepend?.({
+		chainId,
+		provider,
+		vaults: [
+			{
+				debtPricingOracleRoute: makePythRoute(pythAddress),
+				collaterals: [],
+			} as never,
+		],
+	});
+	assert.equal(read, null);
+	const sdk = makeLiquidationSdk(
+		async () => ({ result: makeViolatorSubAccount(), errors: [] }),
+		{ chainId, pythAddress, provider },
+	) as never;
+	await assert.rejects(
+		plugin.processPlan!(makeLiquidationPlan(), OWNER, chainId, sdk),
+		new RegExp(`Untrusted Pyth contract for chainId ${chainId}`),
+	);
+	assert.equal(feeQueries, 0);
+	assert.equal(hermesQueries, 0);
 });
 
 test("Pyth plugin skips untrusted Pyth contract addresses", async () => {
