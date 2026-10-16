@@ -576,11 +576,22 @@ const buildPublicLabelsRequest =
 		path: string,
 		query: PublicLabelsQuery,
 	): Promise<PublicLabelsResponse<T>> => {
-		const url = new URL(config.endpoint);
-		const basePath = url.pathname.replace(/\/+$/, "");
-		url.pathname = `${basePath.endsWith("/v3") ? basePath : `${basePath}/v3`}${path}`;
+		const params = new URLSearchParams();
 		for (const [key, value] of Object.entries(query)) {
-			if (value !== undefined) url.searchParams.set(key, String(value));
+			if (value !== undefined) params.set(key, String(value));
+		}
+
+		let url: URL | string;
+		if (config.endpoint.startsWith("/")) {
+			// Browser proxy prefixes precede the full API path, including /v3.
+			const basePath = config.endpoint.replace(/\/+$/, "");
+			const search = params.toString();
+			url = `${basePath}/v3${path}${search ? `?${search}` : ""}`;
+		} else {
+			url = new URL(config.endpoint);
+			const basePath = url.pathname.replace(/\/+$/, "");
+			url.pathname = `${basePath.endsWith("/v3") ? basePath : `${basePath}/v3`}${path}`;
+			for (const [key, value] of params) url.searchParams.set(key, value);
 		}
 
 		const headers = new Headers({ accept: "application/json" });

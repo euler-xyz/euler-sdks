@@ -902,6 +902,7 @@ describe("default transport", () => {
 		["https://v3.example.test/v3", "https://v3.example.test/v3/labels/sets/public/versions?limit=100"],
 		["https://v3.example.test/v3/", "https://v3.example.test/v3/labels/sets/public/versions?limit=100"],
 		["https://app.example/api/internal/v3", "https://app.example/api/internal/v3/labels/sets/public/versions?limit=100"],
+		["https://app.example/proxy/v3?limit=99&scope=app", "https://app.example/proxy/v3/labels/sets/public/versions?limit=100&scope=app"],
 	])("requests %s as %s, skipping undefined query values", async (endpoint, expected) => {
 		fetchMock.mockResolvedValue(ok(response([])));
 		const adapter = new PublicLabelsV3Adapter({ endpoint });
@@ -909,6 +910,18 @@ describe("default transport", () => {
 		expect(String(fetchMock.mock.calls[0]![0])).toBe(expected);
 		expect(headersOf(0).get("accept")).toBe("application/json");
 		expect(headersOf(0).has("x-api-key")).toBe(false);
+	});
+
+	it.each([
+		{ name: "assessed labels", Adapter: PublicLabelsV3Adapter },
+		{ name: "metadata-only labels", Adapter: PublicLabelsV3MetadataAdapter },
+	])("supports browser proxy bases for $name", async ({ Adapter }) => {
+		fetchMock.mockResolvedValue(ok(response([])));
+		const adapter = new Adapter({ endpoint: "/api/labels/" });
+		await adapter.queryPublicLabels("/geo-policies", { reason: "space & slash/", offset: undefined });
+		expect(fetchMock.mock.calls[0]![0]).toBe("/api/labels/v3/geo-policies?reason=space+%26+slash%2F");
+		await adapter.queryPublicLabels("/geo-policies", {});
+		expect(fetchMock.mock.calls[1]![0]).toBe("/api/labels/v3/geo-policies");
 	});
 
 	it("sends the trimmed API key and omits a blank one", async () => {

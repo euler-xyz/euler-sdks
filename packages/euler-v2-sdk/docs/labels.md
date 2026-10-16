@@ -97,7 +97,9 @@ const sdk = await buildEulerSDK({
 })
 ```
 
-The usual config priority applies to shared endpoint/key values: `config` overrides the explicit adapter config, which overrides environment values. Proxies receive the same V3 paths and query parameters; the adapter preserves a base path ending in `/v3` or appends `/v3` otherwise. An injected `request` owns transport and authentication. V3 request or validation failures propagate without file fallback. With `disableV3: true`, labels reads fail lazily unless a custom service override is supplied.
+The usual config priority applies to shared endpoint/key values: `config` overrides the explicit adapter config, which overrides environment values. Absolute endpoints preserve a base path ending in `/v3` or append `/v3` otherwise. Root-relative endpoints are browser proxy prefixes: `/api/v3` produces `/api/v3/v3/labels/...`, so a proxy that strips `/api/v3` forwards the required `/v3/labels/...` API path. Query parameters and the resolved API key pass through both transports.
+
+An injected `request` owns transport and authentication. V3 request or validation failures propagate without file fallback. With `disableV3: true`, labels reads fail lazily unless a custom service override is supplied.
 
 `fetchEulerLabelsEntities` and `fetchEulerLabelsProducts` expose display metadata, including hidden records. `fetchEulerLabelsPoints` preserves deposit/borrow campaign scope. `fetchEulerLabelsEarnVaults` returns eligible Earn entries, while `fetchEulerLabelsData().earnVaultEntries` retains all published Earn metadata. `fetchEulerLabelsAssets` returns an empty list after a successful V3 read; evaluate `rawGeoPolicies` instead of using file country helpers.
 

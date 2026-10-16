@@ -207,6 +207,25 @@ describe("SDK Public Labels V3 default", () => {
 		}
 	});
 
+	it.each(["/api/v3", "/api/v3/"])("loads complete labels through the React example proxy at %s", async (endpoint) => {
+		const request = fixtureRequest();
+		const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+			expect(String(input)).toMatch(/^\/api\/v3\/v3\//);
+			const url = new URL(String(input), "https://app.example");
+			// Match the React example's Vite proxy rewrite before checking the upstream route.
+			const upstreamPath = url.pathname.replace(/^\/api\/v3/, "");
+			expect(upstreamPath).toMatch(/^\/v3\//);
+			expect(new Headers(init?.headers).get("X-API-Key")).toBe("proxy-key");
+			return Response.json(
+				await request(upstreamPath.slice(3), Object.fromEntries(url.searchParams)),
+			);
+		});
+		const sdk = await build({ config: { v3ApiUrl: endpoint, v3ApiKey: "proxy-key" } });
+		const data = await sdk.eulerLabelsService.fetchEulerLabelsData(1);
+		expect(data).toMatchObject(normalizePublicLabelsData(1, publicLabelsFixture));
+		expect(fetch).toHaveBeenCalled();
+	});
+
 	it("uses injected requests, publication selection, and the application query decorator", async () => {
 		const request = fixtureRequest(undefined, "partner");
 		const queryNames: string[] = [];
