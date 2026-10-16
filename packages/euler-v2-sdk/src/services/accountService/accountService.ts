@@ -42,6 +42,36 @@ export interface ResolveNewSubAccountOptions<
 	fetchOptions?: AccountFetchOptions;
 }
 
+export class AccountDataUnavailableError extends Error {
+	readonly code = "ACCOUNT_DATA_UNAVAILABLE";
+	readonly errors: DataIssue[];
+
+	constructor(
+		readonly chainId: number,
+		readonly address: Address,
+		errors: DataIssue[],
+	) {
+		super(`Account data is unavailable for ${address} on chain ${chainId}.`);
+		this.name = "AccountDataUnavailableError";
+		this.errors = compressDataIssues(errors);
+	}
+}
+
+function rejectUnavailableAccountData(
+	chainId: number,
+	address: Address,
+	fetched: ServiceResult<unknown>,
+): void {
+	if (
+		fetched.result === undefined &&
+		fetched.errors.some(
+			(issue) => issue.code === "SOURCE_UNAVAILABLE" || issue.severity === "error",
+		)
+	) {
+		throw new AccountDataUnavailableError(chainId, address, fetched.errors);
+	}
+}
+
 const SUB_ACCOUNT_CHECK_CHUNK_SIZE = 25;
 
 const SUB_ACCOUNT_SNAPSHOT_FETCH_OPTIONS: AccountFetchOptions = {
@@ -81,17 +111,20 @@ export interface IAccountAdapter {
 export interface IAccountService<
 	TVaultEntity extends IHasVaultAddress = IVaultEntity,
 > {
+	/** @throws {AccountDataUnavailableError} When the adapter reports failure without a snapshot. */
 	fetchAccount(
 		chainId: number,
 		address: Address,
 		options?: AccountFetchOptions,
 	): Promise<ServiceResult<Account<TVaultEntity>>>;
+	/** @throws {AccountDataUnavailableError} When the adapter reports failure without a snapshot. */
 	fetchSubAccount(
 		chainId: number,
 		subAccount: Address,
 		vaults?: Address[],
 		options?: AccountFetchOptions,
 	): Promise<ServiceResult<SubAccount<TVaultEntity> | undefined>>;
+	/** @throws {AccountDataUnavailableError} When account discovery or a candidate snapshot is unavailable. */
 	resolveNewSubAccount(
 		chainId: number,
 		address: Address,
@@ -138,6 +171,7 @@ export class AccountService<
 	): Promise<ServiceResult<Account<TVaultEntity>>> {
 		const resolvedOptions = this.resolveFetchOptions(options);
 		const fetched = await this.adapter.fetchAccount(chainId, address);
+		rejectUnavailableAccountData(chainId, address, fetched);
 		const errors: DataIssue[] = [...fetched.errors];
 		const account: Account<never> = fetched.result
 			? new Account(fetched.result)
@@ -223,6 +257,7 @@ export class AccountService<
 			subAccount,
 			vaults,
 		);
+		rejectUnavailableAccountData(chainId, subAccount, fetched);
 		const errors: DataIssue[] = [...fetched.errors];
 		const sa = fetched.result;
 		if (!sa) return { result: undefined, errors: compressDataIssues(errors) };

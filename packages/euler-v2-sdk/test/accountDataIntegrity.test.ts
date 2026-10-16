@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { getAddress } from "viem";
 import { afterEach, test, vi } from "vitest";
-import type { IAccount, ISubAccount } from "../src/entities/Account.js";
+import {
+	Account,
+	type IAccount,
+	type ISubAccount,
+} from "../src/entities/Account.js";
+import { AccountDataUnavailableError, buildEulerSDK } from "../src/index.js";
 import {
 	AccountService,
 	type IAccountAdapter,
@@ -11,12 +16,26 @@ import { AccountVaultsSubgraphAdapter } from "../src/services/accountService/ada
 import { AccountV3Adapter } from "../src/services/accountService/adapters/accountV3Adapter/accountV3Adapter.js";
 import { VaultTypeSubgraphAdapter } from "../src/services/vaults/vaultMetaService/adapters/VaultTypeSubgraphAdapter.js";
 import { createFallbackAdapter } from "../src/utils/fallbackAdapter.js";
-import { getAddressPrefix } from "../src/utils/subAccounts.js";
+import type { DataIssue } from "../src/utils/entityDiagnostics.js";
+import {
+	getAddressPrefix,
+	getSubAccountAddress,
+} from "../src/utils/subAccounts.js";
 
 const account = getAddress("0x1000000000000000000000000000000000000000");
 const vault = getAddress("0x2000000000000000000000000000000000000000");
 const asset = getAddress("0x3000000000000000000000000000000000000000");
 const factory = getAddress("0x4000000000000000000000000000000000000000");
+const candidate = getSubAccountAddress(account, 1);
+const unavailableError = {
+	name: "AccountDataUnavailableError",
+	code: "ACCOUNT_DATA_UNAVAILABLE",
+};
+const selectionOptions = {
+	startId: 1,
+	endId: 1,
+	fetchOptions: { populateVaults: false },
+};
 const subgraphConfig = {
 	subgraphURLs: { 1: "https://example.invalid/subgraph" },
 };
@@ -77,6 +96,33 @@ const onchainAccount: IAccount = {
 afterEach(() => vi.unstubAllGlobals());
 
 for (const field of ["shares", "assets", "borrowed", "subAccount"] as const) {
+	test(`account service rejects unavailable ${field} without fallback`, async () => {
+		const adapter = new AccountV3Adapter({
+			endpoint: "https://example.invalid",
+		});
+		adapter.setQueryV3AccountPositions(async () => ({
+			data: [{ ...positionRow(), account: candidate, [field]: null }],
+		}));
+		const service = new AccountService(adapter, {} as never);
+		await assert.rejects(
+			service.fetchAccount(1, account, { populateVaults: false }),
+			unavailableError,
+		);
+		await assert.rejects(
+			service.fetchSubAccount(1, candidate, [], { populateVaults: false }),
+			unavailableError,
+		);
+		for (const borrowVault of [undefined, vault]) {
+			await assert.rejects(
+				service.resolveNewSubAccount(1, account, {
+					...selectionOptions,
+					borrowVault,
+				}),
+				unavailableError,
+			);
+		}
+	});
+
 	for (const method of ["fetchAccount", "fetchSubAccount"] as const) {
 		test(`V3 ${method} falls back for unknown ${field} instead of returning a partial snapshot`, async () => {
 			const primary = new AccountV3Adapter({
@@ -116,6 +162,197 @@ for (const field of ["shares", "assets", "borrowed", "subAccount"] as const) {
 			assert.equal(vi.mocked(secondary[method]).mock.calls.length, 1);
 		});
 	}
+}
+
+test("V3-only SDK propagates unavailable account data to discovery and portfolio callers", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () =>
+			Response.json({
+				data: [{ ...positionRow(), account: candidate, shares: null }],
+			}),
+		),
+	);
+	const sdk = await buildEulerSDK({
+		config: { accountServiceAdapter: "v3", queryCacheEnabled: false },
+		servicesOverrides: {
+			deploymentService: {
+				getDeploymentChainIds: () => [],
+				getDeployment: () => {
+					throw new Error("No deployment needed");
+				},
+				addDeployment: () => {},
+			},
+		},
+	});
+	await assert.rejects(
+		sdk.accountService.fetchAccount(1, account),
+		unavailableError,
+	);
+	await assert.rejects(
+		sdk.accountService.resolveNewSubAccount(1, account, selectionOptions),
+		unavailableError,
+	);
+	await assert.rejects(
+		sdk.portfolioService.fetchPortfolio(1, account),
+		unavailableError,
+	);
+});
+
+for (const cachedCandidate of [false, true]) {
+	test(`borrow selection rejects failed candidate reads with cached candidate=${cachedCandidate}`, async () => {
+		const adapter = new AccountV3Adapter({
+			endpoint: "https://example.invalid",
+		});
+		adapter.setQueryV3AccountPositions(async () => ({
+			data: [{ ...positionRow(), account: candidate, shares: null }],
+		}));
+		const service = new AccountService(adapter, {} as never);
+		const snapshot = new Account({
+			chainId: 1,
+			owner: account,
+			subAccounts: cachedCandidate
+				? {
+						[candidate]: {
+							...onchainSubAccount,
+							account: candidate,
+							positions: [],
+						},
+					}
+				: {},
+		});
+		await assert.rejects(
+			service.resolveNewSubAccount(1, account, {
+				...selectionOptions,
+				borrowVault: vault,
+				account: snapshot,
+			}),
+			unavailableError,
+		);
+	});
+}
+
+for (const recovery of ["empty", "occupied", "unavailable"] as const) {
+	test(`account service handles ${recovery} fallback after unavailable V3 data`, async () => {
+		const primary = new AccountV3Adapter({
+			endpoint: "https://example.invalid",
+		});
+		primary.setQueryV3AccountPositions(async () => ({
+			data: [{ ...positionRow(), account: candidate, shares: null }],
+		}));
+		const secondary = new AccountV3Adapter({
+			endpoint: "https://example.invalid",
+		});
+		secondary.setQueryV3AccountPositions(async () => ({
+			data:
+				recovery === "empty"
+					? []
+					: [
+							{
+								...positionRow(),
+								account: candidate,
+								shares: recovery === "unavailable" ? null : "10",
+							},
+						],
+		}));
+		const service = new AccountService(
+			createFallbackAdapter<IAccountAdapter, keyof IAccountAdapter>(
+				primary,
+				secondary,
+				{
+					methods: ["fetchAccount", "fetchSubAccount"],
+					adapterNames: { primary: "accountV3", secondary: "secondary" },
+				},
+			),
+			{} as never,
+		);
+		if (recovery === "unavailable") {
+			await assert.rejects(service.fetchAccount(1, account), unavailableError);
+			await assert.rejects(
+				service.resolveNewSubAccount(1, account, selectionOptions),
+				unavailableError,
+			);
+			return;
+		}
+		const fetched = await service.fetchAccount(1, account, {
+			populateVaults: false,
+		});
+		assert.equal(fetched.errors[0]?.code, "FALLBACK_USED");
+		assert.equal(
+			fetched.result.getSubAccount(candidate)?.positions[0]?.borrowed,
+			recovery === "occupied" ? 5n : undefined,
+		);
+		for (const borrowVault of [undefined, vault]) {
+			const selected = await service.resolveNewSubAccount(1, account, {
+				...selectionOptions,
+				borrowVault,
+			});
+			assert.equal(
+				selected.result,
+				recovery === "empty" ? candidate : undefined,
+			);
+		}
+	});
+}
+
+test("account service accepts a successful empty V3 discovery without fallback", async () => {
+	const adapter = new AccountV3Adapter({ endpoint: "https://example.invalid" });
+	adapter.setQueryV3AccountPositions(async () => ({ data: [] }));
+	const service = new AccountService(adapter, {} as never);
+	const fetched = await service.fetchAccount(1, account, {
+		populateVaults: false,
+	});
+	assert.deepEqual(fetched.result.subAccounts, {});
+	assert.deepEqual(fetched.errors, []);
+	for (const borrowVault of [undefined, vault]) {
+		assert.deepEqual(
+			await service.resolveNewSubAccount(1, account, {
+				...selectionOptions,
+				borrowVault,
+			}),
+			{ result: candidate, errors: [] },
+		);
+	}
+});
+
+for (const diagnostic of [
+	{ code: "SOURCE_UNAVAILABLE", severity: "warning" },
+	{ code: "DECODE_FAILED", severity: "error" },
+] as const) {
+	test(`missing account snapshots retain ${diagnostic.code} diagnostics on the public error`, async () => {
+		const errors: DataIssue[] = [
+			{
+				...diagnostic,
+				message: "Account read failed",
+				locations: [
+					{
+						owner: { kind: "account", chainId: 1, address: account },
+						path: "$",
+					},
+				],
+				source: "test",
+			},
+		];
+		const service = new AccountService(
+			{
+				fetchAccount: async () => ({ result: undefined, errors }),
+				fetchSubAccount: async () => ({ result: undefined, errors }),
+			},
+			{} as never,
+		);
+		for (const read of [
+			() => service.fetchAccount(1, account),
+			() => service.fetchSubAccount(1, account),
+		]) {
+			await assert.rejects(read, (error: unknown) => {
+				assert.ok(error instanceof AccountDataUnavailableError);
+				assert.equal(error.chainId, 1);
+				assert.equal(error.address, account);
+				assert.deepEqual(error.errors, errors);
+				return true;
+			});
+		}
+	});
 }
 
 test("V3 rejects the whole snapshot when a later page has unavailable metadata", async () => {
