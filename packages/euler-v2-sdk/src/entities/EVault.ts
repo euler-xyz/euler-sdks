@@ -250,13 +250,17 @@ function buildCollateral(
 		ramping !== undefined &&
 		rampTimeRemaining > 0n &&
 		ramping.rampDuration > 0n &&
-		ramping.initialLiquidationLTV !== collateral.liquidationLTV;
-	const currentLiquidationLTV = isLiquidationLTVRamping
-		? collateral.liquidationLTV +
-			((ramping.initialLiquidationLTV - collateral.liquidationLTV) *
-				Number(rampTimeRemaining)) /
-				Number(ramping.rampDuration)
-		: collateral.liquidationLTV;
+		ramping.initialLiquidationLTV > collateral.liquidationLTV;
+	let currentLiquidationLTV = collateral.liquidationLTV;
+	if (isLiquidationLTVRamping) {
+		// EVK ramps decreases in integer basis points; increases apply immediately.
+		const target = BigInt(Math.round(collateral.liquidationLTV * 10_000));
+		const initial = BigInt(Math.round(ramping.initialLiquidationLTV * 10_000));
+		currentLiquidationLTV =
+			Number(
+				target + ((initial - target) * rampTimeRemaining) / ramping.rampDuration,
+			) / 10_000;
+	}
 
 	return {
 		address: collateral.address,

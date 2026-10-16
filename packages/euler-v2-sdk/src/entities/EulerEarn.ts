@@ -138,18 +138,31 @@ export class EulerEarn
 		return "inactive";
 	}
 
-	/** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
+	/** Snapshot conversion using virtual deposits; excludes pending fee shares. */
 	override convertToAssets(shares: bigint): bigint {
 		const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
 		const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
 		return (shares * totalAssetsAdjusted) / totalSharesAdjusted;
 	}
 
-	/** Conversion using VIRTUAL_DEPOSIT (matches EVault contract). */
+	/** Snapshot conversion using virtual deposits; excludes pending fee shares. */
 	override convertToShares(assets: bigint): bigint {
 		const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
 		const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
 		return (assets * totalSharesAdjusted) / totalAssetsAdjusted;
+	}
+
+	/**
+	 * Shares needed for `assets`, rounded up from the snapshot totals.
+	 * Excludes pending fee shares; on-chain withdraw computes shares after fee accrual.
+	 */
+	override previewWithdraw(assets: bigint): bigint {
+		const totalAssetsAdjusted = this.totalAssets + VIRTUAL_DEPOSIT_AMOUNT;
+		const totalSharesAdjusted = this.totalShares + VIRTUAL_DEPOSIT_AMOUNT;
+		return (
+			(assets * totalSharesAdjusted + totalAssetsAdjusted - 1n) /
+			totalAssetsAdjusted
+		);
 	}
 
 	async populateStrategyVaults(

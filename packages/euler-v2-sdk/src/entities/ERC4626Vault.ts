@@ -44,9 +44,8 @@ export interface IERC4626VaultConversion {
 	convertToAssets(shares: bigint): bigint;
 	convertToShares(assets: bigint): bigint;
 	/**
-	 * Shares needed to withdraw `assets` of underlying — rounded UP so that
-	 * redeem(shares) yields at least `assets`. Counterpart to ERC4626
-	 * `previewWithdraw(uint256)` and required for asset-denominated redeems.
+	 * Estimated shares needed to withdraw `assets`, rounded up from snapshot totals.
+	 * On-chain `previewWithdraw(uint256)` may differ after interest or fee accrual.
 	 */
 	previewWithdraw(assets: bigint): bigint;
 }
