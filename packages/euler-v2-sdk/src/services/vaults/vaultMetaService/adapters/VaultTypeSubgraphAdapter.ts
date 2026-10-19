@@ -24,10 +24,12 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
 
-	queryVaultFactories = createCallBundler(
+	private loadVaultFactories = createCallBundler(
 		async (
 			keys: { address: Address; chainId: number }[],
-		): Promise<(VaultFactoryResult | undefined)[]> => {
+		): Promise<
+			({ result: VaultFactoryResult | undefined } | { error: unknown })[]
+		> => {
 			const byChain = new Map<number, Address[]>();
 			for (const key of keys) {
 				const arr = byChain.get(key.chainId) ?? [];
@@ -36,43 +38,76 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 			}
 
 			const chainResults = new Map<number, Map<string, Address>>();
+			const chainErrors = new Map<number, unknown>();
 			for (const [chainId, addresses] of byChain) {
 				const subgraphUrl = this.config.subgraphURLs[chainId];
 				if (!subgraphUrl) continue;
 
-				const ids = [...new Set(addresses.map((a) => a.toLowerCase()))];
-				const query = `query VaultFactories($ids: [String!]!) {
+				try {
+					const ids = [...new Set(addresses.map((a) => a.toLowerCase()))];
+					const query = `query VaultFactories($ids: [String!]!) {
       vaults(first: ${PAGE_SIZE}, where: { id_in: $ids }) {
         id
         factory
       }
     }`;
 
-				const map = new Map<string, Address>();
-				for (let i = 0; i < ids.length; i += PAGE_SIZE) {
-					const pageIds = ids.slice(i, i + PAGE_SIZE);
-					const response = await fetch(subgraphUrl, {
-            method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ query, variables: { ids: pageIds } }),
-					});
-					const json = (await response.json()) as {
-						data?: { vaults?: Array<{ id: string; factory: string }> };
-					};
-					for (const v of json.data?.vaults ?? []) {
-						map.set(v.id.toLowerCase(), getAddress(v.factory));
+					const map = new Map<string, Address>();
+					for (let i = 0; i < ids.length; i += PAGE_SIZE) {
+						const pageIds = ids.slice(i, i + PAGE_SIZE);
+						const response = await fetch(subgraphUrl, {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({ query, variables: { ids: pageIds } }),
+						});
+						if (!response.ok) {
+							throw new Error(
+								`Vault type subgraph ${response.status} ${response.statusText}`,
+							);
+						}
+						const json = (await response.json()) as {
+							data?: { vaults?: Array<{ id: string; factory: string }> };
+							errors?: unknown[];
+						};
+						if (json?.errors?.length) {
+							throw new Error("Vault type subgraph returned GraphQL errors.");
+						}
+						if (!Array.isArray(json?.data?.vaults)) {
+							throw new Error(
+								"Vault type subgraph returned malformed vault data.",
+							);
+						}
+						for (const v of json.data.vaults) {
+							map.set(v.id.toLowerCase(), getAddress(v.factory));
+						}
 					}
+					chainResults.set(chainId, map);
+				} catch (error) {
+					chainErrors.set(chainId, error);
 				}
-				chainResults.set(chainId, map);
 			}
 			return keys.map((key) => {
+				if (chainErrors.has(key.chainId)) {
+					return { error: chainErrors.get(key.chainId) };
+				}
 				const factory = chainResults
 					.get(key.chainId)
 					?.get(key.address.toLowerCase());
-				return factory ? { id: getAddress(key.address), factory } : undefined;
+				return {
+					result: factory
+						? { id: getAddress(key.address), factory }
+						: undefined,
+				};
 			});
 		},
 	);
+
+	queryVaultFactories = async (key: { address: Address; chainId: number }) => {
+		const outcome = await this.loadVaultFactories(key);
+		// Reject per key before buildQuery caches the public query's result.
+		if ("error" in outcome) throw outcome.error;
+		return outcome.result;
+	};
 
 	setQueryVaultFactories(fn: typeof this.queryVaultFactories): void {
 		this.queryVaultFactories = fn;
@@ -82,7 +117,10 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 		chainId: number,
 		vaultAddress: Address,
 	): Promise<string | undefined> {
-		const result = await this.queryVaultFactories({ address: vaultAddress, chainId });
+		const result = await this.queryVaultFactories({
+			address: vaultAddress,
+			chainId,
+		});
 		return result?.factory;
 	}
 

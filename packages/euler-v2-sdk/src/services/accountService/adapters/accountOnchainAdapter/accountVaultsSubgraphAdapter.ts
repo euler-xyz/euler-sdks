@@ -18,6 +18,8 @@ export interface AccountVaultsSubgraphAdapterConfig {
 	subgraphURLs: Record<number, string>;
 }
 
+const PAGE_SIZE = 1000;
+
 export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 	constructor(
 		private readonly config: AccountVaultsSubgraphAdapterConfig,
@@ -26,8 +28,10 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 		if (buildQuery) applyBuildQuery(this, buildQuery);
 	}
 
-	queryAccountVaults = createCallBundler(
-		async (keys: { chainId: number; account: Address }[]): Promise<any[]> => {
+	private loadAccountVaults = createCallBundler(
+		async (
+			keys: { chainId: number; account: Address }[],
+		): Promise<({ result: any } | { error: unknown })[]> => {
 			const byChain = new Map<number, Address[]>();
 			for (const key of keys) {
 				const arr = byChain.get(key.chainId) ?? [];
@@ -36,44 +40,100 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 			}
 
 			const chainResults = new Map<number, Map<string, any>>();
+			const chainErrors = new Map<number, unknown>();
 			for (const [chainId, accounts] of byChain) {
 				const subgraphUrl = this.config.subgraphURLs[chainId];
 				if (!subgraphUrl) continue;
 
-				const ids = [...new Set(accounts.map((a) => getAddressPrefix(a)))];
-				const response = await fetch(subgraphUrl, {
-					method: "POST",
-					body: JSON.stringify({
-						query: `query AccountVaults($ids: [String!]!) {
-              trackingActiveAccounts(where: { id_in: $ids }) {
+				try {
+					const ids = [
+						...new Set(accounts.map((a) => getAddressPrefix(a).toLowerCase())),
+					];
+					const query = `query AccountVaults($ids: [String!]!) {
+              trackingActiveAccounts(first: ${PAGE_SIZE}, where: { id_in: $ids }) {
                 id
                 deposits
                 borrows
               }
-            }`,
-						variables: { ids },
-						operationName: "AccountVaults",
-					}),
-				});
-				const json = await response.json();
-				const map = new Map<string, any>();
-				for (const entry of (json as any).data?.trackingActiveAccounts ?? []) {
-					map.set(entry.id.toLowerCase(), entry);
+            }`;
+					const map = new Map<string, any>();
+					for (let i = 0; i < ids.length; i += PAGE_SIZE) {
+						const response = await fetch(subgraphUrl, {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({
+								query,
+								variables: { ids: ids.slice(i, i + PAGE_SIZE) },
+								operationName: "AccountVaults",
+							}),
+						});
+						if (!response.ok) {
+							throw new Error(
+								`Account vaults subgraph ${response.status} ${response.statusText}`,
+							);
+						}
+						const json = (await response.json()) as {
+							data?: {
+								trackingActiveAccounts?: Array<{
+									id: string;
+									deposits: string[];
+									borrows: string[];
+								}>;
+							};
+							errors?: unknown[];
+						};
+						if (json?.errors?.length) {
+							throw new Error(
+								"Account vaults subgraph returned GraphQL errors.",
+							);
+						}
+						if (!Array.isArray(json?.data?.trackingActiveAccounts)) {
+							throw new Error(
+								"Account vaults subgraph returned malformed account data.",
+							);
+						}
+						for (const entry of json.data.trackingActiveAccounts) {
+							if (
+								typeof entry?.id !== "string" ||
+								!Array.isArray(entry.deposits) ||
+								!Array.isArray(entry.borrows)
+							) {
+								throw new Error(
+									"Account vaults subgraph returned malformed account data.",
+								);
+							}
+							map.set(entry.id.toLowerCase(), entry);
+						}
+					}
+					chainResults.set(chainId, map);
+				} catch (error) {
+					chainErrors.set(chainId, error);
 				}
-				chainResults.set(chainId, map);
 			}
 
 			return keys.map((key) => {
+				if (chainErrors.has(key.chainId)) {
+					return { error: chainErrors.get(key.chainId) };
+				}
 				const prefix = getAddressPrefix(key.account);
 				const entry = chainResults.get(key.chainId)?.get(prefix.toLowerCase());
 				return {
-					data: {
-						trackingActiveAccount: entry ?? null,
+					result: {
+						data: {
+							trackingActiveAccount: entry ?? null,
+						},
 					},
 				};
 			});
 		},
 	);
+
+	queryAccountVaults = async (key: { chainId: number; account: Address }) => {
+		const outcome = await this.loadAccountVaults(key);
+		// Reject per key before buildQuery caches the public query's result.
+		if ("error" in outcome) throw outcome.error;
+		return outcome.result;
+	};
 
 	setQueryAccountVaults(fn: typeof this.queryAccountVaults): void {
 		this.queryAccountVaults = fn;

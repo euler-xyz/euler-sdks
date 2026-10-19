@@ -160,10 +160,13 @@ export function createQueryCacheBuildQuery(
 
 			const promise = fn(...args)
 				.then((value) => {
-					cache.set(cacheKey, {
-						expiresAt: Date.now() + ttlMs,
-						value,
-					});
+					const current = cache.get(cacheKey);
+					if (current?.promise === promise) {
+						cache.set(cacheKey, {
+							expiresAt: Date.now() + ttlMs,
+							value,
+						});
+					}
 					return value;
 				})
 				.catch((error) => {

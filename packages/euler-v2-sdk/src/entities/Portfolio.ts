@@ -654,22 +654,12 @@ export class Portfolio<TVaultEntity extends IHasVaultAddress = never>
 				if (borrow.borrowed === 0n) continue;
 				if (!this.includePosition(borrow)) continue;
 
-				positions.push({
-					vault: borrow.vault,
-					borrowedValueUsd: borrow.borrowedValueUsd,
-				});
-
 				const collaterals = resolveBorrowCollateralPositions(
 					subAccount,
 					borrow,
 					(position) => this.includePosition(position),
 				);
-				for (const collateral of collaterals) {
-					positions.push({
-						vault: collateral.vault,
-						suppliedValueUsd: collateral.suppliedValueUsd,
-					});
-				}
+				positions.push(...borrowYieldPositions(borrow, collaterals));
 			}
 		}
 

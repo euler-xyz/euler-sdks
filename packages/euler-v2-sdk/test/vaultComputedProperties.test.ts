@@ -85,6 +85,37 @@ test("EVault collateral computed properties expose current ramped liquidation LT
 	}
 });
 
+test.each([
+	{ initial: 0.85, target: 0.8, timestamp: 101, expected: 0.8333, ramping: true },
+	{ initial: 0.8, target: 0.85, timestamp: 101, expected: 0.85, ramping: false },
+	{ initial: 0.85, target: 0.85, timestamp: 101, expected: 0.85, ramping: false },
+	{ initial: 0.85, target: 0.8, timestamp: 100, expected: 0.85, ramping: true },
+	{ initial: 0.85, target: 0.8, timestamp: 103, expected: 0.8, ramping: false },
+	{ initial: 0.85, target: 0.8, timestamp: 104, expected: 0.8, ramping: false },
+])("EVault liquidation LTV follows contract rounding: $initial to $target at $timestamp", ({ initial, target, timestamp, expected, ramping }) => {
+	const source = getPlainEVaultFixture();
+	const vault = new EVault({
+		...source,
+		timestamp,
+		collaterals: [{
+			address: source.address,
+			borrowLTV: 0,
+			liquidationLTV: target,
+			ramping: {
+				initialLiquidationLTV: initial,
+				targetTimestamp: 103,
+				rampDuration: 3n,
+			},
+			oraclePriceRaw: source.oraclePriceRaw,
+		}],
+	});
+
+	const collateral = vault.collaterals[0]!;
+	assert.equal(collateral.currentLiquidationLTV, expected);
+	assert.equal(collateral.isLiquidationLTVRamping, ramping);
+	assert.equal(collateral.liquidationLTV, target);
+});
+
 test("EulerEarn computed properties expose available liquidity", () => {
 	const source = getPlainEVaultFixture();
 	const vault = new EulerEarn({

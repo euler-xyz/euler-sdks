@@ -112,7 +112,7 @@ same order a UI should display or quote it.
 | `vault` | `VaultEntity | undefined` | Resolved collateral vault entity, populated by `populateCollaterals`. |
 | `oracleRoute` | `OracleRoute | undefined` | Effective ordered collateral-to-unit-of-account route. Includes adapter steps and ERC4626 vault resolution steps. |
 | `marketPriceUsd` | `PriceUsd | undefined` | USD price per collateral underlying, populated by `populateMarketPrices`. |
-| `currentLiquidationLTV` | `number` | Computed current liquidation LTV, including active ramping. |
+| `currentLiquidationLTV` | `number` | Liquidation LTV at the vault snapshot timestamp. Decreases ramp with integer basis-point rounding; increases apply immediately. |
 | `isLiquidationLTVRamping` | `boolean` | Computed `true` while liquidation LTV is actively ramping. |
 | `rampTimeRemaining` | `bigint` | Computed remaining ramp time in seconds. |
 
