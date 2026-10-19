@@ -1,3 +1,10 @@
+import {
+	createSubgraphCallBundler,
+	resolveSubgraphEndpoint,
+	validateSubgraphDeployment,
+	type SubgraphSource,
+	type SubgraphResolver,
+} from "../../../../utils/subgraphCatalog.js";
 import { type Address, getAddress } from "viem";
 import type { IAccountVaultsAdapter } from "./accountOnchainAdapter.js";
 import { getAddressPrefix } from "../../../../utils/subAccounts.js";
@@ -5,7 +12,6 @@ import {
 	type BuildQueryFn,
 	applyBuildQuery,
 } from "../../../../utils/buildQuery.js";
-import { createCallBundler } from "../../../../utils/callBundler.js";
 
 export interface AccountVaults {
 	[vault: Address]: {
@@ -15,18 +21,27 @@ export interface AccountVaults {
 }
 
 export interface AccountVaultsSubgraphAdapterConfig {
-	subgraphURLs: Record<number, string>;
+	subgraphURLs: Record<number, string | false>;
+	resolver?: SubgraphResolver;
 }
 
 export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
+	private readonly sources = new Map<number, SubgraphSource>();
 	constructor(
 		private readonly config: AccountVaultsSubgraphAdapterConfig,
 		buildQuery?: BuildQueryFn,
 	) {
+		const uncached = this.queryAccountVaults;
 		if (buildQuery) applyBuildQuery(this, buildQuery);
+		if (config.resolver) {
+			const configured = this.queryAccountVaults;
+			// Catalog reads evaluate freshness and retirement; explicit maps retain query wrappers.
+			this.queryAccountVaults = (key) =>
+				config.subgraphURLs[key.chainId] ? configured(key) : uncached(key);
+		}
 	}
 
-	queryAccountVaults = createCallBundler(
+	queryAccountVaults = createSubgraphCallBundler(
 		async (keys: { chainId: number; account: Address }[]): Promise<any[]> => {
 			const byChain = new Map<number, Address[]>();
 			for (const key of keys) {
@@ -37,8 +52,18 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 
 			const chainResults = new Map<number, Map<string, any>>();
 			for (const [chainId, accounts] of byChain) {
-				const subgraphUrl = this.config.subgraphURLs[chainId];
+				const subgraphUrl = await resolveSubgraphEndpoint(
+					chainId,
+					"account-vault-discovery",
+					this.config.subgraphURLs,
+					this.config.resolver,
+					this.sources,
+				);
 				if (!subgraphUrl) continue;
+				const source =
+					this.config.resolver && !this.config.subgraphURLs[chainId]
+						? this.sources.get(chainId)
+						: undefined;
 
 				const ids = [...new Set(accounts.map((a) => getAddressPrefix(a)))];
 				const response = await fetch(subgraphUrl, {
@@ -46,6 +71,7 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
 						query: `query AccountVaults($ids: [String!]!) {
+              ${source ? "_meta { deployment }" : ""}
               trackingActiveAccounts(where: { id_in: $ids }) {
                 id
                 deposits
@@ -74,6 +100,7 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 				if (json?.errors?.length) {
 					throw new Error("Account vaults subgraph returned GraphQL errors.");
 				}
+				validateSubgraphDeployment(json, chainId, source);
 				if (!Array.isArray(json?.data?.trackingActiveAccounts)) {
 					throw new Error(
 						"Account vaults subgraph returned malformed account data.",

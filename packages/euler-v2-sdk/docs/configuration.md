@@ -161,3 +161,32 @@ Most services ship with built-in default URLs for V3 APIs, subgraphs, labels, sw
 ## Service overrides
 
 Any built-in service can be replaced via `servicesOverrides`. This is useful for testing or when you need a custom implementation of a specific service. See [SDK Architecture Overview](./sdk-architecture-overview.md) for more on the dependency injection model.
+
+
+## Opt-in subgraph catalog
+
+`config.subgraphCatalog` enables lazy endpoint discovery for built-in account position discovery and vault factory lookup. Omit it or set it to `false` to use bundled compatibility defaults. It does not enable RPC chains or change V3, labels, chain lifecycle, deployment or ABI sources.
+
+```typescript
+const sdk = await buildEulerSDK({
+  config: {
+    subgraphCatalog: { url: "https://operator.example/catalog.json" },
+    accountVaultsSubgraphUrls: { 1: "/api/account-subgraph", 8453: false },
+    vaultTypeSubgraphUrls: { 1: "/api/factory-subgraph", 8453: false },
+  },
+});
+```
+
+The empty object `{}` selects `DEFAULT_SUBGRAPH_CATALOG_URL`, currently a **future publication target** at `https://raw.githubusercontent.com/euler-xyz/euler-subgraph/catalog/v1/catalog.json`. This SDK change does not publish that catalog. Use an operator URL or supplied snapshot until publication is available.
+
+Each purpose resolves independently: `config` URL entries override its top-level adapter URL entries, which override `EULER_SDK_ACCOUNT_VAULTS_SUBGRAPH_URL_<chainId>` or `EULER_SDK_VAULT_TYPE_SUBGRAPH_URL_<chainId>`. A `false` map entry explicitly disables that purpose and throws `SubgraphUnavailableError` with reason `disabled`. Empty maps retain merging behavior. With catalog discovery enabled, absent explicit entries resolve from the catalog; bundled URLs do not substitute for missing, invalid or retired records. Without catalog discovery, bundled defaults and existing missing-URL behavior apply. Explicit URLs retain HTTP, browser-relative and operator-authenticated transports.
+
+`subgraphCatalog` accepts `catalog` (a supplied v1 snapshot), `url`, `fetch` (metadata transport), `resolver`, `channel`, `freshMs`, `maxAgeMs`, `retryMs`, `timeoutMs`, and `now`. `resolver` takes precedence over `catalog`, which takes precedence over URL/fetch. A supplied snapshot is static for that resolver instance and makes no metadata request. The `SubgraphResolver.resolve(chainId, capability)` contract returns `{ endpoint, deploymentId }` or rejects; injected resolvers own their refresh/error policy. Purpose-specific `accountVaultsAdapterConfig.resolver` and `vaultTypeAdapterConfig.resolver` override the shared catalog resolver. Custom account/vault services remain authoritative. SDK construction and explicitly mapped requests do not fetch catalog metadata.
+
+URL-backed metadata is fresh for 60 seconds, may use last-good data for at most 5 minutes from successful fetch/parse, and backs off failed refreshes for 10 seconds. Requests time out after 10 seconds. Concurrent refreshes share one request; failures never extend last-good age. Cache state belongs to one resolver instance. Fresh valid retirement or invalid identity metadata replaces the previous snapshot immediately. Unknown families/channels are ignored, duplicate or invalid supported identities are quarantined, and malformed envelopes/unknown schema versions fail validation. Public catalog endpoints require HTTPS without credentials, query or fragment; this restriction does not apply to explicit operator URLs or injected resolvers.
+
+Stable is the default channel; candidate selection requires `channel: "candidate"`. The two capabilities are `account-vault-discovery` and `vault-factory-lookup`; neither implies Activity, prices or APYs. Catalog `deploymentId` identifies the published deployment, not its current health.
+
+Catalog-backed discovery queries bypass `buildQuery` result caching so metadata freshness, retirement and source transitions are evaluated on each discovery operation. Explicit URL-map query wrappers and RPC query caching remain enabled. Every batched/paginated discovery read uses one resolved endpoint per chain. A changed endpoint or deployment identity between reads rejects with `source-changed` before sending GraphQL; restart the entire read or post-transaction polling operation, then retry against the new source. Applications must likewise avoid indefinitely caching outer service calls across metadata changes. Catalog-backed GraphQL requests include `_meta { deployment }` and validate the returned deployment identity on every page. Missing identity is invalid and a mismatch rejects with `source-changed`. Explicit URL maps keep their existing schema requirements and operator transport semantics; they do not require `_meta`.
+
+Unavailable discovery rejects instead of reporting empty positions. `SubgraphUnavailableError.reason` distinguishes `invalid`, `missing`, `retired`, `unsupported-capability`, `disabled`, `source-failed`, and `source-changed`. Existing HTTP/GraphQL response validation still applies to the selected endpoint.
