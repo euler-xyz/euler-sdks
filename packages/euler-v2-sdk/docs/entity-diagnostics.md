@@ -40,6 +40,12 @@ Fetch/build services return diagnostics next to data:
 
 For batch vault fetches (`fetchVaults`, `fetchVerifiedVaults`, `fetchAllVaults`), `result` may contain `undefined` entries for per-vault failures. Those failures are reported in `errors` with a `vault` owner location for the affected address. For `fetchVaults` and `fetchVerifiedVaults`, result order matches the input/discovery order. For `fetchAllVaults`, entries rejected by the optional pre-population filter are also returned as `undefined`.
 
+These methods can also reject before returning a `ServiceResult`. On-chain account discovery and subgraph vault-type resolution throw on HTTP errors, GraphQL errors, and malformed response data. Without a successful fallback, discovery errors propagate through `accountService.fetchAccount`, and type-resolution errors propagate through `vaultMetaService.fetchVault` / `fetchVaults` and `fetchVaultType` / `fetchVaultTypes`. A valid empty discovery response is still empty data.
+
+Subgraph batches isolate failures by chain, so a failed chain does not reject or poison cached reads for healthy chains. Account discovery splits unique account prefixes into requests of at most 1,000 IDs with an explicit matching result limit. If any request for a chain fails, that chain's batched reads reject instead of returning incomplete discovery as empty accounts.
+
+The [fallback adapter](./fallback-system.md) can retain a valid primary `ServiceResult` with a warning when its secondary source throws. This includes a successful V3 account response with no positions, so empty accounts can load when the subgraph is unavailable. A secondary exception still propagates if the primary threw, was skipped, or returned no data with failure diagnostics. Account vault-population failures are a separate case: `accountService.fetchAccount` retains the account snapshot and reports a `SOURCE_UNAVAILABLE` error diagnostic for that enrichment failure.
+
 Fetch option objects also support `populateAll: true` to force all enrichment steps on.
 
 Errors include issues from nested entities and populated sub-services. Nested diagnostics are remapped to the rendered owner, for example a collateral vault issue becomes a `vaultCollateral` location on the parent vault.
@@ -98,8 +104,7 @@ Example relative location paths:
 
 ## Consumer Policy
 
-The SDK always collects diagnostics during fetch/build.
-Throw policy is consumer-defined.
+Handle rejected fetch promises as well as diagnostics in completed results. Applications choose which returned diagnostics should block their workflow; this policy does not suppress errors thrown by discovery or type resolution.
 
 ```ts
 const { result: account, errors } = await sdk.accountService.fetchAccount(chainId, owner);

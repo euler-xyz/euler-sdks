@@ -9,7 +9,7 @@
  *   2. Build planCleanup() from the dirty account snapshot.
  *   3. Build planBorrow() for the desired borrow position.
  *   4. mergePlans([cleanupPlan, borrowPlan]) so cleanup and borrow execute
- *      together while redundant enable/disable calls are collapsed.
+ *      together in order, preserving every collateral and controller transition.
  *   5. Verify the resulting sub-account only has the borrow position's
  *      collateral and controller enabled.
  *

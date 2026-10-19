@@ -1,10 +1,10 @@
 # Fallback System
 
-The SDK ships with a generic fallback adapter that pairs a primary data source with a secondary one. When the primary fails to produce data, the secondary is called transparently and the result is returned to the caller with a `FALLBACK_USED` diagnostic attached.
+The SDK ships with a generic fallback adapter that pairs a primary data source with a secondary one. When primary data is unavailable or incomplete, the wrapper tries the secondary. Secondary `ServiceResult` responses include a `FALLBACK_USED` diagnostic.
 
 ## Why It Exists
 
-SDK services are built from interchangeable adapters: V3 (HTTP API) is fast but optional; on-chain / subgraph adapters are slower but always available. The fallback adapter lets services be configured to prefer V3 and recover automatically when V3 is unavailable, partially incomplete, or not deployed for a chain.
+SDK services are built from interchangeable adapters: V3 (HTTP API) and on-chain / subgraph adapters can each be unavailable. The fallback adapter lets services prefer V3 and try another source when V3 is unavailable, partially incomplete, or not deployed for a chain.
 
 This is the mechanism behind:
 
@@ -36,7 +36,7 @@ If V3 credentials are not configured, the fallback chain collapses gracefully to
 
 ## Fallback Triggers
 
-The wrapper considers a primary call failed in these cases:
+The wrapper attempts the secondary source in these cases:
 
 | Trigger                  | When                                                              |
 |--------------------------|-------------------------------------------------------------------|
@@ -47,6 +47,10 @@ The wrapper considers a primary call failed in these cases:
 | `circuit-open`           | The circuit breaker is open and the primary call is being skipped.|
 
 Per-item warnings (e.g. `SOURCE_UNAVAILABLE` on a nested oracle) on a **fully-populated** response do **not** trigger fallback — the secondary cannot recover information the primary already returned, and re-fetching only doubles latency.
+
+If the secondary throws, the wrapper retains the primary response when it contains data (including a partially populated array), or when it is empty without failure diagnostics. For example, a successful V3 response with no account positions still loads as an empty account if subgraph discovery fails. Retained responses preserve their diagnostics and append a `SOURCE_UNAVAILABLE` warning identifying the secondary failure.
+
+If the primary threw, was skipped by an open circuit, or returned no data with `SOURCE_UNAVAILABLE`, `DECODE_FAILED`, or error-severity diagnostics, a secondary exception is propagated to the caller. This keeps a failure of both sources from becoming an apparently empty account. Direct on-chain account discovery and direct subgraph vault classification also reject failed HTTP, GraphQL, or malformed responses.
 
 ## Telemetry
 
@@ -95,6 +99,8 @@ When the secondary returns a `ServiceResult`, the wrapper prepends a `FALLBACK_U
 
 This makes fallback events visible to consumers who only inspect `errors`, in addition to the `onFallback` stream.
 
+When a secondary exception causes the primary response to be retained, the added diagnostic is a `SOURCE_UNAVAILABLE` warning sourced from the secondary, with its error message in `originalValue`. `FALLBACK_USED` is reserved for a returned secondary response. `onFallback` runs after secondary success or failure, including failures propagated to the caller.
+
 ## Building a Custom Fallback Adapter
 
 Compose your own fallback chain with `createFallbackAdapter`:
@@ -121,3 +127,4 @@ Notes:
 - Methods that do not return a `ServiceResult` (plain Promise) fall back only on throw.
 - `onFallback` exceptions are swallowed so telemetry can never break the data flow.
 - If `shouldFallback` is provided, it fully replaces the default trigger logic — `trigger` becomes `"custom-shouldFallback"` whenever it returns `true`.
+- A response selected for retry by `shouldFallback` can still be retained under the rules above if the secondary throws. Retaining the primary resets its circuit breaker so subsequent calls can continue using it.
