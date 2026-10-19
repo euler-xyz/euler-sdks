@@ -31,6 +31,12 @@ RPC URLs use `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`.
 The activity-specific values configure the normalized account and vault event
 endpoints without changing the V3 configuration used by other SDK services.
 
+## Subgraph source selection
+
+Direct per-chain subgraph environment URLs remain supported alongside `config` URL maps and optional `config.subgraphCatalog` discovery. Selection is per purpose: `config` map entry → top-level adapter map entry → matching environment entry → resolver/catalog when supplied, otherwise bundled subgraph defaults. Maps merge, so an empty map does not erase environment or bundled entries. `false` in a typed URL map disables that chain/purpose; the environment URL fields are strings, not boolean switches.
+
+There is no catalog environment switch. Omitting `config.subgraphCatalog` or setting it to `false` retains bundled URLs for unmapped chains. Forks that must avoid those defaults can use a rejecting resolver with direct URLs or their own catalog. See [Subgraph sources for forks](./configuration.md#subgraph-sources-for-forks) for both examples and the separate V3/labels/deployment configuration requirements.
+
 ## Account Service
 
 | Config field | Environment variable | Default |
