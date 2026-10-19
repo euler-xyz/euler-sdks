@@ -1,4 +1,4 @@
-export { AccountService, AccountDataUnavailableError } from "./accountService.js";
+export { AccountService } from "./accountService.js";
 export type {
 	AccountServiceConfig,
 	AccountServiceAdapter,

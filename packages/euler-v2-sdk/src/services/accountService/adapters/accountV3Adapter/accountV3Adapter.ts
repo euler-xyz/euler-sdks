@@ -50,9 +50,9 @@ type V3AccountPositionRow = {
 	account: string;
 	vault: string;
 	asset: string;
-	shares: string | null;
-	assets: string | null;
-	borrowed: string | null;
+	shares: string;
+	assets: string;
+	borrowed: string;
 	isController: boolean;
 	isCollateral: boolean;
 	balanceForwarderEnabled: boolean;
@@ -240,19 +240,19 @@ function convertPosition(
 		account,
 		vaultAddress,
 		asset,
-		shares: parseBigIntField(row.shares ?? undefined, {
+		shares: parseBigIntField(row.shares, {
 			path: "$.shares",
 			owner: positionOwner,
 			errors,
 			source: "accountV3",
 		}),
-		assets: parseBigIntField(row.assets ?? undefined, {
+		assets: parseBigIntField(row.assets, {
 			path: "$.assets",
 			owner: positionOwner,
 			errors,
 			source: "accountV3",
 		}),
-		borrowed: parseBigIntField(row.borrowed ?? undefined, {
+		borrowed: parseBigIntField(row.borrowed, {
 			path: "$.borrowed",
 			owner: positionOwner,
 			errors,
@@ -576,22 +576,6 @@ export class AccountV3Adapter implements IAccountAdapter {
 					this.config.forceFresh,
 				);
 				const pageRows = response.data ?? [];
-				for (const row of pageRows) {
-					if (
-						row.shares == null ||
-						row.assets == null ||
-						row.borrowed == null
-					) {
-						throw new Error(
-							"accountV3 returned unavailable position balances.",
-						);
-					}
-					if (row.subAccount == null) {
-						throw new Error(
-							"accountV3 returned unavailable sub-account metadata.",
-						);
-					}
-				}
 				rows.push(...pageRows);
 
 				offset += pageRows.length;
