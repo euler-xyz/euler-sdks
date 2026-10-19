@@ -10,6 +10,11 @@ export {
 	getVaultAccountInfoLensBatchItem,
 } from "./adapters/accountOnchainAdapter/accountOnchainAdapter.js";
 export { AccountV3Adapter } from "./adapters/accountV3Adapter/accountV3Adapter.js";
+export {
+	AccountVaultsSubgraphAdapter,
+	type AccountVaults,
+	type AccountVaultsSubgraphAdapterConfig,
+} from "./adapters/accountVaultsSubgraphAdapter/accountVaultsSubgraphAdapter.js";
 export type {
 	IAccountService,
 	IAccountAdapter,

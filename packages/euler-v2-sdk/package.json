@@ -35,7 +35,8 @@
     "build": "tsc --project tsconfig.json",
     "build:watch": "tsc --project tsconfig.json --watch",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "pnpm run test:package-api && vitest run",
+    "test:package-api": "pnpm run clean && pnpm run build && node --test test/package-api.test.mjs",
     "test:reads": "vitest run --config vitest.reads.config.ts",
     "test:live": "vitest run --config vitest.live.config.ts",
     "test:coverage:reads": "vitest run --config vitest.reads.config.ts --coverage",
@@ -44,7 +45,7 @@
     "lint:fix": "biome lint --write src",
     "prepare": "cd ../.. && if command -v husky >/dev/null 2>&1; then husky packages/euler-v2-sdk/.husky; fi",
     "clean": "rm -rf dist",
-    "release:check": "pnpm run clean && pnpm run build && pnpm run typecheck",
+    "release:check": "pnpm run test:package-api && pnpm run typecheck",
     "prepublishOnly": "pnpm run release:check",
     "publish:public": "npm publish --access public --provenance=false"
   },
