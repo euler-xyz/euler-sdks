@@ -25,6 +25,8 @@ export interface AccountVaultsSubgraphAdapterConfig {
 	resolver?: SubgraphResolver;
 }
 
+const PAGE_SIZE = 1000;
+
 export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 	private readonly sources = new Map<number, SubgraphSource>();
 	constructor(
@@ -65,59 +67,64 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 						? this.sources.get(chainId)
 						: undefined;
 
-				const ids = [...new Set(accounts.map((a) => getAddressPrefix(a)))];
-				const response = await fetch(subgraphUrl, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						query: `query AccountVaults($ids: [String!]!) {
+				const ids = [
+					...new Set(accounts.map((a) => getAddressPrefix(a).toLowerCase())),
+				];
+				const query = `query AccountVaults($ids: [String!]!) {
               ${source ? "_meta { deployment }" : ""}
-              trackingActiveAccounts(where: { id_in: $ids }) {
+              trackingActiveAccounts(first: ${PAGE_SIZE}, where: { id_in: $ids }) {
                 id
                 deposits
                 borrows
               }
-            }`,
-						variables: { ids },
-						operationName: "AccountVaults",
-					}),
-				});
-				if (!response.ok) {
-					throw new Error(
-						`Account vaults subgraph ${response.status} ${response.statusText}`,
-					);
-				}
-				const json = (await response.json()) as {
-					data?: {
-						trackingActiveAccounts?: Array<{
-							id: string;
-							deposits: string[];
-							borrows: string[];
-						}>;
-					};
-					errors?: unknown[];
-				};
-				if (json?.errors?.length) {
-					throw new Error("Account vaults subgraph returned GraphQL errors.");
-				}
-				validateSubgraphDeployment(json, chainId, source);
-				if (!Array.isArray(json?.data?.trackingActiveAccounts)) {
-					throw new Error(
-						"Account vaults subgraph returned malformed account data.",
-					);
-				}
+            }`;
 				const map = new Map<string, any>();
-				for (const entry of json.data.trackingActiveAccounts) {
-					if (
-						typeof entry?.id !== "string" ||
-						!Array.isArray(entry.deposits) ||
-						!Array.isArray(entry.borrows)
-					) {
+				for (let i = 0; i < ids.length; i += PAGE_SIZE) {
+					const response = await fetch(subgraphUrl, {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							query,
+							variables: { ids: ids.slice(i, i + PAGE_SIZE) },
+							operationName: "AccountVaults",
+						}),
+					});
+					if (!response.ok) {
+						throw new Error(
+							`Account vaults subgraph ${response.status} ${response.statusText}`,
+						);
+					}
+					const json = (await response.json()) as {
+						data?: {
+							trackingActiveAccounts?: Array<{
+								id: string;
+								deposits: string[];
+								borrows: string[];
+							}>;
+						};
+						errors?: unknown[];
+					};
+					if (json?.errors?.length) {
+						throw new Error("Account vaults subgraph returned GraphQL errors.");
+					}
+					validateSubgraphDeployment(json, chainId, source);
+					if (!Array.isArray(json?.data?.trackingActiveAccounts)) {
 						throw new Error(
 							"Account vaults subgraph returned malformed account data.",
 						);
 					}
-					map.set(entry.id.toLowerCase(), entry);
+					for (const entry of json.data.trackingActiveAccounts) {
+						if (
+							typeof entry?.id !== "string" ||
+							!Array.isArray(entry.deposits) ||
+							!Array.isArray(entry.borrows)
+						) {
+							throw new Error(
+								"Account vaults subgraph returned malformed account data.",
+							);
+						}
+						map.set(entry.id.toLowerCase(), entry);
+					}
 				}
 				chainResults.set(chainId, map);
 			}

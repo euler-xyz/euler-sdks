@@ -5,6 +5,7 @@ import {
 	type FallbackInfo,
 } from "../src/utils/fallbackAdapter.js";
 import {
+	type DataIssue,
 	dataIssueLocation,
 	serviceDiagnosticOwner,
 	type ServiceResult,
@@ -31,6 +32,179 @@ function makeAdapter(overrides: Partial<SampleAdapter> & { tag: string }): Sampl
 	};
 	return { ...defaults, ...overrides };
 }
+
+test.each([
+	{ result: undefined, errors: [] },
+	{
+		result: ["available", undefined],
+		errors: [
+			{
+				code: "SOURCE_UNAVAILABLE",
+				severity: "warning",
+				message: "One primary item is unavailable.",
+				locations: [dataIssueLocation(serviceDiagnosticOwner("primary"))],
+			},
+		],
+	},
+	{ result: "partial", errors: [] },
+] satisfies ServiceResult<unknown>[])("retains a primary response when the secondary throws: $result", async (primaryResult) => {
+	const secondaryError = new Error("secondary unavailable");
+	const calls: FallbackInfo[] = [];
+	const primary = { fetch: async () => primaryResult };
+	const wrapped = createFallbackAdapter(
+		primary,
+		{
+			fetch: async () => {
+				throw secondaryError;
+			},
+		},
+		{
+			methods: ["fetch"],
+			adapterNames: { primary: "primary", secondary: "secondary" },
+				shouldFallback:
+					typeof primaryResult.result === "string" ? () => true : undefined,
+			onFallback: (info) => {
+				calls.push(info);
+				throw new Error("telemetry failed");
+			},
+		},
+	);
+	const out = await wrapped.fetch();
+	assert.equal(out.result, primaryResult.result);
+	assert.deepEqual(out.errors.slice(0, -1), primaryResult.errors);
+	assert.equal(out.errors.at(-1)?.code, "SOURCE_UNAVAILABLE");
+	assert.equal(out.errors.at(-1)?.severity, "warning");
+	assert.equal(out.errors.at(-1)?.source, "secondary");
+	assert.equal(out.errors.at(-1)?.originalValue, secondaryError.message);
+	assert.deepEqual(out.errors.at(-1)?.locations, [
+		dataIssueLocation(serviceDiagnosticOwner("secondary", undefined, "fetch")),
+	]);
+	assert.equal(primaryResult.errors.length, out.errors.length - 1);
+	assert.equal(calls.length, 1);
+		assert.equal(
+			calls[0]?.trigger,
+			typeof primaryResult.result === "string"
+				? "custom-shouldFallback"
+				: Array.isArray(primaryResult.result)
+					? "array-missing-slots"
+					: "result-undefined",
+		);
+});
+
+test.each([
+	{ result: undefined, code: "SOURCE_UNAVAILABLE", severity: "error" },
+	{ result: undefined, code: "DECODE_FAILED", severity: "warning" },
+	{ result: [undefined], code: "SOURCE_UNAVAILABLE", severity: "warning" },
+] as const)("does not retain unavailable primary data: $code/$severity/$result", async ({
+	result,
+	code,
+	severity,
+}) => {
+	const secondaryError = new Error("secondary unavailable");
+	const issue: DataIssue = {
+		code,
+		severity,
+		message: "Primary unavailable.",
+		locations: [dataIssueLocation(serviceDiagnosticOwner("primary"))],
+	};
+	const wrapped = createFallbackAdapter(
+		{
+			fetch: async () => ({ result, errors: [issue] }),
+		},
+		{
+			fetch: async () => {
+				throw secondaryError;
+			},
+		},
+		{
+			methods: ["fetch"],
+			adapterNames: { primary: "primary", secondary: "secondary" },
+		},
+	);
+	await assert.rejects(wrapped.fetch(), (error) => error === secondaryError);
+});
+
+test.each([
+	new Error("primary unavailable"),
+	undefined,
+])("both thrown failures reject and notify telemetry (%s)", async (primaryError) => {
+	const secondaryError = new Error("secondary unavailable");
+	const calls: FallbackInfo[] = [];
+	const wrapped = createFallbackAdapter(
+		{
+			fetch: async () => {
+				throw primaryError;
+			},
+		},
+		{
+			fetch: async () => {
+				throw secondaryError;
+			},
+		},
+		{
+			methods: ["fetch"],
+			adapterNames: { primary: "primary", secondary: "secondary" },
+			onFallback: (info) => calls.push(info),
+		},
+	);
+	await assert.rejects(wrapped.fetch(), (error) => error === secondaryError);
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0]?.trigger, "primary-threw");
+});
+
+test("retaining a successful empty primary keeps it available with a circuit breaker", async () => {
+	let primaryCalls = 0;
+	const wrapped = createFallbackAdapter(
+		{
+			fetch: async () => {
+				primaryCalls++;
+				return { result: undefined, errors: [] };
+			},
+		},
+		{
+			fetch: async () => {
+				throw new Error("secondary unavailable");
+			},
+		},
+		{
+			methods: ["fetch"],
+			adapterNames: { primary: "primary", secondary: "secondary" },
+			circuitBreaker: { failures: 1, cooldownMs: 60_000 },
+		},
+	);
+	await wrapped.fetch();
+	await wrapped.fetch();
+	assert.equal(primaryCalls, 2);
+});
+
+test("secondary failure still rejects when an open circuit skips primary", async () => {
+	let primaryCalls = 0;
+	const calls: FallbackInfo[] = [];
+	const secondaryError = new Error("secondary unavailable");
+	const wrapped = createFallbackAdapter(
+		{
+			fetch: async () => {
+				primaryCalls++;
+				throw new Error("primary unavailable");
+			},
+		},
+		{
+			fetch: async () => {
+				throw secondaryError;
+			},
+		},
+		{
+			methods: ["fetch"],
+			adapterNames: { primary: "primary", secondary: "secondary" },
+			circuitBreaker: { failures: 1, cooldownMs: 60_000 },
+			onFallback: (info) => calls.push(info),
+		},
+	);
+	await assert.rejects(wrapped.fetch(), (error) => error === secondaryError);
+	await assert.rejects(wrapped.fetch(), (error) => error === secondaryError);
+	assert.equal(primaryCalls, 1);
+	assert.equal(calls[1]?.trigger, "circuit-open");
+});
 
 test("primary success returns primary result with no fallback issue", async () => {
 	const primary = makeAdapter({

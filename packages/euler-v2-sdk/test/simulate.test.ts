@@ -17,6 +17,8 @@ import { eVaultAbi } from "../src/services/executionService/abis/eVaultAbi.js";
 import { swapVerifierAbi } from "../src/services/executionService/abis/swapVerifierAbi.js";
 import { ExecutionService } from "../src/services/executionService/executionService.js";
 import { extractBalanceRequirements } from "../src/services/executionService/simulate.js";
+import { VaultTypeSubgraphAdapter } from "../src/services/vaults/vaultMetaService/adapters/VaultTypeSubgraphAdapter.js";
+import { VaultMetaService } from "../src/services/vaults/vaultMetaService/vaultMetaService.js";
 import type {
 	EVCBatchItem,
 	TransactionPlan,
@@ -369,6 +371,85 @@ test("simulateTransactionPlan rejects CoW swap plans", async () => {
 		/does not support CoW swap plans/,
 	);
 });
+
+for (const { failure, response, error } of [
+	{
+		failure: "HTTP 404",
+		response: () =>
+			Response.json({ error: "No upstream configured" }, { status: 404 }),
+		error: /Vault type subgraph 404/,
+	},
+	{
+		failure: "HTTP 502",
+		response: () =>
+			Response.json({ error: "Upstream unavailable" }, { status: 502 }),
+		error: /Vault type subgraph 502/,
+	},
+	{
+		failure: "GraphQL errors",
+		response: () =>
+			Response.json({
+				data: { vaults: [] },
+				errors: [{ message: "Indexer unavailable" }],
+			}),
+		error: /Vault type subgraph returned GraphQL errors/,
+	},
+	{
+		failure: "malformed vault data",
+		response: () => Response.json({ data: { vaults: null } }),
+		error: /Vault type subgraph returned malformed vault data/,
+	},
+]) {
+	test(`simulateTransactionPlan rejects before batch simulation on vault-type subgraph ${failure}`, async () => {
+		const subgraphUrl = "https://example.invalid/vault-types";
+		const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(response());
+		try {
+			const simulateContract = vi.fn();
+			const service = createExecutionService(
+				{ simulateContract, multicall: vi.fn(async () => []) },
+				new VaultMetaService({
+					vaultTypeAdapter: new VaultTypeSubgraphAdapter({
+						subgraphURLs: { 1: subgraphUrl },
+					}),
+				}),
+			);
+			const plan: TransactionPlan = [
+				{
+					type: "evcBatch",
+					items: [
+						{
+							targetContract: EVC,
+							onBehalfOfAccount: ACCOUNT,
+							value: 0n,
+							data: encodeFunctionData({
+								abi: ethereumVaultConnectorAbi,
+								functionName: "enableCollateral",
+								args: [ACCOUNT, TARGET],
+							}),
+						},
+					],
+				},
+			];
+
+			await assert.rejects(
+				service.simulateTransactionPlan(1, ACCOUNT, plan, {
+					stateOverrides: false,
+				}),
+				error,
+			);
+			assert.equal(fetch.mock.calls.length, 1);
+			assert.equal(fetch.mock.calls[0]?.[0], subgraphUrl);
+			assert.ok(
+				JSON.parse(fetch.mock.calls[0]?.[1]?.body as string).variables.ids.includes(
+					TARGET.toLowerCase(),
+				),
+			);
+			assert.equal(simulateContract.mock.calls.length, 0);
+		} finally {
+			fetch.mockRestore();
+		}
+	});
+}
 
 test("simulateTransactionPlan returns a non-simulatable result for a direct contract call", async () => {
 	const simulateContract = vi.fn();

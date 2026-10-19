@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { getAddress } from "viem";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	createSubgraphCatalogResolver,
@@ -509,6 +510,70 @@ describe("row diagnostics and response identity", () => {
 			"_meta { deployment }",
 		);
 	});
+	it.each([false, true])(
+		"checks every catalog account page and rejects a changed deployment: %s",
+		async (changeDeployment) => {
+			const accounts = Array.from({ length: 1001 }, (_, index) =>
+				getAddress(`0x${(BigInt(index + 1) << 8n).toString(16).padStart(40, "0")}`),
+			);
+			const byPrefix = new Map(
+				accounts.map((account) => [account.toLowerCase().slice(0, 40), account]),
+			);
+			const pages: string[][] = [];
+			vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+				expect(url).toBe(active.endpoint);
+				const request = JSON.parse(String(init?.body)) as {
+					query: string;
+					variables: { ids: string[] };
+				};
+				pages.push(request.variables.ids);
+				expect(request.query).toContain("_meta { deployment }");
+				const first = Number(
+					request.query.match(/trackingActiveAccounts\(first:\s*(\d+)/)?.[1] ?? 100,
+				);
+				expect(first).toBeLessThanOrEqual(1000);
+				return json({
+					data: {
+						_meta: {
+							deployment:
+								changeDeployment && pages.length === 2
+									? "replacement"
+									: active.deploymentId,
+						},
+						trackingActiveAccounts: request.variables.ids
+							.slice(0, first)
+							.map((id) => ({
+								id,
+								deposits: [`${byPrefix.get(id.toLowerCase())}${address.slice(2)}`],
+								borrows: [],
+							})),
+					},
+				});
+			});
+			const adapter = new AccountVaultsSubgraphAdapter({
+				subgraphURLs: {},
+				resolver: createSubgraphCatalogResolver({ catalog: catalog(active) }),
+			});
+			const results = await Promise.allSettled(
+				accounts.map((account) => adapter.fetchAccountVaults(1, account)),
+			);
+			for (const [index, account] of accounts.entries()) {
+				if (changeDeployment) {
+					expect(results[index]).toMatchObject({
+						status: "rejected",
+						reason: { reason: "source-changed" },
+					});
+				} else {
+					expect(results[index]).toEqual({
+						status: "fulfilled",
+						value: { [account]: { deposits: [address], borrows: [] } },
+					});
+				}
+			}
+			expect(pages.map((page) => page.length)).toEqual([1000, 1]);
+			expect(pages.flat()).toEqual([...byPrefix.keys()]);
+		},
+	);
 	it("rejects a factory page served by a different deployment", async () => {
 		const graph = vi
 			.spyOn(globalThis, "fetch")

@@ -115,6 +115,85 @@ for (const mode of ["v3", "fallback"] as const) {
 }
 
 for (const failure of [
+	{
+		name: "HTTP 404 from an unconfigured proxy",
+		status: 404,
+		body: { error: "No subgraph configured for chain 1" },
+		error: /Account vaults subgraph 404/,
+	},
+	{
+		name: "HTTP 502 from an unavailable upstream",
+		status: 502,
+		body: { error: "Subgraph upstream unavailable" },
+		error: /Account vaults subgraph 502/,
+	},
+	{
+		name: "GraphQL errors",
+		status: 200,
+		body: {
+			data: { trackingActiveAccounts: [] },
+			errors: [{ message: "indexer unavailable" }],
+		},
+		error: /Account vaults subgraph returned GraphQL errors/,
+	},
+	{
+		name: "malformed account data",
+		status: 200,
+		body: { data: { trackingActiveAccounts: {} } },
+		error: /Account vaults subgraph returned malformed account data/,
+	},
+]) {
+	for (const v3Available of [true, false]) {
+		test(`fallback account reads ${v3Available ? "preserve a successful empty V3 response" : "reject when V3 is unavailable"} after ${failure.name}`, async () => {
+			const fetch = vi.fn(async (url: string) => {
+				if (url === subgraphConfig.subgraphURLs[1]) {
+					return Response.json(failure.body, { status: failure.status });
+				}
+				assert.match(url, /\/v3\/accounts\/.*\/positions\?/);
+				return Response.json(
+					v3Available ? { data: [] } : { error: "V3 unavailable" },
+					{ status: v3Available ? 200 : 503 },
+				);
+			});
+			vi.stubGlobal("fetch", fetch);
+			const primary = new AccountV3Adapter({
+				endpoint: "https://example.invalid",
+			});
+			const secondary = new AccountOnchainAdapter(
+				{} as never,
+				{} as never,
+				new AccountVaultsSubgraphAdapter(subgraphConfig),
+			);
+			const adapter = createFallbackAdapter<
+				IAccountAdapter,
+				keyof IAccountAdapter
+			>(primary, secondary, {
+				methods: ["fetchAccount", "fetchSubAccount"],
+				adapterNames: { primary: "accountV3", secondary: "accountOnchain" },
+			});
+			const service = new AccountService(adapter, {} as never);
+			const fetched = service.fetchAccount(1, account, {
+				populateVaults: false,
+			});
+			if (v3Available) {
+				const snapshot = await fetched;
+				assert.equal(snapshot.result.chainId, 1);
+				assert.equal(snapshot.result.owner, account);
+				assert.deepEqual(snapshot.result.subAccounts, {});
+				assert.equal(snapshot.errors.length, 1);
+				assert.equal(snapshot.errors[0]?.code, "SOURCE_UNAVAILABLE");
+				assert.equal(snapshot.errors[0]?.severity, "warning");
+				assert.equal(snapshot.errors[0]?.source, "accountOnchain");
+				assert.match(String(snapshot.errors[0]?.originalValue), failure.error);
+			} else {
+				await assert.rejects(fetched, failure.error);
+			}
+			assert.equal(fetch.mock.calls.length, 2);
+		});
+	}
+}
+
+for (const failure of [
 	"HTTP 503",
 	"GraphQL errors",
 	"absent data",
