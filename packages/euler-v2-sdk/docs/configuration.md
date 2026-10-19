@@ -257,6 +257,32 @@ URL-backed metadata is fresh for 60 seconds, may use last-good data for at most 
 
 Stable is the default channel; candidate selection requires `channel: "candidate"`. The two capabilities are `account-vault-discovery` and `vault-factory-lookup`; neither implies Activity, prices or APYs. Catalog `deploymentId` identifies the published deployment, not its current health.
 
-Catalog-backed discovery queries bypass `buildQuery` result caching so metadata freshness, retirement and source transitions are evaluated on each discovery operation. Explicit URL-map query wrappers and RPC query caching remain enabled. Every batched/paginated discovery read uses one resolved endpoint per chain. A changed endpoint or deployment identity between reads rejects with `source-changed` before sending GraphQL; restart the entire read or post-transaction polling operation, then retry against the new source. Applications must likewise avoid indefinitely caching outer service calls across metadata changes. Catalog-backed GraphQL requests include `_meta { deployment }` and validate the returned deployment identity on every page. Missing identity is invalid and a mismatch rejects with `source-changed`. Explicit URL maps keep their existing schema requirements and operator transport semantics; they do not require `_meta`.
+Catalog-backed discovery queries bypass `buildQuery` result caching so metadata freshness and retirement are evaluated on each discovery operation. Explicit URL-map query wrappers and RPC query caching remain enabled. Every batched/paginated discovery read uses one resolved endpoint per chain. Catalog-backed GraphQL requests include `_meta { deployment }` and validate the returned deployment identity on every page. Missing identity is invalid and a mismatch rejects with `source-changed`. Explicit URL maps keep their existing schema requirements and operator transport semantics; they do not require `_meta`.
+
+Simple `fetchAccountVaults` / `fetchVaultFactories` calls keep their existing return shapes. Their adapter-wide `source-changed` notice is advisory: an unrelated read can receive that notice first. It does not protect a baseline held by a separate polling operation. Applications must likewise avoid indefinitely caching outer service calls across metadata changes.
+
+For a multi-read operation, the exported `AccountVaultsSubgraphAdapter.fetchAccountVaultsWithSource(chainId, account, options?)` and `VaultTypeSubgraphAdapter.fetchVaultFactoriesWithSource(chainId, addresses, options?)` methods return `SubgraphReadResult<T>` (`{ value, source? }`). `SubgraphReadOptions.expectedSource` accepts the baseline's `{ endpoint, deploymentId }`. Each expected-source read independently rejects with `source-changed` before querying if the resolver selects a different endpoint or deployment. Concurrent reads with different expectations are isolated, and another reader cannot consume this protection. A baseline read without an expectation uses the current source without the adapter-wide notice.
+
+```typescript
+import {
+  AccountVaultsSubgraphAdapter,
+  createSubgraphCatalogResolver,
+} from "@eulerxyz/euler-v2-sdk";
+
+const discovery = new AccountVaultsSubgraphAdapter({
+  subgraphURLs: {},
+  resolver: createSubgraphCatalogResolver({
+    url: "https://operator.example/catalog.json",
+  }),
+});
+const baseline = await discovery.fetchAccountVaultsWithSource(chainId, account);
+if (!baseline.source) throw new Error("Catalog provenance is required");
+const next = await discovery.fetchAccountVaultsWithSource(chainId, account, {
+  expectedSource: baseline.source,
+});
+// Compare baseline.value with next.value only after this read succeeds.
+```
+
+Keep the baseline and its source together for the whole operation. On `source-changed`, discard that baseline and restart the operation with a new source-aware baseline; repeatedly retrying the same expectation keeps rejecting. These methods verify endpoint/deployment identity, not indexed block freshness, transaction inclusion, or finality. The guarantee applies to catalog/resolver-backed built-in queries. Explicit URL maps and custom query overrides retain their transport behavior and return no source. Supplying `expectedSource` when provenance cannot be verified rejects with `source-changed`; it never silently drops the expectation. A built-in query explicitly disabled with `false` rejects with `disabled`, including when an expectation is supplied; custom query overrides own their transport behavior. These adapter methods are opt-in and do not change top-level service return types.
 
 Unavailable discovery rejects instead of reporting empty positions. `SubgraphUnavailableError.reason` distinguishes `invalid`, `missing`, `retired`, `unsupported-capability`, `disabled`, `source-failed`, and `source-changed`. Existing HTTP/GraphQL response validation still applies to the selected endpoint.

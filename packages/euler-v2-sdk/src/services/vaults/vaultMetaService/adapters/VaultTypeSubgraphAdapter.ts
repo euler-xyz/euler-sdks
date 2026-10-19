@@ -1,6 +1,9 @@
 import {
 	createSubgraphCallBundler,
-	resolveSubgraphEndpoint,
+	resolveSubgraphRead,
+	SubgraphUnavailableError,
+	type SubgraphReadOptions,
+	type SubgraphReadResult,
 	validateSubgraphDeployment,
 	type SubgraphSource,
 	type SubgraphResolver,
@@ -25,6 +28,7 @@ const PAGE_SIZE = 1000;
 
 export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 	private readonly sources = new Map<number, SubgraphSource>();
+	private readonly builtInQuery: typeof this.queryVaultFactories;
 	constructor(
 		private readonly config: VaultTypeSubgraphAdapterConfig,
 		buildQuery?: BuildQueryFn,
@@ -37,12 +41,17 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 			this.queryVaultFactories = (key) =>
 				config.subgraphURLs[key.chainId] ? configured(key) : uncached(key);
 		}
+		this.builtInQuery = this.queryVaultFactories;
 	}
 
-	queryVaultFactories = createSubgraphCallBundler(
+	private readonly loadVaultFactories = createSubgraphCallBundler(
 		async (
-			keys: { address: Address; chainId: number }[],
-		): Promise<(VaultFactoryResult | undefined)[]> => {
+			keys: ({
+				address: Address;
+				chainId: number;
+				withSource?: boolean;
+			} & SubgraphReadOptions)[],
+		): Promise<SubgraphReadResult<VaultFactoryResult | undefined>[]> => {
 			const byChain = new Map<number, Address[]>();
 			for (const key of keys) {
 				const arr = byChain.get(key.chainId) ?? [];
@@ -51,19 +60,18 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 			}
 
 			const chainResults = new Map<number, Map<string, Address>>();
+			let readSource: SubgraphSource | undefined;
 			for (const [chainId, addresses] of byChain) {
-				const subgraphUrl = await resolveSubgraphEndpoint(
+				const { endpoint: subgraphUrl, source } = await resolveSubgraphRead(
 					chainId,
 					"vault-factory-lookup",
 					this.config.subgraphURLs,
 					this.config.resolver,
-					this.sources,
+					keys[0]?.withSource ? undefined : this.sources,
+					keys[0]?.expectedSource,
 				);
 				if (!subgraphUrl) continue;
-				const source =
-					this.config.resolver && !this.config.subgraphURLs[chainId]
-						? this.sources.get(chainId)
-						: undefined;
+				readSource = source;
 
 				const ids = [...new Set(addresses.map((a) => a.toLowerCase()))];
 				const query = `query VaultFactories($ids: [String!]!) {
@@ -110,13 +118,74 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 				const factory = chainResults
 					.get(key.chainId)
 					?.get(key.address.toLowerCase());
-				return factory ? { id: getAddress(key.address), factory } : undefined;
+				return {
+					value: factory ? { id: getAddress(key.address), factory } : undefined,
+					...(readSource ? { source: { ...readSource } } : {}),
+				};
 			});
 		},
 	);
 
+	queryVaultFactories = async (key: {
+		address: Address;
+		chainId: number;
+	}): Promise<VaultFactoryResult | undefined> =>
+		(await this.loadVaultFactories(key)).value;
+
 	setQueryVaultFactories(fn: typeof this.queryVaultFactories): void {
 		this.queryVaultFactories = fn;
+	}
+
+	/** Keep the returned source with the baseline of a multi-read operation. */
+	async fetchVaultFactoriesWithSource(
+		chainId: number,
+		vaultAddresses: Address[],
+		options: SubgraphReadOptions = {},
+	): Promise<SubgraphReadResult<VaultFactoryResult[]>> {
+		if (
+			this.queryVaultFactories === this.builtInQuery &&
+			this.config.subgraphURLs[chainId] === false
+		)
+			throw new SubgraphUnavailableError("disabled", chainId);
+		if (
+			this.queryVaultFactories !== this.builtInQuery ||
+			this.config.subgraphURLs[chainId] ||
+			!this.config.resolver
+		) {
+			if (options.expectedSource)
+				throw new SubgraphUnavailableError("source-changed", chainId);
+			return { value: await this.fetchVaultFactories(chainId, vaultAddresses) };
+		}
+		const expectedSource = options.expectedSource
+			? { ...options.expectedSource }
+			: undefined;
+		if (!vaultAddresses.length) {
+			const { source } = await resolveSubgraphRead(
+				chainId,
+				"vault-factory-lookup",
+				this.config.subgraphURLs,
+				this.config.resolver,
+				undefined,
+				expectedSource,
+			);
+			return { value: [], source };
+		}
+		const results = await Promise.all(
+			vaultAddresses.map((address) =>
+				this.loadVaultFactories({
+					chainId,
+					address,
+					withSource: true,
+					expectedSource,
+				}),
+			),
+		);
+		return {
+			value: results
+				.map((result) => result.value)
+				.filter((result): result is VaultFactoryResult => result != null),
+			source: results[0]?.source,
+		};
 	}
 
 	async fetchVaultType(

@@ -1,6 +1,9 @@
 import {
 	createSubgraphCallBundler,
-	resolveSubgraphEndpoint,
+	resolveSubgraphRead,
+	SubgraphUnavailableError,
+	type SubgraphReadOptions,
+	type SubgraphReadResult,
 	validateSubgraphDeployment,
 	type SubgraphSource,
 	type SubgraphResolver,
@@ -29,6 +32,7 @@ const PAGE_SIZE = 1000;
 
 export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 	private readonly sources = new Map<number, SubgraphSource>();
+	private readonly builtInQuery: typeof this.queryAccountVaults;
 	constructor(
 		private readonly config: AccountVaultsSubgraphAdapterConfig,
 		buildQuery?: BuildQueryFn,
@@ -41,10 +45,17 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 			this.queryAccountVaults = (key) =>
 				config.subgraphURLs[key.chainId] ? configured(key) : uncached(key);
 		}
+		this.builtInQuery = this.queryAccountVaults;
 	}
 
-	queryAccountVaults = createSubgraphCallBundler(
-		async (keys: { chainId: number; account: Address }[]): Promise<any[]> => {
+	private readonly loadAccountVaults = createSubgraphCallBundler(
+		async (
+			keys: ({
+				chainId: number;
+				account: Address;
+				withSource?: boolean;
+			} & SubgraphReadOptions)[],
+		): Promise<SubgraphReadResult<any>[]> => {
 			const byChain = new Map<number, Address[]>();
 			for (const key of keys) {
 				const arr = byChain.get(key.chainId) ?? [];
@@ -53,19 +64,18 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 			}
 
 			const chainResults = new Map<number, Map<string, any>>();
+			let readSource: SubgraphSource | undefined;
 			for (const [chainId, accounts] of byChain) {
-				const subgraphUrl = await resolveSubgraphEndpoint(
+				const { endpoint: subgraphUrl, source } = await resolveSubgraphRead(
 					chainId,
 					"account-vault-discovery",
 					this.config.subgraphURLs,
 					this.config.resolver,
-					this.sources,
+					keys[0]?.withSource ? undefined : this.sources,
+					keys[0]?.expectedSource,
 				);
 				if (!subgraphUrl) continue;
-				const source =
-					this.config.resolver && !this.config.subgraphURLs[chainId]
-						? this.sources.get(chainId)
-						: undefined;
+				readSource = source;
 
 				const ids = [
 					...new Set(accounts.map((a) => getAddressPrefix(a).toLowerCase())),
@@ -133,22 +143,66 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 				const prefix = getAddressPrefix(key.account);
 				const entry = chainResults.get(key.chainId)?.get(prefix.toLowerCase());
 				return {
-					data: {
-						trackingActiveAccount: entry ?? null,
-					},
+					value: { data: { trackingActiveAccount: entry ?? null } },
+					...(readSource ? { source: { ...readSource } } : {}),
 				};
 			});
 		},
 	);
 
+	queryAccountVaults = async (key: {
+		chainId: number;
+		account: Address;
+	}): Promise<any> => (await this.loadAccountVaults(key)).value;
+
 	setQueryAccountVaults(fn: typeof this.queryAccountVaults): void {
 		this.queryAccountVaults = fn;
+	}
+
+	/** Keep the returned source with the baseline of a multi-read operation. */
+	async fetchAccountVaultsWithSource(
+		chainId: number,
+		account: Address,
+		options: SubgraphReadOptions = {},
+	): Promise<SubgraphReadResult<AccountVaults>> {
+		if (
+			this.queryAccountVaults === this.builtInQuery &&
+			this.config.subgraphURLs[chainId] === false
+		)
+			throw new SubgraphUnavailableError("disabled", chainId);
+		if (
+			this.queryAccountVaults !== this.builtInQuery ||
+			this.config.subgraphURLs[chainId] ||
+			!this.config.resolver
+		) {
+			if (options.expectedSource)
+				throw new SubgraphUnavailableError("source-changed", chainId);
+			return { value: await this.fetchAccountVaults(chainId, account) };
+		}
+		const result = await this.loadAccountVaults({
+			chainId,
+			account,
+			withSource: true,
+			expectedSource: options.expectedSource
+				? { ...options.expectedSource }
+				: undefined,
+		});
+		return {
+			value: this.parseAccountVaults(result.value),
+			source: result.source,
+		};
 	}
 
 	async fetchAccountVaults(
 		chainId: number,
 		account: Address,
 	): Promise<AccountVaults> {
+		return this.parseAccountVaults(
+			await this.queryAccountVaults({ chainId, account }),
+		);
+	}
+
+	private parseAccountVaults(data: any): AccountVaults {
 		const parseResult = (
 			type: "deposits" | "borrows",
 			results: AccountVaults,
@@ -166,7 +220,6 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 				results[subAccount][type].push(vault);
 			});
 		};
-		const data = await this.queryAccountVaults({ chainId, account });
 
 		const accountVaults: AccountVaults = {};
 		parseResult(

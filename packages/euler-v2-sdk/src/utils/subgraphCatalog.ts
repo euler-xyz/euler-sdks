@@ -29,6 +29,15 @@ export interface SubgraphSource {
 	endpoint: string;
 	deploymentId: string;
 }
+/** Source identity from a completed catalog-backed read, owned by the caller. */
+export interface SubgraphReadOptions {
+	expectedSource?: SubgraphSource;
+}
+export interface SubgraphReadResult<T> {
+	value: T;
+	/** Absent for explicit endpoints and custom query overrides. */
+	source?: SubgraphSource;
+}
 export interface SubgraphResolver {
 	resolve(
 		chainId: number,
@@ -276,26 +285,53 @@ export async function resolveSubgraphEndpoint(
 	resolver?: SubgraphResolver,
 	previousSources?: Map<number, SubgraphSource>,
 ): Promise<string | undefined> {
+	return (
+		await resolveSubgraphRead(
+			chainId,
+			capability,
+			urls,
+			resolver,
+			previousSources,
+		)
+	).endpoint;
+}
+
+/** Resolve a local source snapshot; caller expectations do not use shared transition state. */
+export async function resolveSubgraphRead(
+	chainId: number,
+	capability: SubgraphCapability,
+	urls: Record<number, string | false>,
+	resolver?: SubgraphResolver,
+	previousSources?: Map<number, SubgraphSource>,
+	expectedSource?: SubgraphSource,
+): Promise<{ endpoint?: string; source?: SubgraphSource }> {
 	const explicit = urls[chainId];
 	if (explicit === false)
 		throw new SubgraphUnavailableError("disabled", chainId);
-	if (explicit) return explicit;
-	if (resolver) {
-		const source = await resolver.resolve(chainId, capability);
-		if (!nonempty(source?.endpoint) || !nonempty(source?.deploymentId))
-			throw new SubgraphUnavailableError("invalid", chainId);
-		const previous = previousSources?.get(chainId);
-		previousSources?.set(chainId, { ...source });
-		// Callers retry the whole read/poll after a source transition, never compare mixed sources silently.
-		if (
-			previous !== undefined &&
-			(previous.endpoint !== source.endpoint ||
-				previous.deploymentId !== source.deploymentId)
-		)
+	if (explicit || !resolver) {
+		if (expectedSource)
 			throw new SubgraphUnavailableError("source-changed", chainId);
-		return source.endpoint;
+		return { endpoint: explicit || undefined };
 	}
-	return undefined;
+	const source = { ...(await resolver.resolve(chainId, capability)) };
+	if (!nonempty(source?.endpoint) || !nonempty(source?.deploymentId))
+		throw new SubgraphUnavailableError("invalid", chainId);
+	if (
+		expectedSource &&
+		(expectedSource.endpoint !== source.endpoint ||
+			expectedSource.deploymentId !== source.deploymentId)
+	)
+		throw new SubgraphUnavailableError("source-changed", chainId);
+	const previous = previousSources?.get(chainId);
+	previousSources?.set(chainId, { ...source });
+	// Advisory for simple readers; multi-read operations supply their own expectedSource.
+	if (
+		previous !== undefined &&
+		(previous.endpoint !== source.endpoint ||
+			previous.deploymentId !== source.deploymentId)
+	)
+		throw new SubgraphUnavailableError("source-changed", chainId);
+	return { endpoint: source.endpoint, source };
 }
 
 /** Catalog-backed queries must identify the deployment that actually answered, on every page. */
@@ -317,15 +353,27 @@ export function validateSubgraphDeployment(
 }
 
 /** A failed chain must not reject requests for unrelated catalog identities. */
-export function createSubgraphCallBundler<K extends { chainId: number }, V>(
-	batch: (keys: K[]) => Promise<V[]>,
-): (key: K) => Promise<V> {
-	const chains = new Map<number, (key: K) => Promise<V>>();
+export function createSubgraphCallBundler<
+	K extends {
+		chainId: number;
+		withSource?: boolean;
+		expectedSource?: SubgraphSource;
+	},
+	V,
+>(batch: (keys: K[]) => Promise<V[]>): (key: K) => Promise<V> {
+	const chains = new Map<string, (key: K) => Promise<V>>();
 	return (key) => {
-		let load = chains.get(key.chainId);
+		// Expectations are part of batching identity: a stale reader cannot reject a fresh reader.
+		const identity = JSON.stringify([
+			key.chainId,
+			!!key.withSource,
+			key.expectedSource?.endpoint,
+			key.expectedSource?.deploymentId,
+		]);
+		let load = chains.get(identity);
 		if (!load) {
 			load = createCallBundler(batch);
-			chains.set(key.chainId, load);
+			chains.set(identity, load);
 		}
 		return load(key);
 	};

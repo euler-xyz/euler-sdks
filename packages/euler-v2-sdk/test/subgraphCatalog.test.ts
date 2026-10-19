@@ -693,3 +693,312 @@ describe("custom query pipelines and deadline", () => {
 		expect(fetch.mock.calls[0]).toBeDefined();
 	});
 });
+
+describe("caller-owned source provenance", () => {
+	const first = { endpoint: "/graph-a", deploymentId: "deployment-a" };
+	const second = { endpoint: "/graph-b", deploymentId: "deployment-b" };
+	const otherAddress = "0x0000000000000000000000000000000000000101";
+	const setup = (buildQuery?: BuildQueryFn) => {
+		let current = first;
+		const resolver = { resolve: vi.fn(async () => current) };
+		const urls: Record<number, string | false> = {};
+		const account = new AccountVaultsSubgraphAdapter(
+			{ subgraphURLs: urls, resolver },
+			buildQuery,
+		);
+		const vault = new VaultTypeSubgraphAdapter(
+			{ subgraphURLs: urls, resolver },
+			buildQuery,
+		);
+		const graph = vi
+			.spyOn(globalThis, "fetch")
+			.mockImplementation(async (_url, init) => {
+				const ids = JSON.parse(String(init?.body)).variables.ids as string[];
+				return json({
+					data: {
+						_meta: { deployment: current.deploymentId },
+						trackingActiveAccounts: [],
+						vaults: ids.map((id) => ({ id, factory: address })),
+					},
+				});
+			});
+		return {
+			account,
+			vault,
+			urls,
+			resolver,
+			graph,
+			change: (source = second) => {
+				current = source;
+			},
+		};
+	};
+
+	it.each([
+		"account",
+		"vault",
+	] as const)("keeps %s poll protection after an unrelated read consumes the shared notice", async (kind) => {
+		const { account, vault, graph, change } = setup();
+		const read = (
+			target: typeof address | typeof otherAddress,
+			expectedSource?: typeof first,
+		) =>
+			kind === "account"
+				? account.fetchAccountVaultsWithSource(1, target, { expectedSource })
+				: vault.fetchVaultFactoriesWithSource(1, [target], { expectedSource });
+		const simple = (target: typeof address | typeof otherAddress) =>
+			kind === "account"
+				? account.fetchAccountVaults(1, target)
+				: vault.fetchVaultFactories(1, [target]);
+		await simple(address);
+		const baseline = await read(address);
+		expect(baseline.source).toEqual(first);
+		change();
+		await expect(simple(otherAddress)).rejects.toMatchObject({
+			reason: "source-changed",
+		});
+		await simple(otherAddress);
+		const count = graph.mock.calls.length;
+		await expect(read(address, baseline.source)).rejects.toMatchObject({
+			reason: "source-changed",
+		});
+		await expect(read(address, baseline.source)).rejects.toMatchObject({
+			reason: "source-changed",
+		});
+		expect(graph).toHaveBeenCalledTimes(count);
+		const restarted = await read(address);
+		expect(restarted.source).toEqual(second);
+		await expect(read(address, restarted.source)).resolves.toMatchObject({
+			source: second,
+		});
+	});
+
+	it.each([
+		"endpoint",
+		"deploymentId",
+	] as const)("checks caller-owned %s independently and isolates conflicting batched expectations", async (field) => {
+		const wrapped = vi.fn();
+		const buildQuery: BuildQueryFn = (_name, fn) =>
+			((...args: Parameters<typeof fn>) => {
+				wrapped();
+				return fn(...args);
+			}) as typeof fn;
+		const { account, vault, graph, change } = setup(buildQuery);
+		const baseline = await account.fetchAccountVaultsWithSource(1, address);
+		const next = { ...first, [field]: second[field] };
+		change(next);
+		const results = await Promise.allSettled([
+			account.fetchAccountVaultsWithSource(1, address, {
+				expectedSource: baseline.source,
+			}),
+			account.fetchAccountVaultsWithSource(1, address, {
+				expectedSource: next,
+			}),
+			account.fetchAccountVaultsWithSource(1, otherAddress, {
+				expectedSource: { ...next },
+			}),
+			vault.fetchVaultFactoriesWithSource(1, [address], {
+				expectedSource: baseline.source,
+			}),
+			vault.fetchVaultFactoriesWithSource(1, [address], {
+				expectedSource: next,
+			}),
+			vault.fetchVaultFactoriesWithSource(1, [otherAddress], {
+				expectedSource: { ...next },
+			}),
+		]);
+		expect(results.map((result) => result.status)).toEqual([
+			"rejected",
+			"fulfilled",
+			"fulfilled",
+			"rejected",
+			"fulfilled",
+			"fulfilled",
+		]);
+		for (const index of [0, 3])
+			expect(results[index]).toMatchObject({
+				reason: { reason: "source-changed" },
+			});
+		for (const index of [1, 2, 4, 5])
+			expect(results[index]).toMatchObject({ value: { source: next } });
+		expect(graph).toHaveBeenCalledTimes(3);
+		expect(wrapped).not.toHaveBeenCalled();
+	});
+
+	it("keeps explicit transport and wrappers, and rejects expectations when an explicit override takes over", async () => {
+		const wrapped = vi.fn();
+		const buildQuery: BuildQueryFn = (name, fn) =>
+			((...args: Parameters<typeof fn>) => {
+				wrapped(name);
+				return fn(...args);
+			}) as typeof fn;
+		const { account, vault, urls, resolver, graph } = setup(buildQuery);
+		const baseline = await account.fetchAccountVaultsWithSource(1, address);
+		urls[1] = "/fork-proxy";
+		graph.mockImplementation(async () =>
+			json({ data: { trackingActiveAccounts: [], vaults: [] } }),
+		);
+		await expect(
+			account.fetchAccountVaultsWithSource(1, address),
+		).resolves.toEqual({ value: {} });
+		await expect(
+			vault.fetchVaultFactoriesWithSource(1, [address]),
+		).resolves.toEqual({ value: [] });
+		expect(wrapped.mock.calls.map(([name]) => name)).toEqual([
+			"queryAccountVaults",
+			"queryVaultFactories",
+		]);
+		expect(resolver.resolve).toHaveBeenCalledTimes(1);
+		for (const [, init] of graph.mock.calls.slice(1))
+			expect(JSON.parse(String(init?.body)).query).not.toContain("_meta");
+		await expect(
+			account.fetchAccountVaultsWithSource(1, address, {
+				expectedSource: baseline.source,
+			}),
+		).rejects.toMatchObject({ reason: "source-changed" });
+		await expect(
+			vault.fetchVaultFactoriesWithSource(1, [address], {
+				expectedSource: baseline.source,
+			}),
+		).rejects.toMatchObject({ reason: "source-changed" });
+		expect(graph).toHaveBeenCalledTimes(3);
+		urls[1] = false;
+		await expect(
+			account.fetchAccountVaultsWithSource(1, address),
+		).rejects.toMatchObject({ reason: "disabled" });
+		await expect(
+			vault.fetchVaultFactoriesWithSource(1, [address]),
+		).rejects.toMatchObject({ reason: "disabled" });
+		expect(graph).toHaveBeenCalledTimes(3);
+	});
+
+	it.each([
+		"setter",
+		"property",
+	] as const)("honors custom query %s overrides without claiming provenance", async (method) => {
+		const { account, vault, resolver, graph, urls } = setup();
+		urls[1] = false;
+		const accountQuery = vi.fn(async () => ({
+			data: { trackingActiveAccount: null },
+		}));
+		const vaultQuery = vi.fn(async () => ({ id: address, factory: address }));
+		if (method === "setter") {
+			account.setQueryAccountVaults(accountQuery);
+			vault.setQueryVaultFactories(vaultQuery);
+		} else {
+			account.queryAccountVaults = accountQuery;
+			vault.queryVaultFactories = vaultQuery;
+		}
+		await expect(
+			account.fetchAccountVaultsWithSource(1, address),
+		).resolves.toEqual({ value: {} });
+		await expect(
+			vault.fetchVaultFactoriesWithSource(1, [address]),
+		).resolves.toEqual({ value: [{ id: address, factory: address }] });
+		await expect(
+			account.fetchAccountVaultsWithSource(1, address, {
+				expectedSource: first,
+			}),
+		).rejects.toMatchObject({ reason: "source-changed" });
+		await expect(
+			vault.fetchVaultFactoriesWithSource(1, [address], {
+				expectedSource: first,
+			}),
+		).rejects.toMatchObject({ reason: "source-changed" });
+		expect(accountQuery).toHaveBeenCalledTimes(1);
+		expect(vaultQuery).toHaveBeenCalledTimes(1);
+		expect(resolver.resolve).not.toHaveBeenCalled();
+		expect(graph).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		true,
+		false,
+	])("prioritizes explicit disable for built-in reads with resolver=%s", async (hasResolver) => {
+		const graph = graphFetch();
+		const resolver = { resolve: vi.fn(async () => first) };
+		const config = {
+			subgraphURLs: { 1: false as const },
+			...(hasResolver ? { resolver } : {}),
+		};
+		const account = new AccountVaultsSubgraphAdapter(config);
+		const vault = new VaultTypeSubgraphAdapter(config);
+		for (const expectedSource of [undefined, first]) {
+			await expect(
+				account.fetchAccountVaultsWithSource(1, address, { expectedSource }),
+			).rejects.toMatchObject({ reason: "disabled" });
+			await expect(
+				vault.fetchVaultFactoriesWithSource(1, [address], { expectedSource }),
+			).rejects.toMatchObject({ reason: "disabled" });
+			await expect(
+				vault.fetchVaultFactoriesWithSource(1, [], { expectedSource }),
+			).rejects.toMatchObject({ reason: "disabled" });
+		}
+		expect(graph).not.toHaveBeenCalled();
+		expect(resolver.resolve).not.toHaveBeenCalled();
+	});
+
+	it("does not claim catalog provenance without a resolver", async () => {
+		const graph = graphFetch();
+		const account = new AccountVaultsSubgraphAdapter({
+			subgraphURLs: { 1: "/direct" },
+		});
+		const vault = new VaultTypeSubgraphAdapter({
+			subgraphURLs: { 1: "/direct" },
+		});
+		await expect(
+			account.fetchAccountVaultsWithSource(1, address),
+		).resolves.toEqual({ value: {} });
+		await expect(
+			vault.fetchVaultFactoriesWithSource(1, [address]),
+		).resolves.toEqual({ value: [] });
+		await expect(
+			account.fetchAccountVaultsWithSource(1, address, {
+				expectedSource: first,
+			}),
+		).rejects.toMatchObject({ reason: "source-changed" });
+		await expect(
+			vault.fetchVaultFactoriesWithSource(1, [address], {
+				expectedSource: first,
+			}),
+		).rejects.toMatchObject({ reason: "source-changed" });
+		expect(graph).toHaveBeenCalledTimes(2);
+	});
+
+	it("validates every source-aware page and does not return a partial result", async () => {
+		const { account, vault, graph } = setup();
+		const accounts = Array.from({ length: 1001 }, (_, i) =>
+			getAddress(`0x${(BigInt(i + 1) << 8n).toString(16).padStart(40, "0")}`),
+		);
+		let page = 0;
+		graph.mockImplementation(async () =>
+			json({
+				data: {
+					_meta: {
+						deployment: ++page % 2 ? first.deploymentId : second.deploymentId,
+					},
+					trackingActiveAccounts: [],
+					vaults: [],
+				},
+			}),
+		);
+		const results = await Promise.allSettled(
+			accounts.map((target) =>
+				account.fetchAccountVaultsWithSource(1, target, {
+					expectedSource: first,
+				}),
+			),
+		);
+		for (const result of results)
+			expect(result).toMatchObject({
+				status: "rejected",
+				reason: { reason: "source-changed" },
+			});
+		await expect(
+			vault.fetchVaultFactoriesWithSource(1, accounts, {
+				expectedSource: first,
+			}),
+		).rejects.toMatchObject({ reason: "source-changed" });
+		expect(graph).toHaveBeenCalledTimes(4);
+	});
+});
