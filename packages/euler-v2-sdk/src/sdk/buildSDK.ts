@@ -1,3 +1,4 @@
+import { createSubgraphCatalogResolver } from "../utils/subgraphCatalog.js";
 import type { Address } from "viem";
 import { EulerSDK } from "./sdk.js";
 import {
@@ -616,22 +617,29 @@ export async function buildEulerSDK<
 			},
 		},
 	);
-	const accountVaultsSubgraphUrls = mergeNumberRecords(
-		defaultAccountVaultsAdapterConfig.subgraphURLs,
+	const catalogResolver = config?.subgraphCatalog
+		? createSubgraphCatalogResolver(config.subgraphCatalog)
+		: undefined;
+	const accountResolver =
+		accountVaultsAdapterConfig?.resolver ?? catalogResolver;
+	const accountVaultsSubgraphUrls = mergeNumberRecords<string | false>(
+		accountResolver
+			? undefined
+			: defaultAccountVaultsAdapterConfig.subgraphURLs,
 		envConfig.accountVaultsSubgraphUrls,
 		accountVaultsAdapterConfig?.subgraphURLs,
 		config?.accountVaultsSubgraphUrls,
 	);
 	const canBuildAccountV3 = !!accountV3Config.endpoint;
 	const canBuildAccountOnchain =
-		Object.keys(accountVaultsSubgraphUrls).length > 0;
+		!!accountResolver || Object.keys(accountVaultsSubgraphUrls).length > 0;
 
 	let accountOnchainAdapter: AccountOnchainAdapter | undefined;
 	const buildAccountV3 = () =>
 		new AccountV3Adapter(accountV3Config, resolvedBuildQuery);
 	const buildAccountOnchain = () => {
 		const accountVaultsAdapter = new AccountVaultsSubgraphAdapter(
-			{ subgraphURLs: accountVaultsSubgraphUrls },
+			{ subgraphURLs: accountVaultsSubgraphUrls, resolver: accountResolver },
 			resolvedBuildQuery,
 		);
 		accountOnchainAdapter = new AccountOnchainAdapter(
@@ -924,8 +932,14 @@ export async function buildEulerSDK<
 			return resolvedVaultTypeAdapterKind;
 		})();
 
-		const vaultTypeSubgraphUrls = mergeNumberRecords(
-			defaultAccountVaultsAdapterConfig.subgraphURLs,
+		const vaultTypeResolver =
+			(vaultTypeAdapterConfig && "subgraphURLs" in vaultTypeAdapterConfig
+				? vaultTypeAdapterConfig.resolver
+				: undefined) ?? catalogResolver;
+		const vaultTypeSubgraphUrls = mergeNumberRecords<string | false>(
+			vaultTypeResolver
+				? undefined
+				: defaultAccountVaultsAdapterConfig.subgraphURLs,
 			envConfig.vaultTypeSubgraphUrls,
 			vaultTypeAdapterConfig && "subgraphURLs" in vaultTypeAdapterConfig
 				? vaultTypeAdapterConfig.subgraphURLs
@@ -969,12 +983,12 @@ export async function buildEulerSDK<
 		);
 		const canBuildVaultTypeV3 = !!vaultTypeV3Config.endpoint;
 		const canBuildVaultTypeSubgraph =
-			Object.keys(vaultTypeSubgraphUrls).length > 0;
+			!!vaultTypeResolver || Object.keys(vaultTypeSubgraphUrls).length > 0;
 		const buildVaultTypeV3 = () =>
 			new VaultTypeV3Adapter(vaultTypeV3Config, resolvedBuildQuery);
 		const buildVaultTypeSubgraph = () =>
 			new VaultTypeSubgraphAdapter(
-				{ subgraphURLs: vaultTypeSubgraphUrls },
+				{ subgraphURLs: vaultTypeSubgraphUrls, resolver: vaultTypeResolver },
 				resolvedBuildQuery,
 			);
 

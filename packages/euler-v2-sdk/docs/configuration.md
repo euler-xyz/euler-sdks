@@ -161,3 +161,128 @@ Most services ship with built-in default URLs for V3 APIs, subgraphs, labels, sw
 ## Service overrides
 
 Any built-in service can be replaced via `servicesOverrides`. This is useful for testing or when you need a custom implementation of a specific service. See [SDK Architecture Overview](./sdk-architecture-overview.md) for more on the dependency injection model.
+
+
+## Subgraph sources for forks
+
+Forks can use **direct per-chain GraphQL URLs**, an **opt-in catalog**, or both. Direct URLs remain first-class: no catalog publication or `_meta` deployment identity is required for them. The endpoints must implement the account-discovery or factory-lookup GraphQL schema used by the respective SDK adapter.
+
+For each chain and purpose, endpoint selection follows this priority:
+
+1. `config.accountVaultsSubgraphUrls` or `config.vaultTypeSubgraphUrls` entry.
+2. `accountVaultsAdapterConfig.subgraphURLs` or `vaultTypeAdapterConfig.subgraphURLs` entry.
+3. The matching `EULER_SDK_ACCOUNT_VAULTS_SUBGRAPH_URL_<chainId>` or `EULER_SDK_VAULT_TYPE_SUBGRAPH_URL_<chainId>` entry.
+4. The purpose-specific resolver, otherwise the shared `config.subgraphCatalog` resolver when enabled; without either resolver, the SDK's bundled subgraph URL.
+
+Maps merge per chain; `{}` does not clear lower-priority entries. A `false` entry disables that purpose for that chain and rejects with `SubgraphUnavailableError` reason `disabled`. Omitting `subgraphCatalog` or setting it to `false` disables catalog discovery **but retains bundled fallback for unmapped chains**. A supplied resolver suppresses bundled URLs for its purpose, and resolver errors propagate without falling back to those URLs. Explicit map entries still win over that resolver, including entries from the environment.
+
+These settings control the built-in subgraph adapters. Select `accountServiceAdapter: "onchain"` and `vaultTypeAdapter: "subgraph"` to use them directly; a V3-only service does not use them, and a `"fallback"` service tries V3 first. See [Fallback System](./fallback-system.md). `accountVaultsAdapterConfig.resolver` overrides the shared resolver for account discovery; for vault lookup use `vaultTypeAdapterConfig: { subgraphURLs: {}, resolver }`. The `subgraphURLs` property selects the subgraph variant of that adapter config. `servicesOverrides.accountService` and `servicesOverrides.vaultMetaService` remain authoritative and own their data sources.
+
+### Direct URLs only, without bundled subgraph fallback
+
+Supply the fork's URLs and a shared resolver that rejects every unmapped chain. Despite the `subgraphCatalog` property name, this injected resolver performs **no catalog HTTP requests**. Requests for unspecified chains fail instead of reaching an Euler bundled subgraph.
+
+```typescript
+import {
+  buildEulerSDK,
+  SubgraphUnavailableError,
+  type SubgraphResolver,
+} from "@eulerxyz/euler-v2-sdk";
+
+const rejectUnmapped: SubgraphResolver = {
+  async resolve(chainId) {
+    throw new SubgraphUnavailableError("missing", chainId);
+  },
+};
+
+const sdk = await buildEulerSDK({
+  config: {
+    rpcUrls: { 1: "https://rpc.fork.example" },
+    accountServiceAdapter: "onchain",
+    vaultTypeAdapter: "subgraph",
+    accountVaultsSubgraphUrls: { 1: "https://graph.fork.example/accounts" },
+    vaultTypeSubgraphUrls: { 1: "https://graph.fork.example/factories" },
+    subgraphCatalog: { resolver: rejectUnmapped },
+  },
+});
+```
+
+Keep both subgraph environment-variable families unset, or set them only to fork-owned endpoints: environment entries are explicit URLs and bypass `rejectUnmapped`. Apply the same rule to any top-level adapter maps merged into these options. There is no global subgraph-off flag; use per-chain `false` entries or a rejecting resolver for unmapped chains.
+
+### Fork-owned catalog with optional direct overrides
+
+A fork can publish its own v1 catalog and use direct URLs for selected chains or purposes. Catalog discovery handles only the remaining chains; missing, invalid or retired catalog records reject without bundled fallback.
+
+```typescript
+import { buildEulerSDK } from "@eulerxyz/euler-v2-sdk";
+
+const sdk = await buildEulerSDK({
+  config: {
+    rpcUrls: { 1: "https://rpc.fork.example", 8453: "https://base-rpc.fork.example" },
+    accountServiceAdapter: "onchain",
+    vaultTypeAdapter: "subgraph",
+    subgraphCatalog: { url: "https://metadata.fork.example/catalog.v1.json" },
+    // Chain 1 bypasses catalog discovery; chain 8453 uses the fork's catalog.
+    accountVaultsSubgraphUrls: { 1: "https://graph.fork.example/accounts" },
+    vaultTypeSubgraphUrls: { 1: "https://graph.fork.example/factories" },
+  },
+});
+```
+
+Keep lower-priority adapter/environment maps fork-owned here too. To avoid metadata HTTP entirely while retaining catalog validation, supply the v1 object as `subgraphCatalog: { catalog: snapshot }`. See the catalog contract below for capabilities, identity checks, refresh and failure behavior.
+
+Both examples isolate **subgraph selection**, not all SDK traffic. Configure the fork's V3 endpoints or use [`disableV3: true`](./fallback-system.md#service-behavior), provide [custom labels](./labels.md#custom-labels-flows) when needed, and separately review [RPC configuration](#chains), [deployments and ABI sources](./config-through-env.md#pricing-swaps-and-euler-interfaces), and other [service defaults](./config-through-env.md). A custom `deploymentsUrl` changes deployment metadata without changing the ABI branch. Disabling V3 or catalog discovery does not disable every Euler-hosted service.
+
+## Opt-in subgraph catalog
+
+`config.subgraphCatalog` enables lazy endpoint discovery for built-in account position discovery and vault factory lookup. Omit it or set it to `false` to retain bundled compatibility defaults for purposes without an injected resolver. It does not enable RPC chains or change V3, labels, chain lifecycle, deployment or ABI sources.
+
+```typescript
+const sdk = await buildEulerSDK({
+  config: {
+    subgraphCatalog: { url: "https://operator.example/catalog.json" },
+    accountVaultsSubgraphUrls: { 1: "/api/account-subgraph", 8453: false },
+    vaultTypeSubgraphUrls: { 1: "/api/factory-subgraph", 8453: false },
+  },
+});
+```
+
+The empty object `{}` selects `DEFAULT_SUBGRAPH_CATALOG_URL`, currently a **future publication target** at `https://raw.githubusercontent.com/euler-xyz/euler-subgraph/catalog/v1/catalog.json`. This SDK change does not publish that catalog. Use an operator URL or supplied snapshot until publication is available.
+
+Each purpose resolves independently: `config` URL entries override its top-level adapter URL entries, which override `EULER_SDK_ACCOUNT_VAULTS_SUBGRAPH_URL_<chainId>` or `EULER_SDK_VAULT_TYPE_SUBGRAPH_URL_<chainId>`. A `false` map entry explicitly disables that purpose and throws `SubgraphUnavailableError` with reason `disabled`. Empty maps retain merging behavior. With catalog discovery enabled, absent explicit entries resolve from the catalog; bundled URLs do not substitute for missing, invalid or retired records. Without catalog discovery or a purpose-specific resolver, bundled defaults and existing missing-URL behavior apply. Explicit URLs retain HTTP, browser-relative and operator-authenticated transports.
+
+`subgraphCatalog` accepts `catalog` (a supplied v1 snapshot), `url`, `fetch` (metadata transport), `resolver`, `channel`, `freshMs`, `maxAgeMs`, `retryMs`, `timeoutMs`, and `now`. `resolver` takes precedence over `catalog`, which takes precedence over URL/fetch. A supplied snapshot is static for that resolver instance and makes no metadata request. The `SubgraphResolver.resolve(chainId, capability)` contract returns `{ endpoint, deploymentId }` or rejects; injected resolvers own their refresh/error policy. Purpose-specific `accountVaultsAdapterConfig.resolver` and `vaultTypeAdapterConfig.resolver` override the shared catalog resolver. Custom account/vault services remain authoritative. SDK construction and explicitly mapped requests do not fetch catalog metadata.
+
+URL-backed metadata is fresh for 60 seconds, may use last-good data for at most 5 minutes from successful fetch/parse, and backs off failed refreshes for 10 seconds. Requests time out after 10 seconds. Concurrent refreshes share one request; failures never extend last-good age. Cache state belongs to one resolver instance. Fresh valid retirement or invalid identity metadata replaces the previous snapshot immediately. Unknown families/channels are ignored, duplicate or invalid supported identities are quarantined, and malformed envelopes/unknown schema versions fail validation. Public catalog endpoints require HTTPS without credentials, query or fragment; this restriction does not apply to explicit operator URLs or injected resolvers.
+
+Stable is the default channel; candidate selection requires `channel: "candidate"`. The two capabilities are `account-vault-discovery` and `vault-factory-lookup`; neither implies Activity, prices or APYs. Catalog `deploymentId` identifies the published deployment, not its current health.
+
+Catalog-backed discovery queries bypass `buildQuery` result caching so metadata freshness and retirement are evaluated on each discovery operation. Explicit URL-map query wrappers and RPC query caching remain enabled. Every batched/paginated discovery read uses one resolved endpoint per chain. Catalog-backed GraphQL requests include `_meta { deployment }` and validate the returned deployment identity on every page. Missing identity is invalid and a mismatch rejects with `source-changed`. Explicit URL maps keep their existing schema requirements and operator transport semantics; they do not require `_meta`.
+
+Simple `fetchAccountVaults` / `fetchVaultFactories` calls keep their existing return shapes. Their adapter-wide `source-changed` notice is advisory: an unrelated read can receive that notice first. It does not protect a baseline held by a separate polling operation. Applications must likewise avoid indefinitely caching outer service calls across metadata changes.
+
+For a multi-read operation, the exported `AccountVaultsSubgraphAdapter.fetchAccountVaultsWithSource(chainId, account, options?)` and `VaultTypeSubgraphAdapter.fetchVaultFactoriesWithSource(chainId, addresses, options?)` methods return `SubgraphReadResult<T>` (`{ value, source? }`). `SubgraphReadOptions.expectedSource` accepts the baseline's `{ endpoint, deploymentId }`. Each expected-source read independently rejects with `source-changed` before querying if the resolver selects a different endpoint or deployment. Concurrent reads with different expectations are isolated, and another reader cannot consume this protection. A baseline read without an expectation uses the current source without the adapter-wide notice.
+
+```typescript
+import {
+  AccountVaultsSubgraphAdapter,
+  createSubgraphCatalogResolver,
+} from "@eulerxyz/euler-v2-sdk";
+
+const discovery = new AccountVaultsSubgraphAdapter({
+  subgraphURLs: {},
+  resolver: createSubgraphCatalogResolver({
+    url: "https://operator.example/catalog.json",
+  }),
+});
+const baseline = await discovery.fetchAccountVaultsWithSource(chainId, account);
+if (!baseline.source) throw new Error("Catalog provenance is required");
+const next = await discovery.fetchAccountVaultsWithSource(chainId, account, {
+  expectedSource: baseline.source,
+});
+// Compare baseline.value with next.value only after this read succeeds.
+```
+
+Keep the baseline and its source together for the whole operation. On `source-changed`, discard that baseline and restart the operation with a new source-aware baseline; repeatedly retrying the same expectation keeps rejecting. These methods verify endpoint/deployment identity, not indexed block freshness, transaction inclusion, or finality. The guarantee applies to catalog/resolver-backed built-in queries. Explicit URL maps and custom query overrides retain their transport behavior and return no source. Supplying `expectedSource` when provenance cannot be verified rejects with `source-changed`; it never silently drops the expectation. A built-in query explicitly disabled with `false` rejects with `disabled`, including when an expectation is supplied; custom query overrides own their transport behavior. These adapter methods are opt-in and do not change top-level service return types.
+
+Unavailable discovery rejects instead of reporting empty positions. `SubgraphUnavailableError.reason` distinguishes `invalid`, `missing`, `retired`, `unsupported-capability`, `disabled`, `source-failed`, and `source-changed`. Existing HTTP/GraphQL response validation still applies to the selected endpoint.

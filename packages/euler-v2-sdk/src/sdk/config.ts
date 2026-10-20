@@ -1,3 +1,4 @@
+import type { SubgraphCatalogConfig } from "../utils/subgraphCatalog.js";
 import { getAddress, type Address } from "viem";
 import type { AccountServiceAdapter } from "../services/accountService/accountServiceConfig.js";
 import type { EVaultServiceAdapter } from "../services/vaults/eVaultService/eVaultServiceConfig.js";
@@ -7,6 +8,8 @@ export type VaultTypeAdapterKind = "v3" | "subgraph" | "fallback";
 export type RewardsServiceAdapterKind = "v3" | "direct" | "fallback";
 
 export interface EulerSDKConfig {
+	/** Opt-in discovery; omitted/false retains bundled compatibility defaults. */
+	subgraphCatalog?: SubgraphCatalogConfig | false;
 	rpcUrls?: Record<number, string>;
 	v3ApiUrl?: string;
 	v3ApiKey?: string;
@@ -20,7 +23,7 @@ export interface EulerSDKConfig {
 	accountV3ApiUrl?: string;
 	accountV3ApiKey?: string;
 	accountV3ForceFresh?: boolean;
-	accountVaultsSubgraphUrls?: Record<number, string>;
+	accountVaultsSubgraphUrls?: Record<number, string | false>;
 
 	eVaultServiceAdapter?: EVaultServiceAdapter;
 	eVaultV3ApiUrl?: string;
@@ -35,7 +38,7 @@ export interface EulerSDKConfig {
 	vaultTypeV3ApiUrl?: string;
 	vaultTypeV3ApiKey?: string;
 	vaultTypeV3TypeMap?: Record<string, string>;
-	vaultTypeSubgraphUrls?: Record<number, string>;
+	vaultTypeSubgraphUrls?: Record<number, string | false>;
 
 	intrinsicApyV3ApiUrl?: string;
 	intrinsicApyV3ApiKey?: string;

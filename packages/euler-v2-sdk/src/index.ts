@@ -75,3 +75,5 @@ export * from "./utils/blockPin.js";
 export * from "./utils/readMany.js";
 export { encodeEVCBatch } from "./utils/batch.js";
 export * from "./utils/lens/index.js";
+
+export * from "./utils/subgraphCatalog.js";
