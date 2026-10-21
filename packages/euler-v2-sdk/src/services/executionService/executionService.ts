@@ -123,6 +123,7 @@ import type {
 	PlanDepositArgs,
 	PlanDepositWithSwapFromWalletArgs,
 	PlanLiquidationArgs,
+	PlanLiquidationWithMarginCollateralArgs,
 	PlanMigrateSameAssetCollateralArgs,
 	PlanMigrateSameAssetDebtArgs,
 	PlanMintArgs,
@@ -598,6 +599,9 @@ export interface IExecutionService<
 	planRedeem(args: PlanRedeemArgs): TransactionPlan;
 	planBorrow(args: PlanBorrowArgs): TransactionPlan;
 	planLiquidation(args: PlanLiquidationArgs): TransactionPlan;
+	planLiquidationWithMarginCollateral(
+		args: PlanLiquidationWithMarginCollateralArgs,
+	): TransactionPlan;
 	planRepayFromWallet(args: PlanRepayFromWalletArgs): TransactionPlan;
 	planRepayFromDeposit(args: PlanRepayFromDepositArgs): TransactionPlan;
 	planRepayWithSwap(args: PlanRepayWithSwapArgs): TransactionPlan;
@@ -2170,7 +2174,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			const normalizedController = getAddress(controller);
 			if (normalizedController === normalizedControllerToKeep) return;
 			disabledControllers.add(normalizedController);
-			items.push(this.encodeDisableController(normalizedController, subAccount));
+			items.push(
+				this.encodeDisableController(normalizedController, subAccount),
+			);
 		};
 
 		if (controllers.length === 0) {
@@ -2491,9 +2497,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			collateral && collateral.amount > 0n
 				? cleanup.disabledCollaterals.has(getAddress(collateral.vault)) ||
 					!(
-							account?.isCollateralEnabled(borrowAccount, collateral.vault) ??
-							false
-						)
+						account?.isCollateralEnabled(borrowAccount, collateral.vault) ??
+						false
+					)
 				: false;
 
 		// Check if controller needs to be enabled
@@ -2502,7 +2508,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			account?.getCurrentController(borrowAccount);
 		const currentController =
 			currentControllerBeforeCleanup &&
-			!cleanup.disabledControllers.has(getAddress(currentControllerBeforeCleanup))
+			!cleanup.disabledControllers.has(
+				getAddress(currentControllerBeforeCleanup),
+			)
 				? currentControllerBeforeCleanup
 				: undefined;
 		const enableController =
@@ -2610,6 +2618,63 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		plan.push(...this.convertBatchItemsToPlan(batchItems, "liquidation"));
 
 		return plan;
+	}
+
+	/**
+	 * Builds a liquidation plan that first supplies margin collateral into the
+	 * liquidator sub-account, then liquidates without planning a duplicate
+	 * collateral enable for the same vault.
+	 *
+	 * @param args - Liquidation with margin collateral plan arguments
+	 * @param args.marginCollateral - Collateral asset supplied from the wallet before liquidation
+	 * @returns Transaction plan with margin collateral approval/deposit plus liquidation approval/batch
+	 */
+	planLiquidationWithMarginCollateral(
+		args: PlanLiquidationWithMarginCollateralArgs,
+	): TransactionPlan {
+		const {
+			account,
+			collateral,
+			liquidatorSubAccountAddress,
+			marginCollateral,
+		} = args;
+
+		if (marginCollateral.amount <= 0n) {
+			return this.planLiquidation(args);
+		}
+
+		const depositPlan = this.planDeposit({
+			account,
+			vault: marginCollateral.vault,
+			amount: marginCollateral.amount,
+			receiver: liquidatorSubAccountAddress,
+			asset: marginCollateral.asset,
+			enableCollateral: true,
+			wrappedNativeInfo: marginCollateral.wrappedNativeInfo,
+		});
+
+		const accountWithMarginCollateral = Object.create(
+			account,
+		) as Account<IHasVaultAddress>;
+		accountWithMarginCollateral.isCollateralEnabled = (
+			subAccount: Address,
+			vault: Address,
+		) => {
+			if (
+				getAddress(subAccount) === getAddress(liquidatorSubAccountAddress) &&
+				getAddress(vault) === getAddress(collateral)
+			) {
+				return true;
+			}
+			return account.isCollateralEnabled(subAccount, vault);
+		};
+
+		const liquidationPlan = this.planLiquidation({
+			...args,
+			account: accountWithMarginCollateral,
+		});
+
+		return this.mergePlans([depositPlan, liquidationPlan]);
 	}
 
 	/**
@@ -3121,7 +3186,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			account?.getCurrentController(borrowAccount);
 		const currentController =
 			currentControllerBeforeCleanup &&
-			!cleanup.disabledControllers.has(getAddress(currentControllerBeforeCleanup))
+			!cleanup.disabledControllers.has(
+				getAddress(currentControllerBeforeCleanup),
+			)
 				? currentControllerBeforeCleanup
 				: undefined;
 
@@ -3739,7 +3806,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			account?.getCurrentController(receiver);
 		const currentController =
 			currentControllerBeforeCleanup &&
-			!cleanup.disabledControllers.has(getAddress(currentControllerBeforeCleanup))
+			!cleanup.disabledControllers.has(
+				getAddress(currentControllerBeforeCleanup),
+			)
 				? currentControllerBeforeCleanup
 				: undefined;
 
@@ -3908,7 +3977,9 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			account?.getCurrentController(receiver);
 		const currentController =
 			currentControllerBeforeCleanup &&
-			!cleanup.disabledControllers.has(getAddress(currentControllerBeforeCleanup))
+			!cleanup.disabledControllers.has(
+				getAddress(currentControllerBeforeCleanup),
+			)
 				? currentControllerBeforeCleanup
 				: undefined;
 
