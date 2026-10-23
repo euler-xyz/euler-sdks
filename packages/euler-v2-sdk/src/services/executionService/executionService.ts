@@ -8,6 +8,7 @@ import {
 	type Hex,
 	maxUint160,
 	maxUint256,
+	zeroAddress,
 	type StateOverride,
 } from "viem";
 import type {
@@ -16,7 +17,6 @@ import type {
 	AddressOrAccount,
 	IHasVaultAddress,
 } from "../../entities/Account.js";
-import type { AssetAllowanceRead } from "../../entities/Wallet.js";
 import type { EulerPlugin, PluginPrefetchData } from "../../plugins/types.js";
 import { resolveBorrowCollateralPositions } from "../../utils/accountPositionClassification.js";
 import type { IDeploymentService } from "../deploymentService/index.js";
@@ -157,6 +157,12 @@ import {
 	isEVCBatchOperation,
 } from "./executionServiceTypes.js";
 import {
+	assessApproval,
+	withApprovalTransferBehaviors,
+} from "./approvalRouting.js";
+
+import {
+	assertSingleEvcTransaction,
 	deriveStateOverrides,
 	type EstimateGasForTransactionPlanOptions,
 	type ExecutionSimulationContext,
@@ -780,6 +786,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		options?: SimulateBatchOptions & { prefetch?: PluginPrefetchData },
 	): Promise<SimulateBatchResult<TVaultEntity>> {
 		assertNoCowSwapPlanItems(transactionPlan, "simulateTransactionPlan");
+		assertSingleEvcTransaction(transactionPlan);
 		const processedPlan = await this.processPlanPlugins(
 			transactionPlan,
 			account,
@@ -808,6 +815,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		options?: SimulateBatchOptions,
 	): Promise<SimulateBatchResult<TVaultEntity>> {
 		assertNoCowSwapPlanItems(prepared.plan, "simulatePreparedTransactionPlan");
+		assertSingleEvcTransaction(prepared.plan);
 		const owner = this.getAccountOwner(prepared.account);
 		return simulateTransactionPlan(
 			this.getSimulationContext(),
@@ -1724,7 +1732,23 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 					const key = `${getAddress(item.token)}:${getAddress(item.owner)}:${getAddress(item.spender)}`;
 					const existing = approvalByKey.get(key);
 					if (existing) {
+						const a = existing.transferBehavior;
+						const b = item.transferBehavior;
+						if (
+							a &&
+							b &&
+							(a.type !== b.type ||
+								(a.type !== "direct" &&
+									b.type !== "direct" &&
+									getAddress(a.permit2) !== getAddress(b.permit2)))
+						) {
+							throw new Error(
+								`Conflicting approval transfer behavior for ${item.spender}`,
+							);
+						}
+						existing.transferBehavior ??= b;
 						existing.amount += item.amount;
+						existing.amountIsExact = false;
 						existing.resolved = undefined;
 					} else {
 						const { resolved: _r, ...rest } = item;
@@ -1963,82 +1987,67 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 					amount: permit2Amount,
 				});
 
-				if (!walletAsset || !allowances) {
-					if (usePermit2) {
-						resolvedItems.push(makeApprove(permit2, maxUint256));
+				const assessment = assessApproval(approval, allowances, permit2);
+				const behavior = approval.transferBehavior;
+				const expiresSoon =
+					assessment.permit2Expiration !== undefined &&
+					assessment.permit2Expiration <=
+						Math.floor(Date.now() / 1000) + PERMIT2_EXPIRY_MARGIN_SECONDS;
+				const refreshPermit =
+					usePermit2 &&
+					assessment.route === "permit2" &&
+					assessment.direct !== "sufficient" &&
+					expiresSoon;
+				if (assessment.status === "sufficient" && !refreshPermit) {
+					approval.resolved = [];
+					continue;
+				}
+				if (!behavior) {
+					throw new Error(
+						`Unknown approval transfer behavior for ${spender}; supply requiredApproval.transferBehavior or use async resolution with recognized vault metadata.`,
+					);
+				}
+
+				const permit2Target =
+					behavior.type === "direct" ? zeroAddress : getAddress(behavior.permit2);
+				const needsPermit =
+					assessment.permit2ToSpender !== "sufficient" || expiresSoon;
+				const canUsePermit2 =
+					permit2Target !== zeroAddress &&
+					amount <= maxUint160 &&
+					(!needsPermit || permit2Target === getAddress(permit2));
+				if (usePermit2 && canUsePermit2) {
+					if (assessment.tokenToPermit2 !== "sufficient") {
+						addApproveWithOptionalReset(
+							permit2Target,
+							maxUint256,
+							assessment.tokenToPermit2Allowance,
+						);
+					}
+					if (needsPermit) {
 						resolvedItems.push(
 							makePermit2(spender, unlimitedApproval ? maxUint160 : amount),
 						);
-					} else {
-						resolvedItems.push(
-							makeApprove(spender, unlimitedApproval ? maxUint256 : amount),
+					}
+				} else {
+					// A direct approval cannot redirect Earn while its internal Permit2 allowance selects that route.
+					if (
+						behavior.type === "permit2WhenAuthorized" &&
+						assessment.route !== "direct"
+					) {
+						throw new Error(
+							`Approval policy conflict for ${spender}: the spender selects Permit2 or its route is unknown; repair its configured Permit2 allowances (usePermit2: ${usePermit2}, Permit2: ${behavior.permit2}).`,
 						);
 					}
-					approval.resolved = resolvedItems;
-					continue;
+					if (assessment.direct !== "sufficient") {
+						addApproveWithOptionalReset(
+							spender,
+							unlimitedApproval ? maxUint256 : amount,
+							assessment.directAllowance,
+						);
+					}
 				}
-
-				const failedReads = allowances.failedReads ?? [];
-				const readAllowance = (read: AssetAllowanceRead): bigint | undefined =>
-					failedReads.includes(read) ? undefined : allowances[read];
-				const assetForVault = readAllowance("assetForVault");
-
-				if (usePermit2) {
-					// A direct allowance that already covers the amount spares the Permit2 approve and signature.
-					if (assetForVault !== undefined && assetForVault >= amount) {
-						approval.resolved = [];
-						continue;
-					}
-
-					const assetForPermit2 = readAllowance("assetForPermit2");
-					const assetForVaultInPermit2 = readAllowance(
-						"assetForVaultInPermit2",
-					);
-					const permit2ExpirationTime = allowances.permit2ExpirationTime;
-					// Permit2 moves at most uint160 per transfer; the signed permit is capped to it.
-					const permit2Amount = amount > maxUint160 ? maxUint160 : amount;
-
-					const currentTime = Math.floor(Date.now() / 1000);
-					const isPermit2Expired =
-						permit2ExpirationTime > 0 &&
-						currentTime + PERMIT2_EXPIRY_MARGIN_SECONDS >=
-							permit2ExpirationTime;
-
-					const hasSufficientPermit2Allowance =
-						assetForPermit2 !== undefined && assetForPermit2 >= permit2Amount;
-					const hasSufficientVaultAllowance =
-						assetForVaultInPermit2 !== undefined &&
-						assetForVaultInPermit2 >= permit2Amount &&
-						!isPermit2Expired;
-
-					if (hasSufficientPermit2Allowance && hasSufficientVaultAllowance) {
-						approval.resolved = [];
-						continue;
-					}
-
-					if (!hasSufficientPermit2Allowance) {
-						addApproveWithOptionalReset(permit2, maxUint256, assetForPermit2);
-					}
-					resolvedItems.push(
-						makePermit2(spender, unlimitedApproval ? maxUint160 : amount),
-					);
-					approval.resolved = resolvedItems;
-				} else {
-					const needsDirectApproval =
-						assetForVault === undefined || assetForVault < amount;
-
-					if (!needsDirectApproval) {
-						approval.resolved = [];
-						continue;
-					}
-
-					addApproveWithOptionalReset(
-						spender,
-						unlimitedApproval ? maxUint256 : amount,
-						assetForVault,
-					);
-					approval.resolved = resolvedItems;
-				}
+				approval.resolved = resolvedItems;
 			}
 		}
 
@@ -2084,6 +2093,22 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			throw new Error(
 				"ExecutionService.resolveRequiredApprovals requires a walletService. Pass it to the ExecutionService constructor or call setWalletService().",
 			);
+		}
+
+		const enrichedPlan = await withApprovalTransferBehaviors(
+			this.getSimulationContext(),
+			chainId,
+			plan,
+		);
+		for (let i = 0; i < plan.length; i++) {
+			const item = plan[i];
+			const enriched = enrichedPlan[i];
+			if (
+				item?.type === "requiredApproval" &&
+				enriched?.type === "requiredApproval"
+			) {
+				item.transferBehavior = enriched.transferBehavior;
+			}
 		}
 
 		// Transform RequiredApprovals into AssetWithSpenders
@@ -2318,6 +2343,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 			owner: account.owner,
 			spender: vault,
 			amount: estimatedAssetAmount,
+			amountIsExact: false,
 		});
 
 		// Build EVC batch items

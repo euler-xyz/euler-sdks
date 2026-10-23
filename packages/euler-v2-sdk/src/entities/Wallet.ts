@@ -12,6 +12,8 @@ export type AssetAllowanceRead =
 	| "assetForVaultInPermit2";
 
 export interface AssetAllowances {
+	/** Contract used for both Permit2 allowance reads. Snapshots without this field use the chain deployment. */
+	permit2Address?: Address;
 	assetForVault: bigint;
 	assetForPermit2: bigint;
 	assetForVaultInPermit2: bigint;

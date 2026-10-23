@@ -160,6 +160,12 @@ import type {
 	IVaultMetaService,
 	VaultEntity,
 } from "../vaults/vaultMetaService/index.js";
+import type { Wallet } from "../../entities/Wallet.js";
+import {
+	assessApproval,
+	withApprovalTransferBehaviors,
+} from "./approvalRouting.js";
+
 import type { IWalletService } from "../walletService/index.js";
 import { ethereumVaultConnectorAbi } from "./abis/ethereumVaultConnectorAbi.js";
 import { swapVerifierAbi } from "./abis/swapVerifierAbi.js";
@@ -289,6 +295,10 @@ export interface SimulateBatchResult<
 	insufficientWalletAssets?: SimulationInsufficientRequirement[];
 	insufficientPermit2Allowances?: SimulationInsufficientRequirement[];
 	insufficientDirectAllowances?: SimulationInsufficientRequirement[];
+	/** Approval route or allowance reads could not be established; blocks canExecute. */
+	unknownApprovalRequirements?: Array<
+		SimulationInsufficientRequirement & { spender: Address }
+	>;
 }
 
 export type SimulateBatchOptions = {
@@ -480,8 +490,7 @@ async function simulateIndependentContractCalls(
 	calls: ContractCall[],
 	stateOverrides?: StateOverride,
 ): Promise<
-	| { error: unknown; decoded: DecodedSmartContractError[] }
-	| undefined
+	{ error: unknown; decoded: DecodedSmartContractError[] } | undefined
 > {
 	if (!calls.length) return undefined;
 	if (!ctx.providerService) {
@@ -524,6 +533,16 @@ async function simulateIndependentContractCalls(
 	return undefined;
 }
 
+export function assertSingleEvcTransaction(
+	transactionPlan: TransactionPlan,
+): void {
+	if (transactionPlan.filter((item) => item.type === "evcBatch").length > 1) {
+		throw new Error(
+			"ExecutionService simulation supports at most one EVC transaction. Each evcBatch has its own health checks; explicitly mergePlans when one atomic transaction is intended.",
+		);
+	}
+}
+
 export async function simulateTransactionPlan<
 	TVaultEntity extends VaultEntity = VaultEntity,
 >(
@@ -534,6 +553,7 @@ export async function simulateTransactionPlan<
 	options?: SimulateBatchOptions,
 ): Promise<SimulateBatchResult<TVaultEntity>> {
 	assertNoCowSwapPlanItems(transactionPlan, "simulateTransactionPlan");
+	assertSingleEvcTransaction(transactionPlan);
 	const unsupportedDirectCallIndex = transactionPlan.findIndex(
 		(item) =>
 			item.type === "contractCall" && item.simulationMode !== "independent",
@@ -544,6 +564,11 @@ export async function simulateTransactionPlan<
 			`ExecutionService.simulateTransactionPlan cannot simulate transaction plan item ${unsupportedDirectCallIndex} (contractCall). Direct contract calls are executable but are not covered by the EVC batch simulation; refusing to return a partial result.`,
 		);
 	}
+	transactionPlan = await withApprovalTransferBehaviors(
+		ctx,
+		chainId,
+		transactionPlan,
+	);
 	const owner = getAddress(account);
 	const useStateOverrides = options?.stateOverrides ?? true;
 	let effectiveStateOverrides: StateOverride | undefined;
@@ -763,7 +788,8 @@ export async function simulateTransactionPlan<
 		vaultStatusErrors.length === 0 &&
 		!insufficientWalletAssets?.length &&
 		!diagnostics.insufficientPermit2Allowances?.length &&
-		!diagnostics.insufficientDirectAllowances?.length;
+		!diagnostics.insufficientDirectAllowances?.length &&
+		!diagnostics.unknownApprovalRequirements?.length;
 
 	return {
 		simulatedAccounts,
@@ -1838,8 +1864,12 @@ async function fetchSimulationDiagnostics(
 	insufficientWalletAssets?: SimulationInsufficientRequirement[];
 	insufficientPermit2Allowances?: SimulationInsufficientRequirement[];
 	insufficientDirectAllowances?: SimulationInsufficientRequirement[];
+	/** Approval route or allowance reads could not be established; blocks canExecute. */
+	unknownApprovalRequirements?: Array<
+		SimulationInsufficientRequirement & { spender: Address }
+	>;
 }> {
-	if (!ctx.walletService || !transactionPlan) return {};
+	if (!transactionPlan) return {};
 
 	const requiredApprovals = transactionPlan.filter(
 		(item): item is RequiredApproval =>
@@ -1864,25 +1894,36 @@ async function fetchSimulationDiagnostics(
 		}),
 	);
 
-	let wallet;
+	let wallet: Wallet | undefined;
 	try {
 		wallet = (
-			await ctx.walletService.fetchWallet(chainId, account, assetsWithSpenders)
-		).result;
+			await ctx.walletService?.fetchWallet(chainId, account, assetsWithSpenders)
+		)?.result;
 	} catch {
-		return {};
+		// Failed reads are unknown, not zero and not proof of sufficient approvals.
 	}
 
 	const walletByToken = new Map<Address, bigint>();
 	const directByToken = new Map<Address, bigint>();
 	const permit2ByToken = new Map<Address, bigint>();
-	const now = Math.floor(Date.now() / 1000);
+	const permit2 =
+		ctx.deploymentService.getDeployment(chainId).addresses.coreAddrs.permit2;
+	const unknownApprovalRequirements: Array<
+		SimulationInsufficientRequirement & { spender: Address }
+	> = [];
+	const addDeficit = (
+		map: Map<Address, bigint>,
+		token: Address,
+		deficit: bigint,
+	) => {
+		if (deficit > (map.get(token) ?? 0n)) map.set(token, deficit);
+	};
 
 	for (const approval of requiredApprovals) {
 		const token = getAddress(approval.token);
 		const spender = getAddress(approval.spender);
 		const amount = approval.amount;
-		const walletAsset = wallet.getAsset(token);
+		const walletAsset = wallet?.getAsset(token);
 		const allowances = walletAsset?.allowances[spender];
 
 		const balance = walletAsset?.balance ?? 0n;
@@ -1892,21 +1933,33 @@ async function fetchSimulationDiagnostics(
 			if (deficit > prev) walletByToken.set(token, deficit);
 		}
 
-		const directAllowance = allowances?.assetForVault ?? 0n;
-		if (directAllowance < amount) {
-			const deficit = amount - directAllowance;
-			const prev = directByToken.get(token) ?? 0n;
-			if (deficit > prev) directByToken.set(token, deficit);
-		}
-
-		const permit2Allowance = allowances?.assetForVaultInPermit2 ?? 0n;
-		const permit2ExpirationTime = allowances?.permit2ExpirationTime ?? 0;
-		const permit2Expired =
-			permit2ExpirationTime > 0 && now >= permit2ExpirationTime;
-		if (permit2Allowance < amount || permit2Expired) {
-			const deficit = permit2Expired ? amount : amount - permit2Allowance;
-			const prev = permit2ByToken.get(token) ?? 0n;
-			if (deficit > prev) permit2ByToken.set(token, deficit);
+		const assessment = assessApproval(approval, allowances, permit2);
+		if (assessment.status === "unknown") {
+			unknownApprovalRequirements.push({ token, spender, amount });
+		} else if (assessment.status === "insufficient") {
+			if (assessment.route === "direct" || assessment.route === "either") {
+				addDeficit(
+					directByToken,
+					token,
+					amount - (assessment.directAllowance ?? 0n),
+				);
+			}
+			if (assessment.route === "permit2" || assessment.route === "either") {
+				const tokenDeficit =
+					amount - (assessment.tokenToPermit2Allowance ?? 0n);
+				const internalDeficit =
+					assessment.permit2ToSpender === "sufficient"
+						? 0n
+						: assessment.permit2Expiration === undefined ||
+								assessment.permit2Expiration < Math.floor(Date.now() / 1000)
+							? amount
+							: amount - (assessment.permit2ToSpenderAllowance ?? 0n);
+				addDeficit(
+					permit2ByToken,
+					token,
+					tokenDeficit > internalDeficit ? tokenDeficit : internalDeficit,
+				);
+			}
 		}
 	}
 
@@ -1914,6 +1967,9 @@ async function fetchSimulationDiagnostics(
 		Array.from(map.entries()).map(([token, amount]) => ({ token, amount }));
 
 	return {
+		...(unknownApprovalRequirements.length
+			? { unknownApprovalRequirements }
+			: {}),
 		...(walletByToken.size > 0
 			? { insufficientWalletAssets: mapToArray(walletByToken) }
 			: {}),

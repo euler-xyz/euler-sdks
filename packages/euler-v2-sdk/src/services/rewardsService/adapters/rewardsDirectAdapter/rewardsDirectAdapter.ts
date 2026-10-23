@@ -35,6 +35,11 @@ import {
 	normalizeBrevisCampaigns,
 } from "./brevisCampaign.js";
 
+import {
+	MERKL_DEFAULT_DISTRIBUTOR,
+	resolveMerklDistributorAddress,
+} from "../../merklDistributor.js";
+
 const DEFAULT_MERKL_API_URL = "https://api.merkl.xyz/v4";
 const DEFAULT_BREVIS_API_URL =
 	"https://incentra-prd.brevis.network/sdk/v1/eulerCampaigns";
@@ -43,8 +48,6 @@ const DEFAULT_BREVIS_PROOFS_API_URL =
 const DEFAULT_FUUL_API_URL = "https://api.fuul.xyz/api/v1";
 const DEFAULT_TURTLE_API_URL = "https://earn.turtle.xyz/v2";
 
-const DEFAULT_MERKL_DISTRIBUTOR: Address =
-	"0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae";
 const DEFAULT_FUUL_MANAGER: Address =
 	"0x8a0836dA623ea1083c85acB958DeEa3716b39dc6";
 const DEFAULT_FUUL_FACTORY: Address =
@@ -550,7 +553,7 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 		this.brevisChainIds = config?.brevisChainIds;
 		this.turtleStreams = config?.turtleStreams ?? [];
 		this.merklDistributorAddress =
-			config?.merklDistributorAddress ?? DEFAULT_MERKL_DISTRIBUTOR;
+			config?.merklDistributorAddress ?? MERKL_DEFAULT_DISTRIBUTOR;
 		this.fuulManagerAddress =
 			config?.fuulManagerAddress ?? DEFAULT_FUUL_MANAGER;
 		this.fuulFactoryAddress =
@@ -1356,7 +1359,10 @@ export class RewardsDirectAdapter implements IRewardsAdapter {
 					accumulated: reward.amount,
 					unclaimed: unclaimed.toString(),
 					proof: reward.proofs as Hex[],
-					claimAddress: this.merklDistributorAddress,
+					claimAddress: resolveMerklDistributorAddress(
+						reward.token.chainId,
+						this.merklDistributorAddress,
+					),
 				};
 				const key = `${userReward.chainId}:${tokenAddress.toLowerCase()}`;
 				const existing = rewardsByToken.get(key);

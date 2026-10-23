@@ -93,11 +93,25 @@ function resolveSingleApproval(
 	service: ReturnType<typeof createExecutionService>,
 	approval: { token: `0x${string}`; spender: `0x${string}`; amount: bigint },
 	wallet: never,
-	options: { usePermit2?: boolean; unlimitedApproval?: boolean; chainId?: number } = {},
+	options: {
+		usePermit2?: boolean;
+		unlimitedApproval?: boolean;
+		chainId?: number;
+	} = {},
 ) {
 	const { chainId = 1, ...rest } = options;
 	const resolved = service.resolveRequiredApprovalsWithWallet({
-		plan: [{ type: "requiredApproval", owner: ACCOUNT, ...approval }],
+		plan: [
+			{
+				type: "requiredApproval",
+				owner: ACCOUNT,
+				transferBehavior: {
+					type: "permit2WithDirectFallback",
+					permit2: PERMIT2,
+				},
+				...approval,
+			},
+		],
 		chainId,
 		wallet,
 		...rest,
@@ -1849,6 +1863,7 @@ test("resolveRequiredApprovals resets mainnet USDT allowance before direct appro
 	const plan = [
 		{
 			type: "requiredApproval",
+			transferBehavior: { type: "permit2WithDirectFallback", permit2: PERMIT2 },
 			token: MAINNET_USDT,
 			owner: ACCOUNT,
 			spender: VAULT_IN,
@@ -1905,6 +1920,7 @@ test("resolveRequiredApprovalsWithWallet defaults to Lite Permit2 approval sizin
 	const plan = [
 		{
 			type: "requiredApproval",
+			transferBehavior: { type: "permit2WithDirectFallback", permit2: PERMIT2 },
 			token: TOKEN_IN,
 			owner: ACCOUNT,
 			spender: VAULT_IN,
@@ -1965,6 +1981,7 @@ test("resolveRequiredApprovalsWithWallet skips Permit2 when direct vault allowan
 	const plan = [
 		{
 			type: "requiredApproval",
+			transferBehavior: { type: "permit2WithDirectFallback", permit2: PERMIT2 },
 			token: TOKEN_IN,
 			owner: ACCOUNT,
 			spender: VAULT_IN,
@@ -2090,7 +2107,7 @@ test("resolveRequiredApprovalsWithWallet treats a Permit2 allowance expiring wit
 	assert.deepEqual(beyondMargin, []);
 });
 
-test("resolveRequiredApprovalsWithWallet compares a deposit-all amount against the uint160 Permit2 cap", () => {
+test("resolveRequiredApprovalsWithWallet uses direct approval for amounts above the uint160 Permit2 cap", () => {
 	const service = createExecutionService();
 	const approval = { token: TOKEN_IN, spender: VAULT_IN, amount: maxUint256 };
 	const expiration = nowInSeconds() + 3600;
@@ -2114,9 +2131,11 @@ test("resolveRequiredApprovalsWithWallet compares a deposit-all amount against t
 		}),
 	);
 
-	assert.deepEqual(unlimitedPermit, []);
+	assert.deepEqual(unlimitedPermit.map(describeResolvedApproval), [
+		{ type: "approve", args: [VAULT_IN, maxUint256] },
+	]);
 	assert.deepEqual(belowCap.map(describeResolvedApproval), [
-		{ type: "permit2", spender: VAULT_IN, amount: maxUint256 },
+		{ type: "approve", args: [VAULT_IN, maxUint256] },
 	]);
 });
 
@@ -2151,7 +2170,6 @@ test("resolveRequiredApprovalsWithWallet keeps the Permit2 approval when a Permi
 	]);
 	assert.deepEqual(unreadablePermit2Allowance.map(describeResolvedApproval), [
 		{ type: "approve", args: [PERMIT2, maxUint256] },
-		{ type: "permit2", spender: VAULT_IN, amount: AMOUNT },
 	]);
 });
 
