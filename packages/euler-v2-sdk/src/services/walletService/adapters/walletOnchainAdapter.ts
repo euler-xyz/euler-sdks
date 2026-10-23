@@ -601,6 +601,7 @@ export class WalletOnchainAdapter implements IWalletAdapter {
 							: []),
 					];
 					allowances[getAddress(spender)] = {
+						permit2Address,
 						assetForVault,
 						assetForPermit2,
 						assetForVaultInPermit2,

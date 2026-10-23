@@ -47,6 +47,7 @@ connectors by default.
 Notes:
 
 - MetaMorpho migration is **supply-only** (no borrow leg) and inbound only.
+- Morpho Blue debt uses `ceil(borrowShares * (totalBorrowAssets + 1) / (totalBorrowShares + 1_000_000))`, following [SharesMathLib.toAssetsUp](https://github.com/morpho-org/morpho-blue/blob/8e26ca6a8dbc5089edcd67fb576248810fd2870a/src/libraries/SharesMathLib.sol#L40-L43). This converts the stored market snapshot; pending interest is excluded, so it is not an exact future repayment quote.
 - Aave and Morpho outbound flows **reject swap quotes** — outbound migration
   moves like-for-like assets and finishes by proving the source debt is fully
   repaid.

@@ -1096,6 +1096,7 @@ test("simulateTransactionPlan reports direct allowance deficits from spender all
 	const plan: TransactionPlan = [
 		{
 			type: "requiredApproval",
+			transferBehavior: { type: "direct" },
 			token: TOKEN,
 			owner: ACCOUNT,
 			spender: SPENDER,
@@ -1763,4 +1764,106 @@ test("extractBalanceRequirements sums a token's approvals across spenders", () =
 	const requirements = extractBalanceRequirements(plan, ACCOUNT);
 
 	assert.deepEqual(requirements, [[getAddress(TOKEN), 100n]]);
+});
+
+for (const prepared of [false, true]) {
+	test(`simulation rejects separate collateral disable/restore transactions before RPC (prepared=${prepared})`, async () => {
+		const rpc = vi.fn(() => {
+			throw new Error("unexpected RPC");
+		});
+		const service = createExecutionService(
+			{ simulateContract: rpc, readContract: rpc },
+			{ fetchVaultTypes: rpc },
+		);
+		service.setPluginProcessor(rpc);
+		const plan: TransactionPlan = [
+			{
+				type: "evcBatch",
+				items: [service.encodeDisableCollateral(1, ACCOUNT, TARGET)],
+			},
+			{
+				type: "evcBatch",
+				items: [service.encodeEnableCollateral(1, ACCOUNT, TARGET)],
+			},
+		];
+		await assert.rejects(
+			() =>
+				prepared
+					? service.simulatePreparedTransactionPlan({
+							__prepared: true,
+							chainId: 1,
+							account: ACCOUNT,
+							plan,
+							usePermit2: true,
+							unlimitedApproval: false,
+						})
+					: service.simulateTransactionPlan(1, ACCOUNT, plan),
+			/at most one EVC transaction/,
+		);
+		assert.equal(rpc.mock.calls.length, 0);
+	});
+}
+
+test("simulation supports explicitly merging collateral disable/restore into one transaction", async () => {
+	const simulateContract = vi.fn(
+		async ({ args }: { args: readonly [EVCBatchItem[]] }) => {
+			// Model existing debt that needs this collateral at each transaction's final health check.
+			let collateralEnabled = true;
+			for (const item of args[0]) {
+				if (getAddress(item.targetContract) !== getAddress(EVC)) continue;
+				const decoded = decodeFunctionData({
+					abi: ethereumVaultConnectorAbi,
+					data: item.data,
+				});
+				if (decoded.functionName === "disableCollateral")
+					collateralEnabled = false;
+				if (decoded.functionName === "enableCollateral")
+					collateralEnabled = true;
+			}
+			return {
+				result: [
+					args[0].map((item) => ({
+						success: getAddress(item.targetContract) === getAddress(EVC),
+						result: "0x",
+					})),
+					[
+						{
+							checkedAddress: ACCOUNT,
+							isValid: collateralEnabled,
+							result: "0x",
+						},
+					],
+					[],
+				],
+			};
+		},
+	);
+	const service = createExecutionService(
+		{ simulateContract },
+		{ fetchVaultTypes: async () => ({}) },
+	);
+	const disable = service.encodeDisableCollateral(1, ACCOUNT, TARGET);
+	const enable = service.encodeEnableCollateral(1, ACCOUNT, TARGET);
+	const disablePlan: TransactionPlan = [{ type: "evcBatch", items: [disable] }];
+	const firstTransaction = await service.simulateTransactionPlan(
+		1,
+		ACCOUNT,
+		disablePlan,
+		{ stateOverrides: false },
+	);
+	assert.equal(firstTransaction.canExecute, false);
+	assert.equal(firstTransaction.accountStatusErrors?.length, 1);
+	const plan = service.mergePlans([
+		disablePlan,
+		[{ type: "evcBatch", items: [enable] }],
+	]);
+	const result = await service.simulateTransactionPlan(1, ACCOUNT, plan, {
+		stateOverrides: false,
+	});
+	assert.equal(result.canExecute, true);
+	assert.equal(simulateContract.mock.calls.length, 2);
+	const calls = simulateContract.mock.calls[1]![0].args[0].filter(
+		(item) => getAddress(item.targetContract) === getAddress(EVC),
+	);
+	assert.deepEqual(calls, [disable, enable]);
 });
