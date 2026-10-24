@@ -53,10 +53,6 @@ export interface Deployment {
 			eulerSwapV2Registry?: Address;
 		};
 		governorAddrs?: {
-			accessControlEmergencyGovernor?: Address;
-			accessControlEmergencyGovernorAdminTimelockController?: Address;
-			accessControlEmergencyGovernorWildcardTimelockController?: Address;
-			capRiskSteward?: Address;
 			eVaultFactoryGovernor?: Address;
 			eVaultFactoryTimelockController?: Address;
 		};
@@ -87,7 +83,6 @@ export interface Deployment {
 			feeFlowController?: Address;
 			feeFlowControllerUtil?: Address;
 			fixedCyclicalBinaryIRMFactory?: Address;
-			governorAccessControlEmergencyFactory?: Address;
 			kinkIRMFactory?: Address;
 			kinkyIRMFactory?: Address;
 			oracleRouterFactory?: Address;
