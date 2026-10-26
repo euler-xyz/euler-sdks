@@ -425,26 +425,12 @@ export const PERMIT2_TYPES = {
 	],
 } as const;
 
-/** Transfer semantics of the actual spender, independent of ERC4626 compatibility. */
-export type ApprovalTransferBehavior =
-	| { type: "direct" }
-	| {
-			type: "permit2WithDirectFallback" | "permit2WhenAuthorized";
-			/** Permit2 configured on the spender; zeroAddress disables Permit2. */
-			permit2: Address;
-	  };
-
 export type RequiredApproval = {
 	type: "requiredApproval";
 	token: Address;
 	owner: Address;
 	spender: Address;
 	amount: bigint;
-	/** False for estimates or totals across multiple transfers. Defaults to one exact transfer. */
-	amountIsExact?: boolean;
-	/** Required for custom spenders and synchronous wallet-only resolution.
-	 * Async resolution discovers this for recognized EVK/Earn vaults and the deployed swap verifier. */
-	transferBehavior?: ApprovalTransferBehavior;
 	resolved?: (ApproveCall | Permit2DataToSign)[];
 };
 

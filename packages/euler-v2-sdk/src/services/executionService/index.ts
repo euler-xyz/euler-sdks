@@ -77,10 +77,6 @@ export {
 } from "./materializedExecution.js";
 export { requiresZeroApprovalReset } from "./tokenApprovalReset.js";
 export type {
-	ApprovalTransferBehavior,
-	RequiredApproval,
-	ResolveRequiredApprovalsArgs,
-	ResolveRequiredApprovalsWithWalletArgs,
 	ApproveCall,
 	BatchEntryDescription,
 	BatchItemDescription,

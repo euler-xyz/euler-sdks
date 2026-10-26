@@ -1096,7 +1096,6 @@ test("simulateTransactionPlan reports direct allowance deficits from spender all
 	const plan: TransactionPlan = [
 		{
 			type: "requiredApproval",
-			transferBehavior: { type: "direct" },
 			token: TOKEN,
 			owner: ACCOUNT,
 			spender: SPENDER,

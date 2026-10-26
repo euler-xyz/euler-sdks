@@ -80,28 +80,9 @@ executed by `executeCowSwapTransactionPlan`, but they are not supported by
 
 After planning, use:
 
-- `resolveRequiredApprovals(...)` or `resolveRequiredApprovalsWithWallet(...)` to resolve approval requirements into concrete `approve` calls or Permit2 signature metadata, using the spender’s transfer behavior and its configured Permit2 address.
+- `resolveRequiredApprovals(...)` or `resolveRequiredApprovalsWithWallet(...)` to resolve approval requirements into concrete `approve` calls or Permit2 signatures metadata. Even when `usePermit2` is set, no Permit2 step is emitted if an existing direct ERC-20 allowance to the vault already covers the required amount.
 - `executeTransactionPlan(...)` to process plugins, resolve any unresolved approvals, request Permit2 signatures, send direct contract calls and EVC batches, and report `onProgress` updates.
 - `prepareTransactionPlan(...)` when the same plan will be both simulated and executed (typical Review-then-Confirm UX). It runs plugins and resolves approvals once and returns a `TransactionPlanPrepared` envelope that carries `plan`, `chainId`, `account`, `usePermit2`, and `unlimitedApproval`. Pass the envelope to `simulatePreparedTransactionPlan(...)` and `executePreparedTransactionPlan(...)` to skip the redundant plugin pass (and, for execute, the approval re-resolution). Use the `isPreparedTransactionPlan` type guard to discriminate envelope vs raw plan.
-
-### Approval transfer behavior
-
-Approval resolution and simulation share an assessment with three outcomes: sufficient, insufficient, or unknown. A usable Permit2 route requires both the token allowance to Permit2 and an unexpired internal Permit2 allowance to the spender. EVK can fall back to direct transfer if Permit2 fails. Euler Earn and the deployed swap verifier select Permit2 whenever its internal allowance covers the transfer; a sufficient direct allowance cannot repair that selected route.
-
-`resolveRequiredApprovals` discovers recognized EVK/Earn vault types and reads their `permit2Address()`; for the deployed swap verifier it reads `permit2()`. Custom spenders require explicit `RequiredApproval.transferBehavior`. ERC4626 compatibility does not establish transfer behavior. Synchronous `resolveRequiredApprovalsWithWallet` requires that metadata on the plan because it cannot fetch contract configuration:
-
-```typescript
-approval.transferBehavior = { type: "direct" }
-// Or, after verifying the spender's implementation and configured address:
-approval.transferBehavior = { type: "permit2WithDirectFallback", permit2: permit2Address }
-approval.transferBehavior = { type: "permit2WhenAuthorized", permit2: permit2Address }
-```
-
-`RequiredApproval.amountIsExact` defaults to one exact transfer. Mint estimates and merged requirements set it to `false`; direct coverage then also requires covering any smaller transfers that could select a partially funded internal Permit2 allowance. Custom planners should set this flag when their approval amount is an estimate or covers multiple transfers.
-
-`usePermit2: false` prevents new Permit2 approvals/signatures. It does not change the route a contract selects. Resolution reports a policy conflict if the selected Earn-style route needs repair or cannot be established. Existing sufficient routes need no approval. Exact transfer amounts above `uint160` require direct approval; they are never clipped into a smaller Permit2 requirement. Resolution refreshes Permit2 authorization near expiry when it is needed to maintain coverage.
-
-`AssetAllowances.permit2Address` identifies the contract used for the snapshot's Permit2 reads; snapshots without it use the chain deployment address. Allowances from a different contract are unknown. Token-to-Permit2 repairs target the spender’s configured address. New Permit2 signatures use the chain deployment; if a different Permit2 contract needs a new signature, resolution reports a conflict unless a direct route is safe. Unknown reads are not treated as confirmed zero; reset-requiring tokens receive a zero reset before a replacement token approval.
 
 ## Consuming a Plan
 
