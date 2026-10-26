@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import {
 	AccountVaultsSubgraphAdapter,
 	SubgraphUnavailableError,
+  withSubgraphQueries,
+  createQueryCacheBuildQuery,
 } from "@eulerxyz/euler-v2-sdk";
 
 const account = "0x0000000000000000000000000000000000000001";
@@ -93,6 +95,14 @@ try {
 	assert.deepEqual(restarted.source, source);
 	assert.deepEqual(restarted.value, baseline.value);
 	assert.equal(graphReads, 3);
+  const proxyAdapter = new AccountVaultsSubgraphAdapter(
+    { subgraphURLs: { [chainId]: source.endpoint } },
+    withSubgraphQueries(createQueryCacheBuildQuery(), async () => source),
+  );
+  assert.deepEqual(await proxyAdapter.fetchAccountVaults(chainId, account), baseline.value);
+  assert.deepEqual(await proxyAdapter.fetchAccountVaults(chainId, account), baseline.value);
+  assert.equal(graphReads, 4, "public source-aware query decorator retains the caller cache");
+
 	await assert.rejects(import("@eulerxyz/euler-v2-sdk/dist/src/index.js"), {
 		code: "ERR_PACKAGE_PATH_NOT_EXPORTED",
 	});

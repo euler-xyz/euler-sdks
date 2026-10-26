@@ -57,6 +57,8 @@ export interface SubgraphCatalogConfig {
 	/** Maximum age since successful fetch, including freshMs; failures never extend it. */
 	maxAgeMs?: number;
 	timeoutMs?: number;
+	/** Maximum streamed catalog response size in bytes; defaults to 1 MB. */
+	maxResponseBytes?: number;
 	retryMs?: number;
 	now?: () => number;
 }
@@ -67,9 +69,11 @@ export interface SubgraphDeployment extends SubgraphSource {
 	status: "active";
 	version: string;
 	capabilities: string[];
-	sourceCommit: string;
+	/** Build provenance, omitted when the deployment was imported without artifact proof. */
+	sourceCommit?: string;
 	interfacesCommit?: string;
-	startBlock: number;
+	/** Compiled start block, present only when known from verified build evidence. */
+	startBlock?: number;
 }
 export interface SubgraphRetirement {
 	chainId: number;
@@ -110,7 +114,9 @@ export function parseSubgraphCatalog(value: unknown): ParsedSubgraphCatalog {
 		value.schemaVersion !== 1 ||
 		!nonempty(value.revision) ||
 		!nonempty(value.publishedAt) ||
-		!/^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(value.publishedAt) ||
+		!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+			value.publishedAt,
+		) ||
 		!Number.isFinite(Date.parse(value.publishedAt)) ||
 		!Array.isArray(value.deployments)
 	) {
@@ -152,8 +158,9 @@ export function parseSubgraphCatalog(value: unknown): ParsedSubgraphCatalog {
 			(record.status === "active" &&
 				publicEndpoint(record.endpoint) &&
 				nonempty(record.deploymentId) &&
-				typeof record.sourceCommit === "string" &&
-				/^[a-f0-9]{40}$/i.test(record.sourceCommit) &&
+				(record.sourceCommit === undefined ||
+					(typeof record.sourceCommit === "string" &&
+						/^[a-f0-9]{40}$/i.test(record.sourceCommit))) &&
 				(record.interfacesCommit === undefined ||
 					(typeof record.interfacesCommit === "string" &&
 						/^[a-f0-9]{40}$/i.test(record.interfacesCommit))) &&
@@ -161,8 +168,9 @@ export function parseSubgraphCatalog(value: unknown): ParsedSubgraphCatalog {
 				/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?$/.test(
 					record.version,
 				) &&
-				Number.isSafeInteger(record.startBlock) &&
-				Number(record.startBlock) >= 0 &&
+				(record.startBlock === undefined ||
+					(Number.isSafeInteger(record.startBlock) &&
+						Number(record.startBlock) >= 0)) &&
 				Array.isArray(record.capabilities) &&
 				record.capabilities.every(nonempty));
 		if (!valid) {
@@ -180,6 +188,45 @@ export function parseSubgraphCatalog(value: unknown): ParsedSubgraphCatalog {
 	return parsed;
 }
 
+async function readCatalogResponse(
+	response: Response,
+	limit: number,
+	signal: AbortSignal,
+): Promise<unknown> {
+	if (!response.body) throw new SubgraphUnavailableError("source-failed");
+	const reader = response.body.getReader();
+	// Custom transports may return a body that is independent of the fetch signal.
+	const cancelReader = () => {
+		void reader.cancel().catch(() => {});
+	};
+	signal.addEventListener("abort", cancelReader, { once: true });
+	const decoder = new TextDecoder();
+	let size = 0,
+		text = "";
+	try {
+		if (signal.aborted || !response.ok) {
+			cancelReader();
+			throw new SubgraphUnavailableError("source-failed");
+		}
+		while (true) {
+			const { done, value } = await reader.read();
+			if (signal.aborted) throw new SubgraphUnavailableError("source-failed");
+			if (done) break;
+			size += value.byteLength;
+			if (size > limit) {
+				cancelReader();
+				throw new SubgraphUnavailableError("source-failed");
+			}
+			text += decoder.decode(value, { stream: true });
+		}
+		text += decoder.decode();
+	} finally {
+		signal.removeEventListener("abort", cancelReader);
+		reader.releaseLock();
+	}
+	return JSON.parse(text);
+}
+
 /** Per-instance cache: sources, fetch functions, channels and supplied snapshots never share state. */
 export function createSubgraphCatalogResolver(
 	config: SubgraphCatalogConfig = {},
@@ -188,13 +235,16 @@ export function createSubgraphCatalogResolver(
 	const freshMs = config.freshMs ?? 60_000;
 	const maxAgeMs = config.maxAgeMs ?? 300_000;
 	const timeoutMs = config.timeoutMs ?? 10_000;
+	const maxResponseBytes = config.maxResponseBytes ?? 1_000_000;
 	const retryMs = config.retryMs ?? 10_000;
 	if (
 		![freshMs, maxAgeMs, timeoutMs, retryMs].every(Number.isFinite) ||
 		freshMs < 0 ||
 		maxAgeMs < freshMs ||
 		timeoutMs <= 0 ||
-		retryMs < 0
+		retryMs < 0 ||
+		!Number.isSafeInteger(maxResponseBytes) ||
+		maxResponseBytes <= 0
 	)
 		throw new Error("Invalid subgraph catalog cache durations");
 	const now = config.now ?? Date.now;
@@ -229,11 +279,15 @@ export function createSubgraphCatalogResolver(
 					(async () => {
 						const response = await (config.fetch ?? globalThis.fetch)(
 							config.url ?? DEFAULT_SUBGRAPH_CATALOG_URL,
-							{ signal: controller.signal },
+							{ signal: controller.signal, redirect: "error" },
 						);
-						if (!response.ok)
-							throw new SubgraphUnavailableError("source-failed");
-						return parseSubgraphCatalog(await response.json());
+						return parseSubgraphCatalog(
+							await readCatalogResponse(
+								response,
+								maxResponseBytes,
+								controller.signal,
+							),
+						);
 					})(),
 					timeout,
 				]);
@@ -252,6 +306,7 @@ export function createSubgraphCatalogResolver(
 				throw new SubgraphUnavailableError("source-failed");
 			} finally {
 				clearTimeout(timer);
+				controller.abort();
 			}
 		})();
 		try {

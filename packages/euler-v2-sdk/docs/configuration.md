@@ -233,6 +233,41 @@ Keep lower-priority adapter/environment maps fork-owned here too. To avoid metad
 
 Both examples isolate **subgraph selection**, not all SDK traffic. Configure the fork's V3 endpoints or use [`disableV3: true`](./fallback-system.md#service-behavior), provide [custom labels](./labels.md#custom-labels-flows) when needed, and separately review [RPC configuration](#chains), [deployments and ABI sources](./config-through-env.md#pricing-swaps-and-euler-interfaces), and other [service defaults](./config-through-env.md). A custom `deploymentsUrl` changes deployment metadata without changing the ABI branch. Disabling V3 or catalog discovery does not disable every Euler-hosted service.
 
+## Application proxies and shared subgraph queries
+
+`withSubgraphQueries(buildQuery, sources, options)` supplies SDK-owned account discovery and factory lookup through an application's transport. The built-in adapters use the same query implementation. It validates HTTP/GraphQL responses and rows, pages at most 1,000 requested IDs, checks deployment identity when supplied, and rejects source changes between pages. Indexed block height can lag or differ between pages; it does not impose a transaction receipt-block requirement.
+
+`sources` is either an explicit chain-to-URL map (with `false` for disabled chains) or an async `(chainId, capability)` resolver returning `{ endpoint, deploymentId?, identity? }`. Missing or disabled map entries reject; this source selection never falls back to bundled endpoints. A dynamic resolver can call `createSubgraphCatalogResolver().resolve(chainId, capability)` or implement a fork-owned pipeline. Configuring this decorator makes its sources authoritative for the two leaf queries, including over adapter maps and adapter catalog resolvers. Other services, custom labels/ABI pipelines and their query hooks are unchanged.
+
+```typescript
+import {
+  buildEulerSDK,
+  createQueryCacheBuildQuery,
+  withSubgraphQueries,
+} from "@eulerxyz/euler-v2-sdk";
+
+const proxies = { 1: "https://app.example/api/subgraph/1" };
+const sdk = await buildEulerSDK({
+  buildQuery: withSubgraphQueries(
+    createQueryCacheBuildQuery({ ttlMs: 300_000 }),
+    proxies,
+    {
+      includeMeta: true,
+      fetch: (url, init) => fetch(url, {
+        ...init,
+        redirect: "error",
+        signal: AbortSignal.timeout(10_000),
+      }),
+      getResponseIdentity: response => response.headers.get("x-subgraph-source") ?? undefined,
+    },
+  ),
+});
+```
+
+The application owns endpoint privacy, authentication and proxy-header semantics. `includeMeta` requests deployment metadata for explicit/proxied endpoints; catalog-backed reads require it automatically. `getResponseIdentity` can supply an opaque proxy identity so a source change remains detectable without exposing private URLs. Resolver `identity` and proxy response identity are independent and need not equal each other. The response hook runs on every successful data page even when the resolver supplies an identity; each identity and the observed deployment must remain consistent across pages. Direct URLs need neither a catalog nor build provenance. The same transport options are available as `queryOptions` on the account and vault-type subgraph adapter configs.
+
+The caller's `buildQuery` retains its cache lifetime, invalidation and `getCacheKey() === null` policy. Each call to `withSubgraphQueries` creates an opaque cache scope by default, isolating separately configured pipelines even when proxy URLs and supplied identities match. Reuse the returned builder to share cached results across adapters. Builders with different cache lifetimes can explicitly share a scope by receiving the same `options.cacheScope` object; use this only when their source and transport policies match. The object is an identity token and is not serialized into cache keys. `cacheScope` applies to `withSubgraphQueries`; built-in adapter `queryOptions` only configure transport and response checks. Within that scope, cache keys include chain, endpoint and supplied source identity. Dynamic sources resolve before result-cache lookup; proxy metadata changes are checked when an actual request occurs. Query results stay usable at the provider's current indexed height. Source-decorated queries are custom overrides for the `WithSource` API: they return no built-in catalog provenance, and an `expectedSource` request rejects instead of silently dropping the expectation.
+
 ## Opt-in subgraph catalog
 
 `config.subgraphCatalog` enables lazy endpoint discovery for built-in account position discovery and vault factory lookup. Omit it or set it to `false` to retain bundled compatibility defaults for purposes without an injected resolver. It does not enable RPC chains or change V3, labels, chain lifecycle, deployment or ABI sources.
@@ -251,9 +286,11 @@ The empty object `{}` selects `DEFAULT_SUBGRAPH_CATALOG_URL`, currently a **futu
 
 Each purpose resolves independently: `config` URL entries override its top-level adapter URL entries, which override `EULER_SDK_ACCOUNT_VAULTS_SUBGRAPH_URL_<chainId>` or `EULER_SDK_VAULT_TYPE_SUBGRAPH_URL_<chainId>`. A `false` map entry explicitly disables that purpose and throws `SubgraphUnavailableError` with reason `disabled`. Empty maps retain merging behavior. With catalog discovery enabled, absent explicit entries resolve from the catalog; bundled URLs do not substitute for missing, invalid or retired records. Without catalog discovery or a purpose-specific resolver, bundled defaults and existing missing-URL behavior apply. Explicit URLs retain HTTP, browser-relative and operator-authenticated transports.
 
-`subgraphCatalog` accepts `catalog` (a supplied v1 snapshot), `url`, `fetch` (metadata transport), `resolver`, `channel`, `freshMs`, `maxAgeMs`, `retryMs`, `timeoutMs`, and `now`. `resolver` takes precedence over `catalog`, which takes precedence over URL/fetch. A supplied snapshot is static for that resolver instance and makes no metadata request. The `SubgraphResolver.resolve(chainId, capability)` contract returns `{ endpoint, deploymentId }` or rejects; injected resolvers own their refresh/error policy. Purpose-specific `accountVaultsAdapterConfig.resolver` and `vaultTypeAdapterConfig.resolver` override the shared catalog resolver. Custom account/vault services remain authoritative. SDK construction and explicitly mapped requests do not fetch catalog metadata.
+`subgraphCatalog` accepts `catalog` (a supplied v1 snapshot), `url`, `fetch` (metadata transport), `resolver`, `channel`, `freshMs`, `maxAgeMs`, `retryMs`, `timeoutMs`, `maxResponseBytes`, and `now`. `resolver` takes precedence over `catalog`, which takes precedence over URL/fetch. A supplied snapshot is static for that resolver instance and makes no metadata request. The `SubgraphResolver.resolve(chainId, capability)` contract returns `{ endpoint, deploymentId }` or rejects; injected resolvers own their refresh/error policy. Purpose-specific `accountVaultsAdapterConfig.resolver` and `vaultTypeAdapterConfig.resolver` override the shared catalog resolver. Custom account/vault services remain authoritative. SDK construction and explicitly mapped requests do not fetch catalog metadata.
 
-URL-backed metadata is fresh for 60 seconds, may use last-good data for at most 5 minutes from successful fetch/parse, and backs off failed refreshes for 10 seconds. Requests time out after 10 seconds. Concurrent refreshes share one request; failures never extend last-good age. Cache state belongs to one resolver instance. Fresh valid retirement or invalid identity metadata replaces the previous snapshot immediately. Unknown families/channels are ignored, duplicate or invalid supported identities are quarantined, and malformed envelopes/unknown schema versions fail validation. Public catalog endpoints require HTTPS without credentials, query or fragment; this restriction does not apply to explicit operator URLs or injected resolvers.
+Active catalog records require endpoint, deployment ID, version, identity and capabilities. Build provenance (`sourceCommit`, `startBlock`, and `interfacesCommit`) is optional and must be valid when supplied. Imported existing deployments omit unverified build fields; a deployment ID does not prove a source commit or compiled start block. Endpoint/deployment identity checks, including `expectedSource`, apply equally to imported and build-verified records. Direct overrides and fork isolation follow the same priority rules for both.
+
+URL-backed metadata is fresh for 60 seconds, may use last-good data for at most 5 minutes from successful fetch/parse, and backs off failed refreshes for 10 seconds. Requests time out after 10 seconds, reject redirects, and stream at most 1 MB of metadata by default (`maxResponseBytes` configures the byte budget). Concurrent refreshes share one request; failures never extend last-good age. Cache state belongs to one resolver instance. Fresh valid retirement or invalid identity metadata replaces the previous snapshot immediately. Unknown families/channels are ignored, duplicate or invalid supported identities are quarantined, and malformed envelopes/unknown schema versions fail validation. Public catalog endpoints require HTTPS without credentials, query or fragment; this restriction does not apply to explicit operator URLs or injected resolvers.
 
 Stable is the default channel; candidate selection requires `channel: "candidate"`. The two capabilities are `account-vault-discovery` and `vault-factory-lookup`; neither implies Activity, prices or APYs. Catalog `deploymentId` identifies the published deployment, not its current health.
 
