@@ -191,25 +191,37 @@ export function parseSubgraphCatalog(value: unknown): ParsedSubgraphCatalog {
 async function readCatalogResponse(
 	response: Response,
 	limit: number,
+	signal: AbortSignal,
 ): Promise<unknown> {
 	if (!response.body) throw new SubgraphUnavailableError("source-failed");
 	const reader = response.body.getReader();
+	// Custom transports may return a body that is independent of the fetch signal.
+	const cancelReader = () => {
+		void reader.cancel().catch(() => {});
+	};
+	signal.addEventListener("abort", cancelReader, { once: true });
 	const decoder = new TextDecoder();
 	let size = 0,
 		text = "";
 	try {
+		if (signal.aborted || !response.ok) {
+			cancelReader();
+			throw new SubgraphUnavailableError("source-failed");
+		}
 		while (true) {
 			const { done, value } = await reader.read();
+			if (signal.aborted) throw new SubgraphUnavailableError("source-failed");
 			if (done) break;
 			size += value.byteLength;
 			if (size > limit) {
-				void reader.cancel().catch(() => {});
+				cancelReader();
 				throw new SubgraphUnavailableError("source-failed");
 			}
 			text += decoder.decode(value, { stream: true });
 		}
 		text += decoder.decode();
 	} finally {
+		signal.removeEventListener("abort", cancelReader);
 		reader.releaseLock();
 	}
 	return JSON.parse(text);
@@ -269,10 +281,12 @@ export function createSubgraphCatalogResolver(
 							config.url ?? DEFAULT_SUBGRAPH_CATALOG_URL,
 							{ signal: controller.signal, redirect: "error" },
 						);
-						if (!response.ok)
-							throw new SubgraphUnavailableError("source-failed");
 						return parseSubgraphCatalog(
-							await readCatalogResponse(response, maxResponseBytes),
+							await readCatalogResponse(
+								response,
+								maxResponseBytes,
+								controller.signal,
+							),
 						);
 					})(),
 					timeout,

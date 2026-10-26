@@ -236,6 +236,72 @@ describe("actual adapters and SDK callers", () => {
 		).rejects.toMatchObject({ reason: "disabled" });
 		expect(metadata).not.toHaveBeenCalled();
 	});
+	it.each(["explicit", "catalog"])(
+		"preserves each adapter's query options through the SDK builder: %s",
+		async (mode) => {
+			const defaultFetch = graphFetch();
+			const payload = {
+				data: {
+					trackingActiveAccounts: [],
+					vaults: [],
+					_meta: { deployment: active.deploymentId, block: { number: 1 } },
+				},
+			};
+			const accountResponse = Response.json(payload, {
+				headers: { "x-source": "accounts" },
+			});
+			const factoryResponse = Response.json(payload, {
+				headers: { "x-source": "factories" },
+			});
+			const accountFetch = vi.fn<typeof fetch>().mockResolvedValue(accountResponse);
+			const factoryFetch = vi.fn<typeof fetch>().mockResolvedValue(factoryResponse);
+			const accountIdentity = vi.fn((response: Response) =>
+				response.headers.get("x-source") ?? undefined,
+			);
+			const factoryIdentity = vi.fn((response: Response) =>
+				response.headers.get("x-source") ?? undefined,
+			);
+			const sdk = await buildEulerSDK({
+				config: {
+					accountServiceAdapter: "onchain",
+					vaultTypeAdapter: "subgraph",
+					subgraphCatalog: mode === "catalog" ? { catalog: catalog(active) } : false,
+				},
+				accountVaultsAdapterConfig: {
+					subgraphURLs: mode === "explicit" ? { 1: "/private/accounts" } : {},
+					queryOptions: {
+						fetch: accountFetch,
+						includeMeta: true,
+						getResponseIdentity: accountIdentity,
+					},
+				},
+				vaultTypeAdapterConfig: {
+					subgraphURLs: mode === "explicit" ? { 1: "/private/factories" } : {},
+					queryOptions: {
+						fetch: factoryFetch,
+						includeMeta: true,
+						getResponseIdentity: factoryIdentity,
+					},
+				},
+				servicesOverrides: { deploymentService },
+			});
+			await sdk.accountService.fetchAccount(1, address, { populateVaults: false });
+			await sdk.vaultMetaService.fetchVaultType(1, address);
+			expect(defaultFetch).not.toHaveBeenCalled();
+			for (const [transport, endpoint] of [
+				[accountFetch, "/private/accounts"],
+				[factoryFetch, "/private/factories"],
+			] as const) {
+				expect(transport).toHaveBeenCalledOnce();
+				expect(transport.mock.calls[0][0]).toBe(mode === "explicit" ? endpoint : active.endpoint);
+				expect(JSON.parse(String(transport.mock.calls[0][1]?.body)).query).toContain(
+					"_meta { deployment block { number } }",
+				);
+			}
+			expect(accountIdentity).toHaveBeenCalledExactlyOnceWith(accountResponse);
+			expect(factoryIdentity).toHaveBeenCalledExactlyOnceWith(factoryResponse);
+		},
+	);
 	it("honors config over adapter over environment for each purpose", async () => {
 		vi.stubEnv("EULER_SDK_ACCOUNT_VAULTS_SUBGRAPH_URL_1", "/env-account");
 		vi.stubEnv("EULER_SDK_VAULT_TYPE_SUBGRAPH_URL_1", "/env-factory");

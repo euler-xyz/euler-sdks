@@ -639,7 +639,11 @@ export async function buildEulerSDK<
 		new AccountV3Adapter(accountV3Config, resolvedBuildQuery);
 	const buildAccountOnchain = () => {
 		const accountVaultsAdapter = new AccountVaultsSubgraphAdapter(
-			{ subgraphURLs: accountVaultsSubgraphUrls, resolver: accountResolver },
+			{
+				subgraphURLs: accountVaultsSubgraphUrls,
+				resolver: accountResolver,
+				queryOptions: accountVaultsAdapterConfig?.queryOptions,
+			},
 			resolvedBuildQuery,
 		);
 		accountOnchainAdapter = new AccountOnchainAdapter(
@@ -988,7 +992,14 @@ export async function buildEulerSDK<
 			new VaultTypeV3Adapter(vaultTypeV3Config, resolvedBuildQuery);
 		const buildVaultTypeSubgraph = () =>
 			new VaultTypeSubgraphAdapter(
-				{ subgraphURLs: vaultTypeSubgraphUrls, resolver: vaultTypeResolver },
+				{
+					subgraphURLs: vaultTypeSubgraphUrls,
+					resolver: vaultTypeResolver,
+					queryOptions:
+						vaultTypeAdapterConfig && "subgraphURLs" in vaultTypeAdapterConfig
+							? vaultTypeAdapterConfig.queryOptions
+							: undefined,
+				},
 				resolvedBuildQuery,
 			);
 

@@ -26,19 +26,56 @@ it("rejects multibyte metadata using bytes rather than characters", async () => 
   const resolver = createSubgraphCatalogResolver({ fetch: async () => Response.json(payload), maxResponseBytes: text.length });
   await expect(resolver.resolve(1, "account-vault-discovery")).rejects.toMatchObject({ reason: "source-failed" });
 });
-it("bounds stalled bodies and prevents late results from refreshing the cache", async () => {
+it.each(["fulfilled", "rejected", "pending"])("cancels stalled bodies and releases readers on every timeout: %s cancellation", async mode => {
   vi.useFakeTimers();
-  let controller!: ReadableStreamDefaultController<Uint8Array>;
-  const body = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
-  const fetch = vi.fn().mockResolvedValue(new Response(body));
+  const bodies: ReadableStream<Uint8Array>[] = [];
+  const cancel = vi.fn(() => mode === "pending" ? new Promise<void>(() => {})
+    : mode === "rejected" ? Promise.reject(new Error("cancel failed")) : Promise.resolve());
+  const fetch = vi.fn<typeof globalThis.fetch>(async () => {
+    const body = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new TextEncoder().encode("{")); }, cancel });
+    bodies.push(body);
+    return new Response(body);
+  });
+  const resolver = createSubgraphCatalogResolver({ fetch, timeoutMs: 10, retryMs: 0 });
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const read = expect(resolver.resolve(1, "account-vault-discovery")).rejects.toMatchObject({ reason: "source-failed" });
+    await vi.advanceTimersByTimeAsync(10);
+    await read;
+    expect(fetch).toHaveBeenCalledTimes(attempt);
+    expect(fetch.mock.calls[attempt - 1][1]?.signal?.aborted).toBe(true);
+    expect(cancel).toHaveBeenCalledTimes(attempt);
+    expect(bodies.every(body => !body.locked)).toBe(true);
+  }
+});
+it("cancels a body arriving after timeout without reading it or refreshing the cache", async () => {
+  vi.useFakeTimers();
+  let finish!: (response: Response) => void;
+  const fetch = vi.fn<typeof globalThis.fetch>(() => new Promise<Response>(resolve => { finish = resolve; }));
   const resolver = createSubgraphCatalogResolver({ fetch, timeoutMs: 10, retryMs: 1000 });
   const read = expect(resolver.resolve(1, "account-vault-discovery")).rejects.toMatchObject({ reason: "source-failed" });
-  await vi.advanceTimersByTimeAsync(10); await read;
-  expect(fetch.mock.calls[0]?.[1].signal.aborted).toBe(true);
-  controller.enqueue(new TextEncoder().encode(JSON.stringify(catalog()))); controller.close();
-  await Promise.resolve();
+  await vi.advanceTimersByTimeAsync(10);
+  await read;
+  const cancel = vi.fn(() => new Promise<void>(() => {}));
+  const pull = vi.fn((controller: ReadableStreamDefaultController<Uint8Array>) => {
+    controller.enqueue(new TextEncoder().encode(JSON.stringify(catalog())));
+    controller.close();
+  });
+  const body = new ReadableStream<Uint8Array>({ pull, cancel }, { highWaterMark: 0 });
+  finish(new Response(body));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(pull).not.toHaveBeenCalled();
+  expect(body.locked).toBe(false);
   await expect(resolver.resolve(1, "account-vault-discovery")).rejects.toMatchObject({ reason: "source-failed" });
   expect(fetch).toHaveBeenCalledOnce();
+});
+it("cancels an unsuccessful HTTP response without awaiting its cancellation", async () => {
+  const cancel = vi.fn(() => new Promise<void>(() => {}));
+  const body = new ReadableStream<Uint8Array>({ cancel });
+  const resolver = createSubgraphCatalogResolver({ fetch: async () => new Response(body, { status: 503 }) });
+  await expect(resolver.resolve(1, "account-vault-discovery")).rejects.toMatchObject({ reason: "source-failed" });
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(body.locked).toBe(false);
 });
 it.each([0, -1, 1.5, Infinity])("rejects invalid byte budgets: %s", maxResponseBytes => {
   expect(() => createSubgraphCatalogResolver({ maxResponseBytes })).toThrow();
