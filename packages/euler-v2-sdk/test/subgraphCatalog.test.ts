@@ -1002,3 +1002,23 @@ describe("caller-owned source provenance", () => {
 		expect(graph).toHaveBeenCalledTimes(4);
 	});
 });
+
+
+describe("imported deployment metadata", () => {
+	it("resolves imports and preserves deployment checks without build provenance", async () => {
+		const imported = { ...active };
+		delete (imported as Partial<typeof active>).sourceCommit;
+		delete (imported as Partial<typeof active>).startBlock;
+		const resolver = createSubgraphCatalogResolver({ catalog: catalog(imported) });
+		expect(await resolver.resolve(1, "account-vault-discovery")).toEqual({ endpoint: active.endpoint, deploymentId: active.deploymentId });
+		const fetch = graphFetch();
+		const adapter = new AccountVaultsSubgraphAdapter({ subgraphURLs: {}, resolver });
+		const baseline = await adapter.fetchAccountVaultsWithSource(1, address);
+		expect(baseline.source).toEqual({ endpoint: active.endpoint, deploymentId: active.deploymentId });
+		fetch.mockResolvedValue(json({ data: { trackingActiveAccounts: [], _meta: { deployment: "wrong-deployment" } } }));
+		await expect(adapter.fetchAccountVaults(1, address)).rejects.toMatchObject({ reason: "source-changed" });
+	});
+	it.each([{ sourceCommit: null }, { sourceCommit: "" }, { sourceCommit: 1 }, { startBlock: null }, { startBlock: "0" }, { startBlock: -1 }, { startBlock: Number.MAX_SAFE_INTEGER + 1 }])("rejects malformed supplied build metadata: %j", async change => {
+		await expect(createSubgraphCatalogResolver({ catalog: catalog({ ...active, ...change }) }).resolve(1, "account-vault-discovery")).rejects.toMatchObject({ reason: "invalid" });
+	});
+});

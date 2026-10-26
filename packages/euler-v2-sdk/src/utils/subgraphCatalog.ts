@@ -67,9 +67,11 @@ export interface SubgraphDeployment extends SubgraphSource {
 	status: "active";
 	version: string;
 	capabilities: string[];
-	sourceCommit: string;
+	/** Build provenance, omitted when the deployment was imported without artifact proof. */
+	sourceCommit?: string;
 	interfacesCommit?: string;
-	startBlock: number;
+	/** Compiled start block, present only when known from verified build evidence. */
+	startBlock?: number;
 }
 export interface SubgraphRetirement {
 	chainId: number;
@@ -152,8 +154,9 @@ export function parseSubgraphCatalog(value: unknown): ParsedSubgraphCatalog {
 			(record.status === "active" &&
 				publicEndpoint(record.endpoint) &&
 				nonempty(record.deploymentId) &&
-				typeof record.sourceCommit === "string" &&
-				/^[a-f0-9]{40}$/i.test(record.sourceCommit) &&
+				(record.sourceCommit === undefined ||
+					(typeof record.sourceCommit === "string" &&
+						/^[a-f0-9]{40}$/i.test(record.sourceCommit))) &&
 				(record.interfacesCommit === undefined ||
 					(typeof record.interfacesCommit === "string" &&
 						/^[a-f0-9]{40}$/i.test(record.interfacesCommit))) &&
@@ -161,8 +164,8 @@ export function parseSubgraphCatalog(value: unknown): ParsedSubgraphCatalog {
 				/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?$/.test(
 					record.version,
 				) &&
-				Number.isSafeInteger(record.startBlock) &&
-				Number(record.startBlock) >= 0 &&
+				(record.startBlock === undefined ||
+					(Number.isSafeInteger(record.startBlock) && Number(record.startBlock) >= 0)) &&
 				Array.isArray(record.capabilities) &&
 				record.capabilities.every(nonempty));
 		if (!valid) {
