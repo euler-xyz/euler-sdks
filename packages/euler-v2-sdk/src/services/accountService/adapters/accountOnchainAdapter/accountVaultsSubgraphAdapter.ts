@@ -1,10 +1,14 @@
 import {
+	querySubgraphAccounts,
+	type SubgraphQueryOptions,
+	hasSubgraphQuerySource,
+} from "../../../../utils/subgraphQueries.js";
+import {
 	createSubgraphCallBundler,
 	resolveSubgraphRead,
 	SubgraphUnavailableError,
 	type SubgraphReadOptions,
 	type SubgraphReadResult,
-	validateSubgraphDeployment,
 	type SubgraphSource,
 	type SubgraphResolver,
 } from "../../../../utils/subgraphCatalog.js";
@@ -26,9 +30,8 @@ export interface AccountVaults {
 export interface AccountVaultsSubgraphAdapterConfig {
 	subgraphURLs: Record<number, string | false>;
 	resolver?: SubgraphResolver;
+	queryOptions?: SubgraphQueryOptions;
 }
-
-const PAGE_SIZE = 1000;
 
 export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 	private readonly sources = new Map<number, SubgraphSource>();
@@ -39,7 +42,7 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 	) {
 		const uncached = this.queryAccountVaults;
 		if (buildQuery) applyBuildQuery(this, buildQuery);
-		if (config.resolver) {
+		if (config.resolver && !hasSubgraphQuerySource(this.queryAccountVaults)) {
 			const configured = this.queryAccountVaults;
 			// Catalog reads evaluate freshness and retirement; explicit maps retain query wrappers.
 			this.queryAccountVaults = (key) =>
@@ -56,97 +59,38 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 				withSource?: boolean;
 			} & SubgraphReadOptions)[],
 		): Promise<SubgraphReadResult<any>[]> => {
-			const byChain = new Map<number, Address[]>();
-			for (const key of keys) {
-				const arr = byChain.get(key.chainId) ?? [];
-				arr.push(key.account);
-				byChain.set(key.chainId, arr);
-			}
-
-			const chainResults = new Map<number, Map<string, any>>();
-			let readSource: SubgraphSource | undefined;
-			for (const [chainId, accounts] of byChain) {
-				const { endpoint: subgraphUrl, source } = await resolveSubgraphRead(
-					chainId,
-					"account-vault-discovery",
-					this.config.subgraphURLs,
-					this.config.resolver,
-					keys[0]?.withSource ? undefined : this.sources,
-					keys[0]?.expectedSource,
-				);
-				if (!subgraphUrl) continue;
-				readSource = source;
-
-				const ids = [
-					...new Set(accounts.map((a) => getAddressPrefix(a).toLowerCase())),
-				];
-				const query = `query AccountVaults($ids: [String!]!) {
-              ${source ? "_meta { deployment }" : ""}
-              trackingActiveAccounts(first: ${PAGE_SIZE}, where: { id_in: $ids }) {
-                id
-                deposits
-                borrows
-              }
-            }`;
-				const map = new Map<string, any>();
-				for (let i = 0; i < ids.length; i += PAGE_SIZE) {
-					const response = await fetch(subgraphUrl, {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({
-							query,
-							variables: { ids: ids.slice(i, i + PAGE_SIZE) },
-							operationName: "AccountVaults",
-						}),
-					});
-					if (!response.ok) {
-						throw new Error(
-							`Account vaults subgraph ${response.status} ${response.statusText}`,
-						);
-					}
-					const json = (await response.json()) as {
-						data?: {
-							trackingActiveAccounts?: Array<{
-								id: string;
-								deposits: string[];
-								borrows: string[];
-							}>;
-						};
-						errors?: unknown[];
-					};
-					if (json?.errors?.length) {
-						throw new Error("Account vaults subgraph returned GraphQL errors.");
-					}
-					validateSubgraphDeployment(json, chainId, source);
-					if (!Array.isArray(json?.data?.trackingActiveAccounts)) {
-						throw new Error(
-							"Account vaults subgraph returned malformed account data.",
-						);
-					}
-					for (const entry of json.data.trackingActiveAccounts) {
-						if (
-							typeof entry?.id !== "string" ||
-							!Array.isArray(entry.deposits) ||
-							!Array.isArray(entry.borrows)
-						) {
-							throw new Error(
-								"Account vaults subgraph returned malformed account data.",
-							);
-						}
-						map.set(entry.id.toLowerCase(), entry);
-					}
-				}
-				chainResults.set(chainId, map);
-			}
-
-			return keys.map((key) => {
-				const prefix = getAddressPrefix(key.account);
-				const entry = chainResults.get(key.chainId)?.get(prefix.toLowerCase());
-				return {
-					value: { data: { trackingActiveAccount: entry ?? null } },
-					...(readSource ? { source: { ...readSource } } : {}),
-				};
-			});
+			const first = keys[0];
+			if (!first) return [];
+			const chainId = first.chainId;
+			const { endpoint, source } = await resolveSubgraphRead(
+				chainId,
+				"account-vault-discovery",
+				this.config.subgraphURLs,
+				this.config.resolver,
+				first.withSource ? undefined : this.sources,
+				first.expectedSource,
+			);
+			const resolver = this.config.resolver;
+			const rows = endpoint
+				? await querySubgraphAccounts(
+						chainId,
+						keys.map((key) => key.account),
+						{ endpoint, ...source },
+						this.config.queryOptions,
+						source && resolver
+							? () => resolver.resolve(chainId, "account-vault-discovery")
+							: undefined,
+					)
+				: new Map();
+			return keys.map((key) => ({
+				value: {
+					data: {
+						trackingActiveAccount:
+							rows.get(getAddressPrefix(key.account).toLowerCase()) ?? null,
+					},
+				},
+				...(source ? { source: { ...source } } : {}),
+			}));
 		},
 	);
 
@@ -167,11 +111,13 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 	): Promise<SubgraphReadResult<AccountVaults>> {
 		if (
 			this.queryAccountVaults === this.builtInQuery &&
+			!hasSubgraphQuerySource(this.queryAccountVaults) &&
 			this.config.subgraphURLs[chainId] === false
 		)
 			throw new SubgraphUnavailableError("disabled", chainId);
 		if (
 			this.queryAccountVaults !== this.builtInQuery ||
+			hasSubgraphQuerySource(this.queryAccountVaults) ||
 			this.config.subgraphURLs[chainId] ||
 			!this.config.resolver
 		) {

@@ -77,3 +77,10 @@ export { encodeEVCBatch } from "./utils/batch.js";
 export * from "./utils/lens/index.js";
 
 export * from "./utils/subgraphCatalog.js";
+
+export {
+	withSubgraphQueries,
+	type SubgraphQuerySource,
+	type SubgraphQuerySources,
+	type SubgraphQueryOptions,
+} from "./utils/subgraphQueries.js";

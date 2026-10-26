@@ -1,14 +1,18 @@
 import {
+	querySubgraphFactories,
+	type SubgraphQueryOptions,
+	hasSubgraphQuerySource,
+} from "../../../../utils/subgraphQueries.js";
+import {
 	createSubgraphCallBundler,
 	resolveSubgraphRead,
 	SubgraphUnavailableError,
 	type SubgraphReadOptions,
 	type SubgraphReadResult,
-	validateSubgraphDeployment,
 	type SubgraphSource,
 	type SubgraphResolver,
 } from "../../../../utils/subgraphCatalog.js";
-import { type Address, getAddress } from "viem";
+import type { Address } from "viem";
 import type {
 	IVaultTypeAdapter,
 	VaultFactoryResult,
@@ -22,9 +26,8 @@ import {
 export interface VaultTypeSubgraphAdapterConfig {
 	subgraphURLs: Record<number, string | false>;
 	resolver?: SubgraphResolver;
+	queryOptions?: SubgraphQueryOptions;
 }
-
-const PAGE_SIZE = 1000;
 
 export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 	private readonly sources = new Map<number, SubgraphSource>();
@@ -35,7 +38,7 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 	) {
 		const uncached = this.queryVaultFactories;
 		if (buildQuery) applyBuildQuery(this, buildQuery);
-		if (config.resolver) {
+		if (config.resolver && !hasSubgraphQuerySource(this.queryVaultFactories)) {
 			const configured = this.queryVaultFactories;
 			// Catalog reads evaluate freshness and retirement; explicit maps retain query wrappers.
 			this.queryVaultFactories = (key) =>
@@ -47,82 +50,38 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 	private readonly loadVaultFactories = createSubgraphCallBundler(
 		async (
 			keys: ({
-				address: Address;
 				chainId: number;
+				address: Address;
 				withSource?: boolean;
 			} & SubgraphReadOptions)[],
 		): Promise<SubgraphReadResult<VaultFactoryResult | undefined>[]> => {
-			const byChain = new Map<number, Address[]>();
-			for (const key of keys) {
-				const arr = byChain.get(key.chainId) ?? [];
-				arr.push(key.address);
-				byChain.set(key.chainId, arr);
-			}
-
-			const chainResults = new Map<number, Map<string, Address>>();
-			let readSource: SubgraphSource | undefined;
-			for (const [chainId, addresses] of byChain) {
-				const { endpoint: subgraphUrl, source } = await resolveSubgraphRead(
-					chainId,
-					"vault-factory-lookup",
-					this.config.subgraphURLs,
-					this.config.resolver,
-					keys[0]?.withSource ? undefined : this.sources,
-					keys[0]?.expectedSource,
-				);
-				if (!subgraphUrl) continue;
-				readSource = source;
-
-				const ids = [...new Set(addresses.map((a) => a.toLowerCase()))];
-				const query = `query VaultFactories($ids: [String!]!) {
-      ${source ? "_meta { deployment }" : ""}
-      vaults(first: ${PAGE_SIZE}, where: { id_in: $ids }) {
-        id
-        factory
-      }
-    }`;
-
-				const map = new Map<string, Address>();
-				for (let i = 0; i < ids.length; i += PAGE_SIZE) {
-					const pageIds = ids.slice(i, i + PAGE_SIZE);
-					const response = await fetch(subgraphUrl, {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ query, variables: { ids: pageIds } }),
-					});
-					if (!response.ok) {
-						throw new Error(
-							`Vault type subgraph ${response.status} ${response.statusText}`,
-						);
-					}
-					const json = (await response.json()) as {
-						data?: { vaults?: Array<{ id: string; factory: string }> };
-						errors?: unknown[];
-					};
-					if (json?.errors?.length) {
-						throw new Error("Vault type subgraph returned GraphQL errors.");
-					}
-					validateSubgraphDeployment(json, chainId, source);
-					if (!Array.isArray(json?.data?.vaults)) {
-						throw new Error(
-							"Vault type subgraph returned malformed vault data.",
-						);
-					}
-					for (const v of json.data.vaults) {
-						map.set(v.id.toLowerCase(), getAddress(v.factory));
-					}
-				}
-				chainResults.set(chainId, map);
-			}
-			return keys.map((key) => {
-				const factory = chainResults
-					.get(key.chainId)
-					?.get(key.address.toLowerCase());
-				return {
-					value: factory ? { id: getAddress(key.address), factory } : undefined,
-					...(readSource ? { source: { ...readSource } } : {}),
-				};
-			});
+			const first = keys[0];
+			if (!first) return [];
+			const chainId = first.chainId;
+			const { endpoint, source } = await resolveSubgraphRead(
+				chainId,
+				"vault-factory-lookup",
+				this.config.subgraphURLs,
+				this.config.resolver,
+				first.withSource ? undefined : this.sources,
+				first.expectedSource,
+			);
+			const resolver = this.config.resolver;
+			const rows = endpoint
+				? await querySubgraphFactories(
+						chainId,
+						keys.map((key) => key.address),
+						{ endpoint, ...source },
+						this.config.queryOptions,
+						source && resolver
+							? () => resolver.resolve(chainId, "vault-factory-lookup")
+							: undefined,
+					)
+				: new Map();
+			return keys.map((key) => ({
+				value: rows.get(key.address.toLowerCase()),
+				...(source ? { source: { ...source } } : {}),
+			}));
 		},
 	);
 
@@ -144,11 +103,13 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 	): Promise<SubgraphReadResult<VaultFactoryResult[]>> {
 		if (
 			this.queryVaultFactories === this.builtInQuery &&
+			!hasSubgraphQuerySource(this.queryVaultFactories) &&
 			this.config.subgraphURLs[chainId] === false
 		)
 			throw new SubgraphUnavailableError("disabled", chainId);
 		if (
 			this.queryVaultFactories !== this.builtInQuery ||
+			hasSubgraphQuerySource(this.queryVaultFactories) ||
 			this.config.subgraphURLs[chainId] ||
 			!this.config.resolver
 		) {
@@ -226,6 +187,8 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 		if (vaultAddresses.length === 0) return [];
 
 		if (
+			this.queryVaultFactories === this.builtInQuery &&
+			!hasSubgraphQuerySource(this.queryVaultFactories) &&
 			!this.config.resolver &&
 			!this.config.subgraphURLs[chainId] &&
 			this.config.subgraphURLs[chainId] !== false
