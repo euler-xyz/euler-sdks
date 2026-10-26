@@ -524,6 +524,16 @@ async function simulateIndependentContractCalls(
 	return undefined;
 }
 
+export function assertSingleEvcTransaction(
+	transactionPlan: TransactionPlan,
+): void {
+	if (transactionPlan.filter((item) => item.type === "evcBatch").length > 1) {
+		throw new Error(
+			"ExecutionService simulation supports at most one EVC transaction. Each evcBatch has its own health checks; explicitly mergePlans when one atomic transaction is intended.",
+		);
+	}
+}
+
 export async function simulateTransactionPlan<
 	TVaultEntity extends VaultEntity = VaultEntity,
 >(
@@ -534,6 +544,7 @@ export async function simulateTransactionPlan<
 	options?: SimulateBatchOptions,
 ): Promise<SimulateBatchResult<TVaultEntity>> {
 	assertNoCowSwapPlanItems(transactionPlan, "simulateTransactionPlan");
+	assertSingleEvcTransaction(transactionPlan);
 	const unsupportedDirectCallIndex = transactionPlan.findIndex(
 		(item) =>
 			item.type === "contractCall" && item.simulationMode !== "independent",

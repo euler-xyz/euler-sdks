@@ -1322,6 +1322,10 @@ function toAssetsUp(
 	totalAssets: bigint,
 	totalShares: bigint,
 ): bigint {
-	if (shares === 0n || totalAssets === 0n || totalShares === 0n) return 0n;
-	return (shares * totalAssets + totalShares - 1n) / totalShares;
+	// Morpho SharesMathLib.toAssetsUp, applied to the stored market snapshot.
+	// Pending interest is not included in this estimate.
+	const virtualTotalShares = totalShares + 1_000_000n;
+	return (
+		(shares * (totalAssets + 1n) + virtualTotalShares - 1n) / virtualTotalShares
+	);
 }

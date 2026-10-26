@@ -61,6 +61,11 @@ const marketParams: MorphoMarketParams = {
 function createConnector(
 	args: {
 		isAuthorized?: boolean;
+		positionSnapshot?: {
+			borrowShares: bigint;
+			totalBorrowAssets: bigint;
+			totalBorrowShares: bigint;
+		};
 		onReadContract?: (functionName?: string) => void;
 		morphoGraphqlTimeoutMs?: number;
 		fetchFn?: typeof fetch;
@@ -79,6 +84,20 @@ function createConnector(
 		} as never,
 		{
 			getProvider: () => ({
+				multicall: async () => {
+					const snapshot = args.positionSnapshot!;
+					return [
+						[0n, snapshot.borrowShares, 0n],
+						[
+							0n,
+							0n,
+							snapshot.totalBorrowAssets,
+							snapshot.totalBorrowShares,
+							0n,
+							0n,
+						],
+					];
+				},
 				readContract: async ({ functionName }: { functionName?: string }) => {
 					args.onReadContract?.(functionName);
 					if (functionName === "isAuthorized") return args.isAuthorized ?? true;
@@ -925,3 +944,37 @@ test("Morpho transaction authorization carries its revocation without postMigrat
 	assert.equal(authorization.postMigrationAuthorization, undefined);
 	assert.deepEqual(authorization.revocation?.args, [SWAP_VERIFIER, false]);
 });
+
+for (const [
+	name,
+	borrowShares,
+	totalBorrowAssets,
+	totalBorrowShares,
+	expected,
+] of [
+	["zero shares", 0n, 2n, 1_000_000n, 0n],
+	["zero stored assets", 1n, 0n, 1_000_000n, 1n],
+	["empty market", 1n, 0n, 0n, 1n],
+	["virtual offsets regression", 500_001n, 2n, 1_000_000n, 1n],
+	["ordinary balance", 10_000_000n, 100n, 100_000_000n, 10n],
+	[
+		"large integer balance",
+		10n ** 30n,
+		10n ** 30n - 1n,
+		10n ** 30n - 1_000_000n,
+		10n ** 30n,
+	],
+] as const) {
+	test(`Morpho stored debt conversion: ${name}`, async () => {
+		const connector = createConnector({
+			positionSnapshot: { borrowShares, totalBorrowAssets, totalBorrowShares },
+		});
+		const position = await connector.getPosition({
+			chainId: CHAIN_ID,
+			owner: OWNER,
+			positionRef: marketParams,
+		});
+		assert.equal(position.raw.borrowAssets, expected);
+		assert.equal(position.debt.amount, expected);
+	});
+}
