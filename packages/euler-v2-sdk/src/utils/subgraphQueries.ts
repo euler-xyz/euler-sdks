@@ -32,6 +32,10 @@ export interface SubgraphQueryOptions {
 	/** Optional opaque identity returned by an application's proxy. */
 	getResponseIdentity?: (response: Response) => string | undefined;
 }
+export interface SubgraphQueryPipelineOptions extends SubgraphQueryOptions {
+	/** Reuse an object to share caches across builders with the same source and transport policy. */
+	cacheScope?: object;
+}
 interface AccountRow {
 	id: string;
 	deposits: string[];
@@ -42,6 +46,10 @@ interface FactoryRow {
 	factory: Address;
 }
 const sourceQueries = new WeakSet<object>();
+// Separate configured pipelines and module loads in application-owned caches.
+const subgraphQueryCacheNamespace = Math.random().toString(36).slice(2);
+let nextSubgraphQueryCacheId = 0;
+const subgraphQueryCacheScopes = new WeakMap<object, string>();
 /** Internal: a source decorator is a query override, not an ordinary result cache. */
 export const hasSubgraphQuerySource = (query: object): boolean =>
 	sourceQueries.has(query);
@@ -257,8 +265,14 @@ export async function querySubgraphFactories(
 export function withSubgraphQueries(
 	buildQuery: BuildQueryFn,
 	sources: SubgraphQuerySources,
-	options: SubgraphQueryOptions = {},
+	options: SubgraphQueryPipelineOptions = {},
 ): BuildQueryFn {
+	const scope = options.cacheScope ?? {};
+	let cacheScope = subgraphQueryCacheScopes.get(scope);
+	if (cacheScope === undefined) {
+		cacheScope = `${subgraphQueryCacheNamespace}:${nextSubgraphQueryCacheId++}`;
+		subgraphQueryCacheScopes.set(scope, cacheScope);
+	}
 	const cacheBySource = <K extends { chainId: number }, V>(
 		name: string,
 		run: (
@@ -298,7 +312,7 @@ export function withSubgraphQueries(
 								: serializeQueryArgs(args);
 							return argsKey === null
 								? null
-								: JSON.stringify([key.chainId, selectedKey, argsKey]);
+								: JSON.stringify([cacheScope, key.chainId, selectedKey, argsKey]);
 						},
 					},
 				);

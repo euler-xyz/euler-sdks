@@ -59,6 +59,15 @@ for (const mode of ["native adapters", "query decorator"] as const) {
   });
 }
 
+const sharedCacheBuilder = (cache: Map<string, Promise<unknown>>): BuildQueryFn => (name, fn, _target, context) =>
+  ((...args: Parameters<typeof fn>) => {
+    const argsKey = context ? context.getCacheKey(args) : JSON.stringify(args);
+    if (argsKey === null) return fn(...args);
+    const key = JSON.stringify([name, argsKey]);
+    if (!cache.has(key)) cache.set(key, fn(...args));
+    return cache.get(key)!;
+  }) as typeof fn;
+
 describe("application cache and source policies", () => {
   it("resolves dynamic sources before the caller cache and keeps new older indexed data usable", async () => {
     let deploymentId = "A";
@@ -70,6 +79,89 @@ describe("application cache and source policies", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     deploymentId = "B";
     await expect(adapter.fetchAccountVaults(1, address)).resolves.toEqual({});
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  describe.each(["accounts", "factories"] as const)("shared application cache for %s", kind => {
+    it.each([
+      { sourceMode: "map", timing: "settled" },
+      { sourceMode: "map", timing: "concurrent" },
+      { sourceMode: "resolver", timing: "settled" },
+      { sourceMode: "resolver", timing: "concurrent" },
+    ])("isolates configured transports with $sourceMode sources and $timing reads", async ({ sourceMode, timing }) => {
+      // Application caches such as TanStack share entries across wrapped queries.
+      const cache = new Map<string, Promise<unknown>>();
+      const buildQuery = sharedCacheBuilder(cache);
+      const owner = owners(1)[0]!;
+      const proxy = "/private/shared-proxy";
+      const factories = [
+        "0x0000000000000000000000000000000000000011",
+        "0x0000000000000000000000000000000000000022",
+      ] as const;
+      const makeRead = (build: BuildQueryFn) => {
+        if (kind === "accounts") {
+          const adapter = new AccountVaultsSubgraphAdapter({ subgraphURLs: {} }, build);
+          return () => adapter.fetchAccountVaults(1, owner);
+        }
+        const adapter = new VaultTypeSubgraphAdapter({ subgraphURLs: {} }, build);
+        return () => adapter.fetchVaultFactories(1, [address]);
+      };
+      const pipelines = factories.map(factory => {
+        const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+          expect(url).toBe(proxy);
+          const { variables: { ids } } = JSON.parse(String(init?.body));
+          const data = kind === "accounts"
+            ? { trackingActiveAccounts: ids.map((id: string) => ({ id, deposits: [owner + factory.slice(2)], borrows: [] })) }
+            : { vaults: ids.map((id: string) => ({ id, factory })) };
+          return Response.json({ data: { ...data, _meta: { deployment: "A" } } }, {
+            headers: { "x-fork-source": factory },
+          });
+        });
+        const getResponseIdentity = vi.fn((response: Response) => response.headers.get("x-fork-source") ?? undefined);
+        const sources = sourceMode === "map" ? { 1: proxy }
+          : async () => ({ endpoint: proxy, deploymentId: "A", identity: "same-configured-identity" });
+        const build = withSubgraphQueries(buildQuery, sources, { fetch, getResponseIdentity });
+        return { read: makeRead(build), siblingRead: makeRead(build), fetch, getResponseIdentity };
+      });
+      const first = pipelines[0]!;
+      const second = pipelines[1]!;
+      const expected = factories.map(factory => kind === "accounts"
+        ? { [getAddress(owner)]: { deposits: [factory], borrows: [] } }
+        : [{ id: address, factory }]);
+      const results = timing === "settled"
+        ? [await first.read(), await second.read()]
+        : await Promise.all([first.read(), second.read()]);
+      expect(results).toEqual(expected);
+      expect(await Promise.all(pipelines.map(pipeline => pipeline.read()))).toEqual(expected);
+      expect(await Promise.all(pipelines.map(pipeline => pipeline.siblingRead()))).toEqual(expected);
+      for (const pipeline of pipelines) {
+        expect(pipeline.fetch).toHaveBeenCalledOnce();
+        expect(pipeline.getResponseIdentity).toHaveBeenCalledOnce();
+      }
+    });
+  });
+  it.each(["accounts", "factories"] as const)("allows explicit cache sharing between builders for %s", async kind => {
+    const cache = new Map<string, Promise<unknown>>();
+    const cacheScope = { privatePolicy: "must-not-be-serialized" };
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ data: { trackingActiveAccounts: [], vaults: [] } }));
+    const makeRead = (shared: boolean) => {
+      const build = withSubgraphQueries(sharedCacheBuilder(cache), { 1: "/private/shared-policy" }, {
+        fetch,
+        ...(shared ? { cacheScope } : {}),
+      });
+      if (kind === "accounts") {
+        const adapter = new AccountVaultsSubgraphAdapter({ subgraphURLs: {} }, build);
+        return () => adapter.fetchAccountVaults(1, address);
+      }
+      const adapter = new VaultTypeSubgraphAdapter({ subgraphURLs: {} }, build);
+      return () => adapter.fetchVaultFactories(1, [address]);
+    };
+    const first = makeRead(true);
+    const second = makeRead(true);
+    await Promise.all([first(), second()]);
+    await second();
+    expect(fetch).toHaveBeenCalledOnce();
+    expect([...cache.keys()].join()).not.toContain(cacheScope.privatePolicy);
+    await makeRead(false)();
     expect(fetch).toHaveBeenCalledTimes(2);
   });
   describe.each(["accounts", "factories"] as const)("configured and proxy identity for %s", kind => {

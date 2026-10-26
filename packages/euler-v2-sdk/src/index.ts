@@ -83,4 +83,5 @@ export {
 	type SubgraphQuerySource,
 	type SubgraphQuerySources,
 	type SubgraphQueryOptions,
+	type SubgraphQueryPipelineOptions,
 } from "./utils/subgraphQueries.js";
