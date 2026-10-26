@@ -72,6 +72,43 @@ describe("application cache and source policies", () => {
     await expect(adapter.fetchAccountVaults(1, address)).resolves.toEqual({});
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+  describe.each(["accounts", "factories"] as const)("configured and proxy identity for %s", kind => {
+    it.each([
+      { headers: ["proxy-A", "proxy-A"], rejected: false },
+      { headers: [undefined, undefined], rejected: false },
+      { headers: ["proxy-A", "proxy-B"], rejected: true },
+      { headers: ["proxy-A", undefined], rejected: true },
+      { headers: [undefined, "proxy-A"], rejected: true },
+    ])("checks proxy identity independently across pages: $headers", async ({ headers, rejected }) => {
+      let calls = 0;
+      const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => {
+        const { variables: { ids } } = JSON.parse(String(init?.body));
+        const header = headers[calls++];
+        return Response.json(page(ids, "A", calls === 2 ? 90 : 100), {
+          headers: header === undefined ? {} : { "x-fork-source": header },
+        });
+      });
+      const getResponseIdentity = vi.fn((response: Response) => response.headers.get("x-fork-source") ?? undefined);
+      const build = withSubgraphQueries(pass, async () => ({
+        endpoint: "/private/proxy",
+        identity: "configured-source",
+        deploymentId: "A",
+      }), { fetch, includeMeta: true, getResponseIdentity });
+      const config = { subgraphURLs: { 1: "/private/proxy" } };
+      const inputs = owners(1001);
+      const accounts = new AccountVaultsSubgraphAdapter(config, build);
+      const factories = new VaultTypeSubgraphAdapter(config, build);
+      const reads = kind === "accounts"
+        ? inputs.map(owner => accounts.fetchAccountVaults(1, owner))
+        : [factories.fetchVaultFactories(1, inputs)];
+      const results = await Promise.allSettled(reads);
+      expect(results.every(result => rejected
+        ? result.status === "rejected" && result.reason.reason === "source-changed"
+        : result.status === "fulfilled")).toBe(true);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(getResponseIdentity).toHaveBeenCalledTimes(2);
+    });
+  });
   it("preserves caller TTL and null-key opt-out", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(0);

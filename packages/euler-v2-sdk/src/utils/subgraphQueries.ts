@@ -120,16 +120,16 @@ async function querySubgraph(
 			? { endpoint: source.endpoint, deploymentId: source.deploymentId }
 			: undefined,
 	);
-	const selectedIdentity =
-		source.identity ?? options.getResponseIdentity?.(response);
+	const responseIdentity = options.getResponseIdentity?.(response);
 	const deployment =
 		object(data._meta) && typeof data._meta.deployment === "string"
 			? data._meta.deployment
 			: undefined;
-	const identity =
-		selectedIdentity || deployment
-			? JSON.stringify([selectedIdentity, deployment])
-			: undefined;
+	const identity = JSON.stringify([
+		source.identity,
+		responseIdentity,
+		deployment,
+	]);
 	if (selection.started && identity !== selection.identity)
 		throw new SubgraphUnavailableError("source-changed", chainId);
 	selection.started = true;
