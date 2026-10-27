@@ -38,7 +38,10 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 	) {
 		const uncached = this.queryVaultFactories;
 		if (buildQuery) applyBuildQuery(this, buildQuery);
-		if (config.resolver && !hasSubgraphQuerySource(this.queryVaultFactories)) {
+		if (
+			config.resolver &&
+			!hasSubgraphQuerySource(this, "queryVaultFactories")
+		) {
 			const configured = this.queryVaultFactories;
 			// Catalog reads evaluate freshness and retirement; explicit maps retain query wrappers.
 			this.queryVaultFactories = (key) =>
@@ -103,13 +106,13 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 	): Promise<SubgraphReadResult<VaultFactoryResult[]>> {
 		if (
 			this.queryVaultFactories === this.builtInQuery &&
-			!hasSubgraphQuerySource(this.queryVaultFactories) &&
+			!hasSubgraphQuerySource(this, "queryVaultFactories") &&
 			this.config.subgraphURLs[chainId] === false
 		)
 			throw new SubgraphUnavailableError("disabled", chainId);
 		if (
 			this.queryVaultFactories !== this.builtInQuery ||
-			hasSubgraphQuerySource(this.queryVaultFactories) ||
+			hasSubgraphQuerySource(this, "queryVaultFactories") ||
 			this.config.subgraphURLs[chainId] ||
 			!this.config.resolver
 		) {
@@ -188,7 +191,7 @@ export class VaultTypeSubgraphAdapter implements IVaultTypeAdapter {
 
 		if (
 			this.queryVaultFactories === this.builtInQuery &&
-			!hasSubgraphQuerySource(this.queryVaultFactories) &&
+			!hasSubgraphQuerySource(this, "queryVaultFactories") &&
 			!this.config.resolver &&
 			!this.config.subgraphURLs[chainId] &&
 			this.config.subgraphURLs[chainId] !== false

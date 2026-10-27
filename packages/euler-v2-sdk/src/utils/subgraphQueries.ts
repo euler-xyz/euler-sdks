@@ -45,14 +45,16 @@ interface FactoryRow {
 	id: Address;
 	factory: Address;
 }
-const sourceQueries = new WeakSet<object>();
+const sourceQueries = new WeakMap<object, Set<string>>();
 // Separate configured pipelines and module loads in application-owned caches.
 const subgraphQueryCacheNamespace = Math.random().toString(36).slice(2);
 let nextSubgraphQueryCacheId = 0;
 const subgraphQueryCacheScopes = new WeakMap<object, string>();
-/** Internal: a source decorator is a query override, not an ordinary result cache. */
-export const hasSubgraphQuerySource = (query: object): boolean =>
-	sourceQueries.has(query);
+/** Internal: source policy belongs to a target/query, even when decorators wrap its function. */
+export const hasSubgraphQuerySource = (
+	target: object,
+	queryName: string,
+): boolean => sourceQueries.get(target)?.has(queryName) ?? false;
 
 type AccountKey = { chainId: number; account: Address };
 type FactoryKey = { chainId: number; address: Address };
@@ -312,7 +314,12 @@ export function withSubgraphQueries(
 								: serializeQueryArgs(args);
 							return argsKey === null
 								? null
-								: JSON.stringify([cacheScope, key.chainId, selectedKey, argsKey]);
+								: JSON.stringify([
+										cacheScope,
+										key.chainId,
+										selectedKey,
+										argsKey,
+									]);
 						},
 					},
 				);
@@ -369,7 +376,12 @@ export function withSubgraphQueries(
 				name === "queryAccountVaults"
 					? cacheBySource(name, accounts, target, context)
 					: cacheBySource(name, factories, target, context);
-			sourceQueries.add(query);
+			let queries = sourceQueries.get(target);
+			if (!queries) {
+				queries = new Set();
+				sourceQueries.set(target, queries);
+			}
+			queries.add(name);
 			return query;
 		}
 		return buildQuery(name, fn, target, context);
