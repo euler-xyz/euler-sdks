@@ -42,7 +42,10 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 	) {
 		const uncached = this.queryAccountVaults;
 		if (buildQuery) applyBuildQuery(this, buildQuery);
-		if (config.resolver && !hasSubgraphQuerySource(this.queryAccountVaults)) {
+		if (
+			config.resolver &&
+			!hasSubgraphQuerySource(this, "queryAccountVaults")
+		) {
 			const configured = this.queryAccountVaults;
 			// Catalog reads evaluate freshness and retirement; explicit maps retain query wrappers.
 			this.queryAccountVaults = (key) =>
@@ -111,13 +114,13 @@ export class AccountVaultsSubgraphAdapter implements IAccountVaultsAdapter {
 	): Promise<SubgraphReadResult<AccountVaults>> {
 		if (
 			this.queryAccountVaults === this.builtInQuery &&
-			!hasSubgraphQuerySource(this.queryAccountVaults) &&
+			!hasSubgraphQuerySource(this, "queryAccountVaults") &&
 			this.config.subgraphURLs[chainId] === false
 		)
 			throw new SubgraphUnavailableError("disabled", chainId);
 		if (
 			this.queryAccountVaults !== this.builtInQuery ||
-			hasSubgraphQuerySource(this.queryAccountVaults) ||
+			hasSubgraphQuerySource(this, "queryAccountVaults") ||
 			this.config.subgraphURLs[chainId] ||
 			!this.config.resolver
 		) {
