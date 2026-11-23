@@ -4052,3 +4052,75 @@ test("direct rewards adapter never replays the Turtle API key across a redirect"
 		await Promise.all([redirecting.close(), target.close()]);
 	}
 });
+
+for (const [chainId, custom, expected] of [
+	[1, undefined, merklDistributorAddress],
+	[50, undefined, getAddress("0xDd8098dA94cF3aEA5253545162F1Feb371278F5a")],
+	[324, undefined, zksyncMerklDistributorAddress],
+	[50, claimAddress, claimAddress],
+	[324, claimAddress, claimAddress],
+	[999_999_999, claimAddress, claimAddress],
+	[999_999_999, undefined, undefined],
+] as const) {
+	test(`Merkl direct-adapter rows reach claim planning on chain ${chainId}, custom=${!!custom}`, async () => {
+		const adapter = new RewardsDirectAdapter({
+			enableBrevis: false,
+			enableFuul: false,
+			enableTurtle: false,
+			merklDistributorAddress: custom,
+		});
+		adapter.setQueryMerklUserRewards(async () => [
+			{
+				chainId,
+				rewards: [
+					{
+						token: {
+							address: rewardToken,
+							chainId,
+							price: 1,
+							symbol: "EUL",
+							name: "Euler",
+							decimals: 18,
+						},
+						amount: "1000",
+						claimed: "0",
+						proofs: [proofHash],
+					},
+				],
+			},
+		]);
+		const rewards = await adapter.fetchUserRewards(chainId, accountAddress);
+		assert.equal(rewards.length, 1);
+		assert.equal(rewards[0]!.claimAddress, expected);
+		const service = new RewardsService(adapter, {
+			merklDistributorAddress: custom ?? merklDistributorAddress,
+			fuulFactoryAddress: zeroAddress,
+			fuulManagerAddress: zeroAddress,
+		});
+		if (!expected) {
+			await assert.rejects(
+				() => service.buildClaimPlans({ rewards, account: accountAddress }),
+				/No trusted Merkl distributor/,
+			);
+			return;
+		}
+		const plan = await service.buildClaimPlans({
+			rewards,
+			account: accountAddress,
+		});
+		assert.equal(plan[0]?.type, "evcBatch");
+		if (plan[0]?.type !== "evcBatch") throw new Error("expected batch");
+		const operation = plan[0].items[0];
+		if (!operation || !("items" in operation))
+			throw new Error("expected operation");
+		assert.equal(operation.items[0]?.targetContract, expected);
+		await assert.rejects(
+			() =>
+				service.buildClaimPlans({
+					rewards: [{ ...rewards[0]!, claimAddress: otherAccountAddress }],
+					account: accountAddress,
+				}),
+			/Merkl claim address mismatch/,
+		);
+	});
+}

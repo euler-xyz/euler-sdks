@@ -157,6 +157,7 @@ import {
 	isEVCBatchOperation,
 } from "./executionServiceTypes.js";
 import {
+	assertSingleEvcTransaction,
 	deriveStateOverrides,
 	type EstimateGasForTransactionPlanOptions,
 	type ExecutionSimulationContext,
@@ -780,6 +781,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		options?: SimulateBatchOptions & { prefetch?: PluginPrefetchData },
 	): Promise<SimulateBatchResult<TVaultEntity>> {
 		assertNoCowSwapPlanItems(transactionPlan, "simulateTransactionPlan");
+		assertSingleEvcTransaction(transactionPlan);
 		const processedPlan = await this.processPlanPlugins(
 			transactionPlan,
 			account,
@@ -808,6 +810,7 @@ export class ExecutionService<TVaultEntity extends VaultEntity = VaultEntity>
 		options?: SimulateBatchOptions,
 	): Promise<SimulateBatchResult<TVaultEntity>> {
 		assertNoCowSwapPlanItems(prepared.plan, "simulatePreparedTransactionPlan");
+		assertSingleEvcTransaction(prepared.plan);
 		const owner = this.getAccountOwner(prepared.account);
 		return simulateTransactionPlan(
 			this.getSimulationContext(),

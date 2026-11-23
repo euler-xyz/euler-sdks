@@ -47,6 +47,8 @@ Returns:
 - `accountStatusErrors` / `vaultStatusErrors`: health-check failures after execution
 - requirements not met by the connected wallet (`insufficientWalletAssets`, `insufficientDirectAllowances`, `insufficientPermit2Allowances`)
 
+Both ordinary and prepared-plan simulation reject plans containing more than one `evcBatch` before RPC work. Execution submits each batch as a separate transaction, with its own health checks. Use `executionService.mergePlans(plans)` explicitly when the operations should execute as one atomic EVC transaction.
+
 The promise can also reject before an EVC batch simulation runs. Simulation resolves candidate vault types through the configured `vaultMetaService` to choose the lens reads needed for the account and vault snapshots. If that resolution uses a subgraph, HTTP errors (including 404 and 502), GraphQL errors, and malformed data propagate to the caller. They are not converted into unknown vaults or a returned `simulationError`. Handle the rejected promise as a failed simulation and keep execution gated until a simulation completes with `canExecute: true`.
 
 Why use it:
