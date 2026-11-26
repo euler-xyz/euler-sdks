@@ -28,6 +28,7 @@ export const defaultAccountVaultsAdapterConfig: AccountVaultsSubgraphAdapterConf
 			146: `${SUBGRAPH_BASE_URL}/euler-simple-sonic/latest/gn`,
 			239: `${SUBGRAPH_BASE_URL}/euler-simple-tac/latest/gn`,
 			999: `${SUBGRAPH_BASE_URL}/euler-simple-hyperevm/latest/gn`,
+			5042: `${SUBGRAPH_BASE_URL}/euler-simple-arc/latest/gn`,
 			8453: `${SUBGRAPH_BASE_URL}/euler-simple-base/latest/gn`,
 			9745: `${SUBGRAPH_BASE_URL}/euler-simple-plasma/latest/gn`,
 			42161: `${SUBGRAPH_BASE_URL}/euler-simple-arbitrum/latest/gn`,
