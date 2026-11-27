@@ -68,7 +68,12 @@ export interface Deployment {
 			DAO?: Address;
 			labs?: Address;
 			securityCouncil?: Address;
+			securityPartner?: Address;
+			techTeam?: Address;
+			treasury?: Address;
+			/** @deprecated Removed from euler-interfaces. */
 			securityPartnerA?: Address;
+			/** @deprecated Removed from euler-interfaces. */
 			securityPartnerB?: Address;
 			gauntlet?: Address;
 			riskSteward?: Address;
